@@ -1,0 +1,171 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from ipaddress import ip_address
+from urllib.parse import urlsplit
+
+DEFAULT_SYNC_PORT = 7777
+
+
+@dataclass(frozen=True)
+class NormalizedEndpoint:
+    host: str
+    port: int
+
+    @property
+    def authority(self) -> str:
+        if ":" in self.host and not self.host.startswith("["):
+            return f"[{self.host}]:{self.port}"
+        return f"{self.host}:{self.port}"
+
+    @property
+    def base_url(self) -> str:
+        return f"http://{self.authority}"
+
+
+def normalize_endpoint(value: str, default_port: int = DEFAULT_SYNC_PORT) -> NormalizedEndpoint | None:
+    """Normalize a user-entered IP endpoint without changing its identity.
+
+    The launcher deliberately treats an IP address as identity-bearing data.
+    Hostnames are accepted for reachability, but an IP literal is required for
+    positive World identity. Ports are normalized so `1.2.3.4` and
+    `1.2.3.4:7777` compare as the same endpoint.
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    candidate = raw if "://" in raw else f"http://{raw}"
+    parts = urlsplit(candidate)
+    host = (parts.hostname or "").strip().lower()
+    if not host:
+        return None
+    try:
+        port = parts.port or default_port
+    except ValueError:
+        return None
+    return NormalizedEndpoint(host=host, port=int(port))
+
+
+def is_ip_literal(value: str) -> bool:
+    endpoint = normalize_endpoint(value)
+    if endpoint is None:
+        return False
+    try:
+        ip_address(endpoint.host)
+        return True
+    except ValueError:
+        return False
+
+
+def is_private_ip(value: str) -> bool:
+    endpoint = normalize_endpoint(value)
+    if endpoint is None:
+        return False
+    try:
+        addr = ip_address(endpoint.host)
+        return bool(addr.is_private or addr.is_loopback or addr.is_link_local)
+    except ValueError:
+        return False
+
+
+def endpoints_equal(left: str, right: str) -> bool:
+    a = normalize_endpoint(left)
+    b = normalize_endpoint(right)
+    return bool(a and b and a == b)
+
+
+def endpoint_hosts_equal(left: str, right: str) -> bool:
+    """Compare the identity-bearing host/IP while deliberately ignoring port.
+
+    Dragonwilds Sync identifies a World by exact World Name + its known internal/
+    external IP aliases. The Sync port is transport metadata and may move when a
+    manager changes the numbered server instance.
+    """
+    a = normalize_endpoint(left)
+    b = normalize_endpoint(right)
+    return bool(a and b and a.host == b.host)
+
+
+def saved_endpoint_kind(world: dict, contacted: str) -> str | None:
+    connection = world.get("connection") or {}
+    if connection.get("internal_ip") and endpoint_hosts_equal(contacted, connection.get("internal_ip", "")):
+        return "internal"
+    if connection.get("external_ip") and endpoint_hosts_equal(contacted, connection.get("external_ip", "")):
+        return "external"
+    return None
+
+
+def authoritative_world_name(world: dict) -> str:
+    identity = world.get("identity") or {}
+    return str(identity.get("world_name") or "").strip()
+
+
+def positive_world_identity(world: dict, contacted_endpoint: str, remote_world_name: str | None) -> tuple[bool, str]:
+    """Apply the v2 positive-identification rule.
+
+    A World is positively identified only when BOTH are true:
+      1. The endpoint used for the response is one of the saved internal/external IPs.
+      2. The server-returned World Name exactly matches the authoritative saved World Name.
+
+    `profile_id` is intentionally not part of the positive identity rule. It can
+    be cached as useful server metadata, but it cannot cause two differently
+    named Worlds on the same machine to collapse into one client profile.
+    """
+    kind = saved_endpoint_kind(world, contacted_endpoint)
+    if kind is None:
+        return False, "Response came from an address that is not associated with this World."
+
+    expected = authoritative_world_name(world)
+    actual = str(remote_world_name or "").strip()
+    if not expected:
+        return False, "This World has no authoritative World Name configured."
+    if actual != expected:
+        return False, f"World Name mismatch: expected '{expected}', server reported '{actual or '(blank)'}'."
+    return True, kind
+
+
+def candidate_endpoints(world: dict) -> list[tuple[str, str]]:
+    """Return (kind, endpoint) candidates in smart route order.
+
+    Auto mode tries the last successful route first, then the other saved route.
+    Explicit Internal/External preference tries only that route first, with the
+    alternate as a fallback so a laptop moving between LAN and WAN still works.
+    """
+    connection = world.get("connection") or {}
+    values = {
+        "internal": str(connection.get("internal_ip") or "").strip(),
+        "external": str(connection.get("external_ip") or "").strip(),
+    }
+    preference = str(connection.get("preference") or "auto").lower()
+    last = str(connection.get("last_successful_route") or "").lower()
+
+    order: list[str] = []
+    if preference in ("internal", "external"):
+        order.append(preference)
+        order.append("external" if preference == "internal" else "internal")
+    else:
+        if last in ("internal", "external"):
+            order.append(last)
+        order.extend(["internal", "external"])
+
+    result: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    try:
+        sync_port = int(connection.get("sync_port") or DEFAULT_SYNC_PORT)
+    except (TypeError, ValueError):
+        sync_port = DEFAULT_SYNC_PORT
+    if not 1 <= sync_port <= 65535:
+        sync_port = DEFAULT_SYNC_PORT
+    for kind in order:
+        endpoint = values.get(kind, "")
+        normalized = normalize_endpoint(endpoint, default_port=sync_port)
+        if not endpoint or normalized is None:
+            continue
+        key = normalized.authority
+        if key in seen:
+            continue
+        seen.add(key)
+        # Always return an explicit Sync endpoint. This lets the saved identity stay
+        # as a clean IP while the launcher transport can live on its own port.
+        result.append((kind, normalized.authority))
+    return result

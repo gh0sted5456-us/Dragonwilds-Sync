@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+import urllib.request
+from pathlib import Path
+
+CLIENT_STEAM_APP_ID = "1374490"
+SERVER_STEAM_APP_ID = "4019830"
+STEAMCMD_INFO_URL = "https://api.steamcmd.net/v1/info/{appid}"
+UE4SS_RELEASE_TAG_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
+_GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
+_BUILD_RE = re.compile(r'"buildid"\s+"([^"]+)"', re.IGNORECASE)
+_LAST_UPDATED_RE = re.compile(r'"LastUpdated"\s+"([^"]+)"', re.IGNORECASE)
+_REMOTE_CACHE: dict[str, tuple[float, dict]] = {}
+
+
+def _find_public_branch_info(obj):
+    if isinstance(obj, dict):
+        branches = obj.get("branches")
+        if isinstance(branches, dict) and isinstance(branches.get("public"), dict) and "buildid" in branches["public"]:
+            return branches["public"]
+        for value in obj.values():
+            found = _find_public_branch_info(value)
+            if found:
+                return found
+    elif isinstance(obj, list):
+        for value in obj:
+            found = _find_public_branch_info(value)
+            if found:
+                return found
+    return None
+
+
+def steam_public_build(appid: str, timeout: float = 6.0, cache_seconds: float = 900.0) -> dict:
+    key = f"steam:{appid}"
+    cached = _REMOTE_CACHE.get(key)
+    if cached and time.time() - cached[0] < cache_seconds:
+        return dict(cached[1])
+    try:
+        req = urllib.request.Request(STEAMCMD_INFO_URL.format(appid=appid), headers={"User-Agent": "DragonwildsSync/2"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8", "replace"))
+        branch = _find_public_branch_info(data)
+        result = {
+            "available": bool(branch),
+            "appid": str(appid),
+            "buildid": str((branch or {}).get("buildid") or ""),
+            "timeupdated": str((branch or {}).get("timeupdated") or ""),
+            "checked_at": time.time(),
+        }
+    except Exception as exc:
+        result = {"available": False, "appid": str(appid), "buildid": "", "timeupdated": "", "checked_at": time.time(), "error": str(exc)}
+    _REMOTE_CACHE[key] = (time.time(), dict(result))
+    return result
+
+
+def latest_ue4ss_release(timeout: float = 6.0, cache_seconds: float = 900.0) -> dict:
+    key = "ue4ss:experimental-latest"
+    cached = _REMOTE_CACHE.get(key)
+    if cached and time.time() - cached[0] < cache_seconds:
+        return dict(cached[1])
+    url = "https://github.com/UE4SS-RE/RE-UE4SS/releases/expanded_assets/experimental-latest"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (DragonwildsSync/2)"})
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            html = response.read().decode(errors="replace")
+        candidates = []
+        for href in _GITHUB_ASSET_HREF_RE.findall(html):
+            filename = href.rsplit("/", 1)[-1]
+            lower = filename.lower()
+            if filename.startswith("UE4SS_v") and filename.endswith(".zip") and not lower.startswith("zdev-"):
+                candidates.append((filename, "https://github.com" + href))
+        filename, download_url = candidates[0] if candidates else ("", "")
+        result = {
+            "available": bool(filename), "filename": filename, "version": filename,
+            "download_url": download_url, "release_url": UE4SS_RELEASE_TAG_URL, "checked_at": time.time(),
+        }
+    except Exception as exc:
+        result = {"available": False, "filename": "", "version": "", "download_url": "", "release_url": UE4SS_RELEASE_TAG_URL, "checked_at": time.time(), "error": str(exc)}
+    _REMOTE_CACHE[key] = (time.time(), dict(result))
+    return result
+
+
+def parse_appmanifest(path: str | Path) -> dict:
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return {"buildid": "", "timeupdated": ""}
+    build = _BUILD_RE.search(text)
+    updated = _LAST_UPDATED_RE.search(text)
+    return {
+        "buildid": build.group(1).strip() if build else "",
+        "timeupdated": updated.group(1).strip() if updated else "",
+    }
+
+
+def parse_appmanifest_buildid(path: str | Path) -> str:
+    return str(parse_appmanifest(path).get("buildid") or "")
+
+
+def _manifest_candidates(anchor: str | Path, appid: str) -> list[Path]:
+    raw = str(anchor or "").strip()
+    if not raw:
+        return []
+    path = Path(raw)
+    if path.is_file():
+        path = path.parent
+    candidates: list[Path] = []
+    for parent in [path, *list(path.parents)[:8]]:
+        candidates.extend([
+            parent / f"appmanifest_{appid}.acf",
+            parent / "steamapps" / f"appmanifest_{appid}.acf",
+        ])
+        if parent.name.lower() == "common" and parent.parent.name.lower() == "steamapps":
+            candidates.append(parent.parent / f"appmanifest_{appid}.acf")
+    seen = set()
+    unique = []
+    for candidate in candidates:
+        key = os.path.normcase(str(candidate))
+        if key not in seen:
+            seen.add(key); unique.append(candidate)
+    return unique
+
+
+def detect_installed_steam_build(anchor: str | Path, appid: str, secondary_anchor: str | Path = "") -> dict:
+    for candidate in [*_manifest_candidates(anchor, appid), *_manifest_candidates(secondary_anchor, appid)]:
+        if candidate.is_file():
+            parsed = parse_appmanifest(candidate)
+            buildid = str(parsed.get("buildid") or "")
+            if buildid:
+                return {"available": True, "appid": str(appid), "buildid": buildid, "timeupdated": str(parsed.get("timeupdated") or ""), "source": "steam_appmanifest", "manifest": str(candidate)}
+    return {"available": False, "appid": str(appid), "buildid": "", "timeupdated": "", "source": "unknown", "manifest": ""}
+
+
+def client_runtime_status(game_dir: str, latest_hint: dict | str | None = None, *, remote: bool = False) -> dict:
+    from runtime_platforms import detect_client_platform
+    installed = detect_installed_steam_build(game_dir, CLIENT_STEAM_APP_ID)
+    if remote:
+        latest = steam_public_build(CLIENT_STEAM_APP_ID)
+    elif isinstance(latest_hint, dict):
+        latest = dict(latest_hint)
+    elif latest_hint:
+        latest = {"buildid": str(latest_hint)}
+    else:
+        latest = {}
+    installed_id = str(installed.get("buildid") or "")
+    latest_id = str(latest.get("buildid") or "")
+    return {
+        **detect_client_platform(game_dir),
+        "appid": CLIENT_STEAM_APP_ID,
+        "installed_buildid": installed_id,
+        "latest_buildid": latest_id,
+        "current": (installed_id == latest_id) if installed_id and latest_id else None,
+        "source": installed.get("source") or "unknown",
+        "manifest": installed.get("manifest") or "",
+    }
+
+
+def _runtime_dir_date(path: str | Path) -> float | None:
+    root = Path(path)
+    if not root.exists():
+        return None
+    mtimes = []
+    try:
+        for child in root.rglob("*"):
+            if child.is_file():
+                try: mtimes.append(child.stat().st_mtime)
+                except OSError: pass
+    except OSError:
+        return None
+    return max(mtimes) if mtimes else None
+
+
+def _as_timestamp(value):
+    try:
+        number = float(value)
+        return number if number > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime_dir: str | Path = "", remote: bool = True) -> dict:
+    install = (application or {}).get("server_install") or {}
+    install_dir = str(install.get("install_dir") or "")
+    steamcmd_dir = str(install.get("steamcmd_dir") or "")
+    detected = detect_installed_steam_build(install_dir, SERVER_STEAM_APP_ID, steamcmd_dir)
+    installed_buildid = str(install.get("installed_buildid") or detected.get("buildid") or "")
+    server_latest = steam_public_build(SERVER_STEAM_APP_ID) if remote else {}
+    client_latest = steam_public_build(CLIENT_STEAM_APP_ID) if remote else {}
+    latest_server_id = str(server_latest.get("buildid") or "")
+
+    ue_latest = latest_ue4ss_release() if remote else {}
+    ue_installed = str(install.get("ue4ss_installed_version") or (profile or {}).get("ue4ss_installed_version") or "")
+    ue_latest_version = str(ue_latest.get("version") or ue_latest.get("filename") or "")
+
+    rs_installed_at = install.get("runeschema_installed_at") or (profile or {}).get("runeschema_installed_at")
+    if rs_installed_at is None and runeschema_runtime_dir:
+        rs_installed_at = _runtime_dir_date(runeschema_runtime_dir)
+
+    server_latest_ts = _as_timestamp(server_latest.get("timeupdated"))
+    client_latest_ts = _as_timestamp(client_latest.get("timeupdated"))
+    release_delta = abs(server_latest_ts - client_latest_ts) if server_latest_ts is not None and client_latest_ts is not None else None
+    release_dates_align = (release_delta <= 72 * 3600) if release_delta is not None else None
+
+    return {
+        "dragonwilds": {
+            "server_appid": SERVER_STEAM_APP_ID,
+            "server_installed_buildid": installed_buildid,
+            "server_latest_buildid": latest_server_id,
+            "server_current": (installed_buildid == latest_server_id) if installed_buildid and latest_server_id else None,
+            "server_build_source": str(install.get("installed_build_source") or detected.get("source") or "unknown"),
+            "server_installed_timeupdated": str(detected.get("timeupdated") or ""),
+            "server_latest_timeupdated": str(server_latest.get("timeupdated") or ""),
+            "server_updated_at": install.get("installed_at"),
+            "client_appid": CLIENT_STEAM_APP_ID,
+            "client_latest_buildid": str(client_latest.get("buildid") or ""),
+            "client_latest_timeupdated": str(client_latest.get("timeupdated") or ""),
+            "release_time_delta_seconds": release_delta,
+            "release_dates_align": release_dates_align,
+            "compatibility_basis": "separate Steam apps; release timestamps are corroborating evidence, not raw build-ID equality",
+            "checked_at": max(float(server_latest.get("checked_at") or 0), float(client_latest.get("checked_at") or 0)) or None,
+        },
+        "ue4ss": {
+            "installed_version": ue_installed,
+            "latest_version": ue_latest_version,
+            "current": (ue_installed == ue_latest_version) if ue_installed and ue_latest_version else None,
+            "latest_url": ue_latest.get("release_url") or UE4SS_RELEASE_TAG_URL,
+            "checked_at": ue_latest.get("checked_at"),
+        },
+        "runeschema": {
+            "installed_at": rs_installed_at,
+            "source_name": str(install.get("runeschema_source_name") or (profile or {}).get("runeschema_source_name") or ""),
+            "version_basis": "installed-date",
+        },
+    }
+
+
+def version_health(runtime_stack: dict | None) -> dict:
+    stack = runtime_stack if isinstance(runtime_stack, dict) else {}
+    game = stack.get("dragonwilds") if isinstance(stack.get("dragonwilds"), dict) else {}
+    current = game.get("server_current")
+    if current is True:
+        return {"score": 100, "grade": "CURRENT", "reasons": ["Dedicated server matches the latest known Steam public build"]}
+    if current is False:
+        return {"score": 25, "grade": "OUTDATED", "reasons": ["Dedicated server does not match the latest known Steam public build"]}
+    return {"score": None, "grade": "AWAITING DATA", "reasons": ["Dedicated server build parity could not be verified"]}

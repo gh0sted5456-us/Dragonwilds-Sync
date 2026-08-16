@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dragonwilds Sync</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    html,body{height:100%;margin:0;overflow:hidden;background:var(--bg)}
+    body{display:flex;flex-direction:column;color:var(--text)}
+    .dialog-native-titlebar{height:34px;flex:0 0 34px;display:flex;align-items:center;border-bottom:1px solid var(--border);background:var(--topbar);-webkit-app-region:drag;user-select:none}
+    .dialog-native-title{padding:0 12px;font-size:11px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .dialog-native-spacer{flex:1}
+    .dialog-native-control{width:44px;height:34px;border:0;border-radius:0;background:transparent;color:var(--muted);-webkit-app-region:no-drag;cursor:pointer}
+    .dialog-native-control:hover{background:rgba(255,255,255,.08);color:var(--text)}
+    .dialog-native-control.close:hover{background:#a83329;color:#fff}
+    #dialog-content{flex:1;min-height:0;overflow:hidden;display:flex}
+    #dialog-content>.modal{width:100%;height:100%;max-width:none;max-height:none;border:0;border-radius:0;box-shadow:none;display:flex;flex-direction:column;background:var(--bg)}
+    #dialog-content .modal-header{flex:0 0 auto;-webkit-app-region:drag}
+    #dialog-content .modal-header button,#dialog-content .modal-header input,#dialog-content .modal-header select,#dialog-content .modal-header a{-webkit-app-region:no-drag}
+    #dialog-content .modal-header>.modal-close{display:none}
+    #dialog-content .modal-body{flex:1 1 auto;min-height:0;overflow:auto}
+    #dialog-content .modal-footer{flex:0 0 auto}
+    .desktop-window-controls{display:none!important}
+  </style>
+</head>
+<body data-theme="dark">
+  <div class="dialog-native-titlebar"><img src="assets/application-icon.png" alt="" style="width:18px;height:18px;margin-left:10px"><span class="dialog-native-title" id="dialog-title">Dragonwilds Sync</span><span class="dialog-native-spacer"></span><button class="dialog-native-control" id="dlg-min">—</button><button class="dialog-native-control" id="dlg-max">□</button><button class="dialog-native-control close" id="dlg-close">×</button></div>
+  <main id="dialog-content"></main>
+  <script src="dialog-host.js"></script>
+</body>
+</html>

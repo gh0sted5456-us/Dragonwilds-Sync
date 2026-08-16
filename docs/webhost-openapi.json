@@ -1,0 +1,85 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Dragonwilds Sync WebHost API",
+    "version": "1.1.9",
+    "description": "Federated public World manifests, browser catalog, heartbeat ingestion, and optional same-origin Remote Server administration."
+  },
+  "servers": [{ "url": "http://127.0.0.1:27080" }],
+  "paths": {
+    "/worlds": {
+      "get": { "summary": "Read the compatibility World manifest", "responses": { "200": { "description": "Public-safe Worlds known to this WebHost" } } }
+    },
+    "/manifest": {
+      "get": { "summary": "Compatibility alias for /worlds", "responses": { "200": { "description": "Public-safe Worlds" } } }
+    },
+    "/heartbeats": {
+      "post": {
+        "summary": "Publish one Sync World heartbeat",
+        "security": [{ "publisherToken": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Heartbeat" } } } },
+        "responses": { "202": { "description": "Heartbeat accepted" }, "400": { "description": "Invalid heartbeat" }, "401": { "description": "Publisher token required" }, "429": { "description": "Rate limited" } }
+      }
+    },
+    "/api/v1/worlds": {
+      "get": {
+        "summary": "Read the filtered public catalog",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "region", "in": "query", "schema": { "type": "string" } },
+          { "name": "access", "in": "query", "schema": { "enum": ["", "open", "password"] } },
+          { "name": "active", "in": "query", "schema": { "enum": ["all", "online", "sync", "vanilla", "modded"] } },
+          { "name": "sort", "in": "query", "schema": { "enum": ["featured", "players", "ping", "name"] } }
+        ],
+        "responses": { "200": { "description": "Ten-result catalog page" } }
+      }
+    },
+    "/api/v1/worlds/{worldId}": {
+      "get": {
+        "summary": "Read one public World",
+        "parameters": [{ "name": "worldId", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "World" }, "404": { "description": "World not found" } }
+      }
+    },
+    "/api/v1/health": { "get": { "summary": "Read WebHost and catalog health", "responses": { "200": { "description": "Health" } } } },
+    "/api/v1/schema": { "get": { "summary": "Read matching and capability metadata", "responses": { "200": { "description": "Schema metadata" } } } },
+    "/api/v1/openapi.json": { "get": { "summary": "Read the live OpenAPI document", "responses": { "200": { "description": "OpenAPI 3.1 document" } } } },
+    "/api/v1/admin/login": {
+      "post": {
+        "summary": "Create a same-origin Remote Server session",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminLogin" } } } },
+        "responses": { "200": { "description": "Session created" }, "401": { "description": "Credentials rejected" }, "429": { "description": "Rate limited" } }
+      }
+    },
+    "/api/v1/admin/session": { "get": { "summary": "Read the current Remote Server session", "responses": { "200": { "description": "Session and permission snapshot" }, "401": { "description": "Login required" } } } },
+    "/api/v1/admin/action": { "post": { "summary": "Submit an allow-listed CSRF-protected Remote Server action", "responses": { "200": { "description": "Action result" }, "403": { "description": "Permission or CSRF rejected" } } } }
+  },
+  "components": {
+    "securitySchemes": { "publisherToken": { "type": "http", "scheme": "bearer" } },
+    "schemas": {
+      "Heartbeat": {
+        "type": "object",
+        "required": ["world_name", "protocol", "fingerprint", "sync_port"],
+        "properties": {
+          "world_name": { "type": "string", "maxLength": 120 },
+          "protocol": { "const": "dragonwilds-world-sync" },
+          "fingerprint": { "type": "string", "pattern": "^dws1-[0-9a-fA-F]{24}$" },
+          "external_ip": { "type": "string" },
+          "internal_ip": { "type": "string" },
+          "sync_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "game_port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        }
+      },
+      "AdminLogin": {
+        "type": "object",
+        "required": ["world_name", "password"],
+        "properties": {
+          "world_name": { "type": "string" },
+          "username": { "type": "string" },
+          "password": { "type": "string", "format": "password" }
+        }
+      }
+    }
+  }
+}

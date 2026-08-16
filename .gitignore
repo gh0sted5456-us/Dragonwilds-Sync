@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dist-service/
+build-service/
+release/
+release-linux/
+dist-service-linux/
+build-service-linux/
+flatpak-build/
+flatpak-repo/
+.venv-linux-build/
+.venv-build/
+.test-venv/
+*.log
+__pycache__/
+*.pyc
+Codex Outputs/

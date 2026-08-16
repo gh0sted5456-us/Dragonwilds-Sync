@@ -1,0 +1,57 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from mod_tags import parse_tags_text
+from profile_store import default_state
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def main():
+    state = default_state()
+    app = state["application"]
+    assert app["application_updates"]["github_url"] == "https://github.com/gh0sted5456-us/Dragonwilds-Sync"
+    assert app["application_updates"]["auto_check"] is True
+    assert app["world_discovery"]["refresh_seconds"] == 30
+    assert app["advanced"]["multiple_servers_enabled"] is False
+
+    tags = parse_tags_text("# ignored\nQoL;Storage;Hotload\n// ignored\n;; ignored\n")
+    assert tags == ["QoL", "Storage", "Hotload"]
+    assert (ROOT / "resources/community-templates/enabled.txt").read_bytes() == b""
+    assert "ExampleUE4SSMod : 1" in (ROOT / "resources/community-templates/mods.txt").read_text(encoding="utf-8")
+    assert "QoL;Storage" in (ROOT / "resources/community-templates/tags.txt").read_text(encoding="utf-8")
+
+    assert not (ROOT / "resources/webhost/shared-worlds.json").exists()
+
+    renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    assert "Release 1." in renderer and "Application Updates" in renderer
+    assert "application-github-url" in renderer
+    assert "splash-update-now" in renderer and "splash-changelog-dismiss" in renderer
+    assert "World Discovery" in renderer and "toggle-multiple-servers" in renderer
+
+    updater = (ROOT / "electron/app_updater.cjs").read_text(encoding="utf-8")
+    assert "PORTABLE_EXECUTABLE_FILE" in updater
+    assert "sha256" in updater.lower()
+    assert "github.com" in updater
+    assert "Update blocked" in updater
+    assert "Wait-Process" in updater
+
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    assert package["version"] == "1.1.9"
+    assert package["build"]["win"]["target"] == ["portable"]
+    assert "nsis" not in package["build"]
+    assert package["build"]["portable"]["artifactName"].startswith("${productName}-Portable-")
+
+    world_sharing = (ROOT / "backend/world_sharing.py").read_text(encoding="utf-8")
+    assert 'headers["Authorization"] = f"Bearer {token}"' in world_sharing
+
+    assert (ROOT / "docs/GITHUB_RELEASES.md").is_file()
+    assert not (ROOT / "docs/SHARED_WORLDS_WEBHOST.md").exists()
+    assert (ROOT / "backend/profile_bundle.py").is_file()
+    print("Release 1 baseline compatibility tests passed")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,6 @@
+{
+  "name": "dragonwilds-sync-webhost-capture",
+  "version": "1.0.0",
+  "private": true,
+  "main": "../capture_webhost.cjs"
+}

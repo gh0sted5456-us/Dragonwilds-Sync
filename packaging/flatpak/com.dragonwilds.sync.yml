@@ -1,0 +1,40 @@
+app-id: com.dragonwilds.sync
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+base: org.electronjs.Electron2.BaseApp
+base-version: '24.08'
+command: dragonwilds-sync
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+  - --filesystem=/home/dragonwilds
+  - --filesystem=/srv/dragonwilds
+  - --filesystem=/run/media
+  - --talk-name=org.freedesktop.Notifications
+  - --env=TMPDIR=/var/tmp
+modules:
+  - name: dragonwilds-sync
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/dragonwilds-sync
+      - cp -a . /app/dragonwilds-sync/
+      - install -Dm755 flatpak-launcher /app/bin/dragonwilds-sync
+      - install -Dm644 com.dragonwilds.sync.desktop /app/share/applications/com.dragonwilds.sync.desktop
+      - install -Dm644 com.dragonwilds.sync.metainfo.xml /app/share/metainfo/com.dragonwilds.sync.metainfo.xml
+      - install -Dm644 application-icon.png /app/share/icons/hicolor/512x512/apps/com.dragonwilds.sync.png
+    sources:
+      - type: dir
+        path: ../../release-linux/linux-unpacked
+      - type: file
+        path: flatpak-launcher
+      - type: file
+        path: com.dragonwilds.sync.desktop
+      - type: file
+        path: com.dragonwilds.sync.metainfo.xml
+      - type: file
+        path: ../../renderer/assets/application-icon.png

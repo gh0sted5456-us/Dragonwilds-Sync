@@ -1,0 +1,5 @@
+# Dragonwilds Sync tags.txt
+# Tags are separated with semicolons.
+# Lines beginning with # are examples/comments and are ignored.
+# Example: QoL;Storage;Hotload;Roleplay
+# Remove the leading # and use your own tags to activate a line.

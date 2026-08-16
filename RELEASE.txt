@@ -1,0 +1,5 @@
+Dragonwilds Sync V1.1.9 - Portable Studio & WebHost
+Version: 1.1.9
+Release family: Portable-only Windows application with consolidated World management, Character Studio, federated WebHost, Remote Server, and source API documentation.
+See docs/WEBHOST_API.md, docs/webhost-openapi.json, docs/FEATURE_LIST.md, docs/CAPABILITIES.md, docs/USER_GUIDE.md, and docs/SERVER_ADMIN_GUIDE.md.
+Settings now includes the shared cross-profile Mod Management repository; World right-click menus support backup-first Unload; Nexus ZIP/7z browser downloads stage automatically; application updates default to https://github.com/gh0sted5456-us/Dragonwilds-Sync.

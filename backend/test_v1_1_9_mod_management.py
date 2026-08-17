@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import shared_mod_repository as repository
+import spawner_catalog
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -45,6 +46,26 @@ def main() -> None:
         assert (target / "new-schema.json").read_text(encoding="utf-8") == "new"
         assert len(result["deployed"]) == 1
 
+    # Character Item Editor, server Spawner, and WebGUI consume one normalized
+    # item identity. Custom/mod-manifest rows must preserve all four gameplay
+    # fields and remain searchable by ITEM_NAME as well as display name/ID.
+    original_search = spawner_catalog.search_items
+    try:
+        spawner_catalog.search_items = lambda query="", limit=250: {"items": [], "count": 0, "cache": {}}
+        custom = spawner_catalog.catalog("", kind="item", query="ITEM_Custom_Sword", custom_items=[{
+            "persistence_id": "/Game/Mods/Test/ITEM_Custom_Sword.ITEM_Custom_Sword",
+            "display_name": "Test Sword", "internal_name": "ITEM_Custom_Sword",
+            "max_stack": 7, "icon_ref": "custom-sword.png",
+        }])
+        assert custom["count"] == 1
+        row = custom["items"][0]
+        assert row["display_name"] == "Test Sword"
+        assert row["internal_name"] == row["item_name"] == "ITEM_Custom_Sword"
+        assert row["persistence_id"].endswith("ITEM_Custom_Sword.ITEM_Custom_Sword")
+        assert row["max_stack"] == 7 and row["runtime_path"].startswith("/Game/Mods/Test/")
+    finally:
+        spawner_catalog.search_items = original_search
+
     project = Path(__file__).resolve().parents[1]
     renderer = (project / "renderer" / "app.js").read_text(encoding="utf-8")
     profile_bundle = (project / "backend" / "profile_bundle.py").read_text(encoding="utf-8")
@@ -53,6 +74,7 @@ def main() -> None:
     assert "const pageSize=40" in renderer
     assert '"items/manifest.json"' in profile_bundle and '"itemsRoot": "items/"' in profile_bundle
     assert "application.custom_items.write_to_mod" in service and '"icon-manifest.json"' in service
+    assert '"icon_url"' in service and "RSDWArchive/RSDWTools" in service
     assert "origin_label" in maintenance and "config-origin-group" in renderer
 
     print("V2.0.0 shared mod repository tests passed")

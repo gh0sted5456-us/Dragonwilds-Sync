@@ -831,6 +831,9 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        if incoming_root and Path(incoming_root).exists():
+            from dragon_core import materialize as materialize_dragon_core
+            materialize_dragon_core(resolve_server_layout(incoming_root).ue4ss_mods_dir, incoming.get("dragon_core"), mode="Server")
         save = restore_profile_savegame(incoming_id, incoming_exe) if incoming_exe else False
         self.active_profile_id = incoming_id; STATE.active_profile_id = incoming_id
         if marker_root:
@@ -1028,6 +1031,11 @@ class ServerEngine:
             cfg["owner_id"] = machine_owner_id
         if not str(cfg.get("owner_id") or "").strip():
             raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
+        # DragonCore is profile-owned. Re-materialize immediately before every
+        # launch so an already-active World cannot inherit another profile's
+        # Player/Server mode or item rules after an interrupted swap.
+        from dragon_core import materialize as materialize_dragon_core
+        materialize_dragon_core(resolve_server_layout_from_exe(exe).ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
         write_dedicated_config(cfg, self._profile_root(profile)); save_server_profile(profile_id, profile)
         try:
             from world_maintenance import lock_world_configs

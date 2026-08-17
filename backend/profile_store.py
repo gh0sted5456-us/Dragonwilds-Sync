@@ -546,6 +546,7 @@ def list_server_profiles() -> list[dict]:
             "platform_compatibility": {"pc": True, **{key: bool((meta.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"})) for key in ("steam", "epic", "nintendo", "playstation", "xbox")}},
             "icon_b64": meta.get("icon_b64") or "",
             "banner_b64": meta.get("banner_b64") or "",
+            "metadata_cache": meta.get("metadata_cache") if isinstance(meta.get("metadata_cache"), dict) else {},
             "auto_ue4ss": bool(meta.get("auto_ue4ss", True)),
             "auto_runeschema": bool(meta.get("auto_runeschema", True)),
             "mod_management": meta.get("mod_management") or {"nexus_auto_check": False, "nexus_auto_apply": False},
@@ -566,6 +567,7 @@ def list_server_profiles() -> list[dict]:
             "operations_schedule": meta.get("operations_schedule") or {"enabled": False, "action": "restart", "interval_minutes": 1440, "next_run_at": None, "warning_minutes": [30,10,5,1], "backup_retention_count": 10},
             "service_notice": meta.get("service_notice") or {},
             "player_map": meta.get("player_map") or {"allow_remote_clients": False, "background_data": "", "calibration": {}},
+            "dragon_core": meta.get("dragon_core") or {},
             "manifest_version": int(meta.get("manifest_version") or 0),
         })
     return result
@@ -661,6 +663,7 @@ def create_server_profile(name: str) -> str:
         "activity_log": [],
         "service_notice": {"level": "info", "message": "", "expires_at": None, "updated_at": None},
         "player_map": {"allow_remote_clients": False, "background_data": "", "calibration": {}},
+        "dragon_core": {},
         "public_ip": "",
         "manifest_version": 0,
         "created_ts": datetime.now(timezone.utc).timestamp(),

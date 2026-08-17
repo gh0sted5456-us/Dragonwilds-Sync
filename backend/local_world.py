@@ -26,7 +26,7 @@ LOCAL_PROFILE_FILE = LOCAL_PROFILE_DIR / "profile.json"
 PRIVATE_PROFILES_DIR = WORLD_PROFILE_ROOT
 PAK_EXTENSIONS = {".pak", ".utoc", ".ucas"}
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
-RESERVED_UE4SS = {"runeschema"} | UE4SS_BAKED_IN_DEFAULT_MODS
+RESERVED_UE4SS = {"runeschema", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
 _LOAD_PREFIX_RE = re.compile(r"^(\d{2,3})_(.+)$")
 
 
@@ -77,6 +77,7 @@ def default_singleplayer_profile(profile_id: str = SINGLEPLAYER_ID, name: str = 
         "unit_overrides": {},
         "broadcast_config": {"password": "", "server_key": "", "share_access_key": "", "sync_port": 27051, "lan_broadcast": True, "access_policy": default_access_policy()},
         "player_map": {"allow_remote_clients": False, "background_data": "", "calibration": {}},
+        "dragon_core": {},
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -236,6 +237,7 @@ def profile_world_shape(profile: dict) -> dict:
         "identity": {"world_name": str(profile.get("name") or "Private World"), "server_profile_id_hint": ""},
         "status": {"online": True, "local": True, "broadcasting": bool(profile.get("broadcasting", False)), "sync_port": int(cfg.get("sync_port") or 27051), "last_error": ""},
         "credentials": {}, "connection": {},
+        "dragon_core": profile.get("dragon_core") or {},
     }
 
 

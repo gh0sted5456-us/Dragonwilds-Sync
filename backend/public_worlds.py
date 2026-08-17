@@ -22,6 +22,8 @@ STEAM_MASTER_HOST = "hl2master.steampowered.com"
 STEAM_MASTER_PORT = 27011
 
 EOS_INDEX_URL = "https://shrug.games/api/rsdw/servers"
+LOBBYSUP_API_URL = "https://www.lobbysup.com/api/servers/dragonwilds"
+LOBBYSUP_SITE_URL = "https://www.lobbysup.com/dragonwilds"
 CACHE_TTL_SECONDS = 25.0
 _CACHE: dict[str, tuple[float, dict]] = {}
 PUBLIC_WORLD_CACHE_PATH = APP_DATA_DIR / "cache" / "public_worlds.json"
@@ -180,6 +182,117 @@ def normalize_eos_world(row: dict) -> dict:
     }
 
 
+def normalize_lobbysup_world(row: dict) -> dict:
+    """Normalize LobbySup's public, read-only Dragonwilds observation."""
+    address = str(row.get("address") or "").strip()
+    host, _, raw_port = address.rpartition(":")
+    try:
+        port = int(raw_port)
+    except (TypeError, ValueError):
+        host, port = address, 7777
+    name = str(row.get("name") or "Dragonwilds World").strip()
+    stable = f"lobbysup|{name.casefold()}|{host}|{port}"
+    country_code = str(row.get("countryCode") or "").strip().upper()[:2]
+    country = str(row.get("country") or "").strip()[:80]
+    return {
+        "id": "lobbysup-" + hashlib.sha256(stable.encode("utf-8")).hexdigest()[:20],
+        "kind": "public", "nickname": "",
+        "identity": {"world_name": name, "external_ip": host, "server_profile_id_hint": ""},
+        "connection": {"external_ip": host, "internal_ip": "", "sync_port": 27051,
+                       "game_port": port, "preference": "external", "requires_direct_connect": True},
+        "credentials": {"password": "", "server_key": "", "share_access_key": "",
+                        "source": "lobbysup-public", "remember": False},
+        "presentation": {"description": "Public Dragonwilds server observed by LobbySup",
+                         "tags": ["DRAGONWILDS", "PUBLIC"], "game_tags": ["DRAGONWILDS", "PUBLIC"],
+                         "sync_tags": [], "mod_badges": ["VANILLA"], "icon_b64": "", "banner_b64": ""},
+        "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal",
+                                                          "host_type": "public", "visibility": "public"}),
+        "status": {"online": bool(row.get("online", True)), "player_count": row.get("players"),
+                   "max_players": row.get("maxPlayers"), "ping_ms": None, "map": row.get("map"),
+                   "country_code": country_code, "country_name": country,
+                   "server_location": country, "last_checked_at": time.time(), "last_error": ""},
+        "manifest_cache": {}, "shared": {"source": "lobbysup-public", "curated": False, "fingerprint": ""},
+        "public_history": {"provider": "lobbysup", "address": address,
+                           "first_seen": str(row.get("firstSeen") or ""), "last_seen": str(row.get("lastSeen") or ""),
+                           "last_updated": str(row.get("lastUpdated") or ""), "history_days": 7},
+        "public_discovery": {"provider": "lobbysup", "official": False, "endpoint": address,
+                             "source_url": LOBBYSUP_SITE_URL, "country_code": country_code,
+                             "latitude": row.get("lat"), "longitude": row.get("lon")},
+    }
+
+
+def _fetch_lobbysup(*, query: str, timeout: float, limit: int) -> list[dict]:
+    request = urllib.request.Request(LOBBYSUP_API_URL, headers={
+        "Accept": "application/json", "User-Agent": "DragonwildsSync/2.0 (+public-world-browser)"})
+    with urllib.request.urlopen(request, timeout=max(1.5, timeout)) as response:
+        payload = json.loads(response.read(4_000_000).decode("utf-8", "replace"))
+    source = payload.get("servers") if isinstance(payload, dict) else payload
+    rows = source if isinstance(source, list) else []
+    needle = query.casefold()
+    if needle:
+        rows = [row for row in rows if needle in " ".join(str(row.get(key) or "") for key in
+                ("name", "address", "country", "countryCode", "map")).casefold()]
+    return [row for row in rows[:limit] if isinstance(row, dict)]
+
+
+def fetch_lobbysup_history(address: str, *, days: int = 7, timeout: float = 4.0) -> dict:
+    """Fetch one public server's hourly population history on demand."""
+    clean = str(address or "").strip()[:320]
+    if not clean or ":" not in clean:
+        return {"provider": "lobbysup", "address": clean, "history": [], "error": "A public IP:port is required."}
+    days = max(1, min(int(days or 7), 30))
+    encoded = urllib.parse.quote(clean, safe="")
+    url = f"https://www.lobbysup.com/api/server/dragonwilds/{encoded}/history?days={days}"
+    request = urllib.request.Request(url, headers={
+        "Accept": "application/json", "User-Agent": "DragonwildsSync/2.0 (+public-world-history)"})
+    with urllib.request.urlopen(request, timeout=max(1.5, timeout)) as response:
+        payload = json.loads(response.read(2_000_000).decode("utf-8", "replace"))
+    rows = payload.get("history") if isinstance(payload, dict) else []
+    history = [{"timestamp": str(row.get("timestamp") or "")[:64],
+                "players": max(0, int(row.get("players") or 0)),
+                "max_players": max(0, int(row.get("maxPlayers") or row.get("max_players") or 0))}
+               for row in (rows if isinstance(rows, list) else [])[-744:] if isinstance(row, dict)]
+    return {"provider": "lobbysup", "source_url": LOBBYSUP_SITE_URL,
+            "address": clean, "days": days, "history": history, "fetched_at": time.time()}
+
+
+def _merge_lobbysup(worlds: list[dict], observed: list[dict]) -> list[dict]:
+    """Enrich unique exact-name sessions, otherwise retain the endpoint row."""
+    by_name: dict[str, list[dict]] = {}
+    for world in worlds:
+        name = str((world.get("identity") or {}).get("world_name") or "").strip().casefold()
+        if name:
+            by_name.setdefault(name, []).append(world)
+    merged: list[dict] = list(worlds)
+    for row in observed:
+        name = str((row.get("identity") or {}).get("world_name") or "").strip().casefold()
+        matches = by_name.get(name) or []
+        if len(matches) == 1 and not str((matches[0].get("connection") or {}).get("external_ip") or "").strip():
+            target = matches[0]
+            target["connection"] = {**(target.get("connection") or {}), **(row.get("connection") or {})}
+            target["identity"] = {**(target.get("identity") or {}), "external_ip": (row.get("identity") or {}).get("external_ip", "")}
+            target["status"] = {**(target.get("status") or {}), **{k: v for k, v in (row.get("status") or {}).items() if v is not None}}
+            target["public_history"] = row.get("public_history") or {}
+            target["public_discovery"] = {**(target.get("public_discovery") or {}),
+                                           "lobbysup": row.get("public_discovery") or {},
+                                           "lobbysup_enhanced": True}
+            target["shared"] = {**(target.get("shared") or {}), "public_observation": "lobbysup"}
+        else:
+            merged.append(row)
+    # Endpoint + exact World name is the stable public identity. This also
+    # collapses duplicate LobbySup entries and later provider overlaps.
+    unique, seen = [], set()
+    for world in merged:
+        name = str((world.get("identity") or {}).get("world_name") or "").strip().casefold()
+        connection = world.get("connection") or {}
+        ip = str(connection.get("external_ip") or "").strip().casefold()
+        key = (name, ip, int(connection.get("game_port") or 7777)) if ip else ("id", str(world.get("id") or ""))
+        if key in seen:
+            continue
+        seen.add(key); unique.append(world)
+    return unique
+
+
 def _fetch_index_page(*, query: str, offset: int, timeout: float) -> tuple[list[dict], int | None]:
     url = EOS_INDEX_URL + "?" + urllib.parse.urlencode({"q": query, "offset": str(offset), "sort": "players"})
     request = urllib.request.Request(url, headers={"Accept": "text/html", "User-Agent": "DragonwildsSync/1.4 (+public-world-browser)"})
@@ -220,6 +333,12 @@ def discover_public_worlds(*, force: bool = False, timeout: float = 4.0, max_ser
     except Exception as exc:
         errors.append(f"Dragonwilds EOS index: {exc}")
 
+    lobbysup_rows: list[dict] = []
+    try:
+        lobbysup_rows = _fetch_lobbysup(query=clean_query, timeout=timeout, limit=limit)
+    except Exception as exc:
+        errors.append(f"LobbySup public observations: {exc}")
+
     worlds, seen = [], set()
     for row in rows:
         world = normalize_eos_world(row)
@@ -229,10 +348,15 @@ def discover_public_worlds(*, force: bool = False, timeout: float = 4.0, max_ser
         worlds.append(world)
         if len(worlds) >= limit:
             break
+    worlds = _merge_lobbysup(worlds, [normalize_lobbysup_world(row) for row in lobbysup_rows])[:limit]
     result = {
         "worlds": worlds, "errors": errors, "source": "shrug-eos-index",
         "source_label": "Dragonwilds EOS sessions · unofficial read-only index",
         "source_url": "https://shrug.games/games/runescape-dragonwilds/servers/",
+        "sources": [
+            {"id": "shrug-eos-index", "label": "Dragonwilds EOS session mirror", "url": "https://shrug.games/games/runescape-dragonwilds/servers/"},
+            {"id": "lobbysup", "label": "LobbySup public observations", "url": LOBBYSUP_SITE_URL},
+        ],
         "total_available": total, "query": clean_query,
         "refreshed_at": time.time(), "endpoint_count": len(worlds),
     }

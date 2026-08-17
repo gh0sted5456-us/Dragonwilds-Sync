@@ -92,10 +92,11 @@ RUNESCHEMA_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "runeschema"
 RUNESCHEMA_UPLOAD_DIR = APP_DATA_DIR / "runeschema_uploads"
 RUNESCHEMA_CORE_CACHE_ZIP = RUNESCHEMA_UPLOAD_DIR / "RuneSchema-core-latest.zip"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
+BUNDLED_RSDWTOOLS_RESOURCE = ("RSDWTools-baseline.zip",)
 def user_visible_mod_unit(unit: "ModUnit") -> bool:
     """Hide shared upstream runtimes while exposing every World-owned mod."""
     return (unit.group not in {"ue4ss_core", "runeschema"}
-            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll"})
+            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll", "rsdwtools", "persistentdirectconnectip", "dragoncore"})
 RUNTIME_MUTATION_LOCK = threading.RLock()
 
 
@@ -2537,6 +2538,27 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
                 errors.append("Bundled RuneSchema baseline is unavailable.")
         except Exception as exc:
             errors.append(f"RuneSchema client baseline repair failed: {exc}")
+    try:
+        from persistent_direct_connect import ensure_installed as ensure_persistent_direct_connect
+        functional = ensure_persistent_direct_connect(layout.game_root)
+        if functional.get("changed"):
+            repaired.append("Persistent Direct Connect functional baseline installed")
+    except Exception as exc:
+        errors.append(f"Persistent Direct Connect baseline repair failed: {exc}")
+    try:
+        rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir)
+        if rsdwtools.get("changed"):
+            repaired.append("RSDWTools bridge baseline installed/updated (DEBUG_BRIDGE=false)")
+        if not rsdwtools.get("ok"):
+            errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
+    except Exception as exc:
+        errors.append(f"RSDWTools client baseline repair failed: {exc}")
+    try:
+        from dragon_core import ensure_installed as ensure_dragon_core
+        dragon_core = ensure_dragon_core(layout.ue4ss_mods_dir)
+        if dragon_core.get("changed"): repaired.append("DragonCore functional baseline installed")
+    except Exception as exc:
+        errors.append(f"DragonCore client baseline repair failed: {exc}")
     after = client_runtime_status(game_root)
     # Defensive cleanup: Player Setup never owns the dedicated-server loader.
     # If a user already has a file named version.dll we do not delete it here;
@@ -2583,6 +2605,47 @@ def _normalize_bundled_integration_contract(target_root: Path) -> dict:
     if rsdwtools.is_dir():
         (rsdwtools / "enabled.txt").write_text("", encoding="utf-8")
     return result
+
+
+def ensure_rsdwtools_baseline(mods_dir: Path) -> dict:
+    """Install/update the self-enabled RSDWTools bridge without mods.txt."""
+    target = Path(mods_dir) / "RSDWTools"
+    bundle = _bundled_app_resource(*BUNDLED_RSDWTOOLS_RESOURCE)
+    if not bundle.is_file():
+        return {"ok": target.is_dir(), "installed": target.is_dir(), "changed": False,
+                "path": str(target), "error": "Bundled RSDWTools baseline is unavailable."}
+    marker = target / ".dragonwilds-sync-baseline.json"
+    signature = {"bundle_bytes": int(bundle.stat().st_size), "bundle_mtime_ns": int(bundle.stat().st_mtime_ns)}
+    try:
+        current = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        current = {}
+    live_main = target / "scripts" / "main.lua"
+    if current == signature and live_main.is_file() and (target / "dlls" / "main.dll").is_file() and (target / "enabled.txt").is_file():
+        text = live_main.read_text(encoding="utf-8-sig", errors="replace")
+        if re.search(r"(?m)^\s*DEBUG_BRIDGE\s*=\s*false\s*$", text):
+            return {"ok": True, "installed": True, "changed": False, "path": str(target),
+                    "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
+    with tempfile.TemporaryDirectory(prefix="dws-rsdwtools-") as temp_name:
+        staged = Path(temp_name) / "payload"
+        with zipfile.ZipFile(bundle) as archive:
+            safe_extract_zip(archive, staged)
+        main_lua = staged / "scripts" / "main.lua"
+        if not main_lua.is_file() or not (staged / "dlls" / "main.dll").is_file():
+            raise RuntimeError("Bundled RSDWTools baseline failed validation.")
+        text = main_lua.read_text(encoding="utf-8-sig", errors="replace")
+        if re.search(r"(?m)^\s*DEBUG_BRIDGE\s*=", text):
+            text = re.sub(r"(?m)^\s*DEBUG_BRIDGE\s*=\s*(?:true|false)\s*$", "DEBUG_BRIDGE = false", text)
+        else:
+            text = "-- Disable all bridge_shm console output when set to false.\nDEBUG_BRIDGE = false\n" + text
+        main_lua.write_text(text, encoding="utf-8")
+        (staged / "enabled.txt").write_text("", encoding="utf-8")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(staged, target, dirs_exist_ok=True)
+    (target / "enabled.txt").write_text("", encoding="utf-8")
+    marker.write_text(json.dumps(signature, indent=2), encoding="utf-8")
+    return {"ok": True, "installed": True, "changed": True, "path": str(target),
+            "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
 
 
 def _ue4ss_settings_present(core_dir: Path) -> bool:
@@ -2888,6 +2951,21 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
                 errors.append(f"RuneSchema is missing and the configured release source failed: {exc}")
         else:
             errors.append("RuneSchema is missing. Load a core ZIP, configure a GitHub/release ZIP source, or use a launcher build containing the bundled RuneSchema core.")
+
+    try:
+        rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir)
+        if rsdwtools.get("changed"):
+            repaired.append("RSDWTools bridge baseline installed/updated (DEBUG_BRIDGE=false)")
+        if not rsdwtools.get("ok"):
+            errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
+    except Exception as exc:
+        errors.append(f"RSDWTools server baseline repair failed: {exc}")
+    try:
+        from dragon_core import ensure_installed as ensure_dragon_core
+        dragon_core = ensure_dragon_core(layout.ue4ss_mods_dir)
+        if dragon_core.get("changed"): repaired.append("DragonCore functional baseline installed")
+    except Exception as exc:
+        errors.append(f"DragonCore server baseline repair failed: {exc}")
 
     after = runtime_prerequisite_status(game_root)
     base_ok = bool(after.get("ok"))

@@ -37,7 +37,7 @@ REMOTE_PERMISSION_DEFAULTS = {
     "view_overview": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
     "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False,
     "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False,
-    "start": True, "stop": True, "restart": True, "refresh": True,
+    "start": True, "stop": True, "restart": True, "update": True, "refresh": True,
 }
 
 
@@ -293,6 +293,19 @@ def _public_remote_ip(value: str) -> str:
         return ""
 
 
+def _public_image_data(value, *, limit: int) -> str:
+    """Return a browser-ready image without ever truncating a base64 payload."""
+    text = str(value or "").strip()
+    if not text or len(text) > limit:
+        return ""
+    if text.startswith("data:image/"):
+        return text
+    # Older profiles stored the PNG base64 body without its data-URI prefix.
+    if text.startswith(("http://", "https://", "/assets/")):
+        return text
+    return f"data:image/png;base64,{text}"
+
+
 def _country_code_for_ip(value: str) -> str:
     """Resolve a declared public host IP to ISO-3166 country, with a durable cache.
 
@@ -491,6 +504,8 @@ class DirectoryHost:
         identity = row.get("identity") or {}; connection = row.get("connection") or {}
         presentation = row.get("presentation") or {}; status = row.get("status") or {}
         shared = row.get("shared") or {}; classification = row.get("classification") or {}
+        cached = row.get("manifest_cache") if isinstance(row.get("manifest_cache"), dict) else {}
+        cached_presentation = cached.get("presentation") if isinstance(cached.get("presentation"), dict) else {}
         world_name = str(row.get("world_name") or identity.get("world_name") or row.get("server_name") or row.get("name") or "World")[:160]
         fingerprint = str(row.get("fingerprint") or row.get("fingerprint_claimed") or shared.get("fingerprint") or shared.get("fingerprint_claimed") or "")[:96]
         source = str(row.get("source") or shared.get("source") or "native")[:80]
@@ -506,13 +521,13 @@ class DirectoryHost:
         region = str(row.get("region") or status.get("region") or status.get("server_location") or "")[:120]
         return {
             "id": stable[:240], "world_name": world_name,
-            "description": str(row.get("description") or presentation.get("description") or "")[:600],
-            "community_rules": str(row.get("community_rules") or presentation.get("community_rules") or "")[:4000],
+            "description": str(row.get("description") or presentation.get("description") or cached.get("description") or cached_presentation.get("description") or "")[:600],
+            "community_rules": str(row.get("community_rules") or presentation.get("community_rules") or cached.get("community_rules") or cached_presentation.get("community_rules") or "")[:4000],
             "tags": [str(value)[:40] for value in tags if str(value).strip()][:16],
             "game_tags": [str(value)[:40] for value in game_tags if str(value).strip()][:16],
             "sync_tags": [str(value)[:40] for value in sync_tags if str(value).strip()][:16],
-            "icon_b64": str(row.get("icon_b64") or presentation.get("icon_b64") or "")[:2_000_000],
-            "banner_b64": str(row.get("banner_b64") or presentation.get("banner_b64") or "")[:4_000_000],
+            "icon_b64": _public_image_data(row.get("icon_b64") or presentation.get("icon_b64") or cached.get("icon_b64") or cached_presentation.get("icon_b64"), limit=8_000_000),
+            "banner_b64": _public_image_data(row.get("banner_b64") or presentation.get("banner_b64") or cached.get("banner_b64") or cached_presentation.get("banner_b64"), limit=16_000_000),
             "online": bool(row.get("online", status.get("online", status.get("public_online", True)))),
             "players": max(0, int(row.get("players") or row.get("player_count") or status.get("players") or status.get("player_count") or 0)),
             "max_players": max(0, int(row.get("max_players") or row.get("player_capacity") or status.get("max_players") or status.get("player_capacity") or 0)),
@@ -528,7 +543,16 @@ class DirectoryHost:
                 "game_mode": str(row.get("game_mode") or classification.get("game_mode") or "normal")[:40],
             },
             "audience": str(row.get("audience") or presentation.get("audience") or "general")[:24],
-            "community": row.get("community") if isinstance(row.get("community"), dict) else {},
+            "community": (row.get("community") if isinstance(row.get("community"), dict) else
+                          (presentation.get("community") if isinstance(presentation.get("community"), dict) else
+                           (cached.get("community") if isinstance(cached.get("community"), dict) else {}))),
+            "server_specs": (row.get("server_specs") if isinstance(row.get("server_specs"), dict) else
+                             (row.get("hw_stats") if isinstance(row.get("hw_stats"), dict) else
+                              (cached.get("server_specs") if isinstance(cached.get("server_specs"), dict) else {}))),
+            "internet_strength": (row.get("internet_strength") if isinstance(row.get("internet_strength"), dict) else
+                                  (cached.get("internet_strength") if isinstance(cached.get("internet_strength"), dict) else
+                                   ((status.get("server_health") or {}).get("host_internet") if isinstance((status.get("server_health") or {}).get("host_internet"), dict) else {}))),
+            "public_history": row.get("public_history") if isinstance(row.get("public_history"), dict) else {},
             "platform_compatibility": {
                 "pc": True,
                 **{key: bool((row.get("platform_compatibility") or presentation.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"}))
@@ -539,7 +563,7 @@ class DirectoryHost:
             "external_ip": external_ip, "internal_ip": internal_ip, "game_port": game_port,
             "sync_port": int(row.get("sync_port") or connection.get("sync_port") or 27051),
             "shared_character_count": max(0, int(row.get("shared_character_count") or shared.get("shared_character_count") or 0)),
-            "source": source, "source_label": "Dragonwilds Sync" if sync_ready else "Dragonwilds public discovery",
+            "source": source, "source_label": "Dragonwilds Sync" if sync_ready else ("LobbySup public observation" if source == "lobbysup-public" else "Dragonwilds public discovery"),
             "last_seen": float(row.get("last_seen") or status.get("last_seen") or time.time()),
         }
 
@@ -708,7 +732,7 @@ class DirectoryHost:
             result = self.remote_action_handler(str(session.get("world_id") or ""), action, {"permission": permission, "username": session.get("username")}) or {}
             self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""), remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail=f"{session.get('username')} requested {permission}")
             return result
-        permission_for = {"start": "start", "stop": "stop", "restart": "restart", "refresh": "refresh",
+        permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "refresh": "refresh",
                           "mod_update": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
                           "spawner_item": "use_spawner", "console_execute": "use_console",
@@ -1032,6 +1056,13 @@ class DirectoryHost:
                 if path.startswith("/api/v1/worlds/"):
                     wanted = urllib.parse.unquote(path.split("/api/v1/worlds/", 1)[1])
                     row = next((item for item in controller.catalog_worlds() if str(item.get("id") or "") == wanted), None)
+                    if row and isinstance(row.get("public_history"), dict) and row["public_history"].get("provider") == "lobbysup":
+                        try:
+                            from public_worlds import fetch_lobbysup_history
+                            address = str(row["public_history"].get("address") or "")
+                            row["public_history"] = {**row["public_history"], **fetch_lobbysup_history(address, days=7)}
+                        except Exception as exc:
+                            row["public_history"] = {**row["public_history"], "error": str(exc)[:300]}
                     self._json({"world": row} if row else {"error": "World not found"}, 200 if row else 404); return
                 if path == "/api/v1/health": self._json({"ok": True, **controller.status(), "catalog_world_count": len(controller.catalog_worlds())}); return
                 if path == "/api/v1/schema": self._json({"schema": "DragonwildsSync.PublicWorldCatalog.v1", "match_order": ["verified fingerprint", "normalized IP + exact World Name"], "public_only": True, "admin_same_origin": True}); return

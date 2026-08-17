@@ -162,8 +162,10 @@ def _load_installed_item_catalog(game_root: str) -> tuple[list[dict], dict]:
                 icon_path = icon_root / icon_name if icon_name else None
                 rows.append({
                     "id": item_data,
-                    "item_data": item_data,
+                    "item_data": item_data, "persistence_id": str(record.get("persistenceId") or record.get("PersistenceID") or item_data),
                     "name": str(record.get("name") or item_data or "Unknown Item"),
+                    "display_name": str(record.get("displayName") or record.get("name") or item_data or "Unknown Item"),
+                    "internal_name": str(record.get("ITEM_NAME") or record.get("ItemName") or record.get("itemName") or record.get("internalName") or record.get("assetName") or Path(source_path).stem),
                     "icon_path": str(icon_path) if icon_path and icon_path.is_file() else "",
                     "source": f"installed:RSDWTools:{tab_id}",
                     "source_path": source_path,
@@ -198,7 +200,8 @@ def item_runtime_path(source_path: str) -> str:
     return f"{mount}{relative}.{leaf}"
 
 
-def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: str = "", limit: int = 250) -> dict:
+def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: str = "", limit: int = 250,
+            custom_items: list[dict] | None = None) -> dict:
     kind = "item" if str(kind).casefold() == "item" else "enemy"
     text = str(query or "").strip().casefold()
     limit = max(1, min(int(limit or 250), 2500))
@@ -208,14 +211,39 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
     if kind == "item":
         installed_rows, installed_status = _load_installed_item_catalog(game_root)
         source = {"items": installed_rows, "count": len(installed_rows), "cache": installed_status} if installed_rows else search_items(query, limit=limit)
+        merged = {str(row.get("item_data") or row.get("persistence_id") or "").casefold(): dict(row)
+                  for row in (source.get("items") or []) if str(row.get("item_data") or row.get("persistence_id") or "").strip()}
+        for raw in custom_items or []:
+            if not isinstance(raw, dict): continue
+            persistence_id = str(raw.get("persistence_id") or "").strip()
+            if not persistence_id: continue
+            internal_name = str(raw.get("internal_name") or Path(persistence_id.replace("\\", "/")).stem).strip()
+            merged[persistence_id.casefold()] = {
+                "id": persistence_id, "item_data": persistence_id, "persistence_id": persistence_id,
+                "name": str(raw.get("display_name") or raw.get("name") or internal_name or persistence_id),
+                "display_name": str(raw.get("display_name") or raw.get("name") or internal_name or persistence_id),
+                "internal_name": internal_name, "item_name": internal_name,
+                "icon_path": str(raw.get("icon_data") or raw.get("icon_ref") or ""),
+                "source": "dragonwilds-sync:mod-manifest", "source_path": str(raw.get("source_path") or persistence_id),
+                "equipment": str(raw.get("equipment") or ""), "category": str(raw.get("category") or "Modded Items"),
+                "raw_category": "Modded Items", "stackable": int(raw.get("max_stack") or 1) > 1,
+                "max_stack": max(1, int(raw.get("max_stack") or 1)), "description": str(raw.get("description") or ""), "custom": True,
+            }
+        source["items"] = list(merged.values())
         rows = []
         all_categories = sorted({str(item.get("category") or _friendly_item_category(item)) for item in (source.get("items") or [])})
         wanted_category = str(category or "").strip().casefold()
         for item in source.get("items") or []:
-            hay = " ".join(str(item.get(key) or "") for key in ("name", "item_data", "category", "raw_category", "equipment", "source_path")).casefold()
+            hay = " ".join(str(item.get(key) or "") for key in ("name", "display_name", "internal_name", "item_name",
+                                                                         "item_data", "persistence_id", "category",
+                                                                         "raw_category", "equipment", "source_path")).casefold()
             if text and text not in hay:
                 continue
-            runtime_path = item_runtime_path(item.get("source_path") or "")
+            runtime_path = str(item.get("runtime_path") or "") or item_runtime_path(item.get("source_path") or "")
+            if not runtime_path and item.get("custom"):
+                candidate = str(item.get("persistence_id") or item.get("item_data") or "").strip()
+                if candidate.startswith("/"):
+                    runtime_path = candidate if "." in candidate.rsplit("/", 1)[-1] else f"{candidate}.{candidate.rsplit('/', 1)[-1]}"
             if not runtime_path:
                 continue
             item_category = str(item.get("category") or _friendly_item_category(item))

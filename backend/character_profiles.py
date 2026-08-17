@@ -958,6 +958,9 @@ def native_rsdw_tool_state(value: dict, tool: str, custom_items: list[dict] | No
                     continue
                 compact = {
                     "name": str(row.get("name") or row["itemData"]), "item_data": str(row["itemData"]),
+                    "display_name": str(row.get("displayName") or row.get("name") or row["itemData"]),
+                    "internal_name": str(row.get("ITEM_NAME") or row.get("ItemName") or row.get("itemName") or row.get("internalName") or row.get("assetName") or Path(str(row.get("sourcePath") or row["itemData"])).stem),
+                    "persistence_id": str(row.get("persistenceId") or row.get("PersistenceID") or row["itemData"]),
                     "max_stack": row.get("maxStack", 1), "icon": str(row.get("iconPath") or ""),
                     "category": str(row.get("category") or ""), "description": str(row.get("description") or ""),
                     "source_path": str(row.get("sourcePath") or ""),
@@ -973,6 +976,9 @@ def native_rsdw_tool_state(value: dict, tool: str, custom_items: list[dict] | No
                 continue
             compact = {
                 "name": str(row.get("name") or row.get("persistence_id") or "Modded Item"),
+                "display_name": str(row.get("display_name") or row.get("name") or row.get("persistence_id") or "Modded Item"),
+                "internal_name": str(row.get("internal_name") or Path(str(row.get("persistence_id") or "")).stem),
+                "persistence_id": str(row.get("persistence_id") or ""),
                 "item_data": str(row.get("persistence_id") or ""),
                 "max_stack": max(1, NumberLike(row.get("max_stack") or 1)),
                 "icon": str(row.get("icon_data") or row.get("icon_ref") or ""),

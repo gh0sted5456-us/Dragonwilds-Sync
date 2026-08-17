@@ -34,7 +34,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # with whatever was cached in that profile's snapshot -- silently
 # downgrading UE4SS's own runtime files back to whatever version existed
 # the last time that particular profile was snapshotted.
-LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema"} | UE4SS_BAKED_IN_DEFAULT_MODS
+LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
 
 
 

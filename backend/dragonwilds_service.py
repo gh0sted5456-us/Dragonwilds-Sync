@@ -67,15 +67,17 @@ from world_save_editor import newest_save, parse_world_save, write_world_save
 from world_sharing import export_world_package, inspect_world_package, world_from_package
 from profile_bundle import export_profile_bundle, import_profile_bundle, inspect_profile_bundle
 from server_engine import player_history_payload
+from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
+from dragon_core import default_settings as default_dragon_core_settings, normalize_settings as normalize_dragon_core_settings, materialize as materialize_dragon_core
 
 from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports,
     delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
-    ensure_base_runtimes, ensure_client_base_runtimes, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
+    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
     pop_scan_warnings as pop_server_scan_warnings,
 )
-from public_worlds import discover_public_worlds, augment_with_sync_directory
+from public_worlds import discover_public_worlds, augment_with_sync_directory, fetch_lobbysup_history
 from world_directory import (discover_sync_worlds, remember_heartbeats, publish_heartbeat_to_sources,
                              normalize_directory_sources, FINGERPRINT_RE, PROTOCOL as WORLD_SYNC_PROTOCOL)
 from directory_host import DIRECTORY_HOST, REMOTE_PERMISSION_DEFAULTS, normalize_host_config, try_upnp_mapping
@@ -99,15 +101,50 @@ def now_iso() -> str:
 
 def _inventory_cache(profile: dict) -> dict:
     cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
-    units = cache.get("mods") if isinstance(cache.get("mods"), list) else []
-    return {"mods": [dict(row) for row in units if isinstance(row, dict)],
-            "updated_at": str(cache.get("updated_at") or ""), "source": str(cache.get("source") or "")}
+    has_mod_inventory = isinstance(cache.get("mods"), list)
+    units = cache.get("mods") if has_mod_inventory else []
+    # Presentation metadata and mod inventory are refreshed independently.
+    # A World edit must not make an as-yet-unscanned empty mod list look cached.
+    mods_updated_at = str(cache.get("mods_updated_at") or (cache.get("updated_at") if has_mod_inventory else "") or "")
+    return {**cache, "mods": [dict(row) for row in units if isinstance(row, dict)],
+            "updated_at": mods_updated_at, "source": str(cache.get("mods_source") or cache.get("source") or "")}
+
+
+def _world_metadata_snapshot(profile: dict) -> dict:
+    """Cache the complete public/profile presentation alongside mod inventory."""
+    health = normalize_health_config(profile.get("health_config"))
+    return {
+        "name": str(profile.get("name") or "World"),
+        "description": str(profile.get("description") or "")[:600],
+        "community_rules": str(profile.get("community_rules") or "")[:4000],
+        "community": dict(profile.get("community") or {}),
+        "tags": list(profile.get("tags") or [])[:16],
+        "classification": dict(profile.get("classification") or {}),
+        "audience": str(profile.get("audience") or "general"),
+        "platform_compatibility": dict(profile.get("platform_compatibility") or {}),
+        "icon_b64": str(profile.get("icon_b64") or ""),
+        "banner_b64": str(profile.get("banner_b64") or ""),
+        "server_specs": dict(profile.get("hw_stats") or {}),
+        "internet_strength": dict(health.get("host_network") or {}),
+    }
+
+
+def _refresh_world_metadata_cache(profile: dict, *, source: str = "apply") -> dict:
+    cache = dict(profile.get("metadata_cache") or {})
+    refreshed_at = now_iso()
+    cache.update({"world_metadata": _world_metadata_snapshot(profile), "metadata_updated_at": refreshed_at,
+                  "metadata_source": source})
+    profile["metadata_cache"] = cache
+    return cache
 
 
 def _cache_local_inventory(profile_id: str, units: list[dict], *, live: bool, source: str = "rescan") -> dict:
     profile = load_singleplayer_profile(profile_id)
-    cache = {"mods": [dict(row) for row in units if isinstance(row, dict)], "updated_at": now_iso(),
-             "source": source, "live_when_scanned": bool(live)}
+    refreshed_at = now_iso()
+    cache = {"mods": [dict(row) for row in units if isinstance(row, dict)], "updated_at": refreshed_at,
+             "mods_updated_at": refreshed_at, "source": source, "mods_source": source,
+             "live_when_scanned": bool(live), "world_metadata": _world_metadata_snapshot(profile),
+             "metadata_updated_at": refreshed_at}
     profile["metadata_cache"] = cache
     save_singleplayer_profile(profile, profile_id)
     return cache
@@ -117,8 +154,10 @@ def _cache_server_inventory(profile_id: str, units, *, active: bool, source: str
     rows = [unit.public(SHARE.live_keys if active else set()) for unit in units if user_visible_mod_unit(unit)]
     profile = load_server_profile(profile_id)
     if profile:
-        profile["metadata_cache"] = {"mods": rows, "updated_at": now_iso(), "source": source,
-                                     "active_when_scanned": bool(active)}
+        refreshed_at = now_iso()
+        profile["metadata_cache"] = {"mods": rows, "updated_at": refreshed_at, "mods_updated_at": refreshed_at,
+                                     "source": source, "mods_source": source, "active_when_scanned": bool(active),
+                                     "world_metadata": _world_metadata_snapshot(profile), "metadata_updated_at": refreshed_at}
         save_server_profile(profile_id, profile)
     return {"mods": rows, "updated_at": str((profile or {}).get("metadata_cache", {}).get("updated_at") or ""), "source": source}
 
@@ -443,6 +482,33 @@ def find_world(state: dict, world_id: str) -> dict | None:
         return match
     shared = (client.get("shared_worlds") or {}).get("profiles") or []
     return next((w for w in shared if w.get("id") == world_id), None)
+
+
+def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | None = None) -> dict:
+    connection = world.get("connection") if isinstance(world.get("connection"), dict) else {}
+    advertised = manifest.get("connection") if isinstance(manifest, dict) and isinstance(manifest.get("connection"), dict) else {}
+    preference = str(connection.get("preference") or "automatic").casefold()
+    internal = str(advertised.get("internal_ip") or connection.get("internal_ip") or "").strip()
+    external = str(advertised.get("external_ip") or connection.get("external_ip") or (world.get("identity") or {}).get("external_ip") or "").strip()
+    host = internal if preference in {"internal", "lan"} and internal else (external or internal)
+    port = int(advertised.get("game_port") or connection.get("game_port") or 7777)
+    # The baseline mod and Dragonwilds' current Direct Connect field accept a
+    # complete IPv4/hostname endpoint. Respect an already supplied port, but
+    # fail closed for IPv6 instead of writing a value the game silently rejects.
+    if host.count(":") == 1:
+        candidate_host, candidate_port = host.rsplit(":", 1)
+        if candidate_port.isdigit():
+            host = candidate_host
+            port = int(candidate_port)
+    if ":" in host or host.startswith("["):
+        cleared = clear_direct_connect_config(game_dir)
+        return {**cleared, "configured": False, "unsupported_address": external or internal,
+                "warning": "Dragonwilds Direct Connect currently supports IPv4 addresses and hostnames, not IPv6."}
+    address = f"{host}:{port}" if host else ""
+    credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
+    classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
+    return write_direct_connect_config(game_dir, address=address, password=str(credentials.get("password") or ""),
+                                       server_type=str(classification.get("game_mode") or "normal"), enabled=bool(address))
 
 
 def _editable_world_save(state: dict, kind: str, profile_id: str) -> Path:
@@ -980,7 +1046,7 @@ def handle(method: str, params: dict) -> object:
         def normalize_custom_item(raw: dict) -> dict:
             raw = raw if isinstance(raw, dict) else {}
             persistence_id = str(raw.get("persistence_id") or raw.get("persistenceId") or "").strip()
-            name = str(raw.get("name") or raw.get("item_name") or "").strip()
+            name = str(raw.get("display_name") or raw.get("name") or raw.get("item_name") or "").strip()
             if not persistence_id or len(persistence_id) > 512:
                 raise ValueError("PersistenceID is required and must be 512 characters or fewer.")
             if not name or len(name) > 160:
@@ -994,7 +1060,9 @@ def handle(method: str, params: dict) -> object:
             icon_ref = str(raw.get("icon_ref") or raw.get("iconRef") or "").strip()[:1024]
             category = str(raw.get("category") or raw.get("type") or "Resources").strip()[:80] or "Resources"
             return {
-                "persistence_id": persistence_id, "name": name, "max_stack": max_stack,
+                "persistence_id": persistence_id, "name": name, "display_name": name,
+                "internal_name": str(raw.get("internal_name") or raw.get("internalName") or Path(persistence_id.replace("\\", "/")).stem)[:160],
+                "max_stack": max_stack,
                 "icon_data": icon_data, "icon_ref": icon_ref, "category": category,
                 "description": str(raw.get("description") or "")[:500],
                 "equipment": str(raw.get("equipment") or "")[:40],
@@ -1241,7 +1309,16 @@ def handle(method: str, params: dict) -> object:
     if method == "application.rsdw.refresh":
         cfg = (state.get("application") or {}).get("rsdw_cache") or {}
         result = refresh_rsdw_cache(force=bool(params.get("force", False)), repo=str(cfg.get("repo") or "RSDWArchive/RSDWTools"), branch=str(cfg.get("branch") or "main"), model_repo=str(cfg.get("model_repo") or "RSDWArchive/RSDWModel"), model_branch=str(cfg.get("model_branch") or "main"))
-        _record_notification(state, "RSDW item cache refreshed", f"{result.get('data_file_count', 0)} data files · {result.get('icon_count', 0)} icons", "success", key="rsdw-cache")
+        deployments = []
+        game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+        if game_dir and Path(game_dir).exists():
+            deployments.append(ensure_rsdwtools_baseline(resolve_client_layout(game_dir).ue4ss_mods_dir))
+        for profile in list_server_profiles():
+            root = server_root_for_profile(profile)
+            if root and Path(root).exists():
+                deployments.append(ensure_rsdwtools_baseline(resolve_server_layout(root).ue4ss_mods_dir))
+        result["runtime_deployments"] = deployments
+        _record_notification(state, "RSDWTools and icon cache refreshed", f"{result.get('data_file_count', 0)} data files · {result.get('icon_count', 0)} icons · {sum(1 for row in deployments if row.get('ok'))} runtime target(s)", "success", key="rsdw-cache")
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
@@ -1358,6 +1435,22 @@ def handle(method: str, params: dict) -> object:
         return {"result": {"ok": True, "presentation_only": True, "files_transferred": 0,
                            "fingerprint": result.get("fingerprint"), "ping_ms": result.get("ping_ms")},
                 "world": sanitize_world_for_renderer(candidate), "state": public_state(state)}
+
+    if method == "world.public.history":
+        world_id = str(params.get("id") or "").strip()
+        candidate = find_world(state, world_id)
+        if candidate is None:
+            raise KeyError("World not found")
+        history_meta = candidate.get("public_history") if isinstance(candidate.get("public_history"), dict) else {}
+        connection = candidate.get("connection") or {}
+        address = str(history_meta.get("address") or "").strip()
+        if not address:
+            host = str(connection.get("external_ip") or (candidate.get("identity") or {}).get("external_ip") or "").strip()
+            address = f"{host}:{int(connection.get('game_port') or 7777)}" if host else ""
+        result = fetch_lobbysup_history(address, days=int(params.get("days") or 7))
+        candidate["public_history"] = {**history_meta, **result}
+        save_state(state)
+        return {"result": result, "world": sanitize_world_for_renderer(candidate), "state": public_state(state)}
 
     if method == "world.metadata.download":
         world_id = str(params.get("id") or "").strip()
@@ -2190,6 +2283,7 @@ def handle(method: str, params: dict) -> object:
         profile=load_singleplayer_profile(profile_id); cfg=dict(profile.get("player_map") or {})
         if "background_data" in params: cfg["background_data"]=str(params.get("background_data") or "")
         if "calibration" in params and isinstance(params.get("calibration"),dict): cfg["calibration"]=dict(params.get("calibration") or {})
+        if "coordinate_source" in params: cfg["coordinate_source"] = str(params.get("coordinate_source") or "")[:120]
         profile["player_map"]=cfg; save_singleplayer_profile(profile, profile_id)
         return {"player_map":cfg,"state":public_state(state)}
 
@@ -2241,11 +2335,18 @@ def handle(method: str, params: dict) -> object:
             if "lan_broadcast" in next_cfg: cfg["lan_broadcast"] = bool(next_cfg.get("lan_broadcast"))
             if "access_policy" in next_cfg: cfg["access_policy"] = normalize_access_policy(next_cfg.get("access_policy") or {})
             profile["broadcast_config"] = cfg
+        if "dragon_core" in incoming and isinstance(incoming.get("dragon_core"), dict):
+            profile["dragon_core"] = normalize_dragon_core_settings(incoming.get("dragon_core"))
         save_singleplayer_profile(profile, profile_id)
         if "name" in incoming and str(profile.get("name") or "") != previous_name:
             profile["name_source"] = "user"
             save_singleplayer_profile(profile, profile_id)
         refresh_live_profile_metadata(profile_id, profile)
+        client_state = state.setdefault("client", {})
+        if str(client_state.get("live_world_id") or "") == profile_id:
+            game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+            if game_dir and Path(game_dir).exists():
+                materialize_dragon_core(resolve_client_layout(game_dir).ue4ss_mods_dir, profile.get("dragon_core"), mode="Player")
         ensure_singleplayer_state(state)
         save_state(state)
         return {"profile": profile, "state": public_state(state)}
@@ -2297,15 +2398,17 @@ def handle(method: str, params: dict) -> object:
                                    state.setdefault("player_profile", {}).get("character_profiles") or {})
             switch_client_world_profile(live_world_id, profile_id, install_dir)
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
+        direct_connect = clear_direct_connect_config(game_dir)
         snapshot_client_world(profile_id, install_dir)
         profile = load_singleplayer_profile(profile_id)
+        dragon_core = materialize_dragon_core(resolve_client_layout(game_dir).ue4ss_mods_dir, profile.get("dragon_core"), mode="Player")
         mode = "coop" if bool((profile.get("status") or {}).get("broadcasting")) else "singleplayer"
         marker = write_active_world(resolve_client_layout(game_dir).game_root, profile_id, mode)
         client_state["live_world_id"] = profile_id
         client_state["active_private_world_id"] = profile_id
         _record_notification(state, "World profile activated", f"{profile.get('name') or profile_id} · files, mods, settings and active marker exchanged", "success", key=f"profile-active:{profile_id}")
         save_state(state)
-        return {"profile": profile, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker)}, "state": public_state(state)}
+        return {"profile": profile, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect, "dragon_core": dragon_core}, "state": public_state(state)}
 
     if method == "singleplayer.profile.unload":
         client_state = state.setdefault("client", {})
@@ -2316,6 +2419,7 @@ def handle(method: str, params: dict) -> object:
         if not game_dir or not Path(game_dir).exists():
             raise ValueError("The configured Dragonwilds game folder is unavailable")
         result = unload_client_world_profile(profile_id, Path(game_dir))
+        result["direct_connect"] = clear_direct_connect_config(game_dir)
         client_state["live_world_id"] = ""; client_state["active_private_world_id"] = ""
         _record_notification(state, "World profile unloaded", f"{load_singleplayer_profile(profile_id).get('name') or profile_id} captured; the client directory is back to core state.", "success", key=f"profile-unloaded:{profile_id}")
         save_state(state)
@@ -3259,6 +3363,7 @@ def handle(method: str, params: dict) -> object:
         if not host:
             raise ValueError("This public World does not have a usable game endpoint.")
         game_address = f"[{host}]:{game_port}" if ":" in host else f"{host}:{game_port}"
+        direct_connect = _write_world_direct_connect(game_dir, world)
         exe = str(application.get("game_exe") or "").strip()
         if not exe:
             candidates = list(install_dir.rglob("RSDragonwilds.exe"))
@@ -3269,7 +3374,7 @@ def handle(method: str, params: dict) -> object:
         world["last_played_at"] = now_iso()
         _remember_shared_connection(state, world)
         save_state(state)
-        return {"result": {"launched": True, "pid": pid, "endpoint": game_address, "public_only": True}, "state": public_state(state)}
+        return {"result": {"launched": True, "pid": pid, "endpoint": game_address, "public_only": True, "direct_connect": direct_connect}, "state": public_state(state)}
 
     if method in ("world.sync", "world.play"):
         world_id = str(params.get("id") or "")
@@ -3340,6 +3445,7 @@ def handle(method: str, params: dict) -> object:
         # client mods.txt delivery: either synthesize it locally after every
         # manifest apply, or accept the server-authored managed control file.
         result["client_mods_txt"] = write_client_mods_txt(install_dir, manifest)
+        result["direct_connect"] = _write_world_direct_connect(game_dir, world, manifest)
 
         if method == "world.play":
             exe = str(application.get("game_exe") or "").strip()
@@ -3540,6 +3646,8 @@ def handle(method: str, params: dict) -> object:
             for key in ("nexus_auto_check", "nexus_auto_apply"):
                 if key in params["mod_management"]:
                     current_mm[key] = bool(params["mod_management"].get(key))
+        if "dragon_core" in params and isinstance(params.get("dragon_core"), dict):
+            profile["dragon_core"] = normalize_dragon_core_settings(params.get("dragon_core"))
         dedicated = profile.setdefault("dedicated_config", {})
         if "name" in params:
             # The profile name is the authoritative Dragonwilds server/world
@@ -3605,6 +3713,7 @@ def handle(method: str, params: dict) -> object:
                 raise ValueError(f"World Sync TCP {sync['port']} is already assigned to {other.get('name') or 'another hosted World'}.")
         sync.setdefault("lan_broadcast", True)
         sync["access_policy"] = normalize_access_policy(sync.get("access_policy") or {"blocked_ips": sync.pop("blocked_ips", []), "blocked_countries": sync.pop("blocked_countries", [])})
+        _refresh_world_metadata_cache(profile, source="apply")
         save_server_profile(profile_id, profile)
         if "name" in params:
             try:
@@ -3619,6 +3728,9 @@ def handle(method: str, params: dict) -> object:
         if state.setdefault("server", {}).get("active_world_id") == profile_id:
             STATE.configure_access_policy((state.get("application") or {}).get("server_access_policy") or {}, sync.get("access_policy") or {})
             refresh_live_profile_metadata(profile_id, profile)
+            live_root = server_root_for_profile(profile)
+            if live_root and Path(live_root).exists():
+                materialize_dragon_core(resolve_server_layout(live_root).ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
         return public_state(state)
 
     if method == "server.world.starter_characters.list":
@@ -3801,6 +3913,7 @@ def handle(method: str, params: dict) -> object:
                             bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime)
         manifest = result.get("manifest") or {}
         result["client_mods_txt"] = write_client_mods_txt(install_dir, manifest)
+        result["direct_connect"] = _write_world_direct_connect(game_dir, local_world, manifest)
 
         exe = str(application.get("game_exe") or "").strip()
         if not exe:
@@ -4212,7 +4325,7 @@ def handle(method: str, params: dict) -> object:
                                                ref=str(params.get("ref") or "main"))
         result = spawner_catalog(server_root_for_profile(profile), kind=str(params.get("kind") or "enemy"),
                                  query=str(params.get("query") or ""), category=str(params.get("category") or ""),
-                                 limit=int(params.get("limit") or 250))
+                                 limit=int(params.get("limit") or 250), custom_items=list((state.get("application") or {}).get("custom_items") or []))
         result["refreshed"] = refreshed
         result["bridge"] = PLAYER_BRIDGE.status()
         runtime = ENGINE.status()
@@ -4317,6 +4430,7 @@ def handle(method: str, params: dict) -> object:
         if "allow_remote_clients" in params: cfg["allow_remote_clients"] = bool(params.get("allow_remote_clients"))
         if "background_data" in params: cfg["background_data"] = str(params.get("background_data") or "")
         if "calibration" in params and isinstance(params.get("calibration"), dict): cfg["calibration"] = dict(params.get("calibration") or {})
+        if "coordinate_source" in params: cfg["coordinate_source"] = str(params.get("coordinate_source") or "")[:120]
         profile["player_map"] = cfg; save_server_profile(profile_id, profile)
         if STATE.active_profile_id == profile_id:
             with STATE.lock:
@@ -4423,6 +4537,7 @@ def handle(method: str, params: dict) -> object:
                 profile["hw_stats"] = stats
                 profile["health_config"] = apply_detected_hardware_references(
                     profile.get("health_config"), stats, generated_at=stats.get("probed_at"))
+                _refresh_world_metadata_cache(profile, source="hardware-refresh")
                 save_server_profile(profile_id, profile)
         return {"result": stats, "state": public_state(state)}
 
@@ -4440,7 +4555,9 @@ def handle(method: str, params: dict) -> object:
             if not profile: continue
             health = normalize_health_config(profile.get("health_config"))
             health["host_network"] = normalize_network_evidence(result)
-            profile["health_config"] = health; save_server_profile(str(meta.get("id")), profile)
+            profile["health_config"] = health
+            _refresh_world_metadata_cache(profile, source="network-benchmark")
+            save_server_profile(str(meta.get("id")), profile)
             if str(meta.get("id") or "") == str(state.setdefault("server", {}).get("active_world_id") or ""):
                 refresh_live_profile_metadata(str(meta.get("id") or ""), profile)
         save_state(state)
@@ -5083,6 +5200,7 @@ def _directory_public_worlds() -> list[dict]:
             shared.pop(key, None)
         rows.append(clone)
     runtime = ENGINE.status(); active_id = str((state.get("server") or {}).get("active_world_id") or "")
+    host_benchmark = (((state.get("application") or {}).get("server_network_benchmark") or {}).get("last_result") or {})
     for profile in list_server_profiles():
         profile_id = str(profile.get("id") or ""); dedicated = profile.get("dedicated_config") or {}; sync = profile.get("sync_config") or {}
         classification = profile.get("classification") or {}; is_active = profile_id == active_id
@@ -5090,6 +5208,9 @@ def _directory_public_worlds() -> list[dict]:
             "id": profile_id, "world_name": str(profile.get("name") or "World"), "description": str(profile.get("description") or ""),
             "community_rules": str(profile.get("community_rules") or "")[:4000],
             "tags": list(profile.get("tags") or []), "classification": classification,
+            "community": dict(profile.get("community") or {}),
+            "server_specs": dict(profile.get("hw_stats") or {}),
+            "internet_strength": dict(((profile.get("health_config") or {}).get("host_network") or host_benchmark)),
             "platform_compatibility": dict(profile.get("platform_compatibility") or {"pc": True, "steam": True, "epic": True}),
             "icon_b64": str(profile.get("icon_b64") or ""),
             "banner_b64": str(profile.get("banner_b64") or ""), "online": bool(is_active and runtime.get("running")),
@@ -5129,7 +5250,7 @@ def _directory_remote_authenticate(world_name: str, username: str, password: str
 def _directory_remote_state(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile: raise KeyError("The linked Server World no longer exists")
-    state = load_state(); active_id = str((state.get("server") or {}).get("active_world_id") or "")
+    state = load_state(); active_id = str((state.get("server") or {}).get("active_world_id") or ENGINE.active_profile_id or "")
     runtime = ENGINE.status() if active_id == profile_id else {"running": False, "players": []}
     dedicated = profile.get("dedicated_config") or {}; sync = profile.get("sync_config") or {}; classification = profile.get("classification") or {}
     uptime = float(runtime.get("uptime_seconds") or 0); uptime_text = "—"
@@ -5165,9 +5286,18 @@ def _directory_remote_state(profile_id: str) -> dict:
                              "tracker_available": bool(item.get("tracker_available")), "position_2d": bool(item.get("position_2d")),
                              "map_point": point, "position": {key: position.get(key) for key in ("x", "y", "z")}})
     try:
-        item_catalog = spawner_catalog(server_root_for_profile(profile), kind="item", query="", category="", limit=500)
+        item_catalog = spawner_catalog(server_root_for_profile(profile), kind="item", query="", category="", limit=2500,
+                                       custom_items=list((state.get("application") or {}).get("custom_items") or []))
     except Exception as exc:
         item_catalog = {"items": [], "categories": [], "error": str(exc)}
+    for item in item_catalog.get("items") or []:
+        icon_path = str(item.get("icon_path") or "")
+        if icon_path.startswith("data:image/"):
+            item["icon_url"] = icon_path
+        elif icon_path:
+            item["icon_url"] = "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/ue4ss/Mods/RSDWTools/web/catalog/icons/" + urllib.parse.quote(Path(icon_path).name)
+    version_stack = dict((((state.get("application") or {}).get("runtime_version_cache") or {}).get("server") or {}))
+    game_version = dict(version_stack.get("dragonwilds") or {})
     return {
         "profile": {"world_name": str(profile.get("name") or "World"), "description": str(profile.get("description") or ""),
                     "community_rules": str(profile.get("community_rules") or "")[:4000],
@@ -5188,8 +5318,10 @@ def _directory_remote_state(profile_id: str) -> dict:
                 "tracker_connected": bool((runtime.get("player_tracker") or {}).get("connected")), "players": live_players[:100]},
         "notice": normalize_notice(profile.get("service_notice")),
         "maintenance": {"schedule": normalize_schedule(profile.get("operations_schedule") or {}),
-                        "backup_retention_count": int((profile.get("operations_schedule") or {}).get("backup_retention_count") or 10)},
-        "spawner": {"items": list(item_catalog.get("items") or [])[:500], "categories": list(item_catalog.get("categories") or []),
+                        "backup_retention_count": int((profile.get("operations_schedule") or {}).get("backup_retention_count") or 10),
+                        "game_version": game_version,
+                        "update_available": game_version.get("server_current") is False},
+        "spawner": {"items": list(item_catalog.get("items") or [])[:2500], "categories": list(item_catalog.get("categories") or []),
                     "players": live_players[:100], "bridge": PLAYER_BRIDGE.status(), "error": str(item_catalog.get("error") or "")[:300]},
         "console": {"toolkit": rsdw_toolkit_status(server_root_for_profile(profile)),
                     "catalog": rsdw_command_catalog(server_root_for_profile(profile)),
@@ -5245,17 +5377,39 @@ def _directory_remote_action(profile_id: str, action: str, payload: dict | None 
     if action == "console_execute":
         return handle("server.console.execute", {"id": profile_id, "command": str(payload.get("command") or ""),
                                                   "confirmed": True, "source": "web", "actor": str(payload.get("username") or "remote-admin")})
-    state = load_state(); server = state.setdefault("server", {}); active_id = str(server.get("active_world_id") or ""); runtime = ENGINE.status()
+    state = load_state(); server = state.setdefault("server", {}); active_id = str(server.get("active_world_id") or ENGINE.active_profile_id or ""); runtime = ENGINE.status()
     if action == "start":
         if active_id != profile_id:
             if runtime.get("running"): raise RuntimeError("Stop the currently active World before remotely starting another one")
             ENGINE.activate_world(active_id or None, profile_id, str(server_root_for_profile(profile) or ""), str(find_dedicated_server_exe(profile) or ""))
             server["active_world_id"] = profile_id; save_state(state)
-        return ENGINE.start_world(profile_id)
+        result = ENGINE.start_world(profile_id)
+        if not result.get("running"):
+            raise RuntimeError("Dragonwilds did not report a running dedicated process after the remote Start command")
+        return result
     if action in {"stop", "restart"} and active_id != profile_id:
         raise RuntimeError("This World is not the active hosted World")
-    if action == "stop": return ENGINE.stop_world()
-    if action == "restart": return ENGINE.restart_world(profile_id)
+    if action == "stop":
+        result = ENGINE.stop_world()
+        if result.get("running") or not result.get("stop_verified"):
+            raise RuntimeError("The dedicated process did not report a verified stop")
+        return result
+    if action == "restart":
+        result = ENGINE.restart_world(profile_id)
+        if not result.get("running"):
+            raise RuntimeError("The stop completed, but Dragonwilds did not report a running process after restart")
+        return result
+    if action == "update":
+        was_running = bool(runtime.get("running"))
+        if was_running:
+            stopped = ENGINE.stop_world()
+            if stopped.get("running") or not stopped.get("stop_verified"):
+                raise RuntimeError("The server update was cancelled because the running process did not stop cleanly")
+        updated = handle("server.install.update", {})
+        restarted = ENGINE.start_world(profile_id) if was_running else {"running": False, "not_restarted": True}
+        if was_running and not restarted.get("running"):
+            raise RuntimeError("The server files updated, but the dedicated process did not restart")
+        return {"updated": True, "install": updated, "restart": restarted}
     refresh_live_profile_metadata(profile_id, profile)
     return ENGINE.publish(profile_id) if active_id == profile_id and runtime.get("running") else {"refreshed": True}
 

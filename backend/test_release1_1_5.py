@@ -140,7 +140,7 @@ def test_empty_server_log_roster_does_not_erase_live_rsdw_player():
     assert status["recent_players"][0]["name"] == "Jonesy"
 
 
-def test_client_mod_discovery_hides_only_managed_runtime_units():
+def test_client_mod_discovery_hides_managed_runtime_and_baseline_units():
     with tempfile.TemporaryDirectory() as tmp:
         game = Path(tmp)
         mods = game / "RSDragonwilds" / "Binaries" / "Win64" / "ue4ss" / "Mods"
@@ -160,7 +160,9 @@ def test_client_mod_discovery_hides_only_managed_runtime_units():
         (rsdw / "web" / "catalog" / "meta.json").write_text(json.dumps({"itemCount": 1373}), encoding="utf-8")
 
         rows = scan_inventory(str(game), live=True)
-        assert {row["name"] for row in rows} == {"VisiblePak", "VisibleUE4SSMod", "VisibleRuneSchemaMod", "RSDWTools"}
+        # RSDWTools is launcher-managed baseline plumbing in V2. It remains
+        # available to the toolkit bridge but is not a user-facing mod row.
+        assert {row["name"] for row in rows} == {"VisiblePak", "VisibleUE4SSMod", "VisibleRuneSchemaMod"}
         assert toolkit_status(game)["ready"] is True
         commands = command_catalog(game)
         assert commands["available"] is True and commands["count"] == 2
@@ -312,7 +314,7 @@ if __name__ == "__main__":
     test_animated_startup_splash_is_packaged()
     test_local_appdata_migration_and_default_off_tips()
     test_admin_relaunch_and_rsdw_toolkit_contracts()
-    test_client_mod_discovery_hides_only_managed_runtime_units()
+    test_client_mod_discovery_hides_managed_runtime_and_baseline_units()
     test_avatar_resolution_rejects_generic_slot_only_matches()
     test_profile_socials_and_character_visibility_contract()
     test_reset_is_backup_first_and_path_guarded()

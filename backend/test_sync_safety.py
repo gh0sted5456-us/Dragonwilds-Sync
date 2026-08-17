@@ -19,7 +19,7 @@ def main():
             raise AssertionError("path traversal was not rejected")
 
     # Switching Worlds replaces profile-owned mods/configuration. RSDWTools is
-    # no longer launcher infrastructure and follows the World that owns it.
+    # hidden baseline infrastructure and must survive every profile swap.
     with TemporaryDirectory() as tmp:
         base = Path(tmp)
         selected = base / "game"
@@ -59,7 +59,7 @@ def main():
 
             report_b = sync_engine.switch_client_world_profile("A", "B", selected)
             assert report_b["clean"] is True
-            assert not (live_mods / "RSDWTools").exists()
+            assert (live_mods / "RSDWTools" / "enabled.txt").is_file()
             assert not (live_mods / "ModA").exists() and (live_mods / "ModB").is_dir()
             assert live_config.read_text(encoding="utf-8") == "world=B"
 

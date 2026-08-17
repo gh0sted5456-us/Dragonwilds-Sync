@@ -592,7 +592,7 @@ def search_items(query: str = "", limit: int = 80) -> dict:
     by common item/name/ID fields rather than relying on one hard-coded manifest.
     """
     text = str(query or "").strip().casefold()
-    limit = max(1, min(int(limit or 80), 250))
+    limit = max(1, min(int(limit or 80), 5000))
     if not validate_cache().get("valid"):
         return {"items": [], "count": 0, "cache": status()}
     rows = []
@@ -613,15 +613,26 @@ def search_items(query: str = "", limit: int = 80) -> dict:
                 continue
             seen.add(identity)
             icon_key = rid or name
+            item_data = str(record.get("itemData") or record.get("ItemData") or rid)
+            internal_name = str(record.get("ITEM_NAME") or record.get("ItemName") or record.get("itemName") or
+                                record.get("internalName") or record.get("InternalName") or
+                                record.get("assetName") or record.get("AssetName") or "").strip()
+            if not internal_name:
+                internal_name = Path(str(record.get("sourcePath") or record.get("SourcePath") or item_data).replace("\\", "/")).stem
+            raw_stack = (record.get("maxStack") or record.get("MaxStack") or record.get("MaxStackSize") or
+                         record.get("stackSize") or record.get("StackSize") or 1)
+            try: max_stack = max(1, int(raw_stack))
+            except (TypeError, ValueError): max_stack = 1
             rows.append({
                 "id": rid,
-                "item_data": str(record.get("itemData") or record.get("ItemData") or rid),
-                "name": name or "Unknown Item",
+                "item_data": item_data, "persistence_id": rid or item_data,
+                "name": name or "Unknown Item", "display_name": name or "Unknown Item",
+                "internal_name": internal_name, "item_name": internal_name, "max_stack": max_stack,
                 "icon_path": resolve_icon(icon_key),
                 "source": path.name,
                 "source_path": str(record.get("sourcePath") or record.get("SourcePath") or ""),
                 "equipment": str(record.get("equipment") or record.get("Equipment") or ""),
-                "stackable": bool(record.get("Stackable") or record.get("stackable") or record.get("IsStackable") or record.get("is_stackable")),
+                "stackable": max_stack > 1 or bool(record.get("Stackable") or record.get("stackable") or record.get("IsStackable") or record.get("is_stackable")),
                 "raw_hint": {k: v for k, v in record.items() if k in {"PersistenceID", "PersistenceId", "ItemID", "ItemId", "Name", "DisplayName", "Stackable", "MaxStackSize", "Durability", "BaseDurability"}},
             })
             if len(rows) >= limit:

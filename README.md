@@ -81,7 +81,7 @@ The bottom-left Player Profile opens a Profile workspace with:
 
 - **User Profile** — avatar/profile picture, banner, description, and social/community links;
 - **Characters** — consolidated Dragonwilds character saves;
-- **Live Map & Tracking** — shared Ashenfall map with optional live positions from an independently installed RSDW DevKit RSDWTools UE4SS bridge. The portable package does not bundle or install that mod.
+- **Live Map & Tracking** — shared Ashenfall map with optional live positions from the launcher-managed, hidden RSDWTools baseline bridge. Bridge debug output is disabled by default, and tracking markers are withheld until map calibration is verified.
 
 Selecting a character is the hydration key for the entire Character workspace. It refreshes the Character Card, RSDW editors, equipment/appearance information, and RSDWModel Avatar state.
 

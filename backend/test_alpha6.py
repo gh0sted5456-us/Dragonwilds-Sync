@@ -129,7 +129,11 @@ def main():
             assert layout.mods_txt == client_game / "Binaries/Win64/ue4ss/Mods/mods.txt"
             assert layout.character_dir == cl.LOCAL_APPDATA / "RSDragonwilds/Saved/SaveCharacters"
             target = sync_engine.target_for_entry(client_install, {"path": "_client_config/Compat.ini", "target_scope": "client_config", "target_path": "Compat.ini"})
-            assert target == layout.config_dir / "Compat.ini"
+            # target_for_entry deliberately returns a resolved, escape-checked
+            # destination. Compare canonical paths so Windows 8.3 aliases and
+            # case normalization do not turn the safety behavior into a false
+            # regression.
+            assert target == (layout.config_dir / "Compat.ini").resolve()
 
             # Character profile is read-only metadata plus World association/snapshot mechanics.
             chars = layout.character_dir

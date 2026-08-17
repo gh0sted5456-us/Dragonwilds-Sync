@@ -63,8 +63,6 @@
       art.appendChild(img);
       card.insertBefore(art, card.firstChild);
     } else {
-      // Preserve the horizontal layout even when a provider blocks anonymous
-      // artwork requests; the card simply collapses back to its text content.
       card.style.gridTemplateColumns = 'minmax(0, 1fr) auto';
     }
 
@@ -97,7 +95,6 @@
     }
     if (actions.childElementCount) card.appendChild(actions);
 
-    // Right-click is a fast details gesture, matching World placard behavior.
     if (pageUrl) {
       card.title = 'Right-click to view mod details';
       card.addEventListener('contextmenu', (event) => {
@@ -119,18 +116,17 @@
     }
   }
 
-  function applyNavigationCleanup(root = document) {
-    // The old Shared Worlds/static-feed and External Declaration surfaces were
-    // superseded by Worlds discovery/import and Server Management respectively.
-    root.querySelectorAll('[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
+  function applyStackWeightInheritanceHints(root = document) {
+    root.querySelectorAll('[data-dragon-core-stack], [data-dragon-core-weight]').forEach((input) => {
+      if (!input.placeholder) input.placeholder = 'Category default';
+      input.title = 'Leave blank to inherit the default for this item category.';
+    });
+  }
 
-    // Legacy sub-tabs can survive in imported/pre-release state. Keep their RPCs
-    // available for migration, but do not expose a second settings hierarchy.
+  function applyNavigationCleanup(root = document) {
+    root.querySelectorAll('[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
     root.querySelectorAll('[data-external-tab]').forEach(hideLegacyEntry);
 
-    // The top-level Sync workspace is now the consolidated Server Management
-    // surface. It still owns Website/Directory and permission-scoped remote
-    // administration; hosted Worlds remain reachable from Worlds.
     root.querySelectorAll('aside.sidebar button, aside.sidebar [role="button"]').forEach((node) => {
       const text = normalize(node.textContent);
       if (text === 'sync' || text.endsWith(' sync')) {
@@ -147,27 +143,41 @@
       }
     });
 
-    // User-facing terminology: WebHost remains the implementation name in logs
-    // and Help, while the ordinary control surface is Website & Directory.
     root.querySelectorAll('button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
       const text = normalize(node.textContent);
       if (text === 'webhost' || text === 'web hosting') node.textContent = 'Website & Directory';
       if (text === 'remote server' || text === 'remote server admin') node.textContent = 'Remote Users & Access';
     });
 
-    // Keep Nexus account integration intentionally hidden in the release UI.
-    // Public mod-page links/artwork are unaffected.
     root.querySelectorAll('[data-nexus-account], [data-nexus-login], #nexus-account-panel, #nexus-auth-panel, .nexus-account-settings').forEach(hideLegacyEntry);
 
-    // Explain the successor home when migration-only legacy views are restored.
     root.querySelectorAll('h1,h2,h3,.page-title,.panel-title').forEach((node) => {
       if (normalize(node.textContent) === 'shared worlds') replaceText(node, 'Shared Worlds', 'Worlds · Imported & Shared');
       if (normalize(node.textContent) === 'external declaration') replaceText(node, 'External Declaration', 'Server Management');
       if (normalize(node.textContent) === 'creator recommended mods') node.textContent = 'Dragonwilds Sync Recommended Mods';
     });
 
+    applyStackWeightInheritanceHints(root);
     void enhanceRecommendedMods(root);
   }
+
+  // app.js historically converted an empty numeric field to 1/0 before its RPC
+  // call. During the capture phase, preserve intentional blanks as NaN; JSON
+  // transport serializes those values as null and DragonCore's normalizer then
+  // resolves the category default. Restore the visual blank immediately after
+  // the original click handler has read it.
+  document.addEventListener('click', (event) => {
+    const button = event.target?.closest?.('#save-dragon-core');
+    if (!button) return;
+    const blanks = [...document.querySelectorAll('[data-dragon-core-stack], [data-dragon-core-weight]')]
+      .filter((input) => String(input.value || '').trim() === '');
+    for (const input of blanks) input.value = 'NaN';
+    setTimeout(() => {
+      for (const input of blanks) {
+        if (String(input.value || '').trim().toLowerCase() === 'nan') input.value = '';
+      }
+    }, 0);
+  }, true);
 
   let scheduled = false;
   const schedule = () => {
@@ -182,7 +192,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule, { once: true });
   else schedule();
 
-  // app.js is a renderer-driven SPA and replaces large DOM sections on every
-  // route/state update. Re-apply only after mutation bursts, not per mutation.
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
 })();

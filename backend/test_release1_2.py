@@ -129,6 +129,9 @@ def main():
         assert quest["native_tool"]["completed_count"] == 1
         item = cp.apply_native_rsdw_tool(quest["text"], "item-editor", {"action": "add", "section": "inventory", "tab": "bag", "id": "item-test"})
         assert item["native_tool"]["sections"]["inventory"][0]["name"] == "Test Sword"
+        custom_state = cp.native_rsdw_tool_state({"Inventory": {"8": {"ItemData": "custom-test", "Count": 1}}}, "item-editor", [{"persistence_id": "custom-test", "name": "Custom Test", "max_stack": 10}])
+        assert custom_state["tabs"]["custom"]["items"][0]["custom"] is True
+        assert custom_state["sections"]["inventory"][0]["custom"] is True
         duplicated = cp.apply_native_rsdw_tool(item["text"], "item-editor", {"action": "duplicate", "section": "inventory", "slot": 8})
         duplicate_rows = duplicated["native_tool"]["sections"]["inventory"]
         assert [row["slot"] for row in duplicate_rows] == [8, 9]
@@ -177,9 +180,13 @@ def main():
     assert "const openItemDefinition=async(node)" in renderer
     assert "node.dataset.itemUnknown==='1'" in renderer and "node.dataset.itemRecognized==='0'" in renderer
     assert "category:'Other'" in renderer and "event.key==='Enter'||event.key===' '" in renderer
+    assert "Rename Custom Item" in renderer and "data-item-custom" in renderer and "custom-item-fingerprint" in renderer
+    assert "function prepareDesktopWindow(win, options={})" in renderer and "options.native!==true" in renderer
+    assert "desktop-window-control minimize" in renderer and "desktop-window-control maximize" in renderer
+    assert "if(!detachedMode&&!host)" in renderer and "if(!detachedMode)render();await openCustomItemRepository" in renderer
     assert "ResizeObserver" in renderer and "syncAvatarHostSize" in renderer
     assert "appearance-editor" not in renderer
-    assert "route:'rsdw-editor'" in renderer and "right-click any tile" in renderer
+    assert "Editing dialogs stay inside Dragonwilds Sync" in renderer and "function prepareDesktopWindow" in renderer
     assert "if(event.channel==='rsdw-content-size')return" in renderer
     assert "feedback-rating-label" in renderer and "250 characters" in renderer and "updateFeedbackCount" in renderer
     assert "openCharacterEditor" not in renderer
@@ -191,6 +198,7 @@ def main():
     assert "overflow-y:auto!important" in preload
     main_js = (ROOT / "electron/main.cjs").read_text(encoding="utf-8")
     assert "startRsdwToolkitServer" in main_js and "127.0.0.1" in main_js and "will-attach-webview" in main_js
+    assert "rsdwToolkitServer?.listening" in main_js and "relative === '__health'" in main_js
     assert "__rsdwmodel/vendor/three/" in main_js and "application/wasm" in main_js
     cache_backend = (ROOT / "backend/rsdw_cache.py").read_text(encoding="utf-8")
     assert "Unsafe path in RSDW archive" in cache_backend and "member_path.parents" in cache_backend

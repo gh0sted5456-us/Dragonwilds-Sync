@@ -205,7 +205,8 @@ def test_ui_contract():
     assert "data-server-launch" in renderer and "server.world.broadcast" in renderer
     assert "active-private" in styles and "instance-1" in styles
 
-    # Managed-window contract for popups/guides and detached tools.
+    # Managed-window compatibility remains available, while ordinary popups
+    # and editors default to the in-app desktop/taskbar.
     assert "managed-dialog-open" in main and "managedDialogs" in main
     assert "openManagedDialog" in preload and "managedConfirm" in renderer and "managedPrompt" in renderer
     assert "dialog-host.html" in main
@@ -217,7 +218,7 @@ def test_ui_contract():
     assert "capture-webview" in main and "Capture Face Card" in renderer
     assert "scrollIntoView" in renderer and "rsdw-avatar-webview" in styles and "rsdw-tool-webview" in styles
     assert "height:calc(100vh" in styles and "min-width:0" in styles
-    assert "options.native===false" in renderer and "`,{native:false});" in renderer
+    assert "options.native!==true" in renderer and "function prepareDesktopWindow" in renderer
     for label in ("Character Editor", "Item Editor", "Spell Editor", "Recipe Unlocker", "Quest Editor"):
         assert label in renderer
 

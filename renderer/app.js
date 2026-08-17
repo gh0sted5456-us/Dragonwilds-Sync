@@ -190,7 +190,7 @@
     it:{characterAppearance:'Personaggio e aspetto',itemEditor:'Editor oggetti',spellEditor:'Editor incantesimi',recipeUnlocker:'Sblocco ricette',questEditor:'Editor missioni',identity:'Identità',characterIdentity:'Identità personaggio',playerName:'Nome giocatore',characterType:'Tipo personaggio',characterGuid:'GUID personaggio',appearance:'Aspetto',rebuildCharacter:'Ricostruisci personaggio',bodyType:'Tipo di corpo',head:'Testa',hair:'Capelli',facialHair:'Barba',skinTone:'Tonalità pelle',hairColor:'Colore capelli',eyeColor:'Colore occhi',eyebrowColor:'Colore sopracciglia',survival:'Sopravvivenza',characterUpkeep:'Bisogni personaggio',keepFull:'Mantieni pieno',progression:'Progressione',skills:'Abilità',travelWorld:'Viaggio e mondo',mountsMap:'Cavalcature e mappa',equippedMount:'Cavalcatura equipaggiata',noMount:'Nessuna cavalcatura',revealMap:'Rivela tutta la mappa di Ashenfall',reputation:'Reputazione',vendors:'Mercanti',itemBrowser:'Catalogo oggetti',playerInventory:'Inventario giocatore',bagItems:'Oggetti borsa',runeItems:'Rune',ammoItems:'Munizioni',questItems:'Oggetti missione',searchItems:'Cerca oggetti…',previous:'Precedente',next:'Successivo',page:'Pagina',of:'di',actionBar:'Barra azioni',equipment:'Equipaggiamento',personalStorage:'Deposito personale',rightClick:'Clic destro su un oggetto per le azioni',emptySlot:'Slot vuoto',setMax:'Massimo',duplicate:'Duplica',customAmount:'Quantità personalizzata',repair:'Ripara',remove:'Rimuovi',add:'Aggiungi',addMax:'Aggiungi massimo',quantity:'Quantità',cancel:'Annulla',apply:'Applica',saveCharacter:'Salva nel personaggio',readyNative:'Pronto · editor nativo caricato dal modulo RSDW corrente',loading:'Caricamento',search:'Cerca',complete:'Completata',incomplete:'Incompleta',mainQuests:'Missioni principali',sideQuests:'Missioni secondarie',fullBody:'Corpo intero',face:'Viso'}
   };
   const EDITOR_DETAIL_I18N = {
-    en:{characterSubtitle:'Identity, body, face, colors, skills & unlocks',itemSubtitle:'Inventory, equipment & item changes',spellSubtitle:'Spellbooks and unlocked spells',recipeSubtitle:'Browse and unlock recipes',questSubtitle:'Quest completion state',writtenToSave:'Written to the save, not a launcher-only label',refreshesPreview:'Every change refreshes the live 3D preview above',setValueKeepFull:'Set a value or keep that meter full',hydration:'Hydration',sustenance:'Sustenance',endurance:'Endurance',infiniteDecay:'Infinite decay buffer',normalDecay:'Normal decay',catalogSkills:'RSDW catalog skills',experience:'Experience',mountsUnlocked:'mounts unlocked',oneWayUnlock:'This is a one-way RSDW save unlock.',currentVendors:'current catalog vendors',tiers:'Tiers',suppliesFields:'RSDWTools supplies current save-field definitions and catalog values.',suppliesUi:'Dragonwilds Sync supplies the native UI, live preview, validation, backup, and direct writeback.',loadedAutomatically:'is loaded automatically. Dragonwilds Sync owns backup-first writeback.',hydrating:'Loading',loadingCatalog:'Loading the current RSDW catalog and matching it to this character save…',selectedUnlocked:'Selected and unlocked spells',spellbookUsed:'spellbook slots used',recipes:'Recipes',unlocked:'unlocked',available:'available',questCompletion:'Quest completion',known:'known',charactersPageSubtitle:'The selected character opens in every editor and in the 3D preview.',openInWindow:'Open in Window',refreshUpstream:'Check for RSDW Updates',hydrateLocal:'Load Character Tools',importProfile:'Import .rsdwl',exportCharacter:'Export Character',livePreview:'Live Character Preview',selectedCharacter:'Selected Character',combatIdentity:'Combat identity',combatHelp:'Tags organize this character. Applying its template replaces only head, body, and leg armour using the current RSDW item catalog.',archetype:'Archetype',subtype:'Subtype',saveTags:'Save Tags',previewInject:'Preview & Inject Armour',lastModified:'Last modified',saveSize:'Save size',profileStatus:'Profile status',worldAssociations:'World associations',chooseImage:'Choose Image',favorite:'Favorite',removeFavorite:'Remove Favorite',cloneCharacter:'Clone Character',deleteCharacter:'Delete Character',editorHint:'Select an editor here · right-click any tile to open it in a dedicated full-size window.',captureFace:'Capture Face Card',openAvatar:'Open Full Avatar',avatarGestures:'Drag to orbit · wheel or pinch to zoom · right-drag to pan'},
+    en:{characterSubtitle:'Identity, body, face, colors, skills & unlocks',itemSubtitle:'Inventory, equipment & item changes',spellSubtitle:'Spellbooks and unlocked spells',recipeSubtitle:'Browse and unlock recipes',questSubtitle:'Quest completion state',writtenToSave:'Written to the save, not a launcher-only label',refreshesPreview:'Every change refreshes the live 3D preview above',setValueKeepFull:'Set a value or keep that meter full',hydration:'Hydration',sustenance:'Sustenance',endurance:'Endurance',infiniteDecay:'Infinite decay buffer',normalDecay:'Normal decay',catalogSkills:'RSDW catalog skills',experience:'Experience',mountsUnlocked:'mounts unlocked',oneWayUnlock:'This is a one-way RSDW save unlock.',currentVendors:'current catalog vendors',tiers:'Tiers',suppliesFields:'RSDWTools supplies current save-field definitions and catalog values.',suppliesUi:'Dragonwilds Sync supplies the native UI, live preview, validation, backup, and direct writeback.',loadedAutomatically:'is loaded automatically. Dragonwilds Sync owns backup-first writeback.',hydrating:'Loading',loadingCatalog:'Loading the current RSDW catalog and matching it to this character save…',selectedUnlocked:'Selected and unlocked spells',spellbookUsed:'spellbook slots used',recipes:'Recipes',unlocked:'unlocked',available:'available',questCompletion:'Quest completion',known:'known',charactersPageSubtitle:'The selected character opens in every editor and in the 3D preview.',openInWindow:'Open in Window',refreshUpstream:'Check for RSDW Updates',hydrateLocal:'Load Character Tools',importProfile:'Import .rsdwl',exportCharacter:'Export Character',livePreview:'Live Character Preview',selectedCharacter:'Selected Character',combatIdentity:'Combat identity',combatHelp:'Tags organize this character. Applying its template replaces only head, body, and leg armour using the current RSDW item catalog.',archetype:'Archetype',subtype:'Subtype',saveTags:'Save Tags',previewInject:'Preview & Inject Armour',lastModified:'Last modified',saveSize:'Save size',profileStatus:'Profile status',worldAssociations:'World associations',chooseImage:'Choose Image',favorite:'Favorite',removeFavorite:'Remove Favorite',cloneCharacter:'Clone Character',deleteCharacter:'Delete Character',editorHint:'Select an editor here. Editing dialogs stay inside Dragonwilds Sync and can be moved, resized, minimized, maximized, or closed from the in-app taskbar.',captureFace:'Capture Face Card',openAvatar:'Open Full Avatar',avatarGestures:'Drag to orbit · wheel or pinch to zoom · right-drag to pan'},
     fr:{characterSubtitle:'Identité, corps, visage, couleurs, compétences et déblocages',itemSubtitle:'Inventaire, équipement et modifications d’objets',spellSubtitle:'Grimoires et sorts débloqués',recipeSubtitle:'Parcourir et débloquer les recettes',questSubtitle:'Progression des quêtes',writtenToSave:'Écrit dans la sauvegarde, pas seulement dans le lanceur',refreshesPreview:'Chaque modification actualise l’aperçu 3D ci-dessus',setValueKeepFull:'Définissez une valeur ou maintenez la jauge pleine',hydration:'Hydratation',sustenance:'Nourriture',endurance:'Endurance',infiniteDecay:'Décroissance infinie',normalDecay:'Décroissance normale',catalogSkills:'compétences du catalogue RSDW',experience:'Expérience',mountsUnlocked:'montures débloquées',oneWayUnlock:'Ceci est un déblocage irréversible de la sauvegarde RSDW.',currentVendors:'marchands du catalogue actuel',tiers:'Paliers',suppliesFields:'RSDWTools fournit les champs de sauvegarde et les valeurs de catalogue actuels.',suppliesUi:'Dragonwilds Sync fournit l’interface native, l’aperçu en direct, la validation, la sauvegarde et l’écriture directe.',loadedAutomatically:'est chargé automatiquement. Dragonwilds Sync gère l’écriture avec sauvegarde préalable.',hydrating:'Chargement de',loadingCatalog:'Chargement du catalogue RSDW actuel et association avec cette sauvegarde…',selectedUnlocked:'Sorts sélectionnés et débloqués',spellbookUsed:'emplacements de grimoire utilisés',recipes:'Recettes',unlocked:'débloquées',available:'disponibles',questCompletion:'Progression des quêtes',known:'connues',charactersPageSubtitle:'Le personnage sélectionné alimente chaque éditeur RSDW et l’avatar 3D.',openInWindow:'Ouvrir dans une fenêtre',refreshUpstream:'Actualiser la source',hydrateLocal:'Charger les outils locaux',importProfile:'Importer .rsdwl',exportCharacter:'Exporter le personnage',livePreview:'Aperçu 3D du personnage',selectedCharacter:'Personnage sélectionné',combatIdentity:'Identité de combat',combatHelp:'Les tags organisent ce personnage. Le modèle ne remplace que l’armure de tête, de corps et de jambes.',archetype:'Archétype',subtype:'Sous-type',saveTags:'Enregistrer les tags',previewInject:'Aperçu et injection d’armure',lastModified:'Dernière modification',saveSize:'Taille de sauvegarde',profileStatus:'État du profil',worldAssociations:'Mondes associés',chooseImage:'Choisir une image',favorite:'Favori',removeFavorite:'Retirer des favoris',cloneCharacter:'Cloner le personnage',deleteCharacter:'Supprimer le personnage',editorHint:'Sélectionnez un éditeur · clic droit pour l’ouvrir dans une fenêtre dédiée.',captureFace:'Capturer le portrait',openAvatar:'Ouvrir l’avatar complet',avatarGestures:'Glisser pour tourner · molette ou pincement pour zoomer · clic droit pour déplacer'},
     de:{characterSubtitle:'Identität, Körper, Gesicht, Farben, Fertigkeiten und Freischaltungen',itemSubtitle:'Inventar-, Ausrüstungs- und Gegenstandsänderungen',spellSubtitle:'Zauberbücher und freigeschaltete Zauber',recipeSubtitle:'Rezepte durchsuchen und freischalten',questSubtitle:'Questfortschritt',writtenToSave:'Wird in den Spielstand geschrieben, nicht nur im Launcher angezeigt',refreshesPreview:'Jede Änderung aktualisiert die 3D-Vorschau oben',setValueKeepFull:'Wert setzen oder Anzeige voll halten',hydration:'Hydration',sustenance:'Nahrung',endurance:'Ausdauer',infiniteDecay:'Unendlicher Abbaupuffer',normalDecay:'Normaler Abbau',catalogSkills:'RSDW-Katalogfertigkeiten',experience:'Erfahrung',mountsUnlocked:'Reittiere freigeschaltet',oneWayUnlock:'Dies ist eine dauerhafte RSDW-Spielstandfreischaltung.',currentVendors:'aktuelle Kataloghändler',tiers:'Stufen',suppliesFields:'RSDWTools liefert aktuelle Spielstandfelder und Katalogwerte.',suppliesUi:'Dragonwilds Sync liefert native Oberfläche, Live-Vorschau, Validierung, Sicherung und direktes Zurückschreiben.',loadedAutomatically:'wird automatisch geladen. Dragonwilds Sync schreibt sicherungsbasiert zurück.',hydrating:'Lade',loadingCatalog:'Aktueller RSDW-Katalog wird geladen und dem Spielstand zugeordnet…',selectedUnlocked:'Ausgewählte und freigeschaltete Zauber',spellbookUsed:'Zauberbuchplätze belegt',recipes:'Rezepte',unlocked:'freigeschaltet',available:'verfügbar',questCompletion:'Questabschluss',known:'bekannt',charactersPageSubtitle:'Der gewählte Charakter füllt alle RSDW-Editoren und die 3D-Avataransicht.',openInWindow:'In Fenster öffnen',refreshUpstream:'Quelle aktualisieren',hydrateLocal:'Lokale Werkzeuge laden',importProfile:'.rsdwl importieren',exportCharacter:'Charakter exportieren',livePreview:'Live-Charaktervorschau',selectedCharacter:'Gewählter Charakter',combatIdentity:'Kampfidentität',combatHelp:'Tags ordnen diesen Charakter. Die Vorlage ersetzt nur Kopf-, Körper- und Beinrüstung.',archetype:'Archetyp',subtype:'Untertyp',saveTags:'Tags speichern',previewInject:'Rüstung ansehen und einfügen',lastModified:'Zuletzt geändert',saveSize:'Spielstandgröße',profileStatus:'Profilstatus',worldAssociations:'Weltzuordnungen',chooseImage:'Bild wählen',favorite:'Favorit',removeFavorite:'Favorit entfernen',cloneCharacter:'Charakter klonen',deleteCharacter:'Charakter löschen',editorHint:'Editor auswählen · Rechtsklick öffnet ein eigenes großes Fenster.',captureFace:'Porträt aufnehmen',openAvatar:'Vollständigen Avatar öffnen',avatarGestures:'Ziehen zum Drehen · Rad oder Geste zum Zoomen · Rechtsziehen zum Verschieben'},
     es:{characterSubtitle:'Identidad, cuerpo, rostro, colores, habilidades y desbloqueos',itemSubtitle:'Inventario, equipo y cambios de objetos',spellSubtitle:'Libros y hechizos desbloqueados',recipeSubtitle:'Explorar y desbloquear recetas',questSubtitle:'Estado de las misiones',writtenToSave:'Se escribe en el guardado, no es solo una etiqueta del lanzador',refreshesPreview:'Cada cambio actualiza la vista 3D superior',setValueKeepFull:'Define un valor o mantén el medidor lleno',hydration:'Hidratación',sustenance:'Alimento',endurance:'Resistencia',infiniteDecay:'Búfer de desgaste infinito',normalDecay:'Desgaste normal',catalogSkills:'habilidades del catálogo RSDW',experience:'Experiencia',mountsUnlocked:'monturas desbloqueadas',oneWayUnlock:'Este es un desbloqueo irreversible del guardado RSDW.',currentVendors:'vendedores del catálogo actual',tiers:'Niveles',suppliesFields:'RSDWTools proporciona los campos de guardado y valores de catálogo actuales.',suppliesUi:'Dragonwilds Sync proporciona la interfaz nativa, vista previa, validación, copia y escritura directa.',loadedAutomatically:'se carga automáticamente. Dragonwilds Sync controla la escritura con copia previa.',hydrating:'Cargando',loadingCatalog:'Cargando el catálogo RSDW actual y asociándolo con este guardado…',selectedUnlocked:'Hechizos seleccionados y desbloqueados',spellbookUsed:'espacios del libro usados',recipes:'Recetas',unlocked:'desbloqueadas',available:'disponibles',questCompletion:'Progreso de misiones',known:'conocidas',charactersPageSubtitle:'El personaje seleccionado carga todos los editores RSDW y el avatar 3D.',openInWindow:'Abrir en ventana',refreshUpstream:'Actualizar origen',hydrateLocal:'Cargar herramientas locales',importProfile:'Importar .rsdwl',exportCharacter:'Exportar personaje',livePreview:'Vista 3D del personaje',selectedCharacter:'Personaje seleccionado',combatIdentity:'Identidad de combate',combatHelp:'Las etiquetas organizan este personaje. La plantilla solo reemplaza armadura de cabeza, cuerpo y piernas.',archetype:'Arquetipo',subtype:'Subtipo',saveTags:'Guardar etiquetas',previewInject:'Vista previa e inyectar armadura',lastModified:'Última modificación',saveSize:'Tamaño del guardado',profileStatus:'Estado del perfil',worldAssociations:'Mundos asociados',chooseImage:'Elegir imagen',favorite:'Favorito',removeFavorite:'Quitar favorito',cloneCharacter:'Clonar personaje',deleteCharacter:'Eliminar personaje',editorHint:'Selecciona un editor · clic derecho para abrirlo en una ventana completa.',captureFace:'Capturar retrato',openAvatar:'Abrir avatar completo',avatarGestures:'Arrastra para girar · rueda o pellizca para acercar · botón derecho para desplazar'},
@@ -1330,6 +1330,8 @@
       try {
         const configured = await window.dragonwilds.configureRsdwToolkitRoot(info.website_dir);
         if (configured?.ok) {
+          const health=await fetch(new URL('__health',configured.baseUrl),{cache:'no-store'});
+          if(!health.ok)throw new Error(`Local RSDW service health check failed (${health.status})`);
           state.rsdwSource = { mode:'local', baseUrl:configured.baseUrl || 'https://rsdwtools.com/', revision:String(info.revision || ''), toolkitValid:true, modelValid:!!info.model_valid, modelRevision:String(info.model_revision||'') };
           return state.rsdwSource;
         }
@@ -1605,7 +1607,7 @@
   function nativeItemSlot(row,{section,slot,kind='storage',tab='',equipment='',overlay=''}={}) {
     const occupied=!!row;
     const title=occupied?`${row.name||row.item_data} · ${et('quantity')} ${Number(row.count||1)}`:et('emptySlot');
-    return `<div class="native-item-slot ${occupied?'occupied':''} native-item-slot-${escapeHtml(kind)}" role="button" tabindex="0" title="${escapeHtml(title)}" data-native-item-slot data-section="${escapeHtml(section)}" data-slot="${Number(slot)}" data-kind="${escapeHtml(kind)}" data-tab="${escapeHtml(tab)}" data-equipment="${escapeHtml(equipment)}" data-item-data="${escapeHtml(row?.item_data||'')}" data-item-name="${escapeHtml(row?.name||'')}" data-item-count="${Number(row?.count||1)}" data-item-equipment="${escapeHtml(row?.equipment||'')}" data-item-recognized="${row?.recognized===false?'0':'1'}" data-base-durability="${row?.base_durability==null?'':escapeHtml(row.base_durability)}" draggable="${occupied?'true':'false'}">${overlay?`<img class="native-slot-overlay" src="${escapeHtml(rsdwAssetUrl(`/shared/game-ui/ItemBrowser/EquipmentSlots/${overlay}`))}" alt="${escapeHtml(equipment)}"/>`:''}${occupied?`<img class="native-slot-icon" src="${escapeHtml(row.icon?rsdwAssetUrl(row.icon):'assets/rsdw-toolkit/modded-items.svg')}" alt="" loading="lazy"/><b>${Number(row.count||1)>1?escapeHtml(row.count):''}</b><span>${escapeHtml(row.name||'')}</span>`:''}</div>`;
+    return `<div class="native-item-slot ${occupied?'occupied':''} ${row?.custom?'custom-item-fingerprint':''} native-item-slot-${escapeHtml(kind)}" role="button" tabindex="0" title="${escapeHtml(title)}" data-native-item-slot data-section="${escapeHtml(section)}" data-slot="${Number(slot)}" data-kind="${escapeHtml(kind)}" data-tab="${escapeHtml(tab)}" data-equipment="${escapeHtml(equipment)}" data-item-data="${escapeHtml(row?.item_data||'')}" data-item-name="${escapeHtml(row?.name||'')}" data-item-count="${Number(row?.count||1)}" data-item-equipment="${escapeHtml(row?.equipment||'')}" data-item-recognized="${row?.recognized===false?'0':'1'}" data-item-custom="${row?.custom?'1':'0'}" data-base-durability="${row?.base_durability==null?'':escapeHtml(row.base_durability)}" draggable="${occupied?'true':'false'}">${overlay?`<img class="native-slot-overlay" src="${escapeHtml(rsdwAssetUrl(`/shared/game-ui/ItemBrowser/EquipmentSlots/${overlay}`))}" alt="${escapeHtml(equipment)}"/>`:''}${occupied?`<img class="native-slot-icon" src="${escapeHtml(row.icon?rsdwAssetUrl(row.icon):'assets/rsdw-toolkit/modded-items.svg')}" alt="" loading="lazy"/><b>${Number(row.count||1)>1?escapeHtml(row.count):''}</b><span>${escapeHtml(row.name||'')}</span>`:''}</div>`;
   }
 
   function nativeItemEditorMarkup(editor) {
@@ -1620,7 +1622,7 @@
     const inventory=new Map(inventoryRows.map((row)=>[Number(row.slot),row]));const personal=new Map(personalRows.map((row)=>[Number(row.slot),row]));const loadout=new Map(loadoutRows.map((row)=>[Number(row.slot),row]));
     const offset=RSDW_ITEM_TABS[tabKey]?.offset??8;
     const catalogSlotCount=Math.max(8,Math.ceil(Math.max(visible.length,1)/8)*8);
-    const catalogSlots=Array.from({length:catalogSlotCount},(_,index)=>{const row=visible[index];return `<div class="native-browser-slot ${row?'occupied':''}" role="button" tabindex="0" title="${escapeHtml(row?`${row.name} · ${row.category||'Item'}`:et('emptySlot'))}" data-native-catalog-slot data-item-data="${escapeHtml(row?.item_data||'')}" data-item-name="${escapeHtml(row?.name||'')}" data-item-equipment="${escapeHtml(row?.equipment||'')}" data-item-max="${Number(row?.max_stack||1)}" data-item-unknown="${row?.unknown?'1':'0'}" draggable="${row?'true':'false'}">${row?`<img src="${escapeHtml(row.icon?rsdwAssetUrl(row.icon):'assets/rsdw-toolkit/modded-items.svg')}" alt="" loading="lazy"/><span>${escapeHtml(row.name)}</span>`:''}</div>`;}).join('');
+    const catalogSlots=Array.from({length:catalogSlotCount},(_,index)=>{const row=visible[index];return `<div class="native-browser-slot ${row?'occupied':''} ${row?.custom?'custom-item-fingerprint':''}" role="button" tabindex="0" title="${escapeHtml(row?`${row.name} · ${row.category||'Item'}${row.custom?' · Custom item':''}`:et('emptySlot'))}" data-native-catalog-slot data-item-data="${escapeHtml(row?.item_data||'')}" data-item-name="${escapeHtml(row?.name||'')}" data-item-equipment="${escapeHtml(row?.equipment||'')}" data-item-max="${Number(row?.max_stack||1)}" data-item-unknown="${row?.unknown?'1':'0'}" data-item-custom="${row?.custom?'1':'0'}" draggable="${row?'true':'false'}">${row?`<img src="${escapeHtml(row.icon?rsdwAssetUrl(row.icon):'assets/rsdw-toolkit/modded-items.svg')}" alt="" loading="lazy"/><span>${escapeHtml(row.name)}</span>`:''}</div>`;}).join('');
     const actionSlots=Array.from({length:8},(_,index)=>nativeItemSlot(inventory.get(index),{section:'inventory',slot:index,kind:'action',tab:'bag'})).join('');
     const categorySlots=Array.from({length:24},(_,index)=>nativeItemSlot(inventory.get(offset+index),{section:'inventory',slot:offset+index,kind:'tabbed',tab:tabKey})).join('');
     const personalSlots=Array.from({length:80},(_,index)=>nativeItemSlot(personal.get(index),{section:'personal',slot:index,kind:'personal',tab:'bag'})).join('');
@@ -1637,7 +1639,7 @@
         <div class="native-storage-tabs inventory-mode-tabs" role="tablist"><button class="${state.rsdwInventorySection==='inventory'?'active':''}" data-native-inventory-section="inventory"><span class="inventory-tab-glyph">▦</span>${escapeHtml(et('playerInventory'))}</button><button class="${state.rsdwInventorySection==='personal'?'active':''}" data-native-inventory-section="personal"><img src="${escapeHtml(rsdwAssetUrl('/shared/game-ui/Inventory/PersonalTab.png'))}" alt=""/>${escapeHtml(et('personalStorage'))}</button>${state.rsdwInventorySection==='inventory'?Object.entries(tabs).map(([key])=>{const cfg=RSDW_ITEM_TABS[key]||RSDW_ITEM_TABS.bag;const label=key==='custom'?'Modded Items':key==='unrecognized'?'Unrecognized Items':et(cfg.labelKey);const icon=cfg.customIcon?cfg.customIcon:rsdwAssetUrl(`/shared/game-ui/Inventory/${tabKey===key?cfg.selected:cfg.normal}`);return `<button class="inventory-category-tab ${tabKey===key?'active':''}" data-native-item-tab="${escapeHtml(key)}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}"><img src="${escapeHtml(icon)}" alt=""/><span>${escapeHtml(label)}</span></button>`;}).join(''):''}</div>
         ${state.rsdwInventorySection==='personal'?`<div class="native-inventory-band personal"><label>${escapeHtml(et('personalStorage'))}</label><div class="native-inventory-grid personal eighty">${personalSlots}</div></div>`:`<div class="native-inventory-band equipment-line"><label>${escapeHtml(et('equipment'))}</label><div class="native-inventory-grid equipment">${equipmentSlots}</div></div><div class="native-inventory-band"><label>${escapeHtml(et('actionBar'))}</label><div class="native-inventory-grid action">${actionSlots}</div></div><div class="native-inventory-grid tabbed">${categorySlots}</div>${tabKey==='custom'?`<div class="custom-item-repository-actions"><button class="btn primary compact-btn" id="open-custom-item-repository">＋ Create / Manage Modded Items</button><span>${(tabs.custom?.items||[]).length} definitions can be exported as a portable mod manifest.</span></div>`:''}`}
       </section>
-    </div><div class="native-item-context-menu" id="native-item-context-menu" hidden><button data-native-context-action="define">Define / Edit Item</button><button data-native-context-action="add">${escapeHtml(et('add'))}</button><button data-native-context-action="add-max">${escapeHtml(et('addMax'))}</button><button data-native-context-action="max">${escapeHtml(et('setMax'))}</button><button data-native-context-action="duplicate">${escapeHtml(et('duplicate'))}</button><button data-native-context-action="custom">${escapeHtml(et('customAmount'))}</button><button data-native-context-action="repair">${escapeHtml(et('repair'))}</button><button data-native-context-action="remove">${escapeHtml(et('remove'))}</button></div></div>`;
+    </div><div class="native-item-context-menu" id="native-item-context-menu" hidden><button data-native-context-action="define">Define / Edit Item</button><button data-native-context-action="rename">Rename Custom Item</button><button data-native-context-action="add">${escapeHtml(et('add'))}</button><button data-native-context-action="add-max">${escapeHtml(et('addMax'))}</button><button data-native-context-action="max">${escapeHtml(et('setMax'))}</button><button data-native-context-action="duplicate">${escapeHtml(et('duplicate'))}</button><button data-native-context-action="custom">${escapeHtml(et('customAmount'))}</button><button data-native-context-action="repair">${escapeHtml(et('repair'))}</button><button data-native-context-action="remove">${escapeHtml(et('remove'))}</button></div></div>`;
   }
 
   function nativeSpellEditorMarkup(editor) {
@@ -3689,13 +3691,6 @@
     }));
     root.querySelectorAll('[data-rsdw-tool]').forEach((button)=>{
       button.addEventListener('click',()=>{const next=button.dataset.rsdwTool||'character-editor';if(next!==state.rsdwTool){state.rsdwToolSearch='';state.rsdwToolPage=0;}state.rsdwTool=next;render();if(next!=='character-editor')hydrateNativeRsdwTool(next);});
-      button.addEventListener('contextmenu',(event)=>{
-        event.preventDefault(); event.stopPropagation();
-        const toolId=button.dataset.rsdwTool||'character-editor';
-        const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
-        if(!selected)return;
-        window.dragonwilds.openDetachedWindow?.({route:'rsdw-editor',title:`Dragonwilds Sync · ${(RSDW_TOOLS.find((entry)=>entry.id===toolId)||RSDW_TOOLS[0]).label}`,width:1420,height:900,context:{characterId:selected.id,rsdwTool:toolId}});
-      });
     });
     root.querySelectorAll('[data-rsdw-studio-tab]').forEach((button)=>button.addEventListener('click',()=>{
       state.rsdwStudioTab=button.dataset.rsdwStudioTab||'identity';
@@ -3892,6 +3887,7 @@
           event.preventDefault();event.stopPropagation();contextTarget=target;
           const show=new Set(mode==='catalog'?['add','add-max']:['max','custom','remove','duplicate','repair']);
           if((mode==='catalog'&&target.dataset.itemUnknown==='1')||(mode==='inventory'&&target.dataset.itemRecognized==='0'))show.add('define');
+          if(target.dataset.itemCustom==='1')show.add('rename');
           if(mode==='inventory'&&target.dataset.section==='loadout')show.delete('duplicate');
           if(mode==='inventory'&&!target.dataset.baseDurability)show.delete('repair');
           contextMenu.querySelectorAll('[data-native-context-action]').forEach((button)=>button.hidden=!show.has(button.dataset.nativeContextAction));
@@ -3935,6 +3931,15 @@
           const action=button.dataset.nativeContextAction;if(!contextTarget)return;
           if(action==='define'){
             const target=contextTarget;hideContext();await openItemDefinition(target);return;
+          }
+          if(action==='rename'){
+            const target=contextTarget,id=target.dataset.itemData||'';
+            const existing=((state.data?.application?.custom_items)||[]).find((row)=>String(row.persistence_id||'').toLowerCase()===String(id).toLowerCase());
+            hideContext();if(!existing)return toast('Rename unavailable','Only launcher-defined custom items can be renamed.','error');
+            const name=await managedPrompt('New display name',existing.name||target.dataset.itemName||id,'Rename Custom Item');if(name===null)return;
+            const clean=String(name).trim();if(!clean)return toast('Rename unavailable','Enter an item name.','error');
+            try{const response=await api.invoke('application.custom_items.create',{item:{...existing,name:clean}});if(response?.state)state.data=response.state;state.rsdwNativeTools['item-editor']=null;await hydrateNativeRsdwTool('item-editor');render();toast('Custom item renamed',`${id} is now displayed as ${clean}.`,'success');}catch(error){toast('Could not rename custom item',error.message,'error');}
+            return;
           }
           if(contextTarget.matches('[data-native-catalog-slot]')){await applyToolChange({action:'add',section:'inventory',tab:state.rsdwItemCatalogTab,id:contextTarget.dataset.itemData,max:action==='add-max'});hideContext();return;}
           const section=contextTarget.dataset.section;const slot=Number(contextTarget.dataset.slot||0);
@@ -4008,6 +4013,7 @@
       avatarResizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(syncAvatarHostSize):null;
       avatarResizeObserver?.observe(avatarShell);
       let avatarReady=false;
+      let avatarRecoveryAttempts=0;
       const prepareAvatarPreview=async()=>{
         if(avatarReady || root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return;
         try{
@@ -4031,9 +4037,9 @@
       // Character card consistently opens on the live canvas rather than the
       // upstream editor controls above it.
       avatarWebview.addEventListener('dom-ready',prepareAvatarPreview);
-      avatarWebview.addEventListener('did-finish-load',prepareAvatarPreview);
+      avatarWebview.addEventListener('did-finish-load',()=>{avatarRecoveryAttempts=0;prepareAvatarPreview();});
       [120,700,1800,3500].forEach((delay)=>setTimeout(prepareAvatarPreview,delay));
-      avatarWebview.addEventListener('did-fail-load',(event)=>{if(Number(event.errorCode)===-3)return;setAvatarStatus(`Avatar failed to load (${event.errorCode})`,'error');toast('Character preview failed',event.errorDescription||'RSDWModel could not load.','error');});
+      avatarWebview.addEventListener('did-fail-load',async(event)=>{const code=Number(event.errorCode);if(code===-3)return;if(code===-102&&avatarRecoveryAttempts<2){avatarRecoveryAttempts+=1;setAvatarStatus('Restarting the local 3D preview service…');try{await configureRsdwToolkitSource();const source=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar||{};await avatarWebview.loadURL(rsdwAvatarUrl(source.url));return;}catch(_){/* Surface the original connection failure below. */}}setAvatarStatus(`Avatar failed to load (${event.errorCode})`,'error');toast('Character preview failed',event.errorDescription||'RSDWModel could not load.','error');});
       root.querySelectorAll('[data-avatar-view]').forEach((button)=>button.addEventListener('click',async()=>{
         const action=button.dataset.avatarView||'full';
         try{await avatarWebview.executeJavaScript(`(()=>{const action=${JSON.stringify(action)};const c=document.querySelector('canvas');if(!c)return false;const x=c.clientWidth/2,y=c.clientHeight/2;const wheel=(delta,count=1)=>{for(let i=0;i<count;i+=1)c.dispatchEvent(new WheelEvent('wheel',{deltaY:delta,clientX:x,clientY:y,bubbles:true,cancelable:true}));};const drag=(dx)=>{const opts={pointerId:71,pointerType:'mouse',button:0,buttons:1,clientX:x,clientY:y,bubbles:true,cancelable:true};c.dispatchEvent(new PointerEvent('pointerdown',opts));c.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+dx}));c.dispatchEvent(new PointerEvent('pointerup',{...opts,button:0,buttons:0,clientX:x+dx}));};if(action==='full'){document.querySelector('#reset-view')?.click();wheel(-260,4);}else if(action==='face'){document.querySelector('#reset-view')?.click();wheel(-260,4);wheel(-100,1);}else if(action==='zoom-in')wheel(-180,1);else if(action==='zoom-out')wheel(180,1);else if(action==='rotate-left')drag(-80);else if(action==='rotate-right')drag(80);return true;})()`,true);}catch(error){toast('Avatar control unavailable',error.message,'error');}
@@ -4928,18 +4934,17 @@
   }
 
   async function openCustomItemRepository(seed={}) {
+    let host=document.querySelector('#custom-item-repository-window');
+    if(!detachedMode&&!host){
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Portable Item Manifest</div><h2>Modded Item Repository</h2><p>Name an item, choose vanilla or custom artwork, describe its equipment behavior, and set its stack size.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body custom-item-modal-body"><section id="custom-item-repository-window"><div class="detached-loading"><div class="spinner"></div><strong>Opening item repository…</strong></div></section></div>`,{native:false,title:'Modded Item Repository',width:1320,height:820});
+      win.querySelector('.modal')?.classList.add('custom-item-repository-modal');
+      host=win.querySelector('#custom-item-repository-window');
+    }
+    if(!host)return;
     if(!state.customItemManifestsScanned){
       state.customItemManifestsScanned=true;
       try{const discovered=await api.invoke('application.custom_items.discover',{});if(discovered?.state)state.data=discovered.state;if(discovered?.imported)toast('Mod item manifests loaded',`${discovered.imported} definition${discovered.imported===1?'':'s'} parsed from ${discovered.sources?.length||0} installed mod manifest${discovered.sources?.length===1?'':'s'}.`,'success');}catch(error){console.warn('Custom item manifest discovery failed',error);}
     }
-    if(!detachedMode&&window.dragonwilds?.openDetachedWindow){
-      try{
-        await window.dragonwilds.openDetachedWindow({route:'custom-item-repository',title:'Dragonwilds Sync · Modded Item Repository',width:1320,height:860,context:{customItemSeed:seed&&typeof seed==='object'?seed:{}}});
-      }catch(error){toast('Could not open Modded Item Repository',error.message||'The dedicated window failed to open.','error');}
-      return;
-    }
-    const host=document.querySelector('#custom-item-repository-window');
-    if(!host)return;
     const items=[...((state.data?.application?.custom_items)||[])];
     const categories=['Armour','One-Handed Weapon','Two-Handed Weapon','Right-Hand Weapon','Left-Hand Weapon','Shield','Potion','Food','Ammo','Rune','Tool','Resource','Material','Plan','Quest Item','Other'];
     const equipmentSlots=['','Head','Body','Legs','Cape','Jewellery','Right Hand','Left Hand','Both Hands'];
@@ -4957,25 +4962,22 @@
     const renderIcons=()=>{const query=String(host.querySelector('#custom-item-icon-search')?.value||'').trim().toLowerCase();const rows=allIcons.filter((row)=>!query||row.name.toLowerCase().includes(query)).slice(0,48);iconGrid.innerHTML=rows.map((row)=>`<button title="${escapeHtml(row.name)}" data-custom-icon-ref="${escapeHtml(row.icon)}"><img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt=""/></button>`).join('')||'<small>No matching RSDW icons.</small>';iconGrid.querySelectorAll('[data-custom-icon-ref]').forEach((button)=>button.addEventListener('click',()=>{iconRef=button.dataset.customIconRef||'';iconData='';host.querySelector('#custom-item-icon img').src=rsdwAssetUrl(iconRef);toast('Game icon selected',button.title,'success');}));};
     renderIcons();host.querySelector('#custom-item-icon-search')?.addEventListener('input',renderIcons);
     host.querySelector('#custom-item-icon')?.addEventListener('click',async()=>{const picked=await window.dragonwilds.pickImage();if(!picked)return;iconData=picked.dataUrl||'';iconRef='';const image=host.querySelector('#custom-item-icon img');if(image)image.src=iconData;});
-    const refreshCatalog=async(response)=>{if(response?.state)state.data=response.state;state.rsdwNativeTools['item-editor']=null;await hydrateNativeRsdwTool('item-editor');await openCustomItemRepository({});};
+    const refreshCatalog=async(response)=>{if(response?.state)state.data=response.state;state.rsdwNativeTools['item-editor']=null;await hydrateNativeRsdwTool('item-editor');if(!detachedMode)render();await openCustomItemRepository({});};
     host.querySelector('#save-custom-item')?.addEventListener('click',async()=>{try{const item={persistence_id:host.querySelector('#custom-item-persistence')?.value||'',name:host.querySelector('#custom-item-name')?.value||'',category:host.querySelector('#custom-item-category')?.value||'Other',equipment:host.querySelector('#custom-item-equipment')?.value||'',max_stack:Number(host.querySelector('#custom-item-stack')?.value||1),icon_data:iconData,icon_ref:iconRef,created_at:start.created_at};const response=await api.invoke('application.custom_items.create',{item});toast('Modded item saved',`${item.name} is now available to the Item Editor and Sync profiles.`,'success');await refreshCatalog(response);}catch(error){toast('Could not save modded item',error.message,'error');}});
     host.querySelectorAll('[data-edit-custom-item]').forEach((button)=>button.addEventListener('click',()=>{const row=items.find((item)=>String(item.persistence_id||'')===button.dataset.editCustomItem);openCustomItemRepository(row||{});}));
     host.querySelectorAll('[data-delete-custom-item]').forEach((button)=>button.addEventListener('click',async()=>{if(!await managedConfirm(`Remove ${button.dataset.deleteCustomItem} from the launcher catalog? Existing save records are not deleted.`,'Remove Modded Item'))return;try{await refreshCatalog(await api.invoke('application.custom_items.delete',{persistence_id:button.dataset.deleteCustomItem}));}catch(error){toast('Could not remove modded item',error.message,'error');}}));
     host.querySelector('#import-custom-items')?.addEventListener('click',async()=>{const path=await window.dragonwilds.pickFile('all');if(!path)return;try{const response=await api.invoke('application.custom_items.import',{path});toast('Modded item catalog imported',`${response.items?.length||0} definitions available.`,'success');await refreshCatalog(response);}catch(error){toast('Import rejected',error.message,'error');}});
     host.querySelector('#export-custom-items')?.addEventListener('click',async()=>{const path=await window.dragonwilds.saveFile({title:'Export Portable Mod Item Manifest',defaultPath:'dragonwilds-sync-items.json',filters:[{name:'Dragonwilds Sync Item Manifest',extensions:['json']}]});if(!path)return;try{const result=await api.invoke('application.custom_items.export',{path});toast('Portable item manifest exported',result.asset_count?`${result.path} · ${result.asset_count} custom icon file(s) packaged beside the JSON`:(result.path||path),'success');}catch(error){toast('Export failed',error.message,'error');}});
-    host.querySelector('#done-custom-item-repository')?.addEventListener('click',()=>window.dragonwilds.windowClose());
+    host.querySelector('#done-custom-item-repository')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));
   }
 
   async function openModExplorer(scope, unitKey) {
-    if(!detachedMode&&window.dragonwilds?.openDetachedWindow){
-      try{
-        const privateWorld=privateWorldById(state.selectedWorldId)||singleplayerWorld();
-        const serverWorld=activeServerWorld();
-        await window.dragonwilds.openDetachedWindow({route:'mod-explorer',title:`Dragonwilds Sync · ${String(unitKey||'Mod').split('::').pop()} Mod Explorer`,width:1280,height:840,context:{modScope:scope,modUnitKey:unitKey,selectedWorldId:privateWorld?.id||state.data?.client?.active_private_world_id||'singleplayer',selectedServerWorldId:serverWorld?.id||state.selectedServerWorldId||''}});
-      }catch(error){toast('Could not open Mod Explorer',error.message||'The dedicated window failed to open.','error');}
-      return;
+    let host=document.querySelector('#mod-explorer-window');
+    if(!detachedMode&&!host){
+      const name=String(unitKey||'Mod').split('::').pop()||'Mod';
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Profile-scoped Mod Explorer</div><h2>${escapeHtml(name)}</h2><p>Browse folders and edit launcher-supported files without leaving Dragonwilds Sync.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body mod-explorer-modal-body"><section id="mod-explorer-window"></section></div>`,{native:false,title:`${name} Mod Explorer`,width:1280,height:820});
+      win.querySelector('.modal')?.classList.add('mod-explorer-modal');host=win.querySelector('#mod-explorer-window');
     }
-    const host=document.querySelector('#mod-explorer-window');
     if(!host)return;
     host.innerHTML='<div class="detached-loading"><div class="spinner"></div><strong>Loading mod files…</strong><span>Resolving the selected World profile and mod repository.</span></div>';
     const world=scope==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
@@ -4999,7 +5001,7 @@
       host.classList.add('mod-explorer-host');
       let editor=null,opened=null;
       const editorPane=host.querySelector('#mod-explorer-editor');const saveButton=host.querySelector('#save-mod-explorer-file');
-      host.querySelector('#close-mod-explorer-window')?.addEventListener('click',()=>window.dragonwilds.windowClose());
+      host.querySelector('#close-mod-explorer-window')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));
       const openFile=async(file)=>{
         editor?.dispose();editor=null;opened=null;saveButton.disabled=true;
         host.querySelectorAll('.mod-explorer-file').forEach((node)=>node.classList.toggle('selected',node.dataset.modExplorerFile===file.relative_path));
@@ -5048,7 +5050,7 @@
         }catch(error){toast('Could not add mod file',error.message,'error');}
       });
       saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}try{if(scope==='server')await api.invoke('server.world.config.save',{id:world.id,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});toast('Mod file saved','Atomic profile-scoped write complete.','success');}catch(error){toast('Save failed',error.message,'error');}});
-    }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Mod Explorer</div><h2>Could not open this mod</h2></div><button class="btn ghost" id="close-mod-explorer-error">Close</button></div><div class="empty-state"><strong>The loading request failed.</strong><span>${escapeHtml(error.message||'Unknown mod-loading error')}</span><button class="btn primary" id="retry-mod-explorer">Retry</button></div>`;host.querySelector('#retry-mod-explorer')?.addEventListener('click',()=>openModExplorer(scope,unitKey));host.querySelector('#close-mod-explorer-error')?.addEventListener('click',()=>window.dragonwilds.windowClose());}
+    }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Mod Explorer</div><h2>Could not open this mod</h2></div><button class="btn ghost" id="close-mod-explorer-error">Close</button></div><div class="empty-state"><strong>The loading request failed.</strong><span>${escapeHtml(error.message||'Unknown mod-loading error')}</span><button class="btn primary" id="retry-mod-explorer">Retry</button></div>`;host.querySelector('#retry-mod-explorer')?.addEventListener('click',()=>openModExplorer(scope,unitKey));host.querySelector('#close-mod-explorer-error')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));}
   }
 
   function openModContextMenu(row,event){
@@ -5195,6 +5197,40 @@
     internalTaskbar?.querySelectorAll('.internal-task-button').forEach((b) => b.classList.toggle('active', b.dataset.windowId === win.dataset.windowId));
   }
 
+  function prepareDesktopWindow(win, options={}) {
+    if(!win||win.dataset.desktopReady==='1')return win;
+    win.dataset.desktopReady='1';
+    win.dataset.windowId=`dialog-${++desktopWindowSeq}`;
+    const layer=modalRoot.getBoundingClientRect();
+    const width=Math.min(Math.max(520,Number(options.width||900)),Math.max(520,layer.width-30));
+    const height=Math.min(Math.max(360,Number(options.height||680)),Math.max(360,layer.height-30));
+    const offset=(desktopWindowSeq%7)*24;
+    win.style.width=`${width}px`;win.style.height=`${height}px`;
+    win.style.left=`${Math.max(12,Math.min(layer.width-width-12,32+offset))}px`;
+    win.style.top=`${Math.max(12,Math.min(layer.height-height-12,24+offset))}px`;
+    const header=win.querySelector('.modal-header');
+    if(header){
+      const controls=document.createElement('div');controls.className='desktop-window-controls';
+      controls.innerHTML='<button class="desktop-window-control minimize" title="Minimize" aria-label="Minimize">−</button><button class="desktop-window-control maximize" title="Maximize or restore" aria-label="Maximize or restore">+</button><button class="desktop-window-control close" title="Close" aria-label="Close">×</button>';
+      header.appendChild(controls);
+      controls.querySelector('.minimize')?.addEventListener('click',()=>{win.classList.add('minimized');win.classList.remove('focused');syncInternalTaskbar();});
+      controls.querySelector('.close')?.addEventListener('click',()=>closeDesktopWindow(win));
+      const toggleMaximize=()=>{win.classList.toggle('maximized');focusDesktopWindow(win);syncInternalTaskbar();};
+      controls.querySelector('.maximize')?.addEventListener('click',toggleMaximize);
+      header.addEventListener('dblclick',(event)=>{if(!event.target.closest('button,input,select,textarea,a'))toggleMaximize();});
+      header.addEventListener('pointerdown',(event)=>{
+        if(event.button!==0||win.classList.contains('maximized')||event.target.closest('button,input,select,textarea,a'))return;
+        event.preventDefault();focusDesktopWindow(win);header.setPointerCapture(event.pointerId);
+        const startX=event.clientX,startY=event.clientY,startLeft=parseFloat(win.style.left)||0,startTop=parseFloat(win.style.top)||0;
+        const move=(moveEvent)=>{const bounds=modalRoot.getBoundingClientRect(),rect=win.getBoundingClientRect();win.style.left=`${Math.max(0,Math.min(bounds.width-Math.min(120,rect.width),startLeft+moveEvent.clientX-startX))}px`;win.style.top=`${Math.max(0,Math.min(bounds.height-44,startTop+moveEvent.clientY-startY))}px`;};
+        const stop=()=>{header.removeEventListener('pointermove',move);header.removeEventListener('pointerup',stop);header.removeEventListener('pointercancel',stop);};
+        header.addEventListener('pointermove',move);header.addEventListener('pointerup',stop);header.addEventListener('pointercancel',stop);
+      });
+    }
+    win.addEventListener('pointerdown',()=>focusDesktopWindow(win));
+    focusDesktopWindow(win);syncInternalTaskbar();return win;
+  }
+
   function syncInternalTaskbar() {
     if (!internalTaskbar) return;
     if (detachedMode) { internalTaskbar.innerHTML = ''; return; }
@@ -5301,23 +5337,25 @@
     shadow.className='managed-dialog-shadow';
     shadow.style.display='none';
     shadow.innerHTML=`<div class="modal">${html}</div>`;
-    modalRoot.appendChild(shadow);
+    // Newest first keeps legacy modalRoot.querySelector(...) handlers scoped to
+    // the window the user just opened, even when older editors are minimized.
+    modalRoot.prepend(shadow);
     shadow.querySelectorAll('[data-close-modal]').forEach((b)=>b.addEventListener('click',()=>closeDesktopWindow(shadow)));
-    if(options.native===false){
-      shadow.style.display='block';shadow.className='desktop-window';focusDesktopWindow(shadow);syncInternalTaskbar();return shadow;
+    if(options.native!==true){
+      shadow.style.display='block';shadow.className='desktop-window';return prepareDesktopWindow(shadow,options);
     }
     const title=String(options.title||shadow.querySelector('.modal-header h2')?.textContent?.trim()||'Dragonwilds Sync');
     const width=Number(options.width||Math.min(1120,Math.max(720,window.innerWidth*0.72)));
     const height=Number(options.height||Math.min(900,Math.max(520,window.innerHeight*0.78)));
     if(!window.dragonwilds?.openManagedDialog){
-      shadow.style.display='block';shadow.className='desktop-window';focusDesktopWindow(shadow);syncInternalTaskbar();return shadow;
+      shadow.style.display='block';shadow.className='desktop-window';return prepareDesktopWindow(shadow,options);
     }
     window.dragonwilds.openManagedDialog({html,title,width,height,theme:document.body.dataset.theme||'dark'}).then((result)=>{
       if(!shadow.isConnected){ if(result?.id)window.dragonwilds.closeManagedDialog(result.id).catch(()=>{}); return; }
       const id=String(result?.id||'');shadow.dataset.nativeDialogId=id;managedDialogShadows.set(id,shadow);
       const observer=new MutationObserver(()=>syncManagedDialog(shadow));observer.observe(shadow,{subtree:true,childList:true,attributes:true,characterData:true});shadow._managedObserver=observer;
       syncManagedDialog(shadow);syncInternalTaskbar();
-    }).catch((error)=>{shadow.style.display='block';shadow.className='desktop-window';focusDesktopWindow(shadow);syncInternalTaskbar();toast('Popup window fallback',error.message,'error');});
+    }).catch((error)=>{shadow.style.display='block';shadow.className='desktop-window';prepareDesktopWindow(shadow,options);toast('Popup window fallback',error.message,'error');});
     return shadow;
   }
 

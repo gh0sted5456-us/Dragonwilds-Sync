@@ -222,13 +222,19 @@ function stopRsdwToolkitServer() {
   rsdwToolkitServer = null; rsdwToolkitBaseUrl = '';
 }
 function startRsdwToolkitServer(rootDir) {
+  const requestedRoot = path.resolve(String(rootDir || ''));
+  if (rsdwToolkitServer?.listening && rsdwToolkitBaseUrl && rsdwToolkitRoot === requestedRoot) return Promise.resolve(rsdwToolkitBaseUrl);
   stopRsdwToolkitServer();
-  rsdwToolkitRoot = path.resolve(String(rootDir || ''));
+  rsdwToolkitRoot = requestedRoot;
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
       try {
         const parsed = new URL(req.url || '/', 'http://127.0.0.1');
         let relative = decodeURIComponent(parsed.pathname || '/').replace(/^\/+/, '');
+        if (relative === '__health') {
+          res.writeHead(200, { 'Content-Type':'application/json; charset=utf-8', 'Cache-Control':'no-store', 'Access-Control-Allow-Origin':'*' });
+          return res.end(JSON.stringify({ ok:true, service:'dragonwilds-rsdw-localhost' }));
+        }
         if (!relative) relative = 'index.html';
         let servingRoot = rsdwToolkitRoot;
         if (relative.startsWith('__rsdwmodel/vendor/three/')) {

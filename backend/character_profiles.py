@@ -936,7 +936,7 @@ def _inventory_rows(section, catalog_index: dict) -> list[dict]:
             "name": str(meta.get("name") or item_data), "icon": str(meta.get("iconPath") or ""),
             "description": str(meta.get("description") or ""), "max_stack": meta.get("maxStack", 1),
             "base_durability": meta.get("baseDurability"), "equipment": str(meta.get("equipment") or ""),
-            "recognized": bool(meta),
+            "recognized": bool(meta), "custom": bool(meta.get("custom")),
         })
     return sorted(rows, key=lambda row: row["slot"])
 
@@ -990,6 +990,7 @@ def native_rsdw_tool_state(value: dict, tool: str, custom_items: list[dict] | No
                 "maxStack": compact["max_stack"], "iconPath": compact["icon"],
                 "category": compact["category"], "description": compact["description"],
                 "equipment": compact["equipment"], "baseDurability": compact["base_durability"],
+                "custom": True,
             }
         tabs["custom"] = {"label": "Modded Items", "items": custom_rows}
         container = _inventory_container(value)

@@ -47,9 +47,10 @@ def main():
     assert "dragonwilds-sync-taskbar-mode" in renderer and ".internal-taskbar.icon-mode" in styles
     assert "body:has(.detached-shell) #internal-taskbar { display:none" in styles
 
-    # Mod Explorer carries the originating World into its detached process and
-    # replaces the spinner with an actionable retry surface on any load error.
-    assert "selectedWorldId:privateWorld?.id" in renderer and "selectedServerWorldId:serverWorld?.id" in renderer
+    # Mod Explorer is an internal, taskbar-managed editor and replaces its
+    # spinner with an actionable retry surface on any load error.
+    assert "mod-explorer-modal-body" in renderer and "title:`${name} Mod Explorer`" in renderer
+    assert "closeDesktopWindow(host.closest('.desktop-window'))" in renderer
     assert "id=\"retry-mod-explorer\"" in renderer and "The loading request failed." in renderer
     assert "!detachedMode && updateCfg.auto_check" in renderer
 

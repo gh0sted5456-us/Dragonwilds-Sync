@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
@@ -19,10 +20,12 @@ from client_layout import resolve_client_layout
 from runtime_platforms import detect_client_platform, entry_allowed_for_platform
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
+from sync_manifest import build_client_meta, component_fingerprints, component_key, manifest_fingerprint
 
 CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_STATE_DIR = ".dwsync"
 STATE_FILE = "state.json"
+META_FILE = "manifest-meta.json"
 PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # These are launcher/runtime infrastructure, never World-owned mod content.
 # They remain installed across profile swaps and are omitted from snapshots.
@@ -38,13 +41,13 @@ LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "rsdwtools", "persistentdirectconnect
 
 
 
-
 def _set_managed_readonly(path: Path, readonly: bool = True) -> None:
     try:
         mode = path.stat().st_mode
         path.chmod((mode & ~0o222) if readonly else (mode | 0o200))
     except OSError:
         pass
+
 
 def sha256_file(path: Path) -> str:
     h = hashlib.sha256()
@@ -123,15 +126,43 @@ def safe_extract_zip(zip_path: Path, destination: Path) -> int:
 def load_local_state(install_dir: Path) -> dict:
     path = install_dir / LOCAL_STATE_DIR / STATE_FILE
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {"profile_id": None, "applied_version": None, "files": {}}
+        state = {"profile_id": None, "applied_version": None, "files": {}}
+    # manifest-meta.json is intentionally a small, inspectable mirror. Older
+    # clients only have state.json, so merge metadata opportunistically.
+    meta_path = install_dir / LOCAL_STATE_DIR / META_FILE
+    try:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        if isinstance(meta, dict):
+            for key in ("manifest_fingerprint", "components", "synced_at"):
+                if key not in state and key in meta:
+                    state[key] = meta[key]
+    except (OSError, json.JSONDecodeError):
+        pass
+    return state
 
 
 def save_local_state(install_dir: Path, state: dict) -> None:
-    path = install_dir / LOCAL_STATE_DIR / STATE_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    root = install_dir / LOCAL_STATE_DIR
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / STATE_FILE
+    pending = path.with_suffix(path.suffix + ".tmp")
+    pending.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    os.replace(pending, path)
+    meta = {
+        "schema": "DragonwildsSync.ClientManifestMeta.v1",
+        "profile_id": state.get("profile_id"),
+        "manifest_version": state.get("applied_version"),
+        "manifest_fingerprint": state.get("manifest_fingerprint") or "",
+        "components": dict(state.get("components") or {}),
+        "file_count": len(state.get("files") or {}),
+        "synced_at": state.get("synced_at"),
+    }
+    meta_path = root / META_FILE
+    meta_pending = meta_path.with_suffix(meta_path.suffix + ".tmp")
+    meta_pending.write_text(json.dumps(meta, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(meta_pending, meta_path)
 
 
 def client_world_dir(world_id: str) -> Path:
@@ -166,8 +197,10 @@ def copy_profile_mod_slot(src: Path, dst: Path, slot: str) -> None:
             # RuneSchema itself is persistent infrastructure, but its Mods
             # subtree is World-owned and must participate in profile swaps.
             source_mods = child / "Mods"
-            if not source_mods.exists(): source_mods = child / "mods"
-            if source_mods.exists(): shutil.copytree(source_mods, dst / child.name / "Mods", dirs_exist_ok=True)
+            if not source_mods.exists():
+                source_mods = child / "mods"
+            if source_mods.exists():
+                shutil.copytree(source_mods, dst / child.name / "Mods", dirs_exist_ok=True)
             continue
         if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
             continue
@@ -175,7 +208,8 @@ def copy_profile_mod_slot(src: Path, dst: Path, slot: str) -> None:
         if child.is_dir():
             shutil.copytree(child, target, dirs_exist_ok=True)
         elif child.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(child, target)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(child, target)
 
 
 def snapshot_client_world(world_id: str, selected_root: Path) -> None:
@@ -206,7 +240,8 @@ def snapshot_client_world(world_id: str, selected_root: Path) -> None:
             copy_profile_mod_slot(source, mods_destination / slot, slot)
     # LocalAppData game configuration is World-profile state. AccountConfig,
     # EOS data and credentials live elsewhere and are intentionally untouched.
-    if layout.config_dir.exists(): copy_tree(layout.config_dir, config_destination)
+    if layout.config_dir.exists():
+        copy_tree(layout.config_dir, config_destination)
     state_path = game_root / LOCAL_STATE_DIR / STATE_FILE
     if state_path.exists():
         destination.mkdir(parents=True, exist_ok=True)
@@ -234,11 +269,13 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
                 for child in list(live.iterdir()):
                     if child.name.casefold() == "runeschema":
                         for candidate in (child / "Mods", child / "mods"):
-                            if candidate.exists(): _remove_launcher_managed_tree(candidate)
+                            if candidate.exists():
+                                _remove_launcher_managed_tree(candidate)
                         continue
                     if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
                         continue
-                    if child.is_dir(): _remove_launcher_managed_tree(child)
+                    if child.is_dir():
+                        _remove_launcher_managed_tree(child)
                     else:
                         # mods.txt and server-pushed managed controls are made
                         # read-only after activation. They are launcher-owned,
@@ -252,7 +289,8 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
             copy_profile_mod_slot(cached, live, slot)
     cached_config = stored / "configs" / "game"
     if cached_config.exists():
-        if layout.config_dir.exists(): _remove_launcher_managed_tree(layout.config_dir)
+        if layout.config_dir.exists():
+            _remove_launcher_managed_tree(layout.config_dir)
         copy_tree(cached_config, layout.config_dir)
     cached_state = stored / STATE_FILE
     try:
@@ -267,16 +305,18 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         if cached.is_file():
             target = target_for_state(selected_root, relative, info)
             target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists(): _set_managed_readonly(target, False)
+            if target.exists():
+                _set_managed_readonly(target, False)
             shutil.copy2(cached, target)
             if str(info.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
                 _set_managed_readonly(target, True)
     live_state = game_root / LOCAL_STATE_DIR / STATE_FILE
     live_state.parent.mkdir(parents=True, exist_ok=True)
     if cached_state.exists():
-        shutil.copy2(cached_state, live_state)
+        save_local_state(game_root, incoming_state)
     else:
         live_state.unlink(missing_ok=True)
+        (game_root / LOCAL_STATE_DIR / META_FILE).unlink(missing_ok=True)
 
 
 def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
@@ -351,7 +391,9 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
             continue
         target = target_for_state(selected_root, relative, info)
         if target.is_file():
-            _set_managed_readonly(target, False); target.unlink(); removed_managed += 1
+            _set_managed_readonly(target, False)
+            target.unlink()
+            removed_managed += 1
     removed_mods = 0
     roots = _client_mod_roots(selected_root)
     for slot, live in roots.items():
@@ -368,13 +410,16 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
                 if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
                     continue
                 removed_mods += sum(1 for p in child.rglob("*") if p.is_file()) if child.is_dir() else 1
-                if child.is_dir(): _remove_launcher_managed_tree(child)
+                if child.is_dir():
+                    _remove_launcher_managed_tree(child)
                 else:
-                    _set_managed_readonly(child, False); child.unlink(missing_ok=True)
+                    _set_managed_readonly(child, False)
+                    child.unlink(missing_ok=True)
         else:
             removed_mods += sum(1 for p in live.rglob("*") if p.is_file())
             _remove_launcher_managed_tree(live)
     (layout.game_root / LOCAL_STATE_DIR / STATE_FILE).unlink(missing_ok=True)
+    (layout.game_root / LOCAL_STATE_DIR / META_FILE).unlink(missing_ok=True)
     remove_active_world(layout.game_root)
     return {"profile_id": profile_id, "snapshot": str(client_world_dir(profile_id)),
             "mods_removed": removed_mods, "managed_files_removed": removed_managed,
@@ -449,8 +494,30 @@ def resolve_verified_manifest(world: dict, client_platform: str = ""):
     raise ConnectionError("; ".join(attempts) if attempts else "No internal or external IP is configured.")
 
 
+def _entry_materialized(install_dir: Path, game_root: Path, entry: dict) -> bool:
+    if entry.get("kind", "file") == "zip_bundle":
+        extract_to = str(entry.get("extract_to") or "").strip()
+        if not extract_to:
+            return True
+        try:
+            return safe_game_path(game_root, extract_to).exists()
+        except ConnectionError:
+            return False
+    try:
+        return target_for_entry(install_dir, entry).is_file()
+    except ConnectionError:
+        return False
+
+
 def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persistent: bool = False,
                client_runtime: dict | None = None) -> dict:
+    """Authenticate, exchange manifests, delta-sync, verify, then return launch-ready.
+
+    Every invocation deliberately fetches a fresh authenticated server manifest.
+    A local metadata fingerprint is only a fast-path cache; it can never replace
+    that network exchange. The function returns successfully only after the
+    server confirms the final per-file SHA manifest is an exact match.
+    """
     if not install_dir.exists():
         raise ConnectionError(f"Dragonwilds folder does not exist: {install_dir}")
     layout = resolve_client_layout(install_dir)
@@ -460,31 +527,64 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
 
     platform_info = detect_client_platform(game_root)
     client_platform = str(platform_info["platform"])
+    # This authenticated manifest exchange happens on every Play/Quick Start.
     route, endpoint, manifest, token, base_url, ping_ms = resolve_verified_manifest(world, client_platform)
     # A new server filters before transmission. This client-side guard also
     # protects against an older/misconfigured host returning tagged entries.
     manifest["files"] = [entry for entry in (manifest.get("files") or [])
                          if isinstance(entry, dict) and entry_allowed_for_platform(entry, client_platform)]
+
+    remote_fingerprint = manifest_fingerprint(manifest)
+    remote_components = component_fingerprints(manifest)
     local_state = load_local_state(game_root)
     remote_files = {f["path"]: f for f in manifest.get("files", [])}
-    old_files = local_state.get("files", {})
+    old_files = local_state.get("files", {}) if isinstance(local_state.get("files"), dict) else {}
+    old_components = local_state.get("components", {}) if isinstance(local_state.get("components"), dict) else {}
 
-    to_download = []
-    up_to_date = []
-    for entry in manifest.get("files", []):
-        if entry.get("kind", "file") == "zip_bundle":
-            if (old_files.get(entry["path"]) or {}).get("sha256") == entry.get("sha256"):
-                up_to_date.append(entry["path"])
+    # Fast path: the whole manifest/settings fingerprint matches the last
+    # server-confirmed sync and every target still exists. We skip expensive
+    # re-hashing and, most importantly, transfer zero payload bytes.
+    same_profile = str(local_state.get("profile_id") or "") == str(manifest.get("profile_id") or "")
+    fast_manifest_match = bool(
+        same_profile and remote_fingerprint and
+        str(local_state.get("manifest_fingerprint") or "") == remote_fingerprint and
+        set(old_files) == set(remote_files) and
+        all(_entry_materialized(install_dir, game_root, entry) for entry in manifest.get("files", []))
+    )
+
+    to_download: list[dict] = []
+    up_to_date: list[str] = []
+    component_fast_matches: set[str] = set()
+    if fast_manifest_match:
+        up_to_date = [entry["path"] for entry in manifest.get("files", [])]
+    else:
+        for entry in manifest.get("files", []):
+            path = entry["path"]
+            key = component_key(entry)
+            old = old_files.get(path) or {}
+            component_match = bool(
+                old_components.get(key) and
+                old_components.get(key) == remote_components.get(key) and
+                old.get("sha256") == entry.get("sha256") and
+                _entry_materialized(install_dir, game_root, entry)
+            )
+            if component_match:
+                component_fast_matches.add(key)
+                up_to_date.append(path)
+                continue
+            if entry.get("kind", "file") == "zip_bundle":
+                if old.get("sha256") == entry.get("sha256") and _entry_materialized(install_dir, game_root, entry):
+                    up_to_date.append(path)
+                else:
+                    to_download.append(entry)
+                continue
+            target = target_for_entry(install_dir, entry)
+            if target.exists() and sha256_file(target) == entry.get("sha256"):
+                up_to_date.append(path)
             else:
                 to_download.append(entry)
-            continue
-        target = target_for_entry(install_dir, entry)
-        if target.exists() and sha256_file(target) == entry.get("sha256"):
-            up_to_date.append(entry["path"])
-        else:
-            to_download.append(entry)
 
-    to_remove = [p for p in old_files if p not in remote_files]
+    to_remove = [] if fast_manifest_match else [p for p in old_files if p not in remote_files]
     security_reviews = []
 
     def review_download(path: Path, manifest_path: str) -> None:
@@ -513,7 +613,8 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
             download_entry(base_url, token, entry, staged, client_platform)
             review_download(staged, entry["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists(): _set_managed_readonly(target, False)
+            if target.exists():
+                _set_managed_readonly(target, False)
             os.replace(staged, target)
             if str(entry.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
                 _set_managed_readonly(target, True)
@@ -542,32 +643,48 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
     new_files = {}
     for entry in manifest.get("files", []):
         info = {"sha256": entry.get("sha256"), "category": entry.get("category"),
-                "target_scope": entry.get("target_scope") or "game", "target_path": entry.get("target_path") or ""}
+                "target_scope": entry.get("target_scope") or "game", "target_path": entry.get("target_path") or "",
+                "component": component_key(entry)}
         if entry.get("kind") == "zip_bundle":
             info.update({"kind": "zip_bundle", "extract_to": entry.get("extract_to", "")})
         new_files[entry["path"]] = info
-    save_local_state(game_root, {
-        "profile_id": manifest.get("profile_id"),
-        "applied_version": manifest.get("version"),
-        "files": new_files,
-    })
-    snapshot_client_world(world["id"], install_dir)
+
+    # Server confirmation is the final transfer gate. Do not mark the local
+    # fingerprint as current until the server agrees every required SHA matches.
     report = report_manifest(
         base_url, token,
         [{"path": f["path"], "sha256": f.get("sha256")} for f in manifest.get("files", [])],
         client_id, {"ping_ms": round(ping_ms, 1)}, client_runtime=client_runtime,
         client_platform=client_platform)
     if report.get("status") != "match":
-        raise ConnectionError("Sync completed, but the server did not confirm a manifest match.")
+        raise ConnectionError("Sync completed locally, but the server did not confirm a manifest match. Launch is blocked.")
+
+    meta = build_client_meta(manifest)
+    save_local_state(game_root, {
+        "profile_id": manifest.get("profile_id"),
+        "applied_version": manifest.get("version"),
+        "manifest_fingerprint": meta["manifest_fingerprint"],
+        "components": meta["components"],
+        "synced_at": time.time(),
+        "files": new_files,
+    })
+    snapshot_client_world(world["id"], install_dir)
     return {
         "ok": True,
+        "launch_ready": True,
+        "transfer_gate": "verified",
         "route": route,
         "endpoint": endpoint,
         "ping_ms": round(ping_ms, 1),
         "manifest": manifest,
+        "manifest_fingerprint": remote_fingerprint,
+        "component_fingerprints": remote_components,
+        "fast_manifest_match": fast_manifest_match,
+        "component_fast_matches": sorted(component_fast_matches),
         "client_platform": platform_info,
         "report": report,
         "downloaded": len(to_download),
+        "downloaded_bytes": sum(max(0, int(entry.get("size") or 0)) for entry in to_download),
         "removed": len(to_remove),
         "up_to_date": len(up_to_date),
         "security": {
@@ -590,6 +707,7 @@ def _bundled_resource_path(name: str) -> Path:
         if candidate.exists():
             return candidate
     return Path(__file__).resolve().parent.parent / "resources" / name
+
 
 def write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
     """Finalize the selected World's UE4SS mods.txt after sync.

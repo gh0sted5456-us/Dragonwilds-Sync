@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from profile_store import APP_DATA_DIR
+from client_layout import resolve_client_layout
 from server_layout import resolve_server_layout
 
 
@@ -19,8 +20,25 @@ _HISTORY_LOCK = threading.RLock()
 
 
 def toolkit_root(game_root: str | Path) -> Path:
-    layout = resolve_server_layout(str(game_root or ""))
-    return layout.ue4ss_mods_dir / "RSDWTools"
+    """Resolve RSDWTools for either a retail client or dedicated server root.
+
+    Prefer a toolkit that already exists under the selected client tree before
+    invoking the dedicated-server resolver.  The server resolver intentionally
+    knows how to search documented SteamCMD ancestor layouts; that is useful for
+    operators selecting a server parent folder, but it can otherwise cause a
+    temporary/client fixture to bind to an unrelated real dedicated install on
+    the same machine.  Existing server toolkits still resolve through the
+    dedicated layout, and non-existent paths retain the server fallback used by
+    setup/status previews.
+    """
+    selected = str(game_root or "")
+    client_root = resolve_client_layout(selected).ue4ss_mods_dir / "RSDWTools"
+    if client_root.is_dir():
+        return client_root
+    server_root = resolve_server_layout(selected).ue4ss_mods_dir / "RSDWTools"
+    if server_root.is_dir():
+        return server_root
+    return server_root
 
 
 def _sha256(path: Path) -> str:

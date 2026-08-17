@@ -60,7 +60,12 @@ jobs:
         shell: powershell
         run: |
           $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
-          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
+          # Windows PowerShell 5.1 can prefix strings piped to native commands
+          # with a UTF-8 BOM on newer Server runners. The packaged service uses
+          # newline-delimited JSON-RPC, so keep the build probe BOM-less.
+          $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+          & .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Create Windows package report and checksums
         shell: powershell
         run: |

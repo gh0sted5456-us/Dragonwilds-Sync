@@ -6,8 +6,6 @@ import world_maintenance as wm
 
 
 def main():
-    # Steam appmanifest parsing + health parity are deterministic and do not
-    # require a live Steam/GitHub request.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         manifest = root / 'appmanifest_4019830.acf'
@@ -20,16 +18,13 @@ def main():
         assert rv.version_health({'dragonwilds': {'server_current': True}})['score'] == 100
         assert rv.version_health({'dragonwilds': {'server_current': False}})['score'] == 25
 
-    # The Alpha 5 JSON subsystem takes explicit ownership of a config file:
-    # open => managed/read-only; save => JSON validation + atomic write + relock;
-    # managed ownership is permanent while the World is launcher-managed.
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         profiles = root / 'profiles'
-        server = root / 'server'
-        # Use the canonical RuneSchema casing. Windows hid this fixture typo on
-        # case-insensitive NTFS; Ubuntu correctly treats RuneSchema/Runeschema as
-        # different paths, which is exactly the portability behavior we want.
+        requested_server = root / 'server'
+        # Canonicalize once through the production resolver. Windows hosted
+        # runners may expose temp paths through both long and 8.3 aliases.
+        server = wm.resolve_server_layout(str(requested_server)).game_root
         config = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json'
         config.parent.mkdir(parents=True)
         config.write_text('{"enabled": true}', encoding='utf-8')

@@ -63,6 +63,11 @@ def main() -> None:
         assert row["internal_name"] == row["item_name"] == "ITEM_Custom_Sword"
         assert row["persistence_id"].endswith("ITEM_Custom_Sword.ITEM_Custom_Sword")
         assert row["max_stack"] == 7 and row["runtime_path"].startswith("/Game/Mods/Test/")
+        by_name = spawner_catalog.catalog("", kind="item", query="ITEM_GUID_Sword", custom_items=[{
+            "persistence_id": "mod-save-guid-123", "display_name": "GUID Sword",
+            "internal_name": "ITEM_GUID_Sword", "max_stack": 2,
+        }])
+        assert by_name["count"] == 1 and by_name["items"][0]["runtime_path"] == "ITEM_GUID_Sword"
     finally:
         spawner_catalog.search_items = original_search
 

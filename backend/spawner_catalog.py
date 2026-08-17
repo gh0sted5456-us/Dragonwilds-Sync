@@ -224,7 +224,9 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
                 "display_name": str(raw.get("display_name") or raw.get("name") or internal_name or persistence_id),
                 "internal_name": internal_name, "item_name": internal_name,
                 "icon_path": str(raw.get("icon_data") or raw.get("icon_ref") or ""),
-                "source": "dragonwilds-sync:mod-manifest", "source_path": str(raw.get("source_path") or persistence_id),
+                "source": "dragonwilds-sync:mod-manifest",
+                "source_path": str(raw.get("source_path") or raw.get("runtime_path") or persistence_id),
+                "runtime_path": str(raw.get("runtime_path") or "").strip(),
                 "equipment": str(raw.get("equipment") or ""), "category": str(raw.get("category") or "Modded Items"),
                 "raw_category": "Modded Items", "stackable": int(raw.get("max_stack") or 1) > 1,
                 "max_stack": max(1, int(raw.get("max_stack") or 1)), "description": str(raw.get("description") or ""), "custom": True,
@@ -244,6 +246,13 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
                 candidate = str(item.get("persistence_id") or item.get("item_data") or "").strip()
                 if candidate.startswith("/"):
                     runtime_path = candidate if "." in candidate.rsplit("/", 1)[-1] else f"{candidate}.{candidate.rsplit('/', 1)[-1]}"
+                else:
+                    # The RSDW admin-item bridge also resolves the game's
+                    # ITEM_NAME token. This keeps GUID Persistence IDs useful
+                    # without inventing a /Game asset path for a mod.
+                    item_name = str(item.get("internal_name") or item.get("item_name") or "").strip()
+                    if re.fullmatch(r"[A-Za-z0-9_.:-]+", item_name):
+                        runtime_path = item_name
             if not runtime_path:
                 continue
             item_category = str(item.get("category") or _friendly_item_category(item))

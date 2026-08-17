@@ -1068,6 +1068,8 @@ def handle(method: str, params: dict) -> object:
                 "equipment": str(raw.get("equipment") or "")[:40],
                 "source_mod": str(raw.get("source_mod") or raw.get("sourceMod") or "")[:2048],
                 "source_manifest": str(raw.get("source_manifest") or raw.get("sourceManifest") or "")[:2048],
+                "source_path": str(raw.get("source_path") or raw.get("sourcePath") or "").strip()[:1024],
+                "runtime_path": str(raw.get("runtime_path") or raw.get("runtimePath") or "").strip()[:1024],
                 "created_at": str(raw.get("created_at") or now_iso()),
                 "updated_at": now_iso(),
             }

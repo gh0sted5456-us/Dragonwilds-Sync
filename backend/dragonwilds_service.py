@@ -72,7 +72,7 @@ from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports,
     delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
-    ensure_base_runtimes, ensure_client_base_runtimes, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, refresh_live_profile_metadata, scan_for_servers, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
+    ensure_base_runtimes, ensure_client_base_runtimes, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
     pop_scan_warnings as pop_server_scan_warnings,
 )
 from public_worlds import discover_public_worlds, augment_with_sync_directory
@@ -3756,6 +3756,11 @@ def handle(method: str, params: dict) -> object:
         if active and SHARE.status().get("serving"):
             ENGINE.publish(profile_id)
         return {"units": [u.public(SHARE.live_keys if active else set()) for u in units], "state": public_state(state)}
+
+    if method == "server.world.mod.classify":
+        profile_id = str(params.get("id") or "")
+        result = set_mod_classification_fast(profile_id, str(params.get("key") or ""), str(params.get("classification") or ""))
+        return {"unit": result}
 
     if method == "server.world.mod.move":
         profile_id = str(params.get("id") or "")

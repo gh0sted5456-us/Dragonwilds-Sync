@@ -73,7 +73,8 @@ def main():
             })
             units = ss.scan_mod_units("world-a", str(install))
             keys = {u.key for u in units}
-            assert "ue4ss_core::dwmapi.dll" in keys
+            assert "ue4ss_core::dwmapi.dll" not in keys
+            assert "ue4ss_mod::mods.txt" not in keys
             assert "runeschema::RuneSchema" in keys
             assert "runeschema_mod::RSRequired" in keys
             assert "ue4ss_mod::RuneSchema" not in keys

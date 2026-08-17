@@ -40,10 +40,16 @@ def main():
             (rs / "mods/BetterLoot/config.json").write_text('{"x":1}')
             (game / "Binaries/Win64/ue4ss/Mods/ServerOnly").mkdir(parents=True)
             (game / "Binaries/Win64/ue4ss/Mods/ServerOnly/main.lua").write_text("return true")
+            (game / "Binaries/Win64/ue4ss/Mods/ClientVisible").mkdir(parents=True)
+            (game / "Binaries/Win64/ue4ss/Mods/ClientVisible/main.lua").write_text("return true")
+            (game / "Binaries/Win64/ue4ss/Mods/mods.txt").write_text("ClientVisible : 1\n")
 
             profile_store.save_server_profile(profile_id, {
                 "name": "World A", "description": "test", "tags": ["coop"], "icon_b64": "", "banner_b64": "",
-                "unit_overrides": {"ue4ss_mod::ServerOnly": {"classification": "server_only", "category": "permanent", "order": 0}},
+                "unit_overrides": {
+                    "ue4ss_mod::ServerOnly": {"classification": "server_only", "category": "permanent", "order": 0},
+                    "ue4ss_mod::ClientVisible": {"classification": "player_required", "category": "permanent", "order": 1},
+                },
                 "mods_txt_writer": "server_push",
                 "feedback": [], "dedicated_config": {"port": 7777}, "sync_config": {},
             })
@@ -53,7 +59,15 @@ def main():
             assert "pak_mod::Example" in keys
             assert "runeschema::Runeschema" in keys
             assert "runeschema_mod::BetterLoot" in keys
+            assert "ue4ss_mod::mods.txt" not in keys
             assert next(u for u in units if u.key == "ue4ss_mod::ServerOnly").classification == "server_only"
+
+            # Mode-only changes update profile metadata without rescanning the
+            # live server share. The next explicit Publish & Push rescans.
+            quick = ss.set_mod_classification_fast(profile_id, "ue4ss_mod::ClientVisible", "server_only")
+            assert quick["pending_publish"] is True
+            assert profile_store.load_server_profile(profile_id)["unit_overrides"]["ue4ss_mod::ClientVisible"]["classification"] == "server_only"
+            ss.set_mod_classification_fast(profile_id, "ue4ss_mod::ClientVisible", "player_required")
 
             # Per-World order/category/classification are backend-owned, not renderer-only state.
             # Load order is family-local: PAKs reorder only against PAKs and are
@@ -98,6 +112,7 @@ def main():
             pushed_mods = next((f for f in manifest["files"] if f.get("target_scope") == "client_mods_txt"), None)
             assert pushed_mods and pushed_mods.get("generated") == "server_client_mods_txt"
             pushed_text = (ss.PUBLISH_DIR / "_client_control" / "mods.txt").read_text(encoding="utf-8")
+            assert "ClientVisible : 1" in pushed_text
             assert "ServerOnly" not in pushed_text, "server-only UE4SS must never be pushed into client mods.txt"
 
             report_body = json.dumps({"client_id": "testclient", "files": [{"path": f["path"], "sha256": f["sha256"]} for f in manifest["files"]]}).encode()

@@ -542,6 +542,9 @@ body[data-theme="dark"] .platform-logo { --platform-logo-filter:invert(1) bright
 .source-pill.manual { color:var(--muted); }
 .mod-row-actions { display:flex; gap:6px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
 .mod-action-btn { padding:6px 8px; font-size:9px; }
+.mod-mode-control { display:grid; gap:3px; min-width:150px; }
+.mod-mode-control>span { color:var(--muted); font-size:8px; font-weight:850; letter-spacing:.12em; }
+.mod-mode-control .select { min-height:30px; padding:5px 28px 5px 8px; font-size:10px; font-weight:800; }
 
 /* Server health */
 .health-score { display:grid; grid-template-columns:92px 1fr; gap:14px; align-items:center; }

@@ -99,15 +99,16 @@ def main():
         assert Path(pushed["path"]).read_text(encoding="utf-8").startswith("; server pushed")
         assert Path(pushed["path"]).stat().st_mode & 0o222 == 0
 
-    # Publish contract: selection and writer ownership are separate. Client
-    # Generate publishes names only; Server Push stages a client-safe managed
-    # control file using the special client_mods_txt destination.
+    # Publish contract: a non-empty client UE4SS selection always stages the
+    # client-safe managed control file using the special destination.
     source = (ROOT / "backend" / "server_systems.py").read_text(encoding="utf-8")
     assert '"client_ue4ss_mods": client_ue4ss_mods' in source
     assert '"mods_txt_writer": mods_txt_writer' in source
+    assert 'mods_txt_writer = "server_push" if client_ue4ss_mods else "client_generate"' in source
     assert '"target_scope": "client_mods_txt"' in source
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
-    assert "Client Generates Last" in renderer and "Server Pushes File" in renderer
+    assert "automatically pushes this hidden control file" in renderer
+    assert "Client Generates Last" not in renderer and "Server Pushes File" not in renderer
     service = (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
     assert 'write_client_mods_txt(install_dir, manifest)' in service
 

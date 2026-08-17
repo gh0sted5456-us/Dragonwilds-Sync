@@ -94,7 +94,8 @@ RUNESCHEMA_CORE_CACHE_ZIP = RUNESCHEMA_UPLOAD_DIR / "RuneSchema-core-latest.zip"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
 def user_visible_mod_unit(unit: "ModUnit") -> bool:
     """Hide shared upstream runtimes while exposing every World-owned mod."""
-    return unit.group not in {"ue4ss_core", "runeschema"}
+    return (unit.group not in {"ue4ss_core", "runeschema"}
+            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll"})
 RUNTIME_MUTATION_LOCK = threading.RLock()
 
 
@@ -475,6 +476,9 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
     _LAST_SCAN_WARNINGS.extend(ensure_baked_in_ue4ss_enabled(mods))
     for name, is_dir, path in _iter_top_level(mods):
         lower = name.lower()
+        if not is_dir and lower == "mods.txt":
+            # Launcher-owned UE4SS control state is not a user-manageable mod.
+            continue
         if is_dir and lower in UE4SS_BAKED_IN_DEFAULT_MODS:
             # Baked into UE4SS's own default distribution -- exists on disk,
             # nothing here for an operator to manage, so it isn't listed.
@@ -506,9 +510,6 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
     for stem, files in grouped.items():
         _order, clean_stem = _strip_pak_load_prefix(stem)
         add(clean_stem, "pak_mod", source_files=files)
-
-    if layout.ue4ss_bootstrap.is_file():
-        add(layout.ue4ss_bootstrap.name, "ue4ss_core", source_files=[layout.ue4ss_bootstrap])
 
     units.sort(key=lambda u: (overrides.get(u.key) or {}).get("order", 10**9))
     return units
@@ -559,6 +560,8 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     _LAST_SCAN_WARNINGS.extend(ensure_baked_in_ue4ss_enabled(mods))
     for name, is_dir, path in _iter_top_level(mods):
         lower = name.lower()
+        if not is_dir and lower == "mods.txt":
+            continue
         if is_dir and lower in UE4SS_BAKED_IN_DEFAULT_MODS:
             continue
         if is_dir and lower == "runeschema":
@@ -717,6 +720,32 @@ def persist_unit_overrides(profile_id: str, units: list[ModUnit]) -> None:
                         "tags": list(getattr(unit, "tags", []) or [])[:24]})
         overrides[unit.key] = current
     save_server_profile(profile_id, profile)
+
+
+def set_mod_classification_fast(profile_id: str, key: str, classification: str) -> dict:
+    """Persist a presentation/distribution mode without rescanning a live share.
+
+    World Management already obtained the unit from inventory. Mode changes only
+    affect profile metadata, so walking every file on a remote server again makes
+    the click needlessly expensive. Publish & Push performs the authoritative
+    rescan before exposing the new manifest.
+    """
+    if classification not in {"player_required", "server_only"}:
+        raise ValueError("classification must be player_required or server_only")
+    group, separator, name = str(key or "").partition("::")
+    if separator != "::" or group not in {"ue4ss_mod", "runeschema_mod", "pak_mod"} or not name.strip():
+        raise ValueError("A user-manageable mod key is required")
+    if len(name) > 240 or name.casefold() in {"mods.txt", "dwmapi.dll"}:
+        raise ValueError("Runtime/control infrastructure cannot be assigned a mod mode")
+    profile = load_server_profile(profile_id)
+    if not profile:
+        raise KeyError("Server World not found")
+    overrides = profile.setdefault("unit_overrides", {})
+    current = dict(overrides.get(key) or {})
+    current["classification"] = classification
+    overrides[key] = current
+    save_server_profile(profile_id, profile)
+    return {"key": key, "classification": classification, "pending_publish": True}
 
 
 def apply_unit_update(profile_id: str, game_root: str, key: str, classification: str | None = None,
@@ -1770,15 +1799,12 @@ class ShareServer:
                 manifest_files.append({"path": manifest_path, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                        "category": unit.category, "kind": "file", "extract_to": "",
                                        "platforms": unit_platforms})
-        # Selection and delivery are deliberately separate. mods_txt_mode chooses
-        # the client-required UE4SS set (Auto/Manual). mods_txt_writer chooses
-        # whether each client synthesizes the control file last or the server
-        # publishes a client-safe managed copy. Self-enabled infrastructure is
-        # absent in either path.
+        # Selection is derived from the World. Whenever the resulting client set
+        # contains UE4SS entries, publish its client-safe launcher-owned mods.txt
+        # rather than asking each client to reconstruct it. An empty set is still
+        # generated locally so a profile swap clears stale entries.
         client_ue4ss_mods = client_ue4ss_enablement(units, source_mods_txt, profile.get("mods_txt_mode") or "auto")
-        mods_txt_writer = str(profile.get("mods_txt_writer") or "client_generate").casefold()
-        if mods_txt_writer not in {"client_generate", "server_push"}:
-            mods_txt_writer = "client_generate"
+        mods_txt_writer = "server_push" if client_ue4ss_mods else "client_generate"
         if mods_txt_writer == "server_push":
             wire = "_client_control/mods.txt"
             dest = PUBLISH_DIR / "_client_control" / "mods.txt"

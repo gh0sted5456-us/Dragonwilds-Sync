@@ -11,17 +11,17 @@ This document is the authoritative handoff for the locally hosted Bonsai LLM. Pr
 - Branch/tag: `main` / `v1.1.9`
 - Supported release format: Windows x64 portable executable only
 - Artifact: `release\Dragonwilds Sync and Launcher-Portable-1.1.9.exe`
-- Artifact size: 211,008,371 bytes (201.2 MB)
-- SHA-256: `3DB89D6DEFE50561367C4B928DFE789DDEE0880E51B3124739A915FD4D948AD6`
-- Successful build: 2026-08-16 19:28:02 MDT
-- Build log: `build-logs\build_20260816_192802.log`
+- Artifact size: 211,010,073 bytes (201.2 MB)
+- SHA-256: `ACDAF9DE2BF613BEA6A4E84973B702EE0E018F029D546B17C4CC66EEB471912E`
+- Successful build: 2026-08-16 19:39:38 MDT
+- Build log: `build-logs\build_20260816_193938.log`
 
 ## Non-negotiable product boundaries
 
 1. Version 1.1.9 is Windows-only and portable-only. Linux workflows, scripts, Flatpak metadata, documentation, package targets, and Linux-specific regression coverage were removed before publication.
 2. RSDWTools and prior retired gameplay helper mods are not bundled or installed as application mods. UE4SS and RuneSchema remain supported shared runtimes. A user-installed copy of RSDWTools may still be detected and managed like any other existing mod.
 3. The unreliable embedded RSDWModel 3D view was removed. Do not restore the webview/local-host preview. Appearance changes can be made in game.
-4. `mods.txt` is application-managed, hidden from file browsers/editors, and dynamically regenerated in the exact format `MODNAME : 1`.
+4. `mods.txt` and the UE4SS bootstrap `dwmapi.dll` are runtime/control infrastructure, not mods. They are hidden from mod inventory and editors. `mods.txt` is application-managed in exact `MODNAME : 1` format and is automatically pushed to clients whenever a World presents UE4SS entries.
 5. All editor dialogs are managed in-app windows. They must remain draggable, resizable, minimizable to the in-app taskbar, maximizable/restorable, and closable from either the title controls or taskbar.
 6. The updater is permanently associated with `gh0sted5456-us/Dragonwilds-Sync`. Settings exposes only **Check for Updates** and **Update Application**.
 
@@ -60,6 +60,7 @@ This document is the authoritative handoff for the locally hosted Bonsai LLM. Pr
 - Adoption can import detected UE4SS, RuneSchema, and PAK mods into the active World profile, or leave them untouched when declined.
 - Default UE4SS loader scaffolding and shared runtime infrastructure are excluded from profile ownership.
 - PAK discovery recursively supports numbered mod directories.
+- Each server mod exposes a persistent Mod Mode selector. Mode-only changes update profile metadata without rescanning the full live/UNC mod tree and are applied to the served manifest by explicit Publish & Push.
 
 ### Direct world path control
 

@@ -1,12 +1,23 @@
 from __future__ import annotations
 
+import html
 import json
+import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
 
 OFFICIAL_FEED_URL = "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/recommended-mods.json"
 NEXUS_ACTIVITY_URL = "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"
+
+_META_RE = re.compile(
+    r'<meta\s+[^>]*(?:property|name)=["\']([^"\']+)["\'][^>]*content=["\']([^"\']*)["\'][^>]*>',
+    re.I,
+)
+_META_RE_REVERSED = re.compile(
+    r'<meta\s+[^>]*content=["\']([^"\']*)["\'][^>]*(?:property|name)=["\']([^"\']+)["\'][^>]*>',
+    re.I,
+)
 
 
 def _resource_file() -> Path:
@@ -19,6 +30,36 @@ def _clean_url(value: object) -> str:
     if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
         return ""
     return raw[:2048]
+
+
+def _public_page_metadata(url: str) -> dict:
+    """Read public presentation metadata without any Nexus account/API login.
+
+    Recommendation artwork is deliberately best-effort. A provider can block
+    anonymous page fetches and the recommendation still remains usable as a
+    plain link. No cookies, Nexus API key, SSO token, or account state is used.
+    """
+    clean = _clean_url(url)
+    if not clean:
+        return {}
+    request = urllib.request.Request(
+        clean,
+        headers={
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "Mozilla/5.0 DragonwildsSync/2.0 RecommendedMods",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=5) as response:
+        body = response.read(1_000_001).decode("utf-8", "replace")
+    meta: dict[str, str] = {}
+    for key, value in _META_RE.findall(body):
+        meta[str(key).casefold()] = html.unescape(value).strip()
+    for value, key in _META_RE_REVERSED.findall(body):
+        meta.setdefault(str(key).casefold(), html.unescape(value).strip())
+    image = _clean_url(meta.get("og:image") or meta.get("twitter:image") or meta.get("twitter:image:src"))
+    description = html.unescape(str(meta.get("og:description") or meta.get("description") or "")).strip()
+    title = html.unescape(str(meta.get("og:title") or meta.get("twitter:title") or "")).strip()
+    return {"artwork_url": image, "page_description": description[:600], "page_title": title[:160]}
 
 
 def normalize_mod(raw: object, *, source_name: str, source_url: str) -> dict | None:
@@ -36,25 +77,64 @@ def normalize_mod(raw: object, *, source_name: str, source_url: str) -> dict | N
         file_id = int(raw.get("file_id")) if raw.get("file_id") not in (None, "", "MULTIPLE") else None
     except (TypeError, ValueError):
         file_id = None
-    targets = raw.get("targets") if isinstance(raw.get("targets"), list) else str(raw.get("platform") or "").replace("CLENT", "CLIENT").split(",")
+    targets = raw.get("targets") if isinstance(raw.get("targets"), list) else str(raw.get("platform") or raw.get("side") or "").replace("CLENT", "CLIENT").split(",")
     targets = [str(value).strip().lower()[:24] for value in targets if str(value).strip()][:8]
+    provider = str(raw.get("provider") or ("nexus" if "nexusmods.com" in page_url.casefold() else ("github" if "github.com" in page_url.casefold() else "community")))[:40]
+    artwork = _clean_url(raw.get("banner_url") or raw.get("artwork_url") or raw.get("image_url") or raw.get("icon_url"))
+    icon = _clean_url(raw.get("icon_url"))
+    # Direct installation is opt-in from the curator JSON. A normal mod page is
+    # never guessed to be a downloadable archive, particularly for Nexus.
+    download = _clean_url(raw.get("download_url") or raw.get("direct_download_url"))
     return {
-        "id": str(raw.get("id") or f"nexus:{mod_id or page_url}:{file_id or name.casefold()}")[:240],
+        "id": str(raw.get("id") or f"{provider}:{mod_id or page_url}:{file_id or name.casefold()}")[:240],
         "name": name,
         "page_url": page_url,
-        "provider": str(raw.get("provider") or ("nexus" if "nexusmods.com" in page_url.casefold() else "community"))[:40],
+        "provider": provider,
         "game_domain": str(raw.get("game_domain") or "runescapedragonwilds")[:80],
         "mod_id": mod_id,
         "file_id": file_id,
         "author": str(raw.get("author") or raw.get("modder") or "")[:120],
         "author_url": _clean_url(raw.get("author_url") or raw.get("modder_link")),
         "targets": targets,
+        "side": "/".join(value.upper() for value in targets)[:80],
         "change": str(raw.get("change") or "")[:80],
         "mod_type": str(raw.get("mod_type") or raw.get("type") or "")[:40],
-        "description": str(raw.get("description") or "")[:600],
+        "category": str(raw.get("category") or raw.get("mod_type") or raw.get("type") or "")[:60],
+        "description": str(raw.get("description") or raw.get("summary") or "")[:600],
+        "version": str(raw.get("version") or "")[:80],
+        "artwork_url": artwork,
+        "icon_url": icon,
+        "download_url": download,
+        "install_capable": bool(download),
         "source_name": source_name[:120],
         "source_url": source_url[:2048],
     }
+
+
+def _enrich_public_artwork(mods: list[dict], *, limit: int = 80) -> None:
+    """Fill missing artwork from public mod-page metadata, best effort only."""
+    cache: dict[str, dict] = {}
+    attempted = 0
+    for item in mods:
+        if item.get("artwork_url") or attempted >= limit:
+            continue
+        page = _clean_url(item.get("page_url"))
+        if not page:
+            continue
+        host = urllib.parse.urlparse(page).netloc.casefold()
+        # Public scraping is intentionally narrow: Nexus pages and GitHub pages
+        # are presentation sources; arbitrary curator domains are not crawled.
+        if not (host == "github.com" or host.endswith(".github.com") or host == "nexusmods.com" or host.endswith(".nexusmods.com")):
+            continue
+        attempted += 1
+        try:
+            info = cache.setdefault(page, _public_page_metadata(page))
+        except Exception:
+            info = {}
+        if info.get("artwork_url"):
+            item["artwork_url"] = info["artwork_url"]
+        if not item.get("description") and info.get("page_description"):
+            item["description"] = info["page_description"]
 
 
 def normalize_feed(payload: object, *, source_name: str, source_url: str) -> dict:
@@ -62,7 +142,7 @@ def normalize_feed(payload: object, *, source_name: str, source_url: str) -> dic
     rows = payload.get("mods") if isinstance(payload.get("mods"), list) else []
     mods = [item for item in (normalize_mod(row, source_name=source_name, source_url=source_url) for row in rows) if item]
     return {
-        "name": str(payload.get("name") or source_name or "Community Recommendations")[:120],
+        "name": str(payload.get("name") or source_name or "Dragonwilds Sync Recommended Mods")[:120],
         "description": str(payload.get("description") or "")[:600],
         "criteria": str(payload.get("criteria") or "")[:1000],
         "source_url": source_url,
@@ -74,8 +154,8 @@ def builtin_recommendations() -> dict:
     try:
         payload = json.loads(_resource_file().read_text(encoding="utf-8-sig"))
     except (OSError, ValueError, TypeError):
-        payload = {"name": "Creator Recommended Mods", "mods": []}
-    return normalize_feed(payload, source_name="Creator Recommended Mods", source_url=OFFICIAL_FEED_URL)
+        payload = {"name": "Dragonwilds Sync Recommended Mods", "mods": []}
+    return normalize_feed(payload, source_name="Dragonwilds Sync Recommended Mods", source_url=OFFICIAL_FEED_URL)
 
 
 def fetch_feed(url: str, *, name: str = "Community Recommendations") -> dict:
@@ -93,10 +173,10 @@ def refresh_recommendations(config: object) -> dict:
     creator_url = _clean_url(config.get("creator_feed_url")) or OFFICIAL_FEED_URL
     errors: list[str] = []
     try:
-        creator = fetch_feed(creator_url, name="Creator Recommended Mods")
+        creator = fetch_feed(creator_url, name="Dragonwilds Sync Recommended Mods")
     except Exception as exc:
         creator = builtin_recommendations()
-        errors.append(f"Creator feed: {exc}")
+        errors.append(f"Dragonwilds Sync feed: {exc}")
     feeds = [{**creator, "kind": "creator"}]
     for source in config.get("community_sources") or []:
         if not isinstance(source, dict) or source.get("enabled", True) is False:
@@ -116,5 +196,7 @@ def refresh_recommendations(config: object) -> dict:
             key = str(item.get("id") or item.get("page_url") or "").casefold()
             if not key or key in seen:
                 continue
-            seen.add(key); mods.append(item)
+            seen.add(key)
+            mods.append(item)
+    _enrich_public_artwork(mods)
     return {"feeds": feeds, "mods": mods, "errors": errors}

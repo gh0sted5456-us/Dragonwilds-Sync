@@ -33,13 +33,14 @@ def test_character_and_world_ui_contract():
     assert "resize:both" in styles and ".desktop-window.minimized { display:none !important; }" in styles
 
 
-def test_character_save_and_optional_lootmenu_contract():
+def test_character_save_and_external_recommendation_contract():
     profiles = (ROOT / "backend" / "character_profiles.py").read_text(encoding="utf-8")
     assert '"personal": 79' in profiles
     assert 'params[slot] = str(resolved["id"])' in profiles
-    bundled = ROOT / "resources" / "OptionalMods"
-    assert (bundled / "LootMenu-1.0.4.zip").is_file()
-    assert (bundled / "README.md").is_file()
+    assert not (ROOT / "resources" / "OptionalMods" / "LootMenu-1.0.4.zip").exists()
+    recommendations = json.loads((ROOT / "resources" / "recommended-mods.json").read_text(encoding="utf-8"))
+    assert recommendations.get("schema") == "dragonwilds-sync-recommendations/v1"
+    assert all(row.get("page_url") for row in recommendations.get("mods") or [])
     sync_engine = (ROOT / "backend" / "sync_engine.py").read_text(encoding="utf-8")
     assert "install_admin_tools_companion(exe_path)" not in sync_engine
 
@@ -103,7 +104,7 @@ def test_admin_relaunch_and_rsdw_toolkit_contracts():
     assert "First-run adoption" in service and 'client_state["live_world_id"] = profile_id' in service
     sync_engine = (ROOT / "backend" / "sync_engine.py").read_text(encoding="utf-8")
     local_world = (ROOT / "backend" / "local_world.py").read_text(encoding="utf-8")
-    assert "${tabButton('console','Console')}" not in renderer
+    assert "${tabButton('console','Console')}" in renderer
     assert '"dragonwildssyncplayertracker"' not in sync_engine
     assert '"dragonwildssyncplayertracker"' not in local_world
     server_engine = (ROOT / "backend" / "server_engine.py").read_text(encoding="utf-8")
@@ -306,7 +307,7 @@ def test_world_placards_are_discovered_from_save_names():
 
 if __name__ == "__main__":
     test_character_and_world_ui_contract()
-    test_character_save_and_optional_lootmenu_contract()
+    test_character_save_and_external_recommendation_contract()
     test_portable_item_manifest_replaces_runtime_companion()
     test_animated_startup_splash_is_packaged()
     test_local_appdata_migration_and_default_off_tips()

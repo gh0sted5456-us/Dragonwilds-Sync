@@ -8,7 +8,7 @@ const projectRoot = path.resolve(__dirname, '..');
 const outputRoot = path.resolve(
   process.env.DWSYNC_RAW_OUTPUT ||
   process.argv[2] ||
-  path.join(projectRoot, 'Codex Outputs', 'DragonwildsSync_V1_Raw_Source'),
+  path.join(projectRoot, 'Codex Outputs', 'DragonwildsSync_V2_Raw_Source'),
 );
 
 const sourceDirectories = [
@@ -104,7 +104,7 @@ for (const directory of sourceDirectories) copyRequired(directory);
 for (const file of sourceFiles) copyRequired(file);
 
 const generated = new Date().toISOString();
-const manifest = `# Dragonwilds Sync V1 Raw Source\n\nGenerated: ${generated}\n\nThis folder is a reproducible Windows source/build workspace. Generated dependency and compiler outputs are intentionally omitted.\n\n## Build\n\n- Windows: run \`build.bat\` or \`npm run build:win\`.\n- Verification only: run \`npm ci\`, then \`npm run verify\`.\n\nThe build restores pinned Node/Python dependencies, regenerates Monaco under \`renderer/vendor\`, verifies the service and renderer, and produces the portable Windows executable. Linux packaging and runtime support are intentionally not included in v1.1.9.\n\nHelp screenshots, third-party attribution, runtime bootstrap archives, tests, and release documentation are included. User data, passwords, server profiles, game saves, caches, logs, dependency folders, and compiled release output are not included.\n`;
+const manifest = `# Dragonwilds Sync V2 Raw Source\n\nGenerated: ${generated}\n\nThis folder is a reproducible Windows source/build workspace. Generated dependency and compiler outputs are intentionally omitted.\n\n## Build\n\n- Windows: run \`build.bat\` or \`npm run build:win\`.\n- Verification only: run \`npm ci\`, then \`npm run verify\`.\n\nThe build restores pinned Node/Python dependencies, regenerates Monaco under \`renderer/vendor\`, verifies the service and renderer, and produces the portable Windows executable. Linux packaging and runtime support are intentionally not included in v2.0.0.\n\nHelp screenshots, third-party attribution, runtime bootstrap archives, tests, and release documentation are included. User data, passwords, server profiles, game saves, caches, logs, dependency folders, and compiled release output are not included.\n`;
 fs.writeFileSync(path.join(outputRoot, 'RAW_SOURCE_CONTENTS.md'), manifest, 'utf8');
 
 const fileCount = countFiles(outputRoot);

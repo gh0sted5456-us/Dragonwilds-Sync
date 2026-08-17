@@ -46,7 +46,7 @@ def main() -> None:
     assert "row?.remove();syncNotificationCenterEmptyState();applyFilter()" in renderer
     assert 'data-notification-filter="warnings"' in renderer and ">Dismiss All<" in renderer
     assert "api.invoke('notifications.dismiss',{id}).catch" in renderer
-    # Version 1.1.9 is deliberately Windows-only. Platform telemetry may remain
+    # Version 2.0.0 is deliberately Windows-only. Platform telemetry may remain
     # defensive internally, but it must never expose the retired Linux UI.
     assert "const showLinuxSettings=false" in renderer
     assert "const nativeLinuxServer = false" in renderer

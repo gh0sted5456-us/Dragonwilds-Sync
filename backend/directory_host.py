@@ -35,14 +35,15 @@ COUNTRY_CACHE_PATH = APP_DATA_DIR / "world_ip_country_cache.json"
 DEFAULT_PORT = DEFAULT_WEBHOST_PORT
 REMOTE_PERMISSION_DEFAULTS = {
     "view_overview": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
-    "view_config": True, "write_config": False, "view_audit": True, "send_announcements": False,
+    "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False,
+    "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False,
     "start": True, "stop": True, "restart": True, "refresh": True,
 }
 
 
 PUBLIC_OPENAPI = {
     "openapi": "3.1.0",
-    "info": {"title": "Dragonwilds Sync Directory API", "version": "1.1.9",
+    "info": {"title": "Dragonwilds Sync Directory API", "version": "2.0.0",
              "description": "Public-safe native and Sync-enhanced Dragonwilds World discovery."},
     "paths": {
         "/worlds": {"get": {"summary": "Read the federated compatibility manifest"}},
@@ -72,6 +73,28 @@ def _directory_icon_bytes() -> bytes:
         try:
             payload = candidate.read_bytes()
             if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+                return payload
+        except OSError:
+            continue
+    return b""
+
+
+def _platform_icon_bytes(name: str) -> bytes:
+    """Serve only the five bundled, presentation-only platform marks."""
+    allowed = {"steam", "epic", "nintendo", "playstation", "xbox"}
+    key = str(name or "").casefold().removesuffix(".svg")
+    if key not in allowed:
+        return b""
+    bundle_root = getattr(sys, "_MEIPASS", "")
+    candidates = []
+    if bundle_root:
+        candidates.append(Path(bundle_root) / "renderer" / "assets" / "platforms" / f"{'epicgames' if key == 'epic' else key}.svg")
+        candidates.append(Path(bundle_root) / "platforms" / f"{'epicgames' if key == 'epic' else key}.svg")
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "platforms" / f"{'epicgames' if key == 'epic' else key}.svg")
+    for candidate in candidates:
+        try:
+            payload = candidate.read_bytes()
+            if payload.lstrip().startswith(b"<svg"):
                 return payload
         except OSError:
             continue
@@ -484,6 +507,7 @@ class DirectoryHost:
         return {
             "id": stable[:240], "world_name": world_name,
             "description": str(row.get("description") or presentation.get("description") or "")[:600],
+            "community_rules": str(row.get("community_rules") or presentation.get("community_rules") or "")[:4000],
             "tags": [str(value)[:40] for value in tags if str(value).strip()][:16],
             "game_tags": [str(value)[:40] for value in game_tags if str(value).strip()][:16],
             "sync_tags": [str(value)[:40] for value in sync_tags if str(value).strip()][:16],
@@ -505,6 +529,11 @@ class DirectoryHost:
             },
             "audience": str(row.get("audience") or presentation.get("audience") or "general")[:24],
             "community": row.get("community") if isinstance(row.get("community"), dict) else {},
+            "platform_compatibility": {
+                "pc": True,
+                **{key: bool((row.get("platform_compatibility") or presentation.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"}))
+                   for key in ("steam", "epic", "nintendo", "playstation", "xbox")},
+            },
             "sync_ready": sync_ready, "sync_protocol": str(row.get("protocol") or row.get("sync_protocol") or shared.get("protocol") or ("dragonwilds-world-sync" if sync_ready and fingerprint else ""))[:80],
             "fingerprint": fingerprint, "fingerprint_claimed": fingerprint, "fingerprint_verified": sync_ready,
             "external_ip": external_ip, "internal_ip": internal_ip, "game_port": game_port,
@@ -663,8 +692,8 @@ class DirectoryHost:
         if not permissions.get("view_maintenance"): payload.pop("maintenance", None)
         if not permissions.get("view_mods"): payload.pop("mods", None)
         if not permissions.get("view_config"): payload.pop("configs", None)
-        payload.pop("spawner", None)
-        payload.pop("console", None)
+        if not permissions.get("view_spawner"): payload.pop("spawner", None)
+        if not permissions.get("view_console"): payload.pop("console", None)
         return {**payload, "session": {key: session.get(key) for key in ("world_id", "world_name", "username", "role", "created_at", "expires_at")},
                 "permissions": permissions, "csrf": session.get("csrf"),
                 "audit": self.remote_audit(str(session.get("world_id") or "")) if permissions.get("view_audit") else []}
@@ -682,6 +711,7 @@ class DirectoryHost:
         permission_for = {"start": "start", "stop": "stop", "restart": "restart", "refresh": "refresh",
                           "mod_update": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
+                          "spawner_item": "use_spawner", "console_execute": "use_console",
                           }
         required = permission_for.get(action)
         if not required: raise ValueError("This remote command is not allowed")
@@ -1013,6 +1043,10 @@ class DirectoryHost:
                     icon = _directory_icon_bytes()
                     if not icon: self._json({"error": "icon unavailable"}, 404, cors=False); return
                     self._send(icon, "image/png", cors=False); return
+                if path.startswith("/assets/platforms/"):
+                    icon = _platform_icon_bytes(path.rsplit("/", 1)[-1])
+                    if not icon: self._json({"error": "platform icon unavailable"}, 404, cors=False); return
+                    self._send(icon, "image/svg+xml; charset=utf-8", cors=False); return
                 if path == "/landing":
                     if not directory_enabled and remote_enabled: self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
                     self._send(_blackout_html() if surface == "blackout" else _public_landing_html(), "text/html; charset=utf-8", cors=False); return

@@ -70,6 +70,7 @@ def default_singleplayer_profile(profile_id: str = SINGLEPLAYER_ID, name: str = 
         "id": pid,
         "name": display,
         "description": "Your launcher-managed local Dragonwilds World.",
+        "community_rules": "",
         "tags": ["LOCAL", "SINGLEPLAYER"],
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "singleplayer", "visibility": "private", "declared": True}),
         "is_default": pid == SINGLEPLAYER_ID,

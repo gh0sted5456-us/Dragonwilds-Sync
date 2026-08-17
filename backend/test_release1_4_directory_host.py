@@ -180,7 +180,7 @@ def main():
     shared = next(row for row in federated["worlds"] if row["world_name"] == "Shared Name")
     assert shared["players"] == 4 and shared["fingerprint"] == fingerprint
     api_spec = json.loads((ROOT / "docs" / "webhost-openapi.json").read_text(encoding="utf-8"))
-    assert api_spec["info"]["version"] == "1.1.9" and "/heartbeats" in api_spec["paths"]
+    assert api_spec["info"]["version"] == "2.0.0" and "/heartbeats" in api_spec["paths"]
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
     for marker in ("Sync Directories", "world.directory.refresh", "Website Listener", "Public joinable-World Directory", "Remote Server Admin", "application.world_directory_host.settings",
                    "Download Direct Metadata", "data-world-selector", "Shared Character Library", "Sync Website",

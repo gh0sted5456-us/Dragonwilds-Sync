@@ -37,6 +37,30 @@ def main():
         assert [row["name"] for row in sources] == ["Primary", "Second"]
         assert sources[0]["url"] == "https://one.example" and sources[0]["publisher_token"] == "free-token"
 
+        # A pasted base URL or full /manifest URL is accepted, and the same
+        # fingerprint advertised by multiple providers remains one World card.
+        old_directory_path = world_directory.DIRECTORY_PATH
+        old_fetch, old_probe = world_directory._fetch_remote, world_directory.probe_heartbeat
+        world_directory.DIRECTORY_PATH = root / "multi-provider-directory.json"
+        world_directory._PROBE_CACHE.clear()
+        fingerprint = "dws1-0123456789abcdef01234567"
+        heartbeat = {"protocol": world_directory.PROTOCOL, "fingerprint": fingerprint,
+                     "world_name": "One World", "external_ip": "203.0.113.77",
+                     "game_port": 7777, "sync_port": 27051}
+        world_directory._fetch_remote = lambda _url, _timeout: [dict(heartbeat)]
+        world_directory.probe_heartbeat = lambda row, _timeout=2.0: {**row, "fingerprint": fingerprint, "verified": True, "status": {}}
+        try:
+            merged = world_directory.discover_sync_worlds(directory_sources=[
+                {"name": "Base Provider", "url": "https://one.example"},
+                {"name": "Manifest Provider", "url": "https://two.example/manifest"},
+            ])
+            assert len(merged["worlds"]) == 1
+            assert len(merged["worlds"][0]["directory_sources"]) == 2
+        finally:
+            world_directory.DIRECTORY_PATH = old_directory_path
+            world_directory._fetch_remote, world_directory.probe_heartbeat = old_fetch, old_probe
+            world_directory._PROBE_CACHE.clear()
+
         old_server_roots = (character_submissions.SERVER_PROFILES_DIR, character_profiles.APP_DATA_DIR)
         old_scan = character_submissions.defender_scan
         app_root = root / "appdata"; server_root = app_root / "server_profiles"; profile_id = "0123456789abcdef"

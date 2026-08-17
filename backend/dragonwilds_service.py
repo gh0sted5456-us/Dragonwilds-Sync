@@ -54,7 +54,7 @@ from world_save_distribution import normalize_policy as normalize_worldsave_poli
 from server_scheduler import arm_schedule, normalize_notice, normalize_schedule, tick_schedule
 from player_tracker import PLAYER_BRIDGE, PLAYER_SERVICE, world_to_map
 from spawner_catalog import catalog as spawner_catalog, refresh_spawn_catalog, spawn_command
-from rsdw_toolkit import command_catalog as rsdw_command_catalog, history as rsdw_console_history, record_event as record_rsdw_event, status as rsdw_toolkit_status, validate_command as validate_rsdw_command
+from rsdw_toolkit import command_catalog as rsdw_command_catalog, history as rsdw_console_history, record_event as record_rsdw_event, status as rsdw_toolkit_status, suppress_roster_poll_logging, validate_command as validate_rsdw_command
 from health_model import apply_detected_hardware_references, normalize_health_config, normalize_network_evidence
 from runtime_versions import client_runtime_status, server_runtime_stack
 from security_policy import normalize_access_policy, normalize_cidrs, VPN_PROVIDERS, REGION_LABELS
@@ -80,6 +80,7 @@ from world_directory import (discover_sync_worlds, remember_heartbeats, publish_
                              normalize_directory_sources, FINGERPRINT_RE, PROTOCOL as WORLD_SYNC_PROTOCOL)
 from directory_host import DIRECTORY_HOST, REMOTE_PERMISSION_DEFAULTS, normalize_host_config, try_upnp_mapping
 from world_classification import normalize_world_classification
+from recommendation_feeds import OFFICIAL_FEED_URL, NEXUS_ACTIVITY_URL, builtin_recommendations, refresh_recommendations
 from operator_identity import public_operator_status, verify_world_identity
 from networking import effective_game_port, manual_router_rule, normalize_publication_mode, valid_port
 from crypto_runtime import cryptography_self_test
@@ -94,6 +95,32 @@ from world_maintenance import (
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _inventory_cache(profile: dict) -> dict:
+    cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
+    units = cache.get("mods") if isinstance(cache.get("mods"), list) else []
+    return {"mods": [dict(row) for row in units if isinstance(row, dict)],
+            "updated_at": str(cache.get("updated_at") or ""), "source": str(cache.get("source") or "")}
+
+
+def _cache_local_inventory(profile_id: str, units: list[dict], *, live: bool, source: str = "rescan") -> dict:
+    profile = load_singleplayer_profile(profile_id)
+    cache = {"mods": [dict(row) for row in units if isinstance(row, dict)], "updated_at": now_iso(),
+             "source": source, "live_when_scanned": bool(live)}
+    profile["metadata_cache"] = cache
+    save_singleplayer_profile(profile, profile_id)
+    return cache
+
+
+def _cache_server_inventory(profile_id: str, units, *, active: bool, source: str = "rescan") -> dict:
+    rows = [unit.public(SHARE.live_keys if active else set()) for unit in units if user_visible_mod_unit(unit)]
+    profile = load_server_profile(profile_id)
+    if profile:
+        profile["metadata_cache"] = {"mods": rows, "updated_at": now_iso(), "source": source,
+                                     "active_when_scanned": bool(active)}
+        save_server_profile(profile_id, profile)
+    return {"mods": rows, "updated_at": str((profile or {}).get("metadata_cache", {}).get("updated_at") or ""), "source": source}
 
 
 def _detect_existing_server_mods(selected: str) -> dict:
@@ -150,17 +177,6 @@ def _dragonwilds_client_running() -> bool:
         return result.returncode == 0 and bool((result.stdout or "").strip())
     except Exception:
         return False
-
-
-def _optional_mod_archive(name: str) -> Path:
-    relative = Path("resources") / "OptionalMods" / name
-    candidates = [Path(__file__).resolve().parent.parent / relative]
-    if getattr(sys, "frozen", False):
-        candidates.insert(0, Path(sys.executable).resolve().parent.parent / relative)
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    raise FileNotFoundError(f"Bundled optional mod is missing: {name}")
 
 
 def _start_profile_upnp(profile_id: str) -> None:
@@ -543,6 +559,11 @@ def public_state(state: dict) -> dict:
     if ENGINE.active_profile_id is None and active_server_id:
         ENGINE.active_profile_id = active_server_id
     clone = deepcopy(state)
+    recommendations = clone.setdefault("application", {}).setdefault("recommended_mods", {})
+    if not recommendations.get("mods"):
+        builtin = builtin_recommendations()
+        recommendations["feeds"] = [{**builtin, "kind": "creator"}]
+        recommendations["mods"] = list(builtin.get("mods") or [])
     remote = (((clone.get("application") or {}).get("world_directory_host") or {}).get("remote_admin") or {})
     if isinstance(remote, dict):
         remote["users"] = [{key: user.get(key) for key in ("username", "world_id", "enabled", "created_at", "permissions")}
@@ -909,6 +930,43 @@ def handle(method: str, params: dict) -> object:
     set_defender_review_enabled(bool((state.get("application") or {}).get("defender_review_enabled", True)))
 
     if method in ("bootstrap", "state.get"):
+        return public_state(state)
+
+    if method == "application.recommended_mods.refresh":
+        application = state.setdefault("application", {})
+        config = application.setdefault("recommended_mods", {})
+        result = refresh_recommendations(config)
+        config["creator_feed_url"] = str(config.get("creator_feed_url") or OFFICIAL_FEED_URL)
+        config["nexus_activity_url"] = NEXUS_ACTIVITY_URL
+        config["feeds"] = result["feeds"]
+        config["mods"] = result["mods"]
+        config["last_refresh_at"] = now_iso()
+        config["last_error"] = " · ".join(result["errors"])[:1000]
+        save_state(state)
+        return {"ok": not result["errors"], "errors": result["errors"], "state": public_state(state)}
+
+    if method == "application.recommended_mods.settings":
+        application = state.setdefault("application", {})
+        config = application.setdefault("recommended_mods", {})
+        if "creator_feed_url" in params:
+            url = str(params.get("creator_feed_url") or OFFICIAL_FEED_URL).strip()
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+                raise ValueError("Creator recommendation feed must use a valid HTTP(S) address")
+            config["creator_feed_url"] = url[:2048]
+        if "community_sources" in params:
+            if not isinstance(params.get("community_sources"), list):
+                raise ValueError("Community recommendation sources must be a list")
+            sources = []
+            for raw in params.get("community_sources")[:20]:
+                if not isinstance(raw, dict):
+                    continue
+                url = str(raw.get("url") or "").strip(); parsed = urllib.parse.urlparse(url)
+                if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+                    continue
+                sources.append({"id": str(raw.get("id") or secrets.token_hex(6))[:80], "name": str(raw.get("name") or "Community Recommendations")[:120], "url": url[:2048], "enabled": raw.get("enabled", True) is not False})
+            config["community_sources"] = sources
+        save_state(state)
         return public_state(state)
 
     if method == "application.storage.paths":
@@ -2023,31 +2081,6 @@ def handle(method: str, params: dict) -> object:
             save_state(state)
         return {"ok": True, "rsdw_cache": result, "state": public_state(state)}
 
-    if method == "application.optional_mod.install":
-        target = str(params.get("target") or "client").strip().casefold()
-        if target not in {"client", "server"}:
-            raise ValueError("Optional mod target must be client or server.")
-        archive = _optional_mod_archive("LootMenu-1.0.4.zip")
-        if target == "client":
-            game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
-            if not game_dir:
-                raise ValueError("Configure the Dragonwilds client root first.")
-            profile_id = _private_profile_id(state, params)
-            result = install_singleplayer_mod_zip(game_dir, str(archive), live=True, preferred_kind="ue4ss", profile_id=profile_id)
-            write_singleplayer_mods_txt(game_dir, profile_id)
-        else:
-            profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "").strip()
-            if not profile_id or not load_server_profile(profile_id):
-                raise ValueError("Choose a dedicated World profile first.")
-            install_dir, _steamcmd, _exe = _server_install_paths(state)
-            if not install_dir:
-                raise ValueError("Configure the dedicated-server root first.")
-            active = str(state.setdefault("server", {}).get("active_world_id") or "") == profile_id
-            result = install_world_mod_zip(profile_id, install_dir, str(archive), active=active, preferred_kind="ue4ss")
-        _record_notification(state, "LootMenu installed", f"The upstream optional LootMenu was installed for the selected {target} World.", "success", key=f"lootmenu:{target}:{profile_id}")
-        save_state(state)
-        return {"ok": True, "mod": "LootMenu", "version": "1.0.4", "result": result, "state": public_state(state)}
-
     if method == "singleplayer.broadcast":
         profile_id = _private_profile_id(state, params)
         state.setdefault("client", {})["active_private_world_id"] = profile_id
@@ -2126,6 +2159,10 @@ def handle(method: str, params: dict) -> object:
 
     if method == "singleplayer.players.get":
         profile_id = _private_profile_id(state, params)
+        game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+        if game_dir:
+            try: suppress_roster_poll_logging(game_dir)
+            except OSError: pass
         PLAYER_BRIDGE.demand(18.0)
         payload = PLAYER_SERVICE.status()
         profile = load_singleplayer_profile(profile_id)
@@ -2179,9 +2216,10 @@ def handle(method: str, params: dict) -> object:
         profile = load_singleplayer_profile(profile_id)
         previous_name = str(profile.get("name") or "")
         incoming = params.get("profile") if isinstance(params.get("profile"), dict) else params
-        for key in ("name", "description"):
+        for key in ("name", "description", "community_rules"):
             if key in incoming:
-                profile[key] = str(incoming.get(key) or "")[:300 if key == "description" else 80] or ("SinglePlayer" if key == "name" else "")
+                limit = 80 if key == "name" else (300 if key == "description" else 4000)
+                profile[key] = str(incoming.get(key) or "")[:limit] or ("SinglePlayer" if key == "name" else "")
         if "tags" in incoming:
             profile["tags"] = [str(x).strip()[:30] for x in (incoming.get("tags") or []) if str(x).strip()][:12]
         if "classification" in incoming:
@@ -2332,8 +2370,18 @@ def handle(method: str, params: dict) -> object:
             save_state(state)
             live_world_id = profile_id
         live = live_world_id == profile_id
-        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
-        return {"units": units, "live": live, "state": public_state(state), "warnings": pop_singleplayer_scan_warnings()}
+        profile = load_singleplayer_profile(profile_id)
+        cached = _inventory_cache(profile)
+        rescanned = bool(params.get("rescan")) or not cached["updated_at"]
+        if rescanned:
+            units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+            cached = _cache_local_inventory(profile_id, units, live=live)
+            warnings = pop_singleplayer_scan_warnings()
+        else:
+            units = [{**row, "live": live} for row in cached["mods"]]
+            warnings = []
+        return {"units": units, "live": live, "cache": {**cached, "mods": None}, "rescanned": rescanned,
+                "state": public_state(state), "warnings": warnings}
 
     if method == "singleplayer.mod.detect":
         return {"kind": detect_local_mod_zip_kind(str(params.get("zip_path") or ""))}
@@ -2347,7 +2395,9 @@ def handle(method: str, params: dict) -> object:
         if live:
             snapshot_client_world(profile_id, Path(game_dir))
             result["mods_txt"] = write_singleplayer_mods_txt(game_dir, profile_id)
-        return {"result": result, "units": scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id), "state": public_state(state)}
+        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
+        return {"result": result, "units": units, "state": public_state(state)}
 
     if method == "singleplayer.mod.update":
         profile_id = _private_profile_id(state, params)
@@ -2360,6 +2410,7 @@ def handle(method: str, params: dict) -> object:
             distribution = singleplayer_distribution_units(game_dir, profile_id)
             profile_override = {"name": local.get("name") or "Private World", "description": local.get("description") or "", "tags": list(local.get("tags") or ["PRIVATE", "CO-OP"]), "classification": normalize_world_classification({**(local.get("classification") or {}), "host_type": "coop", "visibility": "friends"}, tags=local.get("tags") or [], host_type="coop", visibility="friends"), "character_sharing": {"enabled": False}, "icon_b64": local.get("icon_b64") or "", "banner_b64": local.get("banner_b64") or "", "health_config": normalize_health_config(local.get("health_config")), "sync_config": cfg, "dedicated_config": {"port": 7777}, "mods_txt_mode": "auto", "mods_txt_writer": "client_generate", "hierarchy": {}, "feedback": [], "player_map": {"allow_remote_clients": False}, "world_save_download": {"enabled": False}, "service_notice": {}}
             SHARE.publish(profile_id, distribution, str(cfg.get("password") or ""), str(cfg.get("server_key") or ""), int(cfg.get("sync_port") or 27051), hw_stats=gather_server_hardware_stats(), game_port=7777, broadcast=bool(cfg.get("lan_broadcast", True)), public_ip=str(cfg.get("external_ip") or local.get("public_ip") or ""), game_root=game_dir, share_access_key=str(cfg.get("share_access_key") or ""), allow_shared_access=True, profile_override=profile_override, persist_profile=False)
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"units": units, "state": public_state(state)}
 
     if method == "singleplayer.mod.move":
@@ -2371,6 +2422,7 @@ def handle(method: str, params: dict) -> object:
             game_dir, str(params.get("key") or ""), int(params.get("direction") or 0),
             target_index=None if target_index is None else int(target_index), live=live, profile_id=profile_id)
         if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"units": units, "state": public_state(state)}
 
     if method == "singleplayer.mod.remove":
@@ -2379,7 +2431,9 @@ def handle(method: str, params: dict) -> object:
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
         result = remove_singleplayer_mod(game_dir, str(params.get("key") or ""), live=live, profile_id=profile_id)
         if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
-        return {"result": result, "units": scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id), "state": public_state(state)}
+        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
+        return {"result": result, "units": units, "state": public_state(state)}
 
     if method == "singleplayer.mod.files":
         profile_id = _private_profile_id(state, params)
@@ -2421,6 +2475,8 @@ def handle(method: str, params: dict) -> object:
             # Reuse the canonical metadata refresh/publish path so an atomic
             # co-op config write immediately becomes the next client manifest.
             handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or "")})
+        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"result": result, "state": public_state(state)}
 
     if method == "singleplayer.mod.file.create":
@@ -2433,6 +2489,8 @@ def handle(method: str, params: dict) -> object:
         if live: snapshot_client_world(profile_id, Path(game_dir))
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or "")})
+        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
         state.setdefault("notifications", []).append({"time": now_iso(), "title": "Mod file added", "detail": result["relative_path"]})
         save_state(state)
         return {"result": result, "state": public_state(state)}
@@ -2448,6 +2506,8 @@ def handle(method: str, params: dict) -> object:
             snapshot_client_world(profile_id, Path(game_dir))
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or "")})
+        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+        _cache_local_inventory(profile_id, units, live=live, source="apply")
         action = "copied" if method.endswith(".copy") else "deleted"
         state.setdefault("notifications", []).append({"time": now_iso(), "title": f"Mod file {action}",
                                                        "detail": str(result.get("relative_path") or "")})
@@ -3117,6 +3177,7 @@ def handle(method: str, params: dict) -> object:
                 world.setdefault("identity", {})["server_profile_id_hint"] = manifest.get("profile_id") or ""
                 world["presentation"] = {
                     "description": manifest.get("description") or "",
+                    "community_rules": str(manifest.get("community_rules") or "")[:4000],
                     "tags": manifest.get("tags") or [],
                     "mod_badges": manifest.get("mod_badges") or [],
                     "icon_b64": manifest.get("icon_b64") or world.get("presentation", {}).get("icon_b64", ""),
@@ -3255,6 +3316,7 @@ def handle(method: str, params: dict) -> object:
         world.setdefault("identity", {})["server_profile_id_hint"] = manifest.get("profile_id") or ""
         world["presentation"] = {
             "description": manifest.get("description") or "",
+            "community_rules": str(manifest.get("community_rules") or "")[:4000],
             "tags": manifest.get("tags") or [],
             "mod_badges": manifest.get("mod_badges") or [],
             "icon_b64": manifest.get("icon_b64") or world.get("presentation", {}).get("icon_b64", ""),
@@ -3421,6 +3483,8 @@ def handle(method: str, params: dict) -> object:
             profile["name"] = str(params.get("name") or profile.get("name") or "World").strip() or "World"
         if "description" in params:
             profile["description"] = str(params.get("description") or "")[:300]
+        if "community_rules" in params:
+            profile["community_rules"] = str(params.get("community_rules") or "")[:4000]
         if "tags" in params:
             tags = params.get("tags") if isinstance(params.get("tags"), list) else []
             blocked = re.compile(r"(?:n[i1]gg|f[a@]gg|k[i1]ke|sp[i1]c|c[u*]nt)", re.IGNORECASE)
@@ -3435,7 +3499,7 @@ def handle(method: str, params: dict) -> object:
             profile["audience"] = audience
         if "platform_compatibility" in params and isinstance(params.get("platform_compatibility"), dict):
             requested = params["platform_compatibility"]
-            profile["platform_compatibility"] = {"pc": True, **{key: bool(requested.get(key, False)) for key in ("nintendo", "playstation", "xbox")}}
+            profile["platform_compatibility"] = {"pc": True, **{key: bool(requested.get(key, key in {"steam", "epic"})) for key in ("steam", "epic", "nintendo", "playstation", "xbox")}}
         if "classification" in params:
             profile["classification"] = normalize_world_classification(
                 params.get("classification"), tags=profile.get("tags") or [], host_type="dedicated", visibility="public")
@@ -3617,6 +3681,8 @@ def handle(method: str, params: dict) -> object:
         server_exe = str(dedicated.get("server_exe") or find_dedicated_server_exe(profile) or "")
         result = ENGINE.activate_world(outgoing, profile_id, game_root, server_exe)
         state["server"]["active_world_id"] = profile_id
+        units = scan_mod_units(profile_id, game_root) if game_root else []
+        _cache_server_inventory(profile_id, units, active=True, source="apply")
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
@@ -3629,6 +3695,8 @@ def handle(method: str, params: dict) -> object:
         root = server_root_for_profile(profile)
         executable = find_dedicated_server_exe(profile)
         result = ENGINE.unload_world(profile_id, root, executable)
+        units = scan_profile_snapshot_units(profile_id)
+        _cache_server_inventory(profile_id, units, active=False, source="apply")
         state["server"]["active_world_id"] = ""
         _record_notification(state, "Hosted World unloaded", f"{profile.get('name') or profile_id} captured; the shared server directory is back to core state.", "success", key=f"server-unloaded:{profile_id}")
         save_state(state)
@@ -3766,16 +3834,23 @@ def handle(method: str, params: dict) -> object:
         profile = load_server_profile(profile_id)
         if not profile:
             raise KeyError("Server World not found")
-        if state["server"].get("active_world_id") == profile_id:
+        active = state["server"].get("active_world_id") == profile_id
+        cached = _inventory_cache(profile)
+        rescanned = bool(params.get("rescan")) or not cached["updated_at"]
+        if rescanned:
             root = server_root_for_profile(profile)
-            # Inventory rendering must remain read-only. Runtime self-heal is
-            # enforced by explicit Scan/Activate/Publish/Start operations; merely
-            # opening a World placard must never trigger downloads or mutate disk.
-            units = scan_mod_units(profile_id, root) if root else []
+            # Inventory rendering remains read-only. Only the first uncached load
+            # or an explicit Rescan walks the mod tree.
+            units = scan_mod_units(profile_id, root) if active and root else scan_profile_snapshot_units(profile_id)
+            cached = _cache_server_inventory(profile_id, units, active=active)
+            rows = cached["mods"]
+            warnings = pop_server_scan_warnings()
         else:
-            units = scan_profile_snapshot_units(profile_id)
-        return {"units": [u.public(SHARE.live_keys if state["server"].get("active_world_id") == profile_id else set()) for u in units if user_visible_mod_unit(u)],
-                "share": SHARE.status(), "warnings": pop_server_scan_warnings()}
+            rows = [{**row, "live": str(row.get("key") or "") in (SHARE.live_keys if active else set())}
+                    for row in cached["mods"]]
+            warnings = []
+        return {"units": rows, "cache": {**cached, "mods": None}, "rescanned": rescanned,
+                "share": SHARE.status(), "warnings": warnings}
 
     if method == "server.world.mod.update":
         profile_id = str(params.get("id") or "")
@@ -3837,6 +3912,7 @@ def handle(method: str, params: dict) -> object:
             else:
                 unit.source = normalize_mod_source({"provider": "manual"})
         persist_unit_overrides(profile_id, units)
+        _cache_server_inventory(profile_id, units, active=active, source="apply")
         if active and SHARE.status().get("serving"):
             ENGINE.publish(profile_id)
         return {"units": [u.public(SHARE.live_keys if active else set()) for u in units], "state": public_state(state)}
@@ -3844,6 +3920,14 @@ def handle(method: str, params: dict) -> object:
     if method == "server.world.mod.classify":
         profile_id = str(params.get("id") or "")
         result = set_mod_classification_fast(profile_id, str(params.get("key") or ""), str(params.get("classification") or ""))
+        profile = load_server_profile(profile_id)
+        cache = _inventory_cache(profile or {})
+        if cache["updated_at"]:
+            cache["mods"] = [{**row, "classification": result["classification"],
+                              "distribution": "client_required" if result["classification"] == "player_required" else "server_retained"}
+                             if str(row.get("key") or "") == result["key"] else row for row in cache["mods"]]
+            profile["metadata_cache"] = {**cache, "updated_at": now_iso(), "source": "apply"}
+            save_server_profile(profile_id, profile)
         return {"unit": result}
 
     if method == "server.world.mod.move":
@@ -3874,7 +3958,8 @@ def handle(method: str, params: dict) -> object:
                 ordered = iter(group_units)
                 units = [next(ordered) if u.group == unit.group else u for u in units]
                 persist_unit_overrides(profile_id, units)
-        return {"units": [u.public(SHARE.live_keys if active else set()) for u in units], "state": public_state(state)}
+        cached = _cache_server_inventory(profile_id, units, active=active, source="apply")
+        return {"units": cached["mods"], "state": public_state(state)}
 
     if method == "server.world.mod.install":
         profile_id = str(params.get("id") or "")
@@ -3885,7 +3970,8 @@ def handle(method: str, params: dict) -> object:
         if active and not root: raise ValueError("Set the machine-wide Server Directory before installing World mods.")
         result = install_world_mod_zip(profile_id, root, str(params.get("zip_path") or ""), active=active, preferred_kind=params.get("kind"))
         units = scan_mod_units(profile_id, root) if active else scan_profile_snapshot_units(profile_id)
-        return {"result": result, "units": [u.public(SHARE.live_keys if active else set()) for u in units], "state": public_state(state)}
+        cached = _cache_server_inventory(profile_id, units, active=active, source="apply")
+        return {"result": result, "units": cached["mods"], "state": public_state(state)}
 
     if method == "server.world.section.push":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
@@ -3896,8 +3982,9 @@ def handle(method: str, params: dict) -> object:
             raise KeyError("Server World not found")
         root = server_root_for_profile(profile)
         units = bulk_set_classification(profile_id, root, str(params.get("section") or ""), "player_required")
+        cached = _cache_server_inventory(profile_id, units, active=True, source="apply")
         result = ENGINE.publish(profile_id)
-        return {"units": [u.public(SHARE.live_keys) for u in units], "result": result, "state": public_state(state)}
+        return {"units": cached["mods"], "result": result, "state": public_state(state)}
 
     if method == "server.world.publish":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
@@ -4085,11 +4172,16 @@ def handle(method: str, params: dict) -> object:
         return {"events": tick.get("events") or [], "ran": False, "state": public_state(state)}
 
     if method == "server.players.get":
+        requested_profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        requested_profile = load_server_profile(requested_profile_id) if requested_profile_id else {}
+        if requested_profile:
+            try: suppress_roster_poll_logging(server_root_for_profile(requested_profile))
+            except OSError: pass
         PLAYER_BRIDGE.demand(18.0)
         runtime = ENGINE.status()
         PLAYER_SERVICE.update_log_players(runtime.get("players") or [])
         payload = PLAYER_SERVICE.status()
-        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        profile_id = requested_profile_id
         payload = player_history_payload(profile_id, payload)
         profile = load_server_profile(profile_id) if profile_id else {}
         map_cfg = dict((profile or {}).get("player_map") or {})
@@ -4996,7 +5088,10 @@ def _directory_public_worlds() -> list[dict]:
         classification = profile.get("classification") or {}; is_active = profile_id == active_id
         rows.append({
             "id": profile_id, "world_name": str(profile.get("name") or "World"), "description": str(profile.get("description") or ""),
-            "tags": list(profile.get("tags") or []), "classification": classification, "icon_b64": str(profile.get("icon_b64") or ""),
+            "community_rules": str(profile.get("community_rules") or "")[:4000],
+            "tags": list(profile.get("tags") or []), "classification": classification,
+            "platform_compatibility": dict(profile.get("platform_compatibility") or {"pc": True, "steam": True, "epic": True}),
+            "icon_b64": str(profile.get("icon_b64") or ""),
             "banner_b64": str(profile.get("banner_b64") or ""), "online": bool(is_active and runtime.get("running")),
             "players": len(runtime.get("players") or []) if is_active else 0, "max_players": int(profile.get("max_players") or 0),
             "password_required": bool(dedicated.get("world_pass")), "modded": str(classification.get("content_type") or "vanilla") != "vanilla",
@@ -5075,6 +5170,7 @@ def _directory_remote_state(profile_id: str) -> dict:
         item_catalog = {"items": [], "categories": [], "error": str(exc)}
     return {
         "profile": {"world_name": str(profile.get("name") or "World"), "description": str(profile.get("description") or ""),
+                    "community_rules": str(profile.get("community_rules") or "")[:4000],
                     "tags": list(profile.get("tags") or []), "content_type": str(classification.get("content_type") or "vanilla"),
                     "audience": str(profile.get("audience") or "general"),
                     "game_mode": str(classification.get("game_mode") or "normal"), "visibility": str(classification.get("visibility") or "public"),

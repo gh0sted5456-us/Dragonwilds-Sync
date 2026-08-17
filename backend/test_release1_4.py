@@ -194,8 +194,8 @@ def test_ui_contract():
     preload = (ROOT / "electron" / "preload.cjs").read_text(encoding="utf-8")
     meta = (ROOT / "renderer" / "release-meta.js").read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.1.9" and package.get("author") == "RSDW Modding Community"
-    assert "V1.1.9 · Portable Studio & WebHost" in meta
+    assert package["version"] == "2.0.0" and package.get("author") == "RSDW Modding Community"
+    assert "V2 · Portable Worlds, Mod Library & WebHost" in meta
 
     # Worlds route + public refresh + profile-backed Private Worlds + view modes.
     assert "world.directory.refresh" in renderer and "world.discovery.refresh" not in renderer

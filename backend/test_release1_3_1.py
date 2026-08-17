@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "1.1.9"
+    assert package["version"] == "2.0.0"
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")
@@ -43,7 +43,8 @@ def main():
     assert 'self.command("world.net.roster"' in tracker
     assert 'page.replace(b\'<button data-tab="map">Live Map</button>\'' not in directory_web
     assert "${tabButton('spawner',t('spawner'))}" not in renderer
-    assert "${tabButton('console','Console')}" not in renderer
+    assert "${tabButton('console','Console')}" in renderer
+    assert "RSDW Toolkit game console" in directory_web
     assert "tabButton('broadcast','Broadcast')" in renderer
     assert "Convert to Server" in renderer and "Convert to Singleplayer" in renderer
     assert "Merge Changes" in renderer and "Archive World" in renderer

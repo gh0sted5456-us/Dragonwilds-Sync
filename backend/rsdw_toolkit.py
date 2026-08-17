@@ -70,6 +70,31 @@ def status(game_root: str | Path) -> dict:
     }
 
 
+def suppress_roster_poll_logging(game_root: str | Path) -> dict:
+    """Mute only successful high-frequency roster receipts in current DevKit Lua.
+
+    Handler errors and all non-poll commands remain visible. A one-time backup
+    sits beside main.lua so an upstream update or manual rollback stays simple.
+    """
+    entry = toolkit_root(game_root) / "scripts" / "main.lua"
+    if not entry.is_file():
+        return {"changed": False, "available": False, "path": str(entry)}
+    text = entry.read_text(encoding="utf-8-sig", errors="replace")
+    marker = 'if line == "world.net.roster" then return false end'
+    if marker in text:
+        return {"changed": False, "available": True, "suppressed": True, "path": str(entry)}
+    anchor = 'if line == "player.loc" then return false end'
+    if anchor not in text:
+        return {"changed": False, "available": True, "suppressed": False, "path": str(entry), "reason": "Current RSDWTools logging hook was not recognized"}
+    backup = entry.with_name("main.lua.dwsync-roster-log-backup")
+    if not backup.exists():
+        backup.write_text(text, encoding="utf-8")
+    pending = entry.with_suffix(".lua.pending")
+    pending.write_text(text.replace(anchor, anchor + "\n    " + marker, 1), encoding="utf-8")
+    pending.replace(entry)
+    return {"changed": True, "available": True, "suppressed": True, "path": str(entry), "backup": str(backup)}
+
+
 def _expand_verb(token: str) -> list[str]:
     if "|" not in token:
         return [token]

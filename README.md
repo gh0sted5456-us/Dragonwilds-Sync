@@ -1,12 +1,12 @@
-# Dragonwilds Sync — V1.1.9
+# Dragonwilds Sync — V2.0.0
 
-Dragonwilds Sync is a Windows Electron launcher, World profile manager, synchronization client, and dedicated-server manager for RuneScape: Dragonwilds. Version 1.1.9 is portable-only; Linux packaging and runtime support are intentionally paused.
+Dragonwilds Sync is a Windows Electron launcher, World profile manager, synchronization client, and dedicated-server manager for RuneScape: Dragonwilds. Version 2.0.0 is portable-only; Linux packaging and runtime support are intentionally paused.
 
 V1 consolidates Profile/Characters, Private Worlds, public discovery, Dedicated Server, RSDW, Nexus, networking, WebHost/Remote Server, maintenance, maps, and managed windows into one implementation. Every major surface is responsive and detachable, and World profiles behave consistently whether they represent a local singleplayer save, a co-op host, a connected public World, or a dedicated server profile.
 
 ## Documentation
 
-The current documentation is in `docs/`. Begin with `WEBHOST_API.md` for federation/API hosting and `V1_1_7_FINAL_IMPLEMENTATION_AND_QA_HANDOFF.md` for the broader application contract; V1.1.9 release notes and tests supersede retired-mod claims in older documents.
+The current documentation is in `docs/`. Begin with `WEBHOST_API.md` for federation/API hosting and `V2_FINAL_IMPLEMENTATION_AND_QA_HANDOFF.md` for the consolidated application contract; V2 release notes and tests supersede retired-mod claims in older documents.
 
 - **`V1_1_7_FINAL_IMPLEMENTATION_AND_QA_HANDOFF.md`** — authoritative final contract, declared-vs-implemented audit, complete control-wiring verification plan, live acceptance matrix, and retired-feature boundaries.
 - **`WEBHOST_API.md` / `webhost-openapi.json`** — GitHub-ready WebHost federation, public manifest/API, matching, and Remote Server login contract.
@@ -20,7 +20,7 @@ The current documentation is in `docs/`. Begin with `WEBHOST_API.md` for federat
 
 ## Platform packaging
 
-Windows uses `build.bat` / `npm run build:win` and produces the portable executable. No Linux artifact, Flatpak, AppImage, native service, or Linux support claim is published for v1.1.9.
+Windows uses `build.bat` / `npm run build:win` and produces the portable executable. No Linux artifact, Flatpak, AppImage, native service, or Linux support claim is published for V2.
 
 ## Core World model
 
@@ -61,7 +61,7 @@ The browser supports:
 - World Details and connection/sync metadata;
 - Quick Launch / Send to Desktop for locally usable connected Worlds.
 
-Client **Launch** performs the World handshake, refreshes the required manifest, verifies/reconciles baseline runtimes, mods, managed configuration and character context, and then starts Dragonwilds. V1.1.9 does not inject a launcher-built Direct Connect helper mod.
+Client **Launch** performs the World handshake, refreshes the required manifest, verifies/reconciles baseline runtimes, mods, managed configuration and character context, and then starts Dragonwilds. V2 does not inject a launcher-built Direct Connect helper mod.
 
 ## WebHost and API
 

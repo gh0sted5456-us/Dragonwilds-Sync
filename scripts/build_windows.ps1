@@ -152,8 +152,7 @@ try {
 
     Write-BuildLine '[2/7] Required files'
     Test-RequiredFile 'renderer\assets\dragonwilds_icon.ico' 'Application icon'
-    Test-RequiredFile 'resources\OptionalMods\LootMenu-1.0.4.zip' 'Optional upstream LootMenu package'
-    Test-RequiredFile 'resources\OptionalMods\README.md' 'Optional mod provenance and license notice'
+    Test-RequiredFile 'resources\recommended-mods.json' 'GitHub-ready creator recommendation feed'
     Test-RequiredFile 'scripts\check_ue4ss_lua.cjs' 'UE4SS Lua syntax verifier'
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
@@ -408,12 +407,9 @@ try {
     if (-not ($asarListing | Where-Object { $_.TrimStart('/') -eq 'renderer/vendor/monaco/vs/base/worker/workerMain.js' })) { Fail-Build 'Packaged Monaco worker runtime is missing from app.asar.' }
     Write-BuildLine '[OK] Packaged Monaco Editor runtime is present.'
 
-    $packedLootMenu = Join-Path $unpacked 'resources\resources\OptionalMods\LootMenu-1.0.4.zip'
-    $packedOptionalReadme = Join-Path $unpacked 'resources\resources\OptionalMods\README.md'
-    foreach ($requiredPacked in @($packedLootMenu, $packedOptionalReadme)) {
-        if (-not (Test-Path -LiteralPath $requiredPacked -PathType Leaf)) { Fail-Build "Packaged launcher resource missing: $requiredPacked" }
-    }
-    Write-BuildLine '[OK] Packaged optional upstream mod resources are present.'
+    $packedRecommendations = Join-Path $unpacked 'resources\resources\recommended-mods.json'
+    if (-not (Test-Path -LiteralPath $packedRecommendations -PathType Leaf)) { Fail-Build "Packaged launcher resource missing: $packedRecommendations" }
+    Write-BuildLine '[OK] Packaged creator recommendation fallback is present; no third-party mod archive is bundled.'
     $bundledRuneSchema = Join-Path $ProjectRoot 'resources\RuneSchema-core-latest.zip'
     if (Test-Path -LiteralPath $bundledRuneSchema -PathType Leaf) {
         $packedRuneSchema = Join-Path $unpacked 'resources\resources\RuneSchema-core-latest.zip'

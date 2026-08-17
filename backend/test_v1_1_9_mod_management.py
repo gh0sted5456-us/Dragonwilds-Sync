@@ -55,7 +55,7 @@ def main() -> None:
     assert "application.custom_items.write_to_mod" in service and '"icon-manifest.json"' in service
     assert "origin_label" in maintenance and "config-origin-group" in renderer
 
-    print("V1.1.9 shared mod repository tests passed")
+    print("V2.0.0 shared mod repository tests passed")
 
 
 if __name__ == "__main__":

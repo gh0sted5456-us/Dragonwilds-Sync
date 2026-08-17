@@ -57,8 +57,7 @@ def main():
         "backend\\rsdwl_packages.py",
         "backend\\world_sharing.py",
         "backend\\profile_bundle.py",
-        "resources\\OptionalMods\\LootMenu-1.0.4.zip",
-        "resources\\OptionalMods\\README.md",
+        "resources\\recommended-mods.json",
         "backend\\requirements-build.txt",
         "backend\\DragonwildsSync.Service.spec",
         "backend\\crypto_runtime.py",
@@ -88,7 +87,7 @@ def main():
     assert "backend\\dragonwilds_service.py" in build_bat
     assert "scripts\\build_windows.ps1" in build_bat
     assert "pause" in build_bat.lower()
-    assert "Dragonwilds Sync 1.1.9" in build_bat and "Portable Windows Build" in build_bat
+    assert "Dragonwilds Sync 2.0.0" in build_bat and "Portable Windows Build" in build_bat
     assert "Alpha 3.2" not in build_bat
 
     # Windows UX regression: background service/helpers must not pop a console
@@ -106,7 +105,7 @@ def main():
             assert direct_call not in live_text, f"visible subprocess bypass in {candidate.name}: {direct_call}"
 
     package = json.loads(PACKAGE.read_text(encoding="utf-8"))
-    assert package["version"] == "1.1.9"
+    assert package["version"] == "2.0.0"
     assert package["devDependencies"]["luaparse"] == "0.3.1"
     assert "scripts/check_ue4ss_lua.cjs" in package["scripts"]["check:renderer"]
     assert package["devDependencies"]["electron"] != "latest"
@@ -141,7 +140,7 @@ def main():
     assert "RuneSchema-core-latest.zip" in text
     assert "$bundledRuneSchema = Join-Path $ProjectRoot 'resources\\RuneSchema-core-latest.zip'" in text
     raw_packager = (ROOT / "scripts" / "package_raw_source.cjs").read_text(encoding="utf-8")
-    assert "DragonwildsSync_V1_Raw_Source" in raw_packager
+    assert "DragonwildsSync_V2_Raw_Source" in raw_packager
     assert "RAW_SOURCE_CONTENTS.md" in raw_packager
     assert "node_modules" in raw_packager and "Codex Outputs" in raw_packager
     assert "Staging reproducible raw-source folder" not in text
@@ -152,7 +151,7 @@ def main():
     assert "Removing the previous release directory so only this build remains" in text
     assert "Release contains portable EXE artifacts only" in text
 
-    # V1.1.9 is deliberately Windows portable-only.
+    # V2.0.0 is deliberately Windows portable-only.
     assert "build:linux" not in package["scripts"]
     assert "linux" not in package["build"]
     assert not (ROOT / "build-linux.sh").exists()

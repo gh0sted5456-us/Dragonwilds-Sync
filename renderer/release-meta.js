@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '1.1.9',
-  name: 'V1.1.9 · Portable Studio & WebHost',
+  version: '2.0.0',
+  name: 'V2 · Portable Worlds, Mod Library & WebHost',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,8 +9,8 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
-    version: '1.1.9',
-    title: 'Portable Studio, Faster Navigation, and Federated WebHost',
+    version: '2.0.0',
+    title: 'Portable Worlds, Community Metadata, and Shared Mod Management',
     items: [
       'One World Management workspace covers Singleplayer, Co-Op, dedicated, manifest, and favorited Worlds with clear mode/source banners, save discovery, conversion, Game Setup, and Server Setup.',
       'Vortex-style World profiles live under LocalAppData/DragonwildsSync/profiles/world and retain recoverable metadata, configuration, UE4SS/RuneSchema mods, PAKs, managed files, and activeworld identity for full profile exchange.',
@@ -37,9 +37,11 @@ window.DWSYNC_RELEASE_META = Object.freeze({
       'World Management tabs paint cached content immediately, deduplicate in-flight requests, and refresh volatile player/map data separately from stable configuration.',
       'Hardware acceleration is enabled by default. Application settings can disable GPU composition for troubleshooting or set an Automatic, 1, 2, 4, or 8 GB renderer heap ceiling; both apply after restart.',
       'Windows releases are portable-only. Retired launcher-built gameplay helpers and their installer/update routes are no longer bundled.',
-      'Linux AppImage, tarball, Flatpak, CI, and in-app Linux runtime controls are removed from v1.1.9; this release makes no Linux support claim.',
+      'Linux AppImage, tarball, Flatpak, CI, and in-app Linux runtime controls remain outside V2; this release makes no Linux support claim.',
       'Kid-Friendly, Adults Only, Discord, Steam, Epic, Nintendo, PlayStation, Xbox, country, and language identifiers use packaged icon/flag artwork while connection attempts remain user-controlled.',
-      'The original LootMenu 1.0.4 archive remains an optional recommended client/server mod. Live map position tracking can use a separately installed RSDW DevKit RSDWTools bridge; Sync does not bundle or install it.',
+      'Creator and community recommendation feeds publish source links and metadata from GitHub-compatible JSON. No Nexus-hosted or other third-party mod archive is bundled or redistributed.',
+      'All local, co-op, and dedicated Worlds can publish Community Rules through Sync manifests, the public directory/API, hosted website, remote portal, and exported profiles.',
+      'A safe tilde command palette provides declared start/stop broadcast and server actions plus temporary Nexus integration visibility without exposing a shell.',
       'Safe resets preserve EOS/account data and back up saves/config/mods; profile writes, imports, network administration, and editable files use validation, bounded paths, and atomic updates.',
     ],
   }],

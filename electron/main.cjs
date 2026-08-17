@@ -546,6 +546,16 @@ ipcMain.handle('dragonwilds:pick-image', async () => {
   const finalSize=image.getSize();
   return {file,dataUrl:`data:${mime};base64,${bytes.toString('base64')}`,width:finalSize.width,height:finalSize.height};
 });
+ipcMain.handle('dragonwilds:pick-loading-art', async () => {
+  const result=await dialog.showOpenDialog(mainWindow,{title:'Choose loading artwork',properties:['openFile'],filters:[{name:'Animated or static artwork',extensions:['gif','png','jpg','jpeg','webp']} ]});
+  if(result.canceled||!result.filePaths[0])return null;
+  const source=result.filePaths[0],extension=path.extname(source).toLowerCase();
+  const stat=fs.statSync(source);if(!stat.isFile())throw new Error('The selected loading artwork is not a file.');
+  if(stat.size>175*1024*1024)throw new Error('Loading artwork is limited to 175 MB. Use the optimized GIF or a static image.');
+  const targetDir=path.join(app.getPath('userData'),'Appearance');fs.mkdirSync(targetDir,{recursive:true});
+  const target=path.join(targetDir,`custom-loading-art${extension}`);fs.copyFileSync(source,target);
+  return {file:target,url:pathToFileURL(target).href,size:stat.size};
+});
 ipcMain.handle('dragonwilds:pick-directory', async () => { const r=await dialog.showOpenDialog(mainWindow,{properties:['openDirectory','createDirectory']}); return r.canceled?null:r.filePaths[0]||null; });
 ipcMain.handle('dragonwilds:pick-executable', async () => { const r=await dialog.showOpenDialog(mainWindow,{properties:['openFile'],filters:[{name:'Executable',extensions:['exe']},{name:'All files',extensions:['*']}]}); return r.canceled?null:r.filePaths[0]||null; });
 ipcMain.handle('dragonwilds:pick-file', async (_event, kind) => { const filters=(kind==='zip'||kind==='archive')?[{name:'Mod archives',extensions:['zip','7z']}]:kind==='rsdwl'?[{name:'Dragonwilds Launcher Package',extensions:['rsdwl']}]:kind==='dwsworld'?[{name:'Dragonwilds World Identity Card',extensions:['dwsworld']}]:[{name:'All files',extensions:['*']}]; const r=await dialog.showOpenDialog(mainWindow,{properties:['openFile'],filters}); return r.canceled?null:r.filePaths[0]||null; });

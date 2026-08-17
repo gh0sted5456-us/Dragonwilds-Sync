@@ -81,7 +81,7 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'data-tab="map"' in portal and b'data-tab="maintenance"' in portal
             assert b"view_map" in portal and b"Live Ashenfall player map" in portal
             assert b'Request Permission' in portal and b'maintenance_update' in portal
-            assert b'data-tab="spawner"' not in portal and b'data-tab="console"' not in portal
+            assert b'data-tab="spawner"' not in portal and b'data-tab="console"' in portal
             assert b'id="web-language"' in portal and b"Browser language" in portal
             assert b'id="dws-project-info"' in portal and b'installWorldCommunity' in portal
             assert b'background-size:100% 100%' not in portal

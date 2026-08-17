@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Dragonwilds Sync WebHost API",
-    "version": "1.1.9",
+    "version": "2.0.0",
     "description": "Federated public World manifests, browser catalog, heartbeat ingestion, and optional same-origin Remote Server administration."
   },
   "servers": [{ "url": "http://127.0.0.1:27080" }],

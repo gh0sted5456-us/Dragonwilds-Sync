@@ -90,7 +90,10 @@ def main():
             rpc(proc, "server.world.activate", {"id": second_id}, 8)
             assert not (pak_root / "WorldOne.pak").exists()
             (pak_root / "WorldTwo.pak").write_bytes(b"two")
-            inv2 = rpc(proc, "server.world.inventory", {"id": second_id}, 9)
+            # External filesystem changes remain invisible until explicit Rescan.
+            cached_before_rescan = rpc(proc, "server.world.inventory", {"id": second_id}, 9)
+            assert not any(u["key"] == "pak_mod::WorldTwo" for u in cached_before_rescan["units"])
+            inv2 = rpc(proc, "server.world.inventory", {"id": second_id, "rescan": True}, 9)
             assert any(u["key"] == "pak_mod::WorldTwo" for u in inv2["units"])
 
             rpc(proc, "server.world.activate", {"id": first_id}, 10)

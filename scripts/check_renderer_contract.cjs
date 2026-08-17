@@ -9,7 +9,7 @@ function assert(condition, message) {
 
 assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
   'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');
-assert(source.includes('data-webhost-tab="settings">Networking'),
+assert(source.includes('data-webhost-tab="settings">Website &amp; Networking'),
   'The combined Sync workspace must expose its Networking tab.');
 assert(source.includes("navButton('webhost', webhostLinked?'◆':'◇', 'Sync')"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');

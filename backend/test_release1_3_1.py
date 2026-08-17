@@ -30,11 +30,18 @@ def main():
     assert "skipTaskbar: true" in main_js and "restoreDetachedWindow" in renderer
 
     # Local and dedicated Worlds use the same lean detailed shell language.
-    # Map, spawner, and game-console tabs were retired from the shipped UI to
-    # keep World Management responsive; connected-player roster remains.
+    # Map tracking is restored as an optional, demand-driven RSDW DevKit
+    # integration. Spawner and game-console tabs remain retired.
     for label in ("Overview", "Players", "Mods", "Maintenance"):
         assert f"tabButton('{label.lower()}'" in renderer or label == "Maintenance"
-    assert "${tabButton('map',t('map'))}" not in renderer
+    assert renderer.count("${tabButton('map',t('map'))}") >= 2
+    assert "['map','spawner','console'].includes(requestedPrivateTab)" not in renderer
+    assert "['map','spawner','console'].includes(requestedServerTab)" not in renderer
+    tracker = (ROOT / "backend/player_tracker.py").read_text(encoding="utf-8")
+    directory_web = (ROOT / "backend/directory_web.py").read_text(encoding="utf-8")
+    assert 'MAPPING = r"Local\\RSDWTools_SharedLine_v1"' in tracker
+    assert 'self.command("world.net.roster"' in tracker
+    assert 'page.replace(b\'<button data-tab="map">Live Map</button>\'' not in directory_web
     assert "${tabButton('spawner',t('spawner'))}" not in renderer
     assert "${tabButton('console','Console')}" not in renderer
     assert "tabButton('broadcast','Broadcast')" in renderer

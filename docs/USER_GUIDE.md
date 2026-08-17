@@ -179,11 +179,17 @@ The Ashenfall background is automatically refreshed/cached from the latest suppo
 
 Profile → Live Map & Tracking can display a selected World and telemetry. Character cards can show their last saved location where it can be resolved. Accurate marker placement requires the World/map calibration/transform to be available.
 
+The map itself, cached points of interest, and player names derived from server logs remain usable without a tracking mod. Live player-position markers are optional and require the user to install and run the **RSDWTools UE4SS module from RSDWDevKit**. Dragonwilds Sync only reads its documented `RSDWTools_SharedLine_v1` bridge and `world.net.roster` response; it does not bundle, install, update, or modify RSDWTools. If the bridge is absent, the UI says that tracking is unavailable and the World continues normally.
+
+The same rule applies to authenticated WebHost Remote Management. Accounts need the **View live player map** permission, and the host must have the optional bridge running before remote live markers can appear.
+
 ## Managed windows
 
 Secondary workflows are real app windows rather than trapped modal boxes. You can move them to another monitor and resize them.
 
 If you minimize one of Sync's managed child windows, it appears in the **built-in launcher taskbar** so you can restore it later.
+
+Right-click a task button for **Open** or **Close**. Right-click empty space on the taskbar to switch between labeled **Tabs** and compact **Navigation Icons**; the choice is remembered on that device.
 
 ## Back button
 

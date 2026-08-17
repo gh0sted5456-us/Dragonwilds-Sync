@@ -3,6 +3,7 @@
   const modalRoot = document.getElementById('modal-root');
   const toastRoot = document.getElementById('toast-root');
   const internalTaskbar = document.getElementById('internal-taskbar');
+  let taskbarDisplayMode = (()=>{ try { return localStorage.getItem('dragonwilds-sync-taskbar-mode') === 'icons' ? 'icons' : 'tabs'; } catch (_) { return 'tabs'; } })();
   let desktopWindowSeq = 0;
   let desktopZ = 60;
   const query = new URLSearchParams(window.location.search);
@@ -1195,11 +1196,11 @@
       try { state.applicationUpdateMode = await window.dragonwilds.appUpdateMode(); } catch (_) {}
       try { state.applicationUpdateResult = await window.dragonwilds.appUpdateResult(); } catch (_) {}
       try { await configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status || null); } catch (_) {}
-      if (state.applicationUpdateResult && state.data?.application?.rsdw_cache?.refresh_after_updates !== false) {
+      if (!detachedMode && state.applicationUpdateResult && state.data?.application?.rsdw_cache?.refresh_after_updates !== false) {
         try { const refreshed = await api.invoke('application.rsdw.refresh', { force: false }); if (refreshed?.state) state.data = refreshed.state; } catch (_) {}
       }
       const updateCfg = state.data?.application?.application_updates || {};
-      if (!quickMode && updateCfg.auto_check !== false && String(updateCfg.github_url || '').trim()) await checkApplicationUpdate(false);
+      if (!quickMode && !detachedMode && updateCfg.auto_check !== false && String(updateCfg.github_url || '').trim()) await checkApplicationUpdate(false);
       if (!state.selectedWorldId) state.selectedWorldId = state.data?.client?.active_world_id || null;
       if (!state.selectedServerWorldId) state.selectedServerWorldId = state.data?.server?.active_world_id || null;
       if (quickMode) { state.entered = true; state.selectedWorldId = quickWorldId; }
@@ -1240,8 +1241,7 @@
       if (detachedMode && state.route === 'mod-explorer' && detachedContext.modUnitKey) setTimeout(()=>openModExplorer(detachedContext.modScope||'singleplayer',detachedContext.modUnitKey),60);
       if (detachedMode && state.route === 'custom-item-repository') setTimeout(()=>openCustomItemRepository(detachedContext.customItemSeed||{}),60);
       if (state.pendingDirectoryJoin) setTimeout(()=>openDirectoryJoin(state.pendingDirectoryJoin),80);
-      // Map/player-position rendering was intentionally retired from World
-      // Management. Do not warm its large asset cache during normal startup.
+      // The map remains lazy: only a visible Map view warms its large asset cache.
       if (quickMode) setTimeout(runQuickLaunch, 60);
       if (!state.worldRefreshTimer) state.worldRefreshTimer=setInterval(()=>{if(backgroundRefreshAllowed() && state.entered && state.route==='worlds' && state.data?.application?.world_discovery?.enabled!==false) refreshWorldDiscoveryAndStatuses(true).catch(()=>{});},30000);
       if (!state.syncHeartbeatTimer) state.syncHeartbeatTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered)return;try{const result=await api.invoke('world.discovery.heartbeat',{});if(result?.state)state.data=result.state;if(result?.published===false&&String(result?.reason||'').includes('Dragonwilds stopped')){state.data=await api.invoke('state.get',{});render();toast('Co-Op Sync stopped','Dragonwilds closed, so this World fingerprint and client Sync session were withdrawn.','');}}catch(_){}},30000);
@@ -1702,7 +1702,8 @@
     const mapBg = b64Image(mapCfg.background_data || '');
     const cal = mapCfg.calibration || state.mapOverlays?.calibration || {};
     const title = toolkit ? 'RSDW Live Player Map' : 'Ashenfall Player Map';
-    const sourceCopy = tracker.tracker_connected ? 'RSDW bridge telemetry · live positions' : 'RSDW bridge offline · log presence fallback';
+    const bridgeAvailable = !!tracker.bridge?.available;
+    const sourceCopy = tracker.tracker_connected ? 'RSDW DevKit bridge telemetry · live positions' : (bridgeAvailable ? 'RSDW DevKit bridge detected · waiting for roster' : 'RSDW DevKit bridge not detected · log presence fallback');
     const overlayCategories = Object.keys(state.mapOverlays?.categories || {});
     const overlaysAligned = String(state.mapCacheStatus?.coordinate_source||'').includes('world-grid') || String(state.mapCacheStatus?.source_provider||'')==='rsdwarchive';
     const visibleOverlayPoints = overlaysAligned ? (state.mapOverlays?.points || []).filter((point)=>state.mapOverlayFilters.has(point.category)).slice(0, 1800) : [];
@@ -1710,7 +1711,7 @@
     const overlayMarkers = visibleOverlayPoints.map((point)=>`<i class="map-overlay-marker ${escapeHtml(String(point.category||'').toLowerCase())}" data-map-x="${Number(point.map_x)}" data-map-y="${Number(point.map_y)}" style="left:${Number(point.map_x)*100}%;top:${Number(point.map_y)*100}%" title="${escapeHtml(point.subtype || point.label || point.category || 'Map location')}"></i>`).join('');
     const viewport = state.mapViewports[world.id] || { scale:1, x:0, y:0 };
     const categoryDetails=overlayCategories.map((category)=>{const points=(state.mapOverlays?.points||[]).filter((point)=>point.category===category);const types=new Map();points.forEach((point)=>types.set(point.subtype||point.label||category,(types.get(point.subtype||point.label||category)||0)+1));return `<details class="map-data-category"><summary><strong>${escapeHtml(category)}</strong><span>${points.length.toLocaleString()} indexed</span></summary><div>${[...types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,24).map(([label,count])=>`<span>${escapeHtml(label)} <b>${count.toLocaleString()}</b></span>`).join('')}</div></details>`;}).join('');
-    const mapPanel = `<details class="panel collapsible-panel map-panel" open><summary class="panel-header"><div><h2>${title}</h2><span class="panel-subtitle">${tracker.player_count || 0} online · ${sourceCopy}</span></div><span class="status-pill ${tracker.tracker_connected ? 'online' : 'unknown'}">${tracker.tracker_connected ? 'RSDW TRACKING LIVE' : 'TRACKING OFFLINE'}</span></summary><div class="panel-body"><div class="map-viewport-toolbar"><span>Drag to pan · mouse wheel or buttons to zoom</span><div><button class="btn ghost compact-btn" data-map-zoom="out" aria-label="Zoom out">−</button><b data-map-zoom-label>${Math.round(viewport.scale*100)}%</b><button class="btn ghost compact-btn" data-map-zoom="in" aria-label="Zoom in">＋</button><button class="btn ghost compact-btn" data-map-zoom="reset">Reset</button></div></div><div class="server-player-map ${mapBg ? 'has-background' : ''}" data-live-map-world="${escapeHtml(world.id)}" ${mapBg ? `style="background-image:url('${mapBg}')"` : ''}>${overlayMarkers}${playersOnMap.map((pl) => `<button class="player-map-marker ${state.selectedPlayerId === String(pl.id || '') ? 'selected' : ''}" data-map-x="${Number(pl.map_point.x)}" data-map-y="${Number(pl.map_point.y)}" style="left:${Number(pl.map_point.x)*100}%;top:${Number(pl.map_point.y)*100}%;--yaw:${Number(pl.yaw || 0)}deg" title="${escapeHtml(pl.name || 'Player')}" data-map-player="${escapeHtml(pl.id || pl.name)}"><span class="facing">➤</span><b>${escapeHtml(pl.name || 'Player')}</b></button>`).join('')}${mapBg ? '' : '<div class="map-placeholder"><strong>Ashenfall map background not configured</strong><span>Tracking coordinates remain available. Refresh the map cache and the same map component is reused online.</span></div>'}</div><div class="map-attribution">${escapeHtml(state.mapCacheStatus?.attribution||'Ashenfall map imagery © Jagex Ltd. · RuneScape: Dragonwilds')}</div>${overlaysAligned?overlayFilters:'<div class="warning-box compact"><strong>Overlay calibration unavailable</strong><br/>This fallback image uses a different tile grid, so resource markers are hidden instead of being plotted incorrectly. Refresh the RSDW world-grid map.</div>'}<div class="map-data-catalog"><div><strong>Mapped game data</strong><small>Filter controls and indexed records are kept below the map.</small></div>${categoryDetails}</div>${visibleOverlayPoints.length>=1800?'<p class="muted-small map-density-note">Dense overlays are display-sampled to keep the live map responsive. The full RSDW index remains cached.</p>':''}${!tracker.tracker_connected ? '<div class="identity-box"><strong>Graceful fallback</strong><p>RSDW shared-memory telemetry is unavailable. Server gameplay and log-derived player presence continue normally; no second native tracking stack is started.</p></div>' : ''}</div></details>`;
+    const mapPanel = `<details class="panel collapsible-panel map-panel" open><summary class="panel-header"><div><h2>${title}</h2><span class="panel-subtitle">${tracker.player_count || 0} online · ${sourceCopy}</span></div><span class="status-pill ${tracker.tracker_connected ? 'online' : 'unknown'}">${tracker.tracker_connected ? 'RSDW TRACKING LIVE' : 'TRACKING OFFLINE'}</span></summary><div class="panel-body"><div class="map-viewport-toolbar"><span>Drag to pan · mouse wheel or buttons to zoom</span><div><button class="btn ghost compact-btn" data-map-zoom="out" aria-label="Zoom out">−</button><b data-map-zoom-label>${Math.round(viewport.scale*100)}%</b><button class="btn ghost compact-btn" data-map-zoom="in" aria-label="Zoom in">＋</button><button class="btn ghost compact-btn" data-map-zoom="reset">Reset</button></div></div><div class="server-player-map ${mapBg ? 'has-background' : ''}" data-live-map-world="${escapeHtml(world.id)}" ${mapBg ? `style="background-image:url('${mapBg}')"` : ''}>${overlayMarkers}${playersOnMap.map((pl) => `<button class="player-map-marker ${state.selectedPlayerId === String(pl.id || '') ? 'selected' : ''}" data-map-x="${Number(pl.map_point.x)}" data-map-y="${Number(pl.map_point.y)}" style="left:${Number(pl.map_point.x)*100}%;top:${Number(pl.map_point.y)*100}%;--yaw:${Number(pl.yaw || 0)}deg" title="${escapeHtml(pl.name || 'Player')}" data-map-player="${escapeHtml(pl.id || pl.name)}"><span class="facing">➤</span><b>${escapeHtml(pl.name || 'Player')}</b></button>`).join('')}${mapBg ? '' : '<div class="map-placeholder"><strong>Ashenfall map background not configured</strong><span>Tracking coordinates remain available. Refresh the map cache and the same map component is reused online.</span></div>'}</div><div class="map-attribution">${escapeHtml(state.mapCacheStatus?.attribution||'Ashenfall map imagery © Jagex Ltd. · RuneScape: Dragonwilds')}</div>${overlaysAligned?overlayFilters:'<div class="warning-box compact"><strong>Overlay calibration unavailable</strong><br/>This fallback image uses a different tile grid, so resource markers are hidden instead of being plotted incorrectly. Refresh the RSDW world-grid map.</div>'}<div class="map-data-catalog"><div><strong>Mapped game data</strong><small>Filter controls and indexed records are kept below the map.</small></div>${categoryDetails}</div>${visibleOverlayPoints.length>=1800?'<p class="muted-small map-density-note">Dense overlays are display-sampled to keep the live map responsive. The full RSDW index remains cached.</p>':''}${!tracker.tracker_connected ? `<div class="identity-box"><strong>${bridgeAvailable ? 'Waiting for RSDWTools roster' : 'Optional tracking integration not detected'}</strong><p>${bridgeAvailable ? 'The verified RSDW DevKit shared-memory bridge is running, but it has not returned a live player roster yet.' : 'Live positions require the user-installed RSDWTools UE4SS module from RSDWDevKit. Dragonwilds Sync does not bundle, install, or modify that mod. Server gameplay and log-derived player presence continue normally.'}</p>${bridgeAvailable ? '' : '<button class="btn ghost" data-open-external="https://github.com/RSDWArchive/RSDWDevKit">Open RSDWDevKit on GitHub ↗</button>'}</div>` : ''}</div></details>`;
     if (!includeSetup) return mapPanel;
     const setup = `<details class="panel collapsible-panel" open><summary class="panel-header"><h2>Map Setup</h2><span class="panel-subtitle">World coordinates → normalized map coordinates</span></summary><div class="panel-body"><div class="header-actions map-source-actions" style="justify-content:flex-start"><button class="btn primary" id="refresh-latest-rsdw-map">Refresh Ashenfall Map</button><button class="btn ghost" id="choose-player-map-image">Choose Map Image</button><span class="muted-small">${state.mapCacheStatus?.version?`${escapeHtml(state.mapCacheStatus.source_title||'Ashenfall')} · ${escapeHtml(state.mapCacheStatus.version)} · ${state.mapCacheStatus.tile_count||0} tile(s)`:'Ashenfall map cache not checked yet'}</span></div><div class="health-evidence-grid map-calibration"><label><small>World Min X</small><input class="field" id="map-min-x" type="number" value="${escapeHtml(cal.world_min_x ?? '')}" /></label><label><small>World Max X</small><input class="field" id="map-max-x" type="number" value="${escapeHtml(cal.world_max_x ?? '')}" /></label><label><small>World Min Y</small><input class="field" id="map-min-y" type="number" value="${escapeHtml(cal.world_min_y ?? '')}" /></label><label><small>World Max Y</small><input class="field" id="map-max-y" type="number" value="${escapeHtml(cal.world_max_y ?? '')}" /></label></div><label class="checkbox-row"><input type="checkbox" id="map-invert-y" ${cal.invert_y === false ? '' : 'checked'} /> Invert map Y axis</label><label class="checkbox-row"><input type="checkbox" id="map-allow-remote" ${mapCfg.allow_remote_clients ? 'checked' : ''} /> Allow authenticated remote launcher clients to receive map availability</label><button class="btn primary" id="save-player-map-settings">Save Map Setup</button><div class="identity-box"><strong>One mapping pipeline</strong><p>RSDW telemetry emits Unreal coordinates; Dragonwilds Sync applies one map transform shared by Server → Map and RSDW Toolkit. There is no duplicate tracker/map implementation.</p></div></div></details>`;
     return `<div class="panel-grid map-layout">${mapPanel}${setup}</div>`;
@@ -1722,7 +1723,7 @@
     const single = singleplayerWorld();
     const privateBroadcast = !!single?.status?.broadcasting;
     const options = available.map((entry)=>`<option value="${escapeHtml(entry.id)}" ${world?.id===entry.id?'selected':''}>${escapeHtml(entry.name || 'World')}</option>`).join('');
-    return `<div class="content rsdw-toolkit-page"><div class="page-header"><div><div class="eyebrow">Profile</div><h1>Live Map & Tracking</h1><div class="page-subtitle">One RSDW-backed telemetry surface reused by hosted Worlds and server management.</div></div><div class="header-actions"><span class="status-pill ${privateBroadcast?'online':'unknown'}">PRIVATE WORLD ${privateBroadcast?'BROADCASTING':'IDLE'}</span><button class="btn ghost" id="rsdw-map-refresh" ${world?'':'disabled'}>Refresh Tracking</button></div></div>${rsdwToolkitTabs()}<section class="rsdw-map-toolbar"><label><span>World</span><select class="select" id="rsdw-map-world" ${available.length?'':'disabled'}>${options || '<option>No Worlds configured</option>'}</select></label><div><strong>RSDW telemetry reuse</strong><span>Dedicated Worlds consume the existing RSDWToolsUE4SS / bridge_shm path. Private World Broadcast remains game-hosted and can hydrate this surface when equivalent local telemetry is available.</span></div></section><div style="margin-top:16px">${playerMapPanelMarkup(world,{includeSetup:false,toolkit:true})}</div><div class="rsdw-credit">RSDW-powered tracking and tooling by <strong>Hi im Tat</strong> and the <strong>RSDW Modding Community</strong>. Dragonwilds Sync reuses the telemetry/map pipeline rather than shipping a second native tracker.</div></div>`;
+    return `<div class="content rsdw-toolkit-page"><div class="page-header"><div><div class="eyebrow">Profile</div><h1>Live Map & Tracking</h1><div class="page-subtitle">One optional RSDW-backed telemetry surface reused by hosted Worlds and server management.</div></div><div class="header-actions"><span class="status-pill ${privateBroadcast?'online':'unknown'}">PRIVATE WORLD ${privateBroadcast?'BROADCASTING':'IDLE'}</span><button class="btn ghost" id="rsdw-map-refresh" ${world?'':'disabled'}>Refresh Tracking</button></div></div>${rsdwToolkitTabs()}<section class="rsdw-map-toolbar"><label><span>World</span><select class="select" id="rsdw-map-world" ${available.length?'':'disabled'}>${options || '<option>No Worlds configured</option>'}</select></label><div><strong>Optional RSDW DevKit telemetry</strong><span>When the independently installed RSDWTools UE4SS module is running, Sync reads its verified shared-memory roster. Sync never installs or updates that mod. Without it, the map and log-derived player names remain available but live position markers do not.</span></div></section><div style="margin-top:16px">${playerMapPanelMarkup(world,{includeSetup:false,toolkit:true})}</div><div class="rsdw-credit">RSDW-powered tracking and tooling by <strong>Hi im Tat</strong> and the <strong>RSDW Modding Community</strong>. Dragonwilds Sync consumes the documented DevKit bridge without bundling it.</div></div>`;
   }
 
   function characterLastLocationMarkup(character, payload=null) {
@@ -2399,7 +2400,7 @@
     const selectedCharacter=selectionMap[worldId] || (worldId==='singleplayer'?selectionMap.singleplayer:'') || '';
     const selected=state.characters?.find((c)=>c.id===selectedCharacter);
     const requestedPrivateTab=state.privateTab||'overview';
-    const tab=['map','spawner','console'].includes(requestedPrivateTab)?'overview':requestedPrivateTab;
+    const tab=['spawner','console'].includes(requestedPrivateTab)?'overview':requestedPrivateTab;
     if(tab!==requestedPrivateTab)state.privateTab=tab;
     const mapCfg=state.serverMapConfig[worldId] || {};
     const tracker=state.serverPlayers[worldId] || {players:[],recent_players:[],player_count:0,tracker_connected:false};
@@ -2435,7 +2436,7 @@
     const heroIcon=b64Image(world?.presentation?.icon_b64)||'assets/singleplayer-icon.png';
     return `<div class="content"><div class="page-header"><button class="btn ghost" id="back-worlds">← Worlds</button><div class="header-actions"><button class="btn ghost" id="detach-private-world">↗ Open in Window</button><button class="btn ghost" id="edit-private-world">Edit World</button><button class="btn ghost" id="sp-characters">Characters</button><button class="btn ghost" id="sp-desktop">Send to Desktop</button><button class="btn play" id="play-world">Launch</button><button class="btn ${broadcasting?'danger':'primary'}" id="sp-broadcast">${broadcasting?'Stop Co-Op':'Co-Op'}</button></div></div>
       <section class="detail-hero" style="margin-bottom:0;border-radius:18px 18px 0 0"><img class="detail-banner" src="${heroBanner}" alt=""/><div class="hero-overlay"></div><div class="hero-content"><img class="hero-icon" src="${heroIcon}" alt=""/><div class="hero-main"><div class="eyebrow">Private World</div><h1>${escapeHtml(world?.name||'Private World')}</h1><p>${escapeHtml(world?.presentation?.description||world?.description||'Your local Dragonwilds World. Enable Co-Op when compatible launchers should synchronize before joining.')}</p><div class="badges">${badgeMarkup('LOCAL')}${badgeMarkup('PRIVATE')}${broadcasting?'<span class="studio-compat">CO-OP · SYNC LIVE</span>':''}</div></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'CO-OP':'READY'}</span></div></section>
-      ${/* Compatibility contract: tabButton('broadcast','Broadcast') remains the canonical English navigation label. */''}<section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px"><div class="server-tabs"><span class="server-tab-group">World</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration','Live Config')}${tabButton('broadcast',t('broadcast'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group">Roster</span>${tabButton('players',t('players'))}</div>${body}</section></div>`;
+      ${/* Compatibility contract: tabButton('broadcast','Broadcast') remains the canonical English navigation label. */''}<section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px"><div class="server-tabs"><span class="server-tab-group">World</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration','Live Config')}${tabButton('broadcast',t('broadcast'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}</div>${body}</section></div>`;
   }
 
   function renderWorldDetail(world) {
@@ -2575,7 +2576,7 @@
     const isRunning = !!runtime.running && runtime.active_profile_id === p.id;
     const isServing = !!share.serving && runtime.active_profile_id === p.id;
     const requestedServerTab=state.serverTab||'overview';
-    const tab=['map','spawner','console'].includes(requestedServerTab)?'overview':requestedServerTab;
+    const tab=['spawner','console'].includes(requestedServerTab)?'overview':requestedServerTab;
     if(tab!==requestedServerTab)state.serverTab=tab;
     const inv = state.serverInventory[p.id] || [];
     const backups = state.serverBackups[p.id] || [];
@@ -2744,7 +2745,7 @@
           ${banner ? `<img class="detail-banner" src="${banner}" alt="" />` : `<div class="detail-banner-fallback"></div>`}<div class="hero-overlay"></div><div class="hero-content">${icon ? `<img class="hero-icon" src="${icon}" alt="" />` : `<div class="hero-icon fallback">${escapeHtml(initials(p.name))}</div>`}<div class="hero-main"><div class="eyebrow">Hosted World</div><h1 title="${escapeHtml(p.name || 'World')}">${escapeHtml(p.name || 'World')}</h1><p>${escapeHtml(p.description || 'No description yet.')}</p></div><span class="status-pill ${isRunning ? 'online' : (isServing ? 'unknown' : 'offline')}">${isRunning ? 'RUNNING' : (isServing ? 'SYNC LIVE' : (isActive ? 'ACTIVE' : 'STOPPED'))}</span></div>
         </section>
         <section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px">
-          <div class="server-tabs"><span class="server-tab-group">Manage</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration',t('configuration'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group">Roster</span>${tabButton('players',t('players'))}<span class="server-tab-group">History</span>${tabButton('feedback',t('feedback'))}${tabButton('activity',t('activity'))}</div>${body}
+          <div class="server-tabs"><span class="server-tab-group">Manage</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration',t('configuration'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}<span class="server-tab-group">History</span>${tabButton('feedback',t('feedback'))}${tabButton('activity',t('activity'))}</div>${body}
         </section>
       </div>`;
   }
@@ -2978,7 +2979,7 @@
         ], tips:['Test internal and external routes separately.','Use My IP fills the current WAN route but never exposes a saved server key.','A failed Sync probe leaves a public World visible, but not Sync-verified.']
       },
       map: {
-        title:'Connected Players', intro:'World Management keeps the lightweight connected-player roster without loading the retired live-map renderer.', image:'06-server-health.png', alt:'World health and connected-player status',
+        title:'Players & Live Map', intro:'World Management provides a lightweight player roster and Ashenfall map. Live position markers appear only when the independently installed RSDW DevKit RSDWTools bridge is running.', image:'06-server-health.png', alt:'World health, connected-player status, and optional live map',
         sections:[
           ['Map source','Dragonwilds Sync uses the permission-compatible RSDWArchive Ashenfall map rather than embedding a restricted third-party interactive map.'],
           ['Coordinates','Player and save positions are normalized onto the Ashenfall image. The last-known character position also appears beside the character summary.'],
@@ -3003,7 +3004,7 @@
           ['Server users and remote authority','Create World-scoped server users only in the desktop WebHost view. Each account keeps its own overview, player, mod/config, audit, announcement and server-action permissions; passwords are PBKDF2-hashed and write/announcement grants start off.'],
           ['Permission requests','Denied remote categories remain visible but receive no telemetry. Their diagonal Request Permission panel creates a local notification; approve or deny it in WebHost and the decision persists to that user.'],
           ['Website Link & Play','A Sync-ready World detail page can open the registered Dragonwilds Sync V1 handoff. The desktop app refetches the selected manifest, asks for World and access credentials locally, saves the linked World, then performs its own live fingerprint check before Sync & Play.'],
-          ['Connected players','Remote Management shows the lightweight connected-player roster when the host runtime provides it. The retired map renderer is not loaded.'],
+          ['Connected players and map','Remote Management shows the lightweight connected-player roster and permission-scoped Ashenfall map. Live markers appear only while the host’s independently installed RSDW DevKit bridge supplies positions.'],
           ['Remote maintenance','Maintenance remains World-owned, not a global Setting. A server user may receive separate read and write grants for the same recurrence, weekday, local-time, action and backup-retention calendar shown by the local Server profile.'],
           ['Player announcements','Authorized managers can publish Info, Success, Warning or Critical Sync announcements. Clients may enable a click-through top-screen overlay that never takes focus and closes itself. In-game chat relay remains an optional separately installed bridge.'],
           ['What the local network sees','A browser connecting directly from a private or loopback address receives the responsive Directory Control Room. It shows live status, verified counts, current Worlds, routes and the settings that are safe to change without stopping the listener.'],
@@ -4958,13 +4959,16 @@
   async function openModExplorer(scope, unitKey) {
     if(!detachedMode&&window.dragonwilds?.openDetachedWindow){
       try{
-        await window.dragonwilds.openDetachedWindow({route:'mod-explorer',title:`Dragonwilds Sync · ${String(unitKey||'Mod').split('::').pop()} Mod Explorer`,width:1280,height:840,context:{modScope:scope,modUnitKey:unitKey}});
+        const privateWorld=privateWorldById(state.selectedWorldId)||singleplayerWorld();
+        const serverWorld=activeServerWorld();
+        await window.dragonwilds.openDetachedWindow({route:'mod-explorer',title:`Dragonwilds Sync · ${String(unitKey||'Mod').split('::').pop()} Mod Explorer`,width:1280,height:840,context:{modScope:scope,modUnitKey:unitKey,selectedWorldId:privateWorld?.id||state.data?.client?.active_private_world_id||'singleplayer',selectedServerWorldId:serverWorld?.id||state.selectedServerWorldId||''}});
       }catch(error){toast('Could not open Mod Explorer',error.message||'The dedicated window failed to open.','error');}
       return;
     }
     const host=document.querySelector('#mod-explorer-window');
     if(!host)return;
-    const world=scope==='server'?activeServerWorld():activeWorld();
+    host.innerHTML='<div class="detached-loading"><div class="spinner"></div><strong>Loading mod files…</strong><span>Resolving the selected World profile and mod repository.</span></div>';
+    const world=scope==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
     try {
       let files=[];
       if(scope==='server'){
@@ -5034,7 +5038,7 @@
         }catch(error){toast('Could not add mod file',error.message,'error');}
       });
       saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}try{if(scope==='server')await api.invoke('server.world.config.save',{id:world.id,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});toast('Mod file saved','Atomic profile-scoped write complete.','success');}catch(error){toast('Save failed',error.message,'error');}});
-    }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="empty-state"><strong>Could not open this mod.</strong><span>${escapeHtml(error.message||'')}</span></div>`;}
+    }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Mod Explorer</div><h2>Could not open this mod</h2></div><button class="btn ghost" id="close-mod-explorer-error">Close</button></div><div class="empty-state"><strong>The loading request failed.</strong><span>${escapeHtml(error.message||'Unknown mod-loading error')}</span><button class="btn primary" id="retry-mod-explorer">Retry</button></div>`;host.querySelector('#retry-mod-explorer')?.addEventListener('click',()=>openModExplorer(scope,unitKey));host.querySelector('#close-mod-explorer-error')?.addEventListener('click',()=>window.dragonwilds.windowClose());}
   }
 
   function openModContextMenu(row,event){
@@ -5138,6 +5142,41 @@
     return win?.querySelector('.modal-header h2')?.textContent?.trim() || 'Dragonwilds Sync';
   }
 
+  function taskbarRouteIcon(route='', title='') {
+    const key=String(route||'').toLowerCase(),label=String(title||'').toLowerCase();
+    if(key.includes('mod-explorer')||label.includes('mod explorer'))return '◇';
+    if(key.includes('profile')||key.includes('character')||label.includes('character'))return '♙';
+    if(key.includes('world')||key.includes('server')||label.includes('world'))return '♜';
+    if(key.includes('settings')||label.includes('settings'))return '⚙';
+    if(key.includes('nexus')||label.includes('nexus'))return '↗';
+    if(key.includes('webhost')||label.includes('webhost'))return '⌁';
+    if(key==='dialog')return '▣';
+    return '□';
+  }
+
+  function setTaskbarDisplayMode(mode) {
+    taskbarDisplayMode=mode==='icons'?'icons':'tabs';
+    try { localStorage.setItem('dragonwilds-sync-taskbar-mode',taskbarDisplayMode); } catch (_) {}
+    syncInternalTaskbar();
+  }
+
+  function openTaskbarContextMenu(event, button=null) {
+    event.preventDefault();event.stopPropagation();document.querySelector('.taskbar-context-menu')?.remove();
+    const menu=document.createElement('div');menu.className='context-menu taskbar-context-menu';menu.setAttribute('role','menu');
+    menu.style.left=`${Math.min(event.clientX,innerWidth-220)}px`;menu.style.top=`${Math.max(8,Math.min(event.clientY-86,innerHeight-132))}px`;
+    menu.innerHTML=button?'<button role="menuitem" data-taskbar-action="open">Open</button><button role="menuitem" class="danger" data-taskbar-action="close">Close</button>':`<button role="menuitem" data-taskbar-mode="tabs">${taskbarDisplayMode==='tabs'?'✓ ':''}Display as Tabs</button><button role="menuitem" data-taskbar-mode="icons">${taskbarDisplayMode==='icons'?'✓ ':''}Display as Navigation Icons</button>`;
+    document.body.appendChild(menu);
+    const dismiss=(e)=>{if(!menu.contains(e.target)){menu.remove();document.removeEventListener('mousedown',dismiss);}};setTimeout(()=>document.addEventListener('mousedown',dismiss),0);
+    menu.querySelectorAll('[data-taskbar-mode]').forEach((item)=>item.addEventListener('click',()=>{menu.remove();document.removeEventListener('mousedown',dismiss);setTaskbarDisplayMode(item.dataset.taskbarMode);}));
+    menu.querySelectorAll('[data-taskbar-action]').forEach((item)=>item.addEventListener('click',async()=>{
+      menu.remove();document.removeEventListener('mousedown',dismiss);const action=item.dataset.taskbarAction;
+      const internalId=button?.dataset.windowId||'',nativeId=button?.dataset.nativeWindowId||'';
+      if(internalId){const win=modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(internalId)}"]`);if(!win)return;if(action==='close')closeDesktopWindow(win);else{win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();}return;}
+      if(!nativeId)return;
+      try{if(action==='close')await window.dragonwilds?.closeDetachedWindow?.(nativeId);else await window.dragonwilds?.restoreDetachedWindow?.(nativeId);}catch(error){toast(`Could not ${action} window`,error.message,'error');}
+    }));
+  }
+
   function focusDesktopWindow(win) {
     if (!win || win.classList.contains('minimized')) return;
     modalRoot.querySelectorAll('.desktop-window').forEach((item) => item.classList.remove('focused'));
@@ -5151,8 +5190,9 @@
     if (detachedMode) { internalTaskbar.innerHTML = ''; return; }
     const windows = [...modalRoot.querySelectorAll('.desktop-window')];
     const nativeWindows = Array.isArray(state.detachedWindows) ? state.detachedWindows : [];
-    const internalButtons = windows.map((win) => `<button class="internal-task-button ${win.classList.contains('focused') && !win.classList.contains('minimized') ? 'active' : ''}" data-window-id="${escapeHtml(win.dataset.windowId || '')}" title="${escapeHtml(desktopWindowTitle(win))}">${win.classList.contains('minimized') ? '▣ ' : '□ '}${escapeHtml(desktopWindowTitle(win))}</button>`);
-    const nativeButtons = nativeWindows.map((item) => `<button class="internal-task-button native-task-button ${item.hidden ? 'minimized' : ''}" data-native-window-id="${escapeHtml(item.id || '')}" title="${escapeHtml(item.title || 'Dragonwilds Sync window')}">${item.hidden ? '▣ ' : '◇ '}${escapeHtml(item.title || item.route || 'Window')}</button>`);
+    internalTaskbar.classList.toggle('icon-mode',taskbarDisplayMode==='icons');
+    const internalButtons = windows.map((win) => {const title=desktopWindowTitle(win),icon=taskbarRouteIcon('dialog',title);return `<button class="internal-task-button ${win.classList.contains('focused') && !win.classList.contains('minimized') ? 'active' : ''}" data-window-id="${escapeHtml(win.dataset.windowId || '')}" title="${escapeHtml(title)}"><span class="taskbar-item-icon">${win.classList.contains('minimized')?'▣':icon}</span><span class="taskbar-item-label">${escapeHtml(title)}</span></button>`;});
+    const nativeButtons = nativeWindows.map((item) => {const title=item.title||item.route||'Window',icon=taskbarRouteIcon(item.route,title);return `<button class="internal-task-button native-task-button ${item.hidden ? 'minimized' : ''}" data-native-window-id="${escapeHtml(item.id || '')}" title="${escapeHtml(title)}"><span class="taskbar-item-icon">${item.hidden?'▣':icon}</span><span class="taskbar-item-label">${escapeHtml(title)}</span></button>`;});
     internalTaskbar.innerHTML = [...internalButtons, ...nativeButtons].join('');
     internalTaskbar.querySelectorAll('.internal-task-button[data-window-id]').forEach((button) => button.addEventListener('click', () => {
       const win = modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(button.dataset.windowId || '')}"]`);
@@ -5166,6 +5206,8 @@
       try { await window.dragonwilds.restoreDetachedWindow(id); }
       catch (error) { toast('Could not restore window', error.message, 'error'); }
     }));
+    internalTaskbar.querySelectorAll('.internal-task-button').forEach((button)=>button.addEventListener('contextmenu',(event)=>openTaskbarContextMenu(event,button)));
+    if(internalTaskbar.dataset.contextReady!=='1'){internalTaskbar.dataset.contextReady='1';internalTaskbar.addEventListener('contextmenu',(event)=>{if(event.target.closest('.internal-task-button'))return;openTaskbarContextMenu(event);});}
   }
 
   const managedDialogShadows = new Map();

@@ -1135,6 +1135,7 @@ body:has(.detached-shell) #modal-root, body:has(.detached-shell) #internal-taskb
 body:has(.detached-shell) #internal-taskbar { display:none !important; }
 .internal-task-button.native-task-button { border-style:solid; }
 .internal-task-button.native-task-button.minimized { opacity:.78; }
+.internal-task-button{display:inline-flex;align-items:center;gap:7px}.taskbar-item-icon{display:inline-grid;place-items:center;flex:0 0 16px;color:var(--gold);font-size:12px}.taskbar-item-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.internal-taskbar.icon-mode{gap:4px}.internal-taskbar.icon-mode .internal-task-button{min-width:30px;width:30px;max-width:30px;padding:0;justify-content:center;text-align:center}.internal-taskbar.icon-mode .taskbar-item-label{display:none}.taskbar-context-menu{z-index:10020;min-width:210px}
 
 /* Release 1.3.1 — UI hardening, unified Private/Server World shells, navigation history. */
 .titlebar-back{width:31px;height:29px;border:1px solid var(--border);border-radius:8px;background:rgba(255,255,255,.025);color:var(--text);cursor:pointer;font-size:16px;display:grid;place-items:center;flex:0 0 auto}.titlebar-back:hover{border-color:var(--gold);background:rgba(212,176,105,.08)}

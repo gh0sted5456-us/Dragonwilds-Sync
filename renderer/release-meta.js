@@ -30,7 +30,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
       'Hardware acceleration is enabled by default. Application settings can disable GPU composition for troubleshooting or set an Automatic, 1, 2, 4, or 8 GB renderer heap ceiling; both apply after restart.',
       'Windows releases are portable-only. Retired launcher-built gameplay helpers and their installer/update routes are no longer bundled.',
       'Kid-Friendly, Adults Only, Discord, Steam, Epic, Nintendo, PlayStation, Xbox, country, and language identifiers use packaged icon/flag artwork while connection attempts remain user-controlled.',
-      'The original LootMenu 1.0.4 archive remains an optional recommended client/server mod; retired custom spawner, live map, and console polling dependencies are not required.',
+      'The original LootMenu 1.0.4 archive remains an optional recommended client/server mod. Live map position tracking can use a separately installed RSDW DevKit RSDWTools bridge; Sync does not bundle or install it.',
       'Safe resets preserve EOS/account data and back up saves/config/mods; profile writes, imports, network administration, and editable files use validation, bounded paths, and atomic updates.',
     ],
   }],

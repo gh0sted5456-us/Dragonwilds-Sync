@@ -2025,6 +2025,7 @@ def handle(method: str, params: dict) -> object:
                 row["map_point"] = world_to_map(pos.get("x"), pos.get("y"), calibration)
             recent_enriched.append(row)
         payload["recent_players"]=recent_enriched
+        payload["bridge"] = PLAYER_BRIDGE.status()
         return {"players":payload,"player_map":map_cfg,"state":public_state(state)}
 
     if method == "singleplayer.map.update":
@@ -3973,6 +3974,7 @@ def handle(method: str, params: dict) -> object:
                 row["map_point"] = world_to_map(pos.get("x"), pos.get("y"), calibration)
             enriched.append(row)
         payload["players"] = enriched
+        payload["bridge"] = PLAYER_BRIDGE.status()
         return {"players": payload, "player_map": map_cfg, "state": public_state(state)}
 
     if method == "server.player_tracker.ingest":

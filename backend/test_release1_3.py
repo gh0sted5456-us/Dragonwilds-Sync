@@ -42,7 +42,16 @@ def main():
     assert "createDetachedWindow" in main_js and "skipTaskbar: true" in main_js
     assert "w.hide();" in main_js and "dragonwilds:detached-changed" in main_js
     assert "data-native-window-id" in renderer and "restoreDetachedWindow" in renderer
+    assert "data-taskbar-action=\"open\"" in renderer and "data-taskbar-action=\"close\"" in renderer
+    assert "Display as Tabs" in renderer and "Display as Navigation Icons" in renderer
+    assert "dragonwilds-sync-taskbar-mode" in renderer and ".internal-taskbar.icon-mode" in styles
     assert "body:has(.detached-shell) #internal-taskbar { display:none" in styles
+
+    # Mod Explorer carries the originating World into its detached process and
+    # replaces the spinner with an actionable retry surface on any load error.
+    assert "selectedWorldId:privateWorld?.id" in renderer and "selectedServerWorldId:serverWorld?.id" in renderer
+    assert "id=\"retry-mod-explorer\"" in renderer and "The loading request failed." in renderer
+    assert "!detachedMode && updateCfg.auto_check" in renderer
 
     # Settings and every launcher scrollbar are theme-aware/responsive.
     assert "scrollbar-color" in styles and "::-webkit-scrollbar-thumb" in styles

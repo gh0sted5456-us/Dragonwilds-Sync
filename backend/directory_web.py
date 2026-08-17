@@ -352,5 +352,4 @@ def detail_html(world_id: str) -> bytes:
 
 def remote_admin_html() -> bytes:
     page = _remote_admin_html_localized()
-    page = page.replace(b'<button data-tab="map">Live Map</button>', b'', 1)
     return _inject_web_localization(_inject_browser_credits(page))

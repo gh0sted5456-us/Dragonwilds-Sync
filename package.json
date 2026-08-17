@@ -11,7 +11,6 @@
     "validate:gui": "node scripts/validate_world_cards_headless.cjs",
     "verify": "npm run prepare:monaco && npm run check:renderer && npm run test:backend",
     "build:win": "build.bat",
-    "build:linux": "bash build-linux.sh",
     "package:raw": "node scripts/package_raw_source.cjs",
     "prepare:monaco": "node scripts/prepare_monaco.cjs"
   },
@@ -69,23 +68,6 @@
     },
     "portable": {
       "artifactName": "${productName}-Portable-${version}.${ext}"
-    },
-    "linux": {
-      "icon": "renderer/assets/application-icon.png",
-      "executableName": "dragonwilds-sync-app",
-      "category": "Game",
-      "maintainer": "RSDW Modding Community",
-      "artifactName": "Dragonwilds-Sync-${version}-${arch}.${ext}",
-      "extraResources": [
-        {
-          "from": "dist-service-linux/DragonwildsSync.Service",
-          "to": "backend/DragonwildsSync.Service"
-        }
-      ],
-      "target": [
-        "AppImage",
-        "tar.gz"
-      ]
     }
   },
   "dependencies": {

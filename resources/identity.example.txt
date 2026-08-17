@@ -1,0 +1,5 @@
+# Dragonwilds Sync mod identity
+# Copy this file to the mod root as identity.txt.
+Modder: Your Modder Name
+Nexus: https://www.nexusmods.com/runescapedragonwilds/mods/0000
+

@@ -1,6 +1,6 @@
-# IDENTITY.txt
+# identity.txt
 
-`IDENTITY.txt` is an optional, author-owned metadata file a mod creator can
+`identity.txt` is a portable mod identity file a mod creator can
 drop into the root of any:
 
 - UE4SS mod folder (`Binaries/Win64/ue4ss/Mods/<ModName>/`)
@@ -10,9 +10,10 @@ drop into the root of any:
 next to the same launcher-recognized `tags.txt` / `hotload.txt` sidecars
 already documented for those folders.
 
-Dragonwilds Sync only ever **reads** this file. It is never created,
-repaired, or edited by the launcher the way `tags.txt`/`hotload.txt` are --
-it belongs entirely to the mod author.
+Dragonwilds Sync creates a commented template when it repairs a managed
+directory mod's metadata contract. The author can edit it in the in-app Mod
+Explorer. Existing uppercase `IDENTITY.txt` files remain compatible and are
+never replaced.
 
 ## Format
 
@@ -20,7 +21,7 @@ Plain text, one `key: value` pair per line. Blank lines and lines starting
 with `#`, `;;`, or `//` are ignored.
 
 ```
-Author: Snorkles
+Modder: Snorkles
 Nexus: https://www.nexusmods.com/runescapedragonwilds/mods/12
 Steam: https://steamcommunity.com/sharedfiles/filedetails/?id=999999999
 Website: https://example.com/my-mod

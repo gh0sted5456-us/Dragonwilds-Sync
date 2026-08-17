@@ -43,8 +43,11 @@ def main() -> None:
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     assert "closeModal(); setData(fresh); openNotificationCenter()" not in renderer
     assert "row?.remove();syncNotificationCenterEmptyState()" in renderer
-    assert "showLinuxSettings=!!state.adminStatus?.showLinuxSettings" in renderer
-    assert "runtimePlatformStatus()" in main_source and "STEAM_COMPAT_DATA_PATH" in main_source
+    # Version 1.1.9 is deliberately Windows-only. Platform telemetry may remain
+    # defensive internally, but it must never expose the retired Linux UI.
+    assert "const showLinuxSettings=false" in renderer
+    assert "const nativeLinuxServer = false" in renderer
+    assert "runtimePlatformStatus()" in main_source
     assert "min-width:0!important" in styles and "repeat(3,minmax(0,1fr))" in styles
     assert "if(payload.type==='click')" in renderer
     assert "String(payload.html)!==lastHtml" in dialog_host and "if(wired)return" in dialog_host

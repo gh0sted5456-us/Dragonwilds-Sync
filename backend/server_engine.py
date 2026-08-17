@@ -18,6 +18,7 @@ from process_utils import check_output_hidden, popen_hidden, run_hidden
 from health_model import apply_detected_hardware_references
 from server_layout import resolve_server_layout, resolve_server_layout_from_exe
 from active_world import write_active_world, remove_active_world
+from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
                             ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
@@ -30,7 +31,7 @@ DEDICATED_CONFIG_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "Config" / "W
 DEDICATED_CONFIG_FILE = DEDICATED_CONFIG_DIR / "DedicatedServer.ini"
 DEDICATED_SAVEGAMES_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames"
 PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
-SERVER_INFRASTRUCTURE_UE4SS = {"runeschema"}
+SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
@@ -353,7 +354,7 @@ def _read_adopted_dedicated_config(path: Path) -> dict:
     return result
 
 
-def adopt_existing_server_install(profile_id: str, selected: str | Path, *, owner_id: str = "") -> dict:
+def adopt_existing_server_install(profile_id: str, selected: str | Path, *, owner_id: str = "", import_existing_mods: bool = True) -> dict:
     """Inventory and capture an existing install as a profile deployment.
 
     This intentionally copies before it changes ownership.  The files still
@@ -381,12 +382,13 @@ def adopt_existing_server_install(profile_id: str, selected: str | Path, *, owne
     dedicated["server_exe"] = str(layout.server_exe)
     dedicated["game_root"] = str(layout.game_root)
     save_captured = snapshot_profile_savegame(profile_id, str(layout.server_exe))
-    mod_files = snapshot_profile_mods(profile_id, layout.game_root)
+    mod_files = snapshot_profile_mods(profile_id, layout.game_root) if import_existing_mods else 0
     config_files = snapshot_profile_server_config(profile_id, layout.game_root)
     profile["adoption"] = {
         "source_install_root": str(layout.install_root), "source_game_root": str(layout.game_root),
         "source_savegames": str(layout.savegames_dir), "adopted_at": time.time(),
         "save_captured": bool(save_captured), "mod_files_captured": int(mod_files),
+        "existing_mods_imported": bool(import_existing_mods),
         "config_files_captured": int(config_files), "deployment_mode": "copy-verify",
     }
     save_server_profile(profile_id, profile)

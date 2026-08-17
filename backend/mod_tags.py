@@ -6,7 +6,13 @@ from pathlib import Path
 MAX_TAGS = 24
 MAX_TAG_LEN = 40
 HOTLOAD_MARKERS = ("hotload.txt", "hotload.json")
-IDENTITY_FILENAME = "IDENTITY.txt"
+IDENTITY_FILENAME = "identity.txt"
+LEGACY_IDENTITY_FILENAME = "IDENTITY.txt"
+IDENTITY_TEMPLATE = """# Dragonwilds Sync mod identity
+# Replace the values below so users can identify the author and find the mod.
+Modder:
+Nexus:
+"""
 
 # UE4SS ships these Lua mods baked into its own default distribution (loader
 # scaffolding, console/cheat enabler toggles, keybind config, shared helpers).
@@ -277,7 +283,7 @@ def set_tags_file(root: str | Path, values) -> list[str]:
 
 
 def ensure_mod_contract_files(root: str | Path) -> dict:
-    """Repair the two launcher metadata files without changing mod capability.
+    """Repair launcher metadata files without changing mod capability.
 
     Existing community markers retain their meaning. Missing files are created
     with explicit disabled/empty defaults so every managed directory mod can be
@@ -292,9 +298,11 @@ def ensure_mod_contract_files(root: str | Path) -> dict:
     """
     base = Path(root)
     if not base.is_dir():
-        return {"hotload": False, "tags": False, "error": ""}
+        return {"hotload": False, "tags": False, "identity": False, "error": ""}
     hotload = base / "hotload.txt"
     tags = base / "tags.txt"
+    identity = base / IDENTITY_FILENAME
+    legacy_identity = base / LEGACY_IDENTITY_FILENAME
     error = ""
     if not hotload.exists() and not (base / "hotload.json").exists():
         try:
@@ -306,8 +314,14 @@ def ensure_mod_contract_files(root: str | Path) -> dict:
             set_tags_file(base, [])
         except OSError as exc:
             error = error or str(exc)
+    if not identity.exists() and not legacy_identity.exists():
+        try:
+            identity.write_text(IDENTITY_TEMPLATE, encoding="utf-8")
+        except OSError as exc:
+            error = error or str(exc)
     return {"hotload": hotload.exists() or (base / "hotload.json").exists(),
-            "tags": tags.exists() or (base / "tags.json").exists(), "error": error}
+            "tags": tags.exists() or (base / "tags.json").exists(),
+            "identity": identity.exists() or legacy_identity.exists(), "error": error}
 
 
 def parse_identity_text(text: str) -> dict:
@@ -359,8 +373,10 @@ def identity_from_mod_root(root: str | Path) -> dict | None:
     this file; it belongs entirely to the mod author.
     """
     base = Path(root)
-    target = (base / IDENTITY_FILENAME) if base.is_dir() else base.with_name(IDENTITY_FILENAME)
-    if not target.is_file():
+    targets = ([base / IDENTITY_FILENAME, base / LEGACY_IDENTITY_FILENAME]
+               if base.is_dir() else [base.with_name(IDENTITY_FILENAME), base.with_name(LEGACY_IDENTITY_FILENAME)])
+    target = next((candidate for candidate in targets if candidate.is_file()), None)
+    if target is None:
         return None
     try:
         parsed = parse_identity_text(target.read_text(encoding="utf-8", errors="replace"))

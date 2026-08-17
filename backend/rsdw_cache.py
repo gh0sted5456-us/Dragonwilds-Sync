@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -19,6 +20,7 @@ RSDW_DATA_DIR = RSDW_CACHE_ROOT / "item_data"
 RSDW_ICONS_DIR = RSDW_CACHE_ROOT / "icons"
 RSDW_WEBSITE_DIR = RSDW_CACHE_ROOT / "website"
 RSDW_STATE_PATH = RSDW_CACHE_ROOT / "cache_state.json"
+RSDW_ICON_MANIFEST_PATH = RSDW_CACHE_ROOT / "icon-manifest.json"
 RSDW_MODEL_DIR = RSDW_CACHE_ROOT / "model"
 RSDW_MODEL_INDEX = RSDW_MODEL_DIR / "avatar-index.json"
 DEFAULT_REPO = "RSDWArchive/RSDWTools"
@@ -43,6 +45,43 @@ def _json_files(root: Path) -> list[Path]:
 def _icon_files(root: Path) -> list[Path]:
     allowed = {".png", ".jpg", ".jpeg", ".webp", ".svg"}
     return [p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in allowed] if root.exists() else []
+
+
+def _replace_icon_manifest(root: Path, *, repo: str, revision: str) -> dict:
+    """Atomically replace the upstream icon index while custom bindings remain separate."""
+    records = []
+    for path in sorted(_icon_files(root), key=lambda item: item.as_posix().casefold()):
+        payload = path.read_bytes()
+        records.append({"path": path.relative_to(root).as_posix(), "bytes": len(payload),
+                        "sha256": hashlib.sha256(payload).hexdigest()})
+    manifest = {
+        "schema": "DragonwildsSync.RSDWIconManifest.v1", "source": repo,
+        "revision": revision, "generated_at": time.time(), "icon_count": len(records),
+        "icons": records, "custom_icon_policy": "preserved-in-custom-item-records",
+    }
+    RSDW_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(prefix="icon-manifest.", suffix=".tmp", dir=str(RSDW_CACHE_ROOT))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(manifest, handle, indent=2)
+            handle.flush()
+            try: os.fsync(handle.fileno())
+            except OSError: pass
+        os.replace(tmp_name, RSDW_ICON_MANIFEST_PATH)
+    finally:
+        try: Path(tmp_name).unlink(missing_ok=True)
+        except OSError: pass
+    return manifest
+
+
+def icon_manifest() -> dict:
+    try:
+        value = json.loads(RSDW_ICON_MANIFEST_PATH.read_text(encoding="utf-8"))
+        if isinstance(value, dict) and isinstance(value.get("icons"), list):
+            return value
+    except Exception:
+        pass
+    return {"schema": "DragonwildsSync.RSDWIconManifest.v1", "icon_count": 0, "icons": []}
 
 
 def _character_catalog_summary(root: Path) -> dict:
@@ -98,6 +137,8 @@ def validate_cache() -> dict:
         "icon_count": len(icon_files),
         "data_dir": str(RSDW_DATA_DIR),
         "icons_dir": str(RSDW_ICONS_DIR),
+        "icon_manifest": str(RSDW_ICON_MANIFEST_PATH),
+        "icon_manifest_count": int(icon_manifest().get("icon_count") or 0),
         "website_dir": str(RSDW_WEBSITE_DIR),
     }
 
@@ -260,6 +301,8 @@ def refresh(*, force: bool = False, repo: str = DEFAULT_REPO, branch: str = DEFA
             _atomic_swap_dir(staged_data, RSDW_DATA_DIR)
             _atomic_swap_dir(staged_icons, RSDW_ICONS_DIR)
             _atomic_swap_dir(staged_website, RSDW_WEBSITE_DIR)
+
+        _replace_icon_manifest(RSDW_ICONS_DIR, repo=repo, revision=revision)
 
         meta = {
             "repo": repo,

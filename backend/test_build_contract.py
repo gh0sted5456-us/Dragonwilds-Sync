@@ -9,8 +9,6 @@ SPEC = ROOT / "backend" / "DragonwildsSync.Service.spec"
 BUILD_BAT = ROOT / "build.bat"
 PROCESS_UTILS = ROOT / "backend" / "process_utils.py"
 ELECTRON_MAIN = ROOT / "electron" / "main.cjs"
-LINUX_BUILD = ROOT / "scripts" / "build_linux.sh"
-FLATPAK_MANIFEST = ROOT / "packaging" / "flatpak" / "com.dragonwilds.sync.yml"
 
 
 def main():
@@ -154,32 +152,14 @@ def main():
     assert "Removing the previous release directory so only this build remains" in text
     assert "Release contains portable EXE artifacts only" in text
 
-    # Cross-platform source contract: the Linux service is built natively,
-    # packaged into AppImage/tar.gz, then wrapped into a local Flatpak bundle.
-    assert package["scripts"]["build:linux"] == "bash build-linux.sh"
-    linux = package["build"]["linux"]
-    assert set(linux["target"]) == {"AppImage", "tar.gz"}
-    assert linux["executableName"] == "dragonwilds-sync-app"
-    assert any(x.get("from") == "dist-service-linux/DragonwildsSync.Service" for x in linux["extraResources"])
-    linux_build = LINUX_BUILD.read_text(encoding="utf-8")
-    for required_linux in ("uname -s", "PyInstaller", "electron-builder --linux", "flatpak-builder", "flatpak build-bundle"):
-        assert required_linux in linux_build, f"Linux build script missing: {required_linux}"
-    assert "application.cryptography.status" in linux_build and "invalid_signature_rejected" in linux_build
-    assert "package_raw_source.cjs" in linux_build and "Reproducible raw-source folder" in linux_build
-    manifest = FLATPAK_MANIFEST.read_text(encoding="utf-8")
-    assert "app-id: com.dragonwilds.sync" in manifest
-    assert "org.electronjs.Electron2.BaseApp" in manifest
-    assert "release-linux/linux-unpacked" in manifest
-    assert (ROOT / ".github" / "workflows" / "linux-build.yml").is_file()
-    assert (ROOT / "docs" / "LINUX_BUILD.md").is_file()
+    # V1.1.9 is deliberately Windows portable-only.
+    assert "build:linux" not in package["scripts"]
+    assert "linux" not in package["build"]
+    assert not (ROOT / "build-linux.sh").exists()
+    assert not (ROOT / "scripts" / "build_linux.sh").exists()
+    assert not (ROOT / ".github" / "workflows" / "linux-build.yml").exists()
+    assert not (ROOT / "docs" / "LINUX_BUILD.md").exists()
     assert (ROOT / "docs" / "CAPABILITIES.md").is_file()
-    main_text = ELECTRON_MAIN.read_text(encoding="utf-8")
-    assert "process.platform === 'win32' ? 'DragonwildsSync.Service.exe' : 'DragonwildsSync.Service'" in main_text
-    assert "steamapps', 'compatdata'" in main_text
-    server_layout = (ROOT / "backend" / "server_layout.py").read_text(encoding="utf-8")
-    server_systems = (ROOT / "backend" / "server_systems.py").read_text(encoding="utf-8")
-    assert "RSDragonwildsServer.sh" in server_layout and "LinuxServer" in server_layout
-    assert "steamcmd_linux.tar.gz" in server_systems and "DEDICATED_STEAM_APP_ID = \"4019830\"" in server_systems
     print("build contract tests passed")
 
 

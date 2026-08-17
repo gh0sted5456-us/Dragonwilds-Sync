@@ -84,7 +84,7 @@ from operator_identity import public_operator_status, verify_world_identity
 from networking import effective_game_port, manual_router_rule, normalize_publication_mode, valid_port
 from crypto_runtime import cryptography_self_test
 from character_submissions import list_submissions, approve_submission, reject_submission
-from mod_tags import normalize_tags, set_hotload_marker, set_tags_file
+from mod_tags import normalize_tags, set_hotload_marker, set_tags_file, UE4SS_BAKED_IN_DEFAULT_MODS
 from world_maintenance import (
     create_world_backup, delete_world_managed_files, list_world_configs, open_world_config,
     restore_world_backup, save_world_config, copy_world_config, delete_world_config,
@@ -94,6 +94,42 @@ from world_maintenance import (
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _detect_existing_server_mods(selected: str) -> dict:
+    """Return a non-mutating summary of recognizable mods in a server tree."""
+    layout = resolve_server_layout(selected)
+    rows: list[dict] = []
+    ignored = {"runeschema", "shared", "mods.txt", "enabled.txt"}
+    for kind, root in (("UE4SS", layout.ue4ss_mods_dir), ("RuneSchema", layout.runeschema_mods_dir)):
+        if not root.is_dir():
+            continue
+        try:
+            children = list(root.iterdir())
+        except OSError:
+            children = []
+        for child in children:
+            if not child.is_dir() or child.name.casefold() in ignored or (kind == "UE4SS" and child.name.casefold() in UE4SS_BAKED_IN_DEFAULT_MODS):
+                continue
+            try:
+                files = sum(1 for item in child.rglob("*") if item.is_file())
+            except OSError:
+                files = 0
+            if files:
+                rows.append({"name": child.name, "type": kind, "files": files})
+    pak_groups: dict[str, int] = {}
+    if layout.paks_mods_dir.is_dir():
+        try:
+            for path in layout.paks_mods_dir.rglob("*"):
+                if not path.is_file() or path.suffix.casefold() not in {".pak", ".ucas", ".utoc"}:
+                    continue
+                relative = path.relative_to(layout.paks_mods_dir)
+                key = relative.parts[0] if len(relative.parts) > 1 else path.stem.rsplit("_P", 1)[0]
+                pak_groups[key] = pak_groups.get(key, 0) + 1
+        except OSError:
+            pass
+    rows.extend({"name": name, "type": "PAK", "files": count} for name, count in sorted(pak_groups.items()))
+    return {"detected": bool(rows), "count": len(rows), "mods": rows, "game_root": str(layout.game_root)}
 
 
 def _dragonwilds_client_running() -> bool:
@@ -2861,7 +2897,10 @@ def handle(method: str, params: dict) -> object:
                 same_install = os.path.normcase(str(install.get("adopted_install_root") or "")) == os.path.normcase(install_root)
                 if not same_install or not load_server_profile(adopted_profile_id):
                     adopted_profile_id = create_server_profile("Adopted World")
-                adoption = adopt_existing_server_install(adopted_profile_id, install_root, owner_id=owner_id)
+                adoption = adopt_existing_server_install(
+                    adopted_profile_id, install_root, owner_id=owner_id,
+                    import_existing_mods=params.get("import_existing_mods") is not False,
+                )
                 install["adopted_install_root"] = install_root
                 install["adopted_profile_id"] = adopted_profile_id
                 install["last_adoption"] = adoption
@@ -4322,6 +4361,21 @@ def handle(method: str, params: dict) -> object:
             "runtime_prerequisites": runtime_prerequisite_status(install_dir) if install_dir and resolve_server_layout(install_dir).game_root.exists() else {},
             "connection": {"internal_ip": ENGINE.status().get("lan_ip") or "", "external_ip": ENGINE.public_ip or ""},
         }
+
+    if method == "server.install.detect_mods":
+        selected = str(params.get("path") or _server_install_paths(state)[0] or "").strip()
+        return _detect_existing_server_mods(selected) if selected else {"detected": False, "count": 0, "mods": []}
+
+    if method == "server.install.import_mods":
+        profile_id = str(params.get("profile_id") or state.setdefault("server", {}).get("active_world_id") or "")
+        if not profile_id or not load_server_profile(profile_id):
+            raise ValueError("Select or create the destination World Profile before importing server mods.")
+        selected = str(params.get("path") or _server_install_paths(state)[0] or "").strip()
+        detected = _detect_existing_server_mods(selected)
+        files = snapshot_profile_mods(profile_id, Path(detected["game_root"])) if detected["detected"] else 0
+        _record_notification(state, "Existing server mods imported", f"{detected['count']} mod group(s) · {files} file(s) copied into the selected World Profile.", "success", key=f"server-mod-import:{profile_id}")
+        save_state(state)
+        return {**detected, "profile_id": profile_id, "files_captured": files, "state": public_state(state)}
 
     if method in ("server.install.full_setup", "server.maintenance.full_setup"):
         ENGINE.assert_stopped()

@@ -27,7 +27,10 @@ def main():
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
     assert "Release 1." in renderer and "Application Updates" in renderer
-    assert "application-github-url" in renderer
+    assert "application-github-url" not in renderer
+    assert "check-application-update" in renderer and "update-application-now" in renderer
+    assert "https://github.com/gh0sted5456-us/Dragonwilds-Sync" in renderer
+    assert "character-studio-tabs" not in renderer and '<webview id="rsdw-avatar-webview"' not in renderer
     assert "splash-update-now" in renderer and "splash-changelog-dismiss" in renderer
     assert "World Discovery" in renderer and "toggle-multiple-servers" in renderer
 
@@ -48,6 +51,7 @@ def main():
     assert 'headers["Authorization"] = f"Bearer {token}"' in world_sharing
 
     assert (ROOT / "docs/GITHUB_RELEASES.md").is_file()
+    assert "Modder:" in (ROOT / "resources/community-templates/identity.txt").read_text(encoding="utf-8")
     assert not (ROOT / "docs/SHARED_WORLDS_WEBHOST.md").exists()
     assert (ROOT / "backend/profile_bundle.py").is_file()
     print("Release 1 baseline compatibility tests passed")

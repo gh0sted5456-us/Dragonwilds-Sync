@@ -1,6 +1,6 @@
 # Dragonwilds Sync — V1.1.9
 
-Dragonwilds Sync is a Windows/Linux Electron launcher, World profile manager, synchronization client, and dedicated-server manager for RuneScape: Dragonwilds. Windows packages are provided directly; the Linux source includes AppImage, portable tarball, and Flatpak builders.
+Dragonwilds Sync is a Windows Electron launcher, World profile manager, synchronization client, and dedicated-server manager for RuneScape: Dragonwilds. Version 1.1.9 is portable-only; Linux packaging and runtime support are intentionally paused.
 
 V1 consolidates Profile/Characters, Private Worlds, public discovery, Dedicated Server, RSDW, Nexus, networking, WebHost/Remote Server, maintenance, maps, and managed windows into one implementation. Every major surface is responsive and detachable, and World profiles behave consistently whether they represent a local singleplayer save, a co-op host, a connected public World, or a dedicated server profile.
 
@@ -11,8 +11,7 @@ The current documentation is in `docs/`. Begin with `WEBHOST_API.md` for federat
 - **`V1_1_7_FINAL_IMPLEMENTATION_AND_QA_HANDOFF.md`** — authoritative final contract, declared-vs-implemented audit, complete control-wiring verification plan, live acceptance matrix, and retired-feature boundaries.
 - **`WEBHOST_API.md` / `webhost-openapi.json`** — GitHub-ready WebHost federation, public manifest/API, matching, and Remote Server login contract.
 - **`FEATURE_LIST.md`** — historical implementation/feature inventory; reconcile it against the 1.1.7 final handoff.
-- **`CAPABILITIES.md`** — detailed subsystem and Windows/Linux capability matrix, data ownership, protocols, and operational boundaries.
-- **`LINUX_BUILD.md`** — native Linux, AppImage, tarball, Flatpak, Proton-client, and dedicated-server build/setup notes.
+- **`CAPABILITIES.md`** — detailed subsystem capability matrix, data ownership, protocols, and operational boundaries.
 - **`USER_GUIDE.md`** — player-facing setup, Profiles, Characters, Private Worlds, Worlds, Quick Launch, mods, Nexus, and troubleshooting.
 - **`SERVER_ADMIN_GUIDE.md`** — dedicated-server setup, profiles, runtimes, Broadcast, health, Players, Map, mods, networking, maintenance, conversion/merge/archive, and client sync.
 - **`RELEASE1_4_VERIFICATION.md`** — Release 1.4 automated verification and manual Windows QA matrix.
@@ -21,7 +20,7 @@ The current documentation is in `docs/`. Begin with `WEBHOST_API.md` for federat
 
 ## Platform packaging
 
-Windows uses `build.bat` / `npm run build:win`. Linux uses `bash build-linux.sh` / `npm run build:linux` and produces AppImage, portable `tar.gz`, and Flatpak outputs. The Linux application launches the game client through Steam/Proton and can link to or install the native dedicated server (Steam App ID `4019830`) in `~/rs_server`, `/home/dragonwilds/rs_server`, or another operator-selected directory. See `docs/LINUX_BUILD.md` for prerequisites and permission details.
+Windows uses `build.bat` / `npm run build:win` and produces the portable executable. No Linux artifact, Flatpak, AppImage, native service, or Linux support claim is published for v1.1.9.
 
 ## Core World model
 

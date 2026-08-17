@@ -64,7 +64,6 @@ const tests = [
   'backend/test_release1_3_2_runtime.py',
   'backend/test_release1_4.py',
   'backend/test_release1_4_integrations.py',
-  'backend/test_release1_4_platform_runtime.py',
   'backend/test_release1_4_directory_host.py',
   'backend/test_release1_4_web_directory_remote.py',
   'backend/test_release1_4_federation_safety.py',

@@ -22,6 +22,9 @@ def main() -> None:
         config_dir = game / "Saved" / "Config" / ("LinuxServer" if NATIVE_LINUX else "WindowsServer")
         exe = install / ("RSDragonwildsServer.sh" if NATIVE_LINUX else "RSDragonwilds.exe")
         exe.parent.mkdir(parents=True, exist_ok=True); exe.write_bytes(b"server")
+        # Official SteamCMD layouts can also carry an outer bootstrap Binaries
+        # directory. It must not displace the real nested RSDragonwilds root.
+        (install / "Binaries").mkdir()
         save_dir.mkdir(parents=True); (save_dir / "World.sav").write_bytes(b"save-data")
         config_dir.mkdir(parents=True); (config_dir / "DedicatedServer.ini").write_text(
             "[/Script/Dominion.DedicatedServerSettings]\nDefaultWorldName=Effing Desync\nWorldPassword=secret\nPort=7777\n",

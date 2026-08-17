@@ -25,7 +25,6 @@ const sourceDirectories = [
 const sourceFiles = [
   '.gitignore',
   'build.bat',
-  'build-linux.sh',
   'LICENSE.txt',
   'package-lock.json',
   'package.json',
@@ -105,7 +104,7 @@ for (const directory of sourceDirectories) copyRequired(directory);
 for (const file of sourceFiles) copyRequired(file);
 
 const generated = new Date().toISOString();
-const manifest = `# Dragonwilds Sync V1 Raw Source\n\nGenerated: ${generated}\n\nThis folder is a reproducible source/build workspace. Generated dependency and compiler outputs are intentionally omitted.\n\n## Build\n\n- Windows: run \`build.bat\` or \`npm run build:win\`.\n- Linux: run \`bash build-linux.sh\` or \`npm run build:linux\`.\n- Verification only: run \`npm ci\`, then \`npm run verify\`.\n\nThe build restores pinned Node/Python dependencies, regenerates Monaco under \`renderer/vendor\`, verifies the service and renderer, and produces platform packages. Linux native packages must be built on Linux or through the included GitHub Actions workflow.\n\nHelp screenshots, third-party attribution, runtime bootstrap archives, Flatpak metadata, tests, and release documentation are included. User data, passwords, server profiles, game saves, caches, logs, dependency folders, and compiled release output are not included.\n`;
+const manifest = `# Dragonwilds Sync V1 Raw Source\n\nGenerated: ${generated}\n\nThis folder is a reproducible Windows source/build workspace. Generated dependency and compiler outputs are intentionally omitted.\n\n## Build\n\n- Windows: run \`build.bat\` or \`npm run build:win\`.\n- Verification only: run \`npm ci\`, then \`npm run verify\`.\n\nThe build restores pinned Node/Python dependencies, regenerates Monaco under \`renderer/vendor\`, verifies the service and renderer, and produces the portable Windows executable. Linux packaging and runtime support are intentionally not included in v1.1.9.\n\nHelp screenshots, third-party attribution, runtime bootstrap archives, tests, and release documentation are included. User data, passwords, server profiles, game saves, caches, logs, dependency folders, and compiled release output are not included.\n`;
 fs.writeFileSync(path.join(outputRoot, 'RAW_SOURCE_CONTENTS.md'), manifest, 'utf8');
 
 const fileCount = countFiles(outputRoot);

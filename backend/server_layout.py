@@ -122,7 +122,12 @@ def resolve_server_layout(selected: str | Path) -> ServerLayout:
 
     install_root = next((p for p in candidates if _looks_like_install_root(p)), raw)
     if _looks_like_game_root(raw):
-        game_root = raw
+        # Official SteamCMD installs may contain a small top-level Binaries
+        # tree beside the real nested RSDragonwilds game tree. Prefer the
+        # nested root so UE4SS, RuneSchema, PAKs, saves, and config resolve to
+        # the same locations the dedicated process actually uses.
+        nested_game = raw / "RSDragonwilds"
+        game_root = nested_game if _looks_like_game_root(nested_game) else raw
         # A directly selected game root is authoritative.  Retaining a broad
         # ancestor candidate here can turn executable discovery into an
         # accidental recursive scan of an entire drive (for example when an

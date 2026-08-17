@@ -1,0 +1,103 @@
+name: Release Candidate Packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/webgui-catalog-console-overhaul
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-package:
+    name: Ubuntu 24.04 AppImage RC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install headless GUI prerequisites
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
+      - name: Build Ubuntu package
+        run: bash scripts/build_linux.sh
+      - name: Smoke-test packaged AppImage
+        run: bash scripts/test_packaged_linux.sh
+      - name: Upload Ubuntu release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dragonwilds-Sync-Ubuntu-RC
+          if-no-files-found: error
+          path: |
+            release/*Ubuntu*.AppImage
+            release/checksums-linux.sha256
+            release/package-test-report-linux.txt
+            dist-service/DragonwildsSync.Service
+
+  windows-package:
+    name: Windows Portable RC
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and verify portable package
+        shell: powershell
+        run: |
+          $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
+      - name: Create Windows package report and checksums
+        shell: powershell
+        run: |
+          $portable = Get-ChildItem .\release\*.exe | Select-Object -First 1
+          if (-not $portable) { throw 'Portable EXE was not produced.' }
+          @(
+            'Dragonwilds Sync Windows Release Candidate',
+            '===========================================',
+            "Generated: $([DateTime]::UtcNow.ToString('s'))Z",
+            '',
+            'PASS  npm run verify (build gate)',
+            'PASS  Packaged service JSON-RPC stdio (build gate)',
+            'PASS  Packaged Ed25519 self-test (build gate)',
+            'PASS  Packaged launcher/resource validation (build gate)',
+            'NOT RUN  Real Dragonwilds game launch',
+            'NOT RUN  Cross-platform Ubuntu-host sync test',
+            '',
+            'Automated package result: READY FOR CLEAN-VM / GAME INTEGRATION TESTING'
+          ) | Set-Content .\release\package-test-report-windows.txt -Encoding UTF8
+          $hash = Get-FileHash $portable.FullName -Algorithm SHA256
+          "$($hash.Hash.ToLower())  $($portable.Name)" | Set-Content .\release\checksums-windows.sha256 -Encoding ASCII
+      - name: Upload Windows release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dragonwilds-Sync-Windows-RC
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/checksums-windows.sha256
+            release/package-test-report-windows.txt
+            build.log
+
+  rc-summary:
+    name: RC package summary
+    needs: [ubuntu-package, windows-package]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo 'Both packaged release-candidate jobs passed.'
+          echo 'Real Dragonwilds and cross-platform acceptance remain manual gates.'

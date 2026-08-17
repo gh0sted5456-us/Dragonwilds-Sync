@@ -11,6 +11,7 @@
     "validate:gui": "node scripts/validate_world_cards_headless.cjs",
     "verify": "npm run prepare:monaco && npm run check:renderer && npm run test:backend",
     "build:win": "build.bat",
+    "build:linux": "bash scripts/build_linux.sh",
     "package:raw": "node scripts/package_raw_source.cjs",
     "prepare:monaco": "node scripts/prepare_monaco.cjs"
   },
@@ -23,60 +24,30 @@
   },
   "build": {
     "appId": "com.dragonwilds.sync",
-    "asarUnpack": [
-      "node_modules/7zip-bin/**"
-    ],
+    "asarUnpack": ["node_modules/7zip-bin/**"],
     "productName": "Dragonwilds Sync and Launcher",
     "copyright": "Copyright © 2026 RSDW Modding Community",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "electron/**/*",
-      "renderer/**/*",
-      "package.json",
-      "LICENSE.txt"
-    ],
+    "directories": {"output": "release"},
+    "files": ["electron/**/*", "renderer/**/*", "package.json", "LICENSE.txt"],
     "extraResources": [
-      {
-        "from": "resources",
-        "to": "resources",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "node_modules/three/build",
-        "to": "rsdw-viewer/three/build"
-      },
-      {
-        "from": "node_modules/three/examples/jsm",
-        "to": "rsdw-viewer/three/examples/jsm"
-      }
+      {"from": "resources", "to": "resources", "filter": ["**/*"]},
+      {"from": "node_modules/three/build", "to": "rsdw-viewer/three/build"},
+      {"from": "node_modules/three/examples/jsm", "to": "rsdw-viewer/three/examples/jsm"}
     ],
     "win": {
       "icon": "renderer/assets/dragonwilds_icon.ico",
-      "extraResources": [
-        {
-          "from": "dist-service/DragonwildsSync.Service.exe",
-          "to": "backend/DragonwildsSync.Service.exe"
-        }
-      ],
-      "target": [
-        "portable"
-      ]
+      "extraResources": [{"from": "dist-service/DragonwildsSync.Service.exe", "to": "backend/DragonwildsSync.Service.exe"}],
+      "target": ["portable"]
     },
-    "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
-    }
+    "linux": {
+      "category": "Game",
+      "extraResources": [{"from": "dist-service/DragonwildsSync.Service", "to": "backend/DragonwildsSync.Service"}],
+      "target": ["AppImage"],
+      "artifactName": "${productName}-Ubuntu-${version}.${ext}"
+    },
+    "portable": {"artifactName": "${productName}-Portable-${version}.${ext}"}
   },
-  "dependencies": {
-    "7zip-bin": "^5.2.0",
-    "three": "0.184.0",
-    "ws": "8.21.3"
-  },
+  "dependencies": {"7zip-bin": "^5.2.0", "three": "0.184.0", "ws": "8.21.3"},
   "author": "RSDW Modding Community",
-  "allowScripts": {
-    "electron@43.2.0": true
-  }
+  "allowScripts": {"electron@43.2.0": true}
 }

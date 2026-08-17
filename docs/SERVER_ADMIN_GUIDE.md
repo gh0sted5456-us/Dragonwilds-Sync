@@ -263,10 +263,7 @@ This supports taking a server offline for local testing and safely reconciling t
 ## Notifications
 
 Service notices and maintenance warnings appear in the launcher and can generate passive Windows notifications. Polling rate limits use a quiet backoff instead of repeatedly marking the World offline.
-# Linux runtime choice
 
-Use **Native Linux server** for the official Linux dedicated server. It is the normal Linux hosting path, but it intentionally cannot load the current Win64 UE4SS and RuneSchema DLLs.
+## Platform boundary
 
-Use **Windows server through Proton/Wine** only when the server executable is a Windows `.exe` and the World requires that Win64 mod stack. Configure the Proton or Wine executable and, if needed, its compatibility prefix under Settings → Server. The launcher applies the configured DLL overrides to only that child server process. It does not convert DLLs or globally change Wine/Steam settings.
-
-Connected launchers report their game platform during sync. Windows and Linux-Proton clients receive the Win64 runtime; a native Linux ABI receives only compatible content. The server records the selected platform with the client's manifest report for troubleshooting.
+Version 1.1.9 manages the Windows dedicated server from the Windows portable application. Linux server runtimes and Proton/Wine configuration are not exposed or supported in this release.

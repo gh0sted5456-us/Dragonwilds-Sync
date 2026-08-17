@@ -56,21 +56,14 @@ function isNewer(candidate, current) {
 }
 function detectMode(app) {
   if (!app.isPackaged) return 'development';
-  if (process.platform === 'linux') return process.env.APPIMAGE ? 'appimage' : 'linux-package';
-  return process.env.PORTABLE_EXECUTABLE_FILE ? 'portable' : 'installed';
+  return 'portable';
 }
-function chooseAsset(release, mode) {
+function chooseAsset(release) {
   const assets = Array.isArray(release.assets) ? release.assets : [];
-  if (mode === 'appimage' || mode === 'linux-package') {
-    return assets.find((a) => /\.AppImage$/i.test(String(a.name || ''))) || null;
-  }
   const exes = assets.filter((a) => /\.exe$/i.test(String(a.name || '')));
-  let selected = null;
-  if (mode === 'portable') selected = exes.find((a) => /portable/i.test(a.name));
-  else selected = exes.find((a) => /(setup|installer)/i.test(a.name) && !/portable/i.test(a.name));
-  if (!selected && mode === 'installed') selected = exes.find((a) => !/portable/i.test(a.name));
-  if (!selected && mode === 'portable') selected = exes.find((a) => !/(setup|installer)/i.test(a.name));
-  return selected || null;
+  return exes.find((a) => /portable/i.test(a.name))
+    || exes.find((a) => !/(setup|installer)/i.test(a.name))
+    || null;
 }
 function normalizeDigest(asset) {
   const raw = String(asset?.digest || '').trim();
@@ -86,7 +79,7 @@ async function checkForUpdates({ repositoryUrl, currentVersion, mode, etag = '' 
   if (response.status === 304) return { ok: true, notModified: true, repository: repo.repository, etag };
   const release = response.data || {};
   const tag = String(release.tag_name || '').trim();
-  const asset = chooseAsset(release, mode);
+  const asset = chooseAsset(release);
   return {
     ok: true,
     repository: repo.repository,
@@ -131,10 +124,10 @@ function psQuote(value) { return `'${String(value).replace(/'/g, "''")}'`; }
 
 async function stageAndApply({ app, release, repositoryUrl }) {
   if (!app.isPackaged) throw new Error('Application updating is disabled in development mode.');
-  if (process.platform !== 'win32') throw new Error('Install Linux updates through Flatpak or replace the AppImage from the project release page. In-app replacement is Windows-only.');
+  if (process.platform !== 'win32') throw new Error('Dragonwilds Sync 1.1.9 updates require the Windows portable application.');
   const mode = detectMode(app);
   const asset = release?.asset;
-  if (!asset?.url || !asset?.name) throw new Error(`The GitHub release does not contain a ${mode === 'portable' ? 'Portable' : 'Setup'} Windows EXE asset.`);
+  if (!asset?.url || !asset?.name) throw new Error('The GitHub release does not contain a Portable Windows EXE asset.');
   if (!asset.digest) throw new Error('Update blocked: the selected GitHub release asset does not publish a SHA-256 digest.');
   const updateDir = path.join(app.getPath('userData'), 'updates'); fs.mkdirSync(updateDir, { recursive: true });
   const staged = path.join(updateDir, path.basename(asset.name).replace(/[^A-Za-z0-9_. -]/g, '_'));
@@ -146,12 +139,7 @@ async function stageAndApply({ app, release, repositoryUrl }) {
   fs.writeFileSync(marker, JSON.stringify({ version: release.latestVersion, name: release.name, notes: release.notes, releaseUrl: release.releaseUrl, repository: repositoryUrl, appliedAtUtc: new Date().toISOString(), mode }, null, 2));
   const currentExe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
   const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.ps1`);
-  let body;
-  if (mode === 'portable') {
-    body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\ntry { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\nStart-Sleep -Milliseconds 600\nCopy-Item -LiteralPath $src -Destination $dst -Force\nRemove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $dst\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n`;
-  } else {
-    body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$installer=${psQuote(staged)}\n$relaunch=${psQuote(currentExe)}\ntry { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\nStart-Sleep -Milliseconds 600\n$p=Start-Process -FilePath $installer -ArgumentList '/S' -PassThru -Wait\nif($p.ExitCode -ne 0){ exit $p.ExitCode }\nRemove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $relaunch\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n`;
-  }
+  const body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\ntry { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\nStart-Sleep -Milliseconds 600\nCopy-Item -LiteralPath $src -Destination $dst -Force\nRemove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $dst\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n`;
   fs.writeFileSync(script, body, 'utf8');
   const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: 'ignore', windowsHide: true });
   child.unref();

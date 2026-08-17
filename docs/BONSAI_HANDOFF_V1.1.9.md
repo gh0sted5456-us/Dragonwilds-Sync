@@ -11,10 +11,10 @@ This document is the authoritative handoff for the locally hosted Bonsai LLM. Pr
 - Branch/tag: `main` / `v1.1.9`
 - Supported release format: Windows x64 portable executable only
 - Artifact: `release\Dragonwilds Sync and Launcher-Portable-1.1.9.exe`
-- Artifact size: 211,012,117 bytes (201.2 MB)
-- SHA-256: `86768C4D1A251DBBC48BA0D30093FDB42063D77937CBD16454608A40F73289B3`
-- Successful build: 2026-08-16 19:22:53 MDT
-- Build log: `build-logs\build_20260816_192253.log`
+- Artifact size: 211,008,371 bytes (201.2 MB)
+- SHA-256: `3DB89D6DEFE50561367C4B928DFE789DDEE0880E51B3124739A915FD4D948AD6`
+- Successful build: 2026-08-16 19:28:02 MDT
+- Build log: `build-logs\build_20260816_192802.log`
 
 ## Non-negotiable product boundaries
 

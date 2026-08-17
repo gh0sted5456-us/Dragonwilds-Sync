@@ -174,6 +174,9 @@ def main():
     assert "characters.native.preview" in renderer and "nativeCharacterEditorMarkup" in renderer
     assert "characters.native.tool.preview" in renderer and "nativeItemEditorMarkup" in renderer
     assert "native-rsdw-inventory-layout" in renderer and "data-native-context-action=\"duplicate\"" in renderer
+    assert "const openItemDefinition=async(node)" in renderer
+    assert "node.dataset.itemUnknown==='1'" in renderer and "node.dataset.itemRecognized==='0'" in renderer
+    assert "category:'Other'" in renderer and "event.key==='Enter'||event.key===' '" in renderer
     assert "ResizeObserver" in renderer and "syncAvatarHostSize" in renderer
     assert "appearance-editor" not in renderer
     assert "route:'rsdw-editor'" in renderer and "right-click any tile" in renderer

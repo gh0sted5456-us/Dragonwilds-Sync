@@ -3899,6 +3899,16 @@
         };
         const catalogPayload=(node)=>({source:'catalog',id:node.dataset.itemData||'',equipment:node.dataset.itemEquipment||'',max:Number(node.dataset.itemMax||1),tab:state.rsdwItemCatalogTab});
         const inventoryPayload=(node)=>({source:'inventory',section:node.dataset.section||'inventory',slot:Number(node.dataset.slot||0),equipment:node.dataset.itemEquipment||''});
+        let definitionOpening=false;
+        const openItemDefinition=async(node)=>{
+          const id=node?.dataset.itemData||'';
+          if(!id||definitionOpening)return;
+          definitionOpening=true;
+          try{
+            const existing=((state.data?.application?.custom_items)||[]).find((row)=>String(row.persistence_id||'').toLowerCase()===String(id).toLowerCase());
+            await openCustomItemRepository(existing||{persistence_id:id,name:node.dataset.itemName||id,category:'Other',equipment:node.dataset.itemEquipment||'',max_stack:Number(node.dataset.itemMax||node.dataset.itemCount||1)});
+          }finally{setTimeout(()=>{definitionOpening=false;},500);}
+        };
         const canDrop=(payload,target)=>{
           if(!payload||!target)return false;
           const kind=target.dataset.kind||'';
@@ -3909,7 +3919,9 @@
         };
         root.querySelectorAll('[data-native-catalog-slot][data-item-data]:not([data-item-data=""])').forEach((node)=>{
           node.addEventListener('dragstart',(event)=>{const payload=catalogPayload(node);event.dataTransfer.setData('application/json',JSON.stringify(payload));event.dataTransfer.effectAllowed='copy';});
-          node.addEventListener('dblclick',()=>applyToolChange({action:'add',section:'inventory',tab:state.rsdwItemCatalogTab,id:node.dataset.itemData,max:false}));
+          node.addEventListener('click',(event)=>{if(node.dataset.itemUnknown==='1'){event.preventDefault();event.stopPropagation();openItemDefinition(node);}});
+          node.addEventListener('keydown',(event)=>{if(node.dataset.itemUnknown==='1'&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openItemDefinition(node);}});
+          node.addEventListener('dblclick',()=>{if(node.dataset.itemUnknown!=='1')applyToolChange({action:'add',section:'inventory',tab:state.rsdwItemCatalogTab,id:node.dataset.itemData,max:false});});
           node.addEventListener('contextmenu',(event)=>openContext(event,node,'catalog'));
         });
         root.querySelectorAll('[data-native-item-slot]').forEach((node)=>{
@@ -3917,14 +3929,12 @@
           node.addEventListener('dragover',(event)=>{let payload=null;try{payload=JSON.parse(event.dataTransfer.getData('application/json')||'null');}catch(_){}if(!payload&&event.dataTransfer.types.includes('application/json')){event.preventDefault();node.classList.add('drag-pending');return;}if(canDrop(payload,node)){event.preventDefault();node.classList.add('drag-allowed');}else node.classList.add('drag-blocked');});
           node.addEventListener('dragleave',()=>node.classList.remove('drag-pending','drag-allowed','drag-blocked'));
           node.addEventListener('drop',(event)=>{event.preventDefault();node.classList.remove('drag-pending','drag-allowed','drag-blocked');let payload=null;try{payload=JSON.parse(event.dataTransfer.getData('application/json')||'null');}catch(_){}if(!canDrop(payload,node))return;if(payload.source==='catalog'){applyToolChange({action:'add',section:node.dataset.section,tab:state.rsdwItemCatalogTab,id:payload.id,max:false,target_slot:Number(node.dataset.slot||0),action_bar:node.dataset.kind==='action'});}else if(payload.source==='inventory'){applyToolChange({action:'move',section:payload.section,source_section:payload.section,source_slot:Number(payload.slot||0),target_section:node.dataset.section,target_slot:Number(node.dataset.slot||0)});}});
-          if(node.dataset.itemData){node.addEventListener('contextmenu',(event)=>openContext(event,node,'inventory'));node.addEventListener('dblclick',async()=>{const value=await managedPrompt(et('quantity'),String(node.dataset.itemCount||1),et('customAmount'));if(value===null)return;const amount=Number(value);if(!Number.isFinite(amount)||amount<1)return toast(et('customAmount'),'Enter a positive number.','error');applyToolChange({action:'set-count',section:node.dataset.section,slot:Number(node.dataset.slot||0),amount});});}
+          if(node.dataset.itemData){node.addEventListener('click',(event)=>{if(node.dataset.itemRecognized==='0'){event.preventDefault();event.stopPropagation();openItemDefinition(node);}});node.addEventListener('keydown',(event)=>{if(node.dataset.itemRecognized==='0'&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openItemDefinition(node);}});node.addEventListener('contextmenu',(event)=>openContext(event,node,'inventory'));node.addEventListener('dblclick',async()=>{if(node.dataset.itemRecognized==='0')return;const value=await managedPrompt(et('quantity'),String(node.dataset.itemCount||1),et('customAmount'));if(value===null)return;const amount=Number(value);if(!Number.isFinite(amount)||amount<1)return toast(et('customAmount'),'Enter a positive number.','error');applyToolChange({action:'set-count',section:node.dataset.section,slot:Number(node.dataset.slot||0),amount});});}
         });
         contextMenu?.querySelectorAll('[data-native-context-action]').forEach((button)=>button.addEventListener('click',async()=>{
           const action=button.dataset.nativeContextAction;if(!contextTarget)return;
           if(action==='define'){
-            const id=contextTarget.dataset.itemData||'';
-            const existing=((state.data?.application?.custom_items)||[]).find((row)=>String(row.persistence_id||'').toLowerCase()===String(id).toLowerCase());
-            hideContext();await openCustomItemRepository(existing||{persistence_id:id,name:contextTarget.dataset.itemName||id,max_stack:Number(contextTarget.dataset.itemMax||contextTarget.dataset.itemCount||1)});return;
+            const target=contextTarget;hideContext();await openItemDefinition(target);return;
           }
           if(contextTarget.matches('[data-native-catalog-slot]')){await applyToolChange({action:'add',section:'inventory',tab:state.rsdwItemCatalogTab,id:contextTarget.dataset.itemData,max:action==='add-max'});hideContext();return;}
           const section=contextTarget.dataset.section;const slot=Number(contextTarget.dataset.slot||0);

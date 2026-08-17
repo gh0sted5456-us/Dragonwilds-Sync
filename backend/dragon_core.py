@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import shutil
 import sys
@@ -23,19 +24,35 @@ GROUPS = {
 }
 
 
+def _category_defaults(group: str, name: str) -> tuple[int, float]:
+    protected = group == "Protected"
+    stack = 1 if protected else (99999 if group == "Currency" else (9999 if group in {"Magic", "Ammunition"} else 300))
+    weight = -1.0 if protected or (group == "Ammunition" and name in {"Ammo", "Arrow", "Bolt"}) else 0.0
+    return stack, weight
+
+
 def default_settings() -> dict:
     categories = {}
     for group, names in GROUPS.items():
         categories[group] = {}
         for name in names:
-            protected = group == "Protected"
-            stack = 1 if protected else (99999 if group == "Currency" else (9999 if group in {"Magic", "Ammunition"} else 300))
-            weight = -1.0 if protected or (group == "Ammunition" and name in {"Ammo", "Arrow", "Bolt"}) else 0.0
-            categories[group][name] = {"stack": stack, "weight": weight}
+            stack, weight = _category_defaults(group, name)
+            categories[group][name] = {"stack": stack, "weight": weight,
+                                       "stack_inherited": True, "weight_inherited": True}
     return {"enabled": True, "stacks_enabled": True, "weights_enabled": True,
             "defaults": {"vanilla_stack": 300, "modded_stack": 300, "vanilla_weight": 0.0, "modded_weight": 0.0},
             "categories": categories, "equipment": {"stack_enabled": False, "stack_size": 1,
             "weight_enabled": False, "weight": -1.0}, "updated_at": 0}
+
+
+def _finite_number(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def normalize_settings(value: dict | None) -> dict:
@@ -45,19 +62,27 @@ def normalize_settings(value: dict | None) -> dict:
     defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
     for key in result["defaults"]:
         if key in defaults:
-            result["defaults"][key] = float(defaults[key]) if "weight" in key else max(1, min(999999, int(defaults[key])))
+            number = _finite_number(defaults[key])
+            if number is not None:
+                result["defaults"][key] = number if "weight" in key else max(1, min(999999, int(number)))
     incoming = raw.get("categories") if isinstance(raw.get("categories"), dict) else {}
     for group, rows in result["categories"].items():
         supplied = incoming.get(group) if isinstance(incoming.get(group), dict) else {}
         for name, row in rows.items():
             source = supplied.get(name) if isinstance(supplied.get(name), dict) else {}
-            if "stack" in source: row["stack"] = max(1, min(999999, int(source["stack"])))
-            if "weight" in source: row["weight"] = max(-1.0, min(100000.0, float(source["weight"])))
+            stack = _finite_number(source.get("stack")) if "stack" in source else None
+            weight = _finite_number(source.get("weight")) if "weight" in source else None
+            if stack is not None:
+                row["stack"] = max(1, min(999999, int(stack))); row["stack_inherited"] = False
+            if weight is not None:
+                row["weight"] = max(-1.0, min(100000.0, weight)); row["weight_inherited"] = False
     equipment = raw.get("equipment") if isinstance(raw.get("equipment"), dict) else {}
+    stack_size = _finite_number(equipment.get("stack_size"))
+    equipment_weight = _finite_number(equipment.get("weight"))
     result["equipment"].update({"stack_enabled": bool(equipment.get("stack_enabled", result["equipment"]["stack_enabled"])),
-                                "stack_size": max(1, min(999999, int(equipment.get("stack_size", result["equipment"]["stack_size"])))),
+                                "stack_size": max(1, min(999999, int(stack_size))) if stack_size is not None else result["equipment"]["stack_size"],
                                 "weight_enabled": bool(equipment.get("weight_enabled", result["equipment"]["weight_enabled"])),
-                                "weight": max(-1.0, min(100000.0, float(equipment.get("weight", result["equipment"]["weight"]))))})
+                                "weight": max(-1.0, min(100000.0, equipment_weight)) if equipment_weight is not None else result["equipment"]["weight"]})
     return result
 
 

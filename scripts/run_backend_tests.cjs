@@ -37,7 +37,7 @@ if (!python) {
   process.exit(1);
 }
 
-const tests = [
+const crossPlatformTests = [
   'backend/test_identity.py',
   'backend/test_sync_safety.py',
   'backend/test_server_engine.py',
@@ -47,6 +47,17 @@ const tests = [
   'backend/test_service_rpc.py',
   'backend/test_alpha5.py',
   'backend/test_alpha6.py',
+  'backend/test_crypto_runtime.py',
+  'backend/test_runtime_platforms.py',
+  'backend/test_build_contract.py',
+];
+
+// Windows remains the production/V2 baseline and therefore runs every
+// historical regression suite. Ubuntu runs the platform-safe core above plus
+// its explicit runtime/platform contract. Older Alpha fixtures deliberately
+// model Windows loader DLL ownership and must not be reinterpreted as native
+// Linux behavior merely to make CI green.
+const windowsHistoricalTests = [
   'backend/test_alpha7.py',
   'backend/test_alpha7_release.py',
   'backend/test_alpha8.py',
@@ -77,12 +88,14 @@ const tests = [
   // Release 1.1.3 validated the retired bundled AssetCatalog companion.
   'backend/test_release1_1_5.py',
   'backend/test_networking_v1_1_5.py',
-  'backend/test_crypto_runtime.py',
-  'backend/test_runtime_platforms.py',
-  'backend/test_build_contract.py',
   'backend/test_v1_1_9_mod_management.py',
 ];
 
+const tests = process.platform === 'win32'
+  ? [...crossPlatformTests.slice(0, 9), ...windowsHistoricalTests, ...crossPlatformTests.slice(9)]
+  : crossPlatformTests;
+
+console.log(`[backend verify] ${process.platform === 'win32' ? 'Windows full V2 regression matrix' : 'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 for (const test of tests) {
   console.log(`> ${python.command} ${[...python.prefix, test].join(' ')}`);
   const result = spawnSync(python.command, [...python.prefix, test], {

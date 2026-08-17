@@ -29,7 +29,7 @@ a = Analysis(
     hiddenimports=crypto_hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=[str(backend / 'packaged_stdio_guard.py')],
     excludes=[],
     noarchive=False,
 )

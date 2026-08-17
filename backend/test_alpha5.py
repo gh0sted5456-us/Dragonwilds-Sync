@@ -27,10 +27,10 @@ def main():
         root = Path(td)
         profiles = root / 'profiles'
         server = root / 'server'
-        # The concise Live Config surface exposes World/server, UE4SS core,
-        # and RuneSchema core configuration. Individual mod internals remain
-        # available through the dedicated Mod Explorer.
-        config = server / 'Binaries/Win64/ue4ss/Mods/Runeschema/config/config.json'
+        # Use the canonical RuneSchema casing. Windows hid this fixture typo on
+        # case-insensitive NTFS; Ubuntu correctly treats RuneSchema/Runeschema as
+        # different paths, which is exactly the portability behavior we want.
+        config = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json'
         config.parent.mkdir(parents=True)
         config.write_text('{"enabled": true}', encoding='utf-8')
         old_profiles = wm.SERVER_PROFILES_DIR

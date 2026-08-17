@@ -102,6 +102,25 @@ def _unit_key_for_path(layout, path: Path) -> str:
     return f"ue4ss_mod::{first}"
 
 
+def _origin_for_path(layout, path: Path, unit_key: str = "") -> tuple[str, str]:
+    """Return a stable grouping key and user-facing source for World configs."""
+    if unit_key.startswith("runeschema_mod::"):
+        return "runeschema_mod", f"RuneSchema Mod · {unit_key.split('::', 1)[-1]}"
+    if unit_key.startswith("ue4ss_mod::"):
+        return "ue4ss_mod", f"UE4SS Mod · {unit_key.split('::', 1)[-1]}"
+    try:
+        path.relative_to(layout.config_dir)
+        return "world", "World / Server"
+    except ValueError:
+        pass
+    try:
+        path.relative_to(layout.runeschema_root)
+        return "runeschema", "RuneSchema Core"
+    except ValueError:
+        pass
+    return "ue4ss", "UE4SS Core"
+
+
 def _is_launcher_infrastructure_file(layout, file: Path) -> bool:
     """Return True for server runtime plumbing that is not World-owned config.
 
@@ -141,10 +160,12 @@ def _file_metadata(profile_id: str, layout, file: Path, manifest: dict) -> dict:
         default_sync = True
     client_sync = bool(managed.get("client_sync", default_sync)) and not sensitive
     scope = "server_config" if in_server_config else ("runeschema" if in_runeschema else "ue4ss")
+    origin, origin_label = _origin_for_path(layout, file, unit_key)
     return {
         "relative_path": rel, "name": file.name, "size": file.stat().st_size,
         "managed": rel in (manifest.get("files") or {}), "readonly": is_readonly(file),
         "language": _language(file), "scope": scope, "unit_key": unit_key,
+        "origin": origin, "origin_label": origin_label,
         "hotload_capable": hotload, "restart_required": not hotload,
         "client_sync": client_sync, "sensitive": sensitive,
         "special": "mods_txt" if special_mods_txt else "",
@@ -186,7 +207,7 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
                 previous = files.get(rel) or {}
                 files[rel] = {
                     **previous,
-                    **{k: meta[k] for k in ("language", "scope", "unit_key", "hotload_capable", "client_sync", "sensitive", "special")},
+                    **{k: meta[k] for k in ("language", "scope", "unit_key", "origin", "origin_label", "hotload_capable", "client_sync", "sensitive", "special")},
                     "managed_since": previous.get("managed_since") or time.time(),
                     "size": file.stat().st_size,
                 }
@@ -238,12 +259,14 @@ def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[
                 "relative_path": rel, "name": Path(rel).name, "size": int((meta or {}).get("size") or 0),
                 "managed": True, "readonly": True, "language": str(meta.get("language") or _language(Path(rel))),
                 "scope": str(meta.get("scope") or "managed"), "unit_key": str(meta.get("unit_key") or ""),
+                "origin": str(meta.get("origin") or meta.get("scope") or "managed"),
+                "origin_label": str(meta.get("origin_label") or "Managed World Files"),
                 "hotload_capable": bool(meta.get("hotload_capable", False)),
                 "restart_required": not bool(meta.get("hotload_capable", False)),
                 "client_sync": bool(meta.get("client_sync", False)), "sensitive": bool(meta.get("sensitive", False)),
                 "special": str(meta.get("special") or ""), "inactive": True,
             })
-    return sorted(results, key=lambda item: (item.get("scope", ""), item["relative_path"].lower()))
+    return sorted(results, key=lambda item: (item.get("origin", ""), item["relative_path"].lower()))
 
 
 def open_world_config(profile_id: str, server_root: str, relative_path: str, active: bool) -> dict:

@@ -940,6 +940,8 @@ def handle(method: str, params: dict) -> object:
                 "icon_data": icon_data, "icon_ref": icon_ref, "category": category,
                 "description": str(raw.get("description") or "")[:500],
                 "equipment": str(raw.get("equipment") or "")[:40],
+                "source_mod": str(raw.get("source_mod") or raw.get("sourceMod") or "")[:2048],
+                "source_manifest": str(raw.get("source_manifest") or raw.get("sourceManifest") or "")[:2048],
                 "created_at": str(raw.get("created_at") or now_iso()),
                 "updated_at": now_iso(),
             }
@@ -964,6 +966,14 @@ def handle(method: str, params: dict) -> object:
                                 break
                     except OSError:
                         continue
+                try:
+                    for source in root.rglob("manifest.json"):
+                        if source.parent.name.casefold() == "items":
+                            manifests[str(source.resolve()).casefold()] = source.resolve()
+                        if len(manifests) >= 500:
+                            break
+                except OSError:
+                    continue
             merged = {str((row or {}).get("persistence_id") or "").casefold(): row for row in items if isinstance(row, dict)}
             imported = 0
             sources = []
@@ -990,6 +1000,8 @@ def handle(method: str, params: dict) -> object:
                                 if media_type.startswith("image/"):
                                     candidate["icon_data"] = f"data:{media_type};base64,{base64.b64encode(resolved.read_bytes()).decode('ascii')}"
                         item = normalize_custom_item(candidate)
+                        item["source_mod"] = str(source.parent.parent if source.parent.name.casefold() == "items" else source.parent)
+                        item["source_manifest"] = str(source)
                         merged[item["persistence_id"].casefold()] = item
                         imported += 1
                     sources.append({"path": str(source), "items": imported - before})
@@ -1021,6 +1033,78 @@ def handle(method: str, params: dict) -> object:
             application["custom_items"] = [row for row in items if str((row or {}).get("persistence_id") or "").casefold() != key]
             save_state(state)
             return {"items": application["custom_items"], "state": public_state(state)}
+        if method == "application.custom_items.write_to_mod":
+            key = str(params.get("persistence_id") or "").strip().casefold()
+            item = next((deepcopy(row) for row in items if str((row or {}).get("persistence_id") or "").casefold() == key), None)
+            if not item:
+                raise ValueError("Save this modded item before writing it to a mod.")
+            game_dir = str(application.get("game_dir") or "").strip()
+            if not game_dir:
+                raise ValueError("Configure the Dragonwilds game directory first.")
+            layout = resolve_client_layout(game_dir)
+            allowed_roots = [layout.ue4ss_mods_dir.resolve(), layout.runeschema_mods_dir.resolve(), layout.paks_mods_dir.resolve()]
+            mod_root = Path(str(params.get("mod_dir") or "")).expanduser().resolve()
+            if not mod_root.is_dir():
+                raise ValueError("Choose an installed UE4SS, RuneSchema, or PAK mod folder.")
+            if not any(mod_root == root or root in mod_root.parents for root in allowed_roots):
+                raise ValueError("The selected folder is outside the configured Dragonwilds mod directories.")
+            item_dir = mod_root / "items"
+            icon_dir = item_dir / "icons"
+            manifest_path = item_dir / "manifest.json"
+            icon_manifest_path = item_dir / "icon-manifest.json"
+            item_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                existing_payload = json.loads(manifest_path.read_text(encoding="utf-8-sig")) if manifest_path.is_file() else {}
+            except (OSError, json.JSONDecodeError):
+                existing_payload = {}
+            existing_rows = existing_payload.get("items") if isinstance(existing_payload, dict) else []
+            merged_rows = {str((row or {}).get("persistence_id") or "").casefold(): deepcopy(row) for row in (existing_rows or []) if isinstance(row, dict) and row.get("persistence_id")}
+            portable = deepcopy(item)
+            portable.pop("source_mod", None); portable.pop("source_manifest", None)
+            data_uri = str(portable.get("icon_data") or "")
+            icon_index = {}
+            try:
+                prior_icons = json.loads(icon_manifest_path.read_text(encoding="utf-8-sig")) if icon_manifest_path.is_file() else {}
+                icon_index = dict(prior_icons.get("icons") or {}) if isinstance(prior_icons, dict) else {}
+            except (OSError, json.JSONDecodeError):
+                icon_index = {}
+            if data_uri.startswith("data:image/") and "," in data_uri:
+                header, encoded = data_uri.split(",", 1)
+                media_type = header[5:].split(";", 1)[0].lower()
+                blob = base64.b64decode(encoded, validate=False)
+                if not blob or len(blob) > 2 * 1024 * 1024:
+                    raise ValueError("The custom item icon is empty or larger than 2 MB.")
+                extension = mimetypes.guess_extension(media_type) or ".png"
+                if extension == ".jpe": extension = ".jpg"
+                safe_id = re.sub(r"[^A-Za-z0-9._-]+", "-", str(portable.get("persistence_id") or "item")).strip("-.")[:80] or "item"
+                file_name = f"{safe_id}-{hashlib.sha256(blob).hexdigest()[:12]}{extension}"
+                icon_dir.mkdir(parents=True, exist_ok=True)
+                icon_path = icon_dir / file_name
+                icon_tmp = icon_path.with_name(icon_path.name + ".tmp")
+                icon_tmp.write_bytes(blob); os.replace(icon_tmp, icon_path)
+                portable["icon_asset"] = f"icons/{file_name}"
+                portable.pop("icon_data", None)
+                icon_index[str(portable["persistence_id"])] = {"path": f"icons/{file_name}", "sha256": hashlib.sha256(blob).hexdigest(), "media_type": media_type}
+            elif portable.get("icon_ref"):
+                icon_index[str(portable["persistence_id"])] = {"rsdw_ref": str(portable.get("icon_ref"))}
+            merged_rows[key] = portable
+            exported_at = now_iso()
+            payload = {"format": "dragonwilds-sync-modded-items", "version": 3, "exported_at": exported_at,
+                       "merge_key": "persistence_id", "icon_manifest": "icon-manifest.json",
+                       "items": sorted(merged_rows.values(), key=lambda row: str(row.get("name") or "").casefold())[:5000]}
+            icon_payload = {"format": "dragonwilds-sync-item-icons", "version": 1, "updated_at": exported_at, "icons": icon_index}
+            for target, value in ((manifest_path, payload), (icon_manifest_path, icon_payload)):
+                temporary = target.with_name(target.name + ".tmp")
+                temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+                os.replace(temporary, target)
+            item["source_mod"] = str(mod_root); item["source_manifest"] = str(manifest_path)
+            for index, current in enumerate(items):
+                if str((current or {}).get("persistence_id") or "").casefold() == key:
+                    items[index] = item; break
+            application["custom_items"] = sorted(items, key=lambda row: str((row or {}).get("name") or "").casefold())[:5000]
+            save_state(state)
+            return {"ok": True, "path": str(manifest_path), "icon_manifest": str(icon_manifest_path),
+                    "count": len(payload["items"]), "item": item, "items": application["custom_items"], "state": public_state(state)}
         if method == "application.custom_items.export":
             target = Path(str(params.get("path") or "")).expanduser()
             if not target.name:
@@ -2404,7 +2488,7 @@ def handle(method: str, params: dict) -> object:
             if isinstance(item, dict):
                 item["read"] = True
         save_state(state)
-        return public_state(state)
+        return {"ok": True, "read": len(state["application"]["notifications"])}
 
     if method == "notifications.dismiss":
         notification_id = str(params.get("id") or "")
@@ -2415,7 +2499,7 @@ def handle(method: str, params: dict) -> object:
             dismissed[str(removed.get("key"))] = time.time() + 24 * 3600
         state["application"]["notifications"] = [item for item in center if str((item or {}).get("id") or "") != notification_id]
         save_state(state)
-        return public_state(state)
+        return {"ok": True, "dismissed": notification_id}
 
     if method == "notifications.clear":
         application = state.setdefault("application", {})
@@ -2427,7 +2511,7 @@ def handle(method: str, params: dict) -> object:
                 dismissed[key] = until
         application["notifications"] = []
         save_state(state)
-        return public_state(state)
+        return {"ok": True, "dismissed_all": True}
 
     if method == "application.update":
         application = state.setdefault("application", {})

@@ -45,6 +45,16 @@ def main() -> None:
         assert (target / "new-schema.json").read_text(encoding="utf-8") == "new"
         assert len(result["deployed"]) == 1
 
+    project = Path(__file__).resolve().parents[1]
+    renderer = (project / "renderer" / "app.js").read_text(encoding="utf-8")
+    profile_bundle = (project / "backend" / "profile_bundle.py").read_text(encoding="utf-8")
+    service = (project / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    maintenance = (project / "backend" / "world_maintenance.py").read_text(encoding="utf-8")
+    assert "const pageSize=40" in renderer
+    assert '"items/manifest.json"' in profile_bundle and '"itemsRoot": "items/"' in profile_bundle
+    assert "application.custom_items.write_to_mod" in service and '"icon-manifest.json"' in service
+    assert "origin_label" in maintenance and "config-origin-group" in renderer
+
     print("V1.1.9 shared mod repository tests passed")
 
 

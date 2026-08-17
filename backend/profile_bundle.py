@@ -225,9 +225,9 @@ def export_profile_bundle(state: dict, output_path: str | Path, *, profile_name:
     payloads: list[tuple[str, str, bytes, str, bool]] = []
     profile_doc = _safe_profile(player, profile_id=profile_id, profile_name=name)
     profile_doc["worldCharacterSelection"] = deepcopy(client.get("world_character_selection") or {})
-    # Carry custom definitions and their user-supplied artwork as separately
-    # checksummed RSDWL payloads. Built-in RSDW icons remain compact references;
-    # custom PNG/JPEG data is included once and rehydrated on import.
+    # Carry custom definitions in the stable /items namespace.  profile.customItems
+    # remains as a v3 compatibility index, while items/manifest.json is the
+    # canonical, independently checksummed portable item contract.
     custom_items = deepcopy((state.get("application") or {}).get("custom_items") or [])
     for row in custom_items:
         if not isinstance(row, dict):
@@ -237,11 +237,19 @@ def export_profile_bundle(state: dict, output_path: str | Path, *, profile_name:
             continue
         blob, media, ext = asset
         item_key = _slug(str(row.get("persistence_id") or row.get("name") or "item"), "item")
-        member = f"profile/custom-items/icons/{item_key}-{sha256_bytes(blob)[:12]}{ext}"
+        member = f"items/icons/{item_key}-{sha256_bytes(blob)[:12]}{ext}"
         payloads.append(("custom-item-icon", member, blob, media, False))
         row["icon_asset"] = member
         row.pop("icon_data", None)
     profile_doc["customItems"] = custom_items
+    item_manifest = {
+        "format": "dragonwilds-sync-modded-items",
+        "version": 3,
+        "exported_at": exported_at,
+        "merge_key": "persistence_id",
+        "items": custom_items,
+    }
+    payloads.append(("custom-item-manifest", "items/manifest.json", _json_bytes(item_manifest), "application/json", False))
     profile_doc["exportedAtUtc"] = exported_at
 
     character_rows = []
@@ -324,7 +332,7 @@ def export_profile_bundle(state: dict, output_path: str | Path, *, profile_name:
         "createdAtUtc": exported_at,
         "producer": {"application": "Dragonwilds Sync", "version": APP_VERSION, "fingerprint": fingerprint},
         "profile": {"profileId": profile_id, "profileName": name},
-        "layout": {"profileRoot": "profile/", "worldsRoot": "worlds/"},
+        "layout": {"profileRoot": "profile/", "worldsRoot": "worlds/", "itemsRoot": "items/"},
         "payloads": records,
         "security": {
             "digestAlgorithm": "sha256",
@@ -405,7 +413,9 @@ def inspect_profile_bundle(package_path: str | Path) -> dict:
         return json.loads(payload_bytes[str(rec["path"])].decode("utf-8-sig"))
     profile = role_json("profile-metadata", {})
     worlds = role_json("world-list", {"worlds": []})
+    item_manifest = role_json("custom-item-manifest", {})
     return {"ok": True, "path": str(path), "manifest": manifest, "profile": profile, "worlds": worlds,
+            "item_manifest": item_manifest,
             "payload_bytes": payload_bytes, "signature_verified": True,
             "operator_fingerprint": signature.get("operator_fingerprint")}
 
@@ -492,7 +502,9 @@ def import_profile_bundle(state: dict, package_path: str | Path, *, game_dir: st
 
     changelog = {"profileId": profile_id, "profileName": profile_name, "importedAtUtc": imported_at, "added": [], "updated": [], "removed": [], "kept": [], "characters": []}
 
-    incoming_custom = profile_doc.get("customItems") if isinstance(profile_doc.get("customItems"), list) else []
+    item_manifest = inspected.get("item_manifest") if isinstance(inspected.get("item_manifest"), dict) else {}
+    manifest_items = item_manifest.get("items") if isinstance(item_manifest.get("items"), list) else []
+    incoming_custom = manifest_items or (profile_doc.get("customItems") if isinstance(profile_doc.get("customItems"), list) else [])
     if incoming_custom:
         application = state.setdefault("application", {})
         existing_custom = application.get("custom_items") if isinstance(application.get("custom_items"), list) else []

@@ -19,9 +19,17 @@ worlds/
     <world-key>/
       icon.<ext>            # optional
       banner.<ext>          # optional
+items/
+  manifest.json             # portable definitions, merged by persistence_id
+  icons/
+    <item-id>-<sha>.<ext>    # optional custom artwork
 ```
 
-`/profile` owns launcher profile metadata and character save exports. `/worlds` owns a timestamped World-list snapshot and optional presentation assets.
+`/profile` owns launcher profile metadata and character save exports. `/worlds` owns a timestamped World-list snapshot and optional presentation assets. `/items` owns the portable custom-item manifest and artwork. The profile document retains a compatibility item index, but new readers should prefer the checksummed `custom-item-manifest` payload at `items/manifest.json`.
+
+## Custom items
+
+The item manifest uses `persistence_id` as its merge key. Imports add or update matching definitions without deleting unrelated local items. Custom icon files are payload-indexed and checksum-verified like every other archive member; vanilla RSDW artwork remains a compact `icon_ref` rather than duplicated binary data.
 
 ## World snapshots
 

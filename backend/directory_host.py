@@ -110,6 +110,22 @@ def _world_route_key(row: dict) -> str:
     return f"{name}@{address}" if name and address else ""
 
 
+def _world_endpoint_aliases(row: dict) -> set[str]:
+    """Normalize every known route so WAN/LAN views of one World can meet."""
+    aliases: set[str] = set()
+    for value in (row.get("external_ip"), row.get("internal_ip")):
+        address = str(value or "").strip().strip("[]")
+        if not address:
+            continue
+        try:
+            address = ipaddress.ip_address(address.split("%", 1)[0]).compressed.casefold()
+        except ValueError:
+            address = address.rstrip(".").casefold()
+        if address:
+            aliases.add(address)
+    return aliases
+
+
 def _public_landing_html() -> bytes:
     return b'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dragonwilds Sync</title>
 <style>html,body{height:100%;margin:0;background:#030505}body{display:grid;place-items:center;overflow:hidden}.mark{width:min(30vw,190px);height:min(30vw,190px);object-fit:contain;filter:brightness(1.65) saturate(1.25) drop-shadow(0 0 30px rgba(206,151,45,.3));animation:arrive .7s ease-out both}@keyframes arrive{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}@media(prefers-reduced-motion:reduce){.mark{animation:none}}</style></head><body><img class="mark" src="/assets/icon.png" alt="Dragonwilds Sync"></body></html>'''
@@ -508,9 +524,23 @@ class DirectoryHost:
             if not isinstance(raw, dict): continue
             row = self._catalog_row(raw)
             route_key = _world_route_key(row)
+            row_name = str(row.get("world_name") or "").strip().casefold()
+            row_aliases = _world_endpoint_aliases(row)
             existing = next((item for item in merged if
                              (row.get("fingerprint") and item.get("fingerprint") == row.get("fingerprint")) or
-                             (route_key and _world_route_key(item) == route_key)), None)
+                             (route_key and _world_route_key(item) == route_key) or
+                             (row_name and row_name == str(item.get("world_name") or "").strip().casefold() and
+                              bool(row_aliases & _world_endpoint_aliases(item)))), None)
+            # EOS/public mirrors may omit routes entirely. If the exact name is
+            # unique and either half is a verified Sync listing, treat the
+            # route-less row as metadata for that one World instead of a second
+            # placard. Ambiguous duplicate names remain separate.
+            if existing is None and row_name:
+                name_matches = [item for item in merged if str(item.get("world_name") or "").strip().casefold() == row_name]
+                if len(name_matches) == 1:
+                    candidate = name_matches[0]
+                    if (not row_aliases or not _world_endpoint_aliases(candidate)) and (row.get("sync_ready") or candidate.get("sync_ready")):
+                        existing = candidate
             if existing:
                 # A verified Sync heartbeat is the authoritative enrichment,
                 # while native discovery can still contribute country/ping.

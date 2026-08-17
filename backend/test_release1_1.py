@@ -43,6 +43,8 @@ def main():
         source["player_profile"]["profile_id"] = "profile-123"
         source["player_profile"]["display_name"] = "Luke"
         source["client"]["worlds"] = [sample_world()]
+        source["application"]["custom_items"] = [{"persistence_id": "/Game/Mods/TestItem", "name": "Test Item", "max_stack": 40,
+                                                     "category": "Resource", "icon_data": data_uri("image/png", b"custom-icon")}]
         out = root / "Luke.rsdwl"
         result = export_profile_bundle(source, out, profile_name="Luke Main", include_characters=False, include_worlds=True, include_world_artwork=True)
         assert result["manifest"]["version"] == 3
@@ -51,12 +53,15 @@ def main():
             names = set(zf.namelist())
             assert "profile/profile.json" in names
             assert "worlds/worlds.json" in names
+            assert "items/manifest.json" in names
+            assert any(n.startswith("items/icons/") for n in names)
             assert any(n.startswith("worlds/assets/") and "/icon." in n for n in names)
             assert any(n.startswith("worlds/assets/") and "/banner." in n for n in names)
             joined = b"\n".join(zf.read(n) for n in names if n.endswith(".json"))
             assert b"NEVER-EXPORT" not in joined
 
         inspected = inspect_profile_bundle(out)
+        assert inspected["item_manifest"]["items"][0]["persistence_id"] == "/Game/Mods/TestItem"
         assert inspected["profile"]["profileName"] == "Luke Main"
         shared_entry = inspected["worlds"]["worlds"][0]
         assert shared_entry["presentation"]["tags"] == ["PVE", "Friends"]
@@ -64,6 +69,7 @@ def main():
         assert shared_entry["modMetadata"][0]["hotload_capable"] is True
         target = default_state()
         imported = import_profile_bundle(target, out, import_characters=False)
+        assert target["application"]["custom_items"][0]["icon_data"].startswith("data:image/png;base64,")
         assert len(imported["changelog"]["added"]) == 1
         hydrated = target["client"]["curated_worlds"][0]
         assert hydrated["presentation"]["icon_b64"].startswith("data:image/png;base64,")

@@ -91,6 +91,26 @@ def main() -> None:
         finally:
             directory_host.STORE_PATH = old_store
 
+        # A local profile row can lack its public route while the verified
+        # heartbeat carries it. An exact unique name still produces one card.
+        directory_host.STORE_PATH = root / "directory-route-fallback.json"
+        directory_host.STORE_PATH.write_text(json.dumps({"worlds": [{
+            "world_name": "Effing Desync", "external_ip": "203.0.113.25", "game_port": 7777,
+            "sync_port": 27051, "fingerprint_claimed": fingerprint, "directory_verified": True,
+            "source": "self-hosted-directory", "last_seen": time.time(), "expires_at": time.time() + 300,
+        }]}), encoding="utf-8")
+        controller = directory_host.DirectoryHost()
+        controller.public_worlds_provider = lambda: [{
+            "world_name": "Effing Desync", "external_ip": "", "internal_ip": "", "game_port": 7777,
+            "sync_port": 27051, "source": "self-hosted-profile", "description": "This is a test.",
+        }]
+        try:
+            worlds = controller.catalog_worlds()
+            assert len(worlds) == 1, worlds
+            assert worlds[0]["sync_ready"] and worlds[0]["description"] == "This is a test."
+        finally:
+            directory_host.STORE_PATH = old_store
+
         sleeper = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         method = server_engine._terminate_process_tree(sleeper.pid, timeout=3.0)
         sleeper.wait(timeout=3.0)

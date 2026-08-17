@@ -32,8 +32,9 @@ def main() -> None:
         service.set_defender_review_enabled = lambda value: None
         notification_id = state["application"]["notifications"][0]["id"]
         result = service.handle("notifications.dismiss", {"id": notification_id})
-        assert result["application"]["notifications"] == []
-        assert result["application"]["dismissed_notifications"]["server:world-a"] > time.time()
+        assert result == {"ok": True, "dismissed": notification_id}
+        assert state["application"]["notifications"] == []
+        assert state["application"]["dismissed_notifications"]["server:world-a"] > time.time()
     finally:
         service.load_state, service.save_state, service.public_state, service._ensure_server_install_migrated, service.set_defender_review_enabled = original
 
@@ -42,7 +43,9 @@ def main() -> None:
     main_source = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     assert "closeModal(); setData(fresh); openNotificationCenter()" not in renderer
-    assert "row?.remove();syncNotificationCenterEmptyState()" in renderer
+    assert "row?.remove();syncNotificationCenterEmptyState();applyFilter()" in renderer
+    assert 'data-notification-filter="warnings"' in renderer and ">Dismiss All<" in renderer
+    assert "api.invoke('notifications.dismiss',{id}).catch" in renderer
     # Version 1.1.9 is deliberately Windows-only. Platform telemetry may remain
     # defensive internally, but it must never expose the retired Linux UI.
     assert "const showLinuxSettings=false" in renderer

@@ -6,7 +6,11 @@ import world_maintenance as wm
 
 
 def main():
-    with tempfile.TemporaryDirectory() as td:
+    # Keep CI fixtures below the checkout path. Windows hosted runners expose
+    # the system temp directory through both long and 8.3 aliases, which tests
+    # pathlib spelling rather than Dragonwilds Sync behavior.
+    fixture_root = Path.cwd()
+    with tempfile.TemporaryDirectory(dir=fixture_root) as td:
         root = Path(td)
         manifest = root / 'appmanifest_4019830.acf'
         manifest.write_text('"AppState"\n{\n  "appid" "4019830"\n  "buildid" "123456"\n}', encoding='utf-8')
@@ -18,12 +22,10 @@ def main():
         assert rv.version_health({'dragonwilds': {'server_current': True}})['score'] == 100
         assert rv.version_health({'dragonwilds': {'server_current': False}})['score'] == 25
 
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(dir=fixture_root) as td:
         root = Path(td)
         profiles = root / 'profiles'
         requested_server = root / 'server'
-        # Canonicalize once through the production resolver. Windows hosted
-        # runners may expose temp paths through both long and 8.3 aliases.
         server = wm.resolve_server_layout(str(requested_server)).game_root
         config = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json'
         config.parent.mkdir(parents=True)

@@ -1,0 +1,31 @@
+{
+  "schema": "dragonwilds-sync-changelog/v1",
+  "updated_at": "2026-08-17T23:45:00Z",
+  "releases": [
+    {
+      "version": "2.1.0-rc",
+      "title": "Release Client RC",
+      "date": "2026-08-17",
+      "status": "release-candidate",
+      "highlights": [
+        "Fresh password authentication and manifest negotiation before every Play or Quick Start.",
+        "Per-mod/component fingerprints allow unchanged content to remain in place while changed components are transferred.",
+        "Windows and Ubuntu release-candidate packaging and verification paths.",
+        "WebGUI, catalog, Recommended Mods, RSDW item metadata, and server-management consolidation work.",
+        "Native detachable application windows and release-client UI polish."
+      ]
+    },
+    {
+      "version": "2.0.0",
+      "title": "Dragonwilds Sync V2",
+      "date": "2026-08-17",
+      "status": "stable-baseline",
+      "highlights": [
+        "Save-backed World profiles for Singleplayer, Co-Op, and dedicated servers.",
+        "World Sync manifests, Direct Connect, directory discovery, and remote administration.",
+        "RSDW Toolkit integration for characters, items, spawner, map, and tracking.",
+        "Portable Windows launcher baseline."
+      ]
+    }
+  ]
+}

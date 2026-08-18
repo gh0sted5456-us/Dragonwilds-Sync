@@ -9,6 +9,15 @@ const requireText = (text, needle, label) => {
 const forbidText = (text, needle, label) => {
   if (text.includes(needle)) throw new Error(`${label}: forbidden ${JSON.stringify(needle)}`);
 };
+const requireOrder = (text, needles, label) => {
+  let cursor = -1;
+  for (const needle of needles) {
+    const next = text.indexOf(needle, cursor + 1);
+    if (next < 0) throw new Error(`${label}: missing ${JSON.stringify(needle)}`);
+    if (next <= cursor) throw new Error(`${label}: ${JSON.stringify(needle)} is out of order`);
+    cursor = next;
+  }
+};
 
 const app = read('renderer/app.js');
 const css = read('renderer/release-overrides.css');
@@ -58,13 +67,29 @@ requireText(app, 'Update &amp; Restart', 'Minimal Mode update/restart control');
 // ask that backend to shut down before Electron quits.
 requireText(service, 'RUNTIME = AuthoritativeRuntimeManager', 'authoritative runtime controller');
 requireText(main, "serviceInvoke('application.shutdown'", 'full application shutdown');
-for (const phase of ['Starting', 'Stopping', 'Restarting', 'Updating', 'Start Failed', 'Stop Failed', 'Update Failed']) {
+for (const phase of ['Starting', 'Stopping', 'Restarting', 'Updating', 'Start Failed', 'Stop Failed', 'Restart Failed', 'Update Failed']) {
   requireText(runtimeManager, `"${phase}"`, `runtime lifecycle phase ${phase}`);
 }
 requireText(runtimeManager, 'A server lifecycle operation is already active', 'conflicting command lock');
 requireText(runtimeManager, 'exited unexpectedly', 'unexpected process exit reconciliation');
 requireText(runtimeManager, 'broadcast_verified', 'broadcast lifecycle verification');
 requireText(runtimeManager, 'component: str = "Dedicated Server"', 'generic managed update lifecycle');
+requireText(runtimeManager, 'web_management_stopped', 'verified WebGUI shutdown');
+requireText(runtimeManager, 'The Sync advertisement remained active during launcher shutdown.', 'verified broadcast shutdown');
+
+// Start/Restart/Update+Restart must prepare while offline, verify the real game
+// process, and only then expose Sync. The old ServerEngine.start_world helper is
+// deliberately not the authoritative manager path because it publishes first.
+requireText(runtimeManager, 'def _start_verified', 'process-before-broadcast helper');
+requireOrder(runtimeManager, [
+  'prepared = self.engine.scan_mods(profile_id)',
+  'started = self.engine.start_dedicated(profile_id)',
+  'after_process = self._actual()',
+  'published = self.engine.publish(profile_id)',
+], 'process-before-broadcast ordering');
+forbidText(runtimeManager, 'self.engine.start_world(', 'authoritative lifecycle must not use publish-first start_world');
+requireText(runtimeManager, 'self.engine.stop_world()', 'failed post-launch cleanup');
+requireText(runtimeManager, 'Sync became available before dedicated-process verification completed.', 'early advertisement guard');
 
 // Steam build/version checks are independent for the retail client and the
 // dedicated server. SteamCMD is a dedicated-server updater only. The client

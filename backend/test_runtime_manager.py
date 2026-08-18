@@ -27,6 +27,7 @@ class FakeEngine:
         self.share = share
         self.running = False
         self.pid = None
+        self.active_profile_id = ""
         self.events = []
         self.calls = []
         self.fail_start = False
@@ -35,7 +36,7 @@ class FakeEngine:
         self.raise_stop = False
 
     def status(self):
-        return {"running": self.running, "pid": self.pid}
+        return {"running": self.running, "pid": self.pid, "active_profile_id": self.active_profile_id}
 
     def record_event(self, message, level="info"):
         self.events.append((message, level))
@@ -53,6 +54,7 @@ class FakeEngine:
             raise RuntimeError("start probe failed")
         self.running = True
         self.pid = 31415
+        self.active_profile_id = profile_id
         return {"running": True, "pid": self.pid, "profile_id": profile_id}
 
     def publish(self, profile_id):
@@ -69,8 +71,6 @@ class FakeEngine:
         if self.raise_stop:
             raise RuntimeError("stop RPC failed")
         if self.fail_stop:
-            # The share is still withdrawn even when the process cannot be
-            # verified stopped. This mirrors the production safety boundary.
             self.share.serving = False
             return {"running": True, "stop_verified": False, "stopped_pid": self.pid}
         stopped_pid = self.pid
@@ -92,6 +92,14 @@ class FakeEngine:
 class FakeDirectory:
     def __init__(self):
         self.stopped = False
+        self.authenticate = None
+        self.state_provider = None
+        self.action = None
+
+    def set_remote_admin_callbacks(self, *, authenticate=None, state=None, action=None):
+        self.authenticate = authenticate
+        self.state_provider = state
+        self.action = action
 
     def stop(self):
         self.stopped = True
@@ -177,6 +185,70 @@ def test_start_never_advertises_before_process_and_cleans_publish_failure():
     names = [name for name, _ in engine.calls]
     assert names[:3] == ["scan", "start", "publish"]
     assert "stop" in names[3:], "failed post-launch publish did not clean up the process"
+
+
+def test_webgui_state_bridge_uses_authoritative_lifecycle():
+    share = FakeShare()
+    engine = FakeEngine(share)
+    directory = FakeDirectory()
+    manager = AuthoritativeRuntimeManager(engine, share, directory)
+
+    directory.set_remote_admin_callbacks(
+        authenticate=lambda *_args: {"ok": True},
+        state=lambda profile_id: {
+            "profile": {"id": profile_id},
+            "runtime": {"running": False, "players_online": 2},
+        },
+        action=lambda *_args: {"ok": True},
+    )
+    assert callable(directory.state_provider)
+
+    manager.start("world-a")
+    live = directory.state_provider("world-a")
+    assert live["runtime"]["running"] is True
+    assert live["runtime"]["state"] == "Running"
+    assert live["runtime"]["busy"] is False
+    assert live["runtime"]["broadcast"]["serving"] is True
+    assert live["runtime"]["sync_status"] == "Healthy"
+    assert live["runtime"]["players_online"] == 2
+
+    inactive = directory.state_provider("world-b")
+    assert inactive["runtime"]["state"] == "Stopped"
+    assert inactive["runtime"]["busy"] is False
+
+    installer_entered = threading.Event()
+    installer_release = threading.Event()
+    errors = []
+
+    def installer():
+        installer_entered.set()
+        if not installer_release.wait(5):
+            return {"ok": False, "error": "bridge installer timeout"}
+        return {"ok": True}
+
+    def run_update():
+        try:
+            manager.update("world-a", installer, restart=True)
+        except Exception as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=run_update, daemon=True)
+    worker.start()
+    assert installer_entered.wait(2), "bridge test update never reached installer"
+    updating = directory.state_provider("world-a")
+    assert updating["runtime"]["state"] == "Updating"
+    assert updating["runtime"]["busy"] is True
+    assert updating["runtime"]["running"] is False
+    assert updating["runtime"]["broadcast"]["serving"] is False
+    assert updating["runtime"]["sync_status"] == "Updating"
+    installer_release.set()
+    worker.join(5)
+    assert not worker.is_alive() and not errors
+
+    final = directory.state_provider("world-a")
+    assert final["runtime"]["state"] == "Running"
+    assert final["runtime"]["busy"] is False
+    assert final["runtime"]["broadcast"]["serving"] is True
 
 
 def test_shutdown_while_server_is_running():
@@ -383,13 +455,14 @@ def test_save_migration_and_generic_profile_hide():
 def main():
     test_lifecycle()
     test_start_never_advertises_before_process_and_cleans_publish_failure()
+    test_webgui_state_bridge_uses_authoritative_lifecycle()
     test_shutdown_while_server_is_running()
     test_shutdown_uses_process_fallback_and_withdraws_share()
     test_failure_phases_and_command_lock()
     test_independent_client_and_server_steam_version_checks()
     test_cl_and_steam_cloud()
     test_save_migration_and_generic_profile_hide()
-    print("authoritative lifecycle, verified process-before-broadcast, shutdown, independent Steam version, CL, and Steam Cloud tests passed")
+    print("authoritative lifecycle, WebGUI projection, verified process-before-broadcast, shutdown, independent Steam version, CL, and Steam Cloud tests passed")
 
 
 if __name__ == "__main__":

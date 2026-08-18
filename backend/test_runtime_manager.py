@@ -12,11 +12,13 @@ from runtime_versions import cl_version_status, detect_steam_cloud_status, norma
 class FakeShare:
     def __init__(self):
         self.serving = False
+        self.stop_count = 0
 
     def status(self):
         return {"serving": self.serving}
 
     def stop(self):
+        self.stop_count += 1
         self.serving = False
 
 
@@ -26,8 +28,11 @@ class FakeEngine:
         self.running = False
         self.pid = None
         self.events = []
+        self.calls = []
         self.fail_start = False
         self.fail_stop = False
+        self.fail_publish = False
+        self.raise_stop = False
 
     def status(self):
         return {"running": self.running, "pid": self.pid}
@@ -35,16 +40,38 @@ class FakeEngine:
     def record_event(self, message, level="info"):
         self.events.append((message, level))
 
-    def start_world(self, profile_id):
+    def scan_mods(self, profile_id):
+        assert not self.running, "preflight scan must happen while dedicated process is stopped"
+        assert not self.share.serving, "preflight scan must not expose Sync"
+        self.calls.append(("scan", profile_id))
+        return {"units": [], "badges": ["VANILLA"]}
+
+    def start_dedicated(self, profile_id):
+        self.calls.append(("start", profile_id))
+        assert not self.share.serving, "Sync was exposed before process startup"
         if self.fail_start:
             raise RuntimeError("start probe failed")
         self.running = True
         self.pid = 31415
-        self.share.serving = True
         return {"running": True, "pid": self.pid, "profile_id": profile_id}
 
+    def publish(self, profile_id):
+        self.calls.append(("publish", profile_id))
+        assert self.running, "Sync publication happened before process verification"
+        assert not self.share.serving, "Sync was already exposed before publish"
+        if self.fail_publish:
+            raise RuntimeError("publish failed")
+        self.share.serving = True
+        return {"serving": True, "profile_id": profile_id}
+
     def stop_world(self):
+        self.calls.append(("stop", None))
+        if self.raise_stop:
+            raise RuntimeError("stop RPC failed")
         if self.fail_stop:
+            # The share is still withdrawn even when the process cannot be
+            # verified stopped. This mirrors the production safety boundary.
+            self.share.serving = False
             return {"running": True, "stop_verified": False, "stopped_pid": self.pid}
         stopped_pid = self.pid
         self.running = False
@@ -53,8 +80,13 @@ class FakeEngine:
         return {"running": False, "stop_verified": True, "stopped_pid": stopped_pid}
 
     def stop_dedicated(self):
+        self.calls.append(("stop-dedicated", None))
+        self.raise_stop = False
         self.fail_stop = False
-        return self.stop_world()
+        stopped_pid = self.pid
+        self.running = False
+        self.pid = None
+        return {"running": False, "stop_verified": True, "stopped_pid": stopped_pid}
 
 
 class FakeDirectory:
@@ -63,6 +95,14 @@ class FakeDirectory:
 
     def stop(self):
         self.stopped = True
+
+
+def assert_start_order(engine):
+    names = [name for name, _profile in engine.calls]
+    scan = names.index("scan")
+    start = names.index("start", scan + 1)
+    publish = names.index("publish", start + 1)
+    assert scan < start < publish, names
 
 
 def test_lifecycle():
@@ -74,16 +114,23 @@ def test_lifecycle():
     started = manager.start("world-a")
     assert started["verified_running"] and started["broadcast_verified"]
     assert manager.get_status()["state"] == "Running"
+    assert_start_order(engine)
 
+    engine.calls.clear()
     restarted = manager.restart("world-a")
     assert restarted["stop"]["stop_verified"] and restarted["verified_running"]
+    assert [name for name, _ in engine.calls][0] == "stop"
+    assert_start_order(engine)
 
     installed = []
     updated = manager.update("world-a", lambda: installed.append(True) or {"ok": True, "buildid": "123"}, restart=False)
     assert installed and updated["updated"] and not engine.running and not share.serving
+    assert updated["verified_stopped"] and updated["broadcast_verified"]
 
+    engine.calls.clear()
     manager.update("world-a", lambda: {"ok": True}, restart=True)
     assert engine.running and share.serving
+    assert_start_order(engine)
 
     engine.running = False
     status = manager.get_status()
@@ -103,7 +150,33 @@ def test_lifecycle():
     failed_shutdown = failed.shutdown()
     shut_down = manager.shutdown()
     assert failed_shutdown["verified_stopped"] and shut_down["verified_stopped"]
+    assert failed_shutdown["broadcast_verified"] and shut_down["broadcast_verified"]
     assert directory.stopped and not engine.running and not share.serving
+
+
+def test_start_never_advertises_before_process_and_cleans_publish_failure():
+    share = FakeShare()
+    engine = FakeEngine(share)
+    manager = AuthoritativeRuntimeManager(engine, share)
+
+    result = manager.start("world-order")
+    assert result["verified_running"] and result["broadcast_verified"]
+    assert_start_order(engine)
+
+    manager.stop()
+    engine.calls.clear()
+    engine.fail_publish = True
+    try:
+        manager.start("world-fail-publish")
+        raise AssertionError("publish failure must fail Start")
+    except RuntimeError as exc:
+        assert "publish failed" in str(exc)
+    assert not engine.running, "failed post-launch publish left dedicated process running"
+    assert not share.serving, "failed post-launch publish left Sync advertised"
+    assert manager.get_status()["state"] == "Start Failed"
+    names = [name for name, _ in engine.calls]
+    assert names[:3] == ["scan", "start", "publish"]
+    assert "stop" in names[3:], "failed post-launch publish did not clean up the process"
 
 
 def test_shutdown_while_server_is_running():
@@ -116,6 +189,7 @@ def test_shutdown_while_server_is_running():
 
     result = manager.shutdown()
     assert result["shutdown"] and result["verified_stopped"]
+    assert result["broadcast_verified"] and result["web_management_stopped"]
     assert not engine.running and not share.serving and directory.stopped
     status = manager.get_status()
     assert status["state"] == "Stopped" and status["accepting_requests"] is False
@@ -124,6 +198,21 @@ def test_shutdown_while_server_is_running():
         raise AssertionError("shutdown manager accepted a new Start request")
     except RuntimeError as exc:
         assert "shutting down" in str(exc)
+
+
+def test_shutdown_uses_process_fallback_and_withdraws_share():
+    share = FakeShare()
+    engine = FakeEngine(share)
+    directory = FakeDirectory()
+    manager = AuthoritativeRuntimeManager(engine, share, directory)
+    manager.start("world-a")
+    engine.raise_stop = True
+
+    result = manager.shutdown()
+    assert result["shutdown"] and result["verified_stopped"]
+    assert result["broadcast_verified"] and result["web_management_stopped"]
+    assert not engine.running and not share.serving and directory.stopped
+    assert any(name == "stop-dedicated" for name, _ in engine.calls)
 
 
 def test_failure_phases_and_command_lock():
@@ -138,6 +227,7 @@ def test_failure_phases_and_command_lock():
     except RuntimeError:
         pass
     assert start_failure.get_status()["state"] == "Start Failed"
+    assert not share.serving
     engine.fail_start = False
 
     stop_failure = AuthoritativeRuntimeManager(engine, share)
@@ -149,6 +239,7 @@ def test_failure_phases_and_command_lock():
     except RuntimeError:
         pass
     assert stop_failure.get_status()["state"] == "Stop Failed"
+    assert not share.serving, "failed Stop must still withdraw Sync advertisement"
     engine.fail_stop = False
     engine.running = False
     share.serving = False
@@ -176,6 +267,7 @@ def test_failure_phases_and_command_lock():
     assert installer_entered.wait(2), "update never reached the installer phase"
     busy = manager.get_status()
     assert busy["busy"] and busy["state"] == "Updating"
+    assert not engine.running and not share.serving, "Update must keep server/share offline while installer runs"
     try:
         manager.restart("world-a")
         raise AssertionError("conflicting lifecycle command was accepted during Update")
@@ -185,6 +277,7 @@ def test_failure_phases_and_command_lock():
     worker.join(5)
     assert not worker.is_alive() and not update_error
     assert manager.get_status()["state"] == "Running"
+    assert engine.running and share.serving
 
 
 def test_independent_client_and_server_steam_version_checks():
@@ -289,12 +382,14 @@ def test_save_migration_and_generic_profile_hide():
 
 def main():
     test_lifecycle()
+    test_start_never_advertises_before_process_and_cleans_publish_failure()
     test_shutdown_while_server_is_running()
+    test_shutdown_uses_process_fallback_and_withdraws_share()
     test_failure_phases_and_command_lock()
     test_independent_client_and_server_steam_version_checks()
     test_cl_and_steam_cloud()
     test_save_migration_and_generic_profile_hide()
-    print("authoritative lifecycle, shutdown, independent Steam version, CL, and Steam Cloud tests passed")
+    print("authoritative lifecycle, verified process-before-broadcast, shutdown, independent Steam version, CL, and Steam Cloud tests passed")
 
 
 if __name__ == "__main__":

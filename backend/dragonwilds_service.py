@@ -3,8 +3,8 @@ from __future__ import annotations
 """Post-V2 service extensions with the proven service retained intact.
 
 ``dragonwilds_service_legacy`` remains the complete V2 RPC/runtime engine. This
-entry point intercepts only additive lifecycle features that need to wrap an
-existing destructive action (Trash) and delegates every other RPC unchanged.
+entry point wraps only additive lifecycle features: recoverable Trash and the
+public-safe Remote Server heartbeat-routing contract.
 """
 
 import time
@@ -12,11 +12,19 @@ from pathlib import Path
 
 import dragonwilds_service_legacy as _legacy
 from dragonwilds_service_legacy import *  # noqa: F401,F403
+import directory_host as _directory_host_module
 import local_world as _local_world
 from profile_store import SERVER_PROFILES_DIR
 from trash_store import empty as empty_trash
 from trash_store import list_entries as list_trash
 from trash_store import purge_older_than, restore as restore_trash, trash_paths
+from v2_remote_routing import install_directory_patches, remote_advertisement
+
+# Preserve the actual V2 handler before redirecting legacy recursive calls back
+# through this wrapper. Without this saved reference, ordinary RPC delegation
+# would recurse after ``_legacy.handle = handle`` below.
+_legacy_handle = _legacy.handle
+install_directory_patches(_directory_host_module)
 
 _LAST_TRASH_PURGE = 0.0
 _TRASH_PURGE_INTERVAL = 3600.0
@@ -69,8 +77,7 @@ def _trash_summary() -> dict:
 def _private_delete(method: str, params: dict, state: dict):
     profile_id = _legacy._private_profile_id(state, params)
     if profile_id == _legacy.SINGLEPLAYER_ID:
-        # Preserve the baseline V2 rule exactly.
-        return _legacy.handle(method, params)
+        return _legacy_handle(method, params)
     profile = _legacy.load_singleplayer_profile(profile_id)
     profile_root = _local_world._profile_root(profile_id)
     paths: list[Path] = [profile_root]
@@ -86,7 +93,7 @@ def _private_delete(method: str, params: dict, state: dict):
             "was_active": str(state.setdefault("client", {}).get("active_private_world_id") or "") == profile_id,
         },
     )
-    result = _legacy.handle(method, params)
+    result = _legacy_handle(method, params)
     if isinstance(result, dict):
         result = {**result, "trash_entry": entry, "trash": _trash_summary()}
     return result
@@ -107,7 +114,7 @@ def _server_delete(method: str, params: dict, state: dict):
             "was_active": str(state.setdefault("server", {}).get("active_world_id") or "") == profile_id,
         },
     )
-    result = _legacy.handle(method, params)
+    result = _legacy_handle(method, params)
     if isinstance(result, dict):
         result = {**result, "trash_entry": entry, "trash": _trash_summary()}
     return result
@@ -157,7 +164,7 @@ def _character_delete(params: dict, state: dict):
         "success", key=f"character-trash-{character_id}",
     )
     _legacy.save_state(state)
-    characters_payload = _legacy.handle("characters.list", {})
+    characters_payload = _legacy_handle("characters.list", {})
     result = {
         "ok": True, "deleted": True, "character_id": character_id,
         "file_name": str(character.get("file_name") or source.name),
@@ -198,15 +205,150 @@ def _restore_launcher_metadata(state: dict, entry: dict) -> None:
             state.setdefault("client", {})["active_private_world_id"] = profile_id
 
 
+def _external_publish_sources(state: dict) -> list[dict]:
+    cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
+    try:
+        sources = _legacy._directory_sources(cfg)
+    except Exception:
+        return []
+    return [row for row in sources if isinstance(row, dict) and row.get("enabled", True) is not False and row.get("publish_enabled", True) is not False and str(row.get("url") or "").strip()]
+
+
+def _remote_choice(state: dict, enabled: bool, *, explicit: bool) -> dict:
+    application = state.setdefault("application", {})
+    advanced = application.setdefault("advanced", {})
+    host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
+    remote = dict(host_cfg.get("remote_admin") or {})
+    remote["enabled"] = bool(enabled)
+    host_cfg["remote_admin"] = remote
+    advanced["remote_server_enabled"] = bool(enabled)
+    if explicit:
+        advanced["remote_server_choice_made"] = True
+    # Remote-only is a valid service composition. It runs the same hardened
+    # listener but does not publish the World browser surface.
+    if enabled:
+        host_cfg["enabled"] = True
+        if not bool(advanced.get("webhost_enabled", False)):
+            host_cfg["directory_enabled"] = False
+    application["world_directory_host"] = host_cfg
+    _legacy.save_state(state)
+    if enabled:
+        try:
+            _legacy.DIRECTORY_HOST.start(host_cfg)
+        except Exception:
+            # The normal status/UI reports listener/firewall reachability. A
+            # failed bind must never prevent the game/Sync heartbeat itself.
+            pass
+    return host_cfg
+
+
+def _ensure_external_remote_default(state: dict) -> dict:
+    application = state.setdefault("application", {})
+    advanced = application.setdefault("advanced", {})
+    host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
+    if _external_publish_sources(state) and not bool(advanced.get("remote_server_choice_made", False)):
+        host_cfg = _remote_choice(state, True, explicit=False)
+    return host_cfg
+
+
+def _remote_advertisement_for_state(state: dict, payload: dict | None = None) -> dict:
+    application = state.setdefault("application", {})
+    host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
+    status = _legacy.DIRECTORY_HOST.status()
+    advertised_cfg = dict(host_cfg)
+    if not str(advertised_cfg.get("public_base_url") or "").strip():
+        advertised_cfg["public_base_url"] = str(status.get("public_url") or "")
+    external = str(status.get("public_ip") or (payload or {}).get("external_ip") or "")
+    return remote_advertisement(advertised_cfg, external_ip=external)
+
+
+def _heartbeat(state: dict) -> dict:
+    if not _legacy.SHARE.status().get("serving"):
+        return {"published": False, "reason": "No active Sync-enabled World."}
+    active_profile_id = str(_legacy.STATE.active_profile_id or "")
+    if str((_legacy.STATE.manifest or {}).get("host_type") or "") == "private_coop" and not _legacy._dragonwilds_client_running():
+        _legacy.SHARE.stop()
+        if active_profile_id:
+            local = _legacy.load_singleplayer_profile(active_profile_id)
+            local["broadcasting"] = False
+            local["last_broadcast_stopped_reason"] = "dragonwilds_process_ended"
+            _legacy.save_singleplayer_profile(local, active_profile_id)
+            _legacy.ensure_singleplayer_state(state)
+            _legacy._private_profile_world(state, active_profile_id).setdefault("status", {})["broadcasting"] = False
+        _legacy.save_state(state)
+        return {"published": False, "reason": "Dragonwilds stopped; the Co-Op Sync fingerprint was withdrawn."}
+
+    cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
+    _ensure_external_remote_default(state)
+    payload = _legacy.SHARE.broadcast_payload()
+    payload["world_name"] = payload.get("name") or "World"
+    payload["internal_ip"] = payload.get("ip") or ""
+    payload["last_seen"] = time.time()
+    payload["ttl_seconds"] = 180
+    payload.update(_remote_advertisement_for_state(state, payload))
+
+    local_host = None
+    if _legacy.DIRECTORY_HOST.status().get("serving"):
+        try:
+            local_host = _legacy.DIRECTORY_HOST.ingest(payload, "127.0.0.1")
+        except Exception as exc:
+            local_host = {"error": str(exc)}
+    remote = _legacy.publish_heartbeat_to_sources(payload, _legacy._directory_sources(cfg))
+    cfg["last_publish_at"] = _legacy.now_iso()
+    cfg["last_publish_results"] = remote.get("sources") or []
+    _legacy.save_state(state)
+    return {"published": True, "local_host": local_host, "remote": remote, "remote_management": payload.get("remote_management")}
+
+
+def _public_worlds_with_remote():
+    rows = _legacy_public_worlds()
+    state = _legacy.load_state()
+    safe = _remote_advertisement_for_state(state)
+    if not safe.get("capabilities", {}).get("remote_management"):
+        return rows
+    result = []
+    for row in rows:
+        value = dict(row or {})
+        if value.get("sync_ready") or value.get("fingerprint_claimed") or value.get("kind") in {"server", "dedicated"}:
+            value.update(safe)
+        result.append(value)
+    return result
+
+
+_legacy_public_worlds = _legacy._directory_public_worlds
+_legacy._directory_public_worlds = _public_worlds_with_remote
+
+
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
     _trash_settings(state)
+
     if method in {"bootstrap", "state.get"}:
         _maybe_auto_empty(state)
-        result = _legacy.handle(method, params)
+        result = _legacy_handle(method, params)
         if isinstance(result, dict):
             result.setdefault("application", {})["trash_status"] = _trash_summary()
+        return result
+
+    if method == "world.discovery.heartbeat":
+        return _heartbeat(state)
+
+    if method == "application.advanced.settings" and "remote_server_enabled" in params:
+        enabled = bool(params.get("remote_server_enabled"))
+        result = _legacy_handle(method, params)
+        refreshed = _legacy.load_state()
+        _remote_choice(refreshed, enabled, explicit=True)
+        return _legacy.public_state(_legacy.load_state()) if isinstance(result, dict) else result
+
+    if method == "application.world_directory_host.settings":
+        incoming_remote = params.get("remote_admin") if isinstance(params.get("remote_admin"), dict) else None
+        result = _legacy_handle(method, params)
+        if incoming_remote is not None and "enabled" in incoming_remote:
+            refreshed = _legacy.load_state()
+            refreshed.setdefault("application", {}).setdefault("advanced", {})["remote_server_choice_made"] = True
+            refreshed["application"]["advanced"]["remote_server_enabled"] = bool(incoming_remote.get("enabled"))
+            _legacy.save_state(refreshed)
         return result
 
     if method == "application.trash.list":
@@ -249,12 +391,12 @@ def handle(method: str, params: dict) -> object:
     if method == "characters.delete":
         return _character_delete(params, state)
 
-    return _legacy.handle(method, params)
+    return _legacy_handle(method, params)
 
 
 # Legacy remote-admin helpers recursively call their module-global ``handle``.
-# Point those calls at this wrapper so all old RPCs keep working while deletes
-# also obey the new Trash contract.
+# Point those calls at this wrapper while this wrapper itself delegates through
+# the saved ``_legacy_handle`` reference above.
 _legacy.handle = handle
 
 

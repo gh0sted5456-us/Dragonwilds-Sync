@@ -9,10 +9,16 @@ host must never manufacture its own endpoint for a World learned elsewhere.
 """
 
 import ipaddress
+import sys
 import urllib.parse
 
 from cl_authority import install_server_engine_cl_authority_patch
-from core_components import component_for_remote_update, install_mod_taxonomy_adapters, server_core_components
+from core_components import (
+    component_for_remote_update,
+    install_mod_taxonomy_adapters,
+    is_user_manageable_mod,
+    server_core_components,
+)
 from phase3_web import inject_remote_admin
 
 
@@ -23,6 +29,68 @@ AUTH_MODES = ("remote_user", "server_admin_password")
 # Install the shared taxonomy now, then repeat idempotently inside the directory
 # patch for direct unit-test/import paths.
 install_mod_taxonomy_adapters()
+
+
+def _filter_detected_mods(payload: dict | None) -> dict:
+    """Hide launcher infrastructure from the legacy Found Mods discovery result."""
+    result = dict(payload or {})
+    visible: list[dict] = []
+    for raw in result.get("mods") or []:
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("type") or "").strip().casefold()
+        group = {"ue4ss": "ue4ss_mod", "runeschema": "runeschema_mod", "pak": "pak_mod"}.get(kind, "")
+        if group and is_user_manageable_mod(raw.get("name"), group):
+            visible.append(dict(raw))
+    result["mods"] = visible
+    result["count"] = len(visible)
+    result["detected"] = bool(visible)
+    return result
+
+
+def _filter_public_units(payload: dict | None) -> dict:
+    """Ensure direct ServerEngine scan/publish responses expose user mods only."""
+    result = dict(payload or {})
+    if not isinstance(result.get("units"), list):
+        return result
+    result["units"] = [
+        dict(row) for row in result["units"]
+        if isinstance(row, dict) and is_user_manageable_mod(row.get("name"), row.get("group"))
+    ]
+    return result
+
+
+def _install_phase1_visibility_guards() -> None:
+    """Patch presentation/adoption edges while retaining the existing providers."""
+    legacy = sys.modules.get("dragonwilds_service_legacy")
+    if legacy is not None and not getattr(legacy, "_dws_found_mods_taxonomy_patched", False):
+        original_detect = getattr(legacy, "_detect_existing_server_mods", None)
+        if callable(original_detect):
+            legacy._dws_found_mods_taxonomy_patched = True
+
+            def detect_existing_server_mods(selected: str) -> dict:
+                return _filter_detected_mods(original_detect(selected))
+
+            legacy._detect_existing_server_mods = detect_existing_server_mods
+
+    server_engine = sys.modules.get("server_engine")
+    engine_type = getattr(server_engine, "ServerEngine", None) if server_engine is not None else None
+    if engine_type is not None and not getattr(engine_type, "_dws_public_inventory_taxonomy_patched", False):
+        engine_type._dws_public_inventory_taxonomy_patched = True
+        original_scan_mods = engine_type.scan_mods
+        original_publish = engine_type.publish
+
+        def scan_mods(self, profile_id: str) -> dict:
+            return _filter_public_units(original_scan_mods(self, profile_id))
+
+        def publish(self, profile_id: str) -> dict:
+            return _filter_public_units(original_publish(self, profile_id))
+
+        engine_type.scan_mods = scan_mods
+        engine_type.publish = publish
+
+
+_install_phase1_visibility_guards()
 
 
 def sanitize_remote_endpoint(value: object) -> str:
@@ -178,6 +246,7 @@ def install_directory_patches(directory_host_module) -> None:
     dispatcher. No file mutation, lifecycle or update authority is duplicated.
     """
     install_mod_taxonomy_adapters()
+    _install_phase1_visibility_guards()
     if getattr(directory_host_module, "_dws_v2_remote_patched", False):
         return
     directory_host_module._dws_v2_remote_patched = True

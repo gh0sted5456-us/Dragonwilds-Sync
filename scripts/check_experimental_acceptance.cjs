@@ -36,6 +36,7 @@ const syncEngine = read('backend/sync_engine.py');
 const dragonCore = read('backend/dragon_core.py');
 const steamcmdTest = read('backend/test_steamcmd_server_update.py');
 const remoteLifecycleTest = read('backend/test_release1_4_web_directory_remote.py');
+const runtimeManagerTest = read('backend/test_runtime_manager.py');
 
 // Supplied placards must be a first-class World-card surface rather than a
 // fallback texture. The renderer owns four selectable assets and the release
@@ -90,6 +91,17 @@ requireOrder(runtimeManager, [
 forbidText(runtimeManager, 'self.engine.start_world(', 'authoritative lifecycle must not use publish-first start_world');
 requireText(runtimeManager, 'self.engine.stop_world()', 'failed post-launch cleanup');
 requireText(runtimeManager, 'Sync became available before dedicated-process verification completed.', 'early advertisement guard');
+
+// Authenticated WebGUI state is projected from the same manager, including
+// transitional/busy/error/broadcast state. It must not fall back to a separate
+// remembered lifecycle model while actions are routed through the manager.
+requireText(runtimeManager, 'def _install_directory_state_bridge', 'WebGUI authoritative state bridge');
+requireText(runtimeManager, 'host.set_remote_admin_callbacks = bridged_set_remote_admin_callbacks', 'WebGUI callback bridge installation');
+requireText(runtimeManager, '"busy": bool(lifecycle.get("busy"))', 'WebGUI busy lifecycle state');
+requireText(runtimeManager, '"last_error": lifecycle.get("last_error") or ""', 'WebGUI lifecycle error state');
+requireText(runtimeManagerTest, 'test_webgui_state_bridge_uses_authoritative_lifecycle', 'WebGUI lifecycle projection regression');
+requireText(runtimeManagerTest, 'updating["runtime"]["state"] == "Updating"', 'WebGUI Updating state regression');
+requireText(runtimeManagerTest, 'updating["runtime"]["broadcast"]["serving"] is False', 'WebGUI update broadcast withdrawal regression');
 
 // Steam build/version checks are independent for the retail client and the
 // dedicated server. SteamCMD is a dedicated-server updater only. The client

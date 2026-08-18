@@ -11,6 +11,7 @@ host must never manufacture its own endpoint for a World learned elsewhere.
 import ipaddress
 import urllib.parse
 
+from cl_authority import install_server_engine_cl_authority_patch
 from core_components import component_for_remote_update, server_core_components
 from phase3_web import inject_remote_admin
 
@@ -173,6 +174,8 @@ def install_directory_patches(directory_host_module) -> None:
     if getattr(directory_host_module, "_dws_v2_remote_patched", False):
         return
     directory_host_module._dws_v2_remote_patched = True
+    if getattr(directory_host_module, "__name__", "") == "directory_host":
+        install_server_engine_cl_authority_patch()
 
     original_normalize = directory_host_module.normalize_heartbeat
 

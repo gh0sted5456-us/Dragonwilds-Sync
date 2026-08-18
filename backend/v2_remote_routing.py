@@ -11,6 +11,8 @@ host must never manufacture its own endpoint for a World learned elsewhere.
 import ipaddress
 import urllib.parse
 
+from core_components import component_for_remote_update, server_core_components
+
 
 AUTH_MODES = ("remote_user", "server_admin_password")
 
@@ -101,8 +103,59 @@ def attach_public_remote(row: dict, raw: dict | None) -> dict:
     return result
 
 
+def _core_state_provider(provider):
+    if not callable(provider):
+        return provider
+
+    def state_with_core_components(profile_id: str):
+        payload = provider(profile_id)
+        if not isinstance(payload, dict):
+            return payload
+        result = dict(payload)
+        maintenance = result.get("maintenance") if isinstance(result.get("maintenance"), dict) else {}
+        updates = maintenance.get("update_status") if isinstance(maintenance.get("update_status"), dict) else {}
+        result["core_components"] = server_core_components(updates)
+        return result
+
+    return state_with_core_components
+
+
+def _core_action_handler(handler):
+    if not callable(handler):
+        return handler
+
+    def action_with_core_updates(profile_id: str, action: str, payload: dict | None = None):
+        command = str(action or "").casefold()
+        values = dict(payload or {})
+        if command != "core_update":
+            return handler(profile_id, action, values)
+
+        component = component_for_remote_update(values.get("component"))
+        # The legacy remote callback lives in dragonwilds_service_legacy. Its
+        # module-global ``handle`` is redirected by dragonwilds_service.py to
+        # the additive authoritative wrapper before callbacks are registered.
+        # Reuse that dispatcher instead of introducing a second update path.
+        dispatcher = getattr(handler, "__globals__", {}).get("handle")
+        if not callable(dispatcher):
+            raise RuntimeError("The authoritative managed-core update dispatcher is unavailable.")
+        result = dispatcher(
+            "application.core_mod.update",
+            {
+                "component": component,
+                "target": "server",
+                "id": str(profile_id or ""),
+                "restart": bool(values.get("restart", False)),
+            },
+        )
+        if isinstance(result, dict):
+            return result.get("result") if isinstance(result.get("result"), dict) else result
+        return {"result": result}
+
+    return action_with_core_updates
+
+
 def install_directory_patches(directory_host_module) -> None:
-    """Teach the preserved DirectoryHost to retain only safe heartbeat routes.
+    """Teach the preserved DirectoryHost to retain safe routes and core actions.
 
     The additive service wrapper also carries a compatibility provider named
     ``_public_worlds_with_remote``. It predates the heartbeat-owned route
@@ -111,6 +164,10 @@ def install_directory_patches(directory_host_module) -> None:
     original provider. This both prevents false federation routes and avoids a
     status -> provider -> status recursion loop. The live-heartbeat store then
     remains the sole source for Remote Server endpoint enrichment.
+
+    Managed core controls are also attached here as a narrow adapter: they use
+    the existing authenticated/CSRF WebHost session and the existing service
+    dispatcher. No file mutation, lifecycle or update authority is duplicated.
     """
     if getattr(directory_host_module, "_dws_v2_remote_patched", False):
         return
@@ -143,6 +200,55 @@ def install_directory_patches(directory_host_module) -> None:
         original_set_provider(self, selected)
 
     host_class.set_public_worlds_provider = set_public_worlds_provider
+
+    original_set_remote_callbacks = host_class.set_remote_admin_callbacks
+
+    def set_remote_admin_callbacks(self, *, authenticate=None, state=None, action=None) -> None:
+        original_set_remote_callbacks(
+            self,
+            authenticate=authenticate,
+            state=_core_state_provider(state),
+            action=_core_action_handler(action),
+        )
+
+    host_class.set_remote_admin_callbacks = set_remote_admin_callbacks
+
+    original_remote_action = host_class.remote_action
+
+    def remote_action_with_core_update(self, session: dict, action: str, payload: dict | None = None) -> dict:
+        command = str(action or "").casefold()
+        if command != "core_update":
+            return original_remote_action(self, session, action, payload)
+
+        required = "update"
+        if not bool((session.get("permissions") or {}).get(required)):
+            self._remote_audit(
+                command, ok=False, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
+                remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""),
+                detail="Permission denied: update",
+            )
+            raise PermissionError("The desktop WebHost authority has not granted update")
+        if not self.remote_action_handler:
+            raise RuntimeError("Remote commands are unavailable")
+        try:
+            result = self.remote_action_handler(
+                str(session.get("world_id") or ""), command, dict(payload or {})
+            ) or {}
+            self._remote_audit(
+                command, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
+                remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""),
+                detail=f"Managed core update completed: {str((payload or {}).get('component') or 'unknown')[:40]}",
+            )
+            return result
+        except Exception as exc:
+            self._remote_audit(
+                command, ok=False, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
+                remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""),
+                detail=f"Managed core update failed: {type(exc).__name__}: {str(exc)[:300]}",
+            )
+            raise
+
+    host_class.remote_action = remote_action_with_core_update
 
 
 def remote_login_url(base: str, world_name: str = "") -> str:

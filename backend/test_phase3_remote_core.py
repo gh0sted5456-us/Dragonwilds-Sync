@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from v2_remote_routing import _filter_detected_mods, _filter_public_units, install_directory_patches
+from v2_remote_routing import _filter_detected_mods, _filter_inventory_cache, _filter_public_units, install_directory_patches
 
 
 DISPATCHES: list[tuple[str, dict]] = []
@@ -86,6 +86,16 @@ def main() -> None:
         {"name": "SchemaContent", "group": "runeschema_mod"},
     ]})
     assert [row["name"] for row in direct["units"]] == ["ActualLua", "SchemaContent"]
+
+    cached = _filter_inventory_cache({"updated_at": "old", "mods": [
+        {"name": "mods.txt", "group": "ue4ss_mod"},
+        {"name": "DragonCore", "group": "ue4ss_mod"},
+        {"name": "PersistentDirectConnectIP", "group": "ue4ss_mod"},
+        {"name": "RSDWTools", "group": "ue4ss_mod"},
+        {"name": "ActualLua", "group": "ue4ss_mod"},
+    ]})
+    assert cached["updated_at"] == "old"
+    assert [row["name"] for row in cached["mods"]] == ["ActualLua"]
 
     module = SimpleNamespace(DirectoryHost=FakeHost, normalize_heartbeat=normalize_heartbeat)
     install_directory_patches(module)

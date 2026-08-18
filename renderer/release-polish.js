@@ -64,6 +64,38 @@
     });
   }
 
+  async function enhanceRecommendedMods(root = document) {
+    const cards=[...root.querySelectorAll('.recommended-mod-card:not([data-release-recommendation])')];
+    if(!cards.length)return;
+    const appState=await currentState();
+    const mods=appState?.application?.recommended_mods?.mods||[];
+    const byUrl=new Map(mods.map((mod)=>[String(mod.page_url||''),mod]));
+    cards.forEach((card)=>{
+      card.dataset.releaseRecommendation='1';
+      const button=card.querySelector('[data-recommended-open]');
+      const url=String(button?.dataset.recommendedOpen||'');
+      const mod=byUrl.get(url)||{};
+      const artwork=mod.banner_url||mod.artwork_url||mod.icon_url||'';
+      if(artwork&&!card.querySelector('.recommended-mod-artwork')){
+        const art=document.createElement('div');art.className='recommended-mod-artwork';
+        art.innerHTML=`<img src="${esc(artwork)}" alt="" loading="lazy"/>`;
+        card.insertBefore(art,card.firstChild);
+      }
+      const copy=[...card.children].find((node)=>node.tagName==='DIV'&&!node.classList.contains('recommended-mod-artwork'));
+      if(copy&&mod.description&&!copy.querySelector('.recommended-mod-summary')){
+        const summary=document.createElement('div');summary.className='recommended-mod-summary';summary.textContent=mod.description;copy.appendChild(summary);
+      }
+      const openDetails=(event)=>{
+        event?.preventDefault?.();event?.stopPropagation?.();event?.stopImmediatePropagation?.();
+        if(!url||!api?.openInAppBrowser)return;
+        const purpose=/nexusmods\.com/i.test(url)?'nexus':'recommended-mod';
+        api.openInAppBrowser({url,purpose}).catch?.(()=>{});
+      };
+      if(button){button.textContent='View Details';button.title='Open the original mod page inside Dragonwilds Sync';button.addEventListener('click',openDetails,true);}
+      card.addEventListener('contextmenu',openDetails);
+    });
+  }
+
   async function renderModProfileLists(host) {
     const state = await currentState();
     if (!host?.isConnected) return;
@@ -129,7 +161,7 @@
   }
 
   function enhance() {
-    enhanceRatings(); enhanceModSettings(); enhanceChangelog(); enhanceServerManagement();
+    enhanceRatings(); enhanceRecommendedMods(); enhanceModSettings(); enhanceChangelog(); enhanceServerManagement();
   }
   let pending=false;
   const schedule=()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;enhance();});};

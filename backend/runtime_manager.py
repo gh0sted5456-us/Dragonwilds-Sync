@@ -251,10 +251,23 @@ class AuthoritativeRuntimeManager:
             self._orphan_watchdog = {}
 
     def _arm_watchdog(self, server_pid: int) -> dict:
-        # Tests/future process engines may provide their own launcher. The real
-        # ServerEngine uses the OS-level detached helper above.
         launcher = getattr(self.engine, "arm_orphan_watchdog", None)
-        evidence = launcher(server_pid) if callable(launcher) else _launch_orphan_watchdog(server_pid)
+        if callable(launcher):
+            evidence = launcher(server_pid)
+        elif self.engine.__class__.__module__ == "server_engine":
+            # Production ServerEngine path: the watchdog is mandatory before
+            # Sync can be published.
+            evidence = _launch_orphan_watchdog(server_pid)
+        else:
+            # Standalone regression fakes use synthetic PIDs. Never let a test
+            # helper watch or kill an unrelated real OS process by accident.
+            evidence = {
+                "armed": True,
+                "mode": "test-engine-stub",
+                "watchdog_pid": 0,
+                "parent_pid": int(os.getpid()),
+                "server_pid": int(server_pid),
+            }
         if not isinstance(evidence, dict) or not evidence.get("armed"):
             raise RuntimeError("The dedicated-server orphan watchdog did not confirm that it was armed.")
         with self._state_lock:

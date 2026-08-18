@@ -23,6 +23,9 @@ const directoryHost = read('backend/directory_host.py');
 const serverSystems = read('backend/server_systems.py');
 const serverEngine = read('backend/server_engine.py');
 const syncEngine = read('backend/sync_engine.py');
+const dragonCore = read('backend/dragon_core.py');
+const steamcmdTest = read('backend/test_steamcmd_server_update.py');
+const remoteLifecycleTest = read('backend/test_release1_4_web_directory_remote.py');
 
 // Supplied placards must be a first-class World-card surface rather than a
 // fallback texture. The renderer owns four selectable assets and the release
@@ -47,6 +50,8 @@ for (const name of ['maybeBenchmark', 'backgroundTick', 'rsdwModuleTick']) {
 }
 forbidText(bootstrap, "'schedulerTick'", 'Minimal Mode must not suppress server scheduler');
 requireText(main, 'createMinimalWindow(worldId)', 'Minimal Mode selected-world launch');
+requireText(app, 'Minimal Mode · Dedicated World', 'Minimal Mode dedicated surface');
+requireText(app, 'Update &amp; Restart', 'Minimal Mode update/restart control');
 
 // Runtime/process ownership remains centralized and full application exit must
 // ask that backend to shut down before Electron quits.
@@ -58,6 +63,7 @@ for (const phase of ['Starting', 'Stopping', 'Restarting', 'Updating', 'Start Fa
 requireText(runtimeManager, 'A server lifecycle operation is already active', 'conflicting command lock');
 requireText(runtimeManager, 'exited unexpectedly', 'unexpected process exit reconciliation');
 requireText(runtimeManager, 'broadcast_verified', 'broadcast lifecycle verification');
+requireText(runtimeManager, 'component: str = "Dedicated Server"', 'generic managed update lifecycle');
 
 // Steam build/version checks are independent for the retail client and the
 // dedicated server. SteamCMD is a dedicated-server updater only. The client
@@ -67,11 +73,15 @@ requireText(runtimeVersions, 'CLIENT_STEAM_APP_ID = "1374490"', 'retail Steam Ap
 requireText(runtimeVersions, 'SERVER_STEAM_APP_ID = "4019830"', 'dedicated Steam App ID');
 requireText(runtimeVersions, 'def client_runtime_status', 'client Steam version check');
 requireText(runtimeVersions, 'def server_runtime_stack', 'server Steam version check');
-requireText(service, '"game"] = {', 'unified client update state');
-requireText(service, '"server"] = {', 'unified server update state');
+requireText(service, 'updates["game"] = {', 'unified client update state');
+requireText(service, 'updates["server"] = {', 'unified server update state');
 requireText(service, '"action": "Open Steam to update safely"', 'client update action');
 requireText(service, 'RUNTIME.update(profile_id, lambda: _legacy_handle("server.install.update"', 'server-only SteamCMD lifecycle');
 requireText(legacyService, 'install_dedicated_server(install_dir, steamcmd_dir)', 'managed dedicated SteamCMD install/update');
+requireText(serverSystems, '"+app_update", DEDICATED_STEAM_APP_ID, "validate"', 'SteamCMD dedicated update command');
+requireText(serverSystems, '"output": (result.stdout or "")[-4000:]', 'SteamCMD success output');
+requireText(steamcmdTest, 'CLIENT_STEAM_APP_ID not in command', 'SteamCMD never targets retail client');
+requireText(steamcmdTest, 'test_failed_steamcmd_update_surfaces_output', 'failed SteamCMD regression');
 
 // Desktop and authenticated WebGUI must command the same backend runtime
 // operations rather than maintaining parallel process state.
@@ -81,12 +91,23 @@ for (const method of ['server.runtime.start', 'server.runtime.stop', 'server.run
 requireText(directoryHost, '"start": "start", "stop": "stop", "restart": "restart", "update": "update", "update_restart": "update"', 'WebGUI lifecycle permissions');
 requireText(legacyService, 'handle("server.runtime.restart"', 'remote restart routes to runtime manager');
 requireText(legacyService, '"server.runtime.update_restart" if action == "update_restart" else "server.runtime.update"', 'remote update routes to runtime manager');
+for (const action of ['"start"', '"stop"', '"restart"', '"update"', '"update_restart"']) {
+  requireText(remoteLifecycleTest, action, `authenticated WebGUI action ${action}`);
+}
 
-// Central update state must include retail game, dedicated server, launcher and
-// managed/core runtime information and feed the common notification system.
+// Central update state must include retail game, dedicated server, launcher,
+// UE4SS, and launcher-managed DragonCore evidence and feed one notification
+// system. DragonCore server updates use the generic runtime queue, not SteamCMD.
 for (const token of ['updates["game"]', 'updates["server"]', 'updates["core_mod"]', 'updates["launcher"]']) {
   requireText(service, token, `central update state ${token}`);
 }
+requireText(service, 'dragoncore_client', 'central DragonCore client update state');
+requireText(service, 'dragoncore_server', 'central DragonCore server update state');
+requireText(service, 'if method == "application.core_mod.update"', 'DragonCore update RPC');
+requireText(service, 'component="DragonCore"', 'DragonCore uses authoritative update queue');
+requireText(service, 'Close RuneScape: Dragonwilds before updating', 'safe client DragonCore update gate');
+requireText(dragonCore, 'def managed_status', 'DragonCore managed version status');
+requireText(dragonCore, 'sha256', 'DragonCore content fingerprint');
 requireText(service, '_record_notification(', 'shared notification sink');
 
 // CL evidence must be normalized numerically and exposed from the same runtime
@@ -96,6 +117,7 @@ requireText(runtimeVersions, 'def cl_version_status', 'CL comparison');
 requireText(runtimeVersions, 'reported_number = int(', 'numeric CL comparison');
 requireText(runtimeVersions, 'current_expected_cl', 'dynamic expected CL status');
 requireText(app, 'reported_cl', 'desktop CL visibility');
+requireText(app, 'CL status', 'Minimal Mode CL visibility');
 
 // Dedicated scanning/profile activation/publication and host-to-client transfer
 // must continue to operate on real files, not UI-only inventory state.

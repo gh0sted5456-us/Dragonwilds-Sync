@@ -1,14 +1,21 @@
 from __future__ import annotations
 
-"""Small release-surface wrapper for the packaged WebHost.
+"""Release-surface hardening for the packaged WebHost.
 
-Keeping this outside directory_web.py makes the presentation patch easy to
-remove or evolve while preserving the existing API and admin implementation.
+The public WebGUI is a catalog and join surface, not a server-inspection tool.
+Administrative/server metadata stays behind the authenticated remote-admin
+boundary while public discovery retains only the fields needed to discover,
+compare, and join a World.
 """
 
-import html
-
 GITHUB_PROFILE = "https://github.com/gh0sted5456-us"
+
+_PRIVATE_PUBLIC_KEYS = {
+    "server_specs", "internet_strength", "hw_stats", "hardware", "health_config",
+    "server_health", "metadata_cache", "manifest_cache", "status", "runtime_metrics",
+    "process_metrics", "server_install", "configuration", "configs", "config_files",
+    "save_path", "save_dir", "game_root", "install_dir", "steamcmd_dir",
+}
 
 _FOOTER = r'''
 <footer class="dws-fan-footer">
@@ -32,13 +39,52 @@ _FOOTER = r'''
 </style>
 '''
 
+_DETAIL_GUARD = r'''
+<script>
+(function(){
+  function prune(){
+    document.querySelectorAll('.metadata-section').forEach(function(section){
+      var title=(section.querySelector('h2')||{}).textContent||'';
+      if(/server specs|internet strength/i.test(title)) section.remove();
+    });
+    document.querySelectorAll('.all-world-metadata').forEach(function(node){node.remove()});
+    document.querySelectorAll('.detail-actions a').forEach(function(node){if(/metadata json/i.test(node.textContent||''))node.remove()});
+  }
+  prune(); new MutationObserver(prune).observe(document.documentElement,{childList:true,subtree:true});
+})();
+</script>
+'''
 
-def _decorate(page: bytes, *, public_browser: bool = False) -> bytes:
+
+def _sanitize_public_world(row: dict) -> dict:
+    """Remove server-inspection data while preserving public join compatibility."""
+    if not isinstance(row, dict):
+        return {}
+    clean = {key: value for key, value in row.items() if key not in _PRIVATE_PUBLIC_KEYS}
+    stack = clean.get("runtime_stack") if isinstance(clean.get("runtime_stack"), dict) else {}
+    sync = stack.get("dragonwilds_sync") if isinstance(stack.get("dragonwilds_sync"), dict) else {}
+    if sync:
+        clean["sync_version"] = str(sync.get("version") or "")[:40]
+        # The public website only needs the launcher compatibility identity. Full
+        # UE4SS/RuneSchema/game runtime evidence remains desktop/admin metadata.
+        clean["runtime_stack"] = {"dragonwilds_sync": {
+            "version": clean["sync_version"],
+            "channel": str(sync.get("channel") or "")[:40],
+            "protocol": sync.get("protocol"),
+        }}
+    else:
+        clean.pop("runtime_stack", None)
+    return clean
+
+
+def _decorate(page: bytes, *, public_browser: bool = False, detail: bool = False) -> bytes:
     text = page.decode("utf-8", "replace")
     if public_browser:
-        # API remains available at /api/v1, but the public chrome no longer
-        # advertises a raw developer endpoint beside the normal Worlds tab.
+        # API remains an implementation endpoint for launcher interoperability,
+        # but it is no longer promoted in the normal human-facing header.
         text = text.replace('<a href="/api/v1">API</a>', '')
+    if detail and "dws-detail-guard" not in text:
+        text = text.replace("</body>", '<span id="dws-detail-guard" hidden></span>' + _DETAIL_GUARD + "</body>")
     if "dws-fan-footer" not in text:
         text = text.replace("</body>", _FOOTER + "</body>")
     return text.encode("utf-8")
@@ -57,6 +103,17 @@ def install() -> None:
     original_remote = directory_web.remote_admin_html
 
     directory_web.public_browser_html = lambda: _decorate(original_public(), public_browser=True)
-    directory_web.detail_html = lambda *args, **kwargs: _decorate(original_detail(*args, **kwargs))
+    directory_web.detail_html = lambda *args, **kwargs: _decorate(original_detail(*args, **kwargs), detail=True)
     directory_web.admin_login_html = lambda *args, **kwargs: _decorate(original_login(*args, **kwargs))
     directory_web.remote_admin_html = lambda *args, **kwargs: _decorate(original_remote(*args, **kwargs))
+
+    # directory_host imports the already-decorated directory_web functions after
+    # this runtime hook. Sanitize its public catalog at the source so hidden UI
+    # sections cannot be recovered by directly requesting the public JSON.
+    import directory_host
+    original_catalog_worlds = directory_host.DirectoryHost.catalog_worlds
+
+    def public_catalog_worlds(self):
+        return [_sanitize_public_world(row) for row in original_catalog_worlds(self)]
+
+    directory_host.DirectoryHost.catalog_worlds = public_catalog_worlds

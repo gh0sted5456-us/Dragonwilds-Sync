@@ -123,8 +123,9 @@ requireText(runtimeVersions, 'current_expected_cl', 'dynamic expected CL status'
 requireText(app, 'reported_cl', 'desktop CL visibility');
 requireText(app, 'CL status', 'Minimal Mode CL visibility');
 requireText(directoryWeb, 'function clBadge(w)', 'WebGUI Worlds CL badge');
-requireText(directoryWeb, "kv('Reported CL'", 'WebGUI management CL detail');
-requireText(directoryWeb, "kv('CL status'", 'WebGUI management CL status');
+requireText(directoryWeb, 'Reported CL', 'WebGUI management CL detail');
+requireText(directoryWeb, 'Expected CL', 'WebGUI management expected CL');
+requireText(directoryWeb, 'CL status', 'WebGUI management CL status');
 
 // Dedicated scanning/profile activation/publication and host-to-client transfer
 // must continue to operate on real files, not UI-only inventory state.

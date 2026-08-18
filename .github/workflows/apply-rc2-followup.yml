@@ -6,6 +6,7 @@ on:
       - codex/webgui-catalog-console-overhaul
     paths:
       - scripts/apply_rc2_followup.py
+      - scripts/apply_rc2_defender_import_cleanup.py
       - .github/workflows/apply-rc2-followup.yml
   workflow_dispatch:
 
@@ -23,7 +24,9 @@ jobs:
           ref: codex/webgui-catalog-console-overhaul
           fetch-depth: 0
       - name: Apply RC2 follow-up
-        run: python3 scripts/apply_rc2_followup.py
+        run: |
+          python3 scripts/apply_rc2_followup.py
+          python3 scripts/apply_rc2_defender_import_cleanup.py
       - name: Validate syntax and focused contracts
         run: |
           python3 -m py_compile backend/dragonwilds_service.py backend/server_systems.py backend/test_rc2_followup.py

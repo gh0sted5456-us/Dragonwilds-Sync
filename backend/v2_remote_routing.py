@@ -4,12 +4,12 @@ from __future__ import annotations
 
 A Manifest/WebHost is a discovery router only. Credentials, password hashes,
 permission grants, sessions, and audit authority remain on the target World's
-Dragonwilds Sync instance.
+Dragonwilds Sync instance. Remote endpoints are heartbeat-owned: a federation
+host must never manufacture its own endpoint for a World learned elsewhere.
 """
 
 import ipaddress
 import urllib.parse
-from copy import deepcopy
 
 
 AUTH_MODES = ("remote_user", "server_admin_password")
@@ -102,7 +102,16 @@ def attach_public_remote(row: dict, raw: dict | None) -> dict:
 
 
 def install_directory_patches(directory_host_module) -> None:
-    """Teach the preserved DirectoryHost to retain only the safe route fields."""
+    """Teach the preserved DirectoryHost to retain only safe heartbeat routes.
+
+    The additive service wrapper also carries a compatibility provider named
+    ``_public_worlds_with_remote``. It predates the heartbeat-owned route
+    contract and would apply this machine's endpoint to every known Sync World.
+    When the legacy V2 service registers that provider, unwrap it to its saved
+    original provider. This both prevents false federation routes and avoids a
+    status -> provider -> status recursion loop. The live-heartbeat store then
+    remains the sole source for Remote Server endpoint enrichment.
+    """
     if getattr(directory_host_module, "_dws_v2_remote_patched", False):
         return
     directory_host_module._dws_v2_remote_patched = True
@@ -122,6 +131,18 @@ def install_directory_patches(directory_host_module) -> None:
         return attach_public_remote(original_catalog(row), row)
 
     host_class._catalog_row = staticmethod(catalog_with_remote)
+
+    original_set_provider = host_class.set_public_worlds_provider
+
+    def set_public_worlds_provider(self, callback) -> None:
+        selected = callback
+        if callable(callback) and getattr(callback, "__name__", "") == "_public_worlds_with_remote":
+            saved = getattr(callback, "__globals__", {}).get("_legacy_public_worlds")
+            if callable(saved):
+                selected = saved
+        original_set_provider(self, selected)
+
+    host_class.set_public_worlds_provider = set_public_worlds_provider
 
 
 def remote_login_url(base: str, world_name: str = "") -> str:

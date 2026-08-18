@@ -3,8 +3,9 @@ from __future__ import annotations
 """Post-V2 service extensions with the proven service retained intact.
 
 ``dragonwilds_service_legacy`` remains the complete V2 RPC/runtime engine. This
-entry point wraps only additive lifecycle features: recoverable Trash and the
-public-safe Remote Server heartbeat-routing contract.
+entry point wraps only additive lifecycle features: recoverable Trash, the
+public-safe Remote Server heartbeat-routing contract, and the unified operator
+console/log surface.
 """
 
 import time
@@ -18,6 +19,7 @@ from profile_store import SERVER_PROFILES_DIR
 from trash_store import empty as empty_trash
 from trash_store import list_entries as list_trash
 from trash_store import purge_older_than, restore as restore_trash, trash_paths
+from unified_console import install_engine_session_hook, snapshot as unified_console_snapshot
 from v2_remote_routing import install_directory_patches, remote_advertisement
 
 # Preserve the actual V2 handler before redirecting legacy recursive calls back
@@ -25,6 +27,7 @@ from v2_remote_routing import install_directory_patches, remote_advertisement
 # would recurse after ``_legacy.handle = handle`` below.
 _legacy_handle = _legacy.handle
 install_directory_patches(_directory_host_module)
+install_engine_session_hook(_legacy.ENGINE)
 
 _LAST_TRASH_PURGE = 0.0
 _TRASH_PURGE_INTERVAL = 3600.0
@@ -315,6 +318,23 @@ def _public_worlds_with_remote():
     return result
 
 
+def _unified_console(profile_id: str, limit: int = 350) -> dict:
+    profile_id = str(profile_id or "").strip()
+    if not profile_id or not _legacy.load_server_profile(profile_id):
+        raise KeyError("Server World not found")
+    runtime = _legacy.ENGINE.status()
+    with _legacy.STATE.lock:
+        activities = list(_legacy.STATE.activities)
+    history = _legacy.rsdw_console_history(profile_id, max(200, min(int(limit or 350), 1000)))
+    return unified_console_snapshot(
+        profile_id,
+        runtime=runtime,
+        sync_activities=activities,
+        command_history=history,
+        limit=limit,
+    )
+
+
 _legacy_public_worlds = _legacy._directory_public_worlds
 _legacy._directory_public_worlds = _public_worlds_with_remote
 
@@ -333,6 +353,10 @@ def handle(method: str, params: dict) -> object:
 
     if method == "world.discovery.heartbeat":
         return _heartbeat(state)
+
+    if method == "server.console.unified":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        return _unified_console(profile_id, int(params.get("limit") or 350))
 
     if method == "application.advanced.settings" and "remote_server_enabled" in params:
         enabled = bool(params.get("remote_server_enabled"))

@@ -7,13 +7,12 @@
     try{
       document.querySelectorAll('.world-grid').forEach(grid=>{
         const cards=[...grid.children].filter(node=>node.matches?.('.world-card'));
-        if(!cards.length){grid.style.removeProperty('--dws-uniform-card-height');return;}
+        if(!cards.length)return;
         // Clear the previous measurement first so content can legitimately
         // shrink after badges/descriptions are removed.
-        grid.style.removeProperty('--dws-uniform-card-height');
         cards.forEach(card=>card.style.removeProperty('min-height'));
         const tallest=Math.max(...cards.map(card=>Math.ceil(Math.max(card.scrollHeight,card.getBoundingClientRect().height))));
-        if(Number.isFinite(tallest)&&tallest>0)grid.style.setProperty('--dws-uniform-card-height',`${tallest}px`);
+        if(Number.isFinite(tallest)&&tallest>0)cards.forEach(card=>card.style.minHeight=`${tallest}px`);
       });
     } finally {measuring=false;}
   }

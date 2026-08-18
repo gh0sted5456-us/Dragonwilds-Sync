@@ -11,14 +11,13 @@ RUNESCHEMA_CHECK_SECONDS = 15 * 60
 DEFAULT_UE4SS_SOURCE = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
 
 
-def runeschema_status(application: dict, server_stack: dict, *, force: bool = False) -> dict:
+def runeschema_status(application: dict, server_stack: dict, *, force: bool = False, allow_remote: bool = False) -> dict:
     """Return a first-class RuneSchema update row using the configured source.
 
-    RuneSchema has no Steam build ID. The authoritative evidence is the
-    launcher-managed source asset name recorded after installation compared to
-    the currently resolved asset from the operator's configured release/ZIP
-    source. Network resolution is cached in server_install so ordinary state
-    refreshes do not repeatedly query GitHub.
+    Ordinary lifecycle/status rendering consumes cached evidence only. Remote
+    release resolution is opt-in so Start/Stop/Restart never block on GitHub or
+    another release host. Explicit/background update checks can set
+    ``allow_remote`` (or ``force``) and refresh the cache.
     """
     install = application.setdefault("server_install", {})
     stack_row = server_stack.get("runeschema") if isinstance(server_stack.get("runeschema"), dict) else {}
@@ -28,7 +27,7 @@ def runeschema_status(application: dict, server_stack: dict, *, force: bool = Fa
     now = time.time()
 
     stale = force or not cache or now - float(cache.get("checked_at") or 0) >= RUNESCHEMA_CHECK_SECONDS
-    if source_url and stale:
+    if source_url and stale and (allow_remote or force):
         try:
             resolved = server_systems.resolve_runtime_zip_source(
                 source_url, prefer_contains=("runeschema",), timeout=8.0
@@ -81,16 +80,24 @@ def runeschema_status(application: dict, server_stack: dict, *, force: bool = Fa
     }
 
 
-def refresh_server_runtime_cache(state: dict, profile: dict | None, *, force_runeschema: bool = False) -> dict:
+def refresh_server_runtime_cache(state: dict, profile: dict | None, *, force_runeschema: bool = False, remote: bool | None = None) -> dict:
+    """Refresh server evidence without putting network I/O on lifecycle paths.
+
+    Existing callers already pass ``force_runeschema=True`` for explicit remote
+    checks. If ``remote`` is omitted, that flag is also the opt-in for Steam,
+    UE4SS, and RuneSchema remote queries. Normal lifecycle completion therefore
+    stays local/fast while explicit checks still fetch authoritative versions.
+    """
     application = state.setdefault("application", {})
+    remote_check = bool(force_runeschema) if remote is None else bool(remote)
     stack = server_runtime_stack(
         application,
         profile or {},
         runeschema_runtime_dir=server_systems.RUNESCHEMA_RUNTIME_DIR,
-        remote=True,
+        remote=remote_check,
     )
     application.setdefault("runtime_version_cache", {})["server"] = stack
-    runeschema = runeschema_status(application, stack, force=force_runeschema)
+    runeschema = runeschema_status(application, stack, force=force_runeschema, allow_remote=remote_check)
     stack["runeschema"] = {**dict(stack.get("runeschema") or {}),
                            "installed_version": runeschema.get("installed_version") or "",
                            "latest_version": runeschema.get("available_version") or "",

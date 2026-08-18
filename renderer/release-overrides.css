@@ -35,19 +35,65 @@
   box-shadow:none !important;
 }
 
-/* Recommended Mods intentionally mirrors the compact horizontal World language:
-   artwork on one side, metadata in the middle, actions at the far edge. */
-.recommended-mod-grid { display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:8px !important; }
-.recommended-mod-card { position:relative; display:grid !important; grid-template-columns:112px minmax(0,1fr) auto !important; min-height:78px; align-items:stretch !important; overflow:hidden; padding:0 !important; }
-.recommended-mod-card > div:not(.recommended-mod-artwork) { min-width:0; align-self:center; padding:11px 14px; }
-.recommended-mod-artwork { position:relative; min-height:78px; overflow:hidden; background:color-mix(in srgb,var(--panel,#191816) 82%,transparent); }
-.recommended-mod-artwork::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent 48%,color-mix(in srgb,var(--panel,#191816) 28%,transparent) 68%,var(--panel,#191816) 100%); pointer-events:none; }
-.recommended-mod-artwork img { width:100%; height:100%; min-height:78px; display:block; object-fit:cover; }
-.recommended-mod-card > .btn,.recommended-mod-card > .recommended-mod-actions { align-self:center; margin-right:10px; }
-.recommended-mod-actions { display:flex; align-items:center; gap:6px; padding:8px 0; }
-.recommended-mod-card strong { display:block; font-size:13px; line-height:1.25; }
-.recommended-mod-card small { display:block; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.recommended-mod-card .recommended-mod-summary { display:-webkit-box; margin-top:5px; overflow:hidden; color:var(--muted,#9d968c); font-size:10px; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+/* Recommended Mods is deliberately a compact line list. The icon is a small
+   identifier only; name/version/status/action stay on one scan-friendly row. */
+.recommended-mod-grid {
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  gap:4px !important;
+}
+.recommended-mod-card {
+  display:grid !important;
+  grid-template-columns:30px minmax(0,1fr) auto auto !important;
+  min-height:44px !important;
+  align-items:center !important;
+  gap:9px !important;
+  padding:6px 8px !important;
+  border-radius:8px !important;
+  overflow:hidden;
+}
+.recommended-mod-icon {
+  width:28px !important;
+  height:28px !important;
+  min-width:28px !important;
+  object-fit:contain !important;
+  border:0 !important;
+  border-radius:5px !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+.recommended-mod-copy {
+  min-width:0;
+  padding:0 !important;
+}
+.recommended-mod-copy strong {
+  display:block;
+  overflow:hidden;
+  font-size:12px;
+  line-height:1.2;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.recommended-mod-copy small {
+  display:block;
+  margin-top:2px;
+  overflow:hidden;
+  color:var(--muted,#9d968c);
+  font-size:10px;
+  line-height:1.15;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.recommended-mod-card > .status-pill {
+  justify-self:end;
+  white-space:nowrap;
+}
+.recommended-mod-card > .btn {
+  min-height:30px !important;
+  margin:0 !important;
+  padding:5px 9px !important;
+  white-space:nowrap;
+}
 
 /* Keep recognizable brand colors but remove the little outlined boxes around
    platform/community/audience marks. The icon itself carries the visual cue;
@@ -102,7 +148,12 @@
 .nexus-account-settings,.nexus-integration-hidden,[data-nexus-account],[data-nexus-login],#nexus-account-panel,#nexus-auth-panel { display:none !important; }
 
 @media (max-width:760px) {
-  .recommended-mod-card { grid-template-columns:82px minmax(0,1fr) !important; }
-  .recommended-mod-card > .btn,.recommended-mod-card > .recommended-mod-actions { grid-column:1/-1; margin:0 10px 10px; justify-self:end; }
+  .recommended-mod-card {
+    grid-template-columns:26px minmax(0,1fr) auto !important;
+    gap:7px !important;
+  }
+  .recommended-mod-icon { width:24px !important; height:24px !important; min-width:24px !important; }
+  .recommended-mod-card > .status-pill { font-size:9px; }
+  .recommended-mod-card > .btn { grid-column:2/-1; justify-self:end; margin-top:-2px !important; }
   .release-mod-world { align-items:flex-start; flex-direction:column; }
 }

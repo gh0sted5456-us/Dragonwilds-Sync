@@ -23,14 +23,10 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   openExternal: (target) => ipcRenderer.invoke('dragonwilds:open-external', target),
   openInAppBrowser: (target) => ipcRenderer.invoke('dragonwilds:open-in-app-browser', target),
   captureWebview: (payload = {}) => ipcRenderer.invoke('dragonwilds:capture-webview', payload),
-  openManagedDialog: (payload = {}) => ipcRenderer.invoke('dragonwilds:managed-dialog-open', payload),
-  managedDialogContent: (id) => ipcRenderer.invoke('dragonwilds:managed-dialog-content', id),
-  managedDialogEvent: (payload = {}) => ipcRenderer.invoke('dragonwilds:managed-dialog-event', payload),
-  updateManagedDialog: (payload = {}) => ipcRenderer.invoke('dragonwilds:managed-dialog-update', payload),
-  closeManagedDialog: (id) => ipcRenderer.invoke('dragonwilds:managed-dialog-close', id),
-  onManagedDialogEvent: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-event',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-event',fn); },
-  onManagedDialogUpdate: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-update',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-update',fn); },
-  onManagedDialogClosed: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-closed',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-closed',fn); },
+  // Application dialogs intentionally remain renderer-owned. app.js already
+  // falls back to its in-app desktop/modal surface when no native managed
+  // dialog bridge is exposed. Genuine website content continues through the
+  // browser-window bridge above (for example Nexus pages).
   windowMinimize: () => ipcRenderer.invoke('dragonwilds:window-minimize'),
   windowToggleMaximize: () => ipcRenderer.invoke('dragonwilds:window-toggle-maximize'),
   windowClose: () => ipcRenderer.invoke('dragonwilds:window-close'),

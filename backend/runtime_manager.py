@@ -42,8 +42,12 @@ class AuthoritativeRuntimeManager:
     def _actual(self) -> dict:
         runtime = self.engine.status()
         broadcast = self.share.status()
-        return {"runtime": runtime, "broadcast": broadcast, "running": bool(runtime.get("running")),
-                "broadcast_active": bool(broadcast.get("serving"))}
+        return {
+            "runtime": runtime,
+            "broadcast": broadcast,
+            "running": bool(runtime.get("running")),
+            "broadcast_active": bool(broadcast.get("serving")),
+        }
 
     def get_status(self) -> dict:
         actual = self._actual()
@@ -95,23 +99,66 @@ class AuthoritativeRuntimeManager:
             self._operation = ""
         self._operation_lock.release()
 
+    def _withdraw_share(self) -> None:
+        """Best-effort withdrawal used before/after lifecycle failures."""
+        try:
+            self.share.stop()
+        except Exception:
+            pass
+
+    def _cleanup_failed_start(self) -> None:
+        """Never leave a half-started process or advertisement behind."""
+        self._managed_running = False
+        try:
+            if bool(self.engine.status().get("running")):
+                self.engine.stop_world()
+            else:
+                self._withdraw_share()
+        except Exception:
+            self._withdraw_share()
+
+    def _start_verified(self, profile_id: str) -> dict:
+        """Prepare files first, verify the game process, then expose Sync.
+
+        ``ServerEngine.start_world`` historically published the Sync endpoint
+        before spawning the dedicated process. That creates a short but real
+        false-online window. The authoritative manager deliberately performs
+        the phases separately: scan/materialize while stopped, launch the game,
+        verify the process, and only then publish the Sync share.
+        """
+        # A stale share from a prior crash or external call must never survive
+        # into a new Starting phase.
+        self._withdraw_share()
+        prepared = self.engine.scan_mods(profile_id)
+        started = self.engine.start_dedicated(profile_id)
+        after_process = self._actual()
+        if not after_process["running"]:
+            raise RuntimeError("The dedicated server process was not verified after Start.")
+        if after_process["broadcast_active"]:
+            raise RuntimeError("Sync became available before dedicated-process verification completed.")
+
+        published = self.engine.publish(profile_id)
+        actual = self._actual()
+        if not actual["running"]:
+            raise RuntimeError("The dedicated server exited before Sync publication completed.")
+        if not actual["broadcast_active"]:
+            raise RuntimeError("The server started, but its required Sync broadcast was not verified.")
+        self._managed_running = True
+        return {
+            **started,
+            "prepared": prepared,
+            "published": published,
+            "verified_running": True,
+            "broadcast_verified": True,
+        }
+
     def start(self, profile_id: str) -> dict:
         self._begin("start", "Starting")
         try:
-            result = self.engine.start_world(profile_id)
-            actual = self._actual()
-            if not actual["running"]:
-                raise RuntimeError("The dedicated server process was not verified after Start.")
-            if not actual["broadcast_active"]:
-                raise RuntimeError("The server started, but its required Sync broadcast was not verified.")
-            self._managed_running = True
-            return self._finish("Running", {**result, "verified_running": True, "broadcast_verified": True})
+            result = self._start_verified(profile_id)
+            return self._finish("Running", result)
         except Exception as exc:
-            self._managed_running = False
-            try:
-                self.share.stop()
-            except Exception:
-                pass
+            self._cleanup_failed_start()
             self._fail("Start Failed", exc)
             raise
         finally:
@@ -125,13 +172,16 @@ class AuthoritativeRuntimeManager:
             if actual["running"] or not result.get("stop_verified"):
                 raise RuntimeError("The dedicated server process did not report a verified stop.")
             if actual["broadcast_active"]:
-                self.share.stop()
+                self._withdraw_share()
                 actual = self._actual()
             if actual["broadcast_active"]:
                 raise RuntimeError("The dedicated process stopped, but its Sync broadcast remained active.")
             self._managed_running = False
             return self._finish("Stopped", {**result, "verified_stopped": True, "broadcast_verified": True})
         except Exception as exc:
+            # Even if process termination fails, the World must not remain
+            # advertised as available while Stop is in an error state.
+            self._withdraw_share()
             self._fail("Stop Failed", exc)
             raise
         finally:
@@ -142,21 +192,19 @@ class AuthoritativeRuntimeManager:
         try:
             stopped = self.engine.stop_world()
             self._managed_running = False
-            if stopped.get("running") or not stopped.get("stop_verified"):
+            after_stop = self._actual()
+            if after_stop["running"] or not stopped.get("stop_verified"):
                 raise RuntimeError("Restart stopped because process termination was not verified.")
-            started = self.engine.start_world(profile_id)
-            actual = self._actual()
-            if not actual["running"] or not actual["broadcast_active"]:
-                raise RuntimeError("Restart completed its stop phase, but server/broadcast startup was not verified.")
-            self._managed_running = True
-            return self._finish("Running", {**started, "stop": stopped, "verified_running": True, "broadcast_verified": True})
+            if after_stop["broadcast_active"]:
+                self._withdraw_share()
+                after_stop = self._actual()
+            if after_stop["broadcast_active"]:
+                raise RuntimeError("Restart stopped because the prior Sync advertisement could not be withdrawn.")
+            started = self._start_verified(profile_id)
+            return self._finish("Running", {**started, "stop": stopped})
         except Exception as exc:
-            self._managed_running = False
-            try:
-                self.share.stop()
-            except Exception:
-                pass
-            self._fail("Error", exc)
+            self._cleanup_failed_start()
+            self._fail("Restart Failed", exc)
             raise
         finally:
             self._release()
@@ -175,27 +223,50 @@ class AuthoritativeRuntimeManager:
             if before["running"] or before["broadcast_active"]:
                 stopped = self.engine.stop_world()
                 self._managed_running = False
-                if stopped.get("running") or not stopped.get("stop_verified"):
+                after_stop = self._actual()
+                if after_stop["running"] or not stopped.get("stop_verified"):
                     raise RuntimeError("Update cancelled because the server process did not stop cleanly.")
+                if after_stop["broadcast_active"]:
+                    self._withdraw_share()
+                    after_stop = self._actual()
+                if after_stop["broadcast_active"]:
+                    raise RuntimeError("Update cancelled because the Sync advertisement could not be withdrawn.")
+
             install = installer()
             if not isinstance(install, dict) or install.get("ok") is False:
                 raise RuntimeError(str((install or {}).get("error") or f"{component} updater did not confirm success."))
+
             if restart:
-                started = self.engine.start_world(profile_id)
+                started = self._start_verified(profile_id)
+                return self._finish("Running", {
+                    "updated": True,
+                    "component": component,
+                    "install": install,
+                    "stop": stopped,
+                    "restart": started,
+                    "verified_running": True,
+                    "broadcast_verified": True,
+                })
+
+            actual = self._actual()
+            if actual["running"]:
+                raise RuntimeError(f"{component} updated, but the dedicated process unexpectedly remained running.")
+            if actual["broadcast_active"]:
+                self._withdraw_share()
                 actual = self._actual()
-                if not actual["running"] or not actual["broadcast_active"]:
-                    raise RuntimeError(f"{component} updated, but the dedicated server and Sync broadcast did not restart successfully.")
-                self._managed_running = True
-                return self._finish("Running", {"updated": True, "component": component, "install": install, "stop": stopped,
-                                                 "restart": started, "verified_running": True})
-            return self._finish("Stopped", {"updated": True, "component": component, "install": install, "stop": stopped,
-                                             "verified_stopped": True})
+            if actual["broadcast_active"]:
+                raise RuntimeError(f"{component} updated, but the Sync advertisement remained active.")
+            return self._finish("Stopped", {
+                "updated": True,
+                "component": component,
+                "install": install,
+                "stop": stopped,
+                "verified_stopped": True,
+                "broadcast_verified": True,
+            })
         except Exception as exc:
             self._managed_running = False
-            try:
-                self.share.stop()
-            except Exception:
-                pass
+            self._withdraw_share()
             self._fail("Update Failed", exc)
             raise
         finally:
@@ -213,17 +284,24 @@ class AuthoritativeRuntimeManager:
             except Exception:
                 # ``stop_world`` already uses the verified process-tree fallback.
                 result = self.engine.stop_dedicated()
-                self.share.stop()
-            if result.get("running"):
+                self._withdraw_share()
+            actual = self._actual()
+            if actual["running"] or result.get("running"):
                 raise RuntimeError("The dedicated server remained running during launcher shutdown.")
-            self.share.stop()
+            self._withdraw_share()
+            actual = self._actual()
+            if actual["broadcast_active"]:
+                raise RuntimeError("The Sync advertisement remained active during launcher shutdown.")
             self._managed_running = False
             if self.directory_host is not None:
-                try:
-                    self.directory_host.stop()
-                except Exception:
-                    pass
-            return self._finish("Stopped", {**result, "shutdown": True, "verified_stopped": True})
+                self.directory_host.stop()
+            return self._finish("Stopped", {
+                **result,
+                "shutdown": True,
+                "verified_stopped": True,
+                "broadcast_verified": True,
+                "web_management_stopped": self.directory_host is not None,
+            })
         except Exception as exc:
             self._fail("Stop Failed", exc)
             raise

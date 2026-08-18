@@ -20,6 +20,7 @@ const legacyService = read('backend/dragonwilds_service_legacy.py');
 const runtimeManager = read('backend/runtime_manager.py');
 const runtimeVersions = read('backend/runtime_versions.py');
 const directoryHost = read('backend/directory_host.py');
+const directoryWeb = read('backend/directory_web_legacy.py');
 const serverSystems = read('backend/server_systems.py');
 const serverEngine = read('backend/server_engine.py');
 const syncEngine = read('backend/sync_engine.py');
@@ -109,15 +110,21 @@ requireText(service, 'Close RuneScape: Dragonwilds before updating', 'safe clien
 requireText(dragonCore, 'def managed_status', 'DragonCore managed version status');
 requireText(dragonCore, 'sha256', 'DragonCore content fingerprint');
 requireText(service, '_record_notification(', 'shared notification sink');
+requireText(legacyService, '"update_status": dict(((state.get("application") or {}).get("update_status") or {}))', 'WebGUI shared update status payload');
+requireText(directoryWeb, 'Object.values(maintenance.update_status||{})', 'WebGUI shared update status rendering');
 
 // CL evidence must be normalized numerically and exposed from the same runtime
-// version stack rather than hard-coded in the UI.
+// version stack rather than hard-coded in the UI. Desktop and WebGUI both show
+// the reported value plus semantic Current/Outdated/Unknown state.
 requireText(runtimeVersions, 'def normalize_cl_version', 'CL normalization');
 requireText(runtimeVersions, 'def cl_version_status', 'CL comparison');
 requireText(runtimeVersions, 'reported_number = int(', 'numeric CL comparison');
 requireText(runtimeVersions, 'current_expected_cl', 'dynamic expected CL status');
 requireText(app, 'reported_cl', 'desktop CL visibility');
 requireText(app, 'CL status', 'Minimal Mode CL visibility');
+requireText(directoryWeb, 'function clBadge(w)', 'WebGUI Worlds CL badge');
+requireText(directoryWeb, "kv('Reported CL'", 'WebGUI management CL detail');
+requireText(directoryWeb, "kv('CL status'", 'WebGUI management CL status');
 
 // Dedicated scanning/profile activation/publication and host-to-client transfer
 // must continue to operate on real files, not UI-only inventory state.

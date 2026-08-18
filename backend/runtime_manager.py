@@ -25,6 +25,60 @@ class AuthoritativeRuntimeManager:
         # runtime. It lets status reconciliation withdraw an orphaned server
         # advertisement without touching an unrelated private Co-Op share.
         self._managed_running = False
+        self._install_directory_state_bridge()
+
+    def _install_directory_state_bridge(self) -> None:
+        """Make authenticated WebGUI status read the same lifecycle snapshot.
+
+        The preserved WebHost registers its callbacks later during service
+        startup. Wrapping that registration here keeps authentication/action
+        handling untouched while replacing remembered/raw process presentation
+        with this manager's authoritative transitional/error state for the
+        active hosted World.
+        """
+        host = self.directory_host
+        setter = getattr(host, "set_remote_admin_callbacks", None) if host is not None else None
+        if not callable(setter) or bool(getattr(host, "_dws_runtime_state_bridge", False)):
+            return
+        manager = self
+
+        def bridged_set_remote_admin_callbacks(*, authenticate=None, state=None, action=None):
+            provider = state
+            if callable(state):
+                def state_with_lifecycle(profile_id: str):
+                    payload = state(profile_id)
+                    if not isinstance(payload, dict):
+                        return payload
+                    result = dict(payload)
+                    runtime = dict(result.get("runtime") or {})
+                    active_id = str(getattr(manager.engine, "active_profile_id", "") or "")
+                    requested_id = str(profile_id or "")
+                    if active_id == requested_id:
+                        lifecycle = manager.get_status()
+                        runtime.update(dict(lifecycle.get("runtime") or {}))
+                        runtime.update({
+                            "state": lifecycle.get("state"),
+                            "busy": bool(lifecycle.get("busy")),
+                            "operation": lifecycle.get("operation") or "",
+                            "last_error": lifecycle.get("last_error") or "",
+                            "broadcast": dict(lifecycle.get("broadcast") or {}),
+                            "sync_status": (
+                                str(lifecycle.get("state") or "Working")
+                                if lifecycle.get("busy")
+                                else ("Healthy" if lifecycle.get("running") and lifecycle.get("broadcast_active") else "Standby")
+                            ),
+                        })
+                    else:
+                        runtime.setdefault("state", "Stopped")
+                        runtime.setdefault("busy", False)
+                        runtime.setdefault("operation", "")
+                    result["runtime"] = runtime
+                    return result
+                provider = state_with_lifecycle
+            return setter(authenticate=authenticate, state=provider, action=action)
+
+        host.set_remote_admin_callbacks = bridged_set_remote_admin_callbacks
+        host._dws_runtime_state_bridge = True
 
     def _set(self, phase: str, *, operation: str = "", error: str = "", result: dict | None = None) -> None:
         with self._state_lock:

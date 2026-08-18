@@ -15,7 +15,7 @@ def exercise(platform_name: str) -> tuple[list[str], dict, dict]:
     captured = {}
     old_platform = runtime_manager.sys.platform
     old_getpid = runtime_manager.os.getpid
-    old_popen = runtime_manager.subprocess.Popen
+    old_popen = runtime_manager.popen_hidden
     old_sleep = runtime_manager.time.sleep
     try:
         runtime_manager.sys.platform = platform_name
@@ -27,13 +27,13 @@ def exercise(platform_name: str) -> tuple[list[str], dict, dict]:
             captured["kwargs"] = dict(kwargs)
             return FakeProc()
 
-        runtime_manager.subprocess.Popen = fake_popen
+        runtime_manager.popen_hidden = fake_popen
         evidence = runtime_manager._launch_orphan_watchdog(2222)
         return captured["command"], captured["kwargs"], evidence
     finally:
         runtime_manager.sys.platform = old_platform
         runtime_manager.os.getpid = old_getpid
-        runtime_manager.subprocess.Popen = old_popen
+        runtime_manager.popen_hidden = old_popen
         runtime_manager.time.sleep = old_sleep
 
 

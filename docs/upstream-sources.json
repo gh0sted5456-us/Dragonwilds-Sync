@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.UpstreamSources.v1",
-  "updated_at": "2026-08-18T00:49:00Z",
+  "updated_at": "2026-08-18T03:44:00Z",
   "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes and RSDW content. Changing a source requires only an approved repository commit; launcher code does not need to be rebuilt just to change an upstream URL.",
   "security": {
     "allow_arbitrary_commands": false,
@@ -26,7 +26,7 @@
       "branch": "main",
       "path": "website/shared/icons",
       "parent": "rsdwtools",
-      "description": "Canonical colored RSDW icon pack. It currently shares the RSDWTools archive, but remains a separately addressable source so it can move later without changing launcher code."
+      "description": "Canonical colored RSDW icon pack. Dragonwilds Sync maintains its own validated icon fingerprint/index so exact item-to-icon associations survive offline use."
     },
     "rsdw-item-manifest": {
       "display_name": "RSDW Item Manifest",
@@ -34,9 +34,11 @@
       "type": "github-path",
       "repository": "RSDWArchive/RSDWTools",
       "branch": "main",
-      "path": "website/tools/item-editor/data",
+      "path": "data/items/json/RSDragonwilds",
+      "association_catalog": "website/tools/item-editor/data/catalog.json",
+      "icons_path": "website/shared/icons",
       "parent": "rsdwtools",
-      "description": "Canonical RSDW item metadata used by Item Editor, Spawner and server-pushed custom-item reconciliation."
+      "description": "Canonical RSDW item JSON tree. Dragonwilds Sync validates the upstream item-editor association catalog against this tree, then maintains its own atomic manifest mapping display/internal/spawn identity, stack size and exact icon path."
     },
     "runeschema": {
       "display_name": "RuneSchema",

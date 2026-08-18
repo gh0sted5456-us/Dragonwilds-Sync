@@ -52,7 +52,8 @@ def main() -> None:
     assert by_id["rsdw_toolkit"]["remote_update_supported"] is False
 
     # The currently deployed physical RSDWTools bridge name resolves to the
-    # logical RSDW Toolkit UE4SS component, not the RSDWTools data source.
+    # logical RSDW Toolkit UE4SS component. The separate RSDWTools data source
+    # remains represented only by DATA_SOURCES and never receives a core action.
     toolkit = component_metadata_for_mod("RSDWTools", "ue4ss_mod")
     assert toolkit and toolkit["id"] == "rsdw_toolkit"
     assert toolkit["name"] == "RSDW Toolkit"
@@ -75,19 +76,13 @@ def main() -> None:
     assert component_for_remote_update("UE4SS") == "ue4ss"
     assert component_for_remote_update("RuneSchema") == "runeschema"
     assert component_for_remote_update("Dragon_Core") == "dragoncore"
-    for unsupported in ("RSDW Toolkit", "DragonConnect"):
+    for unsupported in ("RSDW Toolkit", "RSDWTools", "DragonConnect"):
         try:
             component_for_remote_update(unsupported)
         except ValueError as exc:
             assert "authoritative remote update source" in str(exc)
         else:
             raise AssertionError(f"{unsupported} must not manufacture remote update support")
-    try:
-        component_for_remote_update("RSDWTools")
-    except ValueError as exc:
-        assert "Unknown managed core/tooling component" in str(exc)
-    else:
-        raise AssertionError("RSDWTools is a data source, not a runtime update component")
 
     print("authoritative core/tooling/data-source taxonomy: PASS")
 

@@ -26,10 +26,10 @@ a = Analysis(
         *webhost_assets,
         (str(backend / 'firewall_rules.ps1'), '.'),
     ],
-    hiddenimports=crypto_hiddenimports,
+    hiddenimports=[*crypto_hiddenimports, 'web_release_polish'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(backend / 'packaged_stdio_guard.py')],
+    runtime_hooks=[str(backend / 'packaged_stdio_guard.py'), str(backend / 'web_release_polish_hook.py')],
     excludes=[],
     noarchive=False,
 )

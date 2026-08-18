@@ -9,15 +9,8 @@ const candidates = [
   ...(configuredPython ? [{ command: configuredPython, prefix: [] }] : []),
   { command: workspacePython, prefix: [] },
   ...(process.platform === 'win32'
-  ? [
-      { command: 'py', prefix: ['-3'] },
-      { command: 'python', prefix: [] },
-      { command: 'python3', prefix: [] },
-    ]
-  : [
-      { command: 'python3', prefix: [] },
-      { command: 'python', prefix: [] },
-    ]),
+  ? [{ command: 'py', prefix: ['-3'] }, { command: 'python', prefix: [] }, { command: 'python3', prefix: [] }]
+  : [{ command: 'python3', prefix: [] }, { command: 'python', prefix: [] }]),
 ];
 
 function findPython() {
@@ -44,6 +37,7 @@ const crossPlatformTests = [
   'backend/test_server_systems.py',
   'backend/test_steamcmd_server_update.py',
   'backend/test_dedicated_post_verify.py',
+  'backend/test_managed_updates.py',
   'backend/test_unified_update_status.py',
   'backend/test_security.py',
   'backend/test_health_model.py',
@@ -101,7 +95,7 @@ const windowsHistoricalTests = [
 ];
 
 const tests = process.platform === 'win32'
-  ? [...crossPlatformTests.slice(0, 16), ...windowsHistoricalTests, ...crossPlatformTests.slice(16)]
+  ? [...crossPlatformTests.slice(0, 17), ...windowsHistoricalTests, ...crossPlatformTests.slice(17)]
   : crossPlatformTests;
 
 console.log(`[backend verify] ${process.platform === 'win32' ? 'Windows full V2 regression matrix' : 'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);

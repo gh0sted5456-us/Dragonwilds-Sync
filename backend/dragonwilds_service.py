@@ -4706,7 +4706,7 @@ def handle(method: str, params: dict) -> object:
         return {"regions": REGION_LABELS, "vpn_providers": VPN_PROVIDERS}
 
     if method in ("security.defender.scan", "server.maintenance.defender_scan"):
-        return defender_scan(str(params.get("path") or ""))
+        return {"available": False, "enabled": False, "blocked": False, "skipped": True, "retired": True, "reason": "Microsoft Defender integration is not used by Dragonwilds Sync."}
 
     if method == "server.install.status":
         install_dir, steamcmd_dir, configured_exe = _server_install_paths(state)

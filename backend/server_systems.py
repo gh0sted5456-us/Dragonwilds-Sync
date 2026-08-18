@@ -32,7 +32,6 @@ from integrations import normalize_mod_source
 from network_health import summarize_client_reports
 from health_model import normalize_health_config, public_health_config, score_server_health
 from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, REGION_LABELS
-from security_scanner import defender_scan, defender_status
 from runtime_versions import server_runtime_stack
 from server_layout import resolve_server_layout
 from client_layout import resolve_client_layout
@@ -1779,10 +1778,7 @@ class ShareServer:
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
         required = [u for u in units if u.classification == "player_required"]
-        defender_state = defender_status()
         security_reviews = []
-        for unit in required:
-            security_reviews.extend(review_mod_unit_with_defender(unit))
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
         # Wipe only app-owned published staging. It is regenerated atomically enough for current protocol.
         for child in list(PUBLISH_DIR.iterdir()):
@@ -1920,15 +1916,7 @@ class ShareServer:
                               "client_ue4ss_mods": client_ue4ss_mods,
                               "game_port": int(game_port or 7777), "rating_average": avg, "rating_count": count,
                               "hw_stats": hw_stats or {}, "network_health": STATE.network_summary(None),
-                              "security_posture": {
-                                  "defender": {
-                                      "available": bool(defender_state.get("available")), "enabled": bool(defender_state.get("enabled")),
-                                      "mode": defender_state.get("mode") or "", "signature_version": defender_state.get("signature_version") or "",
-                                      "checked_at": defender_state.get("checked_at"),
-                                  },
-                                  "reviewed_units": len({r.get("unit_key") for r in security_reviews}),
-                                  "skipped_reviews": sum(1 for r in security_reviews if r.get("skipped")),
-                              },
+                              "security_posture": {"package_validation": "hash-staging-rollback"},
                               "health_config": broadcast_health_config,
                               "runtime_stack": runtime_stack, "baseline_runtime": baseline_runtime,
                               "connection": {
@@ -3494,7 +3482,7 @@ class PlayerLogMonitor:
 
 
 def clear_server_mods(game_root: str) -> dict:
-    """Clear profile mods while retaining RuneSchema core, UE4SS core and mods.txt."""
+    """Clear profile mods while retaining RuneSchema, RSDWTools, UE4SS core and mods.txt."""
     layout = resolve_server_layout(game_root)
     mods_root = layout.ue4ss_mods_dir
     paks_root = layout.paks_mods_dir

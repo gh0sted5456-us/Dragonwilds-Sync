@@ -109,12 +109,18 @@
       const name=world.name||world.world_name||'World';
       const meta=world.metadata_cache||{}; const mods=meta.mods||[];
       const detail=modMode==='server'?'Dedicated Server':'Private World / Co-Op';
-      return `<article class="release-mod-world"><div><strong>${esc(name)}</strong><small>${esc(detail)} · ${mods.length} cached mod${mods.length===1?'':'s'}</small></div><button class="btn primary compact-btn" data-release-open-mods="${esc(world.id||'')}" data-release-open-kind="${modMode}">Open Mod Manager</button></article>`;
+      return `<article class="release-mod-world"><div><strong>${esc(name)}</strong><small>${esc(detail)} · ${mods.length} cached mod${mods.length===1?'':'s'}</small></div><button class="btn primary compact-btn" data-release-open-mods="${esc(world.id||'')}" data-release-open-kind="${modMode}">Manage Mods</button></article>`;
     }).join('') : `<div class="empty-state">No ${modMode==='server'?'dedicated Server':'Private World / Co-Op'} profiles are configured.</div>`;
     list.querySelectorAll('[data-release-open-mods]').forEach((button)=>button.addEventListener('click',()=>{
       const id=button.dataset.releaseOpenMods||''; const kind=button.dataset.releaseOpenKind;
-      if(kind==='server') api.openDetachedWindow?.({route:'server-detail',title:'Dragonwilds Sync · Server Mods',context:{selectedServerWorldId:id,serverTab:'mods'},width:1240,height:820});
-      else api.openDetachedWindow?.({route:'world-detail',title:'Dragonwilds Sync · Private World Mods',context:{selectedWorldId:id,privateTab:'mods'},width:1240,height:820});
+      const route=kind==='server'?'servers':'worlds';
+      const nav=document.querySelector(`[data-route="${route}"],[data-nav-route="${route}"]`);
+      nav?.click();
+      setTimeout(()=>{
+        const card=[...document.querySelectorAll('[data-world-id]')].find((node)=>String(node.dataset.worldId||'')===String(id));
+        const manage=[...card?.querySelectorAll('button')||[]].find((node)=>/manage|details|open/i.test(node.textContent||''));
+        manage?.click();
+      },60);
     }));
   }
 

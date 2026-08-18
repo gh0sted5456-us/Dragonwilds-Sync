@@ -2857,7 +2857,6 @@
       const world=activeServerWorld(); if(!world) throw new Error('Server Profile target was not found.');
       const detected=await api.invoke('server.maintenance.detect_mod_zip',{zip_path:zipPath});
       if(!detected.kind) throw new Error('Could not identify this Nexus archive as UE4SS, PAK, or RuneSchema.');
-      const scan=await api.invoke('server.maintenance.defender_scan',{path:zipPath}); if(scan.available&&scan.clean===false)throw new Error('Microsoft Defender blocked this archive.');
       response=await api.invoke('server.world.mod.install',{id:world.id,zip_path:zipPath,kind:detected.kind});
       state.serverInventory[world.id]=response.units||[]; if(response.state)state.data=response.state;
       if(existing){source.previous={...(existing.source||{}),rollback_archive:response.result?.rollback_archive||'',captured_at:new Date().toISOString(),unit_name:existing.name||''};}
@@ -3652,8 +3651,6 @@
     if(!world||!rootPath) throw new Error('Set the dedicated Server Directory first.');
     const detected=await api.invoke('server.maintenance.detect_mod_zip',{zip_path:zipPath});
     if(!detected.kind) throw new Error('Could not identify this ZIP as UE4SS, PAK, or RuneSchema.');
-    const scan=await api.invoke('server.maintenance.defender_scan',{path:zipPath});
-    if(scan.available&&scan.clean===false) throw new Error('Microsoft Defender reported a problem with this ZIP.');
     await api.invoke('server.world.mod.install',{id:world.id,zip_path:zipPath,kind:detected.kind});
     await refreshServerInventory(world,true); toast('World mod installed',`${detected.kind.toUpperCase()} · launcher load rules applied`,'success');
   }

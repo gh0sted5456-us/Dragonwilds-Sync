@@ -15,108 +15,47 @@
 
 /* Recommended Mods intentionally mirrors the compact horizontal World language:
    artwork on one side, metadata in the middle, actions at the far edge. */
-.recommended-mod-grid {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr) !important;
-  gap: 8px !important;
-}
+.recommended-mod-grid { display:grid !important; grid-template-columns:minmax(0,1fr) !important; gap:8px !important; }
+.recommended-mod-card { position:relative; display:grid !important; grid-template-columns:112px minmax(0,1fr) auto !important; min-height:78px; align-items:stretch !important; overflow:hidden; padding:0 !important; }
+.recommended-mod-card > div:not(.recommended-mod-artwork) { min-width:0; align-self:center; padding:11px 14px; }
+.recommended-mod-artwork { position:relative; min-height:78px; overflow:hidden; background:color-mix(in srgb,var(--panel,#191816) 82%,transparent); }
+.recommended-mod-artwork::after { content:""; position:absolute; inset:0; background:linear-gradient(90deg,transparent 52%,var(--panel,#191816) 100%); pointer-events:none; }
+.recommended-mod-artwork img { width:100%; height:100%; min-height:78px; display:block; object-fit:cover; }
+.recommended-mod-card > .btn,.recommended-mod-card > .recommended-mod-actions { align-self:center; margin-right:10px; }
+.recommended-mod-actions { display:flex; align-items:center; gap:6px; padding:8px 0; }
+.recommended-mod-card strong { display:block; font-size:13px; line-height:1.25; }
+.recommended-mod-card small { display:block; margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.recommended-mod-card .recommended-mod-summary { display:-webkit-box; margin-top:5px; overflow:hidden; color:var(--muted,#9d968c); font-size:10px; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 
-.recommended-mod-card {
-  position: relative;
-  display: grid !important;
-  grid-template-columns: 112px minmax(0, 1fr) auto !important;
-  min-height: 78px;
-  align-items: stretch !important;
-  overflow: hidden;
-  padding: 0 !important;
-}
+/* Make platform/community marks readable on dark themes while preserving each
+   service's recognizable brand color. The bundled black SVG glyph becomes a
+   white foreground mark on its brand tile. */
+.platform-logo { width:20px; height:20px; box-sizing:border-box; padding:3px; border-radius:6px; object-fit:contain; filter:brightness(0) invert(1); }
+.platform-logo[src$="steam.svg"] { background:#1b9fff; }
+.platform-logo[src$="discord.svg"] { background:#5865f2; }
+.platform-logo[src$="xbox.svg"] { background:#107c10; }
+.platform-logo[src$="playstation.svg"] { background:#0070d1; }
+.platform-logo[src$="nintendo.svg"] { background:#e60012; }
+.platform-logo[src$="epicgames.svg"] { background:#444; }
+.platform-logo[src$="nexusmods.svg"] { background:#da8e35; }
 
-.recommended-mod-card > div:not(.recommended-mod-artwork) {
-  min-width: 0;
-  align-self: center;
-  padding: 11px 14px;
-}
+.world-rating[role="button"] { border-radius:8px; transition:background .15s ease,box-shadow .15s ease; }
+.world-rating[role="button"]:hover { background:rgba(217,174,71,.10); }
+.world-rating[role="button"]:focus-visible { outline:2px solid #d9ae47; outline-offset:3px; }
 
-.recommended-mod-artwork {
-  position: relative;
-  min-height: 78px;
-  overflow: hidden;
-  background: color-mix(in srgb, var(--panel, #191816) 82%, transparent);
-}
-
-.recommended-mod-artwork::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent 52%, var(--panel, #191816) 100%);
-  pointer-events: none;
-}
-
-.recommended-mod-artwork img {
-  width: 100%;
-  height: 100%;
-  min-height: 78px;
-  display: block;
-  object-fit: cover;
-}
-
-.recommended-mod-card > .btn,
-.recommended-mod-card > .recommended-mod-actions {
-  align-self: center;
-  margin-right: 10px;
-}
-
-.recommended-mod-actions {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 0;
-}
-
-.recommended-mod-card strong {
-  display: block;
-  font-size: 13px;
-  line-height: 1.25;
-}
-
-.recommended-mod-card small {
-  display: block;
-  margin-top: 3px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.recommended-mod-card .recommended-mod-summary {
-  display: -webkit-box;
-  margin-top: 5px;
-  overflow: hidden;
-  color: var(--muted, #9d968c);
-  font-size: 10px;
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
+.release-mod-tabs { margin:10px 0 14px; }
+.release-mod-list { display:grid; gap:8px; }
+.release-mod-world { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 14px; border:1px solid var(--border,#34403d); border-radius:12px; background:var(--panel,#111817); }
+.release-mod-world strong,.release-mod-world small { display:block; }
+.release-mod-world small { margin-top:3px; color:var(--muted,#92a09b); }
+.release-changelog-tabs { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px; }
 
 /* Nexus account/SSO remains intentionally non-public. Links to public mod pages
    and public artwork are unaffected. */
-.nexus-account-settings,
-.nexus-integration-hidden,
-[data-nexus-account],
-[data-nexus-login],
-#nexus-account-panel,
-#nexus-auth-panel {
-  display: none !important;
-}
+.nexus-account-settings,.nexus-integration-hidden,[data-nexus-account],[data-nexus-login],#nexus-account-panel,#nexus-auth-panel { display:none !important; }
 
-@media (max-width: 760px) {
-  .recommended-mod-card {
-    grid-template-columns: 82px minmax(0, 1fr) !important;
-  }
-  .recommended-mod-card > .btn,
-  .recommended-mod-card > .recommended-mod-actions {
-    grid-column: 1 / -1;
-    margin: 0 10px 10px;
-    justify-self: end;
-  }
+@media (max-width:760px) {
+  .recommended-mod-card { grid-template-columns:82px minmax(0,1fr) !important; }
+  .recommended-mod-card > .btn,.recommended-mod-card > .recommended-mod-actions { grid-column:1/-1; margin:0 10px 10px; justify-self:end; }
+  .release-mod-world { align-items:flex-start; flex-direction:column; }
 }

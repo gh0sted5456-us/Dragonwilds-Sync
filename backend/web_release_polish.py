@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-"""Release-surface hardening for the packaged WebHost.
+"""Release-surface refinements for the packaged WebHost.
 
-The public WebGUI is a catalog and join surface, not a server-inspection tool.
-Administrative/server metadata stays behind the authenticated remote-admin
-boundary while public discovery retains only the fields needed to discover,
-compare, and join a World.
+The public WebGUI is intentionally useful for choosing a World: published host
+specs and internet-quality evidence remain visible. Raw/debug metadata surfaces
+stay hidden, while administrative/configuration data remains behind Remote
+Admin.
 """
 
 GITHUB_PROFILE = "https://github.com/gh0sted5456-us"
 
 _PRIVATE_PUBLIC_KEYS = {
-    "server_specs", "internet_strength", "hw_stats", "hardware", "health_config",
-    "server_health", "metadata_cache", "manifest_cache", "status", "runtime_metrics",
-    "process_metrics", "server_install", "configuration", "configs", "config_files",
-    "save_path", "save_dir", "game_root", "install_dir", "steamcmd_dir",
+    "hw_stats", "hardware", "health_config", "metadata_cache", "manifest_cache",
+    "status", "runtime_metrics", "process_metrics", "server_install",
+    "configuration", "configs", "config_files", "save_path", "save_dir",
+    "game_root", "install_dir", "steamcmd_dir",
 }
 
 _FOOTER = r'''
@@ -43,10 +43,6 @@ _DETAIL_GUARD = r'''
 <script>
 (function(){
   function prune(){
-    document.querySelectorAll('.metadata-section').forEach(function(section){
-      var title=(section.querySelector('h2')||{}).textContent||'';
-      if(/server specs|internet strength/i.test(title)) section.remove();
-    });
     document.querySelectorAll('.all-world-metadata').forEach(function(node){node.remove()});
     document.querySelectorAll('.detail-actions a').forEach(function(node){if(/metadata json/i.test(node.textContent||''))node.remove()});
   }
@@ -55,9 +51,14 @@ _DETAIL_GUARD = r'''
 </script>
 '''
 
+_AUDIENCE_STYLE = r'''
+<style>
+.dws-audience{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border:1px solid;border-radius:999px;font-size:10px;font-weight:850;letter-spacing:.04em;text-transform:uppercase}.dws-audience img{width:17px;height:17px;display:block}.dws-audience.kid{color:#8ee8b2;border-color:#2f7450;background:rgba(45,113,78,.14)}.dws-audience.adult{color:#f0a5a5;border-color:#8b4444;background:rgba(130,54,54,.14)}
+</style>
+'''
+
 
 def _sanitize_public_world(row: dict) -> dict:
-    """Remove server-inspection data while preserving public join compatibility."""
     if not isinstance(row, dict):
         return {}
     clean = {key: value for key, value in row.items() if key not in _PRIVATE_PUBLIC_KEYS}
@@ -65,8 +66,6 @@ def _sanitize_public_world(row: dict) -> dict:
     sync = stack.get("dragonwilds_sync") if isinstance(stack.get("dragonwilds_sync"), dict) else {}
     if sync:
         clean["sync_version"] = str(sync.get("version") or "")[:40]
-        # The public website only needs the launcher compatibility identity. Full
-        # UE4SS/RuneSchema/game runtime evidence remains desktop/admin metadata.
         clean["runtime_stack"] = {"dragonwilds_sync": {
             "version": clean["sync_version"],
             "channel": str(sync.get("channel") or "")[:40],
@@ -80,11 +79,13 @@ def _sanitize_public_world(row: dict) -> dict:
 def _decorate(page: bytes, *, public_browser: bool = False, detail: bool = False) -> bytes:
     text = page.decode("utf-8", "replace")
     if public_browser:
-        # API remains an implementation endpoint for launcher interoperability,
-        # but it is no longer promoted in the normal human-facing header.
         text = text.replace('<a href="/api/v1">API</a>', '')
+        text = text.replace('<span class="badge good">🛡 Kid-Friendly</span>', '<span class="dws-audience kid"><img src="/assets/platforms/kid-friendly.svg" alt="">Kid-Friendly</span>')
+        text = text.replace('<span class="badge plain">18+ Adults Only</span>', '<span class="dws-audience adult"><img src="/assets/platforms/adults-only.svg" alt="">18+ Adults Only</span>')
     if detail and "dws-detail-guard" not in text:
         text = text.replace("</body>", '<span id="dws-detail-guard" hidden></span>' + _DETAIL_GUARD + "</body>")
+    if "dws-audience" in text and "dws-audience.kid" not in text:
+        text = text.replace("</head>", _AUDIENCE_STYLE + "</head>")
     if "dws-fan-footer" not in text:
         text = text.replace("</body>", _FOOTER + "</body>")
     return text.encode("utf-8")
@@ -92,28 +93,19 @@ def _decorate(page: bytes, *, public_browser: bool = False, detail: bool = False
 
 def install() -> None:
     import directory_web
-
     if getattr(directory_web, "_DWS_RELEASE_POLISH_INSTALLED", False):
         return
     directory_web._DWS_RELEASE_POLISH_INSTALLED = True
-
     original_public = directory_web.public_browser_html
     original_detail = directory_web.detail_html
     original_login = directory_web.admin_login_html
     original_remote = directory_web.remote_admin_html
-
     directory_web.public_browser_html = lambda: _decorate(original_public(), public_browser=True)
     directory_web.detail_html = lambda *args, **kwargs: _decorate(original_detail(*args, **kwargs), detail=True)
     directory_web.admin_login_html = lambda *args, **kwargs: _decorate(original_login(*args, **kwargs))
     directory_web.remote_admin_html = lambda *args, **kwargs: _decorate(original_remote(*args, **kwargs))
-
-    # directory_host imports the already-decorated directory_web functions after
-    # this runtime hook. Sanitize its public catalog at the source so hidden UI
-    # sections cannot be recovered by directly requesting the public JSON.
     import directory_host
     original_catalog_worlds = directory_host.DirectoryHost.catalog_worlds
-
     def public_catalog_worlds(self):
         return [_sanitize_public_world(row) for row in original_catalog_worlds(self)]
-
     directory_host.DirectoryHost.catalog_worlds = public_catalog_worlds

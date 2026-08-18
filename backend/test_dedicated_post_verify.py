@@ -82,18 +82,24 @@ def test_build_mismatch_blocks_restart_contract() -> None:
             root = Path(td)
             exe = root / "RSDragonwilds.exe"
             exe.write_bytes(b"server")
-            state = {"application": {"server_install": {"install_dir": str(root), "steamcmd_dir": str(root / "steamcmd"), "server_exe": str(exe)}}}
+            state = {"application": {"server_install": {"install_dir": str(root), "steamcmd_dir": str(root / "steamcmd"), "server_exe": str(exe), "installed_buildid": "777"}}}
             profile_store.load_state = lambda: state
             profile_store.save_state = lambda _value: None
             runtime_versions.detect_installed_steam_build = lambda *_args, **_kwargs: {"available": True, "buildid": "776", "manifest": "test.acf"}
             runtime_versions.steam_public_build = lambda *_args, **_kwargs: {"available": True, "buildid": "777"}
             manager = AuthoritativeRuntimeManager(DummyEngine(), DummyShare())
             try:
-                manager._verify_dedicated_install({"ok": True, "installed": {"server_exe": str(exe)}})
+                manager._verify_dedicated_install({"ok": True, "installed": {"server_exe": str(exe), "output": "SteamCMD claimed success"}})
                 raise AssertionError("mismatched post-SteamCMD appmanifest did not fail verification")
             except RuntimeError as exc:
                 assert "does not match latest public build" in str(exc)
-            assert state["application"]["server_install"]["last_steamcmd_status"] == "verification_failed"
+            install = state["application"]["server_install"]
+            assert install["last_steamcmd_status"] == "verification_failed"
+            assert install["installed_buildid"] == "776", "optimistic latest build leaked into persisted installed state"
+            assert install["installed_build_source"] == "steam_appmanifest_post_validate"
+            assert install["last_steamcmd_actual_buildid"] == "776"
+            assert install["last_steamcmd_expected_buildid"] == "777"
+            assert "claimed success" in install["last_steamcmd_output"]
     finally:
         profile_store.load_state = old_load
         profile_store.save_state = old_save

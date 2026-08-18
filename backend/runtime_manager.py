@@ -5,17 +5,12 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import Callable
 
 
 def _launch_orphan_watchdog(server_pid: int) -> dict:
-    """Arm an OS-level helper that kills the dedicated tree if the backend dies.
-
-    Electron normally asks the backend to perform a verified shutdown. If that
-    backend becomes unresponsive, Electron eventually has to terminate it. The
-    watchdog is intentionally outside the backend process so that catastrophic
-    fallback cannot orphan the dedicated Dragonwilds process.
-    """
+    """Arm an OS-level helper that kills the dedicated tree if the backend dies."""
     server_pid = int(server_pid or 0)
     parent_pid = int(os.getpid())
     if server_pid <= 0:
@@ -103,21 +98,11 @@ class AuthoritativeRuntimeManager:
         self._last_error = ""
         self._last_result: dict = {}
         self._orphan_watchdog: dict = {}
-        # True only after this manager has successfully started the dedicated
-        # runtime. It lets status reconciliation withdraw an orphaned server
-        # advertisement without touching an unrelated private Co-Op share.
         self._managed_running = False
         self._install_directory_state_bridge()
 
     def _install_directory_state_bridge(self) -> None:
-        """Make authenticated WebGUI status read the same lifecycle snapshot.
-
-        The preserved WebHost registers its callbacks later during service
-        startup. Wrapping that registration here keeps authentication/action
-        handling untouched while replacing remembered/raw process presentation
-        with this manager's authoritative transitional/error state for the
-        active hosted World.
-        """
+        """Make authenticated WebGUI status read the same lifecycle snapshot."""
         host = self.directory_host
         setter = getattr(host, "set_remote_admin_callbacks", None) if host is not None else None
         if not callable(setter) or bool(getattr(host, "_dws_runtime_state_bridge", False)):
@@ -238,15 +223,12 @@ class AuthoritativeRuntimeManager:
         self._operation_lock.release()
 
     def _withdraw_share(self) -> None:
-        """Best-effort withdrawal used before/after lifecycle failures."""
         try:
             self.share.stop()
         except Exception:
             pass
 
     def _clear_watchdog(self) -> None:
-        # The detached helper exits on its own as soon as the dedicated PID is
-        # gone. Clearing here removes stale status immediately for the UI.
         with self._state_lock:
             self._orphan_watchdog = {}
 
@@ -255,12 +237,8 @@ class AuthoritativeRuntimeManager:
         if callable(launcher):
             evidence = launcher(server_pid)
         elif self.engine.__class__.__module__ == "server_engine":
-            # Production ServerEngine path: the watchdog is mandatory before
-            # Sync can be published.
             evidence = _launch_orphan_watchdog(server_pid)
         else:
-            # Standalone regression fakes use synthetic PIDs. Never let a test
-            # helper watch or kill an unrelated real OS process by accident.
             evidence = {
                 "armed": True,
                 "mode": "test-engine-stub",
@@ -276,7 +254,6 @@ class AuthoritativeRuntimeManager:
         return dict(evidence)
 
     def _cleanup_failed_start(self) -> None:
-        """Never leave a half-started process or advertisement behind."""
         self._managed_running = False
         try:
             if bool(self.engine.status().get("running")):
@@ -289,15 +266,7 @@ class AuthoritativeRuntimeManager:
             self._clear_watchdog()
 
     def _start_verified(self, profile_id: str) -> dict:
-        """Prepare files first, verify the game process, then expose Sync.
-
-        ``ServerEngine.start_world`` historically published the Sync endpoint
-        before spawning the dedicated process. That creates a short but real
-        false-online window. The authoritative manager deliberately performs
-        the phases separately: scan/materialize while stopped, launch the game,
-        verify the process, arm a detached orphan watchdog, and only then
-        publish the Sync share.
-        """
+        """Prepare files first, verify the game process/watchdog, then expose Sync."""
         self._withdraw_share()
         prepared = self.engine.scan_mods(profile_id)
         started = self.engine.start_dedicated(profile_id)
@@ -324,6 +293,67 @@ class AuthoritativeRuntimeManager:
             "broadcast_verified": True,
             "orphan_watchdog": watchdog,
         }
+
+    def _verify_dedicated_install(self, install: dict) -> dict:
+        """Re-read Steam's actual appmanifest before a managed restart is allowed."""
+        from profile_store import load_state, save_state
+        from runtime_versions import SERVER_STEAM_APP_ID, detect_installed_steam_build, steam_public_build
+
+        state_payload = install.get("state") if isinstance(install.get("state"), dict) else {}
+        public_cfg = ((state_payload.get("application") or {}).get("server_install") or {}) if state_payload else {}
+        persisted = load_state()
+        persisted_cfg = persisted.setdefault("application", {}).setdefault("server_install", {})
+        cfg = {**persisted_cfg, **public_cfg}
+        install_dir = str(cfg.get("install_dir") or "").strip()
+        steamcmd_dir = str(cfg.get("steamcmd_dir") or "").strip()
+        if not install_dir:
+            raise RuntimeError("SteamCMD reported success, but the dedicated-server install directory is not configured.")
+
+        detected = detect_installed_steam_build(install_dir, SERVER_STEAM_APP_ID, steamcmd_dir)
+        actual_build = str(detected.get("buildid") or "")
+        if not detected.get("available") or not actual_build:
+            raise RuntimeError("SteamCMD reported success, but the dedicated Steam appmanifest could not be verified afterward.")
+
+        installed_result = install.get("installed") if isinstance(install.get("installed"), dict) else {}
+        server_exe = str(installed_result.get("server_exe") or cfg.get("server_exe") or "").strip()
+        if not server_exe or not Path(server_exe).is_file():
+            raise RuntimeError("SteamCMD reported success, but the dedicated-server executable was not found afterward.")
+
+        fresh_latest = steam_public_build(SERVER_STEAM_APP_ID, cache_seconds=0.0)
+        expected_build = str(fresh_latest.get("buildid") or (install.get("latest") or {}).get("buildid") or "")
+        if expected_build and actual_build != expected_build:
+            persisted_cfg.update({
+                "last_steamcmd_verified_at": time.time(),
+                "last_steamcmd_actual_buildid": actual_build,
+                "last_steamcmd_expected_buildid": expected_build,
+                "last_steamcmd_status": "verification_failed",
+            })
+            save_state(persisted)
+            raise RuntimeError(
+                f"SteamCMD completed, but installed build {actual_build} does not match latest public build {expected_build}."
+            )
+
+        output = str(installed_result.get("output") or install.get("output") or "")[-8000:]
+        persisted_cfg.update({
+            "installed_buildid": actual_build,
+            "installed_build_source": "steam_appmanifest_post_validate",
+            "server_exe": server_exe,
+            "last_steamcmd_verified_at": time.time(),
+            "last_steamcmd_actual_buildid": actual_build,
+            "last_steamcmd_expected_buildid": expected_build,
+            "last_steamcmd_status": "verified",
+            "last_steamcmd_output": output,
+        })
+        save_state(persisted)
+        evidence = {
+            "verified": True,
+            "appid": SERVER_STEAM_APP_ID,
+            "actual_buildid": actual_build,
+            "expected_buildid": expected_build,
+            "manifest": str(detected.get("manifest") or ""),
+            "server_exe": server_exe,
+        }
+        return {**install, "verified_install": evidence}
 
     def start(self, profile_id: str) -> dict:
         self._begin("start", "Starting")
@@ -353,8 +383,6 @@ class AuthoritativeRuntimeManager:
             self._clear_watchdog()
             return self._finish("Stopped", {**result, "verified_stopped": True, "broadcast_verified": True})
         except Exception as exc:
-            # The advertisement is always withdrawn. If the process itself is
-            # still alive, keep the watchdog armed for catastrophic backend exit.
             self._withdraw_share()
             self._fail("Stop Failed", exc)
             raise
@@ -385,12 +413,7 @@ class AuthoritativeRuntimeManager:
             self._release()
 
     def update(self, profile_id: str, installer: Callable[[], dict], *, restart: bool, component: str = "Dedicated Server") -> dict:
-        """Run one verified update while the managed dedicated process is offline.
-
-        SteamCMD server updates and launcher-managed server core updates use the
-        same serialized lifecycle. ``component`` changes only user-facing
-        error/result context; it never changes process or broadcast authority.
-        """
+        """Run one verified update while the managed dedicated process is offline."""
         self._begin("update_restart" if restart else "update", "Updating")
         try:
             before = self._actual()
@@ -411,6 +434,8 @@ class AuthoritativeRuntimeManager:
             install = installer()
             if not isinstance(install, dict) or install.get("ok") is False:
                 raise RuntimeError(str((install or {}).get("error") or f"{component} updater did not confirm success."))
+            if component == "Dedicated Server":
+                install = self._verify_dedicated_install(install)
 
             if restart:
                 started = self._start_verified(profile_id)
@@ -463,8 +488,6 @@ class AuthoritativeRuntimeManager:
                 self._withdraw_share()
             actual = self._actual()
             if actual["running"] or result.get("running"):
-                # Do not clear the detached watchdog here. If Electron has to
-                # terminate this backend, it will kill the verified server tree.
                 raise RuntimeError("The dedicated server remained running during launcher shutdown.")
             self._withdraw_share()
             actual = self._actual()

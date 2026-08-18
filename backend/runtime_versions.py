@@ -9,6 +9,7 @@ from pathlib import Path
 
 CLIENT_STEAM_APP_ID = "1374490"
 SERVER_STEAM_APP_ID = "4019830"
+DRAGONWILDS_SYNC_VERSION = "2.1.0-rc"
 STEAMCMD_INFO_URL = "https://api.steamcmd.net/v1/info/{appid}"
 UE4SS_RELEASE_TAG_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
@@ -206,6 +207,11 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
     release_dates_align = (release_delta <= 72 * 3600) if release_delta is not None else None
 
     return {
+        "dragonwilds_sync": {
+            "version": DRAGONWILDS_SYNC_VERSION,
+            "channel": "release-candidate" if "rc" in DRAGONWILDS_SYNC_VERSION.casefold() else "stable",
+            "protocol": 1,
+        },
         "dragonwilds": {
             "server_appid": SERVER_STEAM_APP_ID,
             "server_installed_buildid": installed_buildid,

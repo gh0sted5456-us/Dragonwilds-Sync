@@ -10,6 +10,7 @@ from runtime_versions import cl_version_status
 STATE = {
     "application": {
         "server_install": {
+            "installed_buildid": "new-build",
             "expected_cl": "CL-100",
             "expected_cl_buildid": "old-build",
             "expected_cl_observed_at": 1.0,
@@ -60,7 +61,14 @@ def main() -> None:
     assert install["expected_cl_observed_at"] == 1.0
     assert result["cl_source"] == "last_known"
     assert result["cl_authority_guard"] == "stale_history_rejected"
+    assert result["cl_version"]["status"] == "unknown"
+    assert result["cl_version"]["expected_cl"] == ""
+    assert result["cl_expected_build_mismatch"] == {
+        "expected_cl_buildid": "old-build", "installed_buildid": "new-build"
+    }
 
+    # A live CL from the current process is allowed to establish the baseline
+    # for the newly installed Steam build. Once bound, comparison becomes current.
     engine.monitor.reported_cl = "CL-200"
     result = engine.status()
     install = STATE["application"]["server_install"]
@@ -68,9 +76,11 @@ def main() -> None:
     assert install["expected_cl_buildid"] == "new-build"
     assert install["expected_cl_observed_at"] == 3.0
     assert result["cl_source"] == "live_process_log"
+    assert result["cl_version"]["status"] == "current"
     assert "cl_authority_guard" not in result
+    assert "cl_expected_build_mismatch" not in result
 
-    print("live process/log CL authority guard: PASS")
+    print("live process/log CL authority and Steam-build binding: PASS")
 
 
 if __name__ == "__main__":

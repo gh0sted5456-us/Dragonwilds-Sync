@@ -9,8 +9,11 @@ const index = read('renderer/index.html');
 const release = read('renderer/release-webgui-overhaul.js');
 const css = read('renderer/release-webgui-overhaul.css');
 const service = read('backend/dragonwilds_service.py');
+const legacyService = read('backend/dragonwilds_service_legacy.py');
 const consoleModule = read('backend/unified_console.py');
 const recommendations = read('backend/recommendation_feeds.py');
+const rsdwCache = read('backend/rsdw_cache.py');
+const directoryWeb = read('backend/directory_web.py');
 const spec = read('backend/DragonwildsSync.Service.spec');
 const directoryHost = read('backend/directory_host.py');
 const runner = read('scripts/run_backend_tests.cjs');
@@ -35,12 +38,24 @@ requireText(service, 'install_engine_session_hook(_legacy.ENGINE)', 'per-process
 requireText(service, 'if method == "server.console.unified":', 'unified console RPC');
 requireText(consoleModule, 'DragonwildsSync.previous.log', 'previous-session rotation');
 requireText(consoleModule, 'Streams: GAME COMMANDS | SERVER | SYNC TRAFFIC', 'merged text log contract');
+requireText(consoleModule, '_install_remote_state_hook()', 'authenticated WebHost unified stream hook');
+requireText(directoryWeb, 'dws-remote-unified-console-script', 'authenticated WebHost unified console UI');
+requireText(directoryWeb, 'data-dws-web-console-filter="sync"', 'WebHost Sync console filter');
 requireText(runner, 'backend/test_unified_console.py', 'unified console regression test');
 
 requireText(recommendations, '_enrich_public_artwork', 'public artwork enrichment');
 requireText(recommendations, '"banner_url"', 'banner URL feed field');
 requireText(recommendations, '"icon_url"', 'icon URL feed field');
 requireText(recommendations, '"download_url"', 'direct download feed field');
+
+// RSDW remains the canonical game-item source. Server/mod definitions layer on
+// top of it and are sent to authenticated WebGUI consumers with icon identity.
+requireText(rsdwCache, 'data/items/json/RSDragonwilds', 'canonical RSDW item JSON source');
+requireText(rsdwCache, '/shared/icons/', 'canonical RSDW shared icon source');
+requireText(rsdwCache, 'persistence_id', 'canonical persistence identity');
+requireText(legacyService, 'custom_items=list((state.get("application") or {}).get("custom_items") or [])', 'custom items merged into server catalog');
+requireText(legacyService, 'item["icon_url"] = icon_path', 'embedded server custom item icons');
+requireText(legacyService, '"spawner": {"items": list(item_catalog.get("items") or [])[:2500]', 'server-pushed WebGUI item catalog');
 
 // The original WebHost platform icon packaging bug must remain permanently
 // covered both in PyInstaller data collection and the source/one-file resolver.

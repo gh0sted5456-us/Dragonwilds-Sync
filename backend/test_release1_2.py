@@ -8,6 +8,10 @@ from pathlib import Path
 
 import character_profiles as cp
 import client_layout
+# rsdw_cache is now a thin V2 wrapper over the retained rsdw_cache_legacy
+# engine. ``import *`` copied its constants, so a test override must be
+# mirrored onto the legacy module that actually reads them.
+import rsdw_cache_legacy
 import rsdw_cache
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,7 +47,9 @@ def main():
         old_model_index = rsdw_cache.RSDW_MODEL_INDEX
         old_data_dir = rsdw_cache.RSDW_DATA_DIR
         rsdw_cache.RSDW_WEBSITE_DIR = website
+        rsdw_cache_legacy.RSDW_WEBSITE_DIR = rsdw_cache.RSDW_WEBSITE_DIR
         rsdw_cache.RSDW_DATA_DIR = root / "rsdw-data"
+        rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
         rsdw_cache.RSDW_DATA_DIR.mkdir(parents=True, exist_ok=True)
         model_index = root / "rsdw-model" / "avatar-index.json"
         model_index.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +66,7 @@ def main():
             },
         }), encoding="utf-8")
         rsdw_cache.RSDW_MODEL_INDEX = model_index
+        rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
         save = char_dir / "Character_Test.json"
         payload = {
             "PlayerName": "Toolkit Test",
@@ -164,8 +171,11 @@ def main():
         except ValueError as exc:
             assert "changed on disk" in str(exc)
         rsdw_cache.RSDW_WEBSITE_DIR = old_website
+        rsdw_cache_legacy.RSDW_WEBSITE_DIR = rsdw_cache.RSDW_WEBSITE_DIR
         rsdw_cache.RSDW_MODEL_INDEX = old_model_index
+        rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
         rsdw_cache.RSDW_DATA_DIR = old_data_dir
+        rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
     assert "RSDW Toolkit" in renderer
@@ -200,7 +210,10 @@ def main():
     assert "startRsdwToolkitServer" in main_js and "127.0.0.1" in main_js and "will-attach-webview" in main_js
     assert "rsdwToolkitServer?.listening" in main_js and "relative === '__health'" in main_js
     assert "__rsdwmodel/vendor/three/" in main_js and "application/wasm" in main_js
-    cache_backend = (ROOT / "backend/rsdw_cache.py").read_text(encoding="utf-8")
+    # rsdw_cache.py is the V2 item-facing wrapper; the retained RSDW website /
+    # RSDWModel behaviour lives in rsdw_cache_legacy.py.
+    cache_backend = ((ROOT / "backend/rsdw_cache.py").read_text(encoding="utf-8")
+                     + (ROOT / "backend/rsdw_cache_legacy.py").read_text(encoding="utf-8"))
     assert "Unsafe path in RSDW archive" in cache_backend and "member_path.parents" in cache_backend
     assert "Avatar/avatar.js" in cache_backend and "animation-index.json" in cache_backend
     assert "/__rsdwmodel/vendor/three/examples/jsm/libs/draco/" in cache_backend

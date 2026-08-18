@@ -3,7 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import directory_host
-import dragonwilds_service
+# Underscore-private engine internals are not re-exported by the V2 wrapper's
+# ``import *``; target the retained legacy engine directly.
+import dragonwilds_service_legacy as dragonwilds_service
 from health_model import normalize_network_evidence
 from web_tunnel import WEB_TUNNEL
 

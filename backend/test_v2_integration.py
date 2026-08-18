@@ -57,8 +57,12 @@ def test_rsdw_registry_and_maintained_manifest_contract() -> None:
     assert item_source["path"] == "data/items/json/RSDragonwilds"
     assert item_source["association_catalog"] == "website/tools/item-editor/data/catalog.json"
     cache = (ROOT / "backend" / "rsdw_cache.py").read_text(encoding="utf-8")
-    assert 'MANIFEST_PATH = RSDW_ROOT / "item-manifest.json"' in cache
-    assert '"iconExact"' in cache and '"maxStack"' in cache
+    # The canonical manifest keeps the launcher-maintained item file under the
+    # RSDW cache root and records real icon fields; the retired "iconExact"
+    # token was replaced by icon_ref / icon_path.
+    assert 'RSDW_ITEM_MANIFEST_PATH = RSDW_CACHE_ROOT / "item-manifest.json"' in cache
+    assert '"icon_ref"' in cache and '"icon_path"' in cache
+    assert '"persistence_id"' in cache and '"max_stack"' in cache
 
 
 def test_v2_service_wrapper_preserves_original_handler() -> None:

@@ -6,7 +6,10 @@ def main():
     local=(ROOT/'backend/local_world.py').read_text(encoding='utf-8')
     host=(ROOT/'backend/directory_host.py').read_text(encoding='utf-8')
     systems=(ROOT/'backend/server_systems.py').read_text(encoding='utf-8')
-    service=(ROOT/'backend/dragonwilds_service.py').read_text(encoding='utf-8')
+    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
+    # dragonwilds_service_legacy.py handler. Contract tokens may live in either.
+    service=((ROOT/'backend/dragonwilds_service.py').read_text(encoding='utf-8')
+             + (ROOT/'backend/dragonwilds_service_legacy.py').read_text(encoding='utf-8'))
     app=(ROOT/'renderer/app.js').read_text(encoding='utf-8')
     rc2=(ROOT/'renderer/release-rc2.js').read_text(encoding='utf-8')
     assert '"server_mode_enabled": False' in profile

@@ -39,7 +39,10 @@ def main():
             se.DEDICATED_CONFIG_FILE = old_local
 
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
-    service = (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    service = (
+        (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+        + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+    )
     spec = (ROOT / "backend" / "DragonwildsSync.Service.spec").read_text(encoding="utf-8")
     main_js = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
     assert "Player ID (Owner)" in renderer

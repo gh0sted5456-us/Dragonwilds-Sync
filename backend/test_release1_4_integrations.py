@@ -11,6 +11,10 @@ import map_updater
 import public_worlds
 import server_systems
 import world_save_editor
+# rsdw_cache is now a thin V2 wrapper over the retained rsdw_cache_legacy
+# engine. ``import *`` copied its constants, so a test override must be
+# mirrored onto the legacy module that actually reads them.
+import rsdw_cache_legacy
 import rsdw_cache
 import mod_tags
 import world_directory
@@ -103,6 +107,8 @@ def test_character_clone_delete_and_equipment_avatar() -> None:
         character_profiles.resolve_client_layout = lambda _game: SimpleNamespace(character_dir=character_dir)
         character_profiles.CHAR_DELETE_BACKUPS = root / "deleted"
         rsdw_cache.RSDW_DATA_DIR = data_dir; rsdw_cache.RSDW_MODEL_INDEX = model_index
+        rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
+        rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
         try:
             cid = character_profiles.discover_characters("")[0]["id"]
             hydrated = character_profiles.read_character_for_toolkit("", cid)
@@ -118,6 +124,8 @@ def test_character_clone_delete_and_equipment_avatar() -> None:
             assert deleted["recoverable"] and Path(deleted["backup"]).is_file() and not Path(clone["path"]).exists()
         finally:
             character_profiles.resolve_client_layout, character_profiles.CHAR_DELETE_BACKUPS, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_MODEL_INDEX = old
+            rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
+            rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
 
 
 def test_discovery_fingerprint_and_map_contract() -> None:

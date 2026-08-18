@@ -16,6 +16,7 @@ from profile_store import APP_DATA_DIR, read_json, write_json
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from integrations import normalize_mod_source
 from security_policy import default_access_policy, normalize_access_policy
+from security_scanner import defender_scan
 from world_classification import normalize_world_classification
 
 SINGLEPLAYER_ID = "singleplayer"

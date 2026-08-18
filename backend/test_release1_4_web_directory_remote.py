@@ -7,7 +7,9 @@ import urllib.request
 from pathlib import Path
 
 import directory_host
-from dragonwilds_service import _directory_join_catalog_world
+# The V2 wrapper re-exports the legacy engine with ``import *``, which skips
+# underscore-private helpers. Historical internals live in the legacy module.
+from dragonwilds_service_legacy import _directory_join_catalog_world
 
 
 def _free_port():

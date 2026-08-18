@@ -161,7 +161,13 @@ class AuthoritativeRuntimeManager:
         finally:
             self._release()
 
-    def update(self, profile_id: str, installer: Callable[[], dict], *, restart: bool) -> dict:
+    def update(self, profile_id: str, installer: Callable[[], dict], *, restart: bool, component: str = "Dedicated Server") -> dict:
+        """Run one verified update while the managed dedicated process is offline.
+
+        SteamCMD server updates and launcher-managed server core updates use the
+        same serialized lifecycle. ``component`` changes only user-facing
+        error/result context; it never changes process or broadcast authority.
+        """
         self._begin("update_restart" if restart else "update", "Updating")
         try:
             before = self._actual()
@@ -173,16 +179,16 @@ class AuthoritativeRuntimeManager:
                     raise RuntimeError("Update cancelled because the server process did not stop cleanly.")
             install = installer()
             if not isinstance(install, dict) or install.get("ok") is False:
-                raise RuntimeError(str((install or {}).get("error") or "SteamCMD did not confirm a successful server update."))
+                raise RuntimeError(str((install or {}).get("error") or f"{component} updater did not confirm success."))
             if restart:
                 started = self.engine.start_world(profile_id)
                 actual = self._actual()
                 if not actual["running"] or not actual["broadcast_active"]:
-                    raise RuntimeError("Files updated, but the dedicated server and Sync broadcast did not restart successfully.")
+                    raise RuntimeError(f"{component} updated, but the dedicated server and Sync broadcast did not restart successfully.")
                 self._managed_running = True
-                return self._finish("Running", {"updated": True, "install": install, "stop": stopped,
+                return self._finish("Running", {"updated": True, "component": component, "install": install, "stop": stopped,
                                                  "restart": started, "verified_running": True})
-            return self._finish("Stopped", {"updated": True, "install": install, "stop": stopped,
+            return self._finish("Stopped", {"updated": True, "component": component, "install": install, "stop": stopped,
                                              "verified_stopped": True})
         except Exception as exc:
             self._managed_running = False

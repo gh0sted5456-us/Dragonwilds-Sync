@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   backgroundSettings: (settings) => ipcRenderer.invoke('dragonwilds:background-settings', settings),
   notify: (event) => ipcRenderer.invoke('dragonwilds:notify', event),
   openMainWindow: () => ipcRenderer.invoke('dragonwilds:open-main-window'),
+  openMinimalMode: (worldId) => ipcRenderer.invoke('dragonwilds:open-minimal-mode', worldId),
   openPath: (target) => ipcRenderer.invoke('dragonwilds:open-path', target),
   copyText: (text) => ipcRenderer.invoke('dragonwilds:copy-text', text),
   fileSha256: (target) => ipcRenderer.invoke('dragonwilds:file-sha256', target),

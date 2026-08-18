@@ -58,6 +58,11 @@ def main():
         try:
             boot = rpc(proc, "bootstrap", request_id=1)
             assert boot["server_profiles"] == []
+            lifecycle = rpc(proc, "server.runtime.status", request_id=2)
+            assert isinstance(lifecycle.get("state"), dict)
+            assert isinstance(lifecycle.get("runtime"), dict)
+            assert lifecycle.get("lifecycle", {}).get("state") == "Stopped"
+            assert lifecycle["state"]["application"]["runtime_manager"]["state"] == "Stopped"
 
             first = rpc(proc, "server.world.create", {"name": "World One"}, 2)
             first_id = first["id"]

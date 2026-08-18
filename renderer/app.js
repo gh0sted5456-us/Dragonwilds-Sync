@@ -8,6 +8,7 @@
   let desktopZ = 60;
   const query = new URLSearchParams(window.location.search);
   const quickMode = query.get('quick') === '1';
+  const minimalMode = query.get('minimal') === '1';
   const quickWorldId = query.get('worldId') || '';
   const quickWorldKind = ['world','private','server'].includes(query.get('worldKind')) ? query.get('worldKind') : 'world';
   const detachedMode = query.get('detached') === '1';
@@ -1176,12 +1177,19 @@
       state.applicationUpdate = result;
       const updatedCfg = { ...cfg, github_url: repositoryUrl, etag: result.etag || '', last_checked_at: new Date().toISOString(), last_available_version: result.latestVersion || '', last_error: '' };
       state.data = await api.invoke('application.update', { application_updates: updatedCfg });
+      state.data = await api.invoke('application.update_status.record', {
+        installed_version: window.DWSYNC_RELEASE_META?.version || '', available_version: result.latestVersion || result.tag || '',
+        update_available: !!result.available, restart_required: !!result.available,
+        status: result.available ? 'update_available' : 'current', checked_at: Date.now()/1000,
+        action: result.available ? 'Use Update Application in the desktop launcher' : 'No action required'
+      });
       if (manual) toast(result.available ? 'Application update available' : 'Application is current', result.available ? `${result.name || result.tag} is ready.` : `Release ${result.latestVersion || '—'} is not newer than this build.`, result.available ? '' : 'success');
       render();
       return result;
     } catch (error) {
       const updatedCfg = { ...cfg, last_checked_at: new Date().toISOString(), last_error: error.message };
       try { state.data = await api.invoke('application.update', { application_updates: updatedCfg }); } catch (_) {}
+      try { state.data = await api.invoke('application.update_status.record', {installed_version:window.DWSYNC_RELEASE_META?.version||'',update_available:false,restart_required:false,status:'unable_to_check',checked_at:Date.now()/1000,action:'Retry from the desktop launcher',last_error:error.message}); } catch (_) {}
       if (manual) toast('Application update check failed', error.message, 'error');
       return null;
     }
@@ -1194,6 +1202,7 @@
     try {
       toast('Downloading application update', `${release.asset.name} · SHA-256 will be verified before replacement.`);
       await window.dragonwilds.appUpdateApply({ repositoryUrl: 'https://github.com/gh0sted5456-us/Dragonwilds-Sync', release });
+      try { state.data=await api.invoke('application.update_status.record',{installed_version:window.DWSYNC_RELEASE_META?.version||'',available_version:release.latestVersion||release.tag||'',update_available:true,restart_required:true,status:'staged',checked_at:Date.now()/1000,action:'Restart the launcher to apply the staged update'}); } catch (_) {}
       toast('Update staged', 'Dragonwilds Sync will close, replace the portable application, and relaunch.', 'success');
     } catch (error) { toast('Application update blocked', error.message, 'error'); }
   }
@@ -1223,6 +1232,7 @@
       if (!state.selectedWorldId) state.selectedWorldId = state.data?.client?.active_world_id || null;
       if (!state.selectedServerWorldId) state.selectedServerWorldId = state.data?.server?.active_world_id || null;
       if (quickMode) { state.entered = true; state.selectedWorldId = quickWorldId; }
+      if (minimalMode) { state.entered=true;state.route='server-detail';state.serverTab='overview';state.selectedServerWorldId=quickWorldId||state.data?.server?.active_world_id||state.data?.server_profiles?.[0]?.id||null; }
       if (detachedMode) {
         state.entered = true;
         state.route = detachedRoute || 'profile';
@@ -1255,11 +1265,11 @@
       // Native shell status, account status, update checks, and toolkit feed
       // hydration are secondary. They must never hold the first usable frame.
       Promise.allSettled([
-        window.dragonwilds.adminStatus?.(),
-        window.dragonwilds.appUpdateMode?.(),
-        window.dragonwilds.appUpdateResult?.(),
-        window.dragonwilds.nexusStatus?.(),
-        !detachedMode ? window.dragonwilds.listDetachedWindows?.() : Promise.resolve([]),
+        !minimalMode?window.dragonwilds.adminStatus?.():Promise.resolve(null),
+        !minimalMode?window.dragonwilds.appUpdateMode?.():Promise.resolve(null),
+        !minimalMode?window.dragonwilds.appUpdateResult?.():Promise.resolve(null),
+        !minimalMode?window.dragonwilds.nexusStatus?.():Promise.resolve(null),
+        !detachedMode&&!minimalMode ? window.dragonwilds.listDetachedWindows?.() : Promise.resolve([]),
       ]).then((results)=>{
         if(results[0]?.status==='fulfilled'&&results[0].value)state.adminStatus=results[0].value;
         if(results[1]?.status==='fulfilled')state.applicationUpdateMode=results[1].value;
@@ -1268,10 +1278,11 @@
         if(results[4]?.status==='fulfilled')state.detachedWindows=results[4].value||[];
         render();
       });
-      if (!detachedMode && window.dragonwilds?.listDetachedWindows) {
+      if (!detachedMode && !minimalMode && window.dragonwilds?.listDetachedWindows) {
         window.dragonwilds.onDetachedWindowsChanged?.((items)=>{ state.detachedWindows=items||[]; syncInternalTaskbar(); });
       }
       setTimeout(async()=>{
+        if(minimalMode)return;
         try { await configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status || null); } catch (_) {}
         if (!detachedMode && state.applicationUpdateResult && state.data?.application?.rsdw_cache?.refresh_after_updates !== false) {
           try { const refreshed = await api.invoke('application.rsdw.refresh', { force: false }); if (refreshed?.state) setData(refreshed.state); } catch (_) {}
@@ -1286,8 +1297,9 @@
       if (state.pendingDirectoryJoin) setTimeout(()=>openDirectoryJoin(state.pendingDirectoryJoin),80);
       // The map remains lazy: only a visible Map view warms its large asset cache.
       if (quickMode) setTimeout(runQuickLaunch, 60);
-      if (!state.worldRefreshTimer) state.worldRefreshTimer=setInterval(()=>{if(backgroundRefreshAllowed() && state.entered && state.route==='worlds' && state.data?.application?.world_discovery?.enabled!==false) refreshWorldDiscoveryAndStatuses(true).catch(()=>{});},30000);
-      if (!state.syncHeartbeatTimer) state.syncHeartbeatTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered)return;try{const result=await api.invoke('world.discovery.heartbeat',{});if(result?.state)state.data=result.state;if(result?.published===false&&String(result?.reason||'').includes('Dragonwilds stopped')){state.data=await api.invoke('state.get',{});render();toast('Co-Op Sync stopped','Dragonwilds closed, so this World fingerprint and client Sync session were withdrawn.','');}}catch(_){}},30000);
+      if (!minimalMode&&!state.worldRefreshTimer) state.worldRefreshTimer=setInterval(()=>{if(backgroundRefreshAllowed() && state.entered && state.route==='worlds' && state.data?.application?.world_discovery?.enabled!==false) refreshWorldDiscoveryAndStatuses(true).catch(()=>{});},30000);
+      if (!minimalMode&&!state.syncHeartbeatTimer) state.syncHeartbeatTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered)return;try{const result=await api.invoke('world.discovery.heartbeat',{});if(result?.state)state.data=result.state;if(result?.published===false&&String(result?.reason||'').includes('Dragonwilds stopped')){state.data=await api.invoke('state.get',{});render();toast('Co-Op Sync stopped','Dragonwilds closed, so this World fingerprint and client Sync session were withdrawn.','');}}catch(_){}},30000);
+      if (minimalMode&&!state.serverMetricsTimer) state.serverMetricsTimer=setInterval(async()=>{try{state.data=await api.invoke('state.get',{});render();}catch(_){}},5000);
       if (!state.serverMetricsTimer) state.serverMetricsTimer=setInterval(async()=>{if(!backgroundRefreshAllowed() || !state.entered || !((state.route==='server-detail' && ['overview','maintenance'].includes(state.serverTab)) || (state.route==='world-detail' && activeWorld()?.kind==='singleplayer' && ['overview','maintenance'].includes(state.privateTab))))return;try{const response=await api.invoke('server.runtime.status',{});if(response.state){state.data=response.state;render();}}catch(_){}},10000);
       if (!state.directoryAdminSyncTimer) state.directoryAdminSyncTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered||state.route!=='webhost'||state.webhostTab==='live')return;try{const before=JSON.stringify({config:state.data?.application?.world_directory_host||{},status:state.data?.application?.world_directory_host_status||{}});const fresh=await api.invoke('state.get',{});const after=JSON.stringify({config:fresh?.application?.world_directory_host||{},status:fresh?.application?.world_directory_host_status||{}});if(before!==after){state.data=fresh;render();}}catch(_){}},8000);
     } catch (error) {
@@ -1966,6 +1978,18 @@
     return `<div class="world-tag-groups">${group('DRAGONWILDS','game',gameTags)}${group('SYNC','sync',syncTags)}</div>`;
   }
 
+  function worldClMarkup(world, server=false) {
+    if(!server&&!world?.cl_version)return '';
+    const expected=String(state.data?.application?.server_install?.expected_cl||'');
+    const reported=String(world?.cl_version?.reported_cl||world?.last_reported_cl||'');
+    const number=(value)=>{const match=String(value||'').match(/CL[-_ ]?(\d{3,12})/i);return match?Number(match[1]):null;};
+    const reportedNumber=number(reported),expectedNumber=number(world?.cl_version?.expected_cl||expected);
+    const status=String(world?.cl_version?.status||(reportedNumber==null?'unavailable':expectedNumber==null?'unknown':reportedNumber===expectedNumber?'current':reportedNumber<expectedNumber?'outdated':'newer')).toLowerCase();
+    const tone=status==='current'||status==='newer'?'online':status==='outdated'?'offline':'unknown';
+    const label=status==='current'?'Current':status==='outdated'?'Outdated':status==='newer'?'Newer':status==='unavailable'?'Unavailable':'Unknown';
+    return `<span class="status-pill ${tone}" title="Dragonwilds dedicated-server changelist">${escapeHtml(reported||'CL unavailable')} · ${label}</span>`;
+  }
+
   function worldCard(world, server = false) {
     const presentation = server ? world : (world.presentation || {});
     const single = !server && world.kind === 'singleplayer';
@@ -2008,7 +2032,7 @@
           </div>
           <div class="card-description">${escapeHtml(desc)}</div>
           ${tags}
-          <div class="badges" style="margin-top:8px">${classificationMarkup(world,server)}${studio?syncBadgeMarkup(world):''}${world.shared?.curated?'<span class="status-pill unknown">PROFILE</span>':''}${badges.map(badgeMarkup).join('')}${!server&&Number(world.shared?.shared_character_count||0)>0?`<span class="world-class-pill">${Number(world.shared.shared_character_count)} CHARACTERS</span>`:''}</div>
+          <div class="badges" style="margin-top:8px">${classificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}${world.shared?.curated?'<span class="status-pill unknown">PROFILE</span>':''}${badges.map(badgeMarkup).join('')}${!server&&Number(world.shared?.shared_character_count||0)>0?`<span class="world-class-pill">${Number(world.shared.shared_character_count)} CHARACTERS</span>`:''}</div>
           <div class="card-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span>${escapeHtml(ping)}</span><span>${escapeHtml(players)}</span>${observed?`<span title="LobbySup public player history">${escapeHtml(observed)}</span>`:''}</div>${worldRatingMarkup(world)}</div>
         </div>
         ${!server&&!single?`<div class="placard-actions integrated"><button class="btn play" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost" data-world-details="${escapeHtml(world.id)}">Details</button></div>`:''}
@@ -2050,7 +2074,7 @@
     const tags = worldTagGroupsMarkup(world,presentation,server,5);
     return `<article class="world-list-row hosted-list-row${activeClass}" data-world-id="${escapeHtml(world.id)}" data-server-card="${server?'1':'0'}" data-instance="${instance}">
       <div class="world-list-icon">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(title))}</span>`}</div>
-      <div class="world-list-main"><div class="world-list-title"><h3>${escapeHtml(title)}</h3>${classificationMarkup(world,server)}${worldAudienceMarkup(world,true)}${worldCommunityMarkup(world,true)}${status}</div><div class="world-list-meta"><span>${server?`Dedicated · Server #${instance}`:(world.status?.broadcasting?'Private · Co-Op broadcasting':'Private · Singleplayer')}</span><span>${escapeHtml(presentation.description || (server?'Dedicated World profile':'Local Dragonwilds World profile'))}</span></div>${tags}</div>
+      <div class="world-list-main"><div class="world-list-title"><h3>${escapeHtml(title)}</h3>${classificationMarkup(world,server)}${worldClMarkup(world,server)}${worldAudienceMarkup(world,true)}${worldCommunityMarkup(world,true)}${status}</div><div class="world-list-meta"><span>${server?`Dedicated · Server #${instance}`:(world.status?.broadcasting?'Private · Co-Op broadcasting':'Private · Singleplayer')}</span><span>${escapeHtml(presentation.description || (server?'Dedicated World profile':'Local Dragonwilds World profile'))}</span></div>${tags}</div>
       <div class="world-list-banner">${banner?`<img src="${banner}" alt=""/>`:''}</div>
       <div class="world-row-actions">${server?`<button class="btn ${liveServer?'danger':'play'} compact-btn" ${liveServer?`data-server-stop="${escapeHtml(world.id)}"`:`data-server-launch="${escapeHtml(world.id)}"`}>${liveServer?'Stop Server':'Start Server'}</button><button class="btn ghost compact-btn" data-server-manage="${escapeHtml(world.id)}">Manage</button><button class="btn ghost compact-btn" data-server-convert="${escapeHtml(world.id)}">Convert</button>`:`<button class="btn play compact-btn" data-private-launch="${escapeHtml(world.id)}">Enter</button><button class="btn ${world.status?.broadcasting?'danger':'primary'} compact-btn" data-private-coop="${escapeHtml(world.id)}">${world.status?.broadcasting?'Stop Co-Op':'Co-Op'}</button><button class="btn ghost compact-btn" data-private-manage="${escapeHtml(world.id)}">Manage</button><button class="btn ghost compact-btn" data-private-convert="${escapeHtml(world.id)}">Convert</button>`}</div>
     </article>`;
@@ -2165,12 +2189,30 @@
     </div>`;
   }
 
-  function recommendedModCardMarkup(mod) {
+  function recommendationInstallStatus(mod, target='all') {
+    const inventories=target==='client'?[state.singleplayerInventory||[]]
+      :target==='server'?[state.serverInventory[state.selectedServerWorldId]||[]]
+      :[state.singleplayerInventory||[],...Object.values(state.serverInventory||{})];
+    const wantedName=String(mod.name||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+    const wantedId=String(mod.mod_id||'');
+    const installed=inventories.flat().find((unit)=>{
+      const source=unit?.source||{};
+      if(wantedId&&String(source.mod_id||'')===wantedId)return true;
+      const unitName=String(unit?.name||unit?.display_name||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+      return wantedName&&unitName&&(unitName===wantedName||unitName.includes(wantedName)||wantedName.includes(unitName));
+    });
+    if(!installed)return {label:'Not installed',className:'unknown',version:String(mod.version||'Latest')};
+    const source=installed.source||{};
+    const update=!!(source.update_available||installed.update_available);
+    return {label:update?'Update available':'Installed',className:update?'warning':'online',version:String(source.version||source.installed_version||installed.version||mod.version||'Detected')};
+  }
+
+  function recommendedModCardMarkup(mod, target='all') {
     const media=state.recommendationMedia[String(mod.mod_id||'')]||{};
-    const banner=String(mod.banner_url||mod.artwork_url||media.picture_url||media.pictureUrl||'').trim();
     const icon=String(mod.icon_url||media.icon_url||'').trim() || (String(mod.provider||'').toLowerCase()==='nexus'?'assets/platforms/nexusmods.svg':'assets/application-icon.png');
     const provider=String(mod.source_name||mod.provider||'Community').toUpperCase();
-    return `<article class="recommended-mod-card" data-recommended-url="${escapeHtml(mod.page_url||'')}"><div class="recommended-mod-media">${banner?`<img class="recommended-mod-banner" src="${escapeHtml(banner)}" alt="" loading="lazy"/>`:'<div class="recommended-mod-banner recommended-mod-banner-fallback"></div>'}<img class="recommended-mod-icon" src="${escapeHtml(icon)}" alt="${escapeHtml(provider)}" loading="lazy"/><span>${escapeHtml(provider)}</span></div><div class="recommended-mod-copy"><strong>${escapeHtml(mod.name||'Mod')}</strong><small>${escapeHtml(mod.author||'Community author')} · ${escapeHtml(String(mod.mod_type||'mod').toUpperCase())} · ${escapeHtml(mod.change||'quality of life')}</small>${mod.description?`<p>${escapeHtml(mod.description)}</p>`:''}<div class="mod-tag-row">${(mod.targets||[]).map((value)=>`<span class="mod-tag">${escapeHtml(String(value).toUpperCase())}</span>`).join('')}</div></div><button class="btn ghost compact-btn" data-recommended-open="${escapeHtml(mod.page_url||'')}">View Details</button></article>`;
+    const install=recommendationInstallStatus(mod,target);
+    return `<article class="recommended-mod-card" data-recommended-url="${escapeHtml(mod.page_url||'')}"><img class="recommended-mod-icon" src="${escapeHtml(icon)}" alt="${escapeHtml(provider)}" loading="lazy"/><div class="recommended-mod-copy"><strong>${escapeHtml(mod.name||'Mod')}</strong><small>${escapeHtml(install.version)} · ${escapeHtml(mod.author||provider)}</small></div><span class="status-pill ${install.className}">${escapeHtml(install.label)}</span><button class="btn ghost compact-btn" data-recommended-open="${escapeHtml(mod.page_url||'')}">${install.label==='Update available'?'Update':'View'}</button></article>`;
   }
 
   function hydrateRecommendationMedia() {
@@ -2189,7 +2231,7 @@
   function recommendedModsMarkup(target='client') {
     const cfg=state.data?.application?.recommended_mods||{};
     const rows=(cfg.mods||[]).filter((mod)=>!(mod.targets||[]).length||(mod.targets||[]).includes(target)).slice(0,8);
-    return `<section class="recommended-mods-panel"><div class="panel-header"><div><h3>Creator Recommended Mods</h3><span class="panel-subtitle">Banner, icon, author and source metadata from the creator/community feeds. Downloads remain with the original host.</span></div><button class="btn ghost compact-btn" data-recommended-refresh>Refresh List</button></div>${rows.length?`<div class="recommended-mod-grid">${rows.map(recommendedModCardMarkup).join('')}</div>`:'<div class="empty-state">No recommendations are available for this target yet.</div>'}</section>`;
+    return `<section class="recommended-mods-panel"><div class="panel-header"><div><h3>Creator Recommended Mods</h3><span class="panel-subtitle">Compact install and update status from the creator/community feeds. Downloads remain with the original host.</span></div><button class="btn ghost compact-btn" data-recommended-refresh>Refresh List</button></div>${rows.length?`<div class="recommended-mod-grid">${rows.map((mod)=>recommendedModCardMarkup(mod,target)).join('')}</div>`:'<div class="empty-state">No recommendations are available for this target yet.</div>'}</section>`;
   }
 
   function renderWorldManagement() {
@@ -2403,10 +2445,14 @@
     const installedClient = String(client.installed_buildid || '');
     const clientCurrent = installedClient && latestClient ? installedClient === latestClient : client.current;
     const status = (value) => value === true ? '<span class="status-pill online">CURRENT</span>' : value === false ? '<span class="status-pill offline">UPDATE NEEDED</span>' : '<span class="status-pill unknown">UNKNOWN</span>';
+    const clState=String(game.server_cl_status||'unknown').toLowerCase();
+    const clClass=clState==='current'||clState==='newer'?'online':clState==='outdated'?'offline':'unknown';
+    const clLabel=clState==='current'?'CURRENT':clState==='outdated'?'OUTDATED':clState==='newer'?'NEWER':'UNKNOWN';
     return `<div class="runtime-stack">
       <div class="runtime-stack-head"><strong>Runtime Compatibility</strong><span>Version evidence advertised by this server</span></div>
       <div class="runtime-stack-grid">
         <div class="runtime-row"><span>Dedicated Server</span><strong>Build ${escapeHtml(game.server_installed_buildid || '—')}</strong><small>Latest ${escapeHtml(game.server_latest_buildid || 'unknown')}</small>${status(game.server_current)}</div>
+        <div class="runtime-row"><span>Dragonwilds CL</span><strong>${escapeHtml(game.reported_server_cl || 'Not reported yet')}</strong><small>Expected ${escapeHtml(game.current_expected_cl || 'learned from a current Steam build')}</small><span class="status-pill ${clClass}">${clLabel}</span></div>
         ${clientRuntime ? `<div class="runtime-row"><span>Your Dragonwilds</span><strong>Build ${escapeHtml(installedClient || '—')}</strong><small>Latest ${escapeHtml(latestClient || 'unknown')}</small>${status(clientCurrent)}</div>` : ''}
         <div class="runtime-row"><span>UE4SS</span><strong>${escapeHtml(ue.installed_version || 'Not recorded')}</strong><small>Latest ${escapeHtml(ue.latest_version || 'unknown')}</small>${status(ue.current)}${ue.latest_url ? `<button class="runtime-link" data-open-external="${escapeHtml(ue.latest_url)}">GitHub ↗</button>` : ''}</div>
         <div class="runtime-row"><span>RuneSchema</span><strong>${escapeHtml(rs.source_name || 'Installed core')}</strong><small>Installed snapshot: ${escapeHtml(formatRuntimeDate(rs.installed_at))}</small><span class="status-pill unknown">DATE-BASED</span></div>
@@ -2685,7 +2731,10 @@
     const hardwareRefs = p.health_config?.hardware_reference || health.hardware?.references || {};
     const hostNetwork = p.health_config?.host_network || {};
     const serverHw = runtime.hw_stats && Object.keys(runtime.hw_stats).length ? runtime.hw_stats : (p.hw_stats || {});
-    const runtimeStack = share.runtime_stack || runtime.runtime_stack || {};
+    const cachedRuntimeStack=state.data?.application?.runtime_version_cache?.server||{};
+    const runtimeStack = JSON.parse(JSON.stringify(share.runtime_stack || runtime.runtime_stack || cachedRuntimeStack || {}));
+    const runtimeCl=runtime.cl_version||{};
+    runtimeStack.dragonwilds={...(runtimeStack.dragonwilds||{}),reported_server_cl:runtimeCl.reported_cl||(runtimeStack.dragonwilds||{}).reported_server_cl||'',current_expected_cl:runtimeCl.expected_cl||(runtimeStack.dragonwilds||{}).current_expected_cl||'',server_cl_status:runtimeCl.status||(runtimeStack.dragonwilds||{}).server_cl_status||'unknown',server_cl_current:runtimeCl.current??(runtimeStack.dragonwilds||{}).server_cl_current};
     const gameVersion = runtimeStack.dragonwilds || {};
     const serverInstall = state.data?.application?.server_install || {};
     const serverLayout = state.data?.server?.layout || {};
@@ -2837,7 +2886,7 @@
     }
     return `
       <div class="content">
-        <div class="page-header" style="align-items:center;margin-bottom:15px"><button class="btn ghost" id="back-servers">← Servers</button><div class="header-actions"><button class="btn ghost" id="detach-server-world">↗ Open in Window</button><button class="btn ghost" id="edit-server-world-top">Connection &amp; World Settings</button>${!isActive ? `<button class="btn ghost" id="activate-server-world">Activate World</button>` : ''}${isServing && !isRunning ? '<button class="btn ghost" id="stop-share-top">Stop Sync Share</button>' : ''}<button class="btn danger" id="stop-server-world" ${(isRunning || isServing) ? '' : 'disabled'}>Stop World</button><button class="btn ghost" id="restart-server-world" ${isRunning ? '' : 'disabled'}>Restart</button><button class="btn primary" id="broadcast-server-world" ${isRunning && isServing ? 'disabled' : ''}>Launch</button></div></div>
+        <div class="page-header" style="align-items:center;margin-bottom:15px"><button class="btn ghost" id="back-servers">← Servers</button><div class="header-actions"><span class="status-pill ${runtime.busy?'unknown':isRunning?'online':'offline'}">${escapeHtml(runtime.state||(isRunning?'Running':'Stopped'))}</span><button class="btn ghost" id="open-minimal-server-world">Minimal Mode</button><button class="btn ghost" id="detach-server-world">↗ Open in Window</button><button class="btn ghost" id="edit-server-world-top">Connection &amp; World Settings</button>${!isActive ? `<button class="btn ghost" id="activate-server-world">Activate World</button>` : ''}${isServing && !isRunning ? '<button class="btn ghost" id="stop-share-top">Stop Sync Share</button>' : ''}<button class="btn danger" id="stop-server-world" ${(isRunning || isServing) && !runtime.busy ? '' : 'disabled'}>Stop World</button><button class="btn ghost" id="restart-server-world" ${isRunning&&!runtime.busy ? '' : 'disabled'}>Restart</button><button class="btn ghost" id="update-server-world" ${runtime.busy?'disabled':''}>Update</button><button class="btn ghost" id="update-restart-server-world" ${runtime.busy?'disabled':''}>Update &amp; Restart</button><button class="btn primary" id="broadcast-server-world" ${isRunning || runtime.busy ? 'disabled' : ''}>Start</button></div></div>
         <section class="detail-hero" style="margin-bottom:0;border-radius:18px 18px 0 0">
           ${banner ? `<img class="detail-banner" src="${banner}" alt="" />` : `<div class="detail-banner-fallback"></div>`}<div class="hero-overlay"></div><div class="hero-content">${icon ? `<img class="hero-icon" src="${icon}" alt="" />` : `<div class="hero-icon fallback">${escapeHtml(initials(p.name))}</div>`}<div class="hero-main"><div class="eyebrow">Hosted World</div><h1 title="${escapeHtml(p.name || 'World')}">${escapeHtml(p.name || 'World')}</h1><p>${escapeHtml(p.description || 'No description yet.')}</p></div><span class="status-pill ${isRunning ? 'online' : (isServing ? 'unknown' : 'offline')}">${isRunning ? 'RUNNING' : (isServing ? 'SYNC LIVE' : (isActive ? 'ACTIVE' : 'STOPPED'))}</span></div>
         </section>
@@ -3475,7 +3524,7 @@
           <details class="privacy-policy-box" ${serverInstall.linux_server_mode === 'proton-win64' ? 'open' : ''}><summary><strong>Proton / Wine compatibility</strong><span>${escapeHtml(serverInstall.proton_executable || 'Auto-detect from PATH')}</span></summary><div style="padding:10px;display:grid;gap:10px"><label><small>Proton or Wine executable</small><input class="field" id="server-proton-executable" value="${escapeHtml(serverInstall.proton_executable || '')}" placeholder="/path/to/proton, wine64, or wine" /></label><label><small>Compatibility prefix (optional)</small><input class="field" id="server-proton-prefix" value="${escapeHtml(serverInstall.proton_prefix || '')}" placeholder="STEAM_COMPAT_DATA_PATH or WINEPREFIX" /></label><label><small>Native DLL overrides</small><input class="field" id="server-wine-dll-overrides" value="${escapeHtml(serverInstall.wine_dll_overrides || 'dwmapi=n,b;version=n,b')}" /></label><div class="identity-box" style="margin:0"><strong>No binary conversion</strong><p>Windows and Linux-Proton clients receive the same signed/hash-verified Win64 PE runtime variant. Native Linux server processes never receive those DLLs.</p></div></div></details>`:''}
           <div class="settings-row"><div class="settings-copy"><strong>Player ID (Owner)</strong><span>Machine-level Dragonwilds server identity. Copy it from Dragonwilds → Settings or detect the authenticated local ID from the game log. It is written into DedicatedServer.ini; SteamCMD downloads anonymously.</span></div><div class="path-field"><input class="field" id="server-owner-id" value="${escapeHtml(serverInstall.owner_id || '')}" placeholder="Dragonwilds Player ID" /><button class="btn ghost" id="detect-server-owner-id">Detect from Game</button></div></div>
           <details class="privacy-policy-box"><summary><strong>Advanced SteamCMD location</strong><span>${escapeHtml(serverInstall.steamcmd_dir || 'Auto beside server directory')}</span></summary><div style="padding:10px"><div class="path-field"><input class="field" id="server-steamcmd-dir" value="${escapeHtml(serverInstall.steamcmd_dir || '')}" placeholder="Auto: sibling steamcmd folder" /><button class="btn ghost" id="pick-server-steamcmd-dir">Browse</button></div></div></details>
-          <div class="server-install-actions"><button class="btn ghost" id="save-server-install-paths">Save Server Settings</button><button class="btn primary" id="settings-full-server-setup">Full Setup</button><button class="btn ghost" id="settings-configure-server-firewall">Configure Firewall</button><button class="btn ghost" id="settings-update-server">Update Server</button></div>
+          <div class="server-install-actions"><button class="btn ghost" id="save-server-install-paths">Save Server Settings</button><button class="btn primary" id="settings-full-server-setup">Full Setup</button><button class="btn ghost" id="settings-configure-server-firewall">Configure Firewall</button><button class="btn ghost" id="settings-update-server">Update Server</button><button class="btn ghost" id="settings-update-restart-server">Update &amp; Restart</button></div>
           <div class="identity-box"><strong>Installed build record</strong><p>${serverInstall.installed_buildid ? `Steam build <b>${escapeHtml(serverInstall.installed_buildid)}</b>${serverInstall.installed_at ? ` · recorded ${new Date(Number(serverInstall.installed_at) * 1000).toLocaleString()}` : ''}` : 'No successful SteamCMD installation/update has been recorded by this launcher yet.'}</p></div>
         </section>
         <section class="settings-section"><h2>Resolved Server Paths</h2>
@@ -3605,6 +3654,24 @@
     `;
   }
 
+  function renderMinimalMode() {
+    const world=activeServerWorld()||serverWorlds().find((row)=>String(row.id)===String(quickWorldId))||serverWorlds()[0]||{};
+    const manager=state.data?.application?.runtime_manager||{};
+    const runtime=manager.runtime||state.data?.server?.runtime||{};
+    const running=!!runtime.running&&String(runtime.active_profile_id||state.data?.server?.active_world_id||'')===String(world.id||'');
+    const busy=!!manager.busy;
+    const phase=String(manager.state||(running?'Running':'Stopped'));
+    const broadcast=manager.broadcast||runtime.share||{};
+    const cl=runtime.cl_version||{};
+    const clStatus=String(cl.status||'unknown').toLowerCase();
+    const clClass=clStatus==='current'||clStatus==='newer'?'online':clStatus==='outdated'?'offline':'unknown';
+    const icon=b64Image(world.icon_b64);
+    return `<div class="minimal-mode-page"><section class="minimal-mode-head"><div class="minimal-world-identity">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(world.name||'Server'))}</span>`}<div><div class="eyebrow">Minimal Mode · Dedicated World</div><h1>${escapeHtml(world.name||'Select a hosted World')}</h1><p>Direct lifecycle control with reduced launcher services and animation.</p></div></div><div class="header-actions"><button class="btn ghost" id="minimal-refresh">Refresh</button><button class="btn ghost" id="minimal-open-full">Open Full Launcher</button></div></section>
+      <section class="minimal-runtime-card"><div class="minimal-runtime-state"><span class="runtime-orb ${busy?'busy':running?'running':'stopped'}"></span><div><small>Authoritative state</small><strong>${escapeHtml(phase)}</strong>${manager.last_error?`<p>${escapeHtml(manager.last_error)}</p>`:''}</div></div><div class="minimal-actions"><button class="btn primary" id="broadcast-server-world" ${running||busy||!world.id?'disabled':''}>Start</button><button class="btn danger" id="stop-server-world" ${(!running&&!broadcast.serving)||busy?'disabled':''}>Stop</button><button class="btn ghost" id="restart-server-world" ${!running||busy?'disabled':''}>Restart</button><button class="btn ghost" id="update-server-world" ${busy||!world.id?'disabled':''}>Update</button><button class="btn ghost" id="update-restart-server-world" ${busy||!world.id?'disabled':''}>Update &amp; Restart</button></div></section>
+      <section class="minimal-metrics"><div><span>Process</span><strong>${running?`PID ${escapeHtml(runtime.pid||'—')}`:'Stopped'}</strong></div><div><span>Players</span><strong>${escapeHtml(String(runtime.player_count||0))}</strong></div><div><span>Uptime</span><strong>${escapeHtml(formatUptime(runtime.uptime_seconds||0))}</strong></div><div><span>Sync broadcast</span><strong>${broadcast.serving?'Verified live':'Stopped'}</strong></div><div><span>Reported CL</span><strong>${escapeHtml(cl.reported_cl||'Not reported')}</strong></div><div><span>CL status</span><strong class="status-pill ${clClass}">${escapeHtml(clStatus.toUpperCase())}</strong></div></section>
+      <section class="minimal-note"><strong>Shared authority</strong><p>These controls use the same lifecycle queue as the full launcher and remote WebGUI. The server is never advertised during an update or before startup verification completes.</p></section></div>`;
+  }
+
   function render() {
     if (!state.data) return;
     window.__DWSYNC_STATE__ = state.data;
@@ -3635,6 +3702,12 @@
       return;
     }
 
+    if(minimalMode){
+      root.className='app-shell minimal-shell';
+      root.innerHTML=`${renderTitlebar()}${operationMarkup()}<main class="main">${renderMinimalMode()}</main>`;
+      bindEvents();
+      return;
+    }
     let page = '';
     if (state.route === 'world-detail' && activeWorld()) page = activeWorld().kind === 'singleplayer' ? renderSinglePlayerDetail(activeWorld()) : renderWorldDetail(activeWorld());
     else if (state.route === 'world-management' || state.route === 'private-worlds' || state.route === 'singleplayer') { state.route='world-management'; page = renderWorldManagement(); }
@@ -3743,6 +3816,8 @@
   }
 
   function bindEvents() {
+    root.querySelector('#minimal-open-full')?.addEventListener('click',()=>window.dragonwilds.openMainWindow?.());
+    root.querySelector('#minimal-refresh')?.addEventListener('click',async()=>{try{state.data=await api.invoke('state.get',{});render();}catch(error){toast('Refresh failed',error.message,'error');}});
     root.querySelector('#enter-launcher')?.addEventListener('click', () => { state.entered = true; state.route = 'world-management'; render(); const gs=state.data?.application?.guided_setup || {}; if (!gs.completed && !gs.skipped) setTimeout(() => openGuidedSetup('player'), 80); });
     root.querySelector('#splash-update-now')?.addEventListener('click', () => applyApplicationUpdate());
     root.querySelector('#splash-update-notes')?.addEventListener('click', () => { if (state.applicationUpdate?.releaseUrl) window.dragonwilds.openExternal(state.applicationUpdate.releaseUrl); });
@@ -3794,6 +3869,7 @@
     root.querySelector('#detach-settings')?.addEventListener('click',()=>window.dragonwilds.openDetachedWindow?.({route:state.route==='webhost'?'webhost':'settings',title:state.route==='webhost'?'Dragonwilds Sync · Sync':'Dragonwilds Sync · Settings',context:{settingsTab:state.settingsTab}}));
     root.querySelector('#detach-private-world')?.addEventListener('click',()=>window.dragonwilds.openDetachedWindow?.({route:'world-detail',title:`Dragonwilds Sync · ${singleplayerWorld()?.name||'Private World'}`,context:{selectedWorldId:activeWorld()?.id||state.data?.client?.active_private_world_id||'singleplayer',privateTab:state.privateTab}}));
     root.querySelector('#detach-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(!w)return;window.dragonwilds.openDetachedWindow?.({route:'server-detail',title:`Dragonwilds Sync · ${w.name||'Server World'}`,context:{selectedServerWorldId:w.id,serverTab:state.serverTab}});});
+    root.querySelector('#open-minimal-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(w)window.dragonwilds.openMinimalMode?.(w.id);});
     root.querySelector('#profile-open-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
     root.querySelector('#sp-browse-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
     root.querySelector('#sp-check-nexus-updates')?.addEventListener('click',()=>checkNexusUpdates('singleplayer'));
@@ -4258,7 +4334,7 @@
     });
     root.querySelector('#broadcast-server-world')?.addEventListener('click', async () => {
       const world = activeServerWorld(); if (!world) return;
-      try { const response = await runOperation('Starting hosted World', 'Preparing the profile, publishing Sync, and launching Dragonwilds…', ()=>api.invoke('server.world.broadcast', { id: world.id })); setData(response.state); setDiscordPresence('Hosting World', world, { resetTimer: true, playerCount: response.result?.player_count, health: response.result?.server_health }); toast('World launched', response.result?.pid ? `Dedicated process PID ${response.result.pid} · Sync endpoint active` : 'Sync/Studio manifest refreshed.', 'success'); }
+      try { const response = await runOperation('Starting hosted World', 'Preparing the profile, publishing Sync, and launching Dragonwilds…', ()=>api.invoke('server.runtime.start', { id: world.id })); setData(response.state); setDiscordPresence('Hosting World', world, { resetTimer: true, playerCount: response.result?.player_count, health: response.result?.server_health }); toast('World launched', response.result?.pid ? `Dedicated process PID ${response.result.pid} · Sync endpoint active` : 'Sync/Studio manifest refreshed.', 'success'); }
       catch (error) { toast('Launch failed', error.message, 'error'); }
     });
     root.querySelector('#stop-server-world')?.addEventListener('click', async () => {
@@ -4270,6 +4346,14 @@
       const world = activeServerWorld(); if (!world || !await managedConfirm('Restart this Dragonwilds dedicated server?','Restart Server')) return;
       try { const response = await runOperation('Restarting hosted World', 'Stopping the current process, republishing Sync, and launching again…', ()=>api.invoke('server.world.restart', { id: world.id })); setData(response.state); setDiscordPresence('Hosting World', world, { resetTimer: true, playerCount: response.result?.player_count, health: response.result?.server_health }); toast('Dedicated server restarted', `PID ${response.result.pid}`, 'success'); }
       catch (error) { toast('Restart failed', error.message, 'error'); }
+    });
+    root.querySelector('#update-server-world')?.addEventListener('click', async () => {
+      const world=activeServerWorld();if(!world||!await managedConfirm('Stop the active server if needed and install the latest dedicated-server build? It will remain stopped after the update.','Update Server'))return;
+      try{const response=await runOperation('Updating dedicated server','Stopping and verifying the process before SteamCMD updates the shared installation…',()=>api.invoke('server.runtime.update',{id:world.id}));if(response.state)setData(response.state);toast('Server updated','SteamCMD completed; the server remains stopped.','success');}catch(error){toast('Server update failed',error.message,'error');}
+    });
+    root.querySelector('#update-restart-server-world')?.addEventListener('click', async () => {
+      const world=activeServerWorld();if(!world||!await managedConfirm('Stop, update, and restart this hosted World? The server will only be advertised again after its process and Sync broadcast are verified.','Update & Restart'))return;
+      try{const response=await runOperation('Updating and restarting','Stopping, updating with SteamCMD, then verifying server and Sync startup…',()=>api.invoke('server.runtime.update_restart',{id:world.id}));if(response.state)setData(response.state);toast('Server updated and restarted',`PID ${response.result?.restart?.pid||response.result?.pid||'—'} · Sync verified`,'success');}catch(error){toast('Update & restart failed',error.message,'error');}
     });
     root.querySelector('#refresh-server-hardware')?.addEventListener('click', async () => {
       try { const response = await api.invoke('server.hardware.refresh', {}); setData(response.state); toast('Hardware refreshed', '', 'success'); }
@@ -4527,7 +4611,7 @@
     root.querySelector('#clear-world-selectors')?.addEventListener('click',async()=>{try{state.data=await api.invoke('world.browser.settings',{content_type:'all',game_mode:'all',host_type:'all',tag:'all',page:1});render();}catch(error){toast('Could not clear selectors',error.message,'error');}});
     root.querySelectorAll('[data-private-view]').forEach((button)=>button.addEventListener('click',()=>{state.privateWorldView=button.dataset.privateView==='list'?'list':'cards';render();}));
     root.querySelectorAll('[data-server-view]').forEach((button)=>button.addEventListener('click',()=>{state.serverWorldView=button.dataset.serverView==='list'?'list':'cards';render();}));
-    root.querySelectorAll('[data-server-launch]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverLaunch));if(!world||button.disabled)return;try{const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, publishing Sync, and launching the dedicated server…',()=>api.invoke('server.world.broadcast',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab='overview';toast('World launched',response.result?.pid?`Dedicated process PID ${response.result.pid} · Sync endpoint active`:'Sync endpoint active.','success');}catch(error){toast('Launch failed',error.message,'error');}}));
+    root.querySelectorAll('[data-server-launch]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverLaunch));if(!world||button.disabled)return;try{const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, publishing Sync, and launching the dedicated server…',()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab='overview';toast('World launched',response.result?.pid?`Dedicated process PID ${response.result.pid} · Sync endpoint active`:'Sync endpoint active.','success');}catch(error){toast('Launch failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-stop]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverStop));if(!world||button.disabled)return;if(!await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server'))return;const label=button.textContent;button.disabled=true;button.textContent='Stopping…';try{const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('World stopped',`PID ${response.result?.stopped_pid||'—'} · ${response.result?.stop_method||'verified'}`,'success');}catch(error){button.disabled=false;button.textContent=label;toast('Stop failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-manage]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverManage));if(!world)return;pushNavigation();state.selectedServerWorldId=world.id;state.route='server-detail';render();}));
     root.querySelectorAll('[data-world-launch]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=browserWorlds().find((w)=>String(w.id)===String(button.dataset.worldLaunch));if(world)playWorld(world);}));
@@ -4844,9 +4928,17 @@
     root.querySelector('#settings-configure-server-firewall')?.addEventListener('click', async () => { try { const result = await api.invoke('server.install.firewall', {}); toast('Server firewall configured', `Sync TCP: ${(result.sync_ports || []).join(', ') || '—'} · Game UDP: ${(result.game_ports || []).join(', ') || '—'}`, 'success'); } catch (error) { toast('Firewall configuration failed', error.message, 'error'); } });
     root.querySelector('#settings-update-server')?.addEventListener('click', async () => {
       setDiscordPresence('Updating Dragonwilds Server', null, { resetTimer: true });
-      try { await saveServerInstallPaths(); const response = await api.invoke('server.install.update', {}); if (response.state) setData(response.state); const runtimeNote = response.runtime?.ok ? ' Base runtimes ready.' : ` ${(response.runtime?.errors || []).join(' ')}`; toast(response.runtime?.ok ? 'Server updated / validated' : 'Server updated — runtime source needed', `${response.latest?.buildid ? `Latest known Steam build ${response.latest.buildid}.` : 'SteamCMD update completed.'}${runtimeNote}`, response.runtime?.ok ? 'success' : ''); }
+      try { await saveServerInstallPaths(); const response = await api.invoke('server.runtime.update', {}); if (response.state) setData(response.state); toast('Server updated / validated', 'SteamCMD completed; the dedicated server remains stopped.', 'success'); }
       catch (error) { toast('Server update failed', error.message, 'error'); }
       finally { updateDiscordPresenceForRoute(); }
+    });
+    root.querySelector('#settings-update-restart-server')?.addEventListener('click', async () => {
+      const world=activeServerWorld();if(!world)return toast('Select a hosted World','Update & Restart needs an active Server profile.','error');
+      if(!await managedConfirm('Update the shared dedicated-server installation and restart the active World after verification?','Update & Restart'))return;
+      setDiscordPresence('Updating Dragonwilds Server',world,{resetTimer:true});
+      try{await saveServerInstallPaths();const response=await api.invoke('server.runtime.update_restart',{id:world.id});if(response.state)setData(response.state);toast('Server updated and restarted','The process and Sync broadcast are verified running.','success');}
+      catch(error){toast('Update & restart failed',error.message,'error');}
+      finally{updateDiscordPresenceForRoute();}
     });
     root.querySelector('#settings-repair-runtimes')?.addEventListener('click', async () => {
       try { await saveServerInstallPaths(); const response = await api.invoke('server.install.ensure_runtimes', {}); if (response.state) setData(response.state); const result = response.result || {}; if (result.ok) toast('Base runtimes ready', (result.repaired || []).join(' · ') || 'UE4SS and RuneSchema passed validation.', 'success'); else toast('Runtime source required', (result.errors || ['UE4SS / RuneSchema is incomplete.']).join(' '), 'error'); }
@@ -5582,7 +5674,7 @@
     }
     if(command==='start server'){
       const world=activeServerWorld()||serverWorlds()[0];if(!world)throw new Error('No dedicated World exists.');
-      const response=await api.invoke('server.world.broadcast',{id:world.id});if(!response.result?.running)throw new Error('The dedicated process did not report a running state.');if(response.state)setData(response.state);render();toast('Server started',world.name||'Dedicated World','success');return;
+      const response=await api.invoke('server.runtime.start',{id:world.id});if(!response.result?.running)throw new Error('The dedicated process did not report a running state.');if(response.state)setData(response.state);render();toast('Server started',world.name||'Dedicated World','success');return;
     }
     if(command==='end server'){
       const response=await api.invoke('server.world.stop',{});if(response.state)setData(response.state);render();toast('Server stopped',response.result?.stop_method||'Verified stop','success');return;
@@ -5746,7 +5838,7 @@
       menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button>${running?'<button role="menuitem" data-action="stop">Stop Server</button><button role="menuitem" data-action="restart">Restart Server</button>':'<button role="menuitem" data-action="start">Start Server</button>'}${loaded&&!running?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="update">Update Server</button><button role="menuitem" data-action="convert">Convert to Singleplayer / Co-Op</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
     }else if(privateWorld){
       const loaded=String(state.data?.client?.live_world_id||'')===String(id||'');
-      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="activate">Make Active Profile</button>${loaded?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="coop">${privateWorld.status?.broadcasting?'Stop Co-Op':'Start Co-Op'}</button><button role="menuitem" data-action="convert">Convert to Dedicated Server</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button>${privateWorld.id==='singleplayer'?'':`<button role="menuitem" class="danger" data-action="delete">Delete World</button>`}`;
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="activate">Make Active Profile</button>${loaded?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="coop">${privateWorld.status?.broadcasting?'Stop Co-Op':'Start Co-Op'}</button><button role="menuitem" data-action="convert">Convert to Dedicated Server</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
     }else{
       const favorite=(state.data?.client?.favorites||[]).map(String).includes(String(id));
       const saved=worlds().some((world)=>String(world.id)===String(id));
@@ -5764,11 +5856,11 @@
       if (server) {
         const world = serverWorlds().find((w) => w.id === id); if (!world) return;
         if (action === 'open') { pushNavigation(); state.selectedServerWorldId = id; state.route = 'server-detail'; render(); }
-        if (action === 'start') { try { const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, publishing Sync, and launching the dedicated server…',()=>api.invoke('server.world.broadcast',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('Server started',`PID ${response.result?.pid||'—'} · Sync fingerprint active`,'success'); } catch(error){toast('Start failed',error.message,'error');} }
+        if (action === 'start') { try { const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, publishing Sync, and launching the dedicated server…',()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('Server started',`PID ${response.result?.pid||'—'} · Sync fingerprint active`,'success'); } catch(error){toast('Start failed',error.message,'error');} }
         if (action === 'stop' && await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server')) { try { const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('Server stopped',`PID ${response.result?.stopped_pid||'—'}`,'success'); } catch(error){toast('Stop failed',error.message,'error');} }
         if (action === 'unload' && await managedConfirm(`Unload “${world.name||'this hosted World'}”?\n\nChanges are snapshotted back to its Server Profile, then World-owned mods, configuration and live save data are removed from the shared server directory. Runtime cores remain installed.`,'Unload Server Profile')) { try { const response=await api.invoke('server.world.unload',{id});if(response.state)setData(response.state);render();toast('Server Profile unloaded','Changes saved; shared server directory returned to its clean runtime baseline.','success'); } catch(error){toast('Unload failed',error.message,'error');} }
         if (action === 'restart' && await managedConfirm(`Restart ${world.name||'this hosted World'}?`,'Restart Server')) { try { const response=await runOperation('Restarting hosted World','Stopping, republishing Sync, and launching again…',()=>api.invoke('server.world.restart',{id:world.id}));setData(response.state);toast('Server restarted',`PID ${response.result?.pid||'—'}`,'success'); } catch(error){toast('Restart failed',error.message,'error');} }
-        if (action === 'update') { try { const response=await api.invoke('server.install.update',{});if(response.state)setData(response.state);toast('Server updated / validated',response.latest?.buildid?`Steam build ${response.latest.buildid}`:'SteamCMD update completed.','success'); } catch(error){toast('Server update failed',error.message,'error');} }
+        if (action === 'update') { try { const response=await api.invoke('server.runtime.update',{id:world.id});if(response.state)setData(response.state);toast('Server updated','SteamCMD completed; the server remains stopped.','success'); } catch(error){toast('Server update failed',error.message,'error');} }
         if (action === 'convert' && await managedConfirm(`Clone “${world.name||'this World'}” into the local Singleplayer/Co-Op save area?`,'Convert World')) { try { const response=await api.invoke('server.world.convert_to_singleplayer',{id:world.id});if(response.state)state.data=response.state;state.selectedWorldId=response.profile_id||response.profile?.id||state.data?.client?.active_private_world_id||'singleplayer';state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op','The dedicated profile remains available.','success'); } catch(error){toast('Conversion failed',error.message,'error');} }
         if (action === 'desktop') { try { const result=await window.dragonwilds.createWorldShortcut({worldId:id,worldKind:'server',name:world.name||'Hosted World',iconData:world.icon_b64||''});toast('Sent to Desktop',result.path||'Hosted World Quick Launch shortcut created.','success'); } catch(error){toast('Desktop shortcut failed',error.message,'error');} }
         if (action === 'backup') { try { const result=await api.invoke('server.world.backup.create',{id}); state.serverBackups[id]=result.backups||[]; toast('World backup created',result.backup||world.name,'success'); } catch(error){toast('Backup failed',error.message,'error');} }
@@ -5783,7 +5875,7 @@
         if(action==='convert'){const name=await managedPrompt('Name for the dedicated Server profile:',privateWorld.name||'Dragonwilds World','Convert to Dedicated Server');if(!name)return;try{const response=await api.invoke('singleplayer.convert_to_server',{profile_id:id,id,name});if(response.state)state.data=response.state;state.selectedServerWorldId=response.profile_id||response.profile?.id||'';state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server','Save, mods, settings and profile metadata were cloned.','success');}catch(error){toast('Conversion failed',error.message,'error');}return;}
         if(action==='backup'){try{const result=await api.invoke('singleplayer.archive',{profile_id:id,id,name:privateWorld.name||'Private World'});toast('Private World backup created',result.archive_path||privateWorld.name,'success');}catch(error){toast('Backup failed',error.message,'error');}return;}
         if(action==='desktop'){try{const result=await window.dragonwilds.createWorldShortcut({worldId:id,worldKind:'private',name:privateWorld.name||'Private World',iconData:privateWorld.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}return;}
-        if(action==='delete'&&id!=='singleplayer'&&await managedConfirm(`Delete Private World profile '${privateWorld.name}'? The live Dragonwilds installation is not deleted.`,'Delete Private World')){try{const response=await api.invoke('singleplayer.profile.delete',{profile_id:id,id});if(response.state)state.data=response.state;state.selectedWorldId=state.data?.client?.active_private_world_id||'singleplayer';render();toast('Private World profile deleted','','success');}catch(error){toast('Delete failed',error.message,'error');}}
+        if(action==='delete'&&await managedConfirm(`Delete Private World profile '${privateWorld.name}'?${id==='singleplayer'?' This removes the generic launcher placard; newly detected game saves will still become managed profiles.':' The associated save/profile will be moved to recoverable Trash.'}`,'Delete Private World')){try{const response=await api.invoke('singleplayer.profile.delete',{profile_id:id,id});if(response.state)setData(response.state);state.selectedWorldId=state.data?.client?.active_private_world_id||'';render();toast('Private World profile deleted',response.trash_entry?'Moved to Settings → Trash.':'The generic profile was removed.','success');}catch(error){toast('Delete failed',error.message,'error');}}
         return;
       }
       const world = browserWorlds().find((w) => w.id === id); if (!world) return;

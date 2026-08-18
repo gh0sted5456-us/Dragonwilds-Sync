@@ -32,7 +32,7 @@ from integrations import normalize_mod_source
 from network_health import summarize_client_reports
 from health_model import normalize_health_config, public_health_config, score_server_health
 from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, REGION_LABELS
-from runtime_versions import server_runtime_stack
+from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
 from client_layout import resolve_client_layout
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
@@ -3438,7 +3438,7 @@ class PlayerLogMonitor:
     """Headless dedicated-server monitor with join/leave parsing. No GUI dependencies."""
     def __init__(self):
         self.pid: int | None = None; self.exe_path = ""; self.start_ts: float | None = None
-        self.players: set[str] = set(); self.log_path: Path | None = None; self.log_offset = 0
+        self.players: set[str] = set(); self.log_path: Path | None = None; self.log_offset = 0; self.reported_cl = ""
 
     def poll(self, known_pid: int | None = None, known_exe: str = "") -> dict:
         pid = known_pid; exe = known_exe
@@ -3450,11 +3450,11 @@ class PlayerLogMonitor:
                         pid = int(proc.info["pid"]); exe = str(proc.info.get("exe") or ""); self.start_ts = float(proc.info.get("create_time") or time.time()); break
             except Exception: pass
         if pid is None:
-            self.pid = None; self.exe_path = ""; self.start_ts = None; self.players.clear(); self.log_path = None; self.log_offset = 0
+            self.pid = None; self.exe_path = ""; self.start_ts = None; self.players.clear(); self.log_path = None; self.log_offset = 0; self.reported_cl = ""
             with STATE.lock: STATE.server_online = False; STATE.player_count = 0; STATE.server_start_ts = None
             return {"online": False, "pid": None, "players": [], "player_count": 0, "uptime_seconds": None}
         if self.pid != pid:
-            self.players.clear(); self.log_path = None; self.log_offset = 0
+            self.players.clear(); self.log_path = None; self.log_offset = 0; self.reported_cl = ""
         self.pid = pid; self.exe_path = exe or self.exe_path; self.start_ts = self.start_ts or time.time()
         if self.exe_path and not self.log_path:
             try:
@@ -3473,6 +3473,9 @@ class PlayerLogMonitor:
                 with self.log_path.open("r", encoding="utf-8", errors="ignore") as fh:
                     fh.seek(self.log_offset)
                     for line in fh:
+                        reported_cl = normalize_cl_version(line)
+                        if reported_cl:
+                            self.reported_cl = reported_cl
                         m = _DEDICATED_JOIN_RE.search(line)
                         if m: self.players.add(m.group(1).strip()); continue
                         m = _DEDICATED_LEAVE_RE.search(line)
@@ -3481,7 +3484,8 @@ class PlayerLogMonitor:
             except OSError: pass
         uptime = max(0, int(time.time() - self.start_ts)) if self.start_ts else None
         with STATE.lock: STATE.server_online = True; STATE.player_count = len(self.players); STATE.server_start_ts = self.start_ts
-        return {"online": True, "pid": pid, "players": sorted(self.players), "player_count": len(self.players), "uptime_seconds": uptime}
+        return {"online": True, "pid": pid, "players": sorted(self.players), "player_count": len(self.players),
+                "uptime_seconds": uptime, "reported_cl": self.reported_cl}
 
 
 def clear_server_mods(game_root: str) -> dict:

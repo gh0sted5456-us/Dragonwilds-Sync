@@ -56,7 +56,7 @@ from player_tracker import PLAYER_BRIDGE, PLAYER_SERVICE, world_to_map
 from spawner_catalog import catalog as spawner_catalog, refresh_spawn_catalog, spawn_command
 from rsdw_toolkit import command_catalog as rsdw_command_catalog, history as rsdw_console_history, record_event as record_rsdw_event, status as rsdw_toolkit_status, suppress_roster_poll_logging, validate_command as validate_rsdw_command
 from health_model import apply_detected_hardware_references, normalize_health_config, normalize_network_evidence
-from runtime_versions import client_runtime_status, server_runtime_stack
+from runtime_versions import cl_version_status, client_runtime_status, server_runtime_stack
 from security_policy import normalize_access_policy, normalize_cidrs, VPN_PROVIDERS, REGION_LABELS
 from security_scanner import defender_scan, defender_status, set_defender_review_enabled
 from rsdw_cache import status as rsdw_cache_status, refresh_modules as refresh_rsdw_cache, search_items as search_rsdw_items
@@ -4325,30 +4325,12 @@ def handle(method: str, params: dict) -> object:
             action = tick["schedule"].get("action")
             if action == "update_restart":
                 was_running = bool(ENGINE.status().get("running"))
-                ENGINE.stop_world()
-                install_dir, steamcmd_dir, _ = _server_install_paths(state)
-                try:
-                    install_result = install_dedicated_server(install_dir, steamcmd_dir)
-                    install = state.setdefault("application", {}).setdefault("server_install", {})
-                    install["server_exe"] = install_result.get("server_exe") or install.get("server_exe") or ""
-                    install["installed_buildid"] = str(install_result.get("buildid") or install_result.get("installed_buildid") or install.get("installed_buildid") or "")
-                    install["installed_build_source"] = str(install_result.get("build_source") or "steamcmd")
-                    install["installed_at"] = time.time(); save_state(state)
-                    result = ENGINE.start_world(profile_id) if was_running else {"updated": True, **install_result}
-                except Exception as update_error:
-                    # A failed Steam check/update must not silently turn a
-                    # previously running scheduled World into a stopped one.
-                    recovery_error = ""
-                    if was_running:
-                        try: ENGINE.start_world(profile_id)
-                        except Exception as exc: recovery_error = str(exc)
-                    if recovery_error:
-                        raise RuntimeError(f"Scheduled update failed ({update_error}); recovery start also failed ({recovery_error}).") from update_error
-                    raise
+                response = handle("server.runtime.update", {"id": profile_id, "restart": was_running})
+                result = response.get("result") if isinstance(response, dict) else response
             elif action == "backup":
                 was_running = bool(ENGINE.status().get("running"))
                 if was_running:
-                    ENGINE.stop_world()
+                    handle("server.runtime.stop", {})
                 restart_result = None
                 try:
                     result = create_world_backup(
@@ -4360,10 +4342,13 @@ def handle(method: str, params: dict) -> object:
                     ENGINE.record_event(f"Created scheduled safe backup {result.get('backup') or ''}.", "ok")
                 finally:
                     if was_running:
-                        restart_result = ENGINE.start_world(profile_id)
+                        restart_response = handle("server.runtime.start", {"id": profile_id})
+                        restart_result = restart_response.get("result") if isinstance(restart_response, dict) else restart_response
                 result = {**result, "server_restarted": bool(restart_result), "restart_result": restart_result}
             else:
-                result = ENGINE.restart_world(profile_id) if ENGINE.status().get("running") else ENGINE.start_world(profile_id)
+                method = "server.runtime.restart" if ENGINE.status().get("running") else "server.runtime.start"
+                response = handle(method, {"id": profile_id})
+                result = response.get("result") if isinstance(response, dict) else response
             profile = load_server_profile(profile_id)
             completed_message = "Scheduled World backup completed." if action == "backup" else "Scheduled server operation completed."
             profile["service_notice"] = {"level": "info", "message": completed_message, "expires_at": time.time()+300, "updated_at": time.time()}
@@ -5308,6 +5293,9 @@ def _directory_public_worlds() -> list[dict]:
             "banner_b64": str(profile.get("banner_b64") or ""), "online": bool(is_active and runtime.get("running")),
             "placard_background": str(profile.get("placard_background") or "1"),
             "players": len(runtime.get("players") or []) if is_active else 0, "max_players": int(profile.get("max_players") or 0),
+            "cl_version": (dict(runtime.get("cl_version") or {}) if is_active else
+                           cl_version_status(profile.get("last_reported_cl"),
+                                             ((state.get("application") or {}).get("server_install") or {}).get("expected_cl"))),
             "password_required": bool(dedicated.get("world_pass")), "modded": str(classification.get("content_type") or "vanilla") != "vanilla",
             "game_port": int(dedicated.get("port") or 7777), "sync_port": int(sync.get("port") or 27051),
             "source": "self-hosted-profile", "shared": {"source": "self-hosted-profile", "protocol": WORLD_SYNC_PROTOCOL,
@@ -5361,6 +5349,12 @@ def _directory_remote_state(profile_id: str) -> dict:
     if not profile: raise KeyError("The linked Server World no longer exists")
     state = load_state(); active_id = str((state.get("server") or {}).get("active_world_id") or ENGINE.active_profile_id or "")
     runtime = ENGINE.status() if active_id == profile_id else {"running": False, "players": []}
+    try:
+        lifecycle_response = handle("server.runtime.status", {}) if active_id == profile_id else {}
+        lifecycle = dict(lifecycle_response.get("lifecycle") or {}) if isinstance(lifecycle_response, dict) else {}
+    except Exception:
+        lifecycle = {"state": "Running" if runtime.get("running") else "Stopped", "busy": False,
+                     "broadcast": SHARE.status(), "last_error": ""}
     dedicated = profile.get("dedicated_config") or {}; sync = profile.get("sync_config") or {}; classification = profile.get("classification") or {}
     uptime = float(runtime.get("uptime_seconds") or 0); uptime_text = "—"
     if uptime: uptime_text = f"{int(uptime // 3600)}h {int((uptime % 3600) // 60)}m"
@@ -5401,6 +5395,8 @@ def _directory_remote_state(profile_id: str) -> dict:
                              "map_point": point, "position": {key: position.get(key) for key in ("x", "y", "z")}})
     version_stack = dict((((state.get("application") or {}).get("runtime_version_cache") or {}).get("server") or {}))
     game_version = dict(version_stack.get("dragonwilds") or {})
+    cl_version = dict(runtime.get("cl_version") or cl_version_status(
+        profile.get("last_reported_cl"), ((state.get("application") or {}).get("server_install") or {}).get("expected_cl")))
     return {
         "profile": {"world_name": str(profile.get("name") or "World"), "description": str(profile.get("description") or ""),
                     "community_rules": str(profile.get("community_rules") or "")[:4000],
@@ -5414,8 +5410,12 @@ def _directory_remote_state(profile_id: str) -> dict:
                     "auto_ue4ss": bool(profile.get("auto_ue4ss", True)), "auto_runeschema": bool(profile.get("auto_runeschema", True)),
                     "community": {"discord_invite": str((profile.get("community") or {}).get("discord_invite") or "")[:300],
                                   "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]}},
-        "runtime": {"running": bool(runtime.get("running")), "players_online": int(runtime.get("player_count") or len(runtime.get("players") or [])), "uptime_text": uptime_text,
+        "runtime": {"running": bool(runtime.get("running")), "state": str(lifecycle.get("state") or ("Running" if runtime.get("running") else "Stopped")),
+                    "busy": bool(lifecycle.get("busy")), "last_error": str(lifecycle.get("last_error") or ""),
+                    "broadcast": dict(lifecycle.get("broadcast") or SHARE.status()),
+                    "players_online": int(runtime.get("player_count") or len(runtime.get("players") or [])), "uptime_text": uptime_text,
                     "cpu_percent": cpu_percent, "ram_text": ram_text,
+                    "cl_version": cl_version,
                     "sync_status": "Healthy" if bool(runtime.get("running")) and SHARE.httpd else ("Starting" if runtime.get("running") else "Standby")},
         "map": {"background_data": str(map_cfg.get("background_data") or "")[:8_000_000], "calibration": calibration,
                 "tracker_connected": bool((runtime.get("player_tracker") or {}).get("connected")), "players": live_players[:100]},
@@ -5423,6 +5423,8 @@ def _directory_remote_state(profile_id: str) -> dict:
         "maintenance": {"schedule": normalize_schedule(profile.get("operations_schedule") or {}),
                         "backup_retention_count": int((profile.get("operations_schedule") or {}).get("backup_retention_count") or 10),
                         "game_version": game_version,
+                        "cl_version": cl_version,
+                        "update_status": dict(((state.get("application") or {}).get("update_status") or {})),
                         "update_available": game_version.get("server_current") is False},
         "spawner": {"items": [], "categories": [], "players": live_players[:100], "bridge": PLAYER_BRIDGE.status(),
                     "error": "", "loaded": False},
@@ -5488,33 +5490,29 @@ def _directory_remote_action(profile_id: str, action: str, payload: dict | None 
             if runtime.get("running"): raise RuntimeError("Stop the currently active World before remotely starting another one")
             ENGINE.activate_world(active_id or None, profile_id, str(server_root_for_profile(profile) or ""), str(find_dedicated_server_exe(profile) or ""))
             server["active_world_id"] = profile_id; save_state(state)
-        result = ENGINE.start_world(profile_id)
+        response = handle("server.runtime.start", {"id": profile_id})
+        result = response.get("result", response) if isinstance(response, dict) else {}
         if not result.get("running"):
             raise RuntimeError("Dragonwilds did not report a running dedicated process after the remote Start command")
         return result
     if action in {"stop", "restart"} and active_id != profile_id:
         raise RuntimeError("This World is not the active hosted World")
     if action == "stop":
-        result = ENGINE.stop_world()
+        response = handle("server.runtime.stop", {"id": profile_id})
+        result = response.get("result", response) if isinstance(response, dict) else {}
         if result.get("running") or not result.get("stop_verified"):
             raise RuntimeError("The dedicated process did not report a verified stop")
         return result
     if action == "restart":
-        result = ENGINE.restart_world(profile_id)
+        response = handle("server.runtime.restart", {"id": profile_id})
+        result = response.get("result", response) if isinstance(response, dict) else {}
         if not result.get("running"):
             raise RuntimeError("The stop completed, but Dragonwilds did not report a running process after restart")
         return result
-    if action == "update":
-        was_running = bool(runtime.get("running"))
-        if was_running:
-            stopped = ENGINE.stop_world()
-            if stopped.get("running") or not stopped.get("stop_verified"):
-                raise RuntimeError("The server update was cancelled because the running process did not stop cleanly")
-        updated = handle("server.install.update", {})
-        restarted = ENGINE.start_world(profile_id) if was_running else {"running": False, "not_restarted": True}
-        if was_running and not restarted.get("running"):
-            raise RuntimeError("The server files updated, but the dedicated process did not restart")
-        return {"updated": True, "install": updated, "restart": restarted}
+    if action in {"update", "update_restart"}:
+        response = handle("server.runtime.update_restart" if action == "update_restart" else "server.runtime.update",
+                          {"id": profile_id, "restart": action == "update_restart"})
+        return response.get("result", response) if isinstance(response, dict) else {}
     refresh_live_profile_metadata(profile_id, profile)
     return ENGINE.publish(profile_id) if active_id == profile_id and runtime.get("running") else {"refreshed": True}
 

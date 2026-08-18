@@ -224,6 +224,21 @@ def discover_save_profiles(state: dict) -> list[dict]:
             # Discovery must remain available even when a partially installed
             # runtime is not yet safe to snapshot.
             pass
+    if newly_created:
+        pending = state.setdefault("client", {}).setdefault("pending_profile_migrations", [])
+        known = {str((row or {}).get("profile_id") or "") for row in pending if isinstance(row, dict)}
+        for profile in newly_created:
+            profile_id = str(profile.get("id") or "")
+            if profile_id and profile_id not in known:
+                pending.append({
+                    "profile_id": profile_id,
+                    "profile_name": str(profile.get("name") or profile.get("save_file") or "Dragonwilds World"),
+                    "save_file": str(profile.get("save_file") or ""),
+                    "detected_at": time.time(),
+                    "mods_captured": bool(profile.get("initial_mod_snapshot")),
+                })
+                known.add(profile_id)
+        state["client"]["pending_profile_migrations"] = pending[-50:]
     if deleted_saves_changed:
         _write_deleted_save_tombstones(deleted_saves)
     return discovered
@@ -244,8 +259,6 @@ def list_profiles() -> list[dict]:
 
 def delete_profile(profile_id: str) -> None:
     pid = _safe_profile_id(profile_id)
-    if pid == SINGLEPLAYER_ID:
-        raise ValueError("The baseline SinglePlayer profile cannot be deleted; rename or archive it instead.")
     profile = read_json(_profile_file(pid), {})
     save_path = Path(str(profile.get("save_path") or "")) if profile.get("auto_detected") and profile.get("save_path") else None
     if save_path is not None and save_path.is_file():
@@ -291,10 +304,12 @@ def ensure_state(state: dict) -> dict:
     discover_save_profiles(state)
     profiles = list_profiles()
     worlds = [profile_world_shape(p) for p in profiles]
+    if bool(client.get("baseline_singleplayer_hidden", False)):
+        worlds = [world for world in worlds if world.get("id") != SINGLEPLAYER_ID]
     client["private_worlds"] = worlds
     active_id = str(client.get("active_private_world_id") or "")
     if not any(w["id"] == active_id for w in worlds):
-        active_id = SINGLEPLAYER_ID
+        active_id = str((worlds[0] if worlds else {}).get("id") or "")
     client["active_private_world_id"] = active_id
     baseline = next((w for w in worlds if w["id"] == SINGLEPLAYER_ID), worlds[0] if worlds else profile_world_shape(default_singleplayer_profile()))
     # Legacy compatibility: old code/tests can still read client.singleplayer.

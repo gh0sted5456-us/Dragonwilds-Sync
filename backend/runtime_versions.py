@@ -15,6 +15,7 @@ UE4SS_RELEASE_TAG_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/exper
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
 _BUILD_RE = re.compile(r'"buildid"\s+"([^"]+)"', re.IGNORECASE)
 _LAST_UPDATED_RE = re.compile(r'"LastUpdated"\s+"([^"]+)"', re.IGNORECASE)
+_CL_RE = re.compile(r"\bCL[-_ ]?(\d{3,12})\b", re.IGNORECASE)
 _REMOTE_CACHE: dict[str, tuple[float, dict]] = {}
 
 
@@ -136,6 +137,125 @@ def detect_installed_steam_build(anchor: str | Path, appid: str, secondary_ancho
     return {"available": False, "appid": str(appid), "buildid": "", "timeupdated": "", "source": "unknown", "manifest": ""}
 
 
+def _vdf_named_block(text: str, name: str) -> str:
+    match = re.search(rf'"{re.escape(str(name))}"\s*\{{', text, re.IGNORECASE)
+    if not match:
+        return ""
+    start = text.find("{", match.start())
+    depth = 0
+    quoted = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if escaped:
+            escaped = False
+            continue
+        if char == "\\" and quoted:
+            escaped = True
+            continue
+        if char == '"':
+            quoted = not quoted
+            continue
+        if quoted:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:index + 1]
+    return ""
+
+
+def detect_steam_cloud_status(anchor: str | Path, appid: str = CLIENT_STEAM_APP_ID) -> dict:
+    """Detect Steam Cloud evidence for one installed app without changing Steam.
+
+    Steam stores per-user sync state beneath ``userdata``. A matching app block
+    with a Cloud section is authoritative; an existing ``remotecache.vdf`` is
+    retained as fallback evidence for older/newer Steam client layouts.
+    """
+    installed = detect_installed_steam_build(anchor, appid)
+    roots: list[Path] = []
+    manifest = Path(str(installed.get("manifest") or ""))
+    if manifest.is_file() and manifest.parent.name.casefold() == "steamapps":
+        roots.append(manifest.parent.parent)
+    for value in (
+        os.getenv("STEAM_PATH"),
+        Path(os.getenv("PROGRAMFILES(X86)", "")) / "Steam" if os.getenv("PROGRAMFILES(X86)") else None,
+        Path(os.getenv("PROGRAMFILES", "")) / "Steam" if os.getenv("PROGRAMFILES") else None,
+        Path.home() / ".local" / "share" / "Steam",
+        Path.home() / ".steam" / "steam",
+    ):
+        if value:
+            roots.append(Path(value))
+    unique_roots: list[Path] = []
+    seen: set[str] = set()
+    for root in roots:
+        key = os.path.normcase(str(root))
+        if key not in seen:
+            seen.add(key)
+            unique_roots.append(root)
+    accounts = []
+    for root in unique_roots:
+        userdata = root / "userdata"
+        if not userdata.is_dir():
+            continue
+        try:
+            account_dirs = [path for path in userdata.iterdir() if path.is_dir()]
+        except OSError:
+            continue
+        for account in account_dirs:
+            remote_cache = account / str(appid) / "remotecache.vdf"
+            local_config = account / "config" / "localconfig.vdf"
+            app_block = ""
+            if local_config.is_file():
+                try:
+                    app_block = _vdf_named_block(local_config.read_text(encoding="utf-8", errors="ignore"), str(appid))
+                except OSError:
+                    app_block = ""
+            cloud_section = bool(re.search(r'"cloud"\s*\{', app_block, re.IGNORECASE))
+            remote_cache_present = remote_cache.is_file()
+            if not app_block and not remote_cache_present:
+                continue
+            accounts.append({
+                "account_id": account.name,
+                "enabled": bool(cloud_section or (remote_cache_present and not app_block)),
+                "cloud_section": cloud_section,
+                "remote_cache_present": remote_cache_present,
+                "remote_cache": str(remote_cache) if remote_cache_present else "",
+                "local_config": str(local_config) if local_config.is_file() else "",
+            })
+    enabled = any(bool(row.get("enabled")) for row in accounts)
+    return {
+        "appid": str(appid),
+        "detected": bool(accounts),
+        "enabled": enabled,
+        "status": "enabled" if enabled else ("disabled" if accounts else "unknown"),
+        "accounts": accounts,
+        "checked_at": time.time(),
+    }
+
+
+def normalize_cl_version(value: object) -> str:
+    match = _CL_RE.search(str(value or ""))
+    return f"CL-{match.group(1)}" if match else ""
+
+
+def cl_version_status(reported: object, expected: object) -> dict:
+    reported_cl = normalize_cl_version(reported)
+    expected_cl = normalize_cl_version(expected)
+    if not reported_cl:
+        status = "unavailable"
+    elif not expected_cl:
+        status = "unknown"
+    else:
+        reported_number = int(reported_cl.split("-", 1)[1])
+        expected_number = int(expected_cl.split("-", 1)[1])
+        status = "current" if reported_number == expected_number else ("outdated" if reported_number < expected_number else "newer")
+    return {"reported_cl": reported_cl, "expected_cl": expected_cl, "status": status,
+            "current": True if status == "current" else (False if status == "outdated" else None)}
+
+
 def client_runtime_status(game_dir: str, latest_hint: dict | str | None = None, *, remote: bool = False) -> dict:
     from runtime_platforms import detect_client_platform
     installed = detect_installed_steam_build(game_dir, CLIENT_STEAM_APP_ID)
@@ -157,6 +277,7 @@ def client_runtime_status(game_dir: str, latest_hint: dict | str | None = None, 
         "current": (installed_id == latest_id) if installed_id and latest_id else None,
         "source": installed.get("source") or "unknown",
         "manifest": installed.get("manifest") or "",
+        "checked_at": time.time(),
     }
 
 
@@ -192,6 +313,7 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
     server_latest = steam_public_build(SERVER_STEAM_APP_ID) if remote else {}
     client_latest = steam_public_build(CLIENT_STEAM_APP_ID) if remote else {}
     latest_server_id = str(server_latest.get("buildid") or "")
+    cl_status = cl_version_status((profile or {}).get("last_reported_cl"), install.get("expected_cl"))
 
     ue_latest = latest_ue4ss_release() if remote else {}
     ue_installed = str(install.get("ue4ss_installed_version") or (profile or {}).get("ue4ss_installed_version") or "")
@@ -221,6 +343,10 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
             "server_installed_timeupdated": str(detected.get("timeupdated") or ""),
             "server_latest_timeupdated": str(server_latest.get("timeupdated") or ""),
             "server_updated_at": install.get("installed_at"),
+            "reported_server_cl": cl_status.get("reported_cl") or "",
+            "current_expected_cl": cl_status.get("expected_cl") or "",
+            "server_cl_status": cl_status.get("status") or "unknown",
+            "server_cl_current": cl_status.get("current"),
             "client_appid": CLIENT_STEAM_APP_ID,
             "client_latest_buildid": str(client_latest.get("buildid") or ""),
             "client_latest_timeupdated": str(client_latest.get("timeupdated") or ""),

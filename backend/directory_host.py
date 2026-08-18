@@ -543,6 +543,7 @@ class DirectoryHost:
         game_port = int(row.get("game_port") or connection.get("game_port") or connection.get("port") or 7777)
         stable = str(row.get("id") or fingerprint or f"{world_name.casefold()}@{external_ip or internal_ip}:{game_port}")
         region = str(row.get("region") or status.get("region") or status.get("server_location") or "")[:120]
+        cl_version = row.get("cl_version") if isinstance(row.get("cl_version"), dict) else {}
         return {
             "id": stable[:240], "world_name": world_name,
             "description": str(row.get("description") or presentation.get("description") or cached.get("description") or cached_presentation.get("description") or "")[:600],
@@ -590,6 +591,12 @@ class DirectoryHost:
             "shared_character_count": max(0, int(row.get("shared_character_count") or shared.get("shared_character_count") or 0)),
             "host_os": str(row.get("host_os") or status.get("host_os") or "other")[:24].casefold(),
             "server_os_badge": row.get("server_os_badge") if isinstance(row.get("server_os_badge"), dict) else {},
+            "cl_version": {
+                "reported_cl": str(cl_version.get("reported_cl") or "")[:32],
+                "expected_cl": str(cl_version.get("expected_cl") or "")[:32],
+                "status": str(cl_version.get("status") or "unknown")[:24].casefold(),
+                "current": cl_version.get("current") if isinstance(cl_version.get("current"), bool) else None,
+            },
             "directory_sources": list((row.get("public_discovery") or {}).get("directory_sources") or row.get("directory_sources") or [])[:20],
             "source": source, "source_label": "Dragonwilds Sync" if sync_ready else ("LobbySup public observation" if source == "lobbysup-public" else "Dragonwilds public discovery"),
             "last_seen": float(row.get("last_seen") or status.get("last_seen") or time.time()),
@@ -760,7 +767,7 @@ class DirectoryHost:
             result = self.remote_action_handler(str(session.get("world_id") or ""), action, {"permission": permission, "username": session.get("username")}) or {}
             self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""), remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail=f"{session.get('username')} requested {permission}")
             return result
-        permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "refresh": "refresh",
+        permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "update_restart": "update", "refresh": "refresh",
                           "mod_update": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
                           "spawner_catalog": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",

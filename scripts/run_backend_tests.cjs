@@ -49,6 +49,7 @@ const crossPlatformTests = [
   'backend/test_alpha6.py',
   'backend/test_crypto_runtime.py',
   'backend/test_runtime_platforms.py',
+  'backend/test_runtime_manager.py',
   'backend/test_build_contract.py',
   'backend/test_rc2_feedback.py',
   'backend/test_rc2_followup.py',

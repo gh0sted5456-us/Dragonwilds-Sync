@@ -202,7 +202,7 @@ def test_ui_contract():
     assert "privateWorldView" in renderer and "serverWorldView" in renderer
     assert "data-private-view" in renderer and "data-server-view" in renderer
     assert "Co-Op" in renderer and "data-private-launch" in renderer
-    assert "data-server-launch" in renderer and "server.world.broadcast" in renderer
+    assert "data-server-launch" in renderer and "server.runtime.start" in renderer
     assert "active-private" in styles and "instance-1" in styles
 
     # Managed-window compatibility remains available, while ordinary popups

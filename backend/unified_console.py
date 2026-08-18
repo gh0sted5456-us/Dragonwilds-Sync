@@ -8,14 +8,15 @@ The launcher already records three useful event streams independently:
 * RSDWTools game-command history.
 * World Sync HTTP/download activity.
 
-This module gives the renderer one bounded, colour-ready stream without turning
-Dragonwilds Sync into an operating-system shell.  It also mirrors the merged
-stream to one per-World text log.  A new server process rotates the previous
-session to ``DragonwildsSync.previous.log`` before creating a fresh
-``DragonwildsSync.log``.
+This module gives the renderer and authenticated WebHost one bounded,
+colour-ready stream without turning Dragonwilds Sync into an operating-system
+shell. It also mirrors the merged stream to one per-World text log. A new
+server process rotates the previous session to ``DragonwildsSync.previous.log``
+before creating a fresh ``DragonwildsSync.log``.
 """
 
 import os
+import sys
 import threading
 import time
 from datetime import datetime, timezone
@@ -251,8 +252,42 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
     }
 
 
+def _install_remote_state_hook() -> None:
+    """Expose the exact same merged stream through authenticated WebHost state."""
+    legacy = sys.modules.get("dragonwilds_service_legacy")
+    if legacy is None or getattr(legacy, "_dws_unified_remote_state_hook", False):
+        return
+    original = getattr(legacy, "_directory_remote_state", None)
+    if not callable(original):
+        return
+
+    def remote_state(profile_id: str) -> dict:
+        payload = original(profile_id)
+        try:
+            runtime = legacy.ENGINE.status()
+            with legacy.STATE.lock:
+                activities = list(legacy.STATE.activities)
+            payload["unified_console"] = snapshot(
+                profile_id,
+                runtime=runtime,
+                sync_activities=activities,
+                command_history=legacy.rsdw_console_history(profile_id, 350),
+                limit=350,
+            )
+        except Exception as exc:
+            payload["unified_console"] = {
+                "profile_id": str(profile_id or ""), "entries": [], "counts": {"game": 0, "server": 0, "sync": 0},
+                "current_log": "", "previous_log": "", "error": str(exc)[:300],
+            }
+        return payload
+
+    legacy._directory_remote_state = remote_state
+    legacy._dws_unified_remote_state_hook = True
+
+
 def install_engine_session_hook(engine) -> None:
-    """Rotate the unified log whenever ServerEngine launches a new process."""
+    """Rotate logs on ServerEngine starts and expose the stream to WebHost."""
+    _install_remote_state_hook()
     if getattr(engine, "_dws_unified_console_hook", False):
         return
     original = engine.start_world

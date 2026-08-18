@@ -35,6 +35,36 @@
   box-shadow:none !important;
 }
 
+/* The four supplied placard images are the World-card artwork, not a faint
+   texture underneath an unrelated banner. Preserve the banner slot only as
+   layout space so the icon/title geometry stays stable, while the selected
+   placard fills the complete card and remains readable under the lower fade. */
+.world-card:has(> .world-placard-backdrop) > .world-card-banner,
+.world-card:has(> .world-placard-backdrop) > .world-card-banner-fallback {
+  opacity:0 !important;
+  visibility:hidden !important;
+  background:transparent !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+}
+.world-card:has(> .world-placard-backdrop) > .world-placard-backdrop {
+  opacity:.78 !important;
+  filter:saturate(.94) contrast(1.05) brightness(.88) !important;
+  transform:none !important;
+  animation:none !important;
+  object-position:center !important;
+}
+.world-card:has(> .world-placard-backdrop)::after {
+  background:linear-gradient(180deg,rgba(7,10,10,.08) 0%,rgba(7,10,10,.14) 28%,rgba(7,10,10,.62) 48%,rgba(7,10,10,.92) 68%,rgba(7,10,10,.98) 100%) !important;
+}
+.world-card:has(> .world-placard-backdrop) .world-card-body {
+  background:linear-gradient(180deg,transparent 0%,rgba(10,13,13,.30) 18%,rgba(10,13,13,.72) 54%,rgba(10,13,13,.92) 100%) !important;
+}
+.world-card:has(> .world-placard-backdrop) .world-mode-banner,
+.world-card:has(> .world-placard-backdrop) .world-origin-banner {
+  backdrop-filter:blur(4px);
+}
+
 /* Recommended Mods is deliberately a compact line list. The icon is a small
    identifier only; name/version/status/action stay on one scan-friendly row. */
 .recommended-mod-grid {

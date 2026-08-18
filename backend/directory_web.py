@@ -4,14 +4,15 @@ from __future__ import annotations
 
 The proven WebGUI remains in ``directory_web_legacy``. This wrapper adds the
 shared placard/horizontal contract, Declared projection, smooth artwork/icons,
-and the WebHost-as-router Remote Server handoff. The hub never accepts target
-server credentials; authentication always occurs on the target World.
+the WebHost-as-router Remote Server handoff, and the shared unified console
+presentation used by authenticated server management.
 """
 
 from directory_web_legacy import *  # noqa: F401,F403
 from directory_web_legacy import admin_login_html as _legacy_admin_login_html
 from directory_web_legacy import detail_html as _legacy_detail_html
 from directory_web_legacy import public_browser_html as _legacy_public_browser_html
+from directory_web_legacy import remote_admin_html as _legacy_remote_admin_html
 
 
 def _public_extension(remote_admin_enabled: bool) -> str:
@@ -57,6 +58,24 @@ def _public_extension(remote_admin_enabled: bool) -> str:
 '''
 
 
+def _remote_admin_extension() -> bytes:
+    return b'''
+<style id="dws-remote-unified-console-style">
+.dws-web-console-filters{display:flex;gap:6px;flex-wrap:wrap;margin:12px 0}.dws-web-console-filters button{min-height:30px;padding:5px 9px;font-size:10px}.dws-web-console-filters button.active{border-color:var(--gold);color:var(--gold2);background:#292419}.dws-web-unified-console{height:min(420px,46vh);overflow:auto;border:1px solid var(--line2);border-radius:10px;background:#080b0c;font:11px/1.45 Consolas,monospace}.dws-web-console-row{display:grid;grid-template-columns:82px 62px minmax(0,1fr);gap:8px;padding:6px 9px;border-left:3px solid transparent}.dws-web-console-row:nth-child(odd){background:rgba(255,255,255,.018)}.dws-web-console-row time{color:#68706d}.dws-web-console-row b{font-size:9px}.dws-web-console-row.game{border-left-color:#d5a54a}.dws-web-console-row.game b{color:#f0c66e}.dws-web-console-row.server{border-left-color:#67a6dc}.dws-web-console-row.server b{color:#86bbe7}.dws-web-console-row.sync{border-left-color:#70d39b}.dws-web-console-row.sync b{color:#8be7b1}.dws-web-console-row.error{background:rgba(185,67,67,.1);color:#f0b1b1}.dws-web-log-paths{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.dws-web-log-paths>div{min-width:0;padding:8px;border:1px solid var(--line2);border-radius:8px}.dws-web-log-paths small{display:block;color:var(--muted);font-size:8px;font-weight:800}.dws-web-log-paths code{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--gold2);font-size:9px}@media(max-width:620px){.dws-web-console-row{grid-template-columns:64px 48px minmax(0,1fr)}.dws-web-log-paths{grid-template-columns:1fr}}
+</style>
+<script id="dws-remote-unified-console-script">
+(()=>{
+  if(typeof renderTab!=='function')return;
+  const legacyRenderTab=renderTab;
+  let filter='all';
+  const rowHtml=(row)=>{const source=String(row.source||'server').toLowerCase(),level=String(row.level||'info').toLowerCase(),when=new Date(Number(row.ts||0)*1000),stamp=Number.isFinite(when.getTime())?when.toLocaleTimeString():'--';return `<div class="dws-web-console-row ${esc(source)} ${esc(level)}"><time>${esc(stamp)}</time><b>${esc(source.toUpperCase())}</b><span>${esc(row.message||'')}</span></div>`};
+  const draw=()=>{const stream=data?.unified_console||{},rows=(stream.entries||[]).filter(row=>filter==='all'||row.source===filter),host=document.getElementById('dws-web-unified-console');if(host)host.innerHTML=rows.length?rows.map(rowHtml).join(''):'<p class="muted" style="padding:12px">No activity has been recorded for this server session yet.</p>';document.querySelectorAll('[data-dws-web-console-filter]').forEach(button=>button.classList.toggle('active',button.dataset.dwsWebConsoleFilter===filter))};
+  renderTab=function(){legacyRenderTab();if(tab!=='console'||!data||!allowed('view_console'))return;const legacyUnits=document.querySelector('#tab-body .units');if(!legacyUnits)return;const stream=data.unified_console||{},counts=stream.counts||{};const toolbar=document.querySelector('#tab-body .toolbar');if(toolbar){const strong=toolbar.querySelector('strong');if(strong)strong.textContent='Unified Console';const muted=toolbar.querySelector('.muted');if(muted)muted.textContent='RSDW game commands + dedicated-server events + World Sync traffic · never an operating-system shell'}legacyUnits.outerHTML='<div class="dws-web-console-filters"><button data-dws-web-console-filter="all">ALL '+Number((counts.game||0)+(counts.server||0)+(counts.sync||0))+'</button><button data-dws-web-console-filter="game">GAME '+Number(counts.game||0)+'</button><button data-dws-web-console-filter="server">SERVER '+Number(counts.server||0)+'</button><button data-dws-web-console-filter="sync">SYNC '+Number(counts.sync||0)+'</button><button id="dws-web-console-refresh">Refresh stream</button></div><div id="dws-web-unified-console" class="dws-web-unified-console"></div><div class="dws-web-log-paths"><div><small>CURRENT SESSION LOG</small><code title="'+esc(stream.current_log||'')+'">'+esc(stream.current_log||'Unavailable')+'</code></div>'+(stream.previous_log?'<div><small>PREVIOUS SESSION BACKUP</small><code title="'+esc(stream.previous_log)+'">'+esc(stream.previous_log)+'</code></div>':'')+'</div>';document.querySelectorAll('[data-dws-web-console-filter]').forEach(button=>button.onclick=()=>{filter=button.dataset.dwsWebConsoleFilter||'all';draw()});const refresh=document.getElementById('dws-web-console-refresh');if(refresh)refresh.onclick=()=>load().catch(()=>{});draw()};
+})();
+</script>
+'''
+
+
 def public_browser_html(*, remote_admin_enabled: bool = False) -> bytes:
     page = _legacy_public_browser_html(remote_admin_enabled=remote_admin_enabled)
     marker = b"</body>"
@@ -68,6 +87,13 @@ def admin_login_html() -> bytes:
     page = _legacy_admin_login_html()
     script = b'''<script id="dws-prefill-world">(()=>{const world=new URLSearchParams(location.search).get('world')||'';const input=document.getElementById('world');if(input&&world){input.value=world;input.readOnly=true;document.getElementById('account')?.focus();}})();</script>'''
     return page.replace(b"</body>", script + b"</body>", 1)
+
+
+def remote_admin_html() -> bytes:
+    page = _legacy_remote_admin_html()
+    marker = b"</body>"
+    extension = _remote_admin_extension()
+    return page.replace(marker, extension + marker, 1) if marker in page else page + extension
 
 
 def detail_html(world_id: str) -> bytes:

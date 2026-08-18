@@ -22,10 +22,7 @@ const candidates = [
 
 function findPython() {
   for (const candidate of candidates) {
-    const probe = spawnSync(candidate.command, [...candidate.prefix, '--version'], {
-      stdio: 'ignore',
-      shell: false,
-    });
+    const probe = spawnSync(candidate.command, [...candidate.prefix, '--version'], { stdio: 'ignore', shell: false });
     if (!probe.error && probe.status === 0) return candidate;
   }
   return null;
@@ -55,6 +52,7 @@ const crossPlatformTests = [
   'backend/test_build_contract.py',
   'backend/test_rc2_feedback.py',
   'backend/test_rc2_followup.py',
+  'backend/test_v2_integration.py',
 ];
 
 // Windows remains the production/V2 baseline and therefore runs every
@@ -103,10 +101,7 @@ const tests = process.platform === 'win32'
 console.log(`[backend verify] ${process.platform === 'win32' ? 'Windows full V2 regression matrix' : 'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 for (const test of tests) {
   console.log(`> ${python.command} ${[...python.prefix, test].join(' ')}`);
-  const result = spawnSync(python.command, [...python.prefix, test], {
-    stdio: 'inherit',
-    shell: false,
-  });
+  const result = spawnSync(python.command, [...python.prefix, test], { stdio: 'inherit', shell: false });
   if (result.error) {
     console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);
     process.exit(1);

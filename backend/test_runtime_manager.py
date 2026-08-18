@@ -106,6 +106,26 @@ def test_lifecycle():
     assert directory.stopped and not engine.running and not share.serving
 
 
+def test_shutdown_while_server_is_running():
+    share = FakeShare()
+    engine = FakeEngine(share)
+    directory = FakeDirectory()
+    manager = AuthoritativeRuntimeManager(engine, share, directory)
+    manager.start("world-a")
+    assert engine.running and share.serving
+
+    result = manager.shutdown()
+    assert result["shutdown"] and result["verified_stopped"]
+    assert not engine.running and not share.serving and directory.stopped
+    status = manager.get_status()
+    assert status["state"] == "Stopped" and status["accepting_requests"] is False
+    try:
+        manager.start("world-a")
+        raise AssertionError("shutdown manager accepted a new Start request")
+    except RuntimeError as exc:
+        assert "shutting down" in str(exc)
+
+
 def test_failure_phases_and_command_lock():
     share = FakeShare()
     engine = FakeEngine(share)
@@ -269,11 +289,12 @@ def test_save_migration_and_generic_profile_hide():
 
 def main():
     test_lifecycle()
+    test_shutdown_while_server_is_running()
     test_failure_phases_and_command_lock()
     test_independent_client_and_server_steam_version_checks()
     test_cl_and_steam_cloud()
     test_save_migration_and_generic_profile_hide()
-    print("authoritative lifecycle, independent Steam version, CL, and Steam Cloud tests passed")
+    print("authoritative lifecycle, shutdown, independent Steam version, CL, and Steam Cloud tests passed")
 
 
 if __name__ == "__main__":

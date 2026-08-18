@@ -34,6 +34,7 @@ const crossPlatformTests = [
   'backend/test_recommendation_feeds.py',
   'backend/test_dragon_core_settings.py',
   'backend/test_core_components.py',
+  'backend/test_authoritative_mod_taxonomy.py',
   'backend/test_cl_authority.py',
   'backend/test_phase3_web.py',
   'backend/test_server_engine.py',
@@ -99,7 +100,7 @@ const windowsHistoricalTests = [
 ];
 
 const tests = process.platform === 'win32'
-  ? [...crossPlatformTests.slice(0, 21), ...windowsHistoricalTests, ...crossPlatformTests.slice(21)]
+  ? [...crossPlatformTests.slice(0, 22), ...windowsHistoricalTests, ...crossPlatformTests.slice(22)]
   : crossPlatformTests;
 
 console.log(`[backend verify] ${process.platform === 'win32' ? 'Windows full V2 regression matrix' : 'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);

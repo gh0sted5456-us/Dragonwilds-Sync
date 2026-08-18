@@ -22,6 +22,10 @@ def test_runeschema_release_asset_status_and_cache() -> None:
             "runeschema_source_url": "https://example.invalid/releases/latest",
             "runeschema_source_name": "RuneSchema-1.9.0.zip",
         }}
+        cold = managed_updates.runeschema_status(application, {}, force=False)
+        assert cold["status"] == "unknown"
+        assert not calls, "ordinary lifecycle/status rendering unexpectedly performed a network release check"
+
         row = managed_updates.runeschema_status(application, {}, force=True)
         assert row["component"] == "RuneSchema Core"
         assert row["installed_version"] == "RuneSchema-1.9.0.zip"
@@ -34,6 +38,22 @@ def test_runeschema_release_asset_status_and_cache() -> None:
         assert len(calls) == 1, "cached RuneSchema check unexpectedly hit the release source again"
     finally:
         managed_updates.server_systems.resolve_runtime_zip_source = old_resolve
+
+
+def test_runtime_cache_refresh_defaults_to_local_only() -> None:
+    old_stack = managed_updates.server_runtime_stack
+    seen = []
+    try:
+        def fake_stack(_application, _profile, **kwargs):
+            seen.append(bool(kwargs.get("remote")))
+            return {"runeschema": {}}
+        managed_updates.server_runtime_stack = fake_stack
+        state = {"application": {"server_install": {}}}
+        managed_updates.refresh_server_runtime_cache(state, {})
+        managed_updates.refresh_server_runtime_cache(state, {}, force_runeschema=True)
+        assert seen == [False, True], seen
+    finally:
+        managed_updates.server_runtime_stack = old_stack
 
 
 def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
@@ -64,6 +84,7 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
 
 def main() -> None:
     test_runeschema_release_asset_status_and_cache()
+    test_runtime_cache_refresh_defaults_to_local_only()
     test_client_ue4ss_and_runeschema_never_use_steamcmd()
     print("managed UE4SS/RuneSchema update helper contract: PASS")
 

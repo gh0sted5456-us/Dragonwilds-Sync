@@ -16,6 +16,7 @@ from dragonwilds_service_legacy import *  # noqa: F401,F403
 import directory_host as _directory_host_module
 import local_world as _local_world
 import dragon_core as _dragon_core
+import managed_updates as _managed_updates
 from profile_store import SERVER_PROFILES_DIR
 from trash_store import empty as empty_trash
 from trash_store import list_entries as list_trash
@@ -112,9 +113,6 @@ def _private_delete(method: str, params: dict, state: dict):
         return result
     profile = _legacy.load_singleplayer_profile(profile_id)
     profile_root = _local_world._profile_root(profile_id)
-    # ``_world_cache`` lives inside ``profile_root``. Moving both a parent and
-    # its child as separate Trash assets makes the second path disappear after
-    # the first atomic rename and forces an unnecessary rollback/copy pass.
     paths: list[Path] = [profile_root, _local_world._rollback_dir(profile_id)]
     save_path = Path(str(profile.get("save_path") or "")) if profile.get("save_path") else None
     if save_path and save_path.is_file():
@@ -243,7 +241,6 @@ def _restore_launcher_metadata(state: dict, entry: dict) -> None:
 
 
 def _record_local_profile_and_cloud_notices(state: dict) -> None:
-    """Convert local discovery evidence into the shared notification center."""
     _legacy.ensure_singleplayer_state(state)
     client = state.setdefault("client", {})
     pending = [row for row in (client.get("pending_profile_migrations") or []) if isinstance(row, dict)]
@@ -275,7 +272,6 @@ def _record_local_profile_and_cloud_notices(state: dict) -> None:
 
 
 def _dragoncore_update_rows(state: dict) -> dict[str, dict]:
-    """Expose launcher-managed DragonCore evidence for configured client/server roots."""
     application = state.setdefault("application", {})
     rows: dict[str, dict] = {}
 
@@ -348,8 +344,10 @@ def _sync_update_notifications(state: dict) -> list[dict]:
         "component": "UE4SS Core", "installed_version": str(ue4ss.get("installed_version") or ""),
         "available_version": str(ue4ss.get("latest_version") or ""), "update_available": ue4ss.get("current") is False,
         "restart_required": True, "status": "update_available" if ue4ss.get("current") is False else ("current" if ue4ss.get("current") is True else "unknown"),
-        "checked_at": ue4ss.get("checked_at"), "action": "Update managed core runtime",
+        "checked_at": ue4ss.get("checked_at"), "action": "Update managed UE4SS runtime",
     }
+    updates["runeschema"] = _managed_updates.runeschema_status(application, server_stack)
+
     dragoncore_rows = _dragoncore_update_rows(state)
     for stale_key in ("dragoncore_client", "dragoncore_server"):
         if stale_key not in dragoncore_rows:
@@ -359,11 +357,12 @@ def _sync_update_notifications(state: dict) -> list[dict]:
     titles = {
         "game": "Dragonwilds Game Update",
         "server": "Dedicated Server Update",
-        "core_mod": "Core Runtime Update",
+        "core_mod": "UE4SS Core Update",
+        "runeschema": "RuneSchema Core Update",
         "dragoncore_client": "DragonCore Client Update",
         "dragoncore_server": "DragonCore Server Update",
     }
-    for key in ("game", "server", "core_mod", "dragoncore_client", "dragoncore_server"):
+    for key in ("game", "server", "core_mod", "runeschema", "dragoncore_client", "dragoncore_server"):
         row = updates.get(key)
         if not isinstance(row, dict) or not row.get("update_available"):
             continue
@@ -377,9 +376,20 @@ def _sync_update_notifications(state: dict) -> list[dict]:
     return events
 
 
+def _refresh_managed_update_state(state: dict, profile_id: str = "", *, force_runeschema: bool = False) -> dict:
+    profile = _legacy.load_server_profile(profile_id) if profile_id else {}
+    try:
+        _managed_updates.refresh_server_runtime_cache(state, profile or {}, force_runeschema=force_runeschema)
+    except Exception:
+        pass
+    _sync_update_notifications(state)
+    return state
+
+
 def _runtime_response(result: dict, *, title: str, body: str, kind: str = "success") -> dict:
     state = _legacy.load_state()
     profile_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+    _refresh_managed_update_state(state, profile_id)
     _legacy._record_notification(state, title, body, kind, world_id=profile_id,
                                  key=f"runtime:{title.casefold().replace(' ', '-')}:{int(time.time())}")
     _legacy.save_state(state)
@@ -412,8 +422,6 @@ def _remote_choice(state: dict, enabled: bool, *, explicit: bool) -> dict:
     advanced["remote_server_enabled"] = bool(enabled)
     if explicit:
         advanced["remote_server_choice_made"] = True
-    # Remote-only is a valid service composition. It runs the same hardened
-    # listener but does not publish the World browser surface.
     if enabled:
         host_cfg["enabled"] = True
         if not bool(advanced.get("webhost_enabled", False)):
@@ -424,8 +432,6 @@ def _remote_choice(state: dict, enabled: bool, *, explicit: bool) -> dict:
         try:
             _legacy.DIRECTORY_HOST.start(host_cfg)
         except Exception:
-            # The normal status/UI reports listener/firewall reachability. A
-            # failed bind must never prevent the game/Sync heartbeat itself.
             pass
     return host_cfg
 
@@ -566,8 +572,6 @@ def handle(method: str, params: dict) -> object:
             "state": lifecycle.get("state"), "busy": lifecycle.get("busy"),
             "last_error": lifecycle.get("last_error"), "broadcast": lifecycle.get("broadcast"),
         })
-        # Preserve the long-standing desktop response contract while exposing
-        # the explicit manager snapshot to Minimal Mode and authenticated WebGUI.
         return {"state": public, "runtime": runtime, "lifecycle": lifecycle}
 
     if method in {"server.world.start", "server.runtime.start"}:
@@ -598,7 +602,7 @@ def handle(method: str, params: dict) -> object:
         result = RUNTIME.update(profile_id, lambda: _legacy_handle("server.install.update", dict(params)), restart=restart,
                                 component="Dedicated Server")
         title = "Dedicated Server updated successfully and is running" if restart else "Dedicated Server updated successfully"
-        body = "SteamCMD completed and the dedicated server plus Sync broadcast were verified running." if restart else "SteamCMD completed while the dedicated process and advertisement remained stopped."
+        body = "SteamCMD completed, the installed appmanifest was re-verified, and the dedicated server plus Sync broadcast were verified running." if restart else "SteamCMD completed and the installed appmanifest was re-verified while the dedicated process and advertisement remained stopped."
         return _runtime_response(result, title=title, body=body)
 
     if method in {"server.runtime.check_updates", "server.runtime.checkForUpdates"}:
@@ -608,8 +612,9 @@ def handle(method: str, params: dict) -> object:
     if method in {"server.runtime.version", "server.runtime.getVersionStatus"}:
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
         profile = _legacy.load_server_profile(profile_id) if profile_id else {}
-        stack = _legacy.server_runtime_stack(state.get("application") or {}, profile or {},
-                                             runeschema_runtime_dir=_legacy.RUNESCHEMA_RUNTIME_DIR, remote=bool(params.get("remote", False)))
+        stack = _managed_updates.refresh_server_runtime_cache(state, profile or {}, force_runeschema=bool(params.get("remote", False)))
+        _sync_update_notifications(state)
+        _legacy.save_state(state)
         return {"profile_id": profile_id, "runtime_stack": stack, "status": RUNTIME.get_status(),
                 "updates": dict((state.get("application") or {}).get("update_status") or {})}
 
@@ -617,63 +622,88 @@ def handle(method: str, params: dict) -> object:
         return RUNTIME.get_status().get("broadcast") or {}
 
     if method == "application.core_mod.status":
-        _sync_update_notifications(state)
+        profile_id = str(state.setdefault("server", {}).get("active_world_id") or "")
+        _refresh_managed_update_state(state, profile_id)
         _legacy.save_state(state)
         updates = dict(state.setdefault("application", {}).get("update_status") or {})
-        return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "dragoncore_client", "dragoncore_server"}},
+        return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "runeschema", "dragoncore_client", "dragoncore_server"}},
                 "state": _legacy.public_state(state)}
 
     if method == "application.core_mod.update":
-        component = str(params.get("component") or "dragoncore").strip().casefold()
-        if component not in {"dragoncore", "dragon_core"}:
-            raise ValueError("Only launcher-managed DragonCore is supported by this core-mod update route.")
+        component = str(params.get("component") or "dragoncore").strip().casefold().replace("_", "")
+        if component not in {"dragoncore", "ue4ss", "runeschema"}:
+            raise ValueError("Managed core component must be DragonCore, UE4SS, or RuneSchema.")
         target = str(params.get("target") or "server").strip().casefold()
+
         if target == "server":
             profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
             profile = _legacy.load_server_profile(profile_id) if profile_id else {}
             if not profile_id or not profile:
-                raise ValueError("Select the hosted World whose DragonCore runtime should be updated.")
-            install_dir = str((state.setdefault("application", {}).get("server_install") or {}).get("install_dir") or "").strip()
+                raise ValueError("Select the hosted World whose core runtime should be updated.")
+            install_meta = state.setdefault("application", {}).setdefault("server_install", {})
+            install_dir = str(install_meta.get("install_dir") or "").strip()
             if not install_dir:
                 raise ValueError("Set Settings → Server → Server Directory first.")
-            layout = _legacy.resolve_server_layout(install_dir)
             restart = bool(params.get("restart", False))
-            result = RUNTIME.update(
-                profile_id,
-                lambda: _dragon_core.materialize(layout.ue4ss_mods_dir, profile.get("dragon_core"), mode="Server"),
-                restart=restart,
-                component="DragonCore",
-            )
+
+            if component == "dragoncore":
+                layout = _legacy.resolve_server_layout(install_dir)
+                installer = lambda: _dragon_core.materialize(layout.ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
+                label = "DragonCore"
+            elif component == "ue4ss":
+                source = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or _managed_updates.DEFAULT_UE4SS_SOURCE).strip()
+                installer = lambda: _legacy_handle("server.install.ue4ss_update", {"releases_url": source})
+                label = "UE4SS"
+            else:
+                source = str(params.get("releases_url") or install_meta.get("runeschema_source_url") or "").strip()
+                if not source:
+                    raise ValueError("Set a RuneSchema GitHub/release ZIP URL first.")
+                installer = lambda: _legacy_handle("server.install.runeschema_update", {"releases_url": source})
+                label = "RuneSchema"
+
+            result = RUNTIME.update(profile_id, installer, restart=restart, component=label)
             refreshed = _legacy.load_state()
-            _sync_update_notifications(refreshed)
+            if component == "runeschema":
+                refreshed.setdefault("application", {}).setdefault("server_install", {}).pop("runeschema_update_check", None)
+            _refresh_managed_update_state(refreshed, profile_id, force_runeschema=component == "runeschema")
             _legacy._record_notification(
                 refreshed,
-                "DragonCore updated successfully" + (" and server restarted" if restart else ""),
-                "DragonCore was refreshed from the launcher-managed baseline." + (" The dedicated process and Sync broadcast were verified running." if restart else " Restart the server before expecting the new runtime to load."),
-                "success", world_id=profile_id, key=f"dragoncore-server-updated:{int(time.time())}",
+                f"{label} updated successfully" + (" and server restarted" if restart else ""),
+                f"The launcher-managed {label} server runtime was refreshed without SteamCMD." + (" The dedicated process and Sync broadcast were verified running." if restart else " Restart the server before expecting the new runtime to load."),
+                "success", world_id=profile_id, key=f"core-server-updated:{component}:{int(time.time())}",
             )
             _legacy.save_state(refreshed)
             return {"result": result, "state": _legacy.public_state(refreshed)}
+
         if target == "client":
             if _legacy._dragonwilds_client_running():
-                raise RuntimeError("Close RuneScape: Dragonwilds before updating the managed DragonCore client runtime.")
+                raise RuntimeError("Close RuneScape: Dragonwilds before updating a managed client core runtime.")
             game_dir = str(state.setdefault("application", {}).get("game_dir") or "").strip()
             if not game_dir:
                 raise ValueError("Set the Dragonwilds game folder first.")
             layout = _legacy.resolve_client_layout(game_dir)
             profile_id = str(state.setdefault("client", {}).get("live_world_id") or state["client"].get("active_private_world_id") or _legacy.SINGLEPLAYER_ID)
-            profile = _legacy.load_singleplayer_profile(profile_id)
-            result = _dragon_core.materialize(layout.ue4ss_mods_dir, (profile or {}).get("dragon_core"), mode="Player")
+            if component == "dragoncore":
+                profile = _legacy.load_singleplayer_profile(profile_id)
+                result = _dragon_core.materialize(layout.ue4ss_mods_dir, (profile or {}).get("dragon_core"), mode="Player")
+                label = "DragonCore"
+            else:
+                result = _managed_updates.install_client_core(component, str(layout.game_root), state.setdefault("application", {}), params)
+                label = "UE4SS" if component == "ue4ss" else "RuneSchema"
             refreshed = _legacy.load_state()
+            # install_client_core mutates the in-memory application's managed
+            # version evidence; copy it into the freshly loaded state before save.
+            if component in {"ue4ss", "runeschema"}:
+                refreshed.setdefault("application", {})["client_core_runtime"] = dict(state["application"].get("client_core_runtime") or {})
             _sync_update_notifications(refreshed)
             _legacy._record_notification(
-                refreshed, "DragonCore updated successfully",
-                "The launcher-managed DragonCore client runtime was refreshed while Dragonwilds was stopped.",
-                "success", world_id=profile_id, key=f"dragoncore-client-updated:{int(time.time())}",
+                refreshed, f"{label} updated successfully",
+                f"The launcher-managed {label} client runtime was refreshed while Dragonwilds was stopped.",
+                "success", world_id=profile_id, key=f"core-client-updated:{component}:{int(time.time())}",
             )
             _legacy.save_state(refreshed)
             return {"result": result, "state": _legacy.public_state(refreshed)}
-        raise ValueError("DragonCore update target must be 'client' or 'server'.")
+        raise ValueError("Managed core update target must be 'client' or 'server'.")
 
     if method == "application.shutdown":
         result = RUNTIME.shutdown()

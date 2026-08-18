@@ -12,6 +12,7 @@ import ipaddress
 import urllib.parse
 
 from core_components import component_for_remote_update, server_core_components
+from phase3_web import inject_remote_admin
 
 
 AUTH_MODES = ("remote_user", "server_admin_password")
@@ -249,6 +250,12 @@ def install_directory_patches(directory_host_module) -> None:
             raise
 
     host_class.remote_action = remote_action_with_core_update
+
+    original_remote_admin_html = getattr(directory_host_module, "remote_admin_html", None)
+    if callable(original_remote_admin_html):
+        def remote_admin_html_with_phase3() -> bytes:
+            return inject_remote_admin(original_remote_admin_html())
+        directory_host_module.remote_admin_html = remote_admin_html_with_phase3
 
 
 def remote_login_url(base: str, world_name: str = "") -> str:

@@ -10,9 +10,11 @@ The launcher already records three useful event streams independently:
 
 This module gives the renderer and authenticated WebHost one bounded,
 colour-ready stream without turning Dragonwilds Sync into an operating-system
-shell. It also mirrors the merged stream to one per-World text log. A new
-server process rotates the previous session to ``DragonwildsSync.previous.log``
-before creating a fresh ``DragonwildsSync.log``.
+shell. It also mirrors those sources into one per-World text log *as events
+happen*, so logging never depends on an operator keeping the Console tab open.
+A new server process rotates the previous session to
+``DragonwildsSync.previous.log`` before creating a fresh
+``DragonwildsSync.log``.
 """
 
 import os
@@ -110,6 +112,9 @@ def _ensure_session(profile_id: str) -> float:
         current: Path = paths["current"]
         if current.is_file():
             try:
+                # Existing files are only recovered after a service restart.
+                # mtime is a conservative lower bound that avoids replaying
+                # stale activity from an older server process into this session.
                 started = float(current.stat().st_mtime)
             except OSError:
                 started = time.time()
@@ -202,6 +207,37 @@ def _command_entries(history: list[dict]) -> list[dict]:
     return rows
 
 
+def record_entry(profile_id: object, entry: dict) -> bool:
+    """Append one normalized event immediately, de-duplicating poll replays."""
+    key = _profile_key(profile_id)
+    if not isinstance(entry, dict) or not str(entry.get("message") or "").strip():
+        return False
+    normalized = {
+        **entry,
+        "ts": float(entry.get("ts") or time.time()),
+        "source": str(entry.get("source") or "server")[:20].casefold(),
+        "level": _level(entry.get("level"), ok=entry.get("ok")),
+        "message": str(entry.get("message") or "")[:4000],
+    }
+    started = _ensure_session(key)
+    if float(normalized["ts"]) < started - 0.5:
+        return False
+    signature = _event_key(normalized)
+    paths = log_paths(key)
+    with _LOCK:
+        seen = _SEEN.setdefault(key, set())
+        if signature in seen:
+            return False
+        seen.add(signature)
+        with paths["current"].open("a", encoding="utf-8") as handle:
+            handle.write(_line(normalized))
+        if len(seen) > 6000:
+            # Source windows are bounded, so retaining the newest signatures is
+            # enough to prevent duplicate disk writes after UI polling.
+            _SEEN[key] = set(list(seen)[-3000:])
+    return True
+
+
 def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities: list[dict] | None = None,
              command_history: list[dict] | None = None, limit: int = 300) -> dict:
     """Merge current-session streams, persist unseen rows, and return UI data."""
@@ -212,28 +248,19 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
     limit = max(20, min(int(limit or 300), 1000))
     started = _ensure_session(key)
 
+    runtime_active = str(runtime.get("active_profile_id") or "").strip()
+    if runtime_active and runtime_active != key:
+        # Never leak another active World's lifecycle or Sync traffic when an
+        # operator opens the Console for a stopped/inactive profile.
+        runtime = {**runtime, "running": False, "events": []}
+        activities = []
+
     rows = _server_entries(runtime) + _sync_entries(activities) + _command_entries(commands)
     rows = [row for row in rows if float(row.get("ts") or 0) >= started - 0.5]
     rows.sort(key=lambda row: (float(row.get("ts") or 0), str(row.get("source") or "")))
 
-    paths = log_paths(key)
-    with _LOCK:
-        seen = _SEEN.setdefault(key, set())
-        fresh = []
-        for row in rows:
-            signature = _event_key(row)
-            if signature in seen:
-                continue
-            seen.add(signature)
-            fresh.append(row)
-        if fresh:
-            with paths["current"].open("a", encoding="utf-8") as handle:
-                for row in fresh:
-                    handle.write(_line(row))
-        if len(seen) > 6000:
-            # Only the most recent runtime windows can be returned by the three
-            # sources, so a bounded signature set is sufficient for de-duping.
-            _SEEN[key] = {_event_key(row) for row in rows[-2000:]}
+    for row in rows:
+        record_entry(key, row)
 
     counts = {"game": 0, "server": 0, "sync": 0}
     for row in rows:
@@ -241,6 +268,7 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
         if source in counts:
             counts[source] += 1
 
+    paths = log_paths(key)
     return {
         "profile_id": key,
         "session_started_at": started,
@@ -264,9 +292,10 @@ def _install_remote_state_hook() -> None:
     def remote_state(profile_id: str) -> dict:
         payload = original(profile_id)
         try:
-            runtime = legacy.ENGINE.status()
+            runtime = payload.get("runtime") if isinstance(payload.get("runtime"), dict) else {"running": False, "events": []}
+            active_share = str(getattr(legacy.STATE, "active_profile_id", "") or "") == str(profile_id or "")
             with legacy.STATE.lock:
-                activities = list(legacy.STATE.activities)
+                activities = list(legacy.STATE.activities) if active_share else []
             payload["unified_console"] = snapshot(
                 profile_id,
                 runtime=runtime,
@@ -285,9 +314,73 @@ def _install_remote_state_hook() -> None:
     legacy._dws_unified_remote_state_hook = True
 
 
+def _install_live_source_hooks(engine) -> None:
+    """Write SERVER/SYNC/GAME rows immediately instead of waiting for UI polls."""
+    legacy = sys.modules.get("dragonwilds_service_legacy")
+    if legacy is None:
+        return
+
+    if not getattr(engine, "_dws_unified_event_hook", False):
+        original_event = engine._event
+
+        def event(message: str, level: str = "info"):
+            result = original_event(message, level)
+            profile_id = str(getattr(engine, "active_profile_id", "") or "")
+            if profile_id:
+                try:
+                    with engine._event_lock:
+                        raw = dict(engine.events[-1]) if engine.events else {}
+                    rows = _server_entries({"events": [raw]})
+                    if rows:
+                        record_entry(profile_id, rows[0])
+                except Exception:
+                    pass
+            return result
+
+        engine._event = event
+        engine._dws_unified_event_hook = True
+
+    state = getattr(legacy, "STATE", None)
+    if state is not None and not getattr(state, "_dws_unified_activity_hook", False):
+        original_activity = state.activity
+
+        def activity(ip: str, message: str):
+            result = original_activity(ip, message)
+            profile_id = str(getattr(state, "active_profile_id", "") or "")
+            if profile_id:
+                try:
+                    with state.lock:
+                        raw = dict(state.activities[-1]) if state.activities else {}
+                    rows = _sync_entries([raw])
+                    if rows:
+                        record_entry(profile_id, rows[0])
+                except Exception:
+                    pass
+            return result
+
+        state.activity = activity
+        state._dws_unified_activity_hook = True
+
+    original_record = getattr(legacy, "record_rsdw_event", None)
+    if callable(original_record) and not getattr(legacy, "_dws_unified_rsdw_hook", False):
+        def record_rsdw_event(world_id: str, **kwargs):
+            row = original_record(world_id, **kwargs)
+            try:
+                rows = _command_entries([row] if isinstance(row, dict) else [])
+                if rows:
+                    record_entry(world_id, rows[0])
+            except Exception:
+                pass
+            return row
+
+        legacy.record_rsdw_event = record_rsdw_event
+        legacy._dws_unified_rsdw_hook = True
+
+
 def install_engine_session_hook(engine) -> None:
-    """Rotate logs on ServerEngine starts and expose the stream to WebHost."""
+    """Rotate logs on starts and stream all three sources into them live."""
     _install_remote_state_hook()
+    _install_live_source_hooks(engine)
     if getattr(engine, "_dws_unified_console_hook", False):
         return
     original = engine.start_world
@@ -303,12 +396,7 @@ def install_engine_session_hook(engine) -> None:
         try:
             return original(profile_id, *args, **kwargs)
         except Exception as exc:
-            paths = log_paths(key)
-            with _LOCK:
-                if not paths["current"].exists():
-                    _write_header(paths["current"], key, _SESSION_STARTED.get(key, time.time()))
-                with paths["current"].open("a", encoding="utf-8") as handle:
-                    handle.write(_line({"ts": time.time(), "source": "server", "level": "error", "message": f"Server start failed: {exc}"}))
+            record_entry(key, {"ts": time.time(), "source": "server", "level": "error", "message": f"Server start failed: {exc}"})
             raise
 
     engine.start_world = start_world

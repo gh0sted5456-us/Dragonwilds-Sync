@@ -38,6 +38,10 @@ requireText(service, 'install_engine_session_hook(_legacy.ENGINE)', 'per-process
 requireText(service, 'if method == "server.console.unified":', 'unified console RPC');
 requireText(consoleModule, 'DragonwildsSync.previous.log', 'previous-session rotation');
 requireText(consoleModule, 'Streams: GAME COMMANDS | SERVER | SYNC TRAFFIC', 'merged text log contract');
+requireText(consoleModule, 'def record_entry(profile_id: object, entry: dict)', 'continuous disk log writer');
+requireText(consoleModule, '_install_live_source_hooks(engine)', 'live server/sync/game source hooks');
+requireText(consoleModule, 'state.activity = activity', 'live Sync traffic hook');
+requireText(consoleModule, 'legacy.record_rsdw_event = record_rsdw_event', 'live game-command hook');
 requireText(consoleModule, '_install_remote_state_hook()', 'authenticated WebHost unified stream hook');
 requireText(directoryWeb, 'dws-remote-unified-console-script', 'authenticated WebHost unified console UI');
 requireText(directoryWeb, 'data-dws-web-console-filter="sync"', 'WebHost Sync console filter');

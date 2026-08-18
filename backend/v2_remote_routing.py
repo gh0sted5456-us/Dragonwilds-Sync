@@ -12,11 +12,17 @@ import ipaddress
 import urllib.parse
 
 from cl_authority import install_server_engine_cl_authority_patch
-from core_components import component_for_remote_update, server_core_components
+from core_components import component_for_remote_update, install_mod_taxonomy_adapters, server_core_components
 from phase3_web import inject_remote_admin
 
 
 AUTH_MODES = ("remote_user", "server_admin_password")
+
+# dragonwilds_service imports the retained legacy backend before this module, so
+# production reaches this point with the scanner/profile/sync providers loaded.
+# Install the shared taxonomy now, then repeat idempotently inside the directory
+# patch for direct unit-test/import paths.
+install_mod_taxonomy_adapters()
 
 
 def sanitize_remote_endpoint(value: object) -> str:
@@ -171,6 +177,7 @@ def install_directory_patches(directory_host_module) -> None:
     the existing authenticated/CSRF WebHost session and the existing service
     dispatcher. No file mutation, lifecycle or update authority is duplicated.
     """
+    install_mod_taxonomy_adapters()
     if getattr(directory_host_module, "_dws_v2_remote_patched", False):
         return
     directory_host_module._dws_v2_remote_patched = True

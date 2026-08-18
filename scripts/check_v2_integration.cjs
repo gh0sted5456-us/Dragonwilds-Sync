@@ -38,7 +38,7 @@ must(routing.includes('target-world') && routing.includes('parsed.username') && 
 must(registry.sources['rsdw-icons'].path === 'website/shared/icons', 'RSDW icon path is not canonical');
 must(registry.sources['rsdw-item-manifest'].path === 'data/items/json/RSDragonwilds', 'RSDW item JSON path is not canonical');
 must(registry.sources['rsdw-item-manifest'].association_catalog === 'website/tools/item-editor/data/catalog.json', 'Exact RSDW item/icon association catalog is missing');
-must(cache.includes('item-manifest.json') && cache.includes('iconPath') && cache.includes('iconExact'), 'Launcher-maintained exact RSDW item/icon manifest is missing');
+must(cache.includes('item-manifest.json') && cache.includes('iconPath') && cache.includes('"icon_ref": icon_ref') && cache.includes('"icon_path": icon_local'), 'Launcher-maintained exact RSDW item/icon manifest is missing');
 must(spawner.includes('Modded Items') && spawner.includes('SERVER MOD'), 'Spawner custom-item overlay / Modded Items category is missing');
 must(trash.includes('copy one logical launcher object into Trash') || trash.includes('Copy one logical launcher object into Trash'), 'Verified Trash move contract is missing');
 must(trashUi.includes('application.trash.restore') && trashUi.includes('application.trash.settings') && trashUi.includes('Empty Trash'), 'Trash restore/retention/empty controls are incomplete');

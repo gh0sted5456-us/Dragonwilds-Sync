@@ -7,6 +7,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+from core_components import component_metadata_for_mod
+
 OFFICIAL_FEED_URL = "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/docs/recommended-mods.json"
 NEXUS_ACTIVITY_URL = "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"
 
@@ -100,6 +102,11 @@ def normalize_mod(raw: object, *, source_name: str, source_url: str) -> dict | N
     name = str(raw.get("name") or raw.get("mod_name") or "").strip()[:160]
     page_url = _clean_url(raw.get("page_url") or raw.get("mod_link") or raw.get("url"))
     if not name or not page_url:
+        return None
+    # Core/runtime/tooling is managed through Updates/Repair, never through the
+    # user-mod recommendation surface. Physical aliases (including the existing
+    # RSDWTools bridge directory) resolve through the same shared taxonomy.
+    if component_metadata_for_mod(name, "ue4ss_mod") is not None:
         return None
     try:
         mod_id = int(raw.get("mod_id")) if raw.get("mod_id") not in (None, "") else None

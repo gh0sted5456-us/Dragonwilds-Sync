@@ -69,9 +69,10 @@ def main() -> None:
 
     payload = host.remote_state_provider("world-a")
     components = {row["id"]: row for row in payload["core_components"]}
-    assert set(components) == {"ue4ss", "runeschema", "rsdwtools", "dragoncore", "dragonconnect"}
+    assert set(components) == {"ue4ss", "runeschema", "dragoncore", "dragonconnect", "rsdw_toolkit"}
     assert components["runeschema"]["update_available"] is True
     assert components["dragonconnect"]["legacy_name"] == "PersistentDirectConnectIP"
+    assert components["rsdw_toolkit"]["ui_group"] == "tooling"
 
     session = {
         "world_id": "world-a", "world_name": "Alpha", "permissions": {"update": True},
@@ -89,11 +90,11 @@ def main() -> None:
     assert result["legacy_remote"] is True and result["action"] == "start"
 
     try:
-        host.remote_action(session, "core_update", {"component": "RSDWTools"})
+        host.remote_action(session, "core_update", {"component": "RSDW Toolkit"})
     except ValueError as exc:
         assert "authoritative remote update source" in str(exc)
     else:
-        raise AssertionError("Unsupported core update must be rejected")
+        raise AssertionError("Unsupported tooling update must be rejected")
     assert host.audit[-1]["ok"] is False
 
     denied = {**session, "permissions": {"update": False}}
@@ -105,7 +106,7 @@ def main() -> None:
         raise AssertionError("Core update must honor the existing update permission")
     assert host.audit[-1]["ok"] is False
 
-    print("authenticated WebGUI managed-core routing: PASS")
+    print("authenticated WebGUI managed-core/tooling routing: PASS")
 
 
 if __name__ == "__main__":

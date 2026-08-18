@@ -7,7 +7,7 @@
   "scripts": {
     "start": "npm run prepare:monaco && electron .",
     "test:backend": "node scripts/run_backend_tests.cjs",
-    "check:renderer": "node --check renderer/release-meta.js && node --check renderer/app.js && node --check renderer/release-navigation.js && node --check renderer/release-polish.js && node --check renderer/release-world-version.js && node --check electron/bootstrap.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/rsdw_webview_preload.cjs && node --check electron/discord_rpc.cjs && node --check electron/app_updater.cjs && node --check electron/nexus_adapter.cjs && node scripts/check_ue4ss_lua.cjs && node scripts/check_renderer_contract.cjs",
+    "check:renderer": "node --check renderer/release-meta.js && node --check renderer/app.js && node --check renderer/release-navigation.js && node --check renderer/release-polish.js && node --check renderer/release-world-version.js && node --check renderer/upstream-sources.js && node --check electron/bootstrap.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/rsdw_webview_preload.cjs && node --check electron/discord_rpc.cjs && node --check electron/app_updater.cjs && node --check electron/nexus_adapter.cjs && node scripts/check_upstream_sources.cjs && node scripts/check_ue4ss_lua.cjs && node scripts/check_renderer_contract.cjs",
     "validate:gui": "node scripts/validate_world_cards_headless.cjs",
     "verify": "npm run prepare:monaco && npm run check:renderer && npm run test:backend",
     "build:win": "build.bat",

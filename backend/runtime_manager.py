@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from process_utils import popen_hidden
+
 
 def _launch_orphan_watchdog(server_pid: int) -> dict:
     """Arm an OS-level helper that kills the dedicated tree if the backend dies."""
@@ -24,7 +26,7 @@ def _launch_orphan_watchdog(server_pid: int) -> dict:
             "Start-Sleep -Milliseconds 500 }"
         )
         flags = int(getattr(subprocess, "CREATE_NO_WINDOW", 0)) | int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) | int(getattr(subprocess, "DETACHED_PROCESS", 0))
-        proc = subprocess.Popen(["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
+        proc = popen_hidden(["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=flags, close_fds=True)
         mode = "powershell-taskkill"
     else:
         script = f'''parent={parent_pid}
@@ -44,7 +46,7 @@ while kill -0 "$target" 2>/dev/null; do
 done
 exit 0
 '''
-        proc = subprocess.Popen(["/bin/sh", "-c", script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
+        proc = popen_hidden(["/bin/sh", "-c", script], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
         mode = "posix-process-tree"
     time.sleep(0.05)
     if proc.poll() is not None:
@@ -203,10 +205,12 @@ class AuthoritativeRuntimeManager:
         installed_result = install.get("installed") if isinstance(install.get("installed"), dict) else {}; server_exe = str(installed_result.get("server_exe") or cfg.get("server_exe") or "").strip()
         if not server_exe or not Path(server_exe).is_file(): raise RuntimeError("SteamCMD reported success, but the dedicated-server executable was not found afterward.")
         fresh_latest = steam_public_build(SERVER_STEAM_APP_ID, cache_seconds=0.0); expected_build = str(fresh_latest.get("buildid") or (install.get("latest") or {}).get("buildid") or "")
-        if expected_build and actual_build != expected_build:
-            persisted_cfg.update({"last_steamcmd_verified_at": time.time(), "last_steamcmd_actual_buildid": actual_build, "last_steamcmd_expected_buildid": expected_build, "last_steamcmd_status": "verification_failed"}); save_state(persisted)
-            raise RuntimeError(f"SteamCMD completed, but installed build {actual_build} does not match latest public build {expected_build}.")
         output = str(installed_result.get("output") or install.get("output") or "")[-8000:]
+        if expected_build and actual_build != expected_build:
+            persisted_cfg.update({"installed_buildid": actual_build, "installed_build_source": "steam_appmanifest_post_validate", "server_exe": server_exe,
+                                  "last_steamcmd_verified_at": time.time(), "last_steamcmd_actual_buildid": actual_build, "last_steamcmd_expected_buildid": expected_build,
+                                  "last_steamcmd_status": "verification_failed", "last_steamcmd_output": output}); save_state(persisted)
+            raise RuntimeError(f"SteamCMD completed, but installed build {actual_build} does not match latest public build {expected_build}.")
         persisted_cfg.update({"installed_buildid": actual_build, "installed_build_source": "steam_appmanifest_post_validate", "server_exe": server_exe,
                               "last_steamcmd_verified_at": time.time(), "last_steamcmd_actual_buildid": actual_build, "last_steamcmd_expected_buildid": expected_build,
                               "last_steamcmd_status": "verified", "last_steamcmd_output": output}); save_state(persisted)
@@ -254,9 +258,6 @@ class AuthoritativeRuntimeManager:
                 if after_stop["broadcast_active"]: raise RuntimeError("Update cancelled because the Sync advertisement could not be withdrawn.")
             install = installer()
             if not isinstance(install, dict) or install.get("ok") is False: raise RuntimeError(str((install or {}).get("error") or f"{component} updater did not confirm success."))
-            # Only the real production ServerEngine executes SteamCMD. Unit-test
-            # fakes use synthetic installers and must not be forced to provide a
-            # Steam appmanifest. The verification helper itself is tested directly.
             if component == "Dedicated Server" and self.engine.__class__.__module__ == "server_engine": install = self._verify_dedicated_install(install)
             if restart:
                 started = self._start_verified(profile_id)

@@ -49,7 +49,7 @@ def _filter_detected_mods(payload: dict | None) -> dict:
 
 
 def _filter_public_units(payload: dict | None) -> dict:
-    """Ensure direct ServerEngine scan/publish responses expose user mods only."""
+    """Ensure direct inventory responses expose user-manageable mods only."""
     result = dict(payload or {})
     if not isinstance(result.get("units"), list):
         return result
@@ -57,6 +57,17 @@ def _filter_public_units(payload: dict | None) -> dict:
         dict(row) for row in result["units"]
         if isinstance(row, dict) and is_user_manageable_mod(row.get("name"), row.get("group"))
     ]
+    return result
+
+
+def _filter_inventory_cache(payload: dict | None) -> dict:
+    """Filter old persisted inventory caches without forcing a deep rescan."""
+    result = dict(payload or {})
+    if isinstance(result.get("mods"), list):
+        result["mods"] = [
+            dict(row) for row in result["mods"]
+            if isinstance(row, dict) and is_user_manageable_mod(row.get("name"), row.get("group"))
+        ]
     return result
 
 
@@ -72,6 +83,16 @@ def _install_phase1_visibility_guards() -> None:
                 return _filter_detected_mods(original_detect(selected))
 
             legacy._detect_existing_server_mods = detect_existing_server_mods
+
+    if legacy is not None and not getattr(legacy, "_dws_inventory_cache_taxonomy_patched", False):
+        original_inventory_cache = getattr(legacy, "_inventory_cache", None)
+        if callable(original_inventory_cache):
+            legacy._dws_inventory_cache_taxonomy_patched = True
+
+            def inventory_cache(profile: dict) -> dict:
+                return _filter_inventory_cache(original_inventory_cache(profile))
+
+            legacy._inventory_cache = inventory_cache
 
     server_engine = sys.modules.get("server_engine")
     engine_type = getattr(server_engine, "ServerEngine", None) if server_engine is not None else None

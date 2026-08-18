@@ -118,7 +118,8 @@ def main():
     assert "RAW_SOURCE_CONTENTS.md" in raw_packager
     assert "node_modules" in raw_packager and "Codex Outputs" in raw_packager
     assert "Staging reproducible raw-source folder" not in text
-    assert "Portable package still contains the removed RSDWTools UE4SS mod" in text
+    assert "resources\\RSDWTools-baseline.zip" in text
+    assert "Bundled RSDWTools bridge baseline" in text
     assert "DRAGONWILDS_SYNC_PYTHON" in text
     assert "win-unpacked.tmp" in text
     assert "Clear-ReleaseDirectory" in text

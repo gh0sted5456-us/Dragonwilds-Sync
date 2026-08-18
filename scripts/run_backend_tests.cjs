@@ -53,6 +53,7 @@ const crossPlatformTests = [
   'backend/test_crypto_runtime.py',
   'backend/test_runtime_platforms.py',
   'backend/test_build_contract.py',
+  'backend/test_rc2_feedback.py',
 ];
 
 // Windows remains the production/V2 baseline and therefore runs every

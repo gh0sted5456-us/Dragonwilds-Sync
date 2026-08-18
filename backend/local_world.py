@@ -13,7 +13,6 @@ from pathlib import Path
 
 from client_layout import resolve_client_layout
 from profile_store import APP_DATA_DIR, read_json, write_json
-from security_scanner import defender_scan
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from integrations import normalize_mod_source
 from security_policy import default_access_policy, normalize_access_policy
@@ -24,6 +23,24 @@ WORLD_PROFILE_ROOT = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_PROFILE_DIR = WORLD_PROFILE_ROOT / SINGLEPLAYER_ID
 LOCAL_PROFILE_FILE = LOCAL_PROFILE_DIR / "profile.json"
 PRIVATE_PROFILES_DIR = WORLD_PROFILE_ROOT
+DELETED_SAVES_PATH = WORLD_PROFILE_ROOT / ".deleted-saves.json"
+
+
+def _deleted_save_tombstones() -> dict:
+    value = read_json(DELETED_SAVES_PATH, {"version": 1, "saves": {}})
+    saves = value.get("saves") if isinstance(value, dict) else None
+    return dict(saves) if isinstance(saves, dict) else {}
+
+
+def _write_deleted_save_tombstones(saves: dict) -> None:
+    write_json(DELETED_SAVES_PATH, {"version": 1, "updated_at": time.time(), "saves": saves})
+
+
+def _save_tombstone_key(path: Path) -> str:
+    try:
+        return str(path.resolve()).replace("\\", "/").casefold()
+    except OSError:
+        return str(path).replace("\\", "/").casefold()
 PAK_EXTENSIONS = {".pak", ".utoc", ".ucas"}
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
 RESERVED_UE4SS = {"runeschema", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
@@ -134,6 +151,8 @@ def discover_save_profiles(state: dict) -> list[dict]:
     save_root = layout.savegames_dir
     discovered = []
     newly_created = []
+    deleted_saves = _deleted_save_tombstones()
+    deleted_saves_changed = False
     if save_root.is_dir():
         for save_path in sorted(save_root.glob("*.sav"), key=lambda p: p.name.casefold()):
             if save_path.name.casefold() in {"enhancedinputusersettings.sav"}:
@@ -142,6 +161,15 @@ def discover_save_profiles(state: dict) -> list[dict]:
                 stat = save_path.stat()
             except OSError:
                 continue
+            tombstone_key = _save_tombstone_key(save_path)
+            tombstone = deleted_saves.get(tombstone_key)
+            if isinstance(tombstone, dict):
+                same_revision = (abs(float(tombstone.get("mtime") or 0) - float(stat.st_mtime)) < 0.001
+                                 and int(tombstone.get("size") or -1) == int(stat.st_size))
+                if same_revision:
+                    continue
+                deleted_saves.pop(tombstone_key, None)
+                deleted_saves_changed = True
             pid = _save_profile_id(save_path)
             profile_path = _profile_file(pid)
             existed = profile_path.is_file()
@@ -194,6 +222,8 @@ def discover_save_profiles(state: dict) -> list[dict]:
             # Discovery must remain available even when a partially installed
             # runtime is not yet safe to snapshot.
             pass
+    if deleted_saves_changed:
+        _write_deleted_save_tombstones(deleted_saves)
     return discovered
 
 
@@ -214,6 +244,19 @@ def delete_profile(profile_id: str) -> None:
     pid = _safe_profile_id(profile_id)
     if pid == SINGLEPLAYER_ID:
         raise ValueError("The baseline SinglePlayer profile cannot be deleted; rename or archive it instead.")
+    profile = read_json(_profile_file(pid), {})
+    save_path = Path(str(profile.get("save_path") or "")) if profile.get("auto_detected") and profile.get("save_path") else None
+    if save_path is not None and save_path.is_file():
+        try:
+            stat = save_path.stat()
+            tombstones = _deleted_save_tombstones()
+            tombstones[_save_tombstone_key(save_path)] = {
+                "path": str(save_path), "mtime": float(stat.st_mtime), "size": int(stat.st_size),
+                "profile_id": pid, "deleted_at": time.time(),
+            }
+            _write_deleted_save_tombstones(tombstones)
+        except OSError:
+            pass
     root = _profile_root(pid)
     if root.exists():
         shutil.rmtree(root, ignore_errors=True)

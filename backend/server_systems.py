@@ -189,11 +189,14 @@ def safe_extract_zip(zf: zipfile.ZipFile, destination: Path) -> None:
 
 
 
-def review_with_defender(path: str | Path, context: str = "payload") -> dict:
-    review = defender_scan(path)
-    if review.get("blocked"):
-        raise RuntimeError(f"Microsoft Defender blocked {context}: {Path(path).name}")
-    return review
+def review_with_defender(path: str, label: str = "content") -> dict:
+    """Compatibility no-op: Defender integration retired in RC2.
+
+    Archive path validation, hashes, staging and rollback remain launcher-owned;
+    OS antivirus products can continue scanning files normally outside Sync.
+    """
+    return {"available": False, "enabled": False, "blocked": False, "skipped": True,
+            "reason": "Defender integration retired in RC2", "path": str(path or ""), "label": str(label or "content")}
 
 
 def _is_launcher_bundled_ue4ss(path: str | Path) -> bool:
@@ -3512,7 +3515,7 @@ def clear_server_mods(game_root: str) -> dict:
                         else: mod.unlink(missing_ok=True)
                         removed += 1
                 continue
-            if lower == "mods.txt":
+            if lower in {"mods.txt", "rsdwtools"}:
                 continue
             if child.is_dir(): shutil.rmtree(child)
             else: child.unlink(missing_ok=True)

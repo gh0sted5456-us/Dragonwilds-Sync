@@ -993,10 +993,81 @@ def _detect_local_owner_id() -> dict:
 def handle(method: str, params: dict) -> object:
     state = load_state()
     _ensure_server_install_migrated(state)
-    set_defender_review_enabled(bool((state.get("application") or {}).get("defender_review_enabled", True)))
+    set_defender_review_enabled(False)
 
     if method in ("bootstrap", "state.get"):
         return public_state(state)
+
+    if method in {"application.communities.list", "application.communities.settings"}:
+        application = state.setdefault("application", {})
+        communities = list(application.get("communities") or [])
+        if method == "application.communities.settings":
+            incoming = params.get("communities")
+            if not isinstance(incoming, list):
+                raise ValueError("Communities must be a list")
+            normalized = []
+            seen = set()
+            for raw in incoming[:50]:
+                if not isinstance(raw, dict):
+                    continue
+                name = str(raw.get("name") or "Community").strip()[:120] or "Community"
+                cid = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(raw.get("id") or name).strip()).strip("-.").casefold()[:72] or secrets.token_hex(6)
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                def clean_url(value):
+                    url = str(value or "").strip()[:2048]
+                    if not url:
+                        return ""
+                    parsed = urllib.parse.urlparse(url)
+                    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
+                        raise ValueError(f"Community {name} contains an invalid HTTP(S) URL")
+                    return url
+                normalized.append({
+                    "id": cid, "name": name, "enabled": raw.get("enabled", True) is not False,
+                    "worlds_url": clean_url(raw.get("worlds_url") or raw.get("directory_url")),
+                    "recommendations_url": clean_url(raw.get("recommendations_url") or raw.get("mods_url")),
+                    "website_url": clean_url(raw.get("website_url")),
+                    "icon_url": clean_url(raw.get("icon_url")),
+                })
+            communities = normalized
+            application["communities"] = communities
+            recommendation_cfg = application.setdefault("recommended_mods", {})
+            recommendation_cfg["community_sources"] = [
+                {"id": f"community:{row['id']}", "community_id": row["id"], "name": row["name"],
+                 "url": row["recommendations_url"], "enabled": row["enabled"]}
+                for row in communities if row.get("recommendations_url")
+            ]
+            discovery_cfg = application.setdefault("world_discovery", {})
+            existing = [row for row in (discovery_cfg.get("directory_sources") or [])
+                        if isinstance(row, dict) and not str(row.get("id") or "").startswith("community:")]
+            existing.extend({
+                "id": f"community:{row['id']}", "community_id": row["id"], "name": row["name"],
+                "url": row["worlds_url"], "enabled": row["enabled"], "publish_enabled": False,
+                "priority": 200,
+            } for row in communities if row.get("worlds_url"))
+            discovery_cfg["directory_sources"] = existing
+            save_state(state)
+        return {"communities": communities, "state": public_state(state)}
+
+    if method == "network.default_router":
+        gateway = ""
+        try:
+            if sys.platform.startswith("win"):
+                result = run_hidden(["route", "print", "-4", "0.0.0.0"], capture_output=True, text=True, timeout=4)
+                for line in (result.stdout or "").splitlines():
+                    found = re.match(r"^\s*0\.0\.0\.0\s+0\.0\.0\.0\s+(\S+)", line)
+                    if found:
+                        gateway = found.group(1); break
+            else:
+                result = run_hidden(["ip", "route", "show", "default"], capture_output=True, text=True, timeout=4)
+                found = re.search(r"\bdefault\s+via\s+(\S+)", result.stdout or "")
+                if found: gateway = found.group(1)
+        except Exception:
+            gateway = ""
+        if not gateway:
+            raise RuntimeError("The default router/gateway could not be detected on this machine.")
+        return {"gateway": gateway, "url": f"http://{gateway}/"}
 
     if method == "application.recommended_mods.refresh":
         application = state.setdefault("application", {})

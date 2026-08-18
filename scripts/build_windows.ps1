@@ -155,6 +155,7 @@ try {
     Test-RequiredFile 'resources\recommended-mods.json' 'GitHub-ready creator recommendation feed'
     Test-RequiredFile 'scripts\check_ue4ss_lua.cjs' 'UE4SS Lua syntax verifier'
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
+    Test-RequiredFile 'resources\RSDWTools-baseline.zip' 'Bundled RSDWTools bridge baseline'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\version.dll' 'Bundled Dragonwilds server-only version.dll'
     Test-RequiredFile 'scripts\prepare_monaco.cjs' 'Monaco bundling helper'
@@ -426,7 +427,7 @@ try {
     try {
         $forbiddenRsdwTools = @($runtimeArchive.Entries | Where-Object { $_.FullName -match '(^|/)RSDWTools(/|$)' })
         if ($forbiddenRsdwTools.Count -gt 0) {
-            Fail-Build 'Portable package still contains the removed RSDWTools UE4SS mod.'
+            Fail-Build 'UE4SS core archive unexpectedly contains RSDWTools; the launcher-owned RSDWTools baseline must remain independently updateable.'
         }
     }
     finally {

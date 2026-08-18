@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from v2_remote_routing import install_directory_patches
+from v2_remote_routing import _filter_detected_mods, _filter_public_units, install_directory_patches
 
 
 DISPATCHES: list[tuple[str, dict]] = []
@@ -62,6 +62,31 @@ def state_provider(_profile_id: str) -> dict:
 
 
 def main() -> None:
+    # Found Mods and direct inventory responses use the same taxonomy as the
+    # ordinary Mod Manager instead of maintaining separate infrastructure lists.
+    found = _filter_detected_mods({
+        "game_root": "X", "detected": True, "count": 7,
+        "mods": [
+            {"name": "DragonCore", "type": "UE4SS", "files": 3},
+            {"name": "PersistentDirectConnectIP", "type": "UE4SS", "files": 2},
+            {"name": "RSDWTools", "type": "UE4SS", "files": 5},
+            {"name": "RuneSchema", "type": "UE4SS", "files": 4},
+            {"name": "ActualLua", "type": "UE4SS", "files": 1},
+            {"name": "SchemaContent", "type": "RuneSchema", "files": 1},
+            {"name": "ActualPack", "type": "PAK", "files": 3},
+        ],
+    })
+    assert found["detected"] is True and found["count"] == 3
+    assert {row["name"] for row in found["mods"]} == {"ActualLua", "SchemaContent", "ActualPack"}
+
+    direct = _filter_public_units({"units": [
+        {"name": "DragonCore", "group": "ue4ss_mod"},
+        {"name": "RSDWTools", "group": "ue4ss_mod"},
+        {"name": "ActualLua", "group": "ue4ss_mod"},
+        {"name": "SchemaContent", "group": "runeschema_mod"},
+    ]})
+    assert [row["name"] for row in direct["units"]] == ["ActualLua", "SchemaContent"]
+
     module = SimpleNamespace(DirectoryHost=FakeHost, normalize_heartbeat=normalize_heartbeat)
     install_directory_patches(module)
     host = module.DirectoryHost()
@@ -106,7 +131,7 @@ def main() -> None:
         raise AssertionError("Core update must honor the existing update permission")
     assert host.audit[-1]["ok"] is False
 
-    print("authenticated WebGUI managed-core/tooling routing: PASS")
+    print("authenticated WebGUI + taxonomy presentation guards: PASS")
 
 
 if __name__ == "__main__":

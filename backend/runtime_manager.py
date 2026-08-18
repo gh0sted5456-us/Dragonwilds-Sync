@@ -1,8 +1,89 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 import threading
 import time
 from typing import Callable
+
+
+def _launch_orphan_watchdog(server_pid: int) -> dict:
+    """Arm an OS-level helper that kills the dedicated tree if the backend dies.
+
+    Electron normally asks the backend to perform a verified shutdown. If that
+    backend becomes unresponsive, Electron eventually has to terminate it. The
+    watchdog is intentionally outside the backend process so that catastrophic
+    fallback cannot orphan the dedicated Dragonwilds process.
+    """
+    server_pid = int(server_pid or 0)
+    parent_pid = int(os.getpid())
+    if server_pid <= 0:
+        raise RuntimeError("Cannot arm the orphan watchdog without a verified dedicated-server PID.")
+
+    if sys.platform.startswith("win"):
+        script = (
+            f"$parentPid={parent_pid}; $serverPid={server_pid}; "
+            "while ($true) { "
+            "$server = Get-Process -Id $serverPid -ErrorAction SilentlyContinue; "
+            "if ($null -eq $server) { exit 0 }; "
+            "$parent = Get-Process -Id $parentPid -ErrorAction SilentlyContinue; "
+            "if ($null -eq $parent) { "
+            "& taskkill.exe /PID $serverPid /T /F | Out-Null; exit 0 }; "
+            "Start-Sleep -Milliseconds 500 }"
+        )
+        flags = (
+            int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
+            | int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+            | int(getattr(subprocess, "DETACHED_PROCESS", 0))
+        )
+        proc = subprocess.Popen(
+            ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=flags,
+            close_fds=True,
+        )
+        mode = "powershell-taskkill"
+    else:
+        script = f'''parent={parent_pid}
+target={server_pid}
+while kill -0 "$target" 2>/dev/null; do
+  if ! kill -0 "$parent" 2>/dev/null; then
+    descendants="$(pgrep -P "$target" 2>/dev/null || true)"
+    for child in $descendants; do kill -TERM "$child" 2>/dev/null || true; done
+    kill -TERM "$target" 2>/dev/null || true
+    sleep 2
+    descendants="$(pgrep -P "$target" 2>/dev/null || true)"
+    for child in $descendants; do kill -KILL "$child" 2>/dev/null || true; done
+    kill -KILL "$target" 2>/dev/null || true
+    exit 0
+  fi
+  sleep 0.5
+done
+exit 0
+'''
+        proc = subprocess.Popen(
+            ["/bin/sh", "-c", script],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        mode = "posix-process-tree"
+
+    time.sleep(0.05)
+    if proc.poll() is not None:
+        raise RuntimeError("The dedicated-server orphan watchdog exited before it could be armed.")
+    return {
+        "armed": True,
+        "mode": mode,
+        "watchdog_pid": int(proc.pid),
+        "parent_pid": parent_pid,
+        "server_pid": server_pid,
+    }
 
 
 class AuthoritativeRuntimeManager:
@@ -21,6 +102,7 @@ class AuthoritativeRuntimeManager:
         self._completed_at: float | None = None
         self._last_error = ""
         self._last_result: dict = {}
+        self._orphan_watchdog: dict = {}
         # True only after this manager has successfully started the dedicated
         # runtime. It lets status reconciliation withdraw an orphaned server
         # advertisement without touching an unrelated private Co-Op share.
@@ -114,6 +196,7 @@ class AuthoritativeRuntimeManager:
                     actual["broadcast_active"] = bool(actual["broadcast"].get("serving"))
                 finally:
                     self._managed_running = False
+                    self._orphan_watchdog = {}
                 self._phase = "Error"
                 self._last_error = "The dedicated server exited unexpectedly; its Sync broadcast was withdrawn."
                 self._completed_at = time.time()
@@ -128,6 +211,7 @@ class AuthoritativeRuntimeManager:
                 "completed_at": self._completed_at,
                 "last_error": self._last_error,
                 "last_result": dict(self._last_result),
+                "orphan_watchdog": dict(self._orphan_watchdog),
             }
 
     def _begin(self, operation: str, phase: str) -> None:
@@ -160,6 +244,24 @@ class AuthoritativeRuntimeManager:
         except Exception:
             pass
 
+    def _clear_watchdog(self) -> None:
+        # The detached helper exits on its own as soon as the dedicated PID is
+        # gone. Clearing here removes stale status immediately for the UI.
+        with self._state_lock:
+            self._orphan_watchdog = {}
+
+    def _arm_watchdog(self, server_pid: int) -> dict:
+        # Tests/future process engines may provide their own launcher. The real
+        # ServerEngine uses the OS-level detached helper above.
+        launcher = getattr(self.engine, "arm_orphan_watchdog", None)
+        evidence = launcher(server_pid) if callable(launcher) else _launch_orphan_watchdog(server_pid)
+        if not isinstance(evidence, dict) or not evidence.get("armed"):
+            raise RuntimeError("The dedicated-server orphan watchdog did not confirm that it was armed.")
+        with self._state_lock:
+            self._orphan_watchdog = dict(evidence)
+        self.engine.record_event(f"Armed dedicated-server orphan watchdog for PID {int(server_pid)}.", "ok")
+        return dict(evidence)
+
     def _cleanup_failed_start(self) -> None:
         """Never leave a half-started process or advertisement behind."""
         self._managed_running = False
@@ -170,6 +272,8 @@ class AuthoritativeRuntimeManager:
                 self._withdraw_share()
         except Exception:
             self._withdraw_share()
+        finally:
+            self._clear_watchdog()
 
     def _start_verified(self, profile_id: str) -> dict:
         """Prepare files first, verify the game process, then expose Sync.
@@ -178,10 +282,9 @@ class AuthoritativeRuntimeManager:
         before spawning the dedicated process. That creates a short but real
         false-online window. The authoritative manager deliberately performs
         the phases separately: scan/materialize while stopped, launch the game,
-        verify the process, and only then publish the Sync share.
+        verify the process, arm a detached orphan watchdog, and only then
+        publish the Sync share.
         """
-        # A stale share from a prior crash or external call must never survive
-        # into a new Starting phase.
         self._withdraw_share()
         prepared = self.engine.scan_mods(profile_id)
         started = self.engine.start_dedicated(profile_id)
@@ -190,6 +293,8 @@ class AuthoritativeRuntimeManager:
             raise RuntimeError("The dedicated server process was not verified after Start.")
         if after_process["broadcast_active"]:
             raise RuntimeError("Sync became available before dedicated-process verification completed.")
+        server_pid = int((after_process.get("runtime") or {}).get("pid") or started.get("pid") or 0)
+        watchdog = self._arm_watchdog(server_pid)
 
         published = self.engine.publish(profile_id)
         actual = self._actual()
@@ -204,6 +309,7 @@ class AuthoritativeRuntimeManager:
             "published": published,
             "verified_running": True,
             "broadcast_verified": True,
+            "orphan_watchdog": watchdog,
         }
 
     def start(self, profile_id: str) -> dict:
@@ -231,10 +337,11 @@ class AuthoritativeRuntimeManager:
             if actual["broadcast_active"]:
                 raise RuntimeError("The dedicated process stopped, but its Sync broadcast remained active.")
             self._managed_running = False
+            self._clear_watchdog()
             return self._finish("Stopped", {**result, "verified_stopped": True, "broadcast_verified": True})
         except Exception as exc:
-            # Even if process termination fails, the World must not remain
-            # advertised as available while Stop is in an error state.
+            # The advertisement is always withdrawn. If the process itself is
+            # still alive, keep the watchdog armed for catastrophic backend exit.
             self._withdraw_share()
             self._fail("Stop Failed", exc)
             raise
@@ -249,6 +356,7 @@ class AuthoritativeRuntimeManager:
             after_stop = self._actual()
             if after_stop["running"] or not stopped.get("stop_verified"):
                 raise RuntimeError("Restart stopped because process termination was not verified.")
+            self._clear_watchdog()
             if after_stop["broadcast_active"]:
                 self._withdraw_share()
                 after_stop = self._actual()
@@ -280,6 +388,7 @@ class AuthoritativeRuntimeManager:
                 after_stop = self._actual()
                 if after_stop["running"] or not stopped.get("stop_verified"):
                     raise RuntimeError("Update cancelled because the server process did not stop cleanly.")
+                self._clear_watchdog()
                 if after_stop["broadcast_active"]:
                     self._withdraw_share()
                     after_stop = self._actual()
@@ -310,6 +419,7 @@ class AuthoritativeRuntimeManager:
                 actual = self._actual()
             if actual["broadcast_active"]:
                 raise RuntimeError(f"{component} updated, but the Sync advertisement remained active.")
+            self._clear_watchdog()
             return self._finish("Stopped", {
                 "updated": True,
                 "component": component,
@@ -336,17 +446,19 @@ class AuthoritativeRuntimeManager:
             try:
                 result = self.engine.stop_world()
             except Exception:
-                # ``stop_world`` already uses the verified process-tree fallback.
                 result = self.engine.stop_dedicated()
                 self._withdraw_share()
             actual = self._actual()
             if actual["running"] or result.get("running"):
+                # Do not clear the detached watchdog here. If Electron has to
+                # terminate this backend, it will kill the verified server tree.
                 raise RuntimeError("The dedicated server remained running during launcher shutdown.")
             self._withdraw_share()
             actual = self._actual()
             if actual["broadcast_active"]:
                 raise RuntimeError("The Sync advertisement remained active during launcher shutdown.")
             self._managed_running = False
+            self._clear_watchdog()
             if self.directory_host is not None:
                 self.directory_host.stop()
             return self._finish("Stopped", {

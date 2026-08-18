@@ -26,9 +26,10 @@ def main() -> None:
         (inner / "Binaries/Win64/ue4ss/Mods").mkdir(parents=True)
 
         # Isolate the SinglePlayer metadata/cache from the real user profile.
-        lw.LOCAL_PROFILE_DIR = appdata / "singleplayer"
+        lw.WORLD_PROFILE_ROOT = appdata / "client_worlds"
+        lw.PRIVATE_PROFILES_DIR = lw.WORLD_PROFILE_ROOT
+        lw.LOCAL_PROFILE_DIR = lw.WORLD_PROFILE_ROOT / lw.SINGLEPLAYER_ID
         lw.LOCAL_PROFILE_FILE = lw.LOCAL_PROFILE_DIR / "profile.json"
-        lw.CLIENT_WORLD_CACHE = appdata / "client_worlds" / lw.SINGLEPLAYER_ID
         client_layout.LOCAL_APPDATA = appdata
 
         state = {"client": {}}
@@ -165,6 +166,33 @@ def main() -> None:
         assert json.loads(marker.read_text(encoding="utf-8"))["profile_id"] == "private-a"
         assert (live_ue4ss / "WorldA/Scripts/main.lua").read_text(encoding="utf-8") == "return 'A-updated'\n"
         assert (live_ue4ss / "RuneSchema/DLLs/main.dll").read_bytes() == b"managed-baseline"
+
+        # RuneSchema also exists in the wild without a Mods child. Direct-root
+        # child mods (including their internal PAK payloads) must scan, snapshot,
+        # and swap while the shared loader config/DLLs remain installed.
+        direct_game = root / "DirectLayout"
+        direct_inner = direct_game / "RSDragonwilds"
+        direct_rs = direct_inner / "Binaries/Win64/ue4ss/Mods/RuneSchema"
+        (direct_rs / "config").mkdir(parents=True)
+        (direct_rs / "DLLs").mkdir(parents=True)
+        (direct_rs / "DLLs/core.dll").write_bytes(b"shared-runeschema-core")
+        (direct_rs / "enabled.txt").write_text("1", encoding="utf-8")
+        (direct_rs / "DirectA/payload").mkdir(parents=True)
+        (direct_rs / "DirectA/payload/DirectA.pak").write_bytes(b"direct-a")
+        (direct_inner / "Content/Paks/~Mods").mkdir(parents=True)
+        units = lw.scan_inventory(str(direct_game), live=True, profile_id="direct-a")
+        assert any(row["key"] == "runeschema_mod::DirectA" for row in units), units
+        se.snapshot_client_world("direct-a", direct_game)
+        shutil.rmtree(direct_rs / "DirectA")
+        (direct_rs / "DirectB/payload").mkdir(parents=True)
+        (direct_rs / "DirectB/payload/DirectB.pak").write_bytes(b"direct-b")
+        se.snapshot_client_world("direct-b", direct_game)
+        cached_units = lw.scan_inventory(str(direct_game), live=False, profile_id="direct-a")
+        assert any(row["key"] == "runeschema_mod::DirectA" for row in cached_units), cached_units
+        se.restore_client_world("direct-a", direct_game)
+        assert (direct_rs / "DirectA/payload/DirectA.pak").read_bytes() == b"direct-a"
+        assert not (direct_rs / "DirectB").exists()
+        assert (direct_rs / "DLLs/core.dll").read_bytes() == b"shared-runeschema-core"
 
         renderer = (Path(__file__).parents[1] / "renderer/app.js").read_text(encoding="utf-8")
         assert "SinglePlayer" in renderer

@@ -239,6 +239,28 @@ def _clear_children(root: Path, *, exclude_names: set[str] | None = None) -> Non
         _remove_path(child)
 
 
+def _tree_inventory(root: Path, *, exclude_names: set[str] | None = None) -> tuple[tuple[str, int, int], ...]:
+    """Cheap snapshot identity based on paths, sizes, and copied mtimes."""
+    if not root.exists():
+        return ()
+    excluded = {name.casefold() for name in (exclude_names or set())}
+    rows = []
+    try:
+        for path in root.rglob("*"):
+            try:
+                rel = path.relative_to(root)
+                if rel.parts and rel.parts[0].casefold() in excluded:
+                    continue
+                if path.is_file():
+                    stat_result = path.stat()
+                    rows.append((rel.as_posix().casefold(), int(stat_result.st_size), int(stat_result.st_mtime_ns)))
+            except OSError:
+                return (("<unreadable>", -1, -1),)
+    except OSError:
+        return (("<unreadable>", -1, -1),)
+    return tuple(sorted(rows))
+
+
 def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     """Capture only World-owned mod payloads, never shared runtime cores.
 
@@ -248,16 +270,30 @@ def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     """
     layout = resolve_server_layout(game_root)
     destination = _profile_mods_dir(profile_id); staging = destination.with_name(destination.name + ".staging")
+    rs_source = layout.runeschema_mods_dir
+    rs_excluded: set[str] = set()
+    rs_layout = "mods-subdir"
+    if rs_source == layout.runeschema_root:
+        rs_excluded = {"config", "dlls", "enabled.txt", "mods"}
+        rs_layout = "root"
+    layout_marker = destination / "runeschema_layout.txt"
+    marker_value = layout_marker.read_text(encoding="utf-8", errors="ignore").strip() if layout_marker.exists() else ""
+    # copy2 preserves mtimes, so an unchanged live tree can be compared to the
+    # profile snapshot without hashing or recopying large PAK payloads.
+    if destination.exists() and marker_value == rs_layout:
+        unchanged = (
+            _tree_inventory(layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS) == _tree_inventory(destination / "ue4ss_mods")
+            and _tree_inventory(rs_source, exclude_names=rs_excluded) == _tree_inventory(destination / "runeschema_mods")
+            and _tree_inventory(layout.paks_mods_dir) == _tree_inventory(destination / "pak_mods")
+        )
+        if unchanged:
+            return 0
     if staging.exists(): _remove_path(staging)
     staging.mkdir(parents=True, exist_ok=True); copied = 0
     copied += _copy_children(layout.ue4ss_mods_dir, staging / "ue4ss_mods", exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
-    rs_mods = layout.runeschema_root / "mods"
-    if rs_mods.exists():
-        copied += _copy_children(rs_mods, staging / "runeschema_mods")
-        (staging / "runeschema_layout.txt").write_text("mods-subdir", encoding="utf-8")
-    elif layout.runeschema_root.exists():
-        copied += _copy_children(layout.runeschema_root, staging / "runeschema_mods", exclude_names={"config", "dlls", "enabled.txt"})
-        (staging / "runeschema_layout.txt").write_text("root", encoding="utf-8")
+    if rs_source.exists():
+        copied += _copy_children(rs_source, staging / "runeschema_mods", exclude_names=rs_excluded)
+    (staging / "runeschema_layout.txt").write_text(rs_layout, encoding="utf-8")
     copied += _copy_children(layout.paks_mods_dir, staging / "pak_mods")
     if destination.exists(): _remove_path(destination)
     staging.replace(destination); return copied
@@ -890,9 +926,10 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            generate_server_mods_txt(profile_id, root)
-        units = scan_mod_units(profile_id, root); snapshot_profile_mods(profile_id, Path(root))
+            generate_server_mods_txt(profile_id, root, units=units)
+        snapshot_profile_mods(profile_id, Path(root))
         self._event(f"Scanned {len(units)} mod unit(s) for {profile.get('name') or profile_id}.")
         return {"units": [u.public(SHARE.live_keys) for u in units], "badges": compute_mod_badges(units)}
 
@@ -906,10 +943,11 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            generated = generate_server_mods_txt(profile_id, root)
+            generated = generate_server_mods_txt(profile_id, root, units=units)
             self._event(f"Generated server UE4SS mods.txt with {generated.get('count', 0)} enabled mod(s).")
-        units = scan_mod_units(profile_id, root); snapshot_profile_mods(profile_id, Path(root)); sync = profile.setdefault("sync_config", {})
+        snapshot_profile_mods(profile_id, Path(root)); sync = profile.setdefault("sync_config", {})
         password = str(sync.get("password") or ""); key = str(sync.get("server_key") or "")
         port = int(sync.get("port") or 7777); broadcast = bool(sync.get("lan_broadcast", True))
         app_policy = (load_state().get("application") or {}).get("server_access_policy") or {}

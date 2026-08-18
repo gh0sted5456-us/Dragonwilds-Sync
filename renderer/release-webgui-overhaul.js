@@ -25,6 +25,12 @@
   let lastConsolePayload = null;
 
   async function stateSnapshot(force = false) {
+    if (window.__DWSYNC_STATE__) {
+      appState = window.__DWSYNC_STATE__; appStateAt = Date.now();
+      const rows = appState?.application?.recommended_mods?.mods || [];
+      recommendationByUrl = new Map(rows.map((row) => [text(row.page_url), row]).filter(([url]) => url));
+      return appState;
+    }
     if (!force && appState && Date.now() - appStateAt < 2500) return appState;
     appState = await invoke('state.get', {});
     appStateAt = Date.now();
@@ -111,7 +117,7 @@
   }
 
   async function enhanceRecommendations() {
-    const cards = [...document.querySelectorAll('.recommended-mod-card:not([data-dws-recommendation-enhanced="1"])')];
+    const cards = [...document.querySelectorAll('.recommended-mod-card:not([data-dws-recommendation-enhanced="1"]):not(:has(.recommended-mod-media))')];
     if (!cards.length) return;
     try { await stateSnapshot(); } catch (_) { return; }
     cards.forEach(enhanceRecommendationCard);

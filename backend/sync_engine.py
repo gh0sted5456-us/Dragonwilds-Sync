@@ -37,7 +37,8 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # with whatever was cached in that profile's snapshot -- silently
 # downgrading UE4SS's own runtime files back to whatever version existed
 # the last time that particular profile was snapshotted.
-LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
+LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
+RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
 
 
 
@@ -201,6 +202,21 @@ def copy_profile_mod_slot(src: Path, dst: Path, slot: str) -> None:
                 source_mods = child / "mods"
             if source_mods.exists():
                 shutil.copytree(source_mods, dst / child.name / "Mods", dirs_exist_ok=True)
+            else:
+                # Older/current community layouts may place RuneSchema-owned
+                # mod folders and PAK payloads directly in the RuneSchema root.
+                # Preserve those World-owned entries without copying the
+                # shared loader configuration and DLL runtime.
+                direct_target = dst / child.name
+                for entry in child.iterdir():
+                    if entry.name.casefold() in RUNESCHEMA_CORE_NAMES:
+                        continue
+                    target = direct_target / entry.name
+                    if entry.is_dir():
+                        shutil.copytree(entry, target, dirs_exist_ok=True)
+                    elif entry.is_file():
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(entry, target)
             continue
         if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
             continue
@@ -268,9 +284,20 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
             if slot == "ue4ss_mods":
                 for child in list(live.iterdir()):
                     if child.name.casefold() == "runeschema":
+                        nested = False
                         for candidate in (child / "Mods", child / "mods"):
                             if candidate.exists():
+                                nested = True
                                 _remove_launcher_managed_tree(candidate)
+                        if not nested:
+                            for entry in list(child.iterdir()):
+                                if entry.name.casefold() in RUNESCHEMA_CORE_NAMES:
+                                    continue
+                                if entry.is_dir():
+                                    _remove_launcher_managed_tree(entry)
+                                else:
+                                    _set_managed_readonly(entry, False)
+                                    entry.unlink(missing_ok=True)
                         continue
                     if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
                         continue
@@ -402,10 +429,22 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
         if slot == "ue4ss_mods":
             for child in list(live.iterdir()):
                 if child.name.casefold() == "runeschema":
+                    nested = False
                     for candidate in (child / "Mods", child / "mods"):
                         if candidate.exists():
+                            nested = True
                             removed_mods += sum(1 for p in candidate.rglob("*") if p.is_file())
                             _remove_launcher_managed_tree(candidate)
+                    if not nested:
+                        for entry in list(child.iterdir()):
+                            if entry.name.casefold() in RUNESCHEMA_CORE_NAMES:
+                                continue
+                            removed_mods += sum(1 for p in entry.rglob("*") if p.is_file()) if entry.is_dir() else 1
+                            if entry.is_dir():
+                                _remove_launcher_managed_tree(entry)
+                            else:
+                                _set_managed_readonly(entry, False)
+                                entry.unlink(missing_ok=True)
                     continue
                 if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
                     continue

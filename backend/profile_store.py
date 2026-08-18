@@ -638,7 +638,7 @@ def create_server_profile(name: str) -> str:
     instance_number = max(existing_numbers, default=0) + 1
     game_port = effective_game_port(instance_number)
     save_server_profile(profile_id, {
-        "name": world_name, "description": "", "community_rules": "", "tags": [], "icon_b64": "", "banner_b64": "",
+        "name": world_name, "description": "", "community_rules": "", "tags": [], "icon_b64": "", "banner_b64": "", "placard_background": "1",
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "dedicated", "visibility": "public", "declared": True}),
         "audience": "general",
         "platform_compatibility": {"pc": True, "steam": True, "epic": True, "nintendo": False, "playstation": False, "xbox": False},

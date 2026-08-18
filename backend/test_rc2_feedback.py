@@ -27,7 +27,8 @@ def main():
     assert 'unifi.ui.com' not in app
     assert 'Open Default Router Homepage' in app
     assert 'Microsoft Defender Review' not in app
-    assert 'Website, Networking & Remote Access' in rc2
+    assert "settings.textContent='Website & Networking'" in rc2
+    assert "[data-webhost-tab=\"remote\"]" in rc2 and "classList.remove('rc2-retired')" in rc2
     assert 'Community' in rc2 and 'directory_sources' in rc2
     assert (ROOT/'renderer/assets/platforms/windows.svg').is_file()
     assert (ROOT/'renderer/assets/platforms/linux.svg').is_file()

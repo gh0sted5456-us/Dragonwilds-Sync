@@ -11,6 +11,9 @@
   const initials = (value) => String(value || 'Player').trim().split(/\s+/).slice(0,2).map((part)=>part[0]||'').join('').toUpperCase() || 'P';
 
   async function currentState(force = false) {
+    if (window.__DWSYNC_STATE__) {
+      cachedState = window.__DWSYNC_STATE__; stateFetchedAt = Date.now(); return cachedState;
+    }
     if (!api?.invoke) return cachedState || {};
     if (!force && cachedState && Date.now() - stateFetchedAt < 5000) return cachedState;
     try { cachedState = await api.invoke('state.get', {}); stateFetchedAt = Date.now(); } catch (_) {}
@@ -51,6 +54,8 @@
   }
 
   function enhanceRatings(root = document) {
+    // app.js owns review clicks and the reusable in-app review window.
+    return;
     root.querySelectorAll('.world-rating:not([data-release-rating])').forEach((rating) => {
       rating.dataset.releaseRating = '1'; rating.setAttribute('role','button'); rating.setAttribute('tabindex','0'); rating.style.cursor='pointer';
       const open = (event) => {
@@ -65,7 +70,7 @@
   }
 
   async function enhanceRecommendedMods(root = document) {
-    const cards=[...root.querySelectorAll('.recommended-mod-card:not([data-release-recommendation])')];
+    const cards=[...root.querySelectorAll('.recommended-mod-card:not([data-release-recommendation]):not(:has(.recommended-mod-media))')];
     if(!cards.length)return;
     const appState=await currentState();
     const mods=appState?.application?.recommended_mods?.mods||[];

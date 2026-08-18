@@ -59,12 +59,15 @@ requireText(rsdwCache, '/shared/icons/', 'canonical RSDW shared icon source');
 requireText(rsdwCache, 'persistence_id', 'canonical persistence identity');
 requireText(legacyService, 'custom_items=list((state.get("application") or {}).get("custom_items") or [])', 'custom items merged into server catalog');
 requireText(legacyService, 'item["icon_url"] = icon_path', 'embedded server custom item icons');
-requireText(legacyService, '"spawner": {"items": list(item_catalog.get("items") or [])[:2500]', 'server-pushed WebGUI item catalog');
+requireText(legacyService, 'if action == "spawner_catalog":', 'lazy authenticated WebGUI item catalog');
+requireText(legacyService, '"spawner": {"items": [], "categories": []', 'lightweight remote viewer bootstrap');
 
 // The original WebHost platform icon packaging bug must remain permanently
 // covered both in PyInstaller data collection and the source/one-file resolver.
 requireText(spec, "renderer/assets/platforms", 'PyInstaller platform SVG bundle');
+requireText(spec, "renderer/assets/placards", 'PyInstaller placard artwork bundle');
 requireText(directoryHost, 'Path(bundle_root) / "renderer" / "assets" / "platforms" / filename', 'one-file platform icon resolver');
 requireText(directoryHost, 'path.startswith("/assets/platforms/")', 'WebHost platform icon route');
+requireText(directoryHost, 'path.startswith("/assets/placards/")', 'WebHost placard artwork route');
 
 console.log('WebGUI overhaul contract checks passed');

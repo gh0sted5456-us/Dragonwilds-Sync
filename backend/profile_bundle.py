@@ -160,6 +160,7 @@ def _clean_world(world: dict, *, exported_at: str, include_password: bool = Fals
             "community_rules": str(src.get("community_rules") or presentation.get("community_rules") or manifest.get("community_rules") or "")[:4000],
             "rating_average": presentation.get("rating_average") or 0,
             "rating_count": presentation.get("rating_count") or 0,
+            "placard_background": str(presentation.get("placard_background") or manifest.get("placard_background") or "1"),
         },
         "compatibility": {
             "host_type": str(status.get("host_type") or manifest.get("host_type") or shared.get("host_type") or "dedicated")[:40],
@@ -179,6 +180,7 @@ def _clean_world(world: dict, *, exported_at: str, include_password: bool = Fals
             "description": manifest.get("description") or presentation.get("description") or "",
             "community_rules": str(manifest.get("community_rules") or presentation.get("community_rules") or src.get("community_rules") or "")[:4000],
             "tags": deepcopy(manifest.get("tags") or presentation.get("tags") or []),
+            "placard_background": str(manifest.get("placard_background") or presentation.get("placard_background") or "1"),
             "mod_summary": mod_metadata,
             "runtime_stack": deepcopy(manifest.get("runtime_stack") or {}),
         },
@@ -461,6 +463,7 @@ def _hydrate_imported_world(entry: dict, profile_id: str, profile_name: str, imp
             "mod_badges": deepcopy(presentation.get("mod_badges") or entry.get("mods") or []),
             "icon_b64": _payload_data_uri(str(presentation.get("iconPath") or ""), payload_bytes, records),
             "banner_b64": _payload_data_uri(str(presentation.get("bannerPath") or ""), payload_bytes, records),
+            "placard_background": str(presentation.get("placard_background") or (entry.get("manifestSummary") or {}).get("placard_background") or "1"),
         },
         "audience": str(presentation.get("audience") or "general"),
         "community": deepcopy(presentation.get("community") or {}),

@@ -89,6 +89,7 @@ def default_singleplayer_profile(profile_id: str = SINGLEPLAYER_ID, name: str = 
         "name": display,
         "description": "Your launcher-managed local Dragonwilds World.",
         "community_rules": "",
+        "placard_background": "1",
         "tags": ["LOCAL", "SINGLEPLAYER"],
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "singleplayer", "visibility": "private", "declared": True}),
         "is_default": pid == SINGLEPLAYER_ID,
@@ -277,7 +278,7 @@ def profile_world_shape(profile: dict) -> dict:
         "classification": normalize_world_classification({**(profile.get("classification") or {}), "host_type": "coop" if profile.get("broadcasting") else "singleplayer"}, tags=tags,
                                                             host_type="coop" if profile.get("broadcasting") else "singleplayer",
                                                             visibility="friends" if profile.get("broadcasting") else "private"),
-        "presentation": {"description": str(profile.get("description") or ""), "tags": tags, "mod_badges": ["LOCAL", "SINGLEPLAYER"], "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or "")},
+        "presentation": {"description": str(profile.get("description") or ""), "tags": tags, "mod_badges": ["LOCAL", "SINGLEPLAYER"], "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or ""), "placard_background": str(profile.get("placard_background") or "1")},
         "identity": {"world_name": str(profile.get("name") or "Private World"), "server_profile_id_hint": ""},
         "status": {"online": True, "local": True, "broadcasting": bool(profile.get("broadcasting", False)), "sync_port": int(cfg.get("sync_port") or 27051), "last_error": ""},
         "credentials": {}, "connection": {},
@@ -370,16 +371,26 @@ def detect_mod_zip_kind(zip_path: str) -> str | None:
 
 def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
     mods = _world_cache(profile_id) / "mods"
+    runeschema = mods / "ue4ss_mods" / "RuneSchema"
+    runeschema_mods = runeschema / "mods"
+    if not runeschema_mods.exists() and runeschema.exists():
+        runeschema_mods = runeschema
     return {
         "ue4ss": mods / "ue4ss_mods",
         "paks": mods / "pak_mods",
-        "runeschema": mods / "ue4ss_mods" / "RuneSchema" / "mods",
+        "runeschema": runeschema_mods,
     }
 
 
 def _live_roots(game_dir: str) -> dict[str, Path]:
     layout = resolve_client_layout(game_dir)
-    return {"ue4ss": layout.ue4ss_mods_dir, "paks": layout.paks_mods_dir, "runeschema": layout.runeschema_root / "mods"}
+    rs_root = layout.runeschema_root
+    rs_mods = layout.runeschema_mods_dir
+    # Current packages use RuneSchema/Mods. Older installs keep mod payloads
+    # directly in RuneSchema; retain support for both layouts.
+    if not rs_mods.exists() and rs_root.exists():
+        rs_mods = rs_root
+    return {"ue4ss": layout.ue4ss_mods_dir, "paks": layout.paks_mods_dir, "runeschema": rs_mods}
 
 
 def roots(game_dir: str, live: bool, profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
@@ -624,13 +635,14 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
             warnings.append(f"Could not list UE4SS Mods folder: {exc}")
         for path in ue_entries:
             try:
-                if not path.is_dir() or path.name.casefold() in RESERVED_UE4SS:
+                if path.name.casefold() in RESERVED_UE4SS:
                     continue
-                ensure_mod_contract_files(path)
+                if path.is_dir():
+                    ensure_mod_contract_files(path)
                 count, size = _safe_file_stats([path])
                 key = f"ue4ss_mod::{path.name}"
                 ov = overrides.get(key) or {}
-                units.append({"key": key, "name": path.name, "group": "ue4ss_mod", "section": "ue4ss", "subsection": "UE4SS", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else hotload_capable_from_root(path)), "tags": normalize_tags(ov["tags"] if "tags" in ov else tags_from_mod_root(path)), "identity": identity_from_mod_root(path), "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
+                units.append({"key": key, "name": path.name, "group": "ue4ss_mod", "section": "ue4ss", "subsection": "UE4SS", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else (hotload_capable_from_root(path) if path.is_dir() else False)), "tags": normalize_tags(ov["tags"] if "tags" in ov else (tags_from_mod_root(path) if path.is_dir() else [])), "identity": identity_from_mod_root(path) if path.is_dir() else None, "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
             except OSError as exc:
                 warnings.append(f"Skipped UE4SS mod \"{path.name}\": {exc}")
     rs = targets["runeschema"]
@@ -643,6 +655,8 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
         for path in rs_entries:
             try:
                 if path.name.startswith("."):
+                    continue
+                if rs == resolve_client_layout(game_dir).runeschema_root and path.name.casefold() in {"config", "dlls", "enabled.txt", "mods"}:
                     continue
                 if path.is_dir():
                     ensure_mod_contract_files(path)

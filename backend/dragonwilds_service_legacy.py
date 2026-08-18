@@ -48,7 +48,7 @@ from local_world import (SINGLEPLAYER_ID, ensure_state as ensure_singleplayer_st
                          save_core_config_file as save_singleplayer_core_config,
                          distribution_units as singleplayer_distribution_units,
                          pop_scan_warnings as pop_singleplayer_scan_warnings)
-from server_layout import resolve_server_layout, resolve_server_layout_from_exe
+from server_layout import resolve_server_layout, resolve_server_layout_from_exe, steamcmd_root_for_install
 from guided_setup import validate_client_path, validate_server_path, probe_setup_network
 from world_save_distribution import normalize_policy as normalize_worldsave_policy, set_policy as set_worldsave_policy
 from server_scheduler import arm_schedule, normalize_notice, normalize_schedule, tick_schedule
@@ -124,6 +124,7 @@ def _world_metadata_snapshot(profile: dict) -> dict:
         "platform_compatibility": dict(profile.get("platform_compatibility") or {}),
         "icon_b64": str(profile.get("icon_b64") or ""),
         "banner_b64": str(profile.get("banner_b64") or ""),
+        "placard_background": str(profile.get("placard_background") or "1"),
         "server_specs": dict(profile.get("hw_stats") or {}),
         "internet_strength": dict(health.get("host_network") or {}),
     }
@@ -738,6 +739,7 @@ def _apply_metadata_refresh(world: dict, result: dict) -> None:
         "mod_badges": metadata.get("mod_badges") or [],
         "icon_b64": metadata.get("icon_b64") or presentation.get("icon_b64", ""),
         "banner_b64": metadata.get("banner_b64") or presentation.get("banner_b64", ""),
+        "placard_background": str(metadata.get("placard_background") or presentation.get("placard_background") or "1"),
         "rating_average": metadata.get("rating_average") or 0,
         "rating_count": metadata.get("rating_count") or 0,
     })
@@ -793,6 +795,7 @@ def _apply_identity_preview(world: dict, result: dict) -> None:
         "mod_badges": list(identity_payload.get("mod_badges") or presentation.get("mod_badges") or [])[:12],
         "icon_b64": str(identity_payload.get("icon_b64") or presentation.get("icon_b64") or "")[:2_000_000],
         "banner_b64": str(identity_payload.get("banner_b64") or presentation.get("banner_b64") or "")[:4_000_000],
+        "placard_background": str(identity_payload.get("placard_background") or presentation.get("placard_background") or "1"),
         "rating_average": float(identity_payload.get("rating_average") or presentation.get("rating_average") or 0),
         "rating_count": max(0, int(identity_payload.get("rating_count") or presentation.get("rating_count") or 0)),
     })
@@ -955,8 +958,9 @@ def _server_ports() -> tuple[list[int], list[int]]:
 
 def _server_install_paths(state: dict) -> tuple[str, str, str]:
     cfg = (state.setdefault("application", {}).setdefault("server_install", {}))
-    install_dir = str(cfg.get("install_dir") or "").strip()
-    steamcmd_dir = str(cfg.get("steamcmd_dir") or (str(Path(install_dir).parent / "steamcmd") if install_dir else "")).strip()
+    configured_dir = str(cfg.get("install_dir") or "").strip()
+    install_dir = str(resolve_server_layout(configured_dir).install_root) if configured_dir else ""
+    steamcmd_dir = str(cfg.get("steamcmd_dir") or (str(steamcmd_root_for_install(install_dir)) if install_dir else "")).strip()
     server_exe = str(cfg.get("server_exe") or "").strip()
     return install_dir, steamcmd_dir, server_exe
 
@@ -2275,6 +2279,7 @@ def handle(method: str, params: dict) -> object:
             "character_sharing": {"enabled": False},
             "icon_b64": str(local.get("icon_b64") or ""),
             "banner_b64": str(local.get("banner_b64") or ""),
+            "placard_background": str(local.get("placard_background") or "1"),
             "health_config": normalize_health_config(local.get("health_config")),
             "sync_config": cfg,
             "dedicated_config": {"port": 7777},
@@ -2397,6 +2402,11 @@ def handle(method: str, params: dict) -> object:
         for artwork_key in ("icon_b64", "banner_b64"):
             if artwork_key in incoming:
                 profile[artwork_key] = str(incoming.get(artwork_key) or "")
+        if "placard_background" in incoming:
+            value = str(incoming.get("placard_background") or "1")
+            if value not in {"1", "2", "3", "4"}:
+                raise ValueError("Placard background must be one of the built-in choices.")
+            profile["placard_background"] = value
         if "broadcast_config" in incoming and isinstance(incoming.get("broadcast_config"), dict):
             cfg = dict(profile.get("broadcast_config") or {})
             next_cfg = dict(incoming.get("broadcast_config") or {})
@@ -2416,7 +2426,7 @@ def handle(method: str, params: dict) -> object:
             save_singleplayer_profile(profile, profile_id)
         refresh_live_profile_metadata(profile_id, profile)
         client_state = state.setdefault("client", {})
-        if str(client_state.get("live_world_id") or "") == profile_id:
+        if "dragon_core" in incoming and str(client_state.get("live_world_id") or "") == profile_id:
             game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
             if game_dir and Path(game_dir).exists():
                 materialize_dragon_core(resolve_client_layout(game_dir).ue4ss_mods_dir, profile.get("dragon_core"), mode="Player")
@@ -2477,11 +2487,13 @@ def handle(method: str, params: dict) -> object:
         dragon_core = materialize_dragon_core(resolve_client_layout(game_dir).ue4ss_mods_dir, profile.get("dragon_core"), mode="Player")
         mode = "coop" if bool((profile.get("status") or {}).get("broadcasting")) else "singleplayer"
         marker = write_active_world(resolve_client_layout(game_dir).game_root, profile_id, mode)
+        units = scan_singleplayer_inventory(game_dir, live=True, profile_id=profile_id)
+        _cache_local_inventory(profile_id, units, live=True, source="activate")
         client_state["live_world_id"] = profile_id
         client_state["active_private_world_id"] = profile_id
         _record_notification(state, "World profile activated", f"{profile.get('name') or profile_id} · files, mods, settings and active marker exchanged", "success", key=f"profile-active:{profile_id}")
         save_state(state)
-        return {"profile": profile, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect, "dragon_core": dragon_core}, "state": public_state(state)}
+        return {"profile": profile, "units": units, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect, "dragon_core": dragon_core}, "state": public_state(state)}
 
     if method == "singleplayer.profile.unload":
         client_state = state.setdefault("client", {})
@@ -2585,7 +2597,7 @@ def handle(method: str, params: dict) -> object:
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             local = load_singleplayer_profile(profile_id); cfg = local.get("broadcast_config") or {}
             distribution = singleplayer_distribution_units(game_dir, profile_id)
-            profile_override = {"name": local.get("name") or "Private World", "description": local.get("description") or "", "tags": list(local.get("tags") or ["PRIVATE", "CO-OP"]), "classification": normalize_world_classification({**(local.get("classification") or {}), "host_type": "coop", "visibility": "friends"}, tags=local.get("tags") or [], host_type="coop", visibility="friends"), "character_sharing": {"enabled": False}, "icon_b64": local.get("icon_b64") or "", "banner_b64": local.get("banner_b64") or "", "health_config": normalize_health_config(local.get("health_config")), "sync_config": cfg, "dedicated_config": {"port": 7777}, "mods_txt_mode": "auto", "mods_txt_writer": "client_generate", "hierarchy": {}, "feedback": [], "player_map": {"allow_remote_clients": False}, "world_save_download": {"enabled": False}, "service_notice": {}}
+            profile_override = {"name": local.get("name") or "Private World", "description": local.get("description") or "", "tags": list(local.get("tags") or ["PRIVATE", "CO-OP"]), "classification": normalize_world_classification({**(local.get("classification") or {}), "host_type": "coop", "visibility": "friends"}, tags=local.get("tags") or [], host_type="coop", visibility="friends"), "character_sharing": {"enabled": False}, "icon_b64": local.get("icon_b64") or "", "banner_b64": local.get("banner_b64") or "", "placard_background": str(local.get("placard_background") or "1"), "health_config": normalize_health_config(local.get("health_config")), "sync_config": cfg, "dedicated_config": {"port": 7777}, "mods_txt_mode": "auto", "mods_txt_writer": "client_generate", "hierarchy": {}, "feedback": [], "player_map": {"allow_remote_clients": False}, "world_save_download": {"enabled": False}, "service_notice": {}}
             SHARE.publish(profile_id, distribution, str(cfg.get("password") or ""), str(cfg.get("server_key") or ""), int(cfg.get("sync_port") or 27051), hw_stats=gather_server_hardware_stats(), game_port=7777, broadcast=bool(cfg.get("lan_broadcast", True)), public_ip=str(cfg.get("external_ip") or local.get("public_ip") or ""), game_root=game_dir, share_access_key=str(cfg.get("share_access_key") or ""), allow_shared_access=True, profile_override=profile_override, persist_profile=False)
         _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"units": units, "state": public_state(state)}
@@ -3161,7 +3173,7 @@ def handle(method: str, params: dict) -> object:
         if not install_dir:
             raise ValueError("Set Settings → Servers → Server Directory first.")
         if not steamcmd_dir:
-            steamcmd_dir = str(Path(install_dir).parent / "steamcmd")
+            steamcmd_dir = str(steamcmd_root_for_install(install_dir))
         backup = backup_install_for_reset(install_dir, label="server")
         removed = wipe_install_after_backup(install_dir)
         install_cfg = application.setdefault("server_install", {})
@@ -3359,6 +3371,7 @@ def handle(method: str, params: dict) -> object:
                     "mod_badges": manifest.get("mod_badges") or [],
                     "icon_b64": manifest.get("icon_b64") or world.get("presentation", {}).get("icon_b64", ""),
                     "banner_b64": manifest.get("banner_b64") or world.get("presentation", {}).get("banner_b64", ""),
+                    "placard_background": str(manifest.get("placard_background") or world.get("presentation", {}).get("placard_background") or "1"),
                     "rating_average": manifest.get("rating_average") or 0,
                     "rating_count": manifest.get("rating_count") or 0,
                 }
@@ -3499,6 +3512,7 @@ def handle(method: str, params: dict) -> object:
             "mod_badges": manifest.get("mod_badges") or [],
             "icon_b64": manifest.get("icon_b64") or world.get("presentation", {}).get("icon_b64", ""),
             "banner_b64": manifest.get("banner_b64") or world.get("presentation", {}).get("banner_b64", ""),
+            "placard_background": str(manifest.get("placard_background") or world.get("presentation", {}).get("placard_background") or "1"),
             "rating_average": manifest.get("rating_average") or 0,
             "rating_count": manifest.get("rating_count") or 0,
         }
@@ -3698,6 +3712,11 @@ def handle(method: str, params: dict) -> object:
             profile["icon_b64"] = str(params.get("icon_b64") or "")
         if "banner_b64" in params:
             profile["banner_b64"] = str(params.get("banner_b64") or "")
+        if "placard_background" in params:
+            value = str(params.get("placard_background") or "1")
+            if value not in {"1", "2", "3", "4"}:
+                raise ValueError("Placard background must be one of the built-in choices.")
+            profile["placard_background"] = value
         if "auto_ue4ss" in params:
             profile["auto_ue4ss"] = bool(params.get("auto_ue4ss"))
         if "auto_runeschema" in params:
@@ -3802,7 +3821,7 @@ def handle(method: str, params: dict) -> object:
             STATE.configure_access_policy((state.get("application") or {}).get("server_access_policy") or {}, sync.get("access_policy") or {})
             refresh_live_profile_metadata(profile_id, profile)
             live_root = server_root_for_profile(profile)
-            if live_root and Path(live_root).exists():
+            if "dragon_core" in params and live_root and Path(live_root).exists():
                 materialize_dragon_core(resolve_server_layout(live_root).ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
         return public_state(state)
 
@@ -4802,7 +4821,7 @@ def handle(method: str, params: dict) -> object:
         install_dir, steamcmd_dir, _ = _server_install_paths(state)
         # Compatibility callers may still provide explicit paths.
         install_dir = str(params.get("install_dir") or install_dir or "").strip()
-        steamcmd_dir = str(params.get("steamcmd_dir") or steamcmd_dir or (str(Path(install_dir).parent / "steamcmd") if install_dir else "")).strip()
+        steamcmd_dir = str(params.get("steamcmd_dir") or steamcmd_dir or (str(steamcmd_root_for_install(install_dir)) if install_dir else "")).strip()
         if not install_dir:
             raise ValueError("Set Settings → Server → Server Directory first.")
         if not _steamcmd_executable(steamcmd_dir).exists():
@@ -5287,6 +5306,7 @@ def _directory_public_worlds() -> list[dict]:
             "platform_compatibility": dict(profile.get("platform_compatibility") or {"pc": True, "steam": True, "epic": True}),
             "icon_b64": str(profile.get("icon_b64") or ""),
             "banner_b64": str(profile.get("banner_b64") or ""), "online": bool(is_active and runtime.get("running")),
+            "placard_background": str(profile.get("placard_background") or "1"),
             "players": len(runtime.get("players") or []) if is_active else 0, "max_players": int(profile.get("max_players") or 0),
             "password_required": bool(dedicated.get("world_pass")), "modded": str(classification.get("content_type") or "vanilla") != "vanilla",
             "game_port": int(dedicated.get("port") or 7777), "sync_port": int(sync.get("port") or 27051),
@@ -5320,6 +5340,22 @@ def _directory_remote_authenticate(world_name: str, username: str, password: str
     return {"ok": False}
 
 
+def _directory_remote_item_catalog(profile: dict, state: dict) -> dict:
+    try:
+        catalog = spawner_catalog(server_root_for_profile(profile), kind="item", query="", category="", limit=2500,
+                                  custom_items=list((state.get("application") or {}).get("custom_items") or []))
+    except Exception as exc:
+        catalog = {"items": [], "categories": [], "error": str(exc)}
+    for item in catalog.get("items") or []:
+        icon_path = str(item.get("icon_path") or "")
+        if icon_path.startswith("data:image/"):
+            item["icon_url"] = icon_path
+        elif icon_path:
+            item["icon_url"] = "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/ue4ss/Mods/RSDWTools/web/catalog/icons/" + urllib.parse.quote(Path(icon_path).name)
+    return {"items": list(catalog.get("items") or [])[:2500], "categories": list(catalog.get("categories") or []),
+            "error": str(catalog.get("error") or "")[:300], "loaded": True}
+
+
 def _directory_remote_state(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile: raise KeyError("The linked Server World no longer exists")
@@ -5338,8 +5374,13 @@ def _directory_remote_state(profile_id: str) -> dict:
                 else f"{process_ram / (1024 ** 2):.0f} MB" if process_ram > 0 else "—")
     try:
         root = server_root_for_profile(profile)
-        units = scan_mod_units(profile_id, root) if active_id == profile_id and root else scan_profile_snapshot_units(profile_id)
-        mods = [unit.public(SHARE.live_keys if active_id == profile_id else set()) for unit in units if user_visible_mod_unit(unit)]
+        cached_inventory = _inventory_cache(profile)
+        if cached_inventory.get("updated_at"):
+            mods = [dict(row) for row in cached_inventory.get("mods") or []]
+        else:
+            units = scan_mod_units(profile_id, root) if active_id == profile_id and root else scan_profile_snapshot_units(profile_id)
+            cached_inventory = _cache_server_inventory(profile_id, units, active=active_id == profile_id)
+            mods = [dict(row) for row in cached_inventory.get("mods") or []]
     except Exception:
         mods = []
     try:
@@ -5358,17 +5399,6 @@ def _directory_remote_state(profile_id: str) -> dict:
                              "name": str(item.get("name") or "Player")[:96], "yaw": item.get("yaw"),
                              "tracker_available": bool(item.get("tracker_available")), "position_2d": bool(item.get("position_2d")),
                              "map_point": point, "position": {key: position.get(key) for key in ("x", "y", "z")}})
-    try:
-        item_catalog = spawner_catalog(server_root_for_profile(profile), kind="item", query="", category="", limit=2500,
-                                       custom_items=list((state.get("application") or {}).get("custom_items") or []))
-    except Exception as exc:
-        item_catalog = {"items": [], "categories": [], "error": str(exc)}
-    for item in item_catalog.get("items") or []:
-        icon_path = str(item.get("icon_path") or "")
-        if icon_path.startswith("data:image/"):
-            item["icon_url"] = icon_path
-        elif icon_path:
-            item["icon_url"] = "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/ue4ss/Mods/RSDWTools/web/catalog/icons/" + urllib.parse.quote(Path(icon_path).name)
     version_stack = dict((((state.get("application") or {}).get("runtime_version_cache") or {}).get("server") or {}))
     game_version = dict(version_stack.get("dragonwilds") or {})
     return {
@@ -5394,8 +5424,8 @@ def _directory_remote_state(profile_id: str) -> dict:
                         "backup_retention_count": int((profile.get("operations_schedule") or {}).get("backup_retention_count") or 10),
                         "game_version": game_version,
                         "update_available": game_version.get("server_current") is False},
-        "spawner": {"items": list(item_catalog.get("items") or [])[:2500], "categories": list(item_catalog.get("categories") or []),
-                    "players": live_players[:100], "bridge": PLAYER_BRIDGE.status(), "error": str(item_catalog.get("error") or "")[:300]},
+        "spawner": {"items": [], "categories": [], "players": live_players[:100], "bridge": PLAYER_BRIDGE.status(),
+                    "error": "", "loaded": False},
         "console": {"toolkit": rsdw_toolkit_status(server_root_for_profile(profile)),
                     "catalog": rsdw_command_catalog(server_root_for_profile(profile)),
                     "history": rsdw_console_history(profile_id, 200), "bridge": PLAYER_BRIDGE.status()},
@@ -5439,6 +5469,8 @@ def _directory_remote_action(profile_id: str, action: str, payload: dict | None 
     if action == "maintenance_update":
         schedule = normalize_schedule(payload.get("schedule") if isinstance(payload.get("schedule"), dict) else {})
         return handle("server.world.schedule.update", {"id": profile_id, "schedule": schedule})
+    if action == "spawner_catalog":
+        return _directory_remote_item_catalog(profile, load_state())
     if action == "spawner_item":
         player_id = str(payload.get("player_id") or "")[:128]
         runtime_path = str(payload.get("runtime_path") or "")[:1000]

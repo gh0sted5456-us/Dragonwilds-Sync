@@ -103,6 +103,28 @@ def _platform_icon_bytes(name: str) -> bytes:
     return b""
 
 
+def _placard_background_bytes(name: str) -> bytes:
+    """Serve one of the built-in, metadata-addressed World backgrounds."""
+    key = Path(str(name or "")).stem
+    if key not in {"1", "2", "3", "4"}:
+        return b""
+    filename = f"{key}.png"
+    bundle_root = getattr(sys, "_MEIPASS", "")
+    candidates = []
+    if bundle_root:
+        candidates.append(Path(bundle_root) / "renderer" / "assets" / "placards" / filename)
+        candidates.append(Path(bundle_root) / "placards" / filename)
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "placards" / filename)
+    for candidate in candidates:
+        try:
+            payload = candidate.read_bytes()
+            if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+                return payload
+        except OSError:
+            continue
+    return b""
+
+
 def _private_client(value: str) -> bool:
     """Only the directly connected private/loopback peer receives the admin UI.
 
@@ -530,6 +552,7 @@ class DirectoryHost:
             "sync_tags": [str(value)[:40] for value in sync_tags if str(value).strip()][:16],
             "icon_b64": _public_image_data(row.get("icon_b64") or presentation.get("icon_b64") or cached.get("icon_b64") or cached_presentation.get("icon_b64"), limit=8_000_000),
             "banner_b64": _public_image_data(row.get("banner_b64") or presentation.get("banner_b64") or cached.get("banner_b64") or cached_presentation.get("banner_b64"), limit=16_000_000),
+            "placard_background": str(row.get("placard_background") or presentation.get("placard_background") or cached.get("placard_background") or cached_presentation.get("placard_background") or "1")[:8],
             "online": bool(row.get("online", status.get("online", status.get("public_online", True)))),
             "players": max(0, int(row.get("players") or row.get("player_count") or status.get("players") or status.get("player_count") or 0)),
             "max_players": max(0, int(row.get("max_players") or row.get("player_capacity") or status.get("max_players") or status.get("player_capacity") or 0)),
@@ -740,7 +763,7 @@ class DirectoryHost:
         permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "refresh": "refresh",
                           "mod_update": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
-                          "spawner_item": "use_spawner", "console_execute": "use_console",
+                          "spawner_catalog": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",
                           }
         required = permission_for.get(action)
         if not required: raise ValueError("This remote command is not allowed")
@@ -1083,6 +1106,10 @@ class DirectoryHost:
                     icon = _platform_icon_bytes(path.rsplit("/", 1)[-1])
                     if not icon: self._json({"error": "platform icon unavailable"}, 404, cors=False); return
                     self._send(icon, "image/svg+xml; charset=utf-8", cors=False); return
+                if path.startswith("/assets/placards/"):
+                    artwork = _placard_background_bytes(path.rsplit("/", 1)[-1])
+                    if not artwork: self._json({"error": "placard background unavailable"}, 404, cors=False); return
+                    self._send(artwork, "image/png", cors=False); return
                 if path == "/landing":
                     if not directory_enabled and remote_enabled: self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
                     self._send(_blackout_html() if surface == "blackout" else _public_landing_html(), "text/html; charset=utf-8", cors=False); return

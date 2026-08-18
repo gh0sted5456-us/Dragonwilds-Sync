@@ -666,9 +666,11 @@ def _client_mods_txt_lines(names: list[str], existing_text: str = "") -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def generate_server_mods_txt(profile_id: str, game_root: str) -> dict:
+def generate_server_mods_txt(profile_id: str, game_root: str, units: list[ModUnit] | None = None) -> dict:
     layout = resolve_server_layout(game_root)
-    units = scan_mod_units(profile_id, str(layout.game_root))
+    # Callers that are already publishing/scanning may pass the authoritative
+    # inventory.  This avoids a second full walk of every mod file on Start.
+    units = units if units is not None else scan_mod_units(profile_id, str(layout.game_root))
     names = []
     for unit in units:
         if unit.group != "ue4ss_mod" or not unit.is_dir or unit.name.casefold() in {"mods.txt", "dwmapi.dll"}:
@@ -1911,6 +1913,7 @@ class ShareServer:
                                             "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]},
                               "community_rules": str(profile.get("community_rules") or "")[:4000],
                               "mod_badges": compute_mod_badges(units), "icon_b64": profile.get("icon_b64") or "", "banner_b64": profile.get("banner_b64") or "",
+                              "placard_background": str(profile.get("placard_background") or "1"),
                               "mod_summary": summary, "mods_txt_mode": str(profile.get("mods_txt_mode") or "auto").lower(),
                               "mods_txt_writer": mods_txt_writer,
                               "client_ue4ss_mods": client_ue4ss_mods,

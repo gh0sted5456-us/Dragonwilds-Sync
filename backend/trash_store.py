@@ -125,11 +125,29 @@ def trash_paths(kind: str, display_name: str, paths: list[str | Path], *, metada
     shutil.rmtree(pending, ignore_errors=True)
     pending.mkdir(parents=True)
     assets = []
+    moved: list[tuple[Path, Path]] = []
     try:
         for index, source in enumerate(sources):
             stored_name = f"{index:02d}-{_safe_name(source.name)}"
             destination = pending / stored_name
-            verified = _copy_verified(source, destination)
+            verified = None
+            if remove_sources:
+                try:
+                    # Profiles, saves, and launcher Trash normally share a
+                    # volume. An atomic rename is immediate and cannot produce
+                    # a partial copy, even for multi-gigabyte mod snapshots.
+                    os.replace(source, destination)
+                    moved.append((destination, source))
+                    if destination.is_dir():
+                        verified = {"type": "directory", "size": 0, "files": 0, "storage_mode": "atomic-move"}
+                    else:
+                        verified = {"type": "file", "size": destination.stat().st_size, "files": 1,
+                                    "storage_mode": "atomic-move"}
+                except OSError:
+                    verified = None
+            if verified is None:
+                verified = _copy_verified(source, destination)
+                verified["storage_mode"] = "verified-copy"
             assets.append({
                 "original_path": str(source),
                 "stored_name": stored_name,
@@ -152,16 +170,25 @@ def trash_paths(kind: str, display_name: str, paths: list[str | Path], *, metada
             # Delete only after every source was copied and verified. Files are
             # removed before directories so parent profile folders cannot erase
             # a still-unverified child source.
-            for source in sources:
+            copied_sources = [source for source, asset in zip(sources, assets) if asset.get("storage_mode") != "atomic-move"]
+            for source in copied_sources:
                 if source.is_file():
                     source.unlink()
-            for source in sorted((p for p in sources if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
+            for source in sorted((p for p in copied_sources if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
                 shutil.rmtree(source)
         index_value = _read_index()
         index_value["entries"] = [row for row in index_value["entries"] if str(row.get("id")) != entry_id] + [entry]
         _write_index(index_value)
         return entry
     except Exception:
+        if pending.exists():
+            for stored, original in reversed(moved):
+                try:
+                    if stored.exists() and not original.exists():
+                        original.parent.mkdir(parents=True, exist_ok=True)
+                        os.replace(stored, original)
+                except OSError:
+                    pass
         shutil.rmtree(pending, ignore_errors=True)
         if final.exists():
             # A promoted entry is intentionally retained if source deletion had
@@ -202,6 +229,12 @@ def list_entries() -> dict:
 
 
 def _verify_restored(asset: dict, source: Path, destination: Path) -> None:
+    if asset.get("storage_mode") == "atomic-move":
+        if not destination.exists():
+            raise RuntimeError(f"Restored payload is missing: {destination.name}")
+        if asset.get("type") == "file" and destination.stat().st_size != int(asset.get("size") or 0):
+            raise RuntimeError(f"Restored file size changed: {destination.name}")
+        return
     if asset.get("type") == "file":
         if not destination.is_file() or _sha(destination) != str(asset.get("sha256") or ""):
             raise RuntimeError(f"Restored file failed verification: {destination.name}")

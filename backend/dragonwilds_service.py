@@ -83,7 +83,10 @@ def _private_delete(method: str, params: dict, state: dict):
         return _legacy_handle(method, params)
     profile = _legacy.load_singleplayer_profile(profile_id)
     profile_root = _local_world._profile_root(profile_id)
-    paths: list[Path] = [profile_root]
+    # ``_world_cache`` lives inside ``profile_root``. Moving both a parent and
+    # its child as separate Trash assets makes the second path disappear after
+    # the first atomic rename and forces an unnecessary rollback/copy pass.
+    paths: list[Path] = [profile_root, _local_world._rollback_dir(profile_id)]
     save_path = Path(str(profile.get("save_path") or "")) if profile.get("save_path") else None
     if save_path and save_path.is_file():
         paths.append(save_path)

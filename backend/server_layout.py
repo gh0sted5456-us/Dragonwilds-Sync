@@ -115,12 +115,50 @@ def _install_candidates(raw: Path) -> list[Path]:
     return candidates
 
 
+def planned_steamcmd_install_root(selected: str | Path) -> Path:
+    """Return Full Setup's one authoritative SteamCMD game destination.
+
+    A user normally chooses a designated parent such as ``Dragonwilds Server``.
+    SteamCMD itself and the app 1374490 install then live below that parent in
+    the standard hierarchy. Explicit selections already ending at SteamCMD,
+    steamapps/common, or the dedicated folder are accepted without duplicating
+    path segments.
+    """
+    raw = Path(str(selected or "").strip()).expanduser()
+    if raw.is_file():
+        raw = raw.parent
+    # Native Linux installs deliberately use the established ~/rs_server-style
+    # force-install root. The SteamCMD/common contract here is the Windows
+    # dedicated-server layout (including UNC/mapped server folders).
+    if NATIVE_LINUX:
+        return raw
+    if raw.name.casefold() == DEDICATED_FOLDER.casefold():
+        return raw
+    if raw.name.casefold() == "common":
+        return raw / DEDICATED_FOLDER
+    if raw.name.casefold() == "steamapps":
+        return raw / "common" / DEDICATED_FOLDER
+    if raw.name.casefold() == "steamcmd":
+        return raw / "steamapps" / "common" / DEDICATED_FOLDER
+    return raw / "steamcmd" / "steamapps" / "common" / DEDICATED_FOLDER
+
+
+def steamcmd_root_for_install(selected: str | Path) -> Path:
+    install = planned_steamcmd_install_root(selected)
+    if (install.parent.name.casefold() == "common"
+            and install.parent.parent.name.casefold() == "steamapps"
+            and install.parent.parent.parent.name.casefold() == "steamcmd"):
+        return install.parent.parent.parent
+    return install.parent / "steamcmd"
+
+
 def resolve_server_layout(selected: str | Path) -> ServerLayout:
     raw = Path(str(selected or "").strip()).expanduser()
     # Keep non-existent paths deterministic so Settings can preview where Full Setup will install.
     candidates = _install_candidates(raw) if str(raw) else []
 
-    install_root = next((p for p in candidates if _looks_like_install_root(p)), raw)
+    matched_install = next((p for p in candidates if _looks_like_install_root(p)), None)
+    install_root = matched_install if matched_install is not None else planned_steamcmd_install_root(raw)
     if _looks_like_game_root(raw):
         # Official SteamCMD installs may contain a small top-level Binaries
         # tree beside the real nested RSDragonwilds game tree. Prefer the

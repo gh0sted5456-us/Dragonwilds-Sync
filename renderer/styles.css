@@ -1702,6 +1702,34 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 .recommended-mod-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:10px;margin-top:12px}
 .recommended-mod-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}
 .recommended-mod-card>div{min-width:0;display:grid;gap:4px}.recommended-mod-card strong,.recommended-mod-card small{overflow:hidden;text-overflow:ellipsis}.recommended-mod-card small{color:var(--muted)}
+
+/* RC stabilization: one GPU-composited splash frame, living placards, and
+   compact recommendation cards with independent banner/icon surfaces. */
+.fantasy-loading::before{display:none!important}
+.fantasy-loading-art,.fantasy-entry-art{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;transform:none!important;filter:saturate(.88) contrast(1.04);background:none!important}
+.world-card{position:relative;isolation:isolate;overflow:hidden}
+.world-card>.world-placard-backdrop{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;opacity:.16;filter:saturate(.75) contrast(.92);animation:placard-breathe 9s ease-in-out infinite alternate;pointer-events:none}
+.world-card::after{content:"";position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,rgba(12,16,16,.20),rgba(12,16,16,.84) 38%,rgba(12,16,16,.96));pointer-events:none}
+@keyframes placard-breathe{from{opacity:.11;transform:scale(1.015) translate3d(-.5%,0,0)}to{opacity:.23;transform:scale(1.065) translate3d(.6%,-.5%,0)}}
+@media (prefers-reduced-motion:reduce){.world-card>.world-placard-backdrop{animation:none}}
+.placard-background-picker{display:grid;grid-template-columns:repeat(4,minmax(105px,1fr));gap:10px}
+.placard-background-picker label{position:relative;display:grid;gap:5px;padding:7px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);cursor:pointer;overflow:hidden}
+.placard-background-picker label:has(input:checked){border-color:var(--gold);box-shadow:0 0 0 2px color-mix(in srgb,var(--gold) 20%,transparent)}
+.placard-background-picker input{position:absolute;opacity:0;pointer-events:none}
+.placard-background-picker img{width:100%;height:92px;object-fit:cover;border-radius:7px}
+.placard-background-picker span{text-align:center;color:var(--muted);font-size:9px}
+.recommended-mod-grid{grid-template-columns:repeat(auto-fit,minmax(min(320px,100%),1fr));gap:14px}
+.recommended-mod-card{position:relative;display:grid!important;grid-template-columns:82px minmax(0,1fr) auto!important;align-items:center!important;min-height:116px;padding:10px!important;overflow:hidden}
+.recommended-mod-media{position:relative!important;display:block!important;width:82px;height:92px;border-radius:10px;overflow:hidden;background:var(--panel-3)}
+.recommended-mod-banner{width:100%;height:100%;object-fit:cover;opacity:.76}.recommended-mod-banner-fallback{background:linear-gradient(145deg,#382a18,#111718)}
+.recommended-mod-icon{position:absolute;left:7px;bottom:7px;width:34px;height:34px;padding:4px;object-fit:contain;border:1px solid rgba(255,255,255,.24);border-radius:8px;background:rgba(7,10,10,.84)}
+.recommended-mod-media>span{position:absolute;top:5px;left:5px;right:5px;padding:2px 4px;border-radius:5px;background:rgba(0,0,0,.66);color:#fff;font-size:7px;font-weight:800;text-align:center}
+.recommended-mod-copy{min-width:0;display:grid;gap:5px}.recommended-mod-copy strong{white-space:normal;overflow-wrap:normal;word-break:normal}.recommended-mod-copy p{display:-webkit-box;margin:0;color:var(--muted);font-size:9px;line-height:1.35;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.recommended-mod-card>.btn{width:auto!important;align-self:end;white-space:nowrap}
+.world-rating{display:inline-flex;align-items:center;gap:4px;padding:2px 5px;border:0;background:transparent;color:var(--gold);font:inherit;cursor:pointer}.world-rating:hover{background:color-mix(in srgb,var(--gold) 12%,transparent);border-radius:7px}.world-rating small{color:var(--muted)}
+.player-chip .avatar{overflow:hidden}.player-chip .avatar img{display:block;width:100%;height:100%;object-fit:cover}.app-shell.nav-collapsed .player-chip .avatar{width:40px;height:40px;min-width:40px}
+.desktop-window{min-width:min(420px,calc(100% - 16px));max-width:calc(100% - 8px);max-height:calc(100% - 8px)}
+@media(max-width:720px){.placard-background-picker{grid-template-columns:repeat(2,minmax(110px,1fr))}.recommended-mod-card{grid-template-columns:70px minmax(0,1fr)!important}.recommended-mod-card>.btn{grid-column:1/-1;width:100%!important}.recommended-mod-media{width:70px}.desktop-window{min-width:calc(100% - 8px)!important}}
 .nexus-integration-hidden{display:none!important}
 .launcher-console-body{display:grid;gap:14px}.launcher-console-input{font-family:Consolas,"Cascadia Mono",monospace;font-size:15px}.launcher-command-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.launcher-command-list button{display:grid;text-align:left;gap:3px}.launcher-command-list code{color:var(--gold)}
 .items-enemies-page{display:grid;gap:14px}

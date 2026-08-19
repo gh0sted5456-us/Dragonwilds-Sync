@@ -17,6 +17,12 @@ except Exception as exc:
     print(f"[v3-phase4-web] disabled: {exc}", flush=True)
 
 try:
+    from v3_phase4_host_patch import install as install_v3_phase4_host_patch
+    install_v3_phase4_host_patch()
+except Exception as exc:
+    print(f"[v3-phase4-host-patch] disabled: {exc}", flush=True)
+
+try:
     from editor_runtime_stabilization import install as install_editor_stabilization
     install_editor_stabilization()
 except Exception as exc:

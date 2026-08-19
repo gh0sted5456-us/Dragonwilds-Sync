@@ -103,10 +103,24 @@ def test_character_clone_delete_and_equipment_avatar() -> None:
         model_index.write_text(json.dumps({"schema": "RSDWModel.WebsiteAvatarIndex.v1", "datasetVersion": "test", "slots": {"baseBody": [{}], "baseHead": [{}], "torso": [{"id": "EV:test-adamant", "label": "Body Adamant", "slot": "torso", "sex": "M_MED", "equipmentMeshDataPath": "ITEM_Armour_Body_Adamant_MeshData_Male.json"}]}}), encoding="utf-8")
         data_dir = root / "data"; data_dir.mkdir()
         (data_dir / "catalog.json").write_text(json.dumps({"recipeOutput": {"itemData": "opaque-adamant"}, "tabs": {"bag": {"items": [{"name": "Adamant Platebody", "itemData": "opaque-adamant", "sourcePath": "ITEM_Armour_T7_Body_Adamant.json", "equipment": "Body"}]}}}), encoding="utf-8")
-        old = (character_profiles.resolve_client_layout, character_profiles.CHAR_DELETE_BACKUPS, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_MODEL_INDEX)
+        # Isolate both the retained fallback cache and the canonical V2 item
+        # manifest. A developer with a populated real APPDATA manifest must not
+        # change this synthetic avatar fixture's resolution path.
+        old = (
+            character_profiles.resolve_client_layout,
+            character_profiles.CHAR_DELETE_BACKUPS,
+            rsdw_cache.RSDW_DATA_DIR,
+            rsdw_cache.RSDW_MODEL_INDEX,
+            rsdw_cache.RSDW_RAW_ITEMS_DIR,
+            rsdw_cache.RSDW_ITEM_MANIFEST_PATH,
+            rsdw_cache._ITEM_INDEX_CACHE,
+        )
         character_profiles.resolve_client_layout = lambda _game: SimpleNamespace(character_dir=character_dir)
         character_profiles.CHAR_DELETE_BACKUPS = root / "deleted"
         rsdw_cache.RSDW_DATA_DIR = data_dir; rsdw_cache.RSDW_MODEL_INDEX = model_index
+        rsdw_cache.RSDW_RAW_ITEMS_DIR = root / "raw_items"
+        rsdw_cache.RSDW_ITEM_MANIFEST_PATH = root / "item-manifest.json"
+        rsdw_cache._ITEM_INDEX_CACHE = None
         rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
         rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
         try:
@@ -123,7 +137,15 @@ def test_character_clone_delete_and_equipment_avatar() -> None:
             deleted = character_profiles.delete_character("", clone["character_id"])
             assert deleted["recoverable"] and Path(deleted["backup"]).is_file() and not Path(clone["path"]).exists()
         finally:
-            character_profiles.resolve_client_layout, character_profiles.CHAR_DELETE_BACKUPS, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_MODEL_INDEX = old
+            (
+                character_profiles.resolve_client_layout,
+                character_profiles.CHAR_DELETE_BACKUPS,
+                rsdw_cache.RSDW_DATA_DIR,
+                rsdw_cache.RSDW_MODEL_INDEX,
+                rsdw_cache.RSDW_RAW_ITEMS_DIR,
+                rsdw_cache.RSDW_ITEM_MANIFEST_PATH,
+                rsdw_cache._ITEM_INDEX_CACHE,
+            ) = old
             rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
             rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
 

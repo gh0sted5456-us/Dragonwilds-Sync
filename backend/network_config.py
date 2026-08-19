@@ -2,13 +2,9 @@ from __future__ import annotations
 
 """Canonical Dragonwilds Sync public-network identity.
 
-This module owns the built-in public Dragonwilds Sync Network endpoint.  V3
+This module owns the built-in public Dragonwilds Sync Network endpoint. V3
 registration/presence code must import this value rather than duplicating the
 literal in renderer, WebGUI, Quick, tests, or profile defaults.
-
-Phase 1 deliberately does not start network traffic.  It establishes one
-stable authority for the endpoint before Phase 2 adds automatic registration,
-presence, and per-World credentials.
 """
 
 DRAGONWILDS_SYNC_NETWORK_ID = "dragonwilds-sync-network"
@@ -28,3 +24,13 @@ def official_network_descriptor() -> dict:
         "managed_registration": True,
         "manual_secret_ui": False,
     }
+
+
+def network_contract() -> dict:
+    """Compatibility name used by the V3 network service.
+
+    Keeping the helper here preserves Phase 1's single endpoint owner while
+    allowing newer network code to consume the descriptor without duplicating
+    the canonical URL literal.
+    """
+    return official_network_descriptor()

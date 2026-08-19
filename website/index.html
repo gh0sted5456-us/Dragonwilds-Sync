@@ -24,7 +24,14 @@
     .release-channel-arrow{margin-left:auto;color:var(--gold);font-size:11px}
     .primary-channel-note{margin:0 0 24px;color:var(--muted);font-size:11px;line-height:1.55}
     .primary-channel-note strong{color:var(--text)}
-    @media(max-width:720px){.release-channels{flex-direction:column}.release-channel{width:100%;min-width:0}}
+    .remote-manager-launcher{margin-top:28px;border:1px solid var(--line-strong);border-radius:16px;padding:18px;background:var(--panel);backdrop-filter:blur(var(--glass-blur));box-shadow:inset 0 1px rgba(255,255,255,.025)}
+    .remote-manager-launcher h3{margin:0 0 6px;font-size:15px;letter-spacing:-.02em}.remote-manager-launcher>p{margin:0 0 15px;color:var(--muted);font-size:11px;line-height:1.6}
+    .remote-manager-form{display:grid;grid-template-columns:1fr auto;gap:8px}.remote-manager-field{min-width:0}.remote-manager-field label{display:block;margin-bottom:6px;color:var(--faint);font-size:8px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}
+    .remote-manager-field input{width:100%;min-height:44px;border:1px solid var(--line);border-radius:9px;background:var(--surface-3);color:var(--text);padding:0 12px;outline:none}.remote-manager-field input:focus{border-color:var(--line-strong);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 8%,transparent)}
+    .remote-manager-form button{align-self:end;min-height:44px;border:1px solid var(--line-strong);border-radius:9px;padding:0 15px;background:color-mix(in srgb,var(--gold) 11%,var(--panel-soft));color:var(--text);font-size:10px;font-weight:760;cursor:pointer}.remote-manager-form button:disabled{opacity:.6;cursor:wait}
+    .remote-manager-status{margin-top:10px;min-height:18px;color:var(--muted);font-size:10px}.remote-manager-status.checking{color:var(--gold)}.remote-manager-status.online{color:var(--green)}.remote-manager-status.error{color:var(--red)}
+    .remote-manager-safety{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.remote-manager-safety span{padding:5px 7px;border:1px solid var(--line);border-radius:999px;color:var(--faint);font-size:8px}
+    @media(max-width:720px){.release-channels{flex-direction:column}.release-channel{width:100%;min-width:0}.remote-manager-form{grid-template-columns:1fr}.remote-manager-form button{width:100%}}
   </style>
 </head>
 <body>
@@ -164,6 +171,19 @@
           <h2>Your server authority,<br>available remotely.</h2>
           <p>The WebGUI is not a second server manager. It routes supported actions through the same authoritative runtime and update controller used by the desktop application.</p>
           <div class="security-chips"><span>Authenticated sessions</span><span>CSRF protected</span><span>Permission checks</span><span>Audit records</span></div>
+          <div class="remote-manager-launcher">
+            <h3>Remote Server Manager</h3>
+            <p>Enter the WebGUI address configured for your server. Dragonwilds Sync checks that endpoint first, then opens that server's own login page in a new tab. The website never stores or sends your administrator credentials.</p>
+            <form class="remote-manager-form" id="remote-manager-form">
+              <div class="remote-manager-field">
+                <label for="remote-manager-address">Server manager address</label>
+                <input id="remote-manager-address" name="remote-manager-address" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://your-server.example:port" aria-describedby="remote-manager-status">
+              </div>
+              <button type="submit" id="remote-manager-open">Check &amp; Open Login ↗</button>
+            </form>
+            <div class="remote-manager-status" id="remote-manager-status" role="status" aria-live="polite">Enter a hostname/IP and WebGUI port. HTTPS is recommended for remote access.</div>
+            <div class="remote-manager-safety"><span>Address stays in your browser</span><span>No admin credentials in directory</span><span>Explicit login required</span></div>
+          </div>
         </div>
         <div class="webgui-console reveal delay-1" aria-label="WebGUI capability preview">
           <div class="console-head"><span>WORLD / ASHENVALE</span><span class="console-online">● ONLINE</span></div>
@@ -220,7 +240,7 @@
 
     <section class="section-shell docs" id="docs">
       <div class="section-heading reveal"><div class="eyebrow">Documentation</div><h2>From first launch<br>to full world control.</h2><p>The repository remains the authoritative source for setup notes, implementation details, releases, and issue tracking.</p></div>
-      <div class="docs-grid"><a class="doc-card reveal" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync#readme"><span>01</span><div><h3>Getting started</h3><p>Project overview and current setup information.</p></div><b>↗</b></a><a class="doc-card reveal delay-1" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/docs"><span>02</span><div><h3>Documentation</h3><p>Build notes, implementation details, and reference material.</p></div><b>↗</b></a><a class="doc-card reveal delay-2" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues"><span>03</span><div><h3>Issues & feedback</h3><p>Report a problem or follow development work.</p></div><b>↗</b></a></div>
+      <div class="docs-grid"><a class="doc-card reveal" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync#readme"><span>01</span><div><h3>Getting started</h3><p>Project overview and current setup information.</p></div><b>↗</b></a><a class="doc-card reveal delay-1" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/docs"><span>02</span><div><h3>Documentation</h3><p>Build notes, implementation details, and reference material.</p></div><b>↗</b></a><a class="doc-card reveal delay-2" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues"><span>03</span><div><h3>Issues &amp; feedback</h3><p>Report a problem or follow development work.</p></div><b>↗</b></a></div>
     </section>
   </main>
 
@@ -231,5 +251,87 @@
   </footer>
 
   <script src="script.js"></script>
+  <script>
+    (() => {
+      const form = document.getElementById('remote-manager-form');
+      const input = document.getElementById('remote-manager-address');
+      const button = document.getElementById('remote-manager-open');
+      const status = document.getElementById('remote-manager-status');
+      if (!form || !input || !button || !status) return;
+
+      const setStatus = (kind, message) => {
+        status.className = `remote-manager-status${kind ? ` ${kind}` : ''}`;
+        status.textContent = message;
+      };
+
+      const parseTarget = (raw) => {
+        let value = String(raw || '').trim();
+        if (!value) throw new Error('Enter the server manager hostname/IP and port.');
+        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `https://${value}`;
+        const url = new URL(value);
+        if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Only HTTP or HTTPS server manager addresses are supported.');
+        if (url.username || url.password) throw new Error('Do not put a username or password in the address. Use the server login page instead.');
+        return url;
+      };
+
+      const probe = async (target, timeoutMs = 6500) => {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const health = new URL('/health', target);
+          try {
+            await fetch(health.href, { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+            return;
+          } catch (healthError) {
+            if (controller.signal.aborted) throw healthError;
+          }
+          await fetch(target.href, { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+
+      form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        let target;
+        try {
+          target = parseTarget(input.value);
+        } catch (error) {
+          setStatus('error', error.message || 'That server manager address is not valid.');
+          return;
+        }
+
+        if (location.protocol === 'https:' && target.protocol === 'http:') {
+          setStatus('error', 'This HTTPS website cannot safely probe an HTTP-only remote manager. Enable HTTPS for the WebGUI, then try again.');
+          return;
+        }
+
+        const loginTab = window.open('about:blank', '_blank');
+        if (!loginTab) {
+          setStatus('error', 'Your browser blocked the login tab. Allow pop-ups for this site and try again.');
+          return;
+        }
+        try {
+          loginTab.document.title = 'Checking Dragonwilds Sync server…';
+          loginTab.document.body.style.cssText = 'background:#0b0d0f;color:#f2f0eb;font:16px system-ui;padding:32px';
+          loginTab.document.body.textContent = 'Checking Dragonwilds Sync Remote Server Manager…';
+        } catch (_) {}
+
+        button.disabled = true;
+        setStatus('checking', `Checking ${target.host}…`);
+        try {
+          await probe(target);
+          setStatus('online', `Remote Server Manager reachable at ${target.host}. Opening secure login…`);
+          loginTab.opener = null;
+          loginTab.location.replace(target.href);
+        } catch (_) {
+          try { loginTab.close(); } catch (_) {}
+          setStatus('error', `Could not reach ${target.host}. Check the address, WebGUI port, HTTPS certificate, firewall, and remote-access setting.`);
+        } finally {
+          button.disabled = false;
+        }
+      });
+    })();
+  </script>
 </body>
 </html>

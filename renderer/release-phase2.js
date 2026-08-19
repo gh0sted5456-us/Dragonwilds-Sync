@@ -9,6 +9,7 @@
   let lastSelection = { kind: '', id: '' };
   const serverSaveCache = new Map();
   const serverSaveInFlight = new Map();
+  let serverCardRefreshActive = false;
 
   const text = (value) => String(value ?? '').trim();
   const invoke = (method, params = {}) => bridge.invoke(method, params);
@@ -68,6 +69,23 @@
   function normalizedSaveState(state, kind, world) {
     if (!world) return { known: false, loaded: false, file: '', count: 0 };
     const summary = world.save_state && typeof world.save_state === 'object' ? world.save_state : null;
+    if (kind === 'server') {
+      const live = serverSaveCache.get(text(world.id));
+      if (live) return live;
+      // settings.json can prove a configured association immediately, but an
+      // older dedicated profile may still own a valid stored snapshot that has
+      // not been migrated into save associations yet. Never display a false
+      // "no save" while that cheap local status check is still pending.
+      if (summary && (summary.loaded === true || Number(summary.associated_count || 0) > 0)) {
+        return {
+          known: true,
+          loaded: summary.loaded === true,
+          file: text(summary.active_file),
+          count: Number(summary.associated_count || 0),
+        };
+      }
+      return { known: false, loaded: false, file: '', count: 0 };
+    }
     if (summary) {
       return {
         known: true,
@@ -76,14 +94,9 @@
         count: Number(summary.associated_count || 0),
       };
     }
-    if (kind === 'local') {
-      const detected = localDetectedSave(state, world.id);
-      if (detected) return { known: true, loaded: true, file: text(detected.save_file), count: 1 };
-      return { known: true, loaded: false, file: '', count: 0 };
-    }
-    const live = serverSaveCache.get(text(world.id));
-    if (live) return live;
-    return { known: false, loaded: false, file: '', count: 0 };
+    const detected = localDetectedSave(state, world.id);
+    if (detected) return { known: true, loaded: true, file: text(detected.save_file), count: 1 };
+    return { known: true, loaded: false, file: '', count: 0 };
   }
 
   function saveIndicatorMarkup(save, compact = false) {
@@ -162,6 +175,36 @@
 
   function enhanceWorldCards(state) {
     document.querySelectorAll('[data-world-id][data-server-card]').forEach((card) => addCardSaveIndicator(card, state));
+  }
+
+  function updateServerCardIndicators(id, save) {
+    document.querySelectorAll('[data-world-id][data-server-card="1"]').forEach((card) => {
+      if (text(card.dataset.worldId) !== text(id)) return;
+      const holder = card.querySelector('.phase2-card-save-state');
+      if (holder) holder.innerHTML = saveIndicatorMarkup(save, true);
+    });
+  }
+
+  async function refreshVisibleServerCardSaves(state) {
+    if (serverCardRefreshActive) return;
+    const ids = [...new Set([...document.querySelectorAll('[data-world-id][data-server-card="1"]')]
+      .map((card) => text(card.dataset.worldId))
+      .filter((id) => id && worldFor(state, 'server', id)))];
+    if (!ids.length) return;
+    serverCardRefreshActive = true;
+    try {
+      // Resolve sequentially so opening World Management never launches a
+      // burst of directory probes. Cached profile state paints first; these
+      // local checks refine only the visible dedicated cards afterward.
+      for (const id of ids) {
+        const world = worldFor(state, 'server', id);
+        if (normalizedSaveState(state, 'server', world).known) continue;
+        const save = await refreshServerSave(id);
+        updateServerCardIndicators(id, save);
+      }
+    } finally {
+      serverCardRefreshActive = false;
+    }
   }
 
   function joinProfilePath(base, kind, id) {
@@ -286,9 +329,7 @@
     const save = await refreshServerSave(id);
     const holder = document.querySelector('.phase2-detail-save-state');
     if (holder && resolveDetailIdentity(await stateSnapshot(), 'server') === id) holder.innerHTML = saveIndicatorMarkup(save);
-    document.querySelectorAll(`[data-world-id="${CSS.escape(id)}"][data-server-card="1"] .phase2-card-save-state`).forEach((target) => {
-      target.innerHTML = saveIndicatorMarkup(save, true);
-    });
+    updateServerCardIndicators(id, save);
   }
 
   async function enhance() {
@@ -297,6 +338,7 @@
     catch (_) { return; }
     enhanceWorldManagementDirectConnect();
     enhanceWorldCards(state);
+    refreshVisibleServerCardSaves(state).catch(() => {});
     if (document.querySelector('#detach-private-world')) {
       groupTabs('local');
       addDetailActions(state, 'local');

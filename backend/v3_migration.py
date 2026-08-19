@@ -2,8 +2,8 @@ from __future__ import annotations
 
 """Durable V3 migration journal and non-destructive managed-state backup.
 
-Phase 1 adds the safety rail only.  Later V3 phases call this module before
-performing schema/ownership migrations.  Native Dragonwilds save locations are
+Phase 1 adds the safety rail only. Later V3 phases call this module before
+performing schema/ownership migrations. Native Dragonwilds save locations are
 never moved or copied by this helper; it snapshots launcher-managed settings,
 profile metadata, indexes, and migration-relevant JSON only.
 """
@@ -69,6 +69,7 @@ def load_journal() -> dict:
     for stage in V3_MIGRATION_STAGES:
         stages.setdefault(stage, False)
     journal.setdefault("backup", {})
+    journal.setdefault("migration_context", {})
     events = journal.setdefault("events", [])
     journal["events"] = [row for row in events if isinstance(row, dict)][-200:]
     return journal
@@ -99,6 +100,11 @@ def mark_stage(stage: str, complete: bool = True, *, note: str = "") -> dict:
     journal["events"].append({"at": _now(), "stage": stage, "complete": bool(complete), "note": str(note or "")[:500]})
     journal["events"] = journal["events"][-200:]
     return save_journal(journal)
+
+
+def update_stage(stage: str, complete: bool = True, *, note: str = "") -> dict:
+    """V3 compatibility name for the Phase 1 journal's stage writer."""
+    return mark_stage(stage, complete, note=note)
 
 
 def next_incomplete_stage(journal: dict | None = None) -> str:
@@ -272,11 +278,23 @@ def create_managed_state_backup(*, force: bool = False) -> dict:
     return deepcopy(journal["backup"])
 
 
-def prepare_for_v3_migration() -> dict:
-    """Idempotent pre-migration entrypoint for later V3 phases."""
+def prepare_for_v3_migration(*, source_version: str = "", target_version: str = "") -> dict:
+    """Idempotent pre-migration entrypoint for all V3 phases.
+
+    Optional version labels are audit metadata only; they do not change backup
+    ownership or bypass the Phase 1 source-baseline contract.
+    """
     journal = ensure_journal()
     backup = create_managed_state_backup()
     journal = load_journal()
+    if source_version or target_version:
+        context = journal.setdefault("migration_context", {})
+        if source_version:
+            context["source_version"] = str(source_version)[:120]
+        if target_version:
+            context["target_version"] = str(target_version)[:120]
+        context["last_prepared_at"] = _now()
+        journal = save_journal(journal)
     return {
         "journal": journal,
         "backup": backup,

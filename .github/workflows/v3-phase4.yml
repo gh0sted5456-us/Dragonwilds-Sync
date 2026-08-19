@@ -50,5 +50,13 @@ jobs:
         run: |
           node --check renderer/release-v3-phase4.js
           node --check renderer/release-v3-phase4-safety.js
+          node --check renderer/release-v3-phase4-manager.js
       - name: Verify Phase 4 Python syntax
-        run: python -m py_compile backend/v3_phase4.py backend/v3_phase4_web.py backend/dragonwilds_service.py
+        run: >-
+          python -m py_compile
+          backend/v3_phase4.py
+          backend/v3_phase4_registry.py
+          backend/v3_phase4_badges.py
+          backend/v3_phase4_web.py
+          backend/v3_phase4_host_patch.py
+          backend/dragonwilds_service.py

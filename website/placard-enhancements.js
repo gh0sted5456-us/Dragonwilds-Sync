@@ -1,12 +1,22 @@
-/* Icon and motion enhancements layered over the app-parity World placards. */
+/* Asset-first icon enhancements layered over the app-parity World placards.
+   Real SVG artwork from renderer/assets is preferred; semantic inline SVGs are
+   only a fallback when the application does not ship a matching badge asset. */
 (() => {
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const baseCreateWorldCard = createWorldCard;
 
-  const platformAssets = {
-    steam: 'steam.svg', windows: 'windows.svg', linux: 'linux.svg', discord: 'discord.svg',
-    xbox: 'xbox.svg', playstation: 'playstation.svg', nintendo: 'nintendo.svg', epic: 'epicgames.svg',
-  };
+  const REAL_BADGE_ASSETS = [
+    { test: /\b(?:18\+|adult|adults only|mature)\b/i, src: 'assets/platforms/adults-only.svg', kind: 'age' },
+    { test: /\b(?:kid friendly|kid-friendly|family friendly|family-friendly)\b/i, src: 'assets/platforms/kid-friendly.svg', kind: 'age' },
+    { test: /\b(?:nexus|nexusmods|nexus mods)\b/i, src: 'assets/platforms/nexusmods.svg', kind: 'brand' },
+    { test: /\b(?:discord|community|rsdw)\b/i, src: 'assets/platforms/discord.svg', kind: 'brand' },
+    { test: /\b(?:steam|steamcmd|build id|buildid|current build|outdated build)\b/i, src: 'assets/platforms/steam.svg', kind: 'brand' },
+    { test: /\b(?:playstation|ps4|ps5)\b/i, src: 'assets/platforms/playstation.svg', kind: 'brand' },
+    { test: /\b(?:xbox)\b/i, src: 'assets/platforms/xbox.svg', kind: 'brand' },
+    { test: /\b(?:nintendo|switch)\b/i, src: 'assets/platforms/nintendo.svg', kind: 'brand' },
+    { test: /\b(?:epic|epic games)\b/i, src: 'assets/platforms/epicgames.svg', kind: 'brand' },
+    { test: /\b(?:modded|mods enabled|modded world)\b/i, src: 'assets/badges/modded-items.svg', kind: 'app' },
+  ];
 
   const svgPaths = {
     shield: ['M12 2 20 5v6c0 5.2-3.4 9.3-8 11-4.6-1.7-8-5.8-8-11V5l8-3Z'],
@@ -23,7 +33,7 @@
     clock: ['M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z', 'M12 7v5l3 2'],
   };
 
-  function makeSvgIcon(kind, className = 'badge-icon') {
+  function makeSvgIcon(kind, className = 'badge-icon badge-icon-fallback') {
     const svg = document.createElementNS(SVG_NS, 'svg');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('aria-hidden', 'true');
@@ -41,28 +51,41 @@
     return svg;
   }
 
-  function makeAssetIcon(asset, className = 'badge-icon badge-icon-asset') {
+  function fallbackKind(label) {
+    const text = String(label || '').toLowerCase();
+    if (/runeschema|rune schema|\brune\b/.test(text)) return 'rune';
+    if (/ue4ss|ue4|script|code/.test(text)) return 'code';
+    if (/\bpak\b|paks|package/.test(text)) return 'package';
+    if (/verified|sync|operator|official/.test(text)) return 'verified';
+    if (/dedicated|server|host|singleplayer|co-?op/.test(text)) return 'server';
+    if (/hardcore|creative|normal|custom/.test(text)) return 'game';
+    if (/vanilla|public|private/.test(text)) return 'shield';
+    return 'badge';
+  }
+
+  function resolveRealAsset(label) {
+    const text = String(label || '').trim();
+    return REAL_BADGE_ASSETS.find((entry) => entry.test.test(text)) || null;
+  }
+
+  function makeRealAssetIcon(asset, label, className = 'badge-icon badge-icon-asset') {
     const img = document.createElement('img');
-    img.className = className;
-    img.src = `assets/platforms/${asset}`;
+    img.className = `${className} badge-icon-${asset.kind}`;
+    img.src = new URL(asset.src, document.baseURI).href;
     img.alt = '';
+    img.decoding = 'async';
     img.loading = 'lazy';
-    img.addEventListener('error', () => img.remove(), { once: true });
+    img.dataset.assetSource = asset.src;
+    img.addEventListener('error', () => {
+      const fallback = makeSvgIcon(fallbackKind(label), className.replace('badge-icon-asset', 'badge-icon-fallback'));
+      img.replaceWith(fallback);
+    }, { once: true });
     return img;
   }
 
   function badgeIcon(label) {
-    const text = String(label || '').toLowerCase();
-    if (/discord|community|rsdw/.test(text)) return makeAssetIcon(platformAssets.discord);
-    if (/steam|\bbuild\b|\bcl[-\s]?\d|current|outdated/.test(text)) return makeAssetIcon(platformAssets.steam);
-    if (/runeschema|rune schema|\brune\b/.test(text)) return makeSvgIcon('rune');
-    if (/ue4ss|ue4|script|code/.test(text)) return makeSvgIcon('code');
-    if (/\bpak\b|paks|package/.test(text)) return makeSvgIcon('package');
-    if (/verified|sync|operator|official/.test(text)) return makeSvgIcon('verified');
-    if (/dedicated|server|host|singleplayer|co-?op/.test(text)) return makeSvgIcon('server');
-    if (/hardcore|creative|normal|custom/.test(text)) return makeSvgIcon('game');
-    if (/vanilla|modded|handmade|hybrid/.test(text)) return makeSvgIcon('shield');
-    return makeSvgIcon('badge');
+    const asset = resolveRealAsset(label);
+    return asset ? makeRealAssetIcon(asset, label) : makeSvgIcon(fallbackKind(label));
   }
 
   function prependIcon(node, icon) {
@@ -71,32 +94,27 @@
   }
 
   function enhanceBadges(card) {
-    card.querySelectorAll('.badges .badge').forEach((badge) => prependIcon(badge, badgeIcon(badge.textContent)));
+    card.querySelectorAll('.badges .badge').forEach((badge) => {
+      const label = badge.textContent.trim();
+      const asset = resolveRealAsset(label);
+      if (asset) badge.dataset.iconAsset = asset.src;
+      prependIcon(badge, badgeIcon(label));
+    });
+
     card.querySelectorAll('.world-back-section').forEach((section) => {
       if (section.querySelector('h4')?.textContent?.trim().toLowerCase() !== 'badges') return;
       section.querySelectorAll('.world-back-list > span').forEach((badge) => {
         badge.classList.add('back-badge');
-        prependIcon(badge, badgeIcon(badge.textContent));
+        const label = badge.textContent.trim();
+        const asset = resolveRealAsset(label);
+        if (asset) badge.dataset.iconAsset = asset.src;
+        prependIcon(badge, badgeIcon(label));
       });
     });
   }
 
-  function platformAsset(platform) {
-    const key = String(platform || '').toLowerCase();
-    if (key.includes('steam')) return platformAssets.steam;
-    if (key.includes('windows')) return platformAssets.windows;
-    if (key.includes('linux')) return platformAssets.linux;
-    if (key.includes('xbox')) return platformAssets.xbox;
-    if (key.includes('playstation')) return platformAssets.playstation;
-    if (key.includes('nintendo')) return platformAssets.nintendo;
-    if (key.includes('epic')) return platformAssets.epic;
-    return '';
-  }
-
-  function makeMetric(text, icon, className = '') {
-    const span = makeEl('span', className, text);
-    if (icon) span.prepend(icon);
-    return span;
+  function makeMetricIcon(kind) {
+    return makeSvgIcon(kind, 'metric-icon');
   }
 
   function enhanceMetrics(card, world) {
@@ -109,8 +127,9 @@
       if (locationNode && /^[A-Z]{2}$/.test(world.countryCode || '')) {
         const flag = document.createElement('img');
         flag.className = 'metric-icon country-flag';
-        flag.src = `assets/flags/4x3/${world.countryCode.toLowerCase()}.svg`;
+        flag.src = new URL(`assets/flags/4x3/${world.countryCode.toLowerCase()}.svg`, document.baseURI).href;
         flag.alt = '';
+        flag.decoding = 'async';
         flag.loading = 'lazy';
         flag.addEventListener('error', () => flag.remove(), { once: true });
         prependIcon(locationNode, flag);
@@ -119,28 +138,29 @@
 
     if (world.hosting) {
       const node = [...metrics.children].find((entry) => entry.textContent.trim() === world.hosting);
-      prependIcon(node, makeSvgIcon('cloud', 'metric-icon'));
+      prependIcon(node, makeMetricIcon('cloud'));
     }
     if (world.audience) {
       const node = [...metrics.children].find((entry) => entry.textContent.trim() === world.audience);
-      prependIcon(node, makeSvgIcon('audience', 'metric-icon'));
+      prependIcon(node, badgeIcon(world.audience));
     }
 
     const playerNode = [...metrics.children].find((entry) => /players$/i.test(entry.textContent.trim()));
-    prependIcon(playerNode, makeSvgIcon('players', 'metric-icon'));
+    prependIcon(playerNode, makeMetricIcon('players'));
     const lastSeenNode = [...metrics.children].find((entry) => /^Last seen /i.test(entry.textContent.trim()));
-    prependIcon(lastSeenNode, makeSvgIcon('clock', 'metric-icon'));
+    prependIcon(lastSeenNode, makeMetricIcon('clock'));
 
-    const asset = platformAsset(world.platform);
-    if (world.platform && asset) {
-      const platformNode = makeMetric(world.platform.toUpperCase(), makeAssetIcon(asset, 'metric-icon platform-metric-icon'), 'world-platform-badge');
+    const platformAsset = resolveRealAsset(world.platform);
+    if (world.platform && platformAsset) {
+      const platformNode = makeEl('span', 'world-platform-badge', world.platform.toUpperCase());
+      platformNode.prepend(makeRealAssetIcon(platformAsset, world.platform, 'metric-icon badge-icon-asset'));
       const community = metrics.querySelector('.world-community-badge');
       if (community) metrics.insertBefore(platformNode, community);
       else metrics.appendChild(platformNode);
     }
   }
 
-  createWorldCard = function createIconEnhancedWorldCard(world) {
+  createWorldCard = function createAssetEnhancedWorldCard(world) {
     const card = baseCreateWorldCard(world);
     enhanceBadges(card);
     enhanceMetrics(card, world);

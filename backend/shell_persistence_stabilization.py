@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Post-consolidation shell/profile persistence stabilization.
 
-This layer is intentionally additive.  ``profile.json`` remains the compatibility
+This layer is intentionally additive. ``profile.json`` remains the compatibility
 provider, while ``settings.json`` now carries a compact known-mod manifest so a
 World can reopen with its last persisted mod state without a filesystem rescan.
 The same module gives Mod Explorer a persistent, invalidation-aware text-file
@@ -15,9 +15,11 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import threading
 import time
 
+from core_components import is_user_manageable_mod
 import profile_settings
 import profile_store
 
@@ -30,7 +32,7 @@ _LOCK = threading.RLock()
 _REFRESHING: set[str] = set()
 _INSTALLED = False
 
-# These are presentation/desired-state fields only.  File contents, credentials,
+# These are presentation/desired-state fields only. File contents, credentials,
 # absolute runtime roots and heavyweight scanner evidence do not belong in the
 # durable World settings contract.
 _MOD_ROW_KEYS = (
@@ -46,6 +48,8 @@ def _compact_mod_row(raw: object) -> dict | None:
     name = str(raw.get("name") or "").strip()
     group = str(raw.get("group") or "").strip()
     if not key and not (name and group):
+        return None
+    if name and group and not is_user_manageable_mod(name, group):
         return None
     row = {field: deepcopy(raw[field]) for field in _MOD_ROW_KEYS if field in raw}
     if key:
@@ -77,7 +81,7 @@ def _compact_inventory(profile: dict) -> list[dict]:
 def _hydrate_known_mods(profile: dict, settings: dict) -> bool:
     """Recover missing compatibility mod state from durable settings.
 
-    Existing non-empty compatibility values win.  This matters during writes:
+    Existing non-empty compatibility values win. This matters during writes:
     a legitimate new profile mutation must never be overwritten by an older
     settings projection merely because the compatibility provider is retained.
     """
@@ -96,15 +100,17 @@ def _hydrate_known_mods(profile: dict, settings: dict) -> bool:
     cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
     current_inventory = cache.get("mods") if isinstance(cache.get("mods"), list) else []
     if desired_inventory and not current_inventory:
-        cache = dict(cache)
-        cache["mods"] = [deepcopy(row) for row in desired_inventory if isinstance(row, dict)]
-        stamp = str(mods.get("inventory_updated_at") or settings.get("updated_at") or "")
-        cache["mods_updated_at"] = stamp
-        cache["updated_at"] = stamp
-        cache["mods_source"] = "settings-manifest"
-        cache["source"] = "settings-manifest"
-        profile["metadata_cache"] = cache
-        changed = True
+        filtered = [row for raw in desired_inventory if (row := _compact_mod_row(raw))]
+        if filtered:
+            cache = dict(cache)
+            cache["mods"] = [deepcopy(row) for row in filtered]
+            stamp = str(mods.get("inventory_updated_at") or settings.get("updated_at") or "")
+            cache["mods_updated_at"] = stamp
+            cache["updated_at"] = stamp
+            cache["mods_source"] = "settings-manifest"
+            cache["source"] = "settings-manifest"
+            profile["metadata_cache"] = cache
+            changed = True
     return changed
 
 
@@ -124,7 +130,7 @@ def _install_profile_manifest_patch() -> None:
         else:
             previous_mods = (existing or {}).get("mods") if isinstance((existing or {}).get("mods"), dict) else {}
             previous_inventory = previous_mods.get("inventory") if isinstance(previous_mods.get("inventory"), list) else []
-            mods["inventory"] = deepcopy(previous_inventory)
+            mods["inventory"] = [row for raw in previous_inventory if (row := _compact_mod_row(raw))]
         cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
         mods["inventory_updated_at"] = str(
             cache.get("mods_updated_at") or cache.get("updated_at") or
@@ -265,11 +271,31 @@ def _invalidate_mod_indexes(profile_id: str = "", key: str = "") -> int:
     return removed
 
 
+def _bind_legacy_aliases(local_world) -> None:
+    legacy = sys.modules.get("dragonwilds_service_legacy")
+    if legacy is None:
+        return
+    if callable(getattr(local_world, "list_editable_mod_files", None)):
+        legacy.list_singleplayer_mod_files = local_world.list_editable_mod_files
+    for local_name, legacy_name in (
+        ("save_mod_file", "save_singleplayer_mod_file"),
+        ("create_mod_file", "create_singleplayer_mod_file"),
+        ("copy_mod_file", "copy_singleplayer_mod_file"),
+        ("delete_mod_file", "delete_singleplayer_mod_file"),
+    ):
+        provider = getattr(local_world, local_name, None)
+        if callable(provider) and hasattr(legacy, legacy_name):
+            setattr(legacy, legacy_name, provider)
+
+
 def _install_mod_file_index_patch() -> None:
     import local_world
-    import sys
 
+    # Runtime hooks may install before dragonwilds_service_legacy exists. Even
+    # when the local provider is already patched, repeat the cheap alias bind so
+    # the packaged service cannot retain a stale pre-patch imported function.
     if getattr(local_world, "_DWS_PERSISTENT_MOD_FILE_INDEX", False):
+        _bind_legacy_aliases(local_world)
         return
     local_world._DWS_PERSISTENT_MOD_FILE_INDEX = True
     original_list = local_world.list_editable_mod_files
@@ -296,17 +322,9 @@ def _install_mod_file_index_patch() -> None:
             return original_list(game_dir, key, live=live, profile_id=profile_id, include_all=include_all)
 
     local_world.list_editable_mod_files = list_files
-    legacy = sys.modules.get("dragonwilds_service_legacy")
-    if legacy is not None:
-        legacy.list_singleplayer_mod_files = list_files
 
     # App-owned file mutations invalidate only the selected mod's persisted tree.
-    for local_name, legacy_name in (
-        ("save_mod_file", "save_singleplayer_mod_file"),
-        ("create_mod_file", "create_singleplayer_mod_file"),
-        ("copy_mod_file", "copy_singleplayer_mod_file"),
-        ("delete_mod_file", "delete_singleplayer_mod_file"),
-    ):
+    for local_name in ("save_mod_file", "create_mod_file", "copy_mod_file", "delete_mod_file"):
         original = getattr(local_world, local_name, None)
         if not callable(original) or getattr(original, "_dws_index_invalidator", False):
             continue
@@ -320,22 +338,22 @@ def _install_mod_file_index_patch() -> None:
             wrapped._dws_index_invalidator = True
             return wrapped
 
-        wrapped = make_wrapper(original)
-        setattr(local_world, local_name, wrapped)
-        if legacy is not None and hasattr(legacy, legacy_name):
-            setattr(legacy, legacy_name, wrapped)
+        setattr(local_world, local_name, make_wrapper(original))
+
+    _bind_legacy_aliases(local_world)
 
 
 def install() -> bool:
     global _INSTALLED
-    if _INSTALLED:
-        return False
+    first = not _INSTALLED
     _install_profile_manifest_patch()
     try:
+        # Deliberately repeat on subsequent calls so a late-imported legacy
+        # service receives the already-patched local-world aliases.
         _install_mod_file_index_patch()
     except Exception:
         # Profile persistence remains valuable even if a stripped test/provider
         # does not expose the optional Mod Explorer functions.
         pass
     _INSTALLED = True
-    return True
+    return first

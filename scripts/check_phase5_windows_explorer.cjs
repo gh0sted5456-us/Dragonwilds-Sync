@@ -6,7 +6,9 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const phase5 = read('renderer/release-phase5.js');
+const bridge = read('renderer/release-phase5-frame-bridge.js');
 const css = read('renderer/release-phase5.css');
+const embeddedCss = read('renderer/release-phase5-embedded.css');
 const html = read('renderer/index.html');
 
 const requireText = (source, token, label = token) => {
@@ -17,7 +19,16 @@ const rejectText = (source, token, label = token) => {
 };
 
 requireText(html, 'release-phase5.css', 'Phase 5 stylesheet load');
+requireText(html, 'release-phase5-embedded.css', 'embedded workspace guard stylesheet');
+requireText(html, 'release-phase5-frame-bridge.js', 'same-renderer embedded bridge bootstrap');
 requireText(html, 'release-phase5.js', 'Phase 5 renderer load');
+if (html.indexOf('release-phase5-frame-bridge.js') > html.indexOf('app.js')) {
+  throw new Error('Phase 5 embedded bridge must initialize before app.js.');
+}
+requireText(bridge, "query.get('phase5Internal') !== '1'", 'embedded-only bridge guard');
+requireText(bridge, 'window.parent?.dragonwilds', 'reuse parent preload/backend bridge');
+rejectText(bridge, 'openDetachedWindow', 'BrowserWindow creation from embedded bridge');
+
 requireText(phase5, 'DRAGONWILDS SYNC EXPLORER', 'Explorer title');
 requireText(phase5, 'assets/application-icon.png', 'application icon in internal windows/Explorer');
 for (const category of ['UE4SS', 'RuneSchema', 'Pak']) requireText(phase5, category, `logical ${category} category`);
@@ -29,6 +40,7 @@ requireText(phase5, "text(unit.visibility) !== 'user-mod'", 'user-mod visibility
 
 for (const id of ['detach-profile', 'detach-worlds', 'detach-settings', 'detach-private-world', 'detach-server-world']) {
   requireText(phase5, id, `internal Open in Window interception for ${id}`);
+  requireText(embeddedCss, `#${id}`, `nested ${id} suppression inside internal route workspace`);
 }
 requireText(phase5, "target.id === 'phase2-view-mods'", 'World View Mods → Explorer interception');
 requireText(phase5, "target.dataset.action === 'open'", 'Mod Manager Open/Edit → same Explorer interception');
@@ -57,7 +69,7 @@ for (const rpc of [
 requireText(phase5, 'rescan: refresh', 'explicit Explorer Refresh bypasses cached inventory');
 requireText(phase5, 'Files load only when you open a mod.', 'lazy mod-file discovery');
 requireText(phase5, 'Binary and oversized payloads', 'binary/view-only policy');
-requireText(phase5, "JSON.parse(content)", 'JSON save validation');
+requireText(phase5, 'JSON.parse(content)', 'JSON save validation');
 
 requireText(css, '.phase5-window', 'internal window styles');
 requireText(css, '.phase5-route-frame', 'internal route frame styles');

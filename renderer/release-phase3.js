@@ -11,6 +11,7 @@
   const MAX_UI_METRICS = 120;
   const activeRequests = new Map();
   const delayedIndicators = new Map();
+  const inventoryVerifiedAt = new Map();
   let lastWarmAt = 0;
 
   const text = (value) => String(value ?? '').trim();
@@ -24,7 +25,7 @@
 
   function requestIdle(work, timeout = 1200) {
     if (typeof requestIdleCallback === 'function') return requestIdleCallback(work, { timeout });
-    return setTimeout(work, 40);
+    return setTimeout(work, 80);
   }
 
   function stateSnapshot() {
@@ -39,40 +40,22 @@
     return text(state?.server?.active_world_id || state?.server?.runtime?.active_profile_id || state?.server_profiles?.[0]?.id);
   }
 
-  function criticalRequests(state) {
-    const requests = [
-      { method: 'application.storage.paths', params: {} },
-      { method: 'application.rsdw.status', params: {} },
-      { method: 'application.map.status', params: {} },
-    ];
-    if (!minimalMode) requests.push({ method: 'characters.list', params: {} });
-    const localId = localProfileId(state);
-    if (localId) {
-      requests.push(
-        { method: 'singleplayer.profile.get', params: { profile_id: localId } },
-        { method: 'singleplayer.inventory', params: { profile_id: localId, rescan: false } },
-        { method: 'singleplayer.config.list', params: { profile_id: localId } },
-      );
-    }
-    const serverId = serverProfileId(state);
-    if (serverId) {
-      requests.push(
-        { method: 'server.world.inventory', params: { id: serverId, rescan: false } },
-        { method: 'server.world.save.status', params: { id: serverId } },
-        { method: 'server.world.config.list', params: { id: serverId } },
-        { method: 'server.backups.list', params: { id: serverId } },
-      );
-    }
-    return requests;
+  // Startup must make the shell usable first. Heavy modules (RSDW, map,
+  // characters, inventories, backups, configs) are intentionally omitted here
+  // and warmed only when the user actually heads toward that surface.
+  function criticalRequests() {
+    return minimalMode ? [] : [{ method: 'application.storage.paths', params: {} }];
   }
 
   async function prewarmCritical(force = false) {
     const state = stateSnapshot();
     if (!state) return;
     const stamp = Date.now();
-    if (!force && stamp - lastWarmAt < 15000) return;
+    if (!force && stamp - lastWarmAt < 60000) return;
     lastWarmAt = stamp;
-    try { await bridge.prewarm(criticalRequests(state)); } catch (_) {}
+    const requests = criticalRequests(state);
+    if (!requests.length) return;
+    try { await bridge.prewarm(requests); } catch (_) {}
   }
 
   function prewarmProfile(kind, id, tab = '') {
@@ -80,22 +63,41 @@
     if (!id) return;
     const requests = [];
     if (kind === 'server') {
-      if (!tab || tab === 'mods') requests.push({ method: 'server.world.inventory', params: { id, rescan: false } });
+      // Opening a World defaults to Overview. Do not prewarm Mods, Config and
+      // Backups merely because the World card was clicked.
       if (!tab || ['overview', 'maintenance', 'save-editor'].includes(tab)) requests.push({ method: 'server.world.save.status', params: { id } });
-      if (!tab || ['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'server.world.config.list', params: { id } });
-      if (!tab || tab === 'maintenance') requests.push({ method: 'server.backups.list', params: { id } });
+      if (tab === 'mods') requests.push({ method: 'server.world.inventory', params: { id, rescan: false } });
+      if (['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'server.world.config.list', params: { id } });
+      if (tab === 'maintenance') requests.push({ method: 'server.backups.list', params: { id } });
       if (tab === 'save-editor') requests.push({ method: 'world.save.editor.read', params: { id, kind: 'server' } });
       if (tab === 'feedback') requests.push({ method: 'server.feedback.list', params: { id } });
       if (tab === 'players') requests.push({ method: 'server.access.connections', params: {} });
       if (tab === 'map') requests.push({ method: 'application.map.status', params: {} }, { method: 'application.map.overlays', params: {} });
     } else {
       if (!tab || ['overview', 'networking'].includes(tab)) requests.push({ method: 'singleplayer.profile.get', params: { profile_id: id } });
-      if (!tab || tab === 'mods') requests.push({ method: 'singleplayer.inventory', params: { profile_id: id, rescan: false } });
-      if (!tab || ['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'singleplayer.config.list', params: { profile_id: id } });
+      if (tab === 'mods') requests.push({ method: 'singleplayer.inventory', params: { profile_id: id, rescan: false } });
+      if (['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'singleplayer.config.list', params: { profile_id: id } });
       if (tab === 'save-editor') requests.push({ method: 'world.save.editor.read', params: { id, kind: 'private' } });
       if (tab === 'map') requests.push({ method: 'application.map.status', params: {} }, { method: 'application.map.overlays', params: {} });
     }
     if (requests.length) bridge.prewarm(requests).catch(() => {});
+  }
+
+  function scheduleInventoryVerification(kind, id) {
+    id = text(id);
+    if (!id) return;
+    const key = `${kind}:${id}`;
+    const stamp = Date.now();
+    if (stamp - Number(inventoryVerifiedAt.get(key) || 0) < 120000) return;
+    inventoryVerifiedAt.set(key, stamp);
+    // Found Mods opens from the persistent profile cache. A real filesystem
+    // rescan follows only at idle, never on the click/scroll critical path.
+    requestIdle(() => {
+      const request = kind === 'server'
+        ? { method: 'server.world.inventory', params: { id, rescan: true } }
+        : { method: 'singleplayer.inventory', params: { profile_id: id, rescan: true } };
+      bridge.prewarm([request]).catch(() => {});
+    }, 2200);
   }
 
   function requestLabel(method) {
@@ -169,6 +171,7 @@
   });
 
   function markInteraction(kind, value) {
+    window.__DWSYNC_FAST_NAV__?.markInteraction?.(180);
     const started = now();
     requestAnimationFrame(() => requestAnimationFrame(() => {
       pushUiMetric({ type: 'requested_to_first_paint', surface: kind, value: text(value), duration_ms: Math.round((now() - started) * 10) / 10 });
@@ -179,7 +182,6 @@
     const route = event.target?.closest?.('[data-route]');
     if (route) {
       markInteraction('route', route.dataset.route || '');
-      if (route.dataset.route === 'profile') bridge.prewarm([{ method: 'characters.list', params: {} }]).catch(() => {});
       return;
     }
     const server = event.target?.closest?.('[data-server-manage], [data-server-launch]');
@@ -199,38 +201,46 @@
     const serverTab = event.target?.closest?.('[data-server-tab]');
     if (serverTab) {
       const id = text(document.querySelector('[data-server-manage]')?.dataset.serverManage || stateSnapshot()?.server?.active_world_id || stateSnapshot()?.server?.runtime?.active_profile_id);
-      markInteraction('server-tab', serverTab.dataset.serverTab || '');
-      prewarmProfile('server', id, serverTab.dataset.serverTab || '');
+      const tab = serverTab.dataset.serverTab || '';
+      markInteraction('server-tab', tab);
+      prewarmProfile('server', id, tab);
+      if (tab === 'mods') scheduleInventoryVerification('server', id);
       return;
     }
     const localTab = event.target?.closest?.('[data-private-tab]');
     if (localTab) {
       const id = text(document.querySelector('[data-private-manage]')?.dataset.privateManage || stateSnapshot()?.client?.active_private_world_id || stateSnapshot()?.client?.live_world_id);
-      markInteraction('local-tab', localTab.dataset.privateTab || '');
-      prewarmProfile('local', id, localTab.dataset.privateTab || '');
+      const tab = localTab.dataset.privateTab || '';
+      markInteraction('local-tab', tab);
+      prewarmProfile('local', id, tab);
+      if (tab === 'mods') scheduleInventoryVerification('local', id);
       return;
     }
     const profileTab = event.target?.closest?.('[data-profile-tab]');
     if (profileTab?.dataset.profileTab === 'characters') {
       markInteraction('profile-tab', 'characters');
-      bridge.prewarm([{ method: 'characters.list', params: {} }]).catch(() => {});
+      requestIdle(() => bridge.prewarm([{ method: 'characters.list', params: {} }]).catch(() => {}), 900);
     }
   }, true);
 
   function waitForBootstrap() {
     if (stateSnapshot()) {
-      requestIdle(() => prewarmCritical(true));
+      requestIdle(() => prewarmCritical(true), 1800);
       return;
     }
-    setTimeout(waitForBootstrap, 80);
+    setTimeout(waitForBootstrap, 100);
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) requestIdle(() => prewarmCritical(false));
+    if (!document.hidden) requestIdle(() => prewarmCritical(false), 1800);
   });
 
   window.__DWSYNC_PERF__ = {
-    snapshot: async () => ({ backend: await bridge.requestStats(), ui: clone(uiMetrics) }),
+    snapshot: async () => ({
+      backend: await bridge.requestStats(),
+      ui: clone(uiMetrics),
+      navigation: window.__DWSYNC_FAST_NAV__?.snapshot?.() || {},
+    }),
     warm: () => prewarmCritical(true),
   };
 

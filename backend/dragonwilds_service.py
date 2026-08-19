@@ -129,6 +129,19 @@ def _worker_profile_id(params: dict) -> str:
     return value
 
 
+def _worker_revision(params: dict) -> int | None:
+    raw = params.get("config_revision") if "config_revision" in params else params.get("configRevision")
+    if raw in (None, ""):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Worker config revision must be a positive integer.") from exc
+    if value <= 0:
+        raise ValueError("Worker config revision must be a positive integer.")
+    return value
+
+
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
@@ -157,11 +170,13 @@ def handle(method: str, params: dict) -> object:
     if method == "runtime.worker.foundation.stop":
         return _workers().stop(_worker_profile_id(params))
     if method == "runtime.worker.runtime.start":
-        return _workers().start_runtime(_worker_profile_id(params))
+        return _workers().start_runtime(_worker_profile_id(params), _worker_revision(params))
     if method == "runtime.worker.runtime.stop":
         return _workers().stop_runtime(_worker_profile_id(params))
     if method == "runtime.worker.runtime.restart":
-        return _workers().restart_runtime(_worker_profile_id(params))
+        return _workers().restart_runtime(_worker_profile_id(params), _worker_revision(params))
+    if method == "runtime.worker.runtime.logs":
+        return _workers().log_tail(_worker_profile_id(params))
 
     if method == "v3.phase4.contract":
         return phase4_contract()

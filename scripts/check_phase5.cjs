@@ -29,7 +29,7 @@ const website = need('website/script.js', [
 const worker = need('backend/runtime_worker.py', [
   'START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','_start_runtime','_stop_runtime','_restart_runtime','start_new_session','CREATE_NEW_PROCESS_GROUP','RUNTIME_RUNNING'
 ]);
-const supervisor = need('backend/worker_supervisor.py', ['start_runtime','stop_runtime','restart_runtime','START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME']);
+need('backend/worker_supervisor.py', ['start_runtime','stop_runtime','restart_runtime','START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME']);
 const bridge = need('backend/runtime_worker_bridge.py', [
   'WorkerBackedServerEngine','AuthoritativeRuntimeManager','world-runtime-worker','deferred_to_worker','dedicated_enabled','DWSYNC_DISABLE_RUNTIME_WORKERS',
   'share_owner','application','start_runtime','stop_runtime','arm_orphan_watchdog'
@@ -45,14 +45,13 @@ need('backend/web_release_polish_hook.py', ['v3_phase4_web_focus','phase5_remote
 need('cloudflare/dragonwilds-sync-directory/wrangler.toml', ['main = "worker-phase5.js"']);
 
 if (/password|csrf|session|credential_ref|admin_token/i.test(JSON.stringify({
-  // Only inspect the public ping payload construction region rather than docs/comments.
   ping: remote.slice(remote.indexOf('def ping_payload'), remote.indexOf('def install'))
 }))) failures.push('Remote Admin public ping must not expose credentials/session/CSRF/admin token fields');
 if (!directory.includes('const heartbeatClone =') || !directory.includes('response.ok')) failures.push('Official directory must retain Remote Admin metadata only after the signed base heartbeat succeeds');
 if (!website.includes("endpoint.protocol !== 'https:'")) failures.push('GitHub handoff must require HTTPS target endpoints');
 if (!website.includes("String(live?.world_id || '') !== String(world.worldId || '')")) failures.push('GitHub handoff must compare live World ID before login');
 if (!website.includes("String(live?.fingerprint || '') !== expectedFingerprint")) failures.push('GitHub handoff must compare live fingerprint when one is advertised');
-if (/^\s*(?:from|import)\s+server_engine\b/m.test(worker)) failures.push('World worker must lazy-load ServerEngine only after a runtime command');
+if (/^(?:from|import)\s+server_engine\b/m.test(worker)) failures.push('World worker must lazy-load ServerEngine only after a runtime command');
 if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5 runtime-only parity stage must retain existing parent SHARE publication until dedicated worker parity is proven');
 if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 public connection must remain opt-in');
 

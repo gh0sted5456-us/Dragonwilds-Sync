@@ -8,8 +8,8 @@ function in-place, then exposes that same module object as ``profile_settings``.
 
 That detail matters: older stabilization layers intentionally monkey-patch
 private helper names such as ``_build_settings`` and ``_existing_settings``.
-Keeping one module object preserves those proven hooks while adding the V3
-``directory_network`` desired-state section.
+Keeping one module object preserves those proven hooks while adding V3 directory
+network desired state and non-secret exchange provenance.
 """
 
 from copy import deepcopy
@@ -31,6 +31,19 @@ def _v3_build_settings(kind: str, profile_id: str, profile: dict, existing: dict
         "broadcast_destinations": [],
         "public_card": {},
     }
+
+    # Phase 3 interchange provenance is intentionally descriptive metadata, not
+    # publication authority. Persist it alongside desired state so future
+    # imports can recognize descendants of the same source World without ever
+    # copying the source World's directory credential or active destination
+    # state. profile_settings_v1._redact keeps this projection secret-safe.
+    provenance = profile.get("exchange_provenance") if isinstance(profile.get("exchange_provenance"), dict) else {}
+    if not provenance and isinstance(current.get("exchange_provenance"), dict):
+        provenance = current.get("exchange_provenance") or {}
+    if provenance:
+        result["exchange_provenance"] = _base._redact(deepcopy(provenance))
+    elif "exchange_provenance" in current:
+        result["exchange_provenance"] = _base._redact(deepcopy(current.get("exchange_provenance") or {}))
     return result
 
 

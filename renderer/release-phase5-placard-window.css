@@ -1,0 +1,21 @@
+/* Phase 5 · application-owned focused placard windows.
+   Extends the existing V3 placard renderer without creating another World/card authority. */
+.phase5-placard-window{position:absolute;display:flex;flex-direction:column;min-width:420px;min-height:300px;resize:both;overflow:hidden;border:1px solid var(--line,#4a4434);border-radius:15px;background:var(--panel,#111617);box-shadow:0 28px 90px rgba(0,0,0,.58);z-index:10100}
+.phase5-placard-window.focused{box-shadow:0 34px 110px rgba(0,0,0,.7),0 0 0 1px rgba(213,165,74,.18)}
+.phase5-placard-window.maximized{left:8px!important;top:8px!important;width:calc(100% - 16px)!important;height:calc(100% - 16px)!important;resize:none}
+.phase5-placard-window.minimized{display:none}
+.phase5-placard-titlebar{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;padding:8px 10px 8px 12px;border-bottom:1px solid var(--line2,#343a38);background:rgba(0,0,0,.2);cursor:move;user-select:none;touch-action:none}
+.phase5-placard-titlebar strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phase5-placard-titlebar>div{display:flex;align-items:center;gap:5px}
+.phase5-placard-window-control{display:grid;place-items:center;min-width:32px;height:28px;padding:0;border:1px solid transparent;border-radius:7px;background:transparent;color:var(--text,#eeeae0);font:700 14px/1 system-ui;cursor:pointer}
+.phase5-placard-window-control:hover{border-color:var(--line,#4a4434);background:rgba(255,255,255,.06)}
+.phase5-placard-window-control.close:hover{border-color:#7a3737;background:#5b2525}
+.phase5-placard-window-body{flex:1;min-height:0;overflow:auto;padding:14px}
+.phase5-placard-window-body>.world-card{height:100%;min-height:520px;margin:0!important}
+.phase5-placard-task{display:inline-flex;align-items:center;gap:6px;max-width:260px}
+.phase5-placard-task.active{border-color:var(--gold,#d5a54a)!important;color:var(--gold2,#efc66d)!important}
+.phase5-placard-task span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.v3p4-platform.phase5-linked-platform{cursor:pointer;transition:border-color .12s ease,transform .12s ease}
+.v3p4-platform.phase5-linked-platform:hover{border-color:var(--gold,#d5a54a);transform:translateY(-1px)}
+@media(max-width:720px){.phase5-placard-window{left:4px!important;top:4px!important;width:calc(100% - 8px)!important;height:calc(100% - 8px)!important;min-width:0;min-height:0;resize:none}.phase5-placard-window-body{padding:8px}.phase5-placard-window-body>.world-card{min-height:460px}}
+@media(prefers-reduced-motion:reduce){.v3p4-platform.phase5-linked-platform{transition:none}}

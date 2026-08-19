@@ -29,6 +29,7 @@ INDEX_SCHEMA = "DragonwildsSync.CharacterIndex.v1"
 CACHE_DIR = APP_DATA_DIR / "Cache" / "Characters"
 DETAIL_CACHE_FILE = CACHE_DIR / "details.json"
 INDEX_FILE = APP_DATA_DIR / "State" / "character_index.json"
+MIGRATION_STATE_DIR = APP_DATA_DIR / "State" / "migrations"
 
 _LOCK = threading.RLock()
 _DETAIL_MEMORY: dict | None = None
@@ -92,14 +93,14 @@ def _catalog_revision() -> str:
         value = str(state.get("revision") or "").strip()
         if value:
             return value[:160]
-    except (OSError, TypeError, ValueError):
+    except (AttributeError, OSError, TypeError, ValueError):
         pass
     try:
         manifest_path = Path(getattr(_characters.rsdw_cache, "RSDW_ITEM_MANIFEST_PATH"))
         manifest = _read_json(manifest_path, {})
         value = str(manifest.get("revision") or "").strip()
         return value[:160]
-    except (OSError, TypeError, ValueError):
+    except (AttributeError, OSError, TypeError, ValueError):
         return ""
 
 
@@ -272,6 +273,64 @@ def character_index() -> dict:
         return _read_json(INDEX_FILE, {"schema": INDEX_SCHEMA, "count": 0, "characters": []})
 
 
+def _profile_without_volatile(value: dict) -> dict:
+    clean = deepcopy(value if isinstance(value, dict) else {})
+    clean.pop("updated_at", None)
+    return clean
+
+
+def _install_local_profile_hot_path(legacy) -> None:
+    """Stop discovery/read paths from rewriting unchanged profile.json files.
+
+    The retained save-discovery loop refreshes each detected save on every public
+    state projection. Its old save helper always advanced ``updated_at`` and
+    rewrote profile.json even when name/path/size/mtime were identical. The Phase
+    2 settings adapter then had to compare the same desired state again. This
+    wrapper preserves every real mutation but turns identical saves into no-ops.
+
+    The pre-V2 migration copier is likewise a one-time operation. A persistent
+    marker prevents recursively walking the obsolete legacy tree on every profile
+    read after a successful migration.
+    """
+    local_world = sys.modules.get("local_world")
+    if local_world is None or bool(getattr(local_world, "_DWS_PHASE3_PROFILE_HOT_PATH", False)):
+        return
+    local_world._DWS_PHASE3_PROFILE_HOT_PATH = True
+
+    original_save = local_world.save_profile
+    original_migrate = getattr(local_world, "_migrate_legacy_local_profile", None)
+
+    def save_profile_if_changed(profile: dict, profile_id: str | None = None) -> dict:
+        pid = local_world._safe_profile_id(profile_id or profile.get("id") or local_world.SINGLEPLAYER_ID)
+        desired = deepcopy(profile)
+        desired["id"] = pid
+        current = local_world.read_json(local_world._profile_file(pid), {})
+        if current and _profile_without_volatile(current) == _profile_without_volatile(desired):
+            if current.get("updated_at") is not None:
+                profile["updated_at"] = current.get("updated_at")
+            return profile
+        return original_save(profile, profile_id)
+
+    local_world.save_profile = save_profile_if_changed
+    if getattr(legacy, "save_singleplayer_profile", None) is original_save:
+        legacy.save_singleplayer_profile = save_profile_if_changed
+
+    if callable(original_migrate):
+        def migrate_legacy_once(profile_id: str) -> None:
+            pid = local_world._safe_profile_id(profile_id)
+            marker = MIGRATION_STATE_DIR / f"local-{pid}.legacy-profile-v1"
+            if marker.is_file():
+                return
+            original_migrate(pid)
+            try:
+                marker.parent.mkdir(parents=True, exist_ok=True)
+                marker.write_text("migrated\n", encoding="utf-8")
+            except OSError:
+                pass
+
+        local_world._migrate_legacy_local_profile = migrate_legacy_once
+
+
 def install_service_patches() -> bool:
     legacy = sys.modules.get("dragonwilds_service_legacy")
     if legacy is None:
@@ -280,6 +339,7 @@ def install_service_patches() -> bool:
         return True
     legacy.discover_characters = discover_characters_cached
     _characters.discover_characters = discover_characters_cached
+    _install_local_profile_hot_path(legacy)
     legacy._DWS_PHASE3_RESPONSIVENESS = True
     return True
 

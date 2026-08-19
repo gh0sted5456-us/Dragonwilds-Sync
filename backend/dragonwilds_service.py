@@ -1,11 +1,20 @@
 from __future__ import annotations
 
-"""Dragonwilds Sync V3 Phase 4 service layer.
+"""Dragonwilds Sync V3 service entry point.
 
-Phase 3 remains intact in this wrapper. Phase 4 adds the interactive World
-presentation/publication contract while retaining the Phase 2 Runtime Controller
-and DirectoryNetworkService as the sole runtime and heartbeat authorities.
+Normal mode is the trusted desired-state/control backend. ``--runtime-worker``
+is dispatched before the heavy application service graph initializes so the
+same packaged backend executable can also run a lightweight headless World
+worker without starting renderer/community/update presentation systems.
 """
+
+import sys
+
+# Phase 2 worker foundation. This branch executes before importing the retained
+# service graph, which is the important lightweight/headless property.
+if __name__ == "__main__" and "--runtime-worker" in sys.argv:
+    from runtime_worker import main as _runtime_worker_main
+    raise SystemExit(_runtime_worker_main(sys.argv[1:]))
 
 from pathlib import Path
 
@@ -26,12 +35,21 @@ _legacy = _base._legacy
 NETWORK = _base.NETWORK
 RUNTIME = _base.RUNTIME
 install_phase4_network(NETWORK)
+_WORKER_SUPERVISOR = None
 
 try:
     from v3_phase4_web import install as _install_phase4_web
     _install_phase4_web()
 except Exception:
     pass
+
+
+def _workers():
+    global _WORKER_SUPERVISOR
+    if _WORKER_SUPERVISOR is None:
+        from worker_supervisor import WorkerSupervisor
+        _WORKER_SUPERVISOR = WorkerSupervisor()
+    return _WORKER_SUPERVISOR
 
 
 def _identity_roots(params: dict) -> list[str]:
@@ -85,6 +103,13 @@ def _phase4_profile_id(params: dict) -> str:
     return profile_id
 
 
+def _worker_profile_id(params: dict) -> str:
+    value = str(params.get("id") or params.get("profile_id") or "").strip()
+    if not value:
+        raise ValueError("A stable World/profile ID is required for worker supervision.")
+    return value
+
+
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
@@ -97,7 +122,21 @@ def handle(method: str, params: dict) -> object:
                 "canonical_identity": "ID.txt", "item_registry": cached_registry(),
             }
             _phase4_bootstrap(result)
+            # Foundation status only. No worker is created merely by opening UI.
+            result.setdefault("application", {})["runtime_worker_supervisor"] = _workers().list_status()
         return result
+
+    # Phase 2 worker-foundation API. These are intentionally separate from
+    # Start Server / Stop Server until Worker Phase 3 migrates dedicated runtime
+    # execution behind the proven supervisor.
+    if method == "runtime.worker.foundation.list":
+        return _workers().list_status()
+    if method == "runtime.worker.foundation.status":
+        return _workers().status(_worker_profile_id(params))
+    if method == "runtime.worker.foundation.spawn":
+        return _workers().spawn(_worker_profile_id(params), str(params.get("role") or "server"))
+    if method == "runtime.worker.foundation.stop":
+        return _workers().stop(_worker_profile_id(params))
 
     if method == "v3.phase4.contract":
         return phase4_contract()
@@ -186,7 +225,7 @@ _legacy.handle = handle
 
 
 def main() -> int:
-    prepare_for_v3_migration(source_version=str(profile_store.SCHEMA_VERSION), target_version="v3-phase4")
+    prepare_for_v3_migration(source_version=str(profile_store.SCHEMA_VERSION), target_version="v3-phase4-worker-foundation")
     update_stage("metadataMigrated", True, note="Phase 3 metadata authorities preserved")
     update_stage("exportsMigrated", True, note="Phase 3 exchange authority preserved")
     _legacy.handle = handle

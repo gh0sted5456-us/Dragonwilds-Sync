@@ -15,7 +15,10 @@ requireText('backend/network_service.py', [
   'PRESENCE_INTERVAL_SECONDS = 10 * 60', 'HEARTBEAT_INTERVAL_SECONDS = 10 * 60',
   'public_directory_enabled', 'broadcast_destinations', 'public_card', 'world_started', 'world_stopping',
 ]);
-requireText('backend/dragonwilds_service.py', [
+const phase2Service = fs.existsSync(path.join(root, 'backend', 'dragonwilds_service_v3_phase2.py'))
+  ? 'backend/dragonwilds_service_v3_phase2.py'
+  : 'backend/dragonwilds_service.py';
+requireText(phase2Service, [
   'dragonwilds_service_v2_wrapper', 'quick.status', 'quick.start', 'quick.stop', 'quick.restart',
   'quick.update_restart', 'quick.console.execute', 'quick.broadcast', 'network.world.settings',
   'NETWORK.start_background()', 'world.discovery.heartbeat',

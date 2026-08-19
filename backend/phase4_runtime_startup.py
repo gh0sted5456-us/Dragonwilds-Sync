@@ -491,20 +491,6 @@ def _install_server_pipeline(server_engine_module) -> None:
     engine_type.start_dedicated = start_dedicated
     engine_type.publish = publish
 
-    legacy = sys.modules.get("dragonwilds_service_legacy")
-    if legacy is not None and hasattr(legacy, "scan_mod_units"):
-        legacy_scan = legacy.scan_mod_units
-
-        def scan_after_activation(profile_id, root, *args, **kwargs):
-            engine = getattr(legacy, "ENGINE", None)
-            prepared = getattr(engine, "_dws_phase4_prepared", None) if engine is not None else None
-            if isinstance(prepared, dict) and str(prepared.get("profile_id") or "") == str(profile_id or ""):
-                if time.monotonic() - float(prepared.get("created_monotonic") or 0) <= 3.0:
-                    return list(prepared.get("units") or [])
-            return legacy_scan(profile_id, root, *args, **kwargs)
-
-        legacy.scan_mod_units = scan_after_activation
-
 
 def _phase4_start_verified(manager, profile_id: str) -> dict:
     """resolve/materialize -> launch -> verify -> broadcast -> verify"""

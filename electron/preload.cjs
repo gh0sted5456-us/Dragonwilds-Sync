@@ -1,7 +1,194 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+const invokeCache = new Map();
+const invokeInFlight = new Map();
+const invokeActivityListeners = new Set();
+const invokeMetrics = [];
+const MAX_METRICS = 160;
+
+const READ_POLICIES = Object.freeze({
+  'characters.list': { ttl: 5000, stale: 0 },
+  'singleplayer.inventory': { ttl: 3500, stale: 12000 },
+  'server.world.inventory': { ttl: 3500, stale: 12000 },
+  'singleplayer.config.list': { ttl: 5000, stale: 15000 },
+  'server.world.config.list': { ttl: 5000, stale: 15000 },
+  'server.world.save.status': { ttl: 3500, stale: 10000 },
+  'server.backups.list': { ttl: 5000, stale: 15000 },
+  'server.world.starter_characters.list': { ttl: 5000, stale: 12000 },
+  'server.world.character_submissions.list': { ttl: 5000, stale: 12000 },
+  'server.feedback.list': { ttl: 4000, stale: 10000 },
+  'server.access.connections': { ttl: 2000, stale: 5000 },
+  'server.spawner.catalog': { ttl: 10000, stale: 30000 },
+  'server.console.catalog': { ttl: 1500, stale: 3500 },
+  'application.map.status': { ttl: 15000, stale: 60000 },
+  'application.map.overlays': { ttl: 60000, stale: 300000 },
+  'application.rsdw.status': { ttl: 15000, stale: 60000 },
+  'application.storage.paths': { ttl: 300000, stale: 900000 },
+});
+
+const DEDUPE_ONLY = new Set([
+  'state.get',
+  'server.runtime.status',
+  'application.trash.list',
+]);
+
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) out[key] = stableValue(value[key]);
+  return out;
+}
+
+function requestKey(method, params) {
+  let suffix = '';
+  try { suffix = JSON.stringify(stableValue(params || {})); }
+  catch (_) { suffix = '{}'; }
+  return `${String(method || '')}::${suffix}`;
+}
+
+function cloneValue(value) {
+  try { return structuredClone(value); }
+  catch (_) {
+    try { return JSON.parse(JSON.stringify(value)); }
+    catch (_) { return value; }
+  }
+}
+
+function bypassReadCache(params) {
+  const p = params && typeof params === 'object' ? params : {};
+  return p.force === true || p.refresh === true || p.rescan === true || p.verify === true;
+}
+
+function emitInvokeActivity(event) {
+  for (const listener of [...invokeActivityListeners]) {
+    try { listener(cloneValue(event)); } catch (_) {}
+  }
+}
+
+function recordMetric(metric) {
+  invokeMetrics.push(metric);
+  if (invokeMetrics.length > MAX_METRICS) invokeMetrics.splice(0, invokeMetrics.length - MAX_METRICS);
+}
+
+function invalidatePrefix(prefix) {
+  for (const key of [...invokeCache.keys()]) if (key.startsWith(prefix)) invokeCache.delete(key);
+}
+
+function invalidateAfterMutation(method) {
+  const name = String(method || '');
+  if (name.startsWith('characters.') && name !== 'characters.list') invalidatePrefix('characters.list::');
+  if (name.startsWith('singleplayer.mod.') || name.startsWith('singleplayer.profile.') || name.startsWith('singleplayer.config.')) {
+    invalidatePrefix('singleplayer.inventory::');
+    invalidatePrefix('singleplayer.config.list::');
+  }
+  if (name.startsWith('server.world.mod.') || name.startsWith('server.world.activate') || name.startsWith('server.world.update')) {
+    invalidatePrefix('server.world.inventory::');
+  }
+  if (name.startsWith('server.world.config.') && name !== 'server.world.config.list') invalidatePrefix('server.world.config.list::');
+  if (name.startsWith('server.backups.') && name !== 'server.backups.list') invalidatePrefix('server.backups.list::');
+  if (name.startsWith('world.save.') || name.startsWith('server.world.save.')) invalidatePrefix('server.world.save.status::');
+  if (name === 'application.rsdw.refresh') invalidatePrefix('application.rsdw.status::');
+  if (name === 'application.map.refresh') {
+    invalidatePrefix('application.map.status::');
+    invalidatePrefix('application.map.overlays::');
+  }
+}
+
+async function rawInvoke(method, params = {}, meta = {}) {
+  const startedAt = performance.now();
+  if (!meta.background) emitInvokeActivity({ phase: 'start', method, key: meta.key || '', background: false, at: Date.now() });
+  try {
+    const result = await ipcRenderer.invoke('dragonwilds:invoke', method, params);
+    const durationMs = Math.max(0, performance.now() - startedAt);
+    recordMetric({ method, duration_ms: Math.round(durationMs * 10) / 10, cache: false, background: !!meta.background, ok: true, at: Date.now() });
+    emitInvokeActivity({ phase: 'end', method, key: meta.key || '', duration_ms: durationMs, background: !!meta.background, at: Date.now() });
+    return result;
+  } catch (error) {
+    const durationMs = Math.max(0, performance.now() - startedAt);
+    recordMetric({ method, duration_ms: Math.round(durationMs * 10) / 10, cache: false, background: !!meta.background, ok: false, at: Date.now() });
+    emitInvokeActivity({ phase: 'error', method, key: meta.key || '', duration_ms: durationMs, background: !!meta.background, message: String(error?.message || error || 'Request failed'), at: Date.now() });
+    throw error;
+  }
+}
+
+function refreshCachedRead(method, params, key, policy, background = false) {
+  if (invokeInFlight.has(key)) return invokeInFlight.get(key);
+  const pending = rawInvoke(method, params, { key, background }).then((result) => {
+    invokeCache.set(key, { value: cloneValue(result), storedAt: Date.now() });
+    return cloneValue(result);
+  }).finally(() => invokeInFlight.delete(key));
+  invokeInFlight.set(key, pending);
+  return pending;
+}
+
+async function coordinatedInvoke(method, params = {}, options = {}) {
+  const name = String(method || '');
+  const key = requestKey(name, params);
+  const policy = READ_POLICIES[name];
+  const background = options?.background === true;
+  const explicitRefresh = bypassReadCache(params);
+
+  if (policy && !explicitRefresh) {
+    const cached = invokeCache.get(key);
+    const age = cached ? Math.max(0, Date.now() - cached.storedAt) : Infinity;
+    if (cached && age <= policy.ttl) {
+      recordMetric({ method: name, duration_ms: 0, cache: true, stale: false, background, ok: true, at: Date.now() });
+      emitInvokeActivity({ phase: 'cache', method: name, key, stale: false, background, age_ms: age, at: Date.now() });
+      return cloneValue(cached.value);
+    }
+    if (cached && policy.stale > 0 && age <= policy.stale) {
+      recordMetric({ method: name, duration_ms: 0, cache: true, stale: true, background, ok: true, at: Date.now() });
+      emitInvokeActivity({ phase: 'cache', method: name, key, stale: true, background, age_ms: age, at: Date.now() });
+      refreshCachedRead(name, params, key, policy, true).catch(() => {});
+      return cloneValue(cached.value);
+    }
+    return refreshCachedRead(name, params, key, policy, background);
+  }
+
+  if ((policy || DEDUPE_ONLY.has(name)) && invokeInFlight.has(key)) {
+    recordMetric({ method: name, duration_ms: 0, cache: false, deduped: true, background, ok: true, at: Date.now() });
+    emitInvokeActivity({ phase: 'dedupe', method: name, key, background, at: Date.now() });
+    return cloneValue(await invokeInFlight.get(key));
+  }
+
+  const pending = rawInvoke(name, params, { key, background });
+  if (policy || DEDUPE_ONLY.has(name)) invokeInFlight.set(key, pending);
+  try {
+    const result = await pending;
+    if (!policy) invalidateAfterMutation(name);
+    return cloneValue(result);
+  } finally {
+    if (invokeInFlight.get(key) === pending) invokeInFlight.delete(key);
+  }
+}
+
+async function prewarmRequests(requests = []) {
+  const unique = new Map();
+  for (const row of Array.isArray(requests) ? requests : []) {
+    const method = String(row?.method || '');
+    if (!READ_POLICIES[method] && !DEDUPE_ONLY.has(method)) continue;
+    const params = row?.params && typeof row.params === 'object' ? row.params : {};
+    unique.set(requestKey(method, params), { method, params });
+  }
+  const settled = await Promise.allSettled([...unique.values()].map((row) => coordinatedInvoke(row.method, row.params, { background: true })));
+  return {
+    requested: unique.size,
+    fulfilled: settled.filter((item) => item.status === 'fulfilled').length,
+    rejected: settled.filter((item) => item.status === 'rejected').length,
+  };
+}
+
 contextBridge.exposeInMainWorld('dragonwilds', {
-  invoke: (method, params = {}) => ipcRenderer.invoke('dragonwilds:invoke', method, params),
+  invoke: (method, params = {}) => coordinatedInvoke(method, params),
+  prewarm: (requests = []) => prewarmRequests(requests),
+  requestStats: () => cloneValue(invokeMetrics),
+  clearRequestCache: () => { invokeCache.clear(); return true; },
+  onRequestActivity: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    invokeActivityListeners.add(callback);
+    return () => invokeActivityListeners.delete(callback);
+  },
   adminStatus: () => ipcRenderer.invoke('dragonwilds:admin-status'),
   restartAsAdmin: () => ipcRenderer.invoke('dragonwilds:restart-admin'),
   pickImage: () => ipcRenderer.invoke('dragonwilds:pick-image'),

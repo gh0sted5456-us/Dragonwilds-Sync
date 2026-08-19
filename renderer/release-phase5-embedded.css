@@ -1,0 +1,10 @@
+/* Internal route workspaces already live inside an application-owned window.
+   Suppress their legacy detach affordances so they cannot recursively create
+   an Electron BrowserWindow from inside the MDI frame. */
+body.phase5-embedded #detach-profile,
+body.phase5-embedded #detach-worlds,
+body.phase5-embedded #detach-settings,
+body.phase5-embedded #detach-private-world,
+body.phase5-embedded #detach-server-world {
+  display:none !important;
+}

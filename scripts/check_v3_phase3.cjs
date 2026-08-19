@@ -22,8 +22,8 @@ need('backend/dragonwilds_service.py', [
   'dragonwilds_service_v3_phase2', 'v3.exchange.inspect', 'v3.exchange.plan_import', 'v3.exchange.export', 'v3.exchange.import',
   'v3.item.registry', 'v3.identity.inspect', 'NETWORK.ensure_world_identity', 'metadataMigrated', 'exportsMigrated',
 ]);
-need('backend/test_v3_phase3.py', ['multi-world.rsdwl', 'Import as Copy', 'Update Existing', 'manifest-only.rsdwl', 'path traversal', 'symlink']);
-need('PROJECT_STATE/V3_PHASE3.md', ['ID.txt', '.rsdwl', 'Update Existing', 'Import as Copy', 'Character', 'Item Registry', 'Reuse → Migrate → Verify → Retire']);
+need('backend/test_v3_phase3.py', ['multi-world.rsdwl', 'world_decisions=', '"update"', '"copy"', 'manifest-only.rsdwl', 'path traversal', 'symlink']);
+need('PROJECT_STATE/V3_PHASE3.md', ['ID.txt', '.rsdwl', 'Update Existing', 'Import as Copy', 'Skip', 'Review Differences', 'Character', 'Item Registry', 'Reuse → Migrate → Verify → Retire']);
 
 if (!fs.existsSync(path.join(root, 'backend', 'dragonwilds_service_v3_phase2.py'))) failures.push('missing preserved V3 Phase 2 service layer');
 

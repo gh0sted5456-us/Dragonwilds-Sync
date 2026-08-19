@@ -63,13 +63,16 @@ function cleanList(value: unknown, maxItems = 64, maxItemLength = 120): string[]
 
 function parseWorldSecrets(raw: string): Record<string, string> {
   try {
-    const value = JSON.parse(raw);
+    const value: unknown = JSON.parse(raw);
     if (!value || typeof value !== "object" || Array.isArray(value)) return {};
-    return Object.fromEntries(
-      Object.entries(value).filter(
-        ([key, secret]) => typeof key === "string" && typeof secret === "string" && secret.length >= 24,
-      ),
-    );
+
+    const secrets: Record<string, string> = {};
+    for (const [key, secret] of Object.entries(value)) {
+      if (typeof secret === "string" && secret.length >= 24) {
+        secrets[key] = secret;
+      }
+    }
+    return secrets;
   } catch {
     return {};
   }

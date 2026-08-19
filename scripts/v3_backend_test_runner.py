@@ -5,9 +5,10 @@ from __future__ import annotations
 Historical backend tests were written against the post-V2 canonical service and
 some intentionally monkey-patch its private helpers. V3 retains that exact
 service as ``dragonwilds_service_v2_wrapper`` while the new canonical module is a
-thin V3 orchestration layer. Historical tests therefore validate the preserved
-compatibility authority directly; V3-specific tests execute normally against
-new modules.
+thin V3 orchestration layer. Historical tests that actually reference the
+service therefore validate the preserved compatibility authority directly;
+unrelated tests retain their original import order. V3-specific tests execute
+normally against new modules.
 """
 
 import importlib
@@ -36,10 +37,13 @@ def main() -> int:
         print(f"Test file not found: {test}", file=sys.stderr)
         return 2
 
-    # Keep the V3 tests on the real V3 canonical module. Every earlier suite is
-    # a historical compatibility test and should see the exact retained post-V2
-    # service object, including its private monkey-patch hooks.
-    if test.name not in {"test_v3_phase1.py", "test_v3_phase2.py"}:
+    # Do not eagerly import the preserved service for every historical test.
+    # Several regression suites intentionally verify module-import ordering
+    # (for example WebGUI runtime polish before directory_host). The old direct
+    # runner did not preload dragonwilds_service. Only tests that explicitly
+    # reference that service need the compatibility substitution.
+    source = test.read_text(encoding="utf-8", errors="ignore")
+    if test.name not in {"test_v3_phase1.py", "test_v3_phase2.py"} and "dragonwilds_service" in source:
         preserved = importlib.import_module("dragonwilds_service_v2_wrapper")
         sys.modules["dragonwilds_service"] = preserved
 

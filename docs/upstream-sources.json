@@ -1,7 +1,7 @@
 {
   "schema": "DragonwildsSync.UpstreamSources.v1",
-  "updated_at": "2026-08-18T03:44:00Z",
-  "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes and RSDW content. Changing a source requires only an approved repository commit; launcher code does not need to be rebuilt just to change an upstream URL.",
+  "updated_at": "2026-08-19T02:55:00Z",
+  "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. Logical runtime components and data sources are kept distinct even where a legacy physical directory name remains for compatibility.",
   "security": {
     "allow_arbitrary_commands": false,
     "allowed_transport": ["https"],
@@ -15,8 +15,9 @@
       "type": "github-branch",
       "repository": "RSDWArchive/RSDWTools",
       "branch": "main",
-      "components": ["toolkit", "icons", "item-manifest"],
-      "description": "Canonical RSDW Toolkit website/editor source. Dragonwilds Sync stages and atomically promotes validated updates."
+      "components": ["icons", "item-manifest", "reference-data"],
+      "runtime_component": false,
+      "description": "Canonical GitHub-backed data/content source for icons, item manifests and reference data. It is not the installed UE4SS Toolkit runtime."
     },
     "rsdw-icons": {
       "display_name": "RSDW Icons",
@@ -38,7 +39,37 @@
       "association_catalog": "website/tools/item-editor/data/catalog.json",
       "icons_path": "website/shared/icons",
       "parent": "rsdwtools",
-      "description": "Canonical RSDW item JSON tree. Dragonwilds Sync validates the upstream item-editor association catalog against this tree, then maintains its own atomic manifest mapping display/internal/spawn identity, stack size and exact icon path."
+      "description": "Canonical RSDW item JSON tree and item-editor association data used to build Dragonwilds Sync's offline manifest/index."
+    },
+    "rsdw-toolkit": {
+      "display_name": "RSDW Toolkit / DevKit",
+      "enabled": true,
+      "type": "github-release",
+      "repository": "RSDWArchive/RSDWDevKit",
+      "release_url": "https://github.com/RSDWArchive/RSDWDevKit/releases",
+      "runtime_component": true,
+      "runtime_roles": ["server", "client"],
+      "legacy_physical_names": ["RSDWTools"],
+      "description": "UE4SS runtime tooling for spawning, live/in-game map hooks, console commands and game-runtime integration. This is intentionally distinct from the RSDWTools data repository."
+    },
+    "dragoncore": {
+      "display_name": "DragonCore",
+      "enabled": true,
+      "type": "bundled-resource",
+      "bundled_fallback": "resources/DragonCore-baseline.zip",
+      "runtime_component": true,
+      "runtime_roles": ["server", "host"],
+      "description": "Hidden Dragonwilds Sync host/server runtime component. Bundle content hash is its managed version until an independent authoritative release source is configured."
+    },
+    "dragonconnect": {
+      "display_name": "DragonConnect",
+      "enabled": true,
+      "type": "bundled-resource",
+      "bundled_fallback": "resources/PersistentDirectConnectIP-baseline.zip",
+      "runtime_component": true,
+      "runtime_roles": ["client"],
+      "legacy_physical_names": ["PersistentDirectConnectIP"],
+      "description": "Hidden client Direct Connect handoff component. The legacy physical directory remains for compatibility; launcher/UI identity is DragonConnect."
     },
     "runeschema": {
       "display_name": "RuneSchema",
@@ -48,7 +79,7 @@
       "branch": "main",
       "download_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/RuneSchema-core-latest.zip",
       "bundled_fallback": "resources/RuneSchema-core-latest.zip",
-      "description": "Launcher-managed RuneSchema core until an independent public upstream becomes available. Change this entry when RuneSchema moves."
+      "description": "Launcher-managed RuneSchema framework until an independent public upstream becomes available. RuneSchema child content remains a first-class logical mod family."
     },
     "ue4ss": {
       "display_name": "UE4SS",

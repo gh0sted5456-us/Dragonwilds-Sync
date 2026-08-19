@@ -102,7 +102,12 @@ def _profile(profile_id: str) -> dict:
     return profile
 
 
-def list_badges(profile_id: str, *, include_disabled: bool = True) -> list[dict]:
+def _preview_for(row: dict) -> str:
+    payload = badge_asset_bytes(row.get("asset_hash") or "") if row.get("asset_hash") else b""
+    return "data:image/png;base64," + base64.b64encode(payload).decode("ascii") if payload else ""
+
+
+def list_badges(profile_id: str, *, include_disabled: bool = True, include_preview: bool = True) -> list[dict]:
     profile = _profile(profile_id); rows = (profile.get("presentation") or {}).get("custom_badges")
     if not isinstance(rows, list): rows = profile.get("custom_badges")
     result = []
@@ -110,6 +115,7 @@ def list_badges(profile_id: str, *, include_disabled: bool = True) -> list[dict]
         if not isinstance(raw, dict): continue
         try: row = _normalize_badge(raw)
         except ValueError: continue
+        if include_preview: row["preview_data"] = _preview_for(row)
         if include_disabled or row["enabled"]: result.append(row)
     return result[:MAX_BADGES_PER_WORLD]
 
@@ -123,17 +129,18 @@ def save_badges(profile_id: str, rows: list[dict]) -> list[dict]:
         if key in seen: raise ValueError(f"Duplicate custom badge ID: {row['id']}")
         seen.add(key); result.append(row)
     profile = _profile(profile_id); presentation = profile.setdefault("presentation", {}); presentation["custom_badges"] = result; profile["custom_badges"] = result
-    save_server_profile(profile_id, profile); return result
+    save_server_profile(profile_id, profile)
+    return list_badges(profile_id)
 
 
 def add_badge(profile_id: str, row: dict) -> list[dict]:
-    rows = list_badges(profile_id)
+    rows = list_badges(profile_id, include_preview=False)
     if len(rows) >= MAX_BADGES_PER_WORLD: raise ValueError(f"A World may publish at most {MAX_BADGES_PER_WORLD} custom badges.")
     rows.append(_normalize_badge(row if isinstance(row, dict) else {})); return save_badges(profile_id, rows)
 
 
 def update_badge(profile_id: str, badge_id: str, patch: dict) -> list[dict]:
-    rows = list_badges(profile_id); wanted = str(badge_id or "").casefold(); found = False
+    rows = list_badges(profile_id, include_preview=False); wanted = str(badge_id or "").casefold(); found = False
     for index, current in enumerate(rows):
         if str(current.get("id") or "").casefold() == wanted:
             rows[index] = _normalize_badge(patch if isinstance(patch, dict) else {}, existing=current); found = True; break
@@ -142,11 +149,11 @@ def update_badge(profile_id: str, badge_id: str, patch: dict) -> list[dict]:
 
 
 def remove_badge(profile_id: str, badge_id: str) -> list[dict]:
-    wanted = str(badge_id or "").casefold(); return save_badges(profile_id, [row for row in list_badges(profile_id) if str(row.get("id") or "").casefold() != wanted])
+    wanted = str(badge_id or "").casefold(); return save_badges(profile_id, [row for row in list_badges(profile_id, include_preview=False) if str(row.get("id") or "").casefold() != wanted])
 
 
 def reorder_badges(profile_id: str, ordered_ids: list[str]) -> list[dict]:
-    rows = list_badges(profile_id); by_id = {str(row.get("id") or "").casefold(): row for row in rows}; result = []
+    rows = list_badges(profile_id, include_preview=False); by_id = {str(row.get("id") or "").casefold(): row for row in rows}; result = []
     for raw in ordered_ids if isinstance(ordered_ids, list) else []:
         row = by_id.pop(str(raw or "").casefold(), None)
         if row: result.append(row)
@@ -158,13 +165,11 @@ def toggle_badge(profile_id: str, badge_id: str, enabled: bool) -> list[dict]:
 
 
 def badge_preview_data(profile_id: str, badge_id: str) -> str:
-    wanted = str(badge_id or "").casefold(); row = next((x for x in list_badges(profile_id) if str(x.get("id") or "").casefold() == wanted), None)
-    if not row or not row.get("asset_hash"): return ""
-    payload = badge_asset_bytes(row["asset_hash"])
-    return "data:image/png;base64," + base64.b64encode(payload).decode("ascii") if payload else ""
+    wanted = str(badge_id or "").casefold(); row = next((x for x in list_badges(profile_id, include_preview=False) if str(x.get("id") or "").casefold() == wanted), None)
+    return _preview_for(row or {})
 
 
 def public_badge_refs(profile_id: str) -> list[dict]:
     return [{"id": row["id"], "label": row["name"], "tooltip": row["tooltip"], "asset_hash": row.get("asset_hash") or "",
              "asset_url": row.get("asset_path") or "", "link": row.get("link") or ""}
-            for row in list_badges(profile_id, include_disabled=False)]
+            for row in list_badges(profile_id, include_disabled=False, include_preview=False)]

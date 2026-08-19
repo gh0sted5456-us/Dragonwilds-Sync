@@ -23,8 +23,8 @@ must(index.includes('release-performance.css?'), 'performance CSS must be packag
 
 must(performanceJs.includes('target === document.documentElement') && performanceJs.includes('broadSubscribers'),
   'document-wide historical MutationObservers must be coordinated through one scheduler');
-must(performanceJs.includes('requestIdleCallback') && performanceJs.includes('data') === false,
-  'performance coordinator must retain idle scheduling');
+must(performanceJs.includes('requestIdleCallback') && performanceJs.includes('requestAnimationFrame(runBroadSubscribers)'),
+  'performance coordinator must retain idle + frame scheduling');
 must(performanceJs.includes("document.addEventListener('wheel'") && performanceJs.includes("document.addEventListener('scroll'"),
   'scroll/navigation interaction must take priority over presentation enhancement work');
 must(performanceCss.includes('content-visibility: auto'), 'long off-screen UI rows must use Chromium content visibility');

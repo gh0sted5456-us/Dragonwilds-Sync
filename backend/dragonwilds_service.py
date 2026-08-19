@@ -1,17 +1,18 @@
 from __future__ import annotations
 
-"""Dragonwilds Sync V3 service entry point.
+"""Dragonwilds Sync Phase 5 service entry point.
 
 Normal mode is the trusted desired-state/control backend. ``--runtime-worker``
 is dispatched before the heavy application service graph initializes so the
 same packaged backend executable can also run a lightweight headless World
-worker without starting renderer/community/update presentation systems.
+worker. Phase 5 keeps the existing AuthoritativeRuntimeManager and moves the
+dedicated execution edge behind the authenticated World worker.
 """
 
 import sys
 
-# Phase 2 worker foundation. This branch executes before importing the retained
-# service graph, which is the important lightweight/headless property.
+# Worker dispatch must remain before the retained service graph. Spawning a
+# worker alone must never initialize renderer/community/network/update systems.
 if __name__ == "__main__" and "--runtime-worker" in sys.argv:
     from runtime_worker import main as _runtime_worker_main
     raise SystemExit(_runtime_worker_main(sys.argv[1:]))
@@ -22,6 +23,7 @@ import dragonwilds_service_v3_phase2 as _base
 from dragonwilds_service_v3_phase2 import *  # noqa: F401,F403
 from client_layout import resolve_client_layout
 import profile_store
+from runtime_worker_bridge import install as install_runtime_worker_bridge
 from v3_exchange import apply_import, collect_character_entries, collect_world_entries, export_exchange, inspect_exchange, plan_import
 from v3_identity import read_identity
 from v3_item_registry import cached_registry, registry_from_state
@@ -36,6 +38,7 @@ NETWORK = _base.NETWORK
 RUNTIME = _base.RUNTIME
 install_phase4_network(NETWORK)
 _WORKER_SUPERVISOR = None
+_PHASE5_WORKER_MIGRATION = None
 
 try:
     from v3_phase4_web import install as _install_phase4_web
@@ -50,6 +53,22 @@ def _workers():
         from worker_supervisor import WorkerSupervisor
         _WORKER_SUPERVISOR = WorkerSupervisor()
     return _WORKER_SUPERVISOR
+
+
+def _install_phase5_workers() -> dict:
+    global _PHASE5_WORKER_MIGRATION
+    if isinstance(_PHASE5_WORKER_MIGRATION, dict):
+        return dict(_PHASE5_WORKER_MIGRATION)
+    _PHASE5_WORKER_MIGRATION = install_runtime_worker_bridge(
+        RUNTIME, _legacy.ENGINE, _legacy.SHARE, _workers(),
+        load_state=_legacy.load_state, save_state=_legacy.save_state,
+    )
+    return dict(_PHASE5_WORKER_MIGRATION)
+
+
+# Install the execution bridge before any lifecycle RPC can arrive. This does
+# not spawn a worker; workers remain per-World and are created only by Start.
+_install_phase5_workers()
 
 
 def _identity_roots(params: dict) -> list[str]:
@@ -117,18 +136,18 @@ def handle(method: str, params: dict) -> object:
     if method in {"bootstrap", "state.get"}:
         result = _base_handle(method, params)
         if isinstance(result, dict):
-            result.setdefault("application", {})["v3_exchange"] = {
+            application = result.setdefault("application", {})
+            application["v3_exchange"] = {
                 "schema": "DragonwildsSync.RSDWLExchange.v1", "version": 4,
                 "canonical_identity": "ID.txt", "item_registry": cached_registry(),
             }
             _phase4_bootstrap(result)
-            # Foundation status only. No worker is created merely by opening UI.
-            result.setdefault("application", {})["runtime_worker_supervisor"] = _workers().list_status()
+            application["runtime_worker_supervisor"] = _workers().list_status()
+            application["phase5_runtime_workers"] = _install_phase5_workers()
         return result
 
-    # Phase 2 worker-foundation API. These are intentionally separate from
-    # Start Server / Stop Server until Worker Phase 3 migrates dedicated runtime
-    # execution behind the proven supervisor.
+    # Diagnostic/supervision API. Normal UI, Quick Mode and WebGUI lifecycle
+    # controls continue through server.world/server.runtime -> RuntimeManager.
     if method == "runtime.worker.foundation.list":
         return _workers().list_status()
     if method == "runtime.worker.foundation.status":
@@ -137,6 +156,12 @@ def handle(method: str, params: dict) -> object:
         return _workers().spawn(_worker_profile_id(params), str(params.get("role") or "server"))
     if method == "runtime.worker.foundation.stop":
         return _workers().stop(_worker_profile_id(params))
+    if method == "runtime.worker.runtime.start":
+        return _workers().start_runtime(_worker_profile_id(params))
+    if method == "runtime.worker.runtime.stop":
+        return _workers().stop_runtime(_worker_profile_id(params))
+    if method == "runtime.worker.runtime.restart":
+        return _workers().restart_runtime(_worker_profile_id(params))
 
     if method == "v3.phase4.contract":
         return phase4_contract()
@@ -225,9 +250,10 @@ _legacy.handle = handle
 
 
 def main() -> int:
-    prepare_for_v3_migration(source_version=str(profile_store.SCHEMA_VERSION), target_version="v3-phase4-worker-foundation")
-    update_stage("metadataMigrated", True, note="Phase 3 metadata authorities preserved")
-    update_stage("exportsMigrated", True, note="Phase 3 exchange authority preserved")
+    prepare_for_v3_migration(source_version=str(profile_store.SCHEMA_VERSION), target_version="phase5-runtime-worker")
+    update_stage("metadataMigrated", True, note="Phase 4 presentation/publication authorities preserved")
+    update_stage("exportsMigrated", True, note="V3 canonical exchange authority preserved")
+    _install_phase5_workers()
     _legacy.handle = handle
     return _base.main()
 

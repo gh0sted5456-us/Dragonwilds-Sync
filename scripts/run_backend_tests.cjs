@@ -21,10 +21,11 @@ const windowsHistoricalTests = [
 const tests=process.platform==='win32'?[...crossPlatformTests.slice(0,28),...windowsHistoricalTests,...crossPlatformTests.slice(28)]:crossPlatformTests;
 console.log(`[backend verify] ${process.platform==='win32'?'Windows full V2 regression matrix':'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 for(const test of tests){
- console.log(`> ${python.command} ${[...python.prefix,test].join(' ')}`);
+ const runner='scripts/v3_backend_test_runner.py';
+ console.log(`> ${python.command} ${[...python.prefix,runner,test].join(' ')}`);
  const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
  const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result;
- try{result=spawnSync(python.command,[...python.prefix,test],{stdio:'inherit',shell:false,env});}
+ try{result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});}
  finally{try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}}
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);} if(result.status!==0)process.exit(result.status||1);
 }

@@ -99,18 +99,31 @@ def _settings_persistence() -> None:
 def _persistent_mod_file_index() -> None:
     shell.install()
     with tempfile.TemporaryDirectory(prefix="dws-mod-index-") as temp:
-        root = Path(temp) / "ActualLua"
+        managed = Path(temp).resolve()
+        ue4ss = managed / "ue4ss"
+        runeschema = managed / "runeschema"
+        paks = managed / "paks"
+        root = ue4ss / "ActualLua"
         nested = root / "Scripts" / "Config"
         nested.mkdir(parents=True)
+        runeschema.mkdir(parents=True)
+        paks.mkdir(parents=True)
         (root / "main.lua").write_text("return {}\n", encoding="utf-8")
         (nested / "config.json").write_text('{"value":1}\n', encoding="utf-8")
         (root / "ignored.bin").write_bytes(b"x" * 32)
 
-        original_unit_root = local_world._unit_root
+        original_roots = local_world.roots
         original_scan = shell._fast_file_scan
         calls = {"scan": 0}
         try:
-            local_world._unit_root = lambda _game, _key, _live, _profile: root
+            # Exercise the real _unit_root + path-containment resolver on every
+            # platform. Only the physical managed roots are redirected into the
+            # temporary fixture.
+            local_world.roots = lambda _game, _live, _profile: {
+                "ue4ss": ue4ss,
+                "runeschema": runeschema,
+                "paks": paks,
+            }
 
             def counted_scan(*args, **kwargs):
                 calls["scan"] += 1
@@ -140,7 +153,7 @@ def _persistent_mod_file_index() -> None:
             assert payload["schema"] == shell.MOD_INDEX_SCHEMA
             assert payload["count"] == 2
         finally:
-            local_world._unit_root = original_unit_root
+            local_world.roots = original_roots
             shell._fast_file_scan = original_scan
 
 

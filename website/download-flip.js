@@ -50,11 +50,62 @@
 
   oldPanel.replaceWith(flip);
 
-  const setSide = (side) => {
-    flip.classList.toggle('flipped', side === 'experimental');
-    flip.dataset.activeReleaseChannel = side === 'experimental' ? 'experimental' : 'main';
+  const legacyChannels = [...downloads.querySelectorAll('.release-channels .release-channel')];
+  const legacyMain = legacyChannels.find((node) => /\bmain\b/i.test(node.textContent || ''));
+  const legacyExperimental = legacyChannels.find((node) => /experimental/i.test(node.textContent || ''));
+
+  // Convert the original release cards into in-page controls instead of outbound links.
+  if (legacyMain) {
+    legacyMain.removeAttribute('href');
+    legacyMain.removeAttribute('target');
+    legacyMain.removeAttribute('rel');
+    legacyMain.setAttribute('role', 'button');
+    legacyMain.setAttribute('tabindex', '0');
+    legacyMain.dataset.channelFlip = 'main';
+  }
+  if (legacyExperimental) {
+    legacyExperimental.removeAttribute('href');
+    legacyExperimental.removeAttribute('target');
+    legacyExperimental.removeAttribute('rel');
+    legacyExperimental.setAttribute('role', 'button');
+    legacyExperimental.setAttribute('tabindex', '0');
+    legacyExperimental.dataset.channelFlip = 'experimental';
+    const arrow = legacyExperimental.querySelector('.release-channel-arrow');
+    if (arrow) arrow.textContent = '↻';
+  }
+
+  const syncLegacyControls = (side) => {
+    [legacyMain, legacyExperimental].forEach((node) => {
+      if (!node) return;
+      const selected = node.dataset.channelFlip === side;
+      node.classList.toggle('active', selected);
+      node.setAttribute('aria-pressed', String(selected));
+      if (selected) node.setAttribute('aria-current', 'true');
+      else node.removeAttribute('aria-current');
+    });
   };
+
+  const setSide = (side) => {
+    const next = side === 'experimental' ? 'experimental' : 'main';
+    flip.classList.toggle('flipped', next === 'experimental');
+    flip.dataset.activeReleaseChannel = next;
+    syncLegacyControls(next);
+  };
+
   flip.querySelectorAll('[data-channel-flip]').forEach((button) => button.addEventListener('click', () => setSide(button.dataset.channelFlip)));
+  [legacyMain, legacyExperimental].forEach((control) => {
+    if (!control) return;
+    control.addEventListener('click', (event) => {
+      event.preventDefault();
+      setSide(control.dataset.channelFlip);
+    });
+    control.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setSide(control.dataset.channelFlip);
+      }
+    });
+  });
 
   // Mirror the existing Main release loader without depending on its old DOM nodes.
   fetch('https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/releases/latest', { headers: { Accept: 'application/vnd.github+json' } })

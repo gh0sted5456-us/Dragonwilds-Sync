@@ -55,7 +55,8 @@ function safeText(value, fallback = '—', max = 180) {
 }
 
 function safeList(value, maxItems = 12) {
-  return Array.isArray(value) ? value.slice(0, maxItems).map((item) => safeText(item, '', 80)).filter(Boolean) : [];
+  const values = Array.isArray(value) ? value : (typeof value === 'string' ? value.split(/\r?\n|[,;]+/) : []);
+  return values.slice(0, maxItems).map((item) => safeText(item, '', 80)).filter(Boolean);
 }
 
 function safeNumber(value, fallback = 0) {
@@ -81,25 +82,57 @@ function relativeTime(value) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function normalizeRemoteAdmin(raw, worldId, worldName) {
+  const remote = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  if (!remote.configured || !remote.enabled || !remote.available || remote.authority !== 'target-world') return null;
+  try {
+    const endpoint = new URL(String(remote.endpoint || ''));
+    if (endpoint.protocol !== 'https:' || endpoint.username || endpoint.password || endpoint.hash) return null;
+    endpoint.search = '';
+    endpoint.pathname = endpoint.pathname.replace(/\/$/, '');
+    const pingPath = String(remote.ping_path || '/api/v1/remote-admin/ping');
+    const loginPath = String(remote.login_path || '/admin/login');
+    if (pingPath !== '/api/v1/remote-admin/ping' || loginPath !== '/admin/login') return null;
+    return {
+      endpoint: endpoint.href.replace(/\/$/, ''),
+      pingPath, loginPath,
+      worldId: safeText(remote.world_id ?? worldId, worldId, 120),
+      worldName: safeText(remote.world_name ?? worldName, worldName, 160),
+      fingerprint: safeText(remote.fingerprint, '', 96),
+      browserCompatible: remote.browser_compatible !== false,
+    };
+  } catch (_) { return null; }
+}
+
 function normalizeWorld(raw) {
   const players = raw && typeof raw.players === 'object' && raw.players ? raw.players : {};
-  const connect = raw && typeof raw.public_connect === 'object' && raw.public_connect ? raw.public_connect : null;
+  const connectSource = raw && typeof raw.public_connect === 'object' && raw.public_connect
+    ? raw.public_connect
+    : (raw && typeof raw.connection === 'object' && raw.connection ? raw.connection : null);
+  const worldId = safeText(raw?.world_id, 'unknown-world', 120);
+  const name = safeText(raw?.world_name ?? raw?.name, 'Unnamed World', 90);
+  const remoteAdmin = normalizeRemoteAdmin(raw?.remote_management, worldId, name);
   return {
-    worldId: safeText(raw?.world_id, 'unknown-world', 120),
-    name: safeText(raw?.world_name ?? raw?.name, 'Unnamed World', 90),
+    worldId,
+    name,
     description: safeText(raw?.description, 'A public Dragonwilds Sync world.', 240),
     region: safeText(raw?.region, 'Unknown', 40),
-    version: safeText(raw?.version, 'Unknown', 40),
+    version: safeText(raw?.version ?? raw?.cl, 'Unknown', 40),
     status: safeText(raw?.status, 'offline', 24).toLowerCase(),
-    currentPlayers: Math.max(0, safeNumber(players.current ?? raw?.player_current, 0)),
-    maxPlayers: Math.max(0, safeNumber(players.max ?? raw?.player_max, 0)),
+    currentPlayers: Math.max(0, safeNumber(players.current ?? raw?.player_current ?? raw?.player_count, 0)),
+    maxPlayers: Math.max(0, safeNumber(players.max ?? raw?.player_max ?? raw?.max_players, 0)),
     tags: safeList(raw?.tags, 10),
     mods: safeList(raw?.mods, 18),
     rules: safeList(raw?.rules, 12),
     badges: safeList(raw?.badges, 10),
     lastSeen: raw?.last_seen ?? null,
     heartbeatAge: safeNumber(raw?.heartbeat_age, -1),
-    connect: connect ? { host: safeText(connect.host, '', 180), port: safeNumber(connect.port, 0) } : null
+    fingerprint: safeText(raw?.fingerprint ?? raw?.fingerprint_claimed ?? remoteAdmin?.fingerprint, '', 96),
+    remoteAdmin,
+    connect: connectSource ? {
+      host: safeText(connectSource.host ?? connectSource.address, '', 180),
+      port: safeNumber(connectSource.port ?? connectSource.game_port, 0),
+    } : null
   };
 }
 
@@ -120,7 +153,7 @@ let activeFilter = 'all';
 let currentBuild = null;
 
 function isOnline(world) {
-  return ['online', 'starting', 'maintenance'].includes(world.status) && world.status !== 'offline';
+  return ['active', 'online', 'starting', 'maintenance', 'stopping'].includes(world.status) && world.status !== 'offline';
 }
 
 function isModded(world) {
@@ -142,6 +175,55 @@ function makeEl(tag, className, text) {
 function appendChips(container, values, emptyText = 'None published') {
   const list = values.length ? values : [emptyText];
   list.forEach((value) => container.appendChild(makeEl('span', '', value)));
+}
+
+async function openVerifiedRemoteAdmin(world, button) {
+  const remote = world?.remoteAdmin;
+  if (!remote?.browserCompatible || !remote.endpoint) throw new Error('This World is not advertising an HTTPS Remote Admin endpoint.');
+
+  // Open synchronously from the click so browsers treat the final handoff as a
+  // user-requested tab. Nothing secret is put into the placeholder tab.
+  const tab = window.open('about:blank', '_blank');
+  if (tab) {
+    try { tab.opener = null; } catch (_) {}
+    try { tab.document.title = 'Contacting Dragonwilds Sync server…'; } catch (_) {}
+  }
+
+  const original = button?.textContent || 'SERVER ADMIN ↗';
+  if (button) { button.disabled = true; button.textContent = 'CONTACTING SERVER…'; }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const ping = new URL(remote.pingPath, `${remote.endpoint}/`);
+    ping.searchParams.set('world_id', world.worldId);
+    if (remote.fingerprint || world.fingerprint) ping.searchParams.set('fingerprint', remote.fingerprint || world.fingerprint);
+    const response = await fetch(ping.href, { headers: { Accept: 'application/json' }, signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+    if (!response.ok) throw new Error(`Target server probe returned HTTP ${response.status}.`);
+    const live = await response.json();
+    if (!live?.ok || live?.remote_admin_enabled !== true) throw new Error('Remote Admin is not enabled on the target server.');
+    if (live?.authority !== 'target-world' || live?.protocol !== 'dragonwilds-sync-remote-admin' || Number(live?.protocol_version) !== 1) throw new Error('The target did not return the Dragonwilds Sync Remote Admin identity protocol.');
+    if (String(live?.world_id || '') !== String(world.worldId || '')) throw new Error('The live server World ID does not match this directory placard.');
+    const expectedFingerprint = String(remote.fingerprint || world.fingerprint || '');
+    if (expectedFingerprint && String(live?.fingerprint || '') !== expectedFingerprint) throw new Error('The live server fingerprint does not match this directory placard.');
+
+    const loginPath = String(live?.login_path || remote.loginPath || '');
+    if (loginPath !== '/admin/login') throw new Error('The target advertised an invalid Remote Admin login path.');
+    const login = new URL(loginPath, `${remote.endpoint}/`);
+    login.searchParams.set('world', world.name);
+    if (tab && !tab.closed) tab.location.replace(login.href);
+    else window.open(login.href, '_blank', 'noopener');
+    if (button) button.textContent = 'SERVER VERIFIED ✓';
+  } catch (error) {
+    try { if (tab && !tab.closed) tab.close(); } catch (_) {}
+    if (button) {
+      button.textContent = 'REMOTE ADMIN UNAVAILABLE';
+      button.title = error?.message || String(error);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    if (button) setTimeout(() => { button.disabled = false; button.textContent = original; }, 2600);
+  }
 }
 
 function createWorldCard(world) {
@@ -192,19 +274,33 @@ function createWorldCard(world) {
     back.appendChild(makeEl('div', 'world-connect', `Public connect: ${world.connect.host}${port}`));
   }
   const backFooter = makeEl('div', 'world-card-footer');
-  backFooter.append(makeEl('span', '', 'Public telemetry only — no admin access'), makeEl('b', '', 'FRONT ↻'));
+  const footerText = makeEl('span', '', world.remoteAdmin ? 'Remote Admin is verified directly with this server before login.' : 'Public telemetry only — no admin access');
+  backFooter.appendChild(footerText);
+  if (world.remoteAdmin) {
+    const admin = makeEl('button', 'server-admin-button', 'SERVER ADMIN ↗');
+    admin.type = 'button';
+    admin.title = 'Verify this live server and open its Remote Admin login';
+    admin.addEventListener('click', async (event) => {
+      event.preventDefault(); event.stopPropagation();
+      try { await openVerifiedRemoteAdmin(world, admin); }
+      catch (error) { console.warn('[Remote Admin handoff]', error?.message || error); }
+    });
+    backFooter.appendChild(admin);
+  } else {
+    backFooter.appendChild(makeEl('b', '', 'FRONT ↻'));
+  }
   back.appendChild(backFooter);
   inner.append(front, back);
   card.appendChild(inner);
-  const flip = () => {
+  const flip = (event) => {
+    if (event?.target?.closest?.('button,a,input,select,textarea')) return;
     const flipped = card.classList.toggle('flipped');
     card.setAttribute('aria-pressed', String(flipped));
   };
   card.addEventListener('click', flip);
   card.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      flip();
+    if ((event.key === 'Enter' || event.key === ' ') && !event.target.closest('button,a,input,select,textarea')) {
+      event.preventDefault(); flip(event);
     }
   });
   return card;
@@ -317,6 +413,13 @@ async function loadLatestRelease() {
     releaseChannel.textContent = 'Main';
   }
 }
+
+// The public site is static. Remote Admin credentials never cross GitHub or the
+// directory Worker: only the advertised target is probed, then the browser is
+// handed directly to that server's own authenticated login surface.
+const remoteStyle = document.createElement('style');
+remoteStyle.textContent = '.server-admin-button{min-height:34px;padding:6px 10px;border:1px solid #9f7938;border-radius:8px;background:rgba(213,165,74,.1);color:inherit;font:800 10px/1 system-ui;letter-spacing:.04em;cursor:pointer}.server-admin-button:hover{border-color:#d5a54a}.server-admin-button:disabled{cursor:wait;opacity:.72}';
+document.head.appendChild(remoteStyle);
 
 async function refreshNetworkData() {
   await Promise.allSettled([loadWorlds(), loadNetwork()]);

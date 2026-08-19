@@ -75,6 +75,11 @@ def load_journal() -> dict:
     return journal
 
 
+def read_journal() -> dict:
+    """Compatibility alias used by later V3 phase code/tests."""
+    return load_journal()
+
+
 def save_journal(journal: dict) -> dict:
     value = deepcopy(journal)
     value["schema"] = JOURNAL_SCHEMA
@@ -190,8 +195,6 @@ def _candidate_files() -> list[Path]:
                 continue
             if path == JOURNAL_PATH or BACKUP_ROOT in path.parents:
                 continue
-            # Secret vault/key custody is intentionally not duplicated into a
-            # migration backup. Ordinary JSON already carries secret refs.
             if "Secrets" in path.parts or path.name in {"vault.json", "vault.key"}:
                 continue
             candidates.add(path)
@@ -210,8 +213,6 @@ def _write_sanitized_json(source: Path, destination: Path) -> None:
     try:
         raw = json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError, TypeError):
-        # Migration backups intentionally snapshot metadata JSON only. Invalid
-        # JSON is retained byte-for-byte so recovery/diagnostics can inspect it.
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         return

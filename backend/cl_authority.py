@@ -61,9 +61,6 @@ def _apply_build_binding(result: dict, state: dict, displayed: str) -> dict:
     if not expected_build or not installed_build or expected_build == installed_build:
         return result
 
-    # Keep the historical CL visible, but do not compare it against a baseline
-    # learned for a different binary build. Until the newly installed server
-    # emits a live CL, the correct semantic state is Unknown.
     version = cl_version_status(displayed, "")
     result["cl_version"] = version
     result["reported_cl"] = version.get("reported_cl") or displayed
@@ -80,10 +77,15 @@ def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
     if server_engine_module is None:
         import server_engine as server_engine_module  # type: ignore
 
-    # v2_remote_routing invokes this hook after the retained providers and Phase
-    # 1 taxonomy are loaded but before AuthoritativeRuntimeManager is created.
-    # That makes it the safe compatibility seam for the Phase 4 critical path.
-    install_phase4_runtime_patches(server_engine_module)
+    # Production reaches this seam with the retained server providers loaded.
+    # Tiny unit-test stand-ins intentionally expose only status/load/save and
+    # should still be able to test the CL guard in isolation.
+    phase4_requirements = (
+        "ensure_base_runtimes", "scan_mod_units", "generate_server_mods_txt",
+        "snapshot_profile_server_config", "snapshot_profile_savegame",
+    )
+    if all(hasattr(server_engine_module, name) for name in phase4_requirements):
+        install_phase4_runtime_patches(server_engine_module)
 
     engine_class = server_engine_module.ServerEngine
     if bool(getattr(engine_class, "_dws_cl_authority_guard", False)):
@@ -101,9 +103,6 @@ def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
             if not isinstance(result, dict):
                 return result
 
-            # PlayerLogMonitor.reported_cl is reset whenever the process PID
-            # changes/stops, so a value here is evidence from this live server
-            # session rather than the profile's historical fallback.
             live_observed = str(getattr(getattr(self, "monitor", None), "reported_cl", "") or "")
             displayed = str(result.get("reported_cl") or "")
             result["cl_source"] = "live_process_log" if live_observed else ("last_known" if displayed else "unavailable")
@@ -114,10 +113,6 @@ def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
             after_observed = after_values.get("expected_cl_observed_at") if after_present.get("expected_cl_observed_at") else None
             after_expected = str(after_values.get("expected_cl") or "")
 
-            # ServerEngine stamps expected_cl_observed_at whenever it learns a
-            # baseline. If that stamp changed during this status call, but the
-            # monitor supplied no live CL, the write could only have come from
-            # last_reported_cl fallback and must be reverted.
             stale_promotion = bool(
                 not live_observed
                 and displayed

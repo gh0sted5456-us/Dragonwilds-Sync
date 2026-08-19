@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.UpstreamSources.v1",
-  "updated_at": "2026-08-19T02:55:00Z",
+  "updated_at": "2026-08-19T23:19:00Z",
   "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. Logical runtime components and data sources are kept distinct even where a legacy physical directory name remains for compatibility.",
   "security": {
     "allow_arbitrary_commands": false,
@@ -74,12 +74,14 @@
     "runeschema": {
       "display_name": "RuneSchema",
       "enabled": true,
-      "type": "direct-zip",
-      "repository": "gh0sted5456-us/Dragonwilds-Sync",
-      "branch": "main",
-      "download_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/RuneSchema-core-latest.zip",
+      "type": "github-release",
+      "repository": "UnskippableCutscene/RuneSchema",
+      "release_url": "https://github.com/UnskippableCutscene/RuneSchema/releases",
       "bundled_fallback": "resources/RuneSchema-core-latest.zip",
-      "description": "Launcher-managed RuneSchema framework until an independent public upstream becomes available. RuneSchema child content remains a first-class logical mod family."
+      "runtime_component": true,
+      "runtime_roles": ["server", "client"],
+      "update_owner": "Dragonwilds Sync managed update path",
+      "description": "Official RuneSchema release source. Dragonwilds Sync resolves release assets through its managed updater, validates and installs the runtime locally, and retains the bundled package only as an offline/recovery fallback. RuneSchema child content remains a first-class logical mod family."
     },
     "ue4ss": {
       "display_name": "UE4SS",

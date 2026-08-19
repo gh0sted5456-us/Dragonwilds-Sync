@@ -27,6 +27,21 @@ need('cloudflare/dragonwilds-sync-directory/schema-v3.sql', ['world_remote_admin
 const website = need('website/script.js', [
   'normalizeRemoteAdmin','openVerifiedRemoteAdmin','CONTACTING SERVER','dragonwilds-sync-remote-admin','Target server probe','world_id','fingerprint','SERVER VERIFIED'
 ]);
+const runeschema = need('backend/managed_updates.py', [
+  'RUNESCHEMA_REPOSITORY_URL = "https://github.com/UnskippableCutscene/RuneSchema"',
+  'RUNESCHEMA_RELEASES_URL','ensure_runeschema_source','_runeschema_resolver_source','official_source',
+  'install_authoritative_runeschema_update'
+]);
+const sources = need('docs/upstream-sources.json', [
+  '"repository": "UnskippableCutscene/RuneSchema"',
+  '"release_url": "https://github.com/UnskippableCutscene/RuneSchema/releases"',
+  '"type": "github-release"'
+]);
+need('backend/test_managed_updates.py', [
+  'test_runeschema_official_source_is_default_and_api_resolved',
+  'test_runeschema_explicit_custom_source_is_preserved',
+  'RUNESCHEMA_REPOSITORY_URL','RUNESCHEMA_RELEASES_URL'
+]);
 const desired = need('backend/runtime_worker_config.py', [
   'RuntimeDesiredConfig.v1','create_desired_snapshot','load_desired_snapshot','verify_authoritative_settings','settingsHash','desired-current.json','sync_profile_settings'
 ]);
@@ -72,8 +87,10 @@ if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.
 if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
 if (!bridge.includes('applied_revision != desired_revision')) failures.push('Runtime bridge must fail a start whose applied revision does not match desired revision');
 if (!service.includes('activation_gate')) failures.push('Normal service must expose the Phase 5C activation gate instead of silently enabling an unverified worker path');
+if (sources.includes('gh0sted5456-us/Dragonwilds-Sync') && sources.includes('RuneSchema-core-latest.zip')) failures.push('RuneSchema source registry must not retain the temporary Dragonwilds Sync-hosted ZIP as update authority');
+if (!runeschema.includes('resolver_source = _runeschema_resolver_source(source_url)')) failures.push('Official RuneSchema releases URL must resolve through the GitHub API-capable repository source');
 
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · Phase 4 corrections, verified Remote Admin handoff, revisioned desired state and gated dedicated World Runtime Worker ownership contracts present');
+console.log('[Phase 5] PASS · Phase 4 corrections, official RuneSchema releases, verified Remote Admin handoff, revisioned desired state and gated dedicated World Runtime Worker ownership contracts present');

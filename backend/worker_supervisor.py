@@ -4,7 +4,8 @@ from __future__ import annotations
 
 This module is intentionally not a Runtime Controller. It only starts, attaches
 to, reads and gracefully stops the local headless worker process created by the
-same installed Dragonwilds Sync backend executable.
+same installed Dragonwilds Sync backend executable. Phase 5 adds dedicated
+runtime commands while lifecycle policy remains in AuthoritativeRuntimeManager.
 """
 
 import os
@@ -19,7 +20,7 @@ from runtime_worker_protocol import PROTOCOL_VERSION, SUPERVISOR_SCHEMA, WORKER_
 from secret_store import SecretStore, is_reference
 
 START_TIMEOUT_SECONDS = 6.0
-STOP_TIMEOUT_SECONDS = 6.0
+STOP_TIMEOUT_SECONDS = 12.0
 _SECRET_STORE = SecretStore(app_data_root() / "State" / "Secrets")
 
 
@@ -56,13 +57,22 @@ class WorkerSupervisor:
             return ""
         return str(_SECRET_STORE.resolve(ref) or "")
 
-    def _call(self, state: dict, command: str) -> dict:
+    def _call(self, state: dict, command: str, payload: dict | None = None) -> dict:
         ipc = state.get("ipc") if isinstance(state.get("ipc"), dict) else {}
         token = self._token_for(state)
         if not token:
             raise ConnectionError("Worker authentication reference cannot be resolved.")
-        return request(str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token,
-                       {"protocol": PROTOCOL_VERSION, "command": command})
+        message = {"protocol": PROTOCOL_VERSION, "command": str(command or "").upper(), "profileId": str(state.get("profileId") or "")}
+        if isinstance(payload, dict):
+            message["payload"] = payload
+        return request(str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token, message)
+
+    @staticmethod
+    def _require_ok(response: dict, action: str) -> dict:
+        if not isinstance(response, dict) or not response.get("ok"):
+            message = str((response or {}).get("message") or (response or {}).get("error") or f"Worker {action} failed.")
+            raise RuntimeError(message)
+        return response
 
     def reconcile(self, profile_id: str) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
@@ -90,7 +100,7 @@ class WorkerSupervisor:
         state = state if isinstance(state, dict) else read_state(profile_id)
         child = self._children.get(profile_id)
         if child is not None:
-            child.poll()  # reap an exited direct child before the PID probe
+            child.poll()
         if state and self._process_exists(state.get("workerPid")):
             return False
         try:
@@ -148,14 +158,39 @@ class WorkerSupervisor:
         child.terminate()
         try: child.wait(timeout=1.0)
         except subprocess.TimeoutExpired: pass
-        raise TimeoutError("Runtime worker did not become ready within the Phase 2 startup timeout.")
+        raise TimeoutError("Runtime worker did not become ready within the startup timeout.")
 
     def status(self, profile_id: str) -> dict:
         state = self.reconcile(profile_id)
         if not state.get("attached"):
             return state
-        response = self._call(state, "GET_STATUS")
+        response = self._require_ok(self._call(state, "GET_STATUS"), "status")
         return {**(response.get("status") or state), "live": True, "attached": True}
+
+    def start_runtime(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.spawn(profile_id, "server")
+        response = self._require_ok(self._call(state, "START_RUNTIME"), "start")
+        status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
+        return {"profileId": profile_id, "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True}}
+
+    def stop_runtime(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.reconcile(profile_id)
+        if not state.get("live"):
+            return {"profileId": profile_id, "result": {"running": False, "stop_verified": True, "stop_method": "worker-absent"}, "status": state}
+        if not state.get("attached"):
+            raise RuntimeError("Worker is live but cannot be authenticated; refusing an unsafe runtime stop.")
+        response = self._require_ok(self._call(state, "STOP_RUNTIME"), "runtime stop")
+        status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
+        return {"profileId": profile_id, "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True}}
+
+    def restart_runtime(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.spawn(profile_id, "server")
+        response = self._require_ok(self._call(state, "RESTART_RUNTIME"), "runtime restart")
+        status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
+        return {"profileId": profile_id, "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True}}
 
     def stop(self, profile_id: str) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
@@ -165,7 +200,7 @@ class WorkerSupervisor:
             return {"profileId": profile_id, "state": "stopped", "live": False}
         if not state.get("attached"):
             raise RuntimeError("Worker is live but cannot be authenticated; refusing an unsafe stop.")
-        response = self._call(state, "STOP")
+        response = self._require_ok(self._call(state, "STOP"), "stop")
         child = self._children.get(profile_id)
         deadline = time.monotonic() + STOP_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
@@ -182,11 +217,11 @@ class WorkerSupervisor:
         else:
             still_live = self._process_exists(state.get("workerPid"))
         if still_live:
-            raise TimeoutError("Worker did not stop gracefully within the Phase 2 timeout.")
+            raise TimeoutError("Worker did not stop gracefully within the timeout.")
         self.cleanup_stale(profile_id)
         self._children.pop(profile_id, None)
         return {"profileId": profile_id, "runtimeId": state.get("runtimeId"), "state": "stopped", "live": False,
-                "graceful": bool(response.get("ok"))}
+                "graceful": bool(response.get("ok")), "runtime": response.get("runtime") or {}}
 
     def list_status(self) -> dict:
         rows = []

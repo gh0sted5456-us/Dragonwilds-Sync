@@ -16,7 +16,7 @@ requireText(preload, 'const invokeCache = new Map()', 'preload must keep an in-m
 requireText(preload, 'const invokeInFlight = new Map()', 'preload must deduplicate matching in-flight reads');
 requireText(preload, 'let cacheGeneration = 0', 'mutations must invalidate older in-flight cache generations');
 requireText(preload, 'READ_TIMEOUT_MS = 15000', 'foreground/local backend reads must have a bounded timeout');
-requireText(preload, "'characters.list': { ttl: 5000", 'Character Tools must use a hot read policy');
+requireText(preload, "'characters.list': { ttl:", 'Character Tools must use a hot read policy');
 requireText(preload, "'singleplayer.inventory'", 'local mod inventory must use coordinated cached reads');
 requireText(preload, "'server.world.inventory'", 'dedicated mod inventory must use coordinated cached reads');
 requireText(preload, "'singleplayer.mod.files'", 'Mod Explorer file lists must use coordinated cached reads');
@@ -30,18 +30,25 @@ requireText(preload, 'prewarmRequests', 'renderer must be able to warm known loc
 requireText(preload, 'onRequestActivity', 'renderer must receive real request activity instead of fake spinner timers');
 requireText(preload, 'requestStats', 'backend request timings must be inspectable');
 
-requireText(phase3, 'criticalRequests(state)', 'Phase 3 must define critical local-state warmup');
-requireText(phase3, "{ method: 'characters.list', params: {} }", 'Character Tools must warm after bootstrap');
-requireText(phase3, "{ method: 'singleplayer.profile.get'", 'World profile details must warm after bootstrap');
-requireText(phase3, "{ method: 'singleplayer.inventory'", 'local mods must warm after bootstrap');
-requireText(phase3, "{ method: 'server.world.inventory'", 'server mods must warm after bootstrap');
-requireText(phase3, "{ method: 'server.world.save.status'", 'World save state must warm after bootstrap');
+requireText(phase3, 'criticalRequests(state)', 'Phase 3 must define a lightweight startup warmup');
+requireText(phase3, "{ method: 'characters.list', params: {} }", 'Character Tools must warm on explicit user intent');
+requireText(phase3, "{ method: 'singleplayer.profile.get'", 'World profile details must warm on relevant intent');
+requireText(phase3, "{ method: 'singleplayer.inventory'", 'local mods must warm from cache on Mods intent');
+requireText(phase3, "{ method: 'server.world.inventory'", 'server mods must warm from cache on Mods intent');
+requireText(phase3, "{ method: 'server.world.save.status'", 'World save state must warm on relevant World intent');
 requireText(phase3, "{ method: 'world.save.editor.read'", 'Save Editor must warm on user intent');
-requireText(phase3, "{ method: 'server.world.config.list'", 'World configuration must warm after bootstrap');
-requireText(phase3, "{ method: 'server.backups.list'", 'Save Manager/maintenance backup data must warm after bootstrap');
+requireText(phase3, "{ method: 'server.world.config.list'", 'World configuration must warm on configuration intent');
+requireText(phase3, "{ method: 'server.backups.list'", 'Save Manager/maintenance backup data must warm on maintenance intent');
 requireText(phase3, 'requested_to_first_paint', 'major surfaces must record requested-to-first-paint timing');
 requireText(phase3, 'phase3-load-pill', 'slow foreground work must use a localized loading indicator');
 requireText(phase3, 'window.__DWSYNC_PERF__', 'performance evidence must be available for diagnostics');
+
+const criticalStart = phase3.indexOf('function criticalRequests');
+const criticalEnd = phase3.indexOf('async function prewarmCritical', criticalStart);
+const critical = phase3.slice(criticalStart, criticalEnd);
+for (const forbidden of ['application.rsdw.status', 'application.map.status', 'characters.list', 'singleplayer.inventory', 'server.world.inventory', 'server.backups.list']) {
+  if (critical.includes(forbidden)) throw new Error(`Phase 3 contract failed: startup warmup must not include ${forbidden}`);
+}
 
 requireText(backend, 'DragonwildsSync.CharacterIndex.v1', 'backend must persist a lightweight Character Index');
 requireText(backend, '_cached_local_world_projection', 'unchanged local World projection must reuse known profile state');

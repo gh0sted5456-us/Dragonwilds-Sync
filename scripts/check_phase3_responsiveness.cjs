@@ -10,6 +10,9 @@ const requireText = (source, text, label) => {
 const preload = read('electron/preload.cjs');
 const phase3 = read('renderer/release-phase3.js');
 const backend = read('backend/phase3_responsiveness.py');
+const shell = read('backend/shell_persistence_stabilization.py');
+const monaco = read('renderer/release-monaco-prewarm.js');
+const app = read('renderer/app.js');
 const index = read('renderer/index.html');
 
 requireText(preload, 'const invokeCache = new Map()', 'preload must keep an in-memory read cache');
@@ -31,14 +34,16 @@ requireText(preload, 'onRequestActivity', 'renderer must receive real request ac
 requireText(preload, 'requestStats', 'backend request timings must be inspectable');
 
 requireText(phase3, 'criticalRequests(state)', 'Phase 3 must define a lightweight startup warmup');
-requireText(phase3, "{ method: 'characters.list', params: {} }", 'Character Tools must warm on explicit user intent');
-requireText(phase3, "{ method: 'singleplayer.profile.get'", 'World profile details must warm on relevant intent');
-requireText(phase3, "{ method: 'singleplayer.inventory'", 'local mods must warm from cache on Mods intent');
-requireText(phase3, "{ method: 'server.world.inventory'", 'server mods must warm from cache on Mods intent');
-requireText(phase3, "{ method: 'server.world.save.status'", 'World save state must warm on relevant World intent');
-requireText(phase3, "{ method: 'world.save.editor.read'", 'Save Editor must warm on user intent');
+requireText(phase3, "{ method: 'characters.list', params: {} }", 'Characters must warm immediately after shell bootstrap');
+requireText(phase3, "{ method: 'singleplayer.profile.get'", 'active local World profile must warm from persisted state');
+requireText(phase3, "{ method: 'singleplayer.inventory'", 'active local mod inventory must warm from cache');
+requireText(phase3, "{ method: 'server.world.inventory'", 'active server mod inventory must warm from cache');
+requireText(phase3, "{ method: 'server.world.save.status'", 'active server save state must warm with the shell');
+requireText(phase3, 'setTimeout(() => prewarmCritical(true), 0)', 'local workspace warmup must start immediately after initial state paint');
+requireText(phase3, 'window.__DWSYNC_SHELL_READY__', 'shell readiness must be observable for diagnostics');
+requireText(phase3, "{ method: 'world.save.editor.read'", 'Save Editor must still warm only on user intent');
 requireText(phase3, "{ method: 'server.world.config.list'", 'World configuration must warm on configuration intent');
-requireText(phase3, "{ method: 'server.backups.list'", 'Save Manager/maintenance backup data must warm on maintenance intent');
+requireText(phase3, "{ method: 'server.backups.list'", 'Save Manager/maintenance backup data must remain intent-driven');
 requireText(phase3, 'requested_to_first_paint', 'major surfaces must record requested-to-first-paint timing');
 requireText(phase3, 'phase3-load-pill', 'slow foreground work must use a localized loading indicator');
 requireText(phase3, 'window.__DWSYNC_PERF__', 'performance evidence must be available for diagnostics');
@@ -46,8 +51,14 @@ requireText(phase3, 'window.__DWSYNC_PERF__', 'performance evidence must be avai
 const criticalStart = phase3.indexOf('function criticalRequests');
 const criticalEnd = phase3.indexOf('async function prewarmCritical', criticalStart);
 const critical = phase3.slice(criticalStart, criticalEnd);
-for (const forbidden of ['application.rsdw.status', 'application.map.status', 'characters.list', 'singleplayer.inventory', 'server.world.inventory', 'server.backups.list']) {
-  if (critical.includes(forbidden)) throw new Error(`Phase 3 contract failed: startup warmup must not include ${forbidden}`);
+for (const required of ['characters.list', 'singleplayer.inventory', 'server.world.inventory']) {
+  if (!critical.includes(required)) throw new Error(`Phase 3 contract failed: shell warmup must include persisted/local ${required}`);
+}
+for (const forbidden of [
+  'world.browser.refresh', 'world.directory.refresh', 'application.recommendations.refresh',
+  'application.rsdw.refresh', 'application.map.refresh', 'server.backups.list', 'rescan: true',
+]) {
+  if (critical.includes(forbidden)) throw new Error(`Phase 3 contract failed: shell warmup must not include heavyweight ${forbidden}`);
 }
 
 requireText(backend, 'DragonwildsSync.CharacterIndex.v1', 'backend must persist a lightweight Character Index');
@@ -59,14 +70,27 @@ if (backend.includes('_characters.rsdw_cache.status()')) {
   throw new Error('Phase 3 contract failed: Character hot path must not recursively validate the full RSDW cache.');
 }
 
-if (phase3.includes("world.directory.refresh")) {
-  throw new Error('Phase 3 contract failed: public/network World discovery must not be part of local warmup.');
-}
+requireText(shell, 'DragonwildsSync.ModFileIndex.v1', 'Mod Explorer must have a persistent file-tree index');
+requireText(shell, 'settings-manifest', 'settings.json must recover cached mod inventory without a scan');
+requireText(shell, 'mods["inventory"]', 'settings.json must persist the known user-mod inventory');
+requireText(shell, 'is_user_manageable_mod', 'persisted mod inventory must obey the authoritative hidden-infrastructure taxonomy');
+requireText(shell, '_invalidate_mod_indexes', 'narrow file mutations must invalidate only affected Mod Explorer indexes');
+requireText(shell, '_bind_legacy_aliases', 'packaged/source late imports must share the indexed Mod Explorer provider');
+
 if (phase3.includes('setInterval(')) {
   throw new Error('Phase 3 contract failed: responsiveness warmup must not add a polling loop.');
 }
 
+requireText(monaco, "script.src = 'vendor/monaco/vs/loader.js'", 'bundled Monaco loader must be prewarmed');
+requireText(monaco, "amdRequire(['vs/editor/editor.main']", 'Monaco editor core must preload before first editor intent');
+requireText(monaco, 'window.__DWSYNC_MONACO_STATUS__', 'Monaco readiness/failure must be observable');
+requireText(monaco, 'requestAnimationFrame', 'Monaco warmup must yield first shell paint');
+requireText(app, 'monaco.editor.create', 'the application must still mount the real Monaco editor');
+requireText(index, 'release-monaco-prewarm.js', 'Monaco prewarm layer must be loaded');
 requireText(index, 'release-phase3.css', 'Phase 3 localized loading CSS must be loaded');
 requireText(index, 'release-phase3.js', 'Phase 3 responsiveness layer must be loaded');
+if (index.indexOf('release-monaco-prewarm.js') > index.indexOf('app.js')) {
+  throw new Error('Phase 3 contract failed: Monaco warmup must be registered before app.js.');
+}
 
-console.log('Phase 3 responsiveness / backend loading contract: OK');
+console.log('Phase 3 shell-first responsiveness / persistence / Monaco contract: OK');

@@ -9,10 +9,9 @@ body.phase5-embedded #detach-server-world {
   display:none !important;
 }
 
-/* release-phase5.css hides the nested desktop chrome. Restore only the
-   embedded modal layer so editors/config dialogs opened from a route window
-   still work. They remain inside that application-owned window and do not
-   become Windows taskbar processes. */
+/* release-phase5.css hides nested desktop chrome by default. Restore only the
+   modal layer and its taskbar when a route-owned editor/dialog actually opens.
+   Those child tools remain inside the parent application window. */
 body.phase5-embedded #modal-root {
   display:block !important;
   position:fixed;
@@ -21,3 +20,11 @@ body.phase5-embedded #modal-root {
 }
 body.phase5-embedded #modal-root:empty { pointer-events:none; }
 body.phase5-embedded #modal-root .desktop-window { max-width:calc(100% - 8px); }
+body.phase5-embedded #internal-taskbar {
+  display:flex !important;
+  left:0 !important;
+  height:32px;
+  z-index:92;
+}
+body.phase5-embedded #internal-taskbar:empty { display:none !important; }
+body.phase5-embedded:has(#internal-taskbar:not(:empty)) #app.detached-shell > .main { padding-bottom:34px; }

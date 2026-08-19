@@ -17,9 +17,6 @@ WORKER_CONFIG_SCHEMA = "DragonwildsSync.RuntimeWorkers.v1"
 
 
 class WorkerBackedServerEngine:
-    # RuntimeManager historically uses this module marker to decide whether the
-    # dedicated Steam install should receive the strict post-update verification
-    # pass. Keep that safety behavior while execution moves behind this adapter.
     __module__ = "server_engine"
     is_authoritative_server_engine = True
 
@@ -43,10 +40,9 @@ class WorkerBackedServerEngine:
         self.original.record_event(message, level)
 
     def scan_mods(self, profile_id: str) -> dict:
-        # RuntimeManager calls preparation before process launch. Materializing
-        # the live tree here would keep execution split across processes, so the
-        # worker performs the existing ServerEngine.scan_mods immediately before
-        # it launches the game after validating its explicit desired revision.
+        # Record the target before any worker call so RuntimeManager's failed
+        # start cleanup can find/stop the correct worker even if IPC fails midway.
+        self._last_profile_id = str(profile_id or "").strip()
         return {
             "profile_id": str(profile_id), "deferred_to_worker": True,
             "owner": "world-runtime-worker", "desired_state": "revisioned-before-start",
@@ -89,8 +85,6 @@ class WorkerBackedServerEngine:
             }
             return result
         if worker.get("live"):
-            # A live but unauthenticated/unreachable worker is never silently
-            # bypassed by launching a second copy through the old direct path.
             stale_runtime = dict(runtime)
             stale_runtime.update({
                 "running": bool(worker.get("gamePid") or stale_runtime.get("running")),
@@ -111,10 +105,8 @@ class WorkerBackedServerEngine:
         profile_id = str(profile_id or "").strip()
         if not profile_id:
             raise ValueError("A Server World is required for worker launch.")
+        self._last_profile_id = profile_id
 
-        # If a controller restart is re-entering Start while the compatible
-        # worker/game are already alive, attach to that exact applied revision
-        # instead of manufacturing a new revision or a duplicate game process.
         existing = self._worker_status(profile_id)
         existing_runtime = existing.get("runtime") if isinstance(existing.get("runtime"), dict) else {}
         if existing.get("attached") and existing_runtime.get("running"):
@@ -131,7 +123,22 @@ class WorkerBackedServerEngine:
                 },
             }
 
-        response = self.supervisor.start_runtime(profile_id)
+        try:
+            response = self.supervisor.start_runtime(profile_id)
+        except Exception:
+            # If the worker never reached a running game, do not leave an idle
+            # failed worker behind. If the game did start but the response was
+            # lost, leave it visible so RuntimeManager's normal failed-start
+            # cleanup can stop the real worker-owned process safely.
+            state = self._worker_status(profile_id)
+            runtime = state.get("runtime") if isinstance(state.get("runtime"), dict) else {}
+            if state.get("attached") and not runtime.get("running"):
+                try:
+                    self.supervisor.stop(profile_id)
+                except Exception:
+                    pass
+            raise
+
         status = response.get("status") if isinstance(response.get("status"), dict) else {}
         runtime = status.get("runtime") if isinstance(status.get("runtime"), dict) else {}
         result = response.get("result") if isinstance(response.get("result"), dict) else {}
@@ -177,10 +184,6 @@ class WorkerBackedServerEngine:
         return evidence
 
     def publish(self, profile_id: str) -> dict:
-        # Deliberate Phase 5C parity boundary: the proven SHARE/file publication
-        # remains in the parent process until worker-owned dedicated execution is
-        # green on Windows and Linux. RuntimeManager still verifies publication
-        # only after this worker has proven the game process and applied revision.
         self.active_profile_id = profile_id
         return self.original.publish(profile_id)
 
@@ -246,7 +249,6 @@ def _config(state: dict) -> dict:
 
 
 def install(runtime_manager, original_engine, share, supervisor, *, load_state: Callable[[], dict], save_state: Callable[[dict], None]) -> dict:
-    """Install the worker-backed execution edge once, with explicit rollback."""
     if getattr(runtime_manager, "_dws_phase5_worker_bridge", None) is not None:
         bridge = runtime_manager._dws_phase5_worker_bridge
         return {

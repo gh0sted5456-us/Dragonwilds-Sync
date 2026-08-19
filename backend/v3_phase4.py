@@ -22,6 +22,10 @@ MAX_BADGES = 16
 MAX_TAGS = 24
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_ASSET_PATH = re.compile(r"^/assets/placards/badge-[0-9a-f]{64}\.png$")
+_PUBLIC_CARD_SWITCHES = {
+    "show_description", "show_region", "show_players", "show_build", "show_mods",
+    "show_rules", "show_tags", "show_badges", "publish_connection",
+}
 
 
 def _text(value: object, limit: int) -> str:
@@ -146,13 +150,110 @@ def _enrich_raw_from_profile(profile_id: str, kind: str, raw: dict) -> dict:
     return merged
 
 
+def _card_settings(network: Any, profile_id: str, kind: str) -> dict:
+    try:
+        identity = network.ensure_world_identity(profile_id, kind)
+        card = identity.get("public_card") if isinstance(identity, dict) else {}
+        return dict(card or {}) if isinstance(card, dict) else {}
+    except Exception:
+        return {}
+
+
+def _apply_public_card_controls(snapshot: dict, card: dict) -> dict:
+    """Apply every optional public-card visibility switch after base projection.
+
+    Old profiles retain the prior visible behavior unless a field is explicitly
+    disabled. The connection address remains opt-in as before.
+    """
+    result = dict(snapshot or {})
+    controlled = {
+        "show_description": ("description",),
+        "show_region": ("region",),
+        "show_players": ("player_count", "max_players"),
+        "show_build": ("cl",),
+        "show_mods": ("mods",),
+        "show_rules": ("rules",),
+        "show_tags": ("tags",),
+        "show_badges": ("badges", "badge_refs"),
+    }
+    for switch, keys in controlled.items():
+        if card.get(switch, True) is False:
+            for key in keys: result.pop(key, None)
+    if not bool(card.get("publish_connection", False)):
+        result.pop("connection", None)
+    return result
+
+
+def _remote_admin_metadata(snapshot: dict, raw: dict, kind: str) -> dict:
+    """Return public-safe target-owned Remote Admin handoff metadata only."""
+    if str(kind or "").casefold() not in {"server", "dedicated"}:
+        return {}
+    try:
+        from profile_store import load_state
+        from v2_remote_routing import remote_advertisement
+        state = load_state()
+        host_cfg = ((state.get("application") or {}).get("world_directory_host") or {})
+        external_ip = str(raw.get("external_ip") or ((raw.get("connection") or {}).get("external_ip") if isinstance(raw.get("connection"), dict) else "") or "")
+        advertised = remote_advertisement(host_cfg, external_ip=external_ip)
+        remote = dict(advertised.get("remote_management") or {})
+    except Exception:
+        return {}
+    if not remote.get("configured") or not remote.get("available") or not remote.get("endpoint"):
+        return {}
+    world_sync = raw.get("world_sync") if isinstance(raw.get("world_sync"), dict) else {}
+    fingerprint = _text(raw.get("fingerprint") or raw.get("fingerprint_claimed") or raw.get("launcher_fingerprint") or world_sync.get("fingerprint"), 96)
+    endpoint = str(remote.get("endpoint") or "").rstrip("/")
+    return {
+        "configured": True, "enabled": True, "available": True,
+        "endpoint": endpoint, "browser_compatible": endpoint.casefold().startswith("https://"),
+        "ping_path": "/api/v1/remote-admin/ping", "login_path": "/admin/login",
+        "auth": [str(value)[:40] for value in (remote.get("auth") or []) if str(value)],
+        "authority": "target-world", "world_id": str(snapshot.get("world_id") or "")[:120],
+        "world_name": str(snapshot.get("name") or "")[:160], "fingerprint": fingerprint,
+    }
+
+
+def _persist_phase4_public_card(network: Any, profile_id: str, kind: str, patch: dict) -> None:
+    public = patch.get("public_card") if isinstance(patch.get("public_card"), dict) else {}
+    requested = {key: bool(public.get(key)) for key in _PUBLIC_CARD_SWITCHES if key in public}
+    if not requested:
+        return
+    try:
+        from profile_store import write_json
+        path, document = network._world_document(profile_id, kind)
+        card = document.setdefault("directory_network", {}).setdefault("public_card", {})
+        card.update(requested)
+        write_json(path, document)
+    except Exception:
+        # The original settings call already persisted its supported subset.
+        # Do not turn an additive visibility migration into a settings failure.
+        pass
+
+
 def install(network: Any) -> Any:
     """Decorate existing publication in place; no duplicate scheduler or transport."""
     if getattr(network, "_v3_phase4_installed", False): return network
-    original = network.build_public_snapshot
+    original_snapshot = network.build_public_snapshot
+    original_settings = network.set_world_publication
+
+    def set_world_publication(profile_id: str, kind: str, patch: dict) -> dict:
+        result = original_settings(profile_id, kind, patch)
+        _persist_phase4_public_card(network, profile_id, kind, patch if isinstance(patch, dict) else {})
+        return network.world_status(profile_id, kind) if isinstance(result, dict) else result
+
     def build_public_snapshot(profile_id: str, kind: str, raw: dict, *, status: str = "active") -> dict:
         enriched = _enrich_raw_from_profile(profile_id, kind, raw)
-        return decorate_public_snapshot(original(profile_id, kind, enriched, status=status), enriched)
+        result = decorate_public_snapshot(original_snapshot(profile_id, kind, enriched, status=status), enriched)
+        result = _apply_public_card_controls(result, _card_settings(network, profile_id, kind))
+        remote = _remote_admin_metadata(result, enriched, kind)
+        if remote:
+            result["remote_management"] = remote
+            result["capabilities"] = {**(result.get("capabilities") if isinstance(result.get("capabilities"), dict) else {}), "remote_management": True}
+        else:
+            result.pop("remote_management", None)
+        return result
+
+    network.set_world_publication = set_world_publication
     network.build_public_snapshot = build_public_snapshot
     network._v3_phase4_installed = True
     return network
@@ -188,7 +289,9 @@ def heartbeat_status(network: Any, profile_id: str, kind: str = "dedicated") -> 
 
 def phase4_contract() -> dict:
     return {"schema": PHASE4_SCHEMA,
-        "placards": {"sides": 2, "animation_modes": ["full", "reduced", "off"]},
+        "placards": {"sides": 2, "animation_modes": ["full", "reduced", "off"], "focused_window": True},
+        "public_card_switches": sorted(_PUBLIC_CARD_SWITCHES),
+        "remote_admin_handoff": {"authority": "target-world", "live_probe_required": True, "browser_requires_https": True},
         "heartbeat_states": ["Active", "Connecting", "Partial", "Failed", "Disabled"],
         "custom_badges": {"format": "reference", "max_count": MAX_BADGES, "max_png_bytes": MAX_CUSTOM_BADGE_BYTES,
                           "max_png_dimension": MAX_BADGE_DIMENSION, "tooltip_defaults_to_name": True},

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0d0f">
-  <meta name="description" content="Dragonwilds Sync — a unified launcher, client sync, dedicated server manager, mod synchronization, and remote management toolkit for RuneScape: Dragonwilds.">
+  <meta name="description" content="Dragonwilds Sync — client synchronization, dedicated server management, public world discovery, mod coordination, and secure remote administration for RuneScape: Dragonwilds.">
   <meta property="og:title" content="Dragonwilds Sync">
   <meta property="og:description" content="One clean toolkit for Dragonwilds clients, worlds, mods, servers, and remote management.">
   <meta property="og:type" content="website">
@@ -19,24 +19,28 @@
   <header class="site-header" id="top">
     <a class="brand" href="#top" aria-label="Dragonwilds Sync home">
       <img src="assets/application-icon.png" alt="" class="brand-icon">
-      <span class="brand-copy">
-        <strong>Dragonwilds</strong>
-        <span>Sync</span>
-      </span>
+      <span class="brand-copy"><strong>Dragonwilds</strong><span>Sync</span></span>
     </a>
 
     <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav">
-      <span></span><span></span>
-      <span class="sr-only">Toggle navigation</span>
+      <span></span><span></span><span class="sr-only">Toggle navigation</span>
     </button>
 
     <nav class="main-nav" id="main-nav" aria-label="Primary navigation">
       <a href="#features">Features</a>
+      <a href="#network">Network</a>
       <a href="#worlds">Worlds</a>
+      <a href="#webgui">WebGUI</a>
       <a href="#downloads">Downloads</a>
-      <a href="#docs">Docs</a>
+      <a href="#community">Community</a>
       <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>
     </nav>
+
+    <div class="theme-switcher" role="group" aria-label="Website theme">
+      <button type="button" data-theme-choice="dark" aria-pressed="true" title="Dark Graph theme"><span class="theme-dot dark-dot"></span><span class="theme-label">Dark</span></button>
+      <button type="button" data-theme-choice="white" aria-pressed="false" title="White theme"><span class="theme-dot white-dot"></span><span class="theme-label">White</span></button>
+      <button type="button" data-theme-choice="glass" aria-pressed="false" title="Liquid Glass theme"><span class="theme-dot glass-dot"></span><span class="theme-label">Glass</span></button>
+    </div>
   </header>
 
   <main>
@@ -46,14 +50,12 @@
         <div class="hero-copy reveal">
           <div class="eyebrow"><span class="status-dot"></span> Community-built Dragonwilds toolkit</div>
           <h1>Keep every world,<br><span>client, and mod</span> in sync.</h1>
-          <p class="hero-lede">Dragonwilds Sync brings client synchronization, dedicated-server management, mod coordination, updates, profiles, and remote administration into one focused launcher.</p>
+          <p class="hero-lede">Dragonwilds Sync brings client synchronization, dedicated-server management, mod coordination, updates, public world discovery, profiles, and secure remote administration into one focused launcher.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#downloads">Get Dragonwilds Sync <span aria-hidden="true">↓</span></a>
-            <a class="button button-secondary" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">View source <span aria-hidden="true">↗</span></a>
+            <a class="button button-secondary" href="#worlds">Explore public worlds <span aria-hidden="true">→</span></a>
           </div>
-          <div class="hero-meta">
-            <span>Windows</span><i></i><span>Open source</span><i></i><span>Community project</span>
-          </div>
+          <div class="hero-meta"><span>Windows</span><i></i><span>Open source</span><i></i><span>Community project</span></div>
         </div>
 
         <div class="product-window reveal delay-1" aria-label="Dragonwilds Sync interface preview">
@@ -64,34 +66,33 @@
           <div class="window-body">
             <aside class="mock-sidebar">
               <div class="mock-logo"><img src="assets/application-icon.png" alt=""></div>
-              <span class="mock-nav active"></span>
-              <span class="mock-nav"></span>
-              <span class="mock-nav"></span>
-              <span class="mock-nav"></span>
+              <span class="mock-nav active"></span><span class="mock-nav"></span><span class="mock-nav"></span><span class="mock-nav"></span>
             </aside>
             <div class="mock-content">
               <div class="mock-topline"><span>WORLD MANAGEMENT</span><span class="tiny-pill">CONNECTED</span></div>
               <div class="mock-world-card">
-                <div>
-                  <div class="mock-kicker">DEDICATED WORLD</div>
-                  <h3>Ashenvale</h3>
-                  <div class="mock-tags"><span>Modded</span><span>Co-op</span><span>CL-Current</span></div>
-                </div>
+                <div><div class="mock-kicker">DEDICATED WORLD</div><h3>Ashenvale</h3><div class="mock-tags"><span>Modded</span><span>Co-op</span><span>CL-Current</span></div></div>
                 <div class="mock-health"><span></span><b>Online</b><small>12 / 20</small></div>
               </div>
-              <div class="mock-stats">
-                <div><small>SERVER</small><strong>Healthy</strong></div>
-                <div><small>MOD SYNC</small><strong>Current</strong></div>
-                <div><small>UPDATE</small><strong>Ready</strong></div>
-              </div>
+              <div class="mock-stats"><div><small>SERVER</small><strong>Healthy</strong></div><div><small>MOD SYNC</small><strong>Current</strong></div><div><small>UPDATE</small><strong>Ready</strong></div></div>
               <div class="mock-actions"><button>Open World</button><button>Manage</button><button class="mock-primary">Play</button></div>
             </div>
           </div>
         </div>
       </div>
+      <div class="hero-strip reveal delay-2"><span>CLIENT SYNC</span><span>SERVER CONTROL</span><span>MOD MANAGEMENT</span><span>WEBGUI</span><span>PUBLIC WORLDS</span><span>AUTO UPDATE</span></div>
+    </section>
 
-      <div class="hero-strip reveal delay-2">
-        <span>CLIENT SYNC</span><span>SERVER CONTROL</span><span>MOD MANAGEMENT</span><span>WEBGUI</span><span>REMOTE ADMIN</span><span>AUTO UPDATE</span>
+    <section class="network-section section-shell" id="network">
+      <div class="network-heading reveal">
+        <div><div class="eyebrow"><span class="network-live-dot" id="network-live-dot"></span> Dragonwilds Sync Network</div><h2>Live community pulse.</h2></div>
+        <p id="network-message">Connecting to the public Dragonwilds Sync network…</p>
+      </div>
+      <div class="network-stats reveal delay-1" aria-live="polite">
+        <article><span>ACTIVE USERS</span><strong id="stat-users">—</strong><small>anonymous active installations</small></article>
+        <article><span>WORLDS ONLINE</span><strong id="stat-worlds">—</strong><small>publicly broadcasting worlds</small></article>
+        <article><span>PLAYERS LISTED</span><strong id="stat-players">—</strong><small>across public worlds</small></article>
+        <article><span>CURRENT BUILD</span><strong id="stat-build">—</strong><small>network-reported CL build</small></article>
       </div>
     </section>
 
@@ -101,118 +102,97 @@
         <h2>Less server babysitting.<br>More time in Ashenfall.</h2>
         <p>Built around a single source of truth for runtime state, updates, synchronization, and world management — whether you're at the desktop or checking in remotely.</p>
       </div>
-
       <div class="feature-grid">
         <article class="feature-card feature-card-wide reveal">
           <div class="feature-number">01</div>
-          <div class="feature-icon sync-icon" aria-hidden="true"><span></span><span></span></div>
-          <div class="feature-copy"><h3>Client & mod synchronization</h3><p>Connect to a configured world, compare what you have, synchronize what you need, and launch from a consistent profile.</p></div>
-          <div class="feature-visual sync-visual" aria-hidden="true">
-            <div class="sync-node server"><span></span><strong>WORLD</strong><small>Authoritative</small></div>
-            <div class="sync-line"><i></i></div>
-            <div class="sync-node client"><span></span><strong>CLIENT</strong><small>In sync</small></div>
-          </div>
+          <div class="feature-copy"><div class="feature-symbol">⇄</div><h3>Client & mod synchronization</h3><p>Connect to a configured world, compare what you have, synchronize what you need, and launch from a consistent profile.</p></div>
+          <div class="feature-visual" aria-hidden="true"><div class="sync-node server"><span></span><strong>WORLD</strong><small>Authoritative</small></div><div class="sync-line"><i></i></div><div class="sync-node client"><span></span><strong>CLIENT</strong><small>In sync</small></div></div>
         </article>
-
-        <article class="feature-card reveal delay-1">
-          <div class="feature-number">02</div>
-          <div class="feature-symbol">⌁</div>
-          <h3>Dedicated server control</h3>
-          <p>Start, stop, restart, update, verify, and monitor server lifecycle from one controller instead of a pile of scripts.</p>
-        </article>
-
-        <article class="feature-card reveal delay-2">
-          <div class="feature-number">03</div>
-          <div class="feature-symbol">◇</div>
-          <h3>WebGUI & remote access</h3>
-          <p>Manage supported server functions from the web interface while preserving the same backend state and security boundaries.</p>
-        </article>
-
-        <article class="feature-card reveal">
-          <div class="feature-number">04</div>
-          <div class="feature-symbol">↻</div>
-          <h3>Updates that finish the job</h3>
-          <p>Coordinate launcher, game-server, and core-mod updates with controlled restart and rebroadcast behavior.</p>
-        </article>
-
-        <article class="feature-card reveal delay-1">
-          <div class="feature-number">05</div>
-          <div class="feature-symbol">▦</div>
-          <h3>Profiles & world management</h3>
-          <p>Keep previously synchronized worlds, connection details, compatibility state, and world-specific settings organized.</p>
-        </article>
+        <article class="feature-card reveal delay-1"><div class="feature-number">02</div><div class="feature-symbol">⌁</div><h3>Dedicated server control</h3><p>Start, stop, restart, update, verify, and monitor server lifecycle from one controller instead of a pile of scripts.</p></article>
+        <article class="feature-card reveal delay-2"><div class="feature-number">03</div><div class="feature-symbol">◇</div><h3>WebGUI & remote access</h3><p>Use the web interface for supported server operations while keeping the same backend authority, authentication, and lifecycle rules.</p></article>
+        <article class="feature-card reveal"><div class="feature-number">04</div><div class="feature-symbol">↻</div><h3>Updates that finish the job</h3><p>Coordinate launcher, dedicated-server, and Core updates with controlled stop, update, restart, verification, and rebroadcast behavior.</p></article>
+        <article class="feature-card reveal delay-1"><div class="feature-number">05</div><div class="feature-symbol">◎</div><h3>Public world discovery</h3><p>Opt-in public world cards expose only sanitized discovery data while private administration remains entirely separate.</p></article>
       </div>
     </section>
 
     <section class="worlds-section" id="worlds">
       <div class="section-shell">
-        <div class="worlds-layout">
-          <div class="section-heading reveal">
+        <div class="worlds-header reveal">
+          <div class="section-heading">
             <div class="eyebrow"><span class="pulse-heart" aria-hidden="true">♥</span> Public World Directory</div>
             <h2>Find your next world.</h2>
-            <p>The public directory is being prepared as a privacy-conscious, read-only view of participating Dragonwilds Sync worlds. Live telemetry will connect here without exposing server administration.</p>
-            <div class="world-tags"><span>Signed telemetry</span><span>Public-safe fields</span><span>Server badges</span><span>Mod lists</span></div>
+            <p>Live, opt-in world cards from participating Dragonwilds Sync hosts. Public telemetry is read-only and never grants server administration.</p>
           </div>
+          <div class="directory-state" id="directory-state"><span class="directory-dot"></span><div><strong>Connecting</strong><small>Checking the public directory…</small></div></div>
+        </div>
 
-          <div class="placard-wrap reveal delay-1">
-            <button class="placard" type="button" aria-label="Flip world directory preview card">
-              <span class="placard-inner">
-                <span class="placard-face placard-front">
-                  <span class="placard-top"><span class="preview-chip">DIRECTORY PREVIEW</span><span class="placard-heart">♥</span></span>
-                  <span class="placard-title">Public Worlds</span>
-                  <span class="placard-subtitle">Community-hosted Dragonwilds servers</span>
-                  <span class="placard-tags"><i>Vanilla+</i><i>Modded</i><i>Community</i></span>
-                  <span class="placard-footer"><span>Live API not connected yet</span><strong>FLIP ↻</strong></span>
-                </span>
-                <span class="placard-face placard-back">
-                  <span class="placard-top"><span class="preview-chip">COMING ONLINE</span><span>01</span></span>
-                  <span class="back-list"><b>Community rules</b><span>World owners choose what to publish.</span><b>Mods & badges</b><span>Clean, readable compatibility information.</span><b>Privacy first</b><span>No administrative controls on the public API.</span></span>
-                  <span class="placard-footer"><span>Click to return</span><strong>FRONT ↻</strong></span>
-                </span>
-              </span>
-            </button>
+        <div class="world-toolbar reveal delay-1">
+          <div class="filter-group" role="group" aria-label="World directory filter">
+            <button class="filter-button active" type="button" data-world-filter="all">All</button>
+            <button class="filter-button" type="button" data-world-filter="online">Online</button>
+            <button class="filter-button" type="button" data-world-filter="modded">Modded</button>
+            <button class="filter-button" type="button" data-world-filter="current">Current build</button>
           </div>
+          <label class="world-search"><span class="sr-only">Search public worlds</span><input id="world-search" type="search" placeholder="Search worlds, regions, tags…" autocomplete="off"></label>
+        </div>
+
+        <div class="world-grid" id="world-grid" aria-live="polite">
+          <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Loading public worlds</strong><p>Connecting to the Dragonwilds Sync Network.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="webgui-section section-shell" id="webgui">
+      <div class="webgui-layout">
+        <div class="section-heading reveal">
+          <div class="eyebrow">WebHost / WebGUI</div>
+          <h2>Your server authority,<br>available remotely.</h2>
+          <p>The WebGUI is not a second server manager. It routes supported actions through the same authoritative runtime and update controller used by the desktop application.</p>
+          <div class="security-chips"><span>Authenticated sessions</span><span>CSRF protected</span><span>Permission checks</span><span>Audit records</span></div>
+        </div>
+        <div class="webgui-console reveal delay-1" aria-label="WebGUI capability preview">
+          <div class="console-head"><span>WORLD / ASHENVALE</span><span class="console-online">● ONLINE</span></div>
+          <div class="console-status"><div><small>RUNTIME</small><strong>Authoritative</strong></div><div><small>ACCESS</small><strong>Authenticated</strong></div><div><small>AUDIT</small><strong>Recording</strong></div></div>
+          <div class="console-row"><span>Restart world</span><b>Routes through runtime authority</b></div>
+          <div class="console-row"><span>Apply update</span><b>Managed stop → update → restart</b></div>
+          <div class="console-row"><span>Review status</span><b>Shared desktop / WebGUI state</b></div>
+          <div class="console-note">Public directory credentials and WebGUI administrator credentials remain separate by design.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="community-section" id="community">
+      <div class="section-shell community-grid">
+        <div class="community-copy reveal">
+          <div class="eyebrow">Built with the community</div>
+          <h2>Mod, host, share,<br>and discover together.</h2>
+          <p>Dragonwilds Sync is designed to work alongside the wider RSDW modding ecosystem. Join the community for modding discussion, world discovery, shared tools, and project feedback.</p>
+          <div class="community-actions"><a class="button button-primary" href="https://discord.gg/gQ7uY2cQ3q">Join RSDW Modding Community <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">Contribute on GitHub <span aria-hidden="true">↗</span></a></div>
+        </div>
+        <div class="directory-ecosystem reveal delay-1">
+          <div class="eco-node official"><span>OFFICIAL</span><strong>Dragonwilds Sync Network</strong><small>Built-in public discovery</small></div>
+          <div class="eco-line"></div>
+          <div class="eco-row"><div class="eco-node"><span>COMMUNITY</span><strong>Compatible directories</strong><small>Independent listings</small></div><div class="eco-node"><span>SELF-HOSTED</span><strong>Your own directory</strong><small>Protocol-compatible hosts</small></div></div>
         </div>
       </div>
     </section>
 
     <section class="section-shell downloads" id="downloads">
       <div class="download-panel reveal">
-        <div class="download-main">
-          <div class="eyebrow">Latest build</div>
-          <h2>Ready when your world is.</h2>
-          <p>Grab the newest published Dragonwilds Sync release from GitHub. Release information below updates automatically when a public release is available.</p>
-          <div class="release-row">
-            <div><span>VERSION</span><strong id="release-version">Checking…</strong></div>
-            <div><span>PUBLISHED</span><strong id="release-date">GitHub Releases</strong></div>
-            <div><span>CHANNEL</span><strong id="release-channel">Latest</strong></div>
-          </div>
-        </div>
-        <div class="download-action">
-          <img src="assets/application-icon.png" alt="Dragonwilds Sync icon">
-          <a class="button button-primary button-full" id="release-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">View downloads <span aria-hidden="true">↗</span></a>
-          <a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Release history</a>
-        </div>
+        <div class="download-main"><div class="eyebrow">Latest build</div><h2>Ready when your world is.</h2><p>Grab the newest published Dragonwilds Sync release from GitHub. Release information updates automatically when a public release is available.</p><div class="release-row"><div><span>VERSION</span><strong id="release-version">Checking…</strong></div><div><span>PUBLISHED</span><strong id="release-date">GitHub Releases</strong></div><div><span>CHANNEL</span><strong id="release-channel">Latest</strong></div></div></div>
+        <div class="download-action"><img src="assets/application-icon.png" alt="Dragonwilds Sync icon"><a class="button button-primary button-full" id="release-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">View downloads <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Release history</a></div>
       </div>
     </section>
 
     <section class="section-shell docs" id="docs">
-      <div class="section-heading reveal">
-        <div class="eyebrow">Documentation</div>
-        <h2>From first launch<br>to full world control.</h2>
-        <p>The documentation area will grow with the launcher. For now, the repository remains the authoritative source for technical notes, releases, and issue tracking.</p>
-      </div>
-      <div class="docs-grid">
-        <a class="doc-card reveal" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync#readme"><span>01</span><div><h3>Getting started</h3><p>Project overview and current setup information.</p></div><b>↗</b></a>
-        <a class="doc-card reveal delay-1" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/docs"><span>02</span><div><h3>Documentation</h3><p>Build notes, implementation details, and reference material.</p></div><b>↗</b></a>
-        <a class="doc-card reveal delay-2" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues"><span>03</span><div><h3>Issues & feedback</h3><p>Report a problem or follow development work.</p></div><b>↗</b></a>
-      </div>
+      <div class="section-heading reveal"><div class="eyebrow">Documentation</div><h2>From first launch<br>to full world control.</h2><p>The repository remains the authoritative source for setup notes, implementation details, releases, and issue tracking.</p></div>
+      <div class="docs-grid"><a class="doc-card reveal" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync#readme"><span>01</span><div><h3>Getting started</h3><p>Project overview and current setup information.</p></div><b>↗</b></a><a class="doc-card reveal delay-1" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/docs"><span>02</span><div><h3>Documentation</h3><p>Build notes, implementation details, and reference material.</p></div><b>↗</b></a><a class="doc-card reveal delay-2" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues"><span>03</span><div><h3>Issues & feedback</h3><p>Report a problem or follow development work.</p></div><b>↗</b></a></div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="footer-brand"><img src="assets/application-icon.png" alt=""><div><strong>Dragonwilds Sync</strong><span>Community toolkit for RuneScape: Dragonwilds</span></div></div>
-    <div class="footer-links"><a href="#features">Features</a><a href="#downloads">Downloads</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
+    <div class="footer-links"><a href="#network">Network</a><a href="#worlds">Worlds</a><a href="#webgui">WebGUI</a><a href="https://discord.gg/gQ7uY2cQ3q">RSDW Community</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
     <p>Dragonwilds Sync is an independent community project and is not affiliated with, endorsed by, or sponsored by Jagex Ltd.</p>
   </footer>
 

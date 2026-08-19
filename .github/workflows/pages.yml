@@ -154,6 +154,8 @@ jobs:
           cat website/placard-enhancements.css >> _site/styles.css
           printf '\n\n/* Interactive homepage demo */\n' >> _site/styles.css
           cat website/home-demo.css >> _site/styles.css
+          printf '\n\n/* Flippable release download surface */\n' >> _site/styles.css
+          cat website/download-flip.css >> _site/styles.css
 
           printf '\n\n/* App placard parity layer */\n' >> _site/script.js
           cat website/placards.js >> _site/script.js
@@ -167,6 +169,8 @@ jobs:
             printf '\n\n/* Homepage demo discovery links */\n' >> _site/script.js
             cat website/home-demo-nav.js >> _site/script.js
           fi
+          printf '\n\n/* Flippable release download surface */\n' >> _site/script.js
+          cat website/download-flip.js >> _site/script.js
 
           touch _site/.nojekyll
 

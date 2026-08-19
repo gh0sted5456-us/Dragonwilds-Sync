@@ -9,7 +9,7 @@ const protocol = need('backend/runtime_worker_protocol.py', [
   'PROTOCOL_VERSION = 1','MAX_MESSAGE_BYTES','AF_PIPE','AF_UNIX','send_bytes','recv_bytes','DWSYNC_RUNTIME_WORKER_AUTH','atomic_json','0o600','worker-state.json'
 ]);
 const worker = need('backend/runtime_worker.py', [
-  'WORKER_READY','PING','GET_STATUS','STOP','PROTOCOL_MISMATCH','COMMAND_NOT_ALLOWED','gamePid": None','authRef'
+  'WORKER_READY','PING','GET_STATUS','STOP','PROTOCOL_MISMATCH','COMMAND_NOT_ALLOWED','gamePid','authRef'
 ]);
 const supervisor = need('backend/worker_supervisor.py', [
   'WorkerSupervisor','--runtime-worker','sys.executable','token_urlsafe','SecretStore','is_reference','CREATE_NEW_PROCESS_GROUP','start_new_session','reconcile','cleanup_stale','spawn','stop','list_status'
@@ -25,10 +25,9 @@ need('PROJECT_STATE/RUNTIME_WORKER_PHASE2.md', ['Completed','Processes Added','P
 
 if (protocol.includes('pickle.') || protocol.includes('.send(') || protocol.includes('.recv()')) failures.push('worker protocol must exchange bounded JSON bytes, not pickle objects');
 if (/socket\.(?:AF_INET|AF_INET6)/.test(protocol) || /localhost|127\.0\.0\.1/.test(protocol)) failures.push('worker control IPC must not use a normal TCP listener');
-// Phase 2 verifies that the worker starts lightweight and does not launch the
-// game merely by spawning. Later migration phases may add lazy runtime imports
-// and commands, so this checker deliberately guards startup behavior instead of
-// permanently forbidding the reusable server modules from the source file.
+// The historical foundation guarantee is launch-on-command, not a permanent
+// ban on runtime support. Phase 5 may lazy-load the retained ServerEngine only
+// after START_RUNTIME; module import/spawn itself must remain lightweight.
 if (/^\s*(?:from|import)\s+(?:server_engine|runtime_manager|network_service)\b/m.test(worker)) {
   failures.push('runtime modules must not be imported eagerly at worker module load time');
 }
@@ -43,4 +42,4 @@ if (failures.length) {
   failures.forEach(x => console.error(` - ${x}`));
   process.exit(1);
 }
-console.log('[Runtime Worker Phase 2] PASS · same-executable headless mode, authenticated local IPC, supervisor/reattach, state/log boundaries and no launch-on-spawn verified');
+console.log('[Runtime Worker Phase 2] PASS · same-executable headless mode, authenticated local IPC, supervisor/reattach and no launch-on-spawn verified');

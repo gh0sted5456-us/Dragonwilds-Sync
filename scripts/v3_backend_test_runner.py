@@ -20,7 +20,18 @@ def main() -> int:
     if len(sys.argv) != 2:
         print("Usage: python scripts/v3_backend_test_runner.py <test.py>", file=sys.stderr)
         return 2
+    root = Path(__file__).resolve().parents[1]
+    backend = root / "backend"
+    # The original test runner executed each backend/test_*.py directly, which
+    # put backend/ on sys.path. Recreate that import environment before choosing
+    # the preserved-V2 or V3 lane.
+    for value in (str(backend), str(root)):
+        if value not in sys.path:
+            sys.path.insert(0, value)
+
     test = Path(sys.argv[1])
+    if not test.is_absolute():
+        test = root / test
     if not test.is_file():
         print(f"Test file not found: {test}", file=sys.stderr)
         return 2

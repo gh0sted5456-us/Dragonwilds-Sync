@@ -5,7 +5,7 @@ from __future__ import annotations
 Normal mode is the trusted desired-state/control backend. ``--runtime-worker``
 is dispatched before the heavy application service graph initializes so the
 same packaged backend executable can also run a lightweight headless World
-worker. Phase 5 keeps the existing AuthoritativeRuntimeManager and moves the
+worker. Phase 5 keeps the existing AuthoritativeRuntimeManager and stages the
 dedicated execution edge behind the authenticated World worker.
 """
 
@@ -55,19 +55,47 @@ def _workers():
     return _WORKER_SUPERVISOR
 
 
+def _ensure_phase5_worker_gate() -> dict:
+    """Keep the new execution path staged until Windows + Linux parity is green.
+
+    The authoritative Phase 5 plan requires the worker foundation to pass on
+    both platforms before Phase 5C becomes the normal launch path. Existing
+    explicit values are preserved; only a previously-absent setting is seeded
+    OFF with the reason recorded beside it.
+    """
+    state = _legacy.load_state()
+    application = state.setdefault("application", {})
+    config = application.setdefault("runtime_workers", {})
+    if not isinstance(config, dict):
+        config = {}; application["runtime_workers"] = config
+    changed = False
+    if "dedicated_enabled" not in config:
+        config["dedicated_enabled"] = False
+        changed = True
+    if "activation_gate" not in config:
+        config["activation_gate"] = "phase5c-windows-linux-parity"
+        changed = True
+    if changed:
+        _legacy.save_state(state)
+    return dict(config)
+
+
 def _install_phase5_workers() -> dict:
     global _PHASE5_WORKER_MIGRATION
     if isinstance(_PHASE5_WORKER_MIGRATION, dict):
         return dict(_PHASE5_WORKER_MIGRATION)
+    gate = _ensure_phase5_worker_gate()
     _PHASE5_WORKER_MIGRATION = install_runtime_worker_bridge(
         RUNTIME, _legacy.ENGINE, _legacy.SHARE, _workers(),
         load_state=_legacy.load_state, save_state=_legacy.save_state,
     )
+    _PHASE5_WORKER_MIGRATION = {**dict(_PHASE5_WORKER_MIGRATION), "activation_gate": gate.get("activation_gate")}
     return dict(_PHASE5_WORKER_MIGRATION)
 
 
-# Install the execution bridge before any lifecycle RPC can arrive. This does
-# not spawn a worker; workers remain per-World and are created only by Start.
+# Install the bridge decision before lifecycle RPCs can arrive. The staged
+# default remains the retained direct path until the cross-platform parity gate
+# is explicitly cleared; no worker is created merely by opening the UI.
 _install_phase5_workers()
 
 

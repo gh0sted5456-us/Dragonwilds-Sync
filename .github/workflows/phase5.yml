@@ -1,0 +1,76 @@
+name: Phase 5
+
+on:
+  push:
+    branches: [codex/webgui-catalog-console-overhaul]
+    paths:
+      - 'backend/**'
+      - 'renderer/**'
+      - 'website/**'
+      - 'cloudflare/dragonwilds-sync-directory/**'
+      - 'scripts/**'
+      - 'PROJECT_STATE/**'
+      - 'package.json'
+      - '.github/workflows/phase5.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'renderer/**'
+      - 'website/**'
+      - 'cloudflare/dragonwilds-sync-directory/**'
+      - 'scripts/**'
+      - 'PROJECT_STATE/**'
+      - 'package.json'
+      - '.github/workflows/phase5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  phase5:
+    name: Phase 5 · ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      DWSYNC_TEST_MODE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check 'cryptography>=46,<47' psutil
+          npm ci
+      - name: Verify retained Phase 4 contracts
+        run: node scripts/check_v3_phase4.cjs
+      - name: Verify worker foundation invariants
+        run: node scripts/check_runtime_worker_phase2.cjs
+      - name: Verify Phase 5 contracts
+        run: node scripts/check_phase5.cjs
+      - name: Verify JavaScript syntax
+        shell: bash
+        run: |
+          node --check renderer/release-phase5-placard-window.js
+          node --check website/script.js
+          node --check cloudflare/dragonwilds-sync-directory/worker-phase5.js
+      - name: Verify Python syntax
+        shell: bash
+        run: |
+          python -m py_compile backend/v3_phase4.py backend/v3_phase4_web_focus.py backend/phase5_remote_admin.py backend/runtime_worker_protocol.py backend/runtime_worker.py backend/worker_supervisor.py backend/runtime_worker_bridge.py backend/dragonwilds_service.py
+      - name: Run Phase 4 regression
+        run: python scripts/v3_backend_test_runner.py backend/test_v3_phase4.py
+      - name: Run worker spawn and reattach regression
+        run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_phase2.py
+      - name: Run Phase 5 Runtime Manager bridge regression
+        run: python scripts/v3_backend_test_runner.py backend/test_phase5_runtime_worker_bridge.py

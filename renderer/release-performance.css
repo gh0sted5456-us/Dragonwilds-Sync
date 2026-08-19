@@ -1,0 +1,46 @@
+/* Post-consolidation navigation/scroll performance layer.
+   Keep visual behavior intact while allowing Chromium to skip layout/paint for
+   large off-screen rows until they approach the viewport. */
+
+.main {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.mod-clean-row,
+.config-file-row,
+.ledger-row,
+.phase6-community-row,
+.recommended-mod-card,
+.world-list-row,
+.world-grid > .world-card,
+.settings-section {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 96px;
+}
+
+.world-grid > .world-card {
+  contain-intrinsic-size: auto 390px;
+}
+
+.settings-section {
+  contain-intrinsic-size: auto 280px;
+}
+
+html[data-dws-interacting="1"] .mod-clean-row,
+html[data-dws-interacting="1"] .world-card,
+html[data-dws-interacting="1"] .world-list-row,
+html[data-dws-interacting="1"] .config-file-row,
+html[data-dws-interacting="1"] .settings-section,
+html[data-dws-interacting="1"] .recommended-mod-card {
+  transition: none !important;
+}
+
+/* Do not ask the compositor to animate decorative filters while the user is
+   actively scrolling/navigating. Functional loading indicators remain alive. */
+html[data-dws-interacting="1"] .world-placard-backdrop,
+html[data-dws-interacting="1"] .recommended-mod-media,
+html[data-dws-interacting="1"] .world-card-banner,
+html[data-dws-interacting="1"] .world-card-banner-fallback {
+  filter: none !important;
+}

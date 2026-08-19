@@ -247,11 +247,14 @@ def _install_incremental_file_adapters(server_engine_module) -> None:
         pass
 
 
-def _prepared_matches(server_engine_module, engine, profile_id: str, *, verify_mods: bool = False) -> bool:
+def _prepared_matches(server_engine_module, engine, profile_id: str, *, verify_mods: bool = False,
+                      require_launch: bool = False) -> bool:
     prepared = getattr(engine, "_dws_phase4_prepared", None)
     if not isinstance(prepared, dict):
         return False
     if str(prepared.get("profile_id") or "") != str(profile_id or ""):
+        return False
+    if require_launch and not bool(prepared.get("launch_ready")):
         return False
     if int(prepared.get("thread_id") or 0) != threading.get_ident():
         return False
@@ -315,6 +318,7 @@ def _install_server_pipeline(server_engine_module) -> None:
     def prepare_start(self, profile_id: str, *, outgoing_id: str | None = None, game_root: str = "",
                       server_exe: str = "", purpose: str = "lifecycle") -> dict:
         began = time.perf_counter()
+        launch_required = str(purpose or "lifecycle").casefold() != "activation"
         if getattr(self, "_runtime_update_in_progress", False):
             raise RuntimeError("An automatic UE4SS runtime update is being installed. Start World again after it finishes.")
         if process_probe(self).get("running"):
@@ -327,8 +331,11 @@ def _install_server_pipeline(server_engine_module) -> None:
             raise ValueError("Set the machine-wide Server Directory under Settings → Server before starting this World.")
         layout = server_engine_module.resolve_server_layout(root)
         exe = str(server_exe or server_engine_module.find_dedicated_server_exe(profile) or "").strip()
-        if not exe or not Path(exe).is_file():
+        exe_available = bool(exe and Path(exe).is_file())
+        if launch_required and not exe_available:
             raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
+        if not exe_available:
+            exe = ""
 
         marker = read_active_world(layout.game_root)
         marker_id = str(marker.get("profile_id") or "").strip()
@@ -344,17 +351,20 @@ def _install_server_pipeline(server_engine_module) -> None:
             if prior_root and Path(prior_root).exists():
                 server_engine_module.snapshot_profile_mods(prior_id, Path(prior_root))
                 server_engine_module.snapshot_profile_server_config(prior_id, prior_root)
-            if prior_exe:
+            if prior_exe and Path(prior_exe).is_file():
                 server_engine_module.snapshot_profile_savegame(prior_id, prior_exe)
             materialized["mods"] = server_engine_module.restore_profile_mods(profile_id, Path(root))
             materialized["configs"] = server_engine_module.restore_profile_server_config(profile_id, root)
-            materialized["save"] = bool(server_engine_module.restore_profile_savegame(profile_id, exe))
-            materialized["save_action"] = "restored_profile_save" if materialized["save"] else "new_profile_save"
-            if not materialized["save"]:
-                live = server_engine_module._live_savegames_dir(exe)
-                if live is not None and live.is_dir():
-                    for child in list(live.iterdir()):
-                        _remove_path(child)
+            if exe_available:
+                materialized["save"] = bool(server_engine_module.restore_profile_savegame(profile_id, exe))
+                materialized["save_action"] = "restored_profile_save" if materialized["save"] else "new_profile_save"
+                if not materialized["save"]:
+                    live = server_engine_module._live_savegames_dir(exe)
+                    if live is not None and live.is_dir():
+                        for child in list(live.iterdir()):
+                            _remove_path(child)
+            else:
+                materialized["save_action"] = "deferred_no_server_exe"
         elif marker_id and marker_id != profile_id:
             mode = "unknown_owner_preserved"
             server_engine_module.snapshot_profile_mods(profile_id, Path(root))
@@ -372,17 +382,21 @@ def _install_server_pipeline(server_engine_module) -> None:
         from dragon_core import materialize as materialize_dragon_core
         dragon_core = materialize_dragon_core(layout.ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
         cfg = profile.setdefault("dedicated_config", {})
-        cfg.setdefault("server_name", profile.get("name") or "World")
-        cfg.setdefault("world_name", profile.get("name") or "World")
-        cfg.setdefault("port", 7777)
-        cfg["server_exe"] = exe
-        owner_id = str(server_engine_module.server_install_config().get("owner_id") or "").strip()
-        if owner_id:
-            cfg["owner_id"] = owner_id
-        if not str(cfg.get("owner_id") or "").strip():
-            raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
-        server_engine_module.write_dedicated_config(cfg, root)
-        server_engine_module.save_server_profile(profile_id, profile)
+        launch_ready = False
+        if launch_required:
+            cfg.setdefault("server_name", profile.get("name") or "World")
+            cfg.setdefault("world_name", profile.get("name") or "World")
+            cfg.setdefault("port", 7777)
+            cfg["server_exe"] = exe
+            owner_id = str(server_engine_module.server_install_config().get("owner_id") or "").strip()
+            if owner_id:
+                cfg["owner_id"] = owner_id
+            if not str(cfg.get("owner_id") or "").strip():
+                raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
+            server_engine_module.write_dedicated_config(cfg, root)
+            server_engine_module.save_server_profile(profile_id, profile)
+            launch_ready = True
+
         locked = 0
         try:
             from world_maintenance import lock_world_configs
@@ -405,6 +419,7 @@ def _install_server_pipeline(server_engine_module) -> None:
             "materialization_mode": mode, "managed_configs_locked": locked,
             "mod_signature": _server_mod_signature(server_engine_module, root),
             "thread_id": threading.get_ident(), "created_monotonic": time.monotonic(), "purpose": purpose,
+            "launch_ready": launch_ready,
         }
         self._dws_phase4_prepared = prepared
         duration = round((time.perf_counter() - began) * 1000.0, 2)
@@ -413,7 +428,7 @@ def _install_server_pipeline(server_engine_module) -> None:
                 "runtime_repaired": list(runtime.get("repaired") or []), "mod_count": len(units),
                 "mods_txt": dict(mods_txt or {}), "materialization": dict(materialized),
                 "materialization_mode": mode, "managed_configs_locked": locked,
-                "duration_ms": duration, "process_before_broadcast": True}
+                "duration_ms": duration, "process_before_broadcast": True, "launch_ready": launch_ready}
 
     def activate_world(self, outgoing_id: str | None, incoming_id: str, game_root: str = "", server_exe: str = "") -> dict:
         if process_probe(self).get("running"):
@@ -426,12 +441,13 @@ def _install_server_pipeline(server_engine_module) -> None:
         return {"mods_restored": int(mat.get("mods") or 0), "configs_restored": int(mat.get("configs") or 0),
                 "save_restored": bool(mat.get("save")), "save_action": mat.get("save_action") or "",
                 "managed_configs_locked": int(prepared.get("managed_configs_locked") or 0),
-                "materialization_mode": prepared.get("materialization_mode") or "", "duration_ms": prepared.get("duration_ms")}
+                "materialization_mode": prepared.get("materialization_mode") or "", "duration_ms": prepared.get("duration_ms"),
+                "launch_ready": bool(prepared.get("launch_ready"))}
 
     def start_dedicated(self, profile_id: str) -> dict:
         if process_probe(self).get("running"):
             raise RuntimeError("A dedicated server process is already running.")
-        if not _prepared_matches(server_engine_module, self, profile_id):
+        if not _prepared_matches(server_engine_module, self, profile_id, require_launch=True):
             prepare_start(self, profile_id, purpose="lifecycle")
         prepared = self._dws_phase4_prepared
         profile = prepared["profile"]

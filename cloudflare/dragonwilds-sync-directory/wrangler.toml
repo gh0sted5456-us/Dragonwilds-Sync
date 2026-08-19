@@ -1,5 +1,5 @@
 name = "dragonwilds-sync-directory"
-main = "worker.js"
+main = "worker-phase5.js"
 compatibility_date = "2026-08-19"
 
 [[d1_databases]]

@@ -67,10 +67,21 @@ jobs:
       - name: Verify Python syntax
         shell: bash
         run: |
-          python -m py_compile backend/v3_phase4.py backend/v3_phase4_web_focus.py backend/phase5_remote_admin.py backend/runtime_worker_protocol.py backend/runtime_worker.py backend/worker_supervisor.py backend/runtime_worker_bridge.py backend/dragonwilds_service.py
+          python -m py_compile \
+            backend/v3_phase4.py \
+            backend/v3_phase4_web_focus.py \
+            backend/phase5_remote_admin.py \
+            backend/runtime_worker_protocol.py \
+            backend/runtime_worker_config.py \
+            backend/runtime_worker.py \
+            backend/worker_supervisor.py \
+            backend/runtime_worker_bridge.py \
+            backend/dragonwilds_service.py
       - name: Run Phase 4 regression
         run: python scripts/v3_backend_test_runner.py backend/test_v3_phase4.py
       - name: Run worker spawn and reattach regression
         run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_phase2.py
+      - name: Run revisioned desired-state regression
+        run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_config.py
       - name: Run Phase 5 Runtime Manager bridge regression
         run: python scripts/v3_backend_test_runner.py backend/test_phase5_runtime_worker_bridge.py

@@ -97,6 +97,8 @@ def main() -> None:
 
     page = directory_host.public_browser_html(remote_admin_enabled=True)
     assert isinstance(page, bytes) and b"dws-fan-footer" in page
+    assert b"Remote Server management is enabled, but this heartbeat does not yet advertise a usable public WebHost endpoint" in page
+    assert b"Remote Server management is disabled on that World" in page
 
     host = directory_host.DirectoryHost()
     cfg = directory_host.default_host_config()

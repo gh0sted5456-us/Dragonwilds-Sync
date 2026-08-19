@@ -43,8 +43,18 @@ must(preload.includes('const workers = Array.from') && !preload.includes('Promis
 const criticalStart = phase3.indexOf('function criticalRequests');
 const criticalEnd = phase3.indexOf('async function prewarmCritical', criticalStart);
 const critical = phase3.slice(criticalStart, criticalEnd);
-for (const forbidden of ['application.rsdw.status', 'application.map.status', 'characters.list', 'singleplayer.inventory', 'server.world.inventory', 'server.backups.list']) {
-  must(!critical.includes(forbidden), `startup critical warmup must not include ${forbidden}`);
+// Shell-first readiness intentionally warms cheap persisted/local workspaces so
+// Characters and Mods do not pay a first-click cold start. Expensive/networked
+// surfaces and any authoritative deep scan remain outside this startup slice.
+for (const required of ['characters.list', 'singleplayer.inventory', 'server.world.inventory']) {
+  must(critical.includes(required), `shell-first warmup must include local cached ${required}`);
+}
+for (const forbidden of [
+  'application.rsdw.status', 'application.rsdw.refresh', 'application.map.status',
+  'application.map.refresh', 'world.browser.refresh', 'world.directory.refresh',
+  'application.recommendations.refresh', 'server.backups.list', 'rescan: true',
+]) {
+  must(!critical.includes(forbidden), `startup shell warmup must not include heavyweight ${forbidden}`);
 }
 must(phase3.includes("tab === 'mods'") && phase3.includes('rescan: false'), 'Mods tabs must warm the cached inventory first');
 must(phase3.includes('scheduleInventoryVerification') && phase3.includes('rescan: true'),
@@ -55,4 +65,4 @@ must(legacy.includes('def _inventory_cache(profile: dict)') && legacy.includes('
 must(legacy.includes('bool(params.get("rescan"))') && legacy.includes('not cached["updated_at"]'),
   'inventory RPC must use cache normally and reserve deep scan for explicit/first-run refresh');
 
-console.log('Fast navigation / Found Mods cache contract: PASS');
+console.log('Fast shell navigation / Found Mods cache contract: PASS');

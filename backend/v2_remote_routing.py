@@ -21,16 +21,18 @@ from core_components import (
 )
 from profile_settings import install_phase2_profile_adapters
 from phase3_web import inject_remote_admin
+from phase6_integration import install_phase6_integrations
 
 
 AUTH_MODES = ("remote_user", "server_admin_password")
 
 # dragonwilds_service imports the retained legacy backend before this module, so
 # production reaches this point with the scanner/profile/sync providers loaded.
-# Install the shared taxonomy/profile adapters now, then repeat idempotently
-# inside the directory patch for direct unit-test/import paths.
+# Install the shared taxonomy/profile/final-integration adapters now, then
+# repeat idempotently inside the directory patch for direct unit-test paths.
 install_mod_taxonomy_adapters()
 install_phase2_profile_adapters()
+install_phase6_integrations()
 
 
 def _filter_detected_mods(payload: dict | None) -> dict:
@@ -270,6 +272,7 @@ def install_directory_patches(directory_host_module) -> None:
     """
     install_mod_taxonomy_adapters()
     install_phase2_profile_adapters()
+    install_phase6_integrations()
     _install_phase1_visibility_guards()
     if getattr(directory_host_module, "_dws_v2_remote_patched", False):
         return

@@ -1,0 +1,70 @@
+{
+  "schema": "DragonwildsSync.V3Phase1Baseline.v1",
+  "recorded_at": "2026-08-19",
+  "repository": "gh0sted5456-us/Dragonwilds-Sync",
+  "branch": "codex/webgui-catalog-console-overhaul",
+  "source_baseline_commit": "566e062da4a346a7cbf53f128b6809b56773cb30",
+  "application_version": "2.0.0",
+  "schemas": {
+    "application_state": 11,
+    "world_settings": "DragonwildsSync.WorldProfileSettings.v1",
+    "world_registry": "DragonwildsSync.WorldProfileRegistry.v1",
+    "secret_references": "DragonwildsSync.SecretReferences.v1",
+    "v3_migration_journal": "DragonwildsSync.V3MigrationJournal.v1"
+  },
+  "authorities": {
+    "runtime": "backend/runtime_manager.py::AuthoritativeRuntimeManager",
+    "profile_settings": "backend/profile_settings.py",
+    "global_state": "backend/profile_store.py",
+    "secret_store": "backend/secret_store.py",
+    "heartbeat_directory": "backend/world_directory.py",
+    "self_hosted_directory_webgui": "backend/directory_host.py",
+    "cl_build": "backend/cl_authority.py + runtime version providers",
+    "updates": "managed update providers + AuthoritativeRuntimeManager",
+    "console": "backend/unified_console.py"
+  },
+  "packaging": {
+    "windows": "portable",
+    "linux": "AppImage",
+    "windows_installer": "V3 Phase 6 target, not baseline"
+  },
+  "exchange": {
+    "current_rsdwl": "backend/profile_bundle.py launcher profile bundle v3 plus compatibility readers",
+    "final_v3_layout_migration_required": true
+  },
+  "official_network": {
+    "canonical_endpoint_owner": "backend/network_config.py::DRAGONWILDS_SYNC_NETWORK_URL",
+    "worker": "dragonwilds-sync-directory",
+    "d1": "dragonwilds-sync-worlds",
+    "d1_id": "c4498761-2e93-47e4-a7f2-d7a572293ffd",
+    "binding": "DB",
+    "known_tables": [
+      "worlds",
+      "heartbeat_history"
+    ],
+    "known_routes": [
+      "GET /api/v1/worlds",
+      "POST /api/v1/heartbeat"
+    ],
+    "manual_world_secrets_model": "transitional bootstrap/regression only"
+  },
+  "phase1_gate": {
+    "history_reviewed": true,
+    "baseline_recorded": true,
+    "persistence_matrix_complete": true,
+    "migration_matrix_complete": true,
+    "backup_utility_added": true,
+    "migration_journal_added": true,
+    "deprecated_endpoint_scan_added": true,
+    "exact_checkpoint_ci": "pending Phase 1 commit"
+  },
+  "source_baseline_ci": {
+    "workflow": "Release Candidate Packages",
+    "run_number": 557,
+    "run_id": 32226053126,
+    "windows_portable": "success",
+    "ubuntu_appimage": "success",
+    "ubuntu_packaged_smoke": "success",
+    "summary": "success"
+  }
+}

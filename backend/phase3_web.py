@@ -2,6 +2,15 @@ from __future__ import annotations
 
 """Small additive WebGUI layer for authoritative runtime/core/tooling state."""
 
+# Source/developer runs do not execute the PyInstaller runtime hook. Install the
+# same idempotent persistence/index layer here because this module is imported by
+# the additive service before its profile adapters are bound.
+try:
+    from shell_persistence_stabilization import install as _install_shell_persistence
+    _install_shell_persistence()
+except Exception:
+    pass
+
 
 _EXTENSION = r'''
 <style id="dws-phase3-runtime-style">

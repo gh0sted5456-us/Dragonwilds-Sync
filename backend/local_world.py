@@ -13,10 +13,10 @@ from pathlib import Path
 
 from client_layout import resolve_client_layout
 from profile_store import APP_DATA_DIR, read_json, write_json
-from security_scanner import defender_scan
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from integrations import normalize_mod_source
 from security_policy import default_access_policy, normalize_access_policy
+from security_scanner import defender_scan
 from world_classification import normalize_world_classification
 
 SINGLEPLAYER_ID = "singleplayer"
@@ -24,6 +24,24 @@ WORLD_PROFILE_ROOT = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_PROFILE_DIR = WORLD_PROFILE_ROOT / SINGLEPLAYER_ID
 LOCAL_PROFILE_FILE = LOCAL_PROFILE_DIR / "profile.json"
 PRIVATE_PROFILES_DIR = WORLD_PROFILE_ROOT
+DELETED_SAVES_PATH = WORLD_PROFILE_ROOT / ".deleted-saves.json"
+
+
+def _deleted_save_tombstones() -> dict:
+    value = read_json(DELETED_SAVES_PATH, {"version": 1, "saves": {}})
+    saves = value.get("saves") if isinstance(value, dict) else None
+    return dict(saves) if isinstance(saves, dict) else {}
+
+
+def _write_deleted_save_tombstones(saves: dict) -> None:
+    write_json(DELETED_SAVES_PATH, {"version": 1, "updated_at": time.time(), "saves": saves})
+
+
+def _save_tombstone_key(path: Path) -> str:
+    try:
+        return str(path.resolve()).replace("\\", "/").casefold()
+    except OSError:
+        return str(path).replace("\\", "/").casefold()
 PAK_EXTENSIONS = {".pak", ".utoc", ".ucas"}
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
 RESERVED_UE4SS = {"runeschema", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
@@ -71,6 +89,7 @@ def default_singleplayer_profile(profile_id: str = SINGLEPLAYER_ID, name: str = 
         "name": display,
         "description": "Your launcher-managed local Dragonwilds World.",
         "community_rules": "",
+        "placard_background": "1",
         "tags": ["LOCAL", "SINGLEPLAYER"],
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "singleplayer", "visibility": "private", "declared": True}),
         "is_default": pid == SINGLEPLAYER_ID,
@@ -134,6 +153,8 @@ def discover_save_profiles(state: dict) -> list[dict]:
     save_root = layout.savegames_dir
     discovered = []
     newly_created = []
+    deleted_saves = _deleted_save_tombstones()
+    deleted_saves_changed = False
     if save_root.is_dir():
         for save_path in sorted(save_root.glob("*.sav"), key=lambda p: p.name.casefold()):
             if save_path.name.casefold() in {"enhancedinputusersettings.sav"}:
@@ -142,6 +163,15 @@ def discover_save_profiles(state: dict) -> list[dict]:
                 stat = save_path.stat()
             except OSError:
                 continue
+            tombstone_key = _save_tombstone_key(save_path)
+            tombstone = deleted_saves.get(tombstone_key)
+            if isinstance(tombstone, dict):
+                same_revision = (abs(float(tombstone.get("mtime") or 0) - float(stat.st_mtime)) < 0.001
+                                 and int(tombstone.get("size") or -1) == int(stat.st_size))
+                if same_revision:
+                    continue
+                deleted_saves.pop(tombstone_key, None)
+                deleted_saves_changed = True
             pid = _save_profile_id(save_path)
             profile_path = _profile_file(pid)
             existed = profile_path.is_file()
@@ -194,6 +224,23 @@ def discover_save_profiles(state: dict) -> list[dict]:
             # Discovery must remain available even when a partially installed
             # runtime is not yet safe to snapshot.
             pass
+    if newly_created:
+        pending = state.setdefault("client", {}).setdefault("pending_profile_migrations", [])
+        known = {str((row or {}).get("profile_id") or "") for row in pending if isinstance(row, dict)}
+        for profile in newly_created:
+            profile_id = str(profile.get("id") or "")
+            if profile_id and profile_id not in known:
+                pending.append({
+                    "profile_id": profile_id,
+                    "profile_name": str(profile.get("name") or profile.get("save_file") or "Dragonwilds World"),
+                    "save_file": str(profile.get("save_file") or ""),
+                    "detected_at": time.time(),
+                    "mods_captured": bool(profile.get("initial_mod_snapshot")),
+                })
+                known.add(profile_id)
+        state["client"]["pending_profile_migrations"] = pending[-50:]
+    if deleted_saves_changed:
+        _write_deleted_save_tombstones(deleted_saves)
     return discovered
 
 
@@ -212,8 +259,19 @@ def list_profiles() -> list[dict]:
 
 def delete_profile(profile_id: str) -> None:
     pid = _safe_profile_id(profile_id)
-    if pid == SINGLEPLAYER_ID:
-        raise ValueError("The baseline SinglePlayer profile cannot be deleted; rename or archive it instead.")
+    profile = read_json(_profile_file(pid), {})
+    save_path = Path(str(profile.get("save_path") or "")) if profile.get("auto_detected") and profile.get("save_path") else None
+    if save_path is not None and save_path.is_file():
+        try:
+            stat = save_path.stat()
+            tombstones = _deleted_save_tombstones()
+            tombstones[_save_tombstone_key(save_path)] = {
+                "path": str(save_path), "mtime": float(stat.st_mtime), "size": int(stat.st_size),
+                "profile_id": pid, "deleted_at": time.time(),
+            }
+            _write_deleted_save_tombstones(tombstones)
+        except OSError:
+            pass
     root = _profile_root(pid)
     if root.exists():
         shutil.rmtree(root, ignore_errors=True)
@@ -233,7 +291,7 @@ def profile_world_shape(profile: dict) -> dict:
         "classification": normalize_world_classification({**(profile.get("classification") or {}), "host_type": "coop" if profile.get("broadcasting") else "singleplayer"}, tags=tags,
                                                             host_type="coop" if profile.get("broadcasting") else "singleplayer",
                                                             visibility="friends" if profile.get("broadcasting") else "private"),
-        "presentation": {"description": str(profile.get("description") or ""), "tags": tags, "mod_badges": ["LOCAL", "SINGLEPLAYER"], "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or "")},
+        "presentation": {"description": str(profile.get("description") or ""), "tags": tags, "mod_badges": ["LOCAL", "SINGLEPLAYER"], "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or ""), "placard_background": str(profile.get("placard_background") or "1")},
         "identity": {"world_name": str(profile.get("name") or "Private World"), "server_profile_id_hint": ""},
         "status": {"online": True, "local": True, "broadcasting": bool(profile.get("broadcasting", False)), "sync_port": int(cfg.get("sync_port") or 27051), "last_error": ""},
         "credentials": {}, "connection": {},
@@ -246,10 +304,12 @@ def ensure_state(state: dict) -> dict:
     discover_save_profiles(state)
     profiles = list_profiles()
     worlds = [profile_world_shape(p) for p in profiles]
+    if bool(client.get("baseline_singleplayer_hidden", False)):
+        worlds = [world for world in worlds if world.get("id") != SINGLEPLAYER_ID]
     client["private_worlds"] = worlds
     active_id = str(client.get("active_private_world_id") or "")
     if not any(w["id"] == active_id for w in worlds):
-        active_id = SINGLEPLAYER_ID
+        active_id = str((worlds[0] if worlds else {}).get("id") or "")
     client["active_private_world_id"] = active_id
     baseline = next((w for w in worlds if w["id"] == SINGLEPLAYER_ID), worlds[0] if worlds else profile_world_shape(default_singleplayer_profile()))
     # Legacy compatibility: old code/tests can still read client.singleplayer.
@@ -326,16 +386,26 @@ def detect_mod_zip_kind(zip_path: str) -> str | None:
 
 def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
     mods = _world_cache(profile_id) / "mods"
+    runeschema = mods / "ue4ss_mods" / "RuneSchema"
+    runeschema_mods = runeschema / "mods"
+    if not runeschema_mods.exists() and runeschema.exists():
+        runeschema_mods = runeschema
     return {
         "ue4ss": mods / "ue4ss_mods",
         "paks": mods / "pak_mods",
-        "runeschema": mods / "ue4ss_mods" / "RuneSchema" / "mods",
+        "runeschema": runeschema_mods,
     }
 
 
 def _live_roots(game_dir: str) -> dict[str, Path]:
     layout = resolve_client_layout(game_dir)
-    return {"ue4ss": layout.ue4ss_mods_dir, "paks": layout.paks_mods_dir, "runeschema": layout.runeschema_root / "mods"}
+    rs_root = layout.runeschema_root
+    rs_mods = layout.runeschema_mods_dir
+    # Current packages use RuneSchema/Mods. Older installs keep mod payloads
+    # directly in RuneSchema; retain support for both layouts.
+    if not rs_mods.exists() and rs_root.exists():
+        rs_mods = rs_root
+    return {"ue4ss": layout.ue4ss_mods_dir, "paks": layout.paks_mods_dir, "runeschema": rs_mods}
 
 
 def roots(game_dir: str, live: bool, profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
@@ -580,13 +650,14 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
             warnings.append(f"Could not list UE4SS Mods folder: {exc}")
         for path in ue_entries:
             try:
-                if not path.is_dir() or path.name.casefold() in RESERVED_UE4SS:
+                if path.name.casefold() in RESERVED_UE4SS:
                     continue
-                ensure_mod_contract_files(path)
+                if path.is_dir():
+                    ensure_mod_contract_files(path)
                 count, size = _safe_file_stats([path])
                 key = f"ue4ss_mod::{path.name}"
                 ov = overrides.get(key) or {}
-                units.append({"key": key, "name": path.name, "group": "ue4ss_mod", "section": "ue4ss", "subsection": "UE4SS", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else hotload_capable_from_root(path)), "tags": normalize_tags(ov["tags"] if "tags" in ov else tags_from_mod_root(path)), "identity": identity_from_mod_root(path), "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
+                units.append({"key": key, "name": path.name, "group": "ue4ss_mod", "section": "ue4ss", "subsection": "UE4SS", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else (hotload_capable_from_root(path) if path.is_dir() else False)), "tags": normalize_tags(ov["tags"] if "tags" in ov else (tags_from_mod_root(path) if path.is_dir() else [])), "identity": identity_from_mod_root(path) if path.is_dir() else None, "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
             except OSError as exc:
                 warnings.append(f"Skipped UE4SS mod \"{path.name}\": {exc}")
     rs = targets["runeschema"]
@@ -599,6 +670,8 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
         for path in rs_entries:
             try:
                 if path.name.startswith("."):
+                    continue
+                if rs == resolve_client_layout(game_dir).runeschema_root and path.name.casefold() in {"config", "dlls", "enabled.txt", "mods"}:
                     continue
                 if path.is_dir():
                     ensure_mod_contract_files(path)

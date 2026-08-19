@@ -5,6 +5,10 @@ import tempfile
 from pathlib import Path
 
 import character_profiles
+# rsdw_cache is now a thin V2 wrapper over the retained rsdw_cache_legacy
+# engine. ``import *`` copied its constants, so a test override must be
+# mirrored onto the legacy module that actually reads them.
+import rsdw_cache_legacy
 import rsdw_cache
 import server_systems
 from mod_tags import parse_tags_text
@@ -17,7 +21,9 @@ def main():
 
     state = default_state()
     app = state["application"]
-    assert app["defender_review_enabled"] is True
+    # RC2 retired the user-facing Microsoft Defender review, so new states now
+    # default the flag off (see backend/profile_store.py and test_rc2_followup).
+    assert app["defender_review_enabled"] is False
     assert app["rsdw_cache"]["refresh_after_updates"] is True
 
     with tempfile.TemporaryDirectory() as td:
@@ -53,9 +59,13 @@ def main():
         # RSDW repository search tolerates generic upstream JSON shapes and uses local icons.
         old = (rsdw_cache.RSDW_CACHE_ROOT, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_ICONS_DIR, rsdw_cache.RSDW_STATE_PATH)
         rsdw_cache.RSDW_CACHE_ROOT = root / "rsdw"
+        rsdw_cache_legacy.RSDW_CACHE_ROOT = rsdw_cache.RSDW_CACHE_ROOT
         rsdw_cache.RSDW_DATA_DIR = rsdw_cache.RSDW_CACHE_ROOT / "item_data"
+        rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
         rsdw_cache.RSDW_ICONS_DIR = rsdw_cache.RSDW_CACHE_ROOT / "icons"
+        rsdw_cache_legacy.RSDW_ICONS_DIR = rsdw_cache.RSDW_ICONS_DIR
         rsdw_cache.RSDW_STATE_PATH = rsdw_cache.RSDW_CACHE_ROOT / "cache_state.json"
+        rsdw_cache_legacy.RSDW_STATE_PATH = rsdw_cache.RSDW_STATE_PATH
         try:
             rsdw_cache.RSDW_DATA_DIR.mkdir(parents=True)
             rsdw_cache.RSDW_ICONS_DIR.mkdir(parents=True)
@@ -67,6 +77,10 @@ def main():
             assert found["items"][0]["icon_path"].endswith("ITEM_Log.png")
         finally:
             rsdw_cache.RSDW_CACHE_ROOT, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_ICONS_DIR, rsdw_cache.RSDW_STATE_PATH = old
+            rsdw_cache_legacy.RSDW_CACHE_ROOT = rsdw_cache.RSDW_CACHE_ROOT
+            rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
+            rsdw_cache_legacy.RSDW_ICONS_DIR = rsdw_cache.RSDW_ICONS_DIR
+            rsdw_cache_legacy.RSDW_STATE_PATH = rsdw_cache.RSDW_STATE_PATH
 
     # Trusted LAN bypass is subnet-scoped; it is not a WAN password bypass.
     original_local_ip = server_systems.local_ip_guess

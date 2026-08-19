@@ -10,6 +10,10 @@ from local_world import scan_inventory
 from rsdw_toolkit import status as toolkit_status, command_catalog
 from guided_setup import validate_client_path, validate_server_path
 from player_tracker import ServerPlayerService
+# rsdw_cache is now a thin V2 wrapper over the retained rsdw_cache_legacy
+# engine. ``import *`` copied its constants, so a test override must be
+# mirrored onto the legacy module that actually reads them.
+import rsdw_cache_legacy
 import rsdw_cache
 import server_systems
 import client_layout
@@ -46,7 +50,10 @@ def test_character_save_and_external_recommendation_contract():
 
 
 def test_portable_item_manifest_replaces_runtime_companion():
-    service = (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
+    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
     assert 'application.custom_items.discover' in service
     assert 'dragonwilds-sync-items.json' in service and '*.dwsync-items.json' in service
@@ -100,7 +107,10 @@ def test_admin_relaunch_and_rsdw_toolkit_contracts():
     assert "$psi.Verb = 'runas'" in electron
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
     assert "ADMINISTRATOR MODE" in renderer and "STANDARD MODE" in renderer
-    service = (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
+    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
     assert "First-run adoption" in service and 'client_state["live_world_id"] = profile_id' in service
     sync_engine = (ROOT / "backend" / "sync_engine.py").read_text(encoding="utf-8")
     local_world = (ROOT / "backend" / "local_world.py").read_text(encoding="utf-8")
@@ -178,11 +188,13 @@ def test_avatar_resolution_rejects_generic_slot_only_matches():
         original = rsdw_cache.RSDW_MODEL_INDEX
         try:
             rsdw_cache.RSDW_MODEL_INDEX = index
+            rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
             assert rsdw_cache.resolve_avatar_model("torso", "M_MED", ["Adventurer's Tunic", "ITEM_Armour_T1_Body_Adventurers", "Body"]) is None
             resolved = rsdw_cache.resolve_avatar_model("torso", "M_MED", ["Necromancer's Robe Top", "NecromancerRobes", "Body"])
             assert resolved and resolved["id"] == "SK:Necromancer.uemodel"
         finally:
             rsdw_cache.RSDW_MODEL_INDEX = original
+            rsdw_cache_legacy.RSDW_MODEL_INDEX = rsdw_cache.RSDW_MODEL_INDEX
 
 
 def test_profile_socials_and_character_visibility_contract():

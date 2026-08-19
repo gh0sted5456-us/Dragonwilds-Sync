@@ -3,14 +3,20 @@
   "version": "2.0.0",
   "private": true,
   "description": "A unified tool to create, launch, and share world servers with friends.",
-  "main": "electron/main.cjs",
+  "main": "electron/bootstrap.cjs",
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "packageManager": "npm@11.17.0",
   "scripts": {
-    "start": "npm run prepare:monaco && electron .",
+    "start": "npm run check:runtime && npm run prepare:monaco && electron .",
+    "check:runtime": "node scripts/check_node_runtime.cjs",
     "test:backend": "node scripts/run_backend_tests.cjs",
-    "check:renderer": "node --check renderer/release-meta.js && node --check renderer/app.js && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/rsdw_webview_preload.cjs && node --check electron/discord_rpc.cjs && node --check electron/app_updater.cjs && node --check electron/nexus_adapter.cjs && node scripts/check_ue4ss_lua.cjs && node scripts/check_renderer_contract.cjs",
+    "check:renderer": "node --check renderer/release-meta.js && node --check renderer/app.js && node --check renderer/release-navigation.js && node --check renderer/release-polish.js && node --check renderer/release-world-version.js && node --check renderer/release-fastnav.js && node --check renderer/release-rc2.js && node --check renderer/release-vnext.js && node --check renderer/release-vnext-media.js && node --check renderer/release-vnext-help-media.js && node --check renderer/release-v2-integration.js && node --check renderer/release-v2-remote-lifecycle.js && node --check renderer/release-v2-card-sizing.js && node --check renderer/release-v2-trash.js && node --check renderer/release-webgui-overhaul.js && node --check renderer/release-phase2.js && node --check renderer/release-phase3.js && node --check renderer/upstream-sources.js && node --check electron/bootstrap.cjs && node --check electron/main.cjs && node --check electron/preload.cjs && node --check electron/rsdw_webview_preload.cjs && node --check electron/discord_rpc.cjs && node --check electron/app_updater.cjs && node --check electron/nexus_adapter.cjs && node scripts/check_upstream_sources.cjs && node scripts/check_ue4ss_lua.cjs && node scripts/check_renderer_contract.cjs && node scripts/check_vnext_contract.cjs && node scripts/check_v2_integration.cjs && node scripts/check_webgui_overhaul.cjs && node scripts/check_experimental_acceptance.cjs && node scripts/check_phase2_world_management.cjs && node scripts/check_phase3_responsiveness.cjs && node scripts/check_phase4_runtime_startup.cjs",
     "validate:gui": "node scripts/validate_world_cards_headless.cjs",
-    "verify": "npm run prepare:monaco && npm run check:renderer && npm run test:backend",
+    "verify": "npm run check:runtime && npm run prepare:monaco && npm run check:renderer && npm run test:backend",
     "build:win": "build.bat",
+    "build:linux": "bash scripts/build_linux.sh",
     "package:raw": "node scripts/package_raw_source.cjs",
     "prepare:monaco": "node scripts/prepare_monaco.cjs"
   },
@@ -23,60 +29,30 @@
   },
   "build": {
     "appId": "com.dragonwilds.sync",
-    "asarUnpack": [
-      "node_modules/7zip-bin/**"
-    ],
+    "asarUnpack": ["node_modules/7zip-bin/**"],
     "productName": "Dragonwilds Sync and Launcher",
     "copyright": "Copyright © 2026 RSDW Modding Community",
-    "directories": {
-      "output": "release"
-    },
-    "files": [
-      "electron/**/*",
-      "renderer/**/*",
-      "package.json",
-      "LICENSE.txt"
-    ],
+    "directories": {"output": "release"},
+    "files": ["electron/**/*", "renderer/**/*", "package.json", "LICENSE.txt"],
     "extraResources": [
-      {
-        "from": "resources",
-        "to": "resources",
-        "filter": [
-          "**/*"
-        ]
-      },
-      {
-        "from": "node_modules/three/build",
-        "to": "rsdw-viewer/three/build"
-      },
-      {
-        "from": "node_modules/three/examples/jsm",
-        "to": "rsdw-viewer/three/examples/jsm"
-      }
+      {"from": "resources", "to": "resources", "filter": ["**/*"]},
+      {"from": "node_modules/three/build", "to": "rsdw-viewer/three/build"},
+      {"from": "node_modules/three/examples/jsm", "to": "rsdw-viewer/three/examples/jsm"}
     ],
     "win": {
       "icon": "renderer/assets/dragonwilds_icon.ico",
-      "extraResources": [
-        {
-          "from": "dist-service/DragonwildsSync.Service.exe",
-          "to": "backend/DragonwildsSync.Service.exe"
-        }
-      ],
-      "target": [
-        "portable"
-      ]
+      "extraResources": [{"from": "dist-service/DragonwildsSync.Service.exe", "to": "backend/DragonwildsSync.Service.exe"}],
+      "target": ["portable"]
     },
-    "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
-    }
+    "linux": {
+      "category": "Game",
+      "extraResources": [{"from": "dist-service/DragonwildsSync.Service", "to": "backend/DragonwildsSync.Service"}],
+      "target": ["AppImage"],
+      "artifactName": "${productName}-Ubuntu-${version}.${ext}"
+    },
+    "portable": {"artifactName": "${productName}-Portable-${version}.${ext}"}
   },
-  "dependencies": {
-    "7zip-bin": "^5.2.0",
-    "three": "0.184.0",
-    "ws": "8.21.3"
-  },
+  "dependencies": {"7zip-bin": "^5.2.0", "three": "0.184.0", "ws": "8.21.3"},
   "author": "RSDW Modding Community",
-  "allowScripts": {
-    "electron@43.2.0": true
-  }
+  "allowScripts": {"electron@43.2.0": true}
 }

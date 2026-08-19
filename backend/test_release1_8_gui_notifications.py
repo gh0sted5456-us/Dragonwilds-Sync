@@ -3,7 +3,9 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-import dragonwilds_service as service
+# Underscore-private engine internals are not re-exported by the V2 wrapper's
+# ``import *``; target the retained legacy engine directly.
+import dragonwilds_service_legacy as service
 
 
 ROOT = Path(__file__).resolve().parent.parent

@@ -145,7 +145,10 @@ def main():
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     main = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
-    service = (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
+    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
 
     # User-facing Alpha 7 contracts.
     for token in (

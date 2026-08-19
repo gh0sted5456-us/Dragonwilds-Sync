@@ -13,13 +13,14 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from profile_store import SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile
+from profile_store import SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
 from process_utils import check_output_hidden, popen_hidden, run_hidden
 from health_model import apply_detected_hardware_references
 from server_layout import resolve_server_layout, resolve_server_layout_from_exe
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
+from runtime_versions import cl_version_status
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
                             ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
                             install_authoritative_ue4ss_update, local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
@@ -239,6 +240,28 @@ def _clear_children(root: Path, *, exclude_names: set[str] | None = None) -> Non
         _remove_path(child)
 
 
+def _tree_inventory(root: Path, *, exclude_names: set[str] | None = None) -> tuple[tuple[str, int, int], ...]:
+    """Cheap snapshot identity based on paths, sizes, and copied mtimes."""
+    if not root.exists():
+        return ()
+    excluded = {name.casefold() for name in (exclude_names or set())}
+    rows = []
+    try:
+        for path in root.rglob("*"):
+            try:
+                rel = path.relative_to(root)
+                if rel.parts and rel.parts[0].casefold() in excluded:
+                    continue
+                if path.is_file():
+                    stat_result = path.stat()
+                    rows.append((rel.as_posix().casefold(), int(stat_result.st_size), int(stat_result.st_mtime_ns)))
+            except OSError:
+                return (("<unreadable>", -1, -1),)
+    except OSError:
+        return (("<unreadable>", -1, -1),)
+    return tuple(sorted(rows))
+
+
 def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     """Capture only World-owned mod payloads, never shared runtime cores.
 
@@ -248,16 +271,30 @@ def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     """
     layout = resolve_server_layout(game_root)
     destination = _profile_mods_dir(profile_id); staging = destination.with_name(destination.name + ".staging")
+    rs_source = layout.runeschema_mods_dir
+    rs_excluded: set[str] = set()
+    rs_layout = "mods-subdir"
+    if rs_source == layout.runeschema_root:
+        rs_excluded = {"config", "dlls", "enabled.txt", "mods"}
+        rs_layout = "root"
+    layout_marker = destination / "runeschema_layout.txt"
+    marker_value = layout_marker.read_text(encoding="utf-8", errors="ignore").strip() if layout_marker.exists() else ""
+    # copy2 preserves mtimes, so an unchanged live tree can be compared to the
+    # profile snapshot without hashing or recopying large PAK payloads.
+    if destination.exists() and marker_value == rs_layout:
+        unchanged = (
+            _tree_inventory(layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS) == _tree_inventory(destination / "ue4ss_mods")
+            and _tree_inventory(rs_source, exclude_names=rs_excluded) == _tree_inventory(destination / "runeschema_mods")
+            and _tree_inventory(layout.paks_mods_dir) == _tree_inventory(destination / "pak_mods")
+        )
+        if unchanged:
+            return 0
     if staging.exists(): _remove_path(staging)
     staging.mkdir(parents=True, exist_ok=True); copied = 0
     copied += _copy_children(layout.ue4ss_mods_dir, staging / "ue4ss_mods", exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
-    rs_mods = layout.runeschema_root / "mods"
-    if rs_mods.exists():
-        copied += _copy_children(rs_mods, staging / "runeschema_mods")
-        (staging / "runeschema_layout.txt").write_text("mods-subdir", encoding="utf-8")
-    elif layout.runeschema_root.exists():
-        copied += _copy_children(layout.runeschema_root, staging / "runeschema_mods", exclude_names={"config", "dlls", "enabled.txt"})
-        (staging / "runeschema_layout.txt").write_text("root", encoding="utf-8")
+    if rs_source.exists():
+        copied += _copy_children(rs_source, staging / "runeschema_mods", exclude_names=rs_excluded)
+    (staging / "runeschema_layout.txt").write_text(rs_layout, encoding="utf-8")
     copied += _copy_children(layout.paks_mods_dir, staging / "pak_mods")
     if destination.exists(): _remove_path(destination)
     staging.replace(destination); return copied
@@ -771,6 +808,28 @@ class ServerEngine:
         if pid is None: self.started_at = None
         self._maybe_schedule_runtime_check(pid)
         profile = load_server_profile(self.active_profile_id) if self.active_profile_id else {}
+        reported_cl = str(monitor.get("reported_cl") or profile.get("last_reported_cl") or "")
+        if self.active_profile_id and reported_cl and reported_cl != str(profile.get("last_reported_cl") or ""):
+            profile["last_reported_cl"] = reported_cl
+            profile["last_reported_cl_at"] = time.time()
+            save_server_profile(self.active_profile_id, profile)
+        launcher_state = load_state()
+        application = launcher_state.setdefault("application", {})
+        server_install = application.setdefault("server_install", {})
+        cached_game = (((application.get("runtime_version_cache") or {}).get("server") or {}).get("dragonwilds") or {})
+        installed_buildid = str(cached_game.get("server_installed_buildid") or server_install.get("installed_buildid") or "")
+        latest_buildid = str(cached_game.get("server_latest_buildid") or "")
+        # A CL observed while the installed Steam build is confirmed current is
+        # the local compatibility baseline. This deliberately never guesses a
+        # CL from the unrelated client/server Steam build IDs.
+        if reported_cl and installed_buildid and latest_buildid and installed_buildid == latest_buildid:
+            if (str(server_install.get("expected_cl") or "") != reported_cl or
+                    str(server_install.get("expected_cl_buildid") or "") != installed_buildid):
+                server_install["expected_cl"] = reported_cl
+                server_install["expected_cl_buildid"] = installed_buildid
+                server_install["expected_cl_observed_at"] = time.time()
+                save_state(launcher_state)
+        cl_version = cl_version_status(reported_cl, server_install.get("expected_cl"))
         root = self._profile_root(profile) if profile else ""
         prereq = runtime_prerequisite_status(root) if root and Path(root).exists() else {}
         merged_players = PLAYER_SERVICE.status()
@@ -795,6 +854,7 @@ class ServerEngine:
                 "player_tracker": {"connected": merged_players.get("tracker_connected", False), "last_update": merged_players.get("last_tracker_update")},
                 "share": SHARE.status(), "hw_stats": self.hw_stats, "lan_ip": local_ip_guess(), "public_ip": self.public_ip,
                 "runtime_prerequisites": prereq, "runtime_update_in_progress": self._runtime_update_in_progress,
+                "cl_version": cl_version, "reported_cl": cl_version.get("reported_cl") or "",
                 "network_setup": dict(self.network_setup),
                 "metrics": metrics, "metric_history": list(self.metric_history), "events": (persistent_events or self.events)[-150:]}
 
@@ -890,9 +950,10 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            generate_server_mods_txt(profile_id, root)
-        units = scan_mod_units(profile_id, root); snapshot_profile_mods(profile_id, Path(root))
+            generate_server_mods_txt(profile_id, root, units=units)
+        snapshot_profile_mods(profile_id, Path(root))
         self._event(f"Scanned {len(units)} mod unit(s) for {profile.get('name') or profile_id}.")
         return {"units": [u.public(SHARE.live_keys) for u in units], "badges": compute_mod_badges(units)}
 
@@ -906,10 +967,11 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            generated = generate_server_mods_txt(profile_id, root)
+            generated = generate_server_mods_txt(profile_id, root, units=units)
             self._event(f"Generated server UE4SS mods.txt with {generated.get('count', 0)} enabled mod(s).")
-        units = scan_mod_units(profile_id, root); snapshot_profile_mods(profile_id, Path(root)); sync = profile.setdefault("sync_config", {})
+        snapshot_profile_mods(profile_id, Path(root)); sync = profile.setdefault("sync_config", {})
         password = str(sync.get("password") or ""); key = str(sync.get("server_key") or "")
         port = int(sync.get("port") or 7777); broadcast = bool(sync.get("lan_broadcast", True))
         app_policy = (load_state().get("application") or {}).get("server_access_policy") or {}

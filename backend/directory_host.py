@@ -80,21 +80,45 @@ def _directory_icon_bytes() -> bytes:
 
 
 def _platform_icon_bytes(name: str) -> bytes:
-    """Serve only the five bundled, presentation-only platform marks."""
-    allowed = {"steam", "epic", "nintendo", "playstation", "xbox"}
+    """Serve the bundled colored platform/community marks used by the public catalog."""
+    aliases = {"epic": "epicgames", "nexus": "nexusmods", "psn": "playstation"}
+    allowed = {"steam", "epic", "epicgames", "nintendo", "playstation", "psn", "xbox", "discord", "nexus", "nexusmods", "windows", "linux"}
     key = str(name or "").casefold().removesuffix(".svg")
     if key not in allowed:
         return b""
+    filename = aliases.get(key, key) + ".svg"
     bundle_root = getattr(sys, "_MEIPASS", "")
     candidates = []
     if bundle_root:
-        candidates.append(Path(bundle_root) / "renderer" / "assets" / "platforms" / f"{'epicgames' if key == 'epic' else key}.svg")
-        candidates.append(Path(bundle_root) / "platforms" / f"{'epicgames' if key == 'epic' else key}.svg")
-    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "platforms" / f"{'epicgames' if key == 'epic' else key}.svg")
+        candidates.append(Path(bundle_root) / "renderer" / "assets" / "platforms" / filename)
+        candidates.append(Path(bundle_root) / "platforms" / filename)
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "platforms" / filename)
     for candidate in candidates:
         try:
             payload = candidate.read_bytes()
             if payload.lstrip().startswith(b"<svg"):
+                return payload
+        except OSError:
+            continue
+    return b""
+
+
+def _placard_background_bytes(name: str) -> bytes:
+    """Serve one of the built-in, metadata-addressed World backgrounds."""
+    key = Path(str(name or "")).stem
+    if key not in {"1", "2", "3", "4"}:
+        return b""
+    filename = f"{key}.png"
+    bundle_root = getattr(sys, "_MEIPASS", "")
+    candidates = []
+    if bundle_root:
+        candidates.append(Path(bundle_root) / "renderer" / "assets" / "placards" / filename)
+        candidates.append(Path(bundle_root) / "placards" / filename)
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "placards" / filename)
+    for candidate in candidates:
+        try:
+            payload = candidate.read_bytes()
+            if payload.startswith(b"\x89PNG\r\n\x1a\n"):
                 return payload
         except OSError:
             continue
@@ -204,7 +228,7 @@ def default_host_config() -> dict:
         "public_base_url": "", "directory_enabled": True, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False,
         "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct",
         "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
-        "remote_admin": {"enabled": True, "users": [], "permission_requests": [], "permissions": dict(REMOTE_PERMISSION_DEFAULTS)},
+        "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": dict(REMOTE_PERMISSION_DEFAULTS)},
     }
 
 
@@ -252,7 +276,7 @@ def normalize_host_config(value: dict | None) -> dict:
         if isinstance(source, dict):
             requests.append({key: source.get(key) for key in ("id", "username", "world_id", "permission", "status", "requested_at", "resolved_at", "desktop_notified_at")})
     cfg["remote_admin"] = {
-        "enabled": bool(incoming_remote.get("enabled", True)),
+        "enabled": bool(incoming_remote.get("enabled", False)),
         "users": users[:100], "permission_requests": requests,
         "permissions": {key: bool(incoming_permissions.get(key, default)) for key, default in REMOTE_PERMISSION_DEFAULTS.items()},
     }
@@ -519,6 +543,7 @@ class DirectoryHost:
         game_port = int(row.get("game_port") or connection.get("game_port") or connection.get("port") or 7777)
         stable = str(row.get("id") or fingerprint or f"{world_name.casefold()}@{external_ip or internal_ip}:{game_port}")
         region = str(row.get("region") or status.get("region") or status.get("server_location") or "")[:120]
+        cl_version = row.get("cl_version") if isinstance(row.get("cl_version"), dict) else {}
         return {
             "id": stable[:240], "world_name": world_name,
             "description": str(row.get("description") or presentation.get("description") or cached.get("description") or cached_presentation.get("description") or "")[:600],
@@ -528,6 +553,7 @@ class DirectoryHost:
             "sync_tags": [str(value)[:40] for value in sync_tags if str(value).strip()][:16],
             "icon_b64": _public_image_data(row.get("icon_b64") or presentation.get("icon_b64") or cached.get("icon_b64") or cached_presentation.get("icon_b64"), limit=8_000_000),
             "banner_b64": _public_image_data(row.get("banner_b64") or presentation.get("banner_b64") or cached.get("banner_b64") or cached_presentation.get("banner_b64"), limit=16_000_000),
+            "placard_background": str(row.get("placard_background") or presentation.get("placard_background") or cached.get("placard_background") or cached_presentation.get("placard_background") or "1")[:8],
             "online": bool(row.get("online", status.get("online", status.get("public_online", True)))),
             "players": max(0, int(row.get("players") or row.get("player_count") or status.get("players") or status.get("player_count") or 0)),
             "max_players": max(0, int(row.get("max_players") or row.get("player_capacity") or status.get("max_players") or status.get("player_capacity") or 0)),
@@ -563,6 +589,15 @@ class DirectoryHost:
             "external_ip": external_ip, "internal_ip": internal_ip, "game_port": game_port,
             "sync_port": int(row.get("sync_port") or connection.get("sync_port") or 27051),
             "shared_character_count": max(0, int(row.get("shared_character_count") or shared.get("shared_character_count") or 0)),
+            "host_os": str(row.get("host_os") or status.get("host_os") or "other")[:24].casefold(),
+            "server_os_badge": row.get("server_os_badge") if isinstance(row.get("server_os_badge"), dict) else {},
+            "cl_version": {
+                "reported_cl": str(cl_version.get("reported_cl") or "")[:32],
+                "expected_cl": str(cl_version.get("expected_cl") or "")[:32],
+                "status": str(cl_version.get("status") or "unknown")[:24].casefold(),
+                "current": cl_version.get("current") if isinstance(cl_version.get("current"), bool) else None,
+            },
+            "directory_sources": list((row.get("public_discovery") or {}).get("directory_sources") or row.get("directory_sources") or [])[:20],
             "source": source, "source_label": "Dragonwilds Sync" if sync_ready else ("LobbySup public observation" if source == "lobbysup-public" else "Dragonwilds public discovery"),
             "last_seen": float(row.get("last_seen") or status.get("last_seen") or time.time()),
         }
@@ -732,10 +767,10 @@ class DirectoryHost:
             result = self.remote_action_handler(str(session.get("world_id") or ""), action, {"permission": permission, "username": session.get("username")}) or {}
             self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""), remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail=f"{session.get('username')} requested {permission}")
             return result
-        permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "refresh": "refresh",
+        permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "update_restart": "update", "refresh": "refresh",
                           "mod_update": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
-                          "spawner_item": "use_spawner", "console_execute": "use_console",
+                          "spawner_catalog": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",
                           }
         required = permission_for.get(action)
         if not required: raise ValueError("This remote command is not allowed")
@@ -1033,7 +1068,7 @@ class DirectoryHost:
                 path = parsed_url.path.rstrip("/") or "/"
                 surface = str(controller.config.get("public_surface_mode") or "full")
                 directory_enabled = bool(controller.config.get("directory_enabled", True))
-                remote_enabled = bool((controller.config.get("remote_admin") or {}).get("enabled", True))
+                remote_enabled = bool((controller.config.get("remote_admin") or {}).get("enabled", False))
                 public_human_surface = path in {"/servers", "/api/v1", "/api"} or path.startswith("/servers/")
                 if directory_enabled and surface != "full" and public_human_surface:
                     self._send(_blackout_html() if surface == "blackout" else _public_landing_html(), "text/html; charset=utf-8", cors=False); return
@@ -1078,6 +1113,10 @@ class DirectoryHost:
                     icon = _platform_icon_bytes(path.rsplit("/", 1)[-1])
                     if not icon: self._json({"error": "platform icon unavailable"}, 404, cors=False); return
                     self._send(icon, "image/svg+xml; charset=utf-8", cors=False); return
+                if path.startswith("/assets/placards/"):
+                    artwork = _placard_background_bytes(path.rsplit("/", 1)[-1])
+                    if not artwork: self._json({"error": "placard background unavailable"}, 404, cors=False); return
+                    self._send(artwork, "image/png", cors=False); return
                 if path == "/landing":
                     if not directory_enabled and remote_enabled: self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
                     self._send(_blackout_html() if surface == "blackout" else _public_landing_html(), "text/html; charset=utf-8", cors=False); return
@@ -1110,7 +1149,7 @@ class DirectoryHost:
             def do_POST(self):
                 path = urllib.parse.urlparse(self.path).path.rstrip("/")
                 directory_enabled = bool(controller.config.get("directory_enabled", True))
-                remote_enabled = bool((controller.config.get("remote_admin") or {}).get("enabled", True))
+                remote_enabled = bool((controller.config.get("remote_admin") or {}).get("enabled", False))
                 if path.startswith("/api/v1/admin/") and not remote_enabled:
                     self._json({"error": "Remote Server Admin is disabled"}, 404, cors=False); return
                 if path == "/api/v1/admin/login":
@@ -1183,7 +1222,7 @@ class DirectoryHost:
             raise RuntimeError(f"WebHost listener could not bind {cfg['bind_host']}:{cfg['port']}; the setting was not saved: {exc}") from exc
         self.httpd.daemon_threads = True
         self.httpd.block_on_close = False; self.httpd.request_queue_size = 64
-        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True, name="Dragonwilds-World-Directory")
+        self.thread = threading.Thread(target=self.httpd.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True, name="Dragonwilds-World-Directory")
         self.thread.start(); self.started_at = time.time(); self.reachability = {"checked": False, "loopback_ok": False, "public_ok": False, "message": "Not tested"}
         WEB_TUNNEL.ensure(cfg.get("public_transport") or "direct", cfg["port"], True)
         mode = str(cfg.get("publication_mode") or "manual")
@@ -1221,7 +1260,7 @@ class DirectoryHost:
         WEB_TUNNEL.stop()
         if self.httpd: self.httpd.shutdown(); self.httpd.server_close()
         mapping_thread = self.mapping_thread
-        if mapping_thread and mapping_thread.is_alive(): mapping_thread.join(timeout=2.0)
+        if mapping_thread and mapping_thread.is_alive(): mapping_thread.join(timeout=0.15)
         self.httpd = None; self.thread = None; self.started_at = None; self.mapping_thread = None
         if was_mapped:
             # Router discovery/removal can take a few seconds on some networks.

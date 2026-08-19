@@ -74,7 +74,10 @@ def main() -> None:
     project = Path(__file__).resolve().parents[1]
     renderer = (project / "renderer" / "app.js").read_text(encoding="utf-8")
     profile_bundle = (project / "backend" / "profile_bundle.py").read_text(encoding="utf-8")
-    service = (project / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
+    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    service = ((project / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+               + (project / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
     maintenance = (project / "backend" / "world_maintenance.py").read_text(encoding="utf-8")
     assert "const pageSize=40" in renderer
     assert '"items/manifest.json"' in profile_bundle and '"itemsRoot": "items/"' in profile_bundle

@@ -58,6 +58,7 @@ function secureAttachedWebview(event, webPreferences, params) {
 
 let mainWindow = null;
 let quickWindow = null;
+let minimalWindow = null;
 const detachedWindows = new Map();
 const managedDialogs = new Map();
 let detachedCounter = 0;
@@ -76,6 +77,8 @@ let backgroundTimer = null;
 let schedulerTimer = null;
 let rsdwModuleTimer = null;
 let forceQuit = false;
+let shutdownInProgress = false;
+let shutdownComplete = false;
 let pendingJoinRequest = null;
 let backgroundSettings = { close_to_tray: true, start_minimized: false, notifications_enabled: true, announcement_overlay_enabled: true };
 const notificationSeen = new Map();
@@ -413,8 +416,21 @@ function createQuickWindow(worldId, worldKind = 'world') {
   quickWindow.on('closed', () => { quickWindow = null; });
   return quickWindow;
 }
+function createMinimalWindow(worldId) {
+  const id=String(worldId||'').trim();if(!id)return createWindow({show:true});
+  if(minimalWindow&&!minimalWindow.isDestroyed()){
+    minimalWindow.loadFile(path.join(projectRoot(),'renderer','index.html'),{query:{minimal:'1',worldId:id,worldKind:'server'}});
+    minimalWindow.show();minimalWindow.focus();return minimalWindow;
+  }
+  minimalWindow=new BrowserWindow(windowOptions({width:1050,height:760,minWidth:720,minHeight:520,resizable:true,title:'Dragonwilds Sync · Minimal Mode'}));
+  minimalWindow.loadFile(path.join(projectRoot(),'renderer','index.html'),{query:{minimal:'1',worldId:id,worldKind:'server'}});
+  minimalWindow.once('ready-to-show',()=>{minimalWindow.show();minimalWindow.focus();});
+  minimalWindow.on('closed',()=>{minimalWindow=null;});
+  return minimalWindow;
+}
 function parseQuickArgs(argv) {
   const quick = argv.includes('--quick-launch');
+  const minimal = argv.includes('--minimal-mode');
   let worldId = '';
   let worldKind = 'world';
   for (let i = 0; i < argv.length; i++) {
@@ -425,7 +441,7 @@ function parseQuickArgs(argv) {
     else if (arg === '--world-kind' && argv[i + 1]) worldKind = String(argv[i + 1]).toLowerCase();
   }
   if (!['world', 'private', 'server'].includes(worldKind)) worldKind = 'world';
-  return { quick, worldId, worldKind };
+  return { quick, minimal, worldId, worldKind };
 }
 
 function parseJoinArgs(argv = []) {
@@ -567,6 +583,7 @@ ipcMain.handle('dragonwilds:remove-world-shortcut', (_event, name) => { if (proc
 ipcMain.handle('dragonwilds:background-settings', async (_event, incoming) => { backgroundSettings={...backgroundSettings,...(incoming||{})}; return backgroundSettings; });
 ipcMain.handle('dragonwilds:notify', (_event, evt) => { showPassiveNotification(evt||{}); return true; });
 ipcMain.handle('dragonwilds:open-main-window', () => { const w=createWindow({show:true}); w.show(); w.focus(); return true; });
+ipcMain.handle('dragonwilds:open-minimal-mode', (_event, worldId) => { createMinimalWindow(worldId); return true; });
 ipcMain.handle('dragonwilds:discord-activity', async (_event,activity) => discordPresence.setActivity(activity||null));
 ipcMain.handle('dragonwilds:discord-clear', async () => discordPresence.clear());
 ipcMain.handle('dragonwilds:discord-status', () => discordPresence.status());
@@ -658,7 +675,7 @@ ipcMain.handle('dragonwilds:open-path', async (_event,target) => { if(!target)re
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
-else app.on('second-instance', (_event, argv) => { const join=parseJoinArgs(argv); if(join)deliverJoinRequest(join); else { const q=parseQuickArgs(argv); if(q.quick&&q.worldId)createQuickWindow(q.worldId,q.worldKind); else { const w=createWindow({show:true}); w.show(); w.focus(); } } });
+else app.on('second-instance', (_event, argv) => { const join=parseJoinArgs(argv); if(join)deliverJoinRequest(join); else { const q=parseQuickArgs(argv); if(q.minimal&&q.worldId)createMinimalWindow(q.worldId);else if(q.quick&&q.worldId)createQuickWindow(q.worldId,q.worldKind); else { const w=createWindow({show:true}); w.show(); w.focus(); } } });
 
 app.on('open-url', (event, url) => { event.preventDefault(); const request=parseJoinArgs([url]); if(request)deliverJoinRequest(request); });
 
@@ -696,7 +713,7 @@ app.whenReady().then(async () => {
   startService(); await refreshBackgroundSettings(); createTray();
   const q=parseQuickArgs(process.argv);
   const startupJoin=pendingJoinRequest||parseJoinArgs(process.argv);
-  if(startupJoin) deliverJoinRequest(startupJoin); else if(q.quick&&q.worldId) createQuickWindow(q.worldId,q.worldKind); else createWindow({show:!backgroundSettings.start_minimized});
+  if(startupJoin) deliverJoinRequest(startupJoin); else if(q.minimal&&q.worldId)createMinimalWindow(q.worldId);else if(q.quick&&q.worldId) createQuickWindow(q.worldId,q.worldKind); else createWindow({show:!backgroundSettings.start_minimized});
   const maybeBenchmark=()=>serviceInvoke('server.network.benchmark.maybe',{}).catch(()=>{}); setTimeout(maybeBenchmark,20000); benchmarkTimer=setInterval(maybeBenchmark,60*60*1000);
   const backgroundTick=()=>{serviceInvoke('world.discovery.heartbeat',{}).catch(()=>{});return serviceInvoke('client.background.tick',{}).then((r)=>{ for(const evt of r.events||[])showPassiveNotification(evt); }).catch(()=>{});}; setTimeout(backgroundTick,8000); backgroundTimer=setInterval(backgroundTick,30*1000);
   const schedulerTick=()=>serviceInvoke('server.scheduler.tick',{}).then((r)=>{ for(const evt of r.events||[]) if(evt.type==='warning') showPassiveNotification({key:`scheduler:${evt.minutes}:${evt.action}`,title:'Dragonwilds Server',body:evt.message,kind:evt.action==='backup'?'info':'restart'}); }).catch(()=>{}); setTimeout(schedulerTick,15000); schedulerTimer=setInterval(schedulerTick,15*1000);
@@ -704,4 +721,41 @@ app.whenReady().then(async () => {
   app.on('activate',()=>{ if(BrowserWindow.getAllWindows().length===0)createWindow({show:true}); else if(mainWindow){mainWindow.show();mainWindow.focus();} });
 });
 app.on('window-all-closed',()=>{ if(process.platform==='darwin')return; if(!backgroundSettings.close_to_tray){forceQuit=true;app.quit();} });
-app.on('before-quit',()=>{ forceQuit=true; stopRsdwToolkitServer(); for(const entry of detachedWindows.values()){try{entry.window.destroy();}catch(_){}} detachedWindows.clear(); if(benchmarkTimer)clearInterval(benchmarkTimer); if(backgroundTimer)clearInterval(backgroundTimer); if(schedulerTimer)clearInterval(schedulerTimer); if(rsdwModuleTimer)clearInterval(rsdwModuleTimer); discordPresence.destroy(); if(service&&!service.killed)service.kill(); });
+
+function stopLauncherOwnedShellServices(){
+  stopRsdwToolkitServer();
+  for(const entry of detachedWindows.values()){try{entry.window.destroy();}catch(_){}}
+  detachedWindows.clear();
+  if(benchmarkTimer)clearInterval(benchmarkTimer);
+  if(backgroundTimer)clearInterval(backgroundTimer);
+  if(schedulerTimer)clearInterval(schedulerTimer);
+  if(rsdwModuleTimer)clearInterval(rsdwModuleTimer);
+  benchmarkTimer=backgroundTimer=schedulerTimer=rsdwModuleTimer=null;
+  discordPresence.destroy();
+}
+
+async function performFullApplicationExit(){
+  if(shutdownInProgress||shutdownComplete)return;
+  shutdownInProgress=true;forceQuit=true;
+  try{
+    if(service&&!service.killed){
+      let timeoutId;
+      const timeout=new Promise((_,reject)=>{timeoutId=setTimeout(()=>reject(new Error('Backend shutdown verification timed out.')),30000);});
+      try{await Promise.race([serviceInvoke('application.shutdown',{}),timeout]);}
+      finally{if(timeoutId)clearTimeout(timeoutId);}
+    }
+  }catch(error){console.error(`[shutdown] ${error?.stack||error}`);}
+  finally{
+    stopLauncherOwnedShellServices();
+    if(service&&!service.killed)service.kill();
+    shutdownComplete=true;shutdownInProgress=false;
+    app.quit();
+  }
+}
+
+app.on('before-quit',(event)=>{
+  forceQuit=true;
+  if(shutdownComplete){stopLauncherOwnedShellServices();return;}
+  event.preventDefault();
+  void performFullApplicationExit();
+});

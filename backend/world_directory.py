@@ -13,6 +13,7 @@ from pathlib import Path
 from profile_store import APP_DATA_DIR
 from operator_identity import verify_world_identity
 from world_classification import normalize_world_classification
+from runtime_platforms import normalize_server_os, server_os_badge
 
 
 DIRECTORY_PATH = APP_DATA_DIR / "world_heartbeat_directory.json"
@@ -94,6 +95,15 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
     seen = float(row.get("last_seen") or row.get("heartbeat_at") or now)
     ttl = max(30, min(int(row.get("ttl_seconds") or DEFAULT_TTL_SECONDS), 1800))
     host_type = str(row.get("host_type") or "dedicated")[:40]
+    host_os = normalize_server_os(row.get("host_os")) if row.get("host_os") else "other"
+    host_meta = {
+        "host_os": host_os,
+        "host_os_label": str(row.get("host_os_label") or "")[:100],
+        "distro": str(row.get("distro") or "")[:40],
+        "distro_name": str(row.get("distro_name") or "")[:100],
+        "distro_version": str(row.get("distro_version") or "")[:40],
+        "ubuntu": bool(row.get("ubuntu") or row.get("ubuntu_supported")),
+    }
     signed_identity = verify_world_identity(row.get("operator_identity")) if row.get("operator_identity") else {"verified": False, "operator_fingerprint": "", "payload": {}, "error": "not supplied"}
     signed_payload = signed_identity.get("payload") or {}
     operator_verified = bool(signed_identity.get("verified") and
@@ -107,6 +117,7 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "game_port": max(1, min(int(row.get("game_port") or 7777), 65535)),
         "protocol": protocol, "protocol_version": int(row.get("protocol_version") or 1),
         "fingerprint_claimed": fingerprint, "host_type": host_type,
+        **host_meta, "server_os_badge": server_os_badge(host_meta),
         "mod_badges": [str(value)[:32] for value in (row.get("mod_badges") or [])[:12]],
         "tags": [str(value).strip()[:40] for value in (row.get("tags") or [])[:24] if str(value).strip()],
         "game_tags": [str(value).strip()[:40] for value in (row.get("game_tags") or [])[:24] if str(value).strip()],
@@ -208,7 +219,9 @@ def probe_heartbeat(row: dict, timeout: float = 2.0) -> dict:
             protocol = str((world_sync or {}).get("protocol") or "")
             if protocol == PROTOCOL and FINGERPRINT_RE.fullmatch(actual) and actual == row.get("fingerprint_claimed"):
                 connection = status.get("connection") if isinstance(status.get("connection"), dict) else {}
-                return {**row, "fingerprint": actual, "verified": True, "probe_address": address,
+                host = status.get("server_host") if isinstance(status.get("server_host"), dict) else {}
+                return {**row, **host, "server_os_badge": server_os_badge(host or row),
+                        "fingerprint": actual, "verified": True, "probe_address": address,
                         "ping_ms": round((time.perf_counter() - started) * 1000, 1), "status": status,
                         "external_ip": str(connection.get("external_ip") or row.get("external_ip") or ""),
                         "internal_ip": str(connection.get("internal_ip") or row.get("internal_ip") or "")}

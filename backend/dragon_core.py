@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
 import shutil
 import sys
@@ -23,19 +25,35 @@ GROUPS = {
 }
 
 
+def _category_defaults(group: str, name: str) -> tuple[int, float]:
+    protected = group == "Protected"
+    stack = 1 if protected else (99999 if group == "Currency" else (9999 if group in {"Magic", "Ammunition"} else 300))
+    weight = -1.0 if protected or (group == "Ammunition" and name in {"Ammo", "Arrow", "Bolt"}) else 0.0
+    return stack, weight
+
+
 def default_settings() -> dict:
     categories = {}
     for group, names in GROUPS.items():
         categories[group] = {}
         for name in names:
-            protected = group == "Protected"
-            stack = 1 if protected else (99999 if group == "Currency" else (9999 if group in {"Magic", "Ammunition"} else 300))
-            weight = -1.0 if protected or (group == "Ammunition" and name in {"Ammo", "Arrow", "Bolt"}) else 0.0
-            categories[group][name] = {"stack": stack, "weight": weight}
+            stack, weight = _category_defaults(group, name)
+            categories[group][name] = {"stack": stack, "weight": weight,
+                                       "stack_inherited": True, "weight_inherited": True}
     return {"enabled": True, "stacks_enabled": True, "weights_enabled": True,
             "defaults": {"vanilla_stack": 300, "modded_stack": 300, "vanilla_weight": 0.0, "modded_weight": 0.0},
             "categories": categories, "equipment": {"stack_enabled": False, "stack_size": 1,
             "weight_enabled": False, "weight": -1.0}, "updated_at": 0}
+
+
+def _finite_number(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
 
 
 def normalize_settings(value: dict | None) -> dict:
@@ -45,19 +63,27 @@ def normalize_settings(value: dict | None) -> dict:
     defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
     for key in result["defaults"]:
         if key in defaults:
-            result["defaults"][key] = float(defaults[key]) if "weight" in key else max(1, min(999999, int(defaults[key])))
+            number = _finite_number(defaults[key])
+            if number is not None:
+                result["defaults"][key] = number if "weight" in key else max(1, min(999999, int(number)))
     incoming = raw.get("categories") if isinstance(raw.get("categories"), dict) else {}
     for group, rows in result["categories"].items():
         supplied = incoming.get(group) if isinstance(incoming.get(group), dict) else {}
         for name, row in rows.items():
             source = supplied.get(name) if isinstance(supplied.get(name), dict) else {}
-            if "stack" in source: row["stack"] = max(1, min(999999, int(source["stack"])))
-            if "weight" in source: row["weight"] = max(-1.0, min(100000.0, float(source["weight"])))
+            stack = _finite_number(source.get("stack")) if "stack" in source else None
+            weight = _finite_number(source.get("weight")) if "weight" in source else None
+            if stack is not None:
+                row["stack"] = max(1, min(999999, int(stack))); row["stack_inherited"] = False
+            if weight is not None:
+                row["weight"] = max(-1.0, min(100000.0, weight)); row["weight_inherited"] = False
     equipment = raw.get("equipment") if isinstance(raw.get("equipment"), dict) else {}
+    stack_size = _finite_number(equipment.get("stack_size"))
+    equipment_weight = _finite_number(equipment.get("weight"))
     result["equipment"].update({"stack_enabled": bool(equipment.get("stack_enabled", result["equipment"]["stack_enabled"])),
-                                "stack_size": max(1, min(999999, int(equipment.get("stack_size", result["equipment"]["stack_size"])))),
+                                "stack_size": max(1, min(999999, int(stack_size))) if stack_size is not None else result["equipment"]["stack_size"],
                                 "weight_enabled": bool(equipment.get("weight_enabled", result["equipment"]["weight_enabled"])),
-                                "weight": max(-1.0, min(100000.0, float(equipment.get("weight", result["equipment"]["weight"]))))})
+                                "weight": max(-1.0, min(100000.0, equipment_weight)) if equipment_weight is not None else result["equipment"]["weight"]})
     return result
 
 
@@ -66,6 +92,63 @@ def _bundle() -> Path:
         candidate = Path(sys.executable).resolve().parent.parent / "resources" / "DragonCore-baseline.zip"
         if candidate.is_file(): return candidate
     return Path(__file__).resolve().parent.parent / "resources" / "DragonCore-baseline.zip"
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _bundle_signature(bundle: Path | None = None) -> dict:
+    archive = bundle or _bundle()
+    if not archive.is_file():
+        return {"sha256": "", "bytes": 0}
+    return {"sha256": _sha256(archive), "bytes": archive.stat().st_size}
+
+
+def _marker_path(mods_dir: str | Path) -> Path:
+    return Path(mods_dir) / MOD_NAME / ".dragonwilds-sync-baseline.json"
+
+
+def _read_marker(mods_dir: str | Path) -> dict:
+    try:
+        value = json.loads(_marker_path(mods_dir).read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _marker_matches(marker: dict, signature: dict, bundle: Path) -> bool:
+    if marker.get("sha256"):
+        return str(marker.get("sha256") or "") == str(signature.get("sha256") or "")
+    # Backward compatibility for installations stamped before content hashes
+    # became the managed DragonCore version identifier.
+    legacy = {"bytes": bundle.stat().st_size, "mtime_ns": bundle.stat().st_mtime_ns}
+    return marker == legacy
+
+
+def managed_status(mods_dir: str | Path) -> dict:
+    """Return launcher-authoritative DragonCore install/update evidence."""
+    bundle = _bundle()
+    target = Path(mods_dir) / MOD_NAME
+    installed = (target / "Scripts" / "main.lua").is_file() and (target / "enabled.txt").is_file()
+    if not bundle.is_file():
+        return {"component": MOD_NAME, "installed": installed, "current": None, "update_available": False,
+                "installed_version": "unknown" if installed else "", "available_version": "", "status": "source_missing",
+                "restart_required": True, "error": "DragonCore baseline is missing from launcher resources."}
+    signature = _bundle_signature(bundle)
+    marker = _read_marker(mods_dir)
+    current = bool(installed and _marker_matches(marker, signature, bundle))
+    installed_hash = str(marker.get("sha256") or "")
+    installed_version = f"bundle-{installed_hash[:12]}" if installed_hash else ("legacy" if installed else "")
+    available_version = f"bundle-{str(signature.get('sha256') or '')[:12]}"
+    return {"component": MOD_NAME, "installed": installed, "current": current,
+            "update_available": not current, "installed_version": installed_version,
+            "available_version": available_version, "status": "current" if current else ("update_available" if installed else "not_installed"),
+            "restart_required": True, "path": str(target), "source": str(bundle)}
 
 
 def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> None:
@@ -82,11 +165,14 @@ def ensure_installed(mods_dir: str | Path) -> dict:
     target = Path(mods_dir) / MOD_NAME; bundle = _bundle()
     if not bundle.is_file(): raise FileNotFoundError("DragonCore baseline is missing from launcher resources.")
     marker = target / ".dragonwilds-sync-baseline.json"
-    signature = {"bytes": bundle.stat().st_size, "mtime_ns": bundle.stat().st_mtime_ns}
+    signature = _bundle_signature(bundle)
     try: current = json.loads(marker.read_text(encoding="utf-8"))
     except Exception: current = {}
-    if current == signature and (target / "Scripts" / "main.lua").is_file() and (target / "enabled.txt").is_file():
-        return {"ok": True, "changed": False, "path": str(target)}
+    if _marker_matches(current if isinstance(current, dict) else {}, signature, bundle) and (target / "Scripts" / "main.lua").is_file() and (target / "enabled.txt").is_file():
+        # Rewrite a legacy timestamp marker to the stable content-hash format.
+        if not current.get("sha256"):
+            marker.write_text(json.dumps(signature, indent=2), encoding="utf-8")
+        return {"ok": True, "changed": False, "path": str(target), "version": f"bundle-{signature['sha256'][:12]}"}
     with tempfile.TemporaryDirectory(prefix="dws-dragoncore-") as temp_name:
         staged = Path(temp_name)
         with zipfile.ZipFile(bundle) as archive: _safe_extract(archive, staged)
@@ -95,7 +181,7 @@ def ensure_installed(mods_dir: str | Path) -> dict:
         target.parent.mkdir(parents=True, exist_ok=True); shutil.copytree(source, target, dirs_exist_ok=True)
     (target / "enabled.txt").write_text("", encoding="utf-8")
     marker.write_text(json.dumps(signature, indent=2), encoding="utf-8")
-    return {"ok": True, "changed": True, "path": str(target)}
+    return {"ok": True, "changed": True, "path": str(target), "version": f"bundle-{signature['sha256'][:12]}"}
 
 
 def _bool(value: bool) -> str: return "true" if value else "false"

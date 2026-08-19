@@ -202,14 +202,16 @@ def test_ui_contract():
     assert "privateWorldView" in renderer and "serverWorldView" in renderer
     assert "data-private-view" in renderer and "data-server-view" in renderer
     assert "Co-Op" in renderer and "data-private-launch" in renderer
-    assert "data-server-launch" in renderer and "server.world.broadcast" in renderer
+    assert "data-server-launch" in renderer and "server.runtime.start" in renderer
     assert "active-private" in styles and "instance-1" in styles
 
-    # Managed-window compatibility remains available, while ordinary popups
-    # and editors default to the in-app desktop/taskbar.
-    assert "managed-dialog-open" in main and "managedDialogs" in main
-    assert "openManagedDialog" in preload and "managedConfirm" in renderer and "managedPrompt" in renderer
-    assert "dialog-host.html" in main
+    # Application-owned confirms/prompts/editors belong to the in-app desktop.
+    # The legacy managed-dialog host may remain in main.cjs for compatibility,
+    # but preload must not expose it. Genuine web content has its own browser
+    # bridge and is intentionally separate from these application dialogs.
+    assert "managedConfirm" in renderer and "managedPrompt" in renderer
+    assert "openManagedDialog" not in preload and "managedDialogContent" not in preload
+    assert "openInAppBrowser" in preload
     assert "skipTaskbar: true" in main and "restoreDetachedWindow" in renderer
     live_renderer = renderer.replace("managedConfirm(", "").replace("managedPrompt(", "")
     assert "confirm(" not in live_renderer and "prompt(" not in live_renderer
@@ -264,7 +266,7 @@ def main():
     test_read_only_legacy_mod_snapshot_can_be_replaced()
     test_read_only_publish_cache_can_be_replaced()
     test_ui_contract()
-    print("Release 1.4 consolidated Worlds / managed windows / runtime / UI regression tests passed")
+    print("Release 1.4 consolidated Worlds / in-app dialogs / runtime / UI regression tests passed")
 
 
 if __name__ == "__main__":

@@ -32,8 +32,7 @@ from integrations import normalize_mod_source
 from network_health import summarize_client_reports
 from health_model import normalize_health_config, public_health_config, score_server_health
 from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, REGION_LABELS
-from security_scanner import defender_scan, defender_status
-from runtime_versions import server_runtime_stack
+from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
 from client_layout import resolve_client_layout
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
@@ -189,11 +188,14 @@ def safe_extract_zip(zf: zipfile.ZipFile, destination: Path) -> None:
 
 
 
-def review_with_defender(path: str | Path, context: str = "payload") -> dict:
-    review = defender_scan(path)
-    if review.get("blocked"):
-        raise RuntimeError(f"Microsoft Defender blocked {context}: {Path(path).name}")
-    return review
+def review_with_defender(path: str, label: str = "content") -> dict:
+    """Compatibility no-op: Defender integration retired in RC2.
+
+    Archive path validation, hashes, staging and rollback remain launcher-owned;
+    OS antivirus products can continue scanning files normally outside Sync.
+    """
+    return {"available": False, "enabled": False, "blocked": False, "skipped": True,
+            "reason": "Defender integration retired in RC2", "path": str(path or ""), "label": str(label or "content")}
 
 
 def _is_launcher_bundled_ue4ss(path: str | Path) -> bool:
@@ -664,9 +666,11 @@ def _client_mods_txt_lines(names: list[str], existing_text: str = "") -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def generate_server_mods_txt(profile_id: str, game_root: str) -> dict:
+def generate_server_mods_txt(profile_id: str, game_root: str, units: list[ModUnit] | None = None) -> dict:
     layout = resolve_server_layout(game_root)
-    units = scan_mod_units(profile_id, str(layout.game_root))
+    # Callers that are already publishing/scanning may pass the authoritative
+    # inventory.  This avoids a second full walk of every mod file on Start.
+    units = units if units is not None else scan_mod_units(profile_id, str(layout.game_root))
     names = []
     for unit in units:
         if unit.group != "ue4ss_mod" or not unit.is_dir or unit.name.casefold() in {"mods.txt", "dwmapi.dll"}:
@@ -1776,10 +1780,7 @@ class ShareServer:
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
         required = [u for u in units if u.classification == "player_required"]
-        defender_state = defender_status()
         security_reviews = []
-        for unit in required:
-            security_reviews.extend(review_mod_unit_with_defender(unit))
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
         # Wipe only app-owned published staging. It is regenerated atomically enough for current protocol.
         for child in list(PUBLISH_DIR.iterdir()):
@@ -1912,20 +1913,13 @@ class ShareServer:
                                             "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]},
                               "community_rules": str(profile.get("community_rules") or "")[:4000],
                               "mod_badges": compute_mod_badges(units), "icon_b64": profile.get("icon_b64") or "", "banner_b64": profile.get("banner_b64") or "",
+                              "placard_background": str(profile.get("placard_background") or "1"),
                               "mod_summary": summary, "mods_txt_mode": str(profile.get("mods_txt_mode") or "auto").lower(),
                               "mods_txt_writer": mods_txt_writer,
                               "client_ue4ss_mods": client_ue4ss_mods,
                               "game_port": int(game_port or 7777), "rating_average": avg, "rating_count": count,
                               "hw_stats": hw_stats or {}, "network_health": STATE.network_summary(None),
-                              "security_posture": {
-                                  "defender": {
-                                      "available": bool(defender_state.get("available")), "enabled": bool(defender_state.get("enabled")),
-                                      "mode": defender_state.get("mode") or "", "signature_version": defender_state.get("signature_version") or "",
-                                      "checked_at": defender_state.get("checked_at"),
-                                  },
-                                  "reviewed_units": len({r.get("unit_key") for r in security_reviews}),
-                                  "skipped_reviews": sum(1 for r in security_reviews if r.get("skipped")),
-                              },
+                              "security_posture": {"package_validation": "hash-staging-rollback"},
                               "health_config": broadcast_health_config,
                               "runtime_stack": runtime_stack, "baseline_runtime": baseline_runtime,
                               "connection": {
@@ -3444,7 +3438,7 @@ class PlayerLogMonitor:
     """Headless dedicated-server monitor with join/leave parsing. No GUI dependencies."""
     def __init__(self):
         self.pid: int | None = None; self.exe_path = ""; self.start_ts: float | None = None
-        self.players: set[str] = set(); self.log_path: Path | None = None; self.log_offset = 0
+        self.players: set[str] = set(); self.log_path: Path | None = None; self.log_offset = 0; self.reported_cl = ""
 
     def poll(self, known_pid: int | None = None, known_exe: str = "") -> dict:
         pid = known_pid; exe = known_exe
@@ -3456,11 +3450,11 @@ class PlayerLogMonitor:
                         pid = int(proc.info["pid"]); exe = str(proc.info.get("exe") or ""); self.start_ts = float(proc.info.get("create_time") or time.time()); break
             except Exception: pass
         if pid is None:
-            self.pid = None; self.exe_path = ""; self.start_ts = None; self.players.clear(); self.log_path = None; self.log_offset = 0
+            self.pid = None; self.exe_path = ""; self.start_ts = None; self.players.clear(); self.log_path = None; self.log_offset = 0; self.reported_cl = ""
             with STATE.lock: STATE.server_online = False; STATE.player_count = 0; STATE.server_start_ts = None
             return {"online": False, "pid": None, "players": [], "player_count": 0, "uptime_seconds": None}
         if self.pid != pid:
-            self.players.clear(); self.log_path = None; self.log_offset = 0
+            self.players.clear(); self.log_path = None; self.log_offset = 0; self.reported_cl = ""
         self.pid = pid; self.exe_path = exe or self.exe_path; self.start_ts = self.start_ts or time.time()
         if self.exe_path and not self.log_path:
             try:
@@ -3479,6 +3473,9 @@ class PlayerLogMonitor:
                 with self.log_path.open("r", encoding="utf-8", errors="ignore") as fh:
                     fh.seek(self.log_offset)
                     for line in fh:
+                        reported_cl = normalize_cl_version(line)
+                        if reported_cl:
+                            self.reported_cl = reported_cl
                         m = _DEDICATED_JOIN_RE.search(line)
                         if m: self.players.add(m.group(1).strip()); continue
                         m = _DEDICATED_LEAVE_RE.search(line)
@@ -3487,11 +3484,12 @@ class PlayerLogMonitor:
             except OSError: pass
         uptime = max(0, int(time.time() - self.start_ts)) if self.start_ts else None
         with STATE.lock: STATE.server_online = True; STATE.player_count = len(self.players); STATE.server_start_ts = self.start_ts
-        return {"online": True, "pid": pid, "players": sorted(self.players), "player_count": len(self.players), "uptime_seconds": uptime}
+        return {"online": True, "pid": pid, "players": sorted(self.players), "player_count": len(self.players),
+                "uptime_seconds": uptime, "reported_cl": self.reported_cl}
 
 
 def clear_server_mods(game_root: str) -> dict:
-    """Clear profile mods while retaining RuneSchema core, UE4SS core and mods.txt."""
+    """Clear profile mods while retaining RuneSchema, RSDWTools, UE4SS core and mods.txt."""
     layout = resolve_server_layout(game_root)
     mods_root = layout.ue4ss_mods_dir
     paks_root = layout.paks_mods_dir
@@ -3512,7 +3510,7 @@ def clear_server_mods(game_root: str) -> dict:
                         else: mod.unlink(missing_ok=True)
                         removed += 1
                 continue
-            if lower == "mods.txt":
+            if lower in {"mods.txt", "rsdwtools"}:
                 continue
             if child.is_dir(): shutil.rmtree(child)
             else: child.unlink(missing_ok=True)

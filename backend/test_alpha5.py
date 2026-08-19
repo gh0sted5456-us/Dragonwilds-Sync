@@ -6,9 +6,11 @@ import world_maintenance as wm
 
 
 def main():
-    # Steam appmanifest parsing + health parity are deterministic and do not
-    # require a live Steam/GitHub request.
-    with tempfile.TemporaryDirectory() as td:
+    # Keep CI fixtures below the checkout path. Windows hosted runners expose
+    # the system temp directory through both long and 8.3 aliases, which tests
+    # pathlib spelling rather than Dragonwilds Sync behavior.
+    fixture_root = Path.cwd()
+    with tempfile.TemporaryDirectory(dir=fixture_root) as td:
         root = Path(td)
         manifest = root / 'appmanifest_4019830.acf'
         manifest.write_text('"AppState"\n{\n  "appid" "4019830"\n  "buildid" "123456"\n}', encoding='utf-8')
@@ -20,17 +22,12 @@ def main():
         assert rv.version_health({'dragonwilds': {'server_current': True}})['score'] == 100
         assert rv.version_health({'dragonwilds': {'server_current': False}})['score'] == 25
 
-    # The Alpha 5 JSON subsystem takes explicit ownership of a config file:
-    # open => managed/read-only; save => JSON validation + atomic write + relock;
-    # managed ownership is permanent while the World is launcher-managed.
-    with tempfile.TemporaryDirectory() as td:
+    with tempfile.TemporaryDirectory(dir=fixture_root) as td:
         root = Path(td)
         profiles = root / 'profiles'
-        server = root / 'server'
-        # The concise Live Config surface exposes World/server, UE4SS core,
-        # and RuneSchema core configuration. Individual mod internals remain
-        # available through the dedicated Mod Explorer.
-        config = server / 'Binaries/Win64/ue4ss/Mods/Runeschema/config/config.json'
+        requested_server = root / 'server'
+        server = wm.resolve_server_layout(str(requested_server)).game_root
+        config = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json'
         config.parent.mkdir(parents=True)
         config.write_text('{"enabled": true}', encoding='utf-8')
         old_profiles = wm.SERVER_PROFILES_DIR

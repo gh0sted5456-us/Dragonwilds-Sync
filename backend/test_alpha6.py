@@ -18,11 +18,13 @@ ROOT = Path(__file__).resolve().parent.parent
 def main():
     with tempfile.TemporaryDirectory() as td:
         temp = Path(td)
-        # Simulate the exact Alpha 6 server shape supplied by the maintainer:
-        # <dedicated install>/RSDragonwilds/{Saved,Binaries,Content}.
+        # Simulate the exact Alpha 6 dedicated server shape. The authoritative
+        # config directory follows the host ABI: WindowsServer on Windows and
+        # LinuxServer on a native Linux host.
         install = temp / "RuneScape Dragonwilds Dedicated Server"
         game = install / "RSDragonwilds"
-        (game / "Saved/Config/WindowsServer").mkdir(parents=True)
+        platform_config = "LinuxServer" if sl.NATIVE_LINUX else "WindowsServer"
+        (game / "Saved/Config" / platform_config).mkdir(parents=True)
         (game / "Saved/Logs").mkdir(parents=True)
         (game / "Saved/SaveGames").mkdir(parents=True)
         (game / "Binaries/Win64/ue4ss/Mods/RuneSchema/config").mkdir(parents=True)
@@ -45,7 +47,7 @@ def main():
         inner = sl.resolve_server_layout(game)
         assert outer.game_root == game
         assert inner.game_root == game
-        assert outer.config_dir == game / "Saved/Config/WindowsServer"
+        assert outer.config_dir == game / "Saved/Config" / platform_config
         assert outer.logs_dir == game / "Saved/Logs"
         assert outer.savegames_dir == game / "Saved/SaveGames"
         assert outer.ue4ss_bootstrap == game / "Binaries/Win64/dwmapi.dll"
@@ -100,7 +102,7 @@ def main():
             assert generated["ok"] is True
             assert "ClientLua : 1" in server_txt and "ServerLua : 1" in server_txt and "RuneSchema : 1" not in server_txt
 
-            # Safe WindowsServer compatibility config mirrors to players; secrets do not.
+            # Safe server compatibility config mirrors to players; secrets do not.
             safe_cfg = outer.config_dir / "GameUserSettings.ini"
             safe_cfg.write_text("[ClientCompatible]\nSetting=1", encoding="utf-8")
             (outer.config_dir / "DedicatedServer.ini").write_text("AdminPassword=secret", encoding="utf-8")
@@ -127,7 +129,11 @@ def main():
             assert layout.mods_txt == client_game / "Binaries/Win64/ue4ss/Mods/mods.txt"
             assert layout.character_dir == cl.LOCAL_APPDATA / "RSDragonwilds/Saved/SaveCharacters"
             target = sync_engine.target_for_entry(client_install, {"path": "_client_config/Compat.ini", "target_scope": "client_config", "target_path": "Compat.ini"})
-            assert target == layout.config_dir / "Compat.ini"
+            # target_for_entry deliberately returns a resolved, escape-checked
+            # destination. Compare canonical paths so Windows 8.3 aliases and
+            # case normalization do not turn the safety behavior into a false
+            # regression.
+            assert target == (layout.config_dir / "Compat.ini").resolve()
 
             # Character profile is read-only metadata plus World association/snapshot mechanics.
             chars = layout.character_dir
@@ -152,8 +158,6 @@ def main():
         finally:
             cl.LOCAL_APPDATA = old_local
 
-    # Health scoring includes current memory headroom and small, optional
-    # ecosystem corroboration without making a third-party directory mandatory.
     hardware = hm.score_hardware({"cpu_cores": 8, "cpu_threads": 16, "ram_total_gb": 32, "ram_available_gb": 20})
     assert hardware["components"]["memory_headroom"] is not None
     health_cfg = hm.default_health_config()

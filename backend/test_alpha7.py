@@ -127,7 +127,10 @@ def main():
             ) = old_dirs
 
     renderer = (Path(__file__).resolve().parent.parent / "renderer" / "app.js").read_text(encoding="utf-8")
-    service = (Path(__file__).resolve().parent / "dragonwilds_service.py").read_text(encoding="utf-8")
+    service = (
+        (Path(__file__).resolve().parent / "dragonwilds_service.py").read_text(encoding="utf-8")
+        + (Path(__file__).resolve().parent / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+    )
     assert "settings-repair-runtimes" in renderer
     assert "settings-import-runeschema-core" in renderer
     assert 'server.install.ensure_runtimes' in service

@@ -1,0 +1,43 @@
+{
+  "schema": "DragonwildsSync.Help.v1",
+  "version": 1,
+  "title": "Dragonwilds Sync Field Guide",
+  "updated_at": "2026-08-17",
+  "pages": [
+    {
+      "id": "getting-started",
+      "title": "Getting Started",
+      "category": "Getting Started",
+      "summary": "First launch, Player Setup, and the launcher workspace.",
+      "markdown": "getting-started.md"
+    },
+    {
+      "id": "worlds-sync",
+      "title": "Worlds & Sync",
+      "category": "Worlds & Sync",
+      "summary": "Private, connected, declared, and hosted World profiles.",
+      "markdown": "worlds-sync.md"
+    },
+    {
+      "id": "characters-rsdw",
+      "title": "Characters & RSDW Toolkit",
+      "category": "Characters",
+      "summary": "Character selection, RSDW editors, Avatar, and safe writeback.",
+      "markdown": "characters-rsdw.md"
+    },
+    {
+      "id": "server-webhost",
+      "title": "Server & WebHost",
+      "category": "Server Setup",
+      "summary": "Dedicated profiles, heartbeat projection, and remote WebGUI.",
+      "markdown": "server-webhost.md"
+    },
+    {
+      "id": "mods-items",
+      "title": "Mods, Items & Spawner",
+      "category": "Mods & Items",
+      "summary": "Mod profiles, RSDW item catalog, Modded Items, and spawning.",
+      "markdown": "mods-items.md"
+    }
+  ]
+}

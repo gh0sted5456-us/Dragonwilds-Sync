@@ -1,0 +1,189 @@
+/* Dragonwilds Sync release-candidate presentation refinements. */
+
+/* World artwork should dissolve into the card surface. Placards have a banner
+   across the TOP, so their fade is vertical into the card body. Horizontal
+   rows place artwork at the RIGHT, so they feather from the card body into the
+   full-strength artwork instead of ending at a divider. */
+.world-card .world-card-banner {
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0,0,0,.92) 64%, rgba(0,0,0,.48) 82%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 52%, rgba(0,0,0,.92) 64%, rgba(0,0,0,.48) 82%, transparent 100%);
+  -webkit-mask-repeat:no-repeat;
+  mask-repeat:no-repeat;
+}
+.world-card .world-card-banner-fallback {
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 55%, rgba(0,0,0,.82) 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 55%, rgba(0,0,0,.82) 72%, transparent 100%);
+}
+.world-list-banner,
+.world-row .world-card-banner,
+.world-horizontal .world-card-banner,
+.shared-online-card .world-card-banner {
+  border:0 !important;
+  box-shadow:none !important;
+  overflow:hidden;
+  background:transparent !important;
+}
+.world-list-banner img,
+.world-row .world-card-banner,
+.world-horizontal .world-card-banner,
+.shared-online-card .world-card-banner {
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.10) 8%, rgba(0,0,0,.42) 22%, rgba(0,0,0,.84) 42%, #000 66%, #000 100%);
+  mask-image: linear-gradient(90deg, transparent 0%, rgba(0,0,0,.10) 8%, rgba(0,0,0,.42) 22%, rgba(0,0,0,.84) 42%, #000 66%, #000 100%);
+  -webkit-mask-repeat:no-repeat;
+  mask-repeat:no-repeat;
+  border:0 !important;
+  box-shadow:none !important;
+}
+
+/* The four supplied placard images are the World-card artwork, not a faint
+   texture underneath an unrelated banner. Preserve the banner slot only as
+   layout space so the icon/title geometry stays stable, while the selected
+   placard fills the complete card and remains readable under the lower fade. */
+.world-card:has(> .world-placard-backdrop) > .world-card-banner,
+.world-card:has(> .world-placard-backdrop) > .world-card-banner-fallback {
+  opacity:0 !important;
+  visibility:hidden !important;
+  background:transparent !important;
+  -webkit-mask-image:none !important;
+  mask-image:none !important;
+}
+.world-card:has(> .world-placard-backdrop) > .world-placard-backdrop {
+  opacity:.78 !important;
+  filter:saturate(.94) contrast(1.05) brightness(.88) !important;
+  transform:none !important;
+  animation:none !important;
+  object-position:center !important;
+}
+.world-card:has(> .world-placard-backdrop)::after {
+  background:linear-gradient(180deg,rgba(7,10,10,.08) 0%,rgba(7,10,10,.14) 28%,rgba(7,10,10,.62) 48%,rgba(7,10,10,.92) 68%,rgba(7,10,10,.98) 100%) !important;
+}
+.world-card:has(> .world-placard-backdrop) .world-card-body {
+  background:linear-gradient(180deg,transparent 0%,rgba(10,13,13,.30) 18%,rgba(10,13,13,.72) 54%,rgba(10,13,13,.92) 100%) !important;
+}
+.world-card:has(> .world-placard-backdrop) .world-mode-banner,
+.world-card:has(> .world-placard-backdrop) .world-origin-banner {
+  backdrop-filter:blur(4px);
+}
+
+/* Recommended Mods is deliberately a compact line list. The icon is a small
+   identifier only; name/version/status/action stay on one scan-friendly row. */
+.recommended-mod-grid {
+  display:grid !important;
+  grid-template-columns:minmax(0,1fr) !important;
+  gap:4px !important;
+}
+.recommended-mod-card {
+  display:grid !important;
+  grid-template-columns:30px minmax(0,1fr) auto auto !important;
+  min-height:44px !important;
+  align-items:center !important;
+  gap:9px !important;
+  padding:6px 8px !important;
+  border-radius:8px !important;
+  overflow:hidden;
+}
+.recommended-mod-icon {
+  width:28px !important;
+  height:28px !important;
+  min-width:28px !important;
+  object-fit:contain !important;
+  border:0 !important;
+  border-radius:5px !important;
+  background:transparent !important;
+  box-shadow:none !important;
+}
+.recommended-mod-copy {
+  min-width:0;
+  padding:0 !important;
+}
+.recommended-mod-copy strong {
+  display:block;
+  overflow:hidden;
+  font-size:12px;
+  line-height:1.2;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.recommended-mod-copy small {
+  display:block;
+  margin-top:2px;
+  overflow:hidden;
+  color:var(--muted,#9d968c);
+  font-size:10px;
+  line-height:1.15;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.recommended-mod-card > .status-pill {
+  justify-self:end;
+  white-space:nowrap;
+}
+.recommended-mod-card > .btn {
+  min-height:30px !important;
+  margin:0 !important;
+  padding:5px 9px !important;
+  white-space:nowrap;
+}
+
+/* Keep recognizable brand colors but remove the little outlined boxes around
+   platform/community/audience marks. The icon itself carries the visual cue;
+   the World card face stays smooth and uncluttered. */
+.platform-logo {
+  width:20px;
+  height:20px;
+  box-sizing:border-box;
+  padding:3px;
+  border:0 !important;
+  border-radius:6px;
+  object-fit:contain;
+  filter:brightness(0) invert(1);
+  box-shadow:none !important;
+  outline:0 !important;
+}
+.platform-logo[src$="steam.svg"] { background:#1b9fff; }
+.platform-logo[src$="discord.svg"] { background:#5865f2; }
+.platform-logo[src$="xbox.svg"] { background:#107c10; }
+.platform-logo[src$="playstation.svg"] { background:#0070d1; }
+.platform-logo[src$="nintendo.svg"] { background:#e60012; }
+.platform-logo[src$="epicgames.svg"] { background:#444; }
+.platform-logo[src$="nexusmods.svg"] { background:#da8e35; }
+.world-platform-badge,
+.world-community-badge,
+.world-audience-badge {
+  border:0 !important;
+  box-shadow:none !important;
+  outline:0 !important;
+}
+.world-platform-badge,
+.world-community-badge {
+  background:transparent !important;
+  padding-left:2px !important;
+  padding-right:2px !important;
+}
+.world-audience-badge img { border:0 !important; box-shadow:none !important; }
+
+.world-rating[role="button"] { border-radius:8px; transition:background .15s ease,box-shadow .15s ease; }
+.world-rating[role="button"]:hover { background:rgba(217,174,71,.10); }
+.world-rating[role="button"]:focus-visible { outline:2px solid #d9ae47; outline-offset:3px; }
+
+.release-mod-tabs { margin:10px 0 14px; }
+.release-mod-list { display:grid; gap:8px; }
+.release-mod-world { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:12px 14px; border:1px solid var(--border,#34403d); border-radius:12px; background:var(--panel,#111817); }
+.release-mod-world strong,.release-mod-world small { display:block; }
+.release-mod-world small { margin-top:3px; color:var(--muted,#92a09b); }
+.release-changelog-tabs { display:flex; flex-wrap:wrap; gap:7px; margin-bottom:10px; }
+
+/* Nexus account/SSO remains intentionally non-public. Links to public mod pages
+   and public artwork are unaffected. */
+.nexus-account-settings,.nexus-integration-hidden,[data-nexus-account],[data-nexus-login],#nexus-account-panel,#nexus-auth-panel { display:none !important; }
+
+@media (max-width:760px) {
+  .recommended-mod-card {
+    grid-template-columns:26px minmax(0,1fr) auto !important;
+    gap:7px !important;
+  }
+  .recommended-mod-icon { width:24px !important; height:24px !important; min-width:24px !important; }
+  .recommended-mod-card > .status-pill { font-size:9px; }
+  .recommended-mod-card > .btn { grid-column:2/-1; justify-self:end; margin-top:-2px !important; }
+  .release-mod-world { align-items:flex-start; flex-direction:column; }
+}

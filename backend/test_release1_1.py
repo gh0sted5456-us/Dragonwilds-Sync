@@ -108,7 +108,7 @@ def main():
     assert "Server Number / Instance" in renderer
     assert "27050 + Number" in renderer
     assert "task-graph-grid" in renderer
-    assert "singleplayer.broadcast" in renderer and "server.world.broadcast" in renderer
+    assert "singleplayer.broadcast" in renderer and "server.runtime.start" in renderer
     assert "Shared Worlds Feed" not in renderer
     assert not (project / "resources/webhost").exists()
     assert (project / "docs/RSDWL_V3_PROFILE_BUNDLE.md").is_file()

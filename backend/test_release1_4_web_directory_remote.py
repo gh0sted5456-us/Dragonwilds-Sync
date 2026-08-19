@@ -7,7 +7,9 @@ import urllib.request
 from pathlib import Path
 
 import directory_host
-from dragonwilds_service import _directory_join_catalog_world
+# The V2 wrapper re-exports the legacy engine with ``import *``, which skips
+# underscore-private helpers. Historical internals live in the legacy module.
+from dragonwilds_service_legacy import _directory_join_catalog_world
 
 
 def _free_port():
@@ -33,7 +35,7 @@ def test_public_catalog_remote_login_audit_and_structured_action():
              "description": "Hydrated World", "source": "manifest"},
         ])
         controller.set_remote_admin_callbacks(
-            authenticate=lambda name, username, password: {"ok": name == "Ashen Home" and not username and password == "admin-secret", "world_id": "profile-1", "world_name": "Ashen Home", "username": "owner", "role": "owner", "permissions": {"write_config": False}},
+            authenticate=lambda name, username, password: {"ok": name == "Ashen Home" and not username and password == "admin-secret", "world_id": "profile-1", "world_name": "Ashen Home", "username": "owner", "role": "owner", "permissions": {**directory_host.REMOTE_PERMISSION_DEFAULTS, "write_config": False}},
             state=lambda _world_id: {"profile": {"world_name": "Ashen Home"}, "runtime": {"running": False}},
             action=lambda world_id, action, payload: actions.append((world_id, action, payload)) or {"accepted": True},
         )
@@ -85,6 +87,8 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'id="web-language"' in portal and b"Browser language" in portal
             assert b'id="dws-project-info"' in portal and b'installWorldCommunity' in portal
             assert b'background-size:100% 100%' not in portal
+            for label in (b"Start", b"Stop", b"Restart", b"Update"):
+                assert label in portal
             detail_page = directory_host.detail_html("sync-1")
             assert b'dragonwilds-sync://join' in detail_page and b'data-device="mobile"' in detail_page
 
@@ -94,11 +98,31 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             with opener.open(base + "/api/v1/admin/session") as response: session = json.load(response)
             assert session["session"]["world_id"] == "profile-1"
             assert session["permissions"]["write_config"] is False
+            assert session["permissions"]["start"] and session["permissions"]["stop"] and session["permissions"]["restart"] and session["permissions"]["update"]
             assert session["audit"][0]["action"] == "login_succeeded"
-            action = urllib.request.Request(base + "/api/v1/admin/action", method="POST", data=b'{"action":"refresh"}',
-                                            headers={"Content-Type": "application/json", "X-DWS-CSRF": session["csrf"]})
-            with opener.open(action) as response: assert json.load(response)["ok"] is True
-            assert actions == [("profile-1", "refresh", {})]
+
+            def remote_action(name, payload=None):
+                request = urllib.request.Request(
+                    base + "/api/v1/admin/action", method="POST",
+                    data=json.dumps({"action": name, **({"payload": payload} if payload is not None else {})}).encode(),
+                    headers={"Content-Type": "application/json", "X-DWS-CSRF": session["csrf"]},
+                )
+                with opener.open(request) as response:
+                    result = json.load(response)
+                assert result["ok"] is True
+
+            remote_action("refresh")
+            for lifecycle_action in ("start", "stop", "restart", "update", "update_restart"):
+                remote_action(lifecycle_action)
+            assert actions == [
+                ("profile-1", "refresh", {}),
+                ("profile-1", "start", {}),
+                ("profile-1", "stop", {}),
+                ("profile-1", "restart", {}),
+                ("profile-1", "update", {}),
+                ("profile-1", "update_restart", {}),
+            ]
+
             denied = urllib.request.Request(base + "/api/v1/admin/action", method="POST",
                                             data=b'{"action":"config_save","payload":{"relative_path":"x.ini","content":"blocked"}}',
                                             headers={"Content-Type": "application/json", "X-DWS-CSRF": session["csrf"]})
@@ -137,4 +161,4 @@ def test_public_catalog_remote_login_audit_and_structured_action():
 
 if __name__ == "__main__":
     test_public_catalog_remote_login_audit_and_structured_action()
-    print("release 1.4 public catalog and remote Server Admin tests passed")
+    print("release 1.4 public catalog and remote lifecycle/admin tests passed")

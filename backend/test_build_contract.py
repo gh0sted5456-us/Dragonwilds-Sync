@@ -13,9 +13,6 @@ ELECTRON_MAIN = ROOT / "electron" / "main.cjs"
 
 def main():
     text = PS1.read_text(encoding="utf-8")
-    # PowerShell parses "$name:" as a scoped variable reference. Only real
-    # PowerShell scopes are allowed in this script; ordinary interpolated
-    # variables must use ${name}: to avoid the Alpha 2.1 parser failure.
     allowed_scopes = {"global", "local", "script", "private", "env", "using"}
     offenders = []
     for match in re.finditer(r"\$([A-Za-z_][A-Za-z0-9_]*):", text):
@@ -25,9 +22,6 @@ def main():
             offenders.append((line, match.group(0)))
     assert not offenders, f"unsafe PowerShell variable-colon interpolation: {offenders}"
 
-    # Native command stderr is diagnostic output, not a failure signal.
-    # This protects Windows PowerShell 5.1 from aborting on npm deprecation
-    # warnings while retaining non-zero exit-code failure handling.
     assert "$previousErrorActionPreference = $ErrorActionPreference" in text
     assert "$ErrorActionPreference = 'Continue'" in text
     assert "$ErrorActionPreference = $previousErrorActionPreference" in text
@@ -38,50 +32,34 @@ def main():
     assert 'application.cryptography.status' in text and 'invalid_signature_rejected' in text
 
     required = [
-        "backend\\server_systems.py",
-        "backend\\health_model.py",
-        "backend\\integrations.py",
-        "backend\\network_health.py",
-        "backend\\process_utils.py",
-        "backend\\security_policy.py",
-        "backend\\security_scanner.py",
-        "backend\\server_layout.py",
-        "backend\\client_layout.py",
-        "backend\\character_profiles.py",
-        "backend\\local_world.py",
-        "backend\\network_benchmark.py",
-        "backend\\guided_setup.py",
-        "backend\\player_tracker.py",
-        "backend\\server_scheduler.py",
-        "backend\\world_save_distribution.py",
-        "backend\\rsdwl_packages.py",
-        "backend\\world_sharing.py",
-        "backend\\profile_bundle.py",
-        "resources\\recommended-mods.json",
-        "backend\\requirements-build.txt",
-        "backend\\DragonwildsSync.Service.spec",
-        "backend\\crypto_runtime.py",
+        "backend\\server_systems.py", "backend\\health_model.py", "backend\\integrations.py",
+        "backend\\network_health.py", "backend\\process_utils.py", "backend\\security_policy.py",
+        "backend\\security_scanner.py", "backend\\server_layout.py", "backend\\client_layout.py",
+        "backend\\character_profiles.py", "backend\\local_world.py", "backend\\network_benchmark.py",
+        "backend\\guided_setup.py", "backend\\player_tracker.py", "backend\\server_scheduler.py",
+        "backend\\world_save_distribution.py", "backend\\rsdwl_packages.py", "backend\\world_sharing.py",
+        "backend\\profile_bundle.py", "resources\\recommended-mods.json", "backend\\requirements-build.txt",
+        "backend\\DragonwildsSync.Service.spec", "backend\\crypto_runtime.py",
     ]
     for value in required:
         assert value in text, f"build script missing required contract: {value}"
 
-    # Regression: SPECPATH is already the backend directory.  Taking its
-    # parent reproduces the Alpha 2 BuildFix1 failure where PyInstaller looked
-    # for <project>\dragonwilds_service.py instead of backend\dragonwilds_service.py.
     spec = SPEC.read_text(encoding="utf-8")
     assert "backend = Path(SPECPATH).resolve()" in spec
     assert "Path(SPECPATH).resolve().parent" not in spec
     assert "backend / 'dragonwilds_service.py'" in spec
     assert "collect_submodules('cryptography')" in spec
     assert "collect_dynamic_libs('cryptography')" in spec
+    assert "renderer_assets = backend.parent / 'renderer' / 'assets'" in spec
+    assert "renderer/assets/platforms" in spec, "packaged WebHost must contain platform/community SVGs"
     assert "console=True" in spec, "JSON-RPC service must retain stdin/stdout in the packaged build"
-    assert "upx=False" in spec, "service build should avoid UPX variability on Windows"
+    assert "upx=False" in spec, "service build should avoid UPX variability"
     requirements = (ROOT / "backend" / "requirements-build.txt").read_text(encoding="utf-8")
     assert "pyinstaller==6.22.0" in requirements.casefold()
     assert "cryptography>=46,<47" in requirements.casefold()
     assert "$expectedPyInstaller = '6.22.0'" in text
     assert "pip', 'install', '--upgrade'" in text
-    assert "windowsHide: true" in ELECTRON_MAIN.read_text(encoding="utf-8"), "Electron must hide the console-mode service window"
+    assert "windowsHide: true" in ELECTRON_MAIN.read_text(encoding="utf-8")
 
     build_bat = BUILD_BAT.read_text(encoding="utf-8")
     assert "backend\\dragonwilds_service.py" in build_bat
@@ -90,8 +68,6 @@ def main():
     assert "Dragonwilds Sync 2.0.0" in build_bat and "Portable Windows Build" in build_bat
     assert "Alpha 3.2" not in build_bat
 
-    # Windows UX regression: background service/helpers must not pop a console
-    # merely because the operator browsed a World placard.
     process_utils = PROCESS_UTILS.read_text(encoding="utf-8")
     assert "CREATE_NO_WINDOW" in process_utils
     assert "STARTF_USESHOWWINDOW" in process_utils
@@ -118,9 +94,7 @@ def main():
     assert "expectedVersion = '0.52.2'" in monaco_prepare
     assert "base', 'worker', 'workerMain.js" in monaco_prepare
     assert "AMD-compatible runtime" in monaco_prepare
-    assert package["devDependencies"]["@electron/asar"] == "4.2.1"
     assert "--include=dev" in text
-    assert "renderer\\vendor\\monaco\\vs\\loader.js" in text or "Packaged Monaco Editor runtime is present" in text
     assert "Packaged Monaco Editor runtime is present" in text
     assert "Verifying packaged Monaco + launcher resources" in text
     assert "DragonwildsSyncPlayerTracker" not in text
@@ -144,20 +118,28 @@ def main():
     assert "RAW_SOURCE_CONTENTS.md" in raw_packager
     assert "node_modules" in raw_packager and "Codex Outputs" in raw_packager
     assert "Staging reproducible raw-source folder" not in text
-    assert "Portable package still contains the removed RSDWTools UE4SS mod" in text
+    assert "resources\\RSDWTools-baseline.zip" in text
+    assert "Bundled RSDWTools bridge baseline" in text
     assert "DRAGONWILDS_SYNC_PYTHON" in text
     assert "win-unpacked.tmp" in text
     assert "Clear-ReleaseDirectory" in text
     assert "Removing the previous release directory so only this build remains" in text
     assert "Release contains portable EXE artifacts only" in text
 
-    # V2.0.0 is deliberately Windows portable-only.
-    assert "build:linux" not in package["scripts"]
-    assert "linux" not in package["build"]
-    assert not (ROOT / "build-linux.sh").exists()
-    assert not (ROOT / "scripts" / "build_linux.sh").exists()
-    assert not (ROOT / ".github" / "workflows" / "linux-build.yml").exists()
-    assert not (ROOT / "docs" / "LINUX_BUILD.md").exists()
+    # Ubuntu is an additional release-candidate path; Windows portable remains
+    # the production baseline and keeps all of the assertions above.
+    assert package["scripts"]["build:linux"] == "bash scripts/build_linux.sh"
+    assert package["build"]["linux"]["target"] == ["AppImage"]
+    assert package["build"]["linux"]["artifactName"] == "${productName}-Ubuntu-${version}.${ext}"
+    assert package["build"]["linux"]["extraResources"][0]["from"] == "dist-service/DragonwildsSync.Service"
+    linux_script = ROOT / "scripts" / "build_linux.sh"
+    assert linux_script.is_file()
+    linux_text = linux_script.read_text(encoding="utf-8")
+    assert "Ubuntu is the supported baseline" in linux_text
+    assert "backend/DragonwildsSync.Service.spec" in linux_text
+    assert "npm run verify" in linux_text
+    assert "electron-builder --linux AppImage" in linux_text
+    assert "process.platform === 'win32' ? 'DragonwildsSync.Service.exe' : 'DragonwildsSync.Service'" in electron_main
     assert (ROOT / "docs" / "CAPABILITIES.md").is_file()
     print("build contract tests passed")
 

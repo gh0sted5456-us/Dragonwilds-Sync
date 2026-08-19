@@ -18,7 +18,10 @@ def main():
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")
-    service = (ROOT / "backend/dragonwilds_service.py").read_text(encoding="utf-8")
+    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
+    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    service = ((ROOT / "backend/dragonwilds_service.py").read_text(encoding="utf-8")
+               + (ROOT / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
     network = (ROOT / "backend/network_client.py").read_text(encoding="utf-8")
     server_systems = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
     main_js = (ROOT / "electron/main.cjs").read_text(encoding="utf-8")
@@ -44,7 +47,10 @@ def main():
     assert 'page.replace(b\'<button data-tab="map">Live Map</button>\'' not in directory_web
     assert "${tabButton('spawner',t('spawner'))}" not in renderer
     assert "${tabButton('console','Console')}" in renderer
-    assert "RSDW Toolkit game console" in directory_web
+    # The WebGUI console was superseded by the unified GAME/SERVER/SYNC operator
+    # view. It still fronts RSDW game commands and must never become an OS shell.
+    assert "Unified Console" in directory_web
+    assert "RSDW game commands" in directory_web and "never an operating-system shell" in directory_web
     assert "tabButton('broadcast','Broadcast')" in renderer
     assert "Convert to Server" in renderer and "Convert to Singleplayer" in renderer
     assert "Merge Changes" in renderer and "Archive World" in renderer

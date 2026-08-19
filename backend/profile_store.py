@@ -199,13 +199,13 @@ def default_state() -> dict:
             "keep_core_persistent": False,
             "background_server_checks": True,
             "network_diagnostics_enabled": True,
-            "defender_review_enabled": True,
+            "defender_review_enabled": False,
             "performance": {"hardware_acceleration": True, "renderer_memory_mb": 0},
             "rsdw_cache": {"repo": "RSDWArchive/RSDWTools", "branch": "main", "model_repo": "RSDWArchive/RSDWModel", "model_branch": "main", "refresh_after_updates": True, "auto_refresh": True, "refresh_hours": 24},
             "world_discovery": {"enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": "", "directory_token": "", "directory_sources": [], "last_refresh_at": None},
             "recommended_mods": {"creator_feed_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/recommended-mods.json", "community_sources": [], "feeds": [], "mods": [], "last_refresh_at": None, "last_error": "", "nexus_activity_url": "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"},
             "world_directory_host": {"identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": 27080, "public_base_url": "", "directory_enabled": True, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False, "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct", "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
-                                     "remote_admin": {"enabled": True, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "refresh": True}}},
+                                     "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "refresh": True}}},
             # Legacy migration-only shape. The static Shared Worlds webhost UI/resource is retired in Release 1.1.
             "shared_worlds": {"feed_url": "", "feed_token": "", "auto_refresh": False, "refresh_minutes": 15, "last_refresh_at": None, "last_error": ""},
             "advanced": {"multiple_servers_enabled": False, "webhost_enabled": False, "remote_server_enabled": False},
@@ -218,6 +218,7 @@ def default_state() -> dict:
             "server_network_benchmark": {"enabled": True, "interval_hours": 24, "profile": "light", "last_run_at": None, "last_result": {}},
             "external_server_hierarchy": {"enabled": True, "provider": "shrug.games", "base_url": "https://shrug.games/games/runescape-dragonwilds/servers/"},
             "integrations": default_integrations(),
+            "communities": [],
             "server_access_policy": default_access_policy(),
             "client_network_profile": normalize_network_evidence({}),
             "server_install": {
@@ -637,7 +638,7 @@ def create_server_profile(name: str) -> str:
     instance_number = max(existing_numbers, default=0) + 1
     game_port = effective_game_port(instance_number)
     save_server_profile(profile_id, {
-        "name": world_name, "description": "", "community_rules": "", "tags": [], "icon_b64": "", "banner_b64": "",
+        "name": world_name, "description": "", "community_rules": "", "tags": [], "icon_b64": "", "banner_b64": "", "placard_background": "1",
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "dedicated", "visibility": "public", "declared": True}),
         "audience": "general",
         "platform_compatibility": {"pc": True, "steam": True, "epic": True, "nintendo": False, "playstation": False, "xbox": False},

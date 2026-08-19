@@ -43,6 +43,23 @@ def main() -> None:
         assert layout.savegames_dir == save_dir
         assert layout.server_exe == exe
 
+        # Full Setup creates SteamCMD below the administrator-selected server
+        # folder. Selecting that parent (including a mapped/UNC share in real
+        # use) must match the one canonical suffix and never mistake the parent
+        # for the game root.
+        selected_parent = root / "Dragonwilds Server"
+        parent_layout = resolve_server_layout(selected_parent)
+        assert parent_layout.install_root == install
+        assert parent_layout.game_root == game
+        assert str(parent_layout.install_root).endswith(
+            str(Path("steamcmd") / "steamapps" / "common" / "RuneScape Dragonwilds Dedicated Server")
+        )
+        if not NATIVE_LINUX:
+            planned_parent = root / "New Dedicated Host"
+            planned_parent.mkdir()
+            planned = resolve_server_layout(planned_parent)
+            assert planned.install_root == planned_parent / "steamcmd" / "steamapps" / "common" / "RuneScape Dragonwilds Dedicated Server"
+
         old_profile_store = profile_store.SERVER_PROFILES_DIR
         old_engine_store = server_engine.SERVER_PROFILES_DIR
         profile_store.SERVER_PROFILES_DIR = root / "appdata" / "server_profiles"

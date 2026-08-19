@@ -5,21 +5,25 @@ const invokeInFlight = new Map();
 const invokeActivityListeners = new Set();
 const invokeMetrics = [];
 const MAX_METRICS = 160;
+let cacheGeneration = 0;
 
 const READ_POLICIES = Object.freeze({
   'characters.list': { ttl: 5000, stale: 0 },
-  'singleplayer.inventory': { ttl: 3500, stale: 12000 },
-  'server.world.inventory': { ttl: 3500, stale: 12000 },
-  'singleplayer.config.list': { ttl: 5000, stale: 15000 },
-  'server.world.config.list': { ttl: 5000, stale: 15000 },
-  'server.world.save.status': { ttl: 3500, stale: 10000 },
-  'server.backups.list': { ttl: 5000, stale: 15000 },
-  'server.world.starter_characters.list': { ttl: 5000, stale: 12000 },
-  'server.world.character_submissions.list': { ttl: 5000, stale: 12000 },
-  'server.feedback.list': { ttl: 4000, stale: 10000 },
-  'server.access.connections': { ttl: 2000, stale: 5000 },
+  'singleplayer.inventory': { ttl: 3500, stale: 0 },
+  'server.world.inventory': { ttl: 3500, stale: 0 },
+  'singleplayer.config.list': { ttl: 5000, stale: 0 },
+  'server.world.config.list': { ttl: 5000, stale: 0 },
+  'singleplayer.mod.files': { ttl: 5000, stale: 0 },
+  'singleplayer.profile.get': { ttl: 5000, stale: 0 },
+  'world.save.editor.read': { ttl: 3000, stale: 0 },
+  'server.world.save.status': { ttl: 3500, stale: 0 },
+  'server.backups.list': { ttl: 5000, stale: 0 },
+  'server.world.starter_characters.list': { ttl: 5000, stale: 0 },
+  'server.world.character_submissions.list': { ttl: 5000, stale: 0 },
+  'server.feedback.list': { ttl: 4000, stale: 0 },
+  'server.access.connections': { ttl: 2000, stale: 0 },
   'server.spawner.catalog': { ttl: 10000, stale: 30000 },
-  'server.console.catalog': { ttl: 1500, stale: 3500 },
+  'server.console.catalog': { ttl: 1500, stale: 0 },
   'application.map.status': { ttl: 15000, stale: 60000 },
   'application.map.overlays': { ttl: 60000, stale: 300000 },
   'application.rsdw.status': { ttl: 15000, stale: 60000 },
@@ -81,7 +85,12 @@ function recordMetric(metric) {
 }
 
 function invalidatePrefix(prefix) {
+  cacheGeneration += 1;
   for (const key of [...invokeCache.keys()]) if (key.startsWith(prefix)) invokeCache.delete(key);
+  // A read that began before a mutation must not become the new cache authority
+  // after the mutation completes. Dropping its in-flight key allows a fresh read;
+  // generation checks below prevent the old promise from repopulating cache.
+  for (const key of [...invokeInFlight.keys()]) if (key.startsWith(prefix)) invokeInFlight.delete(key);
 }
 
 function invalidateMethod(method) {
@@ -94,12 +103,15 @@ function invalidateAfterMutation(method) {
   if (name.startsWith('singleplayer.mod.') || name.startsWith('singleplayer.profile.') || name.startsWith('singleplayer.config.')) {
     invalidatePrefix('singleplayer.inventory::');
     invalidatePrefix('singleplayer.config.list::');
+    invalidatePrefix('singleplayer.mod.files::');
+    invalidatePrefix('singleplayer.profile.get::');
   }
   if (name.startsWith('server.world.mod.') || name.startsWith('server.world.activate') || name.startsWith('server.world.update')) {
     invalidatePrefix('server.world.inventory::');
   }
   if (name.startsWith('server.world.config.') && name !== 'server.world.config.list') invalidatePrefix('server.world.config.list::');
   if (name.startsWith('server.backups.') && name !== 'server.backups.list') invalidatePrefix('server.backups.list::');
+  if (name.startsWith('world.save.')) invalidatePrefix('world.save.editor.read::');
   if (name.startsWith('world.save.') || name.startsWith('server.world.save.')) invalidatePrefix('server.world.save.status::');
   if (name === 'application.rsdw.refresh') invalidatePrefix('application.rsdw.status::');
   if (name === 'application.map.refresh') {
@@ -127,10 +139,15 @@ async function rawInvoke(method, params = {}, meta = {}) {
 
 function refreshCachedRead(method, params, key, background = false) {
   if (invokeInFlight.has(key)) return invokeInFlight.get(key);
+  const generation = cacheGeneration;
   const pending = rawInvoke(method, params, { key, background }).then((result) => {
-    invokeCache.set(key, { value: cacheSafeValue(result), storedAt: Date.now() });
+    if (generation === cacheGeneration && invokeInFlight.get(key) === pending) {
+      invokeCache.set(key, { value: cacheSafeValue(result), storedAt: Date.now() });
+    }
     return cloneValue(result);
-  }).finally(() => invokeInFlight.delete(key));
+  }).finally(() => {
+    if (invokeInFlight.get(key) === pending) invokeInFlight.delete(key);
+  });
   invokeInFlight.set(key, pending);
   return pending;
 }
@@ -197,7 +214,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   invoke: (method, params = {}) => coordinatedInvoke(method, params),
   prewarm: (requests = []) => prewarmRequests(requests),
   requestStats: () => cloneValue(invokeMetrics),
-  clearRequestCache: () => { invokeCache.clear(); return true; },
+  clearRequestCache: () => { cacheGeneration += 1; invokeCache.clear(); invokeInFlight.clear(); return true; },
   onRequestActivity: (callback) => {
     if (typeof callback !== 'function') return () => {};
     invokeActivityListeners.add(callback);

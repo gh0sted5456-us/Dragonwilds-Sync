@@ -321,12 +321,12 @@ async function loadLatestRelease() {
     const date = new Date(release.published_at || release.created_at);
     releaseVersion.textContent = safeText(release.tag_name || release.name, 'Latest');
     releaseDate.textContent = Number.isNaN(date.getTime()) ? 'GitHub Releases' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    releaseChannel.textContent = release.prerelease ? 'Pre-release' : 'Stable';
+    releaseChannel.textContent = 'Main';
     if (release.html_url) releaseLink.href = release.html_url;
   } catch (_) {
     releaseVersion.textContent = 'Latest available';
     releaseDate.textContent = 'GitHub Releases';
-    releaseChannel.textContent = 'Development';
+    releaseChannel.textContent = 'Main';
   }
 }
 

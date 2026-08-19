@@ -25,10 +25,9 @@ need('PROJECT_STATE/RUNTIME_WORKER_PHASE2.md', ['Completed','Processes Added','P
 
 if (protocol.includes('pickle.') || protocol.includes('.send(') || protocol.includes('.recv()')) failures.push('worker protocol must exchange bounded JSON bytes, not pickle objects');
 if (/socket\.(?:AF_INET|AF_INET6)/.test(protocol) || /localhost|127\.0\.0\.1/.test(protocol)) failures.push('worker control IPC must not use a normal TCP listener');
-// The historical foundation guarantee is launch-on-command, not a permanent
-// ban on runtime support. Phase 5 may lazy-load the retained ServerEngine only
-// after START_RUNTIME; module import/spawn itself must remain lightweight.
-if (/^\s*(?:from|import)\s+(?:server_engine|runtime_manager|network_service)\b/m.test(worker)) {
+// Reject only column-zero runtime imports. Indented imports are the intentional
+// Phase 5 lazy path executed after an authenticated START_RUNTIME command.
+if (/^(?:from|import)\s+(?:server_engine|runtime_manager|network_service)\b/m.test(worker)) {
   failures.push('runtime modules must not be imported eagerly at worker module load time');
 }
 if (supervisor.includes('env[WORKER_AUTH_ENV]') && supervisor.includes('worker_args') && /worker_args[^\n]*auth_token/.test(supervisor)) failures.push('plaintext worker auth token must not be placed on command line');

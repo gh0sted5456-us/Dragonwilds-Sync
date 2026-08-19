@@ -21,6 +21,9 @@ _STYLE = r'''<style>.dws-audience{display:inline-flex;align-items:center;gap:5px
 
 _DETAIL_GUARD = r'''<script>(function(){function prune(){document.querySelectorAll('.all-world-metadata').forEach(function(n){n.remove()});document.querySelectorAll('.detail-actions a').forEach(function(n){if(/metadata json/i.test(n.textContent||''))n.remove()})}prune();new MutationObserver(prune).observe(document.documentElement,{childList:true,subtree:true})})();</script>'''
 
+_REMOTE_ROUTE_OLD = "if(!remote.enabled||!endpoint)throw Error('That World is not currently advertising Remote Server management.');"
+_REMOTE_ROUTE_NEW = "if(!remote.configured&&!remote.enabled)throw Error('Remote Server management is disabled on that World.');if(!remote.enabled||!endpoint)throw Error('Remote Server management is enabled, but this heartbeat does not yet advertise a usable public WebHost endpoint. Verify the public WebHost address and refresh the heartbeat.');"
+
 
 def _sanitize_public_world(row: dict) -> dict:
     if not isinstance(row, dict): return {}
@@ -40,6 +43,7 @@ def _decorate(page: bytes, *, public_browser: bool = False, detail: bool = False
         text = text.replace('<a href="/api/v1">API</a>', '')
         text = text.replace('<span class="badge good">🛡 Kid-Friendly</span>', _KID_BADGE)
         text = text.replace('<span class="badge plain">18+ Adults Only</span>', _ADULT_BADGE)
+        text = text.replace(_REMOTE_ROUTE_OLD, _REMOTE_ROUTE_NEW)
     if detail and "dws-detail-guard" not in text:
         text = text.replace("</body>", '<span id="dws-detail-guard" hidden></span>' + _DETAIL_GUARD + "</body>")
     if "dws-audience" in text: text = text.replace("</head>", _STYLE + "</head>")

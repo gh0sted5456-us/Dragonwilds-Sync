@@ -31,11 +31,14 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Verify V3 Phase 1 contract
+      - name: Verify V3 Phase 1-2 contracts
         run: |
           python -m pip install "cryptography>=46,<47"
           node scripts/check_v3_phase1.cjs
           python backend/test_v3_phase1.py
+          node scripts/check_v3_phase2.cjs
+          python backend/test_v3_phase2.py
+          node --check cloudflare/dragonwilds-sync-directory/worker.js
       - name: Install headless GUI prerequisites
         run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
       - name: Build Ubuntu package
@@ -73,7 +76,7 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Verify V3 Phase 1 contract
+      - name: Verify V3 Phase 1-2 contracts
         shell: powershell
         run: |
           python -m pip install "cryptography>=46,<47"
@@ -82,13 +85,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python backend/test_v3_phase1.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts/check_v3_phase2.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend/test_v3_phase2.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check cloudflare/dragonwilds-sync-directory/worker.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build and verify portable package
         shell: powershell
         run: |
           $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
-          # Windows PowerShell 5.1 can prefix strings piped to native commands
-          # with a UTF-8 BOM on newer Server runners. The packaged service uses
-          # newline-delimited JSON-RPC, so keep the build probe BOM-less.
           $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
           & .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -104,12 +110,14 @@ jobs:
             '',
             'PASS  Node 24 LTS runtime gate',
             'PASS  V3 Phase 1 contract',
+            'PASS  V3 Phase 2 contract',
             'PASS  npm run verify (build gate)',
             'PASS  Packaged service JSON-RPC stdio (build gate)',
             'PASS  Packaged Ed25519 self-test (build gate)',
             'PASS  Packaged launcher/resource validation (build gate)',
             'NOT RUN  Real Dragonwilds game launch',
             'NOT RUN  Cross-platform Ubuntu-host sync test',
+            'NOT RUN  Production Cloudflare V3 route deployment',
             '',
             'Automated package result: READY FOR CLEAN-VM / GAME INTEGRATION TESTING'
           ) | Set-Content .\release\package-test-report-windows.txt -Encoding UTF8
@@ -133,5 +141,5 @@ jobs:
     steps:
       - run: |
           echo 'Both packaged release-candidate jobs passed on the pinned Node 24 LTS toolchain.'
-          echo 'V3 Phase 1 contract passed on both package platforms.'
-          echo 'Real Dragonwilds and cross-platform acceptance remain manual gates.'
+          echo 'V3 Phase 1 and Phase 2 contracts passed on both package platforms.'
+          echo 'Production Cloudflare V3 route deployment and real Dragonwilds/cross-platform acceptance remain external gates.'

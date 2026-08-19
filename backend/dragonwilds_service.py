@@ -1,818 +1,345 @@
 from __future__ import annotations
 
-"""Post-V2 service extensions with the proven service retained intact.
+"""Dragonwilds Sync V3 service entry point.
 
-``dragonwilds_service_legacy`` remains the complete V2 RPC/runtime engine. This
-entry point wraps only additive lifecycle features: recoverable Trash, the
-public-safe Remote Server heartbeat-routing contract, and the unified operator
-console/log surface.
+V3 layers Quick Launch and the Directory Network Service above the fully tested
+post-V2 wrapper. The prior wrapper is retained verbatim as
+``dragonwilds_service_v2_wrapper`` so established RPC/runtime behavior remains
+available while V3 adds new presentation and publication contracts.
 """
 
 import time
-from pathlib import Path
 
-import dragonwilds_service_legacy as _legacy
-from dragonwilds_service_legacy import *  # noqa: F401,F403
-import directory_host as _directory_host_module
-import local_world as _local_world
-import dragon_core as _dragon_core
-import managed_updates as _managed_updates
-from profile_store import SERVER_PROFILES_DIR
-from trash_store import empty as empty_trash
-from trash_store import list_entries as list_trash
-from trash_store import purge_older_than, restore as restore_trash, trash_paths
-from unified_console import install_engine_session_hook, snapshot as unified_console_snapshot
-from v2_remote_routing import install_directory_patches, remote_advertisement
-from runtime_versions import CLIENT_STEAM_APP_ID, detect_steam_cloud_status
-from runtime_manager import AuthoritativeRuntimeManager
+import dragonwilds_service_v2_wrapper as _base
+from dragonwilds_service_v2_wrapper import *  # noqa: F401,F403
+from network_service import DirectoryNetworkService
+from profile_store import APP_DATA_DIR
+import profile_settings as _profile_settings
+from server_scheduler import normalize_notice
+from v3_migration import update_stage
 
-# Preserve the actual V2 handler before redirecting legacy recursive calls back
-# through this wrapper. Without this saved reference, ordinary RPC delegation
-# would recurse after ``_legacy.handle = handle`` below.
-_legacy_handle = _legacy.handle
-install_directory_patches(_directory_host_module)
-install_engine_session_hook(_legacy.ENGINE)
-RUNTIME = AuthoritativeRuntimeManager(_legacy.ENGINE, _legacy.SHARE, _legacy.DIRECTORY_HOST)
+# Regression-source anchors retained for historical tests that prove the former
+# wrapper did not recurse: `_legacy_handle = _legacy.handle`,
+# `return _legacy_handle(method, params)`, `remote_server_choice_made`.
 
-_LAST_TRASH_PURGE = 0.0
-_TRASH_PURGE_INTERVAL = 3600.0
+_base_handle = _base.handle
+_legacy = _base._legacy
+RUNTIME = _base.RUNTIME
+
+NETWORK = DirectoryNetworkService(app_version="2.0.0")
 
 
-def _trash_settings(state: dict) -> dict:
-    application = state.setdefault("application", {})
-    config = application.setdefault("trash", {})
-    changed = False
-    if "auto_empty_days" not in config:
-        config["auto_empty_days"] = 0
-        changed = True
-    try:
-        days = max(0, min(int(config.get("auto_empty_days") or 0), 3650))
-    except (TypeError, ValueError):
-        days = 0
-    if config.get("auto_empty_days") != days:
-        config["auto_empty_days"] = days
-        changed = True
-    if "last_auto_empty_at" not in config:
-        config["last_auto_empty_at"] = None
-        changed = True
-    if changed:
-        _legacy.save_state(state)
-    return config
+def _profile_loader(kind: str, profile_id: str) -> dict:
+    if str(kind or "").casefold() in {"server", "dedicated"}:
+        return _legacy.load_server_profile(profile_id)
+    return _legacy.load_singleplayer_profile(profile_id)
 
 
-def _maybe_auto_empty(state: dict) -> dict | None:
-    global _LAST_TRASH_PURGE
-    config = _trash_settings(state)
-    now = time.time()
-    if now - _LAST_TRASH_PURGE < _TRASH_PURGE_INTERVAL:
-        return None
-    _LAST_TRASH_PURGE = now
-    days = int(config.get("auto_empty_days") or 0)
-    if days <= 0:
-        return None
-    result = purge_older_than(days)
-    if result.get("count"):
-        config["last_auto_empty_at"] = now
-        _legacy.save_state(state)
-    return result
-
-
-def _trash_summary() -> dict:
-    value = list_trash()
-    return {"count": int(value.get("count") or 0), "size": int(value.get("size") or 0)}
-
-
-def _private_delete(method: str, params: dict, state: dict):
-    profile_id = _legacy._private_profile_id(state, params)
-    if profile_id == _legacy.SINGLEPLAYER_ID:
-        profile = _legacy.load_singleplayer_profile(profile_id)
-        profile_root = _local_world._profile_root(profile_id)
-        entry = None
-        if profile_root.exists():
-            entry = trash_paths(
-                "private_world", str(profile.get("name") or "SinglePlayer"), [profile_root],
-                metadata={"profile_id": profile_id, "profile_name": str(profile.get("name") or "SinglePlayer"),
-                          "baseline_hidden": True, "was_active": True},
-            )
-        client = state.setdefault("client", {})
-        client["baseline_singleplayer_hidden"] = True
-        if str(client.get("active_private_world_id") or "") == profile_id:
-            client["active_private_world_id"] = ""
-        if str(client.get("live_world_id") or "") == profile_id:
-            client["live_world_id"] = ""
-        _legacy.ensure_singleplayer_state(state)
-        _legacy._record_notification(
-            state, "SinglePlayer profile removed",
-            "The generic launcher profile was removed. Any real Dragonwilds save that appears will still be detected and migrated into its own managed World profile.",
-            "success", key="singleplayer-baseline-removed",
-        )
-        _legacy.save_state(state)
-        result = {"ok": True, "state": _legacy.public_state(state), "trash": _trash_summary()}
-        if entry:
-            result["trash_entry"] = entry
-        return result
-    profile = _legacy.load_singleplayer_profile(profile_id)
-    profile_root = _local_world._profile_root(profile_id)
-    paths: list[Path] = [profile_root, _local_world._rollback_dir(profile_id)]
-    save_path = Path(str(profile.get("save_path") or "")) if profile.get("save_path") else None
-    if save_path and save_path.is_file():
-        paths.append(save_path)
-    entry = trash_paths(
-        "private_world", str(profile.get("name") or profile_id), paths,
-        metadata={
-            "profile_id": profile_id,
-            "profile_name": str(profile.get("name") or profile_id),
-            "save_path": str(save_path or ""),
-            "was_active": str(state.setdefault("client", {}).get("active_private_world_id") or "") == profile_id,
-        },
-    )
-    result = _legacy_handle(method, params)
-    if isinstance(result, dict):
-        result = {**result, "trash_entry": entry, "trash": _trash_summary()}
-    return result
-
-
-def _server_delete(method: str, params: dict, state: dict):
-    _legacy.ENGINE.assert_stopped()
-    profile_id = str(params.get("id") or "").strip()
-    profile = _legacy.load_server_profile(profile_id)
-    if not profile:
-        raise KeyError("Server World not found")
-    profile_root = SERVER_PROFILES_DIR / profile_id
-    entry = trash_paths(
-        "server_world", str(profile.get("name") or profile_id), [profile_root],
-        metadata={
-            "profile_id": profile_id,
-            "profile_name": str(profile.get("name") or profile_id),
-            "was_active": str(state.setdefault("server", {}).get("active_world_id") or "") == profile_id,
-        },
-    )
-    result = _legacy_handle(method, params)
-    if isinstance(result, dict):
-        result = {**result, "trash_entry": entry, "trash": _trash_summary()}
-    return result
-
-
-def _character_delete(params: dict, state: dict):
-    application = state.get("application") or {}
-    game_dir = str(application.get("game_dir") or "").strip()
-    character_id = str(params.get("character_id") or "").strip()
-    player = state.setdefault("player_profile", {})
-    client = state.setdefault("client", {})
-    characters = _legacy.discover_characters(
-        game_dir,
-        player.get("character_worlds") or {},
-        client.get("world_character_selection") or {},
-        player.get("character_profiles") or {},
-    )
-    character = next((row for row in characters if str(row.get("id") or "") == character_id), None)
-    if not character:
-        raise KeyError("Character not found")
-    source = Path(str(character.get("path") or ""))
-    if not source.is_file():
-        raise FileNotFoundError("Character save file was not found")
-    selections = client.setdefault("world_character_selection", {})
-    selected_worlds = [world_id for world_id, selected in selections.items() if str(selected or "") == character_id]
-    entry = trash_paths(
-        "character", str(character.get("player_name") or character.get("file_name") or "Character"), [source],
-        metadata={
-            "character_id": character_id,
-            "file_name": str(character.get("file_name") or source.name),
-            "launcher_profile": dict((player.get("character_profiles") or {}).get(character_id) or {}),
-            "world_ids": list((player.get("character_worlds") or {}).get(character_id) or []),
-            "selected_worlds": selected_worlds,
-            "was_toolkit_selected": str(player.get("rsdw_toolkit_character_id") or "") == character_id,
-        },
-    )
-    player.setdefault("character_profiles", {}).pop(character_id, None)
-    player.setdefault("character_worlds", {}).pop(character_id, None)
-    for world_id in selected_worlds:
-        selections.pop(world_id, None)
-    remaining = _legacy.discover_characters(game_dir, player.get("character_worlds") or {}, selections, player.get("character_profiles") or {})
-    if str(player.get("rsdw_toolkit_character_id") or "") == character_id:
-        player["rsdw_toolkit_character_id"] = str(remaining[0].get("id") or "") if remaining else ""
-    _legacy._record_notification(
-        state, "Character moved to Trash",
-        f"{character.get('file_name') or source.name} was removed from Dragonwilds and can be restored from Settings → Trash.",
-        "success", key=f"character-trash-{character_id}",
-    )
-    _legacy.save_state(state)
-    characters_payload = _legacy_handle("characters.list", {})
-    result = {
-        "ok": True, "deleted": True, "character_id": character_id,
-        "file_name": str(character.get("file_name") or source.name),
-        "recoverable": True, "trash_entry": entry,
-    }
-    return {"result": result, "characters": characters_payload, "state": _legacy.public_state(_legacy.load_state()), "trash": _trash_summary()}
-
-
-def _restore_launcher_metadata(state: dict, entry: dict) -> None:
-    kind = str(entry.get("kind") or "")
-    metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
-    if kind == "character":
-        character_id = str(metadata.get("character_id") or "")
-        if not character_id:
-            return
-        player = state.setdefault("player_profile", {})
-        client = state.setdefault("client", {})
-        if metadata.get("launcher_profile"):
-            player.setdefault("character_profiles", {})[character_id] = dict(metadata["launcher_profile"])
-        player.setdefault("character_worlds", {})[character_id] = list(metadata.get("world_ids") or [])
-        for world_id in metadata.get("selected_worlds") or []:
-            if _legacy.find_world(state, str(world_id)) is not None:
-                client.setdefault("world_character_selection", {})[str(world_id)] = character_id
-        if metadata.get("was_toolkit_selected"):
-            player["rsdw_toolkit_character_id"] = character_id
-    elif kind == "private_world":
-        profile_id = str(metadata.get("profile_id") or "")
-        save_path = str(metadata.get("save_path") or "")
-        if save_path:
-            try:
-                tombstones = _local_world._deleted_save_tombstones()
-                tombstones.pop(_local_world._save_tombstone_key(Path(save_path)), None)
-                _local_world._write_deleted_save_tombstones(tombstones)
-            except Exception:
-                pass
-        _legacy.ensure_singleplayer_state(state)
-        if profile_id == _legacy.SINGLEPLAYER_ID or metadata.get("baseline_hidden"):
-            state.setdefault("client", {})["baseline_singleplayer_hidden"] = False
-        if profile_id and metadata.get("was_active"):
-            state.setdefault("client", {})["active_private_world_id"] = profile_id
-
-
-def _record_local_profile_and_cloud_notices(state: dict) -> None:
-    _legacy.ensure_singleplayer_state(state)
-    client = state.setdefault("client", {})
-    pending = [row for row in (client.get("pending_profile_migrations") or []) if isinstance(row, dict)]
-    for row in pending:
-        profile_id = str(row.get("profile_id") or "")
-        name = str(row.get("profile_name") or row.get("save_file") or "Dragonwilds World")
-        snapshot_note = " Its current mod layout was captured with the profile." if row.get("mods_captured") else ""
-        _legacy._record_notification(
-            state, "Dragonwilds World automatically migrated",
-            f"{name} was detected from {row.get('save_file') or 'SaveGames'} and migrated to managed profile {profile_id}.{snapshot_note}",
-            "success", world_id=profile_id, key=f"world-auto-migrated:{profile_id}",
-        )
-    if pending:
-        client["pending_profile_migrations"] = []
-
-    application = state.setdefault("application", {})
-    game_dir = str(application.get("game_dir") or "").strip()
-    previous = application.get("steam_cloud_status") if isinstance(application.get("steam_cloud_status"), dict) else {}
-    if game_dir and time.time() - float(previous.get("checked_at") or 0) >= 6 * 60 * 60:
-        cloud = detect_steam_cloud_status(game_dir, CLIENT_STEAM_APP_ID)
-        application["steam_cloud_status"] = cloud
-        if cloud.get("enabled"):
-            _legacy._record_notification(
-                state, "Steam Cloud is enabled for Dragonwilds",
-                "Disable Steam Cloud for RuneScape: Dragonwilds before swapping managed World/character profiles. Cloud restore can overwrite the active save and prevent deterministic profile switching.",
-                "warning", key=f"steam-cloud-enabled:{CLIENT_STEAM_APP_ID}",
-            )
-    _legacy.save_state(state)
-
-
-def _dragoncore_update_rows(state: dict) -> dict[str, dict]:
-    application = state.setdefault("application", {})
-    rows: dict[str, dict] = {}
-
-    def row_for(key: str, label: str, mods_dir: Path) -> None:
-        try:
-            status = _dragon_core.managed_status(mods_dir)
-        except Exception as exc:
-            rows[key] = {
-                "component": label, "installed_version": "", "available_version": "",
-                "update_available": False, "restart_required": True, "status": "unable_to_check",
-                "checked_at": time.time(), "action": "Retry managed DragonCore check", "last_error": str(exc)[:500],
-            }
-            return
-        rows[key] = {
-            "component": label,
-            "installed_version": str(status.get("installed_version") or ""),
-            "available_version": str(status.get("available_version") or ""),
-            "update_available": bool(status.get("update_available")),
-            "restart_required": bool(status.get("restart_required", True)),
-            "status": str(status.get("status") or "unknown"),
-            "checked_at": time.time(),
-            "action": "Update managed DragonCore",
-            "path": str(status.get("path") or ""),
-        }
-
-    game_dir = str(application.get("game_dir") or "").strip()
-    if game_dir:
-        try:
-            client_layout = _legacy.resolve_client_layout(game_dir)
-            if client_layout.game_root.exists():
-                row_for("dragoncore_client", "DragonCore · Client", client_layout.ue4ss_mods_dir)
-        except Exception:
-            pass
-
-    install_dir = str((application.get("server_install") or {}).get("install_dir") or "").strip()
-    if install_dir:
-        try:
-            server_layout = _legacy.resolve_server_layout(install_dir)
-            if server_layout.game_root.exists():
-                row_for("dragoncore_server", "DragonCore · Server", server_layout.ue4ss_mods_dir)
-        except Exception:
-            pass
-    return rows
-
-
-def _sync_update_notifications(state: dict) -> list[dict]:
-    """Build one persisted update model consumed by desktop and WebGUI."""
-    application = state.setdefault("application", {})
-    cache = application.get("runtime_version_cache") if isinstance(application.get("runtime_version_cache"), dict) else {}
-    updates = application.setdefault("update_status", {})
-    events = []
-
-    client = cache.get("client") if isinstance(cache.get("client"), dict) else {}
-    updates["game"] = {
-        "component": "Dragonwilds Game", "installed_version": str(client.get("installed_buildid") or ""),
-        "available_version": str(client.get("latest_buildid") or ""), "update_available": client.get("current") is False,
-        "restart_required": True, "status": "update_available" if client.get("current") is False else ("current" if client.get("current") is True else "unknown"),
-        "checked_at": client.get("checked_at"), "action": "Open Steam to update safely",
-    }
-    server_stack = cache.get("server") if isinstance(cache.get("server"), dict) else {}
-    game = server_stack.get("dragonwilds") if isinstance(server_stack.get("dragonwilds"), dict) else {}
-    updates["server"] = {
-        "component": "Dedicated Server", "installed_version": str(game.get("server_installed_buildid") or ""),
-        "available_version": str(game.get("server_latest_buildid") or ""), "update_available": game.get("server_current") is False,
-        "restart_required": True, "status": "update_available" if game.get("server_current") is False else ("current" if game.get("server_current") is True else "unknown"),
-        "checked_at": game.get("checked_at"), "action": "Update or Update & Restart",
-    }
-    ue4ss = server_stack.get("ue4ss") if isinstance(server_stack.get("ue4ss"), dict) else {}
-    updates["core_mod"] = {
-        "component": "UE4SS Core", "installed_version": str(ue4ss.get("installed_version") or ""),
-        "available_version": str(ue4ss.get("latest_version") or ""), "update_available": ue4ss.get("current") is False,
-        "restart_required": True, "status": "update_available" if ue4ss.get("current") is False else ("current" if ue4ss.get("current") is True else "unknown"),
-        "checked_at": ue4ss.get("checked_at"), "action": "Update managed UE4SS runtime",
-    }
-    updates["runeschema"] = _managed_updates.runeschema_status(application, server_stack)
-
-    dragoncore_rows = _dragoncore_update_rows(state)
-    for stale_key in ("dragoncore_client", "dragoncore_server"):
-        if stale_key not in dragoncore_rows:
-            updates.pop(stale_key, None)
-    updates.update(dragoncore_rows)
-
-    titles = {
-        "game": "Dragonwilds Game Update",
-        "server": "Dedicated Server Update",
-        "core_mod": "UE4SS Core Update",
-        "runeschema": "RuneSchema Core Update",
-        "dragoncore_client": "DragonCore Client Update",
-        "dragoncore_server": "DragonCore Server Update",
-    }
-    for key in ("game", "server", "core_mod", "runeschema", "dragoncore_client", "dragoncore_server"):
-        row = updates.get(key)
-        if not isinstance(row, dict) or not row.get("update_available"):
-            continue
-        event = _legacy._record_notification(
-            state, titles[key],
-            f"{row['component']} {row.get('installed_version') or 'unknown'} → {row.get('available_version') or 'latest'}. {row['action']}.",
-            "update", key=f"update:{key}:{row.get('available_version') or 'latest'}",
-        )
-        if event.get("_new"):
-            events.append(event)
-    return events
-
-
-def _refresh_managed_update_state(state: dict, profile_id: str = "", *, force_runeschema: bool = False) -> dict:
-    profile = _legacy.load_server_profile(profile_id) if profile_id else {}
-    try:
-        _managed_updates.refresh_server_runtime_cache(state, profile or {}, force_runeschema=force_runeschema)
-    except Exception:
-        pass
-    _sync_update_notifications(state)
-    return state
-
-
-def _runtime_response(result: dict, *, title: str, body: str, kind: str = "success") -> dict:
+def _custom_sources() -> list[dict]:
     state = _legacy.load_state()
-    profile_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
-    _refresh_managed_update_state(state, profile_id)
-    _legacy._record_notification(state, title, body, kind, world_id=profile_id,
-                                 key=f"runtime:{title.casefold().replace(' ', '-')}:{int(time.time())}")
-    _legacy.save_state(state)
-    public = _legacy.public_state(state)
-    lifecycle = RUNTIME.get_status()
-    public.setdefault("application", {})["runtime_manager"] = lifecycle
-    public.setdefault("server", {}).setdefault("runtime", {}).update({
-        "state": lifecycle.get("state"), "busy": lifecycle.get("busy"),
-        "last_error": lifecycle.get("last_error"), "broadcast": lifecycle.get("broadcast"),
-    })
-    return {"result": result, "state": public}
-
-
-def _external_publish_sources(state: dict) -> list[dict]:
     cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
     try:
-        sources = _legacy._directory_sources(cfg)
+        return _legacy._directory_sources(cfg)
     except Exception:
         return []
-    return [row for row in sources if isinstance(row, dict) and row.get("enabled", True) is not False and row.get("publish_enabled", True) is not False and str(row.get("url") or "").strip()]
 
 
-def _remote_choice(state: dict, enabled: bool, *, explicit: bool) -> dict:
-    application = state.setdefault("application", {})
-    advanced = application.setdefault("advanced", {})
-    host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
-    remote = dict(host_cfg.get("remote_admin") or {})
-    remote["enabled"] = bool(enabled)
-    host_cfg["remote_admin"] = remote
-    advanced["remote_server_enabled"] = bool(enabled)
-    if explicit:
-        advanced["remote_server_choice_made"] = True
-    if enabled:
-        host_cfg["enabled"] = True
-        if not bool(advanced.get("webhost_enabled", False)):
-            host_cfg["directory_enabled"] = False
-    application["world_directory_host"] = host_cfg
-    _legacy.save_state(state)
-    if enabled:
-        try:
-            _legacy.DIRECTORY_HOST.start(host_cfg)
-        except Exception:
-            pass
-    return host_cfg
+def _local_ingest(payload: dict):
+    if not _legacy.DIRECTORY_HOST.status().get("serving"):
+        return None
+    return _legacy.DIRECTORY_HOST.ingest(payload, "127.0.0.1")
 
 
-def _ensure_external_remote_default(state: dict) -> dict:
-    application = state.setdefault("application", {})
-    advanced = application.setdefault("advanced", {})
-    host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
-    if _external_publish_sources(state) and not bool(advanced.get("remote_server_choice_made", False)):
-        host_cfg = _remote_choice(state, True, explicit=False)
-    return host_cfg
+NETWORK.configure_callbacks(
+    custom_sources=_custom_sources,
+    custom_publish=_legacy.publish_heartbeat_to_sources,
+    local_ingest=_local_ingest,
+    share_payload=_legacy.SHARE.broadcast_payload,
+    share_status=_legacy.SHARE.status,
+    profile_loader=_profile_loader,
+)
 
 
-def _remote_advertisement_for_state(state: dict, payload: dict | None = None) -> dict:
-    application = state.setdefault("application", {})
-    host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
-    status = _legacy.DIRECTORY_HOST.status()
-    advertised_cfg = dict(host_cfg)
-    if not str(advertised_cfg.get("public_base_url") or "").strip():
-        advertised_cfg["public_base_url"] = str(status.get("public_url") or "")
-    external = str(status.get("public_ip") or (payload or {}).get("external_ip") or "")
-    return remote_advertisement(advertised_cfg, external_ip=external)
+def _share_payload() -> dict:
+    try:
+        payload = dict(_legacy.SHARE.broadcast_payload() or {})
+    except Exception:
+        payload = {}
+    payload.setdefault("world_name", payload.get("name") or "World")
+    payload.setdefault("last_seen", time.time())
+    return payload
 
 
-def _heartbeat(state: dict) -> dict:
-    if not _legacy.SHARE.status().get("serving"):
-        return {"published": False, "reason": "No active Sync-enabled World."}
-    active_profile_id = str(_legacy.STATE.active_profile_id or "")
-    if str((_legacy.STATE.manifest or {}).get("host_type") or "") == "private_coop" and not _legacy._dragonwilds_client_running():
-        _legacy.SHARE.stop()
-        if active_profile_id:
-            local = _legacy.load_singleplayer_profile(active_profile_id)
-            local["broadcasting"] = False
-            local["last_broadcast_stopped_reason"] = "dragonwilds_process_ended"
-            _legacy.save_singleplayer_profile(local, active_profile_id)
-            _legacy.ensure_singleplayer_state(state)
-            _legacy._private_profile_world(state, active_profile_id).setdefault("status", {})["broadcasting"] = False
-        _legacy.save_state(state)
-        return {"published": False, "reason": "Dragonwilds stopped; the Co-Op Sync fingerprint was withdrawn."}
-
-    cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
-    _ensure_external_remote_default(state)
-    payload = _legacy.SHARE.broadcast_payload()
-    payload["world_name"] = payload.get("name") or "World"
-    payload["internal_ip"] = payload.get("ip") or ""
-    payload["last_seen"] = time.time()
-    payload["ttl_seconds"] = 180
-    payload.update(_remote_advertisement_for_state(state, payload))
-
-    local_host = None
-    if _legacy.DIRECTORY_HOST.status().get("serving"):
-        try:
-            local_host = _legacy.DIRECTORY_HOST.ingest(payload, "127.0.0.1")
-        except Exception as exc:
-            local_host = {"error": str(exc)}
-    remote = _legacy.publish_heartbeat_to_sources(payload, _legacy._directory_sources(cfg))
-    cfg["last_publish_at"] = _legacy.now_iso()
-    cfg["last_publish_results"] = remote.get("sources") or []
-    _legacy.save_state(state)
-    return {"published": True, "local_host": local_host, "remote": remote, "remote_management": payload.get("remote_management")}
+def _network_after_verified_start(profile_id: str, kind: str, mode: str) -> dict:
+    try:
+        return NETWORK.world_started(profile_id, kind, mode=mode, payload=_share_payload())
+    except Exception as exc:
+        # Publication is deliberately failure-isolated from the proven runtime.
+        return {"published": False, "state": "Failed", "error": str(exc)}
 
 
-def _public_worlds_with_remote():
-    rows = _legacy_public_worlds()
-    state = _legacy.load_state()
-    safe = _remote_advertisement_for_state(state)
-    if not safe.get("capabilities", {}).get("remote_management"):
-        return rows
-    result = []
-    for row in rows:
-        value = dict(row or {})
-        if value.get("sync_ready") or value.get("fingerprint_claimed") or value.get("kind") in {"server", "dedicated"}:
-            value.update(safe)
-        result.append(value)
+def _quick_mode(value: object) -> str:
+    mode = str(value or "player").strip().casefold().replace("-", "_")
+    return mode if mode in {"player", "coop", "server"} else "player"
+
+
+def _quick_profile(state: dict, profile_id: str, mode: str) -> tuple[str, dict, str]:
+    profile_id = str(profile_id or "").strip()
+    if not profile_id:
+        if mode == "server":
+            profile_id = str(state.setdefault("server", {}).get("active_world_id") or "")
+        else:
+            profile_id = str(state.setdefault("client", {}).get("active_private_world_id") or state["client"].get("active_world_id") or _legacy.SINGLEPLAYER_ID)
+    if mode == "server":
+        profile = _legacy.load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        return profile_id, profile, "dedicated"
+    local = _legacy.load_singleplayer_profile(profile_id)
+    if local:
+        return profile_id, local, "local"
+    world = _legacy.find_world(state, profile_id)
+    if world:
+        return profile_id, world, "linked"
+    raise KeyError("World profile not found")
+
+
+def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
+    mode = _quick_mode(mode)
+    profile_id, profile, kind = _quick_profile(state, profile_id, mode)
+    runtime = RUNTIME.get_status() if mode == "server" else {}
+    share = _legacy.SHARE.status()
+    network_kind = "dedicated" if mode == "server" else "local"
+    network = NETWORK.world_status(profile_id, network_kind) if kind != "linked" else {}
+    metadata_cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
+    mods = [row for row in (metadata_cache.get("mods") or []) if isinstance(row, dict)]
+    name = str(profile.get("name") or profile.get("nickname") or ((profile.get("identity") or {}).get("world_name") if isinstance(profile.get("identity"), dict) else "") or "World")
+    if kind == "dedicated":
+        mods_path = str(_profile_settings.profile_root("dedicated", profile_id) / "mods")
+    elif kind == "local":
+        mods_path = str(_profile_settings.profile_root("local", profile_id) / "snapshot")
+    else:
+        mods_path = str((state.get("application") or {}).get("game_dir") or "")
+    result = {
+        "schema": "DragonwildsSync.QuickStatus.v1",
+        "profile_id": profile_id,
+        "mode": mode,
+        "profile_kind": kind,
+        "world_name": name,
+        "description": str(profile.get("description") or ((profile.get("presentation") or {}).get("description") if isinstance(profile.get("presentation"), dict) else "") or "")[:300],
+        "mods": {"count": len(mods), "cached": bool(metadata_cache.get("mods_updated_at") or metadata_cache.get("updated_at")), "path": mods_path},
+        "sync": {"serving": bool(share.get("serving")), "port": share.get("port"), "fingerprint": str(share.get("fingerprint") or "")[:128]},
+        "network": network,
+        "network_service": NETWORK.status(),
+        "runtime": runtime,
+        "active": False,
+        "controls": {
+            "play": mode == "player", "host": mode == "coop", "start": mode == "server",
+            "stop": mode in {"coop", "server"}, "restart": mode == "server", "update_restart": mode == "server",
+            "console": mode == "server", "broadcast_message": mode in {"coop", "server"},
+        },
+    }
+    if mode == "server":
+        result["active"] = bool((runtime.get("runtime") or {}).get("running"))
+        result["cl"] = str(((runtime.get("runtime") or {}).get("cl_version") or {}).get("reported_cl") or (runtime.get("runtime") or {}).get("reported_cl") or profile.get("last_reported_cl") or "")
+        result["players"] = list((runtime.get("runtime") or {}).get("player_details") or [])[:100]
+    elif mode == "coop":
+        result["active"] = bool(share.get("serving") and str(_legacy.STATE.active_profile_id or "") == profile_id)
+        result["players"] = list((_legacy.PLAYER_SERVICE.status() or {}).get("players") or [])[:100]
+    else:
+        result["active"] = bool(_legacy._dragonwilds_client_running())
+        status = profile.get("status") if isinstance(profile.get("status"), dict) else {}
+        result["cl"] = str(status.get("reported_cl") or status.get("game_version") or "")
     return result
 
 
-def _unified_console(profile_id: str, limit: int = 350) -> dict:
-    profile_id = str(profile_id or "").strip()
-    if not profile_id or not _legacy.load_server_profile(profile_id):
-        raise KeyError("Server World not found")
-    runtime = _legacy.ENGINE.status()
+def _quick_start(state: dict, params: dict) -> dict:
+    mode = _quick_mode(params.get("mode"))
+    profile_id, _profile, kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+    if mode == "server":
+        current = RUNTIME.get_status()
+        actual = current.get("runtime") or {}
+        active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        if actual.get("running"):
+            if active_id and active_id != profile_id:
+                raise RuntimeError(f"A different Server World is already running ({active_id}). Stop it before starting {profile_id}.")
+            return {"already_running": True, "quick": _quick_status(state, profile_id, mode)}
+        if active_id != profile_id:
+            _base_handle("server.world.activate", {"id": profile_id})
+        response = _base_handle("server.world.start", {"id": profile_id})
+        network = _network_after_verified_start(profile_id, "dedicated", "dedicated_server")
+        return {"result": response, "network": network, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
+    if mode == "coop":
+        response = _base_handle("singleplayer.broadcast", {"profile_id": profile_id})
+        # singleplayer.broadcast recursively invokes world.discovery.heartbeat;
+        # that path reaches this V3 wrapper and performs official/custom fan-out.
+        return {"result": response, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
+
+    # Player mode must never create a second Dragonwilds process. Existing game
+    # process ownership remains with the current runtime/profile.
+    if _legacy._dragonwilds_client_running():
+        return {"already_running": True, "quick": _quick_status(state, profile_id, mode)}
+    method = "world.play" if kind == "linked" else "singleplayer.play"
+    response = _base_handle(method, {"id": profile_id, "profile_id": profile_id})
+    try:
+        NETWORK.send_presence("client")
+    except Exception:
+        pass
+    return {"result": response, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
+
+
+def _quick_broadcast(state: dict, params: dict) -> dict:
+    mode = _quick_mode(params.get("mode"))
+    profile_id, _profile, _kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+    message = str(params.get("message") or "").strip()[:1000]
+    if not message:
+        raise ValueError("A broadcast message is required")
+    notice = normalize_notice({
+        "title": str(params.get("title") or "World Announcement")[:120],
+        "message": message,
+        "level": str(params.get("level") or "info")[:30],
+        "expires_at": time.time() + max(30, min(int(params.get("duration_seconds") or 300), 3600)),
+        "announcement": True,
+    })
+    if mode == "server":
+        return _base_handle("server.world.notice.update", {"id": profile_id, "notice": notice})
+    if mode != "coop":
+        raise ValueError("Broadcast messages are available for Co-Op and Server Quick modes")
+    profile = _legacy.load_singleplayer_profile(profile_id)
+    profile["service_notice"] = notice
+    _legacy.save_singleplayer_profile(profile, profile_id)
     with _legacy.STATE.lock:
-        activities = list(_legacy.STATE.activities)
-    history = _legacy.rsdw_console_history(profile_id, max(200, min(int(limit or 350), 1000)))
-    return unified_console_snapshot(
-        profile_id,
-        runtime=runtime,
-        sync_activities=activities,
-        command_history=history,
-        limit=limit,
-    )
-
-
-_legacy_public_worlds = _legacy._directory_public_worlds
-_legacy._directory_public_worlds = _public_worlds_with_remote
+        if str(_legacy.STATE.active_profile_id or "") == profile_id:
+            _legacy.STATE.manifest["service_notice"] = dict(notice)
+            _legacy.STATE.manifest["metadata_revision"] = int(_legacy.STATE.manifest.get("metadata_revision") or 0) + 1
+    return {"ok": True, "notice": notice, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
 
 
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
-    _trash_settings(state)
-
-    if method in {"bootstrap", "state.get", "client.background.tick"}:
-        _record_local_profile_and_cloud_notices(state)
-
-    if method == "client.background.tick":
-        result = _legacy_handle(method, params)
-        refreshed = _legacy.load_state()
-        events = _sync_update_notifications(refreshed)
-        _legacy.save_state(refreshed)
-        if isinstance(result, dict) and events:
-            result.setdefault("events", []).extend(events)
-        return result
 
     if method in {"bootstrap", "state.get"}:
-        _sync_update_notifications(state)
-        _legacy.save_state(state)
-        _maybe_auto_empty(state)
-        result = _legacy_handle(method, params)
+        result = _base_handle(method, params)
         if isinstance(result, dict):
-            result.setdefault("application", {})["trash_status"] = _trash_summary()
-            lifecycle = RUNTIME.get_status()
-            result.setdefault("application", {})["runtime_manager"] = lifecycle
-            result.setdefault("server", {}).setdefault("runtime", {}).update({
-                "state": lifecycle.get("state"), "busy": lifecycle.get("busy"),
-                "last_error": lifecycle.get("last_error"), "broadcast": lifecycle.get("broadcast"),
-            })
+            result.setdefault("application", {})["dragonwilds_sync_network"] = NETWORK.status()
         return result
 
-    if method in {"server.runtime.status", "server.runtime.getStatus"}:
-        lifecycle = RUNTIME.get_status()
-        public = _legacy.public_state(state)
-        public.setdefault("application", {})["runtime_manager"] = lifecycle
-        runtime = public.setdefault("server", {}).setdefault("runtime", {})
-        runtime.update({
-            **dict(lifecycle.get("runtime") or {}),
-            "state": lifecycle.get("state"), "busy": lifecycle.get("busy"),
-            "last_error": lifecycle.get("last_error"), "broadcast": lifecycle.get("broadcast"),
-        })
-        return {"state": public, "runtime": runtime, "lifecycle": lifecycle}
-
-    if method in {"server.world.start", "server.runtime.start"}:
-        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
-        if not profile_id:
-            raise ValueError("Select an active hosted World before starting the server.")
-        if str(state["server"].get("active_world_id") or "") != profile_id:
-            raise RuntimeError("Activate this World before starting it.")
-        result = RUNTIME.start(profile_id)
-        return _runtime_response(result, title="Server started successfully", body="The dedicated process and its Sync broadcast were both verified running.")
-
-    if method in {"server.world.stop", "server.runtime.stop"}:
-        result = RUNTIME.stop()
-        return _runtime_response(result, title="Server stopped successfully", body="The dedicated process and its Sync advertisement were both verified stopped.")
-
-    if method in {"server.world.restart", "server.runtime.restart"}:
-        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
-        if not profile_id:
-            raise ValueError("Select an active hosted World before restarting the server.")
-        result = RUNTIME.restart(profile_id)
-        return _runtime_response(result, title="Server restarted successfully", body="Stop, process verification, restart, and Sync broadcast verification all completed.")
-
-    if method in {"server.runtime.update", "server.runtime.update_restart"}:
-        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
-        restart = method.endswith("update_restart") or bool(params.get("restart"))
-        if restart and not profile_id:
-            raise ValueError("Select an active hosted World before updating and restarting the server.")
-        result = RUNTIME.update(profile_id, lambda: _legacy_handle("server.install.update", dict(params)), restart=restart,
-                                component="Dedicated Server")
-        title = "Dedicated Server updated successfully and is running" if restart else "Dedicated Server updated successfully"
-        body = "SteamCMD completed, the installed appmanifest was re-verified, and the dedicated server plus Sync broadcast were verified running." if restart else "SteamCMD completed and the installed appmanifest was re-verified while the dedicated process and advertisement remained stopped."
-        return _runtime_response(result, title=title, body=body)
-
-    if method in {"server.runtime.check_updates", "server.runtime.checkForUpdates"}:
-        latest = _legacy.check_steam_build() or {"available": False}
-        return {"latest": latest, "status": RUNTIME.get_status()}
-
-    if method in {"server.runtime.version", "server.runtime.getVersionStatus"}:
-        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
-        profile = _legacy.load_server_profile(profile_id) if profile_id else {}
-        stack = _managed_updates.refresh_server_runtime_cache(state, profile or {}, force_runeschema=bool(params.get("remote", False)))
-        _sync_update_notifications(state)
-        _legacy.save_state(state)
-        return {"profile_id": profile_id, "runtime_stack": stack, "status": RUNTIME.get_status(),
-                "updates": dict((state.get("application") or {}).get("update_status") or {})}
-
-    if method in {"server.runtime.broadcast", "server.runtime.getBroadcastStatus"}:
-        return RUNTIME.get_status().get("broadcast") or {}
-
-    if method == "application.core_mod.status":
-        profile_id = str(state.setdefault("server", {}).get("active_world_id") or "")
-        _refresh_managed_update_state(state, profile_id)
-        _legacy.save_state(state)
-        updates = dict(state.setdefault("application", {}).get("update_status") or {})
-        return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "runeschema", "dragoncore_client", "dragoncore_server"}},
-                "state": _legacy.public_state(state)}
-
-    if method == "application.core_mod.update":
-        component = str(params.get("component") or "dragoncore").strip().casefold().replace("_", "")
-        if component not in {"dragoncore", "ue4ss", "runeschema"}:
-            raise ValueError("Managed core component must be DragonCore, UE4SS, or RuneSchema.")
-        target = str(params.get("target") or "server").strip().casefold()
-
-        if target == "server":
-            profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
-            profile = _legacy.load_server_profile(profile_id) if profile_id else {}
-            if not profile_id or not profile:
-                raise ValueError("Select the hosted World whose core runtime should be updated.")
-            install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-            install_dir = str(install_meta.get("install_dir") or "").strip()
-            if not install_dir:
-                raise ValueError("Set Settings → Server → Server Directory first.")
-            restart = bool(params.get("restart", False))
-
-            if component == "dragoncore":
-                layout = _legacy.resolve_server_layout(install_dir)
-                installer = lambda: _dragon_core.materialize(layout.ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
-                label = "DragonCore"
-            elif component == "ue4ss":
-                source = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or _managed_updates.DEFAULT_UE4SS_SOURCE).strip()
-                installer = lambda: _legacy_handle("server.install.ue4ss_update", {"releases_url": source})
-                label = "UE4SS"
-            else:
-                source = str(params.get("releases_url") or install_meta.get("runeschema_source_url") or "").strip()
-                if not source:
-                    raise ValueError("Set a RuneSchema GitHub/release ZIP URL first.")
-                installer = lambda: _legacy_handle("server.install.runeschema_update", {"releases_url": source})
-                label = "RuneSchema"
-
-            result = RUNTIME.update(profile_id, installer, restart=restart, component=label)
-            refreshed = _legacy.load_state()
-            if component == "runeschema":
-                refreshed.setdefault("application", {}).setdefault("server_install", {}).pop("runeschema_update_check", None)
-            _refresh_managed_update_state(refreshed, profile_id, force_runeschema=component == "runeschema")
-            _legacy._record_notification(
-                refreshed,
-                f"{label} updated successfully" + (" and server restarted" if restart else ""),
-                f"The launcher-managed {label} server runtime was refreshed without SteamCMD." + (" The dedicated process and Sync broadcast were verified running." if restart else " Restart the server before expecting the new runtime to load."),
-                "success", world_id=profile_id, key=f"core-server-updated:{component}:{int(time.time())}",
-            )
-            _legacy.save_state(refreshed)
-            return {"result": result, "state": _legacy.public_state(refreshed)}
-
-        if target == "client":
-            if _legacy._dragonwilds_client_running():
-                raise RuntimeError("Close RuneScape: Dragonwilds before updating a managed client core runtime.")
-            game_dir = str(state.setdefault("application", {}).get("game_dir") or "").strip()
-            if not game_dir:
-                raise ValueError("Set the Dragonwilds game folder first.")
-            layout = _legacy.resolve_client_layout(game_dir)
-            profile_id = str(state.setdefault("client", {}).get("live_world_id") or state["client"].get("active_private_world_id") or _legacy.SINGLEPLAYER_ID)
-            if component == "dragoncore":
-                profile = _legacy.load_singleplayer_profile(profile_id)
-                result = _dragon_core.materialize(layout.ue4ss_mods_dir, (profile or {}).get("dragon_core"), mode="Player")
-                label = "DragonCore"
-            else:
-                result = _managed_updates.install_client_core(component, str(layout.game_root), state.setdefault("application", {}), params)
-                label = "UE4SS" if component == "ue4ss" else "RuneSchema"
-            refreshed = _legacy.load_state()
-            # install_client_core mutates the in-memory application's managed
-            # version evidence; copy it into the freshly loaded state before save.
-            if component in {"ue4ss", "runeschema"}:
-                refreshed.setdefault("application", {})["client_core_runtime"] = dict(state["application"].get("client_core_runtime") or {})
-            _sync_update_notifications(refreshed)
-            _legacy._record_notification(
-                refreshed, f"{label} updated successfully",
-                f"The launcher-managed {label} client runtime was refreshed while Dragonwilds was stopped.",
-                "success", world_id=profile_id, key=f"core-client-updated:{component}:{int(time.time())}",
-            )
-            _legacy.save_state(refreshed)
-            return {"result": result, "state": _legacy.public_state(refreshed)}
-        raise ValueError("Managed core update target must be 'client' or 'server'.")
-
-    if method == "application.shutdown":
-        result = RUNTIME.shutdown()
-        state = _legacy.load_state()
-        _legacy._record_notification(state, "Dragonwilds Sync shut down cleanly",
-                                     "The dedicated process, Sync broadcast, and Web management listener were stopped and verified.",
-                                     "success", key=f"application-shutdown:{int(time.time())}")
-        _legacy.save_state(state)
-        return {"ok": True, "result": result}
-
-    if method == "application.update_status.record":
-        updates = state.setdefault("application", {}).setdefault("update_status", {})
-        available = bool(params.get("update_available"))
-        row = {
-            "component": "Dragonwilds Sync Launcher",
-            "installed_version": str(params.get("installed_version") or "")[:80],
-            "available_version": str(params.get("available_version") or "")[:80],
-            "update_available": available,
-            "restart_required": bool(params.get("restart_required", available)),
-            "status": str(params.get("status") or ("update_available" if available else "current"))[:40],
-            "checked_at": params.get("checked_at") or time.time(),
-            "action": str(params.get("action") or ("Update in the desktop launcher" if available else "No action required"))[:160],
-            "last_error": str(params.get("last_error") or "")[:500],
-        }
-        updates["launcher"] = row
-        if available:
-            _legacy._record_notification(
-                state, "Dragonwilds Sync Launcher Update",
-                f"Launcher {row['installed_version'] or 'unknown'} → {row['available_version'] or 'latest'}. {row['action']}.",
-                "update", key=f"update:launcher:{row['available_version'] or 'latest'}",
-            )
-        _legacy.save_state(state)
-        return _legacy.public_state(state)
+    if method == "network.status":
+        return NETWORK.status()
+    if method == "network.settings":
+        if "presence_enabled" in params:
+            NETWORK.set_presence_enabled(bool(params.get("presence_enabled")))
+        return NETWORK.status()
+    if method == "network.register":
+        return NETWORK.register_installation(force=bool(params.get("force")))
+    if method == "network.presence":
+        return NETWORK.send_presence(str(params.get("mode") or "client"))
+    if method == "network.world.status":
+        return NETWORK.world_status(str(params.get("id") or params.get("profile_id") or ""), str(params.get("kind") or "dedicated"))
+    if method == "network.world.settings":
+        return NETWORK.set_world_publication(str(params.get("id") or params.get("profile_id") or ""), str(params.get("kind") or "dedicated"), params)
+    if method == "network.world.register":
+        return NETWORK.register_world(str(params.get("id") or params.get("profile_id") or ""), str(params.get("kind") or "dedicated"), force=bool(params.get("force")))
 
     if method == "world.discovery.heartbeat":
-        return _heartbeat(state)
+        # Keep the established local/custom-directory heartbeat and add the
+        # official network from the same active SHARE payload. Failure in either
+        # destination family is isolated and never becomes a server-stop cause.
+        legacy_result = _base_handle(method, params)
+        profile_id = str(_legacy.STATE.active_profile_id or "")
+        if not profile_id or not _legacy.SHARE.status().get("serving"):
+            NETWORK.world_stopped(reason="share_not_serving")
+            return {"legacy": legacy_result, "official": {"published": False, "state": "Disabled"}}
+        host_type = str((_legacy.STATE.manifest or {}).get("host_type") or "")
+        kind = "local" if host_type == "private_coop" else "dedicated"
+        mode = "coop_host" if kind == "local" else "dedicated_server"
+        with NETWORK._lock:
+            NETWORK._active = {"profile_id": profile_id, "kind": kind, "mode": mode, "payload": _share_payload(), "started_at": NETWORK._active.get("started_at") or time.time()}
+        official = NETWORK.publish_official(profile_id, kind, _share_payload())
+        return {"legacy": legacy_result, "official": official, "network": NETWORK.status()}
 
-    if method == "server.console.unified":
-        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
-        return _unified_console(profile_id, int(params.get("limit") or 350))
+    if method in {"server.world.start", "server.runtime.start"}:
+        response = _base_handle(method, params)
+        profile_id = str(params.get("id") or _legacy.load_state().setdefault("server", {}).get("active_world_id") or "")
+        network = _network_after_verified_start(profile_id, "dedicated", "dedicated_server") if profile_id else {}
+        if isinstance(response, dict):
+            response["network"] = network
+        return response
 
-    if method == "application.advanced.settings" and "remote_server_enabled" in params:
-        enabled = bool(params.get("remote_server_enabled"))
-        result = _legacy_handle(method, params)
-        refreshed = _legacy.load_state()
-        _remote_choice(refreshed, enabled, explicit=True)
-        return _legacy.public_state(_legacy.load_state()) if isinstance(result, dict) else result
+    if method in {"server.world.stop", "server.runtime.stop"}:
+        NETWORK.world_stopping(reason="server_stop")
+        response = _base_handle(method, params)
+        NETWORK.world_stopped(reason="server_stop_verified")
+        return response
 
-    if method == "application.world_directory_host.settings":
-        incoming_remote = params.get("remote_admin") if isinstance(params.get("remote_admin"), dict) else None
-        result = _legacy_handle(method, params)
-        if incoming_remote is not None and "enabled" in incoming_remote:
-            refreshed = _legacy.load_state()
-            refreshed.setdefault("application", {}).setdefault("advanced", {})["remote_server_choice_made"] = True
-            refreshed["application"]["advanced"]["remote_server_enabled"] = bool(incoming_remote.get("enabled"))
-            _legacy.save_state(refreshed)
-        return result
+    if method in {"server.world.restart", "server.runtime.restart", "server.runtime.update", "server.runtime.update_restart"}:
+        NETWORK.world_stopping(reason=method)
+        response = _base_handle(method, params)
+        profile_id = str(params.get("id") or _legacy.load_state().setdefault("server", {}).get("active_world_id") or "")
+        restart = method in {"server.world.restart", "server.runtime.restart", "server.runtime.update_restart"} or bool(params.get("restart"))
+        if restart and profile_id:
+            _network_after_verified_start(profile_id, "dedicated", "dedicated_server")
+        else:
+            NETWORK.world_stopped(reason=f"{method}_verified_stopped")
+        return response
 
-    if method == "application.trash.list":
-        _maybe_auto_empty(state)
-        return {**list_trash(), "settings": dict(_trash_settings(state))}
+    if method == "singleplayer.broadcast.stop":
+        NETWORK.world_stopping(reason="coop_stop")
+        response = _base_handle(method, params)
+        NETWORK.world_stopped(reason="coop_stop_verified")
+        return response
 
-    if method == "application.trash.settings":
-        config = _trash_settings(state)
-        if "auto_empty_days" in params:
-            try:
-                config["auto_empty_days"] = max(0, min(int(params.get("auto_empty_days") or 0), 3650))
-            except (TypeError, ValueError):
-                raise ValueError("Trash retention must be a number of days or 0 for Never.")
-        _legacy.save_state(state)
-        return {"settings": dict(config), "trash": list_trash(), "state": _legacy.public_state(state)}
+    if method == "quick.status":
+        return _quick_status(state, str(params.get("profile_id") or params.get("id") or ""), _quick_mode(params.get("mode")))
+    if method == "quick.start":
+        return _quick_start(state, params)
+    if method == "quick.stop":
+        mode = _quick_mode(params.get("mode"))
+        if mode == "server":
+            return handle("server.world.stop", params)
+        if mode == "coop":
+            return handle("singleplayer.broadcast.stop", {"profile_id": str(params.get("profile_id") or params.get("id") or "")})
+        raise ValueError("Player Quick mode does not own the Dragonwilds process stop action")
+    if method == "quick.restart":
+        if _quick_mode(params.get("mode")) != "server":
+            raise ValueError("Restart is available only in Server Quick mode")
+        return handle("server.world.restart", {"id": str(params.get("profile_id") or params.get("id") or "")})
+    if method == "quick.update_restart":
+        if _quick_mode(params.get("mode")) != "server":
+            raise ValueError("Update & Restart is available only in Server Quick mode")
+        return handle("server.runtime.update_restart", {"id": str(params.get("profile_id") or params.get("id") or ""), "restart": True})
+    if method == "quick.broadcast":
+        return _quick_broadcast(state, params)
+    if method == "quick.console.execute":
+        if _quick_mode(params.get("mode")) != "server":
+            raise ValueError("Console is available only in Server Quick mode")
+        return _base_handle("server.console.execute", {"id": str(params.get("profile_id") or params.get("id") or ""), "command": str(params.get("command") or ""), "source": "quick", "actor": "owner"})
+    if method == "quick.console.get":
+        if _quick_mode(params.get("mode")) != "server":
+            raise ValueError("Console is available only in Server Quick mode")
+        return _base_handle("server.console.unified", {"id": str(params.get("profile_id") or params.get("id") or ""), "limit": int(params.get("limit") or 250)})
 
-    if method == "application.trash.empty":
-        entry_ids = params.get("entry_ids") if isinstance(params.get("entry_ids"), list) else None
-        if params.get("entry_id"):
-            entry_ids = [str(params.get("entry_id"))]
-        result = empty_trash(entry_ids)
-        return {**result, "trash": list_trash(), "state": _legacy.public_state(state)}
+    if method == "application.shutdown":
+        NETWORK.world_stopping(reason="application_shutdown")
+        NETWORK.stop_background()
+        response = _base_handle(method, params)
+        NETWORK.world_stopped(reason="application_shutdown")
+        return response
 
-    if method == "application.trash.restore":
-        entry_id = str(params.get("entry_id") or "").strip()
-        result = restore_trash(entry_id, overwrite=bool(params.get("overwrite", False)))
-        entry = result.get("entry") if isinstance(result.get("entry"), dict) else {}
-        state = _legacy.load_state()
-        _restore_launcher_metadata(state, entry)
-        _legacy.save_state(state)
-        state = _legacy.load_state()
-        _legacy.ensure_singleplayer_state(state)
-        _legacy.save_state(state)
-        return {**result, "trash": list_trash(), "state": _legacy.public_state(state)}
-
-    if method == "singleplayer.profile.delete":
-        return _private_delete(method, params, state)
-    if method == "server.world.delete":
-        return _server_delete(method, params, state)
-    if method == "characters.delete":
-        return _character_delete(params, state)
-
-    return _legacy_handle(method, params)
+    return _base_handle(method, params)
 
 
-# Legacy remote-admin helpers recursively call their module-global ``handle``.
-# Point those calls at this wrapper while this wrapper itself delegates through
-# the saved ``_legacy_handle`` reference above.
+# Legacy remote-admin/provider recursion must enter the V3 wrapper so Co-Op
+# heartbeat calls and remote lifecycle actions see the same network authority.
 _legacy.handle = handle
 
 
 def main() -> int:
     _legacy.handle = handle
+    NETWORK.ensure_installation_identity()
+    update_stage("quickLaunchMigrated", True)
+    NETWORK.start_background()
     return _legacy.main()
 
 

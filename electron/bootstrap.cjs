@@ -1,33 +1,25 @@
-// Dragonwilds Sync Electron bootstrap.
-// Keep main.cjs focused on application behavior while this wrapper installs
-// process/window guards before the main process creates any BrowserWindow.
+// Dragonwilds Sync Electron bootstrap — V3 Quick-aware.
+// Quick is a presentation mode. It keeps the same service/runtime authority but
+// suppresses desktop-only periodic work before the retained main module starts.
 const electron = require('electron');
 
-// Minimal Mode is a server control surface, not a hidden full desktop session.
-// Keep authoritative server lifecycle/scheduler work in main.cjs, but suppress
-// desktop-only discovery, client background sync and periodic RSDW/benchmark
-// maintenance before main.cjs registers those timers. Callback names are
-// intentionally used so ordinary timers (including the server scheduler) are
-// untouched.
-const minimalMode = process.argv.includes('--minimal-mode');
-if (minimalMode) {
+const argv = process.argv.slice(1);
+const quickRequested = argv.includes('--quick') || argv.includes('--quick-launch') || argv.includes('--minimal-mode');
+if (quickRequested) {
+  process.env.DWS_V3_QUICK = '1';
   const suppressedBackgroundCallbacks = new Set(['maybeBenchmark', 'backgroundTick', 'rsdwModuleTick']);
   const nativeSetTimeout = global.setTimeout;
   const nativeSetInterval = global.setInterval;
-  global.setTimeout = function dragonwildsMinimalTimeout(callback, delay, ...args) {
+  global.setTimeout = function dragonwildsQuickTimeout(callback, delay, ...args) {
     if (suppressedBackgroundCallbacks.has(String(callback?.name || ''))) return null;
     return nativeSetTimeout(callback, delay, ...args);
   };
-  global.setInterval = function dragonwildsMinimalInterval(callback, delay, ...args) {
+  global.setInterval = function dragonwildsQuickInterval(callback, delay, ...args) {
     if (suppressedBackgroundCallbacks.has(String(callback?.name || ''))) return null;
     return nativeSetInterval(callback, delay, ...args);
   };
 }
 
-// Electron can surface an uncaught "Object has been destroyed" exception when
-// a third-party browser window closes while its download/session cleanup is
-// racing the WebContents teardown. It is safe to ignore only this known close
-// race; every other uncaught exception is still surfaced normally.
 process.on('uncaughtException', (error) => {
   const text = String(error?.stack || error?.message || error || '');
   if (/object has been destroyed|webcontents.*destroyed/i.test(text)) {
@@ -38,8 +30,6 @@ process.on('uncaughtException', (error) => {
   process.exitCode = 1;
 });
 
-// Give ordinary framed browser windows a Dragonwilds Sync titlebar. The main
-// launcher and other frameless application windows keep their existing chrome.
 try {
   const NativeBrowserWindow = electron.BrowserWindow;
   class DragonwildsBrowserWindow extends NativeBrowserWindow {

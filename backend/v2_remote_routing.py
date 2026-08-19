@@ -150,30 +150,89 @@ def sanitize_remote_endpoint(value: object) -> str:
     return urllib.parse.urlunparse((parsed.scheme, f"{host}{port}", path, "", "", "")).rstrip("/")
 
 
+def _remote_port(value: object, default: int = 27080) -> int:
+    try:
+        port = int(value or default)
+    except (TypeError, ValueError):
+        port = default
+    return port if 1 <= port <= 65535 else default
+
+
+def _endpoint_from_public_ip(value: object, port: object) -> str:
+    candidate = str(value or "").strip().strip("[]")
+    if not candidate:
+        return ""
+    try:
+        address = ipaddress.ip_address(candidate.split("%", 1)[0])
+    except ValueError:
+        return ""
+    if not address.is_global:
+        return ""
+    host = f"[{address.compressed}]" if address.version == 6 else address.compressed
+    return f"http://{host}:{_remote_port(port)}"
+
+
+def reconcile_remote_admin_state(state: dict, normalize_host_config) -> bool:
+    """Repair legacy split-brain Remote Management settings once and persistably.
+
+    Older builds exposed both ``application.advanced.remote_server_enabled`` and
+    ``world_directory_host.remote_admin.enabled``. A saved Advanced choice could
+    therefore say ON while the HTTP listener still enforced OFF. The explicit
+    user choice wins; otherwise an explicitly stored host value becomes the
+    canonical value. Fresh installs with neither signal remain OFF.
+    """
+    if not isinstance(state, dict) or not callable(normalize_host_config):
+        return False
+    application = state.setdefault("application", {})
+    advanced = application.setdefault("advanced", {})
+    raw_host = application.get("world_directory_host") if isinstance(application.get("world_directory_host"), dict) else {}
+    raw_remote = raw_host.get("remote_admin") if isinstance(raw_host.get("remote_admin"), dict) else {}
+    choice_made = bool(advanced.get("remote_server_choice_made", False))
+    host_explicit = "enabled" in raw_remote
+    if not choice_made and not host_explicit:
+        return False
+
+    canonical = bool(advanced.get("remote_server_enabled", False)) if choice_made else bool(raw_remote.get("enabled", False))
+    normalized = normalize_host_config(raw_host)
+    normalized_remote = dict(normalized.get("remote_admin") or {})
+    normalized_remote["enabled"] = canonical
+    normalized["remote_admin"] = normalized_remote
+
+    before_host = application.get("world_directory_host")
+    before_advanced = (advanced.get("remote_server_enabled"), advanced.get("remote_server_choice_made"))
+    application["world_directory_host"] = normalized
+    advanced["remote_server_enabled"] = canonical
+    advanced["remote_server_choice_made"] = True
+    return before_host != normalized or before_advanced != (canonical, True)
+
+
 def remote_advertisement(config: dict | None, *, external_ip: str = "") -> dict:
     cfg = dict(config or {})
     remote = cfg.get("remote_admin") if isinstance(cfg.get("remote_admin"), dict) else {}
-    if not bool(remote.get("enabled", False)):
-        return {"capabilities": {"remote_management": False}, "remote_management": {"enabled": False}}
-    endpoint = sanitize_remote_endpoint(cfg.get("public_base_url"))
-    if not endpoint:
-        candidate = str(external_ip or "").strip().strip("[]")
-        if candidate:
-            try:
-                address = ipaddress.ip_address(candidate.split("%", 1)[0])
-                if address.is_global:
-                    host = f"[{address.compressed}]" if address.version == 6 else address.compressed
-                    endpoint = f"http://{host}:{int(cfg.get('port') or 27080)}"
-            except (ValueError, TypeError):
-                pass
-    enabled = bool(endpoint)
+    configured = bool(remote.get("enabled", False))
+    port = _remote_port(cfg.get("port"))
+    if not configured:
+        return {
+            "capabilities": {"remote_management": False},
+            "remote_management": {
+                "configured": False, "enabled": False, "available": False,
+                "endpoint": "", "port": port, "auth": [], "authority": "", "reason": "disabled",
+            },
+        }
+
+    endpoint = sanitize_remote_endpoint(cfg.get("public_base_url")) or _endpoint_from_public_ip(external_ip, port)
+    available = bool(endpoint)
     return {
-        "capabilities": {"remote_management": enabled},
+        "capabilities": {"remote_management": available},
         "remote_management": {
-            "enabled": enabled,
+            "configured": True,
+            "enabled": available,
+            "available": available,
             "endpoint": endpoint,
-            "auth": list(AUTH_MODES) if enabled else [],
+            "port": port,
+            "auth": list(AUTH_MODES) if available else [],
             "authority": "target-world",
+            "reason": "" if available else "public_endpoint_unavailable",
         },
     }
 
@@ -182,16 +241,28 @@ def normalize_public_remote(raw: dict | None) -> dict:
     source = dict(raw or {})
     capabilities = source.get("capabilities") if isinstance(source.get("capabilities"), dict) else {}
     remote = source.get("remote_management") if isinstance(source.get("remote_management"), dict) else {}
+    configured = bool(remote.get("configured", remote.get("enabled", capabilities.get("remote_management", False))))
+    port = _remote_port(remote.get("port") or source.get("remote_admin_port") or 27080)
     endpoint = sanitize_remote_endpoint(remote.get("endpoint"))
-    enabled = bool(capabilities.get("remote_management") and remote.get("enabled", True) and endpoint)
-    auth = [mode for mode in remote.get("auth") or [] if str(mode) in AUTH_MODES]
+    # Directory ingestion may know the public source address before the sender's
+    # asynchronous WAN detector has completed. Recover only when the sender has
+    # explicitly declared Remote Management configured; never infer permission
+    # to administer a World merely because a TCP listener exists.
+    if configured and not endpoint:
+        endpoint = _endpoint_from_public_ip(source.get("external_ip"), port)
+    available = bool(configured and endpoint)
+    auth = [mode for mode in remote.get("auth") or AUTH_MODES if str(mode) in AUTH_MODES] if available else []
     return {
-        "capabilities": {"remote_management": enabled},
+        "capabilities": {"remote_management": available},
         "remote_management": {
-            "enabled": enabled,
-            "endpoint": endpoint if enabled else "",
-            "auth": auth if enabled else [],
-            "authority": "target-world" if enabled else "",
+            "configured": configured,
+            "enabled": available,
+            "available": available,
+            "endpoint": endpoint if available else "",
+            "port": port,
+            "auth": auth,
+            "authority": "target-world" if configured else "",
+            "reason": "" if available else ("public_endpoint_unavailable" if configured else "disabled"),
         },
     }
 
@@ -199,7 +270,8 @@ def normalize_public_remote(raw: dict | None) -> dict:
 def attach_public_remote(row: dict, raw: dict | None) -> dict:
     result = dict(row or {})
     safe = normalize_public_remote(raw)
-    result["capabilities"] = safe["capabilities"]
+    capabilities = result.get("capabilities") if isinstance(result.get("capabilities"), dict) else {}
+    result["capabilities"] = {**capabilities, **safe["capabilities"]}
     result["remote_management"] = safe["remote_management"]
     return result
 
@@ -255,6 +327,84 @@ def _core_action_handler(handler):
     return action_with_core_updates
 
 
+def _install_remote_truth_guards(directory_host_module) -> None:
+    """Keep persisted, renderer and listener Remote Management state identical."""
+    if getattr(directory_host_module, "__name__", "") != "directory_host":
+        return
+    legacy = sys.modules.get("dragonwilds_service_legacy")
+    if legacy is None:
+        return
+
+    if not getattr(legacy, "_dws_remote_truth_projection_patched", False):
+        original_public_state = getattr(legacy, "public_state", None)
+        if callable(original_public_state):
+            legacy._dws_remote_truth_projection_patched = True
+
+            def public_state_with_remote_truth(state: dict) -> dict:
+                payload = original_public_state(state)
+                if not isinstance(payload, dict):
+                    return payload
+                application = payload.setdefault("application", {})
+                host_cfg = application.get("world_directory_host") if isinstance(application.get("world_directory_host"), dict) else {}
+                remote = host_cfg.get("remote_admin") if isinstance(host_cfg.get("remote_admin"), dict) else {}
+                remote = {**remote, "enabled": bool(remote.get("enabled", False))}
+                host_cfg = {**host_cfg, "remote_admin": remote}
+                application["world_directory_host"] = host_cfg
+                advanced = application.setdefault("advanced", {})
+                advanced.setdefault("remote_server_enabled", bool(remote["enabled"]))
+                return payload
+
+            legacy.public_state = public_state_with_remote_truth
+
+    if not getattr(legacy, "_dws_remote_truth_startup_patched", False):
+        original_startup = getattr(legacy, "_startup_world_directory", None)
+        if callable(original_startup):
+            legacy._dws_remote_truth_startup_patched = True
+
+            def startup_world_directory_with_remote_truth() -> None:
+                try:
+                    state = legacy.load_state()
+                    if reconcile_remote_admin_state(state, directory_host_module.normalize_host_config):
+                        legacy.save_state(state)
+                except Exception as exc:
+                    engine = getattr(legacy, "ENGINE", None)
+                    if engine is not None and hasattr(engine, "_event"):
+                        engine._event(f"Remote Management state reconciliation failed: {type(exc).__name__}: {exc}", "warn")
+                return original_startup()
+
+            legacy._startup_world_directory = startup_world_directory_with_remote_truth
+
+    host_class = directory_host_module.DirectoryHost
+    if not getattr(host_class, "_dws_remote_truth_status_patched", False):
+        original_status = getattr(host_class, "status", None)
+        if callable(original_status):
+            host_class._dws_remote_truth_status_patched = True
+
+            def status_with_remote_truth(self) -> dict:
+                payload = original_status(self)
+                if not isinstance(payload, dict):
+                    return payload
+                cfg = getattr(self, "config", {}) if isinstance(getattr(self, "config", {}), dict) else {}
+                advertised = remote_advertisement(cfg, external_ip=payload.get("public_ip") or "")
+                remote = advertised["remote_management"]
+                payload["remote_admin_enabled"] = bool(remote.get("configured"))
+                payload["remote_admin_ready"] = bool(remote.get("available"))
+                payload["remote_admin_endpoint"] = str(remote.get("endpoint") or "")
+                payload["remote_admin_reason"] = str(remote.get("reason") or "")
+                return payload
+
+            host_class.status = status_with_remote_truth
+
+    # Reconcile once immediately so state/status reads between service startup
+    # and the background WebHost startup thread cannot expose split-brain truth.
+    try:
+        state = legacy.load_state()
+        if reconcile_remote_admin_state(state, directory_host_module.normalize_host_config):
+            legacy.save_state(state)
+    except Exception:
+        pass
+
+
 def install_directory_patches(directory_host_module) -> None:
     """Teach the preserved DirectoryHost to retain safe routes and core actions.
 
@@ -279,6 +429,7 @@ def install_directory_patches(directory_host_module) -> None:
     directory_host_module._dws_v2_remote_patched = True
     if getattr(directory_host_module, "__name__", "") == "directory_host":
         install_server_engine_cl_authority_patch()
+        _install_remote_truth_guards(directory_host_module)
 
     original_normalize = directory_host_module.normalize_heartbeat
 

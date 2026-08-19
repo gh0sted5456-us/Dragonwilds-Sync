@@ -7,6 +7,8 @@ on:
       - 'website/**'
       - 'renderer/assets/application-icon.png'
       - 'renderer/assets/singleplayer-banner.png'
+      - 'renderer/assets/world-selection-background.png'
+      - 'renderer/assets/platforms/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -37,10 +39,43 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf _site
-          mkdir -p _site/assets
+          mkdir -p _site/assets/placards _site/assets/platforms
           cp -R website/. _site/
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
+          cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png
+          cp renderer/assets/platforms/discord.svg _site/assets/platforms/discord.svg
+
+          # Use the exact baked placard artwork from the application. The blob SHAs
+          # pin the website to the same four PNGs even while Experimental evolves.
+          curl --fail --silent --show-error --location --retry 3 \
+            -H 'Accept: application/vnd.github.raw+json' \
+            -H 'Authorization: Bearer ${{ github.token }}' \
+            'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/git/blobs/498243def697d1832e5ef76b16d0f481c3e971a9' \
+            -o _site/assets/placards/1.png
+          curl --fail --silent --show-error --location --retry 3 \
+            -H 'Accept: application/vnd.github.raw+json' \
+            -H 'Authorization: Bearer ${{ github.token }}' \
+            'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/git/blobs/e9b14c092045c501b2c5337956460699c04bd6d5' \
+            -o _site/assets/placards/2.png
+          curl --fail --silent --show-error --location --retry 3 \
+            -H 'Accept: application/vnd.github.raw+json' \
+            -H 'Authorization: Bearer ${{ github.token }}' \
+            'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/git/blobs/5a515286435834c673f532c2ae1db012cc22bd1d' \
+            -o _site/assets/placards/3.png
+          curl --fail --silent --show-error --location --retry 3 \
+            -H 'Accept: application/vnd.github.raw+json' \
+            -H 'Authorization: Bearer ${{ github.token }}' \
+            'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/git/blobs/63743edf52312e65c75d36826d2fc159ab861870' \
+            -o _site/assets/placards/4.png
+
+          # Load the parity layer after the base site so its renderer and final CSS
+          # cascade intentionally match the desktop application placards.
+          printf '\n\n/* App placard parity layer */\n' >> _site/styles.css
+          cat website/placards.css >> _site/styles.css
+          printf '\n\n/* App placard parity layer */\n' >> _site/script.js
+          cat website/placards.js >> _site/script.js
+
           touch _site/.nojekyll
 
       - name: Upload Pages artifact

@@ -49,6 +49,7 @@
     const localId = localProfileId(state);
     if (localId) {
       requests.push(
+        { method: 'singleplayer.profile.get', params: { profile_id: localId } },
         { method: 'singleplayer.inventory', params: { profile_id: localId, rescan: false } },
         { method: 'singleplayer.config.list', params: { profile_id: localId } },
       );
@@ -83,12 +84,15 @@
       if (!tab || ['overview', 'maintenance', 'save-editor'].includes(tab)) requests.push({ method: 'server.world.save.status', params: { id } });
       if (!tab || ['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'server.world.config.list', params: { id } });
       if (!tab || tab === 'maintenance') requests.push({ method: 'server.backups.list', params: { id } });
+      if (tab === 'save-editor') requests.push({ method: 'world.save.editor.read', params: { id, kind: 'server' } });
       if (tab === 'feedback') requests.push({ method: 'server.feedback.list', params: { id } });
       if (tab === 'players') requests.push({ method: 'server.access.connections', params: {} });
       if (tab === 'map') requests.push({ method: 'application.map.status', params: {} }, { method: 'application.map.overlays', params: {} });
     } else {
+      if (!tab || ['overview', 'networking'].includes(tab)) requests.push({ method: 'singleplayer.profile.get', params: { profile_id: id } });
       if (!tab || tab === 'mods') requests.push({ method: 'singleplayer.inventory', params: { profile_id: id, rescan: false } });
       if (!tab || ['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'singleplayer.config.list', params: { profile_id: id } });
+      if (tab === 'save-editor') requests.push({ method: 'world.save.editor.read', params: { id, kind: 'private' } });
       if (tab === 'map') requests.push({ method: 'application.map.status', params: {} }, { method: 'application.map.overlays', params: {} });
     }
     if (requests.length) bridge.prewarm(requests).catch(() => {});
@@ -96,8 +100,10 @@
 
   function requestLabel(method) {
     if (method === 'characters.list' || method.startsWith('characters.')) return 'Character data';
+    if (method === 'singleplayer.mod.files') return 'Mod files';
     if (method.includes('inventory')) return 'Mod inventory';
     if (method.includes('save')) return 'World save';
+    if (method.includes('profile')) return 'World profile';
     if (method.includes('config')) return 'Configuration';
     if (method.includes('backups')) return 'Backups';
     if (method.includes('map.')) return 'Map data';

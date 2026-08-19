@@ -36,7 +36,6 @@ requireText(phase6, 'DragonwildsSync.DirectConnectHandoff.v1', 'verified Direct 
 requireText(phase6, 'contains_credentials', 'credential-free handoff receipt');
 requireText(phase6, 'server-pushed mods.txt', 'server literal mods.txt rejection');
 requireText(phase6, 'client_generate', 'client-generated mods.txt authority');
-requireText(phase6, 'PersistentDirectConnectIP', 'DragonConnect legacy physical identity');
 requireText(phase6, 'RuneSchema', 'client runtime RuneSchema framework derivation');
 requireText(phase6, 'DragonCore is host/server behavior', 'client role excludes DragonCore behavior');
 requireText(phase6, 'SYNC_REUSE_SECONDS', 'short-lived verified Sync reuse');

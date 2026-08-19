@@ -18,6 +18,8 @@ from v3_identity import read_identity
 from v3_item_registry import cached_registry, registry_from_state
 from v3_migration import prepare_for_v3_migration, update_stage
 from v3_phase4 import heartbeat_status as phase4_heartbeat_status, install as install_phase4_network, phase4_contract
+from v3_phase4_badges import add_badge, list_badges, remove_badge, reorder_badges, toggle_badge, update_badge
+from v3_phase4_registry import platform_registry, tag_registry
 
 _base_handle = _base.handle
 _legacy = _base._legacy
@@ -25,9 +27,6 @@ NETWORK = _base.NETWORK
 RUNTIME = _base.RUNTIME
 install_phase4_network(NETWORK)
 
-# The public WebHost presentation is an additive decorator over the proven
-# directory_web implementation. Packaging also installs this through the runtime
-# hook; the idempotent source install keeps developer/source runs equivalent.
 try:
     from v3_phase4_web import install as _install_phase4_web
     _install_phase4_web()
@@ -57,8 +56,7 @@ def _phase4_bootstrap(result: dict) -> dict:
     application = result.setdefault("application", {})
     phase4 = application.setdefault("v3_phase4", {})
     if not isinstance(phase4, dict):
-        phase4 = {}
-        application["v3_phase4"] = phase4
+        phase4 = {}; application["v3_phase4"] = phase4
     phase4.setdefault("animation_mode", "full")
     phase4["contract"] = phase4_contract()
     return result
@@ -70,20 +68,21 @@ def _phase4_world_status(params: dict) -> dict:
         raise ValueError("A stable World/profile ID is required.")
     requested_kind = str(params.get("kind") or "").casefold()
     kind = "dedicated" if requested_kind in {"dedicated", "server"} else "singleplayer"
-
-    # Phase 4 status reads must never create/mutate local profile identity for a
-    # remote directory card. Only the one locally active runtime is eligible for
-    # detailed local delivery state; remote/public cards use advertised state.
     service_status = NETWORK.status()
     active = service_status.get("active_world") if isinstance(service_status, dict) else {}
     active_id = str((active or {}).get("profile_id") or "")
     if active_id != profile_id:
-        return {
-            "profile_id": profile_id,
-            "heartbeat": {"state": "", "active": False, "destinations": [], "last_success_at": None},
-            "contract": phase4_contract(),
-        }
+        return {"profile_id": profile_id,
+                "heartbeat": {"state": "", "active": False, "destinations": [], "last_success_at": None},
+                "contract": phase4_contract()}
     return {"profile_id": profile_id, "heartbeat": phase4_heartbeat_status(NETWORK, profile_id, kind), "contract": phase4_contract()}
+
+
+def _phase4_profile_id(params: dict) -> str:
+    profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+    if not profile_id:
+        raise ValueError("A stable World/profile ID is required.")
+    return profile_id
 
 
 def handle(method: str, params: dict) -> object:
@@ -102,9 +101,24 @@ def handle(method: str, params: dict) -> object:
 
     if method == "v3.phase4.contract":
         return phase4_contract()
-
     if method == "v3.phase4.world_status":
         return _phase4_world_status(params)
+    if method == "v3.phase4.tags.registry":
+        return tag_registry()
+    if method == "v3.phase4.platforms.registry":
+        return platform_registry()
+    if method == "v3.phase4.badges.list":
+        return {"profile_id": _phase4_profile_id(params), "badges": list_badges(_phase4_profile_id(params))}
+    if method == "v3.phase4.badges.add":
+        profile_id = _phase4_profile_id(params); return {"profile_id": profile_id, "badges": add_badge(profile_id, params.get("badge") or {})}
+    if method == "v3.phase4.badges.update":
+        profile_id = _phase4_profile_id(params); return {"profile_id": profile_id, "badges": update_badge(profile_id, str(params.get("badge_id") or ""), params.get("badge") or params.get("patch") or {})}
+    if method == "v3.phase4.badges.toggle":
+        profile_id = _phase4_profile_id(params); return {"profile_id": profile_id, "badges": toggle_badge(profile_id, str(params.get("badge_id") or ""), bool(params.get("enabled")))}
+    if method == "v3.phase4.badges.remove":
+        profile_id = _phase4_profile_id(params); return {"profile_id": profile_id, "badges": remove_badge(profile_id, str(params.get("badge_id") or ""))}
+    if method == "v3.phase4.badges.reorder":
+        profile_id = _phase4_profile_id(params); return {"profile_id": profile_id, "badges": reorder_badges(profile_id, params.get("ordered_ids") or [])}
 
     if method == "v3.identity.inspect":
         path = str(params.get("path") or "").strip()
@@ -127,12 +141,9 @@ def handle(method: str, params: dict) -> object:
     if method in {"v3.exchange.export", "exchange.package.export", "world.package.v3.export", "character.package.v3.export"}:
         output = str(params.get("output_path") or "").strip()
         if not output: raise ValueError("Choose where to save the .rsdwl package.")
-        world_ids = params.get("world_ids") or []
-        character_ids = params.get("character_ids") or []
-        if method == "world.package.v3.export" and params.get("id"):
-            world_ids = [str(params.get("id"))]
-        if method == "character.package.v3.export" and params.get("character_id"):
-            character_ids = [str(params.get("character_id"))]
+        world_ids = params.get("world_ids") or []; character_ids = params.get("character_ids") or []
+        if method == "world.package.v3.export" and params.get("id"): world_ids = [str(params.get("id"))]
+        if method == "character.package.v3.export" and params.get("character_id"): character_ids = [str(params.get("character_id"))]
         if not isinstance(world_ids, list): world_ids = []
         if not isinstance(character_ids, list): character_ids = []
         worlds = collect_world_entries(world_ids, ensure_world_identity=NETWORK.ensure_world_identity)
@@ -150,8 +161,7 @@ def handle(method: str, params: dict) -> object:
         return {"result": result, "state": _legacy.public_state(_legacy.load_state())}
 
     if method in {"v3.exchange.import", "exchange.package.import"}:
-        path = str(params.get("path") or "").strip()
-        inspected = inspect_exchange(path)
+        path = str(params.get("path") or "").strip(); inspected = inspect_exchange(path)
         character_root = _character_root_for_import(inspected, state)
         decisions = params.get("world_decisions") if isinstance(params.get("world_decisions"), dict) else {}
         result = apply_import(path, world_decisions=decisions, character_policy=str(params.get("character_policy") or "copy"),
@@ -160,9 +170,6 @@ def handle(method: str, params: dict) -> object:
         update_stage("exportsMigrated", True, note="V3 canonical .rsdwl importer active")
         return {"result": result, "state": _legacy.public_state(_legacy.load_state())}
 
-    # Existing profile/package readers stay available. Prefer the canonical V4
-    # inspector when a new package reaches the generic inspection entry point,
-    # otherwise leave legacy v2/v3 behavior untouched.
     if method == "profile.package.inspect":
         path = str(params.get("path") or "").strip()
         try:
@@ -175,8 +182,6 @@ def handle(method: str, params: dict) -> object:
     return _base_handle(method, params)
 
 
-# Recursive callbacks originating in the retained service must re-enter the
-# newest orchestration layer, while actual old providers remain unchanged.
 _legacy.handle = handle
 
 

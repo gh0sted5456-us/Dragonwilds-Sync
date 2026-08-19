@@ -8,78 +8,49 @@ snapshot; it never becomes a second heartbeat scheduler, profile authority, or
 network transport.
 """
 
-import base64
 import hashlib
 import re
 from copy import deepcopy
 from typing import Any
 
+from v3_phase4_badges import MAX_BADGE_BYTES, MAX_BADGE_DIMENSION, decode_png_data
+from v3_phase4_registry import normalize_platform_ids, normalize_tags as registry_normalize_tags, platform_registry, platforms_for, tag_registry
+
 PHASE4_SCHEMA = "DragonwildsSync.V3Phase4Presentation.v1"
-MAX_CUSTOM_BADGE_BYTES = 512 * 1024
+MAX_CUSTOM_BADGE_BYTES = MAX_BADGE_BYTES
 MAX_BADGES = 16
 MAX_TAGS = 24
-_PLATFORM_ALIASES = {
-    "steam": "steam", "epic": "epic", "epicgames": "epic", "epic games": "epic",
-    "xbox": "xbox", "playstation": "playstation", "psn": "playstation",
-    "nintendo": "nintendo", "windows": "windows", "linux": "linux",
-}
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_SAFE_ASSET_PATH = re.compile(r"^/assets/placards/badge-[0-9a-f]{64}\.png$")
 
 
 def _text(value: object, limit: int) -> str:
-    return str(value or "").strip()[:limit]
+    return " ".join(str(value or "").strip().split())[:limit]
 
 
 def normalize_tags(values: object, *, limit: int = MAX_TAGS) -> list[str]:
-    """Case-insensitive de-duplication while preserving first display spelling."""
-    if isinstance(values, str):
-        values = re.split(r"[,;\n]+", values)
-    if not isinstance(values, (list, tuple, set)):
-        return []
-    result: list[str] = []
-    seen: set[str] = set()
-    for raw in values:
-        value = re.sub(r"\s+", " ", str(raw or "").strip()).lstrip("#")[:40]
-        key = value.casefold()
-        if not value or key in seen:
-            continue
-        seen.add(key)
-        result.append(value)
-        if len(result) >= max(0, int(limit)):
-            break
-    return result
+    """Normalize through the central Tag Registry, including aliases."""
+    return registry_normalize_tags(values, limit=limit)
 
 
 def normalize_platforms(values: object) -> list[str]:
-    if isinstance(values, dict):
-        values = [key for key, enabled in values.items() if enabled]
-    if isinstance(values, str):
-        values = re.split(r"[,;\n]+", values)
-    if not isinstance(values, (list, tuple, set)):
-        return []
-    result: list[str] = []
-    for raw in values:
-        key = _PLATFORM_ALIASES.get(str(raw or "").strip().casefold())
-        if key and key not in result:
-            result.append(key)
-    return result
+    """Return stable enabled platform IDs from the central Platform Registry."""
+    return normalize_platform_ids(values)
 
 
-def _https_url(value: object, limit: int = 1000) -> str:
-    text = _text(value, limit)
-    return text if text.casefold().startswith("https://") else ""
+def _safe_url(value: object, limit: int = 1000, *, allow_badge_asset: bool = False) -> str:
+    text = str(value or "").strip()[:limit]
+    if text.casefold().startswith("https://"):
+        return text
+    if allow_badge_asset and _SAFE_ASSET_PATH.fullmatch(text.casefold()):
+        return text
+    return ""
 
 
 def _png_hash_from_data_url(value: object) -> str:
-    text = str(value or "").strip()
-    prefix = "data:image/png;base64,"
-    if not text.casefold().startswith(prefix):
-        return ""
     try:
-        payload = base64.b64decode(text[len(prefix):], validate=True)
-    except Exception:
-        return ""
-    if not payload.startswith(b"\x89PNG\r\n\x1a\n") or len(payload) > MAX_CUSTOM_BADGE_BYTES:
+        payload = decode_png_data(value)
+    except ValueError:
         return ""
     return hashlib.sha256(payload).hexdigest()
 
@@ -98,15 +69,19 @@ def normalize_custom_badges(values: object) -> list[dict[str, str]]:
             digest = hashlib.sha256(label.casefold().encode("utf-8")).hexdigest()
             row = {"id": f"badge-{digest[:16]}", "label": label, "tooltip": label, "asset_hash": "", "asset_url": "", "link": ""}
         elif isinstance(raw, dict):
-            label = _text(raw.get("label") or raw.get("name") or raw.get("title") or raw.get("id"), 80)
-            tooltip = _text(raw.get("tooltip") or raw.get("meaning") or raw.get("description"), 240)
-            if not label or not tooltip:
-                # Custom/community badges must have an explained meaning.
+            if raw.get("enabled") is False:
                 continue
+            label = _text(raw.get("label") or raw.get("name") or raw.get("title") or raw.get("id"), 80)
+            if not label:
+                continue
+            # Phase 4 contract: tooltip defaults to badge name when omitted.
+            tooltip = _text(raw.get("tooltip") or raw.get("meaning") or raw.get("description") or label, 240)
             digest = _text(raw.get("asset_hash") or raw.get("sha256") or "", 64).casefold()
             if not _HASH_RE.fullmatch(digest):
                 digest = _png_hash_from_data_url(raw.get("image_data") or raw.get("png_data") or raw.get("data_url"))
-            asset_url = _https_url(raw.get("asset_url") or raw.get("image_url"))
+            asset_url = _safe_url(raw.get("asset_path") or raw.get("asset_url") or raw.get("image_url"), allow_badge_asset=True)
+            if digest and not asset_url:
+                asset_url = f"/assets/placards/badge-{digest}.png"
             identity_seed = _text(raw.get("id"), 64) or digest or f"{label}|{tooltip}"
             badge_id = re.sub(r"[^a-z0-9._-]+", "-", identity_seed.casefold()).strip("-")[:64]
             if not badge_id:
@@ -115,17 +90,16 @@ def normalize_custom_badges(values: object) -> list[dict[str, str]]:
                 "id": badge_id,
                 "label": label,
                 "tooltip": tooltip,
-                "asset_hash": digest,
+                "asset_hash": digest if _HASH_RE.fullmatch(digest) else "",
                 "asset_url": asset_url,
-                "link": _https_url(raw.get("link") or raw.get("url")),
+                "link": _safe_url(raw.get("link") or raw.get("url")),
             }
         else:
             continue
         dedupe = row["id"].casefold()
         if dedupe in seen:
             continue
-        seen.add(dedupe)
-        result.append(row)
+        seen.add(dedupe); result.append(row)
         if len(result) >= MAX_BADGES:
             break
     return result
@@ -146,9 +120,12 @@ def destination_state(outcomes: object) -> str:
 def decorate_public_snapshot(snapshot: dict, raw: dict) -> dict:
     result = deepcopy(snapshot) if isinstance(snapshot, dict) else {}
     raw = raw if isinstance(raw, dict) else {}
-    result["tags"] = normalize_tags(result.get("tags") or raw.get("tags"))
+    presentation = raw.get("presentation") if isinstance(raw.get("presentation"), dict) else {}
+    result["tags"] = normalize_tags(result.get("tags") or raw.get("tags") or presentation.get("tags"))
 
     badge_source = raw.get("custom_badges")
+    if not isinstance(badge_source, list):
+        badge_source = presentation.get("custom_badges")
     if not isinstance(badge_source, list):
         badge_source = raw.get("badges")
     badge_refs = normalize_custom_badges(badge_source)
@@ -164,14 +141,22 @@ def decorate_public_snapshot(snapshot: dict, raw: dict) -> dict:
 
     compatibility = raw.get("platforms")
     if compatibility is None:
-        compatibility = raw.get("platform_compatibility")
+        compatibility = raw.get("platform_compatibility") or presentation.get("platform_compatibility")
     if compatibility is None and isinstance(raw.get("compatibility"), dict):
         compatibility = raw["compatibility"].get("platforms")
     platforms = normalize_platforms(compatibility)
     if platforms:
         result["platforms"] = platforms
+        # Small registry-derived metadata makes store/support behavior identical
+        # across Desktop, Quick and WebHost without trusting remote URLs.
+        result["platform_refs"] = [{
+            "id": row["id"], "displayName": row["displayName"],
+            "directSupportUrl": row.get("directSupportUrl") or "",
+            "fallbackInfoUrl": row.get("fallbackInfoUrl") or "",
+            "verified": bool(row.get("verified")),
+        } for row in platforms_for(platforms)]
     else:
-        result.pop("platforms", None)
+        result.pop("platforms", None); result.pop("platform_refs", None)
     return result
 
 
@@ -216,14 +201,11 @@ def heartbeat_status(network: Any, profile_id: str, kind: str = "dedicated") -> 
     for row in configured:
         current = delivery.get(row["id"]) or {}
         attempted = bool(current.get("last_attempt_at"))
-        if attempted:
-            attempts += 1
+        if attempted: attempts += 1
         success_at = current.get("last_success_at")
         if success_at:
-            try:
-                successes.append(float(success_at))
-            except (TypeError, ValueError):
-                pass
+            try: successes.append(float(success_at))
+            except (TypeError, ValueError): pass
         ok = bool(attempted and success_at and not current.get("last_error_code"))
         outcomes.append({**row, "ok": ok, "last_attempt_at": current.get("last_attempt_at"),
                          "last_success_at": success_at, "last_error_code": str(current.get("last_error_code") or "")[:160]})
@@ -237,6 +219,9 @@ def phase4_contract() -> dict:
         "schema": PHASE4_SCHEMA,
         "placards": {"sides": 2, "animation_modes": ["full", "reduced", "off"]},
         "heartbeat_states": ["Active", "Connecting", "Partial", "Failed", "Disabled"],
-        "custom_badges": {"format": "reference", "max_count": MAX_BADGES, "max_png_bytes": MAX_CUSTOM_BADGE_BYTES},
-        "platforms": sorted(set(_PLATFORM_ALIASES.values())),
+        "custom_badges": {"format": "reference", "max_count": MAX_BADGES,
+                          "max_png_bytes": MAX_CUSTOM_BADGE_BYTES, "max_png_dimension": MAX_BADGE_DIMENSION,
+                          "tooltip_defaults_to_name": True},
+        "tag_registry": tag_registry(),
+        "platform_registry": platform_registry(),
     }

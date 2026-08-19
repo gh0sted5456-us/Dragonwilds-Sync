@@ -64,7 +64,7 @@
     ];
     return {
       world_id: isExperimental ? 'demo-ashenfall-exp' : 'demo-ashenfall-main',
-      nickname: isExperimental ? 'Ashenfall · Experimental' : 'Ashenfall',
+      nickname: 'Ashenfall',
       world_name: 'Ashenfall Demo World',
       description: isExperimental
         ? 'Development-channel preview with upcoming runtime, WebGUI, synchronization, and placard features before they graduate to Main.'
@@ -115,9 +115,14 @@
     expFace.classList.remove('world-card-front');
     expFace.classList.add('world-card-back', 'demo-experimental-face');
     const modeBanner = expFace.querySelector('.world-mode-banner');
-    if (modeBanner) modeBanner.textContent = 'EXPERIMENTAL CHANNEL';
+    if (modeBanner) modeBanner.textContent = expWorld.modeLabel;
     const hint = expFace.querySelector('.card-flip-hint');
     if (hint) hint.textContent = 'MAIN ↻';
+    const experimentalRibbon = document.createElement('div');
+    experimentalRibbon.className = 'demo-experimental-ribbon';
+    experimentalRibbon.dataset.releaseChannel = 'experimental';
+    experimentalRibbon.innerHTML = '<span class="demo-experimental-ribbon-dot" aria-hidden="true"></span><strong>EXPERIMENTAL CHANNEL</strong><span>Active development · May be unstable</span>';
+    expFace.appendChild(experimentalRibbon);
     inner.appendChild(expFace);
     mainCard.setAttribute('aria-label', 'Interactive Ashenfall demo World placard. Main and Experimental release channels.');
     mainCard.addEventListener('click', () => queueMicrotask(syncTabsFromCard));

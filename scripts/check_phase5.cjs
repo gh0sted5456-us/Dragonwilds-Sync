@@ -87,7 +87,7 @@ if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.
 if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
 if (!bridge.includes('applied_revision != desired_revision')) failures.push('Runtime bridge must fail a start whose applied revision does not match desired revision');
 if (!service.includes('activation_gate')) failures.push('Normal service must expose the Phase 5C activation gate instead of silently enabling an unverified worker path');
-if (sources.includes('gh0sted5456-us/Dragonwilds-Sync') && sources.includes('RuneSchema-core-latest.zip')) failures.push('RuneSchema source registry must not retain the temporary Dragonwilds Sync-hosted ZIP as update authority');
+if (sources.includes('"download_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/RuneSchema-core-latest.zip"')) failures.push('RuneSchema source registry must not retain the temporary Dragonwilds Sync-hosted ZIP as update authority');
 if (!runeschema.includes('resolver_source = _runeschema_resolver_source(source_url)')) failures.push('Official RuneSchema releases URL must resolve through the GitHub API-capable repository source');
 
 if (failures.length) {

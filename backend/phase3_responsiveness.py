@@ -77,15 +77,30 @@ def _write_json_if_changed(path: Path, payload: dict) -> bool:
 
 
 def _catalog_revision() -> str:
+    """Read only the tiny persisted RSDW revision marker.
+
+    ``rsdw_cache.status()`` also validates the entire item/icon/toolkit cache and
+    recursively counts files. Character-listing is a local hot path, so it must
+    never pay that validation cost merely to decide whether icon hydration may
+    have changed. The cache-state JSON is written atomically by the existing
+    RSDW refresh path and its ``revision`` changes only when authoritative RSDW
+    content changes.
+    """
     try:
-        status = _characters.rsdw_cache.status() or {}
-    except Exception:
-        return ""
-    for key in ("revision", "data_revision", "last_refresh_at", "updated_at"):
-        value = str(status.get(key) or "").strip()
+        state_path = Path(getattr(_characters.rsdw_cache, "RSDW_STATE_PATH"))
+        state = _read_json(state_path, {})
+        value = str(state.get("revision") or "").strip()
         if value:
             return value[:160]
-    return ""
+    except (OSError, TypeError, ValueError):
+        pass
+    try:
+        manifest_path = Path(getattr(_characters.rsdw_cache, "RSDW_ITEM_MANIFEST_PATH"))
+        manifest = _read_json(manifest_path, {})
+        value = str(manifest.get("revision") or "").strip()
+        return value[:160]
+    except (OSError, TypeError, ValueError):
+        return ""
 
 
 def _eligible(path: Path) -> bool:
@@ -187,6 +202,7 @@ def _index_row(row: dict) -> dict:
 
 def discover_characters_cached(game_dir: str, associations: dict | None = None, selections: dict | None = None,
                                profiles: dict | None = None) -> list[dict]:
+    global _DETAIL_MEMORY
     started = time.perf_counter()
     associations = associations if isinstance(associations, dict) else {}
     selections = selections if isinstance(selections, dict) else {}
@@ -229,7 +245,6 @@ def discover_characters_cached(game_dir: str, associations: dict | None = None, 
         cache_changed = next_cache != cache
         if cache_changed:
             _write_json_if_changed(DETAIL_CACHE_FILE, next_cache)
-            global _DETAIL_MEMORY
             _DETAIL_MEMORY = next_cache
 
         index_payload = {

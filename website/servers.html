@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0d0f">
+  <meta name="description" content="Browse live public RuneScape: Dragonwilds servers broadcasting through the Dragonwilds Sync Network.">
+  <meta property="og:title" content="Public Servers — Dragonwilds Sync">
+  <meta property="og:description" content="Live opt-in Dragonwilds Sync servers with build status, tags, mods, rules, badges, and public connection details.">
+  <meta property="og:type" content="website">
+  <title>Public Servers — Dragonwilds Sync</title>
+  <link rel="icon" href="assets/application-icon.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="ambient ambient-one" aria-hidden="true"></div>
+  <div class="ambient ambient-two" aria-hidden="true"></div>
+
+  <header class="site-header" id="top">
+    <a class="brand" href="index.html#top" aria-label="Dragonwilds Sync home">
+      <img src="assets/application-icon.png" alt="" class="brand-icon">
+      <span class="brand-copy"><strong>Dragonwilds</strong><span>Sync</span></span>
+    </a>
+
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav">
+      <span></span><span></span><span class="sr-only">Toggle navigation</span>
+    </button>
+
+    <nav class="main-nav" id="main-nav" aria-label="Primary navigation">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#network">Network</a>
+      <a href="servers.html" aria-current="page">Servers</a>
+      <a href="index.html#webgui">WebGUI</a>
+      <a href="index.html#downloads">Downloads</a>
+      <a href="index.html#community">Community</a>
+      <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>
+    </nav>
+
+    <div class="theme-switcher" role="group" aria-label="Website theme">
+      <button type="button" data-theme-choice="dark" aria-pressed="true" title="Dark Graph theme"><span class="theme-dot dark-dot"></span><span class="theme-label">Dark</span></button>
+      <button type="button" data-theme-choice="white" aria-pressed="false" title="White theme"><span class="theme-dot white-dot"></span><span class="theme-label">White</span></button>
+      <button type="button" data-theme-choice="glass" aria-pressed="false" title="Liquid Glass theme"><span class="theme-dot glass-dot"></span><span class="theme-label">Glass</span></button>
+    </div>
+  </header>
+
+  <main class="directory-page-main">
+    <section class="section-shell directory-page-hero">
+      <div class="section-heading reveal visible">
+        <div class="eyebrow"><span class="pulse-heart" aria-hidden="true">♥</span> Dragonwilds Sync Network</div>
+        <h1>Public Server Directory.</h1>
+        <p>Discover opt-in Dragonwilds servers broadcasting through Dragonwilds Sync. Each placard is public, sanitized telemetry only—server administration and WebGUI credentials are never exposed here.</p>
+      </div>
+    </section>
+
+    <section class="network-section section-shell" id="network">
+      <div class="network-heading reveal">
+        <div><div class="eyebrow"><span class="network-live-dot" id="network-live-dot"></span> Live Network Status</div><h2>See what is online now.</h2></div>
+        <p id="network-message">Connecting to the public Dragonwilds Sync network…</p>
+      </div>
+      <div class="network-stats reveal delay-1" aria-live="polite">
+        <article><span>ACTIVE USERS</span><strong id="stat-users">—</strong><small>anonymous active installations</small></article>
+        <article><span>SERVERS ONLINE</span><strong id="stat-worlds">—</strong><small>publicly broadcasting worlds</small></article>
+        <article><span>PLAYERS LISTED</span><strong id="stat-players">—</strong><small>across public servers</small></article>
+        <article><span>CURRENT BUILD</span><strong id="stat-build">—</strong><small>checking Steam dedicated-server build</small></article>
+      </div>
+    </section>
+
+    <section class="worlds-section" id="servers">
+      <div class="section-shell">
+        <div class="worlds-header reveal">
+          <div class="section-heading">
+            <div class="eyebrow">Public Server List</div>
+            <h2>Find your next world.</h2>
+            <p>Search and filter participating servers. Select a placard to smoothly flip it and reveal published mods, rules, badges, tags, community details, and public connection information.</p>
+          </div>
+          <div class="directory-state" id="directory-state"><span class="directory-dot"></span><div><strong>Connecting</strong><small>Checking the public directory…</small></div></div>
+        </div>
+
+        <div class="world-toolbar reveal delay-1">
+          <div class="filter-group" role="group" aria-label="Server directory filter">
+            <button class="filter-button active" type="button" data-world-filter="all">All</button>
+            <button class="filter-button" type="button" data-world-filter="online">Online</button>
+            <button class="filter-button" type="button" data-world-filter="modded">Modded</button>
+            <button class="filter-button" type="button" data-world-filter="current">Current build</button>
+          </div>
+          <label class="world-search"><span class="sr-only">Search public servers</span><input id="world-search" type="search" placeholder="Search servers, regions, tags…" autocomplete="off"></label>
+        </div>
+
+        <div class="world-grid" id="world-grid" aria-live="polite">
+          <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Loading public servers</strong><p>Connecting to the Dragonwilds Sync Network.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-shell main-directory-cta">
+      <div class="main-directory-card reveal">
+        <div class="section-heading">
+          <div class="eyebrow">Public by design</div>
+          <h2>Discovery is not administration.</h2>
+          <p>The directory only displays fields a host intentionally broadcasts for discovery. Remote management remains behind the separate authenticated WebGUI and authoritative runtime controller.</p>
+        </div>
+        <a class="button button-secondary" href="index.html#webgui">About WebGUI <span aria-hidden="true">→</span></a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="footer-brand"><img src="assets/application-icon.png" alt=""><div><strong>Dragonwilds Sync</strong><span>Community toolkit for RuneScape: Dragonwilds</span></div></div>
+    <div class="footer-links"><a href="index.html#network">Network</a><a href="servers.html" aria-current="page">Servers</a><a href="index.html#webgui">WebGUI</a><a href="https://discord.gg/gQ7uY2cQ3q">RSDW Community</a><a href="https://www.paypal.me/luke0494" target="_blank" rel="noopener noreferrer">Support</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
+    <p>Dragonwilds Sync is an independent community project and is not affiliated with, endorsed by, or sponsored by Jagex Ltd.</p>
+  </footer>
+
+  <!-- The shared script also hydrates release metadata on the landing page. These
+       inert nodes keep that shared routine harmless on this directory-only page. -->
+  <div hidden aria-hidden="true">
+    <span id="release-version"></span><span id="release-date"></span><span id="release-channel"></span><a id="release-link" href="#"></a>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

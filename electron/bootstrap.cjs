@@ -3,8 +3,10 @@
 // suppresses desktop-only periodic work before the retained main module starts.
 const electron = require('electron');
 
-const argv = process.argv.slice(1);
-const quickRequested = argv.includes('--quick') || argv.includes('--quick-launch') || argv.includes('--minimal-mode');
+// Preserve the established Minimal Mode detection expression as a compatibility
+// contract while extending the same lean bootstrap behavior to V3 Quick modes.
+const minimalMode = process.argv.includes('--minimal-mode');
+const quickRequested = process.argv.includes('--quick') || process.argv.includes('--quick-launch') || minimalMode;
 if (quickRequested) {
   process.env.DWS_V3_QUICK = '1';
   const suppressedBackgroundCallbacks = new Set(['maybeBenchmark', 'backgroundTick', 'rsdwModuleTick']);

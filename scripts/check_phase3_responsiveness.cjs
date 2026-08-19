@@ -84,13 +84,17 @@ if (phase3.includes('setInterval(')) {
 requireText(monaco, "script.src = 'vendor/monaco/vs/loader.js'", 'bundled Monaco loader must be prewarmed');
 requireText(monaco, "amdRequire(['vs/editor/editor.main']", 'Monaco editor core must preload before first editor intent');
 requireText(monaco, 'window.__DWSYNC_MONACO_STATUS__', 'Monaco readiness/failure must be observable');
-requireText(monaco, 'requestAnimationFrame', 'Monaco warmup must yield first shell paint');
+requireText(monaco, 'warm().catch(() => {})', 'Monaco must begin warming during the backend bootstrap window');
 requireText(app, 'monaco.editor.create', 'the application must still mount the real Monaco editor');
+requireText(app, "state.data = await api.invoke('bootstrap')", 'app.js must retain an asynchronous backend bootstrap window');
 requireText(index, 'release-monaco-prewarm.js', 'Monaco prewarm layer must be loaded');
 requireText(index, 'release-phase3.css', 'Phase 3 localized loading CSS must be loaded');
 requireText(index, 'release-phase3.js', 'Phase 3 responsiveness layer must be loaded');
-if (index.indexOf('release-monaco-prewarm.js') > index.indexOf('app.js')) {
-  throw new Error('Phase 3 contract failed: Monaco warmup must be registered before app.js.');
+const appIndex = index.indexOf('app.js');
+const monacoIndex = index.indexOf('release-monaco-prewarm.js');
+const performanceIndex = index.indexOf('release-performance.js');
+if (!(appIndex >= 0 && monacoIndex > appIndex && performanceIndex > monacoIndex)) {
+  throw new Error('Phase 3 contract failed: Monaco must warm after app bootstrap starts and before release enhancement work.');
 }
 
 console.log('Phase 3 shell-first responsiveness / persistence / Monaco contract: OK');

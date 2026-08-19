@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "dragonwilds-sync-directory",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-18",
+  "workers_dev": true,
+  "vars": {
+    "OFFLINE_AFTER_SECONDS": "1800",
+    "HISTORY_RETENTION_DAYS": "7"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "dragonwilds-sync-worlds",
+      "database_id": "c4498761-2e93-47e4-a7f2-d7a572293ffd",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

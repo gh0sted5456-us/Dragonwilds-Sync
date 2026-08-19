@@ -143,3 +143,13 @@ def install_client_core(component: str, game_root: str, application: dict, param
         return {"component": "RuneSchema", "result": result}
 
     raise ValueError("Managed client core component must be UE4SS or RuneSchema.")
+
+
+# dragonwilds_service imports this module only after the retained V2 service has
+# finished loading. Install the additive Phase 3 character/index optimization at
+# that point without replacing the service or its RPC authority.
+try:
+    from phase3_responsiveness import install_service_patches as _install_phase3_responsiveness
+    _install_phase3_responsiveness()
+except Exception:
+    pass

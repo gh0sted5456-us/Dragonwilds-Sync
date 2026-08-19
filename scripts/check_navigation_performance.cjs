@@ -9,6 +9,7 @@ const must = (condition, message) => { if (!condition) fail(message); };
 
 const index = read('renderer/index.html');
 const performanceJs = read('renderer/release-performance.js');
+const navigationJs = read('renderer/release-navigation.js');
 const performanceCss = read('renderer/release-performance.css');
 const preload = read('electron/preload.cjs');
 const phase3 = read('renderer/release-phase3.js');
@@ -29,6 +30,17 @@ must(performanceJs.includes("document.addEventListener('wheel'") && performanceJ
   'scroll/navigation interaction must take priority over presentation enhancement work');
 must(performanceCss.includes('content-visibility: auto'), 'long off-screen UI rows must use Chromium content visibility');
 must(performanceCss.includes('overscroll-behavior: contain'), 'main scroll surface must use bounded overscroll behavior');
+
+// Menu names/visibility must settle before paint. Decorative release enhancements
+// may stay coordinated/idle, but navigation itself must not pop into place later.
+must(navigationJs.includes('function applyNavigationCritical') && navigationJs.includes('function applyPresentationEnhancements'),
+  'navigation-critical cleanup must be separated from decorative presentation work');
+must(navigationJs.includes("const appRoot = document.getElementById('app')"),
+  'navigation-critical cleanup must target the app root');
+must(navigationJs.includes("observe(appRoot, { childList: true, subtree: true })"),
+  'app-root navigation observer must run as a targeted native microtask before paint');
+must(navigationJs.includes("observe(document.documentElement, { childList: true, subtree: true })"),
+  'noncritical release enhancement may retain the coordinated broad observer');
 
 for (const method of ['singleplayer.inventory', 'server.world.inventory']) {
   const match = preload.match(new RegExp(`'${method.replaceAll('.', '\\.')}'\\s*:\\s*\\{\\s*ttl:\\s*(\\d+),\\s*stale:\\s*(\\d+)`));

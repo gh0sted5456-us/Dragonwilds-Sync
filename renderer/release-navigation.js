@@ -4,6 +4,12 @@
   // Release navigation cleanup. The underlying V2 routes/RPCs stay intact for
   // backwards compatibility; this layer removes legacy menu entry points and
   // presents their successor names consistently in the shipped client.
+  //
+  // Navigation-critical cleanup is intentionally separate from decorative
+  // enhancement. The app root receives a targeted native MutationObserver so
+  // menu visibility/names settle in the same microtask as app.js render and
+  // before Chromium paints. Broader recommendation/presentation work remains
+  // on the shared idle-time coordinator installed by release-performance.js.
   const normalize = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLowerCase();
   let recommendationRows = null;
   let recommendationLoading = null;
@@ -123,7 +129,7 @@
     });
   }
 
-  function applyNavigationCleanup(root = document) {
+  function applyNavigationCritical(root = document) {
     root.querySelectorAll('[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
     root.querySelectorAll('[data-external-tab]').forEach(hideLegacyEntry);
 
@@ -150,7 +156,9 @@
     });
 
     root.querySelectorAll('[data-nexus-account], [data-nexus-login], #nexus-account-panel, #nexus-auth-panel, .nexus-account-settings').forEach(hideLegacyEntry);
+  }
 
+  function applyPresentationEnhancements(root = document) {
     root.querySelectorAll('h1,h2,h3,.page-title,.panel-title').forEach((node) => {
       if (normalize(node.textContent) === 'shared worlds') replaceText(node, 'Shared Worlds', 'Worlds · Imported & Shared');
       if (normalize(node.textContent) === 'external declaration') replaceText(node, 'External Declaration', 'Server Management');
@@ -179,18 +187,29 @@
     }, 0);
   }, true);
 
+  // Critical menu structure gets a targeted observer. release-performance.js
+  // only defers documentElement-wide observers, so this callback is delivered
+  // as a native MutationObserver microtask before the next browser paint.
+  const appRoot = document.getElementById('app');
+  if (appRoot) {
+    new MutationObserver(() => applyNavigationCritical(appRoot)).observe(appRoot, { childList: true, subtree: true });
+    applyNavigationCritical(appRoot);
+  }
+
   let scheduled = false;
-  const schedule = () => {
+  const scheduleEnhancements = () => {
     if (scheduled) return;
     scheduled = true;
     requestAnimationFrame(() => {
       scheduled = false;
-      applyNavigationCleanup(document);
+      applyPresentationEnhancements(document);
     });
   };
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule, { once: true });
-  else schedule();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleEnhancements, { once: true });
+  else scheduleEnhancements();
 
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
+  // Noncritical presentation remains on the coordinated broad observer so large
+  // editor/mod DOM updates do not trigger several whole-document scans per frame.
+  new MutationObserver(scheduleEnhancements).observe(document.documentElement, { childList: true, subtree: true });
 })();

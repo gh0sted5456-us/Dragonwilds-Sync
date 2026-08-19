@@ -9,10 +9,32 @@ runner recreates the old import/source environment for historical tests while
 V3-specific tests execute against the new canonical modules.
 """
 
+import ast
 import importlib
 from pathlib import Path
 import runpy
 import sys
+
+
+def _imports_dragonwilds_service(source: str) -> bool:
+    """Return True only for a real Python import of dragonwilds_service.
+
+    Historical tests often contain the literal filename in source-inspection
+    assertions. A substring check would eagerly import the service and change
+    module initialization order before the test fixture is established.
+    """
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(alias.name == "dragonwilds_service" for alias in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if node.module == "dragonwilds_service":
+                return True
+    return False
 
 
 def main() -> int:
@@ -61,11 +83,10 @@ def main() -> int:
 
         Path.read_text = historical_read_text
 
-        # Do not eagerly import the preserved service for every historical test.
-        # Several suites intentionally verify module-import ordering (for example
-        # WebGUI runtime polish before directory_host). Only tests that explicitly
-        # reference dragonwilds_service need the compatibility substitution.
-        if "dragonwilds_service" in source:
+        # Only a real import statement gets the preserved service substitution.
+        # Merely mentioning "dragonwilds_service.py" in a source-contract string
+        # must not preload service/runtime modules ahead of the fixture.
+        if _imports_dragonwilds_service(source):
             preserved = importlib.import_module("dragonwilds_service_v2_wrapper")
             sys.modules["dragonwilds_service"] = preserved
 

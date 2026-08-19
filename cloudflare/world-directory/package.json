@@ -12,8 +12,8 @@
     "db:migrate:remote": "wrangler d1 migrations apply dragonwilds-sync-worlds --remote"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20260801.0",
-    "typescript": "^5.9.2",
-    "wrangler": "^4.33.1"
+    "@cloudflare/workers-types": "latest",
+    "typescript": "latest",
+    "wrangler": "latest"
   }
 }

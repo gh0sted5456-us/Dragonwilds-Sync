@@ -44,13 +44,14 @@ const bridge = need('backend/runtime_worker_bridge.py', [
   'revisioned-settings-snapshot','desired_config_revision','applied_config_revision','share_owner','application','start_runtime','stop_runtime','arm_orphan_watchdog'
 ]);
 need('backend/test_phase5_runtime_worker_bridge.py', [
-  'test_start_stop_through_authoritative_manager','test_explicit_rollback_keeps_direct_engine','test_restart_reattaches_existing_worker_without_duplicate_start'
+  'test_start_stop_through_authoritative_manager','test_explicit_rollback_keeps_direct_engine','test_restart_reattaches_existing_worker_without_duplicate_start','test_failed_start_cleans_worker_without_direct_fallback'
 ]);
 need('backend/test_runtime_worker_config.py', [
   'plaintext secret leaked','old desired revision was mutated','stale desired runtime revision was not rejected'
 ]);
 need('backend/dragonwilds_service.py', [
-  'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers','runtime.worker.runtime.start','runtime.worker.runtime.stop','runtime.worker.runtime.restart'
+  'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers',
+  'runtime.worker.runtime.start','runtime.worker.runtime.stop','runtime.worker.runtime.restart','runtime.worker.runtime.logs','_worker_revision'
 ]);
 need('renderer/index.html', ['release-phase5-placard-window.css','release-phase5-placard-window.js']);
 need('backend/web_release_polish_hook.py', ['v3_phase4_web_focus','phase5_remote_admin']);

@@ -57,7 +57,18 @@ def main():
             character_profiles.CHAR_IMPORT_BACKUPS = old_backup_dir
 
         # RSDW repository search tolerates generic upstream JSON shapes and uses local icons.
-        old = (rsdw_cache.RSDW_CACHE_ROOT, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_ICONS_DIR, rsdw_cache.RSDW_STATE_PATH)
+        # Keep the canonical V2 item manifest inside this same temporary root too.
+        # Otherwise a developer who already has a real APPDATA RSDW manifest can make
+        # this fallback-path test consume live user state while clean CI happens to pass.
+        old = (
+            rsdw_cache.RSDW_CACHE_ROOT,
+            rsdw_cache.RSDW_DATA_DIR,
+            rsdw_cache.RSDW_ICONS_DIR,
+            rsdw_cache.RSDW_STATE_PATH,
+            rsdw_cache.RSDW_RAW_ITEMS_DIR,
+            rsdw_cache.RSDW_ITEM_MANIFEST_PATH,
+            rsdw_cache._ITEM_INDEX_CACHE,
+        )
         rsdw_cache.RSDW_CACHE_ROOT = root / "rsdw"
         rsdw_cache_legacy.RSDW_CACHE_ROOT = rsdw_cache.RSDW_CACHE_ROOT
         rsdw_cache.RSDW_DATA_DIR = rsdw_cache.RSDW_CACHE_ROOT / "item_data"
@@ -66,6 +77,9 @@ def main():
         rsdw_cache_legacy.RSDW_ICONS_DIR = rsdw_cache.RSDW_ICONS_DIR
         rsdw_cache.RSDW_STATE_PATH = rsdw_cache.RSDW_CACHE_ROOT / "cache_state.json"
         rsdw_cache_legacy.RSDW_STATE_PATH = rsdw_cache.RSDW_STATE_PATH
+        rsdw_cache.RSDW_RAW_ITEMS_DIR = rsdw_cache.RSDW_CACHE_ROOT / "raw_items"
+        rsdw_cache.RSDW_ITEM_MANIFEST_PATH = rsdw_cache.RSDW_CACHE_ROOT / "item-manifest.json"
+        rsdw_cache._ITEM_INDEX_CACHE = None
         try:
             rsdw_cache.RSDW_DATA_DIR.mkdir(parents=True)
             rsdw_cache.RSDW_ICONS_DIR.mkdir(parents=True)
@@ -76,7 +90,15 @@ def main():
             assert found["items"][0]["id"] == "ITEM_Log"
             assert found["items"][0]["icon_path"].endswith("ITEM_Log.png")
         finally:
-            rsdw_cache.RSDW_CACHE_ROOT, rsdw_cache.RSDW_DATA_DIR, rsdw_cache.RSDW_ICONS_DIR, rsdw_cache.RSDW_STATE_PATH = old
+            (
+                rsdw_cache.RSDW_CACHE_ROOT,
+                rsdw_cache.RSDW_DATA_DIR,
+                rsdw_cache.RSDW_ICONS_DIR,
+                rsdw_cache.RSDW_STATE_PATH,
+                rsdw_cache.RSDW_RAW_ITEMS_DIR,
+                rsdw_cache.RSDW_ITEM_MANIFEST_PATH,
+                rsdw_cache._ITEM_INDEX_CACHE,
+            ) = old
             rsdw_cache_legacy.RSDW_CACHE_ROOT = rsdw_cache.RSDW_CACHE_ROOT
             rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
             rsdw_cache_legacy.RSDW_ICONS_DIR = rsdw_cache.RSDW_ICONS_DIR

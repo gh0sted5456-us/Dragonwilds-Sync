@@ -7,7 +7,7 @@ const need = (rel, values) => { const text=read(rel); for(const value of values)
 
 const phase4 = need('backend/v3_phase4.py', [
   '_PUBLIC_CARD_SWITCHES','show_description','show_region','show_players','show_build','show_rules',
-  '_apply_public_card_controls','_remote_admin_metadata','/api/v1/remote-admin/ping','browser_requires_https','live_probe_required'
+  '_apply_public_card_controls','_remote_admin_metadata','DIRECTORY_HOST.status()','/api/v1/remote-admin/ping','browser_requires_https','live_probe_required'
 ]);
 need('renderer/release-phase5-placard-window.js', [
   'phase5-placard-window','openPlacard','toggleMaximize','minimizeWindow','ResizeObserver','data-phase5-open-placard',
@@ -23,19 +23,31 @@ const remote = need('backend/phase5_remote_admin.py', [
 const directory = need('cloudflare/dragonwilds-sync-directory/worker-phase5.js', [
   "import base from './worker.js'",'world_remote_admin_v1','sanitizeRemote','https:','remote_admin_handoff','target-world','/api/v1/remote-admin/ping'
 ]);
+need('cloudflare/dragonwilds-sync-directory/schema-v3.sql', ['world_remote_admin_v1','FOREIGN KEY (world_id) REFERENCES worlds_v3']);
 const website = need('website/script.js', [
   'normalizeRemoteAdmin','openVerifiedRemoteAdmin','CONTACTING SERVER','dragonwilds-sync-remote-admin','Target server probe','world_id','fingerprint','SERVER VERIFIED'
 ]);
-const worker = need('backend/runtime_worker.py', [
-  'START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','_start_runtime','_stop_runtime','_restart_runtime','start_new_session','CREATE_NEW_PROCESS_GROUP','RUNTIME_RUNNING'
+const desired = need('backend/runtime_worker_config.py', [
+  'RuntimeDesiredConfig.v1','create_desired_snapshot','load_desired_snapshot','verify_authoritative_settings','settingsHash','desired-current.json','sync_profile_settings'
 ]);
-need('backend/worker_supervisor.py', ['start_runtime','stop_runtime','restart_runtime','START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME']);
+const worker = need('backend/runtime_worker.py', [
+  'START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','GET_LOG_TAIL','_start_runtime','_stop_runtime','_restart_runtime',
+  'desiredConfigRevision','appliedConfigRevision','load_desired_snapshot','verify_authoritative_settings',
+  'game.stdout.log','game.stderr.log','GAME_EXITED_UNEXPECTEDLY','CREATE_NEW_PROCESS_GROUP','start_new_session',
+  'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE','windows-job-kill-on-close','orphan-watchdog-fallback','RUNTIME_RUNNING'
+]);
+need('backend/worker_supervisor.py', [
+  'create_desired_snapshot','configRevision','start_runtime','stop_runtime','restart_runtime','log_tail','START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','GET_LOG_TAIL'
+]);
 const bridge = need('backend/runtime_worker_bridge.py', [
   'WorkerBackedServerEngine','AuthoritativeRuntimeManager','world-runtime-worker','deferred_to_worker','dedicated_enabled','DWSYNC_DISABLE_RUNTIME_WORKERS',
-  'share_owner','application','start_runtime','stop_runtime','arm_orphan_watchdog'
+  'revisioned-settings-snapshot','desired_config_revision','applied_config_revision','share_owner','application','start_runtime','stop_runtime','arm_orphan_watchdog'
 ]);
 need('backend/test_phase5_runtime_worker_bridge.py', [
-  'test_start_stop_through_authoritative_manager','test_explicit_rollback_keeps_direct_engine','test_restart_reattaches_existing_worker'
+  'test_start_stop_through_authoritative_manager','test_explicit_rollback_keeps_direct_engine','test_restart_reattaches_existing_worker_without_duplicate_start'
+]);
+need('backend/test_runtime_worker_config.py', [
+  'plaintext secret leaked','old desired revision was mutated','stale desired runtime revision was not rejected'
 ]);
 need('backend/dragonwilds_service.py', [
   'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers','runtime.worker.runtime.start','runtime.worker.runtime.stop','runtime.worker.runtime.restart'
@@ -52,10 +64,13 @@ if (!website.includes("endpoint.protocol !== 'https:'")) failures.push('GitHub h
 if (!website.includes("String(live?.world_id || '') !== String(world.worldId || '')")) failures.push('GitHub handoff must compare live World ID before login');
 if (!website.includes("String(live?.fingerprint || '') !== expectedFingerprint")) failures.push('GitHub handoff must compare live fingerprint when one is advertised');
 if (/^(?:from|import)\s+server_engine\b/m.test(worker)) failures.push('World worker must lazy-load ServerEngine only after a runtime command');
-if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5 runtime-only parity stage must retain existing parent SHARE publication until dedicated worker parity is proven');
+if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5C must retain parent SHARE publication until dedicated worker parity is proven');
 if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 public connection must remain opt-in');
+if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.push('Desired runtime snapshot module must not construct plaintext credential fields');
+if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
+if (!bridge.includes('applied_revision != desired_revision')) failures.push('Runtime bridge must fail a start whose applied revision does not match desired revision');
 
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · Phase 4 corrections, focused placards, verified direct Remote Admin handoff and dedicated World Runtime Worker bridge contracts present');
+console.log('[Phase 5] PASS · Phase 4 corrections, verified Remote Admin handoff, revisioned desired state and dedicated World Runtime Worker ownership contracts present');

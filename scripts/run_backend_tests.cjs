@@ -1,4 +1,6 @@
 const { spawnSync } = require('child_process');
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 const configuredPython = String(process.env.DRAGONWILDS_SYNC_PYTHON || '').trim();
@@ -110,7 +112,32 @@ const tests = process.platform === 'win32'
 console.log(`[backend verify] ${process.platform === 'win32' ? 'Windows full V2 regression matrix' : 'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 for (const test of tests) {
   console.log(`> ${python.command} ${[...python.prefix, test].join(' ')}`);
-  const result = spawnSync(python.command, [...python.prefix, test], { stdio: 'inherit', shell: false });
+
+  // Every regression test gets its own isolated Dragonwilds Sync AppData root.
+  // Build verification must never consume or mutate a developer's real
+  // %LOCALAPPDATA%/DragonwildsSync state. This also prevents one historical
+  // fixture from leaking cached profiles/manifests into the next fixture.
+  const isolatedAppData = fs.mkdtempSync(path.join(os.tmpdir(), 'dragonwilds-sync-test-'));
+  const env = {
+    ...process.env,
+    DRAGONWILDS_SYNC_APPDATA: isolatedAppData,
+  };
+
+  let result;
+  try {
+    result = spawnSync(python.command, [...python.prefix, test], {
+      stdio: 'inherit',
+      shell: false,
+      env,
+    });
+  } finally {
+    try {
+      fs.rmSync(isolatedAppData, { recursive: true, force: true });
+    } catch (error) {
+      console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);
+    }
+  }
+
   if (result.error) {
     console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);
     process.exit(1);

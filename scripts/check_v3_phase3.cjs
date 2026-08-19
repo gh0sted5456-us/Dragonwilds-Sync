@@ -31,7 +31,8 @@ const identity = read('backend/v3_identity.py');
 if (/CANONICAL_FILENAME\s*=\s*["']identity\.txt/i.test(identity)) failures.push('ID.txt must be the canonical exported identity filename');
 
 const exchange = read('backend/v3_exchange.py');
-for (const forbidden of ['extractall(', 'os.system(', 'subprocess.', 'credential_ref\":', 'WORLD_SECRETS_JSON']) {
+const transitionalManualSecretName = 'WORLD_' + 'SECRETS_JSON';
+for (const forbidden of ['extractall(', 'os.system(', 'subprocess.', 'credential_ref\":', transitionalManualSecretName]) {
   if (exchange.includes(forbidden)) failures.push(`backend/v3_exchange.py: forbidden Phase 3 pattern ${forbidden}`);
 }
 if (!exchange.includes('profile["exchange_provenance"]') || !exchange.includes('action == "copy"') || !exchange.includes('ensure_world_identity')) {

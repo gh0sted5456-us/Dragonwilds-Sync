@@ -3,13 +3,18 @@ from __future__ import annotations
 """V3 extension of the established WorldProfileSettings.v1 adapter.
 
 The complete Phase-2/V2 settings implementation is retained verbatim in
-``profile_settings_v1``. This module adds the V3 directory-network desired-state
-section without changing the existing schema or compatibility adapters.
+``profile_settings_v1``. V3 augments its one authoritative ``_build_settings``
+function in-place, then exposes that same module object as ``profile_settings``.
+
+That detail matters: older stabilization layers intentionally monkey-patch
+private helper names such as ``_build_settings`` and ``_existing_settings``.
+Keeping one module object preserves those proven hooks while adding the V3
+``directory_network`` desired-state section.
 """
 
 from copy import deepcopy
+import sys
 import profile_settings_v1 as _base
-from profile_settings_v1 import *  # noqa: F401,F403
 
 _original_build_settings = _base._build_settings
 
@@ -29,4 +34,13 @@ def _v3_build_settings(kind: str, profile_id: str, profile: dict, existing: dict
     return result
 
 
+# Extend the established module in place so existing adapters/monkey-patches and
+# its own function globals all see the same V3-aware builder.
+_base._v3_build_settings = _v3_build_settings
 _base._build_settings = _v3_build_settings
+
+# Importers of ``profile_settings`` receive the established module object rather
+# than a parallel wrapper namespace. This preserves shell persistence hooks and
+# every private compatibility helper while keeping ``profile_settings_v1.py`` as
+# the rollback/reference implementation on disk.
+sys.modules[__name__] = _base

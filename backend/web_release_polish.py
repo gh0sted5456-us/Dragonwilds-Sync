@@ -53,7 +53,7 @@ def install() -> None:
     directory_web._DWS_RELEASE_POLISH_INSTALLED = True
     original_public, original_detail = directory_web.public_browser_html, directory_web.detail_html
     original_login, original_remote = directory_web.admin_login_html, directory_web.remote_admin_html
-    directory_web.public_browser_html = lambda: _decorate(original_public(), public_browser=True)
+    directory_web.public_browser_html = lambda *args, **kwargs: _decorate(original_public(*args, **kwargs), public_browser=True)
     directory_web.detail_html = lambda *args, **kwargs: _decorate(original_detail(*args, **kwargs), detail=True)
     directory_web.admin_login_html = lambda *args, **kwargs: _decorate(original_login(*args, **kwargs))
     directory_web.remote_admin_html = lambda *args, **kwargs: _decorate(original_remote(*args, **kwargs))

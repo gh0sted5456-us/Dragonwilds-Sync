@@ -6,7 +6,7 @@
   const RC_URL = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/codex/webgui-catalog-console-overhaul/docs/upstream-sources.json';
   const URL_KEY = 'dragonwilds-sync-upstream-registry-url';
   const CACHE_KEY = 'dragonwilds-sync-upstream-registry-cache-v1';
-  const REQUIRED = ['rsdwtools', 'rsdw-icons', 'rsdw-item-manifest', 'runeschema', 'ue4ss'];
+  const REQUIRED = ['rsdwtools', 'rsdw-icons', 'rsdw-item-manifest', 'rsdw-toolkit', 'dragonconnect', 'runeschema', 'ue4ss'];
   let registry = null;
   let sourceUrl = '';
   let loading = false;
@@ -15,9 +15,12 @@
     schema: 'DragonwildsSync.UpstreamSources.v1',
     updated_at: '',
     sources: {
-      rsdwtools: { display_name:'RSDWTools', enabled:true, type:'github-branch', repository:'RSDWArchive/RSDWTools', branch:'main' },
+      rsdwtools: { display_name:'RSDWTools', enabled:true, type:'github-branch', repository:'RSDWArchive/RSDWTools', branch:'main', runtime_component:false, description:'GitHub-backed icons, item manifest and reference data. Not the UE4SS Toolkit runtime.' },
       'rsdw-icons': { display_name:'RSDW Icons', enabled:true, type:'github-path', repository:'RSDWArchive/RSDWTools', branch:'main', path:'website/shared/icons', parent:'rsdwtools' },
-      'rsdw-item-manifest': { display_name:'RSDW Item Manifest', enabled:true, type:'github-path', repository:'RSDWArchive/RSDWTools', branch:'main', path:'website/tools/item-editor/data', parent:'rsdwtools' },
+      'rsdw-item-manifest': { display_name:'RSDW Item Manifest', enabled:true, type:'github-path', repository:'RSDWArchive/RSDWTools', branch:'main', path:'data/items/json/RSDragonwilds', parent:'rsdwtools' },
+      'rsdw-toolkit': { display_name:'RSDW Toolkit / DevKit', enabled:true, type:'github-release', repository:'RSDWArchive/RSDWDevKit', release_url:'https://github.com/RSDWArchive/RSDWDevKit/releases', runtime_component:true, runtime_roles:['server','client'], legacy_physical_names:['RSDWTools'] },
+      dragoncore: { display_name:'DragonCore', enabled:true, type:'bundled-resource', bundled_fallback:'resources/DragonCore-baseline.zip', runtime_component:true, runtime_roles:['server','host'] },
+      dragonconnect: { display_name:'DragonConnect', enabled:true, type:'bundled-resource', bundled_fallback:'resources/PersistentDirectConnectIP-baseline.zip', runtime_component:true, runtime_roles:['client'], legacy_physical_names:['PersistentDirectConnectIP'] },
       runeschema: { display_name:'RuneSchema', enabled:true, type:'direct-zip', repository:'gh0sted5456-us/Dragonwilds-Sync', branch:'main', download_url:'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/RuneSchema-core-latest.zip' },
       ue4ss: { display_name:'UE4SS', enabled:true, type:'github-release', repository:'UE4SS-RE/RE-UE4SS', release_url:'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest' },
       rsdwmodel: { display_name:'RSDWModel', enabled:true, type:'github-branch', repository:'RSDWArchive/RSDWModel', branch:'main' }
@@ -95,6 +98,14 @@
     return result;
   }
 
+  async function repairDragonConnect(host) {
+    setStatus(host, 'Repairing DragonConnect…');
+    const result = await api.invoke('application.dragonconnect.repair', {});
+    const row=result?.dragonconnect||{};
+    setStatus(host, `DragonConnect ${row.current===false?'repaired':'verified'} · ${row.available_version||row.installed_version||'bundled baseline'}.`, 'ok');
+    return result;
+  }
+
   async function updateRuneSchema(host) {
     const item=src('runeschema'); const url=String(item.download_url||item.release_url||'').trim();
     if(!url) throw new Error('RuneSchema has no downloadable source in the current registry; use the bundled/local core.');
@@ -122,7 +133,7 @@
     const base=[...page.querySelectorAll('.settings-section')].find((section)=>/Base Runtime Cores/i.test(section.textContent||''));
     if(!base)return;
     const section=document.createElement('section'); section.id='upstream-source-registry'; section.className='settings-section';
-    section.innerHTML=`<style>#upstream-source-registry .upstream-source-row small{display:block;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}#upstream-source-registry [data-upstream-status][data-kind="ok"]{color:#70d6a0}#upstream-source-registry [data-upstream-status][data-kind="error"]{color:#ef8b83}</style><div class="panel-header"><div><h2 style="margin:0">Content & Dependency Sources</h2><div class="panel-subtitle">One GitHub-managed registry controls RSDWTools, canonical icons/item metadata, RuneSchema and UE4SS. Source URLs can move through an approved commit without rebuilding Dragonwilds Sync.</div></div><button class="btn primary compact-btn" data-upstream-action="all">Update All</button></div><div class="settings-row"><div class="settings-copy"><strong>Upstream Registry</strong><span>Official URL is baked only as the bootstrap pointer. A validated last-known-good copy is cached for outages.</span></div><div style="min-width:min(680px,60vw)"><input class="field" data-upstream-url value="${esc(configuredUrl()||OFFICIAL_URL)}"/><div class="header-actions" style="margin-top:7px"><button class="btn ghost compact-btn" data-upstream-action="refresh-registry">Refresh Sources</button><button class="btn ghost compact-btn" data-upstream-action="save-registry">Use This Registry</button><button class="btn ghost compact-btn" data-upstream-action="reset-registry">Reset Official</button></div><small>Loaded: ${esc(sourceUrl||'fallback')}</small></div></div>${row('rsdwtools','rsdw','Update Toolkit')}${row('rsdw-icons','icons','Refresh Icons')}${row('rsdw-item-manifest','items','Refresh Item Manifest')}${row('runeschema','runeschema','Update RuneSchema')}${row('ue4ss','ue4ss','Update UE4SS')}<div class="identity-box"><strong>Safe update boundary</strong><p>The registry may provide HTTPS repositories, paths and release/archive URLs only. Dragonwilds Sync does not accept shell commands, PowerShell, post-install scripts or arbitrary executable instructions from the remote manifest.</p></div><div class="panel-subtitle" data-upstream-status>Ready.</div>`;
+    section.innerHTML=`<style>#upstream-source-registry .upstream-source-row small{display:block;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}#upstream-source-registry [data-upstream-status][data-kind="ok"]{color:#70d6a0}#upstream-source-registry [data-upstream-status][data-kind="error"]{color:#ef8b83}</style><div class="panel-header"><div><h2 style="margin:0">Content & Dependency Sources</h2><div class="panel-subtitle">One validated registry distinguishes RSDWTools data, RSDW Toolkit / DevKit runtime tooling, DragonConnect, RuneSchema and UE4SS. Source URLs can move through an approved commit without teaching the launcher a second ownership model.</div></div><button class="btn primary compact-btn" data-upstream-action="all">Update / Repair All</button></div><div class="settings-row"><div class="settings-copy"><strong>Upstream Registry</strong><span>Official URL is baked only as the bootstrap pointer. A validated last-known-good copy is cached for outages.</span></div><div style="min-width:min(680px,60vw)"><input class="field" data-upstream-url value="${esc(configuredUrl()||OFFICIAL_URL)}"/><div class="header-actions" style="margin-top:7px"><button class="btn ghost compact-btn" data-upstream-action="refresh-registry">Refresh Sources</button><button class="btn ghost compact-btn" data-upstream-action="save-registry">Use This Registry</button><button class="btn ghost compact-btn" data-upstream-action="reset-registry">Reset Official</button></div><small>Loaded: ${esc(sourceUrl||'fallback')}</small></div></div>${row('rsdwtools','rsdw','Refresh RSDWTools Data')}${row('rsdw-icons','icons','Refresh Icons')}${row('rsdw-item-manifest','items','Refresh Item Manifest')}${row('rsdw-toolkit','toolkit','Source Details')}${row('dragonconnect','dragonconnect','Repair DragonConnect')}${row('runeschema','runeschema','Update RuneSchema')}${row('ue4ss','ue4ss','Update UE4SS')}<div class="identity-box"><strong>RSDWTools ≠ RSDW Toolkit</strong><p>RSDWTools is the GitHub data source for icons/item metadata. RSDW Toolkit / DevKit is the UE4SS runtime tooling mod from RSDWArchive/RSDWDevKit. DragonConnect is a hidden client component and retains the physical PersistentDirectConnectIP directory only for compatibility.</p></div><div class="identity-box"><strong>Safe update boundary</strong><p>The registry may provide HTTPS repositories, paths and release/archive URLs only. Dragonwilds Sync does not accept shell commands, PowerShell, post-install scripts or arbitrary executable instructions from the remote manifest.</p></div><div class="panel-subtitle" data-upstream-status>Ready.</div>`;
     base.insertAdjacentElement('beforebegin',section);
 
     section.addEventListener('click',async(event)=>{
@@ -132,11 +143,14 @@
         if(action==='refresh-registry'){registry=null;await loadRegistry(true);setStatus(section,`Sources refreshed from ${sourceUrl}.`,'ok');section.remove();renderPanel(page);return;}
         if(action==='save-registry'){const value=section.querySelector('[data-upstream-url]')?.value.trim()||OFFICIAL_URL;if(!/^https:\/\//i.test(value))throw new Error('Registry URL must use HTTPS.');localStorage.setItem(URL_KEY,value);registry=null;await loadRegistry(true);setStatus(section,`Registry changed and validated: ${sourceUrl}`,'ok');section.remove();renderPanel(page);return;}
         if(action==='reset-registry'){localStorage.removeItem(URL_KEY);registry=null;await loadRegistry(true);section.remove();renderPanel(page);return;}
-        if(action==='rsdw'||action==='icons'||action==='items')await refreshRsdw(section,action==='icons'?'RSDW icons':action==='items'?'RSDW item manifest':'RSDWTools and content');
+        if(action==='rsdw'||action==='icons'||action==='items')await refreshRsdw(section,action==='icons'?'RSDW icons':action==='items'?'RSDW item manifest':'RSDWTools data/content');
+        if(action==='toolkit'){const item=src('rsdw-toolkit');setStatus(section,`RSDW Toolkit / DevKit runtime source · ${sourceDetail('rsdw-toolkit')} · ${item.release_url||'release channel configured'}`,'ok');}
+        if(action==='dragonconnect')await repairDragonConnect(section);
         if(action==='runeschema')await updateRuneSchema(section);
         if(action==='ue4ss')await updateUe4ss(section);
         if(action==='all'){
-          await refreshRsdw(section,'RSDWTools, icons and item manifest');
+          await refreshRsdw(section,'RSDWTools data, icons and item manifest');
+          try{await repairDragonConnect(section);}catch(error){setStatus(section,`Data refresh completed; DragonConnect needs attention: ${error.message}`,'error');}
           for(const fn of [updateRuneSchema,updateUe4ss]){try{await fn(section);}catch(error){setStatus(section,`Content refresh completed; runtime update needs attention: ${error.message}`,'error');}}
         }
       }catch(error){setStatus(section,error.message||String(error),'error');}

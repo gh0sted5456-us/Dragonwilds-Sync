@@ -62,3 +62,14 @@ CREATE TABLE IF NOT EXISTS rate_limits_v3 (
   count INTEGER NOT NULL DEFAULT 0,
   expires_at INTEGER NOT NULL
 );
+
+-- Phase 5 public-safe handoff metadata. Credentials, sessions, CSRF state and
+-- private administrator tokens are deliberately never stored here. The record
+-- is accepted only after the base signed World heartbeat succeeds.
+CREATE TABLE IF NOT EXISTS world_remote_admin_v1 (
+  world_id TEXT PRIMARY KEY,
+  payload_json TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (world_id) REFERENCES worlds_v3(world_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_world_remote_admin_updated ON world_remote_admin_v1(updated_at DESC);

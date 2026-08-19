@@ -90,7 +90,15 @@ def main() -> int:
             preserved = importlib.import_module("dragonwilds_service_v2_wrapper")
             sys.modules["dragonwilds_service"] = preserved
 
-    runpy.run_path(str(test), run_name="__main__")
+    # Emulate direct execution exactly. Some historical unittest.main() suites
+    # parse sys.argv; leaving the runner's positional test path in argv makes
+    # unittest interpret "backend/test_foo.py" as a requested test name.
+    original_argv = sys.argv[:]
+    try:
+        sys.argv = [str(test)]
+        runpy.run_path(str(test), run_name="__main__")
+    finally:
+        sys.argv = original_argv
     return 0
 
 

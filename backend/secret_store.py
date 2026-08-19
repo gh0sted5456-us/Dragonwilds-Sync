@@ -27,6 +27,9 @@ from cryptography.fernet import Fernet, InvalidToken
 
 SCHEMA = "DragonwildsSync.SecretReferences.v1"
 REFERENCE_PREFIX = "dws-secret://"
+# Compatibility alias for V3 callers. Keep REFERENCE_PREFIX as the canonical
+# descriptive name used by the established secret-store implementation.
+PREFIX = REFERENCE_PREFIX
 
 # Match only raw authentication material. Password hashes/salts, public keys,
 # fingerprints and display metadata are intentionally not secret-referenced.

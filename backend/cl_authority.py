@@ -13,6 +13,7 @@ invalidates comparison against an expected CL whose bound Steam build differs
 from the currently installed dedicated build.
 """
 
+import sys
 import threading
 
 from phase4_runtime_startup import install_phase4_runtime_patches
@@ -86,6 +87,14 @@ def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
     )
     if all(hasattr(server_engine_module, name) for name in phase4_requirements):
         install_phase4_runtime_patches(server_engine_module)
+        # The retained JSON-RPC module holds an import-time alias to scan_mod_units.
+        # Phase 4's launch pipeline may reuse an exact prepared scan only inside
+        # the immediate publish context. Outside that context—especially for an
+        # explicit `rescan: true` request—the RPC surface must delegate to the
+        # live scanner rather than a just-activated snapshot.
+        legacy = sys.modules.get("dragonwilds_service_legacy")
+        if legacy is not None and hasattr(legacy, "scan_mod_units"):
+            legacy.scan_mod_units = server_engine_module.scan_mod_units
 
     engine_class = server_engine_module.ServerEngine
     if bool(getattr(engine_class, "_dws_cl_authority_guard", False)):

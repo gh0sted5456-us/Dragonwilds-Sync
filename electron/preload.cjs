@@ -55,6 +55,15 @@ function cloneValue(value) {
   }
 }
 
+function cacheSafeValue(value) {
+  const copy = cloneValue(value);
+  // Read RPCs sometimes include a convenience public-state snapshot. Replaying
+  // that snapshot later could roll the renderer back after an unrelated write,
+  // so cached reads carry only their method-specific payload.
+  if (copy && typeof copy === 'object' && !Array.isArray(copy) && Object.prototype.hasOwnProperty.call(copy, 'state')) delete copy.state;
+  return copy;
+}
+
 function bypassReadCache(params) {
   const p = params && typeof params === 'object' ? params : {};
   return p.force === true || p.refresh === true || p.rescan === true || p.verify === true;
@@ -73,6 +82,10 @@ function recordMetric(metric) {
 
 function invalidatePrefix(prefix) {
   for (const key of [...invokeCache.keys()]) if (key.startsWith(prefix)) invokeCache.delete(key);
+}
+
+function invalidateMethod(method) {
+  invalidatePrefix(`${String(method || '')}::`);
 }
 
 function invalidateAfterMutation(method) {
@@ -112,10 +125,10 @@ async function rawInvoke(method, params = {}, meta = {}) {
   }
 }
 
-function refreshCachedRead(method, params, key, policy, background = false) {
+function refreshCachedRead(method, params, key, background = false) {
   if (invokeInFlight.has(key)) return invokeInFlight.get(key);
   const pending = rawInvoke(method, params, { key, background }).then((result) => {
-    invokeCache.set(key, { value: cloneValue(result), storedAt: Date.now() });
+    invokeCache.set(key, { value: cacheSafeValue(result), storedAt: Date.now() });
     return cloneValue(result);
   }).finally(() => invokeInFlight.delete(key));
   invokeInFlight.set(key, pending);
@@ -140,10 +153,10 @@ async function coordinatedInvoke(method, params = {}, options = {}) {
     if (cached && policy.stale > 0 && age <= policy.stale) {
       recordMetric({ method: name, duration_ms: 0, cache: true, stale: true, background, ok: true, at: Date.now() });
       emitInvokeActivity({ phase: 'cache', method: name, key, stale: true, background, age_ms: age, at: Date.now() });
-      refreshCachedRead(name, params, key, policy, true).catch(() => {});
+      refreshCachedRead(name, params, key, true).catch(() => {});
       return cloneValue(cached.value);
     }
-    return refreshCachedRead(name, params, key, policy, background);
+    return refreshCachedRead(name, params, key, background);
   }
 
   if ((policy || DEDUPE_ONLY.has(name)) && invokeInFlight.has(key)) {
@@ -152,6 +165,7 @@ async function coordinatedInvoke(method, params = {}, options = {}) {
     return cloneValue(await invokeInFlight.get(key));
   }
 
+  if (policy && explicitRefresh) invalidateMethod(name);
   const pending = rawInvoke(name, params, { key, background });
   if (policy || DEDUPE_ONLY.has(name)) invokeInFlight.set(key, pending);
   try {

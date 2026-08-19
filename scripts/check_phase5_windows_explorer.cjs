@@ -7,6 +7,7 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const phase5 = read('renderer/release-phase5.js');
 const bridge = read('renderer/release-phase5-frame-bridge.js');
+const frameActions = read('renderer/release-phase5-frame-actions.js');
 const css = read('renderer/release-phase5.css');
 const embeddedCss = read('renderer/release-phase5-embedded.css');
 const html = read('renderer/index.html');
@@ -22,12 +23,21 @@ requireText(html, 'release-phase5.css', 'Phase 5 stylesheet load');
 requireText(html, 'release-phase5-embedded.css', 'embedded workspace guard stylesheet');
 requireText(html, 'release-phase5-frame-bridge.js', 'same-renderer embedded bridge bootstrap');
 requireText(html, 'release-phase5.js', 'Phase 5 renderer load');
+requireText(html, 'release-phase5-frame-actions.js', 'embedded Explorer forwarding load');
 if (html.indexOf('release-phase5-frame-bridge.js') > html.indexOf('app.js')) {
   throw new Error('Phase 5 embedded bridge must initialize before app.js.');
+}
+if (html.indexOf('release-phase5-frame-actions.js') < html.indexOf('release-phase5.js')) {
+  throw new Error('Phase 5 embedded action forwarding must load after the parent window API layer.');
 }
 requireText(bridge, "query.get('phase5Internal') !== '1'", 'embedded-only bridge guard');
 requireText(bridge, 'window.parent?.dragonwilds', 'reuse parent preload/backend bridge');
 rejectText(bridge, 'openDetachedWindow', 'BrowserWindow creation from embedded bridge');
+requireText(frameActions, "query.get('phase5Internal') !== '1'", 'embedded action guard');
+requireText(frameActions, 'window.parent?.__DWSYNC_INTERNAL_WINDOWS__?.openExplorer', 'forward embedded actions to parent Explorer');
+requireText(frameActions, "target.id === 'phase2-view-mods'", 'embedded World View Mods forwarding');
+requireText(frameActions, "target.dataset.action === 'open'", 'embedded Mod Manager Explore forwarding');
+rejectText(frameActions, 'openDetachedWindow', 'BrowserWindow creation from embedded actions');
 
 requireText(phase5, 'DRAGONWILDS SYNC EXPLORER', 'Explorer title');
 requireText(phase5, 'assets/application-icon.png', 'application icon in internal windows/Explorer');
@@ -42,6 +52,8 @@ for (const id of ['detach-profile', 'detach-worlds', 'detach-settings', 'detach-
   requireText(phase5, id, `internal Open in Window interception for ${id}`);
   requireText(embeddedCss, `#${id}`, `nested ${id} suppression inside internal route workspace`);
 }
+requireText(embeddedCss, '#modal-root', 'embedded editor/modal layer remains usable');
+requireText(embeddedCss, '#internal-taskbar', 'embedded editor minimize/restore path remains usable');
 requireText(phase5, "target.id === 'phase2-view-mods'", 'World View Mods → Explorer interception');
 requireText(phase5, "target.dataset.action === 'open'", 'Mod Manager Open/Edit → same Explorer interception');
 requireText(phase5, 'window.__DWSYNC_INTERNAL_WINDOWS__', 'internal window registry/API');
@@ -80,6 +92,8 @@ requireText(css, '.phase5-editor-textarea', 'Explorer text editor surface');
 
 // Phase 5 owns only app-managed window/Explorer presentation. External browser
 // links intentionally remain with the existing data-open-external implementation.
-if (/data-open-external/.test(phase5)) throw new Error('Phase 5 must not intercept genuine external browser links.');
+if (/data-open-external/.test(phase5) || /data-open-external/.test(frameActions)) {
+  throw new Error('Phase 5 must not intercept genuine external browser links.');
+}
 
 console.log('Phase 5 internal windows / Dragonwilds Sync Explorer contract: OK');

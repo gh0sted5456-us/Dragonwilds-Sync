@@ -57,6 +57,7 @@ class FakeSupervisor:
         self.calls = []
         self.desired_revision = None
         self.applied_revision = None
+        self.fail_start = ""
 
     def _status(self):
         return {
@@ -92,9 +93,13 @@ class FakeSupervisor:
         self.calls.append(("start_runtime", profile_id))
         self.live = True
         self.profile_id = profile_id
-        self.game_pid = 4242
         self.desired_revision = 7
+        if self.fail_start == "before_game":
+            raise RuntimeError("synthetic worker preparation failure")
+        self.game_pid = 4242
         self.applied_revision = 7
+        if self.fail_start == "after_game":
+            raise RuntimeError("synthetic IPC failure after game launch")
         status = self._status()
         return {
             "profileId": profile_id, "configRevision": 7,
@@ -203,8 +208,6 @@ def test_restart_reattaches_existing_worker_without_duplicate_start():
     assert status["runtime"]["worker"]["attached"] is True
     assert status["runtime"]["applied_config_revision"] == 11
 
-    # Re-entering the authoritative Start path must attach to the existing
-    # runtime revision instead of creating a second worker/game process.
     started = manager.start("world-a")
     assert started["already_running"] is True
     assert started["applied_config_revision"] == 11
@@ -212,10 +215,40 @@ def test_restart_reattaches_existing_worker_without_duplicate_start():
     assert engine.publish_calls == ["world-a"]
 
 
+def test_failed_start_cleans_worker_without_direct_fallback():
+    # Failure before game launch: the adapter owns cleanup of the idle worker.
+    share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor(); supervisor.fail_start = "before_game"
+    manager = AuthoritativeRuntimeManager(engine, share); install_enabled(manager, engine, share, supervisor)
+    try:
+        manager.start("world-fail-before")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("synthetic failed start unexpectedly succeeded")
+    assert ("stop_worker", "world-fail-before") in supervisor.calls
+    assert engine.direct_start_calls == 0 and engine.direct_stop_calls == 0
+
+    # Failure after the game became live: RuntimeManager must discover the same
+    # worker via the remembered profile and invoke the worker stop path.
+    share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor(); supervisor.fail_start = "after_game"
+    manager = AuthoritativeRuntimeManager(engine, share); install_enabled(manager, engine, share, supervisor)
+    try:
+        manager.start("world-fail-after")
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("synthetic post-launch IPC failure unexpectedly succeeded")
+    assert ("stop_runtime", "world-fail-after") in supervisor.calls
+    assert ("stop_worker", "world-fail-after") in supervisor.calls
+    assert supervisor.game_pid is None and supervisor.live is False
+    assert engine.direct_start_calls == 0 and engine.direct_stop_calls == 0
+
+
 def main():
     test_start_stop_through_authoritative_manager()
     test_explicit_rollback_keeps_direct_engine()
     test_restart_reattaches_existing_worker_without_duplicate_start()
+    test_failed_start_cleans_worker_without_direct_fallback()
     print("Phase 5C Runtime Manager -> revisioned World worker bridge: PASS")
 
 

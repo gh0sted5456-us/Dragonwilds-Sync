@@ -1,0 +1,53 @@
+name: Deploy Dragonwilds Sync website
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'website/**'
+      - 'renderer/assets/application-icon.png'
+      - 'renderer/assets/singleplayer-banner.png'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Assemble static site
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf _site
+          mkdir -p _site/assets
+          cp -R website/. _site/
+          cp renderer/assets/application-icon.png _site/assets/application-icon.png
+          cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
+          touch _site/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

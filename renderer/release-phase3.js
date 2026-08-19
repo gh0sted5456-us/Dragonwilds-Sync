@@ -40,22 +40,58 @@
     return text(state?.server?.active_world_id || state?.server?.runtime?.active_profile_id || state?.server_profiles?.[0]?.id);
   }
 
-  // Startup must make the shell usable first. Heavy modules (RSDW, map,
-  // characters, inventories, backups, configs) are intentionally omitted here
-  // and warmed only when the user actually heads toward that surface.
-  function criticalRequests() {
-    return minimalMode ? [] : [{ method: 'application.storage.paths', params: {} }];
+  // Shell-first no longer means "wait until the first click". Once the initial
+  // state has painted, immediately warm only persisted/local hot paths. These
+  // requests are cache-coordinated and never include public discovery, RSDW
+  // network refreshes, Nexus/Community, maps, backups or deep rescan=true work.
+  function criticalRequests(state = stateSnapshot()) {
+    if (minimalMode || !state) return [];
+    const requests = [
+      { method: 'application.storage.paths', params: {} },
+      { method: 'characters.list', params: {} },
+    ];
+    const localId = localProfileId(state);
+    if (localId) {
+      requests.push(
+        { method: 'singleplayer.profile.get', params: { profile_id: localId } },
+        { method: 'singleplayer.inventory', params: { profile_id: localId, rescan: false } },
+      );
+    }
+    const serverId = serverProfileId(state);
+    if (serverId) {
+      requests.push(
+        { method: 'server.world.inventory', params: { id: serverId, rescan: false } },
+        { method: 'server.world.save.status', params: { id: serverId } },
+      );
+    }
+    return requests;
   }
 
   async function prewarmCritical(force = false) {
     const state = stateSnapshot();
-    if (!state) return;
+    if (!state) return null;
     const stamp = Date.now();
-    if (!force && stamp - lastWarmAt < 60000) return;
+    if (!force && stamp - lastWarmAt < 60000) return null;
     lastWarmAt = stamp;
     const requests = criticalRequests(state);
-    if (!requests.length) return;
-    try { await bridge.prewarm(requests); } catch (_) {}
+    if (!requests.length) return null;
+    const started = now();
+    try {
+      const result = await bridge.prewarm(requests);
+      window.__DWSYNC_SHELL_READY__ = {
+        ready: true,
+        at: Date.now(),
+        requested: Number(result?.requested || requests.length),
+        fulfilled: Number(result?.fulfilled || 0),
+        rejected: Number(result?.rejected || 0),
+        duration_ms: Math.round((now() - started) * 10) / 10,
+      };
+      pushUiMetric({ type: 'shell_local_prewarm', ...clone(window.__DWSYNC_SHELL_READY__) });
+      return result;
+    } catch (error) {
+      window.__DWSYNC_SHELL_READY__ = { ready: false, at: Date.now(), error: text(error?.message || error) };
+      return null;
+    }
   }
 
   function prewarmProfile(kind, id, tab = '') {
@@ -63,8 +99,8 @@
     if (!id) return;
     const requests = [];
     if (kind === 'server') {
-      // Opening a World defaults to Overview. Do not prewarm Mods, Config and
-      // Backups merely because the World card was clicked.
+      // The shell already warms cached inventory/save state for the active
+      // profile. Hidden heavyweight work still follows explicit tab intent.
       if (!tab || ['overview', 'maintenance', 'save-editor'].includes(tab)) requests.push({ method: 'server.world.save.status', params: { id } });
       if (tab === 'mods') requests.push({ method: 'server.world.inventory', params: { id, rescan: false } });
       if (['configuration', 'maintenance'].includes(tab)) requests.push({ method: 'server.world.config.list', params: { id } });
@@ -90,8 +126,8 @@
     const stamp = Date.now();
     if (stamp - Number(inventoryVerifiedAt.get(key) || 0) < 120000) return;
     inventoryVerifiedAt.set(key, stamp);
-    // Found Mods opens from the persistent profile cache. A real filesystem
-    // rescan follows only at idle, never on the click/scroll critical path.
+    // Found Mods opens from the persistent profile/settings manifest. A real
+    // filesystem rescan follows at idle and never blocks the first paint.
     requestIdle(() => {
       const request = kind === 'server'
         ? { method: 'server.world.inventory', params: { id, rescan: true } }
@@ -218,21 +254,26 @@
     }
     const profileTab = event.target?.closest?.('[data-profile-tab]');
     if (profileTab?.dataset.profileTab === 'characters') {
+      // Normally already hot from shell bootstrap. Keep this as a zero-cost
+      // cache/dedupe safety net for a click that beats initial background warmup.
       markInteraction('profile-tab', 'characters');
-      requestIdle(() => bridge.prewarm([{ method: 'characters.list', params: {} }]).catch(() => {}), 900);
+      bridge.prewarm([{ method: 'characters.list', params: {} }]).catch(() => {});
     }
   }, true);
 
   function waitForBootstrap() {
     if (stateSnapshot()) {
-      requestIdle(() => prewarmCritical(true), 1800);
+      // Start immediately after the first shell state exists. IPC work remains
+      // asynchronous and bounded by preload concurrency, so this does not delay
+      // navigation/layout but removes the old first-tab cold start.
+      setTimeout(() => prewarmCritical(true), 0);
       return;
     }
-    setTimeout(waitForBootstrap, 100);
+    setTimeout(waitForBootstrap, 50);
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) requestIdle(() => prewarmCritical(false), 1800);
+    if (!document.hidden) requestIdle(() => prewarmCritical(false), 600);
   });
 
   window.__DWSYNC_PERF__ = {
@@ -240,6 +281,8 @@
       backend: await bridge.requestStats(),
       ui: clone(uiMetrics),
       navigation: window.__DWSYNC_FAST_NAV__?.snapshot?.() || {},
+      shell: clone(window.__DWSYNC_SHELL_READY__ || {}),
+      monaco: clone(window.__DWSYNC_MONACO_STATUS__ || {}),
     }),
     warm: () => prewarmCritical(true),
   };

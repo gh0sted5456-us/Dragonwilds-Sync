@@ -18,13 +18,17 @@ def install() -> None:
         return
     directory_host._DWS_V3_PHASE4_HOST_PATCH = True
 
-    original_asset = directory_host._placard_background_bytes
-    def asset_bytes(name: str) -> bytes:
-        value = str(name or "")
-        if value.casefold().startswith("badge-"):
-            return badge_asset_bytes(value)
-        return original_asset(name)
-    directory_host._placard_background_bytes = asset_bytes
+    # v3_phase4_web may already have extended this exact hardened placard route.
+    # Never stack a second asset resolver around the same route.
+    if not getattr(directory_host, "_DWS_V3_PHASE4_BADGE_ROUTE_INSTALLED", False):
+        original_asset = directory_host._placard_background_bytes
+        def asset_bytes(name: str) -> bytes:
+            value = str(name or "")
+            if value.casefold().startswith("badge-"):
+                return badge_asset_bytes(value)
+            return original_asset(name)
+        directory_host._placard_background_bytes = asset_bytes
+        directory_host._DWS_V3_PHASE4_BADGE_ROUTE_INSTALLED = True
 
     original_catalog = directory_host.DirectoryHost._catalog_row
     def catalog_row(raw: dict) -> dict:

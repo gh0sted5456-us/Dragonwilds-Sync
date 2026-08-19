@@ -8,6 +8,7 @@ on:
       - 'renderer/assets/application-icon.png'
       - 'renderer/assets/singleplayer-banner.png'
       - 'renderer/assets/world-selection-background.png'
+      - 'renderer/assets/flags/**'
       - 'renderer/assets/platforms/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
@@ -39,12 +40,13 @@ jobs:
         run: |
           set -euo pipefail
           rm -rf _site
-          mkdir -p _site/assets/placards _site/assets/platforms
+          mkdir -p _site/assets/placards
           cp -R website/. _site/
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png
-          cp renderer/assets/platforms/discord.svg _site/assets/platforms/discord.svg
+          cp -R renderer/assets/flags _site/assets/flags
+          cp -R renderer/assets/platforms _site/assets/platforms
 
           # Use the exact baked placard artwork from the application. The blob SHAs
           # pin the website to the same four PNGs even while Experimental evolves.

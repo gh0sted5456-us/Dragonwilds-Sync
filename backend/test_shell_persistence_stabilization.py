@@ -7,6 +7,7 @@ import tempfile
 import local_world
 import profile_settings
 import shell_persistence_stabilization as shell
+import world_maintenance
 
 
 def _profile() -> dict:
@@ -143,10 +144,47 @@ def _persistent_mod_file_index() -> None:
             shell._fast_file_scan = original_scan
 
 
+def _dedicated_manifest_first_paint() -> None:
+    shell.install()
+    profile_id = "server-index-fixture"
+    manifest_path = world_maintenance._managed_config_manifest(profile_id)
+    world_maintenance._write_manifest(profile_id, {
+        "files": {
+            "RSDragonwilds/Saved/Config/WindowsServer/Game.ini": {
+                "language": "ini", "scope": "server_config", "unit_key": "",
+                "origin": "world", "origin_label": "World / Server", "size": 120,
+                "client_sync": True, "sensitive": False, "special": "",
+            },
+            "ue4ss/Mods/ActualLua/Scripts/main.lua": {
+                "language": "lua", "scope": "ue4ss", "unit_key": "ue4ss_mod::ActualLua",
+                "origin": "ue4ss_mod", "origin_label": "UE4SS Mod · ActualLua", "size": 420,
+                "client_sync": True, "sensitive": False, "hotload_capable": True, "special": "",
+            },
+        }
+    })
+    assert manifest_path.is_file()
+
+    original_resolve = world_maintenance.resolve_server_layout
+    try:
+        # A fresh persistent manifest must render without touching/resolving the
+        # live server tree at all. This is the dedicated Mod Explorer hot path.
+        world_maintenance.resolve_server_layout = lambda _root: (_ for _ in ()).throw(AssertionError("unexpected deep scan"))
+        active = world_maintenance.list_world_configs(profile_id, "missing-server-root", True)
+        assert {row["unit_key"] for row in active} == {"", "ue4ss_mod::ActualLua"}
+        mod = next(row for row in active if row["unit_key"] == "ue4ss_mod::ActualLua")
+        assert mod["language"] == "lua" and mod["hotload_capable"] is True and mod["readonly"] is True
+
+        inactive = world_maintenance.list_world_configs(profile_id, "missing-server-root", False)
+        assert len(inactive) == 1 and inactive[0]["unit_key"] == ""
+    finally:
+        world_maintenance.resolve_server_layout = original_resolve
+
+
 def main() -> None:
     _settings_persistence()
     _persistent_mod_file_index()
-    print("shell profile/mod persistence + persistent Mod Explorer index: PASS")
+    _dedicated_manifest_first_paint()
+    print("shell profile/mod persistence + local/dedicated persistent Explorer indexes: PASS")
 
 
 if __name__ == "__main__":

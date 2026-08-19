@@ -44,14 +44,6 @@ class WorkerSupervisor:
             return False
         if value <= 0:
             return False
-        if sys.platform == "win32":
-            # tasklist is unavailable in some stripped CI images; use a harmless
-            # signal-0 probe first and treat failures as not proven alive.
-            try:
-                os.kill(value, 0)
-                return True
-            except OSError:
-                return False
         try:
             os.kill(value, 0)
             return True
@@ -96,6 +88,9 @@ class WorkerSupervisor:
     def cleanup_stale(self, profile_id: str, state: dict | None = None) -> bool:
         profile_id = safe_id(profile_id, "profile ID")
         state = state if isinstance(state, dict) else read_state(profile_id)
+        child = self._children.get(profile_id)
+        if child is not None:
+            child.poll()  # reap an exited direct child before the PID probe
         if state and self._process_exists(state.get("workerPid")):
             return False
         try:
@@ -151,6 +146,8 @@ class WorkerSupervisor:
                     pass
             time.sleep(0.05)
         child.terminate()
+        try: child.wait(timeout=1.0)
+        except subprocess.TimeoutExpired: pass
         raise TimeoutError("Runtime worker did not become ready within the Phase 2 startup timeout.")
 
     def status(self, profile_id: str) -> dict:
@@ -169,10 +166,22 @@ class WorkerSupervisor:
         if not state.get("attached"):
             raise RuntimeError("Worker is live but cannot be authenticated; refusing an unsafe stop.")
         response = self._call(state, "STOP")
+        child = self._children.get(profile_id)
         deadline = time.monotonic() + STOP_TIMEOUT_SECONDS
-        while time.monotonic() < deadline and self._process_exists(state.get("workerPid")):
+        while time.monotonic() < deadline:
+            if child is not None:
+                if child.poll() is not None:
+                    break
+            elif not self._process_exists(state.get("workerPid")):
+                break
             time.sleep(0.05)
-        if self._process_exists(state.get("workerPid")):
+        if child is not None:
+            try: child.wait(timeout=0.2)
+            except subprocess.TimeoutExpired: pass
+            still_live = child.poll() is None
+        else:
+            still_live = self._process_exists(state.get("workerPid"))
+        if still_live:
             raise TimeoutError("Worker did not stop gracefully within the Phase 2 timeout.")
         self.cleanup_stale(profile_id)
         self._children.pop(profile_id, None)

@@ -143,6 +143,10 @@ class SecretStore:
                     pass
             entries[entry_id] = self._load_fernet().encrypt(text.encode("utf-8")).decode("ascii")
             self._dirty = True
+            # A reference returned to a direct caller must already have durable
+            # encrypted backing. This is required by V3 installation/World
+            # identity, which may be followed immediately by a process restart.
+            self._persist()
         return REFERENCE_PREFIX + entry_id
 
     def resolve(self, value: object) -> object:

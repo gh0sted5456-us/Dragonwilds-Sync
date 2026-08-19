@@ -5,6 +5,7 @@ const invokeInFlight = new Map();
 const invokeActivityListeners = new Set();
 const invokeMetrics = [];
 const MAX_METRICS = 160;
+const READ_TIMEOUT_MS = 15000;
 let cacheGeneration = 0;
 
 const READ_POLICIES = Object.freeze({
@@ -120,11 +121,21 @@ function invalidateAfterMutation(method) {
   }
 }
 
+function ipcReadWithTimeout(method, params) {
+  const request = ipcRenderer.invoke('dragonwilds:invoke', method, params);
+  if (!READ_POLICIES[method] && !DEDUPE_ONLY.has(method)) return request;
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Backend read timed out after ${Math.round(READ_TIMEOUT_MS / 1000)}s: ${method}`)), READ_TIMEOUT_MS);
+  });
+  return Promise.race([request, timeout]).finally(() => { if (timer) clearTimeout(timer); });
+}
+
 async function rawInvoke(method, params = {}, meta = {}) {
   const startedAt = performance.now();
   if (!meta.background) emitInvokeActivity({ phase: 'start', method, key: meta.key || '', background: false, at: Date.now() });
   try {
-    const result = await ipcRenderer.invoke('dragonwilds:invoke', method, params);
+    const result = await ipcReadWithTimeout(method, params);
     const durationMs = Math.max(0, performance.now() - startedAt);
     recordMetric({ method, duration_ms: Math.round(durationMs * 10) / 10, cache: false, background: !!meta.background, ok: true, at: Date.now() });
     emitInvokeActivity({ phase: 'end', method, key: meta.key || '', duration_ms: durationMs, background: !!meta.background, at: Date.now() });
@@ -159,6 +170,10 @@ async function coordinatedInvoke(method, params = {}, options = {}) {
   const background = options?.background === true;
   const explicitRefresh = bypassReadCache(params);
 
+  // Force/Refresh/Rescan/Verify means exactly that: discard cached and in-flight
+  // reads for this method before considering deduplication.
+  if (policy && explicitRefresh) invalidateMethod(name);
+
   if (policy && !explicitRefresh) {
     const cached = invokeCache.get(key);
     const age = cached ? Math.max(0, Date.now() - cached.storedAt) : Infinity;
@@ -182,7 +197,6 @@ async function coordinatedInvoke(method, params = {}, options = {}) {
     return cloneValue(await invokeInFlight.get(key));
   }
 
-  if (policy && explicitRefresh) invalidateMethod(name);
   const pending = rawInvoke(name, params, { key, background });
   if (policy || DEDUPE_ONLY.has(name)) invokeInFlight.set(key, pending);
   try {

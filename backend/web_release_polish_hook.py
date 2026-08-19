@@ -1,4 +1,10 @@
 try:
+    from shell_persistence_stabilization import install as install_shell_persistence
+    install_shell_persistence()
+except Exception as exc:
+    print(f"[shell-persistence-stabilization] disabled: {exc}", flush=True)
+
+try:
     from web_release_polish import install
     install()
 except Exception as exc:

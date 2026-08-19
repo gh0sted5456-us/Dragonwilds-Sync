@@ -2,7 +2,17 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from v2_remote_routing import _filter_detected_mods, _filter_inventory_cache, _filter_public_units, install_directory_patches
+from directory_host import normalize_host_config
+from v2_remote_routing import (
+    _filter_detected_mods,
+    _filter_inventory_cache,
+    _filter_public_units,
+    attach_public_remote,
+    install_directory_patches,
+    normalize_public_remote,
+    reconcile_remote_admin_state,
+    remote_advertisement,
+)
 
 
 DISPATCHES: list[tuple[str, dict]] = []
@@ -61,7 +71,100 @@ def state_provider(_profile_id: str) -> dict:
     }
 
 
+def _remote_truth_regressions() -> None:
+    configured = remote_advertisement(
+        {"port": 27080, "public_base_url": "", "remote_admin": {"enabled": True}},
+        external_ip="8.8.8.8",
+    )
+    assert configured["remote_management"]["configured"] is True
+    assert configured["remote_management"]["available"] is True
+    assert configured["remote_management"]["endpoint"] == "http://8.8.8.8:27080"
+    assert configured["capabilities"]["remote_management"] is True
+
+    pending = remote_advertisement(
+        {"port": 27080, "public_base_url": "", "remote_admin": {"enabled": True}},
+        external_ip="",
+    )
+    assert pending["remote_management"]["configured"] is True
+    assert pending["remote_management"]["enabled"] is False
+    assert pending["remote_management"]["available"] is False
+    assert pending["remote_management"]["reason"] == "public_endpoint_unavailable"
+
+    recovered = normalize_public_remote({
+        "external_ip": "8.8.4.4",
+        "remote_management": {"configured": True, "enabled": False, "available": False, "port": 27080},
+        "capabilities": {"remote_management": False},
+    })
+    assert recovered["remote_management"]["configured"] is True
+    assert recovered["remote_management"]["available"] is True
+    assert recovered["remote_management"]["endpoint"] == "http://8.8.4.4:27080"
+
+    disabled = normalize_public_remote({
+        "external_ip": "8.8.4.4",
+        "remote_management": {"configured": False, "enabled": False, "port": 27080},
+        "capabilities": {"remote_management": False},
+    })
+    assert disabled["remote_management"]["configured"] is False
+    assert disabled["remote_management"]["available"] is False
+    assert disabled["remote_management"]["endpoint"] == ""
+    assert disabled["remote_management"]["reason"] == "disabled"
+
+    attached = attach_public_remote(
+        {"capabilities": {"sync": True, "world_save": True}},
+        {
+            "external_ip": "8.8.8.8",
+            "remote_management": {"configured": True, "port": 27080},
+            "capabilities": {"remote_management": False},
+        },
+    )
+    assert attached["capabilities"]["sync"] is True
+    assert attached["capabilities"]["world_save"] is True
+    assert attached["capabilities"]["remote_management"] is True
+
+    # Legacy split-brain: the explicit Advanced choice said ON while the
+    # listener's nested host flag still said OFF. The explicit choice wins.
+    state = {
+        "application": {
+            "advanced": {"remote_server_enabled": True, "remote_server_choice_made": True},
+            "world_directory_host": {"enabled": True, "remote_admin": {"enabled": False}},
+        }
+    }
+    assert reconcile_remote_admin_state(state, normalize_host_config) is True
+    assert state["application"]["advanced"]["remote_server_enabled"] is True
+    assert state["application"]["world_directory_host"]["remote_admin"]["enabled"] is True
+
+    # A host setting saved by builds that predate the Advanced choice marker is
+    # adopted as the canonical choice instead of being reset to False.
+    host_only = {
+        "application": {
+            "advanced": {},
+            "world_directory_host": {"enabled": True, "remote_admin": {"enabled": True}},
+        }
+    }
+    assert reconcile_remote_admin_state(host_only, normalize_host_config) is True
+    assert host_only["application"]["advanced"]["remote_server_enabled"] is True
+    assert host_only["application"]["advanced"]["remote_server_choice_made"] is True
+    assert host_only["application"]["world_directory_host"]["remote_admin"]["enabled"] is True
+
+    # An explicit OFF choice also wins. Reconciliation must never silently turn
+    # Remote Management on just because stale nested configuration says ON.
+    explicit_off = {
+        "application": {
+            "advanced": {"remote_server_enabled": False, "remote_server_choice_made": True},
+            "world_directory_host": {"enabled": True, "remote_admin": {"enabled": True}},
+        }
+    }
+    assert reconcile_remote_admin_state(explicit_off, normalize_host_config) is True
+    assert explicit_off["application"]["world_directory_host"]["remote_admin"]["enabled"] is False
+
+    fresh = {"application": {}}
+    assert reconcile_remote_admin_state(fresh, normalize_host_config) is False
+    assert fresh["application"].get("advanced", {}).get("remote_server_enabled") is None
+
+
 def main() -> None:
+    _remote_truth_regressions()
+
     # Found Mods and direct inventory responses use the same taxonomy as the
     # ordinary Mod Manager instead of maintaining separate infrastructure lists.
     found = _filter_detected_mods({
@@ -141,7 +244,7 @@ def main() -> None:
         raise AssertionError("Core update must honor the existing update permission")
     assert host.audit[-1]["ok"] is False
 
-    print("authenticated WebGUI + taxonomy presentation guards: PASS")
+    print("authenticated WebGUI + remote truth + taxonomy presentation guards: PASS")
 
 
 if __name__ == "__main__":

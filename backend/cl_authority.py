@@ -15,6 +15,7 @@ from the currently installed dedicated build.
 
 import threading
 
+from phase4_runtime_startup import install_phase4_runtime_patches
 from runtime_versions import cl_version_status
 
 
@@ -75,9 +76,14 @@ def _apply_build_binding(result: dict, state: dict, displayed: str) -> dict:
 
 
 def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
-    """Install an idempotent guard around the existing ServerEngine.status."""
+    """Install Phase 4 startup and the idempotent live-CL status guard."""
     if server_engine_module is None:
         import server_engine as server_engine_module  # type: ignore
+
+    # v2_remote_routing invokes this hook after the retained providers and Phase
+    # 1 taxonomy are loaded but before AuthoritativeRuntimeManager is created.
+    # That makes it the safe compatibility seam for the Phase 4 critical path.
+    install_phase4_runtime_patches(server_engine_module)
 
     engine_class = server_engine_module.ServerEngine
     if bool(getattr(engine_class, "_dws_cl_authority_guard", False)):

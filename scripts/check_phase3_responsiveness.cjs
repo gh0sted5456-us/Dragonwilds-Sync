@@ -70,12 +70,15 @@ if (backend.includes('_characters.rsdw_cache.status()')) {
   throw new Error('Phase 3 contract failed: Character hot path must not recursively validate the full RSDW cache.');
 }
 
-requireText(shell, 'DragonwildsSync.ModFileIndex.v1', 'Mod Explorer must have a persistent file-tree index');
+requireText(shell, 'DragonwildsSync.ModFileIndex.v1', 'local Mod Explorer must have a persistent file-tree index');
 requireText(shell, 'settings-manifest', 'settings.json must recover cached mod inventory without a scan');
 requireText(shell, 'mods["inventory"]', 'settings.json must persist the known user-mod inventory');
 requireText(shell, 'is_user_manageable_mod', 'persisted mod inventory must obey the authoritative hidden-infrastructure taxonomy');
-requireText(shell, '_invalidate_mod_indexes', 'narrow file mutations must invalidate only affected Mod Explorer indexes');
-requireText(shell, '_bind_legacy_aliases', 'packaged/source late imports must share the indexed Mod Explorer provider');
+requireText(shell, '_invalidate_mod_indexes', 'narrow local file mutations must invalidate only affected Mod Explorer indexes');
+requireText(shell, '_bind_legacy_aliases', 'packaged/source late imports must share the indexed local Mod Explorer provider');
+requireText(shell, '_server_manifest_rows', 'Dedicated Mod Explorer must project its durable managed config manifest first');
+requireText(shell, '_refresh_server_manifest_background', 'stale dedicated config evidence must refresh in deduplicated background work');
+requireText(shell, '_bind_server_config_alias', 'packaged/source late imports must share the dedicated manifest-first provider');
 
 if (phase3.includes('setInterval(')) {
   throw new Error('Phase 3 contract failed: responsiveness warmup must not add a polling loop.');

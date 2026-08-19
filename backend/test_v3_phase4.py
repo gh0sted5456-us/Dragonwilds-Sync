@@ -14,8 +14,6 @@ def check(condition, message):
 
 
 def png_fixture(width=64, height=64):
-    # The Phase 4 validator intentionally needs only the real PNG signature and
-    # IHDR dimensions; image decoding/normalization is renderer-owned.
     return b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", width, height) + bytes([8, 6, 0, 0, 0]) + b"\x00\x00\x00\x00"
 
 
@@ -76,14 +74,33 @@ def main():
     check(all(str(row.get("directSupportUrl") or "").startswith("https://") for row in decorated["platform_refs"]), "registry-derived platform links")
 
     class FakeNetwork:
+        def __init__(self):
+            self.card = {}
         def build_public_snapshot(self, profile_id, kind, raw, *, status="active"):
-            return {"world_id": profile_id, "status": status, "tags": raw.get("tags", []), "badges": []}
+            return {"world_id": profile_id, "name": "World A", "status": status, "description": "Description", "region": "US",
+                    "cl": "CL-1", "player_count": 2, "max_players": 8, "rules": "Be kind", "mods": ["Example"],
+                    "tags": raw.get("tags", []), "badges": ["Founders"], "connection": {"address": "8.8.8.8", "game_port": 7777}}
+        def set_world_publication(self, profile_id, kind, patch):
+            self.card.update(dict(patch.get("public_card") or {})); return self.world_status(profile_id, kind)
+        def ensure_world_identity(self, profile_id, kind):
+            return {"world_id": profile_id, "public_card": dict(self.card)}
+        def world_status(self, profile_id, kind):
+            return {"public_card": dict(self.card), "public_directory_enabled": False, "broadcast_destinations": []}
+        def _world_document(self, profile_id, kind):
+            raise RuntimeError("fake persistence not used")
 
     fake = install(FakeNetwork())
     again = install(fake)
     check(again is fake, "install idempotence")
     snap = fake.build_public_snapshot("world-a", "dedicated", {"tags": ["Modded", "mods"], "platforms": ["steam"]})
     check(snap["tags"] == ["Modded"] and snap["platforms"] == ["steam"], "network decoration")
+    check("connection" not in snap, "public connection is opt-in")
+    fake.card.update({"show_description": False, "show_region": False, "show_players": False, "show_build": False,
+                      "show_mods": False, "show_rules": False, "show_tags": False, "show_badges": False,
+                      "publish_connection": False})
+    hidden = fake.build_public_snapshot("world-a", "dedicated", {"tags": ["PvE"], "platforms": ["steam"]})
+    for field in ("description", "region", "player_count", "max_players", "cl", "mods", "rules", "tags", "badges", "badge_refs", "connection"):
+        check(field not in hidden, f"optional public field hidden: {field}")
 
     class StatusNetwork(FakeNetwork):
         def world_status(self, profile_id, kind):
@@ -99,7 +116,10 @@ def main():
     contract = phase4_contract()
     check(contract["custom_badges"]["max_png_dimension"] == 256, "badge dimension contract")
     check(contract["custom_badges"]["tooltip_defaults_to_name"] is True, "badge tooltip fallback contract")
-    print("[V3 Phase 4] PASS · aliases/registries, platform links, badge cache/references and heartbeat truth verified")
+    check(contract["remote_admin_handoff"]["live_probe_required"] is True, "remote handoff requires live target probe")
+    check(contract["remote_admin_handoff"]["browser_requires_https"] is True, "GitHub/browser handoff requires HTTPS")
+    check("show_build" in contract["public_card_switches"], "complete public field control contract")
+    print("[V3 Phase 4] PASS · aliases/registries, public controls, platform links, badge references and heartbeat truth verified")
 
 
 if __name__ == "__main__":

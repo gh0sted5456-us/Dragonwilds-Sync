@@ -5,9 +5,10 @@ from __future__ import annotations
 This layer is intentionally additive. ``profile.json`` remains the compatibility
 provider, while ``settings.json`` now carries a compact known-mod manifest so a
 World can reopen with its last persisted mod state without a filesystem rescan.
-The same module gives Mod Explorer a persistent, invalidation-aware text-file
-index: cached navigation paints immediately and stale indexes refresh in the
-background instead of blocking the selected file pane.
+Local Mod Explorer uses a persistent text-file index; Dedicated Mod Explorer
+uses its existing managed_configs.json authority as the first-paint index.
+Stale filesystem evidence refreshes in deduplicated background work instead of
+blocking the selected file pane.
 """
 
 from copy import deepcopy
@@ -28,8 +29,10 @@ MOD_INDEX_SCHEMA = "DragonwildsSync.ModFileIndex.v1"
 MOD_INDEX_ROOT = profile_store.APP_DATA_DIR / "Cache" / "ModFiles"
 _INDEX_FRESH_SECONDS = 45.0
 _INDEX_STALE_SECONDS = 10 * 60.0
+_SERVER_MANIFEST_FRESH_SECONDS = 45.0
 _LOCK = threading.RLock()
 _REFRESHING: set[str] = set()
+_SERVER_REFRESHING: set[str] = set()
 _INSTALLED = False
 
 # These are presentation/desired-state fields only. File contents, credentials,
@@ -323,7 +326,7 @@ def _install_mod_file_index_patch() -> None:
 
     local_world.list_editable_mod_files = list_files
 
-    # App-owned file mutations invalidate only the selected mod's persisted tree.
+    # App-owned file mutations invalidate only the selected mod's persistent tree.
     for local_name in ("save_mod_file", "create_mod_file", "copy_mod_file", "delete_mod_file"):
         original = getattr(local_world, local_name, None)
         if not callable(original) or getattr(original, "_dws_index_invalidator", False):
@@ -343,6 +346,100 @@ def _install_mod_file_index_patch() -> None:
     _bind_legacy_aliases(local_world)
 
 
+def _server_manifest_rows(world_maintenance, profile_id: str, active: bool) -> list[dict]:
+    """Project existing managed_configs.json without touching the live tree."""
+    manifest = world_maintenance._read_manifest(profile_id)
+    files = manifest.get("files") if isinstance(manifest.get("files"), dict) else {}
+    if not files:
+        return []
+    results: list[dict] = []
+    for rel, raw_meta in sorted(files.items(), key=lambda item: str(item[0]).casefold()):
+        meta = raw_meta if isinstance(raw_meta, dict) else {}
+        unit_key = str(meta.get("unit_key") or "")
+        special = str(meta.get("special") or "")
+        # Match the retained provider's inactive view: per-mod files are shown
+        # only while their World is active and can actually be opened/saved.
+        if not active and unit_key and special != "mods_txt":
+            continue
+        hotload = bool(meta.get("hotload_capable", False))
+        results.append({
+            "relative_path": str(rel),
+            "name": Path(str(rel)).name,
+            "size": int(meta.get("size") or 0),
+            "managed": True,
+            "readonly": True,
+            "language": str(meta.get("language") or world_maintenance._language(Path(str(rel)))),
+            "scope": str(meta.get("scope") or "managed"),
+            "unit_key": unit_key,
+            "origin": str(meta.get("origin") or meta.get("scope") or "managed"),
+            "origin_label": str(meta.get("origin_label") or "Managed World Files"),
+            "hotload_capable": hotload,
+            "restart_required": not hotload,
+            "client_sync": bool(meta.get("client_sync", False)),
+            "sensitive": bool(meta.get("sensitive", False)),
+            "special": special,
+            **({"inactive": True} if not active else {}),
+        })
+    return sorted(results, key=lambda item: (str(item.get("origin") or ""), str(item.get("relative_path") or "").casefold()))
+
+
+def _refresh_server_manifest_background(original_list, world_maintenance, profile_id: str,
+                                        server_root: str, active: bool) -> None:
+    key = f"{profile_id}:{1 if active else 0}"
+    with _LOCK:
+        if key in _SERVER_REFRESHING:
+            return
+        _SERVER_REFRESHING.add(key)
+
+    def worker() -> None:
+        try:
+            original_list(profile_id, server_root, active)
+        except Exception:
+            pass
+        finally:
+            with _LOCK:
+                _SERVER_REFRESHING.discard(key)
+
+    threading.Thread(target=worker, daemon=True, name=f"DWS-ServerConfigIndex-{str(profile_id)[:18]}").start()
+
+
+def _bind_server_config_alias(world_maintenance) -> None:
+    legacy = sys.modules.get("dragonwilds_service_legacy")
+    provider = getattr(world_maintenance, "list_world_configs", None)
+    if legacy is not None and callable(provider):
+        legacy.list_world_configs = provider
+
+
+def _install_server_config_index_patch() -> None:
+    import world_maintenance
+
+    if getattr(world_maintenance, "_DWS_PERSISTENT_CONFIG_INDEX", False):
+        _bind_server_config_alias(world_maintenance)
+        return
+    world_maintenance._DWS_PERSISTENT_CONFIG_INDEX = True
+    original_list = world_maintenance.list_world_configs
+
+    def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[dict]:
+        rows = _server_manifest_rows(world_maintenance, profile_id, bool(active))
+        if rows:
+            manifest_path = world_maintenance._managed_config_manifest(profile_id)
+            try:
+                age = max(0.0, time.time() - manifest_path.stat().st_mtime)
+            except OSError:
+                age = float("inf")
+            if active and age > _SERVER_MANIFEST_FRESH_SECONDS:
+                _refresh_server_manifest_background(
+                    original_list, world_maintenance, profile_id, server_root, bool(active)
+                )
+            return rows
+        # First adoption has no durable index yet. Pay the scanner once; every
+        # later navigation reads the manifest immediately.
+        return original_list(profile_id, server_root, active)
+
+    world_maintenance.list_world_configs = list_world_configs
+    _bind_server_config_alias(world_maintenance)
+
+
 def install() -> bool:
     global _INSTALLED
     first = not _INSTALLED
@@ -354,6 +451,10 @@ def install() -> bool:
     except Exception:
         # Profile persistence remains valuable even if a stripped test/provider
         # does not expose the optional Mod Explorer functions.
+        pass
+    try:
+        _install_server_config_index_patch()
+    except Exception:
         pass
     _INSTALLED = True
     return first

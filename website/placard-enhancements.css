@@ -1,0 +1,32 @@
+/* Smooth GPU-composited placard motion and icon-bearing badges. */
+.world-card{perspective:1450px;perspective-origin:50% 46%;transform:translateZ(0)}
+.world-card-inner{will-change:transform;transform:translate3d(0,0,0) rotateY(0deg);transition:transform .68s cubic-bezier(.22,.61,.36,1)}
+.world-card.flipped .world-card-inner{transform:translate3d(0,0,0) rotateY(180deg)}
+.world-card-face{-webkit-backface-visibility:hidden;backface-visibility:hidden;transform-style:preserve-3d;transition:border-color .22s ease,box-shadow .28s ease}
+.world-card-front{transform:rotateY(0deg) translateZ(.1px)}
+.world-card-back{transform:rotateY(180deg) translateZ(.1px)}
+.world-card:hover .world-card-face{border-color:rgba(212,176,105,.34);box-shadow:0 24px 60px rgba(0,0,0,.42)}
+.world-placard-backdrop{will-change:transform,opacity;transform-origin:50% 50%;animation:placard-breathe-smooth 10s cubic-bezier(.45,.05,.55,.95) infinite alternate}
+@keyframes placard-breathe-smooth{from{opacity:.12;transform:translate3d(-.35%,0,0) scale(1.018)}to{opacity:.22;transform:translate3d(.45%,-.35%,0) scale(1.055)}}
+.world-card-banner{will-change:transform,filter;transition:transform .8s cubic-bezier(.22,.61,.36,1),filter .35s ease}
+.world-card:hover .world-card-banner{transform:scale(1.028);filter:saturate(.9) contrast(1.06)}
+.world-icon{transition:transform .3s cubic-bezier(.22,.61,.36,1),border-color .25s ease,box-shadow .3s ease}
+.world-card:hover .world-icon{transform:translateY(-1px);border-color:rgba(235,223,195,.38);box-shadow:0 12px 34px rgba(0,0,0,.5)}
+.badge,.world-back-list .back-badge{display:inline-flex;align-items:center;gap:5px;min-height:22px;transition:transform .16s ease,border-color .16s ease,background-color .16s ease}
+.badge:hover,.world-back-list .back-badge:hover{transform:translateY(-1px);border-color:rgba(212,176,105,.34)}
+.badge-icon{display:block;flex:0 0 12px;width:12px;height:12px;color:currentColor;object-fit:contain}
+.badge-icon-asset{filter:brightness(0) invert(1);opacity:.9}
+.badge.community .badge-icon-asset{filter:invert(78%) sepia(20%) saturate(1200%) hue-rotate(191deg) brightness(106%);opacity:1}
+.badge.build-current .badge-icon-asset{filter:invert(86%) sepia(18%) saturate(724%) hue-rotate(92deg) brightness(96%);opacity:1}
+.badge.build-outdated .badge-icon-asset{filter:invert(76%) sepia(31%) saturate(760%) hue-rotate(306deg) brightness(102%);opacity:1}
+.metric-icon{display:block;flex:0 0 13px;width:13px;height:13px;color:#aeb6b2;object-fit:contain}
+.country-flag{width:18px;height:13px;border-radius:2px;object-fit:cover}
+.platform-metric-icon{filter:brightness(0) invert(1);opacity:.76}
+.world-platform-badge{display:inline-flex!important;align-items:center;gap:5px}
+.world-community-badge,.world-platform-badge{transition:transform .16s ease,border-color .16s ease}
+.world-community-badge:hover,.world-platform-badge:hover{transform:translateY(-1px)}
+@media(prefers-reduced-motion:reduce){
+  .world-card,.world-card-inner,.world-card-face,.world-placard-backdrop,.world-card-banner,.world-icon,.badge,.world-back-list .back-badge,.world-community-badge,.world-platform-badge{animation:none!important;transition:none!important;transform:none!important;will-change:auto!important}
+  .world-card-back{transform:rotateY(180deg)!important}
+  .world-card.flipped .world-card-inner{transform:rotateY(180deg)!important}
+}

@@ -25,7 +25,9 @@ const rejectText = (source, token, label = token) => {
 requireText(secrets, 'DragonwildsSync.SecretReferences.v1', 'encrypted secret reference schema');
 requireText(secrets, 'dws-secret://', 'stable secret reference prefix');
 requireText(secrets, 'Fernet', 'encrypted-at-rest local secret vault');
-requireText(secrets, 'password_hash', 'hash/salt exclusion policy');
+requireText(secrets, '_EXCLUDED_SUFFIXES', 'hash/salt exclusion policy');
+requireText(secrets, '"_hash"', 'password/hash fields are not re-encrypted');
+requireText(secrets, '"_salt"', 'password/salt fields are not re-encrypted');
 requireText(phase6, '_install_secret_references', 'profile/state secure-reference adapter');
 requireText(phase6, 'profile.json', 'World profile secret migration');
 requireText(phase6, 'settings.json', 'desired-state settings boundary');

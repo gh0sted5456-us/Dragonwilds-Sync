@@ -3,10 +3,14 @@ from __future__ import annotations
 """Phase 3 local-state responsiveness helpers.
 
 The expensive character viewer used to hash and parse every character save on
-*every* ``characters.list`` request.  This module keeps a lightweight on-disk
+*every* ``characters.list`` request. This module keeps a lightweight on-disk
 Character Index plus a per-file detail cache keyed by cheap directory metadata.
 Unchanged character saves therefore need only one directory listing + stat pass;
 only new or changed files are re-hashed and re-parsed.
+
+The local World projection is treated the same way: cheap save/profile metadata
+is compared first, and unchanged public-state reads reuse the last World shapes
+instead of re-reading every profile and rewriting discovered saves.
 
 The patch is installed after ``dragonwilds_service_legacy`` has loaded, so the
 existing RPC surface and character editor remain authoritative.
@@ -35,6 +39,7 @@ _LOCK = threading.RLock()
 _DETAIL_MEMORY: dict | None = None
 _TIMINGS: list[dict] = []
 _MAX_TIMINGS = 80
+_LOCAL_WORLD_CACHE: dict = {"signature": None, "worlds": None, "singleplayer": None}
 
 
 def _record_timing(*, duration_ms: float, reused: int, rebuilt: int, count: int) -> None:
@@ -279,19 +284,79 @@ def _profile_without_volatile(value: dict) -> dict:
     return clean
 
 
+def _stat_tuple(path: Path) -> tuple[str, int, int]:
+    try:
+        stat = path.stat()
+        return (path.name.casefold(), int(stat.st_size), int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))))
+    except OSError:
+        return (path.name.casefold(), -1, -1)
+
+
+def _local_world_signature(state: dict, local_world) -> tuple:
+    """Cheap fingerprint for save/profile changes; no JSON parsing or hashing."""
+    game_dir = str((state.get("application") or {}).get("game_dir") or "")
+    save_rows: list[tuple] = []
+    try:
+        save_root = resolve_client_layout(game_dir).savegames_dir
+        if save_root.is_dir():
+            for path in save_root.glob("*.sav"):
+                if path.name.casefold() == "enhancedinputusersettings.sav":
+                    continue
+                save_rows.append(_stat_tuple(path))
+    except (AttributeError, OSError, ValueError):
+        pass
+    save_rows.sort()
+
+    profile_rows: list[tuple] = []
+    root = Path(getattr(local_world, "PRIVATE_PROFILES_DIR", APP_DATA_DIR / "profiles" / "world" / "local"))
+    try:
+        if root.is_dir():
+            for folder in root.iterdir():
+                if not folder.is_dir():
+                    continue
+                profile_rows.append((folder.name.casefold(), _stat_tuple(folder / "profile.json"), _stat_tuple(folder / "settings.json")))
+    except OSError:
+        pass
+    profile_rows.sort()
+
+    tombstone = _stat_tuple(Path(getattr(local_world, "DELETED_SAVES_PATH", root / ".deleted-saves.json")))
+    client = state.get("client") if isinstance(state.get("client"), dict) else {}
+    return (game_dir, bool(client.get("baseline_singleplayer_hidden", False)), tuple(save_rows), tuple(profile_rows), tombstone)
+
+
+def _cached_local_world_projection(state: dict, local_world, original_ensure):
+    """Reuse World card/profile shapes until save/profile metadata actually changes."""
+    signature = _local_world_signature(state, local_world)
+    client = state.setdefault("client", {})
+    with _LOCK:
+        cached_worlds = _LOCAL_WORLD_CACHE.get("worlds")
+        if _LOCAL_WORLD_CACHE.get("signature") == signature and isinstance(cached_worlds, list):
+            worlds = deepcopy(cached_worlds)
+            client["private_worlds"] = worlds
+            active_id = str(client.get("active_private_world_id") or "")
+            if not any(str(world.get("id") or "") == active_id for world in worlds):
+                active_id = str((worlds[0] if worlds else {}).get("id") or "")
+            client["active_private_world_id"] = active_id
+            baseline = next((world for world in worlds if str(world.get("id") or "") == str(local_world.SINGLEPLAYER_ID)), worlds[0] if worlds else deepcopy(_LOCAL_WORLD_CACHE.get("singleplayer") or {}))
+            client["singleplayer"] = deepcopy(baseline)
+            return next((world for world in worlds if str(world.get("id") or "") == active_id), baseline)
+
+    result = original_ensure(state)
+    next_signature = _local_world_signature(state, local_world)
+    with _LOCK:
+        _LOCAL_WORLD_CACHE["signature"] = next_signature
+        _LOCAL_WORLD_CACHE["worlds"] = deepcopy(state.setdefault("client", {}).get("private_worlds") or [])
+        _LOCAL_WORLD_CACHE["singleplayer"] = deepcopy(state.setdefault("client", {}).get("singleplayer") or {})
+    return result
+
+
+def _invalidate_local_world_projection() -> None:
+    with _LOCK:
+        _LOCAL_WORLD_CACHE["signature"] = None
+
+
 def _install_local_profile_hot_path(legacy) -> None:
-    """Stop discovery/read paths from rewriting unchanged profile.json files.
-
-    The retained save-discovery loop refreshes each detected save on every public
-    state projection. Its old save helper always advanced ``updated_at`` and
-    rewrote profile.json even when name/path/size/mtime were identical. The Phase
-    2 settings adapter then had to compare the same desired state again. This
-    wrapper preserves every real mutation but turns identical saves into no-ops.
-
-    The pre-V2 migration copier is likewise a one-time operation. A persistent
-    marker prevents recursively walking the obsolete legacy tree on every profile
-    read after a successful migration.
-    """
+    """Make repeated local World/profile projection cheap and write only changes."""
     local_world = sys.modules.get("local_world")
     if local_world is None or bool(getattr(local_world, "_DWS_PHASE3_PROFILE_HOT_PATH", False)):
         return
@@ -299,6 +364,7 @@ def _install_local_profile_hot_path(legacy) -> None:
 
     original_save = local_world.save_profile
     original_migrate = getattr(local_world, "_migrate_legacy_local_profile", None)
+    original_ensure = getattr(local_world, "ensure_state", None)
 
     def save_profile_if_changed(profile: dict, profile_id: str | None = None) -> dict:
         pid = local_world._safe_profile_id(profile_id or profile.get("id") or local_world.SINGLEPLAYER_ID)
@@ -309,7 +375,9 @@ def _install_local_profile_hot_path(legacy) -> None:
             if current.get("updated_at") is not None:
                 profile["updated_at"] = current.get("updated_at")
             return profile
-        return original_save(profile, profile_id)
+        result = original_save(profile, profile_id)
+        _invalidate_local_world_projection()
+        return result
 
     local_world.save_profile = save_profile_if_changed
     if getattr(legacy, "save_singleplayer_profile", None) is original_save:
@@ -330,6 +398,14 @@ def _install_local_profile_hot_path(legacy) -> None:
 
         local_world._migrate_legacy_local_profile = migrate_legacy_once
 
+    if callable(original_ensure):
+        def ensure_state_cached(state: dict):
+            return _cached_local_world_projection(state, local_world, original_ensure)
+
+        local_world.ensure_state = ensure_state_cached
+        if getattr(legacy, "ensure_singleplayer_state", None) is original_ensure:
+            legacy.ensure_singleplayer_state = ensure_state_cached
+
 
 def install_service_patches() -> bool:
     legacy = sys.modules.get("dragonwilds_service_legacy")
@@ -349,3 +425,4 @@ def _reset_for_tests() -> None:
     with _LOCK:
         _DETAIL_MEMORY = None
         _TIMINGS.clear()
+        _LOCAL_WORLD_CACHE.update({"signature": None, "worlds": None, "singleplayer": None})

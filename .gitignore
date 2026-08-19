@@ -15,3 +15,9 @@ flatpak-repo/
 __pycache__/
 *.pyc
 Codex Outputs/
+
+# Cloudflare local state and development secrets
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example

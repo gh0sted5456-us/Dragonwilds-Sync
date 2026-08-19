@@ -8,6 +8,7 @@ on:
       - 'renderer/**'
       - 'website/**'
       - 'cloudflare/dragonwilds-sync-directory/**'
+      - 'docs/**'
       - 'scripts/**'
       - 'PROJECT_STATE/**'
       - 'package.json'
@@ -18,6 +19,7 @@ on:
       - 'renderer/**'
       - 'website/**'
       - 'cloudflare/dragonwilds-sync-directory/**'
+      - 'docs/**'
       - 'scripts/**'
       - 'PROJECT_STATE/**'
       - 'package.json'
@@ -71,12 +73,15 @@ jobs:
             backend/v3_phase4.py \
             backend/v3_phase4_web_focus.py \
             backend/phase5_remote_admin.py \
+            backend/managed_updates.py \
             backend/runtime_worker_protocol.py \
             backend/runtime_worker_config.py \
             backend/runtime_worker.py \
             backend/worker_supervisor.py \
             backend/runtime_worker_bridge.py \
             backend/dragonwilds_service.py
+      - name: Run managed RuneSchema source/update regression
+        run: python scripts/v3_backend_test_runner.py backend/test_managed_updates.py
       - name: Run Phase 4 regression
         run: python scripts/v3_backend_test_runner.py backend/test_v3_phase4.py
       - name: Run worker spawn and reattach regression

@@ -49,8 +49,9 @@ need('backend/test_phase5_runtime_worker_bridge.py', [
 need('backend/test_runtime_worker_config.py', [
   'plaintext secret leaked','old desired revision was mutated','stale desired runtime revision was not rejected'
 ]);
-need('backend/dragonwilds_service.py', [
-  'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers',
+const service = need('backend/dragonwilds_service.py', [
+  'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers','_ensure_phase5_worker_gate',
+  'phase5c-windows-linux-parity','config["dedicated_enabled"] = False',
   'runtime.worker.runtime.start','runtime.worker.runtime.stop','runtime.worker.runtime.restart','runtime.worker.runtime.logs','_worker_revision'
 ]);
 need('renderer/index.html', ['release-phase5-placard-window.css','release-phase5-placard-window.js']);
@@ -70,8 +71,9 @@ if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 p
 if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.push('Desired runtime snapshot module must not construct plaintext credential fields');
 if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
 if (!bridge.includes('applied_revision != desired_revision')) failures.push('Runtime bridge must fail a start whose applied revision does not match desired revision');
+if (!service.includes('activation_gate')) failures.push('Normal service must expose the Phase 5C activation gate instead of silently enabling an unverified worker path');
 
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · Phase 4 corrections, verified Remote Admin handoff, revisioned desired state and dedicated World Runtime Worker ownership contracts present');
+console.log('[Phase 5] PASS · Phase 4 corrections, verified Remote Admin handoff, revisioned desired state and gated dedicated World Runtime Worker ownership contracts present');

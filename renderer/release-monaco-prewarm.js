@@ -75,13 +75,10 @@
 
   window.__DWSYNC_MONACO__ = { warm, status: () => ({ ...status }) };
 
-  // The script itself is tiny and does not block the shell. Start Monaco only
-  // after the first frame so JSON/Lua/INI editors are hot before the user opens
-  // a config/mod file, while initial navigation/layout wins the first paint.
-  requestAnimationFrame(() => {
-    const schedule = typeof requestIdleCallback === 'function'
-      ? (work) => requestIdleCallback(work, { timeout: 500 })
-      : (work) => setTimeout(work, 40);
-    schedule(() => warm().catch(() => {}));
-  });
+  // app.js has already established the splash and kicked off the backend
+  // bootstrap before this release layer executes. Use that otherwise-idle
+  // bootstrap window to load the bundled Monaco runtime immediately so the
+  // first JSON/Lua/INI editor does not have to fall back to a textarea while
+  // loader.js/editor.main are still cold.
+  warm().catch(() => {});
 })();

@@ -6,28 +6,34 @@ const invokeActivityListeners = new Set();
 const invokeMetrics = [];
 const MAX_METRICS = 160;
 const READ_TIMEOUT_MS = 15000;
+const MAX_PREWARM_CONCURRENCY = 2;
 let cacheGeneration = 0;
 
+// Navigation reads deliberately favor a briefly stale local answer over making
+// a tab click wait on filesystem/network work. Managed writes invalidate the
+// relevant entries immediately; explicit force/refresh/rescan/verify always
+// bypasses this cache. Mod inventories also have a persistent backend profile
+// cache, with an idle authoritative rescan scheduled by release-phase3.js.
 const READ_POLICIES = Object.freeze({
-  'characters.list': { ttl: 5000, stale: 0 },
-  'singleplayer.inventory': { ttl: 3500, stale: 0 },
-  'server.world.inventory': { ttl: 3500, stale: 0 },
-  'singleplayer.config.list': { ttl: 5000, stale: 0 },
-  'server.world.config.list': { ttl: 5000, stale: 0 },
-  'singleplayer.mod.files': { ttl: 5000, stale: 0 },
-  'singleplayer.profile.get': { ttl: 5000, stale: 0 },
-  'world.save.editor.read': { ttl: 3000, stale: 0 },
-  'server.world.save.status': { ttl: 3500, stale: 0 },
-  'server.backups.list': { ttl: 5000, stale: 0 },
-  'server.world.starter_characters.list': { ttl: 5000, stale: 0 },
-  'server.world.character_submissions.list': { ttl: 5000, stale: 0 },
-  'server.feedback.list': { ttl: 4000, stale: 0 },
-  'server.access.connections': { ttl: 2000, stale: 0 },
-  'server.spawner.catalog': { ttl: 10000, stale: 30000 },
-  'server.console.catalog': { ttl: 1500, stale: 0 },
-  'application.map.status': { ttl: 15000, stale: 60000 },
+  'characters.list': { ttl: 15000, stale: 60000 },
+  'singleplayer.inventory': { ttl: 60000, stale: 600000 },
+  'server.world.inventory': { ttl: 60000, stale: 600000 },
+  'singleplayer.config.list': { ttl: 30000, stale: 120000 },
+  'server.world.config.list': { ttl: 30000, stale: 120000 },
+  'singleplayer.mod.files': { ttl: 30000, stale: 120000 },
+  'singleplayer.profile.get': { ttl: 30000, stale: 120000 },
+  'world.save.editor.read': { ttl: 10000, stale: 30000 },
+  'server.world.save.status': { ttl: 10000, stale: 30000 },
+  'server.backups.list': { ttl: 30000, stale: 120000 },
+  'server.world.starter_characters.list': { ttl: 30000, stale: 120000 },
+  'server.world.character_submissions.list': { ttl: 30000, stale: 120000 },
+  'server.feedback.list': { ttl: 15000, stale: 60000 },
+  'server.access.connections': { ttl: 5000, stale: 15000 },
+  'server.spawner.catalog': { ttl: 30000, stale: 120000 },
+  'server.console.catalog': { ttl: 3000, stale: 10000 },
+  'application.map.status': { ttl: 30000, stale: 120000 },
   'application.map.overlays': { ttl: 60000, stale: 300000 },
-  'application.rsdw.status': { ttl: 15000, stale: 60000 },
+  'application.rsdw.status': { ttl: 30000, stale: 120000 },
   'application.storage.paths': { ttl: 300000, stale: 900000 },
 });
 
@@ -216,12 +222,27 @@ async function prewarmRequests(requests = []) {
     const params = row?.params && typeof row.params === 'object' ? row.params : {};
     unique.set(requestKey(method, params), { method, params });
   }
-  const settled = await Promise.allSettled([...unique.values()].map((row) => coordinatedInvoke(row.method, row.params, { background: true })));
-  return {
-    requested: unique.size,
-    fulfilled: settled.filter((item) => item.status === 'fulfilled').length,
-    rejected: settled.filter((item) => item.status === 'rejected').length,
-  };
+
+  // Background warmups are deliberately bounded. A pointer toward one tab must
+  // never fan out enough filesystem/network work to compete with scrolling or
+  // another immediate UI action.
+  const queue = [...unique.values()];
+  let fulfilled = 0;
+  let rejected = 0;
+  async function worker() {
+    while (queue.length) {
+      const row = queue.shift();
+      try {
+        await coordinatedInvoke(row.method, row.params, { background: true });
+        fulfilled += 1;
+      } catch (_) {
+        rejected += 1;
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(MAX_PREWARM_CONCURRENCY, queue.length) }, () => worker());
+  await Promise.all(workers);
+  return { requested: unique.size, fulfilled, rejected };
 }
 
 contextBridge.exposeInMainWorld('dragonwilds', {

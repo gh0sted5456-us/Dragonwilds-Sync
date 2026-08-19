@@ -2,10 +2,10 @@ from __future__ import annotations
 
 """Local per-World worker supervision.
 
-This module is intentionally not a Runtime Controller. It only starts, attaches
-to, reads and gracefully stops the local headless worker process created by the
-same installed Dragonwilds Sync backend executable. Phase 5 adds dedicated
-runtime commands while lifecycle policy remains in AuthoritativeRuntimeManager.
+This module is intentionally not a Runtime Controller. It starts, attaches to,
+reads and gracefully stops the local headless worker process created by the same
+installed Dragonwilds Sync backend executable. Lifecycle/update policy remains
+in AuthoritativeRuntimeManager.
 """
 
 import os
@@ -16,6 +16,7 @@ import time
 import uuid
 from pathlib import Path
 
+from runtime_worker_config import create_desired_snapshot
 from runtime_worker_protocol import PROTOCOL_VERSION, SUPERVISOR_SCHEMA, WORKER_AUTH_ENV, app_data_root, read_state, request, safe_id, state_path
 from secret_store import SecretStore, is_reference
 
@@ -62,7 +63,10 @@ class WorkerSupervisor:
         token = self._token_for(state)
         if not token:
             raise ConnectionError("Worker authentication reference cannot be resolved.")
-        message = {"protocol": PROTOCOL_VERSION, "command": str(command or "").upper(), "profileId": str(state.get("profileId") or "")}
+        message = {
+            "protocol": PROTOCOL_VERSION, "command": str(command or "").upper(),
+            "profileId": str(state.get("profileId") or ""),
+        }
         if isinstance(payload, dict):
             message["payload"] = payload
         return request(str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token, message)
@@ -74,6 +78,20 @@ class WorkerSupervisor:
             raise RuntimeError(message)
         return response
 
+    @staticmethod
+    def _config_revision(profile_id: str, revision: int | None) -> int:
+        try:
+            value = int(revision or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+        snapshot = create_desired_snapshot(profile_id, "dedicated")
+        value = int(snapshot.get("revision") or 0)
+        if value <= 0:
+            raise RuntimeError("A desired runtime revision could not be created before worker Start.")
+        return value
+
     def reconcile(self, profile_id: str) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
         state = read_state(profile_id)
@@ -82,8 +100,10 @@ class WorkerSupervisor:
         if str(state.get("profileId") or "") != profile_id:
             return {"profileId": profile_id, "state": "invalid", "live": False, "attached": False, "error": "PROFILE_ID_MISMATCH"}
         if int(state.get("workerProtocolVersion") or 0) != PROTOCOL_VERSION:
-            return {**state, "state": "incompatible", "live": self._process_exists(state.get("workerPid")), "attached": False,
-                    "expectedProtocolVersion": PROTOCOL_VERSION}
+            return {
+                **state, "state": "incompatible", "live": self._process_exists(state.get("workerPid")), "attached": False,
+                "expectedProtocolVersion": PROTOCOL_VERSION,
+            }
         try:
             pong = self._call(state, "PING")
             if pong.get("ok") and pong.get("command") == "PONG" and pong.get("runtimeId") == state.get("runtimeId"):
@@ -134,7 +154,10 @@ class WorkerSupervisor:
         env = os.environ.copy()
         env[WORKER_AUTH_ENV] = auth_token
         env["DRAGONWILDS_SYNC_APPDATA"] = str(app_data_root())
-        options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "env": env, "close_fds": True}
+        options = {
+            "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
+            "env": env, "close_fds": True,
+        }
         if sys.platform == "win32":
             options["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) | int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
@@ -156,8 +179,10 @@ class WorkerSupervisor:
                     pass
             time.sleep(0.05)
         child.terminate()
-        try: child.wait(timeout=1.0)
-        except subprocess.TimeoutExpired: pass
+        try:
+            child.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            pass
         raise TimeoutError("Runtime worker did not become ready within the startup timeout.")
 
     def status(self, profile_id: str) -> dict:
@@ -167,30 +192,53 @@ class WorkerSupervisor:
         response = self._require_ok(self._call(state, "GET_STATUS"), "status")
         return {**(response.get("status") or state), "live": True, "attached": True}
 
-    def start_runtime(self, profile_id: str) -> dict:
+    def start_runtime(self, profile_id: str, config_revision: int | None = None) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
         state = self.spawn(profile_id, "server")
-        response = self._require_ok(self._call(state, "START_RUNTIME"), "start")
+        revision = self._config_revision(profile_id, config_revision)
+        response = self._require_ok(self._call(state, "START_RUNTIME", {"configRevision": revision}), "start")
         status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
-        return {"profileId": profile_id, "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True}}
+        return {
+            "profileId": profile_id, "configRevision": revision,
+            "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True},
+        }
 
     def stop_runtime(self, profile_id: str) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
         state = self.reconcile(profile_id)
         if not state.get("live"):
-            return {"profileId": profile_id, "result": {"running": False, "stop_verified": True, "stop_method": "worker-absent"}, "status": state}
+            return {
+                "profileId": profile_id,
+                "result": {"running": False, "stop_verified": True, "stop_method": "worker-absent"},
+                "status": state,
+            }
         if not state.get("attached"):
             raise RuntimeError("Worker is live but cannot be authenticated; refusing an unsafe runtime stop.")
         response = self._require_ok(self._call(state, "STOP_RUNTIME"), "runtime stop")
         status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
-        return {"profileId": profile_id, "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True}}
+        return {
+            "profileId": profile_id, "result": dict(response.get("result") or {}),
+            "status": {**status, "live": True, "attached": True},
+        }
 
-    def restart_runtime(self, profile_id: str) -> dict:
+    def restart_runtime(self, profile_id: str, config_revision: int | None = None) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
         state = self.spawn(profile_id, "server")
-        response = self._require_ok(self._call(state, "RESTART_RUNTIME"), "runtime restart")
+        revision = self._config_revision(profile_id, config_revision)
+        response = self._require_ok(self._call(state, "RESTART_RUNTIME", {"configRevision": revision}), "runtime restart")
         status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
-        return {"profileId": profile_id, "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True}}
+        return {
+            "profileId": profile_id, "configRevision": revision,
+            "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True},
+        }
+
+    def log_tail(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.reconcile(profile_id)
+        if not state.get("attached"):
+            return {"profileId": profile_id, "logs": {}, "status": state}
+        response = self._require_ok(self._call(state, "GET_LOG_TAIL"), "log tail")
+        return {"profileId": profile_id, "logs": dict(response.get("logs") or {}), "status": response.get("status") or state}
 
     def stop(self, profile_id: str) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
@@ -211,8 +259,10 @@ class WorkerSupervisor:
                 break
             time.sleep(0.05)
         if child is not None:
-            try: child.wait(timeout=0.2)
-            except subprocess.TimeoutExpired: pass
+            try:
+                child.wait(timeout=0.2)
+            except subprocess.TimeoutExpired:
+                pass
             still_live = child.poll() is None
         else:
             still_live = self._process_exists(state.get("workerPid"))
@@ -220,8 +270,10 @@ class WorkerSupervisor:
             raise TimeoutError("Worker did not stop gracefully within the timeout.")
         self.cleanup_stale(profile_id)
         self._children.pop(profile_id, None)
-        return {"profileId": profile_id, "runtimeId": state.get("runtimeId"), "state": "stopped", "live": False,
-                "graceful": bool(response.get("ok")), "runtime": response.get("runtime") or {}}
+        return {
+            "profileId": profile_id, "runtimeId": state.get("runtimeId"), "state": "stopped", "live": False,
+            "graceful": bool(response.get("ok")), "runtime": response.get("runtime") or {},
+        }
 
     def list_status(self) -> dict:
         rows = []
@@ -233,5 +285,8 @@ class WorkerSupervisor:
                     rows.append(self.status(folder.name))
                 except Exception as exc:
                     rows.append({"profileId": folder.name, "state": "error", "live": False, "attached": False, "error": str(exc)[:200]})
-        return {"schema": SUPERVISOR_SCHEMA, "workerProtocolVersion": PROTOCOL_VERSION, "workers": rows,
-                "liveCount": sum(1 for row in rows if row.get("live")), "attachedCount": sum(1 for row in rows if row.get("attached"))}
+        return {
+            "schema": SUPERVISOR_SCHEMA, "workerProtocolVersion": PROTOCOL_VERSION, "workers": rows,
+            "liveCount": sum(1 for row in rows if row.get("live")),
+            "attachedCount": sum(1 for row in rows if row.get("attached")),
+        }

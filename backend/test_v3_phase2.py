@@ -87,7 +87,8 @@ def main() -> None:
             # Phase 1 migration safety must run before Phase 2 identity/schema work.
             identity_one = service.ensure_installation_identity()
             journal = read_journal()
-            assert journal["backup"]["complete"] is True
+            assert journal["stages"]["backupCreated"] is True
+            assert Path(str(journal["backup"]["manifest"])).is_file()
             assert journal["stages"]["settingsMigrated"] is True
             assert identity_one["installation_id"].startswith("dws-install-")
             assert identity_one["credential_ref"].startswith("dws-secret://")
@@ -126,7 +127,7 @@ def main() -> None:
                 "public_card": {"publish_connection": True, "public_address": "8.8.8.8", "show_mods": True},
             })
             assert service.world_status(first_id, "dedicated")["public_directory_enabled"] is True
-            assert service.status()["presence_enabled"] is False  # toggling one did not alter the other
+            assert service.status()["presence_enabled"] is False
 
             # settings.json remains authoritative even after compatibility profile writes.
             profile = profile_store.load_server_profile(first_id)

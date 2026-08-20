@@ -32,9 +32,18 @@ def main() -> int:
     test = Path(sys.argv[1]); test = test if test.is_absolute() else root / test
     if not test.is_file(): print(f"Test file not found: {test}", file=sys.stderr); return 2
 
-    is_v3_test = test.name in {"test_v3_phase1.py", "test_v3_phase2.py", "test_v3_phase3.py"}
+    # Tests that validate the current V3/Phase 5 entry point must see the real
+    # dragonwilds_service.py. Historical V1/V2 regressions continue to read the
+    # preserved compatibility files below. In particular, feature-worker tests
+    # inspect the early --feature-worker dispatch and then spawn that same entry
+    # point, so redirecting its source read to the V2 wrapper is invalid.
+    current_service_tests = {
+        "test_v3_phase1.py", "test_v3_phase2.py", "test_v3_phase3.py", "test_v3_phase4.py",
+        "test_feature_workers.py", "test_phase5_runtime_worker_bridge.py",
+    }
+    is_current_service_test = test.name in current_service_tests
     source = test.read_text(encoding="utf-8", errors="ignore")
-    if not is_v3_test:
+    if not is_current_service_test:
         redirects = {
             (root / "renderer" / "app.js").resolve(): root / "renderer" / "app-v2.js",
             (root / "electron" / "main.cjs").resolve(): root / "electron" / "main-v2.cjs",

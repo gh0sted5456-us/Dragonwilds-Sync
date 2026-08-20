@@ -229,7 +229,7 @@ Do not begin heartbeat/directory or WebGUI ownership transfer until this slice i
 
 The Phase 5 baseline also preserves the application/backend network contract:
 
-- canonical official endpoint is `https://dragonwilds-sync-directory.dragonwilds.workers.dev`;
+- the official endpoint is single-sourced by `DRAGONWILDS_SYNC_NETWORK_URL` in `backend/network_config.py`;
 - anonymous installation identity/credential is automatic and secret-reference-backed;
 - each public World has a stable unique identity and unique credential;
 - anonymous presence and public World publication are separate controls;

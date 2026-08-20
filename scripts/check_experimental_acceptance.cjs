@@ -36,7 +36,6 @@ const directoryWeb = read('backend/directory_web_legacy.py');
 const serverSystems = read('backend/server_systems.py');
 const serverEngine = read('backend/server_engine.py');
 const syncEngine = read('backend/sync_engine.py');
-const dragonCore = read('backend/dragon_core.py');
 const steamcmdTest = read('backend/test_steamcmd_server_update.py');
 const postVerifyTest = read('backend/test_dedicated_post_verify.py');
 const orphanWatchdogTest = read('backend/test_orphan_watchdog.py');
@@ -143,22 +142,18 @@ requireText(legacyService, 'handle("server.runtime.restart"', 'remote restart ro
 requireText(legacyService, '"server.runtime.update_restart" if action == "update_restart" else "server.runtime.update"', 'remote update routes to runtime manager');
 for (const action of ['"start"', '"stop"', '"restart"', '"update"', '"update_restart"']) requireText(remoteLifecycleTest, action, `authenticated WebGUI action ${action}`);
 
-// Central update state includes launcher, retail game, server, UE4SS, RuneSchema, DragonCore.
+// Central update state includes launcher, retail game, server, UE4SS and RuneSchema.
 for (const token of ['updates["game"]', 'updates["server"]', 'updates["core_mod"]', 'updates["runeschema"]', 'updates["launcher"]']) requireText(service, token, `central update state ${token}`);
-requireText(service, 'dragoncore_client', 'central DragonCore client update state');
-requireText(service, 'dragoncore_server', 'central DragonCore server update state');
 requireText(managedUpdates, 'def runeschema_status', 'RuneSchema managed update evidence');
 requireText(managedUpdates, 'managed-release-asset-name', 'RuneSchema version basis');
 requireText(service, 'if method == "application.core_mod.update"', 'managed core update RPC');
-requireText(service, 'component not in {"dragoncore", "ue4ss", "runeschema"}', 'managed core component allowlist');
+requireText(service, 'component not in {"ue4ss", "runeschema"}', 'managed core component allowlist');
 requireText(service, '_legacy_handle("server.install.ue4ss_update"', 'UE4SS server managed update');
 requireText(service, '_legacy_handle("server.install.runeschema_update"', 'RuneSchema server managed update');
 requireText(service, 'RUNTIME.update(profile_id, installer, restart=restart, component=label)', 'core server update lifecycle serialization');
 requireText(service, 'without SteamCMD', 'core update notification distinguishes managed runtime path');
 requireText(service, 'Close RuneScape: Dragonwilds before updating a managed client core runtime.', 'safe client core update gate');
 requireText(managedUpdates, 'def install_client_core', 'client UE4SS/RuneSchema managed update');
-requireText(dragonCore, 'def managed_status', 'DragonCore managed version status');
-requireText(dragonCore, 'sha256', 'DragonCore content fingerprint');
 requireText(unifiedUpdateTest, 'RuneSchema Core Update', 'RuneSchema notification regression');
 requireText(service, '_record_notification(', 'shared notification sink');
 requireText(legacyService, '"update_status": dict(((state.get("application") or {}).get("update_status") or {}))', 'WebGUI shared update status payload');

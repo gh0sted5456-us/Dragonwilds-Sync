@@ -36,7 +36,8 @@ def test_public_catalog_remote_login_audit_and_structured_action():
         ])
         controller.set_remote_admin_callbacks(
             authenticate=lambda name, username, password: {"ok": name == "Ashen Home" and not username and password == "admin-secret", "world_id": "profile-1", "world_name": "Ashen Home", "username": "owner", "role": "owner", "permissions": {**directory_host.REMOTE_PERMISSION_DEFAULTS, "write_config": False}},
-            state=lambda _world_id: {"profile": {"world_name": "Ashen Home"}, "runtime": {"running": False}},
+            state=lambda _world_id: {"profile": {"world_name": "Ashen Home"}, "runtime": {"running": False},
+                                     "map": {"tracker_connected": True, "players": [{"name": "Test", "map_point": {"x": .5, "y": .5}}]}},
             action=lambda world_id, action, payload: actions.append((world_id, action, payload)) or {"accepted": True},
         )
         port = _free_port(); base = f"http://127.0.0.1:{port}"
@@ -56,6 +57,8 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'id="dws-project-info"' in public_page
             assert b'Jonesing4Space' in public_page and b'Snorkles' in public_page and b'Hi im Tat' in public_page
             assert b'https://discord.gg/gQ7uY2cQ3q' in public_page
+            assert b'https://www.paypal.me/luke0494' in public_page
+            assert b'/assets/platforms/windows.svg' in public_page and b'/assets/platforms/linux.svg' in public_page
             assert b'class="tag-group game"' in public_page and b'class="tag-group sync"' in public_page
             assert b'id="world-pages"' in public_page and b"fetch('/api/v1/worlds?'" in public_page
             controller.config = directory_host.normalize_host_config({**controller.config, "directory_enabled": True, "remote_admin": {**controller.config["remote_admin"], "enabled": False}})
@@ -80,9 +83,14 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert catalog_world["protocol"] == "dragonwilds-world-sync"
             assert catalog_world["fingerprint"] == "dws1-0123456789abcdef01234567"
             portal = directory_host.remote_admin_html()
+            login_portal = directory_host.admin_login_html()
             assert b'data-tab="map"' in portal and b'data-tab="maintenance"' in portal
             assert b"view_map" in portal and b"Live Ashenfall player map" in portal
             assert b'Request Permission' in portal and b'maintenance_update' in portal
+            assert b'/assets/platforms/remote-login.svg' in login_portal
+            assert b'/assets/platforms/windows.svg' in portal and b'/assets/platforms/linux.svg' in portal
+            assert b'https://github.com/gh0sted5456-us/Dragonwilds-Sync' in portal
+            assert b'https://www.paypal.me/luke0494' in portal
             assert b'data-tab="spawner"' not in portal and b'data-tab="console"' in portal
             assert b'id="web-language"' in portal and b"Browser language" in portal
             assert b'id="dws-project-info"' in portal and b'installWorldCommunity' in portal
@@ -98,6 +106,8 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             with opener.open(base + "/api/v1/admin/session") as response: session = json.load(response)
             assert session["session"]["world_id"] == "profile-1"
             assert session["permissions"]["write_config"] is False
+            assert session["permissions"]["view_map"] is True
+            assert session["map"]["tracker_connected"] is True
             assert session["permissions"]["start"] and session["permissions"]["stop"] and session["permissions"]["restart"] and session["permissions"]["update"]
             assert session["audit"][0]["action"] == "login_succeeded"
 

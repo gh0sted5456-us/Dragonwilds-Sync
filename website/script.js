@@ -189,8 +189,10 @@ async function openVerifiedRemoteAdmin(world, button) {
     try { tab.document.title = 'Contacting Dragonwilds Sync server…'; } catch (_) {}
   }
 
-  const original = button?.textContent || 'SERVER ADMIN ↗';
-  if (button) { button.disabled = true; button.textContent = 'CONTACTING SERVER…'; }
+  const label = button?.querySelector?.('[data-remote-label]');
+  const original = label?.textContent || button?.textContent || 'REMOTE LOGIN ↗';
+  const setLabel = (value) => { if (!button) return; const target=button.querySelector?.('[data-remote-label]'); if (target) target.textContent=value; else button.textContent=value; };
+  if (button) { button.disabled = true; button.setAttribute('aria-busy','true'); setLabel('CONTACTING SERVER…'); }
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
   try {
@@ -212,17 +214,17 @@ async function openVerifiedRemoteAdmin(world, button) {
     login.searchParams.set('world', world.name);
     if (tab && !tab.closed) tab.location.replace(login.href);
     else window.open(login.href, '_blank', 'noopener');
-    if (button) button.textContent = 'SERVER VERIFIED ✓';
+    setLabel('SERVER VERIFIED ✓');
   } catch (error) {
     try { if (tab && !tab.closed) tab.close(); } catch (_) {}
     if (button) {
-      button.textContent = 'REMOTE ADMIN UNAVAILABLE';
+      setLabel('REMOTE ADMIN UNAVAILABLE');
       button.title = error?.message || String(error);
     }
     throw error;
   } finally {
     clearTimeout(timeout);
-    if (button) setTimeout(() => { button.disabled = false; button.textContent = original; }, 2600);
+    if (button) setTimeout(() => { button.disabled = false; button.removeAttribute('aria-busy'); setLabel(original); }, 2600);
   }
 }
 
@@ -231,7 +233,6 @@ function createWorldCard(world) {
   card.tabIndex = 0;
   card.dataset.worldId = world.worldId;
   card.setAttribute('role', 'button');
-  card.setAttribute('aria-label', `View details for ${world.name}`);
   card.setAttribute('aria-pressed', 'false');
   const inner = makeEl('div', 'world-card-inner');
   const front = makeEl('div', 'world-card-face world-card-front');
@@ -277,9 +278,11 @@ function createWorldCard(world) {
   const footerText = makeEl('span', '', world.remoteAdmin ? 'Remote Admin is verified directly with this server before login.' : 'Public telemetry only — no admin access');
   backFooter.appendChild(footerText);
   if (world.remoteAdmin) {
-    const admin = makeEl('button', 'server-admin-button', 'SERVER ADMIN ↗');
+    const admin = makeEl('button', 'server-admin-button');
     admin.type = 'button';
     admin.title = 'Verify this live server and open its Remote Admin login';
+    const icon=makeEl('img','server-admin-icon');icon.src='assets/platforms/remote-login.svg';icon.alt='';
+    const label=makeEl('span','', 'REMOTE LOGIN ↗');label.dataset.remoteLabel='';admin.append(icon,label);
     admin.addEventListener('click', async (event) => {
       event.preventDefault(); event.stopPropagation();
       try { await openVerifiedRemoteAdmin(world, admin); }
@@ -349,6 +352,24 @@ async function loadWorlds() {
     allWorlds = [...deduped.values()].sort((a, b) => Number(isOnline(b)) - Number(isOnline(a)) || (normalizeTimestamp(b.lastSeen) || 0) - (normalizeTimestamp(a.lastSeen) || 0) || a.name.localeCompare(b.name));
     setDirectoryState('online', 'Directory online', `${allWorlds.length} public world${allWorlds.length === 1 ? '' : 's'} received`);
     deriveStatsFromWorlds();
+    const network = data?.network && typeof data.network === 'object' ? data.network : null;
+    if (network) {
+      const users = network.active_users;
+      const worlds = network.active_worlds;
+      const players = network.players_in_listed_worlds;
+      currentBuild = safeText(network.current_build ?? network.version, '', 40) || null;
+      $('#stat-users').textContent = Number.isFinite(Number(users)) ? String(Number(users)) : '—';
+      $('#stat-worlds').textContent = Number.isFinite(Number(worlds)) ? String(Number(worlds)) : $('#stat-worlds').textContent;
+      $('#stat-players').textContent = Number.isFinite(Number(players)) ? String(Number(players)) : $('#stat-players').textContent;
+      $('#stat-build').textContent = currentBuild || '—';
+      $('#network-message').textContent = 'Live aggregate presence from participating Dragonwilds Sync installations and public Worlds.';
+      $('#network-live-dot').className = 'network-live-dot';
+    } else {
+      $('#stat-users').textContent = '—';
+      $('#stat-build').textContent = 'Pending';
+      $('#network-message').textContent = 'Public World telemetry is live. Anonymous active-user totals will appear automatically when the directory includes aggregate presence.';
+      $('#network-live-dot').className = 'network-live-dot offline';
+    }
     renderWorlds();
   } catch (error) {
     setDirectoryState('error', 'Directory unavailable', 'Live world data could not be reached');
@@ -359,30 +380,6 @@ async function loadWorlds() {
       state.append(makeEl('strong', '', 'Public directory temporarily unavailable'), makeEl('p', '', 'Downloads, documentation, and the rest of the site are still available.'));
       grid.appendChild(state);
     }
-  }
-}
-
-async function loadNetwork() {
-  const message = $('#network-message');
-  const dot = $('#network-live-dot');
-  try {
-    const data = await fetchJson('/api/v1/network');
-    const users = data?.active_users;
-    const worlds = data?.active_worlds;
-    const players = data?.players_in_listed_worlds;
-    currentBuild = safeText(data?.current_build ?? data?.version, '', 40) || null;
-    $('#stat-users').textContent = Number.isFinite(Number(users)) ? String(Number(users)) : '—';
-    $('#stat-worlds').textContent = Number.isFinite(Number(worlds)) ? String(Number(worlds)) : $('#stat-worlds').textContent;
-    $('#stat-players').textContent = Number.isFinite(Number(players)) ? String(Number(players)) : $('#stat-players').textContent;
-    $('#stat-build').textContent = currentBuild || '—';
-    message.textContent = 'Live aggregate presence from participating Dragonwilds Sync installations and public Worlds.';
-    dot.className = 'network-live-dot';
-    renderWorlds();
-  } catch (_) {
-    $('#stat-users').textContent = '—';
-    $('#stat-build').textContent = 'Pending';
-    message.textContent = 'Public World telemetry is live. Anonymous active-user totals will appear automatically when the network-presence endpoint is enabled.';
-    dot.className = 'network-live-dot offline';
   }
 }
 
@@ -422,7 +419,7 @@ remoteStyle.textContent = '.server-admin-button{min-height:34px;padding:6px 10px
 document.head.appendChild(remoteStyle);
 
 async function refreshNetworkData() {
-  await Promise.allSettled([loadWorlds(), loadNetwork()]);
+  await loadWorlds();
 }
 
 refreshNetworkData();

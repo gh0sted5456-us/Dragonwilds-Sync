@@ -217,6 +217,40 @@ function windowOptions(extra = {}) {
     webPreferences: { preload: path.join(__dirname, 'preload-v2.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true }, ...extra };
 }
 
+const rendererRecovery = new WeakMap();
+function attachRendererDurability(win) {
+  if (!win || win.isDestroyed() || rendererRecovery.has(win)) return;
+  const recovery={events:[],unresponsiveTimer:null,reloading:false};
+  rendererRecovery.set(win,recovery);
+  const recover=(reason)=>{
+    if(win.isDestroyed()||forceQuit||shutdownInProgress||recovery.reloading)return;
+    const now=Date.now();
+    recovery.events=recovery.events.filter((stamp)=>now-stamp<60000);
+    if(recovery.events.length>=2){
+      console.error(`[renderer] recovery stopped after repeated failures: ${reason}`);
+      dialog.showMessageBox(win,{type:'error',title:'Dragonwilds Sync display recovery',message:'The interface stopped repeatedly.',detail:'Close and reopen Dragonwilds Sync. If this continues, disable Hardware Acceleration in Settings → Advanced.',buttons:['OK']}).catch(()=>{});
+      return;
+    }
+    recovery.events.push(now);recovery.reloading=true;
+    console.error(`[renderer] reloading shell after ${reason}`);
+    setTimeout(()=>{
+      if(win.isDestroyed()||forceQuit)return;
+      win.webContents.reloadIgnoringCache();
+      setTimeout(()=>{recovery.reloading=false},1000);
+    },250);
+  };
+  win.webContents.on('render-process-gone',(_event,details)=>{
+    const reason=String(details?.reason||'renderer process exit');
+    if(reason!=='clean-exit')recover(reason);
+  });
+  win.on('unresponsive',()=>{
+    clearTimeout(recovery.unresponsiveTimer);
+    recovery.unresponsiveTimer=setTimeout(()=>recover('renderer unresponsive'),4000);
+  });
+  win.on('responsive',()=>{clearTimeout(recovery.unresponsiveTimer);recovery.unresponsiveTimer=null;});
+  win.on('closed',()=>clearTimeout(recovery.unresponsiveTimer));
+}
+
 function mimeFor(file) {
   const ext = path.extname(file).toLowerCase();
   return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ico':'image/x-icon','.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.wasm':'application/wasm','.glb':'model/gltf-binary','.gltf':'model/gltf+json','.uemodel':'application/octet-stream'})[ext] || 'application/octet-stream';
@@ -284,6 +318,7 @@ function createDetachedWindow(payload = {}) {
   const context = payload.context && typeof payload.context === 'object' ? payload.context : {};
   const id = `dw-${Date.now().toString(36)}-${(++detachedCounter).toString(36)}`;
   const win = new BrowserWindow(windowOptions({ width: Number(payload.width || 1120), height: Number(payload.height || 760), minWidth: 720, minHeight: 520, title, skipTaskbar: true }));
+  attachRendererDurability(win);
   const ctx = Buffer.from(JSON.stringify(context), 'utf8').toString('base64url');
   detachedWindows.set(id, { id, window: win, title, route, context });
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
@@ -371,6 +406,7 @@ function managedDialogOwner(entry) {
 function createWindow({ show = true } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) { if (show) { mainWindow.show(); mainWindow.focus(); } return mainWindow; }
   mainWindow = new BrowserWindow(windowOptions({ width: 1440, height: 920, minWidth: 1080, minHeight: 700, title: 'Dragonwilds Sync' }));
+  attachRendererDurability(mainWindow);
   mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     secureAttachedWebview(event, webPreferences, params);
   });
@@ -386,10 +422,16 @@ function createWindow({ show = true } = {}) {
       const output=path.resolve(process.env.DWS_HELP_CAPTURE_DIR);
       const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
       const shot=async(name)=>{await wait(900);const image=await mainWindow.webContents.capturePage();fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,name),image.toPNG());};
-      const click=async(selector)=>{for(let attempt=0;attempt<30;attempt++){const clicked=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.click();return true;})()`);if(clicked){await wait(700);return;}await wait(250);}throw new Error(`Help capture control was not found: ${selector}`);};
+      const click=async(selector,{optional=false}={})=>{for(let attempt=0;attempt<30;attempt++){const clicked=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.click();return true;})()`);if(clicked){await wait(700);return true;}await wait(250);}if(optional)return false;throw new Error(`Help capture control was not found: ${selector}`);};
+      const scrollTo=async(selector)=>{for(let attempt=0;attempt<120;attempt++){const found=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.scrollIntoView({block:'start'});return true;})()`);if(found){await wait(1400);return true;}await wait(250);}return false;};
+      const waitFor=async(selector,attempts=120)=>{for(let attempt=0;attempt<attempts;attempt++){if(await mainWindow.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`))return true;await wait(250);}return false;};
+      const enterWhenReady=async()=>{for(let attempt=0;attempt<160;attempt++){const state=await mainWindow.webContents.executeJavaScript(`(()=>{const nav=document.querySelector('[data-route="world-management"]');if(nav)return 'ready';const enter=document.querySelector('#enter-launcher');if(enter){enter.click();return 'entered';}return 'waiting';})()`);if(state==='ready'){await wait(500);return;}await wait(state==='entered'?900:250);}throw new Error('Launcher did not reach its Appy navigation within 40 seconds.');};
       try {
         await wait(2200); await shot('01-getting-started.png');
-        await click('#enter-launcher'); await shot('02-worlds.png');
+        await enterWhenReady(); await shot('02-worlds.png');
+        await click('[data-route="characters-app"]'); await scrollTo('.native-avatar-section'); await waitFor('.native-avatar-section .avatar-ready'); await shot('03-characters.png');
+        await click('[data-route="mods-app"]'); await wait(1200); await shot('07-mods.png');
+        await click('[data-route="rsdragonwilds-app"]'); await shot('05-server-setup.png');
         await click('[data-route="webhost"]'); await click('[data-webhost-tab="settings"]'); await shot('09-networking.png');
         await click('[data-webhost-tab="manifest"]'); await shot('29-manifest-hosts.png');
         await click('[data-route="settings"]'); await shot('13-settings.png');
@@ -407,24 +449,26 @@ function createWindow({ show = true } = {}) {
   mainWindow.on('closed', () => { mainWindow = null; });
   return mainWindow;
 }
-function createQuickWindow(worldId, worldKind = 'world') {
+function createQuickWindow(worldId, worldKind = 'world', autoStart = false) {
   const id = String(worldId || '').trim(); if (!id) return createWindow({ show: true });
   const kind = ['world', 'private', 'server'].includes(String(worldKind || '').toLowerCase()) ? String(worldKind).toLowerCase() : 'world';
   if (quickWindow && !quickWindow.isDestroyed()) { quickWindow.close(); quickWindow = null; }
   quickWindow = new BrowserWindow(windowOptions({ width: 520, height: 300, minWidth: 440, minHeight: 250, resizable: false, title: 'Dragonwilds Sync Quick Launch' }));
-  quickWindow.loadFile(path.join(projectRoot(), 'renderer', 'index.html'), { query: { quick: '1', worldId: id, worldKind: kind } });
-  quickWindow.once('ready-to-show', () => quickWindow.showInactive());
+  attachRendererDurability(quickWindow);
+  quickWindow.loadFile(path.join(projectRoot(), 'renderer', 'quick.html'), { query: { quick: '1', worldId: id, worldKind: kind, autoStart: autoStart ? '1' : '0' } });
+  quickWindow.once('ready-to-show', () => { quickWindow.show(); quickWindow.focus(); });
   quickWindow.on('closed', () => { quickWindow = null; });
   return quickWindow;
 }
-function createMinimalWindow(worldId) {
+function createMinimalWindow(worldId, autoStart = false) {
   const id=String(worldId||'').trim();if(!id)return createWindow({show:true});
   if(minimalWindow&&!minimalWindow.isDestroyed()){
-    minimalWindow.loadFile(path.join(projectRoot(),'renderer','index.html'),{query:{minimal:'1',worldId:id,worldKind:'server'}});
+    minimalWindow.loadFile(path.join(projectRoot(),'renderer','quick.html'),{query:{minimal:'1',worldId:id,worldKind:'server',autoStart:autoStart?'1':'0'}});
     minimalWindow.show();minimalWindow.focus();return minimalWindow;
   }
   minimalWindow=new BrowserWindow(windowOptions({width:1050,height:760,minWidth:720,minHeight:520,resizable:true,title:'Dragonwilds Sync · Minimal Mode'}));
-  minimalWindow.loadFile(path.join(projectRoot(),'renderer','index.html'),{query:{minimal:'1',worldId:id,worldKind:'server'}});
+  attachRendererDurability(minimalWindow);
+  minimalWindow.loadFile(path.join(projectRoot(),'renderer','quick.html'),{query:{minimal:'1',worldId:id,worldKind:'server',autoStart:autoStart?'1':'0'}});
   minimalWindow.once('ready-to-show',()=>{minimalWindow.show();minimalWindow.focus();});
   minimalWindow.on('closed',()=>{minimalWindow=null;});
   return minimalWindow;
@@ -442,7 +486,7 @@ function parseQuickArgs(argv) {
     else if (arg === '--world-kind' && argv[i + 1]) worldKind = String(argv[i + 1]).toLowerCase();
   }
   if (!['world', 'private', 'server'].includes(worldKind)) worldKind = 'world';
-  return { quick, minimal, worldId, worldKind };
+  return { quick, minimal, worldId, worldKind, autoStart: argv.includes('--auto-start') };
 }
 
 function parseJoinArgs(argv = []) {
@@ -676,7 +720,7 @@ ipcMain.handle('dragonwilds:open-path', async (_event,target) => { if(!target)re
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();
-else app.on('second-instance', (_event, argv) => { const join=parseJoinArgs(argv); if(join)deliverJoinRequest(join); else { const q=parseQuickArgs(argv); if(q.minimal&&q.worldId)createMinimalWindow(q.worldId);else if(q.quick&&q.worldId)createQuickWindow(q.worldId,q.worldKind); else { const w=createWindow({show:true}); w.show(); w.focus(); } } });
+else app.on('second-instance', (_event, argv) => { const join=parseJoinArgs(argv); if(join)deliverJoinRequest(join); else { const q=parseQuickArgs(argv); if(q.minimal&&q.worldId)createMinimalWindow(q.worldId,q.autoStart);else if(q.quick&&q.worldId)createQuickWindow(q.worldId,q.worldKind,q.autoStart); else { const w=createWindow({show:true}); w.show(); w.focus(); } } });
 
 app.on('open-url', (event, url) => { event.preventDefault(); const request=parseJoinArgs([url]); if(request)deliverJoinRequest(request); });
 
@@ -714,7 +758,7 @@ app.whenReady().then(async () => {
   startService(); await refreshBackgroundSettings(); createTray();
   const q=parseQuickArgs(process.argv);
   const startupJoin=pendingJoinRequest||parseJoinArgs(process.argv);
-  if(startupJoin) deliverJoinRequest(startupJoin); else if(q.minimal&&q.worldId)createMinimalWindow(q.worldId);else if(q.quick&&q.worldId) createQuickWindow(q.worldId,q.worldKind); else createWindow({show:!backgroundSettings.start_minimized});
+  if(startupJoin) deliverJoinRequest(startupJoin); else if(q.minimal&&q.worldId)createMinimalWindow(q.worldId,q.autoStart);else if(q.quick&&q.worldId) createQuickWindow(q.worldId,q.worldKind,q.autoStart); else createWindow({show:!backgroundSettings.start_minimized});
   const maybeBenchmark=()=>serviceInvoke('server.network.benchmark.maybe',{}).catch(()=>{}); setTimeout(maybeBenchmark,20000); benchmarkTimer=setInterval(maybeBenchmark,60*60*1000);
   const backgroundTick=()=>{serviceInvoke('world.discovery.heartbeat',{}).catch(()=>{});return serviceInvoke('client.background.tick',{}).then((r)=>{ for(const evt of r.events||[])showPassiveNotification(evt); }).catch(()=>{});}; setTimeout(backgroundTick,8000); backgroundTimer=setInterval(backgroundTick,30*1000);
   const schedulerTick=()=>serviceInvoke('server.scheduler.tick',{}).then((r)=>{ for(const evt of r.events||[]) if(evt.type==='warning') showPassiveNotification({key:`scheduler:${evt.minutes}:${evt.action}`,title:'Dragonwilds Server',body:evt.message,kind:evt.action==='backup'?'info':'restart'}); }).catch(()=>{}); setTimeout(schedulerTick,15000); schedulerTimer=setInterval(schedulerTick,15*1000);

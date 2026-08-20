@@ -73,7 +73,7 @@
         const row = typeof raw === 'string' ? {name:raw} : (raw && typeof raw === 'object' ? raw : null);
         if (!row) continue;
         const name = text(row.name || row.display_name || row.mod_name || row.id || row.key);
-        if (!name || /^(dragoncore|dragonconnect)$/i.test(name.replace(/\s+/g,''))) continue;
+        if (!name || /^dragonconnect$/i.test(name.replace(/\s+/g,''))) continue;
         const rawType = text(row.type || row.kind || row.loader || row.mod_type).toLowerCase();
         const type = rawType.includes('rune') ? 'RuneSchema' : rawType.includes('pak') ? 'Pak' : 'UE4SS';
         const role = text(row.runtime_role || row.role || row.scope || 'BOTH').toUpperCase();

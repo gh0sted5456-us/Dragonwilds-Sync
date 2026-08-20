@@ -62,9 +62,9 @@ def _settings_persistence() -> None:
 
     disk = json.loads(path.read_text(encoding="utf-8"))
     assert disk["schema"] == profile_settings.SETTINGS_SCHEMA
-    assert disk["mods"]["inventory_count"] == 3
+    assert disk["mods"]["inventory_count"] == 4
     inventory_names = {row.get("name") for row in disk["mods"]["inventory"]}
-    assert inventory_names == {"ActualLua", "SchemaPack", "ActualPak"}
+    assert inventory_names == {"ActualLua", "DragonCore", "SchemaPack", "ActualPak"}
     actual = next(row for row in disk["mods"]["inventory"] if row.get("name") == "ActualLua")
     assert "file_count" not in actual and "size" not in actual
     assert actual["source"] == {"provider": "manual"}
@@ -78,10 +78,10 @@ def _settings_persistence() -> None:
     recovered = {"name": "Persistence Fixture", "metadata_cache": {}, "unit_overrides": {}}
     settings2, _ = profile_settings.sync_profile_settings("dedicated", "world-shell", recovered)
     recovered_names = {row.get("name") for row in recovered["metadata_cache"]["mods"]}
-    assert recovered_names == {"ActualLua", "SchemaPack", "ActualPak"}
+    assert recovered_names == {"ActualLua", "DragonCore", "SchemaPack", "ActualPak"}
     assert recovered["metadata_cache"]["mods_source"] == "settings-manifest"
     assert recovered["unit_overrides"]["ue4ss_mod::ActualLua"]["order"] == 2
-    assert settings2["mods"]["inventory_count"] == 3
+    assert settings2["mods"]["inventory_count"] == 4
 
     # A real non-empty mutation is authoritative. Old settings are a recovery
     # fallback and must never overwrite a newly saved profile value.

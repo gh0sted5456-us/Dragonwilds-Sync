@@ -70,7 +70,10 @@ if (quick) {
   process.env.DWS_V3_QUICK_AUTOSTART = autoStart ? '1' : '0';
 
   // Remove V3-only arguments before the retained main parser sees argv.
-  args = args.filter((arg) => !['--quick', '--auto-start', '--full'].includes(String(arg)));
+  // Keep --auto-start in argv. The already-running primary instance receives
+  // argv through Electron's second-instance event; environment variables from
+  // this short-lived process are not inherited by that primary instance.
+  args = args.filter((arg) => !['--quick', '--full'].includes(String(arg)));
   args = dropFlagWithValue(args, '--profile');
   args = dropFlagWithValue(args, '--mode');
   args = args.filter((arg) => !String(arg).startsWith('--profile=') && !String(arg).startsWith('--mode='));

@@ -15,6 +15,7 @@ crypto_binaries = collect_dynamic_libs('cryptography')
 # same lookup contract instead of silently losing platform/community marks.
 webhost_assets = [
     (str(renderer_assets / 'application-icon.png'), '.'),
+    (str(renderer_assets / 'application-icon-web.png'), '.'),
     (str(renderer_assets / 'platforms'), 'renderer/assets/platforms'),
     (str(renderer_assets / 'placards'), 'renderer/assets/placards'),
 ]

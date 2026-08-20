@@ -24,7 +24,7 @@ This clarification supersedes the earlier draft wording that described a client 
 6. Dedicated Update & Restart stops and verifies the process, runs SteamCMD, verifies success, restarts only after success and restores Sync broadcast only after the process is verified running.
 7. SteamCMD state/logging belongs to the dedicated-server subsystem.
 8. Launcher updates use the existing verified release updater and common notification state.
-9. Managed/core updates use the same update/notification model. DragonCore is a launcher-managed core mod and must expose managed installed/available evidence rather than being invisible to update state.
+9. Managed/core updates use the same update/notification model for UE4SS and RuneSchema. Stack/weight mods are ordinary user-managed profile content and are never silently installed by the launcher.
 10. Desktop and WebGUI consume the same underlying update/notification state.
 11. Reported `CL-XXXXX` is captured and normalized.
 12. CL status is visible in World/Desktop and WebGUI presentations with text semantics as well as color.

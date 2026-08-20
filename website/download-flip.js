@@ -24,7 +24,7 @@
         </div>
         <div class="download-face-side">
           <div class="download-platform-icons" aria-label="Supported platform"><img src="assets/platforms/windows.svg" alt="Windows"><img src="assets/platforms/steam.svg" alt="Steam"></div>
-          <img src="assets/application-icon.png" alt="Dragonwilds Sync icon">
+          <img src="assets/application-icon.ico" alt="Dragonwilds Sync icon">
           <a class="button button-primary button-full" data-main-download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Download Main <span aria-hidden="true">↗</span></a>
           <a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Main release history</a>
         </div>
@@ -40,7 +40,7 @@
         </div>
         <div class="download-face-side">
           <div class="download-platform-icons" aria-label="Experimental platform"><img src="assets/platforms/windows.svg" alt="Windows"><img src="assets/platforms/steam.svg" alt="Steam"><img src="assets/platforms/github.svg" alt="GitHub" onerror="this.remove()"></div>
-          <img src="assets/application-icon.png" alt="Dragonwilds Sync icon">
+          <img src="assets/application-icon.ico" alt="Dragonwilds Sync icon">
           <a class="button button-primary button-full" href="${EXP_ZIP}">Download Experimental ZIP <span aria-hidden="true">↓</span></a>
           <a class="text-link" href="${EXP_PAGE}" target="_blank" rel="noopener noreferrer">View Experimental branch ↗</a>
         </div>

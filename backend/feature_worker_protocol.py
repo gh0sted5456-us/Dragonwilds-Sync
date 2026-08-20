@@ -50,6 +50,64 @@ FEATURE_WORKER_DOMAINS = {
     },
 }
 
+# Stable application identities group disposable feature workers without
+# transferring any lifecycle or durable-state authority out of Core.  A domain
+# may serve more than one parent application; the supervisor still deduplicates
+# it to one authenticated child process.
+APPLICATION_IDENTITIES = {
+    "shell": {
+        "label": "Launcher Shell",
+        "subapps": ["navigation", "settings", "help", "in-app-windows", "quick-launch"],
+        "domains": ["diagnostics"],
+    },
+    "worlds": {
+        "label": "World Library",
+        "subapps": ["placards", "private-worlds", "hosted-worlds", "world-save-editor", "manifests", "world-map"],
+        "domains": ["world-management", "save-studio", "exchange-maintenance", "directory-map"],
+    },
+    "characters": {
+        "label": "Characters",
+        "subapps": ["character-creator", "character-3d", "appearance", "inventory", "modded-item-repository"],
+        "domains": ["save-studio", "mod-library"],
+    },
+    "rsdw-l": {
+        "label": "RSDW-L",
+        "description": "Launcher-owned surfaces powered by the replaceable RSDW Toolkit module",
+        "subapps": ["character-editor", "item-editor", "spell-editor", "recipe-unlocker", "quest-editor", "live-map", "spawner", "console"],
+        "domains": ["save-studio", "directory-map"],
+        "authority": "Core validates writes, permissions and runtime commands; RSDW-L supplies bounded tooling",
+    },
+    "mods": {
+        "label": "Mod Studio",
+        "subapps": ["found-mods", "mod-explorer", "monaco-mod-editor", "shared-mod-repository", "load-order", "runtime-metadata"],
+        "domains": ["mod-library", "world-management"],
+    },
+    "rsdragonwilds": {
+        "label": "RSDragonwilds",
+        "subapps": ["singleplayer", "co-op", "dedicated-server"],
+        "domains": ["world-management", "update"],
+        "runtimeAuthority": "AuthoritativeRuntimeManager",
+        "attachments": {"singleplayer": [], "co-op": ["sync"], "dedicated-server": ["sync"]},
+    },
+    "sync": {
+        "label": "Sync",
+        "subapps": ["heartbeat", "p2p-transfer", "mod-sync", "directory"],
+        "domains": ["client-sync", "directory-map", "diagnostics"],
+        "authority": "Core-owned transfer and broadcast policy",
+    },
+    "webgui": {
+        "label": "WebGUI",
+        "subapps": ["directory-browser", "remote-login", "remote-console"],
+        "domains": ["directory-map", "diagnostics"],
+    },
+    "system": {
+        "label": "System Services",
+        "subapps": ["launcher-update", "server-update", "runtime-update", "security", "network-diagnostics", "integrations"],
+        "domains": ["update", "diagnostics"],
+        "authority": "Core-owned update, credential and security policy",
+    },
+}
+
 
 def app_data_root() -> Path:
     override = os.environ.get("DRAGONWILDS_SYNC_APPDATA")
@@ -107,7 +165,7 @@ def read_state(domain: str) -> dict:
 
 __all__ = [
     "FEATURE_PROTOCOL_VERSION", "FEATURE_STATE_SCHEMA", "FEATURE_SUPERVISOR_SCHEMA",
-    "FEATURE_AUTH_ENV", "DEFAULT_IDLE_SECONDS", "FEATURE_WORKER_DOMAINS",
+    "FEATURE_AUTH_ENV", "DEFAULT_IDLE_SECONDS", "FEATURE_WORKER_DOMAINS", "APPLICATION_IDENTITIES",
     "app_data_root", "safe_domain", "feature_root", "feature_dir", "state_path",
     "endpoint_for", "read_state", "atomic_json", "recv_message", "send_message", "request",
 ]

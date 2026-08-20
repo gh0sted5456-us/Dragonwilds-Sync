@@ -52,15 +52,6 @@
       "legacy_physical_names": ["RSDWTools"],
       "description": "UE4SS runtime tooling for spawning, live/in-game map hooks, console commands and game-runtime integration. This is intentionally distinct from the RSDWTools data repository."
     },
-    "dragoncore": {
-      "display_name": "DragonCore",
-      "enabled": true,
-      "type": "bundled-resource",
-      "bundled_fallback": "resources/DragonCore-baseline.zip",
-      "runtime_component": true,
-      "runtime_roles": ["server", "host"],
-      "description": "Hidden Dragonwilds Sync host/server runtime component. Bundle content hash is its managed version until an independent authoritative release source is configured."
-    },
     "dragonconnect": {
       "display_name": "DragonConnect",
       "enabled": true,

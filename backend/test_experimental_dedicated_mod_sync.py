@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import socket
 import tempfile
+import hashlib
 from pathlib import Path
 
 import profile_store
@@ -144,6 +145,10 @@ def main() -> None:
                 {"os": "test"}, 7777, broadcast=False, game_root=str(game),
             )
             assert published["serving"] is True and published["manifest_file_count"] > 0
+            fingerprints = published.get("component_fingerprints") or {}
+            assert "ue4ss:BetaLua" in fingerprints
+            assert "runeschema:BetaSchema" in fingerprints
+            assert "pak:BetaPack" in fingerprints
 
             (client_game / "Content" / "Paks").mkdir(parents=True, exist_ok=True)
             (client_game / "Binaries" / "Win64").mkdir(parents=True, exist_ok=True)
@@ -153,12 +158,47 @@ def main() -> None:
                 "connection": {"internal_ip": "127.0.0.1", "external_ip": "", "sync_port": port, "preference": "internal"},
                 "credentials": {"password": "pw", "server_key": "server-key", "share_access_key": "", "source": "manual"},
             }
+
+            # Resume gate: seed an interrupted partial file, then prove the
+            # authenticated host responds to Range and the client promotes it
+            # only after the complete manifest SHA-256 matches.
+            _route, _endpoint, manifest, token, base_url, _ping = sync_engine.resolve_verified_manifest(world, "windows")
+            resume_entry = next(row for row in manifest["files"] if int(row.get("size") or 0) > 1)
+            source = ss.PUBLISH_DIR / resume_entry["path"]
+            resume_target = root / "resume-check" / Path(resume_entry["path"]).name
+            resume_partial = resume_target.with_name(resume_target.name + ".partial")
+            resume_partial.parent.mkdir(parents=True, exist_ok=True)
+            raw = source.read_bytes(); resume_partial.write_bytes(raw[: max(1, len(raw) // 2)])
+            sync_engine.download_entry(base_url, token, resume_entry, resume_target, "windows")
+            assert resume_target.read_bytes() == raw
+            assert hashlib.sha256(resume_target.read_bytes()).hexdigest() == resume_entry["sha256"]
+
             synced = sync_world(world, client_install, "integration-client")
             assert synced["ok"] is True and synced["launch_ready"] is True
             assert synced["transfer_gate"] == "verified"
             assert (client_game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta'"
             assert (client_game / "Content/Paks/~mods/BetaPack.pak").read_bytes() == b"Beta-pak"
             assert not (client_game / "Binaries/Win64/ue4ss/Mods/AlphaLua").exists()
+
+            unchanged = sync_world(world, client_install, "integration-client")
+            assert unchanged["fast_manifest_match"] is True
+            assert unchanged["downloaded"] == 0 and unchanged["downloaded_bytes"] == 0
+
+            # Change one file in one mod. The new per-mod fingerprint must
+            # invalidate only BetaLua while unchanged RuneSchema/PAK components
+            # remain transfer-free.
+            (game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").write_text("return 'Beta-v2'", encoding="utf-8")
+            changed_units = ss.scan_mod_units("world-b", str(game))
+            republished = ss.SHARE.publish(
+                "world-b", changed_units, "pw", "server-key", port,
+                {"os": "test"}, 7777, broadcast=False, game_root=str(game),
+            )
+            assert republished["component_fingerprints"]["ue4ss:BetaLua"] != fingerprints["ue4ss:BetaLua"]
+            delta = sync_world(world, client_install, "integration-client")
+            assert delta["downloaded"] == 1
+            assert "pak:BetaPack" in delta["component_fast_matches"]
+            assert "runeschema:BetaSchema" in delta["component_fast_matches"]
+            assert (client_game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta-v2'"
 
             print("experimental dedicated mod scan/profile swap/host transfer tests passed")
         finally:

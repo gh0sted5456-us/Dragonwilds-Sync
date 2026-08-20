@@ -108,7 +108,7 @@ def test_client_mods_txt_is_locally_generated_from_role_filtered_state():
         assert "RuneSchema : 1" in text
         assert f"{direct_connect.MOD_NAME} : 1" in text
         assert "ClientQoL : 1" in text
-        assert "DragonCore" not in text
+        assert "DragonCore : 1" in text
         assert "RSDWTools" not in text
         assert "Keybinds : 1" in text
 

@@ -30,6 +30,7 @@ from dragonwilds_service_v3_phase2 import *  # noqa: F401,F403
 from client_layout import resolve_client_layout
 import profile_store
 from runtime_worker_bridge import install as install_runtime_worker_bridge
+from system_process_catalog import process_catalog
 from v3_exchange import apply_import, collect_character_entries, collect_world_entries, export_exchange, inspect_exchange
 from v3_identity import read_identity
 from v3_item_registry import cached_registry, registry_from_state
@@ -280,7 +281,11 @@ def handle(method: str, params: dict) -> object:
             application["runtime_worker_supervisor"] = _workers().list_status()
             application["feature_worker_supervisor"] = _feature_workers().list_status()
             application["phase5_runtime_workers"] = _install_phase5_workers()
+            application["system_process_catalog"] = process_catalog()
         return result
+
+    if method == "application.process_catalog":
+        return process_catalog()
 
     # Runtime worker diagnostic/supervision API. Normal UI, Quick Mode and
     # WebGUI lifecycle controls continue through server.world/server.runtime.
@@ -308,7 +313,8 @@ def handle(method: str, params: dict) -> object:
         return _feature_workers().list_status()
     if method == "feature.worker.prepare":
         domains = params.get("domains") if isinstance(params.get("domains"), list) else None
-        return _feature_workers().prepare(domains, owner=str(params.get("owner") or "launcher-splash"))
+        applications = params.get("applications") if isinstance(params.get("applications"), list) else None
+        return _feature_workers().prepare(domains, owner=str(params.get("owner") or "launcher-splash"), applications=applications)
     if method == "feature.worker.status":
         return _feature_workers().status(_feature_domain(params))
     if method == "feature.worker.acquire":
@@ -323,6 +329,13 @@ def handle(method: str, params: dict) -> object:
             params.get("params") if isinstance(params.get("params"), dict) else {},
             owner=str(params.get("owner") or "rpc"),
         )
+
+    if method == "application.shutdown":
+        feature_shutdown = _feature_workers().shutdown()
+        result = _base_handle(method, params)
+        if isinstance(result, dict):
+            result["feature_workers"] = feature_shutdown
+        return result
 
     # First real feature-domain migrations. Core keeps authority/safety checks;
     # CPU/memory/failure-prone parsing and image/archive work executes out of process.
@@ -558,8 +571,14 @@ def main() -> int:
     update_stage("metadataMigrated", True, note="Phase 4 presentation/publication authorities preserved")
     update_stage("exportsMigrated", True, note="V3 canonical exchange authority preserved")
     _install_phase5_workers()
+    # Calling the retained V3 bootstrap here would replace this Phase 5 handler
+    # immediately before its stdin loop, hiding every Phase 5-only RPC from the
+    # real Electron-owned subprocess.
     _legacy.handle = handle
-    return _base.main()
+    NETWORK.ensure_installation_identity()
+    update_stage("quickLaunchMigrated", True)
+    NETWORK.start_background()
+    return _legacy.main()
 
 
 if __name__ == "__main__":

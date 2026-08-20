@@ -25,13 +25,13 @@ def main() -> None:
 
     # Registry installation extends every retained profile/runtime ownership set.
     assert "mods.txt" in local_world.RESERVED_UE4SS
-    assert "dragoncore" in local_world.RESERVED_UE4SS
+    assert "dragoncore" not in local_world.RESERVED_UE4SS
     assert "persistentdirectconnectip" in local_world.RESERVED_UE4SS
     assert "rsdwtools" in local_world.RESERVED_UE4SS
     assert "rsdwdevkit" in local_world.RESERVED_UE4SS
-    assert "dragoncore" in server_engine.SERVER_INFRASTRUCTURE_UE4SS
+    assert "dragoncore" not in server_engine.SERVER_INFRASTRUCTURE_UE4SS
     assert "persistentdirectconnectip" in sync_engine.LAUNCHER_LOCAL_UE4SS_MODS
-    assert is_parity_payload("DragonCore", "ue4ss_mod") is False
+    assert is_parity_payload("DragonCore", "ue4ss_mod") is True
     assert is_parity_payload("PersistentDirectConnectIP", "ue4ss_mod") is False
     assert is_parity_payload("RSDWTools", "ue4ss_mod") is False
     assert is_parity_payload("ActualUserMod", "ue4ss_mod") is True
@@ -73,7 +73,7 @@ def main() -> None:
             rows = local_world.scan_inventory(str(client_install), live=True, profile_id=local_world.SINGLEPLAYER_ID)
             names = {str(row.get("name") or "") for row in rows}
             assert "mods.txt" not in names
-            assert "DragonCore" not in names
+            assert "DragonCore" in names
             assert "PersistentDirectConnectIP" not in names
             assert "RSDWTools" not in names
             assert "RSDWDevKit" not in names
@@ -87,8 +87,8 @@ def main() -> None:
                 local_world.DELETED_SAVES_PATH,
             ) = old_local
 
-        # Dedicated mods.txt is a server runtime plan. DragonCore is host/server
-        # infrastructure; DragonConnect and Toolkit are not server control rows.
+        # Dedicated mods.txt is a server runtime plan. User-installed DragonCore
+        # is ordinary profile content; DragonConnect and Toolkit remain infrastructure.
         server_game = root / "server" / "RSDragonwilds"
         server_layout = ss.resolve_server_layout(str(server_game))
         server_layout.ue4ss_mods_dir.mkdir(parents=True, exist_ok=True)
@@ -106,13 +106,13 @@ def main() -> None:
         ]
         generated = ss.generate_server_mods_txt("world", str(server_game), units=units)
         text = Path(generated["path"]).read_text(encoding="utf-8")
-        assert "DragonCore : 1" in text
+        assert "DragonCore : 1" not in text  # fixture is self-enabled through enabled.txt
         assert "ActualUserMod : 1" in text
         assert "PersistentDirectConnectIP" not in text
         assert "RSDWTools" not in text
         assert "SelfEnabledUser" not in text
 
-        assert ss.user_visible_mod_unit(units[0]) is False
+        assert ss.user_visible_mod_unit(units[0]) is True
         assert ss.user_visible_mod_unit(units[1]) is False
         assert ss.user_visible_mod_unit(units[2]) is False
         assert ss.user_visible_mod_unit(units[3]) is True
@@ -132,8 +132,8 @@ def main() -> None:
         assert public["file_count"] >= 1
 
         # Joining-client mods.txt is generated locally from CLIENT/BOTH user
-        # requirements, then adds hidden DragonConnect. Server-only DragonCore
-        # and runtime Toolkit can never leak into it.
+        # requirements, then adds hidden DragonConnect. User-installed DragonCore
+        # follows its declared role; runtime Toolkit can never leak into it.
         client_install = root / "joining-client"
         client_layout = sync_engine.resolve_client_layout(client_install)
         client_layout.ue4ss_mods_dir.mkdir(parents=True, exist_ok=True)
@@ -147,7 +147,7 @@ def main() -> None:
         assert result["writer"] == "client_generate"
         assert "ActualUserMod : 1" in client_text
         assert "PersistentDirectConnectIP : 1" in client_text
-        assert "DragonCore" not in client_text
+        assert "DragonCore : 1" in client_text
         assert "RSDWTools" not in client_text
 
     print("authoritative hidden mod taxonomy / role-aware mods.txt: PASS")

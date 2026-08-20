@@ -379,8 +379,6 @@ def _install_server_pipeline(server_engine_module) -> None:
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
 
-        from dragon_core import materialize as materialize_dragon_core
-        dragon_core = materialize_dragon_core(layout.ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
         cfg = profile.setdefault("dedicated_config", {})
         launch_ready = False
         if launch_required:
@@ -415,7 +413,7 @@ def _install_server_pipeline(server_engine_module) -> None:
         prepared = {
             "profile_id": profile_id, "profile": profile, "root": root, "exe": exe,
             "runtime": dict(runtime), "units": list(units), "mods_txt": dict(mods_txt or {}),
-            "dragon_core": dict(dragon_core or {}), "materialization": materialized,
+            "materialization": materialized,
             "materialization_mode": mode, "managed_configs_locked": locked,
             "mod_signature": _server_mod_signature(server_engine_module, root),
             "thread_id": threading.get_ident(), "created_monotonic": time.monotonic(), "purpose": purpose,

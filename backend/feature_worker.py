@@ -7,7 +7,7 @@ import signal
 import threading
 import time
 import uuid
-from multiprocessing.connection import AuthenticationError, Listener
+from multiprocessing.connection import AuthenticationError, Client, Listener
 from pathlib import Path
 
 from feature_worker_protocol import (
@@ -107,9 +107,17 @@ class FeatureWorker:
         self.stopping = True
         self.state = "stopping"
         self.write_state("stopping")
+        # Closing a multiprocessing Listener from another thread does not
+        # reliably interrupt a blocking named-pipe accept on Windows. Wake the
+        # accept with an authenticated local connection; the serve loop sees
+        # ``stopping`` and performs its normal cleanup immediately afterward.
         try:
-            if self.listener is not None:
-                self.listener.close()
+            # STOP is already being handled by the serving thread; opening a
+            # second Client there would wait for the same thread to call
+            # accept again. Timer/parent threads need the wake-up connection.
+            if self.listener is not None and reason != "supervisor-stop":
+                wake = Client(self.endpoint, family=self.family, authkey=self.auth_token.encode("utf-8"))
+                wake.close()
         except Exception:
             pass
 
@@ -131,12 +139,27 @@ class FeatureWorker:
 
     def _monitor_parent(self) -> None:
         while not self.stopping:
-            # Feature workers are deliberately direct, disposable children of
-            # Core. Checking the actual parent identity avoids platform-specific
-            # signal/probe behavior and also rejects PID reuse after Core exits.
-            if os.getppid() != self.parent_pid:
+            # Windows can continue reporting the original PPID after that
+            # process exits, so comparing os.getppid() alone leaves an orphan
+            # holding its splash lease. Probe the recorded Core PID itself.
+            try:
+                import psutil  # type: ignore
+                parent_alive = psutil.pid_exists(self.parent_pid) and psutil.Process(self.parent_pid).is_running()
+            except ImportError:
+                try:
+                    os.kill(self.parent_pid, 0)
+                    parent_alive = True
+                except OSError:
+                    parent_alive = False
+            except Exception:
+                parent_alive = False
+            if not parent_alive or os.getppid() != self.parent_pid:
                 self._request_stop("parent-exited")
-                return
+                # A disposable feature worker owns no durable or runtime
+                # authority. If Windows leaves the named-pipe accept blocked,
+                # exiting this worker is safer than surviving its Core parent.
+                time.sleep(0.05)
+                os._exit(0)
             time.sleep(2.0)
 
     def _acquire(self, payload: dict) -> dict:

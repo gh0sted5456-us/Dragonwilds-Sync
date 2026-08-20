@@ -23,6 +23,7 @@ from feature_worker_protocol import (
     FEATURE_PROTOCOL_VERSION,
     FEATURE_SUPERVISOR_SCHEMA,
     FEATURE_WORKER_DOMAINS,
+    APPLICATION_IDENTITIES,
     feature_dir,
     feature_root,
     read_state,
@@ -276,12 +277,23 @@ class FeatureWorkerSupervisor:
         self._held_leases[key] = lease["leaseId"]
         return {**lease, "reused": False}
 
-    def prepare(self, domains: list[str] | None = None, owner: str = "launcher-splash") -> dict:
+    def prepare(self, domains: list[str] | None = None, owner: str = "launcher-splash", applications: list[str] | None = None) -> dict:
         """Start and import app feature workspaces in parallel for instant tabs."""
-        requested = domains or [
-            "world-management", "save-studio", "mod-library", "directory-map",
-            "exchange-maintenance", "diagnostics",
-        ]
+        selected_apps = []
+        for value in applications or []:
+            app_id = str(value or "").strip().casefold()
+            if app_id not in APPLICATION_IDENTITIES:
+                raise ValueError(f"Unknown application identity: {app_id or '(empty)'}")
+            if app_id not in selected_apps:
+                selected_apps.append(app_id)
+        requested = list(domains or [])
+        for app_id in selected_apps:
+            requested.extend(APPLICATION_IDENTITIES[app_id]["domains"])
+        if not requested:
+            requested = [
+                "world-management", "save-studio", "mod-library", "directory-map",
+                "exchange-maintenance", "diagnostics",
+            ]
         selected = list(dict.fromkeys(safe_domain(value) for value in requested))
 
         def warm(domain: str) -> dict:
@@ -303,7 +315,25 @@ class FeatureWorkerSupervisor:
                     rows.append({"domain": domain, "ready": False, "error": str(exc)[:300]})
         rows.sort(key=lambda row: selected.index(row["domain"]))
         return {"ready": all(row.get("ready") for row in rows), "prepared": rows,
+                "applications": [{"id": app_id, **APPLICATION_IDENTITIES[app_id]} for app_id in selected_apps],
                 "readyCount": sum(1 for row in rows if row.get("ready")), "requested": len(rows)}
+
+    def shutdown(self) -> dict:
+        """Release held Appy leases and stop disposable workers in parallel."""
+        self._held_leases.clear()
+        self._leases.clear()
+
+        def stop_one(domain: str) -> dict:
+            try:
+                return self.stop(domain, force=True)
+            except Exception as exc:
+                return {"domain": domain, "state": "unavailable", "error": str(exc)[:300]}
+
+        domains = list(FEATURE_WORKER_DOMAINS)
+        with ThreadPoolExecutor(max_workers=max(1, len(domains))) as pool:
+            rows = list(pool.map(stop_one, domains))
+        self._children.clear()
+        return {"stopped": sum(1 for row in rows if not row.get("live")), "workers": rows}
 
     def stop(self, domain: str, *, force: bool = False) -> dict:
         domain = safe_domain(domain)
@@ -357,6 +387,7 @@ class FeatureWorkerSupervisor:
             "schema": FEATURE_SUPERVISOR_SCHEMA,
             "workerProtocolVersion": FEATURE_PROTOCOL_VERSION,
             "idleSeconds": self.idle_seconds,
+            "applications": [{"id": app_id, **metadata} for app_id, metadata in APPLICATION_IDENTITIES.items()],
             "workers": rows,
             "liveCount": sum(1 for row in rows if row.get("live")),
             "attachedCount": sum(1 for row in rows if row.get("attached")),

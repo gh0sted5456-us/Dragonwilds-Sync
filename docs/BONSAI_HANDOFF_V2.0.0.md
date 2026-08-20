@@ -54,7 +54,6 @@ The following archives are shipped under `resources` and installed as hidden lau
   - Profile-specific direct-connect configuration is generated automatically.
   - Password and address values are swapped with the active profile and are not shared in mod archives.
   - IPv4 and hostnames are supported. IPv6 fails closed with a visible warning because the supplied mod does not support it.
-- `DragonCore-baseline.zip`
   - Runs for private/co-op and dedicated-server profiles.
   - The application generates Player or Server mode configuration.
   - Stack and weight categories are configured from Items & Enemies → Item Editor.
@@ -82,7 +81,7 @@ The portable custom-item manifest supports multiple items, merge-by-Persistence-
 
 The former Spawn Items area is consolidated as Items & Enemies:
 
-- Item Editor: DragonCore stack and weight configuration.
+- Mod Editor: user-installed stack/weight mods and their configuration files.
 - Spawner: RSDW item and enemy catalog plus connected-player targets.
 - RSDW vanilla items use their resolved runtime asset path.
 - Custom items can use an explicit runtime/source path or a validated `ITEM_NAME` fallback.
@@ -137,7 +136,7 @@ Public reference: https://www.lobbysup.com/dragonwilds
 
 ## Major files changed for the final pass
 
-- `backend/dragonwilds_service.py`: RPC orchestration, cache separation, item registry, Spawner/WebGUI payloads, maps, public history, remote actions, Direct Connect, DragonCore.
+- `backend/dragonwilds_service.py`: RPC orchestration, cache separation, item registry, Spawner/WebGUI payloads, maps, public history, remote actions, and Direct Connect.
 - `backend/rsdw_cache.py`: normalized RSDW item fields and larger catalog search.
 - `backend/spawner_catalog.py`: shared vanilla/custom registry merge and runtime/ITEM_NAME resolution.
 - `backend/character_profiles.py`: shared fields in Character Item Editor.
@@ -145,8 +144,6 @@ Public reference: https://www.lobbysup.com/dragonwilds
 - `backend/directory_web.py`: grouped mods, Items tab, maintenance version state, Update Server.
 - `backend/public_worlds.py`: LobbySup discovery/history merge and deduplication.
 - `backend/server_systems.py`: hidden RSDWTools baseline and mod filtering.
-- `backend/server_engine.py`: DragonCore server materialization.
-- `backend/dragon_core.py`: safe baseline installation and generated stack/weight Lua.
 - `backend/persistent_direct_connect.py`: safe baseline installation and atomic profile configuration.
 - `renderer/app.js`: Items & Enemies UI, item identity editor, World Details, map alignment, remote settings and permissions.
 - `renderer/styles.css`: Items & Enemies and public-history presentation.
@@ -192,7 +189,7 @@ The 94.5 MB RSDWTools baseline was accepted by GitHub. GitHub emitted its adviso
 On the test dedicated server:
 
 1. Link the existing server directory and accept adoption of detected mods.
-2. Activate the World and verify hidden RSDWTools, DragonCore, and PersistentDirectConnectIP folders exist without appearing as normal mods.
+2. Activate the World and verify hidden RSDW Toolkit and PersistentDirectConnectIP folders exist without appearing as normal mods. Any user-installed stack/weight mod must remain visible and profile-managed.
 3. Rescan once and confirm later World Management tab changes use the cached inventory.
 4. Verify remote login, user permissions, start/stop/restart/update, grouped configs, console, and Items.
 5. Import one custom-item manifest containing a GUID Persistence ID plus `ITEM_NAME`; confirm it appears in Character Editor, Spawner, and WebGUI.

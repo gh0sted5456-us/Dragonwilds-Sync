@@ -34,6 +34,7 @@ requireText('renderer/release-v3-phase2.js', [
   'Broadcast Message', 'quick.console.execute', 'Participate in Dragonwilds Sync Network',
   'Broadcast this World publicly',
 ]);
+requireText('renderer/quick.html', ['release-v3-phase2.css', 'release-v3-phase2.js', 'v3-quick-body']);
 
 const worker = requireText('cloudflare/dragonwilds-sync-directory/worker.js', [
   '/api/v1/register', '/api/v1/presence', '/api/v1/worlds/register', '/api/v1/heartbeat',
@@ -72,6 +73,8 @@ if (/password|world_pass|admin_pass|server_key|share_access_key/i.test(main)) fa
 const retainedMain = read('electron/main-v2.cjs');
 if (!retainedMain.includes("preload: path.join(__dirname, 'preload-v2.cjs')")) failures.push('electron/main-v2.cjs: BrowserWindow must select the self-contained sandbox preload');
 if (!retainedMain.includes('sandbox: true')) failures.push('electron/main-v2.cjs: BrowserWindow preload must remain sandboxed');
+if (!retainedMain.includes("'renderer', 'quick.html'")) failures.push('electron/main-v2.cjs: Quick windows must use the lean dedicated renderer entry');
+if (!retainedMain.includes("autoStart: argv.includes('--auto-start')")) failures.push('electron/main-v2.cjs: second-instance Quick handoff must preserve auto-start');
 const retainedPreload = read('electron/preload-v2.cjs');
 if (/require\(['"]\.\/preload[^'"]*['"]\)/.test(retainedPreload)) failures.push('electron/preload-v2.cjs: sandbox preload must not require another local preload');
 

@@ -12,7 +12,6 @@ const previewState = {
         presentation: { description: 'A heavily modded cooperative survival world for friends.', tags: ['co-op','survival','friends'], mod_badges: ['UE4SS','RUNESCHEMA','PAKS'], icon_b64: 'assets/valhalla-friends-icon.png', banner_b64: 'assets/valhalla-friends-banner.png' },
         status: { online: true, ping_ms: 18.6, player_count: 4, uptime_seconds: 12480, manifest_version: 42 },
         manifest_cache: { mod_summary: [
-          {name:'DragonCore',section:'ue4ss',classification:'player_required',category:'permanent'},
           {name:'Extended Resources',section:'runeschema',classification:'player_required',category:'permanent'},
           {name:'Server Admin Tools',section:'ue4ss',classification:'server_only',category:'permanent'}
         ]}, last_sync: { timestamp:'2026-08-12 18:42', version:42 }

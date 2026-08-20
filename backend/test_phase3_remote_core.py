@@ -65,7 +65,6 @@ def state_provider(_profile_id: str) -> dict:
             "update_status": {
                 "core_mod": {"status": "current", "installed_version": "u1", "available_version": "u1"},
                 "runeschema": {"status": "update_available", "installed_version": "r1", "available_version": "r2", "update_available": True},
-                "dragoncore_server": {"status": "current", "installed_version": "d1", "available_version": "d1"},
             }
         },
     }
@@ -179,8 +178,8 @@ def main() -> None:
             {"name": "ActualPack", "type": "PAK", "files": 3},
         ],
     })
-    assert found["detected"] is True and found["count"] == 3
-    assert {row["name"] for row in found["mods"]} == {"ActualLua", "SchemaContent", "ActualPack"}
+    assert found["detected"] is True and found["count"] == 4
+    assert {row["name"] for row in found["mods"]} == {"DragonCore", "ActualLua", "SchemaContent", "ActualPack"}
 
     direct = _filter_public_units({"units": [
         {"name": "DragonCore", "group": "ue4ss_mod"},
@@ -188,7 +187,7 @@ def main() -> None:
         {"name": "ActualLua", "group": "ue4ss_mod"},
         {"name": "SchemaContent", "group": "runeschema_mod"},
     ]})
-    assert [row["name"] for row in direct["units"]] == ["ActualLua", "SchemaContent"]
+    assert [row["name"] for row in direct["units"]] == ["DragonCore", "ActualLua", "SchemaContent"]
 
     cached = _filter_inventory_cache({"updated_at": "old", "mods": [
         {"name": "mods.txt", "group": "ue4ss_mod"},
@@ -198,7 +197,7 @@ def main() -> None:
         {"name": "ActualLua", "group": "ue4ss_mod"},
     ]})
     assert cached["updated_at"] == "old"
-    assert [row["name"] for row in cached["mods"]] == ["ActualLua"]
+    assert [row["name"] for row in cached["mods"]] == ["DragonCore", "ActualLua"]
 
     module = SimpleNamespace(DirectoryHost=FakeHost, normalize_heartbeat=normalize_heartbeat)
     install_directory_patches(module)
@@ -207,7 +206,7 @@ def main() -> None:
 
     payload = host.remote_state_provider("world-a")
     components = {row["id"]: row for row in payload["core_components"]}
-    assert set(components) == {"ue4ss", "runeschema", "dragoncore", "dragonconnect", "rsdw_toolkit"}
+    assert set(components) == {"ue4ss", "runeschema", "dragonconnect", "rsdw_toolkit"}
     assert components["runeschema"]["update_available"] is True
     assert components["dragonconnect"]["legacy_name"] == "PersistentDirectConnectIP"
     assert components["rsdw_toolkit"]["ui_group"] == "tooling"

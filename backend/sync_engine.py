@@ -37,7 +37,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # with whatever was cached in that profile's snapshot -- silently
 # downgrading UE4SS's own runtime files back to whatever version existed
 # the last time that particular profile was snapshotted.
-LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
+LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
 RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
 
 
@@ -476,30 +476,45 @@ def is_core_persistent_path(path: str) -> bool:
 
 
 def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "") -> None:
-    headers = {"Authorization": f"Bearer {token}"}
-    if client_platform:
-        headers["X-DWS-Client-Platform"] = client_platform
-    response = request(
-        f"{base_url}/files/{quote(entry['path'], safe='/')}",
-        headers=headers, timeout=60.0)
-    # Existing protocol serves whole files. Stream the HTTP response to disk
-    # anyway so the v2 launcher does not add a second in-memory copy.
-    h = hashlib.sha256()
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".partial")
-    with partial.open("wb") as out:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
-            h.update(chunk)
-            out.write(chunk)
-    actual = h.hexdigest()
-    if actual != entry.get("sha256"):
+    expected_size = max(0, int(entry.get("size") or 0))
+    expected_hash = str(entry.get("sha256") or "").casefold()
+    if partial.exists() and expected_size and partial.stat().st_size > expected_size:
         partial.unlink(missing_ok=True)
+
+    # Partial bytes never become trusted state. They are only a Range offset;
+    # the completed payload still needs the manifest SHA-256 before promotion.
+    for attempt in range(2):
+        offset = partial.stat().st_size if partial.exists() else 0
+        digest = hashlib.sha256()
+        if offset:
+            with partial.open("rb") as existing:
+                while True:
+                    chunk = existing.read(1024 * 1024)
+                    if not chunk: break
+                    digest.update(chunk)
+        headers = {"Authorization": f"Bearer {token}"}
+        if client_platform: headers["X-DWS-Client-Platform"] = client_platform
+        if offset: headers["Range"] = f"bytes={offset}-"
+        if not (expected_size and offset == expected_size):
+            response = request(f"{base_url}/files/{quote(entry['path'], safe='/')}", headers=headers, timeout=60.0)
+            resumed = offset > 0 and int(getattr(response, "status", response.getcode()) or 0) == 206
+            if offset and not resumed:
+                offset = 0; digest = hashlib.sha256()
+            with partial.open("ab" if resumed else "wb") as out:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk: break
+                    digest.update(chunk); out.write(chunk)
+        actual = digest.hexdigest()
+        size_ok = not expected_size or partial.stat().st_size == expected_size
+        if size_ok and actual == expected_hash:
+            os.replace(partial, destination); return
+        partial.unlink(missing_ok=True)
+        if attempt == 0: continue
         raise ConnectionError(
-            f"Hash mismatch for {entry.get('path')}: expected {str(entry.get('sha256'))[:12]}…, got {actual[:12]}…")
-    os.replace(partial, destination)
+            f"Hash mismatch for {entry.get('path')}: expected {expected_hash[:12]}…, got {actual[:12]}…")
 
 
 def report_manifest(base_url: str, token: str, files: list[dict], client_id: str, network: dict | None = None,

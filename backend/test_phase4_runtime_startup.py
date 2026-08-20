@@ -92,7 +92,7 @@ def _fake_server_module(root: Path):
     counts = {"runtime": 0, "scan": 0, "generate": 0, "restore_save": 0,
               "restore_mods": 0, "restore_config": 0, "snap_mods": 0, "snap_config": 0, "snap_save": 0}
     profile = {"id": "world-a", "name": "World A", "mods_txt_mode": "auto",
-               "dragon_core": {}, "dedicated_config": {"owner_id": "owner", "port": 7777}}
+               "dedicated_config": {"owner_id": "owner", "port": 7777}}
     prior = {"id": "world-b", "name": "World B", "dedicated_config": {"owner_id": "owner", "port": 7777}}
     exe = root / "RSDragonwilds.exe"
     exe.write_bytes(b"stub")
@@ -140,7 +140,7 @@ def _fake_server_module(root: Path):
 
     fake = SimpleNamespace(
         ServerEngine=FakeEngine, SHARE=share, STATE=SimpleNamespace(active_profile_id="world-a"),
-        SERVER_INFRASTRUCTURE_UE4SS={"runeschema", "dragoncore", "mods.txt"},
+        SERVER_INFRASTRUCTURE_UE4SS={"runeschema", "mods.txt"},
         ensure_base_runtimes=runtime, scan_mod_units=scan, generate_server_mods_txt=generate,
         resolve_server_layout=lambda _root: layout, _find_running_server_pid=lambda _exe="": None,
         load_server_profile=lambda profile_id: profile if profile_id == "world-a" else (prior if profile_id == "world-b" else {}),
@@ -164,9 +164,7 @@ def test_prepare_preserves_live_save_for_current_profile_and_publish_reuses_scan
         root = Path(td)
         fake, counts, share, _profile, layout = _fake_server_module(root)
         write_active_world(layout.game_root, "world-a", "dedicated")
-        old_dragon = sys.modules.get("dragon_core")
         old_maintenance = sys.modules.get("world_maintenance")
-        sys.modules["dragon_core"] = SimpleNamespace(materialize=lambda *_a, **_k: {"ok": True, "changed": False})
         sys.modules["world_maintenance"] = SimpleNamespace(lock_world_configs=lambda *_a, **_k: {"locked": 1})
         try:
             phase4._install_server_pipeline(fake)
@@ -184,10 +182,6 @@ def test_prepare_preserves_live_save_for_current_profile_and_publish_reuses_scan
             engine.publish("world-a")
             assert counts["runtime"] == counts["scan"] == counts["generate"] == 2, "prepared cache survived its one-use publish"
         finally:
-            if old_dragon is None:
-                sys.modules.pop("dragon_core", None)
-            else:
-                sys.modules["dragon_core"] = old_dragon
             if old_maintenance is None:
                 sys.modules.pop("world_maintenance", None)
             else:

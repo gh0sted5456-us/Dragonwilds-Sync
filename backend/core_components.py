@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Authoritative Dragonwilds Sync component taxonomy and compatibility adapters.
+"""Authoritative Dragonwilds Sync component taxonomy and runtime adapters.
 
 This module does not create another manager.  It gives the existing Mod Manager,
 profile/runtime providers, Sync engine and WebGUI one shared answer to three
@@ -56,25 +56,6 @@ CORE_COMPONENTS = {
         "profile_membership": "derived",
         "physical_relationship": "UE4SS/Mods/RuneSchema",
         "aliases": ["runeschema"],
-    },
-    "dragoncore": {
-        "name": "DragonCore",
-        "type": "Host / Dedicated Runtime Component",
-        "ui_group": "core_components",
-        "technology": "ue4ss",
-        "provider": "ue4ss_mod",
-        "physical_type": "ue4ss_mod",
-        "runtime_roles": ["server", "host"],
-        "visibility": "hidden-core",
-        "depends_on": ["ue4ss"],
-        "update_key": "dragoncore_server",
-        "remote_update_supported": True,
-        "parity_payload": False,
-        "profile_membership": "derived",
-        "generated_mods_txt_roles": ["server", "host"],
-        "physical_name": "DragonCore",
-        "physical_relationship": "UE4SS/Mods/DragonCore",
-        "aliases": ["dragoncore"],
     },
     "dragonconnect": {
         "name": "DragonConnect",
@@ -394,9 +375,9 @@ def install_mod_taxonomy_adapters() -> None:
             component_id = str(info.get("component_id") or "")
             if component_id == "dragonconnect" or info.get("visibility") == "hidden-tooling":
                 continue
-            if info.get("managed") and component_id not in {"dragoncore"}:
+            if info.get("managed"):
                 continue
-            if component_id != "dragoncore" and server_systems._unit_has_enabled_txt(unit):
+            if server_systems._unit_has_enabled_txt(unit):
                 continue
             if unit.name.casefold() in GENERATED_CONTROL_NAMES:
                 continue
@@ -491,8 +472,8 @@ def install_mod_taxonomy_adapters() -> None:
             enabled = [name for name in (result.get("enabled") or []) if is_user_manageable_mod(name, "ue4ss_mod")]
             if connect_dir.is_dir() and dragonconnect.casefold() not in {name.casefold() for name in enabled}:
                 enabled.append(dragonconnect)
-            # Rebuild from the authoritative role-filtered list.  DragonCore and
-            # Toolkit can never leak into a joining client's control file.
+            # Rebuild from the authoritative role-filtered list. Toolkit can
+            # never leak into a joining client's control file.
             previous_mode = target.stat().st_mode if target.exists() else None
             if previous_mode is not None:
                 try:

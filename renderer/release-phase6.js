@@ -161,9 +161,10 @@
   const schedule = () => {
     if (scheduled) return;
     scheduled = true;
-    requestAnimationFrame(() => { scheduled = false; enhance(); });
+    queueMicrotask(() => { scheduled = false; enhance(); });
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule, { once:true });
   else schedule();
-  new MutationObserver(schedule).observe(document.documentElement, { childList:true, subtree:true });
+  const appRoot=document.getElementById('app');
+  if(appRoot)new MutationObserver(schedule).observe(appRoot, { childList:true, subtree:true });
 })();

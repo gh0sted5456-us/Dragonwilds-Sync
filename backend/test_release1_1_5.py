@@ -31,7 +31,8 @@ def test_character_and_world_ui_contract():
     assert "rsdwSpellPage" in renderer and 'data-spellbook-page="${index}"' in renderer
     assert "worldManagementPage" in renderer and "pageSize=10" in renderer
     assert "${tabButton('spawner',t('spawner'))}" not in renderer
-    assert "studio-combat-first" in renderer and "studio-combined-summary" in renderer
+    assert "studio-character-summary" in renderer and "studio-combined-summary" in renderer
+    assert renderer.index("studio-character-summary") < renderer.index("studio-combat-card")
     assert "character-studio-tabs" not in renderer
     assert '<webview id="rsdw-avatar-webview"' in renderer and 'native-avatar-section' in renderer
     assert "resize:both" in styles and ".desktop-window.minimized { display:none !important; }" in styles

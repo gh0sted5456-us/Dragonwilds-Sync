@@ -11,7 +11,7 @@ contracts around that engine:
 * encrypted durable secret references while keeping decrypted values available
   only in-process;
 * explicit resumable Sync journal / verified handoff receipts;
-* client-role materialization (DragonConnect enabled, DragonCore inactive);
+* client-role materialization (DragonConnect enabled);
 * client-generated ``mods.txt`` only -- a server literal control file is never
   accepted as a transfer payload;
 * a short-lived verified-sync reuse path so Quick Launch does not sync twice;
@@ -29,7 +29,6 @@ from copy import deepcopy
 from pathlib import Path
 
 import core_components
-import dragon_core
 import persistent_direct_connect
 import profile_store
 import sync_engine
@@ -194,7 +193,7 @@ def _write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
     def add(name: object, *, derived: bool = False) -> None:
         value = str(name or "").strip()
         key = value.casefold()
-        if not value or key in seen or key in {"mods.txt", "dwmapi.dll", "dragoncore", "rsdwtools", "rsdwdevkit", "rsdw toolkit"}:
+        if not value or key in seen or key in {"mods.txt", "dwmapi.dll", "rsdwtools", "rsdwdevkit", "rsdw toolkit"}:
             return
         if not derived and not core_components.is_user_manageable_mod(value, "ue4ss_mod"):
             return
@@ -243,7 +242,6 @@ def _write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
         "derived": {
             "runeschema": "RuneSchema" in selected,
             "dragonconnect": persistent_direct_connect.MOD_NAME in selected,
-            "dragoncore": False,
         },
     }
 
@@ -255,18 +253,6 @@ def _write_role_state(payload: dict) -> None:
 def _prepare_remote_client_role(install_dir: Path) -> dict:
     layout = sync_engine.resolve_client_layout(install_dir)
     dragonconnect = persistent_direct_connect.ensure_installed(layout.game_root)
-    dragoncore = {"installed": False, "disabled": True}
-    dragoncore_root = layout.ue4ss_mods_dir / dragon_core.MOD_NAME
-    if dragoncore_root.is_dir():
-        # DragonCore is host/server behavior. Keep the managed files available
-        # for a later Local/Co-Op profile, but make the runtime inert while this
-        # installation is acting as a joining client.
-        disabled = dragon_core.materialize(
-            layout.ue4ss_mods_dir,
-            {"enabled": False, "stacks_enabled": False, "weights_enabled": False},
-            mode="Player",
-        )
-        dragoncore = {"installed": True, "disabled": True, "path": str(disabled.get("path") or dragoncore_root)}
     result = {
         "role": "CLIENT",
         "dragonconnect": {
@@ -275,7 +261,6 @@ def _prepare_remote_client_role(install_dir: Path) -> dict:
             "installed": bool(dragonconnect.get("installed", True)),
             "version": str(dragonconnect.get("version") or ""),
         },
-        "dragoncore": dragoncore,
     }
     _write_role_state(result)
     return result

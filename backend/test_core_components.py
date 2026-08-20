@@ -22,18 +22,14 @@ def main() -> None:
             "component": "RuneSchema Core", "installed_version": "rs-old", "available_version": "rs-new",
             "status": "update_available", "update_available": True, "restart_required": True,
         },
-        "dragoncore_server": {
-            "component": "DragonCore · Server", "installed_version": "dc-old", "available_version": "dc-new",
-            "status": "update_available", "update_available": True, "restart_required": True,
-        },
     }
     rows = server_core_components(updates)
-    assert [row["id"] for row in rows] == ["ue4ss", "runeschema", "dragoncore", "dragonconnect", "rsdw_toolkit"]
+    assert [row["id"] for row in rows] == ["ue4ss", "runeschema", "dragonconnect", "rsdw_toolkit"]
     by_id = {row["id"]: row for row in rows}
 
-    # Core is four logical runtime components. RSDW Toolkit is tooling, while
+    # Core contains only launcher-required runtime components. RSDW Toolkit is tooling, while
     # RSDWTools is the separate GitHub data/icon/item-manifest source.
-    assert list(CORE_COMPONENTS) == ["ue4ss", "runeschema", "dragoncore", "dragonconnect"]
+    assert list(CORE_COMPONENTS) == ["ue4ss", "runeschema", "dragonconnect"]
     assert list(TOOLING_COMPONENTS) == ["rsdw_toolkit"]
     assert DATA_SOURCES["rsdwtools"]["repository"] == "RSDWArchive/RSDWTools"
     assert DATA_SOURCES["rsdwtools"]["runtime_component"] is False
@@ -43,8 +39,6 @@ def main() -> None:
     assert by_id["runeschema"]["depends_on"] == ["ue4ss"]
     assert by_id["runeschema"]["physical_relationship"] == "UE4SS/Mods/RuneSchema"
     assert by_id["runeschema"]["update_available"] is True
-    assert by_id["dragoncore"]["remote_update_supported"] is True
-    assert by_id["dragoncore"]["runtime_roles"] == ["server", "host"]
     assert by_id["dragonconnect"]["legacy_name"] == "PersistentDirectConnectIP"
     assert by_id["dragonconnect"]["runtime_roles"] == ["client"]
     assert by_id["rsdw_toolkit"]["ui_group"] == "tooling"
@@ -61,26 +55,27 @@ def main() -> None:
     missing = server_core_components({"core_mod": {"status": "not_installed"}, "runeschema": {"status": "current"}})
     missing_by_id = {row["id"]: row for row in missing}
     assert missing_by_id["runeschema"]["status"] == "dependency_problem"
-    assert missing_by_id["dragoncore"]["dependency_problem"] is True
     assert missing_by_id["rsdw_toolkit"]["dependency_problem"] is True
 
-    assert mod_visibility("DragonCore", "ue4ss_mod")["user_manageable"] is False
+    assert mod_visibility("DragonCore", "ue4ss_mod")["user_manageable"] is True
     assert mod_visibility("PersistentDirectConnectIP", "ue4ss_mod")["user_manageable"] is False
     assert mod_visibility("mods.txt", "ue4ss_mod")["visibility"] == "generated-control"
     assert mod_visibility("MyLuaMod", "ue4ss_mod")["user_manageable"] is True
     assert runtime_role_allows("DragonCore", "ue4ss_mod", "server") is True
-    assert runtime_role_allows("DragonCore", "ue4ss_mod", "client") is False
+    assert runtime_role_allows("DragonCore", "ue4ss_mod", "client") is True
     assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "client") is True
     assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "server") is False
 
     assert component_for_remote_update("UE4SS") == "ue4ss"
     assert component_for_remote_update("RuneSchema") == "runeschema"
-    assert component_for_remote_update("Dragon_Core") == "dragoncore"
-    for unsupported in ("RSDW Toolkit", "RSDWTools", "DragonConnect"):
+    for unsupported in ("RSDW Toolkit", "RSDWTools", "DragonConnect", "DragonCore"):
         try:
             component_for_remote_update(unsupported)
         except ValueError as exc:
-            assert "authoritative remote update source" in str(exc)
+            if unsupported == "DragonCore":
+                assert "Unknown managed" in str(exc)
+            else:
+                assert "authoritative remote update source" in str(exc)
         else:
             raise AssertionError(f"{unsupported} must not manufacture remote update support")
 

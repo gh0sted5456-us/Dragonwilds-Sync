@@ -44,6 +44,7 @@ from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file
 from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS,
                                entry_allowed_for_platform, filtered_manifest,
                                normalize_client_platform, runtime_variant_catalog)
+from sync_manifest import build_client_meta
 from world_classification import normalize_world_classification
 from operator_identity import sign_world_identity
 from networking import (DEFAULT_SYNC_PORT, apply_firewall_spec, backend_program,
@@ -95,7 +96,7 @@ BUNDLED_RSDWTOOLS_RESOURCE = ("RSDWTools-baseline.zip",)
 def user_visible_mod_unit(unit: "ModUnit") -> bool:
     """Hide shared upstream runtimes while exposing every World-owned mod."""
     return (unit.group not in {"ue4ss_core", "runeschema"}
-            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll", "rsdwtools", "persistentdirectconnectip", "dragoncore"})
+            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll", "rsdwtools", "persistentdirectconnectip"})
 RUNTIME_MUTATION_LOCK = threading.RLock()
 
 
@@ -852,6 +853,7 @@ class SyncState:
         self.share_access_key = ""
         self.allow_shared_access = True
         self.manifest = {"profile_id": "", "profile_name": "", "version": 0, "files": [],
+                         "manifest_fingerprint": "", "component_fingerprints": {},
                          "description": "", "tags": [], "mod_badges": ["VANILLA"], "icon_b64": "",
                          "banner_b64": "", "mod_summary": [], "game_port": 7777,
                          "rating_average": 0.0, "rating_count": 0, "hw_stats": {}, "network_health": {},
@@ -1549,10 +1551,31 @@ class SyncHandler(BaseHTTPRequestHandler):
                 entry = next((item for item in STATE.manifest.get("files", []) if item.get("path") == rel), None)
             if entry and not entry_allowed_for_platform(entry, client_platform):
                 self._send_json({"error": "runtime is not compatible with the selected client platform"}, 409); return
-            # Protocol parity: whole-file response, while the v2 client streams it to disk.
-            data = target.read_bytes(); STATE.activity(self.client_address[0], f"downloading {rel} ({len(data)} bytes)")
-            self.send_response(200); self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("Content-Length", str(len(data))); self.send_header("X-SHA256", sha256_of(target)); self.end_headers(); self.wfile.write(data); return
+            size = target.stat().st_size
+            start, end, status = 0, max(0, size - 1), 200
+            range_header = str(self.headers.get("Range") or "").strip()
+            if range_header:
+                match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header)
+                if not match:
+                    self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
+                start = int(match.group(1)); end = int(match.group(2)) if match.group(2) else max(0, size - 1)
+                if start >= size or end < start:
+                    self.send_response(416); self.send_header("Content-Range", f"bytes */{size}"); self.end_headers(); return
+                end = min(end, size - 1); status = 206
+            length = max(0, end - start + 1) if size else 0
+            expected = str((entry or {}).get("sha256") or "") or sha256_of(target)
+            STATE.activity(self.client_address[0], f"downloading {rel} ({start}-{end} of {size} bytes)")
+            self.send_response(status); self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(length)); self.send_header("X-SHA256", expected)
+            if status == 206: self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.end_headers()
+            with target.open("rb") as stream:
+                stream.seek(start); remaining = length
+                while remaining > 0:
+                    chunk = stream.read(min(1024 * 1024, remaining))
+                    if not chunk: break
+                    self.wfile.write(chunk); remaining -= len(chunk)
+            return
         self._send_json({"error": "not found"}, 404)
 
     def log_message(self, *_args):
@@ -1943,6 +1966,9 @@ class ShareServer:
                               "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
                               "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
                               "server_health": initial_health}
+            client_meta = build_client_meta(STATE.manifest)
+            STATE.manifest["manifest_fingerprint"] = client_meta["manifest_fingerprint"]
+            STATE.manifest["component_fingerprints"] = client_meta["components"]
             profile["manifest_version"] = version; profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile["server_key"] = server_key
             profile.setdefault("sync_config", {})["port"] = int(port); profile["sync_config"]["password"] = password
             STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
@@ -1974,6 +2000,8 @@ class ShareServer:
             uptime = max(0, time.time() - STATE.server_start_ts) if STATE.server_online and STATE.server_start_ts else None
             return {"serving": self.httpd is not None, "port": self.port, "broadcasting": self.broadcaster.running,
                     "manifest_version": STATE.manifest.get("version", 0), "manifest_file_count": len(STATE.manifest.get("files", [])),
+                    "manifest_fingerprint": STATE.manifest.get("manifest_fingerprint") or "",
+                    "component_fingerprints": dict(STATE.manifest.get("component_fingerprints") or {}),
                     "live_unit_keys": sorted(self.live_keys), "client_reports": dict(STATE.client_reports),
                     "network_health": STATE.network_summary(uptime), "server_health": STATE.server_health_summary(uptime),
                     "runtime_stack": dict(STATE.manifest.get("runtime_stack") or {}),
@@ -2547,12 +2575,6 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
             errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
     except Exception as exc:
         errors.append(f"RSDWTools client baseline repair failed: {exc}")
-    try:
-        from dragon_core import ensure_installed as ensure_dragon_core
-        dragon_core = ensure_dragon_core(layout.ue4ss_mods_dir)
-        if dragon_core.get("changed"): repaired.append("DragonCore functional baseline installed")
-    except Exception as exc:
-        errors.append(f"DragonCore client baseline repair failed: {exc}")
     after = client_runtime_status(game_root)
     # Defensive cleanup: Player Setup never owns the dedicated-server loader.
     # If a user already has a file named version.dll we do not delete it here;
@@ -2954,12 +2976,6 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
             errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
     except Exception as exc:
         errors.append(f"RSDWTools server baseline repair failed: {exc}")
-    try:
-        from dragon_core import ensure_installed as ensure_dragon_core
-        dragon_core = ensure_dragon_core(layout.ue4ss_mods_dir)
-        if dragon_core.get("changed"): repaired.append("DragonCore functional baseline installed")
-    except Exception as exc:
-        errors.append(f"DragonCore server baseline repair failed: {exc}")
 
     after = runtime_prerequisite_status(game_root)
     base_ok = bool(after.get("ok"))

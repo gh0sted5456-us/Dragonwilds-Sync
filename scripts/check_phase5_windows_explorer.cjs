@@ -42,7 +42,7 @@ rejectText(frameActions, 'openDetachedWindow', 'BrowserWindow creation from embe
 requireText(phase5, 'DRAGONWILDS SYNC EXPLORER', 'Explorer title');
 requireText(phase5, 'assets/application-icon.png', 'application icon in internal windows/Explorer');
 for (const category of ['UE4SS', 'RuneSchema', 'Pak']) requireText(phase5, category, `logical ${category} category`);
-for (const hidden of ['dragoncore', 'dragonconnect', 'persistentdirectconnectip', 'rsdwtools', 'rsdwdevkit', 'mods.txt']) {
+for (const hidden of ['dragonconnect', 'persistentdirectconnectip', 'rsdwtools', 'rsdwdevkit', 'mods.txt']) {
   requireText(phase5, hidden, `hidden infrastructure guard ${hidden}`);
 }
 requireText(phase5, 'user_manageable === false', 'central user-manageable presentation guard');

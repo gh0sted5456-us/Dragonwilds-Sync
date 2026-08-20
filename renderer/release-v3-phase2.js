@@ -12,7 +12,7 @@
   const mode = ['player','coop','server'].includes(String(launch.mode || ''))
     ? String(launch.mode)
     : (query.get('minimal') === '1' || fallbackKind === 'server' ? 'server' : (fallbackKind === 'private' ? 'coop' : 'player'));
-  const autoStart = launch.autoStart === true;
+  const autoStart = launch.autoStart === true || query.get('autoStart') === '1';
   let autoStartConsumed = false;
   let quickState = null;
   let consoleState = null;

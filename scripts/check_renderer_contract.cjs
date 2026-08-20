@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
+const source = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app-v2.js'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -11,8 +11,10 @@ assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
   'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');
 assert(source.includes('data-webhost-tab="settings">Website &amp; Networking'),
   'The combined Sync workspace must expose its Networking tab.');
-assert(source.includes("navButton('webhost', webhostLinked?'◆':'◇', 'Sync')"),
+assert(source.includes("navButton('webhost',webhostLinked?'◆':'◇','Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
+assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('rsdragonwilds-app'"),
+  'Characters, Mods, and RSDragonwilds must be first-class Appy navigation entries.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),

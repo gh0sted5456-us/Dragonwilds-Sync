@@ -229,7 +229,21 @@
     }
 
     const footer = makeEl('div', 'card-footer');
-    footer.append(makeEl('div', 'card-metrics', 'Public telemetry only — no admin access'), makeEl('span', 'card-flip-hint', 'FRONT ↻'));
+    footer.appendChild(makeEl('div', 'card-metrics', world.remoteAdmin ? 'Target server verified before credentials are entered.' : 'Public telemetry only — no admin access'));
+    if (world.remoteAdmin) {
+      const admin = makeEl('button', 'server-admin-button');
+      admin.type = 'button';
+      admin.title = 'Verify this live server and open its Remote Admin login';
+      const icon = makeImage('server-admin-icon', 'assets/platforms/remote-login.svg');
+      if (icon) admin.appendChild(icon);
+      const label=makeEl('span', '', 'REMOTE LOGIN ↗');label.dataset.remoteLabel='';admin.appendChild(label);
+      admin.addEventListener('click', async (event) => {
+        event.preventDefault(); event.stopPropagation();
+        try { await openVerifiedRemoteAdmin(world, admin); }
+        catch (error) { console.warn('[Remote Admin handoff]', error?.message || error); }
+      });
+      footer.appendChild(admin);
+    } else footer.appendChild(makeEl('span', 'card-flip-hint', 'FRONT ↻'));
     body.appendChild(footer);
     back.appendChild(body);
     return back;

@@ -37,7 +37,6 @@ requireText(phase6, 'contains_credentials', 'credential-free handoff receipt');
 requireText(phase6, 'server-pushed mods.txt', 'server literal mods.txt rejection');
 requireText(phase6, 'client_generate', 'client-generated mods.txt authority');
 requireText(phase6, 'RuneSchema', 'client runtime RuneSchema framework derivation');
-requireText(phase6, 'DragonCore is host/server behavior', 'client role excludes DragonCore behavior');
 requireText(phase6, 'SYNC_REUSE_SECONDS', 'short-lived verified Sync reuse');
 requireText(phase6, 'reused_verified_sync', 'Quick Launch duplicate-sync avoidance');
 requireText(phase6, 'application.communities.refresh', 'explicit Community refresh');

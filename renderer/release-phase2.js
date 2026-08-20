@@ -250,7 +250,6 @@
         ]
       : [
           ['Profile', ['overview', 'save-editor', 'mods', 'configuration']],
-          ['Tools', ['items']],
           ['Hosting', ['broadcast', 'networking', 'maintenance']],
           ['Roster', ['players', 'map']],
         ];
@@ -261,7 +260,7 @@
       const present = ids.map((id) => buttons.get(id)).filter(Boolean);
       if (!present.length) continue;
       const groupLabel = document.createElement('span');
-      groupLabel.className = 'server-tab-group phase2-tab-group';
+      groupLabel.className = `server-tab-group phase2-tab-group tab-group-${label.toLowerCase()}`;
       groupLabel.textContent = label;
       fragment.appendChild(groupLabel);
       present.forEach((button) => { fragment.appendChild(button); used.add(button); });
@@ -340,11 +339,9 @@
     enhanceWorldCards(state);
     refreshVisibleServerCardSaves(state).catch(() => {});
     if (document.querySelector('#detach-private-world')) {
-      groupTabs('local');
       addDetailActions(state, 'local');
     }
     if (document.querySelector('#detach-server-world')) {
-      groupTabs('server');
       addDetailActions(state, 'server');
       refreshDedicatedDetailSave(state).catch(() => {});
     }

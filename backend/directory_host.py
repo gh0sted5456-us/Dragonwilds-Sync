@@ -34,7 +34,7 @@ REMOTE_ADMIN_AUDIT_PATH = APP_DATA_DIR / "self_hosted_world_directory_remote_aud
 COUNTRY_CACHE_PATH = APP_DATA_DIR / "world_ip_country_cache.json"
 DEFAULT_PORT = DEFAULT_WEBHOST_PORT
 REMOTE_PERMISSION_DEFAULTS = {
-    "view_overview": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
+    "view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
     "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False,
     "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False,
     "start": True, "stop": True, "restart": True, "update": True, "refresh": True,
@@ -63,11 +63,19 @@ PUBLIC_OPENAPI = {
 
 
 def _directory_icon_bytes() -> bytes:
-    """Load the launcher icon in both source and one-file PyInstaller builds."""
+    """Load the compact browser mark in source and one-file builds.
+
+    The desktop artwork is intentionally high resolution.  Serving that 1.4 MiB
+    source for a 42 px WebGUI brand mark made every remote login and directory
+    load pay the full cost, so WebHost owns a small derivative while retaining
+    the original application icon for Electron and installers.
+    """
     candidates = []
     bundle_root = getattr(sys, "_MEIPASS", "")
     if bundle_root:
+        candidates.append(Path(bundle_root) / "application-icon-web.png")
         candidates.append(Path(bundle_root) / "application-icon.png")
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "application-icon-web.png")
     candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "application-icon.png")
     for candidate in candidates:
         try:
@@ -82,7 +90,7 @@ def _directory_icon_bytes() -> bytes:
 def _platform_icon_bytes(name: str) -> bytes:
     """Serve the bundled colored platform/community marks used by the public catalog."""
     aliases = {"epic": "epicgames", "nexus": "nexusmods", "psn": "playstation"}
-    allowed = {"steam", "epic", "epicgames", "nintendo", "playstation", "psn", "xbox", "discord", "nexus", "nexusmods", "windows", "linux"}
+    allowed = {"steam", "epic", "epicgames", "nintendo", "playstation", "psn", "xbox", "discord", "nexus", "nexusmods", "windows", "linux", "github", "paypal", "remote-login"}
     key = str(name or "").casefold().removesuffix(".svg")
     if key not in allowed:
         return b""
@@ -747,7 +755,7 @@ class DirectoryHost:
         if not permissions.get("view_overview"):
             payload["profile"] = {"world_name": str((payload.get("profile") or {}).get("world_name") or session.get("world_name") or "World")}
             payload["runtime"] = {}
-        payload.pop("map", None)
+        if not permissions.get("view_map"): payload.pop("map", None)
         if not permissions.get("view_maintenance"): payload.pop("maintenance", None)
         if not permissions.get("view_mods"): payload.pop("mods", None)
         if not permissions.get("view_config"): payload.pop("configs", None)

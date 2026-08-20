@@ -122,32 +122,10 @@
     }
   }
 
-  function applyStackWeightInheritanceHints(root = document) {
-    root.querySelectorAll('[data-dragon-core-stack], [data-dragon-core-weight]').forEach((input) => {
-      if (!input.placeholder) input.placeholder = 'Category default';
-      input.title = 'Leave blank to inherit the default for this item category.';
-    });
-  }
-
   function applyNavigationCritical(root = document) {
     root.querySelectorAll('[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
     root.querySelectorAll('[data-external-tab]').forEach(hideLegacyEntry);
-
-    root.querySelectorAll('aside.sidebar button, aside.sidebar [role="button"]').forEach((node) => {
-      const text = normalize(node.textContent);
-      if (text === 'sync' || text.endsWith(' sync')) {
-        const label = [...node.childNodes].find((child) => child.nodeType === Node.TEXT_NODE && normalize(child.textContent) === 'sync');
-        if (label) label.textContent = 'Server Management';
-        else {
-          const candidates = node.querySelectorAll('span, strong, div');
-          for (const candidate of candidates) {
-            if (normalize(candidate.textContent) === 'sync') { candidate.textContent = 'Server Management'; break; }
-          }
-        }
-        node.setAttribute('aria-label', 'Server Management');
-        node.title = 'Server Management';
-      }
-    });
+    root.querySelectorAll('#detach-private-world, #detach-server-world').forEach((button)=>{button.textContent='▣ Open Placard';button.title='Open an application-owned placard window without reloading Dragonwilds Sync';});
 
     root.querySelectorAll('button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
       const text = normalize(node.textContent);
@@ -165,27 +143,8 @@
       if (normalize(node.textContent) === 'creator recommended mods') node.textContent = 'Dragonwilds Sync Recommended Mods';
     });
 
-    applyStackWeightInheritanceHints(root);
     void enhanceRecommendedMods(root);
   }
-
-  // app.js historically converted an empty numeric field to 1/0 before its RPC
-  // call. During the capture phase, preserve intentional blanks as NaN; JSON
-  // transport serializes those values as null and DragonCore's normalizer then
-  // resolves the category default. Restore the visual blank immediately after
-  // the original click handler has read it.
-  document.addEventListener('click', (event) => {
-    const button = event.target?.closest?.('#save-dragon-core');
-    if (!button) return;
-    const blanks = [...document.querySelectorAll('[data-dragon-core-stack], [data-dragon-core-weight]')]
-      .filter((input) => String(input.value || '').trim() === '');
-    for (const input of blanks) input.value = 'NaN';
-    setTimeout(() => {
-      for (const input of blanks) {
-        if (String(input.value || '').trim().toLowerCase() === 'nan') input.value = '';
-      }
-    }, 0);
-  }, true);
 
   // Critical menu structure gets a targeted observer. release-performance.js
   // only defers documentElement-wide observers, so this callback is delivered

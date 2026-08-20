@@ -74,7 +74,7 @@
     await renderRemotePanel(root,snapshot);
   }
 
-  function smoothIconNodes(root=document){root.querySelectorAll('.platform-logo,.world-platform-badge img,.world-community-badge img,.world-audience-badge img').forEach(img=>{img.dataset.iconVariants='color black white';img.draggable=false;});}
+  function smoothIconNodes(root=document){root.querySelectorAll('.platform-logo,.world-platform-badge img,.world-community-badge img,.world-audience-badge img').forEach(img=>{img.dataset.iconVariants='color black white';img.draggable=false;if(img.dataset.iconFallbackBound)return;img.dataset.iconFallbackBound='1';const shell=img.closest('.platform-logo-shell');const markFailed=()=>shell?.classList.add('icon-missing');img.addEventListener('error',markFailed,{once:true});if(img.complete&&img.naturalWidth===0)markFailed();});}
   async function enhance(){applyIconMode();retireStandaloneRemoteEntries();smoothIconNodes();await applyWebHostContract();}
   function schedule(){if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;void enhance();});}
 

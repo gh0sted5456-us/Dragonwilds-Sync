@@ -46,11 +46,8 @@ const renderer = need('renderer/release-v3-phase4.js', [
   'heartbeatMarkup', 'Partial', 'data-v3p4-animation-settings', '__DWSYNC_V3_PHASE4__'
 ]);
 const rendererFolded = renderer.toLowerCase();
-for (const coreMod of ['dragoncore', 'dragonconnect']) {
+for (const coreMod of ['dragonconnect']) {
   if (!rendererFolded.includes(coreMod)) failures.push(`renderer/release-v3-phase4.js: missing hidden-core-mod guard for ${coreMod}`);
-}
-if (!/dragoncore\|dragonconnect/i.test(renderer) && !/dragonconnect\|dragoncore/i.test(renderer)) {
-  failures.push('renderer/release-v3-phase4.js: DragonCore and DragonConnect must be filtered together from the public mod list');
 }
 need('renderer/release-v3-phase4.css', [
   'rotateY(180deg)', 'v3p4-back-scroll', 'data-v3p4-animations="reduced"', 'data-v3p4-animations="off"',

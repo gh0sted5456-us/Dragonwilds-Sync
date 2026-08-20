@@ -44,7 +44,7 @@ def _save_tombstone_key(path: Path) -> str:
         return str(path).replace("\\", "/").casefold()
 PAK_EXTENSIONS = {".pak", ".utoc", ".ucas"}
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
-RESERVED_UE4SS = {"runeschema", "rsdwtools", "persistentdirectconnectip", "dragoncore"} | UE4SS_BAKED_IN_DEFAULT_MODS
+RESERVED_UE4SS = {"runeschema", "rsdwtools", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
 _LOAD_PREFIX_RE = re.compile(r"^(\d{2,3})_(.+)$")
 
 
@@ -96,7 +96,6 @@ def default_singleplayer_profile(profile_id: str = SINGLEPLAYER_ID, name: str = 
         "unit_overrides": {},
         "broadcast_config": {"password": "", "server_key": "", "share_access_key": "", "sync_port": 27051, "lan_broadcast": True, "access_policy": default_access_policy()},
         "player_map": {"allow_remote_clients": False, "background_data": "", "calibration": {}},
-        "dragon_core": {},
         "created_at": time.time(),
         "updated_at": time.time(),
     }
@@ -107,6 +106,9 @@ def load_profile(profile_id: str = SINGLEPLAYER_ID) -> dict:
     _migrate_legacy_local_profile(pid)
     fallback = default_singleplayer_profile(pid)
     profile = read_json(_profile_file(pid), fallback)
+    # Retired launcher-managed stack/weight state is intentionally discarded.
+    # A user-installed mod owns its own files through the normal Mod Editor.
+    profile.pop("dragon_core", None)
     for key, value in fallback.items():
         profile.setdefault(key, value)
     profile["id"] = pid
@@ -122,6 +124,7 @@ def load_profile(profile_id: str = SINGLEPLAYER_ID) -> dict:
 def save_profile(profile: dict, profile_id: str | None = None) -> dict:
     pid = _safe_profile_id(profile_id or profile.get("id") or SINGLEPLAYER_ID)
     profile["id"] = pid
+    profile.pop("dragon_core", None)
     profile["updated_at"] = time.time()
     write_json(_profile_file(pid), profile)
     return profile
@@ -295,7 +298,6 @@ def profile_world_shape(profile: dict) -> dict:
         "identity": {"world_name": str(profile.get("name") or "Private World"), "server_profile_id_hint": ""},
         "status": {"online": True, "local": True, "broadcasting": bool(profile.get("broadcasting", False)), "sync_port": int(cfg.get("sync_port") or 27051), "last_error": ""},
         "credentials": {}, "connection": {},
-        "dragon_core": profile.get("dragon_core") or {},
         # Persisted inventory is renderer-safe profile metadata. Exposing it on
         # the World projection lets the Mods tab paint immediately; filesystem
         # verification still happens through the authoritative inventory RPC.

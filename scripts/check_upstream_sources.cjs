@@ -3,7 +3,7 @@ const path = require('path');
 
 const registryPath = path.join(__dirname, '..', 'docs', 'upstream-sources.json');
 const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
-const required = ['rsdwtools', 'rsdw-icons', 'rsdw-item-manifest', 'rsdw-toolkit', 'dragoncore', 'dragonconnect', 'runeschema', 'ue4ss'];
+const required = ['rsdwtools', 'rsdw-icons', 'rsdw-item-manifest', 'rsdw-toolkit', 'dragonconnect', 'runeschema', 'ue4ss'];
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

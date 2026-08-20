@@ -568,7 +568,6 @@ def list_server_profiles() -> list[dict]:
             "operations_schedule": meta.get("operations_schedule") or {"enabled": False, "action": "restart", "interval_minutes": 1440, "next_run_at": None, "warning_minutes": [30,10,5,1], "backup_retention_count": 10},
             "service_notice": meta.get("service_notice") or {},
             "player_map": meta.get("player_map") or {"allow_remote_clients": False, "background_data": "", "calibration": {}},
-            "dragon_core": meta.get("dragon_core") or {},
             "manifest_version": int(meta.get("manifest_version") or 0),
         })
     return result
@@ -577,12 +576,16 @@ def list_server_profiles() -> list[dict]:
 def load_server_profile(profile_id: str) -> dict:
     if not profile_id:
         return {}
-    return read_json(SERVER_PROFILES_DIR / profile_id / "profile.json", {})
+    profile = read_json(SERVER_PROFILES_DIR / profile_id / "profile.json", {})
+    if isinstance(profile, dict):
+        profile.pop("dragon_core", None)
+    return profile
 
 
 def save_server_profile(profile_id: str, data: dict) -> None:
     if not profile_id:
         raise ValueError("Server World id is required")
+    data.pop("dragon_core", None)
     target = SERVER_PROFILES_DIR / profile_id / "profile.json"
     write_json(target, data)
 
@@ -664,7 +667,6 @@ def create_server_profile(name: str) -> str:
         "activity_log": [],
         "service_notice": {"level": "info", "message": "", "expires_at": None, "updated_at": None},
         "player_map": {"allow_remote_clients": False, "background_data": "", "calibration": {}},
-        "dragon_core": {},
         "public_ip": "",
         "manifest_version": 0,
         "created_ts": datetime.now(timezone.utc).timestamp(),

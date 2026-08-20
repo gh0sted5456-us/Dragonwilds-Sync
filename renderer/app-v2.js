@@ -29,7 +29,6 @@
     selectedWorldId: null,
     selectedServerWorldId: null,
     serverTab: 'overview',
-    itemsEnemiesTab: 'editor',
     privateTab: 'overview',
     privateWorldView: 'cards',
     serverWorldView: 'cards',
@@ -133,6 +132,7 @@
     rsdwToolSearch: '',
     rsdwToolPage: 0,
     rsdwItemCatalogTab: 'bag',
+    customItemPage: 0,
     rsdwItemBagCategory: '',
     rsdwRecipeCategory: 'all',
     rsdwSpellWheel: [],
@@ -143,7 +143,7 @@
     rsdwPreviewHidden: new Set(),
     rsdwInventorySection: 'inventory',
     rsdwAvatarScale: 62,
-    rsdwAvatarBackground: 'theme',
+    rsdwAvatarBackground: 'studio',
     rsdwHydrationToken: 0,
     rsdwHydrationError: '',
     pendingDirectoryJoin: null,
@@ -167,7 +167,12 @@
   const portraitAsset = (name) => `assets/character-portraits/${encodeURIComponent(name)}`;
   const PLATFORM_LOGOS = {steam:'steam.svg',epic:'epicgames.svg',xbox:'xbox.svg',playstation:'playstation.svg',nintendo:'nintendo.svg',discord:'discord.svg',nexus:'nexusmods.svg',windows:'windows.svg',linux:'linux.svg'};
   const PLACARD_BACKGROUNDS = ['1','2','3','4'];
-  const platformLogo = (key,label) => PLATFORM_LOGOS[key] ? `<img class="platform-logo" src="assets/platforms/${PLATFORM_LOGOS[key]}" alt="${escapeHtml(label||key)}"/>` : `<b>${escapeHtml(String(label||key).slice(0,2))}</b>`;
+  const platformLogo = (key,label) => {
+    const name=String(label||key);
+    return PLATFORM_LOGOS[key]
+      ? `<span class="platform-logo-shell platform-${escapeHtml(key)}"><img class="platform-logo" src="assets/platforms/${PLATFORM_LOGOS[key]}" alt="${escapeHtml(name)}"/><b class="platform-logo-fallback" aria-hidden="true">${escapeHtml(String(key).toUpperCase().slice(0,4))}</b></span>`
+      : `<b class="platform-logo-fallback visible">${escapeHtml(name.slice(0,4))}</b>`;
+  };
   const assetDataUrl = async (url) => {
     const response = await fetch(url);
     if (!response.ok) throw new Error(`Portrait asset could not be loaded (${response.status}).`);
@@ -176,7 +181,7 @@
   };
 
   const I18N = {
-    en:{worldLauncher:'World Launcher',play:'Play',privateWorlds:'Private Worlds',worlds:'Worlds',host:'Host',servers:'Servers',remoteServer:'Remote Server',profile:'Profile',system:'System',help:'Help',settings:'Settings',playerProfile:'Player Profile',notifications:'Notifications',expandNavigation:'Expand navigation',collapseNavigation:'Collapse navigation',back:'Back to previous area',minimize:'Minimize',maximize:'Maximize / Restore',close:'Close',overview:'Overview',players:'Players',map:'Map',spawner:'Spawner',worldSave:'World Save',mods:'Mods',broadcast:'Broadcast',networking:'Networking',maintenance:'Maintenance',feedback:'Feedback',configuration:'Configuration',activity:'Activity',userProfile:'User Profile',characters:'Characters',liveMap:'Live Map & Tracking',ledger:'Ledger',characterMap:'Character Map',client:'Client',server:'Server',application:'Application',webHosting:'WebHost',integrations:'Community',about:'About',network:'Network',storage:'Storage',tags:'Tags',editTags:'Edit Tags'},
+    en:{worldLauncher:'World Launcher',play:'Play',privateWorlds:'Private Worlds',worlds:'Worlds',host:'Host',servers:'Servers',remoteServer:'Remote Server',profile:'Profile',system:'System',help:'Help',settings:'Settings',playerProfile:'Player Profile',notifications:'Notifications',expandNavigation:'Expand navigation',collapseNavigation:'Collapse navigation',back:'Back to previous area',minimize:'Minimize',maximize:'Maximize / Restore',close:'Close',overview:'Overview',players:'Players',map:'Map',spawner:'Spawner',worldSave:'World Save',mods:'Mods',broadcast:'Broadcast',networking:'Networking',maintenance:'Maintenance',feedback:'Feedback',configuration:'Configuration',activity:'Activity',userProfile:'User Profile',characters:'Characters',liveMap:'Live Map & Tracking',ledger:'Ledger',characterMap:'Character Map',client:'Client',server:'Server',application:'Application',webHosting:'WebHost',integrations:'Integrations',about:'About',network:'Network',storage:'Storage',tags:'Tags',editTags:'Edit Tags'},
     fr:{worldLauncher:'Lanceur de mondes',play:'Jouer',privateWorlds:'Mondes privés',worlds:'Mondes',host:'Héberger',servers:'Serveurs',remoteServer:'Serveur distant',profile:'Profil',system:'Système',help:'Aide',settings:'Paramètres',playerProfile:'Profil du joueur',notifications:'Notifications',expandNavigation:'Développer la navigation',collapseNavigation:'Réduire la navigation',back:'Zone précédente',minimize:'Réduire',maximize:'Agrandir / Restaurer',close:'Fermer',overview:'Aperçu',players:'Joueurs',map:'Carte',spawner:'Générateur',worldSave:'Sauvegarde du monde',mods:'Mods',broadcast:'Diffusion',networking:'Réseau',maintenance:'Maintenance',feedback:'Avis',configuration:'Configuration',activity:'Activité',userProfile:'Profil utilisateur',characters:'Personnages',liveMap:'Carte et suivi en direct',ledger:'Registre',characterMap:'Carte du personnage',client:'Client',server:'Serveur',application:'Application',webHosting:'Hébergement Web',integrations:'Intégrations',about:'À propos',network:'Réseau',storage:'Stockage',tags:'Tags',editTags:'Modifier les tags'},
     de:{worldLauncher:'Welten-Launcher',play:'Spielen',privateWorlds:'Private Welten',worlds:'Welten',host:'Hosten',servers:'Server',remoteServer:'Remote-Server',profile:'Profil',system:'System',help:'Hilfe',settings:'Einstellungen',playerProfile:'Spielerprofil',notifications:'Benachrichtigungen',expandNavigation:'Navigation erweitern',collapseNavigation:'Navigation einklappen',back:'Zum vorherigen Bereich',minimize:'Minimieren',maximize:'Maximieren / Wiederherstellen',close:'Schließen',overview:'Übersicht',players:'Spieler',map:'Karte',spawner:'Spawner',worldSave:'Weltspielstand',mods:'Mods',broadcast:'Übertragung',networking:'Netzwerk',maintenance:'Wartung',feedback:'Feedback',configuration:'Konfiguration',activity:'Aktivität',userProfile:'Benutzerprofil',characters:'Charaktere',liveMap:'Live-Karte & Verfolgung',ledger:'Chronik',characterMap:'Charakterkarte',client:'Client',server:'Server',application:'Anwendung',webHosting:'Webhosting',integrations:'Integrationen',about:'Info',network:'Netzwerk',storage:'Speicher',tags:'Tags',editTags:'Tags bearbeiten'},
     es:{worldLauncher:'Lanzador de mundos',play:'Jugar',privateWorlds:'Mundos privados',worlds:'Mundos',host:'Alojar',servers:'Servidores',remoteServer:'Servidor remoto',profile:'Perfil',system:'Sistema',help:'Ayuda',settings:'Ajustes',playerProfile:'Perfil del jugador',notifications:'Notificaciones',expandNavigation:'Expandir navegación',collapseNavigation:'Contraer navegación',back:'Área anterior',minimize:'Minimizar',maximize:'Maximizar / Restaurar',close:'Cerrar',overview:'Resumen',players:'Jugadores',map:'Mapa',spawner:'Generador',worldSave:'Guardado del mundo',mods:'Mods',broadcast:'Difusión',networking:'Red',maintenance:'Mantenimiento',feedback:'Comentarios',configuration:'Configuración',activity:'Actividad',userProfile:'Perfil de usuario',characters:'Personajes',liveMap:'Mapa y seguimiento en vivo',ledger:'Registro',characterMap:'Mapa del personaje',client:'Cliente',server:'Servidor',application:'Aplicación',webHosting:'Alojamiento web',integrations:'Integraciones',about:'Acerca de',network:'Red',storage:'Almacenamiento',tags:'Etiquetas',editTags:'Editar etiquetas'},
@@ -216,15 +221,6 @@
       return window.dragonwilds.invoke(method, params);
     },
   };
-
-  const DRAGON_CORE_GROUPS = {
-    Magic:['Rune','Catalyst','MagicComponent','Essence'], Ammunition:['Ammo','Arrow','Bolt','Throwable'], Currency:['Currency','Token'],
-    Consumables:['LootPack','TreasureBag','Food','Drink','Potion','Bandage','Scroll','Tome','Consumable'],
-    Resources:['Log','Plank','Ore','Bar','Stone','Clay','Sand','Coal','Gem','Salvage','Bone','AnimalMaterial','MonsterMaterial','Hide','Cloth','Leather','CraftingComponent','Resource'],
-    FarmingFishing:['Seed','Sapling','FarmingMaterial','Compost','Fertilizer','Fish','Bait'], CraftingBuilding:['Plan','Recipe','Decoration','Furniture','BuildingMaterial'],
-    Protected:['Quest','Key','Artifact','Mount','Pet']
-  };
-  const defaultDragonCoreValue=(group,name,kind)=>kind==='stack'?(group==='Protected'?1:(group==='Currency'?99999:(['Magic','Ammunition'].includes(group)?9999:300))):(group==='Protected'||(group==='Ammunition'&&['Ammo','Arrow','Bolt'].includes(name))?-1:0);
 
   const RSDW_TOOLS = [
     { id:'character-editor', label:'Character & Appearance', subtitle:'Identity, body, face, colors, skills & unlocks', icon:'assets/rsdw-toolkit/character-editor.png' },
@@ -656,6 +652,16 @@
   async function handleRouteNavigation(route) {
     const next = String(route || '').trim();
     if (!next) return;
+    if (next === 'characters-app') { await enterRsdwToolkit(); return; }
+    if (next === 'mods-app') {
+      if (!(state.route === 'settings' && state.settingsTab === 'mods')) navigateTo('settings', { settingsTab:'mods' });
+      if (!state.modRepository) {
+        try { state.modRepository=await api.invoke('mod.repository.list',{}); if(state.route==='settings'&&state.settingsTab==='mods')render(); }
+        catch(error){ toast('Mod repository scan failed',error.message,'error'); }
+      }
+      return;
+    }
+    if (next === 'rsdragonwilds-app') { await handleRouteNavigation('servers'); return; }
     if (next === 'servers' && next === state.route && state.serversTab !== 'worlds') { state.serversTab = 'worlds'; render(); return; }
     if (next === 'servers') state.serversTab = 'worlds';
     if (next === 'webhost') state.webhostTab = 'live';
@@ -919,7 +925,11 @@
   async function refreshServerConsole(world = activeServerWorld(), quiet = true) {
     if (!world) return;
     try {
-      state.serverConsole[world.id] = await api.invoke('server.console.catalog', { id:world.id, limit:200 });
+      const [catalog,unified]=await Promise.all([
+        api.invoke('server.console.catalog',{id:world.id,limit:200}),
+        api.invoke('server.console.unified',{id:world.id,limit:500}),
+      ]);
+      state.serverConsole[world.id]={...catalog,unified,history:unified?.entries||catalog?.history||[]};
       render();
     } catch (error) {
       state.serverConsole[world.id] = { error:error.message, catalog:{commands:[]}, history:[] };
@@ -1276,23 +1286,24 @@
   }
 
   async function preloadCharacterStudio() {
-    const response=await api.invoke('characters.list',{});
+    const [response,customItems]=await Promise.all([
+      api.invoke('characters.list',{}),
+      api.invoke('application.custom_items.discover',{}).catch(()=>null),
+    ]);
+    if(customItems?.state)state.data=customItems.state;
     state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];
     const candidate=state.characterSelectedId||response.toolkit_selected_id||state.characters.find((row)=>row.editable)?.id||'';
     state.characterSelectedId=state.characters.some((row)=>row.id===candidate)?candidate:'';
     const selected=state.characters.find((row)=>row.id===state.characterSelectedId);
     if(!selected?.editable)return;
     state.rsdwCharacterPayload=await api.invoke('characters.toolkit.read',{character_id:selected.id});
-    const tools=RSDW_TOOLS.map((entry)=>entry.id).filter((id)=>id!=='character-editor');
-    const hydrated=await api.invoke('characters.native.tools.read',{text:state.rsdwCharacterPayload.text,tools});
-    state.rsdwNativeTools=hydrated.native_tools||{};state.rsdwNativeToolProgress=100;
     state.rsdwCharacterCache[selected.id]={payload:state.rsdwCharacterPayload,tools:state.rsdwNativeTools};
   }
 
   async function prepareLauncherWorkspaces() {
     if(minimalMode||detachedMode||quickMode)return;
     const tasks=[
-      ['World and mod workspaces',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash'})],
+      ['Application workspaces',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',applications:['shell','worlds','characters','mods','rsdw-l','rsdragonwilds','sync','webgui','system']})],
       ['Character and Item Builder',()=>preloadCharacterStudio()],
       ['Profile mod inventories',()=>window.dragonwilds.prewarm?.([
         {method:'application.storage.paths',params:{}},
@@ -1313,7 +1324,11 @@
       ['Editor services',()=>window.__DWSYNC_MONACO__?.warm?.()],
     ];
     let done=0;updateStartupProgress(done,tasks.length,'Starting launcher workspaces…');
-    await Promise.allSettled(tasks.map(async([label,task])=>{try{return await task();}finally{done+=1;updateStartupProgress(done,tasks.length,`Loaded ${label}`);}}));
+    const deadline=(task,label)=>Promise.race([
+      Promise.resolve().then(task),
+      new Promise((resolve)=>setTimeout(()=>resolve({deferred:true,label}),12000)),
+    ]);
+    await Promise.allSettled(tasks.map(async([label,task])=>{try{return await deadline(task,label);}finally{done+=1;updateStartupProgress(done,tasks.length,`Prepared ${label}`);}}));
     updateStartupProgress(tasks.length,tasks.length,'Launcher workspaces ready');
   }
 
@@ -1359,6 +1374,10 @@
       }
       await prepareLauncherWorkspaces();
       render();
+      // Parsing every editor catalog is useful cache work but must not hold the
+      // first usable shell. The Characters feature worker is already warm;
+      // finish populating its shared subapp cache quietly after first paint.
+      if(state.characterSelectedId)setTimeout(()=>hydrateNativeRsdwTools({silent:true}),0);
       // Native shell status, account status, update checks, and toolkit feed
       // hydration are secondary. They must never hold the first usable frame.
       if(minimalMode||detachedMode||quickMode) Promise.allSettled([
@@ -1404,8 +1423,12 @@
     }
   }
 
-  function navButton(route, icon, label) {
-    return `<button class="nav-button ${state.route === route ? 'active' : ''}" data-route="${route}"><span class="nav-icon">${icon}</span><span>${label}</span></button>`;
+  function navButton(route, icon, label, options={}) {
+    const active=Object.prototype.hasOwnProperty.call(options,'active')?!!options.active:state.route===route;
+    const appy=String(options.appy||route).replace(/[^a-z0-9-]/gi,'');
+    const subapps=String(options.subapps||'');
+    const tone=String(options.tone||'default').replace(/[^a-z0-9-]/gi,'');
+    return `<button class="nav-button appy-nav ${active?'active':''}" data-route="${route}" data-appy="${appy}" data-appy-tone="${tone}" title="${escapeHtml(subapps||label)}"><span class="nav-icon">${icon}</span><span class="appy-nav-copy"><strong>${escapeHtml(label)}</strong>${subapps?`<small>${escapeHtml(subapps)}</small>`:''}</span></button>`;
   }
 
   function isLinkedDirectoryEndpoint(value) {
@@ -1452,26 +1475,32 @@
 
   function renderSidebar() {
     const p = player();
-    const serverEnabled = !!state.data?.application?.server_mode_enabled;
-    const webhostEnabled = !!state.data?.application?.advanced?.webhost_enabled;
-    const remoteServerEnabled = !!state.data?.application?.advanced?.remote_server_enabled;
     const hostConfig=state.data?.application?.world_directory_host||{};
     const hostStatus=state.data?.application?.world_directory_host_status||{};
     const webhostLinked=isLinkedDirectoryEndpoint(hostStatus.public_url||hostConfig.public_base_url);
-    const webhostIdentity=String(hostConfig.identity_name||'Dragonwilds Sync').trim()||'Dragonwilds Sync';
     const avatar = p.avatar_data ? `<img src="${p.avatar_data}" alt="" />` : escapeHtml(initials(p.display_name || 'Player'));
+    const worldsActive=['world-management','world-detail'].includes(state.route);
+    const charactersActive=state.route==='profile'&&state.profileTab==='characters';
+    const modsActive=state.route==='settings'&&state.settingsTab==='mods';
+    const rsdwLauncherActive=state.route==='rsdw-launcher';
+    const systemSettingsActive=state.route==='settings'&&!modsActive;
     return `
       <aside class="sidebar">
         <div class="brand">
           <img src="assets/application-icon.png" alt="" />
           <div class="brand-copy"><strong>Dragonwilds Sync</strong><span>${t('worldLauncher')}</span></div>
         </div>
-        <div class="nav-label">${t('play')}</div>
-        ${navButton('world-management', '⌂', t('worlds'))}
-        ${navButton('webhost', webhostLinked?'◆':'◇', 'Sync')}
+        <div class="nav-label">Play &amp; Create</div>
+        ${navButton('world-management','⌂','Worlds',{appy:'worlds',tone:'worlds',active:worldsActive,subapps:'Profiles · placards · saves'})}
+        ${navButton('characters-app','◉','Characters',{appy:'characters',tone:'characters',active:charactersActive,subapps:'Identity · 3D · appearance'})}
+        ${navButton('mods-app','⬡','Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
+        ${navButton('rsdw-launcher','⌘','RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
+        <div class="nav-label">Host &amp; Connect</div>
+        ${navButton('rsdragonwilds-app','▣','RSDragonwilds',{appy:'rsdragonwilds',tone:'hosting',active:state.route==='servers'||state.route==='server-detail',subapps:'Singleplayer · Co-Op · Dedicated'})}
+        ${navButton('webhost',webhostLinked?'◆':'◇','Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
         <div class="nav-label">${t('system')}</div>
-        ${navButton('help', '?', t('help'))}
-        ${navButton('settings', '⚙', t('settings'))}
+        ${navButton('help','?','Helpy',{appy:'help',tone:'system',subapps:'Guides · screenshots · safety'})}
+        ${navButton('settings','⚙',t('settings'),{appy:'system',tone:'system',active:systemSettingsActive,subapps:'Application · network · updates'})}
         <div class="sidebar-spacer"></div>
         <button class="player-chip ${state.route==='profile'?'active':''}" id="player-chip">
           <div class="avatar">${avatar}</div>
@@ -1580,22 +1609,24 @@
     }
   }
 
-  async function hydrateNativeRsdwTools() {
+  async function hydrateNativeRsdwTools({silent=false}={}) {
     const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
     const loaded=state.rsdwCharacterPayload;
     if(!selected?.editable||!loaded?.text||state.rsdwNativeToolBusy==='all')return;
     const tools=RSDW_TOOLS.map((entry)=>entry.id).filter((id)=>id!=='character-editor');
     if(tools.every((id)=>state.rsdwNativeTools[id]))return;
-    state.rsdwNativeToolBusy='all';state.rsdwNativeToolProgress=20;render();
+    state.rsdwNativeToolBusy='all';state.rsdwNativeToolProgress=20;
+    if(!silent||state.route==='profile'&&state.profileTab==='characters')render();
     try{
       const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
-      state.rsdwNativeToolProgress=52;render();
+      state.rsdwNativeToolProgress=52;
+      if(!silent||state.route==='profile'&&state.profileTab==='characters')render();
       const response=await api.invoke('characters.native.tools.read',{text:baseText,tools});
       state.rsdwNativeTools={...state.rsdwNativeTools,...(response.native_tools||{})};
       state.rsdwCharacterCache[selected.id]={payload:loaded,tools:state.rsdwNativeTools};
       state.rsdwNativeToolProgress=100;
     }catch(error){state.rsdwHydrationError=error.message||String(error);}
-    finally{state.rsdwNativeToolBusy='';render();}
+    finally{state.rsdwNativeToolBusy='';if(!silent||state.route==='profile'&&state.profileTab==='characters')render();}
   }
 
   async function previewRsdwToolChange(tool, change) {
@@ -1755,7 +1786,8 @@
     const equipped=editor.equipped_mount||'None';
     const liveAvatar=state.rsdwNativeDraft?.avatar||payload?.avatar||{};
     const avatarUrl=rsdwAvatarUrl(liveAvatar.url);
-    const avatarMarkup=`<section class="native-editor-section native-avatar-section"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview</h3></div><span>Save-backed RSDWModel preview</span></div><div class="rsdw-avatar-pane"><div class="rsdw-avatar-stage-shell" style="--avatar-scale:${Number(state.rsdwAvatarScale||62)}vh"><webview id="rsdw-avatar-webview" class="rsdw-avatar-webview" src="${escapeHtml(avatarUrl)}" partition="persist:dragonwilds-rsdw"></webview><div class="rsdw-avatar-toolbar"><button class="btn ghost compact-btn" data-avatar-view="full" title="Full body">Full</button><button class="btn ghost compact-btn" data-avatar-view="face" title="Face view">Face</button><button class="btn ghost compact-btn" data-avatar-view="rotate-left" title="Rotate left">↶</button><button class="btn ghost compact-btn" data-avatar-view="rotate-right" title="Rotate right">↷</button><button class="btn ghost compact-btn" data-avatar-view="zoom-in" title="Zoom in">＋</button><button class="btn ghost compact-btn" data-avatar-view="zoom-out" title="Zoom out">−</button></div><span class="rsdw-avatar-gesture-note">${escapeHtml(et('avatarGestures'))}</span></div><div class="rsdw-avatar-actions"><span id="rsdw-avatar-status">Loading RSDWModel avatar…</span><label>Background <select class="select" id="rsdw-avatar-background"><option value="theme">Theme</option><option value="studio">Studio</option><option value="forest">Forest</option><option value="parchment">Parchment</option><option value="black">Black</option><option value="white">White</option></select></label></div></div></section>`;
+    const avatarBackground=String(state.rsdwAvatarBackground||'studio');
+    const avatarMarkup=`<section class="native-editor-section native-avatar-section"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview</h3></div><span>Save-backed RSDWModel renderer</span></div><div class="rsdw-avatar-pane"><div class="rsdw-avatar-stage-shell avatar-loading" style="--avatar-scale:${Number(state.rsdwAvatarScale||62)}vh"><webview id="rsdw-avatar-webview" class="rsdw-avatar-webview" src="${escapeHtml(avatarUrl)}" partition="persist:dragonwilds-rsdw"></webview><div class="rsdw-avatar-loading-cover" aria-live="polite"><div class="spinner"></div><strong>Preparing Character Preview</strong><span>Loading only the save-backed 3D renderer…</span></div><div class="rsdw-avatar-toolbar"><button class="btn ghost compact-btn" data-avatar-view="full" title="Full body">Full</button><button class="btn ghost compact-btn" data-avatar-view="face" title="Face view">Face</button><button class="btn ghost compact-btn" data-avatar-view="rotate-left" title="Rotate left">↶</button><button class="btn ghost compact-btn" data-avatar-view="rotate-right" title="Rotate right">↷</button><button class="btn ghost compact-btn" data-avatar-view="zoom-in" title="Zoom in">＋</button><button class="btn ghost compact-btn" data-avatar-view="zoom-out" title="Zoom out">−</button></div><span class="rsdw-avatar-gesture-note">${escapeHtml(et('avatarGestures'))}</span></div><div class="rsdw-avatar-actions"><span id="rsdw-avatar-status">Loading RSDWModel avatar…</span><label>Background <select class="select" id="rsdw-avatar-background">${[['theme','Theme'],['studio','Studio'],['forest','Forest'],['parchment','Parchment'],['black','Black'],['white','White']].map(([value,label])=>`<option value="${value}" ${avatarBackground===value?'selected':''}>${label}</option>`).join('')}</select></label></div></div></section>`;
     return `<div class="rsdw-native-character-editor" id="rsdw-native-character-editor">
       <section class="native-editor-section native-identity-section"><div class="native-section-heading"><div><div class="eyebrow">${escapeHtml(et('identity'))}</div><h3>${escapeHtml(et('characterIdentity'))}</h3></div><span>${escapeHtml(et('writtenToSave'))}</span></div><div class="native-editor-grid native-identity-grid">
         <label class="native-editor-field"><span>${escapeHtml(et('playerName'))}</span><input class="field" data-native-meta="player_name" maxlength="128" value="${escapeHtml(meta.player_name||'')}"/></label>
@@ -1986,9 +2018,9 @@
       ${rsdwToolkitTabs()}
       ${selector}
       ${characterTabs}
-      <section class="studio-summary-card studio-combat-card studio-combat-first">${archetypeEditor}</section>
       <div class="rsdw-character-details studio-character-summary studio-combined-summary"><section class="studio-summary-card studio-overview-card"><div class="rsdw-character-identity">${profile.portrait_data?`<img src="${profile.portrait_data}" alt=""/>`:`<div class="character-profile-avatar">${escapeHtml(initials(charName))}</div>`}<div><div class="eyebrow">${escapeHtml(et('selectedCharacter'))}</div><h2>${escapeHtml(charName)}</h2><strong>${escapeHtml(selected.guid || 'No GUID surfaced')}</strong><span>${escapeHtml(selected.file_name || '')}</span></div><span class="status-pill ${selected.editable?'online':'unknown'}">${selected.editable?'RSDW READY':'PRESERVE ONLY'}</span></div><div class="rsdw-metric-grid">${stats.map(([label,value])=>`<div><span>${label}</span><strong>${escapeHtml(String(value))}</strong></div>`).join('')}</div><div class="rsdw-character-meta"><div><span>${escapeHtml(et('lastModified'))}</span><strong>${new Date((selected.modified_at||0)*1000).toLocaleString()}</strong></div><div><span>${escapeHtml(et('saveSize'))}</span><strong>${(Number(selected.size||0)/1024).toFixed(1)} KiB</strong></div><div><span>SHA-256</span><code>${escapeHtml(String(selected.sha256||'').slice(0,16))}…</code></div><div><span>${escapeHtml(et('profileStatus'))}</span><strong>${profile.favorite?`★ ${escapeHtml(et('favorite'))}`:'Standard'}</strong></div></div><div class="rsdw-character-actions"><button class="btn ghost" id="rsdw-change-portrait">${escapeHtml(et('chooseImage'))}</button><button class="btn ghost" id="rsdw-toggle-favorite">${escapeHtml(profile.favorite?et('removeFavorite'):et('favorite'))}</button><button class="btn ghost" id="rsdw-clone-character">${escapeHtml(et('cloneCharacter'))}</button><button class="btn ghost" id="rsdw-backup-export">Export .rsdwl</button><button class="btn danger" id="rsdw-delete-character">${escapeHtml(et('deleteCharacter'))}</button></div></section><section class="studio-summary-card studio-world-card"><div class="rsdw-world-associations"><strong>${escapeHtml(et('worldAssociations'))}</strong><div>${linked}</div></div></section>${state.rsdwHydrationError?`<div class="warning-box compact">${escapeHtml(state.rsdwHydrationError)}</div>`:''}</div>
-      <div class="rsdw-tool-launch-hint">Identity and progression now share one workspace. Appearance changes are available in Dragonwilds itself; choose an RSDW editor below for save-backed data.</div>${toolNav}
+      <section class="studio-summary-card studio-combat-card">${archetypeEditor}</section>
+      <div class="rsdw-tool-launch-hint">Identity, the dedicated 3D renderer, Appearance, progression, and inventory share one cached character-creator workspace.</div>${toolNav}
       ${editSurface}
       <div class="rsdw-credit">RSDW-powered tooling by <strong>Hi im Tat</strong> and the <strong>RSDW Modding Community</strong>. Dragonwilds Sync handles profile selection, backups, synchronization, and safe writeback.</div>
     </div>`;
@@ -2162,6 +2194,7 @@
        <div class="world-card-inner"><section class="world-card-face world-card-front">
         <div class="world-mode-banner ${modeTone}">${escapeHtml(modeLabel)}</div>
         ${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}
+        <div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div>
         <div class="world-card-body">
           ${icon ? `<img class="world-icon" src="${icon}" alt="" />` : `<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}
           <div class="card-topline">
@@ -2666,6 +2699,7 @@
     const selectionMap=state.data?.client?.world_character_selection||{};
     const selectedCharacter=selectionMap[worldId] || (worldId==='singleplayer'?selectionMap.singleplayer:'') || '';
     const selected=state.characters?.find((c)=>c.id===selectedCharacter);
+    if(state.privateTab==='items')state.privateTab='overview';
     const requestedPrivateTab=state.privateTab||'overview';
     const tab=requestedPrivateTab;
     if(tab!==requestedPrivateTab)state.privateTab=tab;
@@ -2685,8 +2719,6 @@
       body=`<div class="server-tab-body">${playerMapPanelMarkup(world,{includeSetup:true})}</div>`;
     } else if(tab==='mods'){
       body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Private World Mod Manager</h2><span class="panel-subtitle">Same staging, Nexus provenance, validation, rollback, and profile rules as hosted Worlds.</span></div></summary><div class="panel-body"><div class="header-actions mod-manager-actions"><button class="btn ghost" id="sp-refresh">Rescan</button><button class="btn ghost" id="sp-browse-nexus">Browse Nexus Mods</button><button class="btn ghost" id="sp-check-nexus-updates">Check Nexus Updates</button>${units.some((u)=>u?.source?.provider==='nexus'&&u.source.update_available)?'<button class="btn primary" id="sp-update-all-nexus">Update All</button>':''}<button class="btn primary" id="sp-install-mod">Install Manual ZIP</button></div><div class="mod-drop-zone" id="sp-mod-dropzone">Drop a mod ZIP here</div>${singleplayerModRows(units)}</div></details></div>`;
-    } else if(tab==='items'){
-      body=`<div class="server-tab-body">${dragonCoreEditorMarkup(world)}</div>`;
     } else if(tab==='configuration'){
       const configGroups=[...new Set(configs.map((c)=>c.category||'Configuration'))];
       body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World &amp; Runtime Config</h2><span class="panel-subtitle">Overarching Dragonwilds, UE4SS, and RuneSchema settings only. Per-mod files remain in the Mod Explorer.</span></div><button class="btn ghost" id="refresh-private-config">Refresh</button></summary><div class="panel-body">${configs.length?`<div class="config-category-list">${configGroups.map((category)=>`<section class="config-category"><h3>${escapeHtml(category)}</h3><div class="config-file-list">${configs.filter((c)=>(c.category||'Configuration')===category).map((c)=>`<div class="config-file-row"><div><div class="config-name-line"><strong>${escapeHtml(c.name||'Configuration')}</strong><span class="status-pill unknown">${escapeHtml(String(c.scope||'core').toUpperCase())}</span></div><small>${escapeHtml(c.display_path||c.relative_path)} · ${formatBytes(c.size||0)}</small></div><button class="btn ghost" data-sp-config-file="${escapeHtml(c.relative_path)}" data-sp-config-key="__core__">Edit</button></div>`).join('')}</div></section>`).join('')}</div>`:'<div class="empty-state">No supported game, UE4SS, or RuneSchema core configuration files were found.</div>'}<div class="identity-box"><strong>Clear configuration boundary</strong><p>World/Game settings come from LocalAppData for Singleplayer and Co-Op. UE4SS and RuneSchema core settings come from their runtime roots. Right-click a mod to edit or add its individual Lua, JSON, JSONC, INI, CFG, TXT, or recipe files.</p></div></div></details></div>`;
@@ -2705,7 +2737,7 @@
     const heroIcon=b64Image(world?.presentation?.icon_b64)||'assets/singleplayer-icon.png';
     return `<div class="content"><div class="page-header"><button class="btn ghost" id="back-worlds">← Worlds</button><div class="header-actions"><button class="btn ghost" id="detach-private-world">↗ Open in Window</button><button class="btn ghost" id="edit-private-world">Edit World</button><button class="btn ghost" id="sp-characters">Characters</button><button class="btn ghost" id="sp-desktop">Send to Desktop</button><button class="btn play" id="play-world">Launch</button><button class="btn ${broadcasting?'danger':'primary'}" id="sp-broadcast">${broadcasting?'Stop Co-Op':'Co-Op'}</button></div></div>
       <section class="detail-hero" style="margin-bottom:0;border-radius:18px 18px 0 0"><img class="detail-banner" src="${heroBanner}" alt=""/><div class="hero-overlay"></div><div class="hero-content"><img class="hero-icon" src="${heroIcon}" alt=""/><div class="hero-main"><div class="eyebrow">Private World</div><h1>${escapeHtml(world?.name||'Private World')}</h1><p>${escapeHtml(world?.presentation?.description||world?.description||'Your local Dragonwilds World. Enable Co-Op when compatible launchers should synchronize before joining.')}</p><div class="badges">${badgeMarkup('LOCAL')}${badgeMarkup('PRIVATE')}${broadcasting?'<span class="studio-compat">CO-OP · SYNC LIVE</span>':''}</div></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'CO-OP':'READY'}</span></div></section>
-      ${/* Compatibility contract: tabButton('broadcast','Broadcast') remains the canonical English navigation label. */''}<section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px"><div class="server-tabs"><span class="server-tab-group">World</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('items','Items')}${tabButton('configuration','Live Config')}${tabButton('broadcast',t('broadcast'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}</div>${body}</section></div>`;
+      ${/* Compatibility contract: tabButton('broadcast','Broadcast') remains the canonical English navigation label. */''}<section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px"><div class="server-tabs"><span class="server-tab-group tab-group-profile">Profile</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration','Live Config')}<span class="server-tab-group tab-group-hosting">Hosting</span>${tabButton('broadcast',t('broadcast'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group tab-group-roster">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}</div>${body}</section></div>`;
   }
 
   function renderWorldDetail(world) {
@@ -2842,12 +2874,6 @@
     return `<details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>World Config & Mod Files</h2><span class="panel-subtitle">Grouped by origin · JSON, Lua, INI, CFG and TXT through the bundled Monaco editor.</span></div><div class="header-actions"><button class="btn ghost" id="refresh-world-maintenance">Refresh</button>${isActive ? '<button class="btn ghost" id="regenerate-mods-txt">Regenerate mods.txt</button>' : ''}</div></summary><div class="panel-body">${rows ? `<div class="config-file-list">${rows}</div>` : `<div class="empty-state">${isActive ? 'No editable config/Lua/JSON files were found in the World config and mod roots.' : 'Activate this World to inspect its live files.'}</div>`}<div class="identity-box"><strong>Managed file policy</strong><p>Dragonwilds Sync unlocks a managed file only for an atomic write, validates JSON, and returns it to read-only. Hotload and client-sync policies remain explicit; credential-like files never synchronize to clients.</p></div></div></details>`;
   }
 
-  function dragonCoreEditorMarkup(world) {
-    const cfg=world.dragon_core||{},categories=cfg.categories||{};
-    const groups=Object.entries(DRAGON_CORE_GROUPS).map(([group,names])=>`<details class="panel collapsible-panel dragon-core-group" open><summary class="panel-header"><div><h2>${escapeHtml(group.replace(/([a-z])([A-Z])/g,'$1 / $2'))}</h2><span class="panel-subtitle">DragonCore category rules · vanilla and modded ItemData</span></div><span>${names.length} rules</span></summary><div class="panel-body"><div class="dragon-core-grid"><div class="dragon-core-head"><b>Item category</b><b>Stack size</b><b>Weight</b></div>${names.map((name)=>{const row=categories[group]?.[name]||{};return `<label class="dragon-core-row"><strong>${escapeHtml(name.replace(/([a-z])([A-Z])/g,'$1 $2'))}</strong><input class="field" type="number" min="1" max="999999" step="1" data-dragon-core-stack data-group="${escapeHtml(group)}" data-name="${escapeHtml(name)}" value="${escapeHtml(row.stack??defaultDragonCoreValue(group,name,'stack'))}"/><input class="field" type="number" min="-1" max="100000" step="0.01" data-dragon-core-weight data-group="${escapeHtml(group)}" data-name="${escapeHtml(name)}" value="${escapeHtml(row.weight??defaultDragonCoreValue(group,name,'weight'))}"/></label>`;}).join('')}</div></div></details>`).join('');
-    return `<div class="dragon-core-editor"><section class="spawner-intro"><div><div class="eyebrow">DragonCore · Profile Configuration</div><h2>Item Editor</h2><p>These fields write this World profile’s DragonCore stack and weight configuration. The functional mod stays hidden and changes apply when this profile is active.</p></div><div class="spawner-status-row"><span class="status-pill online">PROFILE OWNED</span><span class="status-pill unknown">DEBUG OFF</span></div></section><div class="settings-row"><div class="settings-copy"><strong>DragonCore features</strong><span>Player mode is used for Singleplayer/Co-Op; Server mode is generated for dedicated Worlds.</span></div><div class="toggle-list"><label><input type="checkbox" id="dragon-core-enabled" ${cfg.enabled===false?'':'checked'}/> Enabled</label><label><input type="checkbox" id="dragon-core-stacks" ${cfg.stacks_enabled===false?'':'checked'}/> Stack rules</label><label><input type="checkbox" id="dragon-core-weights" ${cfg.weights_enabled===false?'':'checked'}/> Weight rules</label></div></div>${groups}<div class="sticky-save-row"><button class="btn primary" id="save-dragon-core">Save Item Rules</button><small>Weight −1 preserves the game/mod authored value; 0 makes an item weightless.</small></div></div>`;
-  }
-
   function renderServerDetail(world) {
     const p = world || {};
     const banner = b64Image(p.banner_b64);
@@ -2945,7 +2971,6 @@
           </div></details>
         </div>
       </div>`;
-      body = `<div class="items-enemies-page"><div class="items-enemies-tabs"><button class="${state.itemsEnemiesTab==='editor'?'active':''}" data-items-enemies-tab="editor">Item Editor</button><button class="${state.itemsEnemiesTab==='spawner'?'active':''}" data-items-enemies-tab="spawner">Spawner</button></div>${state.itemsEnemiesTab==='editor'?dragonCoreEditorMarkup(p):body}</div>`;
     } else if (tab === 'console') {
       const commandRows=gameConsole.catalog?.commands||[], historyRows=gameConsole.history||[];
       const commandPageSize=24, commandPageCount=Math.max(1,Math.ceil(commandRows.length/commandPageSize));
@@ -2955,7 +2980,7 @@
       body=`<div class="console-workspace">
         <section class="spawner-intro"><div><div class="eyebrow">RSDWToolkit · Server Admin</div><h2>Game Console</h2><p>Commands are validated against the router installed with this World, sent through its local game bridge, and written to the shared administration history.</p></div><div class="spawner-status-row"><span class="status-pill ${ready?'online':'offline'}">${ready?'TOOLKIT READY':'TOOLKIT MISSING'}</span><span class="status-pill ${bridge?'online':'offline'}">${bridge?'BRIDGE LIVE':'BRIDGE OFFLINE'}</span></div></section>
         <div class="console-grid"><section class="panel"><div class="panel-header"><div><h2>Command input</h2><span class="panel-subtitle">Dragonwilds/RSDWToolkit commands only · never an operating-system shell</span></div><button class="btn ghost console-info" id="toggle-console-help" title="Browse all declared commands">i</button></div><div class="panel-body"><div class="console-input-row"><input class="field console-input" id="game-console-input" maxlength="1023" placeholder="world.weather sunny"/><button class="btn primary" id="run-game-console" ${isRunning&&bridge?'':'disabled'}>Run</button></div><div class="quick-world-controls"><label><small>Weather</small><select class="select" id="quick-weather">${['default','sunny','rain_light','rain_heavy','rain_storm','rain_lightningstorm','fog','cloudy'].map(x=>`<option value="${x}">${x.replaceAll('_',' ')}</option>`).join('')}</select></label><button class="btn ghost" id="apply-quick-weather" ${isRunning&&bridge?'':'disabled'}>Apply Weather</button><label><small>Visual time (0–24)</small><input class="field" id="quick-world-time" type="number" min="0" max="24" step="0.5" value="12"/></label><button class="btn ghost" id="apply-quick-time" ${isRunning&&bridge?'':'disabled'}>Apply Time</button></div>${gameConsole.error?`<div class="warning-box">${escapeHtml(gameConsole.error)}</div>`:''}</div></section>
-        <section class="panel"><div class="panel-header"><div><h2>Console activity</h2><span class="panel-subtitle">Spawner, weather, time, and manual command acknowledgements</span></div><button class="btn ghost" id="refresh-game-console">Refresh</button></div><div class="panel-body console-history">${historyRows.length?historyRows.slice().reverse().map(row=>`<div class="console-history-row ${row.ok?'ok':'error'}"><small>${escapeHtml(new Date(Number(row.at||0)*1000).toLocaleString())} · ${escapeHtml(row.source||'console')}</small><code>${escapeHtml(row.command||'')}</code><span>${escapeHtml(row.ack||'')}</span></div>`).join(''):'<div class="empty-state compact">No game-console activity has been recorded for this World.</div>'}</div></section></div>
+        <section class="panel"><div class="panel-header"><div><h2>Unified activity</h2><span class="panel-subtitle">Server lifecycle, Sync transfer, RSDW-L commands, spawning, acknowledgements, warnings and failures</span></div><button class="btn ghost" id="refresh-game-console">Refresh</button></div><div class="panel-body console-history">${historyRows.length?historyRows.slice().reverse().map(row=>{const at=Number(row.ts||row.at||0);const ok=row.ok!==false&&!['error','failed'].includes(String(row.level||'').toLowerCase());const message=row.message||row.ack||'';return `<div class="console-history-row ${ok?'ok':'error'}"><small>${escapeHtml(at?new Date(at*1000).toLocaleString():'')} · ${escapeHtml(String(row.source||'console').toUpperCase())} · ${escapeHtml(row.level||'info')}</small>${row.command?`<code>${escapeHtml(row.command)}</code>`:''}<span>${escapeHtml(message)}</span></div>`;}).join(''):'<div class="empty-state compact">No server, Sync, or RSDW-L activity has been recorded for this World.</div>'}</div></section></div>
         <details class="panel console-command-help" id="console-command-help"><summary><b>Available commands</b><span>${commandRows.length} declared by the installed router · page ${commandPage+1}/${commandPageCount}</span></summary><div class="command-help-grid">${visibleCommands.map(row=>`<button data-console-example="${escapeHtml(row.verb)}"><code>${escapeHtml(row.usage||row.verb)}</code><span class="status-pill ${row.safety==='dangerous'?'offline':row.safety==='read_only'?'online':'unknown'}">${escapeHtml(String(row.safety||'admin_write').replace('_',' '))}</span></button>`).join('')}</div><div class="pager-row"><button class="btn ghost" data-console-page="${commandPage-1}" ${commandPage<=0?'disabled':''}>← Previous</button><span>Page ${commandPage+1} of ${commandPageCount}</span><button class="btn ghost" data-console-page="${commandPage+1}" ${commandPage>=commandPageCount-1?'disabled':''}>Next →</button></div></details>
       </div>`;
     } else if (tab === 'mods') {
@@ -3030,7 +3055,7 @@
           ${banner ? `<img class="detail-banner" src="${banner}" alt="" />` : `<div class="detail-banner-fallback"></div>`}<div class="hero-overlay"></div><div class="hero-content">${icon ? `<img class="hero-icon" src="${icon}" alt="" />` : `<div class="hero-icon fallback">${escapeHtml(initials(p.name))}</div>`}<div class="hero-main"><div class="eyebrow">Hosted World</div><h1 title="${escapeHtml(p.name || 'World')}">${escapeHtml(p.name || 'World')}</h1><p>${escapeHtml(p.description || 'No description yet.')}</p></div><span class="status-pill ${isRunning ? 'online' : (isServing ? 'unknown' : 'offline')}">${isRunning ? 'RUNNING' : (isServing ? 'SYNC LIVE' : (isActive ? 'ACTIVE' : 'STOPPED'))}</span></div>
         </section>
         <section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px">
-          <div class="server-tabs"><span class="server-tab-group">Manage</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('spawner','Items & Enemies')}${tabButton('console','Console')}${tabButton('configuration',t('configuration'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}<span class="server-tab-group">History</span>${tabButton('feedback',t('feedback'))}${tabButton('activity',t('activity'))}</div>${body}
+          <div class="server-tabs"><span class="server-tab-group tab-group-profile">Profile</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration',t('configuration'))}<span class="server-tab-group tab-group-tools">RSDW-L</span>${tabButton('spawner','Spawner')}${tabButton('console','Console')}<span class="server-tab-group tab-group-hosting">Hosting</span>${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group tab-group-roster">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}<span class="server-tab-group tab-group-history">History</span>${tabButton('feedback',t('feedback'))}${tabButton('activity',t('activity'))}</div>${body}
         </section>
       </div>`;
   }
@@ -3197,7 +3222,7 @@
 
   function renderHelp() {
     const helpUi = ({
-      en:{fieldGuide:'Dragonwilds Sync Field Guide',title:'Help',subtitle:'Every system, from first launch to a healthy managed World.',search:'Search Worlds, characters, UE4SS, health…',clear:'Clear',open:'Open screenshot',read:'Read guide',tips:'Good to know',results:'Results for',none:'No guide matched that search.',safetyTitle:'Reference guide, not a diagnostic substitute',safetyBody:'When an operation fails, use its visible error and notification details. Dragonwilds Sync never marks an unverified fingerprint, save write, runtime install, or network route as successful.',categories:['Getting Started','Worlds & Sync','Character Studio','Server Setup','Mods & JSON','Network & Health','Connected Players','Sync Website','Maintenance','Settings','Tours & Notices']},
+      en:{fieldGuide:'Dragonwilds Sync Field Guide',title:'Helpy',subtitle:'Guides for every Appy and the subapps it keeps warm, from first launch through a healthy managed World.',search:'Search Appys, Worlds, characters, mods, Sync, or health…',clear:'Clear',open:'Open screenshot',read:'Read guide',tips:'Good to know',results:'Results for',none:'No guide matched that search.',safetyTitle:'Reference guide, not a diagnostic substitute',safetyBody:'When an operation fails, use its visible error and notification details. Dragonwilds Sync never marks an unverified fingerprint, save write, runtime install, or network route as successful.',categories:['Getting Started','Worlds Appy','Characters Appy','RSDragonwilds Appy','Mods Appy','Sync & Remote','Roster & Map','WebGUI','Maintenance','System Settings','Tours & Notices']},
       fr:{fieldGuide:'Guide Dragonwilds Sync',title:'Aide',subtitle:'Tous les systèmes, du premier lancement à un monde hébergé sain.',search:'Rechercher mondes, personnages, UE4SS, santé…',clear:'Effacer',open:'Ouvrir la capture',read:'Lire le guide',tips:'Bon à savoir',results:'Résultats pour',none:'Aucun guide ne correspond à cette recherche.',categories:['Bien démarrer','Rejoindre des mondes','Personnages et RSDW','Configuration serveur','Mods et JSON','Réseau et santé','Carte et joueurs','Annuaires et site Web','Maintenance','Paramètres','Visites et notifications']},
       de:{fieldGuide:'Dragonwilds Sync Handbuch',title:'Hilfe',subtitle:'Alle Systeme vom ersten Start bis zu einer gesunden gehosteten Welt.',search:'Welten, Charaktere, UE4SS, Zustand suchen…',clear:'Löschen',open:'Screenshot öffnen',read:'Handbuch lesen',tips:'Gut zu wissen',results:'Ergebnisse für',none:'Kein Handbuch entspricht dieser Suche.',categories:['Erste Schritte','Welten beitreten','Charaktere & RSDW','Servereinrichtung','Mods & JSON','Netzwerk & Zustand','Karte & Spieler','Verzeichnisse & Website','Wartung','Einstellungen','Touren & Hinweise']},
       es:{fieldGuide:'Guía de Dragonwilds Sync',title:'Ayuda',subtitle:'Todos los sistemas, desde el primer inicio hasta un mundo alojado saludable.',search:'Buscar mundos, personajes, UE4SS, salud…',clear:'Borrar',open:'Abrir captura',read:'Leer guía',tips:'Información útil',results:'Resultados para',none:'Ninguna guía coincide con la búsqueda.',categories:['Primeros pasos','Unirse a mundos','Personajes y RSDW','Configuración del servidor','Mods y JSON','Red y salud','Mapa y jugadores','Directorios y sitio web','Mantenimiento','Ajustes','Recorridos y avisos']},
@@ -3210,9 +3235,9 @@
     ];
     let guides = {
       'getting-started': {
-        title:'Getting Started', intro:'Set up the launcher once, then manage local, co-op and dedicated Worlds from one recoverable profile system.', image:'01-getting-started.png', alt:'Current Dragonwilds Sync first-run setup',
+        title:'Getting Started with Appys', intro:'Set up the launcher once, then move between cached primary Appys without restarting the shell or losing the active World context.', image:'01-getting-started.png', alt:'Current Dragonwilds Sync first-run setup',
         sections:[
-          ['Choose the workspace','Worlds manages local saves, co-op hosts, dedicated instances, Favorites, and shared Manifest collections. Dedicated setup remains hidden until Server tools are enabled.'],
+          ['Choose an Appy','Worlds owns profiles and saves; Characters owns identity, 3D preview and appearance; Mods owns the repository and editors; RSDragonwilds owns launch roles; Sync owns directories, transfer and remote access. Their subapps hydrate under the same parent identity.'],
           ['Confirm one Dragonwilds root','Choose any recognizable folder inside the installation. Recursive discovery resolves the game root, executable, UE4SS, RuneSchema, saves, and configuration paths. Read-only editor and model data is cached separately under the application data folder.'],
           ['Keep profiles separate','Each World profile owns its mutable save, settings, and mod selection. Activating another World snapshots the outgoing profile before changing the live game tree.'],
           ['Safety model','Save-changing tools create backups, validate staged output, and reject a write when the source changed after it was loaded.']
@@ -3236,9 +3261,9 @@
         ], tips:['Public discovery refreshes every 30 seconds without re-probing every card.','Primary Launch/Manage actions stay visible; right-click a card for secondary actions.','LAN Scan finds trusted Sync broadcasts on the local network.']
       },
       characters: {
-        title:'Characters and RSDW Editors', intro:'Select a character once to use combat identity, progression, inventory, spells, recipes, quests, and guarded save controls in one workspace.', image:'36-themed-item-editor.png', alt:'V1.1.9 native Item Editor using the launcher light theme', image2:'33-magic-wheel.jpg', alt2:'Formatted eight-slot Magic Wheel', image3:'34-recipe-categories.jpg', alt3:'Categorized RSDW recipes',
+        title:'Characters Appy and RSDW Editors', intro:'Select a character once; Identity, the dedicated 3D renderer, Appearance, progression, inventory, spells, recipes and quests stay hydrated under one parent Appy.', image:'03-characters.png', alt:'Current Characters Appy with Identity, 3D preview and Appearance', image2:'36-themed-item-editor.png', alt2:'Native Item Editor using the launcher theme', image3:'33-magic-wheel.jpg', alt3:'Formatted eight-slot Magic Wheel',
         sections:[
-          ['One character workspace','Combat Identity appears first, followed by the selected character summary and World associations, then Character, Item, Spell, Recipe, and Quest editors. Identity & Appearance and Progression are no longer separate page modes. The embedded 3D viewer was removed; appearance can be changed in Dragonwilds without loading a second rendering application.','36-themed-item-editor.png','Current unified character workspace and Item Editor'],
+          ['One character workspace','Identity is the first row, followed by the dedicated 3D character renderer and then Appearance. Character, Item, Spell, Recipe and Quest editors remain subapps of Characters, so returning to them reuses the hydrated workspace instead of loading the full site.','03-characters.png','Current Characters Appy and dedicated 3D renderer'],
           ['Edit a character','Choose a character, open Character, Item, Spell, Recipe or Quest Editor, make changes, then use Save Character Changes. A backup and source checksum protect every write.'],
           ['Inventory and equipment','The Item Editor receives the selected save’s full inventory and loadout. Its compact tabs use one icon scale, Personal Storage no longer shows a hard-coded capacity, and Equipment and Action Bar use the full available width. Right-click an item for supported actions, including rename for fingerprinted custom items.','36-themed-item-editor.png','Current themed character inventory and equipment editor'],
           ['Portable item manifests','Open the custom item repository to name an item, choose a vanilla icon or your own image, classify armour, one- or two-handed weapons, hand slot, potion, food, ammo, rune, tool, resource and other item families, and set the maximum stack quantity. Export dragonwilds-sync-items.json beside a UE4SS or RuneSchema mod, or as a .dwsync-items.json sidecar next to a PAK; Dragonwilds Sync discovers and merges those definitions automatically.'],
@@ -3252,7 +3277,7 @@
         ], tips:['Do not edit the same save in the game and the editor simultaneously.','A preserve-only save can be backed up but is not presented as safely editable.','The status bar reports loading, unsaved changes, validation and save results.']
       },
       hosting: {
-        title:'Dedicated Server Setup', intro:'Install or adopt the dedicated server from Worlds → Server Setup, then convert or activate an isolated World profile.', image:'05-server-setup.png', alt:'Dedicated server setup', image2:'06-server-health.png', alt2:'Hosted World overview and health', image3:'26-hosted-worlds.jpg', alt3:'Managed World placards',
+        title:'RSDragonwilds Appy', intro:'Choose Singleplayer, Co-Op or Dedicated under one launch authority; Co-Op and Dedicated can attach Sync without moving mod ownership into the runtime Appy.', image:'05-server-setup.png', alt:'Current RSDragonwilds Appy', image2:'06-server-health.png', alt2:'Hosted World overview and health', image3:'26-hosted-worlds.jpg', alt3:'Managed World placards',
         sections:[
           ['Full setup','Settings → Server can download SteamCMD, install or validate the dedicated server, generate its base layout, and check UE4SS/RuneSchema prerequisites. You may select the SteamCMD root, dedicated-server root, executable, inner RSDragonwilds folder, Saved folder, or exact Saved\\SaveGames folder.'],
           ['Adopt an existing server','When an existing installation is selected, Dragonwilds Sync inventories its World save, settings, UE4SS, RuneSchema, and PAK surfaces. If mods are detected, an in-app warning lists them and asks whether to copy them into the selected World Profile before setup continues. The shared Steam base remains reusable.'],
@@ -3813,6 +3838,26 @@
       <section class="minimal-note"><strong>Shared authority</strong><p>These controls use the same lifecycle queue as the full launcher and remote WebGUI. The server is never advertised during an update or before startup verification completes.</p></section></div>`;
   }
 
+  function renderRsdwLauncher() {
+    const hosted=activeServerWorld()||serverWorlds()[0]||null;
+    const catalog=state.data?.application?.system_process_catalog||{};
+    const appy=catalog.applications?.['rsdw-l']||{};
+    const bridge=Object.values(catalog.components||{}).filter((row)=>row?.owner==='rsdw-l');
+    const tool=(id,title,description,icon,disabled=false)=>`<button class="rsdwl-tool-card" data-rsdwl-tool="${id}" ${disabled?'disabled':''}><span>${icon}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></div><b>Open →</b></button>`;
+    return `<div class="content rsdwl-home"><div class="page-header"><div><div class="eyebrow">RSDW Toolkit · Launcher Integration</div><h1>RSDW-L</h1><div class="page-subtitle">One cached launcher Appy for save editors, live telemetry, spawning, and the audited game console.</div></div><div class="header-actions"><button class="btn ghost" id="rsdwl-refresh">Refresh Toolkit</button><span class="status-pill ${hosted?'online':'unknown'}">${hosted?escapeHtml(hosted.name||'WORLD READY'):'NO HOSTED WORLD'}</span></div></div>
+      <section class="rsdwl-ownership-strip"><div><strong>Core keeps authority</strong><span>RSDW-L never owns profiles, permissions, runtime lifecycle, or durable state.</span></div><div><strong>${bridge.length} bounded runtime surfaces</strong><span>${escapeHtml(appy.subapps?.join(' · ')||'Editors · map · spawner · console')}</span></div></section>
+      <div class="rsdwl-tool-grid">
+        ${tool('character','Character Creator','Identity, dedicated 3D renderer, appearance, progression and save-backed fields.','◉')}
+        ${tool('inventory','Inventory & Items','Equipment, action bar, personal storage and the modded item repository.','▦')}
+        ${tool('spells','Spells, Recipes & Quests','Cached RSDW catalogs with backup-first writeback.','✦')}
+        ${tool('map','Live Map','Roster-backed coordinates and Ashenfall overlays for the selected hosted World.','⌖',!hosted)}
+        ${tool('spawner','Spawner','Permission-gated item and enemy commands through the active game bridge.','✣',!hosted)}
+        ${tool('console','Unified Console','Server lifecycle, Sync, RSDW commands, acknowledgements and failures in one timeline.','>_',!hosted)}
+      </div>
+      <section class="panel"><div class="panel-header"><div><h2>Runtime ownership</h2><span class="panel-subtitle">${escapeHtml(appy.authority||'Core-owned policy')}</span></div></div><div class="panel-body"><div class="activity-list">${bridge.map((row)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(row.kind||'service').replace(/-/g,' '))}</span><div><strong>${escapeHtml(row.id||'RSDW-L surface')}</strong><small>${escapeHtml(row.purpose||'')} · ${escapeHtml(row.lifecycle||'on demand')}</small></div></div>`).join('')||'<div class="empty-state compact">Process catalog is still hydrating.</div>'}</div></div></section>
+    </div>`;
+  }
+
   function renderUnsafe() {
     if (!state.data) return;
     if(privateWorldById(state.selectedWorldId)&&Array.isArray(state.singleplayerInventory))state.privateInventory[state.selectedWorldId]=state.singleplayerInventory;
@@ -3857,6 +3902,7 @@
     else if (state.route === 'worlds') page = renderWorldGallery();
     else if (state.route === 'servers') { state.route='world-management'; state.worldManagementTab='worlds'; page = renderWorldManagement(); }
     else if (state.route === 'server-detail' && activeServerWorld()) page = renderServerDetail(activeServerWorld());
+    else if (state.route === 'rsdw-launcher') page = renderRsdwLauncher();
     else if (state.route === 'rsdw-toolkit') { state.route='profile'; state.profileTab='characters'; page = renderProfile(); }
     else if (state.route === 'profile') page = renderProfile();
     else if (state.route === 'rsdw-editor' && detachedMode) page = renderRsdwEditorWindow();
@@ -3980,7 +4026,15 @@
     root.querySelector('#splash-update-later')?.addEventListener('click', async () => { const cfg=state.data?.application?.application_updates||{}; state.data=await api.invoke('application.update',{application_updates:{...cfg,dismissed_version:state.applicationUpdate?.latestVersion||''}}); render(); });
     root.querySelector('#splash-changelog-open')?.addEventListener('click', () => { if (state.applicationUpdateResult?.releaseUrl) window.dragonwilds.openExternal(state.applicationUpdateResult.releaseUrl); });
     root.querySelector('#splash-changelog-dismiss')?.addEventListener('click', async () => { await window.dragonwilds.appUpdateDismissResult(); state.applicationUpdateResult=null; render(); });
-    root.querySelector('#toggle-nav-collapse')?.addEventListener('click', () => updateApplication({ nav_collapsed: !state.data?.application?.nav_collapsed }));
+    root.querySelector('#toggle-nav-collapse')?.addEventListener('click', () => {
+      const previous=!!state.data?.application?.nav_collapsed;
+      const collapsed=!previous;
+      state.data.application.nav_collapsed=collapsed;
+      root.classList.toggle('nav-collapsed',collapsed);
+      const button=root.querySelector('#toggle-nav-collapse');
+      if(button)button.title=collapsed?t('expandNavigation'):t('collapseNavigation');
+      api.invoke('application.update',{nav_collapsed:collapsed}).then((next)=>{state.data=next;window.__DWSYNC_STATE__=next;}).catch((error)=>{state.data.application.nav_collapsed=previous;root.classList.toggle('nav-collapsed',previous);toast('Navigation size was not saved',error.message,'error');});
+    });
     root.querySelector('#application-language')?.addEventListener('change', (event) => updateApplication({ language: event.target.value }));
     root.querySelector('#global-back')?.addEventListener('click', goBack);
     root.querySelector('#open-notification-center')?.addEventListener('click', openNotificationCenter);
@@ -4010,6 +4064,20 @@
       showModal(`<div class="modal-header"><div><div class="eyebrow">Legal</div><h2>${escapeHtml(window.DWSYNC_RELEASE_META?.licenseTitle || 'Dragonwilds Sync Community License')}</h2><p>Dragonwilds Sync is intended to remain freely available to the community.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><pre class="license-full-text">${escapeHtml(text || window.DWSYNC_RELEASE_META?.licenseSummary || 'License text unavailable.')}</pre></div><div class="modal-footer"><span class="muted-small">Third-party components and game assets retain their own terms.</span><button class="btn primary" data-close-modal>Done</button></div>`);
     });
     root.querySelector('#player-chip')?.addEventListener('click', async()=>{pushNavigation();state.route='profile';state.profileTab='user';stopPlayerPolling();render();try{const response=await api.invoke('characters.list',{});state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];if(state.route==='profile')render();}catch(_){} });
+    root.querySelector('#rsdwl-refresh')?.addEventListener('click',async()=>{try{const response=await api.invoke('application.rsdw.refresh',{force:true});if(response?.state)setData(response.state);toast('RSDW-L refreshed','Toolkit catalogs and launcher caches are current.','success');render();}catch(error){toast('RSDW-L refresh failed',error.message,'error');}});
+    root.querySelectorAll('[data-rsdwl-tool]').forEach((button)=>button.addEventListener('click',async()=>{
+      const tool=button.dataset.rsdwlTool||'character';
+      if(['character','inventory','spells'].includes(tool)){
+        await enterRsdwToolkit();
+        state.rsdwTool=tool==='inventory'?'item-editor':tool==='spells'?'spell-editor':'character-editor';
+        render();
+        if(tool!=='character')hydrateNativeRsdwTool(state.rsdwTool);
+        return;
+      }
+      const world=activeServerWorld()||serverWorlds()[0];
+      if(!world)return toast('Hosted World required',`${tool} uses a running or configured hosted World.`, 'error');
+      pushNavigation();state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab=tool;render();await loadServerTabData(tool);
+    }));
     root.querySelectorAll('[data-profile-tab]').forEach((button)=>button.addEventListener('click',async()=>{const nextTab=button.dataset.profileTab||'user';if(nextTab==='characters'){state.characterProfileTab='overview';await enterRsdwToolkit();return;}if(state.route!=='profile'||state.profileTab!==nextTab)pushNavigation();state.profileTab=nextTab;state.route='profile';stopPlayerPolling();render();}));
     root.querySelector('#edit-profile-page')?.addEventListener('click',openPlayerProfile);
     root.querySelector('#detach-profile')?.addEventListener('click',()=>window.dragonwilds.openDetachedWindow?.({route:'profile',title:'Dragonwilds Sync · Profile',context:{profileTab:state.profileTab,characterId:state.characterSelectedId,characterProfileTab:state.characterProfileTab,rsdwTool:state.rsdwTool}}));
@@ -4023,8 +4091,8 @@
     root.querySelectorAll('[data-private-convert]').forEach((button)=>button.addEventListener('click',async(event)=>{event.stopPropagation();const world=privateWorldById(button.dataset.privateConvert);if(!world)return;const name=await managedPrompt('Name for the dedicated Server profile:',world.name||'Dragonwilds World','Convert to Dedicated Server');if(!name)return;try{const response=await api.invoke('singleplayer.convert_to_server',{profile_id:world.id,id:world.id,name});if(response.state)state.data=response.state;state.selectedServerWorldId=response.profile_id||response.profile?.id||'';state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server',`${name} was cloned with its save, mods and settings. The local profile was preserved.`,'success');}catch(error){toast('Conversion failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-convert]').forEach((button)=>button.addEventListener('click',async(event)=>{event.stopPropagation();const world=serverWorlds().find((item)=>String(item.id)===String(button.dataset.serverConvert));if(!world)return;if(!await managedConfirm(`Clone “${world.name||'this World'}” into the local Singleplayer/Co-Op save area? The current local copy is archived first.`,'Convert to Singleplayer / Co-Op'))return;try{const response=await api.invoke('server.world.convert_to_singleplayer',{id:world.id});if(response.state)state.data=response.state;state.selectedWorldId=response.profile_id||response.profile?.id||state.data?.client?.active_private_world_id||'singleplayer';state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op',`${world.name||'World'} was cloned locally; the dedicated profile was preserved.`,'success');}catch(error){toast('Conversion failed',error.message,'error');}}));
     root.querySelector('#detach-settings')?.addEventListener('click',()=>window.dragonwilds.openDetachedWindow?.({route:state.route==='webhost'?'webhost':'settings',title:state.route==='webhost'?'Dragonwilds Sync · Sync':'Dragonwilds Sync · Settings',context:{settingsTab:state.settingsTab}}));
-    root.querySelector('#detach-private-world')?.addEventListener('click',()=>window.dragonwilds.openDetachedWindow?.({route:'world-detail',title:`Dragonwilds Sync · ${singleplayerWorld()?.name||'Private World'}`,context:{selectedWorldId:activeWorld()?.id||state.data?.client?.active_private_world_id||'singleplayer',privateTab:state.privateTab}}));
-    root.querySelector('#detach-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(!w)return;window.dragonwilds.openDetachedWindow?.({route:'server-detail',title:`Dragonwilds Sync · ${w.name||'Server World'}`,context:{selectedServerWorldId:w.id,serverTab:state.serverTab}});});
+    root.querySelector('#detach-private-world')?.addEventListener('click',()=>{const id=activeWorld()?.id||state.data?.client?.active_private_world_id||'singleplayer';window.__DWSYNC_PHASE5_PLACARDS__?.open(id);});
+    root.querySelector('#detach-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(w)window.__DWSYNC_PHASE5_PLACARDS__?.open(w.id);});
     root.querySelector('#open-minimal-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(w)window.dragonwilds.openMinimalMode?.(w.id);});
     root.querySelector('#profile-open-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
     root.querySelector('#sp-browse-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
@@ -4379,8 +4447,8 @@
     }
     const avatarWebview=root.querySelector('#rsdw-avatar-webview');
     if(avatarWebview){
-      const setAvatarStatus=(text,type='')=>{const el=root.querySelector('#rsdw-avatar-status');if(el){el.textContent=text;el.className=type?`avatar-status ${type}`:'avatar-status';}};
       const avatarShell=avatarWebview.closest('.rsdw-avatar-stage-shell');
+      const setAvatarStatus=(text,type='')=>{const el=root.querySelector('#rsdw-avatar-status');if(el){el.textContent=text;el.className=type?`avatar-status ${type}`:'avatar-status';}if(avatarShell){avatarShell.classList.toggle('avatar-ready',type==='ready');avatarShell.classList.toggle('avatar-failed',type==='error');avatarShell.classList.toggle('avatar-loading',type!=='ready'&&type!=='error');const cover=avatarShell.querySelector('.rsdw-avatar-loading-cover span');if(cover&&type==='error')cover.textContent=text;}};
       let avatarResizeObserver=null;
       const syncAvatarHostSize=()=>{
         if(!avatarShell||root.querySelector('#rsdw-avatar-webview')!==avatarWebview){avatarResizeObserver?.disconnect();return;}
@@ -4411,7 +4479,7 @@
           setAvatarStatus(`Avatar loaded${modelCopy} · ${fields} save-backed appearance fields`,'ready');
         }catch(_){ /* The next lifecycle or retry callback handles pages still navigating. */ }
       };
-      avatarWebview.addEventListener('did-start-loading',()=>{avatarReady=false;setAvatarStatus('Loading RSDWModel avatar…');});
+      avatarWebview.addEventListener('did-start-loading',()=>{avatarReady=false;setAvatarStatus('Loading RSDWModel avatar…','loading');});
       // A remote webview can finish before bindEvents runs. Listen to both native
       // lifecycle signals and retry against an already-complete document so the
       // Character card consistently opens on the live canvas rather than the
@@ -4684,19 +4752,6 @@
     });
 
     root.querySelectorAll('[data-private-tab]').forEach((button)=>button.addEventListener('click',()=>loadPrivateTabData(button.dataset.privateTab||'overview')));
-    root.querySelectorAll('[data-items-enemies-tab]').forEach((button)=>button.addEventListener('click',()=>{state.itemsEnemiesTab=button.dataset.itemsEnemiesTab==='spawner'?'spawner':'editor';render();}));
-    root.querySelector('#save-dragon-core')?.addEventListener('click',async()=>{
-      const categories={};
-      root.querySelectorAll('[data-dragon-core-stack]').forEach((input)=>{const group=input.dataset.group,name=input.dataset.name;if(!group||!name)return;(categories[group]||(categories[group]={}))[name]={...(categories[group]?.[name]||{}),stack:Math.max(1,Math.min(999999,Math.round(Number(input.value||1))))};});
-      root.querySelectorAll('[data-dragon-core-weight]').forEach((input)=>{const group=input.dataset.group,name=input.dataset.name;if(!group||!name)return;(categories[group]||(categories[group]={}))[name]={...(categories[group]?.[name]||{}),weight:Math.max(-1,Math.min(100000,Number(input.value||0)))};});
-      const dragon_core={enabled:!!root.querySelector('#dragon-core-enabled')?.checked,stacks_enabled:!!root.querySelector('#dragon-core-stacks')?.checked,weights_enabled:!!root.querySelector('#dragon-core-weights')?.checked,categories};
-      const privateWorld=state.route==='world-detail'&&activeWorld()?.kind==='singleplayer'?(privateWorldById(state.selectedWorldId)||singleplayerWorld()):null;
-      try{
-        if(privateWorld){const response=await api.invoke('singleplayer.profile.update',{profile_id:privateWorld.id,profile:{dragon_core}});if(response.state)setData(response.state);}
-        else {const world=activeServerWorld();if(!world)return;const response=await api.invoke('server.world.update',{id:world.id,dragon_core});setData(response);}
-        render();toast('DragonCore item rules saved','The hidden functional mod was regenerated for this World profile.','success');
-      }catch(error){toast('Could not save DragonCore rules',error.message,'error');}
-    });
     root.querySelectorAll('[data-refresh-world-save]').forEach((button)=>button.addEventListener('click',()=>{
       const kind=button.dataset.refreshWorldSave==='server'?'server':'private';
       const world=kind==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
@@ -4837,7 +4892,7 @@
     root.querySelector('#add-server-world-card')?.addEventListener('click', openServerCreate);
     root.querySelector('#back-servers')?.addEventListener('click', () => { if(state.navigationHistory.length)return goBack(); state.route = 'servers'; render(); });
     root.querySelectorAll('[data-server-tab]').forEach((b) => b.addEventListener('click', () => loadServerTabData(b.dataset.serverTab)));
-    const executeGameConsole=async(command)=>{const world=activeServerWorld();if(!world||!String(command||'').trim())return;if(!await managedConfirm(`Run this game command on ${world.name||'the active World'}?\n\n${command}`,'Run Game Command'))return;try{const response=await api.invoke('server.console.execute',{id:world.id,command:String(command).trim(),confirmed:true,source:'desktop',actor:'owner'});state.serverConsole[world.id]={...(state.serverConsole[world.id]||{}),history:response.history||[]};render();toast('Game command completed',response.ack||'RSDWToolkit acknowledged the command.','success');}catch(error){await refreshServerConsole(world,true);toast('Game command failed',error.message,'error');}};
+    const executeGameConsole=async(command)=>{const world=activeServerWorld();if(!world||!String(command||'').trim())return;if(!await managedConfirm(`Run this game command on ${world.name||'the active World'}?\n\n${command}`,'Run Game Command'))return;try{const response=await api.invoke('server.console.execute',{id:world.id,command:String(command).trim(),confirmed:true,source:'desktop',actor:'owner'});await refreshServerConsole(world,true);toast('Game command completed',response.ack||'RSDW Toolkit acknowledged the command.','success');}catch(error){await refreshServerConsole(world,true);toast('Game command failed',error.message,'error');}};
     root.querySelector('#run-game-console')?.addEventListener('click',()=>executeGameConsole(root.querySelector('#game-console-input')?.value||''));
     root.querySelector('#game-console-input')?.addEventListener('keydown',(event)=>{if(event.key==='Enter')executeGameConsole(event.currentTarget.value);});
     root.querySelector('#refresh-game-console')?.addEventListener('click',()=>refreshServerConsole(activeServerWorld(),false));
@@ -5361,6 +5416,10 @@
       try{const discovered=await api.invoke('application.custom_items.discover',{});if(discovered?.state)state.data=discovered.state;if(discovered?.imported)toast('Mod item manifests loaded',`${discovered.imported} definition${discovered.imported===1?'':'s'} parsed from ${discovered.sources?.length||0} installed mod manifest${discovered.sources?.length===1?'':'s'}.`,'success');}catch(error){console.warn('Custom item manifest discovery failed',error);}
     }
     const items=[...((state.data?.application?.custom_items)||[])];
+    const itemPageSize=20;
+    const itemPageCount=Math.max(1,Math.ceil(items.length/itemPageSize));
+    state.customItemPage=Math.max(0,Math.min(Number(state.customItemPage||0),itemPageCount-1));
+    const visibleItems=items.slice(state.customItemPage*itemPageSize,(state.customItemPage+1)*itemPageSize);
     const categories=['Armour','One-Handed Weapon','Two-Handed Weapon','Right-Hand Weapon','Left-Hand Weapon','Shield','Potion','Food','Ammo','Rune','Tool','Resource','Material','Plan','Quest Item','Other'];
     const equipmentSlots=['','Head','Body','Legs','Cape','Jewellery','Right Hand','Left Hand','Both Hands'];
     let iconSource=state.rsdwNativeTools['item-editor']?.tabs||{};
@@ -5370,7 +5429,7 @@
     const iconUrl=(row)=>row.icon_data||((row.icon_ref||row.icon)?rsdwAssetUrl(row.icon_ref||row.icon):'assets/rsdw-toolkit/modded-items.svg');
     const card=(row)=>`<article class="custom-item-card" data-custom-item-card="${escapeHtml(row.persistence_id||'')}" title="Right-click to write this definition into an installed mod"><div><img src="${escapeHtml(iconUrl(row))}" alt=""/></div><span><strong>${escapeHtml(row.display_name||row.name||'Modded Item')}</strong><code>${escapeHtml(row.internal_name||'Internal name unavailable')}</code><code>${escapeHtml(row.persistence_id||'')}</code><small>${escapeHtml(row.category||'Other')} · Stack ${Number(row.max_stack||1).toLocaleString()}${row.source_mod?` · ${escapeHtml(String(row.source_mod).split(/[\\/]/).pop())}`:''}</small></span><button class="btn ghost compact-btn" data-edit-custom-item="${escapeHtml(row.persistence_id||'')}">Edit</button><button class="btn danger compact-btn" data-delete-custom-item="${escapeHtml(row.persistence_id||'')}">Remove</button></article>`;
     const start=seed&&typeof seed==='object'?seed:{};
-    host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Portable Item Manifest</div><h2>Modded Item Repository</h2><p>One item identity is shared by Character Editor, Spawner, and WebGUI: Display Name, Internal Name, PersistenceID, icon, and stack size.</p></div></div><div class="detached-window-body custom-item-repository"><section class="custom-item-create"><div class="custom-item-icon-tools"><button class="custom-item-icon-picker" id="custom-item-icon"><img src="${escapeHtml(iconUrl(start))}" alt=""/><span>Load Custom Icon</span></button><label>Choose vanilla icon<input class="field" id="custom-item-icon-search" placeholder="Search Dragonwilds artwork…"/></label><div class="custom-item-game-icons" id="custom-item-game-icons"></div></div><label>Persistence ID<input class="field" id="custom-item-persistence" maxlength="512" value="${escapeHtml(start.persistence_id||'')}" placeholder="Save PersistenceID / ItemData key"/></label><label>Display Name<input class="field" id="custom-item-name" maxlength="160" value="${escapeHtml(start.display_name||start.name||'')}" placeholder="Player-facing item name"/></label><label>Internal Name<input class="field" id="custom-item-internal-name" maxlength="160" value="${escapeHtml(start.internal_name||'')}" placeholder="ITEM_NAME / asset name"/></label><label>Item Type<select class="select" id="custom-item-category">${categories.map((value)=>`<option ${value===(start.category||'Resource')?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label><label>Equipment Hand / Slot<select class="select" id="custom-item-equipment">${equipmentSlots.map((value)=>`<option value="${escapeHtml(value)}" ${value===(start.equipment||'')?'selected':''}>${escapeHtml(value||'Not equippable')}</option>`).join('')}</select></label><label>Maximum Stack Quantity<input class="field" id="custom-item-stack" type="number" min="1" max="1000000000" value="${Number(start.max_stack||1)}"/></label><button class="btn primary" id="save-custom-item">${start.persistence_id?'Save Item Changes':'Save Item Definition'}</button></section><section class="custom-item-list">${items.map(card).join('')||'<div class="empty-state"><strong>No modded items yet.</strong><span>Unrecognized save items also appear in their own Item Editor tab and can be defined by right-clicking them.</span></div>'}</section></div><div class="detached-window-footer"><span>${items.length} saved definition${items.length===1?'':'s'} · portable manifests include custom icon files</span><div class="footer-right"><button class="btn ghost" id="import-custom-items">Import Manifest</button><button class="btn ghost" id="export-custom-items" ${items.length?'':'disabled'}>Export Mod Manifest</button><button class="btn primary" id="done-custom-item-repository">Done</button></div></div>`;
+    host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Characters · Portable Item Manifest</div><h2>Modded Item Repository</h2><p>Preloaded with Characters. Display Name, Internal Name, PersistenceID, icon, and stack size remain one shared identity.</p></div></div><div class="detached-window-body custom-item-repository"><section class="custom-item-create"><div class="custom-item-icon-tools"><button class="custom-item-icon-picker" id="custom-item-icon"><img src="${escapeHtml(iconUrl(start))}" alt=""/><span>Load Custom Icon</span></button><label>Choose vanilla icon<input class="field" id="custom-item-icon-search" placeholder="Search Dragonwilds artwork…"/></label><div class="custom-item-game-icons" id="custom-item-game-icons"></div></div><label>Persistence ID<input class="field" id="custom-item-persistence" maxlength="512" value="${escapeHtml(start.persistence_id||'')}" placeholder="Save PersistenceID / ItemData key"/></label><label>Display Name<input class="field" id="custom-item-name" maxlength="160" value="${escapeHtml(start.display_name||start.name||'')}" placeholder="Player-facing item name"/></label><label>Internal Name<input class="field" id="custom-item-internal-name" maxlength="160" value="${escapeHtml(start.internal_name||'')}" placeholder="ITEM_NAME / asset name"/></label><label>Item Type<select class="select" id="custom-item-category">${categories.map((value)=>`<option ${value===(start.category||'Resource')?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label><label>Equipment Hand / Slot<select class="select" id="custom-item-equipment">${equipmentSlots.map((value)=>`<option value="${escapeHtml(value)}" ${value===(start.equipment||'')?'selected':''}>${escapeHtml(value||'Not equippable')}</option>`).join('')}</select></label><label>Maximum Stack Quantity<input class="field" id="custom-item-stack" type="number" min="1" max="1000000000" value="${Number(start.max_stack||1)}"/></label><button class="btn primary" id="save-custom-item">${start.persistence_id?'Save Item Changes':'Save Item Definition'}</button></section><section class="custom-item-list">${visibleItems.map(card).join('')||'<div class="empty-state"><strong>No modded items yet.</strong><span>Unrecognized save items also appear in their own Item Editor tab and can be defined by right-clicking them.</span></div>'}${itemPageCount>1?`<div class="native-catalog-pagination"><button class="btn ghost compact-btn" data-custom-item-page="${state.customItemPage-1}" ${state.customItemPage<=0?'disabled':''}>Previous</button><span>Page ${state.customItemPage+1} of ${itemPageCount} · ${items.length} items</span><button class="btn ghost compact-btn" data-custom-item-page="${state.customItemPage+1}" ${state.customItemPage>=itemPageCount-1?'disabled':''}>Next</button></div>`:''}</section></div><div class="detached-window-footer"><span>${items.length} saved definition${items.length===1?'':'s'} · portable manifests include custom icon files</span><div class="footer-right"><button class="btn ghost" id="import-custom-items">Import Manifest</button><button class="btn ghost" id="export-custom-items" ${items.length?'':'disabled'}>Export Mod Manifest</button><button class="btn primary" id="done-custom-item-repository">Done</button></div></div>`;
     host.classList.add('custom-item-repository-host');
     let iconData=String(start.icon_data||''),iconRef=String(start.icon_ref||'');
     const iconGrid=host.querySelector('#custom-item-game-icons');
@@ -5378,6 +5437,7 @@
     renderIcons();host.querySelector('#custom-item-icon-search')?.addEventListener('input',renderIcons);
     host.querySelector('#custom-item-icon')?.addEventListener('click',async()=>{const picked=await window.dragonwilds.pickImage();if(!picked)return;iconData=picked.dataUrl||'';iconRef='';const image=host.querySelector('#custom-item-icon img');if(image)image.src=iconData;});
     const refreshCatalog=async(response)=>{if(response?.state)state.data=response.state;state.rsdwNativeTools['item-editor']=null;await hydrateNativeRsdwTool('item-editor');if(!detachedMode)render();await openCustomItemRepository({});};
+    host.querySelectorAll('[data-custom-item-page]').forEach((button)=>button.addEventListener('click',()=>{state.customItemPage=Math.max(0,Number(button.dataset.customItemPage||0));openCustomItemRepository(start);}));
     host.querySelector('#save-custom-item')?.addEventListener('click',async()=>{try{const item={persistence_id:host.querySelector('#custom-item-persistence')?.value||'',name:host.querySelector('#custom-item-name')?.value||'',display_name:host.querySelector('#custom-item-name')?.value||'',internal_name:host.querySelector('#custom-item-internal-name')?.value||'',category:host.querySelector('#custom-item-category')?.value||'Other',equipment:host.querySelector('#custom-item-equipment')?.value||'',max_stack:Number(host.querySelector('#custom-item-stack')?.value||1),icon_data:iconData,icon_ref:iconRef,source_mod:start.source_mod||'',source_manifest:start.source_manifest||'',created_at:start.created_at};const response=await api.invoke('application.custom_items.create',{item});toast('Modded item saved',`${item.name} is now available to the Item Editor, Spawner, and WebGUI.`,'success');await refreshCatalog(response);}catch(error){toast('Could not save modded item',error.message,'error');}});
     host.querySelectorAll('[data-edit-custom-item]').forEach((button)=>button.addEventListener('click',()=>{const row=items.find((item)=>String(item.persistence_id||'')===button.dataset.editCustomItem);openCustomItemRepository(row||{});}));
     host.querySelectorAll('[data-custom-item-card]').forEach((cardNode)=>cardNode.addEventListener('contextmenu',async(event)=>{event.preventDefault();event.stopPropagation();const id=cardNode.dataset.customItemCard||'';const modDir=await window.dragonwilds.pickDirectory();if(!modDir)return;try{const response=await api.invoke('application.custom_items.write_to_mod',{persistence_id:id,mod_dir:modDir});toast('Item written to mod',`${response.count} definition${response.count===1?'':'s'} in ${response.path}`,'success');await refreshCatalog(response);}catch(error){toast('Could not write item to mod',error.message,'error');}}));
@@ -5401,8 +5461,15 @@
       let files=[];
       if(scope==='server'){
         if(!world)throw new Error('Select a dedicated World first.');
-        const response=await api.invoke('server.world.config.list',{id:world.id});
+        let response=await api.invoke('server.world.config.list',{id:world.id});
         files=(response.configs||[]).filter((item)=>item.unit_key===unitKey).map((item)=>({...item,editable:true}));
+        for(let attempt=0;!files.length&&response.active&&attempt<8;attempt+=1){
+          const status=host.querySelector('.detached-loading span');
+          if(status)status.textContent=`Indexing this live mod in the RSDragonwilds workspace… ${attempt+1}/8`;
+          await new Promise((resolve)=>setTimeout(resolve,750));
+          response=await api.invoke('server.world.config.list',{id:world.id,force:true});
+          files=(response.configs||[]).filter((item)=>item.unit_key===unitKey).map((item)=>({...item,editable:true}));
+        }
       }else{
         const profileId=world?.kind==='singleplayer'?world.id:(state.data?.client?.active_private_world_id||'singleplayer');
         const response=await api.invoke('singleplayer.mod.files',{key:unitKey,profile_id:profileId,tree:true});
@@ -5465,7 +5532,7 @@
           toast('Mod file added',`${relativePath} was created inside ${name}.`,'success');await openModExplorer(scope,unitKey);
         }catch(error){toast('Could not add mod file',error.message,'error');}
       });
-      saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}try{if(scope==='server')await api.invoke('server.world.config.save',{id:world.id,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});toast('Mod file saved','Atomic profile-scoped write complete.','success');}catch(error){toast('Save failed',error.message,'error');}});
+      saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}const originalLabel=saveButton.textContent;saveButton.disabled=true;saveButton.textContent='Saving…';try{if(scope==='server')await api.invoke('server.world.config.save',{id:world.id,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});saveButton.textContent='✓ Saved';toast('Mod file saved','Atomic profile-scoped write complete.','success');setTimeout(()=>{if(saveButton.isConnected){saveButton.textContent=originalLabel;saveButton.disabled=false;}},1400);}catch(error){saveButton.textContent=originalLabel;saveButton.disabled=false;toast('Save failed',error.message,'error');}});
     }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Mod Explorer</div><h2>Could not open this mod</h2></div><button class="btn ghost" id="close-mod-explorer-error">Close</button></div><div class="empty-state"><strong>The loading request failed.</strong><span>${escapeHtml(error.message||'Unknown mod-loading error')}</span><button class="btn primary" id="retry-mod-explorer">Retry</button></div>`;host.querySelector('#retry-mod-explorer')?.addEventListener('click',()=>openModExplorer(scope,unitKey));host.querySelector('#close-mod-explorer-error')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));}
   }
 
@@ -5804,6 +5871,11 @@
   }
 
   const launcherCommands = [
+    ['open rsdw-l','Open the RSDW-L editor, map, spawner, and unified-console hub'],
+    ['open characters','Open the cached Character Creator and inventory workspace'],
+    ['open mods','Open the profile-aware Mod Studio and editor'],
+    ['open sync','Open Sync directory, transfer, broadcast, and remote access'],
+    ['system status','Show every declared Appy, subapp, process, service, and authority boundary'],
     ['start broadcast','Start Sync broadcasting for the selected local/co-op World'],
     ['end broadcast','Stop the active local/co-op Sync broadcast'],
     ['start server','Start the selected dedicated World and its Sync endpoint'],
@@ -5817,6 +5889,14 @@
   async function executeLauncherCommand(rawCommand) {
     const command=String(rawCommand||'').trim().toLowerCase().replace(/\s+/g,' ');
     if(!command || command==='help'){openLauncherConsole();return;}
+    if(command==='open rsdw-l'){navigateTo('rsdw-launcher');return;}
+    if(command==='open characters'){await enterRsdwToolkit();return;}
+    if(command==='open mods'){await handleRouteNavigation('mods-app');return;}
+    if(command==='open sync'){navigateTo('webhost',{webhostTab:'live'});return;}
+    if(command==='system status'){
+      const catalog=await api.invoke('application.process_catalog',{});const apps=Object.entries(catalog.applications||{});const components=Object.values(catalog.components||{});
+      showModal(`<div class="modal-header"><div><div class="eyebrow">Core process catalog</div><h2>Appy & Service Status</h2><p>${components.length} declared runtime surfaces · durable authority remains in ${escapeHtml(catalog.authority?.durable_state||'control-service')}.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${apps.map(([id,row])=>`<div class="activity-row"><span class="activity-level ok">APPY</span><div><strong>${escapeHtml(row.label||id)}</strong><small>${escapeHtml((row.subapps||[]).join(' · '))}</small></div></div>`).join('')}${components.map((row)=>`<div class="activity-row"><span class="activity-level">${escapeHtml(String(row.kind||'service').replace(/-/g,' '))}</span><div><strong>${escapeHtml(row.id||'component')}</strong><small>${escapeHtml(row.owner||'')} · ${escapeHtml(row.lifecycle||'')} · ${escapeHtml(row.purpose||'')}</small></div></div>`).join('')}</div></div><div class="modal-footer"><span>Read-only catalog · no shell access</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'Dragonwilds Sync System Status',width:980,height:820});return;
+    }
     if(command==='show nexus'){
       state.showNexusIntegration=true;state.route='settings';state.applicationSettingsTab='integrations';state.settingsTab='integrations';render();toast('Nexus integration shown','Use “hide nexus” or restart the application to hide the account controls again.','success');return;
     }
@@ -6209,11 +6289,15 @@
     render();
   }
 
-  async function openPrivateWorldEditor(world) {
-    const response=await api.invoke('singleplayer.profile.get',{profile_id:world.id,id:world.id});
-    const profile=response.profile||{};
+  function openPrivateWorldEditor(world) {
+    // Paint from the already hydrated World projection immediately. The full
+    // profile refines untouched fields in the background instead of delaying
+    // the in-app editor behind filesystem discovery.
+    const profile={name:world.name||'',description:world.presentation?.description||world.description||'',community_rules:world.presentation?.community_rules||world.community_rules||'',tags:world.presentation?.tags||world.tags||[],classification:world.classification||{},placard_background:world.presentation?.placard_background||world.placard_background||'1'};
     const classification=worldClassification({...world,classification:profile.classification||world.classification});
-    showModal(`<div class="modal-header"><div><div class="eyebrow">Private World</div><h2>Edit ${escapeHtml(profile.name||world.name||'Private World')}</h2><p>Presentation and placard changes persist with this World profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="edit-private-name" maxlength="80" value="${escapeHtml(profile.name||world.name||'Private World')}"/></div><div class="form-group full"><label>Description</label><textarea class="textarea" id="edit-private-description" maxlength="300">${escapeHtml(profile.description||world.presentation?.description||'')}</textarea></div><div class="form-group full"><label>Community Rules</label><textarea class="textarea community-rules-field" id="edit-private-rules" maxlength="4000">${escapeHtml(profile.community_rules||world.presentation?.community_rules||'')}</textarea></div><div class="form-group full"><label>Tags</label><input class="field" id="edit-private-tags" value="${escapeHtml((profile.tags||world.presentation?.tags||[]).join(', '))}"/></div><div class="form-group"><label>World Type</label><select class="select" id="edit-private-content">${[['vanilla','Vanilla'],['modded','Modded'],['handmade','Handmade'],['hybrid','Hybrid']].map(([key,label])=>`<option value="${key}" ${classification.content_type===key?'selected':''}>${label}</option>`).join('')}</select></div><div class="form-group"><label>Game Mode</label><select class="select" id="edit-private-mode">${[['normal','Normal'],['hardcore','Hardcore'],['creative','Creative'],['custom','Custom']].map(([key,label])=>`<option value="${key}" ${classification.game_mode===key?'selected':''}>${label}</option>`).join('')}</select></div><div class="form-group full"><label>Placard Background</label>${placardBackgroundPicker(profile.placard_background||world.presentation?.placard_background||'1','private-placard')}</div></div><div class="identity-box"><strong>Synced World presentation</strong><p>The selected built-in background ID travels with manifests and profile exports; the artwork itself ships once with Dragonwilds Sync.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-private-world-profile">Save Changes</button></div></div>`,{title:'Edit Private World'});
+    const editorWindow=showModal(`<div class="modal-header"><div><div class="eyebrow">Private World</div><h2>Edit ${escapeHtml(profile.name||world.name||'Private World')}</h2><p>Presentation and placard changes persist with this World profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="edit-private-name" maxlength="80" value="${escapeHtml(profile.name||world.name||'Private World')}"/></div><div class="form-group full"><label>Description</label><textarea class="textarea" id="edit-private-description" maxlength="300">${escapeHtml(profile.description||world.presentation?.description||'')}</textarea></div><div class="form-group full"><label>Community Rules</label><textarea class="textarea community-rules-field" id="edit-private-rules" maxlength="4000">${escapeHtml(profile.community_rules||world.presentation?.community_rules||'')}</textarea></div><div class="form-group full"><label>Tags</label><input class="field" id="edit-private-tags" value="${escapeHtml((profile.tags||world.presentation?.tags||[]).join(', '))}"/></div><div class="form-group"><label>World Type</label><select class="select" id="edit-private-content">${[['vanilla','Vanilla'],['modded','Modded'],['handmade','Handmade'],['hybrid','Hybrid']].map(([key,label])=>`<option value="${key}" ${classification.content_type===key?'selected':''}>${label}</option>`).join('')}</select></div><div class="form-group"><label>Game Mode</label><select class="select" id="edit-private-mode">${[['normal','Normal'],['hardcore','Hardcore'],['creative','Creative'],['custom','Custom']].map(([key,label])=>`<option value="${key}" ${classification.game_mode===key?'selected':''}>${label}</option>`).join('')}</select></div><div class="form-group full"><label>Placard Background</label>${placardBackgroundPicker(profile.placard_background||world.presentation?.placard_background||'1','private-placard')}</div></div><div class="identity-box"><strong>Synced World presentation</strong><p>The selected built-in background ID travels with manifests and profile exports; the artwork itself ships once with Dragonwilds Sync.</p></div></div><div class="modal-footer"><span class="editor-hydration-status">Ready · checking profile details…</span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-private-world-profile">Save Changes</button></div></div>`,{title:'Edit Private World'});
+    editorWindow.querySelectorAll('input,textarea,select').forEach((field)=>field.addEventListener('input',()=>{field.dataset.userEdited='1';},{once:true}));
+    api.invoke('singleplayer.profile.get',{profile_id:world.id,id:world.id}).then((response)=>{if(!editorWindow?.isConnected)return;const full=response.profile||{};const hydrate=(selector,value)=>{const field=editorWindow.querySelector(selector);if(field&&!field.matches(':focus')&&!field.dataset.userEdited)field.value=String(value??'');};hydrate('#edit-private-name',full.name||profile.name);hydrate('#edit-private-description',full.description||profile.description);hydrate('#edit-private-rules',full.community_rules||profile.community_rules);hydrate('#edit-private-tags',(full.tags||profile.tags||[]).join(', '));const status=editorWindow.querySelector('.editor-hydration-status');if(status)status.textContent='Profile details loaded';}).catch(()=>{const status=editorWindow?.querySelector('.editor-hydration-status');if(status)status.textContent='Using cached profile details';});
     modalRoot.querySelector('#save-private-world-profile')?.addEventListener('click',async()=>{const name=modalRoot.querySelector('#edit-private-name')?.value.trim()||'';if(!name)return toast('World name required','','error');const description=modalRoot.querySelector('#edit-private-description')?.value.trim()||'';const community_rules=modalRoot.querySelector('#edit-private-rules')?.value.trim()||'';const tags=(modalRoot.querySelector('#edit-private-tags')?.value||'').split(',').map(x=>x.trim()).filter(Boolean);const placard_background=modalRoot.querySelector('input[name="private-placard"]:checked')?.value||'1';const classification={content_type:modalRoot.querySelector('#edit-private-content')?.value||'vanilla',game_mode:modalRoot.querySelector('#edit-private-mode')?.value||'normal',host_type:world.status?.broadcasting?'coop':'singleplayer',visibility:world.status?.broadcasting?'friends':'private',declared:true};try{const saved=await api.invoke('singleplayer.profile.update',{profile_id:world.id,id:world.id,profile:{name,description,community_rules,tags,classification,placard_background}});if(saved.state)setData(saved.state);closeModal();state.selectedWorldId=world.id;render();toast('Private World updated',`${name} now identifies this profile and its Sync broadcast.`,'success');}catch(error){toast('Could not update Private World',error.message,'error');}});
   }
 

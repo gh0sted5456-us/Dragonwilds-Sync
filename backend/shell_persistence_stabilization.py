@@ -432,8 +432,15 @@ def _install_server_config_index_patch() -> None:
                     original_list, world_maintenance, profile_id, server_root, bool(active)
                 )
             return rows
-        # First adoption has no durable index yet. Pay the scanner once; every
-        # later navigation reads the manifest immediately.
+        # First adoption has no durable index yet. Build it off the request
+        # thread so opening Mod Explorer never waits on a large live mod tree.
+        # The renderer polls this cheap manifest projection while showing its
+        # own bounded indexing state.
+        if active:
+            _refresh_server_manifest_background(
+                original_list, world_maintenance, profile_id, server_root, bool(active)
+            )
+            return []
         return original_list(profile_id, server_root, active)
 
     world_maintenance.list_world_configs = list_world_configs

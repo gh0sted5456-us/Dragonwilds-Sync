@@ -68,7 +68,6 @@ from world_sharing import export_world_package, inspect_world_package, world_fro
 from profile_bundle import export_profile_bundle, import_profile_bundle, inspect_profile_bundle
 from server_engine import player_history_payload
 from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
-from dragon_core import default_settings as default_dragon_core_settings, normalize_settings as normalize_dragon_core_settings, materialize as materialize_dragon_core
 
 from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports,
@@ -2418,18 +2417,12 @@ def handle(method: str, params: dict) -> object:
             if "lan_broadcast" in next_cfg: cfg["lan_broadcast"] = bool(next_cfg.get("lan_broadcast"))
             if "access_policy" in next_cfg: cfg["access_policy"] = normalize_access_policy(next_cfg.get("access_policy") or {})
             profile["broadcast_config"] = cfg
-        if "dragon_core" in incoming and isinstance(incoming.get("dragon_core"), dict):
-            profile["dragon_core"] = normalize_dragon_core_settings(incoming.get("dragon_core"))
         save_singleplayer_profile(profile, profile_id)
         if "name" in incoming and str(profile.get("name") or "") != previous_name:
             profile["name_source"] = "user"
             save_singleplayer_profile(profile, profile_id)
         refresh_live_profile_metadata(profile_id, profile)
         client_state = state.setdefault("client", {})
-        if "dragon_core" in incoming and str(client_state.get("live_world_id") or "") == profile_id:
-            game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
-            if game_dir and Path(game_dir).exists():
-                materialize_dragon_core(resolve_client_layout(game_dir).ue4ss_mods_dir, profile.get("dragon_core"), mode="Player")
         ensure_singleplayer_state(state)
         save_state(state)
         return {"profile": profile, "state": public_state(state)}
@@ -2484,7 +2477,6 @@ def handle(method: str, params: dict) -> object:
         direct_connect = clear_direct_connect_config(game_dir)
         snapshot_client_world(profile_id, install_dir)
         profile = load_singleplayer_profile(profile_id)
-        dragon_core = materialize_dragon_core(resolve_client_layout(game_dir).ue4ss_mods_dir, profile.get("dragon_core"), mode="Player")
         mode = "coop" if bool((profile.get("status") or {}).get("broadcasting")) else "singleplayer"
         marker = write_active_world(resolve_client_layout(game_dir).game_root, profile_id, mode)
         units = scan_singleplayer_inventory(game_dir, live=True, profile_id=profile_id)
@@ -2493,7 +2485,7 @@ def handle(method: str, params: dict) -> object:
         client_state["active_private_world_id"] = profile_id
         _record_notification(state, "World profile activated", f"{profile.get('name') or profile_id} · files, mods, settings and active marker exchanged", "success", key=f"profile-active:{profile_id}")
         save_state(state)
-        return {"profile": profile, "units": units, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect, "dragon_core": dragon_core}, "state": public_state(state)}
+        return {"profile": profile, "units": units, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect}, "state": public_state(state)}
 
     if method == "singleplayer.profile.unload":
         client_state = state.setdefault("client", {})
@@ -3743,8 +3735,6 @@ def handle(method: str, params: dict) -> object:
             for key in ("nexus_auto_check", "nexus_auto_apply"):
                 if key in params["mod_management"]:
                     current_mm[key] = bool(params["mod_management"].get(key))
-        if "dragon_core" in params and isinstance(params.get("dragon_core"), dict):
-            profile["dragon_core"] = normalize_dragon_core_settings(params.get("dragon_core"))
         dedicated = profile.setdefault("dedicated_config", {})
         if "name" in params:
             # The profile name is the authoritative Dragonwilds server/world
@@ -3826,8 +3816,6 @@ def handle(method: str, params: dict) -> object:
             STATE.configure_access_policy((state.get("application") or {}).get("server_access_policy") or {}, sync.get("access_policy") or {})
             refresh_live_profile_metadata(profile_id, profile)
             live_root = server_root_for_profile(profile)
-            if "dragon_core" in params and live_root and Path(live_root).exists():
-                materialize_dragon_core(resolve_server_layout(live_root).ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
         return public_state(state)
 
     if method == "server.world.starter_characters.list":

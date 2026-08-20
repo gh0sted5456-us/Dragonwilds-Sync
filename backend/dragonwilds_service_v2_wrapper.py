@@ -15,7 +15,6 @@ import dragonwilds_service_legacy as _legacy
 from dragonwilds_service_legacy import *  # noqa: F401,F403
 import directory_host as _directory_host_module
 import local_world as _local_world
-import dragon_core as _dragon_core
 import managed_updates as _managed_updates
 from profile_store import SERVER_PROFILES_DIR
 from trash_store import empty as empty_trash
@@ -116,6 +115,18 @@ def _private_delete(method: str, params: dict, state: dict):
     paths: list[Path] = [profile_root, _local_world._rollback_dir(profile_id)]
     save_path = Path(str(profile.get("save_path") or "")) if profile.get("save_path") else None
     if save_path and save_path.is_file():
+        # Trash moves the save before the legacy delete handler runs. Preserve
+        # the exact revision first so discovery cannot recreate its placard.
+        try:
+            stat = save_path.stat()
+            tombstones = _local_world._deleted_save_tombstones()
+            tombstones[_local_world._save_tombstone_key(save_path)] = {
+                "path": str(save_path), "mtime": float(stat.st_mtime), "size": int(stat.st_size),
+                "profile_id": profile_id, "deleted_at": time.time(),
+            }
+            _local_world._write_deleted_save_tombstones(tombstones)
+        except OSError:
+            pass
         paths.append(save_path)
     entry = trash_paths(
         "private_world", str(profile.get("name") or profile_id), paths,
@@ -271,52 +282,6 @@ def _record_local_profile_and_cloud_notices(state: dict) -> None:
     _legacy.save_state(state)
 
 
-def _dragoncore_update_rows(state: dict) -> dict[str, dict]:
-    application = state.setdefault("application", {})
-    rows: dict[str, dict] = {}
-
-    def row_for(key: str, label: str, mods_dir: Path) -> None:
-        try:
-            status = _dragon_core.managed_status(mods_dir)
-        except Exception as exc:
-            rows[key] = {
-                "component": label, "installed_version": "", "available_version": "",
-                "update_available": False, "restart_required": True, "status": "unable_to_check",
-                "checked_at": time.time(), "action": "Retry managed DragonCore check", "last_error": str(exc)[:500],
-            }
-            return
-        rows[key] = {
-            "component": label,
-            "installed_version": str(status.get("installed_version") or ""),
-            "available_version": str(status.get("available_version") or ""),
-            "update_available": bool(status.get("update_available")),
-            "restart_required": bool(status.get("restart_required", True)),
-            "status": str(status.get("status") or "unknown"),
-            "checked_at": time.time(),
-            "action": "Update managed DragonCore",
-            "path": str(status.get("path") or ""),
-        }
-
-    game_dir = str(application.get("game_dir") or "").strip()
-    if game_dir:
-        try:
-            client_layout = _legacy.resolve_client_layout(game_dir)
-            if client_layout.game_root.exists():
-                row_for("dragoncore_client", "DragonCore · Client", client_layout.ue4ss_mods_dir)
-        except Exception:
-            pass
-
-    install_dir = str((application.get("server_install") or {}).get("install_dir") or "").strip()
-    if install_dir:
-        try:
-            server_layout = _legacy.resolve_server_layout(install_dir)
-            if server_layout.game_root.exists():
-                row_for("dragoncore_server", "DragonCore · Server", server_layout.ue4ss_mods_dir)
-        except Exception:
-            pass
-    return rows
-
-
 def _sync_update_notifications(state: dict) -> list[dict]:
     """Build one persisted update model consumed by desktop and WebGUI."""
     application = state.setdefault("application", {})
@@ -348,21 +313,16 @@ def _sync_update_notifications(state: dict) -> list[dict]:
     }
     updates["runeschema"] = _managed_updates.runeschema_status(application, server_stack)
 
-    dragoncore_rows = _dragoncore_update_rows(state)
-    for stale_key in ("dragoncore_client", "dragoncore_server"):
-        if stale_key not in dragoncore_rows:
-            updates.pop(stale_key, None)
-    updates.update(dragoncore_rows)
+    updates.pop("dragoncore_client", None)
+    updates.pop("dragoncore_server", None)
 
     titles = {
         "game": "Dragonwilds Game Update",
         "server": "Dedicated Server Update",
         "core_mod": "UE4SS Core Update",
         "runeschema": "RuneSchema Core Update",
-        "dragoncore_client": "DragonCore Client Update",
-        "dragoncore_server": "DragonCore Server Update",
     }
-    for key in ("game", "server", "core_mod", "runeschema", "dragoncore_client", "dragoncore_server"):
+    for key in ("game", "server", "core_mod", "runeschema"):
         row = updates.get(key)
         if not isinstance(row, dict) or not row.get("update_available"):
             continue
@@ -626,13 +586,13 @@ def handle(method: str, params: dict) -> object:
         _refresh_managed_update_state(state, profile_id)
         _legacy.save_state(state)
         updates = dict(state.setdefault("application", {}).get("update_status") or {})
-        return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "runeschema", "dragoncore_client", "dragoncore_server"}},
+        return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "runeschema"}},
                 "state": _legacy.public_state(state)}
 
     if method == "application.core_mod.update":
-        component = str(params.get("component") or "dragoncore").strip().casefold().replace("_", "")
-        if component not in {"dragoncore", "ue4ss", "runeschema"}:
-            raise ValueError("Managed core component must be DragonCore, UE4SS, or RuneSchema.")
+        component = str(params.get("component") or "ue4ss").strip().casefold().replace("_", "")
+        if component not in {"ue4ss", "runeschema"}:
+            raise ValueError("Managed core component must be UE4SS or RuneSchema.")
         target = str(params.get("target") or "server").strip().casefold()
 
         if target == "server":
@@ -646,11 +606,7 @@ def handle(method: str, params: dict) -> object:
                 raise ValueError("Set Settings → Server → Server Directory first.")
             restart = bool(params.get("restart", False))
 
-            if component == "dragoncore":
-                layout = _legacy.resolve_server_layout(install_dir)
-                installer = lambda: _dragon_core.materialize(layout.ue4ss_mods_dir, profile.get("dragon_core"), mode="Server")
-                label = "DragonCore"
-            elif component == "ue4ss":
+            if component == "ue4ss":
                 source = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or _managed_updates.DEFAULT_UE4SS_SOURCE).strip()
                 installer = lambda: _legacy_handle("server.install.ue4ss_update", {"releases_url": source})
                 label = "UE4SS"
@@ -683,13 +639,8 @@ def handle(method: str, params: dict) -> object:
                 raise ValueError("Set the Dragonwilds game folder first.")
             layout = _legacy.resolve_client_layout(game_dir)
             profile_id = str(state.setdefault("client", {}).get("live_world_id") or state["client"].get("active_private_world_id") or _legacy.SINGLEPLAYER_ID)
-            if component == "dragoncore":
-                profile = _legacy.load_singleplayer_profile(profile_id)
-                result = _dragon_core.materialize(layout.ue4ss_mods_dir, (profile or {}).get("dragon_core"), mode="Player")
-                label = "DragonCore"
-            else:
-                result = _managed_updates.install_client_core(component, str(layout.game_root), state.setdefault("application", {}), params)
-                label = "UE4SS" if component == "ue4ss" else "RuneSchema"
+            result = _managed_updates.install_client_core(component, str(layout.game_root), state.setdefault("application", {}), params)
+            label = "UE4SS" if component == "ue4ss" else "RuneSchema"
             refreshed = _legacy.load_state()
             # install_client_core mutates the in-memory application's managed
             # version evidence; copy it into the freshly loaded state before save.

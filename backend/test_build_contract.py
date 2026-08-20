@@ -30,6 +30,12 @@ def main():
     assert '$probeInput' in text and '$probeOutput' in text
     assert 'Testing packaged Ed25519 generation' in text
     assert 'application.cryptography.status' in text and 'invalid_signature_rejected' in text
+    assert "build-service\\packaged-probe-appdata" in text, "packaged service probes must use build-local disposable AppData"
+    assert "$env:DRAGONWILDS_SYNC_APPDATA = $probeAppData" in text, "packaged service probes must not use real user AppData"
+    assert "GetEnvironmentVariable('DRAGONWILDS_SYNC_APPDATA', 'Process')" in text, "build must preserve any caller-provided AppData override"
+    assert "Remove-Item Env:DRAGONWILDS_SYNC_APPDATA" in text, "build must restore an originally unset AppData override"
+    assert "$env:DRAGONWILDS_SYNC_APPDATA = $previousProbeAppData" in text, "build must restore an existing AppData override"
+    assert 'finally {' in text and 'Remove-Item -LiteralPath $probeAppData -Recurse -Force -ErrorAction SilentlyContinue' in text
 
     required = [
         "backend\\server_systems.py", "backend\\health_model.py", "backend\\integrations.py",

@@ -1,10 +1,9 @@
-Dragonwilds Sync community TXT templates
+Dragonwilds Sync community metadata templates
 
-TAGS.TXT
-- Optional metadata file for normal UE4SS mods and normal PAK mods.
-- Tags are separated by semicolons.
-- #, // and ;; comment lines are ignored.
-- Dragonwilds Sync consolidates detected tags for World/server presentation.
+ID.TXT
+- Canonical metadata file for UE4SS, RuneSchema, and directory mods.
+- Carries identity, author, runtime role, hotload capability, and tags together.
+- Historical identity.txt, tags.txt, and hotload.txt remain readable but are not generated.
 
 ENABLED.TXT
 - Intentionally blank.

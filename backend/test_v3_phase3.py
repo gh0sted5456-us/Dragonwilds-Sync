@@ -39,6 +39,14 @@ def main() -> None:
         assert "Schema: DragonwildsSync.ID.v1" in rendered
         assert "PersistenceID" in rendered
         assert CANONICAL_FILENAME == "ID.txt"
+        ini_identity = root / "IniMod"; ini_identity.mkdir()
+        (ini_identity / "id.TXT").write_text(
+            "[Mod]\nModId=ini.mod\nName=INI Mod\nRuntimeRole=client\nHotloadCapable=true\nTags=visual; client\n",
+            encoding="utf-8",
+        )
+        parsed_ini = read_identity(ini_identity)
+        assert parsed_ini["mod_id"] == "ini.mod" and parsed_ini["runtime_role"] == "client"
+        assert parsed_ini["hotload_capable"] is True and parsed_ini["tags"] == ["visual", "client"]
         mixed.unlink(); legacy = mod_root / "identities.txt"; legacy.write_text("Modder: Legacy Author\nWebsite: https://example.invalid\n", encoding="utf-8")
         assert read_identity(mod_root)["legacy"] is True
 

@@ -286,6 +286,20 @@ class FeatureWorker:
         self.last_active_at = time.time()
         if action == "domain.info":
             return {"domain": self.domain, **FEATURE_WORKER_DOMAINS[self.domain]}
+        if action == "domain.warm":
+            # Imports initialize each feature graph without granting it any
+            # settings, lifecycle, or World Runtime Worker authority.
+            modules = {
+                "world-management": ("world_maintenance",),
+                "save-studio": ("world_save_editor", "character_profiles"),
+                "mod-library": ("rsdw_cache", "shared_mod_repository"),
+                "directory-map": ("map_updater",),
+                "exchange-maintenance": ("v3_exchange", "website_draft_import", "trash_store"),
+                "diagnostics": ("network_benchmark", "security_scanner"),
+            }.get(self.domain, ())
+            for module in modules:
+                __import__(module)
+            return {"domain": self.domain, "ready": True, "modules": list(modules)}
         if self.domain == "directory-map":
             return self._execute_directory_map(action, params)
         if self.domain == "save-studio":

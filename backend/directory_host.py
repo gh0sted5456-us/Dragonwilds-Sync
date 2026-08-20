@@ -1139,9 +1139,13 @@ class DirectoryHost:
                     query = urllib.parse.parse_qs(parsed_url.query, keep_blank_values=True)
                     self._json(controller.admin_payload(page=_positive_page((query.get("page") or [1])[0])), cors=False); return
                 if path == "/":
-                    if self._private_console_allowed(): page = _admin_console_html(controller.admin_token)
-                    elif not directory_enabled and remote_enabled:
+                    # Remote-only composition has exactly one human-facing
+                    # surface. This check must precede the localhost private
+                    # console allowance or opening the listener on its owner PC
+                    # briefly exposes the complete directory/admin site.
+                    if not directory_enabled and remote_enabled:
                         self.send_response(302); self.send_header("Location", "/admin/login"); self.send_header("Content-Length", "0"); self.end_headers(); return
+                    if self._private_console_allowed(): page = _admin_console_html(controller.admin_token)
                     else: page = _blackout_html() if surface == "blackout" else _public_landing_html()
                     self._send(page, "text/html; charset=utf-8", cors=False); return
                 self._json({"error": "not found"}, 404)

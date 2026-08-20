@@ -296,6 +296,10 @@ def profile_world_shape(profile: dict) -> dict:
         "status": {"online": True, "local": True, "broadcasting": bool(profile.get("broadcasting", False)), "sync_port": int(cfg.get("sync_port") or 27051), "last_error": ""},
         "credentials": {}, "connection": {},
         "dragon_core": profile.get("dragon_core") or {},
+        # Persisted inventory is renderer-safe profile metadata. Exposing it on
+        # the World projection lets the Mods tab paint immediately; filesystem
+        # verification still happens through the authoritative inventory RPC.
+        "metadata_cache": profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {},
     }
 
 

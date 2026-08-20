@@ -14,7 +14,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     items: [
       'One World Management workspace covers Singleplayer, Co-Op, dedicated, manifest, and favorited Worlds with clear mode/source banners, save discovery, conversion, Game Setup, and Server Setup.',
       'Vortex-style World profiles live under LocalAppData/DragonwildsSync/profiles/world and retain recoverable metadata, configuration, UE4SS/RuneSchema mods, PAKs, managed files, and activeworld identity for full profile exchange.',
-      'Mod management supports UE4SS, RuneSchema, PAKs, optional Nexus provenance, drag-and-drop numbered load order, automatic mods.txt repair, hotload.txt, tags.txt, rollback, and client synchronization.',
+      'Mod management supports UE4SS, RuneSchema, PAKs, optional Nexus provenance, drag-and-drop numbered load order, automatic mods.txt repair, canonical ID.txt metadata, rollback, and client synchronization.',
       'Settings → Mod Management provides one canonical UE4SS/RuneSchema/PAK repository across all Private Worlds and Server Profiles; explicit Publish & Push includes newly added schema/config files while preserving profile-specific enablement and order.',
       'Loaded Private Worlds and stopped hosted Worlds can be unloaded from their right-click menu: changes are snapshotted first, then World-owned files are cleared back to the shared runtime-core baseline.',
       'Nexus website downloads open inside an isolated application browser and completed ZIP/7z archives enter the same staging, conversion, inspection, backup, install, and provenance flow as authorized direct downloads.',
@@ -24,7 +24,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
       'Existing dedicated-server adoption detects UE4SS, RuneSchema, and nested PAK mod groups, asks before copying them into the selected World Profile, and correctly resolves official SteamCMD installs whose real game root is the nested RSDragonwilds directory.',
       'mods.txt and dwmapi.dll are hidden runtime/control infrastructure rather than distracting mod entries; a client-safe mods.txt is automatically pushed whenever a World presents UE4SS mods.',
       'Each server mod now has an always-visible Mod Mode selector; mode changes persist immediately without rescanning a remote server share and remain pending until the explicit Publish & Push action.',
-      'Managed mods receive an editable identity.txt contract for Modder and Nexus metadata; legacy uppercase IDENTITY.txt remains compatible.',
+      'Managed mods receive one editable ID.txt contract for identity, tags, runtime role, hotload capability, and custom items; legacy metadata remains readable.',
       'Resizable in-app windows now fill their resized frame and minimize reliably to the in-app taskbar.',
       'RSDW refreshes maintain an atomic full upstream icon manifest while custom item icon bindings remain preserved separately.',
       'The detachable Mod Explorer provides Edit, Copy, and confirmed Delete from each file context menu while keeping every operation inside the selected mod root.',

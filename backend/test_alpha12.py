@@ -117,7 +117,7 @@ def main():
 
     project_root = Path(__file__).resolve().parents[1]
     assert (project_root / "resources" / "RuneSchema-core-latest.zip").is_file()
-    assert (project_root / "resources" / "tags.example.txt").is_file()
+    assert (project_root / "resources" / "ID.example.txt").is_file()
     print("alpha 12 consolidated systems tests passed")
 
 

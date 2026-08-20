@@ -306,6 +306,9 @@ def handle(method: str, params: dict) -> object:
     # and orchestration surfaces; feature actions remain an allowlisted worker API.
     if method == "feature.worker.list":
         return _feature_workers().list_status()
+    if method == "feature.worker.prepare":
+        domains = params.get("domains") if isinstance(params.get("domains"), list) else None
+        return _feature_workers().prepare(domains, owner=str(params.get("owner") or "launcher-splash"))
     if method == "feature.worker.status":
         return _feature_workers().status(_feature_domain(params))
     if method == "feature.worker.acquire":

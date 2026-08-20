@@ -185,11 +185,6 @@
     if (!method || event?.background) return;
     if (event.phase === 'start') {
       activeRequests.set(key, { method, started: now() });
-      const timer = setTimeout(() => {
-        delayedIndicators.delete(key);
-        if (activeRequests.has(key)) showIndicator(key, method);
-      }, 220);
-      delayedIndicators.set(key, timer);
       return;
     }
     if (event.phase === 'cache' || event.phase === 'dedupe') {

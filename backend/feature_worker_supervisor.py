@@ -14,6 +14,7 @@ import subprocess
 import sys
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from feature_worker_protocol import (
@@ -43,6 +44,7 @@ class FeatureWorkerSupervisor:
         self.idle_seconds = max(5.0, min(float(idle_seconds or DEFAULT_IDLE_SECONDS), 3600.0))
         self._children: dict[str, subprocess.Popen] = {}
         self._leases: dict[str, set[str]] = {}
+        self._held_leases: dict[tuple[str, str], str] = {}
 
     @staticmethod
     def _worker_command(domain: str, worker_id: str, auth_ref: str, parent_pid: int, idle_seconds: float) -> list[str]:
@@ -261,6 +263,48 @@ class FeatureWorkerSupervisor:
             except Exception:
                 pass
 
+    def hold(self, domain: str, owner: str = "launcher") -> dict:
+        """Keep one deduplicated lease for an app-owned feature workspace."""
+        domain = safe_domain(domain)
+        owner = str(owner or "launcher")[:120]
+        key = (domain, owner)
+        lease_id = self._held_leases.get(key)
+        state = self.reconcile(domain)
+        if lease_id and state.get("attached"):
+            return {"domain": domain, "leaseId": lease_id, "status": self.status(domain), "reused": True}
+        lease = self.acquire(domain, owner)
+        self._held_leases[key] = lease["leaseId"]
+        return {**lease, "reused": False}
+
+    def prepare(self, domains: list[str] | None = None, owner: str = "launcher-splash") -> dict:
+        """Start and import app feature workspaces in parallel for instant tabs."""
+        requested = domains or [
+            "world-management", "save-studio", "mod-library", "directory-map",
+            "exchange-maintenance", "diagnostics",
+        ]
+        selected = list(dict.fromkeys(safe_domain(value) for value in requested))
+
+        def warm(domain: str) -> dict:
+            lease = self.hold(domain, owner)
+            state = self.reconcile(domain)
+            response = self._require_ok(self._call(state, "EXECUTE", {
+                "leaseId": lease["leaseId"], "action": "domain.warm", "params": {},
+            }), "prepare")
+            return {"domain": domain, **self._read_result_ref(domain, response)}
+
+        rows = []
+        with ThreadPoolExecutor(max_workers=min(4, max(1, len(selected)))) as pool:
+            futures = {pool.submit(warm, domain): domain for domain in selected}
+            for future in as_completed(futures):
+                domain = futures[future]
+                try:
+                    rows.append(future.result())
+                except Exception as exc:
+                    rows.append({"domain": domain, "ready": False, "error": str(exc)[:300]})
+        rows.sort(key=lambda row: selected.index(row["domain"]))
+        return {"ready": all(row.get("ready") for row in rows), "prepared": rows,
+                "readyCount": sum(1 for row in rows if row.get("ready")), "requested": len(rows)}
+
     def stop(self, domain: str, *, force: bool = False) -> dict:
         domain = safe_domain(domain)
         state = self.reconcile(domain)
@@ -293,6 +337,8 @@ class FeatureWorkerSupervisor:
             raise TimeoutError("Feature worker did not stop gracefully within the timeout.")
         self._children.pop(domain, None)
         self._leases.pop(domain, None)
+        for key in [key for key in self._held_leases if key[0] == domain]:
+            self._held_leases.pop(key, None)
         return {"domain": domain, "workerId": state.get("workerId"), "state": "stopped", "live": False,
                 "graceful": bool(response.get("ok"))}
 

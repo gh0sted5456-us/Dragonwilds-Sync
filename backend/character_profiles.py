@@ -1340,6 +1340,18 @@ def read_native_rsdw_tool(text: str, tool: str, custom_items: list[dict] | None 
     return {"native_tool": native_rsdw_tool_state(value, tool, custom_items)}
 
 
+def read_native_rsdw_tools(text: str, tools: list[str] | None = None, custom_items: list[dict] | None = None) -> dict:
+    """Parse one character document once and hydrate its linked editor tabs."""
+    value = _parse_native_tool_text(text)
+    requested = tools or ["item-editor", "spell-editor", "recipe-unlocker", "quest-editor"]
+    result: dict[str, dict] = {}
+    for tool in requested:
+        key = str(tool or "").strip()
+        if key and key != "character-editor":
+            result[key] = native_rsdw_tool_state(value, key, custom_items)
+    return {"native_tools": result}
+
+
 def preview_character_from_toolkit(text: str) -> dict:
     """Hydrate avatar state from unsaved RSDWTools output without touching disk."""
     if len(str(text or "").encode("utf-8")) > MAX_CHARACTER_BYTES:

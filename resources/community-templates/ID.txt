@@ -1,0 +1,10 @@
+# Dragonwilds Sync ID v1
+Schema: DragonwildsSync.ID.v1
+ModId: example-community-mod
+Name: Example Community Mod
+Version: 1.0.0
+Author: Your Modder Name
+RuntimeRole: both
+HotloadCapable: false
+Tags: QoL; Storage
+Nexus: https://www.nexusmods.com/runescapedragonwilds/mods/0000

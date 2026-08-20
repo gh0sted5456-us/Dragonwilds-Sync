@@ -177,7 +177,7 @@ def test_hotload_tags_and_language_contract() -> None:
         (root / "tags.json").write_text(json.dumps({"tags": ["server", "adventure"]}), encoding="utf-8")
         assert mod_tags.tags_from_mod_root(root) == ["server", "adventure"]
         mod_tags.set_hotload_marker(root, True)
-        assert (root / "hotload.txt").is_file() and mod_tags.hotload_capable_from_root(root)
+        assert (root / "ID.txt").is_file() and mod_tags.hotload_capable_from_root(root)
         mod_tags.set_hotload_marker(root, False)
         assert not mod_tags.hotload_capable_from_root(root)
         pak = Path(td) / "01_ExpandedLoot.pak"; pak.write_bytes(b"pak")
@@ -203,7 +203,8 @@ def test_hotload_tags_and_language_contract() -> None:
         assert strict["tags"] == [] and strict["hotload_capable"] is False
         mod_tags.set_tags_file(rs_root, ["runeschema", "loot"]); mod_tags.set_hotload_marker(rs_root, True)
         assert mod_tags.tags_from_mod_root(rs_root) == ["runeschema", "loot"]
-        assert (rs_root / "tags.txt").is_file() and (rs_root / "hotload.txt").is_file()
+        assert (rs_root / "ID.txt").is_file()
+        assert not (rs_root / "tags.txt").exists() and not (rs_root / "hotload.txt").exists()
     fingerprint = server_systems.world_sync_fingerprint("tag-world")
     heartbeat = world_directory.normalize_heartbeat({"protocol": world_directory.PROTOCOL, "fingerprint": fingerprint, "world_name": "Tag World", "internal_ip": "192.168.1.2", "tags": ["combat", "loot"]})
     assert heartbeat and heartbeat["tags"] == ["combat", "loot"]

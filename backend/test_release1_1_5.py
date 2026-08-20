@@ -33,7 +33,7 @@ def test_character_and_world_ui_contract():
     assert "${tabButton('spawner',t('spawner'))}" not in renderer
     assert "studio-combat-first" in renderer and "studio-combined-summary" in renderer
     assert "character-studio-tabs" not in renderer
-    assert '<webview id="rsdw-avatar-webview"' not in renderer
+    assert '<webview id="rsdw-avatar-webview"' in renderer and 'native-avatar-section' in renderer
     assert "resize:both" in styles and ".desktop-window.minimized { display:none !important; }" in styles
 
 

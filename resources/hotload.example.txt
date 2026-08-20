@@ -1,2 +1,0 @@
-# Rename to hotload.txt and place in a UE4SS or RuneSchema mod root.
-# The file is a capability marker; its contents are intentionally ignored.

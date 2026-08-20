@@ -1,0 +1,31 @@
+/* Final compatibility/readiness layer: card artwork, local progress and save feedback. */
+.world-card:has(>.world-placard-backdrop){isolation:isolate;background:#0d1111!important}
+.world-card:has(>.world-placard-backdrop)>.world-card-banner,
+.world-card:has(>.world-placard-backdrop)>.world-card-banner-fallback{display:none!important}
+.world-card:has(>.world-placard-backdrop)>.world-placard-backdrop{
+  position:absolute!important;inset:0!important;width:100%!important;height:100%!important;
+  z-index:0!important;object-fit:cover!important;object-position:center!important;opacity:.62!important;
+  filter:saturate(.88) contrast(1.02) brightness(.7)!important;animation:none!important;transform:none!important
+}
+.world-card:has(>.world-placard-backdrop)::after{
+  content:"";position:absolute;inset:0;z-index:0!important;pointer-events:none;
+  background:linear-gradient(180deg,rgba(6,9,9,.16),rgba(7,10,10,.5) 34%,rgba(7,10,10,.94) 72%,#090d0d 100%)!important
+}
+.world-card:has(>.world-placard-backdrop)>*:not(.world-placard-backdrop){position:relative;z-index:1}
+.world-card:has(>.world-placard-backdrop)>.world-card-body{padding-top:82px;background:transparent!important}
+.world-card:has(>.world-placard-backdrop) .world-icon{top:14px}
+.world-card:has(>.world-placard-backdrop) .card-topline{min-height:58px;padding-left:78px}
+
+.startup-progress,.subapp-progress{width:min(420px,100%);height:7px;margin:14px auto 0;overflow:hidden;border:1px solid rgba(203,158,73,.48);border-radius:999px;background:rgba(0,0,0,.38)}
+.startup-progress>i,.subapp-progress>i{display:block;height:100%;width:4%;border-radius:inherit;background:linear-gradient(90deg,#886222,#e5b75e,#fff0ae);box-shadow:0 0 14px rgba(229,183,94,.5);transition:width .24s ease}
+.subapp-progress{margin-top:8px}
+.native-avatar-section{display:grid;gap:12px}.native-avatar-section .rsdw-avatar-pane{width:100%;min-height:0}.native-avatar-section .rsdw-avatar-stage-shell{height:clamp(480px,58vh,720px)!important;min-height:420px!important}.native-avatar-section .rsdw-avatar-actions label{display:flex;align-items:center;gap:8px;font-size:8px;color:var(--muted)}.native-avatar-section .rsdw-avatar-actions .select{width:auto;min-width:120px}
+.btn.save-confirmed{border-color:#68bd84!important;background:#245d39!important;color:#f2fff6!important;box-shadow:0 0 0 2px rgba(104,189,132,.16),0 0 18px rgba(104,189,132,.22)!important}
+.sync-home-frame{height:clamp(560px,72vh,900px);overflow:hidden;border:1px solid var(--border);border-radius:14px;background:#070b0b}.sync-home-frame webview{display:flex;width:100%;height:100%}
+
+/* Retired navigation is excluded by CSS at insertion time. Compatibility
+   observers still protect older markup, but users never see a one-frame tab. */
+[data-route="shared-worlds"],[data-nav-route="shared-worlds"],[data-settings-tab="external"],[data-external-tab],.dws-v2-retired-remote-entry,.rc2-retired{display:none!important}
+
+@media(max-width:760px){.world-card:has(>.world-placard-backdrop)>.world-card-body{padding-top:66px}}
+@media(prefers-reduced-motion:reduce){.startup-progress>i,.subapp-progress>i,.btn.save-confirmed{transition:none}}

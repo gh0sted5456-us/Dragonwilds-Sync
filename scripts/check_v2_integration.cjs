@@ -18,6 +18,8 @@ const routing = read('backend/v2_remote_routing.py');
 const cache = read('backend/rsdw_cache.py');
 const spawner = read('backend/spawner_catalog.py');
 const trash = read('backend/trash_store.py');
+const appV2 = read('renderer/app-v2.js');
+const directoryHost = read('backend/directory_host.py');
 const registry = JSON.parse(read('docs/upstream-sources.json'));
 
 must(index.includes('release-v2-integration.css') && index.includes('release-v2-integration.js'), 'Final V2 presentation layer is not loaded');
@@ -30,6 +32,8 @@ must(css.includes('data-dws-icon-mode="color"') && css.includes('data-dws-icon-m
 must(js.includes('data-webhost-tab="remote"') && js.includes('remoteEnabled') && js.includes('webHostActivated'), 'Unified WebHost Remote Server/Declared visibility contract is missing');
 must(js.includes('Users & Permissions') && js.includes('application.world_directory_host.user.create'), 'Remote Server user/permission manifest is not surfaced in WebHost');
 must(remoteLifecycle.includes('payload.enabled=remoteEnabled') && remoteLifecycle.includes('payload.directory_enabled=false'), 'Remote-only listener does not release when Remote Server is disabled');
+must(directoryHost.indexOf('if not directory_enabled and remote_enabled:') < directoryHost.indexOf('if self._private_console_allowed(): page = _admin_console_html'), 'Remote-only root must resolve to login before local private-console authority');
+must(appV2.includes('data-webhost-tab="home"') && appV2.includes('https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html'), 'Official Sync Home tab is missing');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');
 must(!web.includes('dws-router-password'), 'The routing hub must never collect a target server password');
 must(service.includes('_legacy_handle = _legacy.handle'), 'V2 service wrapper must preserve the original handler before patching recursion');
@@ -49,6 +53,6 @@ must(trashUi.includes('section.dataset.stamp') && trashUi.includes('mounting'), 
 for (const file of ['docs/changelog.json','docs/changelog.html','docs/recommended-mods.json','docs/recommended-mods.html','help/manifest.json','renderer/assets/dragonwilds_icon.ico']) {
   must(exists(file), `Required V2 resource is missing: ${file}`);
 }
-must(exists('renderer/assets/platforms/steam.svg') && exists('renderer/assets/platforms/discord.svg') && exists('renderer/assets/platforms/nexusmods.svg') && exists('renderer/assets/platforms/windows.svg') && exists('renderer/assets/platforms/linux.svg'), 'Core platform/community icons are incomplete');
+must(exists('renderer/assets/platforms/steam.svg') && exists('renderer/assets/platforms/discord.svg') && exists('renderer/assets/platforms/nexusmods.svg') && exists('renderer/assets/platforms/windows.svg') && exists('renderer/assets/platforms/linux.svg') && exists('renderer/assets/platforms/xbox.svg') && exists('website/assets/platforms/xbox.svg'), 'Core platform/community icons are incomplete');
 
 console.log('V2 integration contract: PASS');

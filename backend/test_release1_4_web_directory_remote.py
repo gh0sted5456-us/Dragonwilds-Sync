@@ -133,6 +133,10 @@ def test_public_catalog_remote_login_audit_and_structured_action():
                 assert exc.code == 400
                 assert "not granted" in json.load(exc)["error"]
             controller.config = directory_host.normalize_host_config({**controller.config, "directory_enabled": False, "remote_admin": {**controller.config["remote_admin"], "enabled": True}})
+            with urllib.request.urlopen(base + "/") as response:
+                remote_only_root = response.read()
+                assert response.geturl().endswith("/admin/login")
+            assert b"Sign in to a World" in remote_only_root and b"Private Directory Administration" not in remote_only_root
             with urllib.request.urlopen(base + "/servers") as response:
                 remote_only_page = response.read()
                 assert response.geturl().endswith("/admin/login")

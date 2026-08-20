@@ -44,6 +44,7 @@ def main() -> None:
         assert result_a["tags"] == ["combat", "nexus-ready"] and result_a["hotload_capable"] is True
         assert not (inner / "Binaries/Win64/ue4ss/Mods/Zulu/enabled.txt").exists()
         assert (inner / "Binaries/Win64/ue4ss/Mods/Zulu/hotload.txt").is_file()
+        assert (inner / "Binaries/Win64/ue4ss/Mods/Zulu/ID.txt").is_file()
 
         zip_b = root / "Alpha.zip"
         make_zip(zip_b, {"Alpha/Scripts/main.lua": "return true", "Alpha/enabled.txt": ""})
@@ -57,8 +58,8 @@ def main() -> None:
         # Every managed directory mod carries editable launcher metadata, even
         # when hotload is disabled and no tags have been assigned yet.
         alpha_root = inner / "Binaries/Win64/ue4ss/Mods/Alpha"
-        assert (alpha_root / "hotload.txt").is_file() and not lw.hotload_capable_from_root(alpha_root)
-        assert (alpha_root / "tags.txt").is_file()
+        assert (alpha_root / "ID.txt").is_file() and not lw.hotload_capable_from_root(alpha_root)
+        assert not (alpha_root / "hotload.txt").exists() and not (alpha_root / "tags.txt").exists()
 
         # Normal PAKs receive physical numeric load-order prefixes.
         pak_a = root / "FirstPak.zip"; make_zip(pak_a, {"First.pak": b"pak-one", "First.tags.json": '{"tags":["visual","pve"]}'})
@@ -85,6 +86,7 @@ def main() -> None:
         assert (rs_root / "raw/items.json").is_file()
         assert (rs_root / "BetterLoot/BetterLoot.pak").is_file()
         assert (rs_root / "tags.txt").is_file() and (rs_root / "hotload.txt").is_file()
+        assert (rs_root / "ID.txt").is_file()
         assert not (rs_root / "BetterLoot/tags.txt").exists() and not (rs_root / "BetterLoot/hotload.txt").exists()
         assert rs_result["tags"] == ["loot", "runeschema"] and rs_result["hotload_capable"] is True
         assert not any(p.name.startswith("01_") for p in rs_root.parent.iterdir())

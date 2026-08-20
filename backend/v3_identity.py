@@ -94,7 +94,7 @@ def parse_id_text(text: str, *, source_name: str = "") -> dict:
         "source_filename": source_name,
         "legacy": str(source_name or "").casefold() in {x.casefold() for x in LEGACY_FILENAMES},
         "mod_id": "", "name": "", "version": "", "revision": "",
-        "description": "", "runtime_role": "both", "author": "", "tags": [],
+        "description": "", "runtime_role": "both", "hotload_capable": False, "author": "", "tags": [],
         "links": [], "items": [],
     }
     seen_tags: set[str] = set()
@@ -103,9 +103,13 @@ def parse_id_text(text: str, *, source_name: str = "") -> dict:
         line = raw_line.strip()
         if not line or line.startswith(("#", ";;", "//")):
             continue
-        if ":" not in line:
+        if line.startswith("[") and line.endswith("]"):
             continue
-        key, value = line.split(":", 1)
+        separators = [(line.find(token), token) for token in (":", "=") if line.find(token) >= 0]
+        if not separators:
+            continue
+        _, separator = min(separators)
+        key, value = line.split(separator, 1)
         key_norm = _norm_key(key)
         value = value.strip()
         if not value:
@@ -142,6 +146,8 @@ def parse_id_text(text: str, *, source_name: str = "") -> dict:
             aliases = {"host": "server", "dedicated": "server", "clientonly": "client", "serveronly": "server"}
             role = aliases.get(role, role)
             result["runtime_role"] = role if role in {"client", "server", "both", "tooling"} else "both"
+        elif key_norm in {"hotload", "hotloadcapable", "liveediting", "liveedit"}:
+            result["hotload_capable"] = value.casefold() in {"1", "true", "yes", "on", "enabled"}
         elif key_norm in {"tags", "tag"}:
             for tag in re.split(r"[;,]", value):
                 clean = _clean_scalar(tag, 40)
@@ -182,6 +188,7 @@ def render_id_text(identity: dict) -> str:
         ("Revision", value.get("revision") or value.get("Revision")),
         ("Author", value.get("author") or value.get("Author")),
         ("RuntimeRole", value.get("runtime_role") or value.get("RuntimeRole") or "both"),
+        ("HotloadCapable", "true" if bool(value.get("hotload_capable") or value.get("HotloadCapable")) else "false"),
         ("Description", value.get("description") or value.get("Description")),
     )
     for label, raw in fields:

@@ -21,7 +21,8 @@ def main():
     assert tags == ["QoL", "Storage", "Hotload"]
     assert (ROOT / "resources/community-templates/enabled.txt").read_bytes() == b""
     assert "ExampleUE4SSMod : 1" in (ROOT / "resources/community-templates/mods.txt").read_text(encoding="utf-8")
-    assert "QoL;Storage" in (ROOT / "resources/community-templates/tags.txt").read_text(encoding="utf-8")
+    identity_template = (ROOT / "resources/community-templates/ID.txt").read_text(encoding="utf-8")
+    assert "Tags:" in identity_template and "HotloadCapable:" in identity_template
 
     assert not (ROOT / "resources/webhost/shared-worlds.json").exists()
 
@@ -30,7 +31,8 @@ def main():
     assert "application-github-url" not in renderer
     assert "check-application-update" in renderer and "update-application-now" in renderer
     assert "https://github.com/gh0sted5456-us/Dragonwilds-Sync" in renderer
-    assert "character-studio-tabs" not in renderer and '<webview id="rsdw-avatar-webview"' not in renderer
+    assert "character-studio-tabs" not in renderer
+    assert '<webview id="rsdw-avatar-webview"' in renderer and 'native-avatar-section' in renderer
     assert "splash-update-now" in renderer and "splash-changelog-dismiss" in renderer
     assert "World Discovery" in renderer and "toggle-multiple-servers" in renderer
 
@@ -51,7 +53,7 @@ def main():
     assert 'headers["Authorization"] = f"Bearer {token}"' in world_sharing
 
     assert (ROOT / "docs/GITHUB_RELEASES.md").is_file()
-    assert "Modder:" in (ROOT / "resources/community-templates/identity.txt").read_text(encoding="utf-8")
+    assert "Author:" in identity_template and "RuntimeRole:" in identity_template
     assert not (ROOT / "docs/SHARED_WORLDS_WEBHOST.md").exists()
     assert (ROOT / "backend/profile_bundle.py").is_file()
     print("Release 1 baseline compatibility tests passed")

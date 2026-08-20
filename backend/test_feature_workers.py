@@ -96,6 +96,16 @@ def main() -> None:
         rsdw = supervisor.execute("mod-library", "rsdw.status", {}, owner="feature-worker-test")
         assert isinstance(rsdw, dict)
 
+        # Splash preparation holds one parent-owned lease per workspace and
+        # repeated preparation remains deduplicated rather than spawning or
+        # leasing another subprocess for every tab visit.
+        prepared = supervisor.prepare(["save-studio", "mod-library"], owner="feature-worker-test-splash")
+        assert prepared["ready"] is True and prepared["readyCount"] == 2
+        prepared_again = supervisor.prepare(["save-studio", "mod-library"], owner="feature-worker-test-splash")
+        assert prepared_again["ready"] is True
+        assert int(supervisor.status("save-studio").get("leaseCount") or 0) == 1
+        assert int(supervisor.status("mod-library").get("leaseCount") or 0) == 1
+
         stopped_map = supervisor.stop("directory-map", force=True)
         stopped_save = supervisor.stop("save-studio", force=True)
         stopped_world = supervisor.stop("world-management", force=True)

@@ -31,7 +31,7 @@ from integrations import link_nexus_source, mark_nexus_check, merge_integrations
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
                                 list_starter_characters, add_starter_character, remove_starter_character, edit_json_character,
-                                read_character_for_toolkit, preview_character_from_toolkit, apply_native_character_editor, read_native_rsdw_tool, apply_native_rsdw_tool, write_character_from_toolkit, clone_character, delete_character,
+                                read_character_for_toolkit, preview_character_from_toolkit, apply_native_character_editor, read_native_rsdw_tool, read_native_rsdw_tools, apply_native_rsdw_tool, write_character_from_toolkit, clone_character, delete_character,
                                 resolve_archetype_loadout, apply_archetype_loadout)
 from network_benchmark import benchmark_due, benchmark_history, lightweight_latency, run_daily_benchmark
 from client_layout import resolve_client_layout
@@ -535,7 +535,7 @@ def _editable_world_save(state: dict, kind: str, profile_id: str) -> Path:
 def _private_profile_id(state: dict, params: dict | None = None) -> str:
     params = params if isinstance(params, dict) else {}
     ensure_singleplayer_state(state)
-    wanted = str(params.get("id") or state.setdefault("client", {}).get("active_private_world_id") or SINGLEPLAYER_ID)
+    wanted = str(params.get("profile_id") or params.get("id") or state.setdefault("client", {}).get("active_private_world_id") or SINGLEPLAYER_ID)
     ids = {str(w.get("id") or "") for w in (state.get("client", {}).get("private_worlds") or [])}
     return wanted if wanted in ids else SINGLEPLAYER_ID
 
@@ -2895,6 +2895,11 @@ def handle(method: str, params: dict) -> object:
     if method == "characters.native.tool.read":
         custom_items = list((state.get("application") or {}).get("custom_items") or [])
         return read_native_rsdw_tool(str(params.get("text") or ""), str(params.get("tool") or ""), custom_items)
+
+    if method == "characters.native.tools.read":
+        custom_items = list((state.get("application") or {}).get("custom_items") or [])
+        tools = params.get("tools") if isinstance(params.get("tools"), list) else None
+        return read_native_rsdw_tools(str(params.get("text") or ""), tools, custom_items)
 
     if method == "characters.native.tool.preview":
         custom_items = list((state.get("application") or {}).get("custom_items") or [])

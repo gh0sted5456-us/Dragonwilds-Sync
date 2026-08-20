@@ -2,17 +2,13 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from v3_identity import CANONICAL_FILENAME, discover_identity_file, read_identity, write_identity
 
 MAX_TAGS = 24
 MAX_TAG_LEN = 40
 HOTLOAD_MARKERS = ("hotload.txt", "hotload.json")
-IDENTITY_FILENAME = "identity.txt"
+IDENTITY_FILENAME = CANONICAL_FILENAME
 LEGACY_IDENTITY_FILENAME = "IDENTITY.txt"
-IDENTITY_TEMPLATE = """# Dragonwilds Sync mod identity
-# Replace the values below so users can identify the author and find the mod.
-Modder:
-Nexus:
-"""
 
 # UE4SS ships these Lua mods baked into its own default distribution (loader
 # scaffolding, console/cheat enabler toggles, keybind config, shared helpers).
@@ -87,7 +83,10 @@ def tags_from_mod_root(root: str | Path) -> list[str]:
     base = Path(root)
     if not base.is_dir():
         return []
-    # JSON is intentionally supported alongside the original simple text convention.
+    identity = read_identity(base)
+    if identity and identity.get("tags"):
+        return _normalize(identity.get("tags"))
+    # Legacy files remain readable but are never newly generated.
     tags = parse_tags_file(base / "tags.json")
     return tags or parse_tags_file(base / "tags.txt")
 
@@ -154,6 +153,22 @@ def discover_packaged_metadata(archive_root: str | Path, *, effective_root: str 
             roots.append(candidate)
     tags: list[str] = []
     sources: list[str] = []
+    identity_hotload = False
+    identity_sources: list[str] = []
+
+    def add_identity(root: Path) -> None:
+        nonlocal tags, identity_hotload
+        identity_path = discover_identity_file(root)
+        identity = read_identity(root)
+        if not identity_path or not identity:
+            return
+        values = _normalize(identity.get("tags") or [])
+        if values:
+            tags = _normalize(tags + values)
+        identity_hotload = identity_hotload or bool(identity.get("hotload_capable"))
+        try: label = identity_path.relative_to(archive).as_posix()
+        except ValueError: label = identity_path.name
+        if label not in identity_sources: identity_sources.append(label)
 
     def add_file(path: Path) -> None:
         nonlocal tags
@@ -175,6 +190,11 @@ def discover_packaged_metadata(archive_root: str | Path, *, effective_root: str 
 
     # A payload-specific PAK sidecar wins. Otherwise the effective mod root
     # wins over an outer Nexus/download wrapper.
+    for root in roots:
+        add_identity(root)
+        if tags:
+            break
+
     if not tags:
         for root in roots:
             for name in ("tags.json", "tags.txt"):
@@ -205,7 +225,8 @@ def discover_packaged_metadata(archive_root: str | Path, *, effective_root: str 
         seen_markers.add(marker)
         try: marker_paths.append(marker.relative_to(archive).as_posix())
         except ValueError: marker_paths.append(marker.name)
-    return {"tags": tags, "hotload_capable": bool(marker_paths), "tag_files": sources, "hotload_files": marker_paths}
+    return {"tags": tags, "hotload_capable": identity_hotload or bool(marker_paths),
+            "tag_files": identity_sources or sources, "hotload_files": identity_sources if identity_hotload else marker_paths}
 
 
 def hotload_capable_from_root(root: str | Path) -> bool:
@@ -217,6 +238,9 @@ def hotload_capable_from_root(root: str | Path) -> bool:
     base = Path(root)
     if not base.is_dir():
         return False
+    identity = read_identity(base)
+    if identity is not None and not identity.get("legacy"):
+        return bool(identity.get("hotload_capable"))
     json_marker = base / "hotload.json"
     if json_marker.is_file():
         try:
@@ -238,56 +262,33 @@ def hotload_capable_from_root(root: str | Path) -> bool:
 
 
 def set_hotload_marker(root: str | Path, enabled: bool) -> bool:
-    """Materialize the UE4SS/RuneSchema contract as hotload.txt.
-
-    An explicit disable removes only the two launcher-recognized marker files;
-    the mod's other content is never touched.
-    """
+    """Persist hotload capability in canonical ID.txt."""
     base = Path(root)
     if not base.is_dir():
         return False
-    if enabled:
-        target = base / "hotload.txt"
-        if not target.exists():
-            target.write_text("# Dragonwilds Sync hotload capability marker\n", encoding="utf-8")
-        return True
-    (base / "hotload.json").unlink(missing_ok=True)
-    (base / "hotload.txt").write_text(
-        "# Dragonwilds Sync hotload capability marker\n"
-        "# Set the next line to enabled to allow live configuration writes.\n"
-        "disabled\n",
-        encoding="utf-8",
-    )
-    return False
+    identity = read_identity(base) or {"mod_id": base.name, "name": base.name, "runtime_role": "both"}
+    identity["hotload_capable"] = bool(enabled)
+    write_identity(base, identity)
+    return bool(enabled)
 
 
 def set_tags_file(root: str | Path, values) -> list[str]:
-    """Materialize canonical directory-mod tags at the mod root.
-
-    RuneSchema payloads may legitimately contain ``<ModName>/<ModName>/*.pak``.
-    Launcher metadata never follows that payload nesting: the canonical file is
-    always ``RuneSchema/mods/<ModName>/tags.txt`` (the same root rule applies to
-    ordinary UE4SS directory mods).
-    """
+    """Persist canonical directory-mod tags in ID.txt at the mod root."""
     base = Path(root)
     if not base.is_dir():
         return []
     tags = normalize_tags(values)
-    target = base / "tags.txt"
-    if tags:
-        target.write_text("\n".join(tags) + "\n", encoding="utf-8")
-    else:
-        target.write_text("# Dragonwilds Sync mod tags (one per line)\n", encoding="utf-8")
-        (base / "tags.json").unlink(missing_ok=True)
+    identity = read_identity(base) or {"mod_id": base.name, "name": base.name, "runtime_role": "both"}
+    identity["tags"] = tags
+    write_identity(base, identity)
     return tags
 
 
 def ensure_mod_contract_files(root: str | Path) -> dict:
     """Repair launcher metadata files without changing mod capability.
 
-    Existing community markers retain their meaning. Missing files are created
-    with explicit disabled/empty defaults so every managed directory mod can be
-    edited and moved between profiles without losing its launcher metadata.
+    Existing community markers retain their meaning. New metadata is consolidated
+    into ID.txt; legacy files remain untouched and readable.
 
     This runs on every mod-directory scan (including plain "read-only"
     inventory refreshes), so a write failure here -- a locked/read-only mod
@@ -299,29 +300,19 @@ def ensure_mod_contract_files(root: str | Path) -> dict:
     base = Path(root)
     if not base.is_dir():
         return {"hotload": False, "tags": False, "identity": False, "error": ""}
-    hotload = base / "hotload.txt"
-    tags = base / "tags.txt"
-    identity = base / IDENTITY_FILENAME
-    legacy_identity = base / LEGACY_IDENTITY_FILENAME
+    identity = discover_identity_file(base)
     error = ""
-    if not hotload.exists() and not (base / "hotload.json").exists():
+    if identity is None:
         try:
-            set_hotload_marker(base, False)
+            legacy_tags = parse_tags_file(base / "tags.json") or parse_tags_file(base / "tags.txt")
+            legacy_hotload = any((base / marker).is_file() for marker in HOTLOAD_MARKERS)
+            identity = write_identity(base, {"mod_id": base.name, "name": base.name, "runtime_role": "both",
+                                             "tags": legacy_tags, "hotload_capable": legacy_hotload})
         except OSError as exc:
             error = str(exc)
-    if not tags.exists() and not (base / "tags.json").exists():
-        try:
-            set_tags_file(base, [])
-        except OSError as exc:
-            error = error or str(exc)
-    if not identity.exists() and not legacy_identity.exists():
-        try:
-            identity.write_text(IDENTITY_TEMPLATE, encoding="utf-8")
-        except OSError as exc:
-            error = error or str(exc)
-    return {"hotload": hotload.exists() or (base / "hotload.json").exists(),
-            "tags": tags.exists() or (base / "tags.json").exists(),
-            "identity": identity.exists() or legacy_identity.exists(), "error": error}
+    parsed = read_identity(base) or {}
+    return {"hotload": bool(parsed.get("hotload_capable")), "tags": bool(parsed.get("tags")),
+            "identity": identity is not None, "canonical": bool(identity and identity.name == CANONICAL_FILENAME), "error": error}
 
 
 def parse_identity_text(text: str) -> dict:
@@ -373,15 +364,13 @@ def identity_from_mod_root(root: str | Path) -> dict | None:
     this file; it belongs entirely to the mod author.
     """
     base = Path(root)
-    targets = ([base / IDENTITY_FILENAME, base / LEGACY_IDENTITY_FILENAME]
-               if base.is_dir() else [base.with_name(IDENTITY_FILENAME), base.with_name(LEGACY_IDENTITY_FILENAME)])
-    target = next((candidate for candidate in targets if candidate.is_file()), None)
-    if target is None:
+    canonical = read_identity(base)
+    if canonical is None:
         return None
-    try:
-        parsed = parse_identity_text(target.read_text(encoding="utf-8", errors="replace"))
-    except OSError:
-        return None
+    parsed = {"author": str(canonical.get("author") or ""), "description": str(canonical.get("description") or ""),
+              "links": list(canonical.get("links") or []), "mod_id": str(canonical.get("mod_id") or ""),
+              "name": str(canonical.get("name") or ""), "version": str(canonical.get("version") or ""),
+              "runtime_role": str(canonical.get("runtime_role") or "both")}
     if not parsed["author"] and not parsed["description"] and not parsed["links"]:
         return None
     return parsed

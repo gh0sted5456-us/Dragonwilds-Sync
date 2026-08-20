@@ -136,7 +136,9 @@ function choosePublishedCl(rows) {
 
 function publishCurrentCl(value) {
   const cl = canonicalCl(value) || CURRENT_CL_FALLBACK;
+  window.DWS_CURRENT_CL = cl;
   $$('[data-current-cl]').forEach((node) => { node.textContent = cl; });
+  window.dispatchEvent(new CustomEvent('dws-current-cl', { detail: { cl } }));
   return cl;
 }
 
@@ -345,26 +347,15 @@ async function loadLatestRelease() {
     const date = new Date(release.published_at || release.created_at);
     releaseVersion.textContent = safeText(release.tag_name || release.name, 'Latest');
     releaseDate.textContent = Number.isNaN(date.getTime()) ? 'GitHub Releases' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    if (release.html_url) releaseLink.href = release.html_url;
+    const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
+    if (executable) {
+      releaseLink.href = executable.browser_download_url;
+      releaseLink.setAttribute('download', '');
+    }
   } catch (_) {
     releaseVersion.textContent = 'Latest available';
     releaseDate.textContent = 'GitHub Releases';
   }
-}
-
-const downloadPlacard = $('#download-placard');
-if (downloadPlacard) {
-  $$('[data-download-side]', downloadPlacard).forEach((button) => button.addEventListener('click', () => {
-    const showThanks = button.dataset.downloadSide === 'thanks';
-    downloadPlacard.classList.toggle('flipped', showThanks);
-    downloadPlacard.dataset.side = showThanks ? 'thanks' : 'download';
-    const front = $('.download-face-front', downloadPlacard);
-    const back = $('.download-face-back', downloadPlacard);
-    front?.setAttribute('aria-hidden', String(showThanks));
-    back?.setAttribute('aria-hidden', String(!showThanks));
-    if (front) front.inert = showThanks;
-    if (back) back.inert = !showThanks;
-  }));
 }
 
 async function refreshNetworkData() {

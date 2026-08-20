@@ -1,0 +1,100 @@
+/* Main download / community-thanks flip card. */
+(() => {
+  const downloads = document.querySelector('#downloads');
+  const oldPanel = downloads?.querySelector('.download-panel');
+  if (!downloads || !oldPanel) return;
+
+  const releaseApi = 'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/releases/latest';
+  const flip = document.createElement('div');
+  flip.className = 'download-flip reveal visible';
+  flip.dataset.releaseSurface = 'true';
+  flip.innerHTML = `
+    <div class="download-flip-inner">
+      <section class="download-face main" aria-label="Main executable download" aria-hidden="false">
+        <div class="download-face-main">
+          <div class="eyebrow">Main · Primary release</div>
+          <h2>Ready when your world is.</h2>
+          <p>Download the newest published Dragonwilds Sync executable. Main is the recommended release for normal use.</p>
+          <div class="download-meta"><div><span>VERSION</span><strong data-main-version>Checking…</strong></div><div><span>PUBLISHED</span><strong data-main-date>Latest release</strong></div><div><span>FILE</span><strong>Windows EXE</strong></div></div>
+          <p>Dragonwilds Sync is a passion project. Donations help with hosting, tools, and development costs, but features will never be locked behind a paywall.</p>
+        </div>
+        <div class="download-face-side">
+          <div class="download-platform-icons" aria-label="Windows application for Steam servers"><img src="assets/platforms/windows.svg" alt="Windows"><img src="assets/platforms/steam.svg" alt="Steam"></div>
+          <img src="assets/application-icon.png" alt="Dragonwilds Sync icon">
+          <a class="button button-primary button-full is-disabled" data-main-download aria-disabled="true">Download EXE <span aria-hidden="true">↓</span></a>
+          <small class="download-file-note" data-main-file>Finding the latest executable…</small>
+        </div>
+        <button class="channel-ribbon" type="button" data-channel-flip="thanks" aria-label="Show special thanks"><span class="ribbon-dot"></span>Special Thanks <span aria-hidden="true">↻</span></button>
+      </section>
+      <section class="download-face thanks" aria-label="Special thanks" aria-hidden="true" inert>
+        <div class="download-face-main">
+          <span class="download-channel-pill">Community acknowledgements</span>
+          <h2>Special thanks.</h2>
+          <p>Dragonwilds Sync exists because people shared tools, knowledge, testing time, and a place for the modding community to grow.</p>
+          <div class="download-credit-list">
+            <div><span>RS</span><p><strong>Snorkles</strong><small>Creator of RuneSchema</small></p></div>
+            <div><span>RSDW</span><p><strong>Hi im Tat</strong><small>Creator and maintainer of RSDW</small></p></div>
+            <div><span>DW</span><p><strong>Dragonwilds Modding Community</strong><small>For the collaboration, testing, and shared knowledge</small></p></div>
+          </div>
+        </div>
+        <div class="download-face-side download-thanks-side">
+          <img src="assets/application-icon.png" alt="Dragonwilds Sync icon">
+          <span>COMMUNITY BUILT</span>
+          <strong>Thank you for making this ecosystem possible.</strong>
+        </div>
+        <button class="channel-ribbon" type="button" data-channel-flip="main" aria-label="Return to the executable download"><span class="ribbon-dot"></span>Back to Download <span aria-hidden="true">↻</span></button>
+      </section>
+    </div>`;
+
+  oldPanel.replaceWith(flip);
+  const channelControls = [...downloads.querySelectorAll('.release-channels .release-channel')];
+  const mainControl = channelControls.find((node) => /\bmain\b/i.test(node.textContent || ''));
+  const thanksControl = channelControls.find((node) => /special thanks/i.test(node.textContent || ''));
+  if (mainControl) mainControl.dataset.channelFlip = 'main';
+  if (thanksControl) thanksControl.dataset.channelFlip = 'thanks';
+
+  const setSide = (requestedSide) => {
+    const side = requestedSide === 'thanks' ? 'thanks' : 'main';
+    const showThanks = side === 'thanks';
+    flip.classList.toggle('flipped', showThanks);
+    const mainFace = flip.querySelector('.download-face.main');
+    const thanksFace = flip.querySelector('.download-face.thanks');
+    mainFace?.setAttribute('aria-hidden', String(showThanks));
+    thanksFace?.setAttribute('aria-hidden', String(!showThanks));
+    if (mainFace) mainFace.inert = showThanks;
+    if (thanksFace) thanksFace.inert = !showThanks;
+    [mainControl, thanksControl].forEach((node) => {
+      if (!node) return;
+      const selected = node.dataset.channelFlip === side;
+      node.classList.toggle('active', selected);
+      node.setAttribute('aria-pressed', String(selected));
+      if (selected) node.setAttribute('aria-current', 'true');
+      else node.removeAttribute('aria-current');
+    });
+  };
+
+  flip.querySelectorAll('[data-channel-flip]').forEach((button) => button.addEventListener('click', () => setSide(button.dataset.channelFlip)));
+  [mainControl, thanksControl].forEach((control) => control?.addEventListener('click', () => setSide(control.dataset.channelFlip)));
+
+  fetch(releaseApi, { headers: { Accept: 'application/vnd.github+json' } })
+    .then((response) => { if (!response.ok) throw new Error('release lookup failed'); return response.json(); })
+    .then((release) => {
+      const date = new Date(release.published_at || release.created_at);
+      const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
+      flip.querySelector('[data-main-version]').textContent = release.tag_name || release.name || 'Latest';
+      flip.querySelector('[data-main-date]').textContent = Number.isNaN(date.getTime()) ? 'Latest release' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      if (!executable) throw new Error('release has no executable');
+      const button = flip.querySelector('[data-main-download]');
+      button.href = executable.browser_download_url;
+      button.setAttribute('download', '');
+      button.removeAttribute('aria-disabled');
+      button.classList.remove('is-disabled');
+      flip.querySelector('[data-main-file]').textContent = executable.name;
+    }).catch(() => {
+      flip.querySelector('[data-main-version]').textContent = 'Latest available';
+      flip.querySelector('[data-main-date]').textContent = 'Latest release';
+      flip.querySelector('[data-main-file]').textContent = 'Open the latest release to download the EXE.';
+    });
+
+  setSide('main');
+})();

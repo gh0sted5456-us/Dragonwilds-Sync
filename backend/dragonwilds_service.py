@@ -3,17 +3,21 @@ from __future__ import annotations
 """Dragonwilds Sync Phase 5 service entry point.
 
 Normal mode is the trusted desired-state/control backend. ``--runtime-worker``
-is dispatched before the heavy application service graph initializes so the
-same packaged backend executable can also run a lightweight headless World
-worker. Phase 5 keeps the existing AuthoritativeRuntimeManager and routes the
-dedicated execution edge through the authenticated World worker by default
-after the Windows + Linux parity gate, while preserving explicit rollback.
+and ``--feature-worker`` are dispatched before the heavy application service
+graph initializes so the same packaged backend executable can run lightweight
+headless workers without constructing the desktop/network/community graph.
+Phase 5 keeps AuthoritativeRuntimeManager as lifecycle authority while World
+Runtime Workers own hosted execution and disposable Feature Workers isolate
+heavy feature domains behind authenticated local IPC and leases.
 """
 
 import sys
 
-# Worker dispatch must remain before the retained service graph. Spawning a
+# Worker dispatch must remain before the retained service graph. Spawning any
 # worker alone must never initialize renderer/community/network/update systems.
+if __name__ == "__main__" and "--feature-worker" in sys.argv:
+    from feature_worker import main as _feature_worker_main
+    raise SystemExit(_feature_worker_main(sys.argv[1:]))
 if __name__ == "__main__" and "--runtime-worker" in sys.argv:
     from runtime_worker import main as _runtime_worker_main
     raise SystemExit(_runtime_worker_main(sys.argv[1:]))
@@ -39,6 +43,7 @@ NETWORK = _base.NETWORK
 RUNTIME = _base.RUNTIME
 install_phase4_network(NETWORK)
 _WORKER_SUPERVISOR = None
+_FEATURE_WORKER_SUPERVISOR = None
 _PHASE5_WORKER_MIGRATION = None
 
 try:
@@ -54,6 +59,19 @@ def _workers():
         from worker_supervisor import WorkerSupervisor
         _WORKER_SUPERVISOR = WorkerSupervisor()
     return _WORKER_SUPERVISOR
+
+
+def _feature_workers():
+    global _FEATURE_WORKER_SUPERVISOR
+    if _FEATURE_WORKER_SUPERVISOR is None:
+        from feature_worker_supervisor import FeatureWorkerSupervisor
+        _FEATURE_WORKER_SUPERVISOR = FeatureWorkerSupervisor()
+    return _FEATURE_WORKER_SUPERVISOR
+
+
+def _feature_domain(params: dict) -> str:
+    from feature_worker_protocol import safe_domain
+    return safe_domain(params.get("domain"))
 
 
 def _ensure_phase5_worker_gate() -> dict:
@@ -173,6 +191,17 @@ def _worker_revision(params: dict) -> int | None:
     return value
 
 
+def _world_save_target(state: dict, params: dict) -> tuple[str, str, Path]:
+    kind = str(params.get("kind") or "private").lower()
+    profile_id = str(
+        params.get("id")
+        or (state.setdefault("client", {}).get("active_private_world_id") if kind != "server"
+            else state.setdefault("server", {}).get("active_world_id"))
+        or _legacy.SINGLEPLAYER_ID
+    )
+    return kind, profile_id, Path(_legacy._editable_world_save(state, kind, profile_id))
+
+
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
@@ -187,11 +216,12 @@ def handle(method: str, params: dict) -> object:
             }
             _phase4_bootstrap(result)
             application["runtime_worker_supervisor"] = _workers().list_status()
+            application["feature_worker_supervisor"] = _feature_workers().list_status()
             application["phase5_runtime_workers"] = _install_phase5_workers()
         return result
 
-    # Diagnostic/supervision API. Normal UI, Quick Mode and WebGUI lifecycle
-    # controls continue through server.world/server.runtime -> RuntimeManager.
+    # Runtime worker diagnostic/supervision API. Normal UI, Quick Mode and
+    # WebGUI lifecycle controls continue through server.world/server.runtime.
     if method == "runtime.worker.foundation.list":
         return _workers().list_status()
     if method == "runtime.worker.foundation.status":
@@ -208,6 +238,65 @@ def handle(method: str, params: dict) -> object:
         return _workers().restart_runtime(_worker_profile_id(params), _worker_revision(params))
     if method == "runtime.worker.runtime.logs":
         return _workers().log_tail(_worker_profile_id(params))
+
+    # Disposable feature workers use explicit leases and never become lifecycle
+    # or durable-settings authorities. These RPCs are intentionally diagnostic
+    # and orchestration surfaces; feature actions remain an allowlisted worker API.
+    if method == "feature.worker.list":
+        return _feature_workers().list_status()
+    if method == "feature.worker.status":
+        return _feature_workers().status(_feature_domain(params))
+    if method == "feature.worker.acquire":
+        return _feature_workers().acquire(_feature_domain(params), str(params.get("owner") or "ui"))
+    if method == "feature.worker.release":
+        return _feature_workers().release(_feature_domain(params), str(params.get("lease_id") or params.get("leaseId") or ""))
+    if method == "feature.worker.stop":
+        return _feature_workers().stop(_feature_domain(params), force=bool(params.get("force", False)))
+    if method == "feature.worker.execute":
+        return _feature_workers().execute(
+            _feature_domain(params), str(params.get("action") or ""),
+            params.get("params") if isinstance(params.get("params"), dict) else {},
+            owner=str(params.get("owner") or "rpc"),
+        )
+
+    # First real feature-domain migrations. Core keeps authority/safety checks;
+    # CPU/memory/failure-prone parsing and image/archive work executes out of process.
+    if method == "application.map.status":
+        return _feature_workers().execute("directory-map", "map.status", {}, owner=method)
+    if method == "application.map.refresh":
+        return _feature_workers().execute("directory-map", "map.refresh", {
+            "repo": str(params.get("repo") or "RSDWArchive/RSDWArchive"),
+            "branch": str(params.get("branch") or "main"),
+            "force": bool(params.get("force", False)),
+        }, owner=method)
+    if method == "application.map.overlays":
+        return _feature_workers().execute("directory-map", "map.overlays", {"force": bool(params.get("force", False))}, owner=method)
+
+    if method == "world.save.editor.read":
+        kind, profile_id, target = _world_save_target(state, params)
+        result = _feature_workers().execute("save-studio", "world-save.read", {"path": str(target)}, owner=method)
+        return {"save": result, "kind": kind, "profile_id": profile_id}
+
+    if method == "world.save.editor.write":
+        kind, profile_id, target = _world_save_target(state, params)
+        if kind == "server" and _legacy.ENGINE.status().get("running") and str(state.setdefault("server", {}).get("active_world_id") or "") == profile_id:
+            raise RuntimeError("Stop this Server World before editing its binary save settings.")
+        result = _feature_workers().execute("save-studio", "world-save.write", {
+            "path": str(target),
+            "values": params.get("values") if isinstance(params.get("values"), dict) else {},
+            "expected_sha256": str(params.get("expected_sha256") or ""),
+            "profile_id": profile_id,
+        }, owner=method)
+        _legacy._record_notification(
+            state,
+            "World save updated",
+            f"{len(result.get('changes') or {})} settings verified after backup-first writeback.",
+            "success",
+            world_id=profile_id,
+            key=f"world-save-edit:{profile_id}",
+        )
+        _legacy.save_state(state)
+        return {"save": result, "state": _legacy.public_state(state)}
 
     if method == "v3.phase4.contract":
         return phase4_contract()
@@ -239,14 +328,10 @@ def handle(method: str, params: dict) -> object:
         return _registry(state, params)
 
     if method in {"v3.exchange.inspect", "exchange.package.inspect"}:
-        inspected = inspect_exchange(str(params.get("path") or ""))
-        return {"ok": True, "manifest": inspected["manifest"], "identity": inspected["identity"],
-                "worlds": [{k: row.get(k) for k in ("stableWorldId", "kind", "profilePath", "manifestPath", "savePaths")} | {"profile": row.get("profile"), "world_manifest": row.get("world_manifest")} for row in inspected["worlds"]],
-                "characters": [{"characterId": row.get("characterId"), "metadata": row.get("metadata"), "hasSave": bool(row.get("save_bytes"))} for row in inspected["characters"]],
-                "item_count": len(inspected.get("items") or [])}
+        return _feature_workers().execute("exchange-maintenance", "exchange.inspect", {"path": str(params.get("path") or "")}, owner=method)
 
     if method in {"v3.exchange.plan_import", "exchange.package.plan"}:
-        return plan_import(str(params.get("path") or ""))
+        return _feature_workers().execute("exchange-maintenance", "exchange.plan", {"path": str(params.get("path") or "")}, owner=method)
 
     if method in {"v3.exchange.export", "exchange.package.export", "world.package.v3.export", "character.package.v3.export"}:
         output = str(params.get("output_path") or "").strip()
@@ -283,9 +368,9 @@ def handle(method: str, params: dict) -> object:
     if method == "profile.package.inspect":
         path = str(params.get("path") or "").strip()
         try:
-            inspected = inspect_exchange(path)
+            inspected = _feature_workers().execute("exchange-maintenance", "exchange.inspect", {"path": path}, owner=method)
             return {"kind": "v3-exchange", "manifest": inspected["manifest"], "identity": inspected["identity"],
-                    "worlds": inspected["worlds"], "characters": inspected["characters"], "item_count": len(inspected.get("items") or [])}
+                    "worlds": inspected["worlds"], "characters": inspected["characters"], "item_count": inspected.get("item_count", 0)}
         except Exception:
             return _base_handle(method, params)
 

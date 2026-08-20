@@ -79,6 +79,9 @@ jobs:
             backend/runtime_worker.py \
             backend/worker_supervisor.py \
             backend/runtime_worker_bridge.py \
+            backend/feature_worker_protocol.py \
+            backend/feature_worker.py \
+            backend/feature_worker_supervisor.py \
             backend/dragonwilds_service.py
       - name: Run managed RuneSchema source/update regression
         run: python scripts/v3_backend_test_runner.py backend/test_managed_updates.py
@@ -86,6 +89,8 @@ jobs:
         run: python scripts/v3_backend_test_runner.py backend/test_v3_phase4.py
       - name: Run worker spawn and reattach regression
         run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_phase2.py
+      - name: Run feature worker lease/isolation regression
+        run: python scripts/v3_backend_test_runner.py backend/test_feature_workers.py
       - name: Run revisioned desired-state regression
         run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_config.py
       - name: Run Phase 5 Runtime Manager bridge regression

@@ -133,9 +133,38 @@ WORLD RUNTIME WORKER
 - live SHARE payload/status
 ```
 
+## Phase 5E Slice 1 — Generalized feature workers
+
+**Status: CODED; CI / PACKAGED ACCEPTANCE PENDING**
+
+A second worker category now exists for heavy, bounded launcher features that should not own runtime lifecycle or durable application state.
+
+Canonical feature domains are:
+
+- `world-management`;
+- `save-studio`;
+- `mod-library`;
+- `directory-map`;
+- `exchange-maintenance`;
+- `update`;
+- `client-sync`;
+- `diagnostics`.
+
+Feature workers are same-binary subprocesses with authenticated local IPC, explicit leases, parent-process binding, an idle shutdown grace period, and allowlisted actions. They are intentionally disposable and must not survive Core loss.
+
+First migrated operations:
+
+- Map status / refresh / overlays → `directory-map` worker;
+- binary World Save read/write → `save-studio` worker while Core retains stop-safety, target resolution, notification and launcher-state commits;
+- `.rsdwl` inspect / import-plan → `exchange-maintenance` worker while mutating import/export remains Core-owned for this slice.
+
+Large results use a validated worker-owned temporary JSON handoff rather than increasing the general IPC message limit.
+
+Authoritative detail: `PROJECT_STATE/PHASE5_FEATURE_WORKERS.md`.
+
 ## Next Phase 5D gate
 
-The next eligible ownership audit/migration slice is **hosted-World heartbeat/directory execution**.
+The next eligible hosted-World ownership audit/migration slice is **hosted-World heartbeat/directory execution**.
 
 That move must keep this split:
 
@@ -166,9 +195,10 @@ Do not move WebGUI/Remote Admin or console in the same slice. Do not instantiate
 - Co-Op worker and Player worker decision;
 - worker-aware Update & Restart;
 - launcher self-update recovery/reattach;
-- utility workers only after profiling;
+- additional feature-domain migrations after Slice 1 verification;
+- removal/lazy-loading of legacy Core imports after worker routing is proven, so subprocess isolation also reduces Core resident memory rather than only operation-time CPU/failure coupling;
 - rollback path retirement only after hands-on acceptance.
 
 ## Completion rule
 
-Phase 5 is **not complete**. Automated gates permit the next staged migration step, but real Windows/game/network and Linux/Proton acceptance remains mandatory before final retirement/release sign-off.
+Phase 5 is **not complete**. Automated gates permit staged migration work, but real Windows/game/network and Linux/Proton acceptance remains mandatory before final retirement/release sign-off.

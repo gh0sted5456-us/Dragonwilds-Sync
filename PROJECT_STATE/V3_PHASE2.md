@@ -111,6 +111,21 @@ The reference Worker provides:
 - aggregate network statistics that do not expose installation IDs;
 - payload bounds, timestamp checks, rate limiting, revocation-aware records, and offline aging.
 
+### Public aggregate contract
+
+`GET /api/v1/network` exposes only anonymous aggregate state:
+
+```text
+active_users
+active_worlds
+dedicated_servers
+coop_hosts
+clients
+players_in_listed_worlds
+```
+
+The mode counts are derived from non-revoked active anonymous presence records. The endpoint never emits installation IDs. Existing `active_installations` and `active_players` fields remain backward-compatible aliases for consumers created before this expanded contract.
+
 ### Credential verification design
 
 A one-way SHA-256 verifier is retained for identity/duplicate checks, but a future HMAC cannot be validated from that verifier alone. Therefore the reference Worker also stores an AES-GCM-wrapped credential. The wrapping key (`CREDENTIAL_WRAP_KEY`) is a Worker secret and is not stored in D1 or distributed to launcher clients. This preserves exact HMAC verification without reintroducing a universal embedded client secret or plaintext D1 credentials.
@@ -157,6 +172,7 @@ The V3 Phase 2 contract must prove on both Windows and Ubuntu:
 - exact raw-body HMAC succeeds and tampering fails;
 - custom destination failure cannot cancel successful official delivery;
 - public snapshot secret/private-address filtering;
+- public aggregate mode counts are anonymous and contain no installation IDs;
 - compatibility profile writes retain V3 World-network desired state;
 - one-executable Quick CLI and stable-ID shortcut contract;
 - Quick renderer contains role controls but no network signing/scheduler authority;

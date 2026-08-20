@@ -9,6 +9,30 @@
 .directory-app-link button{min-height:34px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel-soft);color:var(--text);font-size:9px;font-weight:800;cursor:pointer}
 .directory-app-link button:hover{border-color:var(--line-strong)}
 
+/* Deployment-baked fallback roster. These records exist in HTML before any
+   client-side fetch. script.js replaces them with the richer placards as soon
+   as live/fallback JSON is available. */
+.directory-static-summary{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:12px 15px;border:1px solid var(--line);border-radius:12px;background:var(--panel-soft);color:var(--muted);font-size:10px}
+.directory-static-summary strong{color:var(--text);font-size:11px}
+.directory-static-world{min-width:0;display:grid;grid-template-columns:minmax(0,1fr);gap:13px;padding:16px;border:1px solid var(--line);border-radius:15px;background:var(--panel);box-shadow:0 8px 28px rgba(0,0,0,.12)}
+.directory-static-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.directory-static-title h3{margin:0;color:var(--text);font-size:16px;line-height:1.2;overflow-wrap:anywhere}
+.directory-static-kind{flex:0 0 auto;border:1px solid var(--line);border-radius:999px;padding:5px 7px;color:var(--muted);font-size:8px;font-weight:900;letter-spacing:.05em}
+.directory-static-kind.sync{border-color:rgba(72,196,129,.42);color:#71d99f}
+.directory-static-kind.public{border-color:rgba(109,156,255,.34);color:#8cafef}
+.directory-static-main p{min-height:32px;margin:8px 0 10px;color:var(--muted);font-size:10px;line-height:1.5}
+.directory-static-tags{display:flex;flex-wrap:wrap;gap:5px}
+.directory-static-tags span{padding:4px 6px;border:1px solid var(--line);border-radius:7px;background:var(--panel-soft);color:var(--faint);font-size:8px;font-weight:800}
+.directory-static-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.directory-static-metrics>span{min-width:0;padding:8px;border:1px solid var(--line);border-radius:9px;background:var(--panel-soft);color:var(--muted);font-size:9px;overflow:hidden}
+.directory-static-metrics small{display:block;margin-bottom:2px;color:var(--faint);font-size:7px;text-transform:uppercase;letter-spacing:.08em}
+.directory-static-metrics b{display:block;color:var(--text);font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.directory-static-status{display:flex!important;align-items:center;justify-content:center;font-weight:900!important;letter-spacing:.05em}
+.directory-static-status.online{color:#6bdc9b!important}
+.directory-static-status.offline{color:var(--faint)!important}
+.directory-static-source{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:9px;border-top:1px solid var(--line);color:var(--faint);font-size:8px}
+.directory-static-source strong{min-width:0;color:var(--muted);font-size:8px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 .world-grid.directory-horizontal{grid-template-columns:1fr;gap:12px}
 .world-grid.directory-horizontal .world-card,
 .world-grid.directory-horizontal .world-card-inner{min-height:264px}
@@ -27,16 +51,24 @@
 .world-grid.directory-horizontal .world-card-back .world-card-body{padding:14px 16px}
 .world-grid.directory-horizontal .world-card-back .world-back-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
 .world-grid.directory-horizontal .world-card-back .world-back-list{max-height:62px}
+.world-grid.directory-horizontal .directory-static-world{grid-template-columns:minmax(280px,1.6fr) minmax(360px,1fr) minmax(150px,.55fr);align-items:center;padding:12px 14px}
+.world-grid.directory-horizontal .directory-static-main p{min-height:0;margin:5px 0 7px}
+.world-grid.directory-horizontal .directory-static-source{display:block;padding:0 0 0 12px;border-top:0;border-left:1px solid var(--line)}
+.world-grid.directory-horizontal .directory-static-source strong{display:block;margin-top:4px;text-align:left}
 
 @media(max-width:900px){
   .directory-app-link span{display:none}
   .world-grid.directory-horizontal .world-card-front{grid-template-columns:minmax(190px,36%) 1fr}
   .world-grid.directory-horizontal .world-card-back .world-back-grid{grid-template-columns:1fr 1fr}
+  .world-grid.directory-horizontal .directory-static-world{grid-template-columns:1fr}
+  .world-grid.directory-horizontal .directory-static-source{padding:9px 0 0;border-left:0;border-top:1px solid var(--line)}
 }
 @media(max-width:700px){
   .world-toolbar{align-items:stretch}
   .directory-view-toggle{order:3}
   .directory-app-link{order:4;margin-left:0}
+  .directory-static-summary{align-items:flex-start;flex-direction:column;gap:3px}
+  .directory-static-metrics{grid-template-columns:1fr 1fr}
   .world-grid.directory-horizontal .world-card,
   .world-grid.directory-horizontal .world-card-inner{min-height:500px}
   .world-grid.directory-horizontal .world-card-front{display:block;min-height:500px}

@@ -3,16 +3,18 @@
   const main = document.querySelector('main');
   const headerNav = document.querySelector('#main-nav');
   const hero = document.querySelector('.hero');
-  const demo = document.querySelector('.home-demo');
   const network = document.querySelector('.network-section');
   const features = document.querySelector('#features');
   const webgui = document.querySelector('#webgui');
   const downloads = document.querySelector('#downloads');
   const community = document.querySelector('#community');
 
-  if (headerNav) {
+  // Only rewrite the landing-page navigation here. Directory and World Builder
+  // pages own their own explicit navigation so page-local current-state markers
+  // remain correct.
+  if (headerNav && hero) {
     headerNav.innerHTML = `
-      <a href="#demo-world">Demo World</a>
+      <a href="world-builder.html">World Builder</a>
       <a href="servers.html">Servers</a>
       <a href="#webgui">WebGUI</a>
       <a href="#downloads">Downloads</a>
@@ -37,29 +39,28 @@
     if (actions) {
       actions.innerHTML = `
         <a class="button button-primary" href="#downloads">Download Dragonwilds Sync <span aria-hidden="true">↓</span></a>
-        <a class="button button-secondary" href="#demo-world">Try Demo World <span aria-hidden="true">↘</span></a>
+        <a class="button button-secondary" href="world-builder.html">Build a World <span aria-hidden="true">→</span></a>
         <a class="button button-secondary" href="servers.html">Browse Servers <span aria-hidden="true">→</span></a>`;
     }
   }
 
-  // Establish a deliberate reading order after the hero: show the product in use,
-  // then network proof, then explain features and management surfaces.
+  // Landing-page reading order only. The World Builder is deliberately its own page.
   if (main && hero) {
     let anchor = hero;
-    [demo, network, features, webgui, downloads, community].filter(Boolean).forEach((section) => {
+    [network, features, webgui, downloads, community].filter(Boolean).forEach((section) => {
       anchor.insertAdjacentElement('afterend', section);
       anchor = section;
     });
   }
 
-  if (network) {
+  if (network && hero) {
     const heading = network.querySelector('.network-heading h2');
     const message = network.querySelector('#network-message');
     if (heading) heading.textContent = 'Network at a glance.';
     if (message && /Connecting/i.test(message.textContent || '')) message.textContent = 'Live public Worlds and server-build information.';
   }
 
-  if (features) {
+  if (features && hero) {
     const eyebrow = features.querySelector('.section-heading .eyebrow');
     const heading = features.querySelector('.section-heading h2');
     const copy = features.querySelector('.section-heading p');

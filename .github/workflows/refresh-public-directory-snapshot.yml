@@ -12,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: public-directory-fallback-snapshot
@@ -41,11 +42,13 @@ jobs:
           PY
 
       - name: Commit refreshed snapshot when changed
+        id: snapshot
         shell: bash
         run: |
           set -euo pipefail
           if git diff --quiet -- website/assets/public-worlds-fallback.json && git ls-files --error-unmatch website/assets/public-worlds-fallback.json >/dev/null 2>&1; then
             echo 'Public server fallback snapshot is unchanged.'
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git config user.name 'github-actions[bot]'
@@ -53,3 +56,15 @@ jobs:
           git add website/assets/public-worlds-fallback.json
           git commit -m 'Refresh public server fallback snapshot'
           git push origin HEAD:main
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+      - name: Deploy refreshed snapshot to GitHub Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Pushes made by GITHUB_TOKEN do not recursively start the Pages push
+          # workflow. workflow_dispatch is the supported exception, so explicitly
+          # dispatch Pages after every successful snapshot validation. This also
+          # repairs a stale Pages deployment when the snapshot itself is unchanged.
+          gh workflow run pages.yml --ref main
+          echo 'Dispatched pages.yml for the current main branch.'

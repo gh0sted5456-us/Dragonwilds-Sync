@@ -82,6 +82,8 @@ jobs:
             backend/feature_worker_protocol.py \
             backend/feature_worker.py \
             backend/feature_worker_supervisor.py \
+            backend/website_draft_import.py \
+            backend/process_utils.py \
             backend/dragonwilds_service.py
       - name: Run managed RuneSchema source/update regression
         run: python scripts/v3_backend_test_runner.py backend/test_managed_updates.py
@@ -91,6 +93,10 @@ jobs:
         run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_phase2.py
       - name: Run feature worker lease/isolation regression
         run: python scripts/v3_backend_test_runner.py backend/test_feature_workers.py
+      - name: Run website World draft trust-lane regression
+        run: python scripts/v3_backend_test_runner.py backend/test_website_draft_import.py
+      - name: Run Windows atomic replacement regression
+        run: python scripts/v3_backend_test_runner.py backend/test_windows_atomic_replace.py
       - name: Run revisioned desired-state regression
         run: python scripts/v3_backend_test_runner.py backend/test_runtime_worker_config.py
       - name: Run Phase 5 Runtime Manager bridge regression

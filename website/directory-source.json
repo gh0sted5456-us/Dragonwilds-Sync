@@ -16,12 +16,19 @@
     "mode": "resumable-full-scan",
     "scheduled_refresh_minutes": 5,
     "progressive": true,
-    "resilient_snapshot_minutes": 15
+    "resilient_snapshot_minutes": 15,
+    "sync_offline_retention_seconds": 21600
   },
   "presentation": {
     "preferred_label": "Public Server List",
     "supports_placards": true,
-    "supports_horizontal": true
+    "supports_horizontal": true,
+    "page_size": 10,
+    "sync_first": true,
+    "offline_sync_category": true
+  },
+  "metrics": {
+    "total_sync_world_starts": "directory.total_sync_world_starts"
   },
   "security": {
     "read_only": true,

@@ -21,7 +21,7 @@ jobs:
         os: [ubuntu-24.04, windows-2025]
     runs-on: ${{ matrix.os }}
     env:
-      DRAGONWILDS_SYNC_APPDATA: ${{ runner.temp }}/dragonwilds-sync-v3-phase1
+      DRAGONWILDS_SYNC_APPDATA: ${{ github.workspace }}/.ci-appdata/v3-phase1
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6

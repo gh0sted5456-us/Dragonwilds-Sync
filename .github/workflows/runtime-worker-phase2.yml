@@ -21,7 +21,7 @@ jobs:
         os: [ubuntu-24.04, windows-2025]
     runs-on: ${{ matrix.os }}
     env:
-      DRAGONWILDS_SYNC_APPDATA: ${{ runner.temp }}/dragonwilds-sync-worker-phase2
+      DRAGONWILDS_SYNC_APPDATA: ${{ github.workspace }}/.ci-appdata/runtime-worker-phase2
       DWSYNC_TEST_MODE: "1"
     steps:
       - uses: actions/checkout@v6

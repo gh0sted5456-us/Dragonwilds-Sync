@@ -168,6 +168,9 @@ def main():
     assert "backend/DragonwildsSync.Service.spec" in linux_text
     assert "npm run verify" in linux_text
     assert "xvfb-run -a npm run test:preload" in linux_text
+    assert "chown root:root node_modules/electron/dist/chrome-sandbox" in linux_text
+    assert "chmod 4755 node_modules/electron/dist/chrome-sandbox" in linux_text
+    assert "--no-sandbox" not in linux_text, "Linux preload verification must not weaken Chromium sandboxing"
     assert "electron-builder --linux AppImage" in linux_text
     assert "process.platform === 'win32' ? 'DragonwildsSync.Service.exe' : 'DragonwildsSync.Service'" in electron_main
     assert (ROOT / "docs" / "CAPABILITIES.md").is_file()

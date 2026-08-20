@@ -7,6 +7,22 @@ from pathlib import Path
 
 
 def main() -> None:
+    backend = Path(__file__).resolve().parent
+    service_source = (backend / "dragonwilds_service.py").read_text(encoding="utf-8")
+    supervisor_source = (backend / "feature_worker_supervisor.py").read_text(encoding="utf-8")
+
+    # Same-binary feature dispatch must stay ahead of the retained heavy service
+    # graph, otherwise an on-demand worker would pay the Core startup/RAM cost.
+    feature_dispatch = service_source.index('if __name__ == "__main__" and "--feature-worker" in sys.argv:')
+    heavy_graph = service_source.index("import dragonwilds_service_v3_phase2 as _base")
+    assert feature_dispatch < heavy_graph
+    assert '"--feature-worker"' in supervisor_source
+
+    # Keep direct process creation behind the established process-utils launch
+    # boundary. FeatureWorkerSupervisor owns policy/leases, not raw Popen calls.
+    assert "subprocess.Popen(" not in supervisor_source
+    assert "popen_hidden(self._worker_command(" in supervisor_source
+
     with tempfile.TemporaryDirectory(prefix="dws-feature-workers-") as tmp:
         os.environ["DRAGONWILDS_SYNC_APPDATA"] = tmp
 

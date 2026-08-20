@@ -226,10 +226,14 @@ jobs:
       - name: Verify World Builder route
         shell: bash
         run: |
+          set -euo pipefail
           test -s _site/world-builder.html
+          test -s _site/home-demo.js
           grep -q 'id="world-builder-demo"' _site/world-builder.html
-          grep -q 'src="home-demo.js"' _site/world-builder.html
+          grep -Eq 'src="home-demo\.js(\?[^\"]*)?"' _site/world-builder.html
           grep -q 'href="world-builder.html"' _site/world-builder.html
+          grep -q "querySelector('#world-builder-demo')" _site/home-demo.js
+          grep -q 'loadPresets().then(init)' _site/home-demo.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

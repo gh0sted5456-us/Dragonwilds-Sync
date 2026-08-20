@@ -11,6 +11,7 @@ and WebGUI remain application-owned until their own Phase 5D parity slices.
 """
 
 import os
+import sys
 from typing import Callable
 
 WORKER_CONFIG_SCHEMA = "DragonwildsSync.RuntimeWorkers.v1"
@@ -42,9 +43,9 @@ class WorkerBackedShare:
         worker = self._worker_status(profile_id)
         runtime = worker.get("runtime") if isinstance(worker.get("runtime"), dict) else {}
         share = runtime.get("share") if isinstance(runtime.get("share"), dict) else {}
-        if worker.get("live") and share:
+        if worker.get("live"):
             return {
-                **dict(share),
+                **dict(share or {"serving": False}),
                 "owner": "world-runtime-worker",
                 "profile_id": profile_id,
                 "worker_live": True,
@@ -56,10 +57,11 @@ class WorkerBackedShare:
         profile_id = self._profile_id()
         if profile_id and self.worker_enabled:
             worker = self._worker_status(profile_id)
-            if worker.get("live") and worker.get("attached"):
+            if worker.get("live"):
+                if not worker.get("attached"):
+                    return {}
                 payload = self.supervisor.share_payload(profile_id)
-                if isinstance(payload, dict) and payload:
-                    return dict(payload)
+                return dict(payload or {}) if isinstance(payload, dict) else {}
         value = self.original.broadcast_payload()
         return dict(value or {}) if isinstance(value, dict) else {}
 
@@ -313,6 +315,35 @@ class WorkerBackedServerEngine:
         return getattr(self.original, name)
 
 
+def _rewire_legacy_share(share_adapter: WorkerBackedShare) -> None:
+    """Point retained V3 network readers at the worker-backed SHARE proxy.
+
+    V3 Phase 2 intentionally owns the heartbeat/directory scheduler in the
+    application process for this migration slice. Its older callbacks were
+    bound to the process-local SHARE before Phase 5 installed the worker bridge.
+    Rebind those readers to this proxy so heartbeat/publication reads the
+    worker-owned manifest/status without starting a second SHARE listener.
+    """
+    phase2 = sys.modules.get("dragonwilds_service_v3_phase2")
+    if phase2 is None:
+        return
+    legacy = getattr(phase2, "_legacy", None)
+    network = getattr(phase2, "NETWORK", None)
+    if legacy is not None:
+        legacy.SHARE = share_adapter
+    configure = getattr(network, "configure_callbacks", None)
+    if not callable(configure):
+        return
+    configure(
+        custom_sources=getattr(phase2, "_custom_sources", None),
+        custom_publish=getattr(legacy, "publish_heartbeat_to_sources", None) if legacy is not None else None,
+        local_ingest=getattr(phase2, "_local_ingest", None),
+        share_payload=share_adapter.broadcast_payload,
+        share_status=share_adapter.status,
+        profile_loader=getattr(phase2, "_profile_loader", None),
+    )
+
+
 def _config(state: dict) -> dict:
     application = state.setdefault("application", {})
     config = application.setdefault("runtime_workers", {})
@@ -360,6 +391,7 @@ def install(runtime_manager, original_engine, share, supervisor, *, load_state: 
     if isinstance(share_adapter, WorkerBackedShare):
         share_adapter.engine = bridge
         runtime_manager.share = share_adapter
+        _rewire_legacy_share(share_adapter)
     active_id = str((state.get("server") or {}).get("active_world_id") or "")
     if active_id:
         worker = supervisor.reconcile(active_id)

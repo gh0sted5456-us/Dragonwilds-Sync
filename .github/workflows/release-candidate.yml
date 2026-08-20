@@ -119,6 +119,7 @@ jobs:
             'PASS  V3 Phase 2 contract',
             'PASS  V3 Phase 3 contract',
             'PASS  npm run verify (build gate)',
+            'PASS  sandboxed Electron preload bridge (build gate)',
             'PASS  Packaged service JSON-RPC stdio (build gate)',
             'PASS  Packaged Ed25519 self-test (build gate)',
             'PASS  Packaged launcher/resource validation (build gate)',

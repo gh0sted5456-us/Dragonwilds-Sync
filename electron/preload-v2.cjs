@@ -1,5 +1,18 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+// Keep the Quick presentation bridge in this self-contained preload. Sandboxed
+// Electron preload scripts can use Electron's built-in modules, but they cannot
+// require another project-local preload file.
+contextBridge.exposeInMainWorld('dragonwildsV3', {
+  createQuickShortcut: (data) => ipcRenderer.invoke('dragonwilds:create-v3-quick-shortcut', data || {}),
+  quickContext: () => ({
+    enabled: process.env.DWS_V3_QUICK === '1',
+    profileId: String(process.env.DWS_V3_QUICK_PROFILE || ''),
+    mode: ['player', 'coop', 'server'].includes(String(process.env.DWS_V3_QUICK_MODE || '')) ? String(process.env.DWS_V3_QUICK_MODE) : 'player',
+    autoStart: process.env.DWS_V3_QUICK_AUTOSTART === '1',
+  }),
+});
+
 const invokeCache = new Map();
 const invokeInFlight = new Map();
 const invokeActivityListeners = new Set();

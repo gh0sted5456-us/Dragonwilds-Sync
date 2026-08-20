@@ -9,6 +9,8 @@ SPEC = ROOT / "backend" / "DragonwildsSync.Service.spec"
 BUILD_BAT = ROOT / "build.bat"
 PROCESS_UTILS = ROOT / "backend" / "process_utils.py"
 ELECTRON_MAIN = ROOT / "electron" / "main.cjs"
+ELECTRON_MAIN_V2 = ROOT / "electron" / "main-v2.cjs"
+ELECTRON_PRELOAD_V2 = ROOT / "electron" / "preload-v2.cjs"
 
 
 def main():
@@ -65,7 +67,7 @@ def main():
     assert "cryptography>=46,<47" in requirements.casefold()
     assert "$expectedPyInstaller = '6.22.0'" in text
     assert "pip', 'install', '--upgrade'" in text
-    assert "windowsHide: true" in ELECTRON_MAIN.read_text(encoding="utf-8")
+    assert "windowsHide: true" in ELECTRON_MAIN_V2.read_text(encoding="utf-8")
 
     build_bat = BUILD_BAT.read_text(encoding="utf-8")
     assert "backend\\dragonwilds_service.py" in build_bat
@@ -77,8 +79,14 @@ def main():
     process_utils = PROCESS_UTILS.read_text(encoding="utf-8")
     assert "CREATE_NO_WINDOW" in process_utils
     assert "STARTF_USESHOWWINDOW" in process_utils
-    electron_main = ELECTRON_MAIN.read_text(encoding="utf-8")
+    electron_main = ELECTRON_MAIN_V2.read_text(encoding="utf-8")
     assert "windowsHide: true" in electron_main
+    electron_preload_v2 = ELECTRON_PRELOAD_V2.read_text(encoding="utf-8")
+    assert "preload: path.join(__dirname, 'preload-v2.cjs')" in electron_main
+    assert "sandbox: true" in electron_main
+    assert "require('./preload" not in electron_preload_v2 and 'require("./preload' not in electron_preload_v2
+    assert "exposeInMainWorld('dragonwilds'" in electron_preload_v2
+    assert "exposeInMainWorld('dragonwildsV3'" in electron_preload_v2
 
     # Process spawning remains centralized. The only intentional exception is
     # WorkerSupervisor, whose job is specifically to launch the same packaged
@@ -108,6 +116,7 @@ def main():
     assert package["devDependencies"]["@electron/asar"] == "4.2.1"
     assert package["scripts"]["prepare:monaco"] == "node scripts/prepare_monaco.cjs"
     assert package["scripts"]["package:raw"] == "node scripts/package_raw_source.cjs"
+    assert package["scripts"]["test:preload"] == "electron scripts/check_preload_bridge_electron.cjs"
     monaco_prepare = (ROOT / "scripts" / "prepare_monaco.cjs").read_text(encoding="utf-8")
     assert "expectedVersion = '0.52.2'" in monaco_prepare
     assert "base', 'worker', 'workerMain.js" in monaco_prepare
@@ -115,6 +124,7 @@ def main():
     assert "--include=dev" in text
     assert "Packaged Monaco Editor runtime is present" in text
     assert "Verifying packaged Monaco + launcher resources" in text
+    assert "@('run', 'test:preload')" in text
     assert "DragonwildsSyncPlayerTracker" not in text
     assert "PersistentDirectConnectProfile-v0.4.0.zip" not in text
     assert "singleplayer-banner.png" in text
@@ -123,6 +133,7 @@ def main():
     assert "electron/discord_rpc.cjs" in package["scripts"]["check:renderer"]
     assert "electron/app_updater.cjs" in package["scripts"]["check:renderer"]
     assert "electron/rsdw_webview_preload.cjs" in package["scripts"]["check:renderer"]
+    assert "electron/preload-v2.cjs" in package["scripts"]["check:renderer"]
     assert "renderer/release-meta.js" in package["scripts"]["check:renderer"]
     assert package["build"]["win"]["target"] == ["portable"]
     assert "nsis" not in package["build"]
@@ -156,6 +167,7 @@ def main():
     assert "Ubuntu is the supported baseline" in linux_text
     assert "backend/DragonwildsSync.Service.spec" in linux_text
     assert "npm run verify" in linux_text
+    assert "xvfb-run -a npm run test:preload" in linux_text
     assert "electron-builder --linux AppImage" in linux_text
     assert "process.platform === 'win32' ? 'DragonwildsSync.Service.exe' : 'DragonwildsSync.Service'" in electron_main
     assert (ROOT / "docs" / "CAPABILITIES.md").is_file()

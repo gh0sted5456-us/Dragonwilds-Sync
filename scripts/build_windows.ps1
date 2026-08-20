@@ -268,6 +268,7 @@ try {
 
     Write-BuildLine '[4/7] Verification'
     Invoke-Native $npmExe @('run', 'verify')
+    Invoke-Native $npmExe @('run', 'test:preload') 'Testing the sandboxed Electron preload bridge...'
     Invoke-Native $pythonExe ($pythonPrefix + @('-m', 'py_compile',
         'backend\dragonwilds_service.py',
         'backend\server_engine.py',

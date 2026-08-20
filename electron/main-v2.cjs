@@ -213,7 +213,7 @@ function serviceInvoke(method, params = {}) {
 function iconPath() { return path.join(projectRoot(), 'renderer', 'assets', process.platform === 'win32' ? 'dragonwilds_icon.ico' : 'application-icon.png'); }
 function windowOptions(extra = {}) {
   return { backgroundColor: '#0b0e10', icon: iconPath(), show: false, frame: false, autoHideMenuBar: true,
-    webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true }, ...extra };
+    webPreferences: { preload: path.join(__dirname, 'preload-v2.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true }, ...extra };
 }
 
 function mimeFor(file) {

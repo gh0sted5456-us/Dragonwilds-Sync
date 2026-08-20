@@ -17,6 +17,11 @@ rm -rf build-service dist-service release
 test -x dist-service/DragonwildsSync.Service
 npm ci --include=dev
 npm run verify
+if command -v xvfb-run >/dev/null 2>&1; then
+  xvfb-run -a npm run test:preload
+else
+  echo "[WARN] xvfb-run is unavailable; sandbox preload bridge smoke test was not run."
+fi
 # GitHub Actions sets CI, which otherwise makes electron-builder attempt an
 # actual GitHub release. RC packaging is artifact-only and requires no token.
 npx electron-builder --linux AppImage --publish never

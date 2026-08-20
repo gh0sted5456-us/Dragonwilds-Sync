@@ -27,7 +27,7 @@ requireText('electron/main.cjs', [
   "--quick", "--profile", "--mode", "--auto-start", "dragonwilds:create-v3-quick-shortcut",
   "--quick --profile=${id} --mode=${shortcutMode}", "require('./main-v2.cjs')",
 ]);
-requireText('electron/preload.cjs', ['quickContext', 'createQuickShortcut', "require('./preload-v2.cjs')"]);
+requireText('electron/preload-v2.cjs', ['quickContext', 'createQuickShortcut', "exposeInMainWorld('dragonwilds'", "exposeInMainWorld('dragonwildsV3'"]);
 requireText('renderer/app.js', ['v3Quick', 'app-v2.js']);
 requireText('renderer/release-v3-phase2.js', [
   'Create Quick Shortcut', 'Open Quick + Start', 'Open Full Dragonwilds Sync', 'View Mods',
@@ -68,6 +68,12 @@ for (const forbidden of ['x-dws-signature', 'x-dws-timestamp', 'installation_cre
 
 const main = read('electron/main.cjs');
 if (/password|world_pass|admin_pass|server_key|share_access_key/i.test(main)) failures.push('electron/main.cjs: Quick shortcut arguments must not contain credential fields');
+
+const retainedMain = read('electron/main-v2.cjs');
+if (!retainedMain.includes("preload: path.join(__dirname, 'preload-v2.cjs')")) failures.push('electron/main-v2.cjs: BrowserWindow must select the self-contained sandbox preload');
+if (!retainedMain.includes('sandbox: true')) failures.push('electron/main-v2.cjs: BrowserWindow preload must remain sandboxed');
+const retainedPreload = read('electron/preload-v2.cjs');
+if (/require\(['"]\.\/preload[^'"]*['"]\)/.test(retainedPreload)) failures.push('electron/preload-v2.cjs: sandbox preload must not require another local preload');
 
 if (!fs.existsSync(path.join(root, 'backend', 'dragonwilds_service_v2_wrapper.py'))) failures.push('missing preserved post-V2 service wrapper');
 if (!fs.existsSync(path.join(root, 'electron', 'main-v2.cjs'))) failures.push('missing preserved Electron main implementation');

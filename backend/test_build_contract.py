@@ -73,12 +73,24 @@ def main():
     assert "STARTF_USESHOWWINDOW" in process_utils
     electron_main = ELECTRON_MAIN.read_text(encoding="utf-8")
     assert "windowsHide: true" in electron_main
+
+    # Process spawning remains centralized. The only intentional exception is
+    # WorkerSupervisor, whose job is specifically to launch the same packaged
+    # backend in authenticated --runtime-worker mode. It is a process-management
+    # boundary below AuthoritativeRuntimeManager, not a lifecycle-policy bypass.
+    direct_spawn_owners = {"worker_supervisor.py"}
     for candidate in (ROOT / "backend").glob("*.py"):
         if candidate.name.startswith("test_") or candidate.name == "process_utils.py":
             continue
         live_text = candidate.read_text(encoding="utf-8")
         for direct_call in ("subprocess.Popen(", "subprocess.run(", "subprocess.check_output("):
-            assert direct_call not in live_text, f"visible subprocess bypass in {candidate.name}: {direct_call}"
+            if direct_call in live_text:
+                assert candidate.name in direct_spawn_owners, f"visible subprocess bypass in {candidate.name}: {direct_call}"
+
+    worker_supervisor = (ROOT / "backend" / "worker_supervisor.py").read_text(encoding="utf-8")
+    assert "subprocess.Popen(self._worker_command(" in worker_supervisor, "WorkerSupervisor must own runtime-worker process creation"
+    assert '"--runtime-worker"' in worker_supervisor, "worker spawn must use the same packaged application worker mode"
+    assert "DWSYNC_DISABLE_RUNTIME_WORKERS" not in worker_supervisor, "rollback policy belongs above WorkerSupervisor"
 
     package = json.loads(PACKAGE.read_text(encoding="utf-8"))
     assert package["version"] == "2.0.0"

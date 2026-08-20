@@ -6,6 +6,7 @@ on:
     paths:
       - 'website/**'
       - 'resources/world-builder-presets.json'
+      - 'resources/platform-registry.json'
       - 'renderer/assets/application-icon.png'
       - 'renderer/assets/singleplayer-banner.png'
       - 'renderer/assets/world-selection-background.png'
@@ -135,6 +136,7 @@ jobs:
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png
           cp resources/world-builder-presets.json _site/assets/world-builder-presets.json
+          cp resources/platform-registry.json _site/assets/platform-registry.json
           cp -R renderer/assets/flags _site/assets/flags
           cp -R renderer/assets/platforms _site/assets/platforms
 
@@ -144,6 +146,7 @@ jobs:
             xbox.svg
             playstation.svg
             nintendo.svg
+            switch2.svg
             epicgames.svg
             discord.svg
             nexusmods.svg
@@ -158,11 +161,16 @@ jobs:
           done
           python3 - <<'PY'
           import json
-          payload = json.load(open('_site/assets/world-builder-presets.json', encoding='utf-8'))
-          assert payload.get('format') == 'dragonwilds-sync-world-builder-presets'
-          assert int(payload.get('version') or 0) == 1
-          assert {x.get('id') for x in payload.get('rulePresets', [])} >= {'normal','kids','adults','custom'}
-          assert {x.get('id') for x in payload.get('modFamilies', [])} >= {'ue4ss','runeschema','paks'}
+          presets = json.load(open('_site/assets/world-builder-presets.json', encoding='utf-8'))
+          assert presets.get('format') == 'dragonwilds-sync-world-builder-presets'
+          assert int(presets.get('version') or 0) == 1
+          assert {x.get('id') for x in presets.get('rulePresets', [])} >= {'normal','kids','adults','custom'}
+          assert {x.get('id') for x in presets.get('modFamilies', [])} >= {'ue4ss','runeschema','paks'}
+
+          platforms = json.load(open('_site/assets/platform-registry.json', encoding='utf-8'))
+          assert platforms.get('format') == 'dragonwilds-sync-platform-registry'
+          keys = {x.get('key') for x in platforms.get('platforms', [])}
+          assert {'steam','windows','xbox','playstation','switch2','epicgames'} <= keys
           PY
 
           if [ -f "$RUNNER_TEMP/server-build.json" ]; then
@@ -198,8 +206,9 @@ jobs:
           cat website/platform-assets.js >> _site/script.js
           printf '\n\n/* Steam dedicated-server build authority */\n' >> _site/script.js
           cat website/server-build.js >> _site/script.js
-          printf '\n\n/* World Builder */\n' >> _site/script.js
-          cat website/home-demo.js >> _site/script.js
+          # World Builder intentionally remains a dedicated page script. Do not
+          # concatenate home-demo.js into the global bundle; world-builder.html
+          # loads it explicitly so homepage/directory scripts cannot suppress it.
           printf '\n\n/* Flippable release download surface */\n' >> _site/script.js
           cat website/download-flip.js >> _site/script.js
           printf '\n\n/* Homepage information hierarchy */\n' >> _site/script.js
@@ -207,9 +216,20 @@ jobs:
 
           touch _site/.nojekyll
 
-      - name: Validate assembled JavaScript
+      - name: Validate website JavaScript
         shell: bash
-        run: node --check _site/script.js
+        run: |
+          node --check _site/script.js
+          node --check _site/home-demo.js
+          node --check _site/world-draft-onboarding.js
+
+      - name: Verify World Builder route
+        shell: bash
+        run: |
+          test -s _site/world-builder.html
+          grep -q 'id="world-builder-demo"' _site/world-builder.html
+          grep -q 'src="home-demo.js"' _site/world-builder.html
+          grep -q 'href="world-builder.html"' _site/world-builder.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

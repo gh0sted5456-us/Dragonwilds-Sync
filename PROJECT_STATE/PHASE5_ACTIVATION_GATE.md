@@ -33,8 +33,15 @@ The staged implementation may exist behind this gate so it can be verified, but 
 - application/backend restart reattaches to the compatible worker without spawning a duplicate game.
 - failed Start does not fall back into a second direct launch.
 - Phase 4/publication regression checks remain green.
+- managed RuneSchema checks resolve the official `UnskippableCutscene/RuneSchema` release channel by default while preserving explicit custom-source overrides.
 
-Only after those conditions are satisfied should the default change to worker-backed dedicated execution.
+## Current validation checkpoint
+
+The experimental branch now treats `https://github.com/UnskippableCutscene/RuneSchema/releases` as the authoritative managed RuneSchema update source. The previous Dragonwilds Sync-hosted RuneSchema ZIP remains recovery/offline material only and is not update authority.
+
+This checkpoint intentionally touches `PROJECT_STATE/**` so the Phase 5 push workflow and the normal Release Candidate push workflow both receive a fresh branch head after the RuneSchema/source corrections and Phase 1 synthetic-merge cleanup.
+
+Do not mark Phase 5C green from historical runs. The gate advances only when the current branch head has successful Windows and Ubuntu/Linux evidence.
 
 ## Phase 5D remains blocked
 

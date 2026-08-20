@@ -6,6 +6,7 @@
   "api_base": "https://dragonwilds-sync-directory.dragonwilds.workers.dev",
   "worlds_url": "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds",
   "sources_url": "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/sources",
+  "fallback_worlds_url": "https://gh0sted5456-us.github.io/Dragonwilds-Sync/assets/public-worlds-fallback.json",
   "compatible_aliases": [
     "https://dragonwilds-sync-directory.dragonwilds.workers.dev/worlds",
     "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/worlds",
@@ -14,7 +15,8 @@
   "collection": {
     "mode": "resumable-full-scan",
     "scheduled_refresh_minutes": 5,
-    "progressive": true
+    "progressive": true,
+    "resilient_snapshot_minutes": 15
   },
   "presentation": {
     "preferred_label": "Public Server List",

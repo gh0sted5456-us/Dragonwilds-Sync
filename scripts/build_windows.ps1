@@ -323,35 +323,64 @@ try {
     }
     Write-BuildLine "[OK] Service EXE: $serviceExe"
 
-    # Critical packaged-runtime smoke test. The service is a newline-delimited
-    # JSON-RPC process over stdin/stdout, so a successful PyInstaller exit is
-    # not enough: the packaged EXE must still have working standard streams.
-    Write-BuildLine 'Testing packaged service JSON-RPC stdio...'
-    $probeInput = '{"id":1,"method":"state.get","params":{}}'
-    $probeOutput = @($probeInput | & $serviceExe 2>&1)
-    $probeRc = $LASTEXITCODE
-    $probeText = ($probeOutput | ForEach-Object { $_.ToString() }) -join "`n"
-    if ($probeRc -ne 0) {
-        Fail-Build "Packaged service smoke test exited with code $probeRc. Output: $probeText" $probeRc
+    # Critical packaged-runtime smoke tests run inside a disposable app-data
+    # root under build-service. A build/CI verification must never read or
+    # mutate the builder account's real Dragonwilds Sync state in LOCALAPPDATA.
+    $probeAppData = [IO.Path]::GetFullPath((Join-Path $ProjectRoot 'build-service\packaged-probe-appdata'))
+    $buildServiceRoot = [IO.Path]::GetFullPath((Join-Path $ProjectRoot 'build-service')).TrimEnd('\') + '\'
+    if (-not $probeAppData.StartsWith($buildServiceRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        Fail-Build "Refusing to use an unsafe packaged-probe AppData path: $probeAppData"
     }
-    if ($probeText -notmatch '\"id\"\s*:\s*1' -or $probeText -notmatch '\"ok\"\s*:\s*true') {
-        Fail-Build "Packaged service did not answer JSON-RPC over stdio. Output: $probeText"
+    if (Test-Path -LiteralPath $probeAppData) {
+        Remove-Item -LiteralPath $probeAppData -Recurse -Force
     }
-    Write-BuildLine '[OK] Packaged service JSON-RPC stdio is working.'
-    Write-BuildLine 'Testing packaged Ed25519 generation, signing, serialization, reload, and rejection...'
-    $cryptoProbeInput = '{"id":2,"method":"application.cryptography.status","params":{}}'
-    $cryptoProbeOutput = @($cryptoProbeInput | & $serviceExe 2>&1)
-    $cryptoProbeRc = $LASTEXITCODE
-    $cryptoProbeText = ($cryptoProbeOutput | ForEach-Object { $_.ToString() }) -join "`n"
-    if ($cryptoProbeRc -ne 0) {
-        Fail-Build "Packaged cryptography self-test exited with code $cryptoProbeRc. Output: $cryptoProbeText" $cryptoProbeRc
+    New-Item -ItemType Directory -Force -Path $probeAppData | Out-Null
+    $previousProbeAppData = [Environment]::GetEnvironmentVariable('DRAGONWILDS_SYNC_APPDATA', 'Process')
+    try {
+        $env:DRAGONWILDS_SYNC_APPDATA = $probeAppData
+
+        # The service is a newline-delimited JSON-RPC process over stdin/stdout,
+        # so a successful PyInstaller exit is not enough: the packaged EXE must
+        # still have working standard streams and self-contained persistence.
+        Write-BuildLine 'Testing packaged service JSON-RPC stdio...'
+        $probeInput = '{"id":1,"method":"state.get","params":{}}'
+        $probeOutput = @($probeInput | & $serviceExe 2>&1)
+        $probeRc = $LASTEXITCODE
+        $probeText = ($probeOutput | ForEach-Object { $_.ToString() }) -join "`n"
+        if ($probeRc -ne 0) {
+            Fail-Build "Packaged service smoke test exited with code $probeRc. Output: $probeText" $probeRc
+        }
+        if ($probeText -notmatch '\"id\"\s*:\s*1' -or $probeText -notmatch '\"ok\"\s*:\s*true') {
+            Fail-Build "Packaged service did not answer JSON-RPC over stdio. Output: $probeText"
+        }
+        Write-BuildLine '[OK] Packaged service JSON-RPC stdio is working.'
+
+        Write-BuildLine 'Testing packaged Ed25519 generation, signing, serialization, reload, and rejection...'
+        $cryptoProbeInput = '{"id":2,"method":"application.cryptography.status","params":{}}'
+        $cryptoProbeOutput = @($cryptoProbeInput | & $serviceExe 2>&1)
+        $cryptoProbeRc = $LASTEXITCODE
+        $cryptoProbeText = ($cryptoProbeOutput | ForEach-Object { $_.ToString() }) -join "`n"
+        if ($cryptoProbeRc -ne 0) {
+            Fail-Build "Packaged cryptography self-test exited with code $cryptoProbeRc. Output: $cryptoProbeText" $cryptoProbeRc
+        }
+        foreach ($requiredCryptoResult in @('"healthy"\s*:\s*true', '"sign_verify"\s*:\s*true', '"serialization_reload"\s*:\s*true', '"invalid_signature_rejected"\s*:\s*true')) {
+            if ($cryptoProbeText -notmatch $requiredCryptoResult) {
+                Fail-Build "Packaged cryptography self-test did not prove every required operation. Output: $cryptoProbeText"
+            }
+        }
+        Write-BuildLine '[OK] Packaged cryptography runtime is healthy.'
     }
-    foreach ($requiredCryptoResult in @('"healthy"\s*:\s*true', '"sign_verify"\s*:\s*true', '"serialization_reload"\s*:\s*true', '"invalid_signature_rejected"\s*:\s*true')) {
-        if ($cryptoProbeText -notmatch $requiredCryptoResult) {
-            Fail-Build "Packaged cryptography self-test did not prove every required operation. Output: $cryptoProbeText"
+    finally {
+        if ($null -eq $previousProbeAppData) {
+            Remove-Item Env:DRAGONWILDS_SYNC_APPDATA -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:DRAGONWILDS_SYNC_APPDATA = $previousProbeAppData
+        }
+        if (Test-Path -LiteralPath $probeAppData) {
+            Remove-Item -LiteralPath $probeAppData -Recurse -Force -ErrorAction SilentlyContinue
         }
     }
-    Write-BuildLine '[OK] Packaged cryptography runtime is healthy.'
     Write-BuildLine ''
 
     Write-BuildLine '[7/7] Building Electron portable EXE'

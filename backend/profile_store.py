@@ -44,6 +44,18 @@ V2_SETTINGS_PATH = APP_DATA_DIR / "launcher_v2.json"
 WORLD_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world"
 SERVER_PROFILES_DIR = WORLD_PROFILES_DIR / "dedicated"
 _WRITE_LOCK = threading.RLock()
+_CACHE_LOCK = threading.RLock()
+_STATE_CACHE: dict = {"path": "", "signature": None, "value": None}
+_PROFILE_CACHE: dict[str, dict] = {}
+_MIGRATED_ROOT = ""
+
+
+def _file_signature(path: Path) -> tuple[int, int] | None:
+    try:
+        stat = path.stat()
+        return (int(stat.st_size), int(getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))))
+    except OSError:
+        return None
 
 
 def migrate_world_profile_storage() -> dict:
@@ -303,8 +315,18 @@ def migrate_legacy_state() -> dict:
 
 
 def load_state() -> dict:
-    migrate_roaming_app_data()
-    migrate_world_profile_storage()
+    global _MIGRATED_ROOT
+    root_key = str(APP_DATA_DIR.resolve())
+    with _CACHE_LOCK:
+        if _MIGRATED_ROOT != root_key:
+            migrate_roaming_app_data()
+            migrate_world_profile_storage()
+            _migrate_auto_server_ports()
+            _MIGRATED_ROOT = root_key
+        signature = _file_signature(V2_SETTINGS_PATH)
+        if (_STATE_CACHE.get("path") == str(V2_SETTINGS_PATH) and _STATE_CACHE.get("signature") == signature
+                and isinstance(_STATE_CACHE.get("value"), dict)):
+            return deepcopy(_STATE_CACHE["value"])
     if V2_SETTINGS_PATH.exists():
         state = read_json(V2_SETTINGS_PATH, default_state())
     else:
@@ -500,13 +522,16 @@ def load_state() -> dict:
             clone.setdefault("shared", {})["curated"] = True
             client["curated_worlds"].append(clone)
             existing_ids.add(str(clone.get("id") or ""))
-    _migrate_auto_server_ports()
-    return state
+    with _CACHE_LOCK:
+        _STATE_CACHE.update({"path": str(V2_SETTINGS_PATH), "signature": _file_signature(V2_SETTINGS_PATH), "value": deepcopy(state)})
+    return deepcopy(state)
 
 
 def save_state(state: dict) -> dict:
     state["schema_version"] = SCHEMA_VERSION
     write_json(V2_SETTINGS_PATH, state)
+    with _CACHE_LOCK:
+        _STATE_CACHE.update({"path": str(V2_SETTINGS_PATH), "signature": _file_signature(V2_SETTINGS_PATH), "value": deepcopy(state)})
     return state
 
 
@@ -530,7 +555,7 @@ def list_server_profiles() -> list[dict]:
     for folder in sorted(SERVER_PROFILES_DIR.iterdir(), key=lambda p: p.name.lower()):
         if not folder.is_dir():
             continue
-        meta = read_json(folder / "profile.json", {})
+        meta = load_server_profile(folder.name)
         if not meta:
             continue
         result.append({
@@ -576,18 +601,36 @@ def list_server_profiles() -> list[dict]:
 def load_server_profile(profile_id: str) -> dict:
     if not profile_id:
         return {}
-    profile = read_json(SERVER_PROFILES_DIR / profile_id / "profile.json", {})
+    target = SERVER_PROFILES_DIR / profile_id / "profile.json"
+    signature = _file_signature(target)
+    cache_key = f"{target}:{profile_id}"
+    with _CACHE_LOCK:
+        cached = _PROFILE_CACHE.get(cache_key)
+        if cached and cached.get("signature") == signature and isinstance(cached.get("value"), dict):
+            return deepcopy(cached["value"])
+    profile = read_json(target, {})
     if isinstance(profile, dict):
         profile.pop("dragon_core", None)
-    return profile
+    else:
+        profile = {}
+    with _CACHE_LOCK:
+        if signature is None:
+            _PROFILE_CACHE.pop(cache_key, None)
+        else:
+            _PROFILE_CACHE[cache_key] = {"signature": signature, "value": deepcopy(profile)}
+    return deepcopy(profile)
 
 
 def save_server_profile(profile_id: str, data: dict) -> None:
     if not profile_id:
         raise ValueError("Server World id is required")
+    data = deepcopy(data)
     data.pop("dragon_core", None)
     target = SERVER_PROFILES_DIR / profile_id / "profile.json"
     write_json(target, data)
+    cache_key = f"{target}:{profile_id}"
+    with _CACHE_LOCK:
+        _PROFILE_CACHE[cache_key] = {"signature": _file_signature(target), "value": deepcopy(data)}
 
 
 def _migrate_auto_server_ports() -> None:
@@ -682,3 +725,6 @@ def delete_server_profile(profile_id: str) -> None:
     root = SERVER_PROFILES_DIR.resolve()
     if target.exists() and root in target.parents:
         shutil.rmtree(target, ignore_errors=True)
+    with _CACHE_LOCK:
+        for key in [key for key in _PROFILE_CACHE if key.endswith(f":{profile_id}")]:
+            _PROFILE_CACHE.pop(key, None)

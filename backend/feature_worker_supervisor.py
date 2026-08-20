@@ -24,6 +24,7 @@ from feature_worker_protocol import (
     FEATURE_SUPERVISOR_SCHEMA,
     FEATURE_WORKER_DOMAINS,
     APPLICATION_IDENTITIES,
+    STARTUP_EAGER_DOMAINS,
     feature_dir,
     feature_root,
     read_state,
@@ -277,7 +278,8 @@ class FeatureWorkerSupervisor:
         self._held_leases[key] = lease["leaseId"]
         return {**lease, "reused": False}
 
-    def prepare(self, domains: list[str] | None = None, owner: str = "launcher-splash", applications: list[str] | None = None) -> dict:
+    def prepare(self, domains: list[str] | None = None, owner: str = "launcher-splash", applications: list[str] | None = None,
+                *, eager_only: bool = False) -> dict:
         """Start and import app feature workspaces in parallel for instant tabs."""
         selected_apps = []
         for value in applications or []:
@@ -295,6 +297,8 @@ class FeatureWorkerSupervisor:
                 "exchange-maintenance", "diagnostics",
             ]
         selected = list(dict.fromkeys(safe_domain(value) for value in requested))
+        if eager_only:
+            selected = [domain for domain in selected if domain in STARTUP_EAGER_DOMAINS]
 
         def warm(domain: str) -> dict:
             lease = self.hold(domain, owner)
@@ -314,7 +318,7 @@ class FeatureWorkerSupervisor:
                 except Exception as exc:
                     rows.append({"domain": domain, "ready": False, "error": str(exc)[:300]})
         rows.sort(key=lambda row: selected.index(row["domain"]))
-        return {"ready": all(row.get("ready") for row in rows), "prepared": rows,
+        return {"ready": all(row.get("ready") for row in rows), "prepared": rows, "startupTier": "eager" if eager_only else "requested",
                 "applications": [{"id": app_id, **APPLICATION_IDENTITIES[app_id]} for app_id in selected_apps],
                 "readyCount": sum(1 for row in rows if row.get("ready")), "requested": len(rows)}
 

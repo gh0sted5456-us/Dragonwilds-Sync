@@ -122,6 +122,30 @@ class AuthoritativeRuntimeManager:
         runtime = self.engine.status(); broadcast = self.share.status()
         return {"runtime": runtime, "broadcast": broadcast, "running": bool(runtime.get("running")), "broadcast_active": bool(broadcast.get("serving"))}
 
+    @staticmethod
+    def _process_topology(actual: dict) -> dict:
+        """Expose the two long-lived server lanes without changing authority.
+
+        The dedicated game is a child process.  Its Sync/file-transfer service
+        lives in the launcher-created World Runtime Worker, so both can remain
+        alive concurrently while lifecycle commands still serialize through
+        this manager.
+        """
+        runtime = actual.get("runtime") if isinstance(actual.get("runtime"), dict) else {}
+        worker = runtime.get("worker") if isinstance(runtime.get("worker"), dict) else {}
+        broadcast = actual.get("broadcast") if isinstance(actual.get("broadcast"), dict) else {}
+        game_pid = int(runtime.get("pid") or 0)
+        sync_pid = int(worker.get("worker_pid") or 0)
+        sync_owner = str(broadcast.get("owner") or worker.get("owner") or "application")
+        game_running = bool(actual.get("running") and game_pid)
+        sync_running = bool(actual.get("broadcast_active") and (sync_pid or sync_owner == "application"))
+        return {
+            "game": {"pid": game_pid or None, "running": game_running, "owner": "dedicated-server"},
+            "launcher_sync": {"pid": sync_pid or None, "running": sync_running, "owner": sync_owner},
+            "parallel": bool(game_running and sync_running),
+            "distinct_processes": bool(game_running and sync_running and sync_pid and game_pid != sync_pid),
+        }
+
     def get_status(self) -> dict:
         actual = self._actual()
         with self._state_lock:
@@ -133,7 +157,8 @@ class AuthoritativeRuntimeManager:
                     self._managed_running = False; self._orphan_watchdog = {}
                 self._phase = "Error"; self._last_error = "The dedicated server exited unexpectedly; its Sync broadcast was withdrawn."; self._completed_at = time.time()
             phase = self._phase if transitional or self._last_error else ("Running" if actual["running"] else "Stopped")
-            return {**actual, "state": phase, "operation": self._operation, "busy": transitional, "accepting_requests": self._accepting_requests,
+            processes = self._process_topology(actual)
+            return {**actual, "processes": processes, "state": phase, "operation": self._operation, "busy": transitional, "accepting_requests": self._accepting_requests,
                     "started_at": self._started_at, "completed_at": self._completed_at, "last_error": self._last_error,
                     "last_result": dict(self._last_result), "orphan_watchdog": dict(self._orphan_watchdog)}
 
@@ -188,8 +213,18 @@ class AuthoritativeRuntimeManager:
         published = self.engine.publish(profile_id); actual = self._actual()
         if not actual["running"]: raise RuntimeError("The dedicated server exited before Sync publication completed.")
         if not actual["broadcast_active"]: raise RuntimeError("The server started, but its required Sync broadcast was not verified.")
+        processes = self._process_topology(actual)
+        if not processes["parallel"]:
+            raise RuntimeError("The dedicated game and launcher Sync lanes were not verified running in parallel.")
+        if processes["launcher_sync"]["owner"] == "world-runtime-worker" and not processes["distinct_processes"]:
+            raise RuntimeError("The launcher Sync worker did not report a process distinct from the dedicated game.")
         self._managed_running = True
-        return {**started, "prepared": prepared, "published": published, "verified_running": True, "broadcast_verified": True, "orphan_watchdog": watchdog}
+        self.engine.record_event(
+            f"Verified parallel game PID {processes['game']['pid']} and launcher Sync PID {processes['launcher_sync']['pid'] or 'application'}.",
+            "ok",
+        )
+        return {**started, "prepared": prepared, "published": published, "verified_running": True, "broadcast_verified": True,
+                "parallel_processes_verified": True, "processes": processes, "orphan_watchdog": watchdog}
 
     def _verify_dedicated_install(self, install: dict) -> dict:
         """Re-read Steam's actual appmanifest before a managed restart is allowed."""

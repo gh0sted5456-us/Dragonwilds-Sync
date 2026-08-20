@@ -43,7 +43,8 @@ need('backend/dragonwilds_service.py', [
 const renderer = need('renderer/release-v3-phase4.js', [
   'v3p4-placard', 'v3p4-back', 'data-v3p4-toggle', 'Page 1 / 2', 'Open Placard',
   'v3.phase4.world_status', "['full','reduced','off']", 'custom_badges',
-  'heartbeatMarkup', 'Partial', 'data-v3p4-animation-settings', '__DWSYNC_V3_PHASE4__'
+  'heartbeatMarkup', 'Partial', 'data-v3p4-animation-settings', '__DWSYNC_V3_PHASE4__',
+  "closest('.v3p4-placard,.app-world-placard')"
 ]);
 const rendererFolded = renderer.toLowerCase();
 for (const coreMod of ['dragonconnect']) {

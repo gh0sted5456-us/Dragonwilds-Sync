@@ -9,6 +9,7 @@ console/log surface.
 """
 
 import time
+from copy import deepcopy
 from pathlib import Path
 
 import dragonwilds_service_legacy as _legacy
@@ -251,9 +252,30 @@ def _restore_launcher_metadata(state: dict, entry: dict) -> None:
             state.setdefault("client", {})["active_private_world_id"] = profile_id
 
 
-def _record_local_profile_and_cloud_notices(state: dict) -> None:
-    _legacy.ensure_singleplayer_state(state)
+def _record_local_profile_and_cloud_notices(state: dict) -> bool:
     client = state.setdefault("client", {})
+    application = state.setdefault("application", {})
+    def snapshot() -> tuple:
+        worlds = client.get("private_worlds") if isinstance(client.get("private_worlds"), list) else []
+        world_stamp = tuple(
+            (str(row.get("id") or ""), str(row.get("updated_at") or ""), str(row.get("save_path") or ""),
+             str((row.get("metadata_cache") or {}).get("mods_updated_at") or ""))
+            for row in worlds if isinstance(row, dict)
+        )
+        pending_stamp = tuple(
+            (str(row.get("profile_id") or ""), str(row.get("save_file") or ""))
+            for row in client.get("pending_profile_migrations") or [] if isinstance(row, dict)
+        )
+        cloud = application.get("steam_cloud_status") if isinstance(application.get("steam_cloud_status"), dict) else {}
+        notification_stamp = tuple(
+            str(row.get("key") or row.get("id") or "")
+            for row in application.get("notifications") or [] if isinstance(row, dict)
+        )
+        return (world_stamp, str(client.get("active_private_world_id") or ""), pending_stamp,
+                str(cloud.get("checked_at") or ""), str(cloud.get("enabled") or ""), notification_stamp)
+
+    before = snapshot()
+    _legacy.ensure_singleplayer_state(state)
     pending = [row for row in (client.get("pending_profile_migrations") or []) if isinstance(row, dict)]
     for row in pending:
         profile_id = str(row.get("profile_id") or "")
@@ -267,7 +289,6 @@ def _record_local_profile_and_cloud_notices(state: dict) -> None:
     if pending:
         client["pending_profile_migrations"] = []
 
-    application = state.setdefault("application", {})
     game_dir = str(application.get("game_dir") or "").strip()
     previous = application.get("steam_cloud_status") if isinstance(application.get("steam_cloud_status"), dict) else {}
     if game_dir and time.time() - float(previous.get("checked_at") or 0) >= 6 * 60 * 60:
@@ -279,7 +300,7 @@ def _record_local_profile_and_cloud_notices(state: dict) -> None:
                 "Disable Steam Cloud for RuneScape: Dragonwilds before swapping managed World/character profiles. Cloud restore can overwrite the active save and prevent deterministic profile switching.",
                 "warning", key=f"steam-cloud-enabled:{CLIENT_STEAM_APP_ID}",
             )
-    _legacy.save_state(state)
+    return before != snapshot()
 
 
 def _sync_update_notifications(state: dict) -> list[dict]:
@@ -322,18 +343,35 @@ def _sync_update_notifications(state: dict) -> list[dict]:
         "core_mod": "UE4SS Core Update",
         "runeschema": "RuneSchema Core Update",
     }
+    existing_keys = {
+        str(item.get("key") or "") for item in application.get("notifications") or [] if isinstance(item, dict)
+    }
     for key in ("game", "server", "core_mod", "runeschema"):
         row = updates.get(key)
         if not isinstance(row, dict) or not row.get("update_available"):
             continue
+        notification_key = f"update:{key}:{row.get('available_version') or 'latest'}"
+        if notification_key in existing_keys:
+            continue
         event = _legacy._record_notification(
             state, titles[key],
             f"{row['component']} {row.get('installed_version') or 'unknown'} → {row.get('available_version') or 'latest'}. {row['action']}.",
-            "update", key=f"update:{key}:{row.get('available_version') or 'latest'}",
+            "update", key=notification_key,
         )
         if event.get("_new"):
             events.append(event)
+            existing_keys.add(notification_key)
     return events
+
+
+def _refresh_passive_state(state: dict) -> tuple[list[dict], bool]:
+    """Run cheap state housekeeping and report whether persistence is needed."""
+    application = state.setdefault("application", {})
+    previous_updates = deepcopy(application.get("update_status"))
+    changed = _record_local_profile_and_cloud_notices(state)
+    events = _sync_update_notifications(state)
+    changed = changed or previous_updates != application.get("update_status") or bool(events)
+    return events, changed
 
 
 def _refresh_managed_update_state(state: dict, profile_id: str = "", *, force_runeschema: bool = False) -> dict:
@@ -495,21 +533,20 @@ def handle(method: str, params: dict) -> object:
     state = _legacy.load_state()
     _trash_settings(state)
 
-    if method in {"bootstrap", "state.get", "client.background.tick"}:
-        _record_local_profile_and_cloud_notices(state)
-
     if method == "client.background.tick":
         result = _legacy_handle(method, params)
         refreshed = _legacy.load_state()
-        events = _sync_update_notifications(refreshed)
-        _legacy.save_state(refreshed)
+        events, changed = _refresh_passive_state(refreshed)
+        if changed:
+            _legacy.save_state(refreshed)
         if isinstance(result, dict) and events:
             result.setdefault("events", []).extend(events)
         return result
 
     if method in {"bootstrap", "state.get"}:
-        _sync_update_notifications(state)
-        _legacy.save_state(state)
+        _events, changed = _refresh_passive_state(state)
+        if changed:
+            _legacy.save_state(state)
         _maybe_auto_empty(state)
         result = _legacy_handle(method, params)
         if isinstance(result, dict):

@@ -29,6 +29,7 @@ const main = read('electron/main.cjs');
 const service = read('backend/dragonwilds_service.py');
 const legacyService = read('backend/dragonwilds_service_legacy.py');
 const runtimeManager = read('backend/runtime_manager.py');
+const runtimeWorkerSupervisor = read('backend/worker_supervisor.py');
 const runtimeVersions = read('backend/runtime_versions.py');
 const managedUpdates = read('backend/managed_updates.py');
 const directoryHost = read('backend/directory_host.py');
@@ -75,6 +76,9 @@ requireText(app, 'Update &amp; Restart', 'Minimal Mode update/restart control');
 // Phase 1: one runtime authority and verified shutdown.
 requireText(service, 'RUNTIME = AuthoritativeRuntimeManager', 'authoritative runtime controller');
 requireText(main, "serviceInvoke('application.shutdown'", 'full application shutdown');
+requireText(main, "terminateBackendProcessTree", 'backend process-tree shutdown containment');
+requireText(runtimeWorkerSupervisor, 'def shutdown(self)', 'runtime worker shutdown sweep');
+requireText(runtimeWorkerSupervisor, '_force_stop_verified_worker', 'authenticated runtime worker force-stop fallback');
 for (const phase of ['Starting', 'Stopping', 'Restarting', 'Updating', 'Start Failed', 'Stop Failed', 'Restart Failed', 'Update Failed']) requireText(runtimeManager, `"${phase}"`, `runtime lifecycle phase ${phase}`);
 requireText(runtimeManager, 'A server lifecycle operation is already active', 'conflicting command lock');
 requireText(runtimeManager, 'exited unexpectedly', 'unexpected process exit reconciliation');

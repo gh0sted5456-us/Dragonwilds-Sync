@@ -50,7 +50,9 @@ def main():
     # The original test-process supervisor performs the stop so its Popen handle
     # is reaped deterministically on Linux. Real app-restart workers are reparented
     # by the OS and remain attachable by a fresh supervisor as proven above.
-    stopped = supervisor.stop(profile_id)
+    stopped_all = supervisor.shutdown()
+    check(stopped_all.get("failed") == 0 and stopped_all.get("stopped") >= 1, "shutdown sweeps every runtime worker")
+    stopped = stopped_all["workers"][0]
     check(stopped.get("state") == "stopped" and stopped.get("live") is False, "worker stops gracefully")
     check(not state_path(profile_id).exists(), "stopped worker state cleaned")
 
@@ -65,7 +67,7 @@ def main():
     check(stale.get("state") == "stale-cleaned", "stale worker state cleaned")
     check(not state_path(profile_id).exists(), "stale file removed")
 
-    print("[Runtime Worker Phase 2] PASS · spawn, authenticated local IPC, duplicate prevention, backend restart reattach, protocol mismatch, graceful stop, stale cleanup")
+    print("[Runtime Worker Phase 2] PASS · spawn, authenticated local IPC, duplicate prevention, backend restart reattach, protocol mismatch, shutdown sweep, stale cleanup")
 
 
 if __name__ == "__main__":

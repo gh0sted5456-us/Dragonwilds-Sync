@@ -14,6 +14,7 @@ FEATURE_STATE_SCHEMA = "DragonwildsSync.FeatureWorkerState.v1"
 FEATURE_SUPERVISOR_SCHEMA = "DragonwildsSync.FeatureWorkerSupervisor.v1"
 FEATURE_AUTH_ENV = "DWSYNC_FEATURE_WORKER_AUTH"
 DEFAULT_IDLE_SECONDS = 60.0
+STARTUP_EAGER_DOMAINS = ("world-management", "save-studio", "mod-library")
 
 FEATURE_WORKER_DOMAINS = {
     "world-management": {
@@ -165,7 +166,7 @@ def read_state(domain: str) -> dict:
 
 __all__ = [
     "FEATURE_PROTOCOL_VERSION", "FEATURE_STATE_SCHEMA", "FEATURE_SUPERVISOR_SCHEMA",
-    "FEATURE_AUTH_ENV", "DEFAULT_IDLE_SECONDS", "FEATURE_WORKER_DOMAINS", "APPLICATION_IDENTITIES",
+    "FEATURE_AUTH_ENV", "DEFAULT_IDLE_SECONDS", "STARTUP_EAGER_DOMAINS", "FEATURE_WORKER_DOMAINS", "APPLICATION_IDENTITIES",
     "app_data_root", "safe_domain", "feature_root", "feature_dir", "state_path",
     "endpoint_for", "read_state", "atomic_json", "recv_message", "send_message", "request",
 ]

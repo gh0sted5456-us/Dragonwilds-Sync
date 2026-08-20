@@ -57,6 +57,7 @@ class FakeSupervisor:
         self.runtime_id = "runtime-test"
         self.worker_pid = 31337
         self.game_pid = None
+        self.next_game_pid = 4242
         self.share_serving = False
         self.calls = []
         self.desired_revision = None
@@ -101,7 +102,8 @@ class FakeSupervisor:
         self.desired_revision = 7
         if self.fail_start == "before_game":
             raise RuntimeError("synthetic worker preparation failure")
-        self.game_pid = 4242
+        self.game_pid = self.next_game_pid
+        self.next_game_pid += 1
         self.applied_revision = 7
         if self.fail_start == "after_game":
             raise RuntimeError("synthetic IPC failure after game launch")
@@ -109,7 +111,7 @@ class FakeSupervisor:
         return {
             "profileId": profile_id, "configRevision": 7,
             "result": {
-                "pid": 4242, "verified_running": True,
+                "pid": self.game_pid, "verified_running": True,
                 "desiredConfigRevision": 7, "appliedConfigRevision": 7,
                 "orphan_watchdog": status["orphanWatchdog"],
             },
@@ -197,6 +199,8 @@ def test_start_stop_through_authoritative_manager():
     started = manager.start("world-a")
     assert started["verified_running"] is True
     assert started["broadcast_verified"] is True
+    assert started["parallel_processes_verified"] is True
+    assert started["processes"]["distinct_processes"] is True
     assert started["worker_owned"] is True
     assert started["desired_config_revision"] == 7
     assert started["applied_config_revision"] == 7
@@ -213,6 +217,11 @@ def test_start_stop_through_authoritative_manager():
     assert status["runtime"]["worker"]["owner"] == "world-runtime-worker"
     assert status["runtime"]["worker"]["applied_config_revision"] == 7
     assert status["runtime"]["worker"]["process_containment"]["mode"] == "test-job"
+    assert status["processes"]["game"] == {"pid": 4242, "running": True, "owner": "dedicated-server"}
+    assert status["processes"]["launcher_sync"]["pid"] == supervisor.worker_pid
+    assert status["processes"]["launcher_sync"]["running"] is True
+    assert status["processes"]["parallel"] is True
+    assert status["processes"]["distinct_processes"] is True
     assert status["orphan_watchdog"]["parent_pid"] == supervisor.worker_pid
     payload = manager.share.broadcast_payload()
     assert payload["world_name"] == "Worker World"
@@ -227,6 +236,48 @@ def test_start_stop_through_authoritative_manager():
     assert share.serving is False
     assert supervisor.share_serving is False
     assert manager.get_status()["running"] is False
+
+
+def test_restart_update_and_update_restart_keep_game_and_sync_lanes_coherent():
+    share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor()
+    manager = AuthoritativeRuntimeManager(engine, share)
+    install_enabled(manager, engine, share, supervisor)
+    manager._verify_dedicated_install = lambda result: {**result, "verified_install": {"verified": True}}
+
+    first = manager.start("world-cycle")
+    assert first["pid"] == 4242
+    assert manager.get_status()["processes"]["parallel"] is True
+
+    supervisor.calls.clear()
+    restarted = manager.restart("world-cycle")
+    assert restarted["pid"] == 4243
+    names = [name for name, _profile in supervisor.calls]
+    assert names.index("stop_share") < names.index("stop_runtime") < names.index("stop_worker")
+    assert names.index("stop_worker") < names.index("start_runtime") < names.index("start_share")
+    assert manager.get_status()["processes"]["distinct_processes"] is True
+
+    installer_observations = []
+    def installer():
+        installer_observations.append((supervisor.game_pid, supervisor.share_serving, supervisor.live))
+        return {"ok": True, "installed": {"output": "synthetic SteamCMD success"}}
+
+    updated = manager.update("world-cycle", installer, restart=False)
+    assert updated["verified_stopped"] is True
+    assert installer_observations == [(None, False, False)]
+    stopped = manager.get_status()
+    assert stopped["processes"]["parallel"] is False
+    assert stopped["processes"]["game"]["running"] is False
+    assert stopped["processes"]["launcher_sync"]["running"] is False
+
+    installer_observations.clear()
+    update_restarted = manager.update("world-cycle", installer, restart=True)
+    assert update_restarted["restart"]["pid"] == 4244
+    assert installer_observations == [(None, False, False)]
+    live = manager.get_status()
+    assert live["state"] == "Running"
+    assert live["processes"]["parallel"] is True
+    assert live["processes"]["distinct_processes"] is True
+    manager.stop()
 
 
 def test_explicit_rollback_keeps_direct_engine_and_share():
@@ -313,6 +364,7 @@ def test_failed_start_cleans_worker_without_direct_fallback():
 
 def main():
     test_start_stop_through_authoritative_manager()
+    test_restart_update_and_update_restart_keep_game_and_sync_lanes_coherent()
     test_explicit_rollback_keeps_direct_engine_and_share()
     test_share_slice_can_be_rolled_back_independently()
     test_restart_reattaches_existing_worker_without_duplicate_game_start()

@@ -38,7 +38,6 @@
     serversTab: 'worlds',
     privateWorldPage: 1,
     serverWorldPage: 1,
-    syncHeartbeatTimer: null,
     privateProfileDetails: {},
     singleplayerConfigs: {},
     navigationHistory: [],
@@ -1303,7 +1302,7 @@
   async function prepareLauncherWorkspaces() {
     if(minimalMode||detachedMode||quickMode)return;
     const tasks=[
-      ['Application workspaces',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',applications:['shell','worlds','characters','mods','rsdw-l','rsdragonwilds','sync','webgui','system']})],
+      ['Application workspaces',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',eager_only:true,applications:['shell','worlds','characters','mods','rsdw-l','rsdragonwilds','sync','webgui','system']})],
       ['Character and Item Builder',()=>preloadCharacterStudio()],
       ['Profile mod inventories',()=>window.dragonwilds.prewarm?.([
         {method:'application.storage.paths',params:{}},
@@ -1372,8 +1371,11 @@
           } catch (error) { state.rsdwHydrationError = error.message || String(error); }
         }
       }
-      await prepareLauncherWorkspaces();
+      // Bootstrap already contains the durable profile/system cache. Paint the
+      // usable shell immediately; warm expensive Appy caches in parallel.
+      const workspaceWarmPromise=prepareLauncherWorkspaces();
       render();
+      void workspaceWarmPromise.catch(()=>{});
       // Parsing every editor catalog is useful cache work but must not hold the
       // first usable shell. The Characters feature worker is already warm;
       // finish populating its shared subapp cache quietly after first paint.
@@ -1399,7 +1401,6 @@
       }
       setTimeout(async()=>{
         if(minimalMode)return;
-        try { await configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status || null); } catch (_) {}
         if (!detachedMode && state.applicationUpdateResult && state.data?.application?.rsdw_cache?.refresh_after_updates !== false) {
           try { const refreshed = await api.invoke('application.rsdw.refresh', { force: false }); if (refreshed?.state) setData(refreshed.state); } catch (_) {}
         }
@@ -1414,7 +1415,6 @@
       // The map remains lazy: only a visible Map view warms its large asset cache.
       if (quickMode) setTimeout(runQuickLaunch, 60);
       if (!minimalMode&&!state.worldRefreshTimer) state.worldRefreshTimer=setInterval(()=>{if(backgroundRefreshAllowed() && state.entered && state.route==='worlds' && state.data?.application?.world_discovery?.enabled!==false) refreshWorldDiscoveryAndStatuses(true).catch(()=>{});},30000);
-      if (!minimalMode&&!state.syncHeartbeatTimer) state.syncHeartbeatTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered)return;try{const result=await api.invoke('world.discovery.heartbeat',{});if(result?.state)state.data=result.state;if(result?.published===false&&String(result?.reason||'').includes('Dragonwilds stopped')){state.data=await api.invoke('state.get',{});render();toast('Co-Op Sync stopped','Dragonwilds closed, so this World fingerprint and client Sync session were withdrawn.','');}}catch(_){}},30000);
       if (minimalMode&&!state.serverMetricsTimer) state.serverMetricsTimer=setInterval(async()=>{try{state.data=await api.invoke('state.get',{});render();}catch(_){}},5000);
       if (!state.serverMetricsTimer) state.serverMetricsTimer=setInterval(async()=>{if(!backgroundRefreshAllowed() || !state.entered || !((state.route==='server-detail' && ['overview','maintenance'].includes(state.serverTab)) || (state.route==='world-detail' && activeWorld()?.kind==='singleplayer' && ['overview','maintenance'].includes(state.privateTab))))return;try{const response=await api.invoke('server.runtime.status',{});if(response.state){state.data=response.state;render();}}catch(_){}},10000);
       if (!state.directoryAdminSyncTimer) state.directoryAdminSyncTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered||state.route!=='webhost'||state.webhostTab==='live')return;try{const before=JSON.stringify({config:state.data?.application?.world_directory_host||{},status:state.data?.application?.world_directory_host_status||{}});const fresh=await api.invoke('state.get',{});const after=JSON.stringify({config:fresh?.application?.world_directory_host||{},status:fresh?.application?.world_directory_host_status||{}});if(before!==after){state.data=fresh;render();}}catch(_){}},8000);
@@ -2093,6 +2093,13 @@
     return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.host_type.toUpperCase())}</span>`;
   }
 
+  function placardFrontClassificationMarkup(world, server = false) {
+    const c=worldClassification(world,server);
+    // Host type already owns the full-width banner. Keep the front to two
+    // useful facts and leave the complete taxonomy on the details face.
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode.toUpperCase())}</span>`;
+  }
+
   function worldMenuButton(worldId, server = false) {
     return '';
   }
@@ -2167,14 +2174,9 @@
     const title = server ? (world.name || 'Hosted World') : (single ? (world.name || world.identity?.world_name || 'Private World') : (world.nickname || world.identity?.world_name || 'World'));
     const authoritative = server ? world.name : world.identity?.world_name;
     const desc = presentation.description || (single ? 'Save-backed local Dragonwilds World.' : 'No World description has been provided yet.');
-    // Placards and horizontal rows intentionally share the exact same tag
-    // source. Mode/classification tags remain visible instead of disappearing
-    // merely because the card view also has a mode banner.
-    const tagPresentation = presentation;
-    const tags = worldTagGroupsMarkup(world,tagPresentation,server,4);
-    const badges = server
+    const badges = [...new Set((server
       ? [world.auto_ue4ss && 'UE4SS', world.auto_runeschema && 'RUNESCHEMA'].filter(Boolean)
-      : (single ? ['LOCAL'] : (presentation.mod_badges?.length ? presentation.mod_badges : ['VANILLA']));
+      : (single ? ['LOCAL'] : (presentation.mod_badges?.length ? presentation.mod_badges : ['VANILLA']))).map(String))];
     const ping = !server && world.status?.ping_ms != null ? `${Math.round(world.status.ping_ms)} ms` : '';
     const players = !server && world.status?.player_count != null ? `${world.status.player_count} players` : '';
     const observed = !server && world.public_history?.provider === 'lobbysup' ? (world.public_history.last_seen ? `Observed ${new Date(world.public_history.last_seen).toLocaleDateString()}` : 'Public history') : '';
@@ -2202,8 +2204,7 @@
             ${server ? `<span class="status-pill ${liveServer?'online':'unknown'}">${liveServer?`#${instance} RUNNING`:`#${instance} HOST`}</span>` : (single ? `<span class="status-pill ${world.status?.broadcasting?'online':'unknown'}">${world.status?.broadcasting?'CO-OP':'LOCAL'}</span>` : statusPill(world))}
           </div>
           <div class="card-description">${escapeHtml(desc)}</div>
-          ${tags}
-          <div class="badges" style="margin-top:8px">${classificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}${world.shared?.curated?'<span class="status-pill unknown">PROFILE</span>':''}${badges.map(badgeMarkup).join('')}${!server&&Number(world.shared?.shared_character_count||0)>0?`<span class="world-class-pill">${Number(world.shared.shared_character_count)} CHARACTERS</span>`:''}</div>
+          <div class="badges placard-front-summary">${placardFrontClassificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}</div>
           <div class="card-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span>${escapeHtml(ping)}</span><span>${escapeHtml(players)}</span>${observed?`<span title="LobbySup public player history">${escapeHtml(observed)}</span>`:''}</div>${worldRatingMarkup(world)}<span class="card-flip-hint">DETAILS ↻</span></div>
         </div>
        </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone)}</div>

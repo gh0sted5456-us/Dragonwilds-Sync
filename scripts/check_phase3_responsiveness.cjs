@@ -7,12 +7,16 @@ const requireText = (source, text, label) => {
   if (!source.includes(text)) throw new Error(`Phase 3 contract failed: ${label}`);
 };
 
-const preload = read('electron/preload.cjs');
+const preload = read('electron/preload.cjs') + read('electron/preload-v2.cjs');
 const phase3 = read('renderer/release-phase3.js');
 const backend = read('backend/phase3_responsiveness.py');
 const shell = read('backend/shell_persistence_stabilization.py');
 const monaco = read('renderer/release-monaco-prewarm.js');
 const app = read('renderer/app.js');
+const appV2 = read('renderer/app-v2.js');
+const profileStore = read('backend/profile_store.py');
+const v2Service = read('backend/dragonwilds_service_v2_wrapper.py');
+const serverEngine = read('backend/server_engine.py');
 const index = read('renderer/index.html');
 
 requireText(preload, 'const invokeCache = new Map()', 'preload must keep an in-memory read cache');
@@ -90,6 +94,15 @@ requireText(monaco, 'window.__DWSYNC_MONACO_STATUS__', 'Monaco readiness/failure
 requireText(monaco, 'warm().catch(() => {})', 'Monaco must begin warming during the backend bootstrap window');
 requireText(app, 'monaco.editor.create', 'the application must still mount the real Monaco editor');
 requireText(app, "state.data = await api.invoke('bootstrap')", 'app.js must retain an asynchronous backend bootstrap window');
+requireText(appV2, 'eager_only:true', 'splash must warm only the high-use feature-worker tier');
+requireText(appV2, 'const workspaceWarmPromise=prepareLauncherWorkspaces();', 'first paint must not await workspace cache warming');
+if (appV2.includes('syncHeartbeatTimer')) throw new Error('Phase 3 contract failed: renderer must not duplicate Electron-owned directory heartbeats.');
+requireText(profileStore, '_STATE_CACHE', 'launcher state must have a process-local memory cache');
+requireText(profileStore, '_PROFILE_CACHE', 'World profiles must have a process-local memory cache');
+requireText(profileStore, '_file_signature', 'profile caches must observe external/legacy file writers');
+requireText(v2Service, '_refresh_passive_state', 'compatibility housekeeping must use one consolidated pass');
+requireText(v2Service, 'if changed:', 'unchanged bootstrap/state reads must not rewrite durable state');
+requireText(serverEngine, 'tasklist path is a compatibility fallback', 'successful psutil misses must not trigger a redundant tasklist inventory');
 requireText(index, 'release-monaco-prewarm.js', 'Monaco prewarm layer must be loaded');
 requireText(index, 'release-phase3.css', 'Phase 3 localized loading CSS must be loaded');
 requireText(index, 'release-phase3.js', 'Phase 3 responsiveness layer must be loaded');

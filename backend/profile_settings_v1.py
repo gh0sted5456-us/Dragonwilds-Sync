@@ -232,6 +232,17 @@ def sync_profile_settings(kind: str, profile_id: str, profile: dict) -> tuple[di
     return desired, True
 
 
+def _settings_need_sync(kind: str, profile_id: str) -> bool:
+    """Use cheap metadata before rebuilding the settings compatibility view."""
+    root = profile_root(kind, profile_id)
+    profile_path = root / "profile.json"
+    target = root / "settings.json"
+    try:
+        return not target.is_file() or profile_path.stat().st_mtime_ns > target.stat().st_mtime_ns
+    except OSError:
+        return True
+
+
 def _hydrate_save_associations(profile: dict, settings: dict) -> dict:
     saves = settings.get("saves") if isinstance(settings.get("saves"), dict) else {}
     associated = saves.get("associated") if isinstance(saves.get("associated"), list) else []
@@ -345,7 +356,9 @@ def install_phase2_profile_adapters() -> None:
         def load_server_profile(profile_id: str) -> dict:
             profile = original_server_load(profile_id)
             if profile:
-                settings, _ = sync_profile_settings("dedicated", profile_id, profile)
+                settings = _existing_settings("dedicated", profile_id)
+                if not settings or _settings_need_sync("dedicated", profile_id):
+                    settings, _ = sync_profile_settings("dedicated", profile_id, profile)
                 _hydrate_save_associations(profile, settings)
             return profile
 
@@ -395,7 +408,9 @@ def install_phase2_profile_adapters() -> None:
         def load_profile(profile_id: str = local_world.SINGLEPLAYER_ID) -> dict:
             profile = original_local_load(profile_id)
             profile_id_resolved = str(profile.get("id") or profile_id or local_world.SINGLEPLAYER_ID)
-            settings, _ = sync_profile_settings("local", profile_id_resolved, profile)
+            settings = _existing_settings("local", profile_id_resolved)
+            if not settings or _settings_need_sync("local", profile_id_resolved):
+                settings, _ = sync_profile_settings("local", profile_id_resolved, profile)
             _hydrate_save_associations(profile, settings)
             return profile
 

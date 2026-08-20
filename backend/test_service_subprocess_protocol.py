@@ -15,7 +15,10 @@ def main() -> None:
         for item in (
             {"id": 1, "method": "application.process_catalog", "params": {}},
             {"id": 2, "method": "v3.phase4.platforms.registry", "params": {}},
-            {"id": 3, "method": "feature.worker.prepare", "params": {"owner": "subprocess-test", "applications": ["shell"]}},
+            {"id": 3, "method": "feature.worker.prepare", "params": {
+                "owner": "subprocess-test", "eager_only": True,
+                "applications": ["shell", "worlds", "characters", "mods", "rsdw-l", "rsdragonwilds", "sync", "webgui", "system"],
+            }},
             {"id": 4, "method": "application.shutdown", "params": {}},
         )
     ) + "\n"
@@ -40,6 +43,11 @@ def main() -> None:
     assert responses[1].get("result"), responses[1]
     prepared = responses[2].get("result") or {}
     assert prepared.get("readyCount") == prepared.get("requested"), prepared
+    assert prepared.get("startupTier") == "eager", prepared
+    assert prepared.get("requested") == 3, prepared
+    assert {row.get("domain") for row in prepared.get("prepared", [])} == {
+        "world-management", "save-studio", "mod-library",
+    }, prepared
     assert (responses[3].get("result") or {}).get("feature_workers"), responses[3]
     print("service subprocess protocol tests passed")
 

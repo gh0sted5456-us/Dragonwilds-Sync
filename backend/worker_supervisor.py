@@ -10,6 +10,7 @@ in AuthoritativeRuntimeManager.
 
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -321,6 +322,67 @@ class WorkerSupervisor:
             "profileId": profile_id, "runtimeId": state.get("runtimeId"), "state": "stopped", "live": False,
             "graceful": bool(response.get("ok")), "runtime": response.get("runtime") or {},
         }
+
+    def _force_stop_verified_worker(self, profile_id: str, state: dict) -> dict:
+        """Terminate only a worker we own or authenticated during this sweep."""
+        child = self._children.get(profile_id)
+        if child is None and not state.get("attached"):
+            raise RuntimeError("Refusing to force-stop a worker that was not authenticated or spawned by this supervisor.")
+        pid = int((child.pid if child is not None else state.get("workerPid")) or 0)
+        if pid <= 0:
+            raise RuntimeError("Verified worker PID is unavailable for shutdown containment.")
+        if sys.platform == "win32":
+            subprocess.run(["taskkill.exe", "/PID", str(pid), "/T", "/F"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, check=False, creationflags=int(getattr(subprocess, "CREATE_NO_WINDOW", 0)))
+        else:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if child is not None:
+                if child.poll() is not None:
+                    break
+            elif not self._process_exists(pid):
+                break
+            time.sleep(0.05)
+        if child is not None and child.poll() is None:
+            child.kill()
+            try:
+                child.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                pass
+        elif child is None and self._process_exists(pid) and sys.platform != "win32":
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        self.cleanup_stale(profile_id, state)
+        self._children.pop(profile_id, None)
+        return {"profileId": profile_id, "runtimeId": state.get("runtimeId"), "state": "stopped", "live": False,
+                "graceful": False, "forced": True}
+
+    def shutdown(self) -> dict:
+        """Stop every runtime worker, including authenticated reattachments."""
+        profile_ids = set(self._children)
+        if self.root.is_dir():
+            profile_ids.update(folder.name for folder in self.root.iterdir() if folder.is_dir())
+        rows = []
+        for profile_id in sorted(profile_ids, key=str.casefold):
+            state = self.reconcile(profile_id)
+            try:
+                rows.append(self.stop(profile_id))
+            except Exception as exc:
+                try:
+                    row = self._force_stop_verified_worker(profile_id, state)
+                    row["graceful_error"] = str(exc)[:300]
+                    rows.append(row)
+                except Exception as force_exc:
+                    rows.append({"profileId": profile_id, "state": "shutdown-failed", "live": True,
+                                 "error": str(force_exc)[:300], "graceful_error": str(exc)[:300]})
+        return {"stopped": sum(1 for row in rows if not row.get("live")),
+                "failed": sum(1 for row in rows if row.get("live")), "workers": rows}
 
     def list_status(self) -> dict:
         rows = []

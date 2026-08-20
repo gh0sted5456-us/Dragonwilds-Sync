@@ -594,7 +594,12 @@ def _find_running_server_pid(expected_exe: str = "") -> int | None:
             if expected and actual and os.path.normcase(str(Path(actual).resolve(strict=False))) != expected:
                 continue
             return int(proc.info["pid"])
-    except Exception: pass
+        # A completed psutil inventory is authoritative for this instant. The
+        # tasklist path is a compatibility fallback for a failed/unavailable
+        # psutil probe, not a second full process inventory after every miss.
+        return None
+    except Exception:
+        pass
     if os.name == "nt":
         try:
             for exe_name in DEDICATED_SERVER_EXE_ALIASES:

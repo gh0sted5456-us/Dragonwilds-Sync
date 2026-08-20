@@ -314,7 +314,8 @@ def handle(method: str, params: dict) -> object:
     if method == "feature.worker.prepare":
         domains = params.get("domains") if isinstance(params.get("domains"), list) else None
         applications = params.get("applications") if isinstance(params.get("applications"), list) else None
-        return _feature_workers().prepare(domains, owner=str(params.get("owner") or "launcher-splash"), applications=applications)
+        return _feature_workers().prepare(domains, owner=str(params.get("owner") or "launcher-splash"), applications=applications,
+                                          eager_only=bool(params.get("eager_only", False)))
     if method == "feature.worker.status":
         return _feature_workers().status(_feature_domain(params))
     if method == "feature.worker.acquire":
@@ -332,9 +333,16 @@ def handle(method: str, params: dict) -> object:
 
     if method == "application.shutdown":
         feature_shutdown = _feature_workers().shutdown()
-        result = _base_handle(method, params)
+        try:
+            result = _base_handle(method, params)
+        finally:
+            # RuntimeManager stops the active game/share first. Sweep every
+            # authenticated runtime worker afterward so reattached or inactive
+            # workers cannot outlive an actual launcher Quit.
+            runtime_worker_shutdown = _workers().shutdown()
         if isinstance(result, dict):
             result["feature_workers"] = feature_shutdown
+            result["runtime_workers"] = runtime_worker_shutdown
         return result
 
     # First real feature-domain migrations. Core keeps authority/safety checks;

@@ -22,28 +22,30 @@
 /* Desktop/website placard parity. Runtime actions stay below the flippable
    surface; the front and back use the same composition and interaction as the
    public website while all lifecycle controls remain application-owned. */
-.app-world-placard{min-height:520px!important;perspective:1450px;perspective-origin:50% 46%;cursor:pointer;outline:none;background:transparent!important;transform:translateZ(0)}
+.app-world-placard{min-height:520px!important;perspective:1450px;perspective-origin:50% 46%;cursor:pointer;outline:none;background:transparent!important;contain:layout paint style}
 .app-world-placard.has-placard::before,.app-world-placard.has-placard::after{display:none!important}
-.app-world-placard .world-card-inner{position:relative;display:block;flex:1 1 auto;width:100%;min-height:455px;transform-style:preserve-3d;will-change:transform;transform:translate3d(0,0,0) rotateY(0deg);transition:transform .68s cubic-bezier(.22,.61,.36,1)}
+.app-world-placard .world-card-inner{position:relative;display:block;flex:1 1 auto;width:100%;min-height:455px;transform-style:preserve-3d;transform:rotateY(0deg);transition:transform .52s cubic-bezier(.22,.61,.36,1)}
 .app-world-placard.flipped .world-card-inner{transform:translate3d(0,0,0) rotateY(180deg)}
-.app-world-placard .world-card-face{position:absolute;inset:0;overflow:hidden;isolation:isolate;padding:0;border:1px solid rgba(212,176,105,.18);border-radius:16px;background:linear-gradient(180deg,rgba(27,32,34,.96),rgba(16,20,21,.98));color:#f2eee3;box-shadow:0 20px 50px rgba(0,0,0,.34);-webkit-backface-visibility:hidden;backface-visibility:hidden;transform-style:preserve-3d;transition:border-color .22s ease,box-shadow .28s ease}
-.app-world-placard .world-card-face::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.16;filter:saturate(.75) contrast(.92)}
+.app-world-placard .world-card-face{position:absolute;inset:0;overflow:hidden;isolation:isolate;padding:0;border:1px solid rgba(212,176,105,.18);border-radius:16px;background:linear-gradient(180deg,rgba(27,32,34,.96),rgba(16,20,21,.98));color:#f2eee3;box-shadow:0 16px 38px rgba(0,0,0,.32);-webkit-backface-visibility:hidden;backface-visibility:hidden;transition:border-color .18s ease,box-shadow .2s ease}
+.app-world-placard .world-card-face::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.14}
 .app-world-placard .world-card-face::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(6,9,9,.16),rgba(7,10,10,.5) 34%,rgba(7,10,10,.94) 72%,#090d0d 100%)}
 .app-world-placard .world-card-front{transform:rotateY(0deg) translateZ(.1px)}
 .app-world-placard .world-card-back{transform:rotateY(180deg) translateZ(.1px)}
 .app-world-placard:hover .world-card-face{border-color:rgba(212,176,105,.34);box-shadow:0 24px 60px rgba(0,0,0,.42)}
 .app-world-placard:focus-visible .world-card-face{outline:2px solid var(--gold);outline-offset:2px}
 .app-world-placard .world-card-media{position:relative;z-index:1;height:128px;overflow:hidden;background:linear-gradient(135deg,#1f2828,#121719 60%,#2b2418)}
-.app-world-placard .world-card-banner{display:block;width:100%;height:100%;object-fit:cover;opacity:.82;filter:saturate(.82) contrast(.97)}
+.app-world-placard .world-card-banner{display:block;width:100%;height:100%;object-fit:cover;opacity:.82}
 .app-world-placard .world-card-banner-fallback{width:100%;height:100%;background:radial-gradient(circle at 20% 20%,rgba(212,176,105,.18),transparent 42%),linear-gradient(135deg,#1e2828,#101516)}
 .app-world-placard .world-card-banner-blend{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,10,10,.04),rgba(7,10,10,.18) 58%,rgba(10,14,14,.96))}
-.app-world-placard .world-card-front::before{display:none}.app-world-placard .world-card-front .world-card-body{isolation:isolate}.app-world-placard .world-card-front .world-card-body::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center bottom;background-size:cover;background-repeat:no-repeat;opacity:.2;filter:saturate(.78) contrast(.94)}.app-world-placard .world-card-front .world-card-body::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(0deg,rgba(8,11,11,.18),rgba(8,11,11,.72) 72%,rgba(8,11,11,.96))}.app-world-placard .world-card-front .world-card-banner-blend{box-shadow:0 20px 34px -24px rgba(8,11,11,.98)}
+.app-world-placard .world-card-front::before{display:none}.app-world-placard .world-card-front .world-card-body{isolation:isolate}.app-world-placard .world-card-front .world-card-body::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center bottom;background-size:cover;background-repeat:no-repeat;opacity:.18}.app-world-placard .world-card-front .world-card-body::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(0deg,rgba(8,11,11,.18),rgba(8,11,11,.72) 72%,rgba(8,11,11,.96))}.app-world-placard .world-card-front .world-card-banner-blend{box-shadow:0 20px 34px -24px rgba(8,11,11,.98)}
 .app-world-placard .world-card-body{position:relative;z-index:2;padding:18px 17px 16px!important;background:transparent!important}
 .app-world-placard .world-card-back .world-card-body{padding:18px 17px 16px!important}
 .app-world-placard .world-card-back::before{opacity:.1}
 .app-world-placard .world-card-back .card-topline{min-height:0;padding-left:0;margin-bottom:11px}
 .app-world-placard .world-card-back .card-title h3{font-size:19px!important}
 .app-world-placard .card-flip-hint{margin-left:auto;color:#d4b069;font-size:8px;font-weight:800;letter-spacing:.08em;white-space:nowrap}
+.app-world-placard .placard-front-summary{margin-top:auto!important;padding-top:10px;border-top:1px solid rgba(255,255,255,.07)}
+.app-world-placard .v3p4-front-live{display:inline-flex;padding:0;border:0}
 .app-world-placard .world-back-summary{margin:0 0 13px;color:#b5bbb8;font-size:11px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .app-world-placard .world-back-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:0}
 .app-world-placard .world-back-section{min-width:0;padding:10px;border:1px solid rgba(255,255,255,.075);border-radius:10px;background:rgba(12,16,16,.42)}

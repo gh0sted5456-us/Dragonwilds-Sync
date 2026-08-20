@@ -22,7 +22,8 @@ function startupPerformanceSettings() {
 }
 
 const startupPerformance=startupPerformanceSettings();
-if(!startupPerformance.hardware_acceleration)app.disableHardwareAcceleration();
+const safeGraphicsMode=process.argv.includes('--dws-safe-graphics');
+if(!startupPerformance.hardware_acceleration||safeGraphicsMode)app.disableHardwareAcceleration();
 if(startupPerformance.renderer_memory_mb)app.commandLine.appendSwitch('js-flags',`--max-old-space-size=${startupPerformance.renderer_memory_mb}`);
 
 let rsdwToolkitRoot = '';
@@ -218,6 +219,16 @@ function windowOptions(extra = {}) {
 }
 
 const rendererRecovery = new WeakMap();
+function restartWithSafeGraphics() {
+  if (forceQuit) return;
+  const args=process.argv.slice(1).filter((value)=>value!=='--dws-safe-graphics');
+  args.push('--dws-safe-graphics');
+  app.relaunch({args});
+  forceQuit=true;
+  // Use the normal quit path so the game, Sync worker, feature workers, and
+  // Core service are verified stopped before the safe-graphics process opens.
+  app.quit();
+}
 function attachRendererDurability(win) {
   if (!win || win.isDestroyed() || rendererRecovery.has(win)) return;
   const recovery={events:[],unresponsiveTimer:null,reloading:false};
@@ -228,7 +239,7 @@ function attachRendererDurability(win) {
     recovery.events=recovery.events.filter((stamp)=>now-stamp<60000);
     if(recovery.events.length>=2){
       console.error(`[renderer] recovery stopped after repeated failures: ${reason}`);
-      dialog.showMessageBox(win,{type:'error',title:'Dragonwilds Sync display recovery',message:'The interface stopped repeatedly.',detail:'Close and reopen Dragonwilds Sync. If this continues, disable Hardware Acceleration in Settings → Advanced.',buttons:['OK']}).catch(()=>{});
+      dialog.showMessageBox(win,{type:'error',title:'Dragonwilds Sync display recovery',message:'The interface stopped repeatedly.',detail:'Restart with Safe Graphics to disable GPU composition for this session. Your server and Sync worker remain under backend lifecycle authority.',buttons:['Restart with Safe Graphics','Close'],defaultId:0,cancelId:1,noLink:true}).then(({response})=>{if(response===0)restartWithSafeGraphics();}).catch(()=>{});
       return;
     }
     recovery.events.push(now);recovery.reloading=true;
@@ -779,6 +790,20 @@ function stopLauncherOwnedShellServices(){
   discordPresence.destroy();
 }
 
+function terminateBackendProcessTree(){
+  const owned=service;
+  if(!owned||owned.killed||owned.exitCode!==null)return;
+  const pid=Number(owned.pid||0);
+  if(pid<=0)return;
+  try{
+    if(process.platform==='win32')execFileSync('taskkill.exe',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});
+    else{
+      try{execFileSync('pkill',['-TERM','-P',String(pid)],{stdio:'ignore'});}catch(_){}
+      owned.kill('SIGTERM');
+    }
+  }catch(_){try{owned.kill('SIGKILL');}catch(__){}}
+}
+
 function beginVisualApplicationExit(){
   if(visualShutdownStarted)return;
   visualShutdownStarted=true;forceQuit=true;
@@ -802,7 +827,10 @@ async function performFullApplicationExit(){
   }catch(error){console.error(`[shutdown] ${error?.stack||error}`);}
   finally{
     stopLauncherOwnedShellServices();
-    if(service&&!service.killed)service.kill();
+    // The graceful RPC is authoritative. This final bounded tree termination
+    // is the containment fallback for a wedged Core/worker IPC path; unlike a
+    // plain child.kill(), it cannot leave launcher-owned grandchildren alive.
+    terminateBackendProcessTree();
     shutdownComplete=true;shutdownInProgress=false;
     app.quit();
   }

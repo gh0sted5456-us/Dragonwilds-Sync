@@ -26,6 +26,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="dws-feature-workers-") as tmp:
         os.environ["DRAGONWILDS_SYNC_APPDATA"] = tmp
 
+        import feature_worker_protocol as feature_protocol
         from feature_worker_protocol import FEATURE_WORKER_DOMAINS, read_state
         from feature_worker_supervisor import FeatureWorkerSupervisor
         from profile_store import SERVER_PROFILES_DIR, create_server_profile
@@ -35,6 +36,16 @@ def main() -> None:
             "exchange-maintenance", "update", "client-sync", "diagnostics",
         }
         assert set(FEATURE_WORKER_DOMAINS) == expected
+
+        # Linux AF_UNIX paths must remain below the common 108-byte sun_path
+        # limit even when AppData and worker identifiers are unusually long.
+        original_platform = feature_protocol.sys.platform
+        try:
+            feature_protocol.sys.platform = "linux"
+            endpoint, family = feature_protocol.endpoint_for("world-management", "w" * 120)
+        finally:
+            feature_protocol.sys.platform = original_platform
+        assert family == "AF_UNIX" and len(endpoint.encode("utf-8")) < 108
 
         supervisor = FeatureWorkerSupervisor(idle_seconds=5)
         initial = supervisor.list_status()

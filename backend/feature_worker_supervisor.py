@@ -64,9 +64,16 @@ class FeatureWorkerSupervisor:
         if value <= 0:
             return False
         try:
-            os.kill(value, 0)
-            return True
-        except OSError:
+            import psutil  # type: ignore
+            process = psutil.Process(value)
+            return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        except ImportError:
+            try:
+                os.kill(value, 0)
+                return True
+            except OSError:
+                return False
+        except Exception:
             return False
 
     def _token_for(self, state: dict) -> str:

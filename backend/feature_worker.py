@@ -69,16 +69,6 @@ class FeatureWorker:
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    @staticmethod
-    def _process_exists(pid: int) -> bool:
-        if int(pid or 0) <= 0:
-            return False
-        try:
-            os.kill(int(pid), 0)
-            return True
-        except OSError:
-            return False
-
     def status(self, state: str | None = None) -> dict:
         with self._lease_lock:
             leases = [dict(value) for value in self.leases.values()]
@@ -141,7 +131,10 @@ class FeatureWorker:
 
     def _monitor_parent(self) -> None:
         while not self.stopping:
-            if not self._process_exists(self.parent_pid):
+            # Feature workers are deliberately direct, disposable children of
+            # Core. Checking the actual parent identity avoids platform-specific
+            # signal/probe behavior and also rejects PID reuse after Core exits.
+            if os.getppid() != self.parent_pid:
                 self._request_stop("parent-exited")
                 return
             time.sleep(2.0)

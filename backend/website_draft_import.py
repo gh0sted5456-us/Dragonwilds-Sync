@@ -318,10 +318,11 @@ def _stage_save(inspected: dict, profile_id: str) -> dict:
         files = [path for path in stage.rglob("*") if path.is_file()]
         if not files:
             raise ValueError("Website World-save payload produced no files.")
+        total_bytes = sum(path.stat().st_size for path in files)
         if destination.exists():
             raise RuntimeError("New Website World profile unexpectedly already has a savegame directory.")
         os.replace(stage, destination)
-        return {"included": True, "file_count": len(files), "bytes": sum(path.stat().st_size for path in files), "path": str(destination)}
+        return {"included": True, "file_count": len(files), "bytes": total_bytes, "path": str(destination)}
     finally:
         if stage.exists():
             shutil.rmtree(stage, ignore_errors=True)

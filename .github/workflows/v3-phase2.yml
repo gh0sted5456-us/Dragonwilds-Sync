@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - codex/webgui-catalog-console-overhaul
+      - testing-ground
   pull_request:
     branches:
       - main

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import tempfile
@@ -16,7 +17,7 @@ def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _build(path: Path, *, malicious: bool = False) -> None:
+def _build(path: Path, *, malicious: bool = False, save_mode: str = "raw") -> None:
     created = "2026-08-20T02:30:00+00:00"
     fingerprint = "browser-draft"
     draft = {
@@ -40,8 +41,14 @@ def _build(path: Path, *, malicious: bool = False) -> None:
         ("profile-metadata", "profile/profile.json", _canonical(profile), "application/json", True),
         ("world-list", "worlds/worlds.json", _canonical(worlds), "application/json", True),
         ("server-profile-draft", "worlds/drafts/web-test-world/server-profile.json", _canonical(draft), "application/json", True),
-        ("world-save-file", "worlds/saves/web-test-world/TestWorld.sav", b"SAVE-WEBSITE-DRAFT", "application/octet-stream", True),
     ]
+    if save_mode == "raw":
+        payloads.append(("world-save-file", "worlds/saves/web-test-world/TestWorld.sav", b"SAVE-WEBSITE-DRAFT", "application/octet-stream", True))
+    elif save_mode in {"zip", "unsafe-zip"}:
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_STORED) as save_archive:
+            save_archive.writestr("Nested/TestWorld.sav" if save_mode == "zip" else "../escaped.sav", b"SAVE-WEBSITE-DRAFT-ZIP")
+        payloads.append(("world-save-archive", "worlds/saves/web-test-world/world-save.zip", buffer.getvalue(), "application/zip", True))
     records = [
         {"role": role, "path": member, "mediaType": media, "sha256": _sha(blob), "size": len(blob), "required": required}
         for role, member, blob, media, required in payloads
@@ -104,6 +111,27 @@ def main() -> None:
         assert profile["platform_compatibility"]["nintendo"] is True
         assert profile["platform_compatibility"]["xbox"] is True
         assert profile["website_draft_import"]["trust_mode"] == "website-draft"
+
+        no_save = Path(tmp) / "website-world-no-save.rsdwl"
+        _build(no_save, save_mode="none")
+        no_save_result = import_website_draft(no_save)
+        assert no_save_result["save"]["included"] is False
+        assert no_save_result["server_started"] is False
+
+        zipped = Path(tmp) / "website-world-zipped-save.rsdwl"
+        _build(zipped, save_mode="zip")
+        zipped_result = import_website_draft(zipped)
+        assert zipped_result["save"]["included"] is True
+        assert (SERVER_PROFILES_DIR / zipped_result["profile_id"] / "savegame" / "Nested" / "TestWorld.sav").is_file()
+
+        unsafe_zip = Path(tmp) / "website-world-unsafe-save.rsdwl"
+        _build(unsafe_zip, save_mode="unsafe-zip")
+        try:
+            import_website_draft(unsafe_zip)
+        except ValueError as exc:
+            assert "unsafe" in str(exc).casefold() or "traversal" in str(exc).casefold()
+        else:
+            raise AssertionError("Website draft ZIP traversal must be rejected")
 
         bad = Path(tmp) / "website-world-malicious.rsdwl"
         _build(bad, malicious=True)

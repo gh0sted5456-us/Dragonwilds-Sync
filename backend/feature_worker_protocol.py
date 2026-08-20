@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from runtime_worker_protocol import atomic_json, recv_message, request, safe_id, send_message
@@ -81,9 +83,18 @@ def endpoint_for(domain: str, worker_id: str) -> tuple[str, str]:
     worker_id = safe_id(worker_id, "feature worker ID")
     if sys.platform == "win32":
         return rf"\\.\pipe\DragonwildsSync-Feature-{worker_id}", "AF_PIPE"
-    ipc = feature_dir(domain) / "ipc"
+    # AF_UNIX endpoints have a small platform path limit (commonly 108 bytes).
+    # AppData/test roots can be arbitrarily long, so keep only state/results in
+    # the feature directory and use a short, installation-scoped socket path.
+    scope = hashlib.sha256(str(app_data_root().resolve()).encode("utf-8")).hexdigest()[:12]
+    endpoint_id = hashlib.sha256(f"{domain}\0{worker_id}".encode("utf-8")).hexdigest()[:32]
+    ipc = Path(tempfile.gettempdir()) / f"dws-feature-{scope}"
     ipc.mkdir(parents=True, exist_ok=True)
-    return str(ipc / f"{worker_id}.sock"), "AF_UNIX"
+    try:
+        os.chmod(ipc, 0o700)
+    except OSError:
+        pass
+    return str(ipc / f"{endpoint_id}.sock"), "AF_UNIX"
 
 
 def read_state(domain: str) -> dict:

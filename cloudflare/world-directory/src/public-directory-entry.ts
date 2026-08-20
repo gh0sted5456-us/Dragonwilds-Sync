@@ -1,4 +1,5 @@
 import coreWorker from './index';
+import { scanPublicSourcesIncrementally } from './rotating-public-scan';
 
 const core = coreWorker as any;
 
@@ -25,6 +26,10 @@ function directoryDescriptor(request: Request): Response {
     sources_url: `${origin}/api/v1/sources`,
     compatible_aliases: [`${origin}/worlds`, `${origin}/api/worlds`, `${origin}/manifest`],
     read_only: true,
+    collection: {
+      mode: 'resumable-full-scan',
+      refresh: 'incremental-5-minute-cursor',
+    },
   }), {
     status: 200,
     headers: {
@@ -33,6 +38,10 @@ function directoryDescriptor(request: Request): Response {
       ...corsHeaders(),
     },
   });
+}
+
+function isWorldRead(pathname: string): boolean {
+  return ['/api/v1/worlds', '/worlds', '/api/worlds', '/manifest'].includes(pathname);
 }
 
 export default {
@@ -47,18 +56,24 @@ export default {
       return directoryDescriptor(request);
     }
 
-    if (request.method === 'GET' && ['/worlds', '/api/worlds', '/manifest'].includes(url.pathname)) {
-      url.pathname = '/api/v1/worlds';
-      const forwarded = new Request(url.toString(), request);
-      return core.fetch(forwarded, env, ctx);
+    if (request.method === 'GET' && isWorldRead(url.pathname)) {
+      // Reads never scrape providers in the browser. They may nudge one bounded
+      // background scan batch when the persisted scan state is due.
+      ctx.waitUntil(scanPublicSourcesIncrementally(env, false));
+      if (url.pathname !== '/api/v1/worlds') {
+        url.pathname = '/api/v1/worlds';
+        const forwarded = new Request(url.toString(), request);
+        return core.fetch(forwarded, env, ctx);
+      }
     }
 
     return core.fetch(request, env, ctx);
   },
 
-  async scheduled(controller: ScheduledController, env: any, ctx: ExecutionContext): Promise<void> {
-    if (typeof core.scheduled === 'function') {
-      await core.scheduled(controller, env, ctx);
-    }
+  async scheduled(_controller: ScheduledController, env: any, ctx: ExecutionContext): Promise<void> {
+    // Do not call the older fixed-window source refresher here. This rotating
+    // scan keeps a generation/cursor in D1 and retires stale rows only after a
+    // complete provider pass, allowing the directory to grow beyond 500 rows.
+    ctx.waitUntil(scanPublicSourcesIncrementally(env, true));
   },
 };

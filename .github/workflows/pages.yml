@@ -139,7 +139,8 @@ jobs:
           cp resources/world-builder-presets.json _site/assets/world-builder-presets.json
           cp resources/platform-registry.json _site/assets/platform-registry.json
           cp -R renderer/assets/flags _site/assets/flags
-          cp -R renderer/assets/platforms _site/assets/platforms
+          mkdir -p _site/assets/platforms
+          cp -R renderer/assets/platforms/. _site/assets/platforms/
 
           # Bake one ten-server first page directly into servers.html so the
           # directory never begins as a JavaScript-only blank surface. The full

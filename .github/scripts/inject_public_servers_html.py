@@ -3,10 +3,14 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import time
 from pathlib import Path
 
 START = "<!-- PUBLIC_SERVER_SNAPSHOT_START -->"
 END = "<!-- PUBLIC_SERVER_SNAPSHOT_END -->"
+PAGE_SIZE = 10
+SYNC_FORGET_SECONDS = 6 * 60 * 60
+ONLINE_STATUSES = {"online", "starting", "maintenance"}
 
 
 def esc(value: object) -> str:
@@ -20,23 +24,56 @@ def intish(value: object) -> int:
         return 0
 
 
+def timestamp_seconds(value: object) -> int:
+    try:
+        number = int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+    return number // 1000 if number > 1_000_000_000_000 else number
+
+
+def is_sync(row: dict) -> bool:
+    return bool(row.get("is_sync_world") or row.get("directory_source") == "dragonwilds-sync")
+
+
+def is_online(row: dict) -> bool:
+    return str(row.get("status") or "").strip().lower() in ONLINE_STATUSES
+
+
+def is_visible(row: dict, now: int) -> bool:
+    if not is_sync(row):
+        return True
+    seen = timestamp_seconds(row.get("last_seen"))
+    return bool(seen and now - seen <= SYNC_FORGET_SECONDS)
+
+
+def sort_key(row: dict) -> tuple:
+    players = row.get("players") if isinstance(row.get("players"), dict) else {}
+    return (
+        -int(is_sync(row)),
+        -int(is_online(row)),
+        -timestamp_seconds(row.get("last_seen")),
+        -intish(players.get("current") if players else row.get("players_current")),
+        str(row.get("world_name") or row.get("name") or "").casefold(),
+    )
+
+
 def world_markup(row: dict) -> str:
     players = row.get("players") if isinstance(row.get("players"), dict) else {}
     name = esc(row.get("world_name") or row.get("name") or "Unnamed World")
     description = esc(row.get("description") or "Public Dragonwilds server")
-    source = esc(row.get("source_name") or ("Dragonwilds Sync" if row.get("is_sync_world") else "Public source"))
+    source = esc(row.get("source_name") or ("Dragonwilds Sync" if is_sync(row) else "Public source"))
     status = str(row.get("status") or "offline").strip().lower()
     status_label = esc(status.upper())
     region = esc(row.get("country_name") or row.get("region") or row.get("country_code") or "Unknown")
     version = esc(row.get("version") or "Build unknown")
     current = intish(players.get("current") if players else row.get("players_current"))
     maximum = intish(players.get("max") if players else row.get("players_max"))
-    kind = "SYNC WORLD" if row.get("is_sync_world") else "PUBLIC SERVER"
-    kind_class = "sync" if row.get("is_sync_world") else "public"
+    kind = "SYNC WORLD" if is_sync(row) else "PUBLIC SERVER"
+    kind_class = "sync" if is_sync(row) else "public"
     tags = row.get("tags") if isinstance(row.get("tags"), list) else []
     tag_markup = "".join(f'<span>{esc(tag)}</span>' for tag in tags[:6] if str(tag or "").strip())
-    online = status in {"online", "starting", "maintenance"}
-    online_class = "online" if online else "offline"
+    online_class = "online" if status in ONLINE_STATUSES else "offline"
 
     return f'''<article class="directory-static-world" data-static-public-world="1">
   <div class="directory-static-main">
@@ -61,6 +98,12 @@ def inject(snapshot: Path, page: Path) -> None:
     if not rows:
         raise SystemExit(f"Public server snapshot is empty: {snapshot}")
 
+    now = int(time.time())
+    visible_rows = sorted((row for row in rows if is_visible(row, now)), key=sort_key)
+    if not visible_rows:
+        raise SystemExit(f"Public server snapshot has no currently visible rows: {snapshot}")
+    first_page = visible_rows[:PAGE_SIZE]
+
     source = page.read_text(encoding="utf-8")
     start = source.find(START)
     end = source.find(END)
@@ -69,14 +112,14 @@ def inject(snapshot: Path, page: Path) -> None:
 
     summary = (
         f'<div class="directory-static-summary" data-static-public-summary="1">'
-        f'<strong>{len(rows):,} public servers are already loaded.</strong>'
-        f'<span>This is the latest baked public snapshot. Live directory data will replace it automatically when available.</span>'
+        f'<strong>Showing the first {len(first_page):,} of {len(visible_rows):,} public servers.</strong>'
+        f'<span>Sync Worlds are prioritized. The browser hydrates the full roster and paginates it at {PAGE_SIZE} servers per page.</span>'
         f'</div>'
     )
-    body = summary + "\n" + "\n".join(world_markup(row) for row in rows)
+    body = summary + "\n" + "\n".join(world_markup(row) for row in first_page)
     rendered = source[: start + len(START)] + "\n" + body + "\n" + source[end:]
     page.write_text(rendered, encoding="utf-8")
-    print(f"Baked {len(rows)} public server records directly into {page}")
+    print(f"Baked {len(first_page)} of {len(visible_rows)} visible public server records directly into {page}")
 
 
 def main() -> None:

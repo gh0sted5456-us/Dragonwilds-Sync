@@ -14,6 +14,9 @@ Current bundled marks include:
 - Discord
 - Nexus Mods
 - GitHub
+- UE4SS
+- RuneSchema
+- PAKs
 - Adults Only / Kid Friendly presentation badges
 
 Sources/provenance:
@@ -24,6 +27,9 @@ Sources/provenance:
 - Windows: bundled geometric Windows mark using the standard Windows blue presentation.
 - GitHub: bundled GitHub mark for local website/download presentation.
 - Linux: bundled local platform-identification artwork.
+- UE4SS: bundled local vector treatment based on project-provided UE4SS reference artwork; used only to identify the UE4SS runtime/mod family.
+- RuneSchema: bundled local vector treatment based on project-provided RuneSchema reference artwork; used only to identify the RuneSchema mod family.
+- PAKs: original generic Dragonwilds Sync package/cube mark used to identify cooked Unreal PAK/UTOC/UCAS-oriented content; it is not a third-party company logo.
 
 Simple Icons is CC0-1.0. Brand names and logos remain trademarks of their
 respective owners. Their inclusion does not imply endorsement or affiliation.

@@ -5,8 +5,9 @@ from __future__ import annotations
 Normal mode is the trusted desired-state/control backend. ``--runtime-worker``
 is dispatched before the heavy application service graph initializes so the
 same packaged backend executable can also run a lightweight headless World
-worker. Phase 5 keeps the existing AuthoritativeRuntimeManager and stages the
-dedicated execution edge behind the authenticated World worker.
+worker. Phase 5 keeps the existing AuthoritativeRuntimeManager and routes the
+dedicated execution edge through the authenticated World worker by default
+after the Windows + Linux parity gate, while preserving explicit rollback.
 """
 
 import sys
@@ -56,12 +57,13 @@ def _workers():
 
 
 def _ensure_phase5_worker_gate() -> dict:
-    """Keep the new execution path staged until Windows + Linux parity is green.
+    """Apply the completed Phase 5C cross-platform activation gate.
 
-    The authoritative Phase 5 plan requires the worker foundation to pass on
-    both platforms before Phase 5C becomes the normal launch path. Existing
-    explicit values are preserved; only a previously-absent setting is seeded
-    OFF with the reason recorded beside it.
+    Current-head Windows and Ubuntu/Linux Phase 5 parity is green, so a new
+    configuration now defaults dedicated execution ON through the worker.
+    Existing explicit ``dedicated_enabled`` values are preserved so an
+    operator-selected rollback is never silently overwritten. The old pending
+    gate marker is advanced independently of that explicit choice.
     """
     state = _legacy.load_state()
     application = state.setdefault("application", {})
@@ -70,10 +72,10 @@ def _ensure_phase5_worker_gate() -> dict:
         config = {}; application["runtime_workers"] = config
     changed = False
     if "dedicated_enabled" not in config:
-        config["dedicated_enabled"] = False
+        config["dedicated_enabled"] = True
         changed = True
-    if "activation_gate" not in config:
-        config["activation_gate"] = "phase5c-windows-linux-parity"
+    if str(config.get("activation_gate") or "") in {"", "phase5c-windows-linux-parity"}:
+        config["activation_gate"] = "phase5c-windows-linux-parity-passed"
         changed = True
     if changed:
         _legacy.save_state(state)
@@ -93,9 +95,10 @@ def _install_phase5_workers() -> dict:
     return dict(_PHASE5_WORKER_MIGRATION)
 
 
-# Install the bridge decision before lifecycle RPCs can arrive. The staged
-# default remains the retained direct path until the cross-platform parity gate
-# is explicitly cleared; no worker is created merely by opening the UI.
+# Install the bridge decision before lifecycle RPCs can arrive. New installs
+# use worker-backed dedicated execution after the green cross-platform gate;
+# an existing explicit false value remains the rollback path. No worker is
+# created merely by opening the UI.
 _install_phase5_workers()
 
 

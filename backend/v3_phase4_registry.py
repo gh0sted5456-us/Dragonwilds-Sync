@@ -3,7 +3,9 @@ from __future__ import annotations
 """Canonical V3 Phase 4 tag/platform registries.
 
 The registries are application metadata authorities. Worlds store stable IDs or
-human tags; renderers never invent platform URLs or tag aliases.
+human tags; renderers never invent platform URLs or tag aliases. World Builder
+presets, the desktop application, WebGUI and public directory all normalize
+through this same tag vocabulary while still permitting bounded custom tags.
 """
 
 from copy import deepcopy
@@ -23,9 +25,21 @@ _TAG_DEFAULTS = [
     {"id": "casual", "displayName": "Casual", "category": "Community", "aliases": ["casual"]},
     {"id": "hardcore", "displayName": "Hardcore", "category": "Community", "aliases": ["hardcore", "hard-core"]},
     {"id": "roleplay", "displayName": "Roleplay", "category": "Community", "aliases": ["roleplay", "role-play", "rp"]},
+    {"id": "community", "displayName": "Community", "category": "Community", "aliases": ["community", "community world"]},
+    {"id": "general", "displayName": "General", "category": "Community", "aliases": ["general", "general purpose", "general-purpose"]},
+    {"id": "respectful", "displayName": "Respectful", "category": "Community", "aliases": ["respectful", "respectful community"]},
+    {"id": "new-player-friendly", "displayName": "New Player Friendly", "category": "Community", "aliases": ["new player friendly", "new-player-friendly", "beginner friendly", "beginner-friendly"]},
+    {"id": "kids", "displayName": "Kids", "category": "Audience", "aliases": ["kids", "kid friendly", "kid-friendly", "children"]},
+    {"id": "family-friendly", "displayName": "Family Friendly", "category": "Audience", "aliases": ["family friendly", "family-friendly", "family"]},
+    {"id": "strict-chat", "displayName": "Strict Chat", "category": "Audience", "aliases": ["strict chat", "strict-chat", "clean chat"]},
+    {"id": "adults-only", "displayName": "18+", "category": "Audience", "aliases": ["18+", "18 plus", "adults only", "adults-only", "adult"]},
+    {"id": "mature-community", "displayName": "Mature Community", "category": "Audience", "aliases": ["mature community", "mature-community", "mature"]},
+    {"id": "custom-rules", "displayName": "Custom Rules", "category": "Rules", "aliases": ["custom rules", "custom-rules", "custom"]},
     {"id": "modded", "displayName": "Modded", "category": "Content", "aliases": ["modded", "mods"]},
     {"id": "vanilla", "displayName": "Vanilla", "category": "Content", "aliases": ["vanilla", "unmodded"]},
-    {"id": "new-player-friendly", "displayName": "New Player Friendly", "category": "Community", "aliases": ["new player friendly", "new-player-friendly", "beginner friendly", "beginner-friendly"]},
+    {"id": "ue4ss", "displayName": "UE4SS", "category": "Mod Ecosystem", "aliases": ["ue4ss", "ue 4 ss"]},
+    {"id": "runeschema", "displayName": "RuneSchema", "category": "Mod Ecosystem", "aliases": ["runeschema", "rune schema"]},
+    {"id": "paks", "displayName": "PAKs", "category": "Mod Ecosystem", "aliases": ["pak", "paks", "pak mods", "pak-mods", "utoc", "ucas"]},
 ]
 
 # Direct links were verified against first-party storefront/Jagex pages on

@@ -216,6 +216,40 @@ class WorkerSupervisor:
             "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True},
         }
 
+    def start_share(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.reconcile(profile_id)
+        if not state.get("live") or not state.get("attached"):
+            raise RuntimeError("A live authenticated World worker is required before Sync/file share can start.")
+        response = self._require_ok(self._call(state, "START_SHARE"), "share start")
+        status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
+        return {
+            "profileId": profile_id, "result": dict(response.get("result") or {}),
+            "status": {**status, "live": True, "attached": True},
+        }
+
+    def stop_share(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.reconcile(profile_id)
+        if not state.get("live"):
+            return {"profileId": profile_id, "result": {"serving": False, "stop_verified": True, "stop_method": "worker-absent"}, "status": state}
+        if not state.get("attached"):
+            raise RuntimeError("Worker is live but cannot be authenticated; refusing an unsafe Sync/file-share stop.")
+        response = self._require_ok(self._call(state, "STOP_SHARE"), "share stop")
+        status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
+        return {
+            "profileId": profile_id, "result": dict(response.get("result") or {}),
+            "status": {**status, "live": True, "attached": True},
+        }
+
+    def share_payload(self, profile_id: str) -> dict:
+        profile_id = safe_id(profile_id, "profile ID")
+        state = self.reconcile(profile_id)
+        if not state.get("live") or not state.get("attached"):
+            return {}
+        response = self._require_ok(self._call(state, "GET_SHARE_PAYLOAD"), "share payload")
+        return dict(response.get("payload") or {}) if isinstance(response.get("payload"), dict) else {}
+
     def stop_runtime(self, profile_id: str) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
         state = self.reconcile(profile_id)

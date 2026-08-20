@@ -236,6 +236,22 @@ jobs:
           node --check _site/public-directory-fetch-fallback.js
           node --check _site/public-directory-view.js
 
+      - name: Verify homepage presentation and download card
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/assets/download-placard-background.png
+          test -s _site/assets/demo-world-banner.svg
+          test -s _site/assets/demo-world-icon.svg
+          grep -q 'Steam Server' _site/index.html
+          grep -q 'data-current-cl' _site/index.html
+          grep -q 'Snorkles' _site/script.js
+          grep -q 'Hi im Tat' _site/script.js
+          grep -q 'Dragonwilds Modding Community' _site/script.js
+          grep -q 'browser_download_url' _site/script.js
+          ! grep -q 'Download Experimental' _site/script.js
+          ! grep -q 'Preview what comes next' _site/script.js
+
       - name: Verify Public Server List route
         shell: bash
         run: |

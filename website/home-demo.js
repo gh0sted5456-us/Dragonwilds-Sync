@@ -305,7 +305,7 @@
       const rule = currentRule();
       const platformLabels = platforms.map((entry) => entry.label);
       const runtimeBadges = modFamilies.filter((family) => groups[family.id]?.length).map((family) => family.label);
-      const badges = [...platformLabels, ...runtimeBadges, 'Verified', ...(community ? ['Discord'] : []), ...(modded ? ['Nexus Mods', 'Modded'] : []), ...(isExperimental ? ['Experimental'] : ['Current'])];
+      const badges = [...platformLabels.map((label) => label === 'Steam' ? 'Steam Server' : label), ...runtimeBadges, 'Verified', ...(community ? ['Discord'] : []), ...(modded ? ['Nexus Mods', 'Modded'] : []), ...(isExperimental ? ['Experimental'] : ['Current'])];
 
       return {
         world_id: `web-${safeSlug(name).toLowerCase()}-${channel}`,
@@ -315,7 +315,7 @@
         region: fields.region.value,
         country_code: region.code,
         country_name: region.name,
-        version: isExperimental ? 'CL-DEV' : (window.currentSteamServerBuild || 'CL-CURRENT'),
+        version: isExperimental ? 'CL-DEV' : (window.DWS_CURRENT_CL || 'CL-232224'),
         status: 'online',
         players: { current: isExperimental ? 4 : 12, max: 20 },
         tags: [isExperimental ? 'Experimental' : 'Main', mode === 'coop' ? 'Co-op' : mode === 'single' ? 'Sync World' : 'Dedicated', ...(modded ? ['Modded'] : ['Vanilla']), ...(isPublic ? ['Public'] : ['Private']), ...customTags].slice(0, 10),

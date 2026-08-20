@@ -1,6 +1,7 @@
 const API_BASE = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev';
 const RELEASE_API = 'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/releases/latest';
 const THEME_KEY = 'dragonwilds-sync-theme';
+const CURRENT_CL_FALLBACK = 'CL-232224';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -118,6 +119,30 @@ async function fetchJson(path, timeoutMs = 8000) {
 let allWorlds = [];
 let activeFilter = 'all';
 let currentBuild = null;
+
+function canonicalCl(value) {
+  const match = String(value || '').trim().match(/^cl-?(\d{4,})$/i);
+  return match ? `CL-${match[1]}` : '';
+}
+
+function choosePublishedCl(rows) {
+  const counts = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    const cl = canonicalCl(row?.version ?? row?.build ?? row?.current_build);
+    if (cl) counts.set(cl, (counts.get(cl) || 0) + 1);
+  });
+  return [...counts].sort((a, b) => b[1] - a[1] || Number(b[0].slice(3)) - Number(a[0].slice(3)))[0]?.[0] || '';
+}
+
+function publishCurrentCl(value) {
+  const cl = canonicalCl(value) || CURRENT_CL_FALLBACK;
+  window.DWS_CURRENT_CL = cl;
+  $$('[data-current-cl]').forEach((node) => { node.textContent = cl; });
+  window.dispatchEvent(new CustomEvent('dws-current-cl', { detail: { cl } }));
+  return cl;
+}
+
+publishCurrentCl(CURRENT_CL_FALLBACK);
 
 function isOnline(world) {
   return ['online', 'starting', 'maintenance'].includes(world.status) && world.status !== 'offline';
@@ -260,6 +285,7 @@ async function loadWorlds() {
   try {
     const data = await fetchJson('/api/v1/worlds');
     const rows = Array.isArray(data?.worlds) ? data.worlds : [];
+    publishCurrentCl(choosePublishedCl(rows));
     const deduped = new Map();
     rows.map(normalizeWorld).forEach((world) => deduped.set(world.worldId, world));
     allWorlds = [...deduped.values()].sort((a, b) => Number(isOnline(b)) - Number(isOnline(a)) || (normalizeTimestamp(b.lastSeen) || 0) - (normalizeTimestamp(a.lastSeen) || 0) || a.name.localeCompare(b.name));
@@ -287,16 +313,17 @@ async function loadNetwork() {
     const worlds = data?.active_worlds;
     const players = data?.players_in_listed_worlds;
     currentBuild = safeText(data?.current_build ?? data?.version, '', 40) || null;
+    const productionCl = publishCurrentCl(canonicalCl(currentBuild) || CURRENT_CL_FALLBACK);
     $('#stat-users').textContent = Number.isFinite(Number(users)) ? String(Number(users)) : '—';
     $('#stat-worlds').textContent = Number.isFinite(Number(worlds)) ? String(Number(worlds)) : $('#stat-worlds').textContent;
     $('#stat-players').textContent = Number.isFinite(Number(players)) ? String(Number(players)) : $('#stat-players').textContent;
-    $('#stat-build').textContent = currentBuild || '—';
+    $('#stat-build').textContent = productionCl;
     message.textContent = 'Live aggregate presence from participating Dragonwilds Sync installations and public Worlds.';
     dot.className = 'network-live-dot';
     renderWorlds();
   } catch (_) {
     $('#stat-users').textContent = '—';
-    $('#stat-build').textContent = 'Pending';
+    $('#stat-build').textContent = publishCurrentCl(CURRENT_CL_FALLBACK);
     message.textContent = 'Public World telemetry is live. Anonymous active-user totals will appear automatically when the network-presence endpoint is enabled.';
     dot.className = 'network-live-dot offline';
   }
@@ -312,7 +339,6 @@ $('#world-search')?.addEventListener('input', renderWorlds);
 async function loadLatestRelease() {
   const releaseVersion = $('#release-version');
   const releaseDate = $('#release-date');
-  const releaseChannel = $('#release-channel');
   const releaseLink = $('#release-link');
   try {
     const response = await fetch(RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
@@ -321,12 +347,14 @@ async function loadLatestRelease() {
     const date = new Date(release.published_at || release.created_at);
     releaseVersion.textContent = safeText(release.tag_name || release.name, 'Latest');
     releaseDate.textContent = Number.isNaN(date.getTime()) ? 'GitHub Releases' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    releaseChannel.textContent = 'Main';
-    if (release.html_url) releaseLink.href = release.html_url;
+    const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
+    if (executable) {
+      releaseLink.href = executable.browser_download_url;
+      releaseLink.setAttribute('download', '');
+    }
   } catch (_) {
     releaseVersion.textContent = 'Latest available';
     releaseDate.textContent = 'GitHub Releases';
-    releaseChannel.textContent = 'Main';
   }
 }
 

@@ -40,23 +40,44 @@ jobs:
               raise SystemExit('Fallback snapshot is empty')
           print(f'Validated fallback snapshot with {len(worlds)} Worlds')
           PY
+          cp website/assets/public-worlds-fallback.json "$RUNNER_TEMP/public-worlds-fallback.json"
 
-      - name: Commit refreshed snapshot when changed
+      - name: Commit refreshed snapshot without racing main
         id: snapshot
         shell: bash
         run: |
           set -euo pipefail
-          if git diff --quiet -- website/assets/public-worlds-fallback.json && git ls-files --error-unmatch website/assets/public-worlds-fallback.json >/dev/null 2>&1; then
-            echo 'Public server fallback snapshot is unchanged.'
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add website/assets/public-worlds-fallback.json
-          git commit -m 'Refresh public server fallback snapshot'
-          git push origin HEAD:main
-          echo 'changed=true' >> "$GITHUB_OUTPUT"
+
+          # A snapshot run can overlap normal development pushes. Always replay
+          # the generated data file onto the newest main and retry a rejected
+          # fast-forward instead of allowing a stale workflow checkout to win.
+          for attempt in 1 2 3; do
+            echo "Snapshot publish attempt $attempt/3"
+            git fetch origin main
+            git reset --hard origin/main
+            cp "$RUNNER_TEMP/public-worlds-fallback.json" website/assets/public-worlds-fallback.json
+
+            if git diff --quiet -- website/assets/public-worlds-fallback.json && git ls-files --error-unmatch website/assets/public-worlds-fallback.json >/dev/null 2>&1; then
+              echo 'Public server fallback snapshot is unchanged on current main.'
+              echo 'changed=false' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            git add website/assets/public-worlds-fallback.json
+            git commit -m 'Refresh public server fallback snapshot'
+            if git push origin HEAD:main; then
+              echo 'changed=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo 'main advanced while publishing the snapshot; retrying against the new tip.' >&2
+            sleep $((attempt * 2))
+          done
+
+          echo 'Unable to publish snapshot after three fast-forward retries.' >&2
+          exit 1
 
       - name: Deploy refreshed snapshot to GitHub Pages
         env:

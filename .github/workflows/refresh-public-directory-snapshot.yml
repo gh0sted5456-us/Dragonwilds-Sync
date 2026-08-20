@@ -1,0 +1,55 @@
+name: Refresh Public Server Fallback Snapshot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/15 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/scripts/build_public_server_snapshot.py'
+      - '.github/workflows/refresh-public-directory-snapshot.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: public-directory-fallback-snapshot
+  cancel-in-progress: true
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build complete public-server fallback snapshot
+        run: |
+          python3 .github/scripts/build_public_server_snapshot.py website/assets/public-worlds-fallback.json
+          python3 - <<'PY'
+          import json
+          path = 'website/assets/public-worlds-fallback.json'
+          data = json.load(open(path, encoding='utf-8'))
+          worlds = data.get('worlds') or []
+          if not worlds:
+              raise SystemExit('Fallback snapshot is empty')
+          print(f'Validated fallback snapshot with {len(worlds)} Worlds')
+          PY
+
+      - name: Commit refreshed snapshot when changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- website/assets/public-worlds-fallback.json && git ls-files --error-unmatch website/assets/public-worlds-fallback.json >/dev/null 2>&1; then
+            echo 'Public server fallback snapshot is unchanged.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add website/assets/public-worlds-fallback.json
+          git commit -m 'Refresh public server fallback snapshot'
+          git push origin HEAD:main

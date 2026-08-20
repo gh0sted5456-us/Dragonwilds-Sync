@@ -77,6 +77,7 @@
   // for v1 compatibility, but present it as Nintendo Switch 2 and use the Switch 2 mark.
   function upgradeWorldBuilderSwitch2(root = document) {
     root.querySelectorAll('[data-demo-platform="nintendo"]').forEach((input) => {
+      if (input.dataset.platformCanonical === 'switch2') return;
       const wrapper = input.closest('.demo-platform');
       if (!wrapper) return;
       input.dataset.label = 'Nintendo Switch 2';

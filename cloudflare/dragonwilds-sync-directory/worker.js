@@ -143,8 +143,25 @@ async function worldById(env,id) {const worldId=normalizedId(id,'world'),row=awa
 async function networkStats(env) {
   const cutoff=now()-ACTIVE_WINDOW_SECONDS;
   const worlds=await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(player_count),0) AS players FROM worlds_v3 WHERE last_seen>=?1 AND status='active'").bind(cutoff).first();
-  const installations=await env.DB.prepare('SELECT COUNT(*) AS n FROM installations WHERE last_seen>=?1 AND revoked_at IS NULL').bind(cutoff).first();
-  return json({active_worlds:Number(worlds?.n||0),active_players:Number(worlds?.players||0),active_installations:Number(installations?.n||0),generated_at:now()},200,PUBLIC_HEADERS);
+  const presence=await env.DB.prepare(`SELECT COUNT(*) AS n,
+    COALESCE(SUM(CASE WHEN p.mode='client' THEN 1 ELSE 0 END),0) AS clients,
+    COALESCE(SUM(CASE WHEN p.mode='dedicated_server' THEN 1 ELSE 0 END),0) AS dedicated_servers,
+    COALESCE(SUM(CASE WHEN p.mode='coop_host' THEN 1 ELSE 0 END),0) AS coop_hosts
+    FROM network_presence_v3 p JOIN installations i ON i.installation_id=p.installation_id
+    WHERE p.last_seen>=?1 AND i.revoked_at IS NULL`).bind(cutoff).first();
+  const activeUsers=Number(presence?.n||0), activeWorlds=Number(worlds?.n||0), players=Number(worlds?.players||0);
+  return json({
+    active_users:activeUsers,
+    active_worlds:activeWorlds,
+    dedicated_servers:Number(presence?.dedicated_servers||0),
+    coop_hosts:Number(presence?.coop_hosts||0),
+    clients:Number(presence?.clients||0),
+    players_in_listed_worlds:players,
+    // Backward-compatible aggregate aliases retained for existing consumers.
+    active_installations:activeUsers,
+    active_players:players,
+    generated_at:now(),
+  },200,PUBLIC_HEADERS);
 }
 
 export default {

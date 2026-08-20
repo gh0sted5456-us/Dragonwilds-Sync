@@ -136,6 +136,22 @@ jobs:
           cp -R renderer/assets/flags _site/assets/flags
           cp -R renderer/assets/platforms _site/assets/platforms
 
+          required_platforms=(
+            steam.svg
+            windows.svg
+            xbox.svg
+            playstation.svg
+            nintendo.svg
+            epicgames.svg
+            discord.svg
+            nexusmods.svg
+          )
+          for asset in "${required_platforms[@]}"; do
+            path="_site/assets/platforms/$asset"
+            test -s "$path" || { echo "Required baked platform asset missing: $asset" >&2; exit 1; }
+            grep -qi '<svg' "$path" || { echo "Required platform asset is not SVG: $asset" >&2; exit 1; }
+          done
+
           if [ -f "$RUNNER_TEMP/server-build.json" ]; then
             cp "$RUNNER_TEMP/server-build.json" _site/assets/server-build.json
           else
@@ -156,11 +172,15 @@ jobs:
           cat website/home-demo.css >> _site/styles.css
           printf '\n\n/* Flippable release download surface */\n' >> _site/styles.css
           cat website/download-flip.css >> _site/styles.css
+          printf '\n\n/* Homepage information hierarchy */\n' >> _site/styles.css
+          cat website/top-flow.css >> _site/styles.css
 
           printf '\n\n/* App placard parity layer */\n' >> _site/script.js
           cat website/placards.js >> _site/script.js
           printf '\n\n/* Placard icon enhancements */\n' >> _site/script.js
           cat website/placard-enhancements.js >> _site/script.js
+          printf '\n\n/* Canonical baked platform assets */\n' >> _site/script.js
+          cat website/platform-assets.js >> _site/script.js
           printf '\n\n/* Steam dedicated-server build authority */\n' >> _site/script.js
           cat website/server-build.js >> _site/script.js
           printf '\n\n/* Interactive homepage demo */\n' >> _site/script.js
@@ -171,6 +191,8 @@ jobs:
           fi
           printf '\n\n/* Flippable release download surface */\n' >> _site/script.js
           cat website/download-flip.js >> _site/script.js
+          printf '\n\n/* Homepage information hierarchy */\n' >> _site/script.js
+          cat website/top-flow.js >> _site/script.js
 
           touch _site/.nojekyll
 

@@ -20,6 +20,10 @@
   const objectValue = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const placardId = (value) => ['1','2','3','4'].includes(String(value)) ? String(value) : '1';
   const initials = (value) => safeText(value, 'DW', 80).split(/\s+/).filter(Boolean).slice(0,2).map((part) => part[0]?.toUpperCase()).join('') || 'DW';
+  const textList = (value, max = 24) => {
+    const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/\r?\n|;/) : [];
+    return source.map((item) => safeText(item, '', 180)).filter(Boolean).slice(0, max);
+  };
   const communitySignal = (raw, badges) => {
     const community = objectValue(raw?.community ?? raw?.presentation?.community);
     const invite = safeText(community.discord_invite ?? community.invite_url ?? raw?.discord_invite, '', 400);
@@ -28,23 +32,46 @@
     const implied = badges.some((badge) => /discord|community|rsdw/i.test(badge));
     return { enabled: Boolean(invite || guild || implied), invite: /^https:\/\//i.test(invite) ? invite : '', guild, label };
   };
+  const normalizeModGroups = (raw, baseMods) => {
+    const source = objectValue(raw?.mod_groups ?? raw?.mods_by_family ?? raw?.mods_by_runtime);
+    const groups = {
+      ue4ss: textList(source.ue4ss ?? source.UE4SS, 32),
+      runeschema: textList(source.runeschema ?? source.RuneSchema ?? source.rune_schema, 32),
+      paks: textList(source.paks ?? source.pak ?? source.PAKs, 32),
+      other: textList(source.other, 32),
+    };
+    const hasStructured = groups.ue4ss.length || groups.runeschema.length || groups.paks.length || groups.other.length;
+    if (!hasStructured) groups.other = textList(baseMods, 32);
+    return groups;
+  };
 
   normalizeWorld = function normalizePlacardWorld(raw) {
     const base = originalNormalizeWorld(raw);
     const presentation = objectValue(raw?.presentation);
     const classification = objectValue(raw?.classification);
     const rating = objectValue(raw?.rating);
-    const badges = safeList(raw?.badges ?? presentation.badges, 12);
+    const badges = safeList(raw?.badges ?? presentation.badges, 16);
     const name = safeText(raw?.nickname ?? raw?.display_name ?? base.name, 'Unnamed World', 90);
     const authoritativeName = safeText(raw?.world_name ?? raw?.identity?.world_name ?? base.name, name, 90);
     const hostType = safeText(raw?.host_type ?? classification.host_type ?? raw?.mode, '', 32).toLowerCase();
     const modeLabel = hostType === 'dedicated' || hostType === 'server' ? 'DEDICATED SERVER' : hostType === 'coop' || hostType === 'co-op' ? 'CO-OP' : 'SYNC WORLD';
     const modeTone = modeLabel === 'DEDICATED SERVER' ? 'dedicated' : modeLabel === 'CO-OP' ? 'coop' : 'single';
     const community = communitySignal(raw, badges);
+    const ruleSource = objectValue(raw?.community_rule_profile ?? raw?.rules_profile ?? raw?.rule_profile);
+    const rules = textList(ruleSource.rules ?? raw?.rules ?? raw?.community_rules ?? base.rules, 32);
+    const ruleId = safeText(ruleSource.id ?? raw?.community_rule_profile_id, rules.length ? 'custom' : 'none', 40).toLowerCase();
+    const audience = safeText(raw?.audience ?? classification.visibility, '', 40);
+    const ruleLabel = safeText(ruleSource.label ?? raw?.community_rule_profile_label,
+      ruleId === 'kids' ? 'Kids / Family Friendly' : ruleId === 'adults' ? 'Adults Only' : ruleId === 'normal' ? 'Normal' : ruleId === 'roleplay' ? 'Roleplay' : rules.length ? 'Custom Rules' : 'No Rules Published', 80);
+    const mods = textList(raw?.mods ?? base.mods, 32);
     return {
       ...base,
       name,
       authoritativeName,
+      rules,
+      mods,
+      ruleProfile: { id: ruleId, label: ruleLabel, audience: safeText(ruleSource.audience ?? audience, audience || 'general', 40), tags: textList(ruleSource.tags, 8), rules },
+      modGroups: normalizeModGroups(raw, mods),
       placardBackground: placardId(raw?.placard_background ?? presentation.placard_background),
       bannerUrl: safeImageUrl(raw?.banner_url ?? raw?.banner ?? presentation.banner_url ?? presentation.banner),
       iconUrl: safeImageUrl(raw?.icon_url ?? raw?.icon ?? presentation.icon_url ?? presentation.icon),
@@ -52,7 +79,7 @@
       countryCode: safeText(raw?.country_code ?? raw?.status?.country_code, '', 4).toUpperCase(),
       countryName: safeText(raw?.country_name ?? raw?.status?.country_name, '', 60),
       hosting: safeText(raw?.hosting ?? raw?.host_label ?? classification.hosting, '', 60),
-      audience: safeText(raw?.audience ?? classification.visibility, '', 40),
+      audience,
       platform: safeText(raw?.platform ?? classification.platform, '', 40),
       contentType: safeText(raw?.content_type ?? classification.content_type, '', 40),
       gameMode: safeText(raw?.game_mode ?? classification.game_mode, '', 40),
@@ -93,7 +120,7 @@
     if (world.gameMode) row.appendChild(makeBadge(world.gameMode.toUpperCase()));
     const state = buildState(world);
     row.appendChild(makeBadge(`${world.version}${state === 'current' ? ' · Current' : state === 'outdated' ? ' · Outdated' : ''}`, state === 'current' ? 'build-current' : state === 'outdated' ? 'build-outdated' : ''));
-    world.badges.slice(0, 6).forEach((badge) => row.appendChild(makeBadge(badge, /discord|community|rsdw/i.test(badge) ? 'community' : '')));
+    world.badges.slice(0, 8).forEach((badge) => row.appendChild(makeBadge(badge, /discord|community|rsdw/i.test(badge) ? 'community' : '')));
     return row;
   }
 
@@ -184,6 +211,58 @@
     return front;
   }
 
+  function ensureDetailDialog() {
+    let dialog = document.querySelector('#world-detail-dialog');
+    if (dialog) return dialog;
+    dialog = document.createElement('dialog');
+    dialog.id = 'world-detail-dialog';
+    dialog.className = 'world-detail-dialog';
+    const shell = makeEl('div', 'world-detail-dialog-shell');
+    const head = makeEl('div', 'world-detail-dialog-head');
+    const copy = makeEl('div', 'world-detail-dialog-title');
+    copy.append(makeEl('span', '', 'WORLD DETAILS'), makeEl('h3', '', 'Details'));
+    const close = makeEl('button', 'world-detail-dialog-close', '×');
+    close.type = 'button';
+    close.setAttribute('aria-label', 'Close details');
+    head.append(copy, close);
+    shell.append(head, makeEl('p', 'world-detail-dialog-description', ''), makeEl('div', 'world-detail-dialog-list'));
+    dialog.appendChild(shell);
+    document.body.appendChild(dialog);
+    close.addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (event) => { if (event.target === dialog) dialog.close(); });
+    return dialog;
+  }
+
+  function openDetailDialog(world, title, description, values) {
+    const dialog = ensureDetailDialog();
+    dialog.querySelector('.world-detail-dialog-title span').textContent = world.name;
+    dialog.querySelector('.world-detail-dialog-title h3').textContent = title;
+    dialog.querySelector('.world-detail-dialog-description').textContent = description || '';
+    const list = dialog.querySelector('.world-detail-dialog-list');
+    list.replaceChildren();
+    values.forEach((value, index) => {
+      const row = makeEl('div', 'world-detail-dialog-row');
+      row.append(makeEl('span', 'world-detail-dialog-index', String(index + 1)), makeEl('p', '', value));
+      list.appendChild(row);
+    });
+    if (!values.length) list.appendChild(makeEl('p', 'world-detail-empty', 'Nothing has been published in this category.'));
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+
+  function makeDetailChip(world, label, values, description, className = '') {
+    const button = makeEl('button', `world-detail-chip ${className}`.trim());
+    button.type = 'button';
+    button.append(makeEl('strong', '', label), makeEl('span', '', String(values.length)));
+    button.setAttribute('aria-label', `Open ${label} for ${world.name}`);
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openDetailDialog(world, label, description, values);
+    });
+    return button;
+  }
+
   function makeBackSection(heading, values, emptyText) {
     const section = makeEl('section', 'world-back-section');
     section.appendChild(makeEl('h4', '', heading));
@@ -191,6 +270,32 @@
     appendChips(list, values, emptyText);
     section.appendChild(list);
     return section;
+  }
+
+  function makeInteractiveBackSection(heading, children, emptyText) {
+    const section = makeEl('section', 'world-back-section world-back-section-interactive');
+    section.appendChild(makeEl('h4', '', heading));
+    const list = makeEl('div', 'world-back-list world-back-detail-list');
+    if (children.length) children.forEach((child) => list.appendChild(child));
+    else list.appendChild(makeEl('span', 'back-chip muted', emptyText));
+    section.appendChild(list);
+    return section;
+  }
+
+  function modFamilyButtons(world) {
+    const defs = [
+      ['ue4ss', 'UE4SS', 'UE4SS runtime and Lua mods published by this World.'],
+      ['runeschema', 'RuneSchema', 'RuneSchema data-driven mods published by this World.'],
+      ['paks', 'PAKs', 'Cooked Unreal package mods published by this World.'],
+      ['other', 'Other Mods', 'Published mods without a declared runtime family.'],
+    ];
+    return defs.filter(([key]) => world.modGroups[key]?.length).map(([key, label, description]) => makeDetailChip(world, label, world.modGroups[key], description, `mod-family-${key}`));
+  }
+
+  function ruleButtons(world) {
+    if (!world.ruleProfile.rules.length) return [];
+    return [makeDetailChip(world, world.ruleProfile.label, world.ruleProfile.rules,
+      world.ruleProfile.id === 'kids' ? 'Family-friendly community rules.' : world.ruleProfile.id === 'adults' ? '18+ community rules.' : 'Published community rules.', `rule-profile-${world.ruleProfile.id}`)];
   }
 
   function makeBack(world) {
@@ -206,7 +311,12 @@
     body.appendChild(makeEl('p', 'world-back-summary', world.description));
 
     const grid = makeEl('div', 'world-back-grid');
-    grid.append(makeBackSection('Mods', world.mods, 'None published'), makeBackSection('Community Rules', world.rules, 'None published'), makeBackSection('Badges', world.badges, 'None'), makeBackSection('Tags', world.tags, 'None'));
+    grid.append(
+      makeInteractiveBackSection('Mods', modFamilyButtons(world), 'None published'),
+      makeInteractiveBackSection('Community Rules', ruleButtons(world), 'None published'),
+      makeBackSection('Badges', world.badges, 'None'),
+      makeBackSection('Tags', world.tags, 'None')
+    );
     body.appendChild(grid);
 
     if (world.community.enabled) {
@@ -261,8 +371,6 @@
     return card;
   };
 
-  // If the first public-directory response happened unusually quickly, redraw it
-  // immediately with the parity renderer. Normal fetch timing means this is a no-op.
   queueMicrotask(() => {
     try { if (Array.isArray(allWorlds) && allWorlds.length) renderWorlds(); } catch (_) {}
   });

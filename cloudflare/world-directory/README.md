@@ -14,16 +14,16 @@ Read-only public Dragonwilds sources
 
 Cloudflare Worker
   -> validate + sanitize Sync heartbeats
-  -> refresh public sources every five minutes
+  -> resumably scan public sources on a five-minute schedule
   -> normalize + store source observations in D1
   -> conservatively identify duplicate Worlds
   -> prefer the Dragonwilds Sync record when a duplicate is proven
 
 Cloudflare D1
   -> Sync current state + heartbeat history
-  -> public source observations + source health
+  -> public source observations + source health + scan cursor/generation
 
-GitHub Pages
+GitHub Pages / Dragonwilds Sync application
   -> GET /api/v1/worlds
 ```
 
@@ -31,7 +31,7 @@ The public API is intentionally read-only. It does not expose server administrat
 
 ## Public directory aggregation
 
-`GET /api/v1/worlds` is the canonical merged response used by the website. It may contain both:
+`GET /api/v1/worlds` is the canonical merged response used by the website and the website-backed application Public Server List. It may contain both:
 
 - signed Dragonwilds Sync Worlds, and
 - ordinary publicly observed Dragonwilds servers from approved read-only providers.
@@ -43,7 +43,24 @@ Current providers:
 - `shrug-eos-index` — the same Shrug EOS session mirror already used by the desktop public-world browser.
 - `lobbysup` — the same LobbySup public observation feed already used by the desktop public-world browser.
 
-The Worker refreshes configured providers every five minutes and also requests a background refresh when `/api/v1/worlds` is read and source data is stale.
+### Full-provider scan model
+
+The authoritative scheduled collector is `src/rotating-public-scan.ts`.
+
+The old fixed 100/500-record refresh is retained only as a compatibility fallback inside the core Worker. It is not the authoritative directory size.
+
+For the paged Shrug source, each five-minute Worker invocation fetches a bounded number of pages and stores a scan cursor/generation in D1. The next invocation resumes from that cursor. When a short/empty page proves the end of the source roster, the generation is completed and rows not seen during that **complete** pass are marked unlisted.
+
+This deliberately means:
+
+- a large public roster fills progressively across scheduled runs;
+- the previous generation remains visible while a replacement pass is incomplete;
+- provider errors or parsing failures do not immediately blank the previous dataset;
+- the website is not limited to the first 100 or 500 source rows.
+
+The current Shrug batch is 35 pages × 10 rows, so a normal cron run advances roughly 350 source rows while keeping outbound work bounded. LobbySup currently exposes its usable current set in one response, so that adapter commits the full returned set as one generation.
+
+Public reads may nudge one due background batch through `ExecutionContext.waitUntil`, but the webpage itself never scrapes Shrug or LobbySup.
 
 ### Identity precedence and duplicate suppression
 
@@ -69,7 +86,15 @@ The public response includes `directory.precedence = "dragonwilds-sync"` and dup
 - `public_source_worlds` — normalized read-only public observations.
 - `public_source_runs` — last refresh, error, and record-count status per provider.
 
-Source refreshes use a generation token so a failed or partial provider request does not immediately blank the last successful dataset.
+`0003_public_source_scan_state.sql` extends `public_source_runs` with:
+
+- `scan_cursor`
+- `scan_generation`
+- `scan_started_at`
+- `scan_completed_at`
+- `scan_total`
+
+These fields make provider enumeration resumable across Worker invocations.
 
 ## Public endpoints
 
@@ -78,10 +103,16 @@ GET /health
 GET /api/v1/worlds
 GET /api/v1/worlds/<world-id>
 GET /api/v1/sources
+GET /worlds                  # read-only compatibility alias
+GET /api/worlds              # read-only compatibility alias
+GET /manifest                # read-only compatibility alias
+GET /directory-source.json   # machine-readable application descriptor
 POST /api/v1/heartbeat
 ```
 
 `GET /api/v1/sources` exposes only provider labels/URLs and refresh health. It does not contain credentials.
+
+The compatibility aliases all resolve to the same merged public roster. They do not create another schema or trust path.
 
 ## Cloudflare agent setup
 
@@ -155,6 +186,8 @@ https://dragonwilds-sync-directory.<your-workers-subdomain>.workers.dev
 
 The current GitHub workflow also deploys automatically when files under `cloudflare/world-directory/**` change on `main`. The workflow type-checks the Worker, applies pending remote D1 migrations, and then deploys.
 
+The migration step must run before the Worker because `src/rotating-public-scan.ts` depends on the scan-state fields added by `0003_public_source_scan_state.sql`.
+
 ## Heartbeat contract
 
 Endpoint:
@@ -222,14 +255,17 @@ The API allows public browser reads with CORS and does not use credentialed CORS
 
 ## Source settings
 
-The default Worker configuration is:
+The current Worker configuration is:
 
 ```text
-PUBLIC_SOURCE_REFRESH_SECONDS=300
-PUBLIC_SOURCE_MAX_SERVERS=100
+PUBLIC_SOURCE_REFRESH_SECONDS=1800
+PUBLIC_SOURCE_MAX_SERVERS=500
+PUBLIC_SOURCE_BATCH_PAGES=35
 PUBLIC_SOURCE_PROVIDERS=shrug,lobbysup
 PUBLIC_SOURCE_TIMEOUT_MS=5000
 ```
+
+`PUBLIC_SOURCE_REFRESH_SECONDS` and `PUBLIC_SOURCE_MAX_SERVERS` govern the older compatibility refresher in `src/index.ts`. The scheduled entrypoint uses the resumable scanner instead. `PUBLIC_SOURCE_BATCH_PAGES` controls how many Shrug pages are advanced per resumable scan cycle.
 
 These are normal Worker variables, not secrets. Provider URLs are fixed in source so arbitrary URLs cannot be injected through public requests.
 
@@ -250,7 +286,7 @@ Wrangler uses local D1 storage in normal local development mode.
 
 Current signed Sync state lives in `worlds`. A compact heartbeat record also goes into `heartbeat_history`. Old heartbeat history is pruned automatically during accepted heartbeats. Default retention is seven days and can be changed with `HISTORY_RETENTION_DAYS`.
 
-Public-source observations are current-directory cache/provenance rather than operator telemetry. A successful provider refresh marks records not seen in that generation as unlisted; provider failures preserve the last successful rows instead of clearing them.
+Public-source observations are current-directory cache/provenance rather than operator telemetry. A completed provider generation marks records not seen in that full generation as unlisted. Partial scans and provider failures preserve previously listed rows.
 
 ## GitHub Actions
 

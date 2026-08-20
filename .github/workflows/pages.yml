@@ -141,14 +141,15 @@ jobs:
           cp -R renderer/assets/flags _site/assets/flags
           cp -R renderer/assets/platforms _site/assets/platforms
 
-          # The public roster is baked directly into servers.html so the page can
-          # never begin as a JavaScript-only empty directory. Live/fallback JSON
-          # still hydrates and replaces these compact rows after page startup.
+          # Bake one ten-server first page directly into servers.html so the
+          # directory never begins as a JavaScript-only blank surface. The full
+          # live/fallback dataset hydrates afterward and remains paginated.
           test -s _site/assets/public-worlds-fallback.json || { echo 'Public World fallback snapshot missing' >&2; exit 1; }
           python3 .github/scripts/inject_public_servers_html.py _site/assets/public-worlds-fallback.json _site/servers.html
           STATIC_WORLD_COUNT="$(grep -c 'data-static-public-world="1"' _site/servers.html || true)"
           test "$STATIC_WORLD_COUNT" -gt 0 || { echo 'No public Worlds were baked into servers.html' >&2; exit 1; }
-          echo "Baked Public Server List rows: $STATIC_WORLD_COUNT"
+          test "$STATIC_WORLD_COUNT" -le 10 || { echo 'Public Server List baked more than ten rows' >&2; exit 1; }
+          echo "Baked Public Server List first-page rows: $STATIC_WORLD_COUNT"
 
           required_platforms=(
             steam.svg
@@ -241,10 +242,14 @@ jobs:
           set -euo pipefail
           test -s _site/servers.html
           test -s _site/assets/public-worlds-fallback.json
+          test -s _site/public-directory-pagination.css
           grep -q 'data-static-public-world="1"' _site/servers.html
           grep -q 'data-directory-view="placards"' _site/servers.html
           grep -q 'data-directory-view="horizontal"' _site/servers.html
-          grep -q 'public-directory-fetch-fallback.js?v=public-directory-5' _site/servers.html
+          grep -q 'data-world-filter="offline-sync"' _site/servers.html
+          grep -q 'id="world-pagination"' _site/servers.html
+          grep -q 'id="stat-total-sync-starts"' _site/servers.html
+          grep -q 'public-directory-fetch-fallback.js?v=public-directory-6' _site/servers.html
           python3 - <<'PY'
           import json
           data=json.load(open('_site/assets/public-worlds-fallback.json',encoding='utf-8'))
@@ -252,8 +257,9 @@ jobs:
           assert worlds, 'Public World fallback snapshot is empty'
           html=open('_site/servers.html',encoding='utf-8').read()
           baked=html.count('data-static-public-world="1"')
-          assert baked == len(worlds), f'Baked row mismatch: html={baked}, snapshot={len(worlds)}'
-          print(f'Public Server List verified: {baked} baked rows')
+          assert 1 <= baked <= 10, f'Baked first page must contain 1-10 rows, got {baked}'
+          assert baked <= len(worlds), f'Baked rows exceed snapshot rows: html={baked}, snapshot={len(worlds)}'
+          print(f'Public Server List verified: {baked} baked first-page rows; {len(worlds)} snapshot rows available')
           PY
 
       - name: Verify World Builder route

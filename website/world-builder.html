@@ -10,9 +10,9 @@
   <meta property="og:type" content="website">
   <title>World Builder — Dragonwilds Sync</title>
   <link rel="icon" href="assets/application-icon.png">
-  <link rel="stylesheet" href="styles.css?v=world-builder-4">
-  <link rel="stylesheet" href="world-builder-controls.css?v=world-builder-4">
-  <link rel="stylesheet" href="world-draft-onboarding.css?v=world-builder-4">
+  <link rel="stylesheet" href="styles.css?v=world-builder-5">
+  <link rel="stylesheet" href="world-builder-controls.css?v=world-builder-5">
+  <link rel="stylesheet" href="world-draft-onboarding.css?v=world-builder-5">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -60,7 +60,7 @@
         <div class="section-heading">
           <div class="eyebrow">World Builder</div>
           <h2>Loading the browser authoring tools…</h2>
-          <p>If this remains visible after a few seconds, the dedicated builder runtime did not initialize. Refresh once after deployment; the page does not redirect to the public server browser.</p>
+          <p>The dedicated World Builder is starting. If initialization fails, this message will now show the JavaScript error instead of hanging silently.</p>
         </div>
       </div>
       <noscript><p class="section-heading">The World Builder requires JavaScript to create and package a local `.rsdwl` World Draft.</p></noscript>
@@ -88,11 +88,14 @@
     <span id="release-version"></span><span id="release-date"></span><span id="release-channel"></span><a id="release-link" href="#"></a>
   </div>
 
-  <!-- Versioned URLs intentionally keep the dedicated World Builder page and its
-       runtime dependencies on the same deployment revision instead of allowing a
-       stale cached builder script to mount against newer HTML. -->
-  <script src="script.js?v=world-builder-4"></script>
-  <script src="home-demo.js?v=world-builder-4"></script>
-  <script src="world-draft-onboarding.js?v=world-builder-4"></script>
+  <!-- Dedicated builder boot order:
+       1. shared site helpers when available
+       2. local runtime guard/fallbacks
+       3. builder authoring UI
+       4. draft onboarding explanation -->
+  <script src="script.js?v=world-builder-5"></script>
+  <script src="world-builder-runtime.js?v=world-builder-5"></script>
+  <script src="home-demo.js?v=world-builder-5"></script>
+  <script src="world-draft-onboarding.js?v=world-builder-5"></script>
 </body>
 </html>

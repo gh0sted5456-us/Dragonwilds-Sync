@@ -48,7 +48,11 @@ requireText('cloudflare/dragonwilds-sync-directory/schema-v3.sql', [
   'CREATE TABLE IF NOT EXISTS heartbeat_history_v3', 'CREATE TABLE IF NOT EXISTS rate_limits_v3',
 ]);
 if (worker.includes('WORLD_' + 'SECRETS_JSON')) failures.push('Cloudflare V3 Worker must not use transitional manual World secret provisioning');
-const networkStats = worker.slice(worker.indexOf('async function networkStats'), worker.indexOf('\n}\n\nexport default', worker.indexOf('async function networkStats')) + 2);
+const networkStatsStart = worker.indexOf('async function networkStats');
+const networkStatsEnd = worker.indexOf('export default', networkStatsStart);
+const networkStats = networkStatsStart >= 0 && networkStatsEnd > networkStatsStart
+  ? worker.slice(networkStatsStart, networkStatsEnd)
+  : '';
 if (!networkStats.includes("p.mode='client'") || !networkStats.includes("p.mode='dedicated_server'") || !networkStats.includes("p.mode='coop_host'")) failures.push('Network aggregate must break anonymous presence down by client/dedicated/coop mode');
 if (/\binstallation_id\s*:/.test(networkStats)) failures.push('Public network aggregate must never expose installation IDs');
 

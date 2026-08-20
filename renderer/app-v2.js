@@ -2157,13 +2157,13 @@
     return `<section class="world-back-section"><h4>${escapeHtml(title)}</h4><div class="world-back-list">${rows.length?rows.map((value)=>`<span>${escapeHtml(value)}</span>`).join(''):`<span>${escapeHtml(empty)}</span>`}</div></section>`;
   }
 
-  function placardBackMarkup(world,presentation,server,badges,title,desc,modeTone) {
+  function placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel='') {
     const manifest=world?.manifest_cache||{};
     const mods=server?(world?.mod_metadata||manifest.mod_summary||[]):(world?.mod_metadata||manifest.mod_summary||presentation?.mod_summary||[]);
     const tags=[...(presentation?.game_tags||[]),...(presentation?.sync_tags||[]),...(presentation?.tags||[])];
     const rules=String(world?.community_rules||presentation?.community_rules||manifest.community_rules||'').trim();
     const endpoint=!server?String(world?.connection?.external_ip||world?.connection?.internal_ip||'').trim():'';
-    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div><div class="world-card-body"><div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.id||'')}</small></div>${server?`<span class="status-pill unknown">HOST</span>`:statusPill(world)}</div><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Mods',mods)}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer"><div class="card-metrics"><span>Profile telemetry and presentation</span></div><span class="card-flip-hint">FRONT ↻</span></div></div></section>`;
+    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div>${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}<div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div><div class="world-card-body">${icon?`<img class="world-icon" src="${icon}" alt=""/>`:`<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}<div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.id||'')}</small></div>${server?`<span class="status-pill unknown">HOST</span>`:statusPill(world)}</div><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Mods',mods)}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer"><div class="card-metrics"><span>Profile telemetry and presentation</span></div><span class="card-flip-hint">FRONT ↻</span></div></div></section>`;
   }
 
   function worldCard(world, server = false) {
@@ -2207,7 +2207,7 @@
           <div class="badges placard-front-summary">${placardFrontClassificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}</div>
           <div class="card-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span>${escapeHtml(ping)}</span><span>${escapeHtml(players)}</span>${observed?`<span title="LobbySup public player history">${escapeHtml(observed)}</span>`:''}</div>${worldRatingMarkup(world)}<span class="card-flip-hint">DETAILS ↻</span></div>
         </div>
-       </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone)}</div>
+       </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel)}</div>
        ${!server&&!single?`<div class="placard-actions integrated"><button class="btn play" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost" data-world-details="${escapeHtml(world.id)}">Details</button></div>`:''}
       </article>`;
   }
@@ -2222,7 +2222,9 @@
     const players = world.status?.player_count != null ? `${world.status.player_count} players` : 'Players —';
     const ping = world.status?.ping_ms != null ? `${Math.round(world.status.ping_ms)} ms` : 'Ping —';
     const originLabel=(world.shared?.curated||world.shared?.source_id)?String(world.shared?.profile_name||world.shared?.source_name||world.shared?.source_id||'Imported Manifest'):'';
-    return `<article class="world-list-row" data-world-id="${escapeHtml(world.id)}" data-server-card="0">
+    const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
+    const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
+    return `<article class="world-list-row has-placard" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="0">
       <div class="world-list-icon">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(title))}</span>`}</div>
       <div class="world-list-main"><div class="world-list-title"><h3>${escapeHtml(title)}</h3>${classificationMarkup(world)}${studio?syncBadgeMarkup(world):''}${originLabel?`<span class="status-pill manifest-source">MANIFEST · ${escapeHtml(originLabel)}</span>`:''}${statusPill(world)}</div><div class="world-list-meta">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world,true)}${worldCommunityMarkup(world,true)}${worldPlatformMarkup(world,true)}${worldRatingMarkup(world,true)}<span>${players}</span><span>${ping}</span><span>${escapeHtml(world.connection?.external_ip || world.connection?.internal_ip || 'Endpoint pending')}</span></div>${tags}</div>
       <div class="world-list-banner">${banner?`<img src="${banner}" alt=""/>`:''}</div>
@@ -2245,7 +2247,9 @@
       ? `<span class="status-pill ${liveServer?'online':'unknown'}">${liveServer?`#${instance} RUNNING`:`#${instance} HOST`}</span>`
       : `<span class="status-pill ${world.status?.broadcasting?'online':'unknown'}">${world.status?.broadcasting?'CO-OP':'LOCAL'}</span>`;
     const tags = worldTagGroupsMarkup(world,presentation,server,5);
-    return `<article class="world-list-row hosted-list-row${activeClass}" data-world-id="${escapeHtml(world.id)}" data-server-card="${server?'1':'0'}" data-instance="${instance}">
+    const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
+    const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
+    return `<article class="world-list-row hosted-list-row has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server?'1':'0'}" data-instance="${instance}">
       <div class="world-list-icon">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(title))}</span>`}</div>
       <div class="world-list-main"><div class="world-list-title"><h3>${escapeHtml(title)}</h3>${classificationMarkup(world,server)}${worldClMarkup(world,server)}${worldAudienceMarkup(world,true)}${worldCommunityMarkup(world,true)}${status}</div><div class="world-list-meta"><span>${server?`Dedicated · Server #${instance}`:(world.status?.broadcasting?'Private · Co-Op broadcasting':'Private · Singleplayer')}</span><span>${escapeHtml(presentation.description || (server?'Dedicated World profile':'Local Dragonwilds World profile'))}</span></div>${tags}</div>
       <div class="world-list-banner">${banner?`<img src="${banner}" alt=""/>`:''}</div>

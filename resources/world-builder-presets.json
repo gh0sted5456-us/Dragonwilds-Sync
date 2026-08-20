@@ -75,14 +75,14 @@
       "id": "ue4ss",
       "label": "UE4SS",
       "assetKey": "ue4ss",
-      "asset": "ue4ss.webp",
+      "asset": "ue4ss.png",
       "description": "UE4SS runtime/Lua mods and compatible UE4SS-managed mod content."
     },
     {
       "id": "runeschema",
       "label": "RuneSchema",
       "assetKey": "runeschema",
-      "asset": "runeschema.webp",
+      "asset": "runeschema.png",
       "description": "RuneSchema data-driven mods and packages."
     },
     {

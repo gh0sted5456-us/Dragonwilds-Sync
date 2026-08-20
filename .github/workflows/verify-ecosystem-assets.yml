@@ -37,8 +37,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test -s renderer/assets/platforms/ue4ss.webp
-          test -s renderer/assets/platforms/runeschema.webp
+          test -s renderer/assets/platforms/ue4ss.png
+          test -s renderer/assets/platforms/runeschema.png
 
           python3 - <<'PY'
           from pathlib import Path
@@ -49,26 +49,30 @@ jobs:
           presets = json.loads(Path('resources/world-builder-presets.json').read_text(encoding='utf-8'))
 
           by_key = {item['key']: item for item in registry['platforms']}
-          assert by_key['ue4ss']['asset'] == 'ue4ss.webp'
-          assert by_key['runeschema']['asset'] == 'runeschema.webp'
+          assert by_key['ue4ss']['asset'] == 'ue4ss.png'
+          assert by_key['runeschema']['asset'] == 'runeschema.png'
 
           families = {item['id']: item for item in presets['modFamilies']}
-          assert families['ue4ss']['asset'] == 'ue4ss.webp'
-          assert families['runeschema']['asset'] == 'runeschema.webp'
+          assert families['ue4ss']['asset'] == 'ue4ss.png'
+          assert families['runeschema']['asset'] == 'runeschema.png'
           assert families['paks']['asset'] == 'paks.svg'
 
-          for filename in ('ue4ss.webp', 'runeschema.webp'):
+          for filename in ('ue4ss.png', 'runeschema.png'):
               data = (assets / filename).read_bytes()
               assert len(data) > 32, f'{filename} is unexpectedly small'
-              assert data[:4] == b'RIFF' and data[8:12] == b'WEBP', f'{filename} is not WebP'
+              assert data[:8] == b'\x89PNG\r\n\x1a\n', f'{filename} is not PNG'
+
+          import hashlib
+          assert hashlib.sha256((assets / 'ue4ss.png').read_bytes()).hexdigest() == '5d85d20b008b32516ee3115318b4aeaba54631f6d254477e60af55101823d98a'
+          assert hashlib.sha256((assets / 'runeschema.png').read_bytes()).hexdigest() == '379a7b239490eb8fcc01ff6bafdaf291f09393ab30106658af02bf96c716b105'
 
           website = Path('website/platform-assets.js').read_text(encoding='utf-8')
-          assert 'assets/platforms/ue4ss.webp' in website
-          assert 'assets/platforms/runeschema.webp' in website
+          assert 'assets/platforms/ue4ss.png' in website
+          assert 'assets/platforms/runeschema.png' in website
 
           builder = Path('website/ecosystem-assets.js').read_text(encoding='utf-8')
-          assert "ue4ss: 'assets/platforms/ue4ss.webp'" in builder
-          assert "runeschema: 'assets/platforms/runeschema.webp'" in builder
+          assert "ue4ss: 'assets/platforms/ue4ss.png'" in builder
+          assert "runeschema: 'assets/platforms/runeschema.png'" in builder
 
           page = Path('website/world-builder.html').read_text(encoding='utf-8')
           assert 'ecosystem-assets.js' in page

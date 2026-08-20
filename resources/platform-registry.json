@@ -82,14 +82,14 @@
     {
       "key": "ue4ss",
       "label": "UE4SS",
-      "asset": "ue4ss.webp",
+      "asset": "ue4ss.png",
       "aliases": ["ue4ss"],
       "footerStore": false
     },
     {
       "key": "runeschema",
       "label": "RuneSchema",
-      "asset": "runeschema.webp",
+      "asset": "runeschema.png",
       "aliases": ["runeschema", "rune schema"],
       "footerStore": false
     },

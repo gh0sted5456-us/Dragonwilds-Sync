@@ -1762,3 +1762,12 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 @media(max-width:720px){.placard-background-picker{grid-template-columns:repeat(2,minmax(110px,1fr))}.recommended-mod-card{grid-template-columns:38px minmax(0,1fr) auto!important}.recommended-mod-card>.status-pill{display:none}.recommended-mod-card>.btn{width:auto!important}.desktop-window{min-width:calc(100% - 8px)!important}}
 .nexus-integration-hidden{display:none!important}
 .launcher-console-body{display:grid;gap:14px}.launcher-console-input{font-family:Consolas,"Cascadia Mono",monospace;font-size:15px}.launcher-command-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.launcher-command-list button{display:grid;text-align:left;gap:3px}.launcher-command-list code{color:var(--gold)}
+
+/* Horizontal cards inherit the same absolute placard background and selected
+   server banner as the full front/back placard. */
+.world-list-row.has-placard{isolation:isolate;background:#0b1010!important}
+.world-list-row.has-placard::before{content:"";position:absolute;z-index:0;inset:0;background-image:linear-gradient(90deg,rgba(7,10,10,.24),rgba(7,10,10,.58) 55%,rgba(7,10,10,.82)),var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.7;pointer-events:none}
+.world-list-row.has-placard>.world-list-icon,.world-list-row.has-placard>.world-list-main,.world-list-row.has-placard>.world-list-banner,.world-list-row.has-placard>.world-row-actions{position:relative;z-index:2}
+.world-list-row.has-placard>.world-list-banner{position:absolute;z-index:1}
+.world-list-row.has-placard>.world-list-banner img{opacity:.66;filter:saturate(.94) contrast(1.04) brightness(.92)}
+.world-list-row.has-placard>.world-row-actions{background:linear-gradient(90deg,transparent,rgba(11,16,16,.88) 28%,#0b1010 72%)}

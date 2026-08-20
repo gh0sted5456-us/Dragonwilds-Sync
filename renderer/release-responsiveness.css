@@ -27,7 +27,7 @@
 .app-world-placard .world-card-inner{position:relative;display:block;flex:1 1 auto;width:100%;min-height:455px;transform-style:preserve-3d;transform:rotateY(0deg);transition:transform .52s cubic-bezier(.22,.61,.36,1)}
 .app-world-placard.flipped .world-card-inner{transform:translate3d(0,0,0) rotateY(180deg)}
 .app-world-placard .world-card-face{position:absolute;inset:0;overflow:hidden;isolation:isolate;padding:0;border:1px solid rgba(212,176,105,.18);border-radius:16px;background:linear-gradient(180deg,rgba(27,32,34,.96),rgba(16,20,21,.98));color:#f2eee3;box-shadow:0 16px 38px rgba(0,0,0,.32);-webkit-backface-visibility:hidden;backface-visibility:hidden;transition:border-color .18s ease,box-shadow .2s ease}
-.app-world-placard .world-card-face::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.14}
+.app-world-placard .world-card-face::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.52;filter:saturate(.88) contrast(1.04)}
 .app-world-placard .world-card-face::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(180deg,rgba(6,9,9,.16),rgba(7,10,10,.5) 34%,rgba(7,10,10,.94) 72%,#090d0d 100%)}
 .app-world-placard .world-card-front{transform:rotateY(0deg) translateZ(.1px)}
 .app-world-placard .world-card-back{transform:rotateY(180deg) translateZ(.1px)}
@@ -37,11 +37,12 @@
 .app-world-placard .world-card-banner{display:block;width:100%;height:100%;object-fit:cover;opacity:.82}
 .app-world-placard .world-card-banner-fallback{width:100%;height:100%;background:radial-gradient(circle at 20% 20%,rgba(212,176,105,.18),transparent 42%),linear-gradient(135deg,#1e2828,#101516)}
 .app-world-placard .world-card-banner-blend{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,10,10,.04),rgba(7,10,10,.18) 58%,rgba(10,14,14,.96))}
-.app-world-placard .world-card-front::before{display:none}.app-world-placard .world-card-front .world-card-body{isolation:isolate}.app-world-placard .world-card-front .world-card-body::before{content:"";position:absolute;inset:0;z-index:-2;pointer-events:none;background-image:var(--world-placard);background-position:center bottom;background-size:cover;background-repeat:no-repeat;opacity:.18}.app-world-placard .world-card-front .world-card-body::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(0deg,rgba(8,11,11,.18),rgba(8,11,11,.72) 72%,rgba(8,11,11,.96))}.app-world-placard .world-card-front .world-card-banner-blend{box-shadow:0 20px 34px -24px rgba(8,11,11,.98)}
+.app-world-placard .world-card-front::before{display:block}.app-world-placard .world-card-front .world-card-body{isolation:isolate}.app-world-placard .world-card-front .world-card-body::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(0deg,rgba(8,11,11,.18),rgba(8,11,11,.62) 72%,rgba(8,11,11,.86))}.app-world-placard .world-card-front .world-card-banner-blend{box-shadow:0 20px 34px -24px rgba(8,11,11,.98)}
 .app-world-placard .world-card-body{position:relative;z-index:2;padding:18px 17px 16px!important;background:transparent!important}
 .app-world-placard .world-card-back .world-card-body{padding:18px 17px 16px!important}
-.app-world-placard .world-card-back::before{opacity:.1}
-.app-world-placard .world-card-back .card-topline{min-height:0;padding-left:0;margin-bottom:11px}
+.app-world-placard .world-card-back::before{opacity:.52}
+.app-world-placard .world-card-back .world-card-media,.app-world-placard .world-card-back .world-card-banner{height:104px}
+.app-world-placard .world-card-back .card-topline{min-height:42px;padding-left:78px;margin-bottom:7px}
 .app-world-placard .world-card-back .card-title h3{font-size:19px!important}
 .app-world-placard .card-flip-hint{margin-left:auto;color:#d4b069;font-size:8px;font-weight:800;letter-spacing:.08em;white-space:nowrap}
 .app-world-placard .placard-front-summary{margin-top:auto!important;padding-top:10px;border-top:1px solid rgba(255,255,255,.07)}

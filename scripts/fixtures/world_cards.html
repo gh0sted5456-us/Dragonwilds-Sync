@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>World card layout validation</title>
   <link rel="stylesheet" href="../../renderer/styles.css" />
+  <link rel="stylesheet" href="../../renderer/release-responsiveness.css" />
   <style>
     html,body{min-height:100%;overflow:auto}
     body{padding:24px;background:var(--bg);font-size:12px}
@@ -20,10 +21,11 @@
   <main class="validation-stage">
     <section>
       <p class="validation-label">Private World placard</p>
-      <article class="world-card validation-placard" id="validation-placard">
-        <div class="world-card-banner-fallback"></div>
+      <article class="world-card app-world-placard has-placard validation-placard" id="validation-placard" style="--world-placard:url('../../renderer/assets/placards/2.png')">
+       <div class="world-card-inner"><section class="world-card-face world-card-front">
+        <div class="world-card-media"><img class="world-card-banner" src="../../website/assets/demo-world-banner.svg" alt=""/><div class="world-card-banner-blend"></div></div>
         <div class="world-card-body">
-          <img class="world-icon" src="../../renderer/assets/singleplayer-icon.png" alt="" />
+          <img class="world-icon" src="../../website/assets/demo-world-icon.svg" alt="" />
           <div class="card-topline">
             <div class="card-title"><h3>SinglePlayer</h3><small>PRIVATE WORLD</small></div>
             <span class="status-pill unknown">LOCAL</span>
@@ -33,15 +35,16 @@
           <div class="badges" style="margin-top:8px"><span class="badge vanilla">VANILLA</span><span class="badge paks">NORMAL</span><span class="badge vanilla">SINGLEPLAYER</span><span class="badge vanilla">LOCAL</span></div>
           <div class="card-footer"><div class="card-metrics"><span>SINGLEPLAYER</span></div><span class="world-rating"><span>☆☆☆☆☆</span><b>New</b><small>(0)</small></span></div>
         </div>
+       </section></div>
         <div class="placard-actions integrated" id="validation-actions"><button class="btn play">Launch</button><button class="btn ghost">Co-Op</button><button class="btn ghost">Manage</button></div>
       </article>
     </section>
     <section>
       <p class="validation-label">Horizontal World row</p>
-      <article class="world-list-row validation-row" id="validation-row">
+      <article class="world-list-row has-placard validation-row" id="validation-row" style="--world-placard:url('../../renderer/assets/placards/2.png')">
         <div class="world-list-icon"><img src="../../renderer/assets/singleplayer-icon.png" alt="" /></div>
         <div class="world-list-main"><div class="world-list-title"><h3>SinglePlayer</h3><span class="status-pill unknown">LOCAL</span></div><div class="world-list-meta"><span>Private World</span><span>Local</span></div><div class="badges"><span class="badge vanilla">VANILLA</span><span class="badge paks">NORMAL</span></div></div>
-        <div class="world-list-banner"></div>
+        <div class="world-list-banner"><img src="../../website/assets/demo-world-banner.svg" alt="" /></div>
         <div class="world-row-actions"><button class="btn play compact-btn">Launch</button><button class="btn ghost compact-btn">Manage</button></div>
       </article>
     </section>
@@ -60,15 +63,25 @@
       const tagPlacardStyle=getComputedStyle(document.querySelector('#validation-tag-placard'));
       const row=rect(document.querySelector('#validation-row'));
       const rowActionsNode=document.querySelector('#validation-row .world-row-actions');
+      const rowNode=document.querySelector('#validation-row');
       const rowActions=rect(rowActionsNode);
       const rowButtons=[...document.querySelectorAll('#validation-row .btn')].map(rect);
       const pairOverlap=(values)=>values.some((value,index)=>values.slice(index+1).some((other)=>intersects(value,other)));
       const errors=[];
+      const banner=card.querySelector('.world-card-banner');
+      const icon=card.querySelector('.world-icon');
+      if(!getComputedStyle(card.querySelector('.world-card-face'),'::before').backgroundImage.includes('placards/2.png'))errors.push('absolute placard face background missing');
+      if(!banner.complete||!banner.naturalWidth)errors.push('server banner did not load');
+      if(!icon.complete||!icon.naturalWidth)errors.push('server icon did not load');
+      if(!card.querySelector('.world-card-banner-blend'))errors.push('banner blend layer missing');
       if(actions.top+.5<body.bottom)errors.push('actions overlap body');
       if(buttons.some((button)=>button.top+.5<footer.bottom))errors.push('buttons overlap rating/footer');
       if(buttons.some((button)=>button.left<rect(card).left-.5||button.right>rect(card).right+.5))errors.push('button escapes placard');
       if(pairOverlap(buttons))errors.push('placard buttons overlap');
       if(tagPlacardStyle.backgroundColor==='rgb(255, 255, 255)'||tagPlacardStyle.backgroundColor==='rgba(255, 255, 255, 1)')errors.push('Dragonwilds/Sync placard is white');
+      if(!getComputedStyle(rowNode,'::before').backgroundImage.includes('placards/2.png'))errors.push('horizontal placard background missing');
+      const rowBanner=rowNode.querySelector('.world-list-banner img');
+      if(!rowBanner.complete||!rowBanner.naturalWidth)errors.push('horizontal server banner did not load');
       if(row.height>(innerWidth<=520?120.5:90.5))errors.push(`horizontal height ${row.height}px`);
       if(rowButtons.some((button)=>button.left<row.left-.5||button.right>row.right+.5||button.top<row.top-.5||button.bottom>row.bottom+.5))errors.push(`horizontal button escapes row ${JSON.stringify({row,actions:rowActions,buttons:rowButtons,actionsStyle:{display:getComputedStyle(rowActionsNode).display,position:getComputedStyle(rowActionsNode).position,alignSelf:getComputedStyle(rowActionsNode).alignSelf,justifyContent:getComputedStyle(rowActionsNode).justifyContent,gridColumn:getComputedStyle(rowActionsNode).gridColumn,gridRow:getComputedStyle(rowActionsNode).gridRow}})}`);
       if(pairOverlap(rowButtons))errors.push('horizontal buttons overlap');

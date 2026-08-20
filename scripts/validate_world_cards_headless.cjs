@@ -43,7 +43,8 @@ function runCase(testCase,port){
     const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);pending.delete(testCase.name);error?reject(error):resolve(value);};
     const timer=setTimeout(()=>finish(new Error(`${testCase.name}: browser did not return a layout result`)),20000);
     pending.set(testCase.name,(validation)=>validation.status==='pass'?finish(null,{screenshot,detail:validation.detail}):finish(new Error(`${testCase.name}: ${validation.detail||'layout failed'}`)));
-    const url=`http://127.0.0.1:${port}/scripts/fixtures/world_cards.html?theme=${encodeURIComponent(testCase.theme)}&case=${encodeURIComponent(testCase.name)}`;
+    const fixture=testCase.fixture||'scripts/fixtures/world_cards.html';
+    const url=`http://127.0.0.1:${port}/${fixture}?theme=${encodeURIComponent(testCase.theme)}&case=${encodeURIComponent(testCase.name)}`;
     const child=spawn(browser,['--headless=new','--disable-gpu','--hide-scrollbars','--run-all-compositor-stages-before-draw','--virtual-time-budget=1500',`--window-size=${testCase.width},${testCase.height}`,`--user-data-dir=${profile}`,`--screenshot=${screenshot}`,url],{windowsHide:true});
     child.stderr.on('data',(chunk)=>{stderr+=String(chunk);});
     child.on('error',(error)=>finish(error));
@@ -54,7 +55,7 @@ function runCase(testCase,port){
 (async()=>{
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   const port=server.address().port;
-  const cases=[{name:'dark-desktop',theme:'dark',width:1100,height:900},{name:'light-desktop',theme:'light',width:1100,height:900},{name:'light-mobile',theme:'light',width:430,height:1100}];
+  const cases=[{name:'dark-desktop',theme:'dark',width:1100,height:900},{name:'light-desktop',theme:'light',width:1100,height:900},{name:'light-mobile',theme:'light',width:430,height:1100},{name:'placard-flip',theme:'glass',width:720,height:720,fixture:'scripts/fixtures/website_placard_flip.html'}];
   try{for(const testCase of cases){const result=await runCase(testCase,port);console.log(`[OK] ${testCase.name}: ${result.detail}; screenshot ${result.screenshot}`);}}
   finally{await new Promise((resolve)=>server.close(resolve));}
 })().catch((error)=>{console.error(`[ERROR] ${error.message||error}`);process.exitCode=1;});

@@ -5,9 +5,10 @@
   const originalNormalizeWorld = normalizeWorld;
 
   const safeImageUrl = (value) => {
-    const raw = safeText(value, '', 1200);
+    const input = typeof value === 'string' ? value.trim() : '';
+    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(input)) return input.length <= 16_000_000 ? input : '';
+    const raw = safeText(input, '', 1200);
     if (!raw) return '';
-    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,/i.test(raw)) return raw;
     try {
       const url = new URL(raw, window.location.href);
       if (url.origin === window.location.origin && url.protocol === window.location.protocol) return url.href;
@@ -73,8 +74,8 @@
       ruleProfile: { id: ruleId, label: ruleLabel, audience: safeText(ruleSource.audience ?? audience, audience || 'general', 40), tags: textList(ruleSource.tags, 8), rules },
       modGroups: normalizeModGroups(raw, mods),
       placardBackground: placardId(raw?.placard_background ?? presentation.placard_background),
-      bannerUrl: safeImageUrl(raw?.banner_url ?? raw?.banner ?? presentation.banner_url ?? presentation.banner),
-      iconUrl: safeImageUrl(raw?.icon_url ?? raw?.icon ?? presentation.icon_url ?? presentation.icon),
+      bannerUrl: safeImageUrl(raw?.banner_url ?? raw?.banner_b64 ?? raw?.banner ?? presentation.banner_url ?? presentation.banner_b64 ?? presentation.banner),
+      iconUrl: safeImageUrl(raw?.icon_url ?? raw?.icon_b64 ?? raw?.icon ?? presentation.icon_url ?? presentation.icon_b64 ?? presentation.icon),
       originLabel: safeText(raw?.source_name ?? raw?.directory_name ?? presentation.source_name, '', 90),
       countryCode: safeText(raw?.country_code ?? raw?.status?.country_code, '', 4).toUpperCase(),
       countryName: safeText(raw?.country_name ?? raw?.status?.country_name, '', 60),
@@ -302,7 +303,10 @@
     const back = makeEl('div', 'world-card-face world-card-back');
     back.appendChild(makePlacardBackdrop(world));
     back.appendChild(makeModeBanner(world, 'PUBLIC DETAILS'));
+    if (world.originLabel) back.appendChild(makeEl('div', 'world-origin-banner', `DIRECTORY · ${world.originLabel}`));
+    back.appendChild(makeMedia(world));
     const body = makeEl('div', 'world-card-body');
+    body.appendChild(makeIcon(world));
     const topline = makeEl('div', 'card-topline');
     const title = makeEl('div', 'card-title');
     title.append(makeEl('h3', '', world.name), makeEl('small', '', world.worldId));
@@ -374,6 +378,7 @@
       if (event?.target?.closest?.('a,button,input,select,textarea')) return;
       const flipped = card.classList.toggle('flipped');
       card.setAttribute('aria-pressed', String(flipped));
+      card.setAttribute('aria-label', `${flipped ? 'Return to summary for' : 'View details for'} ${world.name}`);
     };
     card.addEventListener('click', flip);
     card.addEventListener('keydown', (event) => {

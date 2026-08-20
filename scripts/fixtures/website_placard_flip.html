@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en" data-theme="glass">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Website placard flip validation</title>
+  <link rel="stylesheet" href="../../website/placards.css" />
+  <style>
+    *{box-sizing:border-box}html,body{min-height:100%;margin:0}body{display:grid;place-items:start;padding:36px;background:#080c0d;color:#f2eee3;font-family:Inter,system-ui,sans-serif}.world-card{width:359px}.card-flip-hint{display:block;margin-top:8px}#validation-result{position:fixed;right:12px;top:12px;z-index:20;padding:7px 10px;border:1px solid #5b5344;border-radius:9px;background:#111718;color:#f2eee3;font-weight:800}
+  </style>
+</head>
+<body>
+  <output id="validation-result">Testing 3D flip…</output>
+  <article class="world-card" id="flip-card" tabindex="0" role="button" aria-pressed="false" aria-label="View details for Ashenfall">
+    <div class="world-card-inner">
+      <section class="world-card-face world-card-front">
+        <img class="world-placard-backdrop" src="../../renderer/assets/placards/2.png" alt="" />
+        <div class="world-mode-banner dedicated">DEDICATED SERVER</div>
+        <div class="world-card-media"><img class="world-card-banner" src="../../website/assets/demo-world-banner.svg" alt="" /><div class="world-card-banner-blend"></div></div>
+        <div class="world-card-body"><img class="world-icon" src="../../website/assets/demo-world-icon.svg" alt="" /><div class="card-topline"><div class="card-title"><h3>Ashenfall</h3><small>PUBLIC WORLD</small></div><span class="status-pill online">ONLINE</span></div><p class="card-description">Server summary and declared platforms.</p><span class="card-flip-hint">DETAILS ↻</span></div>
+      </section>
+      <section class="world-card-face world-card-back">
+        <img class="world-placard-backdrop" src="../../renderer/assets/placards/2.png" alt="" />
+        <div class="world-mode-banner dedicated">PUBLIC DETAILS</div>
+        <div class="world-card-media"><img class="world-card-banner" src="../../website/assets/demo-world-banner.svg" alt="" /><div class="world-card-banner-blend"></div></div>
+        <div class="world-card-body"><img class="world-icon" src="../../website/assets/demo-world-icon.svg" alt="" /><div class="card-topline"><div class="card-title"><h3>Ashenfall</h3><small>WORLD DETAILS</small></div><span class="status-pill online">ONLINE</span></div><div class="world-back-grid"><section class="world-back-section"><h4>Mods</h4><div class="world-back-list"><span>UE4SS</span><span>RuneSchema</span></div></section><section class="world-back-section"><h4>Tags</h4><div class="world-back-list"><span>Community</span></div></section></div><span class="card-flip-hint">FRONT ↻</span></div>
+      </section>
+    </div>
+  </article>
+  <script>
+    const params=new URLSearchParams(location.search),card=document.querySelector('#flip-card');
+    const flip=()=>{const flipped=card.classList.toggle('flipped');card.setAttribute('aria-pressed',String(flipped));};
+    card.addEventListener('click',flip);card.addEventListener('keydown',(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();flip();}});
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{card.click();setTimeout(()=>{
+      const faces=[...card.querySelectorAll('.world-card-face')],inner=getComputedStyle(card.querySelector('.world-card-inner'));
+      const loaded=(selector)=>[...card.querySelectorAll(selector)].every((img)=>img.complete&&img.naturalWidth);
+      const errors=[];
+      if(!card.classList.contains('flipped')||card.getAttribute('aria-pressed')!=='true')errors.push('click did not flip card');
+      if(inner.transform==='none')errors.push('3D transform missing');
+      if(faces.length!==2)errors.push('front/back faces missing');
+      if(!loaded('.world-placard-backdrop'))errors.push('face placard missing');
+      if(!loaded('.world-card-banner'))errors.push('face banner missing');
+      if(!loaded('.world-icon'))errors.push('face icon missing');
+      const detail=errors.length?`FAIL · ${errors.join(' · ')}`:'PASS · true 3D flip · both faces inherit placard, banner, and icon';
+      document.querySelector('#validation-result').textContent=detail;
+      fetch(`/__validation?case=${encodeURIComponent(params.get('case')||'flip')}&status=${errors.length?'fail':'pass'}&detail=${encodeURIComponent(detail)}`).catch(()=>{});
+    },700);}));
+  </script>
+</body>
+</html>

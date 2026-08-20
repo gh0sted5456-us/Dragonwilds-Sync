@@ -47,19 +47,24 @@ const desired = need('backend/runtime_worker_config.py', [
 ]);
 const worker = need('backend/runtime_worker.py', [
   'START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','GET_LOG_TAIL','_start_runtime','_stop_runtime','_restart_runtime',
+  'START_SHARE','STOP_SHARE','GET_SHARE_PAYLOAD','_start_share','_stop_share','_share_payload','FILE_SHARE_STATUS',
   'desiredConfigRevision','appliedConfigRevision','load_desired_snapshot','verify_authoritative_settings',
   'game.stdout.log','game.stderr.log','GAME_EXITED_UNEXPECTEDLY','CREATE_NEW_PROCESS_GROUP','start_new_session',
   'JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE','windows-job-kill-on-close','orphan-watchdog-fallback','RUNTIME_RUNNING'
 ]);
-need('backend/worker_supervisor.py', [
-  'create_desired_snapshot','configRevision','start_runtime','stop_runtime','restart_runtime','log_tail','START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','GET_LOG_TAIL'
+const supervisor = need('backend/worker_supervisor.py', [
+  'create_desired_snapshot','configRevision','start_runtime','stop_runtime','restart_runtime','log_tail',
+  'start_share','stop_share','share_payload','START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','START_SHARE','STOP_SHARE','GET_SHARE_PAYLOAD','GET_LOG_TAIL'
 ]);
 const bridge = need('backend/runtime_worker_bridge.py', [
-  'WorkerBackedServerEngine','AuthoritativeRuntimeManager','world-runtime-worker','deferred_to_worker','dedicated_enabled','DWSYNC_DISABLE_RUNTIME_WORKERS',
-  'revisioned-settings-snapshot','desired_config_revision','applied_config_revision','share_owner','application','start_runtime','stop_runtime','arm_orphan_watchdog'
+  'WorkerBackedServerEngine','WorkerBackedShare','world-runtime-worker','deferred_to_worker','dedicated_enabled','share_enabled','DWSYNC_DISABLE_RUNTIME_WORKERS',
+  'revisioned-settings-snapshot','desired_config_revision','applied_config_revision','share_owner','heartbeat_owner','webgui_owner',
+  'start_runtime','stop_runtime','start_share','stop_share','arm_orphan_watchdog','_rewire_legacy_share','share_payload=share_adapter.broadcast_payload','share_status=share_adapter.status'
 ]);
-need('backend/test_phase5_runtime_worker_bridge.py', [
-  'test_start_stop_through_authoritative_manager','test_explicit_rollback_keeps_direct_engine','test_restart_reattaches_existing_worker_without_duplicate_start','test_failed_start_cleans_worker_without_direct_fallback'
+const bridgeTests = need('backend/test_phase5_runtime_worker_bridge.py', [
+  'test_start_stop_through_authoritative_manager','test_explicit_rollback_keeps_direct_engine_and_share',
+  'test_share_slice_can_be_rolled_back_independently','test_restart_reattaches_existing_worker_without_duplicate_game_start',
+  'test_failed_start_cleans_worker_without_direct_fallback','Parent process must not start a duplicate dedicated Sync listener'
 ]);
 need('backend/test_runtime_worker_config.py', [
   'plaintext secret leaked','old desired revision was mutated','stale desired runtime revision was not rejected'
@@ -81,7 +86,12 @@ if (!website.includes("endpoint.protocol !== 'https:'")) failures.push('GitHub h
 if (!website.includes("String(live?.world_id || '') !== String(world.worldId || '')")) failures.push('GitHub handoff must compare live World ID before login');
 if (!website.includes("String(live?.fingerprint || '') !== expectedFingerprint")) failures.push('GitHub handoff must compare live fingerprint when one is advertised');
 if (/^(?:from|import)\s+server_engine\b/m.test(worker)) failures.push('World worker must lazy-load ServerEngine only after a runtime command');
-if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5C must retain parent SHARE publication until Phase 5D ownership transfer is separately verified');
+if (!bridge.includes('response = self.supervisor.start_share(profile_id)')) failures.push('Phase 5D dedicated Sync publication must execute through the World worker');
+if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5D must retain an explicit share-only rollback path until parity is proven');
+if (!bridge.includes('config.setdefault("heartbeat_owner", "application")')) failures.push('Heartbeat ownership must remain application-owned in the first Phase 5D Sync-share slice');
+if (!bridge.includes('config.setdefault("webgui_owner", "application")')) failures.push('WebGUI ownership must remain application-owned in the first Phase 5D Sync-share slice');
+if (!bridge.includes('legacy.SHARE = share_adapter')) failures.push('Retained V3 heartbeat readers must be rewired to the worker-backed SHARE proxy');
+if (!bridgeTests.includes('assert stop_share < stop_runtime < stop_worker')) failures.push('Phase 5D test must prove Share -> Runtime -> Worker stop ordering');
 if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 public connection must remain opt-in');
 if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.push('Desired runtime snapshot module must not construct plaintext credential fields');
 if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
@@ -94,4 +104,4 @@ if (!runeschema.includes('resolver_source = _runeschema_resolver_source(source_u
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · retained Phase 4 corrections, verified Remote Admin handoff, revisioned desired state, and activated Phase 5C dedicated World Runtime Worker contracts present');
+console.log('[Phase 5] PASS · retained Phase 4 corrections, passed Phase 5C dedicated worker gate, and staged Phase 5D worker-owned dedicated Sync share with application-owned heartbeat/WebGUI');

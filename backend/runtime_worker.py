@@ -137,12 +137,12 @@ class RuntimeWorker:
     def _runtime_status(self) -> dict:
         with self._runtime_lock:
             if self._runtime_engine is None:
-                return {"running": False, "pid": None, "active_profile_id": None}
+                return {"running": False, "pid": None, "active_profile_id": None, "share": {"serving": False}}
             try:
                 value = self._runtime_engine.status()
-                return dict(value or {}) if isinstance(value, dict) else {"running": False, "pid": None}
+                return dict(value or {}) if isinstance(value, dict) else {"running": False, "pid": None, "share": {"serving": False}}
             except Exception as exc:
-                return {"running": False, "pid": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
+                return {"running": False, "pid": None, "share": {"serving": False}, "error": f"{type(exc).__name__}: {exc}"[:300]}
 
     def status(self, state: str | None = None) -> dict:
         runtime = self._runtime_status()
@@ -265,11 +265,19 @@ class RuntimeWorker:
                 runtime = self._runtime_status()
                 if runtime.get("running"):
                     continue
+                share_error = ""
+                if self._runtime_engine is not None:
+                    try:
+                        self._runtime_engine.stop_share()
+                    except Exception as exc:
+                        share_error = f"{type(exc).__name__}: {exc}"[:300]
+                        self.log("FILE_SHARE_STOP_FAILED", reason="game_exit", error=share_error)
                 self.runtime_state = "error"
                 self._orphan_watchdog = {}
                 self._last_runtime_result = {
                     "operation": "monitor", "at": time.time(), "ok": False,
                     "error": "Dedicated Dragonwilds process exited unexpectedly.",
+                    "shareStopError": share_error,
                 }
                 self.log("GAME_EXITED_UNEXPECTEDLY", applied_config_revision=self.applied_config_revision)
                 try:
@@ -347,27 +355,87 @@ class RuntimeWorker:
                 "desiredConfigRevision": desired["revision"], "appliedConfigRevision": self.applied_config_revision,
             }
 
+    def _start_share(self) -> dict:
+        with self._runtime_lock:
+            engine = self._engine()
+            before = self._runtime_status()
+            if not before.get("running") or not int(before.get("pid") or 0):
+                raise RuntimeError("Sync/file share cannot start before the dedicated process is verified running.")
+            existing = before.get("share") if isinstance(before.get("share"), dict) else {}
+            if existing.get("serving"):
+                return {"already_serving": True, "verified_serving": True, "share": dict(existing)}
+            published = engine.publish(self.profile_id)
+            after = self._runtime_status()
+            share = after.get("share") if isinstance(after.get("share"), dict) else {}
+            if not share.get("serving"):
+                try:
+                    engine.stop_share()
+                except Exception:
+                    pass
+                raise RuntimeError("Worker started Sync/file share but could not verify that it is serving.")
+            self.write_state(self.runtime_state)
+            self.log("FILE_SHARE_STATUS", state="serving", port=share.get("port"))
+            return {**dict(published or {}), "verified_serving": True, "share": dict(share)}
+
+    def _stop_share(self) -> dict:
+        with self._runtime_lock:
+            if self._runtime_engine is None:
+                return {"serving": False, "stop_verified": True, "stop_method": "worker-runtime-not-loaded"}
+            engine = self._runtime_engine
+            before = self._runtime_status()
+            if not bool((before.get("share") or {}).get("serving")):
+                return {"serving": False, "stop_verified": True, "stop_method": "already-stopped"}
+            stopped = engine.stop_share()
+            after = self._runtime_status()
+            share = after.get("share") if isinstance(after.get("share"), dict) else {}
+            if share.get("serving"):
+                raise RuntimeError("Worker Sync/file share remained active after Stop Share.")
+            self.write_state(self.runtime_state)
+            self.log("FILE_SHARE_STATUS", state="stopped")
+            return {**dict(stopped or {}), "serving": False, "stop_verified": True}
+
+    def _share_payload(self) -> dict:
+        with self._runtime_lock:
+            if self._runtime_engine is None:
+                return {}
+            from server_systems import SHARE
+            value = SHARE.broadcast_payload()
+            return dict(value or {}) if isinstance(value, dict) else {}
+
     def _stop_runtime(self) -> dict:
         with self._runtime_lock:
             if self._runtime_engine is None:
                 self._orphan_watchdog = {}
                 self.applied_config_revision = None
                 self.runtime_state = "ready"
-                return {"running": False, "stop_verified": True, "stop_method": "worker-runtime-not-loaded"}
+                return {"running": False, "stop_verified": True, "stop_method": "worker-runtime-not-loaded", "share": {"serving": False}}
             engine = self._runtime_engine
             before = self._runtime_status()
+            share_stop_error = ""
+            if bool((before.get("share") or {}).get("serving")):
+                try:
+                    engine.stop_share()
+                    self.log("FILE_SHARE_STATUS", state="stopped", reason="runtime_stop")
+                except Exception as exc:
+                    share_stop_error = f"{type(exc).__name__}: {exc}"[:300]
+                    self.log("FILE_SHARE_STOP_FAILED", reason="runtime_stop", error=share_stop_error)
             if not before.get("running"):
+                after = self._runtime_status()
                 self._orphan_watchdog = {}
                 self.applied_config_revision = None
                 self.runtime_state = "ready"
                 self._close_windows_job()
-                return {**before, "stop_verified": True, "stop_method": "already-stopped"}
+                if bool((after.get("share") or {}).get("serving")):
+                    raise RuntimeError("Runtime is stopped but its worker-owned Sync/file share remains active.")
+                return {**after, "stop_verified": True, "stop_method": "already-stopped", "share_stop_error": share_stop_error}
             self.runtime_state = "stopping"
             self.log("RUNTIME_STOPPING", game_pid=int(before.get("pid") or 0))
             stopped = engine.stop_dedicated()
             after = self._runtime_status()
             if after.get("running"):
                 raise RuntimeError("Dedicated process remained running after worker stop.")
+            if bool((after.get("share") or {}).get("serving")):
+                raise RuntimeError("Dedicated process stopped but its worker-owned Sync/file share remained active.")
             self._orphan_watchdog = {}
             self._close_windows_job()
             self._containment = {"mode": "not-armed"}
@@ -377,10 +445,12 @@ class RuntimeWorker:
             self._last_runtime_result = {
                 "operation": "stop", "at": time.time(), "ok": True,
                 "pid": int(before.get("pid") or 0), "previousAppliedConfigRevision": prior_revision,
+                "shareStopError": share_stop_error,
             }
             self.write_state("ready")
             self.log("RUNTIME_STOPPED", game_pid=int(before.get("pid") or 0), previous_applied_config_revision=prior_revision)
             return {**dict(stopped or {}), "running": False, "stop_verified": True,
+                    "share": dict(after.get("share") or {"serving": False}), "share_stop_error": share_stop_error,
                     "previousAppliedConfigRevision": prior_revision}
 
     def _restart_runtime(self, payload: dict | None = None) -> dict:
@@ -430,6 +500,12 @@ class RuntimeWorker:
                 return {"ok": True, "status": self.status()}
             if command in {"START", "START_RUNTIME"}:
                 return {"ok": True, "result": self._start_runtime(payload), "status": self.status()}
+            if command == "START_SHARE":
+                return {"ok": True, "result": self._start_share(), "status": self.status()}
+            if command == "STOP_SHARE":
+                return {"ok": True, "result": self._stop_share(), "status": self.status()}
+            if command == "GET_SHARE_PAYLOAD":
+                return {"ok": True, "payload": self._share_payload(), "status": self.status()}
             if command in {"STOP_GAME", "STOP_RUNTIME"}:
                 return {"ok": True, "result": self._stop_runtime(), "status": self.status("ready")}
             if command in {"RESTART", "RESTART_RUNTIME"}:

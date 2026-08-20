@@ -2,6 +2,16 @@
 (() => {
   const baseCreateWorldCard = typeof createWorldCard === 'function' ? createWorldCard : null;
 
+  function installSharedVisualLayer() {
+    if (document.querySelector('link[data-dws-site-visuals]')) return;
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = new URL('site-visuals.css?v=visuals-1', document.baseURI).href;
+    link.dataset.dwsSiteVisuals = 'true';
+    document.head.appendChild(link);
+  }
+  installSharedVisualLayer();
+
   const PLATFORMS = [
     { key: 'steam', label: 'Steam', src: 'assets/platforms/steam.svg', storeUrl: 'https://store.steampowered.com/app/1374490/RuneScape_Dragonwilds/', footerStore: true, test: /\bsteam(?:cmd)?\b/i },
     { key: 'windows', label: 'Windows', src: 'assets/platforms/windows.svg', test: /\b(?:windows|win32|win64)\b/i },

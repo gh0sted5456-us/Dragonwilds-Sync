@@ -249,6 +249,9 @@ jobs:
           grep -q 'Snorkles' _site/script.js
           grep -q 'Hi im Tat' _site/script.js
           grep -q 'Dragonwilds Modding Community' _site/script.js
+          grep -q 'github.com/UnskippableCutscene' _site/script.js
+          grep -q 'github.com/RSDWArchive' _site/script.js
+          grep -q 'discord.gg/gQ7uY2cQ3q' _site/script.js
           grep -q 'browser_download_url' _site/script.js
           ! grep -q 'Download Experimental' _site/script.js
           ! grep -q 'Preview what comes next' _site/script.js

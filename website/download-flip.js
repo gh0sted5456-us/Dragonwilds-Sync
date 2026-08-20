@@ -32,9 +32,9 @@
           <h2>Special thanks.</h2>
           <p>Dragonwilds Sync exists because people shared tools, knowledge, testing time, and a place for the modding community to grow.</p>
           <div class="download-credit-list">
-            <div><span>RS</span><p><strong>Snorkles</strong><small>Creator of RuneSchema</small></p></div>
-            <div><span>RSDW</span><p><strong>Hi im Tat</strong><small>Creator and maintainer of RSDW</small></p></div>
-            <div><span>DW</span><p><strong>Dragonwilds Modding Community</strong><small>For the collaboration, testing, and shared knowledge</small></p></div>
+            <div><span>RS</span><p><strong><a href="https://github.com/UnskippableCutscene" target="_blank" rel="noopener noreferrer">Snorkles <span aria-hidden="true">↗</span></a></strong><small>Creator of RuneSchema</small></p></div>
+            <div><span>RSDW</span><p><strong><a href="https://github.com/RSDWArchive" target="_blank" rel="noopener noreferrer">Hi im Tat <span aria-hidden="true">↗</span></a></strong><small>Creator and maintainer of RSDW</small></p></div>
+            <div><span>DW</span><p><strong><a href="https://discord.gg/gQ7uY2cQ3q" target="_blank" rel="noopener noreferrer">Dragonwilds Modding Community <span aria-hidden="true">↗</span></a></strong><small>For the collaboration, testing, and shared knowledge</small></p></div>
           </div>
         </div>
         <div class="download-face-side download-thanks-side">

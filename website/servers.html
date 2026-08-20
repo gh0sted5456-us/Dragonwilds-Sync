@@ -11,8 +11,8 @@
   <title>Public Servers — Dragonwilds Sync</title>
   <link rel="icon" href="assets/application-icon.png">
   <link rel="dragonwilds-sync-directory" type="application/json" href="directory-source.json">
-  <link rel="stylesheet" href="styles.css?v=public-directory-4">
-  <link rel="stylesheet" href="public-directory-view.css?v=public-directory-4">
+  <link rel="stylesheet" href="styles.css?v=public-directory-5">
+  <link rel="stylesheet" href="public-directory-view.css?v=public-directory-5">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -73,9 +73,9 @@
           <div class="section-heading">
             <div class="eyebrow">Public Server List</div>
             <h2>Find your next world.</h2>
-            <p>Search the complete public roster currently available. Live Cloudflare data is preferred; if the live directory is empty or unreachable, the page automatically loads the latest independently refreshed public snapshot instead of showing a blank list.</p>
+            <p>Search the complete public roster currently available. The latest public snapshot is baked directly into this page at deployment, then live Cloudflare data replaces it when available.</p>
           </div>
-          <div class="directory-state" id="directory-state"><span class="directory-dot"></span><div><strong>Connecting</strong><small>Checking the public directory…</small></div></div>
+          <div class="directory-state" id="directory-state"><span class="directory-dot"></span><div><strong>Server list ready</strong><small>Baked snapshot loads before live refresh.</small></div></div>
         </div>
 
         <div class="world-toolbar reveal delay-1">
@@ -97,7 +97,9 @@
         </div>
 
         <div class="world-grid" id="world-grid" aria-live="polite">
-          <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Loading public servers</strong><p>Connecting to the Dragonwilds Sync directory service.</p></div>
+          <!-- PUBLIC_SERVER_SNAPSHOT_START -->
+          <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Server snapshot is being prepared</strong><p>The Pages deployment replaces this placeholder with the current public roster before publishing.</p></div>
+          <!-- PUBLIC_SERVER_SNAPSHOT_END -->
         </div>
       </div>
     </section>
@@ -124,8 +126,8 @@
     <span id="release-version"></span><span id="release-date"></span><span id="release-channel"></span><a id="release-link" href="#"></a>
   </div>
 
-  <script src="public-directory-fetch-fallback.js?v=public-directory-4"></script>
-  <script src="script.js?v=public-directory-4"></script>
-  <script src="public-directory-view.js?v=public-directory-4"></script>
+  <script src="public-directory-fetch-fallback.js?v=public-directory-5"></script>
+  <script src="script.js?v=public-directory-5"></script>
+  <script src="public-directory-view.js?v=public-directory-5"></script>
 </body>
 </html>

@@ -43,7 +43,10 @@ need('backend/test_managed_updates.py', [
   'RUNESCHEMA_REPOSITORY_URL','RUNESCHEMA_RELEASES_URL'
 ]);
 const desired = need('backend/runtime_worker_config.py', [
-  'RuntimeDesiredConfig.v1','create_desired_snapshot','load_desired_snapshot','verify_authoritative_settings','settingsHash','desired-current.json','sync_profile_settings'
+  'RuntimeDesiredConfig.v1','create_desired_snapshot','load_desired_snapshot','verify_authoritative_settings','settingsHash','desired-current.json','sync_profile_settings',
+  '_prepare_main_owned_runtime_profile','_install_worker_persistence_overlay','WORKER_AUTH_ENV','persistenceAuthority','workerPersistence',
+  'profile_store.load_server_profile = worker_load_server_profile','profile_store.save_server_profile = worker_save_server_profile',
+  'profile_store.load_state = worker_load_state','profile_store.save_state = worker_save_state'
 ]);
 const worker = need('backend/runtime_worker.py', [
   'START_RUNTIME','STOP_RUNTIME','RESTART_RUNTIME','GET_LOG_TAIL','_start_runtime','_stop_runtime','_restart_runtime',
@@ -66,8 +69,10 @@ const bridgeTests = need('backend/test_phase5_runtime_worker_bridge.py', [
   'test_share_slice_can_be_rolled_back_independently','test_restart_reattaches_existing_worker_without_duplicate_game_start',
   'test_failed_start_cleans_worker_without_direct_fallback','Parent process must not start a duplicate dedicated Sync listener'
 ]);
-need('backend/test_runtime_worker_config.py', [
-  'plaintext secret leaked','old desired revision was mutated','stale desired runtime revision was not rejected'
+const configTests = need('backend/test_runtime_worker_config.py', [
+  'plaintext secret leaked','old desired revision was mutated','stale desired runtime revision was not rejected',
+  'workerPersistence','World worker wrote durable profile.json','World worker changed authoritative settings.json','World worker wrote durable launcher_v2.json',
+  'old-family-key','family_join_rotated_at'
 ]);
 const service = need('backend/dragonwilds_service.py', [
   'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers','_ensure_phase5_worker_gate',
@@ -94,6 +99,10 @@ if (!bridge.includes('legacy.SHARE = share_adapter')) failures.push('Retained V3
 if (!bridgeTests.includes('assert stop_share < stop_runtime < stop_worker')) failures.push('Phase 5D test must prove Share -> Runtime -> Worker stop ordering');
 if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 public connection must remain opt-in');
 if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.push('Desired runtime snapshot module must not construct plaintext credential fields');
+if (!desired.includes('profile_store.read_json(profile_store.SERVER_PROFILES_DIR / profile_id / "profile.json", {})')) failures.push('Worker persistence overlay must refresh from main-owned durable profile state before each verified revision');
+if (!desired.includes('profile_store.read_json(profile_store.V2_SETTINGS_PATH, {})')) failures.push('Worker global-state overlay must read without becoming the durable launcher-state writer');
+if (!configTests.includes('assert profile_path.read_bytes() == profile_bytes')) failures.push('Worker config regression must prove profile.json remains byte-identical after legacy runtime save calls');
+if (!configTests.includes('assert settings_path.read_bytes() == settings_bytes')) failures.push('Worker config regression must prove authoritative settings.json remains byte-identical');
 if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
 if (!bridge.includes('applied_revision != desired_revision')) failures.push('Runtime bridge must fail a start whose applied revision does not match desired revision');
 if (!service.includes('activation_gate')) failures.push('Normal service must expose the recorded Phase 5C gate result and preserve explicit rollback state');
@@ -104,4 +113,4 @@ if (!runeschema.includes('resolver_source = _runeschema_resolver_source(source_u
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · retained Phase 4 corrections, passed Phase 5C dedicated worker gate, and staged Phase 5D worker-owned dedicated Sync share with application-owned heartbeat/WebGUI');
+console.log('[Phase 5] PASS · retained Phase 4 corrections, passed Phase 5C dedicated worker gate, worker-owned dedicated Sync share, and application-owned durable profile/settings authority');

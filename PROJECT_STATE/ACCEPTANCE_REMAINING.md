@@ -1,95 +1,94 @@
-# Acceptance Remaining / Known Future Work
+# Acceptance Remaining
 
-The Phase 1–6 automated implementation is complete, but this file intentionally records what automated CI cannot prove and what was deliberately not mislabeled as complete.
+## Current automated status
 
-## Required hands-on acceptance before treating the draft PR as release-ready
+The Phase 5C dedicated worker path and Phase 5D Slice 1 dedicated Sync/share transfer are automated-gate green on the current verified code checkpoint `503dda5fec290b9202bf3a442727837778610eca`.
 
-### Windows retail client
+Verified in CI/package gates:
 
-- launch packaged Portable app on a normal user machine
-- discover/configure real RuneScape: Dragonwilds install
-- verify known World Management / Character Tools / Explorer / internal windows open quickly on real data
-- verify Local World launch and Co-Op activation do not lose saves/mod state
-- verify DragonCore enables for host role and becomes inert for remote-client role as expected
-- verify DragonConnect baseline repair/configuration works with the real game and does not visibly appear as a normal mod
+- retained Phase 4 public-card / placard / Remote Admin source and regression contracts;
+- worker foundation spawn/attach/version/auth contracts;
+- revisioned desired-state integrity and stale-revision rejection;
+- application-owned durable profile/settings write barrier inside worker execution;
+- Runtime Manager → worker dedicated Start/Stop/reattach regressions;
+- worker-owned dedicated SHARE ordering and no duplicate parent listener;
+- Windows 2025 Phase 5 matrix;
+- Ubuntu 24.04 Phase 5 matrix;
+- Windows Portable release-candidate build and packaged service JSON-RPC/cryptography verification;
+- Ubuntu 24.04 AppImage release-candidate build and packaged smoke test.
 
-### Dedicated server on Windows
+The Windows packaged-service smoke test uses an isolated disposable `DRAGONWILDS_SYNC_APPDATA` root and no longer mutates the builder account's real LocalAppData state.
 
-- install/update dedicated App ID `4019830` through SteamCMD
-- verify appmanifest/public-build evidence after update
-- start a real server and time profile resolve/materialization/process-ready/broadcast phases
-- confirm Sync is not published before the process is truly running
-- stop/restart/update/update+restart from Desktop and WebGUI
-- kill the server unexpectedly and verify share withdrawal/error transition
-- test backend/controller catastrophic exit and orphan-watchdog behavior
+## Staged implementation still open
 
-### Cross-machine synchronization
+Automated success above does **not** mean all Phase 5 work is finished.
 
-Use at least two physical/VM machines where practical:
+Still open in staged order:
 
-- host a dedicated or Co-Op World
-- connect via saved Direct Connect and public/directory route
-- authenticate with real World password
-- verify actual Sync endpoint can differ from gameplay endpoint
-- modify CLIENT/BOTH/ SERVER-only mod combinations and confirm role filtering
-- verify server literal `mods.txt` is never copied
-- verify local client `mods.txt` contains the derived client plan
-- verify Pak and RuneSchema content lands correctly
-- interrupt a download, resume, and confirm journal/partial-transfer behavior
-- verify final host parity before game launch
-- verify DragonConnect connects to the advertised real game endpoint
+1. hosted-World heartbeat / official-custom directory execution in the World worker while keeping installation presence and credential provisioning main-owned;
+2. console/game transport and live telemetry ownership consolidation;
+3. WebGUI / Remote Admin runtime listener migration while preserving auth/CSRF/audit authority;
+4. revisioned live config notification, last-known-good state, apply-mode execution, and desired-vs-applied UX;
+5. Co-Op worker ownership and explicit Player worker decision;
+6. worker-executed dedicated Update & Restart while retaining Update Manager policy authority;
+7. launcher self-update/recovery journal and compatible-worker reattach;
+8. selective utility workers only where profiling demonstrates benefit;
+9. retirement of direct/rollback execution only after parity and hands-on acceptance.
 
-### WebGUI / Remote
+## Required hands-on Windows/game acceptance
 
-- open packaged WebGUI from another device
-- test session login, CSRF, permissions, audit history
-- Start/Stop/Restart/Update through remote surface and confirm identical runtime state in Desktop/Minimal Mode
-- test Core update action with the correct interruption/restart semantics
-- ensure a federation/directory host does not gain target-World admin authority
+These cannot be proven by GitHub Actions alone:
 
-### Community / offline
+- launch a real dedicated Dragonwilds server through the World worker;
+- verify real generated runtime/mod state and `mods.txt` against an actual install;
+- Start / Stop / Restart from Full;
+- Start / Stop / Restart from Quick/Minimal;
+- Start / Stop / Restart from WebGUI;
+- verify one real worker and one real Dragonwilds process, with no duplicates;
+- verify real dedicated SHARE/client sync;
+- close/reopen the desktop control surface and reattach without game restart when the remaining persistent services have migrated;
+- issue a real console command after console transport moves;
+- force worker crash and verify no orphan game/listener remains;
+- real dedicated SteamCMD Update & Restart;
+- installer/update behavior with active worker when the self-update stage is implemented.
 
-- configure multiple Community sources
-- test all-online, one-offline, malformed manifest, and completely offline cases
-- verify cached pages still open immediately
-- verify refresh reports partial errors without deleting cached content
-- verify Community Connect enters the existing Direct Connect flow
+## Required network/public-directory acceptance
 
-### Internal window/Explorer UX
+After heartbeat ownership moves:
 
-- drag/resize/minimize/maximize/restore multiple app-owned windows on Windows
-- verify no renderer reload or lost editing state
-- open View Mods from both main World and an internal World window
-- verify both focus/use the same logical Explorer
-- verify binary files remain safe/read-only and invalid existing JSON can be inspected
-- verify genuine external website actions still open externally
+- real official heartbeat while desktop UI is closed;
+- multi-destination partial failure and recovery;
+- stopping/offline publication behavior;
+- real public API card reflects current CL/player/public-field settings;
+- no credential, secret ref, private path, private IP, session or CSRF leakage;
+- GitHub Server Admin handoff pings the actual target and rejects identity/fingerprint mismatch;
+- Remote Admin remains target-owned and authenticated.
 
-## Intentionally incomplete product work
+Production Cloudflare deployment of new registration/presence/schema work remains an external deployment task unless separately performed with authenticated Cloudflare access.
 
-### Full Uncategorized Save adoption UX
+## Required Linux/Proton acceptance
 
-Legacy local discovery still auto-discovers native saves and may create/associate launcher placards. The desired `Uncategorized World Save Found` workflow (Assign / Create New / Keep Uncategorized / Ignore) remains future work. Do not fake it with physical save moves before native behavior is validated.
+CI validates Linux source/worker/package contracts, but real runtime acceptance still needs:
 
-### General runtime-safe active-save switch UI
+- actual Linux/Proton Dragonwilds process tree;
+- process-group cleanup on worker termination;
+- UI/controller detach and worker reattach;
+- real SHARE/network behavior under Proton;
+- no orphan Wine/Proton descendants after forced worker failure.
 
-The profile model supports active/associated saves and server profile switching has safe snapshot/materialization behavior. A polished arbitrary active-save switching UX across every mode should be implemented only with explicit 'runtime not writing' checks and real-game validation.
+## Performance acceptance
 
-### `profile.json` retirement
+Record before final worker migration sign-off:
 
-Not done. `settings.json` is the desired-state direction, but compatibility readers/writers still exist. Retirement requires a dedicated migration pass.
+- desktop idle RAM/CPU;
+- worker idle RAM/CPU per active World;
+- Quick cold start;
+- Quick attach-to-existing-worker time;
+- Start Server → worker ready;
+- worker ready → game running;
+- LIVE config apply latency once live reload exists;
+- UI responsiveness during `.rsdwl`, hashing, archive extraction and downloads before deciding on utility workers.
 
-### Stronger OS credential vault
+## Release rule
 
-Phase 6 removes raw credentials from ordinary state/profile JSON through an encrypted local reference vault. The current per-install Fernet key is stored locally; it is not equivalent to DPAPI/Windows Credential Manager/macOS Keychain/Linux Secret Service. A future security upgrade can move key custody into an OS vault while retaining the reference IDs.
-
-### Independent DragonConnect release source
-
-DragonConnect has a managed bundled-content hash/version and repair path. If/when a canonical independent release source exists, add it to the source registry and update manager without changing CLIENT ownership or exposing it as a normal mod.
-
-### Real Linux/Proton Dragonwilds support
-
-Ubuntu CI proves the application/service/AppImage package path and headless boot, not that the real Dragonwilds server/client runtime works on Linux/Proton. SteamCMD/game runtime acceptance is still required before claiming that platform support.
-
-## Release gate
-
-Keep the experimental PR draft until the relevant real-game items above have been exercised. Record failures as concrete reproduction evidence; do not weaken lifecycle/parity/security tests merely to match a broken runtime observation.
+Do not mark the worker migration complete and do not retire rollback execution until the applicable hands-on checks above pass. Automated green is a gate to the next stage, not a substitute for physical Dragonwilds/network acceptance.

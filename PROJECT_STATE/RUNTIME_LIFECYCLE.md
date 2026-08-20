@@ -1,112 +1,123 @@
 # Runtime Lifecycle
 
-## Dedicated server authoritative start order
+## Authoritative dedicated Start order
 
-The final dedicated-server contract is:
+The current verified Phase 5 path is:
 
 ```text
-resolve profile
-→ materialize/verify save + mods + config
-→ generate runtime state / role-aware mods.txt
-→ launch dedicated server EXE
-→ verify real process
-→ arm orphan watchdog
-→ start Sync/broadcast
-→ re-verify process
-→ verify broadcast
+Full / Quick / WebGUI Start request
+→ Authoritative Runtime Manager locks operation
+→ validate/resolve stable World profile
+→ prepare immutable desired config revision
+→ attach to or launch same-binary World Runtime Worker
+→ worker verifies requested revision/hash
+→ worker materializes save/mod/runtime state
+→ worker generates role-correct mods.txt
+→ worker launches Dragonwilds Dedicated Server
+→ worker verifies real game PID
+→ worker arms containment/watchdog
+→ worker starts dedicated Sync/file share
+→ worker verifies SHARE serving
+→ Runtime Manager re-verifies process + SHARE
+→ application-owned heartbeat/directory layer may publish from worker SHARE state
+→ mark authoritative Running only after verification
 ```
 
-This ordering is safety-critical. A World must never appear joinable merely because the launcher intended to start a process.
+A World must never appear joinable merely because a launch command was issued.
 
-## Why process-before-broadcast exists
+## Stop Server
 
-Older flows could publish/share too early. That creates false-online Worlds, remote clients attempting to sync against a server that never came up, and ambiguous failure cleanup. Phase 4 consolidated startup around `AuthoritativeRuntimeManager` and `ServerEngine` so the real process is evidence before publication.
+`Stop Server` stops the World runtime unit, not merely one child process.
 
-## Start behavior
+Current verified ordering:
 
-The runtime manager should:
+```text
+Runtime Manager STOP
+→ worker STOP_SHARE
+→ verify dedicated SHARE stopped
+→ worker STOP_RUNTIME
+→ gracefully stop/verify Dragonwilds tree
+→ worker exits
+→ clear live runtime ownership
+```
 
-1. withdraw stale Sync share
-2. prepare/resolve the exact profile
-3. incrementally materialize only changed profile state
-4. prepare managed Core/runtime requirements
-5. generate the SERVER/BOTH mod runtime plan and `mods.txt`
-6. start the dedicated process using the hidden-process utility
-7. verify the process with a lightweight process probe
-8. arm the orphan watchdog
-9. publish Sync/broadcast
-10. verify the process again and verify the share
-11. mark authoritative running state only after those checks succeed
+Forced worker termination remains an exceptional recovery path. Worker/process containment exists so a dead worker does not leave an unmanaged dedicated process tree or worker-owned listener.
 
-`backend/runtime_manager.py` remains the authority; Phase 4 optimization wraps that authority rather than replacing it.
+## Restart
 
-## Phase 4 prepared-start cache
+Restart follows the same verified Stop then Start path using the newest authoritative desired state. A stale desired revision is rejected rather than silently applied.
 
-Immediate Start → Publish is allowed to reuse the exact prepared runtime/mod inventory only when:
+## Unexpected game death
 
-- the profile is the same
-- the preparation belongs to the same short-lived operation/thread context
-- the cheap mod/materialization signature still matches
-- the prepared authority has not already been consumed
+The worker watches its Dragonwilds child. Unexpected exit causes:
 
-The reuse is one-shot. Explicit Rescan remains live and cannot be satisfied by a prepared shortcut.
+- runtime state to transition to error/stopped evidence;
+- worker-owned SHARE withdrawal;
+- runtime diagnostics to record the failure;
+- later watchdog/restart policy to use the worker as the game authority.
 
-## Materialization rules
+The main application watches/reconciles the worker; it does not run a competing game watchdog.
 
-Phase 4 uses cheap path/size/`mtime_ns` evidence for the launch hot path. It does not SHA-256 every mod tree merely to start a known World.
+## Controller/UI close status
 
-- copy new/changed managed files
-- retain unchanged files
-- remove stale files only when ownership proves they are managed
-- preserve shared runtime Core correctly
-- never destructively guess ownership of unknown/legacy files
-- do not rewrite an unchanged generated file solely to advance a timestamp
+The worker process architecture is designed to outlive a presentation process, but **full hosted-World UI-independence is not yet declared complete**.
 
-Hashes remain appropriate for download/integrity/security/parity workflows. They are not the default mechanism for proving that a local launch tree probably has not changed.
+The dedicated game and dedicated SHARE are now worker-owned. Hosted-World heartbeat/directory scheduling and WebGUI/Remote Admin are still application-owned, so ordinary application shutdown must not yet be redefined as a universal detach-only action.
 
-## Save protection
+The final required behavior remains:
 
-A same-profile Start/Restart must not restore an older snapshot over the live save. A real World switch must first snapshot the outgoing World and then restore/materialize the incoming World.
+- ordinary UI/controller detach should eventually leave an intentionally running hosted World alive and reachable;
+- explicit `Stop Server` stops that World worker/runtime;
+- explicit `Exit and Stop Managed Worlds` stops managed workers before exit;
+- application relaunch must authenticate/re-attach to an existing compatible worker instead of starting a duplicate process.
 
-Unchanged outgoing saves do not need duplicate safety ZIPs. Changed saves still use the retained backup-first behavior.
+## Desired vs applied configuration
 
-## Stop / restart / unexpected death
+The application is the durable desired-state writer. Worker Start receives an explicit immutable revision.
 
-All control surfaces must route these through the same runtime authority.
+```text
+Desired revision N
+→ worker validates N
+→ launch/materialize
+→ verify game
+→ Applied revision N
+```
 
-- **Stop:** stop process/share coherently; no stale broadcast.
-- **Restart:** stop safely, prepare current desired state, then follow the normal verified start sequence.
-- **Unexpected process death:** transition to authoritative Error/stopped state and withdraw Sync.
-- **Backend catastrophe:** orphan watchdog protects against a dedicated process being left behind without its controller.
+A setting written to disk is not automatically active. Phase 5 live-config work must expose desired-vs-applied state and classify settings as `UI_ONLY`, `LIVE`, `WORKER_RESTART`, `GAME_RESTART`, or `NEXT_START`.
+
+## Runtime persistence barrier
+
+Legacy ServerEngine runtime code may call profile/state save helpers. Inside the worker those writes are intercepted into a process-local overlay after desired-state verification. Durable profile/settings/global state remains main-backend owned.
+
+This preserves reuse of proven ServerEngine logic without creating a second settings authority.
 
 ## Updates while running
 
-Runtime-impacting updates use the same controller. The system should perform the smallest correct interruption:
+The Update Manager remains policy/version authority. Runtime-impacting update execution will move through the worker in the later update stage.
 
-1. decide whether the component actually affects this runtime role
-2. stop/withdraw when required
-3. stage/download/verify update
-4. apply/repair through the component owner
-5. re-verify installed/runtime evidence
-6. restart automatically when the requested update action implies restart
-7. restore broadcast only after the new process is verified
+Required ordering remains:
 
-Do not create a separate 'update launcher' that bypasses lifecycle locks.
+1. classify impact;
+2. reject new conflicting lifecycle work;
+3. withdraw appropriate runtime availability;
+4. stop Dragonwilds if required;
+5. run the authoritative component update path;
+6. verify installed build/component evidence;
+7. reload newest desired config;
+8. restart through the worker when required;
+9. verify process/runtime services;
+10. publish success only after verified recovery.
+
+Do not create a second updater inside the worker.
 
 ## Steam rule
 
-Retail Dragonwilds and the dedicated server are independent Steam applications.
+- Retail Dragonwilds: normal Steam-client ownership; no launcher-managed SteamCMD install/update path.
+- Dragonwilds Dedicated Server: launcher-managed SteamCMD is allowed.
+- Successful SteamCMD exit alone is insufficient; build/appmanifest/executable/runtime evidence must be verified before success.
 
-- Retail game: Steam-managed; launcher does not run SteamCMD against it.
-- Dedicated server: App ID `4019830`; launcher-managed SteamCMD is allowed here.
-- Retail App ID `1374490` and dedicated build evidence must not be conflated.
+## Co-Op / Player
 
-Successful SteamCMD is not enough by itself: appmanifest/executable/public build evidence is rechecked before restart is treated as successful.
+Co-Op continues to use the same World/profile/save, not a duplicate Co-Op World. Co-Op worker migration is a later Phase 5 stage.
 
-## Co-Op
-
-Co-Op uses the same World/profile/save rather than creating a duplicate World. Host mode derives SERVER/BOTH mod behavior and DragonCore, then uses the same heartbeat/broadcast concepts. The client-only DragonConnect component is not the host authority.
-
-## Minimal Mode
-
-Minimal Mode is a launch mode over the same backend/profile (`--profile <id> --minimal` conceptually), not a second runtime system. It should resolve the selected profile immediately and avoid unrelated Community/media work unless the user opens it.
+Player worker ownership remains an audited decision: use it only where it materially improves Direct Connect, sync, materialization, game monitoring, or UI independence.

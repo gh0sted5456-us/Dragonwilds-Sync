@@ -1,107 +1,114 @@
-# Architecture and Ownership
+# Architecture
 
-## Core principle: one authority, many views
+## Core principle
 
-Dragonwilds Sync must not have a Desktop implementation, a Minimal Mode implementation, and a WebGUI implementation of the same lifecycle. Those are presentation/control surfaces over one backend authority.
+Dragonwilds Sync has **one authoritative desired-state/control plane** and, for each active hosted World that uses the Phase 5 path, **one World Runtime Worker as the live execution plane**.
 
-The authoritative backend owns:
-
-- runtime process lifecycle
-- profile resolution and materialization
-- mod classification/deployment and generated runtime control files
-- Core component state and repair/update routing
-- game/server update orchestration
-- World save and character persistence
-- synchronization, parity verification, and Direct Connect preparation
-- heartbeat/broadcast state
-- security/session/audit boundaries
-- durable state/index/cache repositories
-
-The renderer may request actions and display state. It must not independently mutate game/server process state, invent parity, or construct a second source of truth.
-
-## Important implementation owners
-
-| Concern | Primary implementation / authority | Notes |
-|---|---|---|
-| Dedicated lifecycle | `backend/runtime_manager.py` + `AuthoritativeRuntimeManager` | Process-before-broadcast is mandatory. |
-| Server profile/runtime tree | `backend/server_engine.py` plus Phase 4 adapters | Profile switch, snapshots, incremental materialization. |
-| Runtime start optimization | `backend/phase4_runtime_startup.py` | Resolve/materialize/launch hot path without launch-time whole-tree hashing. |
-| User-mod classification | `backend/core_components.py`, server/local scanners | Shared presentation and role rules. |
-| Sync transport/parity | `backend/sync_engine.py` | Authenticated manifest, staged transfer, SHA-256, report verification. |
-| Phase 6 integration | `backend/phase6_integration.py` | Wraps retained sync/profile providers; does not replace them. |
-| Direct Connect runtime mod | `backend/persistent_direct_connect.py` | Logical DragonConnect; physical `PersistentDirectConnectIP`. |
-| Profile desired-state adapter | `backend/profile_settings.py` | `DragonwildsSync.WorldProfileSettings.v1`. |
-| Secret references | `backend/secret_store.py` | Encrypted local reference vault for durable state/profile JSON. |
-| Local/private Worlds | `backend/local_world.py` | Uses same conceptual profile/save/mod model; legacy discovery retained where necessary. |
-| Character hot path | `backend/phase3_responsiveness.py` | Character Index + incremental detail cache. |
-| UI read coordinator | `electron/preload.cjs` | TTL cache, in-flight dedupe, invalidation, timeouts, prewarm, metrics. |
-| Internal windows/Explorer | `renderer/release-phase5*.js/css` | Application-owned MDI + one Dragonwilds Sync Explorer. |
-| Community/final UI | `renderer/release-phase6.js/css` | Cached-first settings and explicit refresh. |
-| Source registry | `docs/upstream-sources.json` | Canonical source identity/channel metadata; not an executable script manifest. |
-| WebGUI/Remote | retained directory/WebGUI providers + `backend/v2_remote_routing.py` | Same auth/permission/audit/runtime authority. |
-
-## State layers
-
-The architecture intentionally distinguishes three state layers:
+Process separation is not permission to duplicate business authority.
 
 ```text
-settings.json / profile desired state
-              ↓ Resolve
-managed LocalAppData + ownership/manifests/indexes
-              ↓ Reconcile / Materialize
-live game / dedicated-server filesystem and process
+Full Desktop ───┐
+Quick/Minimal ──┼──> Authoritative Runtime Manager
+WebGUI ─────────┘             │
+                              ▼
+                       Worker Supervisor
+                              │
+                              ▼
+                     World Runtime Worker
+                     ├─ dedicated game
+                     └─ dedicated Sync/share
 ```
 
-### Desired state
+## Main trusted backend owns
 
-Describes what a World/profile wants: identity, mode, active/associated saves, mods, configuration, update preferences, sync metadata, and feature toggles. It should be small, understandable, and stable.
+- World/profile identity and desired configuration;
+- authoritative `settings.json` persistence and compatibility profile writes;
+- profile/mod/item/tag/platform/core registries;
+- Secret Store and creation of `dws-secret://` references;
+- update/version policy;
+- Runtime Manager lifecycle policy and operation locking;
+- Worker Supervisor lifecycle/discovery/reattach;
+- user-facing notifications;
+- anonymous installation presence;
+- currently, hosted-World heartbeat/directory scheduling;
+- currently, WebGUI / Remote Admin listener, authentication, authorization, CSRF and audit.
 
-### Managed state
+## World Runtime Worker currently owns
 
-Dragonwilds Sync's authoritative local store. It may include managed mod copies, profile snapshots, manifests, caches, indexes, backups, journals, update state, and encrypted secret references.
+For an active dedicated World:
 
-### Materialized state
+- runtime preparation/materialization through the existing ServerEngine;
+- role-correct runtime files and `mods.txt` generation;
+- Dragonwilds Dedicated Server child process;
+- PID/process verification;
+- stdout/stderr runtime logs;
+- watchdog/process containment relationship;
+- unexpected-game-exit monitoring;
+- the exact applied desired-config revision;
+- dedicated Sync/file-share listener and live SHARE payload/status.
 
-The live Dragonwilds or dedicated-server tree. This is a deployment target, not the long-term authority. A profile switch reconciles managed desired state into this runtime surface safely.
+The worker is launched from the same packaged application in `--runtime-worker` mode and communicates over authenticated local-only IPC.
 
-## LocalAppData model
+## Durable-write boundary
 
-Conceptual organization (working existing paths should not be rewritten merely for cosmetic conformity):
+A worker may resolve the secret references required by its active World, but it may not silently become a second profile/settings writer.
+
+Before Start:
 
 ```text
-%LOCALAPPDATA%\Dragonwilds Sync\
- Core\
- Tools\
- Mods\UE4SS\
- Mods\RuneSchema\
- Mods\Pak\
- Profiles\
- Worlds\
- Characters\
- Saves\
- Manifests\
- Updates\
- Backups\
- Cache\
- State\
+main backend validates desired state
+→ performs main-owned durable pre-start mutations
+→ writes immutable revisioned snapshot
+→ worker verifies exact hash/revision
+→ worker installs read-only durable profile/state view
+→ legacy runtime save calls write only to worker memory overlay
 ```
 
-The actual repository retains established paths where changing them would create migration risk. Future restructuring must be a migration, not a blind rename.
+Regression tests prove worker-side legacy saves do not alter durable `profile.json`, authoritative `settings.json`, or global launcher state.
 
-## Resolve versus Reconcile
+Kid-Friendly daily join-code rotation is therefore performed by the main backend before the immutable desired revision is created.
 
-This split is an architectural rule, not merely a performance optimization.
+## Dedicated SHARE boundary
 
-**Resolve** should be cheap: read known profile/settings/index/cache evidence and produce the desired plan.
+Phase 5D Slice 1 reuses the existing SHARE implementation **inside** the World worker. The parent process uses `WorkerBackedShare` only as an IPC read/control proxy.
 
-**Reconcile/Materialize** may touch disk, compare changed files, download, validate, hash, copy, delete managed stale files, or regenerate runtime state. It runs only when required by an operation or explicit Verify/Repair/Rescan.
+It does not open a duplicate dedicated listener.
 
-## Event/state convergence
+The retained application-owned heartbeat scheduler is rebound to read the worker SHARE proxy, so public publication still sees the live worker manifest while heartbeat ownership remains application-side for this stage.
 
-The intended model is shared, event-driven state (`profile.updated`, `mods.changed`, `save.changed`, `character.changed`, `runtime.changed`, `update.changed`, `heartbeat.changed`). Phase 3's read coordinator and mutation invalidation implement the practical current form. Future upgrades may formalize the event bus further, but must preserve the result: one mutation invalidates/reconciles dependent views rather than every view polling independently.
+Router/UPnP mutation also remains application/profile-controller policy until separately migrated; moving SHARE did not silently move router authority.
 
-## Compatibility philosophy
+## Network authority
 
-Several old physical identities remain because deployed mods or saved profiles depend on them. Logical identity belongs to the product model; physical identity belongs to compatibility. Do not infer ownership from a folder name alone.
+The application/backend network contract preserves:
 
-Example: DragonConnect is the logical CLIENT component while `PersistentDirectConnectIP` remains its physical UE4SS directory until a deliberate migration can update installed files, profiles, tests, and users atomically.
+- one canonical official endpoint source;
+- automatic anonymous installation ID + credential;
+- stable per-World ID + unique credential;
+- installation presence separate from World publication;
+- secret references rather than plaintext durable credentials;
+- exact-body timestamped HMAC;
+- sanitized/allowlisted public snapshots;
+- multi-destination failure isolation and retry/backoff;
+- self-hosted compatible destinations;
+- no Remote Admin authority in the public directory.
+
+`GET /api/v1/network` exposes anonymous aggregate counts only; installation IDs are never public.
+
+## Current ownership that has NOT moved yet
+
+These are later Phase 5 gates, not completed work:
+
+- hosted-World heartbeat / official-custom directory scheduler;
+- console/game command transport consolidation;
+- live player/runtime telemetry consolidation;
+- WebGUI / Remote Admin runtime listener;
+- live config reload/apply-mode execution;
+- worker-executed dedicated update/restart sequencing;
+- launcher self-update recovery/worker reattach.
+
+See `PHASE5_RUNTIME_OWNERSHIP_AUDIT.md` for the detailed subsystem table.
+
+## Compatibility rule
+
+Old direct dedicated execution and application-owned SHARE remain rollback paths during migration only. They are not permanent parallel products and must be retired only after parity plus required hands-on acceptance.

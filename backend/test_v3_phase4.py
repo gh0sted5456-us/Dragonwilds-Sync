@@ -64,6 +64,7 @@ def main():
 
     decorated = decorate_public_snapshot({"badges": ["Founders"], "tags": ["coop", "Co-Op", "PvE", "pve"]}, {
         "custom_badges": [{"id": "Founders", "label": "Founders", "tooltip": "Early community supporter", "asset_hash": cached["asset_hash"], "asset_path": cached["asset_path"]}],
+        "presentation": {"icon_b64": data, "banner_b64": data},
         "platforms": ["Steam", "PSN"],
     })
     check(decorated["tags"] == ["Co-Op", "PvE"], "snapshot aliases")
@@ -71,6 +72,8 @@ def main():
     check(decorated["badge_refs"][0]["label"] == "Founders", "snapshot badge reference")
     check(decorated["badge_refs"][0]["asset_url"].startswith("/assets/placards/badge-"), "cached public asset reference")
     check("image_data" not in str(decorated) and "preview_data" not in str(decorated), "no embedded badge data")
+    check(decorated["icon_b64"] == data and decorated["banner_b64"] == data, "World icon and banner remain in the public snapshot")
+    check(all("data:image/" not in str(row) for row in decorated["badge_refs"]), "receiver derives badge imagery from references")
     check(all(str(row.get("directSupportUrl") or "").startswith("https://") for row in decorated["platform_refs"]), "registry-derived platform links")
 
     class FakeNetwork:

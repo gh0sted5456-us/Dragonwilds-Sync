@@ -81,6 +81,7 @@ def main():
     assert "STARTF_USESHOWWINDOW" in process_utils
     electron_main = ELECTRON_MAIN_V2.read_text(encoding="utf-8")
     assert "windowsHide: true" in electron_main
+    assert "beginVisualApplicationExit();" in electron_main, "application close must hide the launcher before verified backend cleanup"
     electron_preload_v2 = ELECTRON_PRELOAD_V2.read_text(encoding="utf-8")
     assert "preload: path.join(__dirname, 'preload-v2.cjs')" in electron_main
     assert "sandbox: true" in electron_main

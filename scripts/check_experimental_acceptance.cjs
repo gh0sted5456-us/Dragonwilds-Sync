@@ -21,6 +21,8 @@ const requireOrder = (text, needles, label) => {
 
 const app = read('renderer/app.js');
 const css = read('renderer/release-overrides.css');
+const responsiveCss = read('renderer/release-responsiveness.css');
+const phase4Renderer = read('renderer/release-v3-phase4.js');
 const preload = read('electron/preload.cjs');
 const bootstrap = read('electron/bootstrap.cjs');
 const main = read('electron/main.cjs');
@@ -44,8 +46,17 @@ const runtimeManagerTest = read('backend/test_runtime_manager.py');
 
 // Supplied placards must be a first-class World-card surface rather than a fallback texture.
 requireText(app, "const PLACARD_BACKGROUNDS = ['1','2','3','4'];", 'placard asset contract');
-requireText(app, 'world-placard-backdrop', 'placard card renderer');
-requireText(css, '.world-card:has(> .world-placard-backdrop) > .world-card-banner', 'placard banner suppression');
+requireText(app, 'class="world-card app-world-placard has-placard', 'CSS-layer placard card renderer');
+requireText(app, '--world-placard:url(', 'placard artwork variable');
+requireText(responsiveCss, '.world-card.has-placard::before', 'full-card placard background layer');
+requireText(responsiveCss, '.world-card.has-placard>.world-card-banner', 'placard banner suppression');
+requireText(app, 'world-card-inner', 'website-parity flip card structure');
+requireText(app, 'world-card-face world-card-back', 'website-parity details face');
+requireText(responsiveCss, '.app-world-placard.flipped .world-card-inner', 'website-parity flip motion');
+requireText(phase4Renderer, "card.classList.contains('app-world-placard')", 'single website-parity placard model');
+requireText(phase4Renderer, "card.classList.toggle('flipped'", 'Phase 4 uses the shared website flip state');
+requireText(app, 'function renderUnsafe()', 'renderer recovery boundary');
+requireText(app, 'renderer-recovery-root', 'visible renderer recovery surface');
 requireText(css, 'opacity:.78 !important', 'placard full-card visibility');
 requireText(css, '.recommended-mod-card', 'compact Recommended Mods');
 

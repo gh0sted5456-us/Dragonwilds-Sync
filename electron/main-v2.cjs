@@ -79,6 +79,7 @@ let rsdwModuleTimer = null;
 let forceQuit = false;
 let shutdownInProgress = false;
 let shutdownComplete = false;
+let visualShutdownStarted = false;
 let pendingJoinRequest = null;
 let backgroundSettings = { close_to_tray: true, start_minimized: false, notifications_enabled: true, announcement_overlay_enabled: true };
 const notificationSeen = new Map();
@@ -734,9 +735,19 @@ function stopLauncherOwnedShellServices(){
   discordPresence.destroy();
 }
 
+function beginVisualApplicationExit(){
+  if(visualShutdownStarted)return;
+  visualShutdownStarted=true;forceQuit=true;
+  // A verified backend shutdown can take several seconds when a dedicated
+  // server is stopping. Remove the launcher UI immediately while that bounded
+  // authority-preserving cleanup continues in the background.
+  for(const win of BrowserWindow.getAllWindows()){try{win.hide();}catch(_){}}
+  if(tray){try{tray.destroy();}catch(_){}tray=null;}
+}
+
 async function performFullApplicationExit(){
   if(shutdownInProgress||shutdownComplete)return;
-  shutdownInProgress=true;forceQuit=true;
+  shutdownInProgress=true;beginVisualApplicationExit();
   try{
     if(service&&!service.killed){
       let timeoutId;
@@ -757,5 +768,6 @@ app.on('before-quit',(event)=>{
   forceQuit=true;
   if(shutdownComplete){stopLauncherOwnedShellServices();return;}
   event.preventDefault();
+  beginVisualApplicationExit();
   void performFullApplicationExit();
 });

@@ -2113,6 +2113,20 @@
     return `<span class="status-pill ${tone}" title="Dragonwilds dedicated-server changelist">${escapeHtml(reported||'CL unavailable')} · ${label}</span>`;
   }
 
+  function placardBackSection(title, values, empty='None published') {
+    const rows=[...new Set((values||[]).map((value)=>typeof value==='object'?(value.name||value.label||value.id||''):String(value)).map((value)=>String(value||'').trim()).filter(Boolean))].slice(0,16);
+    return `<section class="world-back-section"><h4>${escapeHtml(title)}</h4><div class="world-back-list">${rows.length?rows.map((value)=>`<span>${escapeHtml(value)}</span>`).join(''):`<span>${escapeHtml(empty)}</span>`}</div></section>`;
+  }
+
+  function placardBackMarkup(world,presentation,server,badges,title,desc,modeTone) {
+    const manifest=world?.manifest_cache||{};
+    const mods=server?(world?.mod_metadata||manifest.mod_summary||[]):(world?.mod_metadata||manifest.mod_summary||presentation?.mod_summary||[]);
+    const tags=[...(presentation?.game_tags||[]),...(presentation?.sync_tags||[]),...(presentation?.tags||[])];
+    const rules=String(world?.community_rules||presentation?.community_rules||manifest.community_rules||'').trim();
+    const endpoint=!server?String(world?.connection?.external_ip||world?.connection?.internal_ip||'').trim():'';
+    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div><div class="world-card-body"><div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.id||'')}</small></div>${server?`<span class="status-pill unknown">HOST</span>`:statusPill(world)}</div><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Mods',mods)}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer"><div class="card-metrics"><span>Profile telemetry and presentation</span></div><span class="card-flip-hint">FRONT ↻</span></div></div></section>`;
+  }
+
   function worldCard(world, server = false) {
     const presentation = server ? world : (world.presentation || {});
     const single = !server && world.kind === 'singleplayer';
@@ -2139,14 +2153,15 @@
     const instance = Math.max(1, Number(world.instance_number || 1));
     const activeClass = livePrivate ? ' active-private-world' : (liveServer ? ` active-server-world instance-${((instance-1)%6)+1}` : '');
     const modeLabel = server ? 'DEDICATED SERVER' : (single ? (world.status?.broadcasting ? 'CO-OP' : 'SINGLEPLAYER') : 'SYNC WORLD');
+    const modeTone=server?'dedicated':(world.status?.broadcasting?'coop':'single');
     const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
+    const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
     const originLabel=!server&&!single&&(world.shared?.curated||world.shared?.source_id)?String(world.shared?.profile_name||world.shared?.source_name||world.shared?.source_id||'Imported Manifest'):'';
     return `
-      <article class="world-card${activeClass}" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}">
-        <img class="world-placard-backdrop" src="assets/placards/${PLACARD_BACKGROUNDS.includes(placard)?placard:'1'}.png" alt="" />
-        <div class="world-mode-banner ${server?'dedicated':(world.status?.broadcasting?'coop':'single')}">${escapeHtml(modeLabel)}</div>
+      <article class="world-card app-world-placard has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}" tabindex="0" role="button" aria-label="Flip ${escapeHtml(title)} placard" aria-pressed="false">
+       <div class="world-card-inner"><section class="world-card-face world-card-front">
+        <div class="world-mode-banner ${modeTone}">${escapeHtml(modeLabel)}</div>
         ${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}
-        ${banner ? `<img class="world-card-banner" src="${banner}" alt="" />` : `<div class="world-card-banner-fallback"></div>`}
         <div class="world-card-body">
           ${icon ? `<img class="world-icon" src="${icon}" alt="" />` : `<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}
           <div class="card-topline">
@@ -2156,9 +2171,10 @@
           <div class="card-description">${escapeHtml(desc)}</div>
           ${tags}
           <div class="badges" style="margin-top:8px">${classificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}${world.shared?.curated?'<span class="status-pill unknown">PROFILE</span>':''}${badges.map(badgeMarkup).join('')}${!server&&Number(world.shared?.shared_character_count||0)>0?`<span class="world-class-pill">${Number(world.shared.shared_character_count)} CHARACTERS</span>`:''}</div>
-          <div class="card-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span>${escapeHtml(ping)}</span><span>${escapeHtml(players)}</span>${observed?`<span title="LobbySup public player history">${escapeHtml(observed)}</span>`:''}</div>${worldRatingMarkup(world)}</div>
+          <div class="card-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span>${escapeHtml(ping)}</span><span>${escapeHtml(players)}</span>${observed?`<span title="LobbySup public player history">${escapeHtml(observed)}</span>`:''}</div>${worldRatingMarkup(world)}<span class="card-flip-hint">DETAILS ↻</span></div>
         </div>
-        ${!server&&!single?`<div class="placard-actions integrated"><button class="btn play" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost" data-world-details="${escapeHtml(world.id)}">Details</button></div>`:''}
+       </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone)}</div>
+       ${!server&&!single?`<div class="placard-actions integrated"><button class="btn play" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost" data-world-details="${escapeHtml(world.id)}">Details</button></div>`:''}
       </article>`;
   }
 
@@ -3797,7 +3813,7 @@
       <section class="minimal-note"><strong>Shared authority</strong><p>These controls use the same lifecycle queue as the full launcher and remote WebGUI. The server is never advertised during an update or before startup verification completes.</p></section></div>`;
   }
 
-  function render() {
+  function renderUnsafe() {
     if (!state.data) return;
     if(privateWorldById(state.selectedWorldId)&&Array.isArray(state.singleplayerInventory))state.privateInventory[state.selectedWorldId]=state.singleplayerInventory;
     window.__DWSYNC_STATE__ = state.data;
@@ -3884,6 +3900,20 @@
       }
     });
     updateDiscordPresenceForRoute();
+  }
+
+  let renderFailureCount=0;
+  function render() {
+    try {
+      const result=renderUnsafe();renderFailureCount=0;return result;
+    } catch(error) {
+      renderFailureCount+=1;
+      console.error('[renderer] UI render failed',error);
+      root.className='welcome-root renderer-recovery-root';
+      root.innerHTML=`<div class="fatal-error"><strong>Dragonwilds Sync recovered from a display error.</strong><span>${escapeHtml(error?.message||String(error||'Unknown renderer error'))}</span><button class="btn primary" id="reload-renderer-after-error">Reload Interface</button></div>`;
+      root.querySelector('#reload-renderer-after-error')?.addEventListener('click',()=>location.reload());
+      return null;
+    }
   }
 
   async function installSinglePlayerZip(zipPath) {
@@ -5571,7 +5601,14 @@
       const internalId=button?.dataset.windowId||'',nativeId=button?.dataset.nativeWindowId||'';
       if(internalId){const win=modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(internalId)}"]`);if(!win)return;if(action==='close')closeDesktopWindow(win);else{win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();}return;}
       if(!nativeId)return;
-      try{if(action==='close')await window.dragonwilds?.closeDetachedWindow?.(nativeId);else await window.dragonwilds?.restoreDetachedWindow?.(nativeId);}catch(error){toast(`Could not ${action} window`,error.message,'error');}
+      if(action==='close'){
+        // Closing from the in-app taskbar is optimistic: remove the tab now,
+        // then let Electron destroy the native window without blocking input.
+        state.detachedWindows=(state.detachedWindows||[]).filter((entry)=>String(entry.id||'')!==String(nativeId));syncInternalTaskbar();
+        Promise.resolve(window.dragonwilds?.closeDetachedWindow?.(nativeId)).catch(async(error)=>{try{state.detachedWindows=await window.dragonwilds?.listDetachedWindows?.()||[];syncInternalTaskbar();}catch(_){}toast('Could not close window',error.message,'error');});
+        return;
+      }
+      try{await window.dragonwilds?.restoreDetachedWindow?.(nativeId);}catch(error){toast('Could not open window',error.message,'error');}
     }));
   }
 

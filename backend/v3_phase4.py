@@ -57,6 +57,20 @@ def _png_hash_from_data_url(value: object) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
+def _public_world_artwork(value: object, *, limit: int) -> str:
+    """Keep the World's own artwork while excluding arbitrary embedded assets."""
+    text = str(value or "").strip()
+    if not text or len(text) > limit:
+        return ""
+    lowered = text.casefold()
+    if lowered.startswith("data:image/") or lowered.startswith(("https://", "/assets/")):
+        return text
+    # Compatibility with older profiles that stored a bare PNG base64 body.
+    if re.fullmatch(r"[a-zA-Z0-9+/=\r\n]+", text):
+        return f"data:image/png;base64,{text}"
+    return ""
+
+
 def normalize_custom_badges(values: object) -> list[dict[str, str]]:
     """Return small heartbeat-safe badge references, never embedded PNG bytes."""
     if not isinstance(values, (list, tuple)):
@@ -121,6 +135,19 @@ def decorate_public_snapshot(snapshot: dict, raw: dict) -> dict:
     raw = raw if isinstance(raw, dict) else {}
     presentation = raw.get("presentation") if isinstance(raw.get("presentation"), dict) else {}
     result["tags"] = normalize_tags(result.get("tags") or raw.get("tags") or presentation.get("tags"))
+    # The World icon and banner are the only embedded presentation images in a
+    # heartbeat. Badge/platform imagery is reconstructed by the receiver from
+    # the semantic tag and registry references below.
+    icon = _public_world_artwork(raw.get("icon_b64") or presentation.get("icon_b64"), limit=8_000_000)
+    banner = _public_world_artwork(raw.get("banner_b64") or presentation.get("banner_b64"), limit=16_000_000)
+    if icon:
+        result["icon_b64"] = icon
+    else:
+        result.pop("icon_b64", None)
+    if banner:
+        result["banner_b64"] = banner
+    else:
+        result.pop("banner_b64", None)
     badge_source = raw.get("custom_badges")
     if not isinstance(badge_source, list):
         badge_source = presentation.get("custom_badges")

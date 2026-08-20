@@ -6,7 +6,7 @@
     if (document.querySelector('link[data-dws-site-visuals]')) return;
     const link = document.createElement('link');
     link.rel = 'stylesheet';
-    link.href = new URL('site-visuals.css?v=visuals-1', document.baseURI).href;
+    link.href = new URL('site-visuals.css?v=visuals-2', document.baseURI).href;
     link.dataset.dwsSiteVisuals = 'true';
     document.head.appendChild(link);
   }

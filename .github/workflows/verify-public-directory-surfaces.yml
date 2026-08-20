@@ -12,6 +12,8 @@ on:
       - 'renderer/public-server-list.css'
       - 'renderer/index.html'
       - 'cloudflare/world-directory/src/public-directory-entry.ts'
+      - 'cloudflare/world-directory/src/rotating-public-scan.ts'
+      - 'cloudflare/world-directory/migrations/0003_public_source_scan_state.sql'
       - 'cloudflare/world-directory/wrangler.jsonc'
       - '.github/workflows/verify-public-directory-surfaces.yml'
   workflow_dispatch:
@@ -31,7 +33,7 @@ jobs:
           node --check renderer/public-server-list.js
       - name: Check public descriptor
         run: |
-          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('website/directory-source.json','utf8'));if(x.format!=='dragonwilds-sync-public-directory-link'||x.version!==1||!x.worlds_url)process.exit(1)"
+          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('website/directory-source.json','utf8'));if(x.format!=='dragonwilds-sync-public-directory-link'||x.version!==1||!x.worlds_url||x.collection?.mode!=='resumable-full-scan')process.exit(1)"
       - name: Check website wiring
         run: |
           grep -q 'data-directory-view="placards"' website/servers.html
@@ -44,6 +46,12 @@ jobs:
           grep -q 'public-server-list.js' renderer/index.html
           grep -q 'https://\*.workers.dev' renderer/index.html
           grep -q 'Public Server List' renderer/public-server-list.js
+      - name: Check resumable scan wiring
+        run: |
+          grep -q "scanPublicSourcesIncrementally" cloudflare/world-directory/src/public-directory-entry.ts
+          grep -q "scan_cursor" cloudflare/world-directory/src/rotating-public-scan.ts
+          grep -q "scan_generation" cloudflare/world-directory/migrations/0003_public_source_scan_state.sql
+          grep -q '"PUBLIC_SOURCE_BATCH_PAGES": "35"' cloudflare/world-directory/wrangler.jsonc
       - name: Type-check Cloudflare entry
         working-directory: cloudflare/world-directory
         run: |

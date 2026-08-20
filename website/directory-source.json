@@ -8,8 +8,14 @@
   "sources_url": "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/sources",
   "compatible_aliases": [
     "https://dragonwilds-sync-directory.dragonwilds.workers.dev/worlds",
-    "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/worlds"
+    "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/worlds",
+    "https://dragonwilds-sync-directory.dragonwilds.workers.dev/manifest"
   ],
+  "collection": {
+    "mode": "resumable-full-scan",
+    "scheduled_refresh_minutes": 5,
+    "progressive": true
+  },
   "presentation": {
     "preferred_label": "Public Server List",
     "supports_placards": true,

@@ -17,9 +17,11 @@ rm -rf build-service dist-service release
 test -x dist-service/DragonwildsSync.Service
 npm ci --include=dev
 # Electron's Linux sandbox must remain enabled during the preload smoke test.
-# Hosted CI checks out npm's helper as an ordinary file, so repair the standard
-# root-owned setuid permissions instead of disabling Chromium's sandbox.
-if [[ "${CI:-}" == "true" && -f node_modules/electron/dist/chrome-sandbox ]]; then
+# npm may defer Electron's binary download until first launch; materialize it
+# before repairing the standard root-owned setuid helper permissions.
+if [[ "${CI:-}" == "true" ]]; then
+  node node_modules/electron/install.js
+  test -f node_modules/electron/dist/chrome-sandbox
   sudo -n chown root:root node_modules/electron/dist/chrome-sandbox
   sudo -n chmod 4755 node_modules/electron/dist/chrome-sandbox
 fi

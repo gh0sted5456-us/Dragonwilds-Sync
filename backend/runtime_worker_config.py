@@ -10,20 +10,33 @@ settings document still matches it before materializing/launching anything.
 
 Snapshots intentionally contain the already-redacted settings projection, never
 legacy plaintext profile credentials.
+
+A World Runtime Worker may reuse legacy runtime code that calls profile-store
+save functions as part of launch/publication. Those calls are redirected to a
+process-local overlay after the desired revision has been verified. The worker
+therefore cannot silently persist profile.json, settings.json, or global
+launcher desired state; permanent edits remain owned by the main backend.
 """
 
 from copy import deepcopy
 import hashlib
 import json
+import os
+import secrets
+import threading
 import time
 from pathlib import Path
 
 import profile_settings
 import profile_store
-from runtime_worker_protocol import atomic_json, runtime_dir, safe_id
+from runtime_worker_protocol import WORKER_AUTH_ENV, atomic_json, runtime_dir, safe_id
 
 DESIRED_SCHEMA = "DragonwildsSync.RuntimeDesiredConfig.v1"
 DESIRED_SCHEMA_VERSION = 1
+_WORKER_OVERLAY_LOCK = threading.RLock()
+_WORKER_PROFILE_OVERLAYS: dict[str, dict] = {}
+_WORKER_STATE_OVERLAY: dict | None = None
+_WORKER_OVERLAY_INSTALLED = False
 
 
 def _canonical(value: object) -> bytes:
@@ -66,6 +79,27 @@ def _next_revision(profile_id: str) -> int:
     return max(0, previous) + 1
 
 
+def _prepare_main_owned_runtime_profile(profile_id: str, profile: dict) -> dict:
+    """Perform durable pre-start mutations only in the controlling backend.
+
+    The legacy share publisher rotates the kid-friendly join key daily. Once
+    publication executes in the World worker, that rotation must happen before
+    the immutable desired revision is created so the worker never becomes the
+    durable profile writer and all control surfaces observe the same key state.
+    """
+    result = deepcopy(profile if isinstance(profile, dict) else {})
+    if str(result.get("audience") or "general") != "kid_friendly":
+        return result
+    sync = result.setdefault("sync_config", {})
+    rotation_day = time.strftime("%Y-%m-%d", time.gmtime())
+    if str(sync.get("family_join_rotated_at") or "") == rotation_day:
+        return result
+    sync["share_access_key"] = secrets.token_hex(8)
+    sync["family_join_rotated_at"] = rotation_day
+    profile_store.save_server_profile(profile_id, result)
+    return result
+
+
 def create_desired_snapshot(profile_id: str, kind: str = "dedicated") -> dict:
     """Synchronize existing desired state and atomically create one new revision."""
     profile_id = safe_id(profile_id, "profile ID")
@@ -73,6 +107,8 @@ def create_desired_snapshot(profile_id: str, kind: str = "dedicated") -> dict:
     profile = profile_store.load_server_profile(profile_id) if normalized_kind == "dedicated" else {}
     if not isinstance(profile, dict) or not profile:
         raise KeyError("World profile not found while preparing runtime desired state.")
+    if normalized_kind == "dedicated":
+        profile = _prepare_main_owned_runtime_profile(profile_id, profile)
 
     settings, _changed = profile_settings.sync_profile_settings(normalized_kind, profile_id, profile)
     if not isinstance(settings, dict) or not settings:
@@ -119,8 +155,71 @@ def load_desired_snapshot(profile_id: str, revision: int) -> dict:
     return payload
 
 
+def _install_worker_persistence_overlay(profile_id: str) -> bool:
+    """Replace durable profile/global saves with worker-local overlays.
+
+    The authenticated worker environment is the discriminator; the normal
+    supervisor/control process never installs this barrier. The durable source
+    is reread on every verified revision so a controlled restart sees the
+    newest main-owned profile while any legacy runtime mutations stay local to
+    the worker process.
+    """
+    global _WORKER_OVERLAY_INSTALLED, _WORKER_STATE_OVERLAY
+    if not str(os.environ.get(WORKER_AUTH_ENV) or "").strip():
+        return False
+    profile_id = safe_id(profile_id, "profile ID")
+    durable_profile = profile_store.read_json(profile_store.SERVER_PROFILES_DIR / profile_id / "profile.json", {})
+    if not isinstance(durable_profile, dict) or not durable_profile:
+        raise RuntimeError("Authoritative World profile disappeared before worker launch.")
+    durable_state = profile_store.read_json(profile_store.V2_SETTINGS_PATH, {})
+
+    with _WORKER_OVERLAY_LOCK:
+        _WORKER_PROFILE_OVERLAYS[profile_id] = deepcopy(durable_profile)
+        _WORKER_STATE_OVERLAY = deepcopy(durable_state if isinstance(durable_state, dict) else {})
+        if _WORKER_OVERLAY_INSTALLED:
+            return True
+
+        original_load_profile = profile_store.load_server_profile
+        original_load_state = profile_store.load_state
+
+        def worker_load_server_profile(requested_profile_id: str) -> dict:
+            requested = str(requested_profile_id or "").strip()
+            with _WORKER_OVERLAY_LOCK:
+                if requested in _WORKER_PROFILE_OVERLAYS:
+                    return deepcopy(_WORKER_PROFILE_OVERLAYS[requested])
+            # Reads of another profile remain read-only and use the pre-barrier
+            # loader; writes below are still blocked to the active worker World.
+            return original_load_profile(requested)
+
+        def worker_save_server_profile(requested_profile_id: str, data: dict) -> None:
+            requested = str(requested_profile_id or "").strip()
+            with _WORKER_OVERLAY_LOCK:
+                if requested not in _WORKER_PROFILE_OVERLAYS:
+                    raise RuntimeError("World Runtime Worker may not persist or mutate another World profile.")
+                _WORKER_PROFILE_OVERLAYS[requested] = deepcopy(data if isinstance(data, dict) else {})
+
+        def worker_load_state() -> dict:
+            with _WORKER_OVERLAY_LOCK:
+                if _WORKER_STATE_OVERLAY is not None:
+                    return deepcopy(_WORKER_STATE_OVERLAY)
+            return deepcopy(original_load_state())
+
+        def worker_save_state(state: dict) -> dict:
+            global _WORKER_STATE_OVERLAY
+            with _WORKER_OVERLAY_LOCK:
+                _WORKER_STATE_OVERLAY = deepcopy(state if isinstance(state, dict) else {})
+                return deepcopy(_WORKER_STATE_OVERLAY)
+
+        profile_store.load_server_profile = worker_load_server_profile
+        profile_store.save_server_profile = worker_save_server_profile
+        profile_store.load_state = worker_load_state
+        profile_store.save_state = worker_save_state
+        _WORKER_OVERLAY_INSTALLED = True
+        return True
+
+
 def verify_authoritative_settings(profile_id: str, snapshot: dict, kind: str = "dedicated") -> dict:
-    """Refuse to apply a stale snapshot if desired state changed after PREPARE."""
+    """Refuse stale desired state, then establish the worker persistence barrier."""
     profile_id = safe_id(profile_id, "profile ID")
     normalized_kind = "dedicated" if str(kind or "").casefold() in {"server", "dedicated"} else "local"
     path = profile_settings.settings_path(normalized_kind, profile_id)
@@ -131,4 +230,10 @@ def verify_authoritative_settings(profile_id: str, snapshot: dict, kind: str = "
     actual = desired_hash(current)
     if not expected or actual != expected:
         raise RuntimeError("Desired World configuration changed after the worker revision was prepared; retry Start with the newest revision.")
-    return {"settingsPath": str(path), "settingsHash": actual, "revision": int(snapshot.get("revision") or 0)}
+    overlay = _install_worker_persistence_overlay(profile_id) if normalized_kind == "dedicated" else False
+    return {
+        "settingsPath": str(path), "settingsHash": actual,
+        "revision": int(snapshot.get("revision") or 0),
+        "persistenceAuthority": "application",
+        "workerPersistence": "memory-overlay" if overlay else "not-worker",
+    }

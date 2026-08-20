@@ -2,15 +2,15 @@
    Theme backgrounds are baked assets derived from the user-supplied watercolor
    knight-versus-dragon artwork. Placards remain dark readable surfaces. */
 :root{
-  --dws-site-art:url('assets/backgrounds/world-bg-dark.webp');
+  --dws-site-art:url('assets/backgrounds/world-bg-dark.webp?v=theme-art-1');
   --dws-site-art-wash:rgba(7,10,12,.72);
 }
 html[data-theme="white"]{
-  --dws-site-art:url('assets/backgrounds/world-bg-white.webp');
+  --dws-site-art:url('assets/backgrounds/world-bg-white.webp?v=theme-art-1');
   --dws-site-art-wash:rgba(247,245,239,.46);
 }
 html[data-theme="glass"]{
-  --dws-site-art:url('assets/backgrounds/world-bg-glass.webp');
+  --dws-site-art:url('assets/backgrounds/world-bg-glass.webp?v=theme-art-1');
   --dws-site-art-wash:rgba(8,15,22,.48);
 }
 body{

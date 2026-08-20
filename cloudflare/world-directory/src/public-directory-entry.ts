@@ -83,7 +83,7 @@ async function totalSyncWorldStarts(env: any): Promise<number> {
   try {
     const row = await env.DB.prepare(
       "SELECT counter_value FROM network_counters WHERE counter_key = 'total_sync_world_starts'",
-    ).first<{ counter_value: number }>();
+    ).first() as { counter_value?: number } | null;
     return Math.max(0, Number(row?.counter_value || 0));
   } catch {
     // During first deployment the migration and Worker may overlap briefly.
@@ -237,13 +237,13 @@ async function recordAcceptedSyncStart(env: any, payload: Record<string, any>): 
       SELECT world_id, last_start_id, last_seen, last_status, starts
       FROM sync_world_start_state
       WHERE world_id = ?
-    `).bind(worldId).first<{
-      world_id: string;
-      last_start_id: string;
-      last_seen: number;
-      last_status: string;
-      starts: number;
-    }>();
+    `).bind(worldId).first() as {
+      world_id?: string;
+      last_start_id?: string;
+      last_seen?: number;
+      last_status?: string;
+      starts?: number;
+    } | null;
 
     const hadState = Boolean(state?.world_id);
     const previousSeen = Number(state?.last_seen || 0);
@@ -273,7 +273,7 @@ async function recordAcceptedSyncStart(env: any, payload: Record<string, any>): 
       const existingEvent = explicitStartId
         ? await env.DB.prepare(
           'SELECT 1 AS present FROM sync_world_start_events WHERE world_id = ? AND start_id = ?',
-        ).bind(worldId, eventStartId).first<{ present: number }>()
+        ).bind(worldId, eventStartId).first() as { present?: number } | null
         : null;
 
       if (!existingEvent?.present) {

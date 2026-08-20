@@ -1,6 +1,6 @@
 /* Website-backed Public Server List tab for Dragonwilds Sync desktop.
-   This is discovery-only UI. It consumes the same merged Cloudflare response as
-   the website and never imports admin credentials, World passwords, or runtime authority. */
+   Discovery-only: this consumes the same merged Cloudflare response as the
+   website and never imports admin credentials, World passwords, or authority. */
 (() => {
   const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html';
   const API_URL = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds';
@@ -12,11 +12,11 @@
   let rows = [];
   let lastLoadedAt = 0;
   let refreshTimer = null;
+  let activeContent = null;
 
-  const byId = (id, root = document) => root.querySelector(`#${id}`);
   const text = (value, fallback = '') => {
-    const next = value == null ? '' : String(value).trim();
-    return next || fallback;
+    const valueText = value == null ? '' : String(value).trim();
+    return valueText || fallback;
   };
   const number = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
   const list = (value, max = 12) => Array.isArray(value) ? value.map((item) => text(item)).filter(Boolean).slice(0, max) : [];
@@ -26,6 +26,8 @@
     if (value !== '') node.textContent = value;
     return node;
   };
+  const panel = () => document.querySelector('.dws-public-server-panel');
+  const withinPanel = (selector) => panel()?.querySelector(selector) || null;
 
   function resolveFeed(raw) {
     const value = text(raw);
@@ -35,19 +37,16 @@
     if (url.protocol !== 'https:') throw new Error('Public Server List links must use HTTPS.');
 
     const host = url.hostname.toLowerCase();
-    const path = url.pathname.toLowerCase();
+    const path = url.pathname.toLowerCase().replace(/\/$/, '');
     if (host === 'gh0sted5456-us.github.io' && path.startsWith('/dragonwilds-sync')) return API_URL;
     if (host === 'dragonwilds-sync-directory.dragonwilds.workers.dev') {
-      if (path === '/api/v1/worlds' || path === '/worlds' || path === '/api/worlds' || path === '/manifest') return url.toString();
-      url.pathname = '/api/v1/worlds';
-      url.search = '';
-      url.hash = '';
+      if (['/api/v1/worlds', '/worlds', '/api/worlds', '/manifest'].includes(path)) return url.toString();
+      url.pathname = '/api/v1/worlds'; url.search = ''; url.hash = '';
       return url.toString();
     }
     if (host.endsWith('.workers.dev')) {
-      if (!/\/(?:api\/v1\/worlds|worlds|api\/worlds|manifest)\/?$/i.test(url.pathname)) url.pathname = '/api/v1/worlds';
-      url.search = '';
-      url.hash = '';
+      if (!['/api/v1/worlds', '/worlds', '/api/worlds', '/manifest'].includes(path)) url.pathname = '/api/v1/worlds';
+      url.search = ''; url.hash = '';
       return url.toString();
     }
     throw new Error('Use the Dragonwilds Sync Public Server Directory webpage link or an approved workers.dev directory feed.');
@@ -65,8 +64,7 @@
       status: text(raw?.status, 'offline').toLowerCase(),
       current: Math.max(0, number(players.current ?? raw?.players_current, 0)),
       max: Math.max(0, number(players.max ?? raw?.players_max, 0)),
-      tags: list(raw?.tags, 10),
-      badges: list(raw?.badges, 8),
+      tags: list(raw?.tags, 10), badges: list(raw?.badges, 8),
       source: text(raw?.source_name, raw?.is_sync_world ? 'Dragonwilds Sync' : 'Public source'),
       isSync: Boolean(raw?.is_sync_world),
       host: text(connect?.host ?? raw?.public_connect_host, ''),
@@ -75,55 +73,44 @@
     };
   }
 
-  function isOnline(world) {
-    return ['online', 'starting', 'maintenance'].includes(world.status);
-  }
+  const isOnline = (world) => ['online', 'starting', 'maintenance'].includes(world.status);
+  const currentView = () => localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'horizontal';
 
   function setStatus(message, kind = '') {
-    const status = byId('dws-public-server-status');
+    const status = withinPanel('#dws-public-server-status');
     if (!status) return;
     status.className = `dws-public-server-status ${kind}`.trim();
     status.textContent = message;
   }
 
-  function currentView() {
-    return localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'horizontal';
-  }
-
   function renderRows() {
-    const panel = document.querySelector('.dws-public-server-panel');
-    if (!panel) return;
-    const results = byId('dws-public-server-results', panel);
-    const summary = byId('dws-public-server-summary', panel);
-    const search = text(byId('dws-public-server-search', panel)?.value).toLowerCase();
+    const root = panel();
+    if (!root) return;
+    const results = root.querySelector('#dws-public-server-results');
+    const summary = root.querySelector('#dws-public-server-summary');
+    const search = text(root.querySelector('#dws-public-server-search')?.value).toLowerCase();
     if (!results || !summary) return;
 
     const filtered = rows
       .filter((world) => !search || [world.name, world.region, world.version, world.source, ...world.tags, ...world.badges].join(' ').toLowerCase().includes(search))
       .sort((a, b) => Number(isOnline(b)) - Number(isOnline(a)) || b.current - a.current || b.lastSeen - a.lastSeen || a.name.localeCompare(b.name));
 
-    const syncCount = rows.filter((world) => world.isSync).length;
-    const publicCount = rows.length - syncCount;
-    const onlineCount = rows.filter(isOnline).length;
     summary.replaceChildren();
-    const pieces = [
-      ['Loaded', rows.length],
-      ['Online', onlineCount],
-      ['Sync Worlds', syncCount],
-      ['Public Servers', publicCount],
-      ['Showing', filtered.length],
+    const counts = [
+      ['Loaded', rows.length], ['Online', rows.filter(isOnline).length],
+      ['Sync Worlds', rows.filter((world) => world.isSync).length],
+      ['Public Servers', rows.filter((world) => !world.isSync).length], ['Showing', filtered.length],
     ];
-    pieces.forEach(([label, value]) => {
-      const span = make('span');
-      span.append(document.createTextNode(`${label} `), make('b', '', String(value)));
-      summary.appendChild(span);
+    counts.forEach(([label, value]) => {
+      const item = make('span');
+      item.append(document.createTextNode(`${label} `), make('b', '', String(value)));
+      summary.appendChild(item);
     });
 
     const view = currentView();
     results.className = `dws-public-server-results ${view === 'horizontal' ? 'horizontal' : ''}`.trim();
-    panel.querySelectorAll('[data-dws-public-view]').forEach((button) => button.classList.toggle('active', button.dataset.dwsPublicView === view));
+    root.querySelectorAll('[data-dws-public-view]').forEach((button) => button.classList.toggle('active', button.dataset.dwsPublicView === view));
     results.replaceChildren();
-
     if (!filtered.length) {
       results.appendChild(make('div', 'dws-public-empty', rows.length ? 'No public servers match this search.' : 'No public servers have been loaded yet.'));
       return;
@@ -132,7 +119,6 @@
     const fragment = document.createDocumentFragment();
     filtered.forEach((world) => {
       const card = make('article', 'dws-public-server-card');
-
       const identity = make('div');
       const head = make('div', 'dws-public-server-card-head');
       const title = make('div');
@@ -152,9 +138,9 @@
       const tags = make('div', 'dws-public-server-tags');
       (world.tags.length ? world.tags : world.badges).slice(0, 6).forEach((tag) => tags.appendChild(make('span', '', tag)));
       detail.appendChild(tags);
-      if (world.host) detail.appendChild(make('div', 'dws-public-server-route', `Public route: ${world.host}${world.port ? `:${world.port}` : ''}`));
-      else detail.appendChild(make('div', 'dws-public-server-route', world.isSync ? 'Sync metadata published; public route not exposed.' : 'Public source does not expose a direct route.'));
-
+      detail.appendChild(make('div', 'dws-public-server-route', world.host
+        ? `Public route: ${world.host}${world.port ? `:${world.port}` : ''}`
+        : world.isSync ? 'Sync metadata published; public route not exposed.' : 'Public source does not expose a direct route.'));
       card.append(identity, metrics, detail);
       fragment.appendChild(card);
     });
@@ -162,20 +148,17 @@
   }
 
   async function loadDirectory({ force = false } = {}) {
-    const panel = document.querySelector('.dws-public-server-panel');
-    if (!panel) return;
-    const input = byId('dws-public-server-link', panel);
-    if (!input) return;
+    const root = panel();
+    const input = root?.querySelector('#dws-public-server-link');
+    if (!root || !input) return;
+
     const pageLink = text(input.value, PAGE_LINK);
     let endpoint;
-    try { endpoint = resolveFeed(pageLink); } catch (error) { setStatus(error.message || String(error), 'error'); return; }
+    try { endpoint = resolveFeed(pageLink); }
+    catch (error) { setStatus(error.message || String(error), 'error'); return; }
     localStorage.setItem(LINK_KEY, pageLink);
 
-    if (!force && rows.length && Date.now() - lastLoadedAt < 5000) {
-      renderRows();
-      return;
-    }
-
+    if (!force && rows.length && Date.now() - lastLoadedAt < 5000) { renderRows(); return; }
     setStatus('Loading public servers…');
     try {
       const response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
@@ -187,7 +170,7 @@
       rows = [...unique.values()];
       lastLoadedAt = Date.now();
       setStatus(`${rows.length} public server${rows.length === 1 ? '' : 's'} loaded`, 'ok');
-      const endpointNode = byId('dws-public-server-endpoint', panel);
+      const endpointNode = root.querySelector('#dws-public-server-endpoint');
       if (endpointNode) endpointNode.textContent = endpoint;
       renderRows();
     } catch (error) {
@@ -196,31 +179,37 @@
     }
   }
 
-  function deactivate() {
-    active = false;
-    const content = document.querySelector('.world-source-tabs')?.closest('.content');
-    content?.classList.remove('dws-public-server-mode');
-    document.querySelector('.dws-public-server-tab')?.classList.remove('active');
-    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+  function stopRefreshTimer() {
+    if (refreshTimer) clearInterval(refreshTimer);
+    refreshTimer = null;
   }
 
-  function activate() {
+  function deactivate() {
+    active = false;
+    activeContent?.classList.remove('dws-public-server-mode');
+    activeContent = null;
+    document.querySelector('.dws-public-server-tab')?.classList.remove('active');
+    stopRefreshTimer();
+  }
+
+  function applyActiveState({ load = true } = {}) {
     const tabs = document.querySelector('.world-source-tabs');
-    const panel = document.querySelector('.dws-public-server-panel');
+    const root = panel();
     const content = tabs?.closest('.content');
-    if (!tabs || !panel || !content) return;
+    if (!tabs || !root || !content) return;
     active = true;
+    activeContent = content;
     tabs.querySelectorAll('button').forEach((button) => button.classList.remove('active'));
     tabs.querySelector('.dws-public-server-tab')?.classList.add('active');
     content.classList.add('dws-public-server-mode');
-    loadDirectory({ force: !rows.length });
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(() => { if (active) loadDirectory({ force: true }); }, REFRESH_MS);
+    if (load) loadDirectory({ force: !rows.length });
+    renderRows();
+    if (!refreshTimer) refreshTimer = setInterval(() => { if (active) loadDirectory({ force: true }); }, REFRESH_MS);
   }
 
   function buildPanel() {
-    const panel = make('section', 'dws-public-server-panel');
-    panel.innerHTML = `
+    const root = make('section', 'dws-public-server-panel');
+    root.innerHTML = `
       <div class="dws-public-server-head">
         <div><div class="eyebrow">Website-backed discovery</div><h2>Public Server List</h2><p>Paste the Dragonwilds Sync Public Server Directory webpage link. The application resolves it to the same read-only, deduplicated Cloudflare feed used by the website. Sync Worlds win strong duplicate matches; ordinary public servers remain limited discovery records.</p></div>
         <span class="dws-public-server-status" id="dws-public-server-status">Not loaded</span>
@@ -233,49 +222,48 @@
       </div>
       <div class="dws-public-server-summary" id="dws-public-server-summary"></div>
       <div class="dws-public-server-results" id="dws-public-server-results"><div class="dws-public-empty">Paste or keep the default website link, then load the Public Server List.</div></div>
-      <div class="muted-small" style="margin-top:9px">Resolved read-only endpoint: <span id="dws-public-server-endpoint">—</span> · refreshes every 30 seconds while this tab is open.</div>
-    `;
-    const input = byId('dws-public-server-link', panel);
-    input.value = localStorage.getItem(LINK_KEY) || PAGE_LINK;
+      <div class="muted-small" style="margin-top:9px">Resolved read-only endpoint: <span id="dws-public-server-endpoint">—</span> · refreshes every 30 seconds while this tab is open.</div>`;
 
-    byId('dws-public-server-load', panel)?.addEventListener('click', () => loadDirectory({ force: true }));
-    byId('dws-public-server-search', panel)?.addEventListener('input', renderRows);
+    const input = root.querySelector('#dws-public-server-link');
+    input.value = localStorage.getItem(LINK_KEY) || PAGE_LINK;
+    root.querySelector('#dws-public-server-load')?.addEventListener('click', () => loadDirectory({ force: true }));
+    root.querySelector('#dws-public-server-search')?.addEventListener('input', renderRows);
     input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadDirectory({ force: true }); } });
     input.addEventListener('paste', () => setTimeout(() => loadDirectory({ force: true }), 60));
-    panel.querySelectorAll('[data-dws-public-view]').forEach((button) => button.addEventListener('click', () => {
-      const next = button.dataset.dwsPublicView === 'cards' ? 'cards' : 'horizontal';
-      localStorage.setItem(VIEW_KEY, next);
+    root.querySelectorAll('[data-dws-public-view]').forEach((button) => button.addEventListener('click', () => {
+      localStorage.setItem(VIEW_KEY, button.dataset.dwsPublicView === 'cards' ? 'cards' : 'horizontal');
       renderRows();
     }));
-    return panel;
+    return root;
   }
 
   function ensure() {
     const tabs = document.querySelector('.world-source-tabs');
-    if (!tabs) {
-      if (active) deactivate();
-      return;
-    }
+    if (!tabs) { if (active) deactivate(); return; }
+
     if (!tabs.querySelector('.dws-public-server-tab')) {
       const button = make('button', 'dws-public-server-tab');
-      const strong = make('strong', '', 'Public Server List');
-      const span = make('span', '', 'Website-backed combined public directory');
-      button.append(strong, span);
       button.type = 'button';
-      button.addEventListener('click', activate);
+      button.append(make('strong', '', 'Public Server List'), make('span', '', 'Website-backed combined public directory'));
+      button.addEventListener('click', () => applyActiveState({ load: true }));
       tabs.appendChild(button);
     }
-    if (!document.querySelector('.dws-public-server-panel')) {
-      tabs.insertAdjacentElement('afterend', buildPanel());
-    }
-    if (active) activate();
+    if (!document.querySelector('.dws-public-server-panel')) tabs.insertAdjacentElement('afterend', buildPanel());
+
+    if (active && tabs.closest('.content') !== activeContent) applyActiveState({ load: false });
   }
 
   document.addEventListener('click', (event) => {
     if (event.target.closest('[data-world-tab]')) deactivate();
   }, true);
 
-  const observer = new MutationObserver(() => ensure());
+  const observer = new MutationObserver((mutations) => {
+    const relevant = mutations.some((mutation) => {
+      const target = mutation.target;
+      return !(target instanceof Element && target.closest('.dws-public-server-panel'));
+    });
+    if (relevant) ensure();
+  });
   observer.observe(document.querySelector('#app') || document.body, { childList: true, subtree: true });
   ensure();
 })();

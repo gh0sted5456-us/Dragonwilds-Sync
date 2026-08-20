@@ -119,9 +119,22 @@ class WorkerSupervisor:
         profile_id = safe_id(profile_id, "profile ID")
         state = state if isinstance(state, dict) else read_state(profile_id)
         child = self._children.get(profile_id)
+        owned_reaped_child = False
         if child is not None:
             child.poll()
-        if state and self._process_exists(state.get("workerPid")):
+            try:
+                owned_reaped_child = (
+                    child.returncode is not None
+                    and int((state or {}).get("workerPid") or 0) == int(child.pid)
+                )
+            except (TypeError, ValueError):
+                owned_reaped_child = False
+        # Windows can keep a terminated process object queryable while our
+        # Popen handle is still alive. If this supervisor owns the matching
+        # child and poll()/wait() has already reaped it, that is stronger
+        # evidence than os.kill(pid, 0). Reattached workers still rely on the
+        # conservative PID probe because there is no owned Popen handle.
+        if state and self._process_exists(state.get("workerPid")) and not owned_reaped_child:
             return False
         try:
             state_path(profile_id).unlink(missing_ok=True)

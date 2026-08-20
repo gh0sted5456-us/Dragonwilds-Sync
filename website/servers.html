@@ -4,13 +4,15 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0d0f">
-  <meta name="description" content="Browse live public RuneScape: Dragonwilds servers broadcasting through the Dragonwilds Sync Network.">
+  <meta name="description" content="Browse the combined public RuneScape: Dragonwilds server directory, including Dragonwilds Sync Worlds and approved read-only public observations.">
   <meta property="og:title" content="Public Servers — Dragonwilds Sync">
-  <meta property="og:description" content="Live opt-in Dragonwilds Sync servers with build status, tags, mods, rules, badges, and public connection details.">
+  <meta property="og:description" content="A combined Dragonwilds public server directory with Sync-enriched placards, public observations, build status, tags, mods, rules, and connection details.">
   <meta property="og:type" content="website">
   <title>Public Servers — Dragonwilds Sync</title>
   <link rel="icon" href="assets/application-icon.png">
+  <link rel="dragonwilds-sync-directory" type="application/json" href="directory-source.json">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="public-directory-view.css">
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
@@ -46,20 +48,20 @@
   <main class="directory-page-main">
     <section class="section-shell directory-page-hero">
       <div class="section-heading reveal visible">
-        <div class="eyebrow"><span class="pulse-heart" aria-hidden="true">♥</span> Dragonwilds Sync Network</div>
+        <div class="eyebrow"><span class="pulse-heart" aria-hidden="true">♥</span> Dragonwilds Public Network</div>
         <h1>Public Server Directory.</h1>
-        <p>Discover opt-in Dragonwilds servers broadcasting through Dragonwilds Sync. Each placard is public, sanitized telemetry only—server administration and WebGUI credentials are never exposed here.</p>
+        <p>Browse one combined Dragonwilds roster. Dragonwilds Sync Worlds receive the richer Sync placard, while approved read-only public sources fill in ordinary public servers. Strong identity matches collapse into one Sync entry instead of showing duplicates.</p>
       </div>
     </section>
 
     <section class="network-section section-shell" id="network">
       <div class="network-heading reveal">
         <div><div class="eyebrow"><span class="network-live-dot" id="network-live-dot"></span> Live Network Status</div><h2>See what is online now.</h2></div>
-        <p id="network-message">Connecting to the public Dragonwilds Sync network…</p>
+        <p id="network-message">Connecting to the combined public Dragonwilds directory…</p>
       </div>
       <div class="network-stats reveal delay-1" aria-live="polite">
         <article><span>ACTIVE USERS</span><strong id="stat-users">—</strong><small>anonymous active installations</small></article>
-        <article><span>SERVERS ONLINE</span><strong id="stat-worlds">—</strong><small>publicly broadcasting worlds</small></article>
+        <article><span>SERVERS ONLINE</span><strong id="stat-worlds">—</strong><small>public Dragonwilds worlds</small></article>
         <article><span>PLAYERS LISTED</span><strong id="stat-players">—</strong><small>across public servers</small></article>
         <article><span>CURRENT BUILD</span><strong id="stat-build">—</strong><small>checking Steam dedicated-server build</small></article>
       </div>
@@ -71,7 +73,7 @@
           <div class="section-heading">
             <div class="eyebrow">Public Server List</div>
             <h2>Find your next world.</h2>
-            <p>Search and filter participating servers. Select a placard to smoothly flip it and reveal published mod families, community rules, badges, tags, community details, and public connection information. Rules and mod-family chips open their full published contents.</p>
+            <p>Search the complete set currently collected by Cloudflare. Sync Worlds and ordinary public observations share one normalized list; a strongly matched public observation is suppressed in favor of its authoritative Sync placard.</p>
           </div>
           <div class="directory-state" id="directory-state"><span class="directory-dot"></span><div><strong>Connecting</strong><small>Checking the public directory…</small></div></div>
         </div>
@@ -84,10 +86,18 @@
             <button class="filter-button" type="button" data-world-filter="current">Current build</button>
           </div>
           <label class="world-search"><span class="sr-only">Search public servers</span><input id="world-search" type="search" placeholder="Search servers, regions, tags…" autocomplete="off"></label>
+          <div class="directory-view-toggle" role="group" aria-label="Public Server List view">
+            <button type="button" data-directory-view="placards" aria-pressed="true" title="Placards">▦ Placards</button>
+            <button type="button" data-directory-view="horizontal" aria-pressed="false" title="Horizontal">☰ Horizontal</button>
+          </div>
+          <div class="directory-app-link">
+            <span id="copy-app-directory-status">Use this webpage link in Dragonwilds Sync.</span>
+            <button type="button" id="copy-app-directory-link">Copy App Link</button>
+          </div>
         </div>
 
         <div class="world-grid" id="world-grid" aria-live="polite">
-          <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Loading public servers</strong><p>Connecting to the Dragonwilds Sync Network.</p></div>
+          <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Loading public servers</strong><p>Connecting to the Dragonwilds Sync directory service.</p></div>
         </div>
       </div>
     </section>
@@ -97,7 +107,7 @@
         <div class="section-heading">
           <div class="eyebrow">Public by design</div>
           <h2>Discovery is not administration.</h2>
-          <p>The directory only displays fields a host intentionally broadcasts for discovery. Remote management remains behind the separate authenticated WebGUI and authoritative runtime controller.</p>
+          <p>The directory only displays public discovery metadata. Remote management, passwords, WebGUI sessions, Sync secrets, and administrator authority remain separate from this public list.</p>
         </div>
         <a class="button button-secondary" href="index.html#webgui">About WebGUI <span aria-hidden="true">→</span></a>
       </div>
@@ -115,5 +125,6 @@
   </div>
 
   <script src="script.js"></script>
+  <script src="public-directory-view.js"></script>
 </body>
 </html>

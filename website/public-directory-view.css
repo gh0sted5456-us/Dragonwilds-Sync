@@ -1,0 +1,48 @@
+/* Public Server Directory view-mode controls.
+   Placards remain the canonical rich view; Horizontal is a compact presentation
+   of the exact same normalized/deduplicated World records. */
+.directory-view-toggle{display:flex;align-items:center;gap:5px;padding:3px;border:1px solid var(--line);border-radius:11px;background:var(--panel-soft)}
+.directory-view-toggle button{min-height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:10px;font-weight:800;cursor:pointer}
+.directory-view-toggle button[aria-pressed="true"]{background:var(--surface-2);color:var(--text);box-shadow:0 3px 12px rgba(0,0,0,.12)}
+.directory-app-link{display:flex;align-items:center;gap:8px;margin-left:auto;min-width:0}
+.directory-app-link span{color:var(--faint);font-size:9px;white-space:nowrap}
+.directory-app-link button{min-height:34px;padding:0 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel-soft);color:var(--text);font-size:9px;font-weight:800;cursor:pointer}
+.directory-app-link button:hover{border-color:var(--line-strong)}
+
+.world-grid.directory-horizontal{grid-template-columns:1fr;gap:12px}
+.world-grid.directory-horizontal .world-card,
+.world-grid.directory-horizontal .world-card-inner{min-height:264px}
+.world-grid.directory-horizontal .world-card-front{display:grid;grid-template-columns:minmax(230px,31%) 1fr;grid-template-rows:auto auto 1fr;min-height:264px}
+.world-grid.directory-horizontal .world-card-front>.world-mode-banner{grid-column:1/-1;grid-row:1}
+.world-grid.directory-horizontal .world-card-front>.world-origin-banner{grid-column:1/-1;grid-row:2}
+.world-grid.directory-horizontal .world-card-front>.world-card-media{grid-column:1;grid-row:3;height:100%;min-height:206px}
+.world-grid.directory-horizontal .world-card-front .world-card-banner{height:100%;min-height:206px}
+.world-grid.directory-horizontal .world-card-front .world-card-banner-blend{background:linear-gradient(90deg,rgba(12,16,16,0) 30%,rgba(12,16,16,.16) 62%,rgba(12,16,16,.9) 100%)}
+.world-grid.directory-horizontal .world-card-front>.world-card-body{grid-column:2;grid-row:3;padding:16px 18px 14px;min-width:0}
+.world-grid.directory-horizontal .world-card-front .world-icon{top:14px;left:16px;width:56px;height:56px}
+.world-grid.directory-horizontal .world-card-front .card-topline{padding-left:70px;min-height:52px}
+.world-grid.directory-horizontal .world-card-front .card-description{height:auto;min-height:36px;max-height:54px;margin:8px 0 9px}
+.world-grid.directory-horizontal .world-card-front .card-footer{margin-top:10px;padding-top:9px}
+.world-grid.directory-horizontal .world-card-back{min-height:264px}
+.world-grid.directory-horizontal .world-card-back .world-card-body{padding:14px 16px}
+.world-grid.directory-horizontal .world-card-back .world-back-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.world-grid.directory-horizontal .world-card-back .world-back-list{max-height:62px}
+
+@media(max-width:900px){
+  .directory-app-link span{display:none}
+  .world-grid.directory-horizontal .world-card-front{grid-template-columns:minmax(190px,36%) 1fr}
+  .world-grid.directory-horizontal .world-card-back .world-back-grid{grid-template-columns:1fr 1fr}
+}
+@media(max-width:700px){
+  .world-toolbar{align-items:stretch}
+  .directory-view-toggle{order:3}
+  .directory-app-link{order:4;margin-left:0}
+  .world-grid.directory-horizontal .world-card,
+  .world-grid.directory-horizontal .world-card-inner{min-height:500px}
+  .world-grid.directory-horizontal .world-card-front{display:block;min-height:500px}
+  .world-grid.directory-horizontal .world-card-front>.world-card-media{height:128px;min-height:0}
+  .world-grid.directory-horizontal .world-card-front .world-card-banner{height:128px;min-height:0}
+  .world-grid.directory-horizontal .world-card-front .world-card-banner-blend{background:linear-gradient(180deg,rgba(12,16,16,0) 28%,rgba(12,16,16,.12) 58%,rgba(12,16,16,.88) 100%)}
+  .world-grid.directory-horizontal .world-card-front .world-icon{top:-46px;left:17px;width:66px;height:66px}
+  .world-grid.directory-horizontal .world-card-front .card-topline{padding-left:78px;min-height:44px}
+}

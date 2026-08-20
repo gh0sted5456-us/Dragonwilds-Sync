@@ -28,6 +28,7 @@ def main() -> None:
 
         from feature_worker_protocol import FEATURE_WORKER_DOMAINS, read_state
         from feature_worker_supervisor import FeatureWorkerSupervisor
+        from profile_store import SERVER_PROFILES_DIR, create_server_profile
 
         expected = {
             "world-management", "save-studio", "mod-library", "directory-map",
@@ -61,10 +62,37 @@ def main() -> None:
         assert parsed["field_count"] == 0
         assert parsed["editable_count"] == 0
 
+        # World Management performs the archive work in-process-of-worker while
+        # Core remains responsible for ensuring this inactive/offline condition.
+        profile_id = create_server_profile("Feature Worker Backup Test")
+        save_root = SERVER_PROFILES_DIR / profile_id / "savegame"
+        save_root.mkdir(parents=True, exist_ok=True)
+        world_file = save_root / "World.sav"
+        world_file.write_bytes(b"original-world-save")
+        backup = supervisor.execute("world-management", "maintenance.backup-inactive", {
+            "profile_id": profile_id, "retention_count": 3,
+        }, owner="feature-worker-test")
+        assert backup["ok"] is True and backup["backup"].endswith(".zip")
+        world_file.write_bytes(b"changed-world-save")
+        restored = supervisor.execute("world-management", "maintenance.restore-inactive", {
+            "profile_id": profile_id, "backup_name": backup["backup"],
+        }, owner="feature-worker-test")
+        assert restored["ok"] is True
+        assert world_file.read_bytes() == b"original-world-save"
+
+        # Mod Library status is a generated-cache read and must not require the
+        # desktop Core to import the RSDW indexing graph just to render status.
+        rsdw = supervisor.execute("mod-library", "rsdw.status", {}, owner="feature-worker-test")
+        assert isinstance(rsdw, dict)
+
         stopped_map = supervisor.stop("directory-map", force=True)
         stopped_save = supervisor.stop("save-studio", force=True)
+        stopped_world = supervisor.stop("world-management", force=True)
+        stopped_mods = supervisor.stop("mod-library", force=True)
         assert stopped_map["live"] is False
         assert stopped_save["live"] is False
+        assert stopped_world["live"] is False
+        assert stopped_mods["live"] is False
         assert read_state("directory-map").get("authRef", "").startswith("dws-secret://")
 
     print("feature worker regression passed")

@@ -12,6 +12,7 @@ heavy feature domains behind authenticated local IPC and leases.
 """
 
 import sys
+import time
 
 # Worker dispatch must remain before the retained service graph. Spawning any
 # worker alone must never initialize renderer/community/network/update systems.
@@ -29,7 +30,7 @@ from dragonwilds_service_v3_phase2 import *  # noqa: F401,F403
 from client_layout import resolve_client_layout
 import profile_store
 from runtime_worker_bridge import install as install_runtime_worker_bridge
-from v3_exchange import apply_import, collect_character_entries, collect_world_entries, export_exchange, inspect_exchange, plan_import
+from v3_exchange import apply_import, collect_character_entries, collect_world_entries, export_exchange, inspect_exchange
 from v3_identity import read_identity
 from v3_item_registry import cached_registry, registry_from_state
 from v3_migration import prepare_for_v3_migration, update_stage
@@ -202,6 +203,67 @@ def _world_save_target(state: dict, params: dict) -> tuple[str, str, Path]:
     return kind, profile_id, Path(_legacy._editable_world_save(state, kind, profile_id))
 
 
+def _runtime_for(profile_id: str = "") -> dict:
+    try:
+        status = RUNTIME.get_status()
+    except Exception:
+        status = {}
+    runtime = status.get("runtime") if isinstance(status, dict) and isinstance(status.get("runtime"), dict) else status
+    runtime = dict(runtime or {}) if isinstance(runtime, dict) else {}
+    if profile_id:
+        active_id = str(runtime.get("active_profile_id") or runtime.get("profile_id") or "")
+        runtime["matches_profile"] = bool(runtime.get("running") and (not active_id or active_id == profile_id))
+    return runtime
+
+
+def _rsdw_worker_params(state: dict, *, force: bool = False) -> dict:
+    cfg = (state.get("application") or {}).get("rsdw_cache") or {}
+    return {
+        "force": bool(force),
+        "repo": str(cfg.get("repo") or "RSDWArchive/RSDWTools"),
+        "branch": str(cfg.get("branch") or "main"),
+        "model_repo": str(cfg.get("model_repo") or "RSDWArchive/RSDWModel"),
+        "model_branch": str(cfg.get("model_branch") or "main"),
+    }
+
+
+def _finish_rsdw_refresh(state: dict, result: dict, *, notification_key: str = "rsdw-cache") -> dict:
+    deployments = []
+    game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+    if game_dir and Path(game_dir).exists():
+        deployments.append(_legacy.ensure_rsdwtools_baseline(resolve_client_layout(game_dir).ue4ss_mods_dir))
+    for profile in _legacy.list_server_profiles():
+        root = _legacy.server_root_for_profile(profile)
+        if root and Path(root).exists():
+            deployments.append(_legacy.ensure_rsdwtools_baseline(_legacy.resolve_server_layout(root).ue4ss_mods_dir))
+    result["runtime_deployments"] = deployments
+    _legacy._record_notification(
+        state,
+        "RSDWTools and icon cache refreshed",
+        f"{result.get('data_file_count', 0)} data files · {result.get('icon_count', 0)} icons · {sum(1 for row in deployments if row.get('ok'))} runtime target(s)",
+        "success",
+        key=notification_key,
+    )
+    _legacy.save_state(state)
+    return {"result": result, "state": _legacy.public_state(state)}
+
+
+def _import_website_draft(path: str, state: dict) -> dict:
+    from website_draft_import import import_website_draft
+    result = import_website_draft(path)
+    current = _legacy.load_state()
+    _legacy._record_notification(
+        current,
+        "Website World draft imported",
+        f"{result.get('world_name') or 'World'} was created as a new local Dedicated World with fresh credentials.",
+        "success",
+        world_id=str(result.get("profile_id") or ""),
+        key=f"website-draft:{result.get('profile_id') or 'world'}",
+    )
+    _legacy.save_state(current)
+    return {"result": result, "state": _legacy.public_state(current)}
+
+
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
@@ -272,6 +334,36 @@ def handle(method: str, params: dict) -> object:
     if method == "application.map.overlays":
         return _feature_workers().execute("directory-map", "map.overlays", {"force": bool(params.get("force", False))}, owner=method)
 
+    # Mod Library / RSDW generated-cache work. Core retains timing, runtime
+    # deployment, notifications and durable settings; the worker owns refresh/search compute.
+    if method == "application.rsdw.status":
+        return _feature_workers().execute("mod-library", "rsdw.status", {}, owner=method)
+    if method == "application.rsdw.items.search":
+        return _feature_workers().execute("mod-library", "rsdw.search", {
+            "query": str(params.get("query") or ""), "limit": int(params.get("limit") or 80),
+        }, owner=method)
+    if method == "application.rsdw.refresh":
+        result = _feature_workers().execute("mod-library", "rsdw.refresh", _rsdw_worker_params(state, force=bool(params.get("force", False))), owner=method)
+        return _finish_rsdw_refresh(state, result)
+    if method == "application.rsdw.maybe":
+        cfg = (state.get("application") or {}).get("rsdw_cache") or {}
+        if cfg.get("auto_refresh") is False:
+            return {"skipped": True, "reason": "Automatic RSDW module updates are disabled.",
+                    "result": _feature_workers().execute("mod-library", "rsdw.status", {}, owner=method)}
+        current = _feature_workers().execute("mod-library", "rsdw.status", {}, owner=method)
+        hours = max(1.0, min(float(cfg.get("refresh_hours") or 24), 168.0))
+        if time.time() - float(current.get("checked_at") or 0) < hours * 3600:
+            return {"skipped": True, "reason": "RSDW modules were checked recently.", "result": current}
+        result = _feature_workers().execute("mod-library", "rsdw.refresh", _rsdw_worker_params(state), owner=method)
+        if result.get("changed"):
+            _legacy._record_notification(
+                state, "RSDW modules updated",
+                f"RSDWTools {(result.get('revision') or '')[:8]} · RSDWModel {(result.get('model_revision') or '')[:8]}",
+                "success", key="rsdw-modules-auto",
+            )
+            _legacy.save_state(state)
+        return {"skipped": False, "result": result, "state": _legacy.public_state(state)}
+
     if method == "world.save.editor.read":
         kind, profile_id, target = _world_save_target(state, params)
         result = _feature_workers().execute("save-studio", "world-save.read", {"path": str(target)}, owner=method)
@@ -297,6 +389,56 @@ def handle(method: str, params: dict) -> object:
         )
         _legacy.save_state(state)
         return {"save": result, "state": _legacy.public_state(state)}
+
+    # Existing backup/restore RPCs keep Core as the offline/lifecycle authority.
+    # Once stopped, archive work runs in the disposable World Management worker.
+    if method == "server.world.backup.create":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        profile = _legacy.load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        schedule = profile.get("schedule") if isinstance(profile.get("schedule"), dict) else {}
+        retention = int(params.get("retention_count") or schedule.get("backup_retention_count") or 10)
+        runtime = _runtime_for(profile_id)
+        was_running = bool(runtime.get("matches_profile"))
+        restart_result = None
+        if was_running:
+            handle("server.runtime.stop", {"id": profile_id})
+        try:
+            result = _feature_workers().execute("world-management", "maintenance.backup-inactive", {
+                "profile_id": profile_id, "retention_count": retention,
+            }, owner=method)
+        finally:
+            if was_running:
+                restart_result = handle("server.runtime.start", {"id": profile_id})
+        try:
+            _legacy.ENGINE.record_event(f"Created manual World backup {result.get('backup') or ''}.", "ok")
+        except Exception:
+            pass
+        return {**result, "server_restarted": bool(restart_result), "restart_result": restart_result,
+                "backups": _legacy.list_profile_backups(profile_id), "state": _legacy.public_state(_legacy.load_state())}
+
+    if method == "server.world.backup.restore":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        if not _legacy.load_server_profile(profile_id):
+            raise KeyError("Server World not found")
+        if _runtime_for(profile_id).get("matches_profile"):
+            raise RuntimeError("Stop this Server World before restoring a backup.")
+        result = _feature_workers().execute("world-management", "maintenance.restore-inactive", {
+            "profile_id": profile_id, "backup_name": str(params.get("backup") or params.get("backup_name") or ""),
+        }, owner=method)
+        try:
+            _legacy.ENGINE.record_event(f"Restored World backup {result.get('backup') or ''}.", "ok")
+        except Exception:
+            pass
+        return {**result, "backups": _legacy.list_profile_backups(profile_id), "state": _legacy.public_state(_legacy.load_state())}
+
+    # Lightweight diagnostics no longer need to import/execute their scanner or
+    # benchmark modules in Core merely to render status/history.
+    if method in {"security.defender.status", "server.security.defender.status", "client.security.defender.status"}:
+        return _feature_workers().execute("diagnostics", "security.defender.status", {}, owner=method)
+    if method == "server.network.benchmark.history":
+        return _feature_workers().execute("diagnostics", "network.benchmark.history", {}, owner=method)
 
     if method == "v3.phase4.contract":
         return phase4_contract()
@@ -332,6 +474,18 @@ def handle(method: str, params: dict) -> object:
 
     if method in {"v3.exchange.plan_import", "exchange.package.plan"}:
         return _feature_workers().execute("exchange-maintenance", "exchange.plan", {"path": str(params.get("path") or "")}, owner=method)
+
+    # Website World Builder v3 profile drafts have a separate restricted trust
+    # lane. Inspection is isolated; import itself remains Core-owned because it
+    # creates fresh local profile authority/secrets and commits profile state.
+    if method == "website.world_draft.inspect":
+        return _feature_workers().execute("exchange-maintenance", "website-draft.inspect", {"path": str(params.get("path") or "")}, owner=method)
+    if method == "website.world_draft.import":
+        path = str(params.get("path") or "").strip()
+        if not path:
+            raise ValueError("Choose a website World draft .rsdwl file.")
+        _feature_workers().execute("exchange-maintenance", "website-draft.inspect", {"path": path}, owner=method)
+        return _import_website_draft(path, state)
 
     if method in {"v3.exchange.export", "exchange.package.export", "world.package.v3.export", "character.package.v3.export"}:
         output = str(params.get("output_path") or "").strip()
@@ -372,7 +526,23 @@ def handle(method: str, params: dict) -> object:
             return {"kind": "v3-exchange", "manifest": inspected["manifest"], "identity": inspected["identity"],
                     "worlds": inspected["worlds"], "characters": inspected["characters"], "item_count": inspected.get("item_count", 0)}
         except Exception:
+            pass
+        try:
+            inspected = _feature_workers().execute("exchange-maintenance", "website-draft.inspect", {"path": path}, owner=method)
+            return inspected
+        except Exception:
             return _base_handle(method, params)
+
+    if method == "profile.package.import":
+        path = str(params.get("path") or "").strip()
+        if path:
+            try:
+                _feature_workers().execute("exchange-maintenance", "website-draft.inspect", {"path": path}, owner=method)
+            except Exception:
+                pass
+            else:
+                return _import_website_draft(path, state)
+        return _base_handle(method, params)
 
     return _base_handle(method, params)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import sys
@@ -44,9 +45,18 @@ def endpoint_for(profile_id: str, runtime_id: str) -> tuple[str, str]:
     runtime_id = safe_id(runtime_id, "runtime ID")
     if sys.platform == "win32":
         return rf"\\.\pipe\DragonwildsSync-{runtime_id}", "AF_PIPE"
-    ipc = runtime_dir(profile_id) / "ipc"
+    # AF_UNIX sun_path is commonly capped at 108 bytes. Profiles and CI may
+    # live below long AppData/workspace roots, so use a short installation-
+    # scoped endpoint while retaining durable state under runtime_dir().
+    scope = hashlib.sha256(str(app_data_root().resolve()).encode("utf-8")).hexdigest()[:12]
+    endpoint_id = hashlib.sha256(f"{profile_id}\0{runtime_id}".encode("utf-8")).hexdigest()[:32]
+    ipc = Path(tempfile.gettempdir()) / f"dws-runtime-{scope}"
     ipc.mkdir(parents=True, exist_ok=True)
-    return str(ipc / f"{runtime_id}.sock"), "AF_UNIX"
+    try:
+        os.chmod(ipc, 0o700)
+    except OSError:
+        pass
+    return str(ipc / f"{endpoint_id}.sock"), "AF_UNIX"
 
 
 def encode_message(payload: dict) -> bytes:

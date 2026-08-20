@@ -1,5 +1,5 @@
 import coreWorker from './index';
-import { scanPublicSourcesIncrementally } from './rotating-public-scan';
+import { publicScanStatus, scanPublicSourcesIncrementally } from './rotating-public-scan';
 
 const core = coreWorker as any;
 
@@ -44,6 +44,24 @@ function isWorldRead(pathname: string): boolean {
   return ['/api/v1/worlds', '/worlds', '/api/worlds', '/manifest'].includes(pathname);
 }
 
+async function sourceResponseWithScanProgress(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+  ctx.waitUntil(scanPublicSourcesIncrementally(env, false));
+  const base = await core.fetch(request, env, ctx);
+  if (!base.ok) return base;
+  try {
+    const payload = await base.clone().json() as Record<string, unknown>;
+    const scan = await publicScanStatus(env);
+    const headers = new Headers(base.headers);
+    headers.set('cache-control', 'public, max-age=30');
+    return new Response(JSON.stringify({ ...payload, collection_mode: 'resumable-full-scan', scan }), {
+      status: base.status,
+      headers,
+    });
+  } catch {
+    return base;
+  }
+}
+
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -54,6 +72,10 @@ export default {
 
     if (request.method === 'GET' && url.pathname === '/directory-source.json') {
       return directoryDescriptor(request);
+    }
+
+    if (request.method === 'GET' && url.pathname === '/api/v1/sources') {
+      return sourceResponseWithScanProgress(request, env, ctx);
     }
 
     if (request.method === 'GET' && isWorldRead(url.pathname)) {

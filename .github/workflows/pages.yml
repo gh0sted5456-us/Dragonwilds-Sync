@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - '.github/scripts/inject_public_servers_html.py'
       - 'resources/world-builder-presets.json'
       - 'resources/platform-registry.json'
       - 'renderer/assets/application-icon.png'
@@ -140,6 +141,15 @@ jobs:
           cp -R renderer/assets/flags _site/assets/flags
           cp -R renderer/assets/platforms _site/assets/platforms
 
+          # The public roster is baked directly into servers.html so the page can
+          # never begin as a JavaScript-only empty directory. Live/fallback JSON
+          # still hydrates and replaces these compact rows after page startup.
+          test -s _site/assets/public-worlds-fallback.json || { echo 'Public World fallback snapshot missing' >&2; exit 1; }
+          python3 .github/scripts/inject_public_servers_html.py _site/assets/public-worlds-fallback.json _site/servers.html
+          STATIC_WORLD_COUNT="$(grep -c 'data-static-public-world="1"' _site/servers.html || true)"
+          test "$STATIC_WORLD_COUNT" -gt 0 || { echo 'No public Worlds were baked into servers.html' >&2; exit 1; }
+          echo "Baked Public Server List rows: $STATIC_WORLD_COUNT"
+
           required_platforms=(
             steam.svg
             windows.svg
@@ -222,6 +232,29 @@ jobs:
           node --check _site/script.js
           node --check _site/home-demo.js
           node --check _site/world-draft-onboarding.js
+          node --check _site/public-directory-fetch-fallback.js
+          node --check _site/public-directory-view.js
+
+      - name: Verify Public Server List route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/servers.html
+          test -s _site/assets/public-worlds-fallback.json
+          grep -q 'data-static-public-world="1"' _site/servers.html
+          grep -q 'data-directory-view="placards"' _site/servers.html
+          grep -q 'data-directory-view="horizontal"' _site/servers.html
+          grep -q 'public-directory-fetch-fallback.js?v=public-directory-5' _site/servers.html
+          python3 - <<'PY'
+          import json
+          data=json.load(open('_site/assets/public-worlds-fallback.json',encoding='utf-8'))
+          worlds=data.get('worlds') or []
+          assert worlds, 'Public World fallback snapshot is empty'
+          html=open('_site/servers.html',encoding='utf-8').read()
+          baked=html.count('data-static-public-world="1"')
+          assert baked == len(worlds), f'Baked row mismatch: html={baked}, snapshot={len(worlds)}'
+          print(f'Public Server List verified: {baked} baked rows')
+          PY
 
       - name: Verify World Builder route
         shell: bash

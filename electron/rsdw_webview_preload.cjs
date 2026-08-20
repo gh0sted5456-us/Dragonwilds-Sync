@@ -227,7 +227,11 @@ window.addEventListener('DOMContentLoaded', () => {
       html,body{width:100%!important;height:100%!important;min-height:100%!important;margin:0!important;overflow:hidden!important;background:#090b0c!important}
       body>*:not(main):not(#avatar-stage){display:none!important}
       main{display:block!important;position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;background:#090b0c!important}
-      main>*:not(#avatar-stage),#rsdw-header-mount,#rsdw-footer-mount,.avatar-shell__controls,.avatar-sidebar{display:none!important}
+      main>*:not(.avatar-layout):not(#avatar-stage){display:none!important}
+      .avatar-layout{display:block!important;position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important}
+      .avatar-layout>*:not(.avatar-viewer-panel):not(#avatar-stage),.avatar-controls,#rsdw-header-mount,#rsdw-footer-mount,.avatar-shell__controls,.avatar-sidebar{display:none!important}
+      .avatar-viewer-panel{display:block!important;position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;margin:0!important;padding:0!important;border:0!important;background:#090b0c!important}
+      .avatar-viewer-panel>*:not(#avatar-stage){display:none!important}
       #avatar-stage{display:block!important;position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;min-height:100vh!important;margin:0!important;background:#090b0c!important}
       #avatar-stage canvas{display:block!important;width:100vw!important;height:100vh!important}
     `;

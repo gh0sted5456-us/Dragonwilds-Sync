@@ -39,15 +39,20 @@
 .app-world-placard .world-card-banner-blend{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,10,10,.04),rgba(7,10,10,.18) 58%,rgba(10,14,14,.96))}
 .app-world-placard .world-card-front::before{display:block}.app-world-placard .world-card-front .world-card-body{isolation:isolate}.app-world-placard .world-card-front .world-card-body::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;background:linear-gradient(0deg,rgba(8,11,11,.18),rgba(8,11,11,.62) 72%,rgba(8,11,11,.86))}.app-world-placard .world-card-front .world-card-banner-blend{box-shadow:0 20px 34px -24px rgba(8,11,11,.98)}
 .app-world-placard .world-card-body{position:relative;z-index:2;padding:18px 17px 16px!important;background:transparent!important}
+.app-world-placard .card-topline{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:10px;min-height:62px;padding-left:78px}
+.app-world-placard .card-title{min-width:0;overflow:hidden}
+.app-world-placard .card-title h3,.app-world-placard .card-title small{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-world-placard .status-pill{max-width:58px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app-world-placard .card-description{clear:both;margin-top:4px}
 .app-world-placard .world-card-back .world-card-body{padding:18px 17px 16px!important}
 .app-world-placard .world-card-back::before{opacity:.52}
 .app-world-placard .world-card-back .world-card-media,.app-world-placard .world-card-back .world-card-banner{height:104px}
-.app-world-placard .world-card-back .card-topline{min-height:42px;padding-left:78px;margin-bottom:7px}
+.app-world-placard .world-card-back .card-topline{min-height:62px;padding-left:78px;margin-bottom:7px}
 .app-world-placard .world-card-back .card-title h3{font-size:19px!important}
 .app-world-placard .card-flip-hint{margin-left:auto;color:#d4b069;font-size:8px;font-weight:800;letter-spacing:.08em;white-space:nowrap}
 .app-world-placard .placard-front-summary{margin-top:auto!important;padding-top:10px;border-top:1px solid rgba(255,255,255,.07)}
 .app-world-placard .v3p4-front-live{display:inline-flex;padding:0;border:0}
-.app-world-placard .world-back-summary{margin:0 0 13px;color:#b5bbb8;font-size:11px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.app-world-placard .world-back-summary{clear:both;margin:0 0 13px;color:#b5bbb8;font-size:11px;line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .app-world-placard .world-back-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin:0}
 .app-world-placard .world-back-section{min-width:0;padding:10px;border:1px solid rgba(255,255,255,.075);border-radius:10px;background:rgba(12,16,16,.42)}
 .app-world-placard .world-back-section h4{margin:0 0 8px;color:#d4b069;font-size:9px;letter-spacing:.12em;text-transform:uppercase}

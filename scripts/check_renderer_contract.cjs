@@ -4,6 +4,9 @@ const crypto = require('node:crypto');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'renderer', 'app-v2.js'), 'utf8');
+const avatarPreload = fs.readFileSync(path.join(root, 'electron', 'rsdw_webview_preload.cjs'), 'utf8');
+const placardWindows = fs.readFileSync(path.join(root, 'renderer', 'release-phase5-placard-window.js'), 'utf8');
+const responsiveCss = fs.readFileSync(path.join(root, 'renderer', 'release-responsiveness.css'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -23,6 +26,21 @@ assert(source.includes('id="toggle-webhost-remote-admin"'),
   'Sync Networking must independently expose Remote Server Access.');
 assert(!source.includes("if(routedWebhost) state.webhostTab='live'"),
   'The routed WebHost workspace must not reset the selected tab during render.');
+assert(avatarPreload.includes('main>*:not(.avatar-layout):not(#avatar-stage)') &&
+  avatarPreload.includes('.avatar-layout>*:not(.avatar-viewer-panel):not(#avatar-stage)') &&
+  avatarPreload.includes('.avatar-viewer-panel>*:not(#avatar-stage)'),
+  'The embedded RSDWModel viewport must preserve every ancestor of #avatar-stage.');
+assert(!avatarPreload.includes('main>*:not(#avatar-stage),#rsdw-header-mount'),
+  'The embedded RSDWModel viewport must not hide the avatar-stage parent layout.');
+assert(placardWindows.includes("event.target.closest?.('[data-phase5-placard-close],[data-phase5-placard-min],[data-phase5-placard-max]')") &&
+  placardWindows.includes("if (event.key !== 'Escape') return"),
+  'Placard windows must expose capture-safe titlebar controls and Escape-to-close.');
+assert(!/dblclick[\s\S]{0,500}openPlacard\(card\.dataset\.worldId/.test(placardWindows),
+  'Double-clicking a placard must not open an unexpected application window.');
+assert(responsiveCss.includes('grid-template-columns:minmax(0,1fr) auto') &&
+  responsiveCss.includes('.app-world-placard .card-title{min-width:0;overflow:hidden}') &&
+  responsiveCss.includes('.app-world-placard .world-card-back .card-topline{min-height:62px'),
+  'Placard identity rows must reserve independent icon, title, and status space.');
 
 function sha256(relativePath) {
   return crypto.createHash('sha256')

@@ -165,9 +165,9 @@
     Object.assign(win.style, { left:`${left}px`, top:`${top}px`, width:`${width}px`, height:`${height}px`, zIndex:String(++zIndex) });
     win.innerHTML = `<div class="phase5-placard-titlebar"><strong>${esc(title)}</strong><div><button class="phase5-placard-window-control" data-phase5-placard-min title="Minimize" aria-label="Minimize">—</button><button class="phase5-placard-window-control" data-phase5-placard-max title="Maximize / Restore" aria-label="Maximize or restore">□</button><button class="phase5-placard-window-control close" data-phase5-placard-close title="Close" aria-label="Close">×</button></div></div><div class="phase5-placard-window-body"><article class="world-card" data-world-id="${esc(id)}" data-server-card="${server}"><div class="v3p4-window-summary"><div class="eyebrow">World Placard</div><h2>${esc(title)}</h2><p>Live World identity, joining details, compatibility and heartbeat status.</p></div></article></div>`;
     modalRoot.appendChild(win); windows.set(id, win); taskFor(win); bindGeometry(win);
-    win.querySelector('[data-phase5-placard-min]')?.addEventListener('click', (event) => { event.stopPropagation(); minimizeWindow(win); });
-    win.querySelector('[data-phase5-placard-max]')?.addEventListener('click', (event) => { event.stopPropagation(); toggleMaximize(win); });
-    win.querySelector('[data-phase5-placard-close]')?.addEventListener('click', (event) => { event.stopPropagation(); closeWindow(win); });
+    win.querySelector('[data-phase5-placard-min]')?.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); minimizeWindow(win); });
+    win.querySelector('[data-phase5-placard-max]')?.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); toggleMaximize(win); });
+    win.querySelector('[data-phase5-placard-close]')?.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); closeWindow(win); });
     focusWindow(win);
     // The retained V3 Phase 4 MutationObserver owns decoration and heartbeat
     // refresh for this new card, so this window does not create a second card model.
@@ -220,6 +220,19 @@
   }
 
   document.addEventListener('click', (event) => {
+    // Handle window chrome in capture phase. Several retained placard layers
+    // also listen in capture phase; keeping lifecycle controls here guarantees
+    // that a decorated card can never swallow Close/Minimize/Maximize.
+    const chrome = event.target.closest?.('[data-phase5-placard-close],[data-phase5-placard-min],[data-phase5-placard-max]');
+    if (chrome) {
+      const win = chrome.closest('.phase5-placard-window');
+      if (!win) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      if (chrome.hasAttribute('data-phase5-placard-close')) closeWindow(win);
+      else if (chrome.hasAttribute('data-phase5-placard-min')) minimizeWindow(win);
+      else toggleMaximize(win);
+      return;
+    }
     const button = event.target.closest?.('[data-phase5-open-placard]');
     if (!button) return;
     event.preventDefault(); event.stopImmediatePropagation();
@@ -228,12 +241,21 @@
     openPlacard(id, document.querySelector(`[data-world-id="${CSS.escape(id)}"]`));
   }, true);
 
-  // Capture before the retained V3 Phase 4 dblclick handler so the legacy fixed
-  // overlay cannot be created alongside the application-owned window.
+  // A placard click/double-click is reserved for flipping the physical card.
+  // Opening a separate window is an explicit context-menu action only; this
+  // prevents an ordinary click sequence from producing a trapping overlay.
   document.addEventListener('dblclick', (event) => {
     const card = event.target.closest?.('.v3p4-placard[data-world-id]');
     if (!card || event.target.closest('button,a,input,select,textarea')) return;
-    event.preventDefault(); event.stopImmediatePropagation(); openPlacard(card.dataset.worldId, card);
+    event.preventDefault(); event.stopImmediatePropagation();
+  }, true);
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    const visible = [...modalRoot.querySelectorAll('.phase5-placard-window:not(.minimized)')]
+      .sort((a, b) => Number(b.style.zIndex || 0) - Number(a.style.zIndex || 0));
+    if (!visible[0]) return;
+    event.preventDefault(); event.stopImmediatePropagation(); closeWindow(visible[0]);
   }, true);
 
   const observer = new MutationObserver((records) => {

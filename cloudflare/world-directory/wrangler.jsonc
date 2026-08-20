@@ -1,14 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "dragonwilds-sync-directory",
-  "main": "src/index.ts",
+  "main": "src/public-directory-entry.ts",
   "compatibility_date": "2026-08-18",
   "workers_dev": true,
   "vars": {
     "OFFLINE_AFTER_SECONDS": "1800",
     "HISTORY_RETENTION_DAYS": "7",
     "PUBLIC_SOURCE_REFRESH_SECONDS": "300",
-    "PUBLIC_SOURCE_MAX_SERVERS": "100",
+    "PUBLIC_SOURCE_MAX_SERVERS": "500",
     "PUBLIC_SOURCE_PROVIDERS": "shrug,lobbysup",
     "PUBLIC_SOURCE_TIMEOUT_MS": "5000"
   },

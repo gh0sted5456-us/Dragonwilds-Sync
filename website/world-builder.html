@@ -55,7 +55,16 @@
       </div>
     </section>
 
-    <section id="world-builder-demo" class="section-shell" aria-label="World Builder"></section>
+    <section id="world-builder-demo" class="section-shell" aria-label="World Builder">
+      <div class="main-directory-card reveal visible" id="world-builder-loading">
+        <div class="section-heading">
+          <div class="eyebrow">World Builder</div>
+          <h2>Loading the browser authoring tools…</h2>
+          <p>If this message remains visible, refresh the page. The World Builder is a dedicated page and does not redirect to the public server browser.</p>
+        </div>
+      </div>
+      <noscript><p class="section-heading">The World Builder requires JavaScript to create and package a local `.rsdwl` World Draft.</p></noscript>
+    </section>
 
     <section class="section-shell main-directory-cta">
       <div class="main-directory-card reveal">
@@ -80,6 +89,7 @@
   </div>
 
   <script src="script.js"></script>
+  <script src="home-demo.js"></script>
   <script src="world-draft-onboarding.js"></script>
 </body>
 </html>

@@ -66,7 +66,7 @@ need('backend/test_runtime_worker_config.py', [
 ]);
 const service = need('backend/dragonwilds_service.py', [
   'install_runtime_worker_bridge','_install_phase5_workers','phase5_runtime_workers','_ensure_phase5_worker_gate',
-  'phase5c-windows-linux-parity','config["dedicated_enabled"] = False',
+  'phase5c-windows-linux-parity-passed','config["dedicated_enabled"] = True',
   'runtime.worker.runtime.start','runtime.worker.runtime.stop','runtime.worker.runtime.restart','runtime.worker.runtime.logs','_worker_revision'
 ]);
 need('renderer/index.html', ['release-phase5-placard-window.css','release-phase5-placard-window.js']);
@@ -81,16 +81,17 @@ if (!website.includes("endpoint.protocol !== 'https:'")) failures.push('GitHub h
 if (!website.includes("String(live?.world_id || '') !== String(world.worldId || '')")) failures.push('GitHub handoff must compare live World ID before login');
 if (!website.includes("String(live?.fingerprint || '') !== expectedFingerprint")) failures.push('GitHub handoff must compare live fingerprint when one is advertised');
 if (/^(?:from|import)\s+server_engine\b/m.test(worker)) failures.push('World worker must lazy-load ServerEngine only after a runtime command');
-if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5C must retain parent SHARE publication until dedicated worker parity is proven');
+if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5C must retain parent SHARE publication until Phase 5D ownership transfer is separately verified');
 if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 public connection must remain opt-in');
 if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.push('Desired runtime snapshot module must not construct plaintext credential fields');
 if (!worker.includes('self.applied_config_revision = desired["revision"]')) failures.push('Worker must report the exact desired revision as applied only after verified launch');
 if (!bridge.includes('applied_revision != desired_revision')) failures.push('Runtime bridge must fail a start whose applied revision does not match desired revision');
-if (!service.includes('activation_gate')) failures.push('Normal service must expose the Phase 5C activation gate instead of silently enabling an unverified worker path');
+if (!service.includes('activation_gate')) failures.push('Normal service must expose the recorded Phase 5C gate result and preserve explicit rollback state');
+if (!service.includes('Existing explicit ``dedicated_enabled`` values are preserved')) failures.push('Phase 5C activation must preserve an explicit operator rollback choice');
 if (sources.includes('"download_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/RuneSchema-core-latest.zip"')) failures.push('RuneSchema source registry must not retain the temporary Dragonwilds Sync-hosted ZIP as update authority');
 if (!runeschema.includes('resolver_source = _runeschema_resolver_source(source_url)')) failures.push('Official RuneSchema releases URL must resolve through the GitHub API-capable repository source');
 
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · Phase 4 corrections, official RuneSchema releases, verified Remote Admin handoff, revisioned desired state and gated dedicated World Runtime Worker ownership contracts present');
+console.log('[Phase 5] PASS · retained Phase 4 corrections, verified Remote Admin handoff, revisioned desired state, and activated Phase 5C dedicated World Runtime Worker contracts present');

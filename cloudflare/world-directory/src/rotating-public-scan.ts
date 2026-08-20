@@ -43,6 +43,12 @@ type ScanState = {
   scan_total: number;
 };
 
+type ShrugPage = {
+  offset: number;
+  rows: Array<Record<string, unknown>>;
+  declaredTotal: number | null;
+};
+
 const SHRUG_API_URL = 'https://shrug.games/api/rsdw/servers';
 const SHRUG_SITE_URL = 'https://shrug.games/games/runescape-dragonwilds/servers/';
 const LOBBYSUP_API_URL = 'https://www.lobbysup.com/api/servers/dragonwilds';
@@ -97,7 +103,7 @@ function hasClass(fragment: string, className: string): boolean {
   return new RegExp(`class=["'][^"']*\\b${escaped}\\b[^"']*["']`, 'i').test(fragment);
 }
 
-function parseShrugRows(payload: string): Array<Record<string, unknown>> {
+function parseShrugPage(payload: string, offset: number): ShrugPage {
   const chunks = payload.split(/<div\b[^>]*class=["'][^"']*\bsb-row\b[^"']*["'][^>]*>/gi).slice(1);
   const rows: Array<Record<string, unknown>> = [];
   for (const fragment of chunks) {
@@ -117,7 +123,9 @@ function parseShrugRows(payload: string): Array<Record<string, unknown>> {
       build: extractClassText(fragment, 'sb-row-build').replace(/^CL-/i, ''),
     });
   }
-  return rows;
+  const totalMatch = /([\d,]+)\s+servers\b/i.exec(decodeHtml(payload));
+  const declaredTotal = totalMatch ? Number(totalMatch[1].replace(/,/g, '')) : null;
+  return { offset, rows, declaredTotal: Number.isFinite(declaredTotal) ? declaredTotal : null };
 }
 
 function parseAddress(value: unknown): { host: string; port: number } {
@@ -258,7 +266,7 @@ async function listedCount(env: ScanEnv, sourceId: string): Promise<number> {
 }
 
 async function recordFailure(env: ScanEnv, sourceId: string, error: unknown, now: number): Promise<void> {
-  await env.DB.prepare(`UPDATE public_source_runs SET last_attempt_at=?, last_error=? WHERE source_id=?`)
+  await env.DB.prepare('UPDATE public_source_runs SET last_attempt_at=?, last_error=? WHERE source_id=?')
     .bind(now, cleanText(error instanceof Error ? error.message : String(error), 500), sourceId).run();
 }
 
@@ -309,23 +317,37 @@ async function scanShrug(env: ScanEnv, force: boolean): Promise<void> {
     const timeoutMs = clampInt(env.PUBLIC_SOURCE_TIMEOUT_MS, 5000, 1000, 15000);
     const batchPages = clampInt(env.PUBLIC_SOURCE_BATCH_PAGES, 35, 5, 45);
     const offsets = Array.from({ length: batchPages }, (_, index) => cursor + index * 10);
-    const pages = await Promise.allSettled(offsets.map(async (offset) => {
+    const settled = await Promise.allSettled(offsets.map(async (offset) => {
       const response = await fetchWithTimeout(`${SHRUG_API_URL}?offset=${offset}&sort=players`, timeoutMs, 'text/html');
       if (!response.ok) throw new Error(`offset ${offset}: HTTP ${response.status}`);
-      return { offset, rows: parseShrugRows(await response.text()) };
+      return parseShrugPage(await response.text(), offset);
     }));
 
-    const successful = pages
-      .filter((page): page is PromiseFulfilledResult<{ offset: number; rows: Array<Record<string, unknown>> }> => page.status === 'fulfilled')
-      .map((page) => page.value)
-      .sort((a, b) => a.offset - b.offset);
-    if (!successful.length) throw new Error('Shrug EOS mirror returned no successful pages');
+    const failures = settled.filter((page) => page.status === 'rejected');
+    if (failures.length) throw new Error(`${failures.length}/${settled.length} Shrug pages failed; cursor not advanced`);
+    const pages = (settled as PromiseFulfilledResult<ShrugPage>[]).map((page) => page.value).sort((a, b) => a.offset - b.offset);
+    const totals = pages.map((page) => page.declaredTotal).filter((value): value is number => Number.isFinite(value));
+    const declaredTotal = totals.length ? Math.max(...totals) : null;
 
-    const records = normalizeShrugRows(successful.flatMap((page) => page.rows), now);
+    if (declaredTotal !== null) {
+      for (const page of pages) {
+        if (page.offset < declaredTotal && page.rows.length === 0) {
+          throw new Error(`Shrug page ${page.offset} declared ${declaredTotal} servers but parsed zero rows; preserving prior generation`);
+        }
+      }
+    } else if (!pages.some((page) => page.rows.length > 0)) {
+      throw new Error('Shrug returned no rows and no declared total; preserving prior generation');
+    }
+
+    const relevantPages = declaredTotal === null ? pages : pages.filter((page) => page.offset < declaredTotal);
+    const records = normalizeShrugRows(relevantPages.flatMap((page) => page.rows), now);
     if (records.length) await saveRecords(env, records, generation, now);
 
-    const terminal = successful.find((page) => page.rows.length < 10);
+    const terminal = declaredTotal !== null
+      ? cursor + batchPages * 10 >= declaredTotal
+      : pages.some((page) => page.rows.length < 10);
     const nextCursor = terminal ? 0 : cursor + batchPages * 10;
+
     if (terminal) {
       await env.DB.prepare('UPDATE public_source_worlds SET is_listed=0, updated_at=? WHERE source_id=? AND refresh_token<>?')
         .bind(now, sourceId, generation).run();
@@ -352,4 +374,13 @@ export async function scanPublicSourcesIncrementally(env: ScanEnv, force = false
   if (enabled.has('lobbysup')) tasks.push(scanLobbySup(env, force));
   if (enabled.has('shrug') || enabled.has('shrug-eos-index')) tasks.push(scanShrug(env, force));
   await Promise.all(tasks);
+}
+
+export async function publicScanStatus(env: ScanEnv): Promise<Array<Record<string, unknown>>> {
+  const { results } = await env.DB.prepare(`
+    SELECT source_id,last_attempt_at,last_success_at,last_error,last_count,
+           scan_cursor,scan_generation,scan_started_at,scan_completed_at,scan_total
+    FROM public_source_runs ORDER BY source_id ASC
+  `).all<Record<string, unknown>>();
+  return results || [];
 }

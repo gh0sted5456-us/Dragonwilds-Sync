@@ -43,6 +43,20 @@ jobs:
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           touch _site/.nojekyll
 
+      - name: Validate release placard
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check _site/script.js
+          test -s _site/assets/download-placard-background.png
+          test -s _site/assets/platforms/steam.svg
+          grep -q 'Snorkles' _site/index.html
+          grep -q 'Hi im Tat' _site/index.html
+          grep -q 'Dragonwilds Modding Community' _site/index.html
+          grep -q 'data-current-cl' _site/index.html
+          ! grep -q 'View Experimental channel' _site/index.html
+          ! grep -q 'Download Experimental' _site/index.html
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:

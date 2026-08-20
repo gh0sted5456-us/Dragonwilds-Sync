@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from runtime_manager import AuthoritativeRuntimeManager
-from runtime_worker_bridge import WorkerBackedServerEngine, install
+from runtime_worker_bridge import WorkerBackedServerEngine, WorkerBackedShare, install
 
 
 class FakeShare:
@@ -10,7 +10,10 @@ class FakeShare:
         self.stop_calls = 0
 
     def status(self):
-        return {"serving": self.serving}
+        return {"serving": self.serving, "owner": "application"}
+
+    def broadcast_payload(self):
+        return {"world_name": "legacy-parent"} if self.serving else {}
 
     def stop(self):
         self.stop_calls += 1
@@ -54,6 +57,7 @@ class FakeSupervisor:
         self.runtime_id = "runtime-test"
         self.worker_pid = 31337
         self.game_pid = None
+        self.share_serving = False
         self.calls = []
         self.desired_revision = None
         self.applied_revision = None
@@ -73,6 +77,7 @@ class FakeSupervisor:
             "runtime": {
                 "running": bool(self.game_pid), "pid": self.game_pid,
                 "active_profile_id": self.profile_id if self.game_pid else None,
+                "share": {"serving": self.share_serving, "port": 27051 if self.share_serving else None},
             },
             "processContainment": ({"mode": "test-job", "server_pid": self.game_pid, "armed": True} if self.game_pid else {"mode": "not-armed"}),
             "orphanWatchdog": ({
@@ -111,10 +116,37 @@ class FakeSupervisor:
             "status": status,
         }
 
+    def start_share(self, profile_id):
+        self.calls.append(("start_share", profile_id))
+        if not self.game_pid:
+            raise RuntimeError("share requires running game")
+        self.share_serving = True
+        return {
+            "profileId": profile_id,
+            "result": {"verified_serving": True, "manifest_version": 1, "manifest_file_count": 2, "share": {"serving": True, "port": 27051}},
+            "status": self._status(),
+        }
+
+    def stop_share(self, profile_id):
+        self.calls.append(("stop_share", profile_id))
+        self.share_serving = False
+        return {
+            "profileId": profile_id,
+            "result": {"serving": False, "stop_verified": True},
+            "status": self._status(),
+        }
+
+    def share_payload(self, profile_id):
+        self.calls.append(("share_payload", profile_id))
+        if not self.share_serving:
+            return {}
+        return {"world_name": "Worker World", "profile_id": profile_id, "manifest_version": 1}
+
     def stop_runtime(self, profile_id):
         self.calls.append(("stop_runtime", profile_id))
         old = self.game_pid
         old_revision = self.applied_revision
+        self.share_serving = False
         self.game_pid = None
         self.applied_revision = None
         return {
@@ -122,12 +154,14 @@ class FakeSupervisor:
             "result": {
                 "running": False, "stop_verified": True, "stopped_pid": old,
                 "stop_method": "test-worker", "previousAppliedConfigRevision": old_revision,
+                "share": {"serving": False},
             },
             "status": self._status(),
         }
 
     def stop(self, profile_id):
         self.calls.append(("stop_worker", profile_id))
+        self.share_serving = False
         self.game_pid = None
         self.live = False
         self.applied_revision = None
@@ -151,8 +185,12 @@ def test_start_stop_through_authoritative_manager():
     result, state, saves = install_enabled(manager, engine, share, supervisor)
     assert result["enabled"] is True
     assert isinstance(manager.engine, WorkerBackedServerEngine)
+    assert isinstance(manager.share, WorkerBackedShare)
     assert state["application"]["runtime_workers"]["dedicated_enabled"] is True
-    assert state["application"]["runtime_workers"]["share_owner"] == "application"
+    assert state["application"]["runtime_workers"]["share_enabled"] is True
+    assert state["application"]["runtime_workers"]["share_owner"] == "world-runtime-worker"
+    assert state["application"]["runtime_workers"]["heartbeat_owner"] == "application"
+    assert state["application"]["runtime_workers"]["webgui_owner"] == "application"
     assert state["application"]["runtime_workers"]["desired_state"] == "revisioned-settings-snapshot"
     assert saves, "Phase 5 worker defaults should persist"
 
@@ -164,37 +202,62 @@ def test_start_stop_through_authoritative_manager():
     assert started["applied_config_revision"] == 7
     assert started["prepared"]["deferred_to_worker"] is True
     assert engine.direct_start_calls == 0
-    assert engine.publish_calls == ["world-a"], "Sync publication remains the retained parent path during runtime parity"
-    assert supervisor.calls[0] == ("start_runtime", "world-a")
+    assert engine.publish_calls == [], "Parent process must not start a duplicate dedicated Sync listener"
+    assert ("start_runtime", "world-a") in supervisor.calls
+    assert ("start_share", "world-a") in supervisor.calls
+    assert supervisor.calls.index(("start_runtime", "world-a")) < supervisor.calls.index(("start_share", "world-a"))
     status = manager.get_status()
     assert status["running"] is True
+    assert status["broadcast_active"] is True
+    assert status["broadcast"]["owner"] == "world-runtime-worker"
     assert status["runtime"]["worker"]["owner"] == "world-runtime-worker"
     assert status["runtime"]["worker"]["applied_config_revision"] == 7
     assert status["runtime"]["worker"]["process_containment"]["mode"] == "test-job"
     assert status["orphan_watchdog"]["parent_pid"] == supervisor.worker_pid
+    payload = manager.share.broadcast_payload()
+    assert payload["world_name"] == "Worker World"
 
     stopped = manager.stop()
     assert stopped["verified_stopped"] is True
     assert stopped["broadcast_verified"] is True
-    assert supervisor.calls[-2:] == [("stop_runtime", "world-a"), ("stop_worker", "world-a")]
+    stop_share = supervisor.calls.index(("stop_share", "world-a"))
+    stop_runtime = supervisor.calls.index(("stop_runtime", "world-a"))
+    stop_worker = supervisor.calls.index(("stop_worker", "world-a"))
+    assert stop_share < stop_runtime < stop_worker
     assert share.serving is False
+    assert supervisor.share_serving is False
     assert manager.get_status()["running"] is False
 
 
-def test_explicit_rollback_keeps_direct_engine():
+def test_explicit_rollback_keeps_direct_engine_and_share():
     share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor()
     manager = AuthoritativeRuntimeManager(engine, share)
     state = {"application": {"runtime_workers": {"dedicated_enabled": False}}, "server": {"active_world_id": ""}}
     result, _, _ = install_enabled(manager, engine, share, supervisor, state)
     assert result["enabled"] is False and result["rollback"] is True
     assert manager.engine is engine
+    assert manager.share is share
 
 
-def test_restart_reattaches_existing_worker_without_duplicate_start():
+def test_share_slice_can_be_rolled_back_independently():
+    share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor()
+    manager = AuthoritativeRuntimeManager(engine, share)
+    state = {"application": {"runtime_workers": {"dedicated_enabled": True, "share_enabled": False}}, "server": {"active_world_id": ""}}
+    result, _, _ = install_enabled(manager, engine, share, supervisor, state)
+    assert result["enabled"] is True
+    assert result["share_owner"] == "application"
+    assert manager.share is share
+    manager.start("world-app-share")
+    assert engine.publish_calls == ["world-app-share"]
+    manager.stop()
+
+
+def test_restart_reattaches_existing_worker_without_duplicate_game_start():
     share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor()
     supervisor.live = True
     supervisor.profile_id = "world-a"
     supervisor.game_pid = 5150
+    supervisor.share_serving = True
     supervisor.desired_revision = 11
     supervisor.applied_revision = 11
     manager = AuthoritativeRuntimeManager(engine, share)
@@ -204,6 +267,7 @@ def test_restart_reattaches_existing_worker_without_duplicate_start():
     assert manager.engine.active_profile_id == "world-a"
     status = manager.get_status()
     assert status["running"] is True
+    assert status["broadcast_active"] is True
     assert status["runtime"]["pid"] == 5150
     assert status["runtime"]["worker"]["attached"] is True
     assert status["runtime"]["applied_config_revision"] == 11
@@ -212,7 +276,9 @@ def test_restart_reattaches_existing_worker_without_duplicate_start():
     assert started["already_running"] is True
     assert started["applied_config_revision"] == 11
     assert not any(call[0] == "start_runtime" for call in supervisor.calls)
-    assert engine.publish_calls == ["world-a"]
+    assert engine.publish_calls == []
+    assert ("stop_share", "world-a") in supervisor.calls
+    assert ("start_share", "world-a") in supervisor.calls
 
 
 def test_failed_start_cleans_worker_without_direct_fallback():
@@ -229,7 +295,8 @@ def test_failed_start_cleans_worker_without_direct_fallback():
     assert engine.direct_start_calls == 0 and engine.direct_stop_calls == 0
 
     # Failure after the game became live: RuntimeManager must discover the same
-    # worker via the remembered profile and invoke the worker stop path.
+    # worker via the remembered profile and invoke the worker stop path. Share
+    # must also finish stopped even though publication never succeeded.
     share = FakeShare(); engine = FakeEngine(share); supervisor = FakeSupervisor(); supervisor.fail_start = "after_game"
     manager = AuthoritativeRuntimeManager(engine, share); install_enabled(manager, engine, share, supervisor)
     try:
@@ -240,16 +307,17 @@ def test_failed_start_cleans_worker_without_direct_fallback():
         raise AssertionError("synthetic post-launch IPC failure unexpectedly succeeded")
     assert ("stop_runtime", "world-fail-after") in supervisor.calls
     assert ("stop_worker", "world-fail-after") in supervisor.calls
-    assert supervisor.game_pid is None and supervisor.live is False
+    assert supervisor.game_pid is None and supervisor.live is False and supervisor.share_serving is False
     assert engine.direct_start_calls == 0 and engine.direct_stop_calls == 0
 
 
 def main():
     test_start_stop_through_authoritative_manager()
-    test_explicit_rollback_keeps_direct_engine()
-    test_restart_reattaches_existing_worker_without_duplicate_start()
+    test_explicit_rollback_keeps_direct_engine_and_share()
+    test_share_slice_can_be_rolled_back_independently()
+    test_restart_reattaches_existing_worker_without_duplicate_game_start()
     test_failed_start_cleans_worker_without_direct_fallback()
-    print("Phase 5C Runtime Manager -> revisioned World worker bridge: PASS")
+    print("Phase 5D Runtime Manager -> World worker dedicated runtime + Sync share: PASS")
 
 
 if __name__ == "__main__":

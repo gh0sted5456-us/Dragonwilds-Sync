@@ -224,7 +224,7 @@
               <span>World save · optional</span>
               <label class="demo-save-drop" id="demo-save-drop"><strong>Drop a World save or ZIP here</strong><span>or click to choose save files · up to 256 MiB total</span><input id="demo-save-files" type="file" multiple></label>
               <div class="demo-save-state"><strong id="demo-save-count">No save attached</strong><span id="demo-save-size">0 B</span></div>
-              <small class="demo-local-note">Save bytes remain local. Save World packages them directly into the `.rsdwl`; no upload request is made.</small>
+              <small class="demo-local-note">Save bytes remain local. Save World packages them directly into the .rsdwl; no upload request is made.</small>
             </div></div>
 
             <div class="demo-builder-actions"><a class="button button-secondary" href="servers.html">Browse servers <span aria-hidden="true">→</span></a><button class="demo-reset" id="demo-reset" type="button">Reset</button><button class="button button-primary button-save-world" id="demo-save-world" type="button">Save World (.rsdwl) ↓</button></div>

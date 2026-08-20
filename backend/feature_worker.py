@@ -214,8 +214,35 @@ class FeatureWorker:
             return status()
         if action == "rsdw.search":
             from rsdw_cache import search_items
-            return search_items(str(params.get("query") or ""), limit=max(1, min(int(params.get("limit") or 100), 500)))
+            return search_items(str(params.get("query") or ""), limit=max(1, min(int(params.get("limit") or 100), 5000)))
+        if action == "rsdw.refresh":
+            from rsdw_cache import refresh_modules
+            return refresh_modules(
+                force=bool(params.get("force", False)),
+                repo=str(params.get("repo") or "RSDWArchive/RSDWTools"),
+                branch=str(params.get("branch") or "main"),
+                model_repo=str(params.get("model_repo") or "RSDWArchive/RSDWModel"),
+                model_branch=str(params.get("model_branch") or "main"),
+            )
         raise ValueError("Mod Library action is not available in this migration slice.")
+
+    def _execute_world_management(self, action: str, params: dict) -> dict:
+        profile_id = str(params.get("profile_id") or params.get("id") or "").strip()
+        if not profile_id:
+            raise ValueError("World Management worker requires a profile ID.")
+        if action == "maintenance.save-status":
+            from world_maintenance import world_save_status
+            return world_save_status(profile_id, "", False)
+        if action == "maintenance.backup-inactive":
+            from world_maintenance import create_world_backup
+            return create_world_backup(profile_id, "", False, max(1, min(int(params.get("retention_count") or 10), 50)))
+        if action == "maintenance.restore-inactive":
+            from world_maintenance import restore_world_backup
+            backup_name = str(params.get("backup_name") or "").strip()
+            if not backup_name:
+                raise ValueError("Choose a World backup to restore.")
+            return restore_world_backup(profile_id, backup_name, "", False)
+        raise ValueError("World Management action is not available in this migration slice.")
 
     def _execute_exchange_maintenance(self, action: str, params: dict) -> dict:
         path = str(params.get("path") or "").strip()
@@ -240,6 +267,9 @@ class FeatureWorker:
         if action == "exchange.plan":
             from v3_exchange import plan_import
             return plan_import(path)
+        if action == "website-draft.inspect":
+            from website_draft_import import inspect_website_draft
+            return inspect_website_draft(path)
         raise ValueError("Exchange/Maintenance action is not available in this migration slice.")
 
     def _execute_diagnostics(self, action: str, params: dict) -> dict:
@@ -247,9 +277,13 @@ class FeatureWorker:
             from security_scanner import defender_status
             return defender_status()
         if action == "network.benchmark.history":
-            from network_benchmark import benchmark_history
+            from network_benchmark import benchmark_history, lightweight_latency
             value = benchmark_history()
-            return value if isinstance(value, dict) else {"history": value}
+            history = value.get("history") if isinstance(value, dict) else value
+            return {"history": list(history or [])[:60], "latency": lightweight_latency()}
+        if action == "network.benchmark.run":
+            from network_benchmark import run_daily_benchmark
+            return run_daily_benchmark(str(params.get("profile") or "light"))
         raise ValueError("Diagnostics action is not available in this migration slice.")
 
     def _execute(self, payload: dict) -> dict:
@@ -265,6 +299,8 @@ class FeatureWorker:
             return self._execute_save_studio(action, params)
         if self.domain == "mod-library":
             return self._execute_mod_library(action, params)
+        if self.domain == "world-management":
+            return self._execute_world_management(action, params)
         if self.domain == "exchange-maintenance":
             return self._execute_exchange_maintenance(action, params)
         if self.domain == "diagnostics":

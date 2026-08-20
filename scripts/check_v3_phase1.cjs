@@ -7,6 +7,16 @@ const expectedNetworkUrl = 'https://dragonwilds-sync-directory.' + 'dragonwilds.
 const transitionalSecretEnv = 'WORLD_' + 'SECRETS_JSON';
 const ignoredRoots = new Set(['.git', 'node_modules', 'release', 'dist-service', '.venv-build']);
 const textExtensions = new Set(['.py', '.js', '.cjs', '.mjs', '.json', '.md', '.txt', '.html', '.css', '.yml', '.yaml', '.ps1', '.bat', '.sh']);
+// These files publish or consume the canonical endpoint for non-Python
+// surfaces. They are replicas, not configuration authorities. Keeping the
+// list explicit prevents a new runtime owner from appearing unnoticed.
+const officialNetworkReplicaAllowlist = new Set([
+  '.github/scripts/build_public_server_snapshot.py',
+  'renderer/public-server-list.js',
+  'website/.PUBLIC_DIRECTORY_AGGREGATION_CONTRACT.md',
+  'website/assets/public-worlds-fallback.json',
+  'website/directory-source.json',
+]);
 
 function walk(folder, out = []) {
   for (const entry of fs.readdirSync(folder, { withFileTypes: true })) {
@@ -31,8 +41,9 @@ for (const file of files) {
   try { text = fs.readFileSync(file, 'utf8'); } catch { continue; }
   const rel = relative(file);
   if (text.includes(deprecatedHost)) failures.push(`${rel}: deprecated official Worker hostname remains`);
-  if (text.includes(expectedNetworkUrl)) officialLiteralOwners.push(rel);
-  if (text.includes(transitionalSecretEnv) && !rel.startsWith('PROJECT_STATE/') && !rel.startsWith('docs/')) {
+  if (text.includes(expectedNetworkUrl) && !officialNetworkReplicaAllowlist.has(rel)) officialLiteralOwners.push(rel);
+  const isDocumentation = path.extname(rel).toLowerCase() === '.md';
+  if (text.includes(transitionalSecretEnv) && !isDocumentation && !rel.startsWith('PROJECT_STATE/') && !rel.startsWith('docs/')) {
     worldSecretsCodeOwners.push(rel);
   }
 }

@@ -101,14 +101,39 @@ class FeatureWorkerSupervisor:
         token = self._token_for(state)
         if not token:
             raise ConnectionError("Feature worker authentication reference cannot be resolved.")
+        command_name = str(command or "").upper()
         message = {
             "protocol": FEATURE_PROTOCOL_VERSION,
-            "command": str(command or "").upper(),
+            "command": command_name,
             "domain": str(state.get("domain") or ""),
         }
         if isinstance(payload, dict):
             message["payload"] = payload
-        return request(str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token, message)
+        # Keep interactive Appy calls responsive while allowing large, local
+        # backup/restore jobs enough time to complete on slower disks.
+        action = str((payload or {}).get("action") or "").casefold() if command_name == "EXECUTE" else ""
+        timeout = {
+            "domain.warm": 30.0,
+            "map.status": 15.0,
+            "rsdw.status": 15.0,
+            "rsdw.search": 30.0,
+            "security.defender.status": 30.0,
+            "network.benchmark.history": 30.0,
+            "exchange.inspect": 60.0,
+            "website-draft.inspect": 60.0,
+            "exchange.plan": 120.0,
+            "world-save.read": 120.0,
+            "world-save.write": 300.0,
+            "map.refresh": 300.0,
+            "map.overlays": 300.0,
+            "rsdw.refresh": 300.0,
+            "maintenance.backup-inactive": 900.0,
+            "maintenance.restore-inactive": 900.0,
+        }.get(action, 300.0) if command_name == "EXECUTE" else 8.0
+        return request(
+            str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token, message,
+            timeout_seconds=timeout,
+        )
 
     @staticmethod
     def _require_ok(response: dict, action: str) -> dict:

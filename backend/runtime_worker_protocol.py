@@ -7,7 +7,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from multiprocessing.connection import Client, Connection
+from multiprocessing.connection import Client, Connection, wait
 
 PROTOCOL_VERSION = 1
 STATE_SCHEMA = "DragonwildsSync.RuntimeWorkerState.v1"
@@ -85,12 +85,17 @@ def recv_message(connection: Connection) -> dict:
     return value
 
 
-def request(endpoint: str, family: str, auth_token: str, payload: dict) -> dict:
+def request(endpoint: str, family: str, auth_token: str, payload: dict, *, timeout_seconds: float | None = None) -> dict:
     if not auth_token:
         raise ValueError("Worker IPC authentication is unavailable.")
     connection = Client(endpoint, family=family, authkey=auth_token.encode("utf-8"))
     try:
         send_message(connection, payload)
+        if timeout_seconds is not None:
+            timeout = max(0.01, float(timeout_seconds))
+            if not wait([connection], timeout):
+                command = str(payload.get("command") or "request") if isinstance(payload, dict) else "request"
+                raise TimeoutError(f"Worker IPC {command} timed out after {timeout:g} seconds.")
         return recv_message(connection)
     finally:
         connection.close()

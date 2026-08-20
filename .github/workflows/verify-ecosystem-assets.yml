@@ -1,0 +1,75 @@
+name: Verify canonical ecosystem assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'renderer/assets/platforms/**'
+      - 'resources/platform-registry.json'
+      - 'resources/world-builder-presets.json'
+      - 'website/ecosystem-assets.js'
+      - 'website/platform-assets.js'
+      - 'website/world-builder.html'
+      - 'website/.ECOSYSTEM_LOGO_COMPATIBILITY.md'
+      - '.github/workflows/verify-ecosystem-assets.yml'
+  pull_request:
+    paths:
+      - 'renderer/assets/platforms/**'
+      - 'resources/platform-registry.json'
+      - 'resources/world-builder-presets.json'
+      - 'website/ecosystem-assets.js'
+      - 'website/platform-assets.js'
+      - 'website/world-builder.html'
+      - 'website/.ECOSYSTEM_LOGO_COMPATIBILITY.md'
+      - '.github/workflows/verify-ecosystem-assets.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify exact ecosystem assets and registry bindings
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s renderer/assets/platforms/ue4ss.webp
+          test -s renderer/assets/platforms/runeschema.webp
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import json
+
+          assets = Path('renderer/assets/platforms')
+          registry = json.loads(Path('resources/platform-registry.json').read_text(encoding='utf-8'))
+          presets = json.loads(Path('resources/world-builder-presets.json').read_text(encoding='utf-8'))
+
+          by_key = {item['key']: item for item in registry['platforms']}
+          assert by_key['ue4ss']['asset'] == 'ue4ss.webp'
+          assert by_key['runeschema']['asset'] == 'runeschema.webp'
+
+          families = {item['id']: item for item in presets['modFamilies']}
+          assert families['ue4ss']['asset'] == 'ue4ss.webp'
+          assert families['runeschema']['asset'] == 'runeschema.webp'
+          assert families['paks']['asset'] == 'paks.svg'
+
+          for filename in ('ue4ss.webp', 'runeschema.webp'):
+              data = (assets / filename).read_bytes()
+              assert len(data) > 32, f'{filename} is unexpectedly small'
+              assert data[:4] == b'RIFF' and data[8:12] == b'WEBP', f'{filename} is not WebP'
+
+          website = Path('website/platform-assets.js').read_text(encoding='utf-8')
+          assert 'assets/platforms/ue4ss.webp' in website
+          assert 'assets/platforms/runeschema.webp' in website
+
+          builder = Path('website/ecosystem-assets.js').read_text(encoding='utf-8')
+          assert "ue4ss: 'assets/platforms/ue4ss.webp'" in builder
+          assert "runeschema: 'assets/platforms/runeschema.webp'" in builder
+
+          page = Path('website/world-builder.html').read_text(encoding='utf-8')
+          assert 'ecosystem-assets.js' in page
+          PY

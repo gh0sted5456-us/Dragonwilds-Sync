@@ -75,18 +75,21 @@
       "id": "ue4ss",
       "label": "UE4SS",
       "assetKey": "ue4ss",
+      "asset": "ue4ss.webp",
       "description": "UE4SS runtime/Lua mods and compatible UE4SS-managed mod content."
     },
     {
       "id": "runeschema",
       "label": "RuneSchema",
       "assetKey": "runeschema",
+      "asset": "runeschema.webp",
       "description": "RuneSchema data-driven mods and packages."
     },
     {
       "id": "paks",
       "label": "PAKs",
       "assetKey": "paks",
+      "asset": "paks.svg",
       "description": "Cooked Unreal package content such as PAK/UTOC/UCAS-based mod payloads."
     }
   ]

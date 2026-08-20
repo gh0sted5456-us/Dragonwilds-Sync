@@ -5,6 +5,9 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - '.github/scripts/inject_public_servers_html.py'
+      - 'resources/world-builder-presets.json'
+      - 'resources/platform-registry.json'
       - 'renderer/assets/application-icon.png'
       - 'renderer/assets/singleplayer-banner.png'
       - 'renderer/assets/world-selection-background.png'
@@ -133,8 +136,53 @@ jobs:
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png
+          cp resources/world-builder-presets.json _site/assets/world-builder-presets.json
+          cp resources/platform-registry.json _site/assets/platform-registry.json
           cp -R renderer/assets/flags _site/assets/flags
           cp -R renderer/assets/platforms _site/assets/platforms
+
+          # Bake one ten-server first page directly into servers.html so the
+          # directory never begins as a JavaScript-only blank surface. The full
+          # live/fallback dataset hydrates afterward and remains paginated.
+          test -s _site/assets/public-worlds-fallback.json || { echo 'Public World fallback snapshot missing' >&2; exit 1; }
+          python3 .github/scripts/inject_public_servers_html.py _site/assets/public-worlds-fallback.json _site/servers.html
+          STATIC_WORLD_COUNT="$(grep -c 'data-static-public-world="1"' _site/servers.html || true)"
+          test "$STATIC_WORLD_COUNT" -gt 0 || { echo 'No public Worlds were baked into servers.html' >&2; exit 1; }
+          test "$STATIC_WORLD_COUNT" -le 10 || { echo 'Public Server List baked more than ten rows' >&2; exit 1; }
+          echo "Baked Public Server List first-page rows: $STATIC_WORLD_COUNT"
+
+          required_platforms=(
+            steam.svg
+            windows.svg
+            xbox.svg
+            playstation.svg
+            nintendo.svg
+            switch2.svg
+            epicgames.svg
+            discord.svg
+            nexusmods.svg
+            ue4ss.svg
+            runeschema.svg
+            paks.svg
+          )
+          for asset in "${required_platforms[@]}"; do
+            path="_site/assets/platforms/$asset"
+            test -s "$path" || { echo "Required baked platform/ecosystem asset missing: $asset" >&2; exit 1; }
+            grep -qi '<svg' "$path" || { echo "Required platform/ecosystem asset is not SVG: $asset" >&2; exit 1; }
+          done
+          python3 - <<'PY'
+          import json
+          presets = json.load(open('_site/assets/world-builder-presets.json', encoding='utf-8'))
+          assert presets.get('format') == 'dragonwilds-sync-world-builder-presets'
+          assert int(presets.get('version') or 0) == 1
+          assert {x.get('id') for x in presets.get('rulePresets', [])} >= {'normal','kids','adults','custom'}
+          assert {x.get('id') for x in presets.get('modFamilies', [])} >= {'ue4ss','runeschema','paks'}
+
+          platforms = json.load(open('_site/assets/platform-registry.json', encoding='utf-8'))
+          assert platforms.get('format') == 'dragonwilds-sync-platform-registry'
+          keys = {x.get('key') for x in platforms.get('platforms', [])}
+          assert {'steam','windows','xbox','playstation','switch2','epicgames'} <= keys
+          PY
 
           if [ -f "$RUNNER_TEMP/server-build.json" ]; then
             cp "$RUNNER_TEMP/server-build.json" _site/assets/server-build.json
@@ -150,33 +198,81 @@ jobs:
 
           printf '\n\n/* App placard parity layer */\n' >> _site/styles.css
           cat website/placards.css >> _site/styles.css
+          printf '\n\n/* Interactive placard Rules / Mods details */\n' >> _site/styles.css
+          cat website/placard-detail-popovers.css >> _site/styles.css
           printf '\n\n/* Placard icon + motion enhancements */\n' >> _site/styles.css
           cat website/placard-enhancements.css >> _site/styles.css
-          printf '\n\n/* Interactive homepage demo */\n' >> _site/styles.css
+          printf '\n\n/* World Builder */\n' >> _site/styles.css
           cat website/home-demo.css >> _site/styles.css
           printf '\n\n/* Flippable release download surface */\n' >> _site/styles.css
           cat website/download-flip.css >> _site/styles.css
+          printf '\n\n/* Homepage information hierarchy */\n' >> _site/styles.css
+          cat website/top-flow.css >> _site/styles.css
 
           printf '\n\n/* App placard parity layer */\n' >> _site/script.js
           cat website/placards.js >> _site/script.js
           printf '\n\n/* Placard icon enhancements */\n' >> _site/script.js
           cat website/placard-enhancements.js >> _site/script.js
+          printf '\n\n/* Canonical baked platform assets */\n' >> _site/script.js
+          cat website/platform-assets.js >> _site/script.js
           printf '\n\n/* Steam dedicated-server build authority */\n' >> _site/script.js
           cat website/server-build.js >> _site/script.js
-          printf '\n\n/* Interactive homepage demo */\n' >> _site/script.js
-          cat website/home-demo.js >> _site/script.js
-          if [ -f website/home-demo-nav.js ]; then
-            printf '\n\n/* Homepage demo discovery links */\n' >> _site/script.js
-            cat website/home-demo-nav.js >> _site/script.js
-          fi
+          # World Builder intentionally remains a dedicated page script. Do not
+          # concatenate home-demo.js into the global bundle; world-builder.html
+          # loads it explicitly so homepage/directory scripts cannot suppress it.
           printf '\n\n/* Flippable release download surface */\n' >> _site/script.js
           cat website/download-flip.js >> _site/script.js
+          printf '\n\n/* Homepage information hierarchy */\n' >> _site/script.js
+          cat website/top-flow.js >> _site/script.js
 
           touch _site/.nojekyll
 
-      - name: Validate assembled JavaScript
+      - name: Validate website JavaScript
         shell: bash
-        run: node --check _site/script.js
+        run: |
+          node --check _site/script.js
+          node --check _site/home-demo.js
+          node --check _site/world-draft-onboarding.js
+          node --check _site/public-directory-fetch-fallback.js
+          node --check _site/public-directory-view.js
+
+      - name: Verify Public Server List route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/servers.html
+          test -s _site/assets/public-worlds-fallback.json
+          test -s _site/public-directory-pagination.css
+          grep -q 'data-static-public-world="1"' _site/servers.html
+          grep -q 'data-directory-view="placards"' _site/servers.html
+          grep -q 'data-directory-view="horizontal"' _site/servers.html
+          grep -q 'data-world-filter="offline-sync"' _site/servers.html
+          grep -q 'id="world-pagination"' _site/servers.html
+          grep -q 'id="stat-total-sync-starts"' _site/servers.html
+          grep -q 'public-directory-fetch-fallback.js?v=public-directory-6' _site/servers.html
+          python3 - <<'PY'
+          import json
+          data=json.load(open('_site/assets/public-worlds-fallback.json',encoding='utf-8'))
+          worlds=data.get('worlds') or []
+          assert worlds, 'Public World fallback snapshot is empty'
+          html=open('_site/servers.html',encoding='utf-8').read()
+          baked=html.count('data-static-public-world="1"')
+          assert 1 <= baked <= 10, f'Baked first page must contain 1-10 rows, got {baked}'
+          assert baked <= len(worlds), f'Baked rows exceed snapshot rows: html={baked}, snapshot={len(worlds)}'
+          print(f'Public Server List verified: {baked} baked first-page rows; {len(worlds)} snapshot rows available')
+          PY
+
+      - name: Verify World Builder route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/world-builder.html
+          test -s _site/home-demo.js
+          grep -q 'id="world-builder-demo"' _site/world-builder.html
+          grep -Eq 'src="home-demo\.js(\?[^\"]*)?"' _site/world-builder.html
+          grep -q 'href="world-builder.html"' _site/world-builder.html
+          grep -q "querySelector('#world-builder-demo')" _site/home-demo.js
+          grep -q 'loadPresets().then(init)' _site/home-demo.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

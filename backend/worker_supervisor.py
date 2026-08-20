@@ -64,13 +64,29 @@ class WorkerSupervisor:
         token = self._token_for(state)
         if not token:
             raise ConnectionError("Worker authentication reference cannot be resolved.")
+        command_name = str(command or "").upper()
         message = {
-            "protocol": PROTOCOL_VERSION, "command": str(command or "").upper(),
+            "protocol": PROTOCOL_VERSION, "command": command_name,
             "profileId": str(state.get("profileId") or ""),
         }
         if isinstance(payload, dict):
             message["payload"] = payload
-        return request(str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token, message)
+        timeout = {
+            "PING": 2.0,
+            "GET_STATUS": 3.0,
+            "GET_SHARE_PAYLOAD": 5.0,
+            "GET_LOG_TAIL": 5.0,
+            "START_SHARE": 30.0,
+            "STOP_SHARE": 30.0,
+            "STOP_RUNTIME": 45.0,
+            "STOP": 45.0,
+            "START_RUNTIME": 180.0,
+            "RESTART_RUNTIME": 240.0,
+        }.get(command_name, 30.0)
+        return request(
+            str(ipc.get("endpoint") or ""), str(ipc.get("family") or ""), token, message,
+            timeout_seconds=timeout,
+        )
 
     @staticmethod
     def _require_ok(response: dict, action: str) -> dict:

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+require('./check_public_server_list.cjs');
 const root = path.resolve(__dirname, '..');
 const failures = [];
 const read = rel => fs.readFileSync(path.join(root, rel), 'utf8');

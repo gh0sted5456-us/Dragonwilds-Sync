@@ -17,6 +17,14 @@
 
   const byLabel = (value) => PLATFORMS.find((entry) => entry.test.test(String(value || '').trim())) || null;
 
+  window.DWS_PLATFORM_ASSETS = Object.freeze({
+    list: PLATFORMS.map(({ key, label, src }) => Object.freeze({ key, label, src })),
+    resolve(value) {
+      const entry = byLabel(value);
+      return entry ? { key: entry.key, label: entry.label, src: entry.src } : null;
+    },
+  });
+
   function makeLogo(entry, className = 'badge-icon badge-icon-asset badge-icon-brand') {
     const img = document.createElement('img');
     img.className = className;
@@ -44,25 +52,9 @@
     });
   }
 
-  function addDemoPlatformBadges(card, world) {
-    if (!String(world?.worldId || '').startsWith('demo-')) return;
-    const row = card.querySelector('.world-card-front .badges');
-    if (!row) return;
-    for (const entry of PLATFORMS.slice(0, 6)) {
-      if ([...row.children].some((node) => byLabel(node.textContent)?.key === entry.key)) continue;
-      const badge = document.createElement('span');
-      badge.className = 'badge demo-platform-badge';
-      badge.textContent = entry.label;
-      badge.prepend(makeLogo(entry));
-      badge.dataset.platformKey = entry.key;
-      row.appendChild(badge);
-    }
-  }
-
   createWorldCard = function createWorldCardWithCanonicalPlatformAssets(world) {
     const card = baseCreateWorldCard(world);
     repairBrandIcons(card);
-    addDemoPlatformBadges(card, world);
     return card;
   };
 

@@ -2,7 +2,7 @@ name: Phase 5
 
 on:
   push:
-    branches: [codex/webgui-catalog-console-overhaul]
+    branches: [testing-ground]
     paths:
       - 'backend/**'
       - 'renderer/**'

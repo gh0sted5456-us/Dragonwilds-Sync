@@ -35,18 +35,22 @@ requireText('renderer/release-v3-phase2.js', [
   'Broadcast this World publicly',
 ]);
 
-requireText('cloudflare/dragonwilds-sync-directory/worker.js', [
+const worker = requireText('cloudflare/dragonwilds-sync-directory/worker.js', [
   '/api/v1/register', '/api/v1/presence', '/api/v1/worlds/register', '/api/v1/heartbeat',
   '/api/v1/capabilities', '/api/v1/network', 'CREDENTIAL_WRAP_KEY', 'crypto.subtle', 'env.DB.prepare',
-  'x-dws-timestamp', 'x-dws-signature',
+  'x-dws-timestamp', 'x-dws-signature', 'network_presence_v3 p JOIN installations i',
+  'active_users:activeUsers', 'active_worlds:activeWorlds', 'dedicated_servers:', 'coop_hosts:', 'clients:',
+  'players_in_listed_worlds:players', 'active_installations:activeUsers', 'active_players:players',
 ]);
 requireText('cloudflare/dragonwilds-sync-directory/schema-v3.sql', [
   'CREATE TABLE IF NOT EXISTS installations', 'CREATE TABLE IF NOT EXISTS world_credentials',
   'CREATE TABLE IF NOT EXISTS network_presence_v3', 'CREATE TABLE IF NOT EXISTS worlds_v3',
   'CREATE TABLE IF NOT EXISTS heartbeat_history_v3', 'CREATE TABLE IF NOT EXISTS rate_limits_v3',
 ]);
-const worker = read('cloudflare/dragonwilds-sync-directory/worker.js');
 if (worker.includes('WORLD_' + 'SECRETS_JSON')) failures.push('Cloudflare V3 Worker must not use transitional manual World secret provisioning');
+const networkStats = worker.slice(worker.indexOf('async function networkStats'), worker.indexOf('\n}\n\nexport default', worker.indexOf('async function networkStats')) + 2);
+if (!networkStats.includes("p.mode='client'") || !networkStats.includes("p.mode='dedicated_server'") || !networkStats.includes("p.mode='coop_host'")) failures.push('Network aggregate must break anonymous presence down by client/dedicated/coop mode');
+if (/\binstallation_id\s*:/.test(networkStats)) failures.push('Public network aggregate must never expose installation IDs');
 
 requireText('PROJECT_STATE/V3_PHASE2.md', ['Reuse → Migrate → Verify → Retire', 'Cloudflare', 'external deployment gate']);
 
@@ -70,4 +74,4 @@ if (!fs.existsSync(path.join(root, 'backend', 'profile_settings_v1.py'))) failur
 if (failures.length) {
   console.error('[V3 Phase 2] FAIL'); failures.forEach((failure)=>console.error(` - ${failure}`)); process.exit(1);
 }
-console.log('[V3 Phase 2] PASS · shared runtime/Quick CLI, backend network authority, publication controls and compatibility layers verified');
+console.log('[V3 Phase 2] PASS · shared runtime/Quick CLI, backend network authority, anonymous network aggregates, publication controls and compatibility layers verified');

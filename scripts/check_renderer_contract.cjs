@@ -41,6 +41,22 @@ assert(responsiveCss.includes('grid-template-columns:minmax(0,1fr) auto') &&
   responsiveCss.includes('.app-world-placard .card-title{min-width:0;overflow:hidden}') &&
   responsiveCss.includes('.app-world-placard .world-card-back .card-topline{min-height:62px'),
   'Placard identity rows must reserve independent icon, title, and status space.');
+assert(source.includes('selectedInventoryWarmRequests') &&
+  !source.includes('...privateWorlds().map((world)=>({method:\'singleplayer.inventory\''),
+  'Startup must hydrate only selected profile inventories, not every saved world.');
+assert(source.includes("requestIdleCallback(run,{timeout})") &&
+  source.includes("root.addEventListener('pointerover'") &&
+  source.includes('scheduleAppyWarm(lastAppy()'),
+  'Appy workspaces must support hover prediction and idle warming of the last workspace.');
+assert(source.includes('startBackgroundRefreshScheduler();') &&
+  source.includes('function activeBackgroundRefresh()') &&
+  !source.includes('worldRefreshTimer') &&
+  !source.includes('serverMetricsTimer') &&
+  !source.includes('directoryAdminSyncTimer'),
+  'Visible background data must use one coordinated, route-aware scheduler.');
+assert(!source.includes('characters.native.tools.read') &&
+  source.includes("if(state.rsdwTool!=='character-editor')setTimeout(()=>hydrateNativeRsdwTool(state.rsdwTool),0)"),
+  'Character Studio must parse only the selected subsystem instead of every editor at once.');
 
 function sha256(relativePath) {
   return crypto.createHash('sha256')

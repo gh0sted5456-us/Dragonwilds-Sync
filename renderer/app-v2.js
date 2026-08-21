@@ -115,9 +115,9 @@
     applicationUpdate: null,
     applicationUpdateResult: null,
     applicationUpdateMode: null,
-    worldRefreshTimer: null,
-    serverMetricsTimer: null,
-    directoryAdminSyncTimer: null,
+    backgroundRefreshTimer: null,
+    backgroundRefreshBusy: false,
+    backgroundRefreshAt: { worlds:0, runtime:0, directory:0, minimal:0 },
     rsdwSection: 'character',
     rsdwTool: 'character-editor',
     rsdwMapWorldId: '',
@@ -552,6 +552,69 @@
     return !state.operation && !document.hidden && !isEditingControl() && !modalRoot?.children?.length;
   }
 
+  function backgroundStateSignature(data, channel) {
+    const application=data?.application||{};
+    if(channel==='directory')return JSON.stringify({config:application.world_directory_host||{},status:application.world_directory_host_status||{}});
+    if(channel==='minimal')return JSON.stringify({server:data?.server||{},runtime:application.runtime_manager||{}});
+    const selected=String(state.selectedServerWorldId||data?.server?.active_world_id||'');
+    const profile=(data?.server_profiles||[]).find((row)=>String(row?.id||'')===selected)||null;
+    return JSON.stringify({
+      server:data?.server||{},
+      manager:application.runtime_manager||{},
+      profile:profile?{
+        id:profile.id,updated_at:profile.updated_at,health:profile.health,
+        runtime_stack:profile.runtime_stack,host_hardware:profile.host_hardware,
+        network_health:profile.network_health,network_benchmark:profile.network_benchmark,
+      }:null,
+    });
+  }
+
+  function activeBackgroundRefresh() {
+    if(minimalMode)return {channel:'minimal',interval:5000};
+    if(!state.entered)return null;
+    if(state.route==='worlds'&&state.data?.application?.world_discovery?.enabled!==false)return {channel:'worlds',interval:30000};
+    if((state.route==='server-detail'&&['overview','maintenance'].includes(state.serverTab))||(state.route==='world-detail'&&activeWorld()?.kind==='singleplayer'&&['overview','maintenance'].includes(state.privateTab)))return {channel:'runtime',interval:10000};
+    if(state.route==='webhost'&&state.webhostTab!=='live')return {channel:'directory',interval:8000};
+    return null;
+  }
+
+  function scheduleBackgroundRefresh(delay=1200) {
+    clearTimeout(state.backgroundRefreshTimer);
+    state.backgroundRefreshTimer=setTimeout(runBackgroundRefresh,Math.max(250,Number(delay)||1200));
+  }
+
+  async function runBackgroundRefresh() {
+    if(state.backgroundRefreshBusy){scheduleBackgroundRefresh(1200);return;}
+    const active=activeBackgroundRefresh();
+    if(!active||!backgroundRefreshAllowed()){scheduleBackgroundRefresh(document.hidden?4000:1800);return;}
+    const now=Date.now();
+    const elapsed=now-Number(state.backgroundRefreshAt[active.channel]||0);
+    if(elapsed<active.interval){scheduleBackgroundRefresh(Math.min(4000,Math.max(500,active.interval-elapsed)));return;}
+    state.backgroundRefreshAt[active.channel]=now;
+    state.backgroundRefreshBusy=true;
+    try{
+      if(active.channel==='worlds')await refreshWorldDiscoveryAndStatuses(true);
+      else{
+        const before=backgroundStateSignature(state.data,active.channel);
+        const response=['directory','minimal'].includes(active.channel)?await api.invoke('state.get',{}):await api.invoke('server.runtime.status',{});
+        const fresh=response?.state||response;
+        if(fresh&&backgroundStateSignature(fresh,active.channel)!==before){
+          state.data=fresh;
+          window.__DWSYNC_STATE__=fresh;
+          window.dispatchEvent(new CustomEvent('dragonwilds:state-updated',{detail:fresh}));
+          render();
+        }
+      }
+    }catch(_){/* The visible page keeps its last verified snapshot and retries later. */}
+    finally{state.backgroundRefreshBusy=false;scheduleBackgroundRefresh(active.interval);}
+  }
+
+  function startBackgroundRefreshScheduler() {
+    if(state.backgroundRefreshTimer)return;
+    scheduleBackgroundRefresh(800);
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)scheduleBackgroundRefresh(250);});
+  }
+
   function operationMarkup() {
     if (!state.operation) return '';
     return `<div class="operation-banner" role="status" aria-live="polite"><span class="operation-spinner" aria-hidden="true"></span><div><strong>${escapeHtml(state.operation.title)}</strong><small>${escapeHtml(state.operation.detail || 'This may take a moment. The application is still working.')}</small></div></div>`;
@@ -651,6 +714,10 @@
   async function handleRouteNavigation(route) {
     const next = String(route || '').trim();
     if (!next) return;
+    const nextAppy=appyForRoute(next);
+    rememberLastAppy(nextAppy);
+    scheduleAppyWarm(nextAppy,{delay:180,timeout:1200});
+    if(state.backgroundRefreshTimer)scheduleBackgroundRefresh(250);
     if (next === 'characters-app') { await enterRsdwToolkit(); return; }
     if (next === 'mods-app') {
       if (!(state.route === 'settings' && state.settingsTab === 'mods')) navigateTo('settings', { settingsTab:'mods' });
@@ -690,6 +757,16 @@
         console.error('Dragonwilds Sync route navigation failed', el.dataset.route, error);
       });
     });
+    root.addEventListener('pointerover',(event)=>{
+      const button=event.target?.closest?.('.appy-nav[data-appy]');
+      if(!button||!root.contains(button))return;
+      scheduleAppyWarm(button.dataset.appy,{delay:140,timeout:1200});
+    },{passive:true});
+    root.addEventListener('pointerout',(event)=>{
+      const button=event.target?.closest?.('.appy-nav[data-appy]');
+      if(!button||button.contains(event.relatedTarget))return;
+      cancelScheduledAppyWarm(button.dataset.appy);
+    },{passive:true});
   }
 
   function scrollKey() {
@@ -1299,16 +1376,102 @@
     state.rsdwCharacterCache[selected.id]={payload:state.rsdwCharacterPayload,tools:state.rsdwNativeTools};
   }
 
+  const APPY_WARM_STORAGE_KEY='dragonwilds-sync-last-appy';
+  const appyWarmPromises=new Map();
+  const appyWarmTimers=new Map();
+  let characterStudioWarmPromise=null;
+
+  function appyForRoute(route=state.route) {
+    const value=String(route||'').toLowerCase();
+    if(value==='characters-app'||value==='profile'&&state.profileTab==='characters')return 'characters';
+    if(value==='mods-app'||value==='settings'&&state.settingsTab==='mods')return 'mods';
+    if(value==='rsdw-launcher'||value==='rsdw-toolkit'||value==='rsdw-editor')return 'rsdw-l';
+    if(['servers','server-detail','rsdragonwilds-app'].includes(value))return 'rsdragonwilds';
+    if(['webhost','remote-server'].includes(value))return 'sync';
+    if(value==='help')return 'shell';
+    if(value==='settings')return 'system';
+    return 'worlds';
+  }
+
+  function rememberLastAppy(appy) {
+    const value=String(appy||'').trim();
+    if(!value)return;
+    try{localStorage.setItem(APPY_WARM_STORAGE_KEY,value);}catch(_){}
+  }
+
+  function lastAppy() {
+    try{return String(localStorage.getItem(APPY_WARM_STORAGE_KEY)||'worlds');}catch(_){return 'worlds';}
+  }
+
+  function selectedInventoryWarmRequests() {
+    const requests=[{method:'application.storage.paths',params:{}}];
+    const privateId=selectedPrivateProfileId();
+    if(privateWorldById(privateId))requests.push({method:'singleplayer.inventory',params:{profile_id:privateId,id:privateId,rescan:false}});
+    const serverId=String(state.selectedServerWorldId||state.data?.server?.active_world_id||'');
+    if(serverId&&serverWorlds().some((world)=>String(world.id)===serverId))requests.push({method:'server.world.inventory',params:{id:serverId,rescan:false}});
+    return requests;
+  }
+
+  function ensureCharacterStudioWarm() {
+    if(state.characters.length&&state.rsdwCharacterPayload)return Promise.resolve({cached:true});
+    if(!characterStudioWarmPromise)characterStudioWarmPromise=preloadCharacterStudio().catch((error)=>{characterStudioWarmPromise=null;throw error;});
+    return characterStudioWarmPromise;
+  }
+
+  function appyApplications(appy) {
+    const value=String(appy||'worlds');
+    if(value==='characters')return ['characters'];
+    if(value==='mods')return ['mods'];
+    if(value==='rsdw-l')return ['rsdw-l'];
+    if(value==='rsdragonwilds')return ['rsdragonwilds'];
+    if(value==='sync')return ['sync','webgui'];
+    if(value==='system')return ['shell','system'];
+    if(value==='shell')return ['shell'];
+    return ['worlds'];
+  }
+
+  function warmAppy(appy,{reason='idle'}={}) {
+    const value=String(appy||'worlds');
+    if(appyWarmPromises.has(value))return appyWarmPromises.get(value);
+    const promise=(async()=>{
+      const tasks=[api.invoke('feature.worker.prepare',{owner:`appy-${value}-${reason}`,applications:appyApplications(value),eager_only:false})];
+      if(['worlds','mods','rsdragonwilds'].includes(value))tasks.push(window.dragonwilds.prewarm?.(selectedInventoryWarmRequests()));
+      if(value==='characters')tasks.push(ensureCharacterStudioWarm(),configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null));
+      if(value==='rsdw-l')tasks.push(configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null));
+      if(['mods','rsdw-l'].includes(value))tasks.push(window.__DWSYNC_MONACO__?.warm?.());
+      await Promise.allSettled(tasks.filter(Boolean));
+      return {appy:value,ready:true};
+    })();
+    appyWarmPromises.set(value,promise);
+    return promise;
+  }
+
+  function cancelScheduledAppyWarm(appy) {
+    const value=String(appy||'');
+    const pending=appyWarmTimers.get(value);
+    if(!pending)return;
+    clearTimeout(pending.timer);
+    if(pending.idle&&typeof cancelIdleCallback==='function')cancelIdleCallback(pending.idle);
+    appyWarmTimers.delete(value);
+  }
+
+  function scheduleAppyWarm(appy,{delay=100,timeout=1200}={}) {
+    const value=String(appy||'').trim();
+    if(!value||appyWarmPromises.has(value)||appyWarmTimers.has(value))return;
+    const pending={timer:null,idle:null};
+    pending.timer=setTimeout(()=>{
+      const run=()=>{appyWarmTimers.delete(value);warmAppy(value,{reason:'predictive'}).catch(()=>{});};
+      if(typeof requestIdleCallback==='function')pending.idle=requestIdleCallback(run,{timeout});
+      else pending.timer=setTimeout(run,32);
+    },Math.max(0,Number(delay)||0));
+    appyWarmTimers.set(value,pending);
+  }
+
   async function prepareLauncherWorkspaces() {
     if(minimalMode||detachedMode||quickMode)return;
     const tasks=[
-      ['Application workspaces',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',eager_only:true,applications:['shell','worlds','characters','mods','rsdw-l','rsdragonwilds','sync','webgui','system']})],
-      ['Character and Item Builder',()=>preloadCharacterStudio()],
-      ['Profile mod inventories',()=>window.dragonwilds.prewarm?.([
-        {method:'application.storage.paths',params:{}},
-        ...privateWorlds().map((world)=>({method:'singleplayer.inventory',params:{profile_id:world.id,id:world.id,rescan:false}})),
-        ...serverWorlds().map((world)=>({method:'server.world.inventory',params:{id:world.id,rescan:false}})),
-      ])],
+      ['Core World workspace',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',eager_only:true,applications:['shell','worlds']})],
+      ['Selected profile cache',()=>window.dragonwilds.prewarm?.(selectedInventoryWarmRequests())],
       ['Launcher integrations',()=>Promise.allSettled([
         window.dragonwilds.adminStatus?.(),window.dragonwilds.appUpdateMode?.(),window.dragonwilds.appUpdateResult?.(),
         window.dragonwilds.nexusStatus?.(),window.dragonwilds.listDetachedWindows?.(),
@@ -1319,8 +1482,6 @@
         if(results[3]?.status==='fulfilled')state.nexusStatus=results[3].value;
         if(results[4]?.status==='fulfilled')state.detachedWindows=results[4].value||[];
       })],
-      ['Local RSDW compatibility',()=>configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null)],
-      ['Editor services',()=>window.__DWSYNC_MONACO__?.warm?.()],
     ];
     let done=0;updateStartupProgress(done,tasks.length,'Starting launcher workspaces…');
     const deadline=(task,label)=>Promise.race([
@@ -1329,6 +1490,7 @@
     ]);
     await Promise.allSettled(tasks.map(async([label,task])=>{try{return await deadline(task,label);}finally{done+=1;updateStartupProgress(done,tasks.length,`Prepared ${label}`);}}));
     updateStartupProgress(tasks.length,tasks.length,'Launcher workspaces ready');
+    scheduleAppyWarm(lastAppy(),{delay:80,timeout:1800});
   }
 
   async function bootstrap() {
@@ -1376,10 +1538,6 @@
       const workspaceWarmPromise=prepareLauncherWorkspaces();
       render();
       void workspaceWarmPromise.catch(()=>{});
-      // Parsing every editor catalog is useful cache work but must not hold the
-      // first usable shell. The Characters feature worker is already warm;
-      // finish populating its shared subapp cache quietly after first paint.
-      if(state.characterSelectedId)setTimeout(()=>hydrateNativeRsdwTools({silent:true}),0);
       // Native shell status, account status, update checks, and toolkit feed
       // hydration are secondary. They must never hold the first usable frame.
       if(minimalMode||detachedMode||quickMode) Promise.allSettled([
@@ -1414,10 +1572,7 @@
       if (state.pendingDirectoryJoin) setTimeout(()=>openDirectoryJoin(state.pendingDirectoryJoin),80);
       // The map remains lazy: only a visible Map view warms its large asset cache.
       if (quickMode) setTimeout(runQuickLaunch, 60);
-      if (!minimalMode&&!state.worldRefreshTimer) state.worldRefreshTimer=setInterval(()=>{if(backgroundRefreshAllowed() && state.entered && state.route==='worlds' && state.data?.application?.world_discovery?.enabled!==false) refreshWorldDiscoveryAndStatuses(true).catch(()=>{});},30000);
-      if (minimalMode&&!state.serverMetricsTimer) state.serverMetricsTimer=setInterval(async()=>{try{state.data=await api.invoke('state.get',{});render();}catch(_){}},5000);
-      if (!state.serverMetricsTimer) state.serverMetricsTimer=setInterval(async()=>{if(!backgroundRefreshAllowed() || !state.entered || !((state.route==='server-detail' && ['overview','maintenance'].includes(state.serverTab)) || (state.route==='world-detail' && activeWorld()?.kind==='singleplayer' && ['overview','maintenance'].includes(state.privateTab))))return;try{const response=await api.invoke('server.runtime.status',{});if(response.state){state.data=response.state;render();}}catch(_){}},10000);
-      if (!state.directoryAdminSyncTimer) state.directoryAdminSyncTimer=setInterval(async()=>{if(!backgroundRefreshAllowed()||!state.entered||state.route!=='webhost'||state.webhostTab==='live')return;try{const before=JSON.stringify({config:state.data?.application?.world_directory_host||{},status:state.data?.application?.world_directory_host_status||{}});const fresh=await api.invoke('state.get',{});const after=JSON.stringify({config:fresh?.application?.world_directory_host||{},status:fresh?.application?.world_directory_host_status||{}});if(before!==after){state.data=fresh;render();}}catch(_){}},8000);
+      startBackgroundRefreshScheduler();
     } catch (error) {
       root.innerHTML = `<div class="fantasy-loading"><div class="fantasy-loading-card error-card"><strong>Could not start Dragonwilds Sync.</strong><span>${escapeHtml(error.message)}</span></div></div>`;
     }
@@ -1577,8 +1732,8 @@
       state.rsdwHydrationError = '';
       state.rsdwCharacterCache[id]={payload,tools:state.rsdwNativeTools};
       render();
-      // All linked Character Studio tabs share one parse and hydrate together.
-      setTimeout(()=>hydrateNativeRsdwTools(),0);
+      // Parse only the visible subsystem. Other tabs hydrate on first use.
+      if(state.rsdwTool!=='character-editor')setTimeout(()=>hydrateNativeRsdwTool(state.rsdwTool),0);
     } catch (error) {
       if (token !== state.rsdwHydrationToken) return;
       state.rsdwHydrationError = error.message || String(error);
@@ -1607,26 +1762,6 @@
       if(state.rsdwNativeToolBusy===tool)state.rsdwNativeToolBusy='';
       render();
     }
-  }
-
-  async function hydrateNativeRsdwTools({silent=false}={}) {
-    const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
-    const loaded=state.rsdwCharacterPayload;
-    if(!selected?.editable||!loaded?.text||state.rsdwNativeToolBusy==='all')return;
-    const tools=RSDW_TOOLS.map((entry)=>entry.id).filter((id)=>id!=='character-editor');
-    if(tools.every((id)=>state.rsdwNativeTools[id]))return;
-    state.rsdwNativeToolBusy='all';state.rsdwNativeToolProgress=20;
-    if(!silent||state.route==='profile'&&state.profileTab==='characters')render();
-    try{
-      const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
-      state.rsdwNativeToolProgress=52;
-      if(!silent||state.route==='profile'&&state.profileTab==='characters')render();
-      const response=await api.invoke('characters.native.tools.read',{text:baseText,tools});
-      state.rsdwNativeTools={...state.rsdwNativeTools,...(response.native_tools||{})};
-      state.rsdwCharacterCache[selected.id]={payload:loaded,tools:state.rsdwNativeTools};
-      state.rsdwNativeToolProgress=100;
-    }catch(error){state.rsdwHydrationError=error.message||String(error);}
-    finally{state.rsdwNativeToolBusy='';if(!silent||state.route==='profile'&&state.profileTab==='characters')render();}
   }
 
   async function previewRsdwToolChange(tool, change) {

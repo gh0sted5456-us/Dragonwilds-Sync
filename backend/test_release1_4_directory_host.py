@@ -181,11 +181,15 @@ def main():
     assert shared["players"] == 4 and shared["fingerprint"] == fingerprint
     api_spec = json.loads((ROOT / "docs" / "webhost-openapi.json").read_text(encoding="utf-8"))
     assert api_spec["info"]["version"] == "2.0.0" and "/heartbeats" in api_spec["paths"]
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    # app.js is the lightweight mode selector; the full renderer contract lives
+    # in app-v2.js and is loaded synchronously for normal application windows.
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for marker in ("Sync Directories", "world.directory.refresh", "Website Listener", "Public joinable-World Directory", "Remote Server Admin", "application.world_directory_host.settings",
                    "Download Direct Metadata", "data-world-selector", "Shared Character Library", "Sync Website",
-                   "17-directory-admin.png", "18-directory-public.png", "directoryAdminSyncTimer"):
+                   "17-directory-admin.png", "18-directory-public.png", "startBackgroundRefreshScheduler"):
         assert marker in renderer
+    assert "return {channel:'directory',interval:8000}" in renderer
+    assert "['directory','minimal'].includes(active.channel)" in renderer
     assert "Public Internet address" in renderer and "PORT FORWARD REQUIRED" in renderer and "copy-webhost-public-address" in renderer
     print("release 1.4 self-hosted directory tests passed")
 

@@ -12,11 +12,13 @@ release gates in [`test-matrix.json`](test-matrix.json).
 | Renderer/release contracts | PASS | Navigation, Appy workflow, V2/V3, WebGUI, phases 2–6, runtime-worker, and public-list contracts |
 | Appy/subapp inventory | PASS | 9 application identities and all 46 registered subapps have current implementation evidence outside the identity registry |
 | Code/process ownership | PASS | 56 renderer assets, 26 website sources, 99 backend modules, every Appy/subapp parent, every process parent/owner/consumer, compatibility-only preload, and diagnostic worker RPCs are classified and linked |
-| Backend cross-platform matrix | 49 PASS / 5 ENVIRONMENT-BLOCKED | Every non-listener suite in the 54-file Ubuntu matrix passed in isolated AppData |
+| Backend cross-platform matrix | 50 PASS / 5 ENVIRONMENT-BLOCKED | Every non-listener suite in the 55-file Ubuntu matrix passed in isolated AppData |
 | Character Editor | PASS | Discovery, editable hydration, native preview, inventory refinement, two unique backups, optimistic SHA guard, invalid-JSON preservation, verified write, and immediate reload |
 | Full Item Repository | PASS | Canonical-manifest fallback, vanilla/custom tabs, create/edit/list, invalid-stack rejection, portable icon export, delete/import restore, item refinement, and spawner identity propagation |
 | Focused compatibility | PASS | Release 1.2 RSDW Toolkit, Release 1.1 profile bundle, V2 shared item identity, and V3 exchange/item registry suites |
 | Window/navigation lifecycle | PASS | Measured click-to-render instrumentation, internal minimize/restore/close, lightweight native promotion, stateful Mod Explorer pop-out, Monaco disposal, unsaved guards, and contained mod paths |
+| Real-time mod isolation | PASS | Per-mod SHA-256 identities; UE4SS live edit changed only the selected hash/snapshot while sibling hash, bytes, mtime, World config, Character save, and profile bytes remained unchanged; dedicated targeted snapshot covered |
+| Managed runtime updates | PASS | Official GitHub API asset resolution, live UE4SS and RuneSchema ZIP downloads/validation, role-specific installation, client loader exclusion, and dedicated loader preservation/colocation covered |
 
 The five environment-blocked backend files are
 `test_remote_user_permissions.py`, `test_service_subprocess_protocol.py`,
@@ -69,6 +71,21 @@ desktop gate via `npm run test:navigation-swaps`.
     and diagnostic-only source from becoming silently orphaned. The audit found
     no file safe to delete; apparent website/Python orphans are active Pages or
     PyInstaller assembly inputs.
+11. Content-only UE4SS/RuneSchema edits now use targeted client and dedicated
+    profile snapshots. Per-mod hashes are returned by inventory/edit APIs and
+    advertised in hosted summaries; metadata/load-order operations retain the
+    full transaction because they can intentionally change `mods.txt`.
+12. Client UE4SS updates no longer traverse the dedicated-server installer.
+    UE4SS and RuneSchema release pages resolve their real downloadable ZIP assets
+    through GitHub's release API. Every upstream `version.dll` is ignored;
+    Dragonwilds' managed server loader is preserved and deployed only beside the
+    dedicated server's `dwmapi.dll`. A live install check used
+    `UE4SS_v3.0.1-1028-gd7e7826d.zip` and `RuneSchema.zip` and left the retail
+    client free of `version.dll`.
+13. The retained Release 1.4 UI regression now follows the current split entry
+    points (`app.js` + `app-v2.js`, `main.cjs` + `main-v2.cjs`, and both preload
+    layers) instead of treating compatibility bootstraps as the complete active
+    implementation.
 
 ## Still required before release certification
 

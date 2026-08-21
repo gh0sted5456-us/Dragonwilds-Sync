@@ -21,10 +21,10 @@ from pathlib import Path
 from process_utils import run_hidden
 
 from network_client import download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, worldsave_status
-from sync_engine import launch_game, restore_client_world, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
+from sync_engine import launch_game, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
 from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
-from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mods,
+from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                            server_root_for_profile, server_install_config, write_dedicated_config)
 from shared_mod_repository import public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
@@ -2599,14 +2599,27 @@ def handle(method: str, params: dict) -> object:
         profile_id = _private_profile_id(state, params)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
-        units = update_singleplayer_mod(game_dir, str(params.get("key") or ""), live=live, hotload_capable=params.get("hotload_capable"), tags=params.get("tags") if "tags" in params else None, source=params.get("source"), profile_id=profile_id)
-        if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
+        key = str(params.get("key") or "")
+        content_only = bool(params.get("content_only"))
+        if content_only:
+            units = _inventory_cache(load_singleplayer_profile(profile_id))["mods"]
+            content_hash = str(params.get("content_hash") or "")
+            if content_hash:
+                units = [{**unit, "content_hash": content_hash} if str(unit.get("key") or "") == key else unit for unit in units]
+        else:
+            units = update_singleplayer_mod(game_dir, key, live=live, hotload_capable=params.get("hotload_capable"), tags=params.get("tags") if "tags" in params else None, source=params.get("source"), profile_id=profile_id)
+        if live:
+            if content_only:
+                snapshot_client_mod_unit(profile_id, Path(game_dir), key)
+            else:
+                write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             local = load_singleplayer_profile(profile_id); cfg = local.get("broadcast_config") or {}
             distribution = singleplayer_distribution_units(game_dir, profile_id)
             profile_override = {"name": local.get("name") or "Private World", "description": local.get("description") or "", "tags": list(local.get("tags") or ["PRIVATE", "CO-OP"]), "classification": normalize_world_classification({**(local.get("classification") or {}), "host_type": "coop", "visibility": "friends"}, tags=local.get("tags") or [], host_type="coop", visibility="friends"), "character_sharing": {"enabled": False}, "icon_b64": local.get("icon_b64") or "", "banner_b64": local.get("banner_b64") or "", "placard_background": str(local.get("placard_background") or "1"), "health_config": normalize_health_config(local.get("health_config")), "sync_config": cfg, "dedicated_config": {"port": 7777}, "mods_txt_mode": "auto", "mods_txt_writer": "client_generate", "hierarchy": {}, "feedback": [], "player_map": {"allow_remote_clients": False}, "world_save_download": {"enabled": False}, "service_notice": {}}
             SHARE.publish(profile_id, distribution, str(cfg.get("password") or ""), str(cfg.get("server_key") or ""), int(cfg.get("sync_port") or 27051), hw_stats=gather_server_hardware_stats(), game_port=7777, broadcast=bool(cfg.get("lan_broadcast", True)), public_ip=str(cfg.get("external_ip") or local.get("public_ip") or ""), game_root=game_dir, share_access_key=str(cfg.get("share_access_key") or ""), allow_shared_access=True, profile_override=profile_override, persist_profile=False)
-        _cache_local_inventory(profile_id, units, live=live, source="apply")
+        if not content_only:
+            _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"units": units, "state": public_state(state)}
 
     if method == "singleplayer.mod.move":
@@ -2668,13 +2681,12 @@ def handle(method: str, params: dict) -> object:
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
         result = save_singleplayer_mod_file(game_dir, str(params.get("key") or ""), str(params.get("relative_path") or ""), str(params.get("content") or ""), live=live, profile_id=profile_id)
-        if live: snapshot_client_world(profile_id, Path(game_dir))
+        if live and not (STATE.active_profile_id == profile_id and SHARE.status().get("serving")):
+            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""))
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             # Reuse the canonical metadata refresh/publish path so an atomic
             # co-op config write immediately becomes the next client manifest.
-            handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or "")})
-        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
-        _cache_local_inventory(profile_id, units, live=live, source="apply")
+            handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or ""), "content_only": True, "content_hash": result.get("content_hash")})
         return {"result": result, "state": public_state(state)}
 
     if method == "singleplayer.mod.file.create":
@@ -2684,11 +2696,10 @@ def handle(method: str, params: dict) -> object:
         result = create_singleplayer_mod_file(
             game_dir, str(params.get("key") or ""), str(params.get("relative_path") or ""),
             str(params.get("content") or ""), live=live, profile_id=profile_id)
-        if live: snapshot_client_world(profile_id, Path(game_dir))
+        if live and not (STATE.active_profile_id == profile_id and SHARE.status().get("serving")):
+            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""))
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
-            handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or "")})
-        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
-        _cache_local_inventory(profile_id, units, live=live, source="apply")
+            handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or ""), "content_only": True, "content_hash": result.get("content_hash")})
         state.setdefault("notifications", []).append({"time": now_iso(), "title": "Mod file added", "detail": result["relative_path"]})
         save_state(state)
         return {"result": result, "state": public_state(state)}
@@ -2700,12 +2711,10 @@ def handle(method: str, params: dict) -> object:
         operation = copy_singleplayer_mod_file if method.endswith(".copy") else delete_singleplayer_mod_file
         result = operation(game_dir, str(params.get("key") or ""), str(params.get("relative_path") or ""),
                            live=live, profile_id=profile_id)
-        if live:
-            snapshot_client_world(profile_id, Path(game_dir))
+        if live and not (STATE.active_profile_id == profile_id and SHARE.status().get("serving")):
+            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""))
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
-            handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or "")})
-        units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
-        _cache_local_inventory(profile_id, units, live=live, source="apply")
+            handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or ""), "content_only": True, "content_hash": result.get("content_hash")})
         action = "copied" if method.endswith(".copy") else "deleted"
         state.setdefault("notifications", []).append({"time": now_iso(), "title": f"Mod file {action}",
                                                        "detail": str(result.get("relative_path") or "")})
@@ -5123,7 +5132,12 @@ def handle(method: str, params: dict) -> object:
         result = save_world_config(profile_id, server_root_for_profile(profile), str(params.get("relative_path") or ""), str(params.get("content") or ""), active)
         if result.get("special") == "mods_txt":
             profile = load_server_profile(profile_id); profile["mods_txt_mode"] = "manual"; save_server_profile(profile_id, profile)
-        ENGINE.scan_mods(profile_id)
+        unit_key = str(result.get("unit_key") or "")
+        targeted_mod = unit_key.startswith(("ue4ss_mod::", "runeschema_mod::"))
+        if targeted_mod:
+            snapshot_profile_mod_unit(profile_id, Path(server_root_for_profile(profile)), unit_key)
+        else:
+            ENGINE.scan_mods(profile_id)
         running = bool(ENGINE.status().get("running"))
         result["restart_required"] = bool(running and not result.get("hotload_capable"))
         result["live_applied"] = bool(running and result.get("hotload_capable"))
@@ -5137,7 +5151,8 @@ def handle(method: str, params: dict) -> object:
                 with STATE.lock:
                     STATE.manifest["service_notice"] = dict(notice); STATE.touch_metadata()
         if result.get("client_sync") and SHARE.status().get("serving"):
-            ENGINE.publish(profile_id); result["republished"] = True
+            ENGINE.publish(profile_id, capture_snapshot=not targeted_mod, regenerate_mods_txt=not targeted_mod)
+            result["republished"] = True
         return result
 
     if method in {"server.world.config.copy", "server.world.config.delete"}:

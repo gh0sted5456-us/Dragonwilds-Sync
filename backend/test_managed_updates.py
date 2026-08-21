@@ -1,8 +1,76 @@
 from __future__ import annotations
 
+import json
+import io
 import tempfile
+import zipfile
+from pathlib import Path
 
 import managed_updates
+
+
+def test_client_github_update_cannot_install_server_loader() -> None:
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("dwmapi.dll", b"client-bootstrap")
+        bundle.writestr("version.dll", b"must-be-ignored")
+        bundle.writestr("ue4ss/UE4SS.dll", b"client-core")
+        bundle.writestr("ue4ss/UE4SS-Settings.ini", b"[Settings]\n")
+    payload = archive.getvalue()
+    old_urlopen = managed_updates.server_systems.urllib.request.urlopen
+
+    class Download(io.BytesIO):
+        def __enter__(self): return self
+        def __exit__(self, *_args): self.close(); return False
+
+    try:
+        managed_updates.server_systems.urllib.request.urlopen = lambda *_args, **_kwargs: Download(payload)
+        with tempfile.TemporaryDirectory() as td:
+            game = Path(td) / "RSDragonwilds"
+            (game / "Content" / "Paks").mkdir(parents=True)
+            result = managed_updates.server_systems.install_client_ue4ss_update("https://github.com/example/UE4SS.zip", str(game))
+            win64 = game / "Binaries" / "Win64"
+            assert (win64 / "dwmapi.dll").read_bytes() == b"client-bootstrap"
+            assert (win64 / "ue4ss" / "UE4SS.dll").read_bytes() == b"client-core"
+            assert not (win64 / "version.dll").exists()
+            assert result["role"] == "client" and result["server_loader_excluded"] is True
+    finally:
+        managed_updates.server_systems.urllib.request.urlopen = old_urlopen
+
+
+def test_github_release_pages_resolve_real_assets_via_api() -> None:
+    old_urlopen = managed_updates.server_systems.urllib.request.urlopen
+    seen = []
+
+    class Response:
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self): return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout=0):
+        url = str(getattr(request, "full_url", request))
+        seen.append((url, timeout))
+        if "RE-UE4SS" in url:
+            return Response({"tag_name": "experimental-latest", "assets": [
+                {"name": "zDEV-UE4SS_v9.zip", "browser_download_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/zdev.zip"},
+                {"name": "UE4SS_v9.zip", "browser_download_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_v9.zip"},
+            ]})
+        return Response({"tag_name": "v2", "assets": [
+            {"name": "RuneSchema-v2.zip", "browser_download_url": "https://github.com/UnskippableCutscene/RuneSchema/releases/download/v2/RuneSchema-v2.zip"},
+        ]})
+
+    try:
+        managed_updates.server_systems.urllib.request.urlopen = fake_urlopen
+        ue = managed_updates.server_systems.check_ue4ss_update(managed_updates.DEFAULT_UE4SS_SOURCE)
+        rune = managed_updates.server_systems.resolve_runtime_zip_source(
+            managed_updates.RUNESCHEMA_RELEASES_URL, prefer_contains=("runeschema",))
+        assert ue["filename"] == "UE4SS_v9.zip" and ue["resolver"] == "github-api"
+        assert rune["filename"] == "RuneSchema-v2.zip" and rune["resolver"] == "github-api"
+        assert any("/releases/tags/experimental-latest" in url for url, _ in seen)
+        assert any("/releases/latest" in url and "RuneSchema" in url for url, _ in seen)
+    finally:
+        managed_updates.server_systems.urllib.request.urlopen = old_urlopen
 
 
 def test_runeschema_official_source_is_default_and_api_resolved() -> None:
@@ -61,6 +129,19 @@ def test_runeschema_explicit_custom_source_is_preserved() -> None:
         managed_updates.server_systems.resolve_runtime_zip_source = old_resolve
 
 
+def test_runeschema_missing_release_asset_fails_cleanly() -> None:
+    old_resolve = managed_updates.server_systems.resolve_runtime_zip_source
+    try:
+        managed_updates.server_systems.resolve_runtime_zip_source = lambda *_args, **_kwargs: None
+        application = {"server_install": {}}
+        row = managed_updates.runeschema_status(application, {}, force=True)
+        assert row["status"] == "unable_to_check"
+        assert row["update_available"] is False
+        assert "no downloadable ZIP release asset" in row["last_error"]
+    finally:
+        managed_updates.server_systems.resolve_runtime_zip_source = old_resolve
+
+
 def test_runtime_cache_refresh_defaults_to_local_only() -> None:
     old_stack = managed_updates.server_runtime_stack
     seen = []
@@ -80,7 +161,7 @@ def test_runtime_cache_refresh_defaults_to_local_only() -> None:
 
 def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
     old_check = managed_updates.server_systems.check_ue4ss_update
-    old_ue = managed_updates.server_systems.install_authoritative_ue4ss_update
+    old_ue = managed_updates.server_systems.install_client_ue4ss_update
     old_rs = managed_updates.server_systems.install_authoritative_runeschema_update
     called = []
     try:
@@ -88,8 +169,8 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
             "filename": "UE4SS-test.zip",
             "download_url": "https://example.invalid/UE4SS-test.zip",
         }
-        managed_updates.server_systems.install_authoritative_ue4ss_update = lambda url, root: called.append(("ue4ss", url, root)) or {"ok": True}
-        managed_updates.server_systems.install_authoritative_runeschema_update = lambda source, root: called.append(("runeschema", source, root)) or {"ok": True, "filename": "RuneSchema-test.zip"}
+        managed_updates.server_systems.install_client_ue4ss_update = lambda url, root: called.append(("ue4ss", url, root)) or {"ok": True, "role": "client", "server_loader_excluded": True}
+        managed_updates.server_systems.install_authoritative_runeschema_update = lambda source, root, **kwargs: called.append(("runeschema", source, root, kwargs)) or {"ok": True, "filename": "RuneSchema-test.zip", "role": kwargs.get("role")}
         with tempfile.TemporaryDirectory() as td:
             application = {"server_install": {}}
             ue = managed_updates.install_client_core("ue4ss", td, application, {})
@@ -97,6 +178,8 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
             assert ue["component"] == "UE4SS" and rs["component"] == "RuneSchema"
             assert [row[0] for row in called] == ["ue4ss", "runeschema"]
             assert called[1][1] == managed_updates.RUNESCHEMA_REPOSITORY_URL
+            assert called[1][3].get("role") == "client"
+            assert ue["result"]["server_loader_excluded"] is True
             assert rs["source_url"] == managed_updates.RUNESCHEMA_RELEASES_URL
             assert application["server_install"]["runeschema_source_url"] == managed_updates.RUNESCHEMA_RELEASES_URL
             assert application["client_core_runtime"]["runeschema_source_url"] == managed_updates.RUNESCHEMA_RELEASES_URL
@@ -104,13 +187,16 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
             assert "runeschema_installed_version" in application["client_core_runtime"]
     finally:
         managed_updates.server_systems.check_ue4ss_update = old_check
-        managed_updates.server_systems.install_authoritative_ue4ss_update = old_ue
+        managed_updates.server_systems.install_client_ue4ss_update = old_ue
         managed_updates.server_systems.install_authoritative_runeschema_update = old_rs
 
 
 def main() -> None:
+    test_client_github_update_cannot_install_server_loader()
+    test_github_release_pages_resolve_real_assets_via_api()
     test_runeschema_official_source_is_default_and_api_resolved()
     test_runeschema_explicit_custom_source_is_preserved()
+    test_runeschema_missing_release_asset_fails_cleanly()
     test_runtime_cache_refresh_defaults_to_local_only()
     test_client_ue4ss_and_runeschema_never_use_steamcmd()
     print("managed UE4SS/RuneSchema update helper contract: PASS")

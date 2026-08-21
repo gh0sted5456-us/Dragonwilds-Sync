@@ -619,26 +619,42 @@ def pop_scan_warnings() -> list[str]:
     return warnings
 
 
-def _safe_file_stats(paths) -> tuple[int, int]:
-    """(file_count, total_size) over a mix of files/dirs, never raising."""
+def _safe_file_summary(paths) -> tuple[int, int, str]:
+    """Stable count, size, and content hash for exactly one mod unit."""
     count = 0
     size = 0
-    for p in paths:
+    digest = hashlib.sha256()
+    members: list[tuple[str, Path]] = []
+    for p in (Path(value) for value in paths):
         try:
             if p.is_file():
-                count += 1
-                size += p.stat().st_size
+                members.append((p.name, p))
             else:
                 for x in p.rglob("*"):
                     try:
                         if x.is_file():
-                            count += 1
-                            size += x.stat().st_size
+                            members.append((x.relative_to(p).as_posix(), x))
                     except OSError:
                         continue
         except OSError:
             continue
-    return count, size
+    for relative, path in sorted(members, key=lambda item: item[0].casefold()):
+        try:
+            file_size = path.stat().st_size
+            digest.update(relative.encode("utf-8")); digest.update(b"\0")
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            digest.update(b"\0")
+            count += 1; size += file_size
+        except OSError:
+            continue
+    return count, size, digest.hexdigest()
+
+
+def mod_content_hash(game_dir: str, key: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> str:
+    """Hash one editable mod without scanning or mutating its siblings."""
+    return _safe_file_summary([_unit_root(game_dir, key, live, profile_id)])[2]
 
 
 def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> list[dict]:
@@ -660,10 +676,10 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
                     continue
                 if path.is_dir():
                     ensure_mod_contract_files(path)
-                count, size = _safe_file_stats([path])
+                count, size, content_hash = _safe_file_summary([path])
                 key = f"ue4ss_mod::{path.name}"
                 ov = overrides.get(key) or {}
-                units.append({"key": key, "name": path.name, "group": "ue4ss_mod", "section": "ue4ss", "subsection": "UE4SS", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else (hotload_capable_from_root(path) if path.is_dir() else False)), "tags": normalize_tags(ov["tags"] if "tags" in ov else (tags_from_mod_root(path) if path.is_dir() else [])), "identity": identity_from_mod_root(path) if path.is_dir() else None, "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
+                units.append({"key": key, "name": path.name, "group": "ue4ss_mod", "section": "ue4ss", "subsection": "UE4SS", "classification": "local", "category": "permanent", "file_count": count, "size": size, "content_hash": content_hash, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else (hotload_capable_from_root(path) if path.is_dir() else False)), "tags": normalize_tags(ov["tags"] if "tags" in ov else (tags_from_mod_root(path) if path.is_dir() else [])), "identity": identity_from_mod_root(path) if path.is_dir() else None, "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
             except OSError as exc:
                 warnings.append(f"Skipped UE4SS mod \"{path.name}\": {exc}")
     rs = targets["runeschema"]
@@ -681,10 +697,10 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
                     continue
                 if path.is_dir():
                     ensure_mod_contract_files(path)
-                count, size = _safe_file_stats([path])
+                count, size, content_hash = _safe_file_summary([path])
                 key = f"runeschema_mod::{path.name}"
                 ov = overrides.get(key) or {}
-                units.append({"key": key, "name": path.name, "group": "runeschema_mod", "section": "runeschema", "subsection": "RuneSchema Mods", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else (hotload_capable_from_root(path) if path.is_dir() else False)), "tags": normalize_tags(ov["tags"] if "tags" in ov else (tags_from_mod_root(path) if path.is_dir() else [])), "identity": identity_from_mod_root(path) if path.is_dir() else None, "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
+                units.append({"key": key, "name": path.name, "group": "runeschema_mod", "section": "runeschema", "subsection": "RuneSchema Mods", "classification": "local", "category": "permanent", "file_count": count, "size": size, "content_hash": content_hash, "hotload_capable": bool(ov["hotload_capable"] if "hotload_capable" in ov else (hotload_capable_from_root(path) if path.is_dir() else False)), "tags": normalize_tags(ov["tags"] if "tags" in ov else (tags_from_mod_root(path) if path.is_dir() else [])), "identity": identity_from_mod_root(path) if path.is_dir() else None, "order": int(ov.get("order", 9999)), "source": ov.get("source") or {"provider": "manual"}, "live": live})
             except OSError as exc:
                 warnings.append(f"Skipped RuneSchema mod \"{path.name}\": {exc}")
     try:
@@ -701,8 +717,8 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
             if paths and Path(paths[0]).is_file():
                 first = Path(paths[0]); _, clean_stem = _strip_prefix(first.stem); sidecar_tags = tags_from_sidecar(first, clean_stem=clean_stem)
             pak_identity = identity_from_mod_root(Path(paths[0])) if paths and Path(paths[0]).is_dir() else None
-            count, size = _safe_file_stats([Path(p) for p in paths])
-            units.append({"key": key, "name": group["name"], "group": "pak_mod", "section": "paks", "subsection": "Paks", "classification": "local", "category": "permanent", "file_count": count, "size": size, "hotload_capable": False, "tags": normalize_tags(ov["tags"] if "tags" in ov else sidecar_tags), "identity": pak_identity, "order": group.get("order") or idx + 1, "source": ov.get("source") or {"provider": "manual"}, "live": live})
+            count, size, content_hash = _safe_file_summary([Path(p) for p in paths])
+            units.append({"key": key, "name": group["name"], "group": "pak_mod", "section": "paks", "subsection": "Paks", "classification": "local", "category": "permanent", "file_count": count, "size": size, "content_hash": content_hash, "hotload_capable": False, "tags": normalize_tags(ov["tags"] if "tags" in ov else sidecar_tags), "identity": pak_identity, "order": group.get("order") or idx + 1, "source": ov.get("source") or {"provider": "manual"}, "live": live})
         except OSError as exc:
             warnings.append(f"Skipped PAK mod \"{group.get('name', '?')}\": {exc}")
     units.sort(key=lambda u: ({"paks": 0, "ue4ss": 1, "runeschema": 2}.get(u["section"], 9), u.get("order", 9999), u["name"].casefold()))
@@ -898,6 +914,7 @@ def open_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool = F
 
 
 def save_mod_file(game_dir: str, key: str, relative_path: str, content: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> dict:
+    previous_content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
     opened = open_mod_file(game_dir, key, relative_path, live=live, profile_id=profile_id)
     base = _unit_root(game_dir, key, live, profile_id)
     path = (base / Path(opened["relative_path"])).resolve()
@@ -920,7 +937,10 @@ def save_mod_file(game_dir: str, key: str, relative_path: str, content: str, *, 
         path.chmod(path.stat().st_mode & ~0o222)
     except OSError:
         pass
-    return {"ok": True, "relative_path": opened["relative_path"], "path": str(path), "language": opened["language"]}
+    content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
+    return {"ok": True, "mod_key": key, "relative_path": opened["relative_path"], "path": str(path), "language": opened["language"],
+            "previous_content_hash": previous_content_hash, "content_hash": content_hash,
+            "hash_changed": previous_content_hash != content_hash}
 
 
 def create_mod_file(game_dir: str, key: str, relative_path: str, content: str = "", *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> dict:
@@ -931,6 +951,7 @@ def create_mod_file(game_dir: str, key: str, relative_path: str, content: str = 
     RuneSchema recipe (or UE4SS config) from escaping the selected mod.
     """
     base = _unit_root(game_dir, key, live, profile_id)
+    previous_content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
     rel = Path(str(relative_path or "").strip().replace("\\", "/"))
     if not rel.parts or rel.is_absolute() or ".." in rel.parts:
         raise ValueError("Choose a relative file path inside this mod.")
@@ -959,12 +980,16 @@ def create_mod_file(game_dir: str, key: str, relative_path: str, content: str = 
     except OSError:
         pass
     language = {".lua": "lua", ".json": "json", ".jsonc": "jsonc", ".ini": "ini", ".cfg": "plaintext", ".txt": "plaintext"}.get(rel.suffix.casefold(), "plaintext")
-    return {"ok": True, "relative_path": rel.as_posix(), "path": str(path), "language": language, "created": True}
+    content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
+    return {"ok": True, "mod_key": key, "relative_path": rel.as_posix(), "path": str(path), "language": language, "created": True,
+            "previous_content_hash": previous_content_hash, "content_hash": content_hash,
+            "hash_changed": previous_content_hash != content_hash}
 
 
 def copy_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> dict:
     """Duplicate one selected file beside itself without replacing anything."""
     base = _unit_root(game_dir, key, live, profile_id)
+    previous_content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
     rel, source = _resolve_mod_path(base, relative_path)
     destination = source.with_name(f"{source.stem} - Copy{source.suffix}")
     counter = 2
@@ -974,13 +999,17 @@ def copy_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool = F
         if counter > 10_000:
             raise RuntimeError("Could not choose an available copy name.")
     shutil.copy2(source, destination)
-    return {"ok": True, "source": rel.as_posix(), "relative_path": destination.relative_to(base).as_posix(),
-            "path": str(destination), "size": destination.stat().st_size}
+    content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
+    return {"ok": True, "mod_key": key, "source": rel.as_posix(), "relative_path": destination.relative_to(base).as_posix(),
+            "path": str(destination), "size": destination.stat().st_size,
+            "previous_content_hash": previous_content_hash, "content_hash": content_hash,
+            "hash_changed": previous_content_hash != content_hash}
 
 
 def delete_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> dict:
     """Delete exactly one file and prune only empty directories beneath its mod."""
     base = _unit_root(game_dir, key, live, profile_id)
+    previous_content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
     rel, target = _resolve_mod_path(base, relative_path)
     try:
         target.chmod(target.stat().st_mode | 0o200)
@@ -994,7 +1023,10 @@ def delete_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool =
         except OSError:
             break
         parent = parent.parent
-    return {"ok": True, "relative_path": rel.as_posix()}
+    content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
+    return {"ok": True, "mod_key": key, "relative_path": rel.as_posix(),
+            "previous_content_hash": previous_content_hash, "content_hash": content_hash,
+            "hash_changed": previous_content_hash != content_hash}
 
 
 def _core_config_roots(game_dir: str) -> dict[str, tuple[str, Path]]:

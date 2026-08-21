@@ -264,6 +264,39 @@ def snapshot_client_world(world_id: str, selected_root: Path) -> None:
         shutil.copy2(state_path, destination / STATE_FILE)
 
 
+def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> dict:
+    """Refresh one World-owned mod snapshot without touching sibling state."""
+    group, separator, name = str(key or "").partition("::")
+    if not separator or not name or name in {".", ".."} or any(token in name for token in ("/", "\\")):
+        raise ValueError("Invalid mod key.")
+    if group not in {"ue4ss_mod", "runeschema_mod"}:
+        raise ValueError("Only UE4SS and RuneSchema mod units support targeted live snapshots.")
+    layout = resolve_client_layout(selected_root)
+    snapshot_root = client_world_dir(world_id) / "mods" / "ue4ss_mods"
+    if group == "ue4ss_mod":
+        if name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
+            raise ValueError("Runtime infrastructure is not a World-owned mod unit.")
+        source = layout.ue4ss_mods_dir / name
+        destination = snapshot_root / name
+    else:
+        runeschema_source_root = layout.runeschema_mods_dir
+        if not runeschema_source_root.exists() and layout.runeschema_root.exists():
+            runeschema_source_root = layout.runeschema_root
+        source = runeschema_source_root / name
+        rune_snapshot = snapshot_root / "RuneSchema"
+        destination = rune_snapshot / name if runeschema_source_root == layout.runeschema_root else rune_snapshot / "Mods" / name
+    _remove_launcher_managed_tree(destination)
+    copied = 0
+    if source.is_dir():
+        shutil.copytree(source, destination)
+        copied = sum(1 for path in source.rglob("*") if path.is_file())
+    elif source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        copied = 1
+    return {"key": key, "copied": copied, "removed": not source.exists(), "snapshot_path": str(destination)}
+
+
 def restore_client_world(world_id: str, selected_root: Path) -> None:
     if not world_id:
         return

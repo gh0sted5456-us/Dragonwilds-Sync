@@ -10,6 +10,8 @@
       "highlights": [
         "Fresh password authentication and manifest negotiation before every Play or Quick Start.",
         "Per-mod/component fingerprints allow unchanged content to remain in place while changed components are transferred.",
+        "Real-time mod file edits now replace only the selected mod snapshot and hash, preserving sibling mods, World configuration, Character saves, and profile revision bytes.",
+        "Managed UE4SS and RuneSchema updates now resolve official GitHub release ZIP assets through role-specific installers; the Dragonwilds version.dll loader remains dedicated-server-only beside server dwmapi.dll and is excluded from clients.",
         "Windows and Ubuntu release-candidate packaging and verification paths.",
         "WebGUI, catalog, Recommended Mods, RSDW item metadata, and server-management consolidation work.",
         "Native detachable application windows and release-client UI polish.",

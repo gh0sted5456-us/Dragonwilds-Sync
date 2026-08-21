@@ -24,7 +24,7 @@ import zipfile
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path, PurePosixPath
-from urllib.parse import quote_plus, unquote, urlparse
+from urllib.parse import quote, quote_plus, unquote, urlparse
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile
 from process_utils import check_output_hidden, run_hidden
@@ -158,6 +158,7 @@ DEFAULT_UE4SS_RELEASES_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/
 SERVER_LOADER_FILENAME = "version.dll"
 _GITHUB_RELEASE_TAG_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/releases/tag/([^/?#]+)/?$")
 _GITHUB_REPO_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?$")
+_GITHUB_RELEASES_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/releases/?$")
 _GITHUB_RELEASES_LATEST_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/releases/latest/?$")
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
 _DEDICATED_JOIN_RE = re.compile(r"Join succeeded:\s*(.+)")
@@ -348,6 +349,7 @@ class ModUnit:
     hotload_capable: bool = False
     tags: list[str] = field(default_factory=list)
     identity: dict | None = None
+    _content_cache: tuple[int, int, str] | None = field(default=None, init=False, repr=False)
 
     @property
     def key(self) -> str:
@@ -386,14 +388,42 @@ class ModUnit:
                 pass
         return total
 
+    def content_summary(self) -> tuple[int, int, str]:
+        """Return count, size, and a stable SHA-256 identity for this mod only."""
+        if self._content_cache is not None:
+            return self._content_cache
+        digest = hashlib.sha256()
+        count = 0
+        size = 0
+        rows = []
+        for _, source in self.iter_files():
+            relative = source.relative_to(self.source_dir).as_posix() if self.source_dir is not None else source.name
+            rows.append((relative, source))
+        for relative, source in sorted(rows, key=lambda item: item[0].casefold()):
+            try:
+                file_size = source.stat().st_size
+                digest.update(relative.replace("\\", "/").encode("utf-8"))
+                digest.update(b"\0")
+                with source.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                digest.update(b"\0")
+                count += 1
+                size += file_size
+            except OSError:
+                continue
+        self._content_cache = (count, size, digest.hexdigest())
+        return self._content_cache
+
     def public(self, live_keys: set[str] | None = None) -> dict:
+        file_count, size, content_hash = self.content_summary()
         return {
             "key": self.key, "name": self.name, "group": self.group,
             "section": UNIT_GROUP_SECTION.get(self.group, ("other", ""))[0],
             "subsection": UNIT_GROUP_SECTION.get(self.group, ("other", ""))[1],
             "classification": self.classification, "category": self.category,
             "distribution": "client_required" if self.classification == "player_required" else "server_retained",
-            "file_count": self.file_count(), "size": self.total_size(), "manual": self.manual,
+            "file_count": file_count, "size": size, "content_hash": content_hash, "manual": self.manual,
             "source": normalize_mod_source(self.source),
             "hotload_capable": bool(self.hotload_capable),
             "tags": list(self.tags),
@@ -1879,12 +1909,16 @@ class ShareServer:
         # mod metadata remains available so clients can opt to reveal it.
         visible_units = [u for u in units if u.group not in ("ue4ss_core", "runeschema")
                          and u.name.lower() not in {"mods.txt", "dwmapi.dll"}]
-        summary = [{"name": u.name, "section": UNIT_GROUP_SECTION.get(u.group, ("other", ""))[0],
-                    "subsection": UNIT_GROUP_SECTION.get(u.group, ("other", ""))[1],
-                    "classification": u.classification,
-                    "distribution": "client_required" if u.classification == "player_required" else "server_retained",
-                    "category": u.category, "file_count": u.file_count(), "source": normalize_mod_source(u.source),
-                    "hotload_capable": bool(u.hotload_capable), "tags": list(u.tags)} for u in visible_units]
+        summary = []
+        for unit in visible_units:
+            file_count, _, content_hash = unit.content_summary()
+            summary.append({"name": unit.name, "section": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[0],
+                            "subsection": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[1],
+                            "classification": unit.classification,
+                            "distribution": "client_required" if unit.classification == "player_required" else "server_retained",
+                            "category": unit.category, "file_count": file_count, "content_hash": content_hash,
+                            "source": normalize_mod_source(unit.source), "hotload_capable": bool(unit.hotload_capable),
+                            "tags": list(unit.tags)})
         avg, count = profile_rating_summary(profile)
         full_health_config = normalize_health_config(profile.get("health_config"))
         hierarchy = profile.get("hierarchy") if isinstance(profile.get("hierarchy"), dict) else {}
@@ -2345,21 +2379,29 @@ def check_steam_build(timeout: float = 8.0) -> dict | None:
 
 
 def check_ue4ss_update(releases_url: str = DEFAULT_UE4SS_RELEASES_URL, timeout: float = 8.0) -> dict | None:
-    match = _GITHUB_RELEASE_TAG_RE.match(releases_url.strip())
-    if not match:
-        return resolve_runtime_zip_source(releases_url, prefer_contains=("ue4ss",), timeout=timeout)
-    owner, repo, tag = match.groups(); url = f"https://github.com/{owner}/{repo}/releases/expanded_assets/{tag}"
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (DragonwildsSync)"})
-        with urllib.request.urlopen(req, timeout=timeout) as response: html = response.read().decode(errors="replace")
-    except Exception: return None
-    candidates = []
-    for href in _GITHUB_ASSET_HREF_RE.findall(html):
-        filename = href.rsplit("/", 1)[-1]
-        if filename.startswith("UE4SS_v") and filename.endswith(".zip") and not filename.lower().startswith("zdev-"):
-            candidates.append((filename, "https://github.com" + href))
-    if not candidates: return None
-    filename, download_url = candidates[0]; return {"filename": filename, "download_url": download_url}
+    return resolve_runtime_zip_source(releases_url, prefer_contains=("ue4ss",), timeout=timeout)
+
+
+def _github_release_zip(api_url: str, source: str, prefer_contains: tuple[str, ...], timeout: float) -> dict | None:
+    req = urllib.request.Request(api_url, headers={"User-Agent": "DragonwildsSync/2", "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        payload = json.loads(response.read().decode("utf-8", "replace"))
+    assets = [asset for asset in (payload.get("assets") or []) if str(asset.get("name") or "").casefold().endswith(".zip")]
+    if prefer_contains:
+        preferred = [asset for asset in assets if any(token.casefold() in str(asset.get("name") or "").casefold() for token in prefer_contains)]
+        if preferred:
+            assets = preferred
+    non_developer = [asset for asset in assets if not str(asset.get("name") or "").casefold().startswith(("zdev-", "dev-"))]
+    if non_developer:
+        assets = non_developer
+    if not assets:
+        return None
+    asset = assets[0]
+    download_url = str(asset.get("browser_download_url") or "")
+    if not download_url:
+        return None
+    return {"filename": str(asset.get("name") or "runtime.zip"), "download_url": download_url,
+            "source": source, "release_tag": str(payload.get("tag_name") or ""), "resolver": "github-api"}
 
 
 def resolve_runtime_zip_source(source_url: str, *, prefer_contains: tuple[str, ...] = (), timeout: float = 10.0) -> dict | None:
@@ -2382,24 +2424,23 @@ def resolve_runtime_zip_source(source_url: str, *, prefer_contains: tuple[str, .
     match = _GITHUB_RELEASE_TAG_RE.match(source)
     if match:
         owner, repo, tag = match.groups()
+        try:
+            resolved = _github_release_zip(
+                f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{quote(tag, safe='')}",
+                source, prefer_contains, timeout)
+            if resolved:
+                return resolved
+        except Exception:
+            pass
     else:
-        match = _GITHUB_RELEASES_LATEST_RE.match(source) or _GITHUB_REPO_RE.match(source)
+        match = _GITHUB_RELEASES_LATEST_RE.match(source) or _GITHUB_RELEASES_RE.match(source) or _GITHUB_REPO_RE.match(source)
         if match:
             owner, repo = match.groups()
             api_url = f"https://api.github.com/repos/{owner}/{repo}/releases/latest"
             try:
-                req = urllib.request.Request(api_url, headers={"User-Agent": "DragonwildsSync/2", "Accept": "application/vnd.github+json"})
-                with urllib.request.urlopen(req, timeout=timeout) as response:
-                    payload = json.loads(response.read().decode("utf-8", "replace"))
-                assets = [a for a in (payload.get("assets") or []) if str(a.get("name") or "").lower().endswith(".zip")]
-                if prefer_contains:
-                    preferred = [a for a in assets if any(token.casefold() in str(a.get("name") or "").casefold() for token in prefer_contains)]
-                    if preferred:
-                        assets = preferred
-                if assets:
-                    asset = assets[0]
-                    return {"filename": str(asset.get("name") or "runtime.zip"), "download_url": str(asset.get("browser_download_url") or ""), "source": source}
-                tag = str(payload.get("tag_name") or "").strip() or None
+                resolved = _github_release_zip(api_url, source, prefer_contains, timeout)
+                if resolved:
+                    return resolved
             except Exception:
                 return None
     if not (owner and repo and tag):
@@ -2437,10 +2478,10 @@ def download_runtime_zip(source_url: str, *, prefer_contains: tuple[str, ...] = 
     return target, resolved, temp
 
 
-def install_authoritative_runeschema_update(source_url: str, game_root: str, timeout: float = 90.0) -> dict:
+def install_authoritative_runeschema_update(source_url: str, game_root: str, timeout: float = 90.0, *, role: str = "server") -> dict:
     zip_path, resolved, temp = download_runtime_zip(source_url, prefer_contains=("runeschema",), timeout=timeout)
     try:
-        result = install_runeschema_zip(str(zip_path), game_root)
+        result = install_runeschema_zip(str(zip_path), game_root, role=role)
         if str(result.get("kind") or "").casefold() != "core":
             raise ValueError("The resolved RuneSchema ZIP is not a core package; expected a package containing RuneSchema's mods/ directory.")
         return {**result, "filename": resolved.get("filename"), "source": resolved.get("source"), "download_url": resolved.get("download_url")}
@@ -2457,6 +2498,34 @@ def install_ue4ss_update(download_url: str, binaries_dir: str, timeout: float = 
         return install_ue4ss_zip(str(zp), str(root))
 
 
+def _ue4ss_archive_wrapper(zf: zipfile.ZipFile) -> str:
+    """Identify a single release wrapper without stripping UE4SS's new payload folder."""
+    first_parts = set()
+    for info in zf.infolist():
+        if info.is_dir():
+            continue
+        parts = PurePosixPath(info.filename.replace("\\", "/")).parts
+        if parts:
+            first_parts.add(parts[0])
+    if len(first_parts) != 1:
+        return ""
+    first = next(iter(first_parts))
+    lowered = first.casefold()
+    return first if lowered == "ue4ss" or lowered.startswith(("ue4ss_", "ue4ss-", "re-ue4ss")) else ""
+
+
+def install_client_ue4ss_update(download_url: str, game_root: str, timeout: float = 90.0) -> dict:
+    """Download an upstream UE4SS ZIP through the client-only installer."""
+    layout = resolve_client_layout(game_root)
+    with tempfile.TemporaryDirectory(prefix="dwsync_client_ue4ss_") as temp:
+        archive = Path(temp) / "ue4ss.zip"
+        req = urllib.request.Request(download_url, headers={"User-Agent": "DragonwildsSync/2"})
+        with urllib.request.urlopen(req, timeout=timeout) as response, archive.open("wb") as out:
+            shutil.copyfileobj(response, out)
+        result = install_client_ue4ss_zip(str(archive), str(layout.game_root))
+    return {**result, "download_url": download_url, "role": "client", "server_loader_excluded": True}
+
+
 def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
     """Install the distributable UE4SS baseline into a retail client.
 
@@ -2471,12 +2540,13 @@ def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
     target_root.mkdir(parents=True, exist_ok=True)
     written = []
     with zipfile.ZipFile(zip_path) as zf:
+        wrapper = _ue4ss_archive_wrapper(zf)
         for info in zf.infolist():
             if info.is_dir():
                 continue
             relative = PurePosixPath(info.filename.replace("\\", "/"))
             parts = list(relative.parts)
-            if len(parts) > 1 and parts[0].lower().startswith(("ue4ss", "re-ue4ss")):
+            if wrapper and len(parts) > 1 and parts[0] == wrapper:
                 parts = parts[1:]
             if not parts or ".." in parts:
                 raise zipfile.BadZipFile(f"Unsafe UE4SS archive path: {info.filename}")
@@ -2551,10 +2621,10 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
         rs_bundle = _bundled_app_resource("RuneSchema-core-latest.zip")
         try:
             if rs_bundle.is_file():
-                install_runeschema_zip(str(rs_bundle), str(layout.game_root))
+                install_runeschema_zip(str(rs_bundle), str(layout.game_root), role="client")
                 repaired.append("RuneSchema client baseline installed/repaired")
             elif RUNESCHEMA_CORE_CACHE_ZIP.is_file():
-                install_runeschema_zip(str(RUNESCHEMA_CORE_CACHE_ZIP), str(layout.game_root))
+                install_runeschema_zip(str(RUNESCHEMA_CORE_CACHE_ZIP), str(layout.game_root), role="client")
                 repaired.append("RuneSchema client baseline restored from cache")
             else:
                 errors.append("Bundled RuneSchema baseline is unavailable.")
@@ -2588,13 +2658,16 @@ def install_ue4ss_zip(zip_path: str, binaries_dir: str) -> dict:
     root = Path(binaries_dir); root.mkdir(parents=True, exist_ok=True)
     updated = []
     with zipfile.ZipFile(zip_path) as zf:
+        wrapper = _ue4ss_archive_wrapper(zf)
         for info in zf.infolist():
             if info.is_dir(): continue
             relative = PurePosixPath(info.filename.replace("\\", "/"))
             parts = list(relative.parts)
-            if len(parts) > 1 and parts[0].lower().startswith(("ue4ss", "re-ue4ss")):
+            if wrapper and len(parts) > 1 and parts[0] == wrapper:
                 parts = parts[1:]
             if not parts or ".." in parts: raise zipfile.BadZipFile(f"Unsafe UE4SS archive path: {info.filename}")
+            if Path(parts[-1]).name.casefold() == SERVER_LOADER_FILENAME.casefold():
+                continue
             lower = [part.casefold() for part in parts]
             if "runeschema" in lower and "mods" in lower[lower.index("runeschema") + 1:]:
                 continue
@@ -2605,7 +2678,7 @@ def install_ue4ss_zip(zip_path: str, binaries_dir: str) -> dict:
             updated.append(PurePosixPath(*parts).as_posix())
     normalized = _normalize_bundled_integration_contract(root)
     return {"ok": True, "files_written": len(updated), "files": updated,
-            "integrations": normalized}
+            "server_loader_excluded": True, "integrations": normalized}
 
 
 def _normalize_bundled_integration_contract(target_root: Path) -> dict:
@@ -2773,6 +2846,7 @@ def runtime_prerequisite_status(game_root: str) -> dict:
     }
     server_loader_checks = {
         "version_dll": layout.server_loader.is_file(),
+        "colocated_with_dwmapi": layout.server_loader.parent == layout.ue4ss_bootstrap.parent,
     }
     rs_checks = {
         "root": layout.runeschema_root.is_dir(),
@@ -3005,6 +3079,8 @@ def deploy_authoritative_runtimes(game_root: str, include_ue4ss: bool = True, in
             if not src.is_file():
                 continue
             rel = src.relative_to(UE4SS_RUNTIME_DIR)
+            if src.name.casefold() == SERVER_LOADER_FILENAME.casefold() and rel != Path(SERVER_LOADER_FILENAME):
+                continue
             dest = win64 / rel
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dest)
@@ -3380,7 +3456,7 @@ def detect_mod_zip_kind(path: str) -> str | None:
     return None
 
 
-def install_runeschema_zip(zip_path: str, game_root: str) -> dict:
+def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server") -> dict:
     review_with_defender(zip_path, "mod package")
     """Install either a full RuneSchema package or one RuneSchema mod.
 
@@ -3391,7 +3467,11 @@ def install_runeschema_zip(zip_path: str, game_root: str) -> dict:
     intentionally ignored. A non-core archive becomes one mod under
     Runeschema/mods/<archive-or-wrapper-name>.
     """
-    live_rs = resolve_server_layout(game_root).runeschema_root
+    normalized_role = str(role or "server").strip().casefold()
+    if normalized_role not in {"server", "client"}:
+        raise ValueError("RuneSchema runtime role must be server or client.")
+    live_rs = (resolve_client_layout(game_root).runeschema_root if normalized_role == "client"
+               else resolve_server_layout(game_root).runeschema_root)
     live_rs.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="dwsync_rs_") as temp:
         scratch = Path(temp)
@@ -3438,7 +3518,7 @@ def install_runeschema_zip(zip_path: str, game_root: str) -> dict:
                 (base / "enabled.txt").write_text("", encoding="utf-8")
                 (base / "mods").mkdir(parents=True, exist_ok=True)
             ignored_mod_files = sum(1 for child in mods_dir.rglob("*") if child.is_file()) if mods_dir.is_dir() else 0
-            return {"ok": True, "kind": "core", "files_written": written,
+            return {"ok": True, "kind": "core", "role": normalized_role, "files_written": written,
                     "bundled_mod_files_ignored": ignored_mod_files,
                     "mods_profile_owned": True, "destination": str(live_rs)}
         name = wrapper_name or Path(zip_path).stem
@@ -3446,7 +3526,7 @@ def install_runeschema_zip(zip_path: str, game_root: str) -> dict:
         for src in content_root.rglob("*"):
             if not src.is_file(): continue
             rel = src.relative_to(content_root); dest = dest_root / rel; dest.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src, dest); written += 1
-        return {"ok": True, "kind": "mod", "name": name, "files_written": written, "destination": str(dest_root)}
+        return {"ok": True, "kind": "mod", "role": normalized_role, "name": name, "files_written": written, "destination": str(dest_root)}
 
 
 

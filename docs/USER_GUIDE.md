@@ -45,6 +45,17 @@ runtime and must never copy the server's literal `mods.txt`.
 The Mods Appy lists profile-owned copies and their load order. **Edit** opens the
 selected managed root. Supported text files are editable, JSON is validated
 before save, and writes are atomic; binary files remain visible but read-only.
+Each mod has its own content hash. Saving a live mod file updates only that
+mod's cached profile unit and Sync component; it does not rewrite sibling mods,
+World settings, Character saves, or profile metadata. Load-order and tag changes
+remain full profile operations because they can intentionally change `mods.txt`.
+
+Use the managed update controls for UE4SS and RuneSchema. They resolve the
+current downloadable ZIP assets from the projects' official GitHub releases and
+install them into the selected client or server layout. The Dragonwilds
+`version.dll` loader is dedicated-server-only: it is preserved and deployed next
+to the server's `dwmapi.dll`, and is never installed or synchronized to a retail
+client by the launcher.
 
 ## Sync and joining
 

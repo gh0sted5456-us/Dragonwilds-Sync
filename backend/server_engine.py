@@ -301,6 +301,37 @@ def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     staging.replace(destination); return copied
 
 
+def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int:
+    """Capture only the edited dedicated mod, preserving every sibling snapshot."""
+    group, separator, name = str(key or "").partition("::")
+    if not separator or not name or name in {".", ".."} or any(token in name for token in ("/", "\\")):
+        raise ValueError("Invalid mod key.")
+    layout = resolve_server_layout(game_root)
+    stored = _profile_mods_dir(profile_id)
+    if group == "ue4ss_mod":
+        if name.casefold() in SERVER_INFRASTRUCTURE_UE4SS:
+            raise ValueError("Runtime infrastructure is not a World-owned mod unit.")
+        source = layout.ue4ss_mods_dir / name
+        destination = stored / "ue4ss_mods" / name
+    elif group == "runeschema_mod":
+        source = layout.runeschema_mods_dir / name
+        destination = stored / "runeschema_mods" / name
+        marker = stored / "runeschema_layout.txt"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text("root" if layout.runeschema_mods_dir == layout.runeschema_root else "mods-subdir", encoding="utf-8")
+    else:
+        raise ValueError("Only UE4SS and RuneSchema mod units support targeted live snapshots.")
+    _remove_path(destination)
+    if source.is_dir():
+        shutil.copytree(source, destination)
+        return sum(1 for path in source.rglob("*") if path.is_file())
+    if source.is_file():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+        return 1
+    return 0
+
+
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     """Restore World-owned payloads while preserving shared UE4SS/RuneSchema cores."""
     layout = resolve_server_layout(game_root); stored = _profile_mods_dir(profile_id); copied = 0
@@ -1004,7 +1035,7 @@ class ServerEngine:
         self._event(f"Scanned {len(units)} mod unit(s) for {profile.get('name') or profile_id}.")
         return {"units": [u.public(SHARE.live_keys) for u in units], "badges": compute_mod_badges(units)}
 
-    def publish(self, profile_id: str) -> dict:
+    def publish(self, profile_id: str, *, capture_snapshot: bool = True, regenerate_mods_txt: bool = True) -> dict:
         profile = load_server_profile(profile_id)
         if not profile: raise KeyError("Server World not found")
         root = self._profile_root(profile)
@@ -1015,10 +1046,12 @@ class ServerEngine:
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
         units = scan_mod_units(profile_id, root)
-        if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
+        if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generated = generate_server_mods_txt(profile_id, root, units=units)
             self._event(f"Generated server UE4SS mods.txt with {generated.get('count', 0)} enabled mod(s).")
-        snapshot_profile_mods(profile_id, Path(root)); sync = profile.setdefault("sync_config", {})
+        if capture_snapshot:
+            snapshot_profile_mods(profile_id, Path(root))
+        sync = profile.setdefault("sync_config", {})
         password = str(sync.get("password") or ""); key = str(sync.get("server_key") or "")
         port = int(sync.get("port") or 7777); broadcast = bool(sync.get("lan_broadcast", True))
         app_policy = (load_state().get("application") or {}).get("server_access_policy") or {}

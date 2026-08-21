@@ -63,11 +63,13 @@ def main() -> None:
             ue_zip = root / 'ue4ss.zip'
             with zipfile.ZipFile(ue_zip, 'w') as zf:
                 zf.writestr('dwmapi.dll', b'new-bootstrap')
+                zf.writestr('version.dll', b'upstream-must-not-replace-server-loader')
                 zf.writestr('ue4ss/UE4SS.dll', b'new-core')
                 zf.writestr('ue4ss/UE4SS-Settings.ini', b'[Settings]\n')
             ss.install_authoritative_ue4ss_zip(str(ue_zip), str(game))
             assert (game / 'Binaries' / 'Win64' / 'version.dll').read_bytes() == b'dragonwilds-server-loader'
             assert (ss.UE4SS_RUNTIME_DIR / 'version.dll').read_bytes() == b'dragonwilds-server-loader'
+            assert (game / 'Binaries' / 'Win64' / 'version.dll').parent == (game / 'Binaries' / 'Win64' / 'dwmapi.dll').parent
         finally:
             ss.PUBLISH_DIR = old_publish
             ss.UE4SS_RUNTIME_DIR = old_ue

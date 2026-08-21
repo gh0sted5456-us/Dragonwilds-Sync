@@ -59,14 +59,15 @@ def runeschema_status(application: dict, server_stack: dict, *, force: bool = Fa
             resolved = server_systems.resolve_runtime_zip_source(
                 resolver_source, prefer_contains=("runeschema",), timeout=8.0
             ) or {}
+            available = bool(resolved.get("download_url"))
             cache = {
                 "checked_at": now,
-                "available": bool(resolved.get("download_url")),
+                "available": available,
                 "filename": str(resolved.get("filename") or ""),
                 "download_url": str(resolved.get("download_url") or ""),
                 "source": source_url,
                 "resolved_source": str(resolved.get("source") or resolver_source),
-                "error": "",
+                "error": "" if available else "The configured RuneSchema GitHub repository has no downloadable ZIP release asset.",
             }
         except Exception as exc:
             cache = {
@@ -151,7 +152,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
         update = server_systems.check_ue4ss_update(source) or {}
         if not update.get("download_url"):
             raise RuntimeError("No downloadable UE4SS release asset could be resolved from the configured source.")
-        result = server_systems.install_authoritative_ue4ss_update(str(update["download_url"]), root)
+        result = server_systems.install_client_ue4ss_update(str(update["download_url"]), root)
         metadata.update({
             "ue4ss_source_url": source,
             "ue4ss_installed_version": str(update.get("filename") or "experimental-latest"),
@@ -170,7 +171,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
         source = configured or RUNESCHEMA_RELEASES_URL
         server_install.setdefault("runeschema_source_url", source)
         resolver_source = _runeschema_resolver_source(source)
-        result = server_systems.install_authoritative_runeschema_update(resolver_source, root)
+        result = server_systems.install_authoritative_runeschema_update(resolver_source, root, role="client")
         metadata.update({
             "runeschema_source_url": source,
             "runeschema_installed_version": str(result.get("filename") or result.get("source") or source),

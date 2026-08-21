@@ -188,10 +188,22 @@ def test_read_only_publish_cache_can_be_replaced():
 
 
 def test_ui_contract():
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    # app.js is the active bootstrap; Full mode synchronously loads app-v2.js.
+    # Inspect both active layers instead of treating the bootstrap as the entire
+    # renderer, which made this legacy contract stale after the shell split.
+    renderer = "\n".join(
+        (ROOT / "renderer" / name).read_text(encoding="utf-8")
+        for name in ("app.js", "app-v2.js")
+    )
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
-    main = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
-    preload = (ROOT / "electron" / "preload.cjs").read_text(encoding="utf-8")
+    main = "\n".join(
+        (ROOT / "electron" / name).read_text(encoding="utf-8")
+        for name in ("main.cjs", "main-v2.cjs")
+    )
+    preload = "\n".join(
+        (ROOT / "electron" / name).read_text(encoding="utf-8")
+        for name in ("preload.cjs", "preload-v2.cjs")
+    )
     meta = (ROOT / "renderer" / "release-meta.js").read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["version"] == "2.0.0" and package.get("author") == "RSDW Modding Community"

@@ -33,11 +33,14 @@ This is the current source-level capability contract for `testing-ground`. A cap
 - Core frameworks, DragonCore, DragonConnect, RSDW data, and runtime tooling are separately classified and cannot masquerade as ordinary user mods.
 - Discovery, role classification, load order, `mods.txt`, tags, hotload declarations, `ID.txt`, install/update/move/remove, Explorer/editing, shared repository, and Nexus provenance/staging are supported.
 - Managed text mod files are editable within their selected root with JSON validation where applicable and atomic save behavior; unsupported binary payloads remain read-only.
+- Every user mod exposes a deterministic SHA-256 content hash. A real-time Monaco create/save/copy/delete refreshes only that mod's profile snapshot; sibling mods, World configuration, Character saves, and profile metadata are not rewritten.
 - Client state is generated from verified CLIENT/BOTH roles. The server's literal `mods.txt` is never copied to clients.
+- Managed UE4SS and RuneSchema updates resolve downloadable ZIP assets from their official GitHub release APIs, validate the archives, and install through role-specific client/server paths. Client UE4SS installation always excludes `version.dll`.
+- `version.dll` is a Dragonwilds dedicated-server loader, not an upstream UE4SS client component. The launcher preserves and deploys it only to a server's `Binaries/Win64`, beside that server's `dwmapi.dll`.
 
 ## Sync, Direct Connect, and exchange
 
-- Hosted Worlds can publish authenticated manifests and incremental file fingerprints.
+- Hosted Worlds can publish authenticated manifests with aggregate, per-component, and per-mod fingerprints. A content-only edit changes the selected mod component while unchanged components remain transfer-free.
 - Clients authenticate, obtain a fresh manifest, stage downloads, verify hashes, materialize role-correct content, generate local control files, prove final parity, configure DragonConnect, and then become launch-ready.
 - Sync journals and verified handoff records support recovery without persisting credentials.
 - `.rsdwl` exchange supports bounded World, Character, identity, item-registry, and manifest data with path and checksum validation.

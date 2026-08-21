@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.UpstreamSources.v1",
-  "updated_at": "2026-08-19T23:19:00Z",
+  "updated_at": "2026-08-21T00:00:00Z",
   "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. Logical runtime components and data sources are kept distinct even where a legacy physical directory name remains for compatibility.",
   "security": {
     "allow_arbitrary_commands": false,
@@ -72,7 +72,7 @@
       "runtime_component": true,
       "runtime_roles": ["server", "client"],
       "update_owner": "Dragonwilds Sync managed update path",
-      "description": "Official RuneSchema release source. Dragonwilds Sync resolves release assets through its managed updater, validates and installs the runtime locally, and retains the bundled package only as an offline/recovery fallback. RuneSchema child content remains a first-class logical mod family."
+      "description": "Official RuneSchema release source. Dragonwilds Sync resolves downloadable ZIP assets through GitHub's release API, validates them, installs through an explicit client/server layout, and retains the bundled package only as an offline/recovery fallback. RuneSchema child content remains a first-class logical mod family."
     },
     "ue4ss": {
       "display_name": "UE4SS",
@@ -80,7 +80,9 @@
       "type": "github-release",
       "repository": "UE4SS-RE/RE-UE4SS",
       "release_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest",
-      "description": "Official UE4SS release source. Dragonwilds Sync keeps its own install/validation logic and never executes commands from this registry."
+      "runtime_roles": ["server", "client"],
+      "update_owner": "Dragonwilds Sync managed update path",
+      "description": "Official UE4SS release source. Dragonwilds Sync resolves the tagged release ZIP through GitHub's API and installs it through role-specific validation. Upstream version.dll files are ignored; Dragonwilds' separate server loader is preserved only beside the dedicated server dwmapi.dll."
     },
     "rsdwmodel": {
       "display_name": "RSDWModel",

@@ -258,6 +258,8 @@ jobs:
           grep -q 'assets/rsdw-logo.png' _site/script.js
           grep -q 'assets/platforms/discord.svg' _site/script.js
           grep -q 'browser_download_url' _site/script.js
+          ! grep -q 'release-channels' _site/index.html
+          ! grep -q 'primary-channel-note' _site/index.html
           ! grep -q 'Download Experimental' _site/script.js
           ! grep -q 'Preview what comes next' _site/script.js
 
@@ -271,10 +273,12 @@ jobs:
           grep -q 'data-static-public-world="1"' _site/servers.html
           grep -q 'data-directory-view="placards"' _site/servers.html
           grep -q 'data-directory-view="horizontal"' _site/servers.html
+          grep -q 'data-world-filter="sync"' _site/servers.html
           grep -q 'data-world-filter="offline-sync"' _site/servers.html
           grep -q 'id="world-pagination"' _site/servers.html
           grep -q 'id="stat-total-sync-starts"' _site/servers.html
           grep -q 'public-directory-fetch-fallback.js?v=public-directory-7' _site/servers.html
+          grep -q 'public-directory-view.js?v=public-directory-7' _site/servers.html
           python3 - <<'PY'
           import json
           data=json.load(open('_site/assets/public-worlds-fallback.json',encoding='utf-8'))

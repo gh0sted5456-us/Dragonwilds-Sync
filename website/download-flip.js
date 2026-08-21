@@ -47,15 +47,9 @@
     </div>`;
 
   oldPanel.replaceWith(flip);
-  const channelControls = [...downloads.querySelectorAll('.release-channels .release-channel')];
-  const mainControl = channelControls.find((node) => /\bmain\b/i.test(node.textContent || ''));
-  const thanksControl = channelControls.find((node) => /special thanks/i.test(node.textContent || ''));
-  if (mainControl) mainControl.dataset.channelFlip = 'main';
-  if (thanksControl) thanksControl.dataset.channelFlip = 'thanks';
 
   const setSide = (requestedSide) => {
-    const side = requestedSide === 'thanks' ? 'thanks' : 'main';
-    const showThanks = side === 'thanks';
+    const showThanks = requestedSide === 'thanks';
     flip.classList.toggle('flipped', showThanks);
     const mainFace = flip.querySelector('.download-face.main');
     const thanksFace = flip.querySelector('.download-face.thanks');
@@ -63,18 +57,9 @@
     thanksFace?.setAttribute('aria-hidden', String(!showThanks));
     if (mainFace) mainFace.inert = showThanks;
     if (thanksFace) thanksFace.inert = !showThanks;
-    [mainControl, thanksControl].forEach((node) => {
-      if (!node) return;
-      const selected = node.dataset.channelFlip === side;
-      node.classList.toggle('active', selected);
-      node.setAttribute('aria-pressed', String(selected));
-      if (selected) node.setAttribute('aria-current', 'true');
-      else node.removeAttribute('aria-current');
-    });
   };
 
   flip.querySelectorAll('[data-channel-flip]').forEach((button) => button.addEventListener('click', () => setSide(button.dataset.channelFlip)));
-  [mainControl, thanksControl].forEach((control) => control?.addEventListener('click', () => setSide(control.dataset.channelFlip)));
 
   fetch(releaseApi, { headers: { Accept: 'application/vnd.github+json' } })
     .then((response) => { if (!response.ok) throw new Error('release lookup failed'); return response.json(); })

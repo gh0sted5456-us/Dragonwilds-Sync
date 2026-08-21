@@ -213,11 +213,13 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
         source = {"items": installed_rows, "count": len(installed_rows), "cache": installed_status} if installed_rows else search_items(query, limit=limit)
         merged = {str(row.get("item_data") or row.get("persistence_id") or "").casefold(): dict(row)
                   for row in (source.get("items") or []) if str(row.get("item_data") or row.get("persistence_id") or "").strip()}
+        custom_count = 0
         for raw in custom_items or []:
             if not isinstance(raw, dict): continue
-            persistence_id = str(raw.get("persistence_id") or "").strip()
+            persistence_id = str(raw.get("persistence_id") or raw.get("PersistenceID") or raw.get("ItemId") or raw.get("item_data") or raw.get("logical_key") or "").strip()
             if not persistence_id: continue
-            internal_name = str(raw.get("internal_name") or Path(persistence_id.replace("\\", "/")).stem).strip()
+            internal_name = str(raw.get("internal_name") or raw.get("ITEM Name") or raw.get("item_name") or raw.get("asset_name") or Path(persistence_id.replace("\\", "/")).stem).strip()
+            runtime_path = str(raw.get("runtime_path") or raw.get("runtimePath") or raw.get("source_path") or raw.get("sourcePath") or "").strip()
             merged[persistence_id.casefold()] = {
                 "id": persistence_id, "item_data": persistence_id, "persistence_id": persistence_id,
                 "name": str(raw.get("display_name") or raw.get("name") or internal_name or persistence_id),
@@ -225,13 +227,15 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
                 "internal_name": internal_name, "item_name": internal_name,
                 "icon_path": str(raw.get("icon_data") or raw.get("icon_ref") or ""),
                 "source": "dragonwilds-sync:mod-manifest",
-                "source_path": str(raw.get("source_path") or raw.get("runtime_path") or persistence_id),
-                "runtime_path": str(raw.get("runtime_path") or "").strip(),
+                "source_path": runtime_path or persistence_id,
+                "runtime_path": runtime_path,
                 "equipment": str(raw.get("equipment") or ""), "category": str(raw.get("category") or "Modded Items"),
                 "raw_category": "Modded Items", "stackable": int(raw.get("max_stack") or 1) > 1,
                 "max_stack": max(1, int(raw.get("max_stack") or 1)), "description": str(raw.get("description") or ""), "custom": True,
             }
+            custom_count += 1
         source["items"] = list(merged.values())
+        source["custom_count"] = custom_count
         rows = []
         all_categories = sorted({str(item.get("category") or _friendly_item_category(item)) for item in (source.get("items") or [])})
         wanted_category = str(category or "").strip().casefold()
@@ -263,6 +267,7 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
                 break
         return {"kind": kind, "items": rows, "count": len(rows), "categories": all_categories,
                 "source": source.get("cache") or {}, "loot_menu_detected": loot_menu,
+                "custom_count": custom_count,
                 "live_modded_catalog": bool(installed_rows),
                 "message": "Installed RSDWTools item and icon catalog ready." if installed_rows else
                            ("RSDW item catalog ready. LootMenu is detected but exposes no supported catalog API." if loot_menu else "RSDW item catalog ready.")}

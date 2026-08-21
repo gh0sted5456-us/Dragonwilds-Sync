@@ -26,7 +26,8 @@ from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_prof
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                            server_root_for_profile, server_install_config, write_dedicated_config)
-from shared_mod_repository import public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry
+from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
+                                   PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
@@ -41,7 +42,8 @@ from local_world import (SINGLEPLAYER_ID, ensure_state as ensure_singleplayer_st
                          scan_inventory as scan_singleplayer_inventory, install_mod_zip as install_singleplayer_mod_zip,
                          update_mod as update_singleplayer_mod, move_mod as move_singleplayer_mod, remove_mod as remove_singleplayer_mod,
                          write_mods_txt as write_singleplayer_mods_txt, detect_mod_zip_kind as detect_local_mod_zip_kind,
-                         list_editable_mod_files as list_singleplayer_mod_files, open_mod_file as open_singleplayer_mod_file,
+                         list_editable_mod_files as list_singleplayer_mod_files, singleplayer_mod_root,
+                         open_mod_file as open_singleplayer_mod_file,
                          save_mod_file as save_singleplayer_mod_file, create_mod_file as create_singleplayer_mod_file,
                          copy_mod_file as copy_singleplayer_mod_file, delete_mod_file as delete_singleplayer_mod_file,
                          list_core_config_files as list_singleplayer_core_configs, open_core_config_file as open_singleplayer_core_config,
@@ -2549,6 +2551,18 @@ def handle(method: str, params: dict) -> object:
     if method == "mod.repository.deploy":
         result = deploy_entry(str(params.get("entry_id") or ""), str(params.get("profile_kind") or params.get("kind") or "local"), str(params.get("profile_id") or ""))
         return {"result": result, "state": public_state(state)}
+
+    if method == "mod.repository.files":
+        entry_id = str(params.get("entry_id") or "").strip()
+        return {"files": list_repository_files(entry_id, include_all=bool(params.get("tree"))),
+                "root": str(PAYLOAD_ROOT / entry_id), "repository": cached_mod_repository()}
+
+    if method == "mod.repository.file.open":
+        return open_repository_file(str(params.get("entry_id") or ""), str(params.get("relative_path") or ""))
+
+    if method == "mod.repository.file.save":
+        result = save_repository_file(str(params.get("entry_id") or ""), str(params.get("relative_path") or ""), str(params.get("content") or ""))
+        return {"result": result, "repository": cached_mod_repository(), "state": public_state(state)}
 
     if method == "singleplayer.inventory":
         profile_id = _private_profile_id(state, params)

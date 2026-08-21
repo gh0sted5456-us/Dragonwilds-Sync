@@ -29,6 +29,10 @@ assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigatio
   !source.includes("navButton('rsdragonwilds-app'") &&
   baseCss.includes('.nav-icon-image{display:block;width:22px;height:22px'),
   'Dragonwilds must retain the game artwork and own Hosting without a duplicate navigation item.');
+assert(baseCss.includes('.studio-appearance-swatches{grid-column:1/-1;min-width:0') &&
+  baseCss.includes('.studio-appearance-swatches>div{display:flex;flex-wrap:wrap;gap:6px') &&
+  baseCss.includes('.studio-appearance-swatches button{flex:0 0 26px;width:26px'),
+  'Character Editor color swatches must span the appearance panel with readable, wrapping choices.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),

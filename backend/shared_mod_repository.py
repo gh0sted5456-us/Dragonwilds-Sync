@@ -19,6 +19,7 @@ PAYLOAD_ROOT = REPOSITORY_ROOT / "payloads"
 INDEX_PATH = REPOSITORY_ROOT / "index.json"
 LOCAL_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 SUPPORTED_GROUPS = {"ue4ss_mod", "runeschema_mod", "pak_mod"}
+EDITABLE_EXTENSIONS = {".lua", ".json", ".jsonc", ".ini", ".cfg", ".txt"}
 _PREFIX = re.compile(r"^\d{2,3}_(.+)$")
 
 
@@ -210,6 +211,85 @@ def public_index(index: dict | None = None) -> dict:
     rows = sorted((value.get("entries") or {}).values(), key=lambda row: (row.get("group", ""), row.get("name", "").casefold()))
     return {"root": str(REPOSITORY_ROOT), "updated_at": value.get("updated_at"), "entries": rows,
             "counts": {group: sum(1 for row in rows if row.get("group") == group) for group in sorted(SUPPORTED_GROUPS)}}
+
+
+def _repository_entry(entry_id: str) -> tuple[dict, Path]:
+    safe_id = _safe_component(entry_id, "Repository entry")
+    index = _load_index()
+    entry = (index.get("entries") or {}).get(safe_id)
+    if not isinstance(entry, dict):
+        raise KeyError("Shared mod was not found")
+    payload = (PAYLOAD_ROOT / safe_id).resolve()
+    if not payload.is_dir() or PAYLOAD_ROOT.resolve() not in payload.parents:
+        raise FileNotFoundError("The shared mod payload is missing")
+    children = list(payload.iterdir())
+    root = children[0].resolve() if entry.get("group") != "pak_mod" and len(children) == 1 and children[0].is_dir() else payload
+    return entry, root
+
+
+def _repository_path(entry_id: str, relative_path: str) -> tuple[dict, Path, Path]:
+    entry, root = _repository_entry(entry_id)
+    rel = Path(str(relative_path or "").strip().replace("\\", "/"))
+    if not rel.parts or rel.is_absolute() or ".." in rel.parts:
+        raise ValueError("Invalid repository file path")
+    path = (root / rel).resolve()
+    if path == root or root not in path.parents:
+        raise ValueError("Invalid repository file path")
+    return entry, root, path
+
+
+def _file_language(path: Path) -> str:
+    return {".lua": "lua", ".json": "json", ".jsonc": "jsonc", ".ini": "ini"}.get(path.suffix.casefold(), "plaintext")
+
+
+def list_repository_files(entry_id: str, *, include_all: bool = False) -> list[dict]:
+    _entry, root = _repository_entry(entry_id)
+    rows = []
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        size = path.stat().st_size
+        editable = path.suffix.casefold() in EDITABLE_EXTENSIONS and size <= 2 * 1024 * 1024
+        if include_all or editable:
+            rows.append({"relative_path": path.relative_to(root).as_posix(), "name": path.name,
+                         "language": _file_language(path), "size": size, "editable": editable})
+        if len(rows) >= 5000:
+            break
+    return sorted(rows, key=lambda row: row["relative_path"].casefold())
+
+
+def open_repository_file(entry_id: str, relative_path: str) -> dict:
+    _entry, root, path = _repository_path(entry_id, relative_path)
+    if not path.is_file() or path.suffix.casefold() not in EDITABLE_EXTENSIONS:
+        raise FileNotFoundError("Editable repository file was not found")
+    if path.stat().st_size > 2 * 1024 * 1024:
+        raise ValueError("This file is too large for the built-in editor")
+    return {"relative_path": path.relative_to(root).as_posix(), "name": path.name,
+            "language": _file_language(path), "content": path.read_text(encoding="utf-8", errors="replace"),
+            "path": str(path), "folder": str(path.parent), "root": str(root)}
+
+
+def save_repository_file(entry_id: str, relative_path: str, content: str) -> dict:
+    entry, root, path = _repository_path(entry_id, relative_path)
+    opened = open_repository_file(entry_id, relative_path)
+    text = str(content)
+    if path.suffix.casefold() == ".json":
+        json.loads(text)
+    fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".dwsync.tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text); handle.flush(); os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    finally:
+        if os.path.exists(tmp_name):
+            os.unlink(tmp_name)
+    payload = PAYLOAD_ROOT / entry["id"]
+    content_hash, file_count, size = _content_hash(list(payload.iterdir()))
+    index = _load_index(); stored = (index.get("entries") or {}).get(entry["id"], entry)
+    stored.update({"content_hash": content_hash, "file_count": file_count, "size": size, "updated_at": time.time()})
+    index.setdefault("entries", {})[entry["id"]] = stored; index["updated_at"] = time.time(); write_json(INDEX_PATH, index)
+    return {"ok": True, "entry_id": entry["id"], "relative_path": opened["relative_path"],
+            "path": str(path), "language": opened["language"], "content_hash": content_hash}
 
 
 def _remove_existing(kind: str, profile_id: str, group: str, name: str) -> None:

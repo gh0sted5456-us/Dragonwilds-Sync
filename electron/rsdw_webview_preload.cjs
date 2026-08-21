@@ -217,6 +217,7 @@ HTMLAnchorElement.prototype.click = function patchedAnchorClick() {
 
 ipcRenderer.on('hydrate-rsdw-character', (_event, payload) => hydrateCharacter(payload || {}));
 ipcRenderer.on('request-rsdw-save', () => requestSave('save'));
+ipcRenderer.on('request-rsdw-preview', () => requestPreview());
 
 window.addEventListener('DOMContentLoaded', () => {
   document.body?.classList.add('dws-embedded');
@@ -256,7 +257,6 @@ window.addEventListener('DOMContentLoaded', () => {
     if (hydrating || event.target?.type === 'file') return;
     clearTimeout(dirtyTimer);
     dirtyTimer = setTimeout(() => post('rsdw-dirty', {}), 80);
-    requestPreview();
   }, true);
   document.addEventListener('change', (event) => {
     if (hydrating || event.target?.type === 'file') return;
@@ -266,7 +266,6 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     clearTimeout(dirtyTimer);
     dirtyTimer = setTimeout(() => post('rsdw-dirty', {}), 80);
-    requestPreview();
   }, true);
   document.addEventListener('keydown', (event) => {
     if ((event.ctrlKey || event.metaKey) && String(event.key).toLowerCase() === 's') {

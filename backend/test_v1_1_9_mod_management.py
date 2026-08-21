@@ -45,6 +45,15 @@ def main() -> None:
         assert (target / "schema.json").read_text(encoding="utf-8") == "first"
         assert (target / "new-schema.json").read_text(encoding="utf-8") == "new"
         assert len(result["deployed"]) == 1
+        entry_id = result["entry"]["id"]
+        files = repository.list_repository_files(entry_id, include_all=True)
+        assert any(row["relative_path"] == "schema.json" and row["editable"] for row in files)
+        opened = repository.open_repository_file(entry_id, "schema.json")
+        assert opened["content"] == "first"
+        repository.save_repository_file(entry_id, "schema.json", '"master"')
+        assert repository.open_repository_file(entry_id, "schema.json")["content"] == '"master"'
+        repository.deploy_entry(entry_id, "local", "world-b")
+        assert target.joinpath("schema.json").read_text(encoding="utf-8") == '"master"'
 
     # Character Item Editor, server Spawner, and WebGUI consume one normalized
     # item identity. Custom/mod-manifest rows must preserve all four gameplay
@@ -68,11 +77,17 @@ def main() -> None:
             "internal_name": "ITEM_GUID_Sword", "max_stack": 2,
         }])
         assert by_name["count"] == 1 and by_name["items"][0]["runtime_path"] == "ITEM_GUID_Sword"
+        aliases = spawner_catalog.catalog("", kind="item", query="Alias Axe", custom_items=[{
+            "PersistenceID": "mod-alias-axe", "name": "Alias Axe", "item_name": "ITEM_Alias_Axe",
+            "runtimePath": "/Alias/Items/ITEM_Alias_Axe.ITEM_Alias_Axe",
+        }])
+        assert aliases["count"] == 1 and aliases["custom_count"] == 1
     finally:
         spawner_catalog.search_items = original_search
 
     project = Path(__file__).resolve().parents[1]
-    renderer = (project / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = ((project / "renderer" / "app.js").read_text(encoding="utf-8")
+                + (project / "renderer" / "app-v2.js").read_text(encoding="utf-8"))
     profile_bundle = (project / "backend" / "profile_bundle.py").read_text(encoding="utf-8")
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
     # dragonwilds_service_legacy.py engine, so contract tokens may live in either.

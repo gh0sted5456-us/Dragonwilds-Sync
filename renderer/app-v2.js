@@ -160,6 +160,10 @@
     rsdwEquipmentSearch: '',
     rsdwPreviewHidden: new Set(),
     rsdwInventorySection: 'inventory',
+    rsdwCharacterEditorTab: 'appearance',
+    rsdwCharacterHistory: [],
+    rsdwCharacterFuture: [],
+    rsdwCharacterLastChanges: null,
     rsdwAvatarScale: 62,
     rsdwAvatarBackground: 'studio',
     rsdwHydrationToken: 0,
@@ -1936,6 +1940,9 @@
     const cached=state.rsdwCharacterCache[id];
     state.rsdwCharacterPayload = cached?.payload||null;
     state.rsdwNativeDraft = null;
+    state.rsdwCharacterHistory = [];
+    state.rsdwCharacterFuture = [];
+    state.rsdwCharacterLastChanges = null;
     state.rsdwNativeTools = cached?.tools||{};
     state.rsdwNativeToolBusy = '';
     state.rsdwSpellWheel = [];
@@ -1996,8 +2003,15 @@
     if(!selected?.editable||!loaded?.text)throw new Error('Select an editable character first.');
     const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
     const response=await api.invoke('characters.native.tool.preview',{text:baseText,tool,change});
+    if(tool==='item-editor')rememberRsdwCharacterSnapshot();
     state.rsdwNativeDraft={...response,characterId:selected.id};
     if(response.native_tool)state.rsdwNativeTools[tool]=response.native_tool;
+    if(tool==='item-editor'){
+      root?.querySelectorAll?.('#rsdw-save-character, [data-character-save]').forEach((button)=>{button.disabled=false;});
+      const dirty=root?.querySelector?.('[data-character-dirty]');if(dirty){dirty.classList.add('dirty');dirty.textContent='Unsaved changes';}
+      const status=root?.querySelector?.('#rsdw-editor-status');if(status)status.textContent='Unsaved equipment · ready to write with backup';
+      const dot=root?.querySelector?.('#rsdw-editor-status-dot');if(dot)dot.className='dirty';
+    }
     if(paint)render();
     return response;
   }
@@ -2019,9 +2033,28 @@
     const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
     if(!selected)return;
     state.rsdwNativeDraft=null;
+    state.rsdwCharacterHistory=[];
+    state.rsdwCharacterFuture=[];
+    state.rsdwCharacterLastChanges=null;
     state.rsdwNativeTools={};
     state.rsdwEquipmentRepositorySlot='';
     await selectRsdwCharacter(selected.id,{renderFirst:false});
+  }
+
+  function cloneRsdwSnapshot(value) {
+    if(value==null)return null;
+    try{return structuredClone(value);}catch(_){return JSON.parse(JSON.stringify(value));}
+  }
+
+  function rememberRsdwCharacterSnapshot() {
+    const snapshot={draft:cloneRsdwSnapshot(state.rsdwNativeDraft),itemEditor:cloneRsdwSnapshot(state.rsdwNativeTools['item-editor']||null)};
+    const prior=state.rsdwCharacterHistory[state.rsdwCharacterHistory.length-1];
+    const signature=(value)=>`${value?.draft?.text||value?.draft?.sha256||'base'}|${JSON.stringify(value?.itemEditor?.sections?.loadout||[])}`;
+    if(!state.rsdwCharacterHistory.length||signature(prior)!==signature(snapshot))state.rsdwCharacterHistory.push(snapshot);
+    if(state.rsdwCharacterHistory.length>40)state.rsdwCharacterHistory.shift();
+    state.rsdwCharacterFuture=[];
+    root?.querySelectorAll?.('[data-character-undo]').forEach((button)=>{button.disabled=!state.rsdwCharacterHistory.length;});
+    root?.querySelectorAll?.('[data-character-redo]').forEach((button)=>{button.disabled=true;});
   }
 
   async function enterRsdwToolkit({ forceSource = false, remember = true } = {}) {
@@ -2149,6 +2182,26 @@
     return `<fieldset class="native-color-field"><legend>${escapeHtml(label)}</legend><div class="native-color-options">${choices.map((row)=>`<label class="native-color-choice ${String(row.value||'')===String(current)?'selected':''}" title="${escapeHtml(row.label||row.value||'')}"><input type="radio" name="native-${escapeHtml(key)}" data-native-customization="${escapeHtml(key)}" value="${escapeHtml(row.value||'')}" ${String(row.value||'')===String(current)?'checked':''}/><i style="--native-swatch:${escapeHtml(row.color||'#888')}"></i><span>${escapeHtml(row.label||row.value||'')}</span></label>`).join('')}</div></fieldset>`;
   }
 
+  function nativeAppearanceSelector(editor, key, label) {
+    const current=String(editor?.customization?.[key]||'');
+    const choices=Array.isArray(editor?.catalog?.[key])?editor.catalog[key]:[];
+    const index=Math.max(0,choices.findIndex((row)=>String(row.value||'')===current));
+    const selected=choices[index]||{value:current,label:current||'Not surfaced'};
+    const raw=String(selected.value||current||'Not surfaced');
+    const friendly=String(selected.label||raw);
+    return `<section class="character-appearance-card" data-appearance-card="${escapeHtml(key)}"><div class="character-appearance-card-head"><strong>${escapeHtml(label)}</strong><span>${choices.length} save-backed choice${choices.length===1?'':'s'}</span></div><div class="character-appearance-card-body"><div class="character-asset-silhouette" aria-hidden="true"><i></i></div><div class="character-asset-selector"><div class="character-asset-current"><button type="button" data-native-step="${escapeHtml(key)}" data-native-step-delta="-1" ${choices.length<2?'disabled':''} aria-label="Previous ${escapeHtml(label)}">‹</button><span><strong>${escapeHtml(raw)}</strong>${friendly!==raw?`<small>${escapeHtml(friendly)}</small>`:'<small>Authoritative asset name</small>'}</span><button type="button" data-native-step="${escapeHtml(key)}" data-native-step-delta="1" ${choices.length<2?'disabled':''} aria-label="Next ${escapeHtml(label)}">›</button></div><select class="select" data-native-customization="${escapeHtml(key)}" aria-label="Select ${escapeHtml(label)} asset">${nativeSelectOptions(choices,current)}</select><div class="character-asset-range"><input type="range" min="0" max="${Math.max(0,choices.length-1)}" value="${index}" data-native-range="${escapeHtml(key)}" ${choices.length<2?'disabled':''}/><span>${choices.length?index+1:0} / ${choices.length}</span></div></div></div></section>`;
+  }
+
+  function characterEquipmentSurface(liveAvatar) {
+    const itemEditor=state.rsdwNativeTools['item-editor']||{};
+    const loadout=new Map((itemEditor.sections?.loadout||[]).map((row)=>[Number(row.slot),row]));
+    const inventory=new Map((itemEditor.sections?.inventory||[]).map((row)=>[Number(row.slot),row]));
+    const socket=(equipment,index)=>{const row=loadout.get(index);const hiddenKey={Head:'helmet',Body:'torso',Legs:'legs',Cape:'cape'}[equipment]||'';const hidden=hiddenKey&&state.rsdwPreviewHidden.has(hiddenKey);return `<button class="studio-equipment-socket character-equipped-row ${row?'occupied':'empty'} ${hidden?'hidden-preview':''}" data-studio-equipment-slot="${escapeHtml(equipment)}" data-studio-equipment-index="${index}" aria-label="${escapeHtml(equipment)} equipment slot · ${escapeHtml(row?.name||'Empty')}" title="Browse compatible ${escapeHtml(equipment)} items">${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/>`:`<span class="studio-socket-glyph">${escapeHtml(equipment.slice(0,1))}</span>`}<span><strong>${escapeHtml(equipment)}</strong><small>${escapeHtml(row?.name||'Empty slot')}</small><i>${hidden?'Hidden in preview':'Save-backed'}</i></span>${hiddenKey?`<b class="studio-socket-eye ${hidden?'hidden':''}" data-rsdw-socket-eye="${hiddenKey}" title="${hidden?'Show':'Hide'} ${escapeHtml(equipment)} in preview">◉</b>`:''}<em aria-hidden="true">⌕</em></button>`;};
+    const hand=(label,slot,upstreamId)=>{const model=liveAvatar?.params?.[slot]||'';const hidden=state.rsdwPreviewHidden.has(slot);return `<button class="studio-equipment-socket character-equipped-row preview-hand ${model?'occupied':'empty'} ${hidden?'hidden-preview':''}" data-studio-equipment-slot="${escapeHtml(label)}" data-avatar-hand-slot="${escapeHtml(upstreamId)}" aria-label="${escapeHtml(label)} slot · ${escapeHtml(model||'Empty')}" title="Browse compatible ${escapeHtml(label)} items"><span class="studio-socket-glyph">${label==='Main Hand'?'⚔':'◈'}</span><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(model?String(model).split('/').pop():'Choose preview item')}</small><i>RSDWModel preview mapping</i></span><b class="studio-socket-eye ${hidden?'hidden':''}" data-rsdw-socket-eye="${slot}" title="${hidden?'Show':'Hide'} ${escapeHtml(label)}">◉</b><em aria-hidden="true">⌕</em></button>`;};
+    const hotbar=Array.from({length:8},(_,index)=>{const row=inventory.get(index);return `<button type="button" class="character-action-slot ${row?'occupied':''}" data-character-action-slot="${index}" title="${escapeHtml(row?`${row.name||row.item_data} · quantity ${Number(row.count||1)}`:`Action slot ${index+1} · empty`)}"><b>${index+1}</b>${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><span>${Number(row.count||1)>1?escapeHtml(row.count):''}</span>`:'<i aria-hidden="true">＋</i>'}</button>`;}).join('');
+    return {right:`<aside class="character-editor-equipped" aria-label="Equipped items"><div class="character-equipped-title"><div><span>Equipped</span><strong>${itemEditor.sections?'Item repository ready':'Loading item repository…'}</strong></div><button type="button" class="btn ghost compact-btn" data-open-item-editor title="Open the full Item Editor">Manage</button></div><section><h4>Armour</h4>${socket('Head',0)}${socket('Body',1)}${socket('Legs',2)}</section><section><h4>Attachments</h4>${socket('Cape',3)}${socket('Jewellery',4)}</section><section><h4>Weapons <small>preview mapped</small></h4>${hand('Main Hand','rightHand','slot-rightHand')}${hand('Off Hand','leftHand','slot-leftHand')}</section></aside>`,hotbar};
+  }
+
   function nativeCharacterEditorMarkup(payload) {
     const editor=(state.rsdwNativeDraft?.native_editor)||payload?.native_editor||{};
     const meta=editor.meta||{};
@@ -2162,21 +2215,32 @@
     const avatarBackground=String(state.rsdwAvatarBackground||'studio');
     const suspendAvatar=hostingFocusActive()&&activeComputerProfile().suspend_visuals!==false;
     const avatarMarkup=suspendAvatar
-      ? `<section class="native-editor-section native-avatar-section hosting-focus-placeholder"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview Paused</h3></div><span>Hosting Focus</span></div><div><strong>The live 3D renderer is resting while your server is active.</strong><p>Stop the server or disable “Pause 3D previews” in Settings → Application to load the interactive character model.</p></div></section>`
-      : `<section class="native-editor-section native-avatar-section"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview</h3></div><span>Save-backed RSDWModel renderer</span></div><div class="rsdw-avatar-pane"><div class="rsdw-avatar-stage-shell avatar-loading" style="--avatar-scale:${Number(state.rsdwAvatarScale||62)}vh"><webview id="rsdw-avatar-webview" class="rsdw-avatar-webview" src="${escapeHtml(avatarUrl)}" partition="persist:dragonwilds-rsdw"></webview><div class="rsdw-avatar-loading-cover" aria-live="polite"><div class="spinner"></div><strong>Preparing Character Preview</strong><span>Loading only the save-backed 3D renderer…</span></div><div class="rsdw-avatar-toolbar"><button class="btn ghost compact-btn" data-avatar-view="full" title="Full body">Full</button><button class="btn ghost compact-btn" data-avatar-view="face" title="Face view">Face</button><button class="btn ghost compact-btn" data-avatar-view="rotate-left" title="Rotate left">↶</button><button class="btn ghost compact-btn" data-avatar-view="rotate-right" title="Rotate right">↷</button><button class="btn ghost compact-btn" data-avatar-view="zoom-in" title="Zoom in">＋</button><button class="btn ghost compact-btn" data-avatar-view="zoom-out" title="Zoom out">−</button></div><span class="rsdw-avatar-gesture-note">${escapeHtml(et('avatarGestures'))}</span></div><div class="rsdw-avatar-actions"><span id="rsdw-avatar-status">Loading RSDWModel avatar…</span><label>Background <select class="select" id="rsdw-avatar-background">${[['theme','Theme'],['studio','Studio'],['forest','Forest'],['parchment','Parchment'],['black','Black'],['white','White']].map(([value,label])=>`<option value="${value}" ${avatarBackground===value?'selected':''}>${label}</option>`).join('')}</select></label></div></div></section>`;
-    return `<div class="rsdw-native-character-editor" id="rsdw-native-character-editor">
-      <section class="native-editor-section native-identity-section"><div class="native-section-heading"><div><div class="eyebrow">${escapeHtml(et('identity'))}</div><h3>${escapeHtml(et('characterIdentity'))}</h3></div><span>${escapeHtml(et('writtenToSave'))}</span></div><div class="native-editor-grid native-identity-grid">
-        <label class="native-editor-field"><span>${escapeHtml(et('playerName'))}</span><input class="field" data-native-meta="player_name" maxlength="128" value="${escapeHtml(meta.player_name||'')}"/></label>
+      ? `<div class="character-preview-paused hosting-focus-placeholder"><strong>Character Preview Paused</strong><p>The live 3D renderer is resting while Hosting Focus is active. Stop the server or disable “Pause 3D previews” in Settings → Application.</p></div>`
+      : `<div class="rsdw-avatar-pane character-preview-pane"><div class="rsdw-avatar-stage-shell avatar-loading" style="--avatar-scale:${Number(state.rsdwAvatarScale||62)}vh"><webview id="rsdw-avatar-webview" class="rsdw-avatar-webview" src="${escapeHtml(avatarUrl)}" partition="persist:dragonwilds-rsdw"></webview><div class="rsdw-avatar-loading-cover" aria-live="polite"><div class="spinner"></div><strong>Preparing Character Preview</strong><span>Loading the save-backed 3D renderer…</span></div><div class="rsdw-avatar-toolbar"><button class="btn ghost compact-btn" data-avatar-view="full" title="Full body">Full</button><button class="btn ghost compact-btn" data-avatar-view="face" title="Face view">Face</button><button class="btn ghost compact-btn" data-avatar-view="rotate-left" title="Rotate left">↶</button><button class="btn ghost compact-btn" data-avatar-view="rotate-right" title="Rotate right">↷</button><button class="btn ghost compact-btn" data-avatar-view="zoom-in" title="Zoom in">＋</button><button class="btn ghost compact-btn" data-avatar-view="zoom-out" title="Zoom out">−</button></div><span class="rsdw-avatar-gesture-note">${escapeHtml(et('avatarGestures'))}</span></div><div class="rsdw-avatar-actions"><span id="rsdw-avatar-status">Loading RSDWModel avatar…</span><label>Background <select class="select" id="rsdw-avatar-background">${[['theme','Theme'],['studio','Studio'],['forest','Forest'],['parchment','Parchment'],['black','Black'],['white','White']].map(([value,label])=>`<option value="${value}" ${avatarBackground===value?'selected':''}>${label}</option>`).join('')}</select></label></div></div>`;
+    const equipment=characterEquipmentSurface(liveAvatar);
+    const dirty=state.rsdwNativeDraft?.characterId===state.characterSelectedId;
+    const activeTab=['appearance','equipment','pose'].includes(state.rsdwCharacterEditorTab)?state.rsdwCharacterEditorTab:'appearance';
+    return `<div class="rsdw-native-character-editor character-editor-redesign" id="rsdw-native-character-editor" data-character-editor-active-tab="${activeTab}">
+      <header class="character-editor-redesign-head"><div class="character-editor-title"><span>Character Editor</span><strong>${escapeHtml(meta.player_name||'Unnamed Character')}</strong><i class="character-dirty-indicator ${dirty?'dirty':''}" data-character-dirty>${dirty?'Unsaved changes':'Saved'}</i></div><div class="character-editor-tabs" role="tablist" aria-label="Character editor sections">${[['appearance','Appearance'],['equipment','Equipment'],['pose','Pose']].map(([key,label])=>`<button type="button" role="tab" data-character-editor-tab="${key}" aria-selected="${activeTab===key}" class="${activeTab===key?'active':''}">${label}</button>`).join('')}</div><div class="character-editor-head-actions"><button type="button" class="btn ghost compact-btn" data-character-undo title="Undo last editor change" ${state.rsdwCharacterHistory.length?'':'disabled'}>↶ Undo</button><button type="button" class="btn ghost compact-btn" data-character-redo title="Redo editor change" ${state.rsdwCharacterFuture.length?'':'disabled'}>↷ Redo</button><button type="button" class="btn ghost compact-btn" id="rsdw-revert-draft" ${dirty?'':'disabled'}>Revert</button></div></header>
+      <div class="character-editor-workspace">
+        <aside class="character-editor-controls">
+          <div class="character-editor-tab-panel ${activeTab==='appearance'?'active':''}" data-character-tab-panel="appearance"><label class="character-name-field"><span>Name</span><input class="field" data-native-meta="player_name" maxlength="128" value="${escapeHtml(meta.player_name||'')}"/></label><div class="character-nickname-row"><span>Asset nicknames remain secondary to raw save names.</span><button type="button" disabled title="Nickname metadata is not available in the current save schema">Edit</button></div>${nativeAppearanceSelector(editor,'Head','Face')}${nativeAppearanceSelector(editor,'HairPreset','Hair')}${nativeAppearanceSelector(editor,'FacialHairPreset','Beard')}<div class="character-body-type">${nativeAppearanceField(editor,'BodyType',et('bodyType'))}</div><div class="character-color-rows">${nativeColorField(editor,'SkinTone','Skin')}${nativeColorField(editor,'EyeColor','Eyes')}${nativeColorField(editor,'HairColor','Hair')}${nativeColorField(editor,'EyebrowColor','Beard')}</div></div>
+          <div class="character-editor-tab-panel ${activeTab==='equipment'?'active':''}" data-character-tab-panel="equipment"><div class="character-tab-callout"><span>Equipment</span><strong>Save-backed loadout</strong><p>Select armour and attachment slots in the Equipped rail. Weapon choices are explicitly marked as preview mappings when RSDWModel cannot write them to the save.</p><button type="button" class="btn primary" data-open-item-editor>Open full Item Editor</button></div></div>
+          <div class="character-editor-tab-panel ${activeTab==='pose'?'active':''}" data-character-tab-panel="pose"><div class="character-tab-callout"><span>Pose</span><strong>Preview-only animation</strong><p>Pose and camera changes never modify the character save.</p></div><label class="native-editor-field"><span>Animation<small>RSDWModel catalog</small></span><select class="select" data-avatar-upstream-select="avatar-animation-select" data-avatar-default="idle" disabled><option>Loading animations…</option></select></label><div class="character-pose-actions"><button type="button" class="btn ghost" data-avatar-play="play">▶ Play</button><button type="button" class="btn ghost" data-avatar-play="pause">Ⅱ Pause</button><button type="button" class="btn ghost" data-avatar-view="full">Reset camera</button></div></div>
+        </aside>
+        <main class="character-editor-preview" aria-label="Live character preview"><div class="character-preview-label"><span>Live 3D preview</span><strong>RSDWModel · save-backed appearance</strong></div>${avatarMarkup}</main>
+        ${equipment.right}
+      </div>
+      <footer class="character-editor-footer"><div class="character-action-bar" aria-label="Eight-slot character action bar">${equipment.hotbar}</div><div class="character-editor-footer-actions"><button type="button" class="btn ghost" data-character-undo ${state.rsdwCharacterHistory.length?'':'disabled'}>↶ Undo</button><button type="button" class="btn ghost" data-character-redo ${state.rsdwCharacterFuture.length?'':'disabled'}>↷ Redo</button><button type="button" class="btn primary character-save-button" data-character-save ${dirty?'':'disabled'}>▣ Save Character</button><button type="button" class="btn ghost" data-character-export>↥ Export</button></div></footer>
+      <details class="character-editor-advanced"><summary><span>Advanced save fields</span><small>Character type, GUID, upkeep, progression, mounts, map, and vendors</small></summary><div class="native-editor-grid native-identity-grid">
         <label class="native-editor-field native-character-type-field"><span>${escapeHtml(et('characterType'))}</span><div><img data-native-character-type-icon src="${escapeHtml(rsdwAssetUrl(`/shared/game-ui/Character/${['Standard','Hardcore','Creative','Custom'][Number(meta.character_type)||0]}.png`))}" alt=""/><select class="select" data-native-meta="character_type"><option value="0" ${Number(meta.character_type)===0?'selected':''}>Standard</option><option value="1" ${Number(meta.character_type)===1?'selected':''}>Hardcore</option><option value="2" ${Number(meta.character_type)===2?'selected':''}>Creative</option><option value="3" ${Number(meta.character_type)===3?'selected':''}>Custom</option></select></div></label>
         <label class="native-editor-field native-guid-field"><span>${escapeHtml(et('characterGuid'))}</span><input class="field mono" data-native-meta="guid" maxlength="32" value="${escapeHtml(meta.guid||'')}"/></label>
-      </div></section>
-      ${avatarMarkup}
-      <section class="native-editor-section native-appearance-section"><div class="native-section-heading"><div><div class="eyebrow">${escapeHtml(et('appearance'))}</div><h3>${escapeHtml(et('rebuildCharacter'))}</h3></div><span>${escapeHtml(et('refreshesPreview'))}</span></div><div class="native-editor-grid native-appearance-grid">${nativeAppearanceField(editor,'BodyType',et('bodyType'))}${nativeAppearanceField(editor,'Head',et('head'))}${nativeAppearanceField(editor,'HairPreset',et('hair'))}${nativeAppearanceField(editor,'FacialHairPreset',et('facialHair'))}</div><div class="native-color-grid">${nativeColorField(editor,'SkinTone',et('skinTone'))}${nativeColorField(editor,'HairColor',et('hairColor'))}${nativeColorField(editor,'EyeColor',et('eyeColor'))}${nativeColorField(editor,'EyebrowColor',et('eyebrowColor'))}</div></section>
+      </div>
       <section class="native-editor-section"><div class="native-section-heading"><div><div class="eyebrow">${escapeHtml(et('survival'))}</div><h3>${escapeHtml(et('characterUpkeep'))}</h3></div><span>${escapeHtml(et('setValueKeepFull'))}</span></div><div class="native-upkeep-grid">${['Hydration','Sustenance','Endurance'].map((key)=>{const row=upkeep[key]||{};const translated={Hydration:et('hydration'),Sustenance:et('sustenance'),Endurance:et('endurance')}[key]||key;return `<div class="native-upkeep-card"><div><strong>${escapeHtml(translated)}</strong><span>${escapeHtml(row.infinite?et('infiniteDecay'):et('normalDecay'))}</span></div><input class="field" type="number" min="0" max="100" data-native-upkeep-value="${escapeHtml(key)}" value="${escapeHtml(row.value??0)}"/><label class="native-check"><input type="checkbox" data-native-upkeep-infinite="${escapeHtml(key)}" ${row.infinite?'checked':''}/><span>${escapeHtml(et('keepFull'))}</span></label></div>`;}).join('')}</div></section>
       <details class="native-editor-section native-editor-details"><summary><div><div class="eyebrow">${escapeHtml(et('progression'))}</div><h3>${escapeHtml(et('skills'))}</h3></div><span>${skills.length} ${escapeHtml(et('catalogSkills'))}</span></summary><div class="native-skill-grid">${skills.map((row)=>`<label class="native-skill-card"><img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><span>${escapeHtml(row.label||row.id)}</span><small>${escapeHtml(et('experience'))}</small><input class="field" type="number" min="0" step="1" data-native-skill="${escapeHtml(row.id||'')}" value="${escapeHtml(row.xp??0)}"/></label>`).join('')}</div></details>
       <details class="native-editor-section native-editor-details"><summary><div><div class="eyebrow">${escapeHtml(et('travelWorld'))}</div><h3>${escapeHtml(et('mountsMap'))}</h3></div><span>${mounts.filter((row)=>row.unlocked).length} / ${mounts.length} ${escapeHtml(et('mountsUnlocked'))}</span></summary><div class="native-world-controls"><label class="native-editor-field"><span>${escapeHtml(et('equippedMount'))}</span><select class="select" data-native-mount-equipped><option value="None" ${equipped==='None'?'selected':''}>${escapeHtml(et('noMount'))}</option>${mounts.map((row)=>`<option value="${escapeHtml(row.value)}" ${row.value===equipped?'selected':''}>${escapeHtml(row.label)} · ${escapeHtml(row.type)}</option>`).join('')}</select></label><label class="native-check native-map-check"><input type="checkbox" data-native-map-unlocked ${editor.map_unlocked?'checked':''}/><span><strong>${escapeHtml(et('revealMap'))}</strong><small>${escapeHtml(et('oneWayUnlock'))}</small></span></label></div><div class="native-mount-grid">${mounts.map((row)=>`<label class="native-mount-card"><img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><input type="checkbox" data-native-mount="${escapeHtml(row.value)}" ${row.unlocked?'checked':''}/><span><strong>${escapeHtml(row.label)}</strong><small>${escapeHtml(row.type)}</small></span></label>`).join('')}</div></details>
       <details class="native-editor-section native-editor-details"><summary><div><div class="eyebrow">${escapeHtml(et('reputation'))}</div><h3>${escapeHtml(et('vendors'))}</h3></div><span>${vendors.length} ${escapeHtml(et('currentVendors'))}</span></summary><div class="native-vendor-grid">${vendors.map((row)=>`<label class="native-editor-field"><span>${escapeHtml(row.label)}</span><input class="field" type="number" min="0" step="1" data-native-vendor="${escapeHtml(row.tag)}" value="${escapeHtml(row.amount??0)}"/><small>${escapeHtml(et('tiers'))}: ${(row.tiers||[]).map((tier)=>escapeHtml(tier)).join(' · ')}</small></label>`).join('')}</div></details>
-      <div class="native-editor-provenance"><span>${escapeHtml(et('suppliesFields'))}</span><strong>${escapeHtml(et('suppliesUi'))}</strong></div>
+      <div class="native-editor-provenance"><span>${escapeHtml(et('suppliesFields'))}</span><strong>${escapeHtml(et('suppliesUi'))}</strong></div></details>
     </div>`;
   }
 
@@ -2351,9 +2415,6 @@
     const profile = selected?.profile || {};
     const tool = translatedRsdwTool(RSDW_TOOLS.find((entry)=>entry.id===state.rsdwTool) || RSDW_TOOLS[0]);
     const sourceLocal = state.rsdwSource?.mode === 'local';
-    const liveAvatar=state.rsdwNativeDraft?.characterId===selected?.id&&state.rsdwNativeDraft?.avatar?state.rsdwNativeDraft.avatar:payload?.avatar;
-    const avatarUrl = rsdwAvatarUrl(liveAvatar?.url);
-    const avatarReady=sourceLocal&&!!state.rsdwSource?.modelValid&&!!liveAvatar?.url;
     const selector = chars.length ? `<div class="character-selector-strip rsdw-selector">${chars.map((character)=>{
       const meta=character.profile||{}; const portrait=meta.portrait_data; const active=selected?.id===character.id;
       return `<button class="character-mini ${active?'active':''}" data-rsdw-character="${escapeHtml(character.id)}">${portrait?`<img src="${portrait}" alt=""/>`:`<span class="character-mini-avatar">${escapeHtml(initials(meta.label||character.player_name||character.file_name))}</span>`}<span><strong>${escapeHtml(meta.label||character.player_name||character.file_name)}</strong><small>${character.editable?'RSDW editable':'Preserve only'} · ${new Date((character.modified_at||0)*1000).toLocaleDateString()}</small></span></button>`;
@@ -2380,19 +2441,11 @@
     const rawEditSurface = rsdwEditorSurfaceMarkup(selected,payload,tool);
     const editSurface = rawEditSurface;
     const itemEditor=state.rsdwNativeTools['item-editor']||{};
-    const loadout=new Map((itemEditor.sections?.loadout||[]).map((row)=>[Number(row.slot),row]));
-    const studioInventory=new Map((itemEditor.sections?.inventory||[]).map((row)=>[Number(row.slot),row]));
-    const studioHotbar=Array.from({length:8},(_,index)=>{const row=studioInventory.get(index);return `<div class="studio-hotbar-slot ${row?'occupied':''}" title="${escapeHtml(row?.name||`Hotbar ${index+1}`)}"><b>${index+1}</b>${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt=""/><span>${escapeHtml(row.name||'')}</span>`:'<span>Empty</span>'}</div>`;}).join('');
-    const studioNative=(state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.native_editor)||payload?.native_editor||{};
-    const studioNativeSelect=(key,label)=>{const current=studioNative.customization?.[key]||'';const choices=studioNative.catalog?.[key]||[];return `<label>${escapeHtml(label)}<select class="select" data-studio-native-customization="${escapeHtml(key)}">${nativeSelectOptions(choices,current)}</select></label>`;};
-    const studioNativeSwatches=(key,label)=>{const current=studioNative.customization?.[key]||'';const choices=studioNative.catalog?.[key]||[];return `<fieldset class="studio-appearance-swatches"><legend>${escapeHtml(label)}</legend><div>${choices.map((row)=>`<button type="button" class="${String(row.value||'')===String(current)?'active':''}" data-studio-native-customization="${escapeHtml(key)}" data-studio-native-value="${escapeHtml(row.value||'')}" title="${escapeHtml(row.label||row.value||'')}" style="--studio-swatch:${escapeHtml(row.color||'#888')}"></button>`).join('')}</div></fieldset>`;};
-    const studioSocket=(equipment,index)=>{const row=loadout.get(index);const hiddenKey={Head:'helmet',Body:'torso',Legs:'legs',Cape:'cape'}[equipment]||'';const hidden=hiddenKey&&state.rsdwPreviewHidden.has(hiddenKey);return `<button class="studio-equipment-socket ${row?'occupied':'empty'} ${hidden?'hidden-preview':''}" data-studio-equipment-slot="${escapeHtml(equipment)}" data-studio-equipment-index="${index}" aria-label="${escapeHtml(equipment)} equipment slot · ${escapeHtml(row?.name||'Empty')}" title="Right-click or activate to browse compatible ${escapeHtml(equipment)} items">${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/>`:`<span class="studio-socket-glyph">${escapeHtml(equipment.slice(0,1))}</span>`}<span><strong>${escapeHtml(equipment)}</strong><small>${escapeHtml(row?.name||'Empty')}</small><i>${hidden?'Hidden':'Saved'}</i></span>${hiddenKey?`<b class="studio-socket-eye ${hidden?'hidden':''}" data-rsdw-socket-eye="${hiddenKey}" title="${hidden?'Show':'Hide'} ${escapeHtml(equipment)} in preview">${hidden?'◉':'◉'}</b>`:''}</button>`;};
-    const handSocket=(label,slot,upstreamId)=>{const model=liveAvatar?.params?.[slot]||'';const hidden=state.rsdwPreviewHidden.has(slot);return `<button class="studio-equipment-socket preview-hand ${model?'occupied':'empty'} ${hidden?'hidden-preview':''}" data-studio-equipment-slot="${escapeHtml(label)}" data-avatar-hand-slot="${escapeHtml(upstreamId)}" aria-label="${escapeHtml(label)} slot · ${escapeHtml(model||'Empty')}" title="Browse compatible ${escapeHtml(label)} items"><span class="studio-socket-glyph">${label==='Main Hand'?'⚔':'◈'}</span><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(model?String(model).split('/').pop():'Click to choose')}</small><i>Preview mapped through RSDWModel</i></span><b class="studio-socket-eye ${hidden?'hidden':''}" data-rsdw-socket-eye="${slot}" title="${hidden?'Show':'Hide'} ${escapeHtml(label)}">◉</b></button>`;};
     const repositorySlot=String(state.rsdwEquipmentRepositorySlot||'');
     const repositoryCompatible=(row,slot)=>{const text=`${row.equipment||''} ${row.category||''} ${row.name||''} ${row.description||''} ${row.item_data||''}`.toLowerCase();if(slot==='Main Hand')return /(weapon|weapons|tool|sword|axe|maul|staff|wand|bow|crossbow|pickaxe|dagger|spear|mace)/.test(text)&&!/(shield|off[ -]?hand)/.test(text);if(slot==='Off Hand')return /(off[ -]?hand|shield|buckler|focus|orb|weapon|sword|dagger|wand)/.test(text);return String(row.equipment||'')===slot;};
     const repositoryItems=repositorySlot?Object.values(itemEditor.tabs||{}).flatMap((tab)=>tab.items||[]).filter((row)=>repositoryCompatible(row,repositorySlot)&&(!state.rsdwEquipmentSearch||`${row.name||''} ${row.category||''} ${row.description||''}`.toLowerCase().includes(state.rsdwEquipmentSearch.toLowerCase()))).slice(0,80):[];
     const repositoryMarkup=repositorySlot?`<div class="studio-repository-backdrop" id="studio-repository-backdrop"><section class="studio-equipment-repository" role="dialog" aria-label="${escapeHtml(repositorySlot)} equipment repository"><div class="panel-header"><div><div class="eyebrow">Shared Item Editor Repository</div><h2>${escapeHtml(repositorySlot)} Equipment</h2><span class="panel-subtitle">${repositorySlot==='Main Hand'||repositorySlot==='Off Hand'?'Choose a compatible item; the closest available RSDWModel asset is used in the live preview.':'Preview-only until Apply to Character.'} ${repositoryItems.length} compatible current-catalog items shown.</span></div><button class="btn ghost" id="close-studio-repository">×</button></div><div class="studio-repository-search"><input class="field" id="studio-equipment-search" value="${escapeHtml(state.rsdwEquipmentSearch)}" placeholder="Search compatible equipment…"/><button class="btn ghost" id="studio-equipment-search-apply">Search</button></div><div class="studio-repository-grid">${repositoryItems.map((row)=>`<button class="studio-repository-item" draggable="true" data-studio-equipment-item="${escapeHtml(row.item_data)}" data-studio-equipment-name="${escapeHtml(row.name||'')}" data-studio-equipment-type="${escapeHtml(row.equipment)}"><img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.category||row.equipment)}</small></span></button>`).join('')||'<div class="empty-state compact">No compatible catalog items match this search.</div>'}</div></section></div>`:'';
-    const equipmentStudioMarkup=tool.id==='character-editor'?`<section class="panel character-equipment-studio"><div class="panel-header"><div><div class="eyebrow">Character Creator · Item Editor</div><h2>Equipped Items</h2><span class="panel-subtitle">Click or right-click a slot to browse compatible armor and weapons. Armor is staged in the save-backed draft and sent to the live 3D preview.</span></div><span class="status-pill ${itemEditor.sections?'online':'unknown'}">${itemEditor.sections?'ITEM REPOSITORY READY':'LOADS ON FIRST SLOT'}</span></div><div class="character-equipment-groups"><div class="studio-equipment-group"><b>Armor</b><div class="studio-socket-row three">${studioSocket('Head',0)}${studioSocket('Body',1)}${studioSocket('Legs',2)}</div><div class="studio-socket-row two">${studioSocket('Cape',3)}${studioSocket('Jewellery',4)}</div></div><div class="studio-equipment-group"><b>Weapons · live preview</b><div class="studio-socket-row two">${handSocket('Main Hand','rightHand','slot-rightHand')}${handSocket('Off Hand','leftHand','slot-leftHand')}</div><small>Weapon meshes use the closest compatible RSDWModel asset; saved armor uses the authoritative Item Editor loadout.</small></div></div></section>${repositoryMarkup}`:'';
+    const equipmentStudioMarkup=tool.id==='character-editor'?repositoryMarkup:'';
     return `<div class="content rsdw-toolkit-page studio-combined-page">
       <div class="page-header"><div><div class="eyebrow">${escapeHtml(t('profile'))}</div><h1>${escapeHtml(t('characters'))}</h1><div class="page-subtitle">${escapeHtml(et('charactersPageSubtitle'))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-profile">↗ ${escapeHtml(et('openInWindow'))}</button>${sourceBadge}<button class="btn ghost" id="rsdw-refresh-toolkit">${escapeHtml(sourceLocal?et('refreshUpstream'):et('hydrateLocal'))}</button><button class="btn ghost" id="rsdw-import-character">${escapeHtml(et('importProfile'))}</button><button class="btn primary" id="rsdw-export-character">${escapeHtml(et('exportCharacter'))}</button></div></div>
       ${rsdwToolkitTabs()}
@@ -4619,7 +4672,7 @@
       const saveButton=root.querySelector('#rsdw-save-character');
       let nativePreviewTimer=null;
       let nativePreviewSequence=0;
-      const setNativeStatus=(message,type='')=>{if(statusLabel)statusLabel.textContent=message;if(statusDot)statusDot.className=type;if(saveButton)saveButton.disabled=!['dirty','ready'].includes(type);};
+      const setNativeStatus=(message,type='')=>{if(statusLabel)statusLabel.textContent=message;if(statusDot)statusDot.className=type;if(saveButton)saveButton.disabled=!['dirty','ready'].includes(type);nativeCharacterEditor.querySelectorAll('[data-character-save]').forEach((button)=>{button.disabled=!['dirty','ready'].includes(type);});const dirty=nativeCharacterEditor.querySelector('[data-character-dirty]');if(dirty){dirty.classList.toggle('dirty',type==='dirty');dirty.textContent=type==='dirty'?'Unsaved changes':type==='saving'?'Validating…':'Saved';}};
       const collectNativeChanges=()=>{
         const changes={meta:{},customization:{},upkeep:{},skills:{},mount:{equipped:'None',unlocked:[]},vendors:{}};
         nativeCharacterEditor.querySelectorAll('[data-native-meta]').forEach((input)=>{changes.meta[input.dataset.nativeMeta]=input.value;});
@@ -4637,8 +4690,10 @@
         const sequence=++nativePreviewSequence;
         setNativeStatus('Validating native character changes…','saving');
         try{
-          const response=await api.invoke('characters.native.preview',{text:loaded.text,changes:collectNativeChanges()});
+          const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
+          const response=await api.invoke('characters.native.preview',{text:baseText,changes:collectNativeChanges()});
           if(sequence!==nativePreviewSequence)return null;
+          rememberRsdwCharacterSnapshot();
           state.rsdwNativeDraft={...response,characterId:selected.id};
           await syncRsdwAvatarPreview(response?.avatar);
           setNativeStatus('Unsaved changes · live 3D preview refreshed','dirty');
@@ -4648,7 +4703,19 @@
           return null;
         }
       };
-      const scheduleNativePreview=()=>{
+      const scheduleNativePreview=(event)=>{
+        const target=event?.target;
+        if(target&&!target.matches('[data-native-meta], [data-native-customization], [data-native-upkeep-value], [data-native-upkeep-infinite], [data-native-skill], [data-native-mount-equipped], [data-native-mount], [data-native-map-unlocked], [data-native-vendor]'))return;
+        const appearanceCard=target?.closest?.('[data-appearance-card]');
+        if(appearanceCard&&target.tagName==='SELECT'){
+          const option=target.selectedOptions?.[0];
+          const raw=String(option?.value||'Not surfaced');
+          const label=String(option?.textContent||raw);
+          const current=appearanceCard.querySelector('.character-asset-current span');
+          if(current)current.innerHTML=`<strong>${escapeHtml(raw)}</strong><small>${escapeHtml(label!==raw?label:'Authoritative asset name')}</small>`;
+          const range=appearanceCard.querySelector('[data-native-range]');if(range)range.value=String(Math.max(0,target.selectedIndex));
+          const count=appearanceCard.querySelector('.character-asset-range span');if(count)count.textContent=`${target.options.length?target.selectedIndex+1:0} / ${target.options.length}`;
+        }
         nativeCharacterEditor.querySelectorAll('.native-color-choice').forEach((choice)=>choice.classList.toggle('selected',!!choice.querySelector('input:checked')));
         const typeValue=Number(nativeCharacterEditor.querySelector('[data-native-meta="character_type"]')?.value||0);
         const typeIcon=nativeCharacterEditor.querySelector('[data-native-character-type-icon]');
@@ -4657,6 +4724,20 @@
         clearTimeout(nativePreviewTimer);
         nativePreviewTimer=setTimeout(runNativePreview,220);
       };
+      const setCharacterEditorTab=(tab)=>{
+        const next=['appearance','equipment','pose'].includes(tab)?tab:'appearance';
+        state.rsdwCharacterEditorTab=next;
+        nativeCharacterEditor.dataset.characterEditorActiveTab=next;
+        nativeCharacterEditor.querySelectorAll('[data-character-editor-tab]').forEach((button)=>{const active=button.dataset.characterEditorTab===next;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));});
+        nativeCharacterEditor.querySelectorAll('[data-character-tab-panel]').forEach((panel)=>panel.classList.toggle('active',panel.dataset.characterTabPanel===next));
+      };
+      nativeCharacterEditor.querySelectorAll('[data-character-editor-tab]').forEach((button)=>button.addEventListener('click',()=>setCharacterEditorTab(button.dataset.characterEditorTab)));
+      nativeCharacterEditor.querySelectorAll('[data-native-step]').forEach((button)=>button.addEventListener('click',()=>{const key=button.dataset.nativeStep||'';const select=nativeCharacterEditor.querySelector(`select[data-native-customization="${CSS.escape(key)}"]`);if(!select||!select.options.length)return;const delta=Number(button.dataset.nativeStepDelta||0);select.selectedIndex=(select.selectedIndex+delta+select.options.length)%select.options.length;select.dispatchEvent(new Event('change',{bubbles:true}));}));
+      nativeCharacterEditor.querySelectorAll('[data-native-range]').forEach((range)=>range.addEventListener('input',(event)=>{event.stopPropagation();const key=range.dataset.nativeRange||'';const select=nativeCharacterEditor.querySelector(`select[data-native-customization="${CSS.escape(key)}"]`);if(!select)return;select.selectedIndex=Math.max(0,Math.min(select.options.length-1,Number(range.value||0)));const count=range.nextElementSibling;if(count)count.textContent=`${select.options.length?select.selectedIndex+1:0} / ${select.options.length}`;select.dispatchEvent(new Event('change',{bubbles:true}));}));
+      const restoreCharacterSnapshot=async(from,to)=>{if(!from.length)return;clearTimeout(nativePreviewTimer);to.push({draft:cloneRsdwSnapshot(state.rsdwNativeDraft),itemEditor:cloneRsdwSnapshot(state.rsdwNativeTools['item-editor']||null)});const snapshot=from.pop()||{};state.rsdwNativeDraft=cloneRsdwSnapshot(snapshot.draft);if(snapshot.itemEditor)state.rsdwNativeTools['item-editor']=cloneRsdwSnapshot(snapshot.itemEditor);await syncRsdwAvatarPreview(state.rsdwNativeDraft?.avatar||loaded?.avatar);render();};
+      nativeCharacterEditor.querySelectorAll('[data-character-undo]').forEach((button)=>button.addEventListener('click',()=>restoreCharacterSnapshot(state.rsdwCharacterHistory,state.rsdwCharacterFuture)));
+      nativeCharacterEditor.querySelectorAll('[data-character-redo]').forEach((button)=>button.addEventListener('click',()=>restoreCharacterSnapshot(state.rsdwCharacterFuture,state.rsdwCharacterHistory)));
+      nativeCharacterEditor.querySelectorAll('[data-open-item-editor], [data-character-action-slot]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwTool='item-editor';state.rsdwToolSearch='';state.rsdwToolPage=0;render();if(!state.rsdwNativeTools['item-editor'])setTimeout(()=>hydrateNativeRsdwTool('item-editor'),0);}));
       // The MMO-style Appearance rail is a compact facade over the complete
       // save-backed RSDW editor below it. Proxy each choice into the canonical
       // control so preview validation and backup-first writeback retain one
@@ -4704,6 +4785,8 @@
           await selectRsdwCharacter(selected.id,{renderFirst:false});
         }catch(error){setNativeStatus('Writeback blocked · save changed or invalid','error');toast('Character writeback blocked',error.message,'error');}
       });
+      nativeCharacterEditor.querySelectorAll('[data-character-save]').forEach((button)=>button.addEventListener('click',()=>saveButton?.click()));
+      nativeCharacterEditor.querySelectorAll('[data-character-export]').forEach((button)=>button.addEventListener('click',exportToolkitCharacter));
     }
     // Appearance is persistent across Studio tabs.  When the full native
     // editor is not mounted (for example while Item Editor is open), drive
@@ -4952,6 +5035,7 @@
       }));
     }
     root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>select.addEventListener('change',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const id=select.dataset.avatarUpstreamSelect;const value=select.value;await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(id)});if(!select)return false;select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,true);}catch(error){toast('RSDWModel selection unavailable',error.message,'error');}}));
+    root.querySelectorAll('[data-avatar-play]').forEach((button)=>button.addEventListener('click',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;const action=button.dataset.avatarPlay==='pause'?'pause':'play';try{await guest.executeJavaScript(`(()=>{const action=${JSON.stringify(action)};const direct=document.getElementById(action==='pause'?'avatar-animation-pause':'avatar-animation-play');if(direct){direct.click();return true;}const canvas=document.querySelector('canvas');if(action==='pause'&&canvas){canvas.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true}));return true;}return false;})()`,true);}catch(error){toast('Animation control unavailable',error.message,'error');}}));
     root.querySelector('#rsdw-avatar-background')?.addEventListener('change',async(event)=>{state.rsdwAvatarBackground=event.currentTarget.value||'theme';const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;const theme=(state.data?.application?.theme||'dark')==='light'?'#eee8dc':'#050708';try{await guest.executeJavaScript(`(()=>{const colors={theme:${JSON.stringify(theme)},transparent:'transparent',studio:'#34383d',parchment:'#d7c39d',forest:'#173426',black:'#000000',white:'#ffffff'};const color=colors[${JSON.stringify(state.rsdwAvatarBackground)}]||colors.theme;document.documentElement.style.background=color;document.body.style.setProperty('background',color,'important');document.querySelector('#avatar-stage')?.style.setProperty('background',color,'important');return true;})()`,true);}catch(error){toast('Background selection unavailable',error.message,'error');}});
     root.querySelectorAll('[data-rsdw-preview-slot]').forEach((button)=>button.addEventListener('click',()=>{const slot=button.dataset.rsdwPreviewSlot;if(state.rsdwPreviewHidden.has(slot))state.rsdwPreviewHidden.delete(slot);else state.rsdwPreviewHidden.add(slot);render();}));
     root.querySelectorAll('[data-rsdw-socket-eye]').forEach((eye)=>eye.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();const slot=eye.dataset.rsdwSocketEye;if(state.rsdwPreviewHidden.has(slot))state.rsdwPreviewHidden.delete(slot);else state.rsdwPreviewHidden.add(slot);render();}));

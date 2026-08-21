@@ -8,6 +8,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const need = (condition, message) => { if (!condition) throw new Error(`Appy workflow contract: ${message}`); };
 
 const app = read('renderer/app-v2.js');
+const styles = read('renderer/styles.css');
 const responsive = read('renderer/release-responsiveness.css');
 const capture = read('electron/main-v2.cjs');
 const helpManifest = JSON.parse(read('help/manifest.json'));
@@ -41,6 +42,18 @@ need(app.includes('bindPersistentOnce(') && app.includes('const persistentShellB
 need(app.includes('Associated Character Saves') && app.includes('data-profile-character-editor='), 'Profile must list associated Character saves with an editor handoff');
 need(app.includes("state.rsdwTool='character-editor'") && app.includes('await enterRsdwToolkit()'), 'Profile handoff must select the Character Editor through RSDW-L');
 need(responsive.includes('.profile-character-save{') && responsive.includes('.profile-character-worlds{'), 'Profile Character saves must have responsive layout and World chips');
+
+for (const token of [
+  'character-editor-redesign', "[['appearance','Appearance'],['equipment','Equipment'],['pose','Pose']]",
+  "nativeAppearanceSelector(editor,'Head','Face')", "nativeAppearanceSelector(editor,'HairPreset','Hair')",
+  "nativeAppearanceSelector(editor,'FacialHairPreset','Beard')", 'characterEquipmentSurface(liveAvatar)',
+  'Array.from({length:8}', 'data-character-save', 'data-character-export',
+  'data-character-undo', 'data-character-redo', 'data-avatar-upstream-select="avatar-animation-select"',
+]) need(app.includes(token), `Character Editor redesign contract missing ${token}`);
+need(app.includes('nativeCharacterEditor.querySelectorAll(\'[data-character-editor-tab]\')') && app.includes('panel.classList.toggle(\'active\''), 'Character Editor tabs must swap panels in place without recreating the live preview');
+need(app.includes("target&&!target.matches('[data-native-meta], [data-native-customization]"), 'preview-only camera, background, and Pose controls must not dirty the save');
+need(styles.includes('grid-template-columns:minmax(320px,370px) minmax(480px,1fr) minmax(340px,400px)'), 'Character Editor desktop layout must preserve controls, dominant preview, and equipped columns');
+need(styles.includes('.character-action-bar{') && styles.includes('grid-template-columns:repeat(8'), 'Character Editor must render the exact eight-slot action bar');
 
 for (const token of [
   "runOperation('Starting hosted World'",

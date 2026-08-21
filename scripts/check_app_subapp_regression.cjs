@@ -44,7 +44,7 @@ const evidence = {
   placards: ['placardFrontClassificationMarkup'], 'private-worlds': ['privateWorldById'],
   'hosted-worlds': ['serverWorlds()'], 'world-save-editor': ['world.save.editor.write'],
   manifests: ['sync_manifest'], 'world-map': ['ensureAshenfallMap'],
-  'character-creator': ['character-equipment-studio'], 'character-3d': ['rsdw-avatar-webview'],
+  'character-creator': ['character-editor-redesign'], 'character-3d': ['rsdw-avatar-webview'],
   appearance: ['nativeAppearanceField'], inventory: ['nativeItemEditorMarkup'],
   'modded-item-repository': ['openCustomItemRepository'],
   'character-editor': ['nativeCharacterEditorMarkup'], 'item-editor': ['characters.native.tool.preview'],

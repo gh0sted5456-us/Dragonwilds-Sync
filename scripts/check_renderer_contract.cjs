@@ -109,7 +109,7 @@ assert(sha256('renderer/assets/navigation/rsdw-l.png') === '6fca88b1bdfe9180bb3e
   'The RSDW-L navbar icon must match the supplied approved artwork.');
 assertIco('renderer/assets/dragonwilds_icon.ico');
 assert(sha256('renderer/assets/dragonwilds_icon.ico') === '3ccd660ed77e252940fce0a53e0938d897b4f0ff0bcb71fee4bba41469fe5e8e',
-  'The RSDragonwilds navbar icon must remain the canonical game executable icon.');
+  'The Dragonwilds navbar icon must remain the canonical game executable icon.');
 
 const platformAssets = {
   'renderer/assets/platforms/runeschema.png': '379a7b239490eb8fcc01ff6bafdaf291f09393ab30106658af02bf96c716b105',

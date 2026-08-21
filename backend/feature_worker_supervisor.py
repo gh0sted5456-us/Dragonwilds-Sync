@@ -388,8 +388,10 @@ class FeatureWorkerSupervisor:
                 except Exception as exc:
                     rows.append({"domain": domain, "ready": False, "error": str(exc)[:4000]})
         rows.sort(key=lambda row: selected.index(row["domain"]))
+        from system_process_catalog import process_catalog
+        application_catalog = process_catalog()["applications"]
         return {"ready": all(row.get("ready") for row in rows), "prepared": rows, "startupTier": "eager" if eager_only else "requested",
-                "applications": [{"id": app_id, **APPLICATION_IDENTITIES[app_id]} for app_id in selected_apps],
+                "applications": [{"id": app_id, **application_catalog[app_id]} for app_id in selected_apps],
                 "readyCount": sum(1 for row in rows if row.get("ready")), "requested": len(rows)}
 
     def shutdown(self) -> dict:
@@ -457,11 +459,13 @@ class FeatureWorkerSupervisor:
             row.setdefault("purpose", metadata["purpose"])
             row["localLeaseCount"] = len(self._leases.get(domain) or set())
             rows.append(row)
+        from system_process_catalog import process_catalog
+        application_catalog = process_catalog()["applications"]
         return {
             "schema": FEATURE_SUPERVISOR_SCHEMA,
             "workerProtocolVersion": FEATURE_PROTOCOL_VERSION,
             "idleSeconds": self.idle_seconds,
-            "applications": [{"id": app_id, **metadata} for app_id, metadata in APPLICATION_IDENTITIES.items()],
+            "applications": [{"id": app_id, **application_catalog[app_id]} for app_id in APPLICATION_IDENTITIES],
             "workers": rows,
             "liveCount": sum(1 for row in rows if row.get("live")),
             "attachedCount": sum(1 for row in rows if row.get("attached")),

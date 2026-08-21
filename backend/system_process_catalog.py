@@ -10,12 +10,39 @@ anything.  Keeping the inventory executable makes architectural drift testable.
 
 from feature_worker_protocol import APPLICATION_IDENTITIES, FEATURE_WORKER_DOMAINS
 
-CATALOG_SCHEMA = "DragonwildsSync.SystemProcessCatalog.v1"
+CATALOG_SCHEMA = "DragonwildsSync.SystemProcessCatalog.v2"
+
+
+# Appys are renderer workspaces, not independent operating-system processes.
+# Keeping their actual renderer parent explicit prevents a navigation surface
+# from being mistaken for a lifecycle authority. Overrides identify real
+# secondary/sandboxed renderer processes owned by Electron main.
+APPLICATION_PARENT_COMPONENTS = {
+    "shell": "main-renderer",
+    "worlds": "main-renderer",
+    "characters": "main-renderer",
+    "rsdw-l": "main-renderer",
+    "mods": "main-renderer",
+    "rsdragonwilds": "main-renderer",
+    "sync": "main-renderer",
+    "webgui": "main-renderer",
+    "system": "main-renderer",
+}
+
+SUBAPP_PARENT_OVERRIDES = {
+    ("shell", "in-app-windows"): "managed-dialog-renderer",
+    ("shell", "quick-launch"): "quick-renderer",
+    ("characters", "character-3d"): "rsdw-viewer-renderer",
+}
+
+
+def _domain_consumers(domain: str) -> list[str]:
+    return [app_id for app_id, row in APPLICATION_IDENTITIES.items() if domain in row.get("domains", [])]
 
 
 def _entry(kind: str, owner: str, parent: str | None, lifecycle: str, purpose: str, *,
-           authority: str = "none", optional: bool = False) -> dict:
-    return {
+           authority: str = "none", optional: bool = False, consumers: list[str] | None = None) -> dict:
+    value = {
         "kind": kind,
         "owner": owner,
         "parent": parent,
@@ -24,6 +51,9 @@ def _entry(kind: str, owner: str, parent: str | None, lifecycle: str, purpose: s
         "authority": authority,
         "optional": bool(optional),
     }
+    if consumers:
+        value["consumers"] = list(dict.fromkeys(consumers))
+    return value
 
 
 SYSTEM_COMPONENTS = {
@@ -35,19 +65,20 @@ SYSTEM_COMPONENTS = {
     "managed-dialog-renderer": _entry("renderer-process", "shell", "electron-main", "window", "Theme-shared detachable in-app editor/dialog host"),
     "internal-route-frame": _entry("renderer-surface", "shell", "main-renderer", "workspace", "Cached same-origin route workspace sharing the parent preload bridge"),
     "external-browser-renderer": _entry("sandboxed-renderer-process", "shell", "electron-main", "window", "Untrusted HTTPS/Nexus browser with no launcher bridge", optional=True),
-    "rsdw-viewer-renderer": _entry("sandboxed-renderer-process", "rsdw-l", "main-renderer", "subapp", "Renderer-only character preview", optional=True),
+    "rsdw-viewer-renderer": _entry("sandboxed-renderer-process", "rsdw-l", "main-renderer", "subapp", "Renderer-only character preview", optional=True, consumers=["characters", "rsdw-l"]),
 
     # Disposable compute isolation. One authenticated process per active domain.
     **{
         f"feature-worker:{domain}": _entry(
-            "os-process", next((app for app, row in APPLICATION_IDENTITIES.items() if domain in row.get("domains", [])), "system"),
+            "os-process", "shell",
             "control-service", "leased-idle", str(meta.get("purpose") or meta.get("label") or domain),
+            consumers=_domain_consumers(domain),
         )
         for domain, meta in FEATURE_WORKER_DOMAINS.items()
     },
 
     # Per-World runtime tree. The worker is supervised; runtime authority stays in Core.
-    "world-runtime-worker": _entry("os-process", "rsdragonwilds", "control-service", "per-active-hosted-world", "Authenticated dedicated runtime and Sync-share execution boundary"),
+    "world-runtime-worker": _entry("os-process", "rsdragonwilds", "control-service", "per-active-hosted-world", "Authenticated dedicated runtime and Sync-share execution boundary", consumers=["rsdragonwilds", "sync"]),
     "dedicated-server": _entry("external-os-process", "rsdragonwilds", "world-runtime-worker", "world-runtime", "RuneScape: Dragonwilds dedicated server", authority="game-runtime"),
     "dragonwilds-client": _entry("external-os-process", "rsdragonwilds", "control-service", "user-launch", "RuneScape: Dragonwilds player client", authority="game-runtime"),
     "orphan-watchdog": _entry("bounded-helper-process", "rsdragonwilds", "world-runtime-worker", "world-runtime", "Terminates a dedicated process if its owning worker catastrophically exits"),
@@ -73,8 +104,24 @@ SYSTEM_COMPONENTS = {
 
 
 def process_catalog() -> dict:
-    applications = {key: dict(value) for key, value in APPLICATION_IDENTITIES.items()}
     components = {key: {"id": key, **dict(value)} for key, value in SYSTEM_COMPONENTS.items()}
+    applications = {}
+    for app_id, metadata in APPLICATION_IDENTITIES.items():
+        parent = APPLICATION_PARENT_COMPONENTS[app_id]
+        subapp_parents = {
+            subapp: SUBAPP_PARENT_OVERRIDES.get((app_id, subapp), parent)
+            for subapp in metadata.get("subapps", [])
+        }
+        linked_components = [
+            component_id for component_id, component in components.items()
+            if component.get("owner") == app_id or app_id in component.get("consumers", [])
+        ]
+        applications[app_id] = {
+            **dict(metadata),
+            "parentProcess": parent,
+            "subappParents": subapp_parents,
+            "components": linked_components,
+        }
     return {
         "schema": CATALOG_SCHEMA,
         "authority": {
@@ -88,4 +135,7 @@ def process_catalog() -> dict:
     }
 
 
-__all__ = ["CATALOG_SCHEMA", "SYSTEM_COMPONENTS", "process_catalog"]
+__all__ = [
+    "CATALOG_SCHEMA", "APPLICATION_PARENT_COMPONENTS", "SUBAPP_PARENT_OVERRIDES",
+    "SYSTEM_COMPONENTS", "process_catalog",
+]

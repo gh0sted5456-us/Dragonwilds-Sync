@@ -84,7 +84,8 @@ APPLICATION_IDENTITIES = {
         "domains": ["mod-library", "world-management"],
     },
     "rsdragonwilds": {
-        "label": "RSDragonwilds",
+        "label": "Dragonwilds",
+        "description": "Singleplayer, Co-Op and Dedicated Server lifecycle surfaces; stable internal ID retained for compatibility",
         "subapps": ["singleplayer", "co-op", "dedicated-server"],
         "domains": ["world-management", "update"],
         "runtimeAuthority": "AuthoritativeRuntimeManager",

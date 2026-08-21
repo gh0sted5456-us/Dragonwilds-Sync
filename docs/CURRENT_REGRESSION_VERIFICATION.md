@@ -11,6 +11,7 @@ release gates in [`test-matrix.json`](test-matrix.json).
 | JavaScript syntax | PASS | Renderer, Electron, website, Cloudflare, and contract-runner sources parsed individually |
 | Renderer/release contracts | PASS | Navigation, Appy workflow, V2/V3, WebGUI, phases 2–6, runtime-worker, and public-list contracts |
 | Appy/subapp inventory | PASS | 9 application identities and all 46 registered subapps have current implementation evidence outside the identity registry |
+| Code/process ownership | PASS | 56 renderer assets, 26 website sources, 99 backend modules, every Appy/subapp parent, every process parent/owner/consumer, compatibility-only preload, and diagnostic worker RPCs are classified and linked |
 | Backend cross-platform matrix | 49 PASS / 5 ENVIRONMENT-BLOCKED | Every non-listener suite in the 54-file Ubuntu matrix passed in isolated AppData |
 | Character Editor | PASS | Discovery, editable hydration, native preview, inventory refinement, two unique backups, optimistic SHA guard, invalid-JSON preservation, verified write, and immediate reload |
 | Full Item Repository | PASS | Canonical-manifest fallback, vanilla/custom tabs, create/edit/list, invalid-stack rejection, portable icon export, delete/import restore, item refinement, and spawner identity propagation |
@@ -60,6 +61,14 @@ desktop gate via `npm run test:navigation-swaps`.
    records synchronous render and two-frame click-to-settled p50/p95 values from
    `window.__DWSYNC_SWAP_METRICS__`; the source matrix enforces the lifecycle and
    instrumentation contract on every automated run.
+9. `SystemProcessCatalog.v2` now publishes a real renderer parent and complete
+   subapp-parent/component links for all Appys. Shared feature workers list all
+   consumers instead of inheriting the first matching Appy as a misleading
+   owner, and the stale “RSDragonwilds” display label is now “Dragonwilds”.
+10. `npm run check:ownership` prevents runtime, build-assembled, compatibility,
+    and diagnostic-only source from becoming silently orphaned. The audit found
+    no file safe to delete; apparent website/Python orphans are active Pages or
+    PyInstaller assembly inputs.
 
 ## Still required before release certification
 

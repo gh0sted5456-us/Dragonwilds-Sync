@@ -15,7 +15,7 @@ const helpManifest = JSON.parse(read('help/manifest.json'));
 const navRoutes = ['world-management', 'characters-app', 'mods-app', 'rsdw-launcher', 'webhost', 'help', 'settings'];
 for (const route of navRoutes) need(app.includes(`navButton('${route}'`), `${route} must remain a first-class navigation entry`);
 need(app.includes("event.target?.closest?.('[data-route]')") && app.includes('handleRouteNavigation(el.dataset.route)'), 'all Appy buttons must use the persistent delegated route handler');
-need(!app.includes("navButton('rsdragonwilds-app'"), 'RSDragonwilds/Hosting must not reappear as a duplicate navigation item');
+need(!app.includes("navButton('rsdragonwilds-app'"), 'Dragonwilds/Hosting must not reappear as a duplicate navigation item');
 need(app.includes("navButton('world-management',navIconAsset('assets/dragonwilds_icon.ico'),'Dragonwilds'"), 'Dragonwilds must retain the canonical game icon');
 for (const token of [
   "navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.png')",

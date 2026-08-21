@@ -6,7 +6,7 @@
   "test_matrix": "docs/test-matrix.json",
   "authorities": {
     "desktop_lifecycle": "electron/main.cjs + electron/main-v2.cjs",
-    "renderer_boundary": "electron/preload.cjs + electron/preload-v2.cjs",
+    "renderer_boundary": "electron/preload-v2.cjs (live sandbox preload); electron/preload.cjs (historical compatibility alias)",
     "trusted_core": "backend/dragonwilds_service.py",
     "desired_state": "backend/profile_store.py + backend/profile_settings.py",
     "secrets": "backend/secret_store.py",

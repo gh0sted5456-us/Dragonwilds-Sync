@@ -5,7 +5,7 @@ This file defines every system that must be covered by the authoritative test ma
 | ID | System | Authoritative owner | Primary implementation |
 |---|---|---|---|
 | `SHELL` | Electron lifecycle and OS integration | Electron main process | `electron/bootstrap.cjs`, `electron/main.cjs`, `electron/main-v2.cjs` |
-| `BRIDGE` | Renderer/preload/IPC boundary | Electron preload + main | `electron/preload.cjs`, `electron/preload-v2.cjs`, `dragonwilds:invoke` |
+| `BRIDGE` | Renderer/preload/IPC boundary | Electron preload + main | live `electron/preload-v2.cjs`, compatibility-only `electron/preload.cjs`, `dragonwilds:invoke` |
 | `UI` | Full desktop renderer | Renderer | `renderer/app.js`, `renderer/app-v2.js`, release overlays |
 | `QUICK` | Quick/Minimal presentation | Electron argument adapter + renderer | `electron/main.cjs`, `electron/bootstrap.cjs`, renderer Quick paths |
 | `CORE` | Trusted JSON-RPC service | Python Core | `backend/dragonwilds_service.py` and compatibility wrappers |
@@ -47,6 +47,12 @@ Each active hosted World may have one compatible World Runtime Worker. The worke
 ### Disposable feature plane
 
 Feature workers handle bounded expensive domains such as map/directory, save studio, mod library, exchange/maintenance, update, client-sync, and diagnostics. They have leases, idle shutdown, authenticated local IPC, bounded results, and no independent durable authority.
+
+### Appy and subapp parents
+
+Appys are workspaces inside `main-renderer`; they are not independent lifecycle authorities. `application.process_catalog` publishes a `parentProcess`, a complete `subappParents` map, and all linked `components` for every Appy. Quick Launch is parented by `quick-renderer`, detached in-app windows by `managed-dialog-renderer`, and the Character 3D preview by `rsdw-viewer-renderer`. Shared feature workers remain children of `control-service` and list every consuming Appy instead of claiming the first consumer as their owner.
+
+Every component parent, owner, consumer, Appy parent, subapp parent, and feature-domain consumer link is checked by `backend/test_system_process_catalog.py`. Source/build liveness is checked by `npm run check:ownership`.
 
 ## Required coverage dimensions
 

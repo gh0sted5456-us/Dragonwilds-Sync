@@ -2,7 +2,7 @@ name: Deploy Dragonwilds Sync website
 
 on:
   push:
-    branches: [main]
+    branches: [webpage]
     paths:
       - 'website/**'
       - 'help/**'

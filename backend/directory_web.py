@@ -95,7 +95,12 @@ def public_browser_html(*, remote_admin_enabled: bool = False) -> bytes:
 def admin_login_html() -> bytes:
     page = _legacy_admin_login_html()
     page = page.replace(b'class="login-intro"><img src="/assets/icon.png"', b'class="login-intro"><img src="/assets/platforms/remote-login.svg"', 1)
-    script = b'''<script id="dws-prefill-world">(()=>{const world=new URLSearchParams(location.search).get('world')||'';const input=document.getElementById('world');if(input&&world){input.value=world;input.readOnly=true;document.getElementById('account')?.focus();}})();</script>'''
+    page = page.replace(
+        b'<label>World Name<input class="field" id="world" autocomplete="organization" required></label>',
+        b'<label>World Name<select class="field" id="world" autocomplete="organization" required><option value="">Loading hosted profiles...</option></select></label>',
+        1,
+    )
+    script = b'''<script id="dws-prefill-world">(async()=>{const select=document.getElementById('world'),message=document.getElementById('message'),wanted=new URLSearchParams(location.search).get('world')||'';if(!select)return;try{const response=await fetch('/api/v1/admin/profiles',{cache:'no-store',headers:{Accept:'application/json'}}),data=await response.json();if(!response.ok)throw Error(data.error||'Hosted profiles are unavailable');const profiles=Array.isArray(data.profiles)?data.profiles:[];select.replaceChildren(new Option(profiles.length?'Select a hosted World':'No hosted World profiles are available',''));for(const profile of profiles){const name=String(profile.world_name||'').trim();if(!name)continue;const option=new Option(name+(profile.running?' (running)':''),name);option.dataset.profileId=String(profile.profile_id||'');select.appendChild(option)}if(wanted&&profiles.some(profile=>String(profile.world_name||'')===wanted))select.value=wanted;if(select.value)document.getElementById('account')?.focus()}catch(error){select.replaceChildren(new Option(wanted||'Hosted profiles unavailable',wanted));if(wanted)select.value=wanted;if(message)message.textContent=error.message||String(error)}})();</script>'''
     return page.replace(b"</body>", script + b"</body>", 1)
 
 

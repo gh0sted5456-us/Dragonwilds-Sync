@@ -7,7 +7,6 @@
   scrollbar-gutter: stable;
 }
 
-.mod-clean-row,
 .config-file-row,
 .ledger-row,
 .phase6-community-row,
@@ -34,6 +33,14 @@ html[data-dws-interacting="1"] .config-file-row,
 html[data-dws-interacting="1"] .settings-section,
 html[data-dws-interacting="1"] .recommended-mod-card {
   transition: none !important;
+}
+
+/* Chromium can enter a pathological relayout cycle when content-visibility is
+   applied to draggable grid rows nested inside open <details> panels. Mod
+   managers are already paged by profile and stay small enough to paint eagerly. */
+.mod-clean-row {
+  content-visibility: visible;
+  contain: none;
 }
 
 /* Do not ask the compositor to animate decorative filters while the user is

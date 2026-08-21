@@ -56,6 +56,7 @@ PUBLIC_OPENAPI = {
         "/api/v1/schema": {"get": {"summary": "Read field and capability metadata"}},
         "/api/v1/openapi.json": {"get": {"summary": "Read this OpenAPI description"}},
         "/api/v1/admin/login": {"post": {"summary": "Link an exact World with its Server Admin Password (same-origin)"}},
+        "/api/v1/admin/profiles": {"get": {"summary": "List hosted World profiles available to Remote Login (same-origin)"}},
         "/api/v1/admin/session": {"get": {"summary": "Read the linked World management session (same-origin)"}},
         "/api/v1/admin/action": {"post": {"summary": "Submit an allow-listed World command (same-origin + CSRF)"}},
     },
@@ -711,6 +712,26 @@ class DirectoryHost:
         if world_id: rows = [row for row in rows if str(row.get("world_id") or "") == str(world_id)]
         return rows[-200:][::-1]
 
+    def remote_login_profiles(self) -> list[dict]:
+        """Return only the safe identity needed to choose a hosted profile."""
+        rows: list[dict] = []
+        if self.public_worlds_provider:
+            try:
+                candidates = self.public_worlds_provider() or []
+            except Exception as exc:
+                self._event("remote_login_profiles", ok=False, detail=str(exc))
+                candidates = []
+            for source in candidates:
+                if not isinstance(source, dict):
+                    continue
+                profile_id = str(source.get("id") or source.get("profile_id") or "").strip()[:120]
+                world_name = str(source.get("world_name") or source.get("name") or "").strip()[:160]
+                if not profile_id or not world_name:
+                    continue
+                rows.append({"profile_id": profile_id, "world_name": world_name, "running": bool(source.get("online"))})
+        unique = {str(row["profile_id"]): row for row in rows}
+        return sorted(unique.values(), key=lambda row: (not row["running"], str(row["world_name"]).casefold()))
+
     def remote_login(self, world_name: str, username: str, password: str, remote_ip: str, user_agent: str) -> tuple[str, dict]:
         now = time.time(); key = f"{remote_ip}|{str(world_name).casefold()}|{str(username).casefold()}"
         attempts = [stamp for stamp in self.remote_login_attempts.get(key, []) if now - stamp < 600]
@@ -1132,6 +1153,9 @@ class DirectoryHost:
                 if path.startswith("/servers/"):
                     self._send(detail_html(urllib.parse.unquote(path.split("/servers/", 1)[1])), "text/html; charset=utf-8", cors=False); return
                 if path == "/admin/login": self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
+                if path == "/api/v1/admin/profiles":
+                    if not self._same_origin(): self._json({"error": "same-origin profile selection required"}, 403, cors=False); return
+                    self._json({"profiles": controller.remote_login_profiles()}, cors=False); return
                 if path == "/admin/server":
                     if not self._remote_session():
                         self.send_response(302); self.send_header("Location", "/admin/login"); self.send_header("Content-Length", "0"); self.end_headers(); return

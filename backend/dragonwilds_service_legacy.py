@@ -26,7 +26,7 @@ from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_prof
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mods,
                            server_root_for_profile, server_install_config, write_dedicated_config)
-from shared_mod_repository import refresh_repository, publish_from_profile, deploy_entry
+from shared_mod_repository import public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
@@ -2504,6 +2504,8 @@ def handle(method: str, params: dict) -> object:
         return {"result": result, "state": public_state(state)}
 
     if method == "mod.repository.list":
+        if not bool(params.get("refresh", False)):
+            return {"repository": cached_mod_repository(), "state": public_state(state)}
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         local_active = str(state.setdefault("client", {}).get("live_world_id") or "").strip()
         if local_active and game_dir and Path(game_dir).exists():

@@ -125,7 +125,10 @@
   function applyNavigationCritical(root = document) {
     root.querySelectorAll('[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
     root.querySelectorAll('[data-external-tab]').forEach(hideLegacyEntry);
-    root.querySelectorAll('#detach-private-world, #detach-server-world').forEach((button)=>{button.textContent='▣ Open Placard';button.title='Open an application-owned placard window without reloading Dragonwilds Sync';});
+    root.querySelectorAll('#detach-private-world, #detach-server-world').forEach((button)=>{
+      if(button.textContent!=='▣ Open Placard')button.textContent='▣ Open Placard';
+      button.title='Open an application-owned placard window without reloading Dragonwilds Sync';
+    });
 
     root.querySelectorAll('button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
       const text = normalize(node.textContent);

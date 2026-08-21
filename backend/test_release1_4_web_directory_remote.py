@@ -88,6 +88,12 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b"view_map" in portal and b"Live Ashenfall player map" in portal
             assert b'Request Permission' in portal and b'maintenance_update' in portal
             assert b'/assets/platforms/remote-login.svg' in login_portal
+            assert b'<select class="field" id="world"' in login_portal
+            assert b"/api/v1/admin/profiles" in login_portal
+            with urllib.request.urlopen(base + "/api/v1/admin/profiles") as response:
+                login_profiles = json.load(response)["profiles"]
+            assert login_profiles and all(row["world_name"] == "Ashen Home" for row in login_profiles)
+            assert login_profiles[0]["running"] is True
             assert b'/assets/platforms/windows.svg' in portal and b'/assets/platforms/linux.svg' in portal
             assert b'https://github.com/gh0sted5456-us/Dragonwilds-Sync' in portal
             assert b'https://www.paypal.me/luke0494' in portal

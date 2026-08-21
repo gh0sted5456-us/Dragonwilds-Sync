@@ -82,8 +82,12 @@
     nexusTarget: null,
     nexusPending: null,
     modRepository: null,
+    modRepositoryLoading: false,
+    modRepositoryError: '',
     nexusAutoCheckAt: {},
     showNexusIntegration: false,
+    integrationStatus: null,
+    integrationsLoading: false,
     detachedWindows: [],
     busy: new Set(),
     defenderStatus: null,
@@ -119,6 +123,7 @@
     backgroundRefreshBusy: false,
     backgroundRefreshAt: { worlds:0, runtime:0, directory:0, minimal:0 },
     rsdwSection: 'character',
+    rsdwlToolLoading: '',
     rsdwTool: 'character-editor',
     rsdwMapWorldId: '',
     rsdwWorlds: [],
@@ -277,18 +282,65 @@
     }catch(_){return value;}
   }
 
+  let rsdwAvatarPreviewSequence=0;
   async function syncRsdwAvatarPreview(avatarState) {
+    const sequence=++rsdwAvatarPreviewSequence;
     const guest=root.querySelector('#rsdw-avatar-webview');
     const next=rsdwAvatarUrl(avatarState?.url);
     if(!guest||!next)return false;
     let params={};
     try{params=Object.fromEntries(new URLSearchParams(new URL(next).hash.replace(/^#/,'')));}catch(_){params=avatarState?.params||{};}
     try{
-      const result=await guest.executeJavaScript(`(async()=>{const params=${JSON.stringify(params)};if(!document.querySelector('canvas'))return false;const wait=(ms)=>new Promise(resolve=>setTimeout(resolve,ms));const sex=params.sex==='F_MED'?'sex-f':'sex-m';document.getElementById(sex)?.click();await wait(30);for(const slot of ['baseBody','baseHead','hair','beard','torso','legs','helmet','cape','rightHand','leftHand']){const select=document.getElementById('slot-'+slot);if(!select)continue;const wanted=params[slot]||'';if(wanted&&![...select.options].some(option=>option.value===wanted))continue;if(select.value===wanted)continue;select.value=wanted;select.dispatchEvent(new Event('change',{bubbles:true}));await wait(45);}for(const [role,key] of [['skin','skinColor'],['hair','hairColor'],['eyes','eyeColor']]){const wanted=params[key];if(!wanted)continue;const button=document.querySelector('#'+(role==='eyes'?'eye':role)+'-swatches .swatch[data-color="'+CSS.escape(wanted)+'"]');button?.click();await wait(35);}return true;})()`,true);
+      const result=await guest.executeJavaScript(`(async()=>{const params=${JSON.stringify(params)};if(!document.querySelector('canvas'))return false;if(typeof window.dwsApplyAvatarParams==='function')return window.dwsApplyAvatarParams(params);const sex=params.sex==='F_MED'?'sex-f':'sex-m';document.getElementById(sex)?.click();for(const slot of ['baseBody','baseHead','hair','beard','torso','legs','helmet','cape','rightHand','leftHand']){const select=document.getElementById('slot-'+slot);if(!select)continue;const wanted=params[slot]||'';if(wanted&&![...select.options].some(option=>option.value===wanted))continue;if(select.value===wanted)continue;select.value=wanted;select.dispatchEvent(new Event('change',{bubbles:true}));}for(const [role,key] of [['skin','skinColor'],['hair','hairColor'],['eyes','eyeColor']]){const wanted=params[key];if(!wanted)continue;document.querySelector('#'+(role==='eyes'?'eye':role)+'-swatches .swatch[data-color="'+CSS.escape(wanted)+'"]')?.click();}return true;})()`,true);
+      if(sequence!==rsdwAvatarPreviewSequence)return false;
       if(result)return true;
     }catch(_){/* Fall back to navigation if the local model has not initialized. */}
-    if(guest.src!==next)guest.src=next;
+    if(sequence===rsdwAvatarPreviewSequence&&guest.src!==next)guest.src=next;
     return false;
+  }
+
+  function objectRows(value) {
+    return Array.isArray(value) ? value.filter((row)=>row&&typeof row==='object'&&!Array.isArray(row)) : [];
+  }
+
+  function normalizeModRepositoryResponse(response) {
+    const repository=response?.repository&&typeof response.repository==='object'?response.repository:response;
+    if(!repository||typeof repository!=='object'||Array.isArray(repository))return {root:'',entries:[],counts:{}};
+    return {...repository,entries:objectRows(repository.entries),counts:repository.counts&&typeof repository.counts==='object'?repository.counts:{}};
+  }
+
+  async function loadModRepository({force=false,paint=true}={}) {
+    if(state.modRepositoryLoading)return state.modRepository;
+    state.modRepositoryLoading=true;state.modRepositoryError='';
+    if(paint&&state.route==='settings'&&state.settingsTab==='mods')render();
+    try{
+      const response=await api.invoke('mod.repository.list',{refresh:force});
+      state.modRepository=normalizeModRepositoryResponse(response);
+      if(response?.state)state.data=response.state;
+      return state.modRepository;
+    }catch(error){state.modRepositoryError=error.message||String(error);throw error;}
+    finally{state.modRepositoryLoading=false;if(paint&&state.route==='settings'&&state.settingsTab==='mods')render();}
+  }
+
+  let integrationsHydrationPromise=null;
+  async function hydrateIntegrations({force=false}={}) {
+    if(integrationsHydrationPromise&&!force)return integrationsHydrationPromise;
+    state.integrationsLoading=true;
+    integrationsHydrationPromise=(async()=>{
+      const results=await Promise.allSettled([
+        window.dragonwilds.nexusStatus?.(),
+        window.dragonwilds.discordStatus?.(),
+        api.invoke('application.rsdw.status',{}),
+      ]);
+      if(results[0]?.status==='fulfilled')state.nexusStatus=results[0].value;
+      if(results[1]?.status==='fulfilled')state.discordStatus=results[1].value;
+      state.integrationStatus={
+        nexus:results[0]?.status==='fulfilled',discord:results[1]?.status==='fulfilled',rsdw:results[2]?.status==='fulfilled'?results[2].value:null,
+        errors:results.filter((row)=>row.status==='rejected').map((row)=>row.reason?.message||String(row.reason||'Integration unavailable')),
+      };
+      return state.integrationStatus;
+    })().finally(()=>{state.integrationsLoading=false;integrationsHydrationPromise=null;if(state.route==='settings'&&state.settingsTab==='integrations')render();});
+    return integrationsHydrationPromise;
   }
 
   function rsdwAssetUrl(path, fallback = '') {
@@ -734,13 +786,9 @@
     if (next === 'characters-app') { await enterRsdwToolkit(); return; }
     if (next === 'mods-app') {
       if (!(state.route === 'settings' && state.settingsTab === 'mods')) navigateTo('settings', { settingsTab:'mods' });
-      if (!state.modRepository) {
-        try { state.modRepository=await api.invoke('mod.repository.list',{}); if(state.route==='settings'&&state.settingsTab==='mods')render(); }
-        catch(error){ toast('Mod repository scan failed',error.message,'error'); }
-      }
       return;
     }
-    if (next === 'rsdragonwilds-app') { await handleRouteNavigation('servers'); return; }
+    if (next === 'rsdragonwilds-app') { state.worldManagementTab='server-setup';await handleRouteNavigation('world-management'); return; }
     if (next === 'servers' && next === state.route && state.serversTab !== 'worlds') { state.serversTab = 'worlds'; render(); return; }
     if (next === 'servers') state.serversTab = 'worlds';
     if (next === 'webhost') state.webhostTab = 'live';
@@ -1018,18 +1066,20 @@
     }
   }
 
-  async function refreshServerConsole(world = activeServerWorld(), quiet = true) {
+  async function refreshServerConsole(world = activeServerWorld(), quiet = true, {paint=true} = {}) {
     if (!world) return;
     try {
       const [catalog,unified]=await Promise.all([
         api.invoke('server.console.catalog',{id:world.id,limit:200}),
         api.invoke('server.console.unified',{id:world.id,limit:500}),
       ]);
-      state.serverConsole[world.id]={...catalog,unified,history:unified?.entries||catalog?.history||[]};
-      render();
+      const commands=objectRows(catalog?.catalog?.commands);
+      const history=objectRows(unified?.entries||catalog?.history);
+      state.serverConsole[world.id]={...catalog,catalog:{...(catalog?.catalog||{}),commands},unified,history};
+      if(paint)render();
     } catch (error) {
       state.serverConsole[world.id] = { error:error.message, catalog:{commands:[]}, history:[] };
-      render();
+      if(paint)render();
       if (!quiet) toast('RSDWToolkit console unavailable', error.message, 'error');
     }
   }
@@ -1051,7 +1101,7 @@
       if (force || !status?.data_url) status = await api.invoke('application.map.refresh', { force });
       state.mapCacheStatus = status || null;
       if (!state.mapOverlays) {
-        try { state.mapOverlays = await api.invoke('application.map.overlays', {}); } catch (_) { state.mapOverlays = { points: [], categories: {} }; }
+        try { const overlays=await api.invoke('application.map.overlays', {});state.mapOverlays={...(overlays||{}),points:objectRows(overlays?.points),categories:overlays?.categories&&typeof overlays.categories==='object'?overlays.categories:{}}; } catch (_) { state.mapOverlays = { points: [], categories: {} }; }
       }
       if (world && status?.data_url) {
         const isPrivate = world.kind === 'singleplayer' || !!privateWorldById(world.id);
@@ -1396,6 +1446,21 @@
     state.rsdwCharacterCache[selected.id]={payload:state.rsdwCharacterPayload,tools:state.rsdwNativeTools};
   }
 
+  async function prepareRsdwlServerTool(tool, world) {
+    const cacheKey=`${world.id}:${tool}`;
+    if(tool==='map'){
+      await Promise.all([refreshServerPlayers(world,true,false),ensureAshenfallMap({world})]);
+    }else if(tool==='console'){
+      await refreshServerConsole(world,true,{paint:false});
+    }else if(tool==='spawner'){
+      await refreshServerPlayers(world,true,false);
+      await refreshServerSpawner(world,{quiet:true});
+    }else{
+      throw new Error(`Unsupported RSDW-L server tool: ${tool}`);
+    }
+    state.serverTabLoadedAt[cacheKey]=Date.now();
+  }
+
   const APPY_WARM_STORAGE_KEY='dragonwilds-sync-last-appy';
   const appyWarmPromises=new Map();
   const appyWarmTimers=new Map();
@@ -1406,7 +1471,7 @@
     if(value==='characters-app'||value==='profile'&&state.profileTab==='characters')return 'characters';
     if(value==='mods-app'||value==='settings'&&state.settingsTab==='mods')return 'mods';
     if(value==='rsdw-launcher'||value==='rsdw-toolkit'||value==='rsdw-editor')return 'rsdw-l';
-    if(['servers','server-detail','rsdragonwilds-app'].includes(value))return 'rsdragonwilds';
+    if(['servers','server-detail','rsdragonwilds-app','world-management','world-detail'].includes(value))return 'worlds';
     if(['webhost','remote-server'].includes(value))return 'sync';
     if(value==='help')return 'shell';
     if(value==='settings')return 'system';
@@ -1443,11 +1508,11 @@
     if(value==='characters')return ['characters'];
     if(value==='mods')return ['mods'];
     if(value==='rsdw-l')return ['rsdw-l'];
-    if(value==='rsdragonwilds')return ['rsdragonwilds'];
+    if(value==='rsdragonwilds')return ['worlds','rsdragonwilds'];
     if(value==='sync')return ['sync','webgui'];
     if(value==='system')return ['shell','system'];
     if(value==='shell')return ['shell'];
-    return ['worlds'];
+    return ['worlds','rsdragonwilds'];
   }
 
   function warmAppy(appy,{reason='idle'}={}) {
@@ -1457,10 +1522,9 @@
     if(appyWarmPromises.has(value))return appyWarmPromises.get(value);
     const promise=(async()=>{
       const tasks=[api.invoke('feature.worker.prepare',{owner:`appy-${value}-${reason}`,applications:appyApplications(value),eager_only:false})];
-      if(['worlds','mods','rsdragonwilds'].includes(value))tasks.push(window.dragonwilds.prewarm?.(selectedInventoryWarmRequests()));
+      if(['worlds','rsdragonwilds'].includes(value))tasks.push(window.dragonwilds.prewarm?.(selectedInventoryWarmRequests()));
       if(value==='characters')tasks.push(ensureCharacterStudioWarm(),configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null));
       if(value==='rsdw-l')tasks.push(configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null));
-      if(['mods','rsdw-l'].includes(value))tasks.push(window.__DWSYNC_MONACO__?.warm?.());
       await Promise.allSettled(tasks.filter(Boolean));
       return {appy:value,ready:true};
     })();
@@ -1660,7 +1724,8 @@
     const hostStatus=state.data?.application?.world_directory_host_status||{};
     const webhostLinked=isLinkedDirectoryEndpoint(hostStatus.public_url||hostConfig.public_base_url);
     const avatar = p.avatar_data ? `<img src="${p.avatar_data}" alt="" />` : escapeHtml(initials(p.display_name || 'Player'));
-    const worldsActive=['world-management','world-detail'].includes(state.route);
+    const hostingActive=state.route==='server-detail'||state.route==='servers'||state.route==='rsdragonwilds-app'||(state.route==='world-management'&&state.worldManagementTab==='server-setup');
+    const worldsActive=!hostingActive&&['world-management','world-detail'].includes(state.route);
     const charactersActive=state.route==='profile'&&state.profileTab==='characters';
     const modsActive=state.route==='settings'&&state.settingsTab==='mods';
     const rsdwLauncherActive=state.route==='rsdw-launcher';
@@ -1672,12 +1737,12 @@
           <div class="brand-copy"><strong>Dragonwilds Sync</strong><span>${t('worldLauncher')}</span></div>
         </div>
         <div class="nav-label">Play &amp; Create</div>
-        ${navButton('world-management','⌂','Worlds',{appy:'worlds',tone:'worlds',active:worldsActive,subapps:'Profiles · placards · saves'})}
+        ${navButton('world-management',navIconAsset('assets/dragonwilds_icon.ico'),'Dragonwilds',{appy:'worlds',tone:'worlds',active:worldsActive,subapps:'Private · Co-Op · profiles · connect'})}
         ${navButton('characters-app','◉','Characters',{appy:'characters',tone:'characters',active:charactersActive,subapps:'Identity · 3D · appearance'})}
         ${navButton('mods-app','⬡','Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
         ${navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png'),'RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
         <div class="nav-label">Host &amp; Connect</div>
-        ${navButton('rsdragonwilds-app',navIconAsset('assets/dragonwilds_icon.ico'),'RSDragonwilds',{appy:'rsdragonwilds',tone:'hosting',active:state.route==='servers'||state.route==='server-detail',subapps:'Singleplayer · Co-Op · Dedicated'})}
+        ${navButton('rsdragonwilds-app','▣','Hosting',{appy:'worlds',tone:'hosting',active:hostingActive,subapps:'Dedicated setup · runtime · Worlds'})}
         ${navButton('webhost',webhostLinked?'◆':'◇','Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
         <div class="nav-label">${t('system')}</div>
         ${navButton('help','?','Helpy',{appy:'help',tone:'system',subapps:'Guides · screenshots · safety'})}
@@ -1760,6 +1825,7 @@
       render();
       // Parse only the visible subsystem. Other tabs hydrate on first use.
       if(state.rsdwTool!=='character-editor')setTimeout(()=>hydrateNativeRsdwTool(state.rsdwTool),0);
+      else setTimeout(()=>hydrateNativeRsdwTool('item-editor',{paintStart:false}),0);
     } catch (error) {
       if (token !== state.rsdwHydrationToken) return;
       state.rsdwHydrationError = error.message || String(error);
@@ -1767,7 +1833,7 @@
     }
   }
 
-  async function hydrateNativeRsdwTool(toolId) {
+  async function hydrateNativeRsdwTool(toolId,{paintStart=true}={}) {
     const tool=String(toolId||'');
     if(!tool||tool==='character-editor'||state.rsdwNativeTools[tool]||state.rsdwNativeToolBusy===tool)return;
     const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
@@ -1777,7 +1843,7 @@
     state.rsdwNativeToolProgress=18;
     try{
       const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
-      state.rsdwNativeToolProgress=48; render();
+      state.rsdwNativeToolProgress=48;if(paintStart)render();
       const response=await api.invoke('characters.native.tool.read',{text:baseText,tool});
       state.rsdwNativeTools[tool]=response.native_tool;
       state.rsdwNativeToolProgress=100;
@@ -1790,7 +1856,7 @@
     }
   }
 
-  async function previewRsdwToolChange(tool, change) {
+  async function previewRsdwToolChange(tool, change, { paint = true } = {}) {
     const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
     const loaded=state.rsdwCharacterPayload;
     if(!selected?.editable||!loaded?.text)throw new Error('Select an editable character first.');
@@ -1798,7 +1864,7 @@
     const response=await api.invoke('characters.native.tool.preview',{text:baseText,tool,change});
     state.rsdwNativeDraft={...response,characterId:selected.id};
     if(response.native_tool)state.rsdwNativeTools[tool]=response.native_tool;
-    render();
+    if(paint)render();
     return response;
   }
 
@@ -1828,6 +1894,9 @@
     if (remember && !(state.route === 'profile' && state.profileTab === 'characters')) pushNavigation();
     state.route = 'profile';
     state.profileTab = 'characters';
+    // Character Creator is a fresh navigation target, not a continuation of
+    // the last editor's scroll position.
+    state.scrollPositions.profile = 0;
     state.rsdwToolkitLoading = true;
     render();
     try {
@@ -2092,13 +2161,16 @@
     const overlayCategories = Object.keys(state.mapOverlays?.categories || {});
     const coordinateSource=String(mapCfg.coordinate_source||state.mapCacheStatus?.coordinate_source||'');
     const overlaysAligned = coordinateSource==='manual-calibration' || coordinateSource.includes('world-grid') || String(state.mapCacheStatus?.source_provider||'')==='rsdwarchive';
-    const playersOnMap = overlaysAligned ? (tracker.players || []).filter((pl) => pl.map_point) : [];
-    const visibleOverlayPoints = overlaysAligned ? (state.mapOverlays?.points || []).filter((point)=>state.mapOverlayFilters.has(point.category)).slice(0, 1800) : [];
-    const overlayFilters = overlayCategories.length ? `<div class="map-filter-bar"><div><strong>Map filters</strong><small>RSDW game-data locations · ${Number(state.mapOverlays?.source_point_count || 0).toLocaleString()} indexed</small></div><div class="map-filter-chips">${overlayCategories.map((category)=>{const count=(state.mapOverlays?.points||[]).filter((point)=>point.category===category).length;return `<button type="button" class="map-filter-chip ${state.mapOverlayFilters.has(category)?'active':''}" data-map-overlay-category="${escapeHtml(category)}"><i class="${escapeHtml(category.toLowerCase())}"></i>${escapeHtml(category)} <b>${count.toLocaleString()}</b></button>`;}).join('')}<button type="button" class="map-filter-chip" data-map-overlay-preset="all">All</button><button type="button" class="map-filter-chip" data-map-overlay-preset="none">None</button></div></div>` : '<div class="map-filter-loading">Resource and location filters load from the cached RSDW game-data index.</div>';
+    const playerRows=objectRows(tracker.players);
+    const overlayRows=objectRows(state.mapOverlays?.points);
+    const playersOnMap = overlaysAligned ? playerRows.filter((pl) => pl.map_point&&typeof pl.map_point==='object') : [];
+    const visibleOverlayPoints = overlaysAligned ? overlayRows.filter((point)=>state.mapOverlayFilters.has(point.category)).slice(0, 600) : [];
+    const overlayCounts=new Map();overlayRows.forEach((point)=>overlayCounts.set(point.category,(overlayCounts.get(point.category)||0)+1));
+    const overlayFilters = overlayCategories.length ? `<div class="map-filter-bar"><div><strong>Map filters</strong><small>RSDW game-data locations · ${Number(state.mapOverlays?.source_point_count || 0).toLocaleString()} indexed</small></div><div class="map-filter-chips">${overlayCategories.map((category)=>{const count=overlayCounts.get(category)||0;return `<button type="button" class="map-filter-chip ${state.mapOverlayFilters.has(category)?'active':''}" data-map-overlay-category="${escapeHtml(category)}"><i class="${escapeHtml(category.toLowerCase())}"></i>${escapeHtml(category)} <b>${count.toLocaleString()}</b></button>`;}).join('')}<button type="button" class="map-filter-chip" data-map-overlay-preset="all">All</button><button type="button" class="map-filter-chip" data-map-overlay-preset="none">None</button></div></div>` : '<div class="map-filter-loading">Resource and location filters load from the cached RSDW game-data index.</div>';
     const overlayMarkers = visibleOverlayPoints.map((point)=>`<i class="map-overlay-marker ${escapeHtml(String(point.category||'').toLowerCase())}" data-map-x="${Number(point.map_x)}" data-map-y="${Number(point.map_y)}" style="left:${Number(point.map_x)*100}%;top:${Number(point.map_y)*100}%" title="${escapeHtml(point.subtype || point.label || point.category || 'Map location')}"></i>`).join('');
     const viewport = state.mapViewports[world.id] || { scale:1, x:0, y:0 };
-    const categoryDetails=overlayCategories.map((category)=>{const points=(state.mapOverlays?.points||[]).filter((point)=>point.category===category);const types=new Map();points.forEach((point)=>types.set(point.subtype||point.label||category,(types.get(point.subtype||point.label||category)||0)+1));return `<details class="map-data-category"><summary><strong>${escapeHtml(category)}</strong><span>${points.length.toLocaleString()} indexed</span></summary><div>${[...types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,24).map(([label,count])=>`<span>${escapeHtml(label)} <b>${count.toLocaleString()}</b></span>`).join('')}</div></details>`;}).join('');
-    const mapPanel = `<details class="panel collapsible-panel map-panel" open><summary class="panel-header"><div><h2>${title}</h2><span class="panel-subtitle">${tracker.player_count || 0} online · ${sourceCopy}</span></div><span class="status-pill ${tracker.tracker_connected ? 'online' : 'unknown'}">${tracker.tracker_connected ? 'RSDW TRACKING LIVE' : 'TRACKING OFFLINE'}</span></summary><div class="panel-body"><div class="map-viewport-toolbar"><span>Drag to pan · mouse wheel or buttons to zoom</span><div><button class="btn ghost compact-btn" data-map-zoom="out" aria-label="Zoom out">−</button><b data-map-zoom-label>${Math.round(viewport.scale*100)}%</b><button class="btn ghost compact-btn" data-map-zoom="in" aria-label="Zoom in">＋</button><button class="btn ghost compact-btn" data-map-zoom="reset">Reset</button></div></div><div class="server-player-map ${mapBg ? 'has-background' : ''}" data-live-map-world="${escapeHtml(world.id)}" ${mapBg ? `style="background-image:url('${mapBg}')"` : ''}>${overlayMarkers}${playersOnMap.map((pl) => `<button class="player-map-marker ${state.selectedPlayerId === String(pl.id || '') ? 'selected' : ''}" data-map-x="${Number(pl.map_point.x)}" data-map-y="${Number(pl.map_point.y)}" style="left:${Number(pl.map_point.x)*100}%;top:${Number(pl.map_point.y)*100}%;--yaw:${Number(pl.yaw || 0)}deg" title="${escapeHtml(pl.name || 'Player')}" data-map-player="${escapeHtml(pl.id || pl.name)}"><span class="facing">➤</span><b>${escapeHtml(pl.name || 'Player')}</b></button>`).join('')}${mapBg ? '' : '<div class="map-placeholder"><strong>Ashenfall map background not configured</strong><span>Tracking coordinates remain available. Refresh the map cache and the same map component is reused online.</span></div>'}</div><div class="map-attribution">${escapeHtml(state.mapCacheStatus?.attribution||'Ashenfall map imagery © Jagex Ltd. · RuneScape: Dragonwilds')}</div>${overlaysAligned?overlayFilters:'<div class="warning-box compact"><strong>Map calibration unavailable</strong><br/>Player and resource markers are hidden instead of being plotted against an unrelated image grid. Refresh the RSDW world-grid map or save verified manual bounds.</div>'}<div class="map-data-catalog"><div><strong>Mapped game data</strong><small>Filter controls and indexed records are kept below the map.</small></div>${categoryDetails}</div>${visibleOverlayPoints.length>=1800?'<p class="muted-small map-density-note">Dense overlays are display-sampled to keep the live map responsive. The full RSDW index remains cached.</p>':''}${!tracker.tracker_connected ? `<div class="identity-box"><strong>${bridgeAvailable ? 'Waiting for RSDWTools roster' : 'Tracking bridge waiting for the game'}</strong><p>${bridgeAvailable ? 'The verified RSDWTools shared-memory bridge is running, but it has not returned a live player roster yet.' : 'Dragonwilds Sync installs the baseline RSDWTools functional bridge with debug output disabled. Live positions begin when the game or dedicated server starts producing telemetry; log-derived player presence remains available meanwhile.'}</p></div>` : ''}</div></details>`;
+    const categoryDetails=overlayCategories.map((category)=>{const points=overlayRows.filter((point)=>point.category===category);const types=new Map();points.forEach((point)=>types.set(point.subtype||point.label||category,(types.get(point.subtype||point.label||category)||0)+1));return `<details class="map-data-category"><summary><strong>${escapeHtml(category)}</strong><span>${points.length.toLocaleString()} indexed</span></summary><div>${[...types.entries()].sort((a,b)=>b[1]-a[1]).slice(0,24).map(([label,count])=>`<span>${escapeHtml(label)} <b>${count.toLocaleString()}</b></span>`).join('')}</div></details>`;}).join('');
+    const mapPanel = `<details class="panel collapsible-panel map-panel" open><summary class="panel-header"><div><h2>${title}</h2><span class="panel-subtitle">${tracker.player_count || 0} online · ${sourceCopy}</span></div><span class="status-pill ${tracker.tracker_connected ? 'online' : 'unknown'}">${tracker.tracker_connected ? 'RSDW TRACKING LIVE' : 'TRACKING OFFLINE'}</span></summary><div class="panel-body"><div class="map-viewport-toolbar"><span>Drag to pan · mouse wheel or buttons to zoom</span><div><button class="btn ghost compact-btn" data-map-zoom="out" aria-label="Zoom out">−</button><b data-map-zoom-label>${Math.round(viewport.scale*100)}%</b><button class="btn ghost compact-btn" data-map-zoom="in" aria-label="Zoom in">＋</button><button class="btn ghost compact-btn" data-map-zoom="reset">Reset</button></div></div><div class="server-player-map ${mapBg ? 'has-background' : ''}" data-live-map-world="${escapeHtml(world.id)}" ${mapBg ? `style="background-image:url('${mapBg}')"` : ''}>${overlayMarkers}${playersOnMap.map((pl) => `<button class="player-map-marker ${state.selectedPlayerId === String(pl.id || '') ? 'selected' : ''}" data-map-x="${Number(pl.map_point.x)}" data-map-y="${Number(pl.map_point.y)}" style="left:${Number(pl.map_point.x)*100}%;top:${Number(pl.map_point.y)*100}%;--yaw:${Number(pl.yaw || 0)}deg" title="${escapeHtml(pl.name || 'Player')}" data-map-player="${escapeHtml(pl.id || pl.name)}"><span class="facing">➤</span><b>${escapeHtml(pl.name || 'Player')}</b></button>`).join('')}${mapBg ? '' : '<div class="map-placeholder"><strong>Ashenfall map background not configured</strong><span>Tracking coordinates remain available. Refresh the map cache and the same map component is reused online.</span></div>'}</div><div class="map-attribution">${escapeHtml(state.mapCacheStatus?.attribution||'Ashenfall map imagery © Jagex Ltd. · RuneScape: Dragonwilds')}</div>${overlaysAligned?overlayFilters:'<div class="warning-box compact"><strong>Map calibration unavailable</strong><br/>Player and resource markers are hidden instead of being plotted against an unrelated image grid. Refresh the RSDW world-grid map or save verified manual bounds.</div>'}<div class="map-data-catalog"><div><strong>Mapped game data</strong><small>Filter controls and indexed records are kept below the map.</small></div>${categoryDetails}</div>${visibleOverlayPoints.length>=600?'<p class="muted-small map-density-note">Dense overlays are display-sampled to keep the live map responsive. The full RSDW index remains cached.</p>':''}${!tracker.tracker_connected ? `<div class="identity-box"><strong>${bridgeAvailable ? 'Waiting for RSDWTools roster' : 'Tracking bridge waiting for the game'}</strong><p>${bridgeAvailable ? 'The verified RSDWTools shared-memory bridge is running, but it has not returned a live player roster yet.' : 'Dragonwilds Sync installs the baseline RSDWTools functional bridge with debug output disabled. Live positions begin when the game or dedicated server starts producing telemetry; log-derived player presence remains available meanwhile.'}</p></div>` : ''}</div></details>`;
     if (!includeSetup) return mapPanel;
     const setup = `<details class="panel collapsible-panel" open><summary class="panel-header"><h2>Map Setup</h2><span class="panel-subtitle">World coordinates → normalized map coordinates</span></summary><div class="panel-body"><div class="header-actions map-source-actions" style="justify-content:flex-start"><button class="btn primary" id="refresh-latest-rsdw-map">Refresh Ashenfall Map</button><button class="btn ghost" id="choose-player-map-image">Choose Map Image</button><span class="muted-small">${state.mapCacheStatus?.version?`${escapeHtml(state.mapCacheStatus.source_title||'Ashenfall')} · ${escapeHtml(state.mapCacheStatus.version)} · ${state.mapCacheStatus.tile_count||0} tile(s)`:'Ashenfall map cache not checked yet'}</span></div><div class="health-evidence-grid map-calibration"><label><small>World Min X</small><input class="field" id="map-min-x" type="number" value="${escapeHtml(cal.world_min_x ?? '')}" /></label><label><small>World Max X</small><input class="field" id="map-max-x" type="number" value="${escapeHtml(cal.world_max_x ?? '')}" /></label><label><small>World Min Y</small><input class="field" id="map-min-y" type="number" value="${escapeHtml(cal.world_min_y ?? '')}" /></label><label><small>World Max Y</small><input class="field" id="map-max-y" type="number" value="${escapeHtml(cal.world_max_y ?? '')}" /></label></div><label class="checkbox-row"><input type="checkbox" id="map-invert-y" ${cal.invert_y === false ? '' : 'checked'} /> Invert map Y axis</label><label class="checkbox-row"><input type="checkbox" id="map-allow-remote" ${mapCfg.allow_remote_clients ? 'checked' : ''} /> Allow authenticated remote launcher clients to receive map availability</label><button class="btn primary" id="save-player-map-settings">Save Map Setup</button><div class="identity-box"><strong>One mapping pipeline</strong><p>RSDW telemetry emits Unreal coordinates; Dragonwilds Sync applies one map transform shared by Server → Map and RSDW Toolkit. There is no duplicate tracker/map implementation.</p></div></div></details>`;
     return `<div class="panel-grid map-layout">${mapPanel}${setup}</div>`;
@@ -2177,6 +2249,7 @@
     const repositoryCompatible=(row,slot)=>{const text=`${row.equipment||''} ${row.category||''} ${row.name||''} ${row.description||''} ${row.item_data||''}`.toLowerCase();if(slot==='Main Hand')return /(weapon|weapons|tool|sword|axe|maul|staff|wand|bow|crossbow|pickaxe|dagger|spear|mace)/.test(text)&&!/(shield|off[ -]?hand)/.test(text);if(slot==='Off Hand')return /(off[ -]?hand|shield|buckler|focus|orb|weapon|sword|dagger|wand)/.test(text);return String(row.equipment||'')===slot;};
     const repositoryItems=repositorySlot?Object.values(itemEditor.tabs||{}).flatMap((tab)=>tab.items||[]).filter((row)=>repositoryCompatible(row,repositorySlot)&&(!state.rsdwEquipmentSearch||`${row.name||''} ${row.category||''} ${row.description||''}`.toLowerCase().includes(state.rsdwEquipmentSearch.toLowerCase()))).slice(0,80):[];
     const repositoryMarkup=repositorySlot?`<div class="studio-repository-backdrop" id="studio-repository-backdrop"><section class="studio-equipment-repository" role="dialog" aria-label="${escapeHtml(repositorySlot)} equipment repository"><div class="panel-header"><div><div class="eyebrow">Shared Item Editor Repository</div><h2>${escapeHtml(repositorySlot)} Equipment</h2><span class="panel-subtitle">${repositorySlot==='Main Hand'||repositorySlot==='Off Hand'?'Choose a compatible item; the closest available RSDWModel asset is used in the live preview.':'Preview-only until Apply to Character.'} ${repositoryItems.length} compatible current-catalog items shown.</span></div><button class="btn ghost" id="close-studio-repository">×</button></div><div class="studio-repository-search"><input class="field" id="studio-equipment-search" value="${escapeHtml(state.rsdwEquipmentSearch)}" placeholder="Search compatible equipment…"/><button class="btn ghost" id="studio-equipment-search-apply">Search</button></div><div class="studio-repository-grid">${repositoryItems.map((row)=>`<button class="studio-repository-item" draggable="true" data-studio-equipment-item="${escapeHtml(row.item_data)}" data-studio-equipment-name="${escapeHtml(row.name||'')}" data-studio-equipment-type="${escapeHtml(row.equipment)}"><img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><span><strong>${escapeHtml(row.name)}</strong><small>${escapeHtml(row.category||row.equipment)}</small></span></button>`).join('')||'<div class="empty-state compact">No compatible catalog items match this search.</div>'}</div></section></div>`:'';
+    const equipmentStudioMarkup=tool.id==='character-editor'?`<section class="panel character-equipment-studio"><div class="panel-header"><div><div class="eyebrow">Character Creator · Item Editor</div><h2>Equipped Items</h2><span class="panel-subtitle">Click or right-click a slot to browse compatible armor and weapons. Armor is staged in the save-backed draft and sent to the live 3D preview.</span></div><span class="status-pill ${itemEditor.sections?'online':'unknown'}">${itemEditor.sections?'ITEM REPOSITORY READY':'LOADS ON FIRST SLOT'}</span></div><div class="character-equipment-groups"><div class="studio-equipment-group"><b>Armor</b><div class="studio-socket-row three">${studioSocket('Head',0)}${studioSocket('Body',1)}${studioSocket('Legs',2)}</div><div class="studio-socket-row two">${studioSocket('Cape',3)}${studioSocket('Jewellery',4)}</div></div><div class="studio-equipment-group"><b>Weapons · live preview</b><div class="studio-socket-row two">${handSocket('Main Hand','rightHand','slot-rightHand')}${handSocket('Off Hand','leftHand','slot-leftHand')}</div><small>Weapon meshes use the closest compatible RSDWModel asset; saved armor uses the authoritative Item Editor loadout.</small></div></div></section>${repositoryMarkup}`:'';
     return `<div class="content rsdw-toolkit-page studio-combined-page">
       <div class="page-header"><div><div class="eyebrow">${escapeHtml(t('profile'))}</div><h1>${escapeHtml(t('characters'))}</h1><div class="page-subtitle">${escapeHtml(et('charactersPageSubtitle'))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-profile">↗ ${escapeHtml(et('openInWindow'))}</button>${sourceBadge}<button class="btn ghost" id="rsdw-refresh-toolkit">${escapeHtml(sourceLocal?et('refreshUpstream'):et('hydrateLocal'))}</button><button class="btn ghost" id="rsdw-import-character">${escapeHtml(et('importProfile'))}</button><button class="btn primary" id="rsdw-export-character">${escapeHtml(et('exportCharacter'))}</button></div></div>
       ${rsdwToolkitTabs()}
@@ -2185,6 +2258,7 @@
       <div class="rsdw-character-details studio-character-summary studio-combined-summary"><section class="studio-summary-card studio-overview-card"><div class="rsdw-character-identity">${profile.portrait_data?`<img src="${profile.portrait_data}" alt=""/>`:`<div class="character-profile-avatar">${escapeHtml(initials(charName))}</div>`}<div><div class="eyebrow">${escapeHtml(et('selectedCharacter'))}</div><h2>${escapeHtml(charName)}</h2><strong>${escapeHtml(selected.guid || 'No GUID surfaced')}</strong><span>${escapeHtml(selected.file_name || '')}</span></div><span class="status-pill ${selected.editable?'online':'unknown'}">${selected.editable?'RSDW READY':'PRESERVE ONLY'}</span></div><div class="rsdw-metric-grid">${stats.map(([label,value])=>`<div><span>${label}</span><strong>${escapeHtml(String(value))}</strong></div>`).join('')}</div><div class="rsdw-character-meta"><div><span>${escapeHtml(et('lastModified'))}</span><strong>${new Date((selected.modified_at||0)*1000).toLocaleString()}</strong></div><div><span>${escapeHtml(et('saveSize'))}</span><strong>${(Number(selected.size||0)/1024).toFixed(1)} KiB</strong></div><div><span>SHA-256</span><code>${escapeHtml(String(selected.sha256||'').slice(0,16))}…</code></div><div><span>${escapeHtml(et('profileStatus'))}</span><strong>${profile.favorite?`★ ${escapeHtml(et('favorite'))}`:'Standard'}</strong></div></div><div class="rsdw-character-actions"><button class="btn ghost" id="rsdw-change-portrait">${escapeHtml(et('chooseImage'))}</button><button class="btn ghost" id="rsdw-toggle-favorite">${escapeHtml(profile.favorite?et('removeFavorite'):et('favorite'))}</button><button class="btn ghost" id="rsdw-clone-character">${escapeHtml(et('cloneCharacter'))}</button><button class="btn ghost" id="rsdw-backup-export">Export .rsdwl</button><button class="btn danger" id="rsdw-delete-character">${escapeHtml(et('deleteCharacter'))}</button></div></section><section class="studio-summary-card studio-world-card"><div class="rsdw-world-associations"><strong>${escapeHtml(et('worldAssociations'))}</strong><div>${linked}</div></div></section>${state.rsdwHydrationError?`<div class="warning-box compact">${escapeHtml(state.rsdwHydrationError)}</div>`:''}</div>
       <section class="studio-summary-card studio-combat-card">${archetypeEditor}</section>
       <div class="rsdw-tool-launch-hint">Identity, the dedicated 3D renderer, Appearance, progression, and inventory share one cached character-creator workspace.</div>${toolNav}
+      ${equipmentStudioMarkup}
       ${editSurface}
       <div class="rsdw-credit">RSDW-powered tooling by <strong>Hi im Tat</strong> and the <strong>RSDW Modding Community</strong>. Dragonwilds Sync handles profile selection, backups, synchronization, and safe writeback.</div>
     </div>`;
@@ -2588,14 +2662,14 @@
 
   function renderWorldManagement() {
     const tab = ['worlds','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
-    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management sections"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">Worlds</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Setup</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Server Setup</button></nav>`;
+    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management sections"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">Worlds</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Setup</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Hosting</button></nav>`;
     if (tab === 'game-setup') {
       const cfg=state.data?.application||{}, layout=state.data?.singleplayer?.layout||{};
       return `<div class="content"><div class="page-header"><div><div class="eyebrow">World Management · /Game</div><h1>Game Setup</h1><div class="page-subtitle">Update the live Dragonwilds client association here. The selected root resolves UE4SS, RuneSchema, PAK, configuration, and save locations.</div></div></div>${tabs}<section class="panel"><div class="panel-header"><div><h2>Dragonwilds Client Paths</h2><span class="panel-subtitle">Choose a Steam library, game folder, inner RSDragonwilds folder, or exact executable.</span></div></div><div class="panel-body"><div class="form-grid"><label class="form-group full"><span>Game directory</span><div class="path-field"><input class="field" id="wm-game-dir" value="${escapeHtml(cfg.game_dir||'')}" placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\RuneScape Dragonwilds"/><button class="btn ghost" id="wm-pick-game-dir">Browse</button></div></label><label class="form-group full"><span>Game executable</span><div class="path-field"><input class="field" id="wm-game-exe" value="${escapeHtml(cfg.game_exe||layout.game_exe||'')}" placeholder="RSDragonwilds.exe"/><button class="btn ghost" id="wm-pick-game-exe">Browse</button></div></label></div><div class="header-actions"><button class="btn primary" id="wm-save-game-paths">Save &amp; Validate /Game</button><button class="btn ghost" id="rescan-game-worlds">Rescan Worlds &amp; Mods</button></div><div class="identity-box"><strong>Path changes are explicit</strong><p>Saving validates the selected client tree before replacing the application’s current /Game association. Existing World Profiles remain in application storage.</p></div>${recommendedModsMarkup('client')}</div></section></div>`;
     }
     if (tab === 'server-setup') {
       const install=state.data?.application?.server_install||{}, layout=state.data?.server?.layout||{};
-      return `<div class="content"><div class="page-header"><div><div class="eyebrow">World Management · /Server</div><h1>Server Setup</h1><div class="page-subtitle">Choose the designated server folder. Full Setup resolves its game root at steamcmd\\steamapps\\common\\RuneScape Dragonwilds Dedicated Server.</div></div></div>${tabs}<section class="panel"><div class="panel-header"><div><h2>Dedicated Server Paths</h2><span class="panel-subtitle">Each running instance receives its own gameplay port: 7777, 7778, 7779, and onward.</span></div><span class="status-pill ${layout.valid?'online':'unknown'}">${layout.valid?'READY':'SETUP REQUIRED'}</span></div><div class="panel-body"><div class="form-grid"><label class="form-group full"><span>Designated server folder or existing game root</span><div class="path-field"><input class="field" id="wm-server-dir" value="${escapeHtml(install.install_dir||'')}" placeholder="C:\\Dragonwilds Server"/><button class="btn ghost" id="wm-pick-server-dir">Browse</button></div></label><label class="form-group full"><span>Server executable</span><div class="path-field"><input class="field" id="wm-server-exe" value="${escapeHtml(install.server_exe||layout.server_exe||'')}" placeholder="RSDragonwilds.exe"/><button class="btn ghost" id="wm-pick-server-exe">Browse</button></div></label></div><div class="header-actions"><button class="btn primary" id="wm-save-server-paths">Save &amp; Validate /Server</button><button class="btn ghost" id="wm-full-server-setup">Run Full Setup</button><button class="btn ghost" id="add-server-world">+ Create Dedicated World</button></div><div class="identity-box"><strong>Existing mods are never ignored</strong><p>When the selected directory already contains UE4SS, RuneSchema, or PAK mods, Dragonwilds Sync asks whether to copy them into the selected World Profile before continuing.</p></div>${recommendedModsMarkup('server')}</div></section></div>`;
+      return `<div class="content"><div class="page-header"><div><div class="eyebrow">World Management · Hosting</div><h1>Hosting</h1><div class="page-subtitle">Dedicated server setup, installation, validation, runtime paths, and new hosted Worlds remain one explicit tab inside Worlds.</div></div></div>${tabs}<section class="panel"><div class="panel-header"><div><h2>Dedicated Server Paths</h2><span class="panel-subtitle">Each running instance receives its own gameplay port: 7777, 7778, 7779, and onward.</span></div><span class="status-pill ${layout.valid?'online':'unknown'}">${layout.valid?'READY':'SETUP REQUIRED'}</span></div><div class="panel-body"><div class="form-grid"><label class="form-group full"><span>Designated server folder or existing game root</span><div class="path-field"><input class="field" id="wm-server-dir" value="${escapeHtml(install.install_dir||'')}" placeholder="C:\\Dragonwilds Server"/><button class="btn ghost" id="wm-pick-server-dir">Browse</button></div></label><label class="form-group full"><span>Server executable</span><div class="path-field"><input class="field" id="wm-server-exe" value="${escapeHtml(install.server_exe||layout.server_exe||'')}" placeholder="RSDragonwilds.exe"/><button class="btn ghost" id="wm-pick-server-exe">Browse</button></div></label></div><div class="header-actions"><button class="btn primary" id="wm-save-server-paths">Save &amp; Validate /Server</button><button class="btn ghost" id="wm-full-server-setup">Run Full Setup</button><button class="btn ghost" id="add-server-world">+ Create Dedicated World</button></div><div class="identity-box"><strong>Existing mods are never ignored</strong><p>When the selected directory already contains UE4SS, RuneSchema, or PAK mods, Dragonwilds Sync asks whether to copy them into the selected World Profile before continuing.</p></div>${recommendedModsMarkup('server')}</div></section></div>`;
     }
     const localRows=privateWorlds().map((world)=>({world,server:false}));
     const dedicatedRows=serverWorlds().map((world)=>({world,server:true}));
@@ -2767,6 +2841,15 @@
   function formatRuntimeDate(value) {
     if (!value) return 'Not recorded';
     const date = new Date(Number(value) * 1000);
+    return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+  }
+
+  function formatDate(value) {
+    if(!value)return 'Not recorded';
+    const numeric=Number(value);
+    const date=Number.isFinite(numeric)&&String(value).trim()!==''
+      ? new Date(numeric > 1e12 ? numeric : numeric * 1000)
+      : new Date(String(value));
     return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
   }
 
@@ -3647,8 +3730,8 @@
       const labels={ue4ss_mod:'UE4SS Mods',runeschema_mod:'RuneSchema Mods',pak_mod:'PAK Mods'};
       const rows=(repository?.entries||[]);
       const groups=['ue4ss_mod','runeschema_mod','pak_mod'];
-      content = `<section class="settings-section"><div class="panel-header"><div><h2>Mod Management</h2><span class="panel-subtitle">One canonical library shared by every Private World and Server Profile.</span></div><div class="header-actions"><button class="btn ghost" id="open-mod-repository" ${repository?.root?'':'disabled'}>Open Repository</button><button class="btn primary" id="refresh-mod-repository">${repository?'Refresh':'Load Mods'}</button></div></div><div class="identity-box"><strong>Profile-aware, centrally maintained</strong><p>Each profile keeps its own enabled set, tags and load order. Publishing a profile copy replaces the canonical payload—including newly added schema/config files—and pushes that payload to every profile already linked to the same mod.</p></div></section>
-      ${repository ? groups.map((group)=>{const mods=rows.filter((row)=>row.group===group);return `<section class="settings-section"><div class="panel-header"><div><h2>${labels[group]}</h2><span class="panel-subtitle">${mods.length} shared ${mods.length===1?'entry':'entries'}</span></div><span class="status-pill unknown">${escapeHtml(group.replace('_mod','').toUpperCase())}</span></div>${mods.length?`<div class="mod-list">${mods.map((mod)=>{const source=mod.source||{};const first=(mod.profiles||[])[0]||{};return `<div class="mod-clean-row"><div><div class="mod-name-line"><strong>${escapeHtml(mod.name||'Mod')}</strong>${source.provider==='nexus'?`<span class="status-pill online">NEXUS #${escapeHtml(String(source.mod_id||''))}</span>`:''}</div><div class="mod-meta">${escapeHtml(String(mod.file_count||0))} files · ${formatBytes(mod.size||0)} · ${(mod.profiles||[]).length} linked profile${(mod.profiles||[]).length===1?'':'s'}</div><div class="mod-tag-row">${(mod.profiles||[]).map((profile)=>`<span class="mod-tag">${escapeHtml(profile.kind==='dedicated'?'Server':'Private')} · ${escapeHtml(profile.name||profile.id)}</span>`).join('')}</div></div><div class="mod-row-actions">${source.web_url?`<button class="btn ghost mod-action-btn" data-repository-nexus="${escapeHtml(source.web_url)}">Nexus ↗</button>`:''}${first.id?`<button class="btn primary mod-action-btn" data-repository-publish="${escapeHtml(mod.key)}" data-profile-kind="${escapeHtml(first.kind)}" data-profile-id="${escapeHtml(first.id)}">Publish &amp; Push</button>`:''}</div></div>`;}).join('')}</div>`:'<div class="empty-state">No profile currently contains this mod type.</div>'}</section>`;}).join('') : '<section class="settings-section"><div class="empty-state">Load the shared repository to scan every saved profile.</div></section>'}`;
+      content = `<section class="settings-section"><div class="panel-header"><div><h2>Mod Management</h2><span class="panel-subtitle">One canonical library shared by every Private World and Server Profile.</span></div><div class="header-actions"><button class="btn ghost" id="open-mod-repository" ${repository?.root?'':'disabled'}>Open Repository</button><button class="btn primary" id="refresh-mod-repository" ${state.modRepositoryLoading?'disabled':''}>${state.modRepositoryLoading?'Scanning…':repository?'Refresh':'Load Mods'}</button></div></div>${state.modRepositoryError?`<div class="warning-box compact"><strong>Repository scan failed</strong><br/>${escapeHtml(state.modRepositoryError)}</div>`:''}<div class="identity-box"><strong>Profile-aware, centrally maintained</strong><p>Each profile keeps its own enabled set, tags and load order. Edit opens the selected profile copy in the built-in Mod Explorer; Publish &amp; Push replaces the canonical payload and propagates it to linked profiles.</p></div></section>
+      ${repository ? groups.map((group)=>{const mods=rows.filter((row)=>row.group===group);return `<section class="settings-section"><div class="panel-header"><div><h2>${labels[group]}</h2><span class="panel-subtitle">${mods.length} shared ${mods.length===1?'entry':'entries'}</span></div><span class="status-pill unknown">${escapeHtml(group.replace('_mod','').toUpperCase())}</span></div>${mods.length?`<div class="mod-list">${mods.map((mod)=>{const source=mod.source||{};const first=objectRows(mod.profiles)[0]||{};return `<div class="mod-clean-row"><div><div class="mod-name-line"><strong>${escapeHtml(mod.name||'Mod')}</strong>${source.provider==='nexus'?`<span class="status-pill online">NEXUS #${escapeHtml(String(source.mod_id||''))}</span>`:''}</div><div class="mod-meta">${escapeHtml(String(mod.file_count||0))} files · ${formatBytes(mod.size||0)} · ${(mod.profiles||[]).length} linked profile${(mod.profiles||[]).length===1?'':'s'}</div><div class="mod-tag-row">${objectRows(mod.profiles).map((profile)=>`<span class="mod-tag">${escapeHtml(profile.kind==='dedicated'?'Server':'Private')} · ${escapeHtml(profile.name||profile.id)}</span>`).join('')}</div></div><div class="mod-row-actions">${source.web_url?`<button class="btn ghost mod-action-btn" data-repository-nexus="${escapeHtml(source.web_url)}">Nexus ↗</button>`:''}${first.id?`<button class="btn ghost mod-action-btn" data-repository-edit="${escapeHtml(mod.key)}" data-profile-kind="${escapeHtml(first.kind)}" data-profile-id="${escapeHtml(first.id)}">Edit</button><button class="btn primary mod-action-btn" data-repository-publish="${escapeHtml(mod.key)}" data-profile-kind="${escapeHtml(first.kind)}" data-profile-id="${escapeHtml(first.id)}">Publish &amp; Push</button>`:''}</div></div>`;}).join('')}</div>`:'<div class="empty-state">No profile currently contains this mod type.</div>'}</section>`;}).join('') : `<section class="settings-section"><div class="empty-state">${state.modRepositoryLoading?'Scanning every saved profile for UE4SS, RuneSchema, and PAK mods…':'Load the shared repository to scan every saved profile.'}</div></section>`}`;
     } else if (tab === 'about') {
       const meta = window.DWSYNC_RELEASE_META || {};
       const currentVersion = state.applicationUpdateMode?.version || meta.version || '1.3.0';
@@ -3659,11 +3742,15 @@
         <section class="settings-section about-section"><div class="panel-header"><div><h2>Community License</h2><span class="panel-subtitle">Free redistribution, open RSDWL interoperability, no paid distribution of Dragonwilds Sync.</span></div><button class="btn ghost" id="view-community-license">View Full License</button></div><div class="license-summary">${escapeHtml(meta.licenseSummary || '')}</div></section>`;
     } else if (tab === 'integrations') {
       const ns = state.nexusStatus || {};
+      const integrationState=state.integrationStatus||{};
+      const rsdwIntegration=integrationState.rsdw||a.rsdw_cache_status||{};
+      const discordIntegration=state.discordStatus||{};
       const nexusCfg = integrations.nexus_mods || {};
       const recommendationCfg = a.recommended_mods || {};
       const recommendationRows = recommendationCfg.mods || [];
       const recommendationSources = recommendationCfg.community_sources || [];
-      content = `<section class="settings-section nexus-account-settings ${state.showNexusIntegration?'':'nexus-integration-hidden'}"><div class="panel-header" style="padding:0 0 12px"><div><h2 style="margin:0">Nexus Mods</h2><span class="panel-subtitle">Optional source integration for Singleplayer and Server Profile mods.</span></div><span class="status-pill ${ns.connected?'online':'unknown'}">${ns.connected?'CONNECTED':'OPTIONAL'}</span></div>
+      content = `<section class="settings-section integration-overview"><div class="panel-header"><div><h2>Integration Status</h2><span class="panel-subtitle">Live status for optional services and independently updated RSDW modules.</span></div><button class="btn ghost" id="refresh-integration-status" ${state.integrationsLoading?'disabled':''}>${state.integrationsLoading?'Checking…':'Refresh Status'}</button></div><div class="computer-profile-hardware">${metric('RSDWTools',rsdwIntegration.toolkit_valid?`Ready · ${String(rsdwIntegration.revision||'').slice(0,8)||'cached'}`:'Needs refresh')}${metric('RSDWModel',rsdwIntegration.model_valid?`Ready · ${String(rsdwIntegration.model_revision||'').slice(0,8)||'cached'}`:'Needs refresh')}${metric('Discord',discordIntegration.connected||discordIntegration.active?'Connected':'Optional / idle')}${metric('Nexus Mods',ns.connected?`Connected · ${ns.username||'account'}`:'Optional / disconnected')}</div>${integrationState.errors?.length?`<div class="warning-box compact">${integrationState.errors.map(escapeHtml).join('<br/>')}</div>`:''}<div class="header-actions"><button class="btn ghost" id="rsdwl-refresh">Refresh RSDW Modules</button><button class="btn ghost" id="nexus-open-game-page">Browse Nexus Mods</button></div></section>
+      <section class="settings-section nexus-account-settings ${state.showNexusIntegration?'':'nexus-integration-hidden'}"><div class="panel-header" style="padding:0 0 12px"><div><h2 style="margin:0">Nexus Mods</h2><span class="panel-subtitle">Optional source integration for Singleplayer and Server Profile mods.</span></div><span class="status-pill ${ns.connected?'online':'unknown'}">${ns.connected?'CONNECTED':'OPTIONAL'}</span></div>
         <div class="settings-row"><div class="settings-copy"><strong>Account</strong><span>${ns.connected?`Connected as ${escapeHtml(ns.username||'Nexus user')}. Authentication remains local to this PC and is never sent to a Dragonwilds Sync server.`:'Authorize through Nexus Mods. Dragonwilds Sync never asks for your Nexus password.'}</span></div><div class="header-actions">${ns.connected?'<button class="btn danger" id="nexus-disconnect">Disconnect</button>':'<button class="btn primary" id="nexus-connect-sso">Connect Nexus Mods Account</button>'}</div></div>
         <div class="settings-row"><div class="settings-copy"><strong>Credential storage</strong><span>The application-specific Nexus key is stored with Electron/Windows secure storage when available; no plaintext API key is written to normal launcher profile state.</span></div><span class="status-pill ${ns.secure_storage?'online':'unknown'}">${ns.secure_storage?'OS SECURE STORAGE':'SESSION ONLY'}</span></div>
         <div class="settings-row"><div class="settings-copy"><strong>Cached update checks</strong><span>Update metadata is cached to avoid excessive API polling. Server mods are never auto-updated without operator approval.</span></div><label class="inline-check"><input type="checkbox" id="nexus-auto-check" ${nexusCfg.auto_check_updates?'checked':''}/> Periodically check linked mods</label></div>
@@ -4096,7 +4183,7 @@
     else if (state.route === 'world-management' || state.route === 'private-worlds' || state.route === 'singleplayer') { state.route='world-management'; page = renderWorldManagement(); }
     else if (state.route === 'shared-worlds') { state.route = 'worlds'; page = renderWorldGallery(); }
     else if (state.route === 'worlds') page = renderWorldGallery();
-    else if (state.route === 'servers') { state.route='world-management'; state.worldManagementTab='worlds'; page = renderWorldManagement(); }
+    else if (state.route === 'servers') { state.route='world-management'; state.worldManagementTab='server-setup'; page = renderWorldManagement(); }
     else if (state.route === 'server-detail' && activeServerWorld()) page = renderServerDetail(activeServerWorld());
     else if (state.route === 'rsdw-launcher') page = renderRsdwLauncher();
     else if (state.route === 'rsdw-toolkit') { state.route='profile'; state.profileTab='characters'; page = renderProfile(); }
@@ -4261,18 +4348,26 @@
     });
     root.querySelector('#player-chip')?.addEventListener('click', async()=>{pushNavigation();state.route='profile';state.profileTab='user';stopPlayerPolling();render();try{const response=await api.invoke('characters.list',{});state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];if(state.route==='profile')render();}catch(_){} });
     root.querySelector('#rsdwl-refresh')?.addEventListener('click',async()=>{try{const response=await api.invoke('application.rsdw.refresh',{force:true});if(response?.state)setData(response.state);toast('RSDW-L refreshed','Toolkit catalogs and launcher caches are current.','success');render();}catch(error){toast('RSDW-L refresh failed',error.message,'error');}});
+    root.querySelector('#refresh-integration-status')?.addEventListener('click',async()=>{try{await hydrateIntegrations({force:true});toast('Integration status refreshed','RSDW, Discord, and Nexus status checks completed.','success');}catch(error){toast('Integration refresh failed',error.message,'error');}});
     root.querySelectorAll('[data-rsdwl-tool]').forEach((button)=>button.addEventListener('click',async()=>{
       const tool=button.dataset.rsdwlTool||'character';
-      if(['character','inventory','spells'].includes(tool)){
-        await enterRsdwToolkit();
-        state.rsdwTool=tool==='inventory'?'item-editor':tool==='spells'?'spell-editor':'character-editor';
-        render();
-        if(tool!=='character')hydrateNativeRsdwTool(state.rsdwTool);
-        return;
-      }
-      const world=activeServerWorld()||serverWorlds()[0];
-      if(!world)return toast('Hosted World required',`${tool} uses a running or configured hosted World.`, 'error');
-      pushNavigation();state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab=tool;render();await loadServerTabData(tool);
+      if(state.rsdwlToolLoading)return;
+      const label=button.querySelector('b');const original=label?.textContent||'Open →';state.rsdwlToolLoading=tool;button.disabled=true;if(label)label.textContent='Loading…';
+      try{
+        if(['character','inventory','spells'].includes(tool)){
+          state.rsdwTool=tool==='inventory'?'item-editor':tool==='spells'?'spell-editor':'character-editor';
+          await enterRsdwToolkit();
+          if(tool!=='character')await hydrateNativeRsdwTool(state.rsdwTool);
+          return;
+        }
+        const world=activeServerWorld()||serverWorlds()[0];
+        if(!world)throw new Error(`${tool} uses a running or configured hosted World.`);
+        state.selectedServerWorldId=world.id;
+        await prepareRsdwlServerTool(tool,world);
+        pushNavigation();state.route='server-detail';state.serverTab=tool;render();
+        if(tool==='map')startPlayerPolling(world);
+      }catch(error){toast(tool==='map'?'Map unavailable':tool==='console'?'Console unavailable':'RSDW-L tool unavailable',error.message,'error');}
+      finally{state.rsdwlToolLoading='';if(button.isConnected){button.disabled=false;if(label)label.textContent=original;}}
     }));
     root.querySelectorAll('[data-profile-tab]').forEach((button)=>button.addEventListener('click',async()=>{const nextTab=button.dataset.profileTab||'user';if(nextTab==='characters'){state.characterProfileTab='overview';await enterRsdwToolkit();return;}if(state.route!=='profile'||state.profileTab!==nextTab)pushNavigation();state.profileTab=nextTab;state.route='profile';stopPlayerPolling();render();}));
     root.querySelector('#edit-profile-page')?.addEventListener('click',openPlayerProfile);
@@ -4704,8 +4799,25 @@
       socket.addEventListener('contextmenu',(event)=>{event.preventDefault();openStudioRepository(socket.dataset.studioEquipmentSlot);});
       socket.addEventListener('dragover',(event)=>{if(event.dataTransfer.types.includes('application/x-rsdw-equipment')){event.preventDefault();socket.classList.add('drag-allowed');}});
       socket.addEventListener('dragleave',()=>socket.classList.remove('drag-allowed'));
-      socket.addEventListener('drop',async(event)=>{event.preventDefault();socket.classList.remove('drag-allowed');let payload={};try{payload=JSON.parse(event.dataTransfer.getData('application/x-rsdw-equipment')||'{}');}catch(_){}if(payload.type!==socket.dataset.studioEquipmentSlot)return toast('Incompatible equipment',`This socket accepts ${socket.dataset.studioEquipmentSlot} items.`,'error');try{await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:payload.id,target_slot:Number(socket.dataset.studioEquipmentIndex)});}catch(error){toast('Equipment preview blocked',error.message,'error');}});
+      socket.addEventListener('drop',async(event)=>{event.preventDefault();socket.classList.remove('drag-allowed');let payload={};try{payload=JSON.parse(event.dataTransfer.getData('application/x-rsdw-equipment')||'{}');}catch(_){}if(payload.type!==socket.dataset.studioEquipmentSlot)return toast('Incompatible equipment',`This socket accepts ${socket.dataset.studioEquipmentSlot} items.`,'error');try{const response=await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:payload.id,target_slot:Number(socket.dataset.studioEquipmentIndex)},{paint:false});await syncRsdwAvatarPreview(response.avatar);}catch(error){toast('Equipment preview blocked',error.message,'error');}});
     });
+    root.querySelector('.studio-repository-grid')?.addEventListener('click',async(event)=>{
+      const item=event.target.closest('[data-studio-equipment-item]');
+      const slot=String(state.rsdwEquipmentRepositorySlot||'');
+      if(!item||slot==='Main Hand'||slot==='Off Hand')return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const index=RSDW_LOADOUT_SLOTS.findIndex(([type])=>type===slot);
+      try{
+        const response=await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:item.dataset.studioEquipmentItem,target_slot:index},{paint:false});
+        state.rsdwEquipmentRepositorySlot='';
+        root.querySelector('#studio-repository-backdrop')?.remove();
+        const row=(response.native_tool?.sections?.loadout||[]).find((entry)=>Number(entry.slot)===index);
+        const socket=root.querySelector(`[data-studio-equipment-index="${index}"]`);
+        if(socket&&row){socket.classList.add('occupied');const label=socket.querySelector('small');if(label)label.textContent=row.name||item.dataset.studioEquipmentName||'Equipped';}
+        await syncRsdwAvatarPreview(response.avatar);
+        toast('Equipment preview updated',`${item.dataset.studioEquipmentName} is staged. Apply to Character to save it.`,'success');
+      }catch(error){toast('Equipment preview blocked',error.message,'error');}
+    },true);
     root.querySelectorAll('[data-studio-equipment-item]').forEach((item)=>{
       item.addEventListener('dragstart',(event)=>{event.dataTransfer.setData('application/x-rsdw-equipment',JSON.stringify({id:item.dataset.studioEquipmentItem,type:item.dataset.studioEquipmentType}));event.dataTransfer.effectAllowed='copy';});
       item.addEventListener('click',async()=>{const slot=state.rsdwEquipmentRepositorySlot;const handId=slot==='Main Hand'?'slot-rightHand':slot==='Off Hand'?'slot-leftHand':'';if(handId){const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return toast('Weapon preview unavailable','The 3D avatar is still loading.','error');try{const result=await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(handId)});if(!select)return {ok:false};const clean=(v)=>String(v||'').toLowerCase().replace(/item|weapon|main|off|hand|one handed|two handed|1h|2h|[_./-]/g,' ').replace(/[^a-z0-9 ]/g,' ').replace(/\\s+/g,' ').trim();const wanted=clean(${JSON.stringify(item.dataset.studioEquipmentName||'')});const tokens=wanted.split(' ').filter((v)=>v.length>2);const rows=[...select.options].map((option)=>{const hay=clean(option.textContent+' '+option.value);const score=tokens.reduce((sum,token)=>sum+(hay.includes(token)?token.length:0),0);return {option,score};}).sort((a,b)=>b.score-a.score);if(!rows[0]||rows[0].score<=0)return {ok:false};select.value=rows[0].option.value;select.dispatchEvent(new Event('change',{bubbles:true}));return {ok:true,label:rows[0].option.textContent,value:rows[0].option.value};})()`,true);state.rsdwEquipmentRepositorySlot='';root.querySelector('#studio-repository-backdrop')?.remove();if(result?.ok){const avatar=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar;if(avatar?.params)avatar.params[handId==='slot-rightHand'?'rightHand':'leftHand']=result.value;const hand=root.querySelector(`[data-avatar-hand-slot="${handId}"] small`);if(hand)hand.textContent=item.dataset.studioEquipmentName||result.label;}toast(result?.ok?'Weapon preview updated':'No mapped 3D asset',result?.ok?`${item.dataset.studioEquipmentName} matched ${result.label}.`:'This item is valid for the slot, but RSDWModel has no matching 3D asset yet.',result?.ok?'success':'error');}catch(error){toast('Weapon preview unavailable',error.message,'error');}return;}const index=RSDW_LOADOUT_SLOTS.findIndex(([type])=>type===slot);try{await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:item.dataset.studioEquipmentItem,target_slot:index});state.rsdwEquipmentRepositorySlot='';render();}catch(error){toast('Equipment preview blocked',error.message,'error');}});
@@ -5020,7 +5132,7 @@
     root.querySelectorAll('[data-server-view]').forEach((button)=>button.addEventListener('click',()=>{state.serverWorldView=button.dataset.serverView==='list'?'list':'cards';render();}));
     root.querySelectorAll('[data-server-launch]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverLaunch));if(!world||button.disabled)return;try{const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, publishing Sync, and launching the dedicated server…',()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab='overview';toast('World launched',response.result?.pid?`Dedicated process PID ${response.result.pid} · Sync endpoint active`:'Sync endpoint active.','success');}catch(error){toast('Launch failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-stop]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverStop));if(!world||button.disabled)return;if(!await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server'))return;const label=button.textContent;button.disabled=true;button.textContent='Stopping…';try{const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('World stopped',`PID ${response.result?.stopped_pid||'—'} · ${response.result?.stop_method||'verified'}`,'success');}catch(error){button.disabled=false;button.textContent=label;toast('Stop failed',error.message,'error');}}));
-    root.querySelectorAll('[data-server-manage]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverManage));if(!world)return;pushNavigation();state.selectedServerWorldId=world.id;state.route='server-detail';render();}));
+    root.querySelectorAll('[data-server-manage]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverManage));if(!world)return;stopPlayerPolling();pushNavigation();state.selectedServerWorldId=world.id;state.serverTab='overview';state.route='server-detail';render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{}));}));
     root.querySelectorAll('[data-world-launch]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=browserWorlds().find((w)=>String(w.id)===String(button.dataset.worldLaunch));if(world)playWorld(world);}));
     root.querySelectorAll('[data-world-details]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const id=button.dataset.worldDetails;const world=browserWorlds().find((w)=>String(w.id)===String(id));if(!world||button.disabled)return;button.disabled=true;try{if(world.shared?.fingerprint_verified||world.status?.sync_verified||world.shared?.verified){const preview=await api.invoke('world.metadata.preview',{id});if(preview?.state)state.data=preview.state;}if(world.public_history?.provider==='lobbysup'){const observed=await api.invoke('world.public.history',{id,days:7});if(observed?.state)state.data=observed.state;}await api.invoke('world.select',{id}).catch(()=>{});}catch(error){toast('Live details unavailable',`${error.message} Showing cached metadata.`,'');}finally{pushNavigation();state.selectedWorldId=id;state.route='world-detail';render();}}));
     const worldSearch=root.querySelector('#world-search');
@@ -5196,10 +5308,11 @@
     root.querySelectorAll('[data-country-search]').forEach((input)=>input.addEventListener('input',()=>{const prefix=input.dataset.countrySearch;const q=input.value.trim().toLowerCase();root.querySelectorAll(`[data-country-picker="${prefix}"] .country-option`).forEach((row)=>{row.hidden=!!q&&!`${row.dataset.countryName||''} ${row.dataset.countryCode||''}`.includes(q);});}));
     root.querySelectorAll('.country-picker input[type=checkbox]').forEach((input)=>input.addEventListener('change',()=>{const attr=[...input.attributes].find((a)=>a.name.startsWith('data-')&&a.name.endsWith('-country'));if(!attr)return;const prefix=attr.name.slice(5,-8);const target=root.querySelector(`[data-selected-country-list="${prefix}"]`);if(!target)return;const selected=[...root.querySelectorAll(`[data-${prefix}-country]`)].filter(x=>x.checked).map(x=>x.getAttribute(`data-${prefix}-country`));target.innerHTML=selected.length?selected.map(code=>`<span class="country-flag-chip">${flagMarkup(code)} <b>${escapeHtml(countryName(code))}</b></span>`).join(''):'<span class="muted-small">No country blocks selected</span>'; }));
     root.querySelectorAll('[data-refresh-vpn-catalog]').forEach((button)=>button.addEventListener('click',async()=>{try{const result=await api.invoke('security.vpn_catalog.refresh',{});state.vpnCatalog=result;for(const [provider,entry] of Object.entries(result.providers||{})){const ranges=entry.ranges||[];root.querySelectorAll(`[data-global-access-vpn-ranges="${provider}"],[data-world-access-vpn-ranges="${provider}"]`).forEach(el=>{if(ranges.length)el.value=ranges.join('\n');});}toast('VPN IP catalog refreshed',`${Object.values(result.providers||{}).reduce((n,e)=>n+(e.ranges||[]).length,0)} cached network range(s). Save the access policy to apply them.`,'success');}catch(error){toast('VPN catalog refresh failed',error.message,'error');}}));
-    root.querySelectorAll('[data-settings-tab]').forEach((button) => button.addEventListener('click', async() => { state.settingsTab = button.dataset.settingsTab; render();if(state.settingsTab==='mods'&&!state.modRepository){try{state.modRepository=await api.invoke('mod.repository.list',{});render();}catch(error){toast('Mod repository scan failed',error.message,'error');}} }));
-    root.querySelector('#refresh-mod-repository')?.addEventListener('click',async()=>{try{state.modRepository=await api.invoke('mod.repository.list',{});render();toast('Mod repository refreshed',`${state.modRepository.entries?.length||0} shared mod entries found.`,'success');}catch(error){toast('Mod repository scan failed',error.message,'error');}});
+    root.querySelectorAll('[data-settings-tab]').forEach((button) => button.addEventListener('click', async() => { state.settingsTab = button.dataset.settingsTab; render();if(state.settingsTab==='integrations')await hydrateIntegrations(); }));
+    root.querySelector('#refresh-mod-repository')?.addEventListener('click',async()=>{try{const repository=await loadModRepository({force:true});toast('Mod repository refreshed',`${repository.entries?.length||0} shared mod entries found.`,'success');}catch(error){toast('Mod repository scan failed',error.message,'error');}});
     root.querySelector('#open-mod-repository')?.addEventListener('click',()=>{if(state.modRepository?.root)window.dragonwilds.openPath(state.modRepository.root);});
     root.querySelectorAll('[data-repository-nexus]').forEach((button)=>button.addEventListener('click',()=>window.dragonwilds.openInAppBrowser({url:button.dataset.repositoryNexus,purpose:'nexus'})));
+    root.querySelectorAll('[data-repository-edit]').forEach((button)=>button.addEventListener('click',async()=>{const kind=button.dataset.profileKind||'';const id=button.dataset.profileId||'';if(kind==='dedicated')state.selectedServerWorldId=id;else state.selectedWorldId=id;try{await openModExplorer(kind==='dedicated'?'server':'singleplayer',button.dataset.repositoryEdit);}catch(error){toast('Mod editor could not open',error.message,'error');}}));
     root.querySelectorAll('[data-repository-publish]').forEach((button)=>button.addEventListener('click',async()=>{if(!await managedConfirm('Publish this profile copy as the canonical mod and push it to every linked profile?\n\nNew schema/config files inside the mod are included. Profile-specific enablement, tags, and load order stay separate.','Publish Shared Mod'))return;try{const response=await api.invoke('mod.repository.publish',{kind:button.dataset.profileKind,profile_id:button.dataset.profileId,key:button.dataset.repositoryPublish,propagate:true});const result=response.result||response;state.modRepository=result.repository||state.modRepository;render();toast('Shared mod published',`${result.deployed?.length||0} linked profile${result.deployed?.length===1?'':'s'} updated.`,'success');}catch(error){toast('Mod publish failed',error.message,'error');}}));
     root.querySelectorAll('[data-servers-tab]').forEach((button) => button.addEventListener('click', () => { state.serversTab = button.dataset.serversTab === 'settings' ? 'settings' : 'worlds'; render(); }));
     root.querySelectorAll('[data-world-management-tab]').forEach((button)=>button.addEventListener('click',()=>{state.worldManagementTab=button.dataset.worldManagementTab||'worlds';state.worldManagementPage=1;render();}));
@@ -6297,7 +6410,7 @@
       const action = e.target.dataset.action; if (!action) return; menu.remove();
       if (server) {
         const world = serverWorlds().find((w) => w.id === id); if (!world) return;
-        if (action === 'open') { pushNavigation(); state.selectedServerWorldId = id; state.route = 'server-detail'; render(); }
+        if (action === 'open') { stopPlayerPolling();pushNavigation(); state.selectedServerWorldId = id; state.serverTab='overview';state.route = 'server-detail'; render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{})); }
         if (action === 'start') { try { const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, publishing Sync, and launching the dedicated server…',()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('Server started',`PID ${response.result?.pid||'—'} · Sync fingerprint active`,'success'); } catch(error){toast('Start failed',error.message,'error');} }
         if (action === 'stop' && await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server')) { try { const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('Server stopped',`PID ${response.result?.stopped_pid||'—'}`,'success'); } catch(error){toast('Stop failed',error.message,'error');} }
         if (action === 'unload' && await managedConfirm(`Unload “${world.name||'this hosted World'}”?\n\nChanges are snapshotted back to its Server Profile, then World-owned mods, configuration and live save data are removed from the shared server directory. Runtime cores remain installed.`,'Unload Server Profile')) { try { const response=await api.invoke('server.world.unload',{id});if(response.state)setData(response.state);render();toast('Server Profile unloaded','Changes saved; shared server directory returned to its clean runtime baseline.','success'); } catch(error){toast('Unload failed',error.message,'error');} }
@@ -6481,7 +6594,7 @@
 
   async function managePrivateWorld(world) {
     if (!world) return;
-    pushNavigation(); state.selectedWorldId = world.id; state.route = 'world-detail'; state.privateTab = 'overview';
+    stopPlayerPolling();pushNavigation(); state.selectedWorldId = world.id; state.route = 'world-detail'; state.privateTab = 'overview';
     const cached=state.privateInventory[world.id] || cachedProfileMods(world);
     state.singleplayerInventory=Array.isArray(cached)?cached:[];
     render();
@@ -6813,6 +6926,25 @@
 
   window.dragonwilds?.onJoinRequest?.((payload)=>{state.pendingDirectoryJoin=payload;if(state.data)setTimeout(()=>openDirectoryJoin(payload),40);});
   window.dragonwilds?.onNexusBrowserDownload?.(async(payload)=>{const pending=state.nexusPending;if(!pending)return;if(payload.state!=='completed')return toast('Nexus download did not complete',payload.name||'The browser download was interrupted.','error');try{toast('Nexus download complete','Inspecting and installing the staged archive…');await installNexusArchive(payload.path,pending.mod,pending.file);state.nexusPending=null;render();}catch(error){toast('Nexus mod install failed',error.message,'error');}});
+  document.addEventListener('dws:open-profile-mods',(event)=>{
+    const id=String(event.detail?.id||'');
+    const kind=event.detail?.kind==='server'?'server':'private';
+    if(!id)return;
+    if(kind==='server'){
+      const world=serverWorlds().find((row)=>String(row.id||'')===id);
+      if(!world)return toast('Hosted World unavailable','Refresh Hosting and try again.','error');
+      stopPlayerPolling();pushNavigation();state.selectedServerWorldId=world.id;state.serverTab='mods';state.route='server-detail';
+      if(!Array.isArray(state.serverInventory[world.id]))state.serverInventory[world.id]=cachedProfileMods(world)||[];
+      render();
+      return;
+    }
+    const world=privateWorldById(id);
+    if(!world)return toast('Private World unavailable','Refresh Dragonwilds and try again.','error');
+    stopPlayerPolling();pushNavigation();state.selectedWorldId=world.id;state.route='world-detail';
+    const cached=state.privateInventory[world.id]||cachedProfileMods(world);
+    state.singleplayerInventory=Array.isArray(cached)?cached:[];
+    state.privateTab='mods';render();
+  });
   document.addEventListener('keydown',(event)=>{
     if(event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey)return;
     if(event.key!=='`'&&event.key!=='~')return;

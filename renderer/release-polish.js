@@ -116,16 +116,10 @@
       const detail=modMode==='server'?'Dedicated Server':'Private World / Co-Op';
       return `<article class="release-mod-world"><div><strong>${esc(name)}</strong><small>${esc(detail)} · ${mods.length} cached mod${mods.length===1?'':'s'}</small></div><button class="btn primary compact-btn" data-release-open-mods="${esc(world.id||'')}" data-release-open-kind="${modMode}">Manage Mods</button></article>`;
     }).join('') : `<div class="empty-state">No ${modMode==='server'?'dedicated Server':'Private World / Co-Op'} profiles are configured.</div>`;
-    list.querySelectorAll('[data-release-open-mods]').forEach((button)=>button.addEventListener('click',()=>{
+    list.querySelectorAll('[data-release-open-mods]').forEach((button)=>button.addEventListener('click',(event)=>{
+      event.preventDefault();event.stopImmediatePropagation();
       const id=button.dataset.releaseOpenMods||''; const kind=button.dataset.releaseOpenKind;
-      const route=kind==='server'?'servers':'worlds';
-      const nav=document.querySelector(`[data-route="${route}"],[data-nav-route="${route}"]`);
-      nav?.click();
-      setTimeout(()=>{
-        const card=[...document.querySelectorAll('[data-world-id]')].find((node)=>String(node.dataset.worldId||'')===String(id));
-        const manage=[...card?.querySelectorAll('button')||[]].find((node)=>/manage|details|open/i.test(node.textContent||''));
-        manage?.click();
-      },60);
+      document.dispatchEvent(new CustomEvent('dws:open-profile-mods',{detail:{id,kind}}));
     }));
   }
 

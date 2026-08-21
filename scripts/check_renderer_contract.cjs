@@ -8,6 +8,9 @@ const avatarPreload = fs.readFileSync(path.join(root, 'electron', 'rsdw_webview_
 const placardWindows = fs.readFileSync(path.join(root, 'renderer', 'release-phase5-placard-window.js'), 'utf8');
 const responsiveCss = fs.readFileSync(path.join(root, 'renderer', 'release-responsiveness.css'), 'utf8');
 const baseCss = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
+const releaseNavigation = fs.readFileSync(path.join(root, 'renderer', 'release-navigation.js'), 'utf8');
+const releasePolish = fs.readFileSync(path.join(root, 'renderer', 'release-polish.js'), 'utf8');
+const performanceCss = fs.readFileSync(path.join(root, 'renderer', 'release-performance.css'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -19,12 +22,13 @@ assert(source.includes('data-webhost-tab="settings">Website &amp; Networking'),
   'The combined Sync workspace must expose its Networking tab.');
 assert(source.includes("navButton('webhost',webhostLinked?'◆':'◇','Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
-assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('rsdragonwilds-app'"),
-  'Characters, Mods, and RSDragonwilds must be first-class Appy navigation entries.');
+assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('world-management'"),
+  'Characters, Mods, and Dragonwilds must be first-class Appy navigation entries.');
 assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
-  source.includes("navButton('rsdragonwilds-app',navIconAsset('assets/dragonwilds_icon.ico')") &&
+  source.includes("navButton('world-management',navIconAsset('assets/dragonwilds_icon.ico'),'Dragonwilds'") &&
+  source.includes("navButton('rsdragonwilds-app','▣','Hosting'") &&
   baseCss.includes('.nav-icon-image{display:block;width:22px;height:22px'),
-  'RSDW-L and RSDragonwilds must use their approved navbar artwork.');
+  'Dragonwilds must retain the game artwork while Hosting remains an independent navigation section.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),
@@ -76,6 +80,11 @@ assert(source.includes('Pause 3D previews') && source.includes('hosting-focus-pl
 assert(!source.includes('characters.native.tools.read') &&
   source.includes("if(state.rsdwTool!=='character-editor')setTimeout(()=>hydrateNativeRsdwTool(state.rsdwTool),0)"),
   'Character Studio must parse only the selected subsystem instead of every editor at once.');
+assert(releaseNavigation.includes("if(button.textContent!=='▣ Open Placard')button.textContent='▣ Open Placard'") &&
+  releasePolish.includes("new CustomEvent('dws:open-profile-mods'") &&
+  source.includes("document.addEventListener('dws:open-profile-mods'") &&
+  performanceCss.includes('.mod-clean-row {\n  content-visibility: visible;'),
+  'World Manage and profile Mods navigation must remain idempotent and free of observer/layout loops.');
 
 function sha256(relativePath) {
   return crypto.createHash('sha256')

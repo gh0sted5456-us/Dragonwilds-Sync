@@ -341,6 +341,66 @@ def _write_state(meta: dict) -> None:
         except OSError: pass
 
 
+def _patch_avatar_viewer(script: str) -> str:
+    """Add a small integration API and cancel stale asynchronous mesh swaps.
+
+    RSDWModel intentionally updates each equipment slot independently.  When a
+    launcher applies a complete appearance in one operation, older GLTF loads
+    can otherwise finish after newer ones and leave duplicate meshes behind.
+    The patch stays deliberately narrow and fails closed if upstream changes
+    the expected viewer structure.
+    """
+    if "dwsAvatarUpdateGeneration" in script:
+        return script
+    replacements = (
+        (
+            "  const activeObjects = new Map();\n  const activeMixers = [];",
+            "  const activeObjects = new Map();\n  const activeMixers = [];\n  let dwsAvatarUpdateGeneration = 0;",
+        ),
+        (
+            "  async function loadSlot(slot, row) {",
+            "  async function loadSlot(slot, row, generation = dwsAvatarUpdateGeneration) {",
+        ),
+        (
+            "    await applyVariants(cloned, row);\n    avatarRoot.add(cloned);\n    activeObjects.set(slot, cloned);",
+            "    await applyVariants(cloned, row);\n    if (generation !== dwsAvatarUpdateGeneration) return;\n    const current = activeObjects.get(slot);\n    if (current && current.parent) current.parent.remove(current);\n    avatarRoot.add(cloned);\n    activeObjects.set(slot, cloned);",
+        ),
+        (
+            "  async function updateAvatar() {\n    els.loading.hidden = false;",
+            "  async function updateAvatar() {\n    const generation = ++dwsAvatarUpdateGeneration;\n    els.loading.hidden = false;",
+        ),
+        (
+            "      await Promise.all(rows.map(([slot, row]) => loadSlot(slot, row)));\n      for (const slot of SLOT_ORDER) {\n        if (!visibleSlots.has(slot)) await loadSlot(slot, null);\n      }\n      attachHeldSlots();",
+            "      await Promise.all(rows.map(([slot, row]) => loadSlot(slot, row, generation)));\n      if (generation !== dwsAvatarUpdateGeneration) return false;\n      for (const slot of SLOT_ORDER) {\n        if (!visibleSlots.has(slot)) await loadSlot(slot, null, generation);\n      }\n      if (generation !== dwsAvatarUpdateGeneration) return false;\n      attachHeldSlots();",
+        ),
+        (
+            "    } catch (error) {\n      console.error(error);\n      setWarning(\"The avatar could not finish loading. Confirm the selected WebAssets exist on this branch.\");",
+            "    } catch (error) {\n      if (generation !== dwsAvatarUpdateGeneration) return false;\n      console.error(error);\n      setWarning(\"The avatar could not finish loading. Confirm the selected WebAssets exist on this branch.\");",
+        ),
+        (
+            "    } finally {\n      els.loading.hidden = true;\n    }\n  }\n\n  function setSex(sex) {",
+            "    } finally {\n      if (generation === dwsAvatarUpdateGeneration) els.loading.hidden = true;\n    }\n    return generation === dwsAvatarUpdateGeneration;\n  }\n\n  window.dwsApplyAvatarParams = async function dwsApplyAvatarParams(params = {}) {\n    const next = params && typeof params === 'object' ? params : {};\n    if (next.sex === 'M_MED' || next.sex === 'F_MED') state.sex = next.sex;\n    for (const slot of SLOT_ORDER) {\n      if (Object.prototype.hasOwnProperty.call(next, slot)) state.slots[slot] = next[slot] || null;\n    }\n    for (const [role, key] of [['skin', 'skinColor'], ['hair', 'hairColor'], ['eyes', 'eyeColor']]) {\n      if (next[key]) state.colors[role] = next[key];\n    }\n    state = normalizeState(state);\n    renderControls();\n    return updateAvatar();\n  };\n\n  function setSex(sex) {",
+        ),
+    )
+    patched = script
+    for before, after in replacements:
+        if before not in patched:
+            raise RuntimeError("RSDWModel Avatar viewer integration contract changed upstream.")
+        patched = patched.replace(before, after, 1)
+    return patched
+
+
+def _ensure_avatar_viewer_patch(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    current = path.read_text(encoding="utf-8")
+    patched = _patch_avatar_viewer(current)
+    if patched == current:
+        return False
+    path.write_text(patched, encoding="utf-8")
+    return True
+
+
 def refresh_model_index(*, force: bool = False, repo: str = DEFAULT_MODEL_REPO, branch: str = DEFAULT_MODEL_BRANCH) -> dict:
     """Atomically refresh the small RSDWModel manifest independently of the app."""
     repo = str(repo or DEFAULT_MODEL_REPO).strip() or DEFAULT_MODEL_REPO
@@ -351,7 +411,8 @@ def refresh_model_index(*, force: bool = False, repo: str = DEFAULT_MODEL_REPO, 
         if not revision:
             raise RuntimeError("RSDWModel upstream revision could not be determined.")
         if not force and before.get("model_valid") and str(before.get("model_revision") or "") == revision:
-            return {**before, "ok": True, "changed": False, "checked_at": time.time()}
+            patched = _ensure_avatar_viewer_patch(RSDW_MODEL_DIR / "Avatar" / "avatar.js")
+            return {**status(), "ok": True, "changed": patched, "checked_at": time.time()}
         RSDW_CACHE_ROOT.mkdir(parents=True, exist_ok=True)
         staged = RSDW_CACHE_ROOT / ".model.next"
         shutil.rmtree(staged, ignore_errors=True)
@@ -386,6 +447,7 @@ def refresh_model_index(*, force: bool = False, repo: str = DEFAULT_MODEL_REPO, 
                 'https://unpkg.com/three@0.184.0/examples/jsm/libs/draco/',
                 '/__rsdwmodel/vendor/three/examples/jsm/libs/draco/',
             )
+            avatar_script = _patch_avatar_viewer(avatar_script)
             avatar_script_path.write_text(avatar_script, encoding="utf-8")
             # Keep the renderer and its dependencies local while resolving the
             # independently versioned, selected model layers from RSDWModel.

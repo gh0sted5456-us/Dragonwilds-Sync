@@ -457,9 +457,10 @@ function createWindow({ show = true } = {}) {
       const scrollTo=async(selector)=>{for(let attempt=0;attempt<120;attempt++){const found=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.scrollIntoView({block:'start'});return true;})()`);if(found){await wait(1400);return true;}await wait(250);}return false;};
       const waitFor=async(selector,attempts=120)=>{for(let attempt=0;attempt<attempts;attempt++){if(await mainWindow.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`))return true;await wait(250);}return false;};
       const enterWhenReady=async()=>{for(let attempt=0;attempt<160;attempt++){const state=await mainWindow.webContents.executeJavaScript(`(()=>{const nav=document.querySelector('[data-route="world-management"]');if(nav)return 'ready';const enter=document.querySelector('#enter-launcher');if(enter){enter.click();return 'entered';}return 'waiting';})()`);if(state==='ready'){await wait(500);return;}await wait(state==='entered'?900:250);}throw new Error('Launcher did not reach its Appy navigation within 40 seconds.');};
+      const assertAppyNavigation=async()=>{const result=await mainWindow.webContents.executeJavaScript(`(()=>{const expected=['world-management','characters-app','mods-app','rsdw-launcher','webhost','help','settings'];const rows=[...document.querySelectorAll('.appy-nav[data-route]')];const routes=rows.map((node)=>node.dataset.route);const missing=expected.filter((route)=>!routes.includes(route));const emptyIcons=rows.filter((node)=>!String(node.querySelector('.nav-icon')?.textContent||'').trim()&&!node.querySelector('.nav-icon img')).map((node)=>node.dataset.route);return {ok:!missing.length&&!emptyIcons.length&&!routes.includes('rsdragonwilds-app'),missing,emptyIcons,routes};})()`);if(!result?.ok)throw new Error(`Appy navigation contract failed: ${JSON.stringify(result)}`);};
       try {
         await wait(2200); await shot('01-getting-started.png');
-        await enterWhenReady(); await shot('02-worlds.png');
+        await enterWhenReady();await assertAppyNavigation();await shot('02-worlds.png');
         await click('[data-route="characters-app"]'); await shot('40-character-creator-top.png'); await scrollTo('.native-avatar-section'); await waitFor('.native-avatar-section .avatar-ready'); await shot('03-characters.png');
         await click('[data-route="mods-app"]'); await wait(1200); await shot('07-mods.png');
         if(await click('[data-release-open-mods]',{optional:true})){
@@ -467,12 +468,13 @@ function createWindow({ show = true } = {}) {
           await shot('41-profile-mod-editor.png');
         }
         await click('[data-route="rsdw-launcher"]'); await shot('38-rsdwl.png');
-        await click('[data-route="rsdragonwilds-app"]'); await shot('05-server-setup.png');
+        await click('[data-route="world-management"]');await click('[data-world-management-tab="server-setup"]');await shot('05-server-setup.png');
         await click('[data-route="webhost"]'); await click('[data-webhost-tab="settings"]'); await shot('09-networking.png');
         await click('[data-webhost-tab="manifest"]'); await shot('29-manifest-hosts.png');
         await click('[data-route="settings"]'); await shot('13-settings.png');
         await click('[data-settings-tab="integrations"]'); await shot('39-integrations.png');
         await click('[data-settings-tab="mods"]'); await wait(1200); await shot('37-mod-management.png');
+        await click('#player-chip');await waitFor('.profile-character-saves');await shot('42-profile-character-saves.png');
         await click('[data-route="help"]'); await shot('27-help-flow.png');
         console.log(`[OK] Current Help screenshots captured: ${output}`);
       } catch (error) { console.error(`[help-capture] ${error?.stack||error}`); process.exitCode=1; }

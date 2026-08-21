@@ -15,6 +15,19 @@ release metadata move together.
 The launcher separates desired profile state, managed application data, and the
 materialized game/server runtime. Do not manually combine those locations.
 
+## Appy navigation
+
+The **Dragonwilds** Appy, identified by the game icon, is the single workspace
+for World profiles, Singleplayer, Co-Op, Dedicated hosting, game setup, and
+connections. Hosting is a tab in this workspace rather than a second
+RSDragonwilds navigation item. **Characters**, **Mods**, **RSDW-L**, **Sync**,
+**Helpy**, and **Settings** remain independent navigation entries with stable
+icons. Legacy Hosting shortcuts are redirected to Dragonwilds → Hosting.
+
+Open the Player chip to see **Associated Character Saves**, their linked or
+preferred Worlds, and whether each save is editable. **Open Character Editor in
+RSDW-L** selects that exact save before entering the protected editor.
+
 ## Worlds and profiles
 
 A World profile is the durable authority for one World identity. Use the supported
@@ -28,6 +41,10 @@ User mods are classified as UE4SS, RuneSchema, or Pak content. Core components a
 hidden infrastructure are managed by the launcher and are not ordinary user mods.
 Server and client material can differ; the client builds its own role-correct
 runtime and must never copy the server's literal `mods.txt`.
+
+The Mods Appy lists profile-owned copies and their load order. **Edit** opens the
+selected managed root. Supported text files are editable, JSON is validated
+before save, and writes are atomic; binary files remain visible but read-only.
 
 ## Sync and joining
 

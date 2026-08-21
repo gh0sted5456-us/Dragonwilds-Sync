@@ -26,9 +26,9 @@ assert(source.includes("navButton('characters-app'") && source.includes("navButt
   'Characters, Mods, and Dragonwilds must be first-class Appy navigation entries.');
 assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
   source.includes("navButton('world-management',navIconAsset('assets/dragonwilds_icon.ico'),'Dragonwilds'") &&
-  source.includes("navButton('rsdragonwilds-app','▣','Hosting'") &&
+  !source.includes("navButton('rsdragonwilds-app'") &&
   baseCss.includes('.nav-icon-image{display:block;width:22px;height:22px'),
-  'Dragonwilds must retain the game artwork while Hosting remains an independent navigation section.');
+  'Dragonwilds must retain the game artwork and own Hosting without a duplicate navigation item.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),

@@ -2,6 +2,20 @@
 
 Hosted Worlds use profile-owned presentation, save/config snapshots, mod state, Sync settings, and public-safe metadata while sharing the machine-level dedicated Dragonwilds runtime.
 
+Open **Dragonwilds → Hosting** for dedicated paths, validation, setup, and hosted World creation. Hosting is no longer a separate RSDragonwilds navigation item.
+
+![Dragonwilds Hosting setup](../renderer/assets/help/05-server-setup.png) "Dedicated setup remains inside the game-icon Dragonwilds Appy."
+
+## Fluid startup sequence
+
+1. Resolve the selected profile and immutable desired revision.
+2. Materialize its save, configuration, and managed mods.
+3. Launch and verify the dedicated process.
+4. Start and verify the World-owned Sync listener.
+5. Publish only after both runtime and Sync evidence pass.
+
+Stop and restart use the same operation guard and verify process-tree cleanup before reporting success.
+
 ## WebHost
 
 WebHost can project the public World browser, accept authenticated Sync heartbeats, expose public-safe API routes, and provide paired remote server administration when enabled.

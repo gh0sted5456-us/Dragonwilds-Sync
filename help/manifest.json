@@ -1,8 +1,8 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 1,
+  "version": 2,
   "title": "Dragonwilds Sync Field Guide",
-  "updated_at": "2026-08-17",
+  "updated_at": "2026-08-21",
   "pages": [
     {
       "id": "getting-started",
@@ -10,6 +10,13 @@
       "category": "Getting Started",
       "summary": "First launch, Player Setup, and the launcher workspace.",
       "markdown": "getting-started.md"
+    },
+    {
+      "id": "appy-walkthrough",
+      "title": "Appy Walkthrough",
+      "category": "Getting Started",
+      "summary": "Current navigation, icons, profile handoffs, and the recommended end-to-end flow.",
+      "markdown": "appy-walkthrough.md"
     },
     {
       "id": "worlds-sync",

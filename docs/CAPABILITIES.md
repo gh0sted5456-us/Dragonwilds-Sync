@@ -7,6 +7,8 @@ This is the current source-level capability contract for `testing-ground`. A cap
 - Full desktop mode and profile-focused Quick/Minimal mode use the same backend authority.
 - Single-instance handling, tray/background behavior, managed dialogs, detached application windows, placard windows, safe-graphics recovery, and Windows shortcuts are provided by Electron.
 - Dark/light themes, responsive layouts, cached navigation, bounded prewarming, localized loading states, notifications, Help, and Settings are renderer-owned presentation concerns.
+- The game-icon Dragonwilds Appy combines World Management and Dedicated hosting; Characters, Mods, RSDW-L, Sync, Helpy, and Settings retain distinct navigation entries and icons.
+- Profile lists discovered Character saves with World associations and can hand the exact selected save directly to the RSDW-L Character Editor.
 - The renderer has no unrestricted Node access; mutable work crosses explicit preload and JSON-RPC bridges.
 
 ## Worlds and profiles
@@ -29,6 +31,7 @@ This is the current source-level capability contract for `testing-ground`. A cap
 - User mod families are UE4SS, RuneSchema, and PAK.
 - Core frameworks, DragonCore, DragonConnect, RSDW data, and runtime tooling are separately classified and cannot masquerade as ordinary user mods.
 - Discovery, role classification, load order, `mods.txt`, tags, hotload declarations, `ID.txt`, install/update/move/remove, Explorer/editing, shared repository, and Nexus provenance/staging are supported.
+- Managed text mod files are editable within their selected root with JSON validation where applicable and atomic save behavior; unsupported binary payloads remain read-only.
 - Client state is generated from verified CLIENT/BOTH roles. The server's literal `mods.txt` is never copied to clients.
 
 ## Sync, Direct Connect, and exchange

@@ -83,7 +83,7 @@ assert(!source.includes('characters.native.tools.read') &&
 assert(releaseNavigation.includes("if(button.textContent!=='▣ Open Placard')button.textContent='▣ Open Placard'") &&
   releasePolish.includes("new CustomEvent('dws:open-profile-mods'") &&
   source.includes("document.addEventListener('dws:open-profile-mods'") &&
-  performanceCss.includes('.mod-clean-row {\n  content-visibility: visible;'),
+  /\.mod-clean-row \{\r?\n  content-visibility: visible;/.test(performanceCss),
   'World Manage and profile Mods navigation must remain idempotent and free of observer/layout loops.');
 
 function sha256(relativePath) {

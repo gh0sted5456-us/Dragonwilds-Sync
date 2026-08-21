@@ -27,12 +27,14 @@ def main():
     assert not (ROOT / "resources/webhost/shared-worlds.json").exists()
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    renderer_v2 = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     assert "Release 1." in renderer and "Application Updates" in renderer
     assert "application-github-url" not in renderer
     assert "check-application-update" in renderer and "update-application-now" in renderer
     assert "https://github.com/gh0sted5456-us/Dragonwilds-Sync" in renderer
     assert "character-studio-tabs" not in renderer
-    assert '<webview id="rsdw-avatar-webview"' in renderer and 'native-avatar-section' in renderer
+    assert '<webview id="rsdw-avatar-webview"' in renderer_v2
+    assert 'rsdw-native-character-editor' in renderer_v2
     assert "splash-update-now" in renderer and "splash-changelog-dismiss" in renderer
     assert "World Discovery" in renderer and "toggle-multiple-servers" in renderer
 

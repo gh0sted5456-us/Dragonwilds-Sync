@@ -293,13 +293,19 @@ async function loadWorlds() {
     deriveStatsFromWorlds();
     renderWorlds();
   } catch (error) {
-    setDirectoryState('error', 'Directory unavailable', 'Live world data could not be reached');
-    const grid = $('#world-grid');
-    if (grid) {
-      grid.replaceChildren();
-      const state = makeEl('div', 'directory-placeholder');
-      state.append(makeEl('strong', '', 'Public directory temporarily unavailable'), makeEl('p', '', 'Downloads, documentation, and the rest of the site are still available.'));
-      grid.appendChild(state);
+    if (allWorlds.length) {
+      setDirectoryState('online', 'Directory cached', `${allWorlds.length} public world${allWorlds.length === 1 ? '' : 's'} retained while the directory reconnects`);
+      deriveStatsFromWorlds();
+      renderWorlds();
+    } else {
+      setDirectoryState('error', 'Directory unavailable', 'Live world data could not be reached');
+      const grid = $('#world-grid');
+      if (grid) {
+        grid.replaceChildren();
+        const state = makeEl('div', 'directory-placeholder');
+        state.append(makeEl('strong', '', 'Public directory temporarily unavailable'), makeEl('p', '', 'Downloads, documentation, and the rest of the site are still available.'));
+        grid.appendChild(state);
+      }
     }
   }
 }

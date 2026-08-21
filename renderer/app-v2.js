@@ -22,6 +22,20 @@
   const detachedRoute = query.get('route') || '';
   let detachedContext = {};
   try { detachedContext = query.get('ctx') ? JSON.parse(atob(query.get('ctx').replace(/-/g,'+').replace(/_/g,'/'))) : {}; } catch (_) { detachedContext = {}; }
+  const uiSwapMetrics=[];let pendingUiSwap=null;const MAX_UI_SWAP_METRICS=160;
+  let detachedCloseGuard=null;
+  const percentile=(values,p)=>{if(!values.length)return 0;const sorted=[...values].sort((a,b)=>a-b);return sorted[Math.min(sorted.length-1,Math.max(0,Math.ceil(sorted.length*p)-1))];};
+  function uiSwapSnapshot(){
+    const rows=uiSwapMetrics.slice();const sync=rows.map((row)=>row.sync_ms),settled=rows.map((row)=>row.settled_ms);
+    return {count:rows.length,sync_p50_ms:percentile(sync,.5),sync_p95_ms:percentile(sync,.95),settled_p50_ms:percentile(settled,.5),settled_p95_ms:percentile(settled,.95),budget:{sync_ms:50,settled_ms:120},rows};
+  }
+  window.__DWSYNC_SWAP_METRICS__={snapshot:uiSwapSnapshot,clear:()=>{uiSwapMetrics.length=0;pendingUiSwap=null;}};
+  document.addEventListener('click',(event)=>{
+    const target=event.target?.closest?.('button,[data-route],[role="tab"]');if(!target)return;
+    const entry=Object.entries(target.dataset||{}).find(([key])=>/(route|appy|tab|section|tool|view)$/i.test(key));
+    if(!entry)return;
+    pendingUiSwap={kind:entry[0],target:String(entry[1]||target.textContent||'').trim().slice(0,100),startedAt:performance.now(),wallAt:Date.now()};
+  },true);
 
   const state = {
     data: null,
@@ -1584,6 +1598,10 @@
     root.className = 'welcome-root';
     root.innerHTML = `<div class="fantasy-loading"><img class="fantasy-loading-art" src="assets/theme/animated-splash.gif" alt=""/><div class="fantasy-loading-card"><img src="assets/application-icon.png" alt="" /><div class="spinner"></div><strong>Preparing Dragonwilds Sync</strong><span data-startup-status>Restoring Worlds, profiles, paths, and server state…</span><div class="startup-progress" role="progressbar"><i></i></div></div></div>`;
     try {
+      if(detachedMode && window.dragonwilds?.detachedContext){
+        const detached=await window.dragonwilds.detachedContext();
+        if(detached?.context && typeof detached.context==='object')detachedContext=detached.context;
+      }
       state.data = await api.invoke('bootstrap');
       window.__DWSYNC_STATE__ = state.data;
       if (!state.selectedWorldId) state.selectedWorldId = state.data?.client?.active_world_id || null;
@@ -4363,8 +4381,17 @@
 
   let renderFailureCount=0;
   function render() {
+    const renderStarted=performance.now();
     try {
-      const result=renderUnsafe();renderFailureCount=0;return result;
+      const result=renderUnsafe();renderFailureCount=0;
+      const syncMs=Math.round((performance.now()-renderStarted)*10)/10;
+      const intent=pendingUiSwap&&performance.now()-pendingUiSwap.startedAt<15000?pendingUiSwap:{kind:'render',target:String(state.route||'unknown'),startedAt:renderStarted,wallAt:Date.now()};
+      pendingUiSwap=null;
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        const row={kind:intent.kind,target:intent.target,route:String(state.route||''),sync_ms:syncMs,settled_ms:Math.round((performance.now()-intent.startedAt)*10)/10,at:intent.wallAt};
+        uiSwapMetrics.push(row);if(uiSwapMetrics.length>MAX_UI_SWAP_METRICS)uiSwapMetrics.splice(0,uiSwapMetrics.length-MAX_UI_SWAP_METRICS);
+      }));
+      return result;
     } catch(error) {
       renderFailureCount+=1;
       console.error('[renderer] UI render failed',error);
@@ -4471,7 +4498,7 @@
     root.querySelectorAll('[data-help-image]').forEach((button)=>button.addEventListener('click',()=>{const src=button.dataset.helpImage;const alt=button.dataset.helpAlt||'Help screenshot';showModal(`<div class="modal-header"><div><div class="eyebrow">Field Guide</div><h2>${escapeHtml(alt)}</h2></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body help-image-modal"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"/></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`,{title:alt,width:1320,height:900});}));
     bindPersistentOnce(root.querySelector('#window-minimize'),'click','minimize',() => window.dragonwilds.windowMinimize());
     bindPersistentOnce(root.querySelector('#window-maximize'),'click','maximize',() => window.dragonwilds.windowToggleMaximize());
-    bindPersistentOnce(root.querySelector('#window-close'),'click','close',() => window.dragonwilds.windowClose());
+    bindPersistentOnce(root.querySelector('#window-close'),'click','close',async() => {if(detachedCloseGuard&&!await detachedCloseGuard())return;window.dragonwilds.windowClose();});
     root.querySelectorAll('[data-open-external]').forEach((button) => button.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); const ok = await window.dragonwilds.openExternal(button.dataset.openExternal); if (!ok) toast('Could not open link', 'Only valid HTTP/HTTPS links are allowed.', 'error'); }));
     root.querySelector('#view-community-license')?.addEventListener('click', async()=>{
       const text = await window.dragonwilds.legalText();
@@ -5828,14 +5855,14 @@
     const theme = document.body.dataset.theme === 'light' ? 'vs' : 'vs-dark';
     const referenceFallback = root.querySelector('#json-reference-fallback');
     const editableFallback = root.querySelector('#json-editor-fallback');
-    let editor = null;
+    let editor = null, referenceEditor = null;
     try {
       const monaco = await loadMonaco();
       const referenceHost = root.querySelector('#monaco-json-reference');
       const editableHost = root.querySelector('#monaco-json-editor');
       if (!document.body.contains(editableHost)) return { editor: null, fallback: editableFallback };
       if (referenceHost) {
-        monaco.editor.create(referenceHost, { value: opened.content || '', language, automaticLayout: true, minimap: { enabled: false }, theme, readOnly: true, domReadOnly: true, scrollBeyondLastLine: false, wordWrap: 'on' });
+        referenceEditor=monaco.editor.create(referenceHost, { value: opened.content || '', language, automaticLayout: true, minimap: { enabled: false }, theme, readOnly: true, domReadOnly: true, scrollBeyondLastLine: false, wordWrap: 'on' });
         if (referenceFallback) referenceFallback.style.display = 'none';
       }
       editor = monaco.editor.create(editableHost, { value: opened.content || '', language, automaticLayout: true, minimap: { enabled: false }, theme, scrollBeyondLastLine: false, wordWrap: 'on', fontSize: 13, tabSize: 2 });
@@ -5845,7 +5872,7 @@
       if (editableFallback) editableFallback.style.display = 'block';
       toast('Monaco fallback active', `${error.message} Plain text editing remains available.`, '');
     }
-    return { editor, fallback: editableFallback };
+    return { editor, fallback: editableFallback, dispose:()=>{try{editor?.dispose();}catch(_){}try{referenceEditor?.dispose();}catch(_){}} };
   }
 
   function modFileIcon(path, editable) {
@@ -5900,52 +5927,77 @@
 
   async function openModExplorer(scope, unitKey) {
     let host=document.querySelector('#mod-explorer-window');
+    let modWindow=host?.closest('.desktop-window')||null;
     if(!detachedMode&&!host){
       const name=String(unitKey||'Mod').split('::').pop()||'Mod';
       const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Profile-scoped Mod Explorer</div><h2>${escapeHtml(name)}</h2><p>Browse folders and edit launcher-supported files without leaving Dragonwilds Sync.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body mod-explorer-modal-body"><section id="mod-explorer-window"></section></div>`,{native:false,title:`${name} Mod Explorer`,width:1280,height:820});
-      win.querySelector('.modal')?.classList.add('mod-explorer-modal');host=win.querySelector('#mod-explorer-window');
+      win.querySelector('.modal')?.classList.add('mod-explorer-modal');host=win.querySelector('#mod-explorer-window');modWindow=win;
+      // A Monaco surface needs a state-aware native route rather than the
+      // lightweight HTML mirror used by ordinary application dialogs.
+      win._dwsPopOut=()=>{toast('Editor is still loading','Wait for the file tree to finish loading, then try again.','');return false;};
     }
     if(!host)return;
+    try{host._dwsDispose?.();}catch(_){}
     host.innerHTML='<div class="detached-loading"><div class="spinner"></div><strong>Loading mod files…</strong><span>Resolving the selected World profile and mod repository.</span></div>';
     const world=scope==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
     try {
-      let files=[];
+      let files=[];let explorerRoot='';
       if(scope==='server'){
         if(!world)throw new Error('Select a dedicated World first.');
         let response=await api.invoke('server.world.config.list',{id:world.id});
+        explorerRoot=String(response.root||'');
         files=(response.configs||[]).filter((item)=>item.unit_key===unitKey).map((item)=>({...item,editable:true}));
         for(let attempt=0;!files.length&&response.active&&attempt<8;attempt+=1){
           const status=host.querySelector('.detached-loading span');
           if(status)status.textContent=`Indexing this live mod in the RSDragonwilds workspace… ${attempt+1}/8`;
           await new Promise((resolve)=>setTimeout(resolve,750));
           response=await api.invoke('server.world.config.list',{id:world.id,force:true});
+          explorerRoot=String(response.root||explorerRoot);
           files=(response.configs||[]).filter((item)=>item.unit_key===unitKey).map((item)=>({...item,editable:true}));
         }
       }else{
         const profileId=world?.kind==='singleplayer'?world.id:(state.data?.client?.active_private_world_id||'singleplayer');
         const response=await api.invoke('singleplayer.mod.files',{key:unitKey,profile_id:profileId,tree:true});
-        files=response.files||[];
+        files=response.files||[];explorerRoot=String(response.root||'');
       }
       const name=String(unitKey||'').split('::').pop()||'Mod';
       const groupFor=(file)=>{const path=String(file.relative_path||'').replace(/\\/g,'/'),base=path.split('/').pop().toLowerCase(),ext=base.split('.').pop();if(base==='id.txt'||base==='hotload.txt'||base==='tags.txt'||base==='identity.txt')return 'Sync Identifiers';if(['pak','ucas','utoc'].includes(ext))return '/Paks';const dir=path.includes('/')?path.slice(0,path.lastIndexOf('/')):'';return dir?`/${dir}`:`/${name}`;};
       const groups=new Map();files.forEach((file)=>{const label=groupFor(file);if(!groups.has(label))groups.set(label,[]);groups.get(label).push(file);});
       const order=(label)=>label==='Sync Identifiers'?3:label==='/Paks'?2:1;
       const rows=[...groups.entries()].sort((a,b)=>order(a[0])-order(b[0])||a[0].localeCompare(b[0])).map(([label,entries])=>`<section class="mod-explorer-group ${label==='Sync Identifiers'?'identifiers':''}"><h3>${escapeHtml(label)}</h3>${entries.map((file)=>`<button class="mod-explorer-file ${file.editable===false?'readonly':''}" data-mod-explorer-file="${escapeHtml(file.relative_path||'')}" ${file.editable===false?'data-readonly="1"':''}>${modFileIcon(file.relative_path,file.editable!==false)}<span><b>${escapeHtml(file.name||file.relative_path)}</b><small>${escapeHtml(file.relative_path||'')} · ${formatBytes(file.size||0)}</small></span></button>`).join('')}</section>`).join('');
-      host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Profile-scoped Mod Explorer</div><h2>${escapeHtml(name)}</h2><p>Browse folders, edit supported text files, or add a RuneSchema recipe/config inside this mod.</p></div><div class="header-actions"><button class="btn ghost" id="close-mod-explorer-window">Close</button></div></div><div class="mod-explorer detached-window-body"><aside class="mod-explorer-tree"><div class="mod-explorer-root"><span>▾ ${escapeHtml(name)}</span>${scope==='singleplayer'?'<button class="btn primary compact-btn" id="new-mod-explorer-file">+ Add File</button>':''}</div>${rows||'<div class="empty-state compact">No files were found for this mod.</div>'}</aside><section class="mod-explorer-editor" id="mod-explorer-editor"><div class="empty-state"><strong>Select a file</strong><br/>Binary files remain view-only.</div></section></div><div class="detached-window-footer"><span>Writes are atomic and cannot escape this mod directory.</span><div class="footer-right"><button class="btn primary" id="save-mod-explorer-file" disabled>Save File</button></div></div>`;
+      host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Profile-scoped Mod Explorer</div><h2>${escapeHtml(name)}</h2><p>Browse folders, edit supported text files, or add a RuneSchema recipe/config inside this mod.</p>${explorerRoot?`<code class="mod-explorer-managed-path" title="${escapeHtml(explorerRoot)}">${escapeHtml(explorerRoot)}</code>`:''}</div><div class="header-actions">${explorerRoot?'<button class="btn ghost" id="open-mod-explorer-root">Open Mod Folder</button>':''}${!detachedMode?'<button class="btn ghost" id="popout-mod-explorer-window">↗ Another Screen</button>':''}<button class="btn ghost" id="close-mod-explorer-window">Close</button></div></div><div class="mod-explorer detached-window-body"><aside class="mod-explorer-tree"><div class="mod-explorer-root"><span>▾ ${escapeHtml(name)}</span>${scope==='singleplayer'?'<button class="btn primary compact-btn" id="new-mod-explorer-file">+ Add File</button>':''}</div>${rows||'<div class="empty-state compact">No files were found for this mod.</div>'}</aside><section class="mod-explorer-editor" id="mod-explorer-editor"><div class="empty-state"><strong>Select a file</strong><br/>Binary files remain view-only.</div></section></div><div class="detached-window-footer"><span>Writes are atomic and cannot escape this mod directory.</span><div class="footer-right"><button class="btn primary" id="save-mod-explorer-file" disabled>Save File</button></div></div>`;
       host.classList.add('mod-explorer-host');
-      let editor=null,opened=null;
+      let editor=null,opened=null,dirty=false;
+      const currentContent=()=>{const fallback=editorPane?.querySelector('#mod-explorer-fallback');return editor?editor.getValue():(fallback?.value||'');};
+      const updateDirty=()=>{dirty=!!opened&&currentContent()!==String(opened.content||'');host.dataset.dirty=dirty?'1':'0';if(saveButton)saveButton.title=dirty?'Unsaved changes':'No unsaved changes';};
       const editorPane=host.querySelector('#mod-explorer-editor');const saveButton=host.querySelector('#save-mod-explorer-file');
-      host.querySelector('#close-mod-explorer-window')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));
+      host.querySelector('#open-mod-explorer-root')?.addEventListener('click',()=>window.dragonwilds.openPath(explorerRoot));
+      host.querySelector('#close-mod-explorer-window')?.addEventListener('click',async()=>{if(detachedMode){if(detachedCloseGuard&&!await detachedCloseGuard())return;window.dragonwilds.windowClose();}else requestCloseDesktopWindow(modWindow);});
       const openFile=async(file)=>{
+        if(dirty&&opened&&opened.relative_path!==file.relative_path&&!await managedConfirm(`Discard unsaved changes to ${opened.relative_path}?`,'Unsaved Mod File'))return;
         editor?.dispose();editor=null;opened=null;saveButton.disabled=true;
         host.querySelectorAll('.mod-explorer-file').forEach((node)=>node.classList.toggle('selected',node.dataset.modExplorerFile===file.relative_path));
         if(file.editable===false){editorPane.innerHTML=`<div class="mod-file-preview readonly"><div class="mod-file-preview-icon">${modFileIcon(file.relative_path,false)}</div><h3>${escapeHtml(file.name||'File')}</h3><p>${escapeHtml(file.relative_path||'')}</p><span class="status-pill unknown">VIEW ONLY · ${formatBytes(file.size||0)}</span><p>Binary and oversized files are listed for structural visibility but cannot be edited inside Dragonwilds Sync.</p></div>`;return;}
         opened=scope==='server'?await api.invoke('server.world.config.open',{id:world.id,relative_path:file.relative_path}):await api.invoke('singleplayer.mod.file.open',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:file.relative_path});
-        editorPane.innerHTML=`<div class="mod-explorer-editor-head"><div><strong>${escapeHtml(opened.name||file.name)}</strong><small>${escapeHtml(opened.relative_path||file.relative_path)}</small></div><span class="status-pill online">${escapeHtml(String(opened.language||'text').toUpperCase())}</span></div><div id="mod-explorer-monaco" class="monaco-editor-host"></div><textarea id="mod-explorer-fallback" class="textarea json-fallback" spellcheck="false">${escapeHtml(opened.content||'')}</textarea>`;
+        const initialDraft=detachedMode&&String(detachedContext.modInitialPath||'')===String(opened.relative_path||file.relative_path)&&Object.prototype.hasOwnProperty.call(detachedContext,'modDraftContent')?String(detachedContext.modDraftContent??''):String(opened.content||'');
+        editorPane.innerHTML=`<div class="mod-explorer-editor-head"><div><strong>${escapeHtml(opened.name||file.name)}</strong><small title="${escapeHtml(opened.path||opened.relative_path||file.relative_path)}">${escapeHtml(opened.path||opened.relative_path||file.relative_path)}</small></div><div class="header-actions">${opened.folder?'<button class="btn ghost compact-btn" id="open-current-mod-folder">Open Folder</button>':''}<span class="status-pill online">${escapeHtml(String(opened.language||'text').toUpperCase())}</span></div></div><div id="mod-explorer-monaco" class="monaco-editor-host"></div><textarea id="mod-explorer-fallback" class="textarea json-fallback" spellcheck="false">${escapeHtml(initialDraft)}</textarea>`;
         const fallback=editorPane.querySelector('#mod-explorer-fallback');
-        try{const monaco=await loadMonaco();editor=monaco.editor.create(editorPane.querySelector('#mod-explorer-monaco'),{value:opened.content||'',language:opened.language==='jsonc'?'json':opened.language==='lua'?'lua':opened.language==='json'?'json':opened.language==='ini'?'ini':'plaintext',automaticLayout:true,minimap:{enabled:false},theme:document.body.dataset.theme==='light'?'vs':'vs-dark',wordWrap:'on',scrollBeyondLastLine:false});fallback.style.display='none';}catch(_){fallback.style.display='block';}
+        try{const monaco=await loadMonaco();editor=monaco.editor.create(editorPane.querySelector('#mod-explorer-monaco'),{value:initialDraft,language:opened.language==='jsonc'?'json':opened.language==='lua'?'lua':opened.language==='json'?'json':opened.language==='ini'?'ini':'plaintext',automaticLayout:true,minimap:{enabled:false},theme:document.body.dataset.theme==='light'?'vs':'vs-dark',wordWrap:'on',scrollBeyondLastLine:false});editor.onDidChangeModelContent(updateDirty);fallback.style.display='none';}catch(_){fallback.style.display='block';fallback.addEventListener('input',updateDirty);}
+        editorPane.querySelector('#open-current-mod-folder')?.addEventListener('click',()=>window.dragonwilds.openPath(opened.folder));
+        dirty=initialDraft!==String(opened.content||'');updateDirty();
         saveButton.disabled=false;
       };
+      host._dwsDispose=()=>{editor?.dispose();editor=null;};
+      if(detachedMode)detachedCloseGuard=()=>!dirty||managedConfirm(`Close ${name} without saving ${opened?.relative_path||'the current file'}?`,'Unsaved Mod File');
+      if(modWindow){
+        modWindow._dwsDispose=()=>host._dwsDispose?.();
+        modWindow._dwsBeforeClose=()=>!dirty||managedConfirm(`Close ${name} without saving ${opened?.relative_path||'the current file'}?`,'Unsaved Mod File');
+        modWindow._dwsPopOut=async()=>{
+          const result=await window.dragonwilds.openDetachedWindow({route:'mod-explorer',title:`Dragonwilds Sync · ${name}`,width:Math.round(modWindow.getBoundingClientRect().width||1280),height:Math.round(modWindow.getBoundingClientRect().height||820),context:{modScope:scope,modUnitKey:unitKey,selectedWorldId:state.selectedWorldId,selectedServerWorldId:state.selectedServerWorldId,modInitialPath:opened?.relative_path||'',modDraftContent:opened?currentContent():'',modDraftDirty:dirty}});
+          if(result?.id){closeDesktopWindow(modWindow);return true;}return false;
+        };
+        host.querySelector('#popout-mod-explorer-window')?.addEventListener('click',()=>modWindow._dwsPopOut());
+      }
       host.querySelectorAll('[data-mod-explorer-file]').forEach((button)=>button.addEventListener('click',()=>{const file=files.find((item)=>item.relative_path===button.dataset.modExplorerFile);if(file)openFile(file).catch((error)=>toast('Could not open mod file',error.message,'error'));}));
       host.querySelectorAll('[data-mod-explorer-file]').forEach((button)=>button.addEventListener('contextmenu',(event)=>{
         event.preventDefault();event.stopPropagation();
@@ -5983,7 +6035,9 @@
           toast('Mod file added',`${relativePath} was created inside ${name}.`,'success');await openModExplorer(scope,unitKey);
         }catch(error){toast('Could not add mod file',error.message,'error');}
       });
-      saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}const originalLabel=saveButton.textContent;saveButton.disabled=true;saveButton.textContent='Saving…';try{if(scope==='server')await api.invoke('server.world.config.save',{id:world.id,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});saveButton.textContent='✓ Saved';toast('Mod file saved','Atomic profile-scoped write complete.','success');setTimeout(()=>{if(saveButton.isConnected){saveButton.textContent=originalLabel;saveButton.disabled=false;}},1400);}catch(error){saveButton.textContent=originalLabel;saveButton.disabled=false;toast('Save failed',error.message,'error');}});
+      saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}const originalLabel=saveButton.textContent;saveButton.disabled=true;saveButton.textContent='Saving…';try{if(scope==='server')await api.invoke('server.world.config.save',{id:world.id,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});opened.content=content;dirty=false;updateDirty();saveButton.textContent='✓ Saved';toast('Mod file saved','Atomic profile-scoped write complete.','success');setTimeout(()=>{if(saveButton.isConnected){saveButton.textContent=originalLabel;saveButton.disabled=false;}},1400);}catch(error){saveButton.textContent=originalLabel;saveButton.disabled=false;toast('Save failed',error.message,'error');}});
+      const initialFile=files.find((item)=>String(item.relative_path||'')===String(detachedContext.modInitialPath||''));
+      if(initialFile)await openFile(initialFile);
     }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Mod Explorer</div><h2>Could not open this mod</h2></div><button class="btn ghost" id="close-mod-explorer-error">Close</button></div><div class="empty-state"><strong>The loading request failed.</strong><span>${escapeHtml(error.message||'Unknown mod-loading error')}</span><button class="btn primary" id="retry-mod-explorer">Retry</button></div>`;host.querySelector('#retry-mod-explorer')?.addEventListener('click',()=>openModExplorer(scope,unitKey));host.querySelector('#close-mod-explorer-error')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));}
   }
 
@@ -6005,16 +6059,20 @@
       const core = unitKey === '__core__';
       const opened = await api.invoke(core ? 'singleplayer.config.open' : 'singleplayer.mod.file.open', core ? { relative_path: relativePath } : { key: unitKey, relative_path: relativePath });
       const isJson = opened.language === 'json';
-      showModal(`<div class="modal-header"><div><h2>${escapeHtml(opened.name || (core ? 'Core Configuration' : 'Mod File'))}</h2><p>${escapeHtml(opened.category ? `${opened.category} · ${opened.relative_path}` : (opened.relative_path || relativePath))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body json-editor-body"><div class="json-editor-status"><span class="status-pill online">${core ? 'WORLD / RUNTIME CORE' : 'PROFILE MOD'} · LAUNCHER MANAGED</span>${core ? '' : `<span class="status-pill online">HOTLOAD TAGGED</span>`}</div>${dualPaneJsonEditorHTML(opened, relativePath)}<div class="identity-box"><strong>Atomic local edit</strong><p>Dragonwilds Sync writes this file atomically. Strict JSON is validated before save and the active World profile snapshot is refreshed. The left pane never changes -- it's the on-disk copy from the moment this editor opened, in case you need to check what you're changing.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="save-sp-mod-file">Save File</button></div></div>`, { native: false });
-      modalRoot.querySelector('.modal')?.classList.add('monaco-modal', 'dual-pane-modal');
-      const { editor, fallback } = await mountDualPaneJsonEditor(modalRoot, opened);
-      modalRoot.querySelector('#save-sp-mod-file')?.addEventListener('click', async () => {
+      const win=showModal(`<div class="modal-header"><div><h2>${escapeHtml(opened.name || (core ? 'Core Configuration' : 'Mod File'))}</h2><p>${escapeHtml(opened.category ? `${opened.category} · ${opened.relative_path}` : (opened.path||opened.relative_path||relativePath))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body json-editor-body"><div class="json-editor-status"><span class="status-pill online">${core ? 'WORLD / RUNTIME CORE' : 'PROFILE MOD'} · LAUNCHER MANAGED</span>${core ? '' : `<span class="status-pill online">HOTLOAD TAGGED</span>`}${opened.folder?'<button class="btn ghost compact-btn" id="open-sp-editor-folder">Open Folder</button>':''}</div>${dualPaneJsonEditorHTML(opened, relativePath)}<div class="identity-box"><strong>Atomic local edit</strong><p>Dragonwilds Sync writes this file atomically. Strict JSON is validated before save and the active World profile snapshot is refreshed. The left pane never changes -- it's the on-disk copy from the moment this editor opened, in case you need to check what you're changing.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="save-sp-mod-file">Save File</button></div></div>`, { native: false, detachable:false });
+      win.querySelector('.modal')?.classList.add('monaco-modal', 'dual-pane-modal');
+      const mounted = await mountDualPaneJsonEditor(win, opened);const { editor, fallback }=mounted;
+      let dirty=false;const changed=()=>{dirty=(editor?editor.getValue():(fallback?.value||''))!==String(opened.content||'');};editor?.onDidChangeModelContent(changed);fallback?.addEventListener('input',changed);
+      win._dwsDispose=mounted.dispose;win._dwsBeforeClose=()=>!dirty||managedConfirm('Close this editor without saving the current changes?','Unsaved Mod File');
+      win.querySelector('#open-sp-editor-folder')?.addEventListener('click',()=>window.dragonwilds.openPath(opened.folder));
+      win.querySelector('#save-sp-mod-file')?.addEventListener('click', async () => {
         const content = editor ? editor.getValue() : (fallback?.value || '');
         if (isJson) { try { JSON.parse(content); } catch (error) { return toast('Invalid JSON', error.message, 'error'); } }
         try {
           await api.invoke(core ? 'singleplayer.config.save' : 'singleplayer.mod.file.save', core ? { relative_path: relativePath, content } : { key: unitKey, relative_path: relativePath, content });
+          opened.content=content;dirty=false;
           toast(core ? 'Core configuration saved' : 'SinglePlayer mod saved', 'Atomic profile-scoped write complete.', 'success');
-          closeModal();
+          closeDesktopWindow(win);
           if (core) await loadPrivateTabData('configuration'); else await refreshSinglePlayerInventory(true);
         } catch (error) { toast('Save failed', error.message, 'error'); }
       });
@@ -6040,36 +6098,38 @@
       const isJson = opened.language === 'json';
       const canHotload = ['json', 'lua'].includes(String(opened.language || '').toLowerCase());
       await setDiscordPresence('Editing Server Mod', world, { state: opened.name || relativePath, force: true });
-      showModal(`<div class="modal-header"><div class="modal-title-wrap"><h2>${escapeHtml(opened.name || 'World File')}</h2><p title="${escapeHtml(opened.relative_path || relativePath)}">${escapeHtml(opened.relative_path || relativePath)}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body json-editor-body"><div class="json-editor-status"><span class="status-pill online">MANAGED · READ-ONLY ON DISK</span><span id="editor-live-status" class="status-pill ${opened.hotload_capable ? 'online' : 'unknown'}">${opened.hotload_capable ? 'HOTLOAD' : 'RESTART REQUIRED'}</span><span id="editor-sync-status" class="distribution-pill ${opened.client_sync ? 'client' : 'server'}">${opened.client_sync ? 'SYNC CLIENT' : 'SERVER ONLY'}</span></div><div class="editor-policy-bar"><label><input type="checkbox" id="editor-hotload" ${opened.hotload_capable ? 'checked' : ''} ${canHotload ? '' : 'disabled'} /> Hotload capable</label><label><input type="checkbox" id="editor-client-sync" ${opened.client_sync ? 'checked' : ''} ${opened.sensitive ? 'disabled' : ''} /> Synchronize to client</label>${opened.special === 'mods_txt' ? `<span class="status-pill unknown">mods.txt MODE: ${escapeHtml(String(opened.mods_txt_mode || 'auto').toUpperCase())}</span><button class="btn ghost" id="editor-regenerate-mods-txt">Use Auto-Generated Client Set</button>` : ''}</div>${dualPaneJsonEditorHTML(opened, relativePath)}${opened.parse_error ? `<div class="warning-box">Existing JSON parse error: ${escapeHtml(opened.parse_error)}</div>` : ''}${opened.hotload_capable ? `<div class="identity-box"><strong>Hotload capable</strong><p>Changes are written immediately. Dragonwilds Sync treats this file as live-capable while the server is running and republishes it when client synchronization is enabled.</p></div>` : `<div class="warning-box">This file is not marked hotload capable. It can still be edited and saved while the server is running, but the gameplay change should be expected after the next server restart.</div>`}<div class="identity-box"><strong>Managed configuration</strong><p>Dragonwilds Sync temporarily unlocks the file only during an atomic write, then returns it to read-only. Safe server compatibility configs can be mirrored to clients; sensitive credential files such as DedicatedServer.ini remain host-only. The left pane is a frozen reference of the on-disk copy from the moment this editor opened.</p></div></div><div class="modal-footer"><span class="muted-small">Launcher-managed file · read-only outside Dragonwilds Sync</span><div class="footer-right"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="save-world-config">Save File</button></div></div>`,{native:false});
-      modalRoot.querySelector('.modal')?.classList.add('monaco-modal', 'dual-pane-modal');
-      const status = modalRoot.querySelector('#json-validation-status');
+      const win=showModal(`<div class="modal-header"><div class="modal-title-wrap"><h2>${escapeHtml(opened.name || 'World File')}</h2><p title="${escapeHtml(opened.path || opened.relative_path || relativePath)}">${escapeHtml(opened.path || opened.relative_path || relativePath)}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body json-editor-body"><div class="json-editor-status"><span class="status-pill online">MANAGED · READ-ONLY ON DISK</span><span id="editor-live-status" class="status-pill ${opened.hotload_capable ? 'online' : 'unknown'}">${opened.hotload_capable ? 'HOTLOAD' : 'RESTART REQUIRED'}</span><span id="editor-sync-status" class="distribution-pill ${opened.client_sync ? 'client' : 'server'}">${opened.client_sync ? 'SYNC CLIENT' : 'SERVER ONLY'}</span>${opened.folder?'<button class="btn ghost compact-btn" id="open-world-editor-folder">Open Folder</button>':''}</div><div class="editor-policy-bar"><label><input type="checkbox" id="editor-hotload" ${opened.hotload_capable ? 'checked' : ''} ${canHotload ? '' : 'disabled'} /> Hotload capable</label><label><input type="checkbox" id="editor-client-sync" ${opened.client_sync ? 'checked' : ''} ${opened.sensitive ? 'disabled' : ''} /> Synchronize to client</label>${opened.special === 'mods_txt' ? `<span class="status-pill unknown">mods.txt MODE: ${escapeHtml(String(opened.mods_txt_mode || 'auto').toUpperCase())}</span><button class="btn ghost" id="editor-regenerate-mods-txt">Use Auto-Generated Client Set</button>` : ''}</div>${dualPaneJsonEditorHTML(opened, relativePath)}${opened.parse_error ? `<div class="warning-box">Existing JSON parse error: ${escapeHtml(opened.parse_error)}</div>` : ''}${opened.hotload_capable ? `<div class="identity-box"><strong>Hotload capable</strong><p>Changes are written immediately. Dragonwilds Sync treats this file as live-capable while the server runs and republishes it when client synchronization is enabled.</p></div>` : `<div class="warning-box">This file is not marked hotload capable. It can still be edited and saved while the server is running, but the gameplay change should be expected after the next server restart.</div>`}<div class="identity-box"><strong>Managed configuration</strong><p>Dragonwilds Sync temporarily unlocks the file only during an atomic write, then returns it to read-only. Safe server compatibility configs can be mirrored to clients; sensitive credential files remain host-only.</p></div></div><div class="modal-footer"><span class="muted-small">Launcher-managed file · read-only outside Dragonwilds Sync</span><div class="footer-right"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="save-world-config">Save File</button></div></div>`,{native:false,detachable:false});
+      win.querySelector('.modal')?.classList.add('monaco-modal', 'dual-pane-modal');
+      win.querySelector('#open-world-editor-folder')?.addEventListener('click',()=>window.dragonwilds.openPath(opened.folder));
+      const status = win.querySelector('#json-validation-status');
       const validate = (text) => {
         if (!isJson) return true;
         try { JSON.parse(text); if (status) { status.textContent = 'VALID JSON'; status.className = 'status-pill online'; status.title = ''; } return true; }
         catch (error) { if (status) { status.textContent = 'INVALID JSON'; status.className = 'status-pill offline'; status.title = error.message; } return false; }
       };
-      const { editor, fallback } = await mountDualPaneJsonEditor(modalRoot, opened);
-      editor?.onDidChangeModelContent(() => validate(editor.getValue()));
-      fallback?.addEventListener('input', () => validate(fallback.value));
+      const mounted=await mountDualPaneJsonEditor(win, opened);const { editor, fallback } = mounted;
+      let dirty=false;const changed=()=>{const content=editor?editor.getValue():(fallback?.value||'');dirty=content!==String(opened.content||'');validate(content);};
+      editor?.onDidChangeModelContent(changed);fallback?.addEventListener('input', changed);
+      win._dwsDispose=mounted.dispose;win._dwsBeforeClose=()=>!dirty||managedConfirm('Close this editor without saving the current changes?','Unsaved World File');
       const savePolicy = async () => {
         const response = await api.invoke('server.world.config.policy', {
           id: world.id, relative_path: relativePath,
-          hotload_capable: canHotload ? !!modalRoot.querySelector('#editor-hotload')?.checked : opened.hotload_capable,
-          client_sync: opened.sensitive ? false : !!modalRoot.querySelector('#editor-client-sync')?.checked,
+          hotload_capable: canHotload ? !!win.querySelector('#editor-hotload')?.checked : opened.hotload_capable,
+          client_sync: opened.sensitive ? false : !!win.querySelector('#editor-client-sync')?.checked,
         });
-        const live = modalRoot.querySelector('#editor-live-status');
-        const sync = modalRoot.querySelector('#editor-sync-status');
+        const live = win.querySelector('#editor-live-status');
+        const sync = win.querySelector('#editor-sync-status');
         if (live) { live.textContent = response.hotload_capable ? 'HOTLOAD' : 'RESTART REQUIRED'; live.className = `status-pill ${response.hotload_capable ? 'online' : 'unknown'}`; }
         if (sync) { sync.textContent = response.client_sync ? 'SYNC CLIENT' : 'SERVER ONLY'; sync.className = `distribution-pill ${response.client_sync ? 'client' : 'server'}`; }
         return response;
       };
-      modalRoot.querySelector('#editor-hotload')?.addEventListener('change', () => savePolicy().catch((error) => toast('Policy update failed', error.message, 'error')));
-      modalRoot.querySelector('#editor-client-sync')?.addEventListener('change', () => savePolicy().catch((error) => toast('Policy update failed', error.message, 'error')));
-      modalRoot.querySelector('#editor-regenerate-mods-txt')?.addEventListener('click', async () => {
+      win.querySelector('#editor-hotload')?.addEventListener('change', () => savePolicy().catch((error) => toast('Policy update failed', error.message, 'error')));
+      win.querySelector('#editor-client-sync')?.addEventListener('change', () => savePolicy().catch((error) => toast('Policy update failed', error.message, 'error')));
+      win.querySelector('#editor-regenerate-mods-txt')?.addEventListener('click', async () => {
         try { const result = await api.invoke('server.world.mods_txt.regenerate', { id: world.id }); toast('mods.txt returned to Auto mode', `${result.count || 0} client-required entries enabled.`, 'success'); editor?.dispose(); closeModal(); await refreshWorldMaintenance(world, true); }
         catch (error) { toast('Could not regenerate mods.txt', error.message, 'error'); }
       });
-      modalRoot.querySelector('#save-world-config')?.addEventListener('click', async () => {
+      win.querySelector('#save-world-config')?.addEventListener('click', async () => {
         const content = editor ? editor.getValue() : (fallback?.value || '');
         if (!validate(content)) return toast('JSON is invalid', 'Fix the syntax before saving.', 'error');
         try {
@@ -6078,6 +6138,7 @@
           if (result.live_applied) toast('File saved live', `Hotload-capable change applied${suffix}.`, 'success');
           else if (result.restart_required) toast('File saved', `Restart required before the gameplay change takes effect${suffix}.`, '');
           else toast('File saved', `Written atomically and returned to read-only${suffix}.`, 'success');
+          opened.content=content;dirty=false;
           await refreshWorldMaintenance(world, true);
         } catch (error) { toast('File save failed', error.message, 'error'); }
       });
@@ -6117,7 +6178,7 @@
     menu.querySelectorAll('[data-taskbar-action]').forEach((item)=>item.addEventListener('click',async()=>{
       menu.remove();document.removeEventListener('mousedown',dismiss);const action=item.dataset.taskbarAction;
       const internalId=button?.dataset.windowId||'',nativeId=button?.dataset.nativeWindowId||'';
-      if(internalId){const win=modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(internalId)}"]`);if(!win)return;if(action==='close')closeDesktopWindow(win);else{win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();}return;}
+      if(internalId){const win=modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(internalId)}"]`);if(!win)return;if(action==='close')requestCloseDesktopWindow(win);else{win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();}return;}
       if(!nativeId)return;
       if(action==='close'){
         // Closing from the in-app taskbar is optimistic: remove the tab now,
@@ -6152,10 +6213,11 @@
     const header=win.querySelector('.modal-header');
     if(header){
       const controls=document.createElement('div');controls.className='desktop-window-controls';
-      controls.innerHTML='<button class="desktop-window-control minimize" title="Minimize" aria-label="Minimize">−</button><button class="desktop-window-control maximize" title="Maximize or restore" aria-label="Maximize or restore">+</button><button class="desktop-window-control close" title="Close" aria-label="Close">×</button>';
+      controls.innerHTML=`${options.detachable===false||!window.dragonwilds?.openManagedDialog?'':'<button class="desktop-window-control popout" title="Open on another screen" aria-label="Open on another screen">↗</button>'}<button class="desktop-window-control minimize" title="Minimize" aria-label="Minimize">−</button><button class="desktop-window-control maximize" title="Maximize or restore" aria-label="Maximize or restore">+</button><button class="desktop-window-control close" title="Close" aria-label="Close">×</button>`;
       header.appendChild(controls);
       controls.querySelector('.minimize')?.addEventListener('click',()=>{win.classList.add('minimized');win.classList.remove('focused');syncInternalTaskbar();});
-      controls.querySelector('.close')?.addEventListener('click',()=>closeDesktopWindow(win));
+      controls.querySelector('.popout')?.addEventListener('click',()=>popOutDesktopWindow(win,options));
+      controls.querySelector('.close')?.addEventListener('click',()=>requestCloseDesktopWindow(win));
       const toggleMaximize=()=>{win.classList.toggle('maximized');focusDesktopWindow(win);syncInternalTaskbar();};
       controls.querySelector('.maximize')?.addEventListener('click',toggleMaximize);
       header.addEventListener('dblclick',(event)=>{if(!event.target.closest('button,input,select,textarea,a'))toggleMaximize();});
@@ -6200,10 +6262,11 @@
   const managedDialogShadows = new Map();
 
   function activeDesktopWindow() {
-    const native = [...modalRoot.querySelectorAll('.managed-dialog-shadow')];
-    if (native.length) return native[native.length - 1];
     const windows = [...modalRoot.querySelectorAll('.desktop-window:not(.minimized)')];
-    return windows.sort((a,b) => Number(b.style.zIndex || 0) - Number(a.style.zIndex || 0))[0] || null;
+    const visible=windows.sort((a,b) => Number(b.style.zIndex || 0) - Number(a.style.zIndex || 0))[0];
+    if(visible)return visible;
+    const native = [...modalRoot.querySelectorAll('.managed-dialog-shadow')];
+    return native[0] || null;
   }
 
   function dialogFields(win) {
@@ -6255,14 +6318,61 @@
     });
     window.dragonwilds?.onManagedDialogClosed?.((payload)=>{
       const id=String(payload.id||'');const win=managedDialogShadows.get(id);if(!win)return;
-      managedDialogShadows.delete(id);win.remove();syncInternalTaskbar();
+      managedDialogShadows.delete(id);try{win._dwsOnNativeClosed?.();}catch(_){}disposeDesktopWindow(win);win.remove();syncInternalTaskbar();
     });
+  }
+
+  function disposeDesktopWindow(win) {
+    if(!win || win.dataset?.disposed==='1')return;
+    win.dataset.disposed='1';
+    try{win._managedObserver?.disconnect?.();}catch(_){}
+    try{win._dwsDispose?.();}catch(error){console.warn('Window cleanup failed',error);}
+  }
+
+  function registerManagedDialogShadow(shadow, result={}) {
+    const id=String(result?.id||'');
+    if(!id)throw new Error('Native window did not return an identifier.');
+    shadow.dataset.nativeDialogId=id;
+    shadow.className='managed-dialog-shadow';shadow.style.display='none';
+    managedDialogShadows.set(id,shadow);
+    const observer=new MutationObserver(()=>syncManagedDialog(shadow));
+    observer.observe(shadow,{subtree:true,childList:true,attributes:true,characterData:true});
+    shadow._managedObserver=observer;
+    syncManagedDialog(shadow);syncInternalTaskbar();
+    return shadow;
+  }
+
+  async function popOutDesktopWindow(win, options={}) {
+    if(!win || win.dataset?.nativeDialogId)return false;
+    if(typeof win._dwsPopOut==='function')return !!(await win._dwsPopOut());
+    if(!window.dragonwilds?.openManagedDialog)return false;
+    const modal=win.querySelector('.modal');
+    if(!modal)return false;
+    const title=String(options.title||desktopWindowTitle(win));
+    const rect=win.getBoundingClientRect();
+    const button=win.querySelector('.desktop-window-control.popout');if(button)button.disabled=true;
+    try{
+      const result=await window.dragonwilds.openManagedDialog({html:modal.innerHTML,title,width:Math.round(rect.width||options.width||900),height:Math.round(rect.height||options.height||680),theme:document.body.dataset.theme||'dark'});
+      registerManagedDialogShadow(win,result);
+      return true;
+    }catch(error){
+      if(button)button.disabled=false;
+      toast('Could not open window',error.message,'error');return false;
+    }
+  }
+
+  async function requestCloseDesktopWindow(win) {
+    if(!win)return false;
+    try{if(typeof win._dwsBeforeClose==='function' && !await win._dwsBeforeClose())return false;}
+    catch(error){toast('Could not close window',error.message,'error');return false;}
+    closeDesktopWindow(win);return true;
   }
 
   function closeDesktopWindow(win) {
     if (!win) return;
     const nativeId=win.dataset?.nativeDialogId||'';
-    if(nativeId){ managedDialogShadows.delete(nativeId); window.dragonwilds?.closeManagedDialog?.(nativeId).catch(()=>{}); win.remove(); syncInternalTaskbar(); updateDiscordPresenceForRoute(); return; }
+    if(nativeId){ managedDialogShadows.delete(nativeId); window.dragonwilds?.closeManagedDialog?.(nativeId).catch(()=>{}); disposeDesktopWindow(win); win.remove(); syncInternalTaskbar(); updateDiscordPresenceForRoute(); return; }
+    disposeDesktopWindow(win);
     win.remove();
     const next = activeDesktopWindow(); if (next && next.classList.contains('desktop-window')) focusDesktopWindow(next);
     syncInternalTaskbar(); updateDiscordPresenceForRoute();
@@ -6281,7 +6391,7 @@
     // Newest first keeps legacy modalRoot.querySelector(...) handlers scoped to
     // the window the user just opened, even when older editors are minimized.
     modalRoot.prepend(shadow);
-    shadow.querySelectorAll('[data-close-modal]').forEach((b)=>b.addEventListener('click',()=>closeDesktopWindow(shadow)));
+    shadow.querySelectorAll('[data-close-modal]').forEach((b)=>b.addEventListener('click',()=>requestCloseDesktopWindow(shadow)));
     if(options.native!==true){
       shadow.style.display='block';shadow.className='desktop-window';return prepareDesktopWindow(shadow,options);
     }
@@ -6293,9 +6403,7 @@
     }
     window.dragonwilds.openManagedDialog({html,title,width,height,theme:document.body.dataset.theme||'dark'}).then((result)=>{
       if(!shadow.isConnected){ if(result?.id)window.dragonwilds.closeManagedDialog(result.id).catch(()=>{}); return; }
-      const id=String(result?.id||'');shadow.dataset.nativeDialogId=id;managedDialogShadows.set(id,shadow);
-      const observer=new MutationObserver(()=>syncManagedDialog(shadow));observer.observe(shadow,{subtree:true,childList:true,attributes:true,characterData:true});shadow._managedObserver=observer;
-      syncManagedDialog(shadow);syncInternalTaskbar();
+      registerManagedDialogShadow(shadow,result);
     }).catch((error)=>{shadow.style.display='block';shadow.className='desktop-window';prepareDesktopWindow(shadow,options);toast('Popup window fallback',error.message,'error');});
     return shadow;
   }
@@ -6303,8 +6411,9 @@
   function managedConfirm(message, title='Confirm') {
     return new Promise((resolve)=>{
       let settled=false;
-      const finish=(value)=>{if(settled)return;settled=true;closeModal();resolve(!!value);};
-      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Confirmation</div><h2>${escapeHtml(title)}</h2></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box managed-confirm-copy">${escapeHtml(String(message||'')).replace(/\n/g,'<br/>')}</div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" id="managed-confirm-no">Cancel</button><button class="btn primary" id="managed-confirm-yes">Continue</button></div></div>`,{title});
+      const finish=(value,closed=false)=>{if(settled)return;settled=true;if(!closed)closeModal();resolve(!!value);};
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Confirmation</div><h2>${escapeHtml(title)}</h2></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box managed-confirm-copy">${escapeHtml(String(message||'')).replace(/\n/g,'<br/>')}</div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" id="managed-confirm-no">Cancel</button><button class="btn primary" id="managed-confirm-yes">Continue</button></div></div>`,{title,native:managedDialogShadows.size>0});
+      win._dwsOnNativeClosed=()=>finish(false,true);
       win.querySelector('#managed-confirm-no')?.addEventListener('click',()=>finish(false));
       win.querySelector('#managed-confirm-yes')?.addEventListener('click',()=>finish(true));
     });
@@ -6313,8 +6422,9 @@
   function managedPrompt(message, defaultValue='', title='Input Required') {
     return new Promise((resolve)=>{
       let settled=false;
-      const finish=(value)=>{if(settled)return;settled=true;closeModal();resolve(value);};
-      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Dragonwilds Sync</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(String(message||''))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><input class="field" id="managed-prompt-value" value="${escapeHtml(String(defaultValue||''))}" autofocus/></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" id="managed-prompt-cancel">Cancel</button><button class="btn primary" id="managed-prompt-ok">Continue</button></div></div>`,{title});
+      const finish=(value,closed=false)=>{if(settled)return;settled=true;if(!closed)closeModal();resolve(value);};
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Dragonwilds Sync</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(String(message||''))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><input class="field" id="managed-prompt-value" value="${escapeHtml(String(defaultValue||''))}" autofocus/></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" id="managed-prompt-cancel">Cancel</button><button class="btn primary" id="managed-prompt-ok">Continue</button></div></div>`,{title,native:managedDialogShadows.size>0});
+      win._dwsOnNativeClosed=()=>finish(null,true);
       win.querySelector('#managed-prompt-cancel')?.addEventListener('click',()=>finish(null));
       win.querySelector('#managed-prompt-ok')?.addEventListener('click',()=>finish(win.querySelector('#managed-prompt-value')?.value??''));
       win.querySelector('#managed-prompt-value')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();finish(event.target.value);}});

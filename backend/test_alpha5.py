@@ -37,6 +37,9 @@ def main():
             assert any(row['relative_path'].endswith('RuneSchema/config/config.json') for row in rows)
             opened = wm.open_world_config('world-a', str(server), 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json', True)
             assert opened['readonly'] is True
+            assert Path(opened['path']).resolve() == config.resolve()
+            assert Path(opened['folder']).resolve() == config.parent.resolve()
+            assert config.resolve().is_relative_to(Path(opened['root']).resolve())
             assert wm.is_readonly(config)
             saved = wm.save_world_config('world-a', str(server), opened['relative_path'], '{\n  "enabled": false,\n  "count": 2\n}', True)
             assert saved['readonly'] is True

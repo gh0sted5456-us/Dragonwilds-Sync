@@ -15,6 +15,7 @@ release gates in [`test-matrix.json`](test-matrix.json).
 | Character Editor | PASS | Discovery, editable hydration, native preview, inventory refinement, two unique backups, optimistic SHA guard, invalid-JSON preservation, verified write, and immediate reload |
 | Full Item Repository | PASS | Canonical-manifest fallback, vanilla/custom tabs, create/edit/list, invalid-stack rejection, portable icon export, delete/import restore, item refinement, and spawner identity propagation |
 | Focused compatibility | PASS | Release 1.2 RSDW Toolkit, Release 1.1 profile bundle, V2 shared item identity, and V3 exchange/item registry suites |
+| Window/navigation lifecycle | PASS | Measured click-to-render instrumentation, internal minimize/restore/close, lightweight native promotion, stateful Mod Explorer pop-out, Monaco disposal, unsaved guards, and contained mod paths |
 
 The five environment-blocked backend files are
 `test_remote_user_permissions.py`, `test_service_subprocess_protocol.py`,
@@ -23,6 +24,13 @@ The five environment-blocked backend files are
 listeners; this review container rejects `socket()` with `Operation not
 permitted`. Related non-listener contracts passed, but these files are not
 reported as passes.
+
+The new Electron timing runner was also invoked in this container. Chromium
+stopped before renderer startup because its process-singleton/DBus setup needs a
+local socket and this sandbox returns `Operation not permitted`. Consequently,
+this record makes no fabricated navigation timing claim: source instrumentation
+and lifecycle contracts passed here, while numeric swap p50/p95 remains a real
+desktop gate via `npm run test:navigation-swaps`.
 
 ## Defects corrected during this pass
 
@@ -37,6 +45,21 @@ reported as passes.
 4. The current regression runner now fails when an application/subapp identity
    loses its implementation path or when the Character/Item safety contracts
    regress.
+5. Ordinary application windows can now promote into a draggable native window
+   backed by the existing owner-side DOM, so opening it on another display does
+   not reload the main Appy. Native minimize hides it into the in-app taskbar;
+   restore and close remain controlled by the main window.
+6. Mod Explorer preserves its selected profile, open file, and unsaved Monaco
+   draft when it opens on another screen. The draft travels through an
+   ownership-checked IPC context rather than a URL. Both Monaco models are
+   disposed on close/reopen and dirty files receive an explicit close guard.
+7. Mod Explorer and the focused config editors now show their validated managed
+   paths and provide folder actions. Backend containment and atomic-write rules
+   remain authoritative for Singleplayer, Co-Op, and Dedicated profiles.
+8. `npm run test:navigation-swaps` is the physical Electron timing runner. It
+   records synchronous render and two-frame click-to-settled p50/p95 values from
+   `window.__DWSYNC_SWAP_METRICS__`; the source matrix enforces the lifecycle and
+   instrumentation contract on every automated run.
 
 ## Still required before release certification
 
@@ -44,6 +67,10 @@ reported as passes.
 - Exercise every visible Appy in a real Electron desktop, including Full,
   Quick, detached windows, repeated navigation, cancellation, and repaint
   inspection.
+- Run `npm run test:navigation-swaps` on that desktop, record its p50/p95 output,
+  and drag promoted dialogs plus a stateful Mod Explorer between real monitors.
+  Confirm that the main Appy never reloads, drafts survive, native minimize
+  appears in the in-app taskbar, and restore/close target the correct window.
 - Use disposable real Dragonwilds character saves to verify the upstream
   RSDWTools/RSDWModel catalog, 3D preview, every editor tab, Apply, game load,
   and backup restore against the current game build.

@@ -844,6 +844,11 @@ def _unit_root(game_dir: str, key: str, live: bool, profile_id: str = SINGLEPLAY
     return base
 
 
+def singleplayer_mod_root(game_dir: str, key: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> str:
+    """Return the validated profile-scoped root used by the in-app explorer."""
+    return str(_unit_root(game_dir, key, live, profile_id))
+
+
 def _resolve_mod_path(base: Path, relative_path: str, *, require_file: bool = True) -> tuple[Path, Path]:
     rel = Path(str(relative_path or "").strip().replace("\\", "/"))
     if not rel.parts or rel.is_absolute() or ".." in rel.parts:
@@ -887,7 +892,9 @@ def open_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool = F
         raise ValueError("This file is too large for the built-in editor.")
     ext = path.suffix.casefold()
     language = {".lua": "lua", ".json": "json", ".jsonc": "jsonc", ".ini": "ini", ".cfg": "plaintext", ".txt": "plaintext"}.get(ext, "plaintext")
-    return {"relative_path": rel.as_posix(), "name": path.name, "language": language, "content": path.read_text(encoding="utf-8", errors="replace")}
+    return {"relative_path": rel.as_posix(), "name": path.name, "language": language,
+            "content": path.read_text(encoding="utf-8", errors="replace"),
+            "path": str(path), "folder": str(path.parent), "root": str(base)}
 
 
 def save_mod_file(game_dir: str, key: str, relative_path: str, content: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> dict:

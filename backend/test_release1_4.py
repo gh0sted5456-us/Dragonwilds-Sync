@@ -205,12 +205,13 @@ def test_ui_contract():
     assert "data-server-launch" in renderer and "server.runtime.start" in renderer
     assert "active-private" in styles and "instance-1" in styles
 
-    # Application-owned confirms/prompts/editors belong to the in-app desktop.
-    # The legacy managed-dialog host may remain in main.cjs for compatibility,
-    # but preload must not expose it. Genuine web content has its own browser
-    # bridge and is intentionally separate from these application dialogs.
+    # Application-owned confirms/prompts/editors begin on the in-app desktop.
+    # A user-requested pop-out promotes ordinary dialogs into the lightweight
+    # managed host without reloading the main Appy; genuine website content
+    # remains on its separate, isolated browser bridge.
     assert "managedConfirm" in renderer and "managedPrompt" in renderer
-    assert "openManagedDialog" not in preload and "managedDialogContent" not in preload
+    assert "openManagedDialog" in preload and "managedDialogContent" in preload
+    assert "updateManagedDialog" in preload and "closeManagedDialog" in preload
     assert "openInAppBrowser" in preload
     assert "skipTaskbar: true" in main and "restoreDetachedWindow" in renderer
     live_renderer = renderer.replace("managedConfirm(", "").replace("managedPrompt(", "")

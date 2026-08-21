@@ -297,6 +297,7 @@ def open_world_config(profile_id: str, server_root: str, relative_path: str, act
     _write_manifest(profile_id, manifest)
     _set_readonly(target, True)
     return {**meta, "content": text, "readonly": True, "parse_error": parse_error,
+            "path": str(target), "folder": str(target.parent), "root": str(layout.game_root),
             "mods_txt_mode": str(load_server_profile(profile_id).get("mods_txt_mode") or "auto") if meta.get("special") == "mods_txt" else ""}
 
 

@@ -135,6 +135,12 @@ def _persistent_mod_file_index() -> None:
             assert calls["scan"] == 1
             assert first == second
             assert [row["relative_path"] for row in first] == ["main.lua", "Scripts/Config/config.json"]
+            opened = local_world.open_mod_file(
+                "fixture-game", "ue4ss_mod::ActualLua", "Scripts/Config/config.json", profile_id="profile-a"
+            )
+            assert Path(opened["path"]).resolve() == (nested / "config.json").resolve()
+            assert Path(opened["folder"]).resolve() == nested.resolve()
+            assert Path(opened["path"]).resolve().is_relative_to(Path(opened["root"]).resolve())
 
             # Saving one file invalidates only this mod/profile index. The next
             # navigation refreshes once; following opens are persistent-cache hits.

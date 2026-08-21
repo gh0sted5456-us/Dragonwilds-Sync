@@ -60,9 +60,12 @@ requireText(app, 'renderer-recovery-root', 'visible renderer recovery surface');
 requireText(css, 'opacity:.78 !important', 'placard full-card visibility');
 requireText(css, '.recommended-mod-card', 'compact Recommended Mods');
 
-// Application-owned dialogs stay in renderer; genuine websites keep the browser bridge.
-forbidText(preload, 'openManagedDialog:', 'in-app dialog contract');
-forbidText(preload, 'managedDialogContent:', 'in-app dialog contract');
+// Application-owned dialogs begin in the renderer and may be promoted into the
+// lightweight managed host without reloading the main Appy. Genuine websites
+// retain their separate isolated browser bridge.
+requireText(preload, 'openManagedDialog:', 'state-preserving in-app dialog pop-out');
+requireText(preload, 'managedDialogContent:', 'state-preserving in-app dialog host');
+requireText(preload, 'updateManagedDialog:', 'owner-side live dialog synchronization');
 requireText(preload, 'openInAppBrowser:', 'external website browser contract');
 
 // Minimal Mode retains server lifecycle/scheduler but suppresses desktop/client background work.

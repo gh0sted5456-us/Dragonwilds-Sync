@@ -2635,7 +2635,9 @@ def handle(method: str, params: dict) -> object:
         profile_id = _private_profile_id(state, params)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
-        return {"files": list_singleplayer_mod_files(game_dir, str(params.get("key") or ""), live=live, profile_id=profile_id, include_all=bool(params.get("tree"))), "live": live}
+        key = str(params.get("key") or "")
+        return {"files": list_singleplayer_mod_files(game_dir, key, live=live, profile_id=profile_id, include_all=bool(params.get("tree"))),
+                "live": live, "root": singleplayer_mod_root(game_dir, key, live=live, profile_id=profile_id)}
 
     if method == "singleplayer.config.list":
         profile_id = _private_profile_id(state, params)
@@ -5100,7 +5102,9 @@ def handle(method: str, params: dict) -> object:
         if not profile:
             raise KeyError("Server World not found")
         active = state.setdefault("server", {}).get("active_world_id") == profile_id
-        return {"configs": list_world_configs(profile_id, server_root_for_profile(profile), active), "active": active}
+        server_root = server_root_for_profile(profile)
+        return {"configs": list_world_configs(profile_id, server_root, active), "active": active,
+                "root": str(resolve_server_layout(server_root).game_root)}
 
     if method == "server.world.config.open":
         profile_id = str(params.get("id") or "")

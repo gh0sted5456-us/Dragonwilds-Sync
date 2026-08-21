@@ -21,7 +21,7 @@
       "systems": ["SHELL", "BRIDGE", "UI", "QUICK", "WORLDS", "RUNTIME", "MODS", "SYNC_HOST", "SYNC_CLIENT", "DIRECT_CONNECT", "NETWORK", "WEBHOST", "DIRECTORY", "WEBSITE", "CHARACTERS", "RSDW_L", "ITEMS", "MAP_TELEMETRY", "SECURITY", "UPDATES", "PACKAGING"],
       "dimensions": ["functional", "invalid_input", "security", "responsiveness"],
       "timeout_seconds": 900,
-      "commands": [["npm", "run", "check:renderer"], ["node", "scripts/check_app_subapp_regression.cjs"]],
+      "commands": [["npm", "run", "check:renderer"], ["node", "scripts/check_app_subapp_regression.cjs"], ["node", "scripts/check_window_navigation_lifecycle.cjs"]],
       "required_for_release": true
     },
     {

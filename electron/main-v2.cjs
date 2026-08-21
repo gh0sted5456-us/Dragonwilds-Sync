@@ -350,12 +350,14 @@ function createDetachedWindow(payload = {}) {
   const id = `dw-${Date.now().toString(36)}-${(++detachedCounter).toString(36)}`;
   const win = new BrowserWindow(windowOptions({ width: Number(payload.width || 1120), height: Number(payload.height || 760), minWidth: 720, minHeight: 520, title, skipTaskbar: true }));
   attachRendererDurability(win);
-  const ctx = Buffer.from(JSON.stringify(context), 'utf8').toString('base64url');
   detachedWindows.set(id, { id, window: win, title, route, context });
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     secureAttachedWebview(event, webPreferences, params);
   });
-  win.loadFile(path.join(projectRoot(), 'renderer', 'index.html'), { query: { detached: '1', route, windowId: id, ctx } });
+  // Keep potentially large editor drafts out of the URL. The detached renderer
+  // retrieves its state through an ownership-checked IPC call, while the main
+  // application renderer stays mounted and untouched.
+  win.loadFile(path.join(projectRoot(), 'renderer', 'index.html'), { query: { detached: '1', route, windowId: id } });
   win.once('ready-to-show', () => { win.show(); win.focus(); notifyDetachedWindows(); });
   win.on('show', notifyDetachedWindows); win.on('hide', notifyDetachedWindows);
   win.on('closed', () => { detachedWindows.delete(id); notifyDetachedWindows(); });
@@ -681,6 +683,11 @@ ipcMain.handle('dragonwilds:window-toggle-maximize', (event) => { const w=Browse
 ipcMain.handle('dragonwilds:window-close', (event) => { BrowserWindow.fromWebContents(event.sender)?.close(); return true; });
 ipcMain.handle('dragonwilds:window-state', (event) => ({ maximized:!!BrowserWindow.fromWebContents(event.sender)?.isMaximized() }));
 ipcMain.handle('dragonwilds:detached-open', (_event, payload={}) => createDetachedWindow(payload));
+ipcMain.handle('dragonwilds:detached-context', (event) => {
+  const id=detachedIdForWindow(BrowserWindow.fromWebContents(event.sender));
+  const entry=id?detachedWindows.get(id):null;
+  return entry && entry.window?.webContents?.id===event.sender.id ? {id,route:entry.route,context:entry.context||{}} : {id:'',route:'',context:{}};
+});
 ipcMain.handle('dragonwilds:detached-list', () => detachedSnapshot());
 ipcMain.handle('dragonwilds:detached-restore', (_event, id) => { const entry=detachedWindows.get(String(id||'')); if(!entry||entry.window.isDestroyed())return false; entry.window.show(); entry.window.focus(); notifyDetachedWindows(); return true; });
 ipcMain.handle('dragonwilds:detached-close', (_event, id) => { const entry=detachedWindows.get(String(id||'')); if(!entry||entry.window.isDestroyed())return false; entry.window.close(); return true; });

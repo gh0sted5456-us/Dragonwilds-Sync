@@ -7,7 +7,8 @@ This is the current source-level capability contract for `testing-ground`. A cap
 - Full desktop mode and profile-focused Quick/Minimal mode use the same backend authority.
 - Single-instance handling, tray/background behavior, managed dialogs, detached application windows, placard windows, safe-graphics recovery, and Windows shortcuts are provided by Electron.
 - Dark/light themes, responsive layouts, cached navigation, bounded prewarming, localized loading states, notifications, Help, and Settings are renderer-owned presentation concerns.
-- The game-icon Dragonwilds Appy combines World Management and Dedicated hosting; Characters, Mods, RSDW-L, Sync, Helpy, and Settings retain distinct navigation entries and icons.
+- The game-icon Dragonwilds Appy combines World Management and Dedicated hosting; Characters, Mods, RSDW-L, Sync, Helpy, and Settings retain distinct navigation entries and packaged icons.
+- In Full mode, the titlebar and navigation rail are persistent DOM; route and status renders replace the main workspace while synchronizing active, notification, Profile, language, and collapsed-shell state in place.
 - Profile lists discovered Character saves with World associations and can hand the exact selected save directly to the RSDW-L Character Editor.
 - The renderer has no unrestricted Node access; mutable work crosses explicit preload and JSON-RPC bridges.
 

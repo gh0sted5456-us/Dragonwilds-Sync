@@ -20,7 +20,7 @@ assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
   'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');
 assert(source.includes('data-webhost-tab="settings">Website &amp; Networking'),
   'The combined Sync workspace must expose its Networking tab.');
-assert(source.includes("navButton('webhost',webhostLinked?'◆':'◇','Sync'"),
+assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('world-management'"),
   'Characters, Mods, and Dragonwilds must be first-class Appy navigation entries.');

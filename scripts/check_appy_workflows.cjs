@@ -21,10 +21,22 @@ for (const token of [
   "navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.png')",
   "navButton('mods-app',navIconAsset('assets/rsdw-toolkit/modded-items.svg')",
   "navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')",
-  "navButton('webhost',webhostLinked?'◆':'◇'", "navButton('help','?'", "navButton('settings','⚙'",
+  "navButton('webhost',navIconAsset('assets/navigation/sync.svg')",
+  "navButton('help',navIconAsset('assets/navigation/help.svg')",
+  "navButton('settings',navIconAsset('assets/navigation/settings.svg')",
 ]) need(app.includes(token), `navigation icon contract missing ${token}`);
+for (const relative of [
+  'renderer/assets/dragonwilds_icon.ico', 'renderer/assets/rsdw-toolkit/character-editor.png',
+  'renderer/assets/rsdw-toolkit/modded-items.svg', 'renderer/assets/navigation/rsdw-l.png',
+  'renderer/assets/navigation/sync.svg', 'renderer/assets/navigation/help.svg',
+  'renderer/assets/navigation/settings.svg',
+]) need(fs.existsSync(path.join(root, relative)) && fs.statSync(path.join(root, relative)).size > 0, `${relative} must be a packaged non-empty navigation icon`);
 need(app.includes("'Singleplayer · Co-Op · Dedicated · connect'"), 'Dragonwilds must describe every combined launch role');
 need(app.includes("next === 'rsdragonwilds-app'") && app.includes("handleRouteNavigation('world-management')"), 'legacy Hosting shortcuts must redirect into Dragonwilds safely');
+need(app.includes('function renderPersistentShell(page)') && app.includes("root.dataset.persistentShell='1'"), 'normal navigation must keep one persistent shell instance');
+need(app.includes("syncPersistentTitlebar(root.querySelector(':scope > .titlebar'))") && app.includes("syncPersistentSidebar(root.querySelector(':scope > .sidebar'))"), 'persistent shell state must be synchronized without replacing the navigation DOM');
+need(app.includes('else renderPersistentShell(page);') && !app.includes("`${renderTitlebar()}${renderSidebar()}${operationMarkup()}"), 'normal renders must replace only the main workspace, not the titlebar/sidebar');
+need(app.includes('bindPersistentOnce(') && app.includes('const persistentShellBindings=new WeakMap()'), 'persistent titlebar/Profile controls must not accumulate duplicate event handlers');
 
 need(app.includes('Associated Character Saves') && app.includes('data-profile-character-editor='), 'Profile must list associated Character saves with an editor handoff');
 need(app.includes("state.rsdwTool='character-editor'") && app.includes('await enterRsdwToolkit()'), 'Profile handoff must select the Character Editor through RSDW-L');

@@ -104,6 +104,7 @@ button { color: inherit; }
     linear-gradient(90deg, rgba(6, 8, 9, .98), rgba(12, 16, 18, .94)),
     url('assets/theme/dark-mode.png') center/cover fixed;
 }
+.shell-transient-host { display:contents; }
 
 .sidebar {
   position: relative;
@@ -156,8 +157,9 @@ button { color: inherit; }
   color: #f8f1e1;
   box-shadow: inset 3px 0 0 var(--gold);
 }
-.nav-icon { width: 24px; text-align:center; font-size: 15px; color: var(--gold); }
-.nav-icon-image{display:block;width:22px;height:22px;margin:auto;object-fit:contain;object-position:center;border:0;background:transparent;box-shadow:none;pointer-events:none;user-select:none}
+.nav-icon { width:24px;height:24px;display:grid;place-items:center;flex:0 0 24px;text-align:center;font-size:15px;color:var(--gold);contain:layout paint; }
+.nav-icon-image{display:block;width:22px;height:22px;margin:auto;object-fit:contain;object-position:center;border:0;background:transparent;box-shadow:none;pointer-events:none;user-select:none;image-rendering:auto;backface-visibility:hidden}
+.appy-nav[data-route="webhost"][data-linked="1"] .nav-icon-image{filter:drop-shadow(0 0 5px rgba(101,200,154,.48))}
 .appy-nav-copy{display:flex;min-width:0;flex-direction:column;gap:2px}.appy-nav-copy strong{font-size:11px;line-height:1.15}.appy-nav-copy small{color:var(--muted);font-size:8px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.appy-nav[data-appy-tone="characters"] .nav-icon{color:#60c8d8}.appy-nav[data-appy-tone="mods"] .nav-icon{color:#b78cdd}.appy-nav[data-appy-tone="hosting"] .nav-icon{color:#e08b72}.appy-nav[data-appy-tone="sync"] .nav-icon{color:#65c89a}.appy-nav[data-appy-tone="system"] .nav-icon{color:#aab3ae}.appy-nav[data-appy-tone="characters"].active{border-color:rgba(96,200,216,.34);box-shadow:inset 3px 0 #60c8d8}.appy-nav[data-appy-tone="mods"].active{border-color:rgba(183,140,221,.34);box-shadow:inset 3px 0 #b78cdd}.appy-nav[data-appy-tone="hosting"].active{border-color:rgba(224,139,114,.34);box-shadow:inset 3px 0 #e08b72}.appy-nav[data-appy-tone="sync"].active{border-color:rgba(101,200,154,.34);box-shadow:inset 3px 0 #65c89a}
 
 /* Retired full-route detach controls are hidden by the first stylesheet pass,

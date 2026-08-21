@@ -48,6 +48,7 @@ Dragonwilds Sync keeps one persistent navigation shell. Moving between Appys pre
 
 - **Helpy** keeps the current walkthrough and screenshots.
 - **Settings** owns application, player, network, update, integration, and system policy.
-- Navigation icons and labels remain stable when the sidebar is collapsed or expanded.
+- Dragonwilds, Characters, Mods, RSDW-L, Sync, Helpy, and Settings each use a packaged image icon rather than a temporary text glyph.
+- The titlebar and navigation rail remain mounted while Appys and background status refreshes update the main workspace, so the icons and collapsed state do not disappear or repaint between routes.
 
 > A visible success message is not a substitute for verification. Runtime, save, fingerprint, and atomic-write checks remain authoritative.

@@ -1673,7 +1673,7 @@
   }
 
   function navIconAsset(source) {
-    return `<img class="nav-icon-image" src="${escapeHtml(source)}" alt="" aria-hidden="true" draggable="false"/>`;
+    return `<img class="nav-icon-image" src="${escapeHtml(source)}" width="22" height="22" alt="" aria-hidden="true" draggable="false" decoding="sync"/>`;
   }
 
   function isLinkedDirectoryEndpoint(value) {
@@ -1720,9 +1720,6 @@
 
   function renderSidebar() {
     const p = player();
-    const hostConfig=state.data?.application?.world_directory_host||{};
-    const hostStatus=state.data?.application?.world_directory_host_status||{};
-    const webhostLinked=isLinkedDirectoryEndpoint(hostStatus.public_url||hostConfig.public_base_url);
     const avatar = p.avatar_data ? `<img src="${p.avatar_data}" alt="" />` : escapeHtml(initials(p.display_name || 'Player'));
     const dragonwildsActive=['world-management','world-detail','server-detail','servers','rsdragonwilds-app'].includes(state.route);
     const charactersActive=state.route==='profile'&&state.profileTab==='characters';
@@ -1741,10 +1738,10 @@
         ${navButton('mods-app',navIconAsset('assets/rsdw-toolkit/modded-items.svg'),'Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
         ${navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png'),'RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
         <div class="nav-label">Host &amp; Connect</div>
-        ${navButton('webhost',webhostLinked?'◆':'◇','Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
+        ${navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
         <div class="nav-label">${t('system')}</div>
-        ${navButton('help','?','Helpy',{appy:'help',tone:'system',subapps:'Guides · screenshots · safety'})}
-        ${navButton('settings','⚙',t('settings'),{appy:'system',tone:'system',active:systemSettingsActive,subapps:'Application · network · updates'})}
+        ${navButton('help',navIconAsset('assets/navigation/help.svg'),'Helpy',{appy:'help',tone:'system',subapps:'Guides · screenshots · safety'})}
+        ${navButton('settings',navIconAsset('assets/navigation/settings.svg'),t('settings'),{appy:'system',tone:'system',active:systemSettingsActive,subapps:'Application · network · updates'})}
         <div class="sidebar-spacer"></div>
         <button class="player-chip ${state.route==='profile'?'active':''}" id="player-chip">
           <div class="avatar">${avatar}</div>
@@ -1752,6 +1749,127 @@
           <div class="chev">›</div>
         </button>
       </aside>`;
+  }
+
+  const persistentShellBindings=new WeakMap();
+  function bindPersistentOnce(node,eventName,key,handler) {
+    if(!node)return;
+    let keys=persistentShellBindings.get(node);
+    if(!keys){keys=new Set();persistentShellBindings.set(node,keys);}
+    const token=`${eventName}:${key}`;
+    if(keys.has(token))return;
+    keys.add(token);node.addEventListener(eventName,handler);
+  }
+
+  function syncTransientShellMarkup(host,markup) {
+    if(!host)return;
+    const next=String(markup||'');
+    if(host.__dwsShellMarkup===next)return;
+    host.__dwsShellMarkup=next;
+    host.innerHTML=next;
+  }
+
+  function syncShellText(node,value) {
+    const next=String(value??'');
+    if(node&&node.textContent!==next)node.textContent=next;
+  }
+
+  function syncShellTitle(node,value) {
+    const next=String(value??'');
+    if(node&&node.title!==next)node.title=next;
+  }
+
+  function syncPersistentTitlebar(titlebar) {
+    if(!titlebar)return;
+    const collapsed=!!state.data?.application?.nav_collapsed;
+    const collapse=titlebar.querySelector('#toggle-nav-collapse');
+    syncShellTitle(collapse,collapsed?t('expandNavigation'):t('collapseNavigation'));
+    const left=titlebar.querySelector('.titlebar-left');
+    let back=titlebar.querySelector('#global-back');
+    if(state.navigationHistory.length&&!back&&left){
+      back=document.createElement('button');back.className='titlebar-back';back.id='global-back';back.textContent='←';
+      left.insertBefore(back,left.querySelector('.titlebar-app-icon'));
+    }else if(!state.navigationHistory.length&&back){back.remove();back=null;}
+    syncShellTitle(back,t('back'));
+
+    const elevated=!!state.adminStatus?.elevated;
+    const privilege=titlebar.querySelector('.titlebar-privilege');
+    if(privilege){
+      privilege.classList.toggle('elevated',elevated);privilege.classList.toggle('standard',!elevated);
+      syncShellText(privilege,elevated?'ADMINISTRATOR MODE':'STANDARD MODE');
+      syncShellTitle(privilege,elevated?'Dragonwilds Sync is running with Windows Administrator rights.':'Dragonwilds Sync is running with standard Windows rights.');
+    }
+    const language=titlebar.querySelector('#application-language');
+    if(language&&language.value!==languageCode())language.value=languageCode();
+    const notices=Array.isArray(state.data?.application?.notifications)?state.data.application.notifications:[];
+    const unread=notices.filter((item)=>item&&item.read!==true).length;
+    const notifications=titlebar.querySelector('#open-notification-center');
+    if(notifications){
+      syncShellTitle(notifications,t('notifications'));
+      let badge=notifications.querySelector('span');
+      if(unread){if(!badge){badge=document.createElement('span');notifications.appendChild(badge);}syncShellText(badge,String(Math.min(99,unread)));}
+      else badge?.remove();
+    }
+    syncShellTitle(titlebar.querySelector('#window-minimize'),t('minimize'));
+    syncShellTitle(titlebar.querySelector('#window-maximize'),t('maximize'));
+    syncShellTitle(titlebar.querySelector('#window-close'),t('close'));
+  }
+
+  function syncPersistentSidebar(sidebar) {
+    if(!sidebar)return;
+    const p=player();
+    const activeRoutes={
+      'world-management':['world-management','world-detail','server-detail','servers','rsdragonwilds-app'].includes(state.route),
+      'characters-app':state.route==='profile'&&state.profileTab==='characters',
+      'mods-app':state.route==='settings'&&state.settingsTab==='mods',
+      'rsdw-launcher':state.route==='rsdw-launcher',
+      webhost:state.route==='webhost'||state.route==='remote-server',
+      help:state.route==='help',
+      settings:state.route==='settings'&&state.settingsTab!=='mods',
+    };
+    sidebar.querySelectorAll('.appy-nav[data-route]').forEach((button)=>{
+      const active=!!activeRoutes[button.dataset.route];
+      button.classList.toggle('active',active);
+      if(active&&button.getAttribute('aria-current')!=='page')button.setAttribute('aria-current','page');
+      else if(!active&&button.hasAttribute('aria-current'))button.removeAttribute('aria-current');
+    });
+    const hostConfig=state.data?.application?.world_directory_host||{};
+    const hostStatus=state.data?.application?.world_directory_host_status||{};
+    const syncButton=sidebar.querySelector('.appy-nav[data-route="webhost"]');
+    if(syncButton){const linked=isLinkedDirectoryEndpoint(hostStatus.public_url||hostConfig.public_base_url)?'1':'0';if(syncButton.dataset.linked!==linked)syncButton.dataset.linked=linked;}
+    syncShellText(sidebar.querySelector('.brand-copy span'),t('worldLauncher'));
+    const groupLabels=sidebar.querySelectorAll('.nav-label');syncShellText(groupLabels[2],t('system'));
+    syncShellText(sidebar.querySelector('.appy-nav[data-route="settings"] .appy-nav-copy strong'),t('settings'));
+
+    const chip=sidebar.querySelector('#player-chip');
+    if(chip){
+      chip.classList.toggle('active',state.route==='profile');
+      const avatar=chip.querySelector('.avatar');
+      const avatarData=String(p.avatar_data||'');
+      const avatarKey=avatarData?`image:${avatarData.length}:${avatarData.slice(-24)}`:`initials:${initials(p.display_name||'Player')}`;
+      if(avatar&&avatar.__dwsAvatarKey!==avatarKey){
+        avatar.__dwsAvatarKey=avatarKey;avatar.replaceChildren();
+        if(avatarData){const image=document.createElement('img');image.src=avatarData;image.alt='';avatar.appendChild(image);}
+        else avatar.textContent=initials(p.display_name||'Player');
+      }
+      syncShellText(chip.querySelector('div:nth-child(2) strong'),p.display_name||'Player');
+      syncShellText(chip.querySelector('div:nth-child(2) span'),'Profile Management');
+    }
+  }
+
+  function renderPersistentShell(page) {
+    const mounted=root.dataset.persistentShell==='1'&&root.querySelector(':scope > .titlebar')&&root.querySelector(':scope > .sidebar')&&root.querySelector(':scope > .main');
+    if(!mounted){
+      root.innerHTML=`${renderTitlebar()}${renderSidebar()}<div class="shell-transient-host" data-shell-operation></div><div class="shell-transient-host" data-shell-hosting-focus></div><main class="main"></main>`;
+      root.dataset.persistentShell='1';
+    }
+    syncPersistentTitlebar(root.querySelector(':scope > .titlebar'));
+    syncPersistentSidebar(root.querySelector(':scope > .sidebar'));
+    syncTransientShellMarkup(root.querySelector('[data-shell-operation]'),operationMarkup());
+    syncTransientShellMarkup(root.querySelector('[data-shell-hosting-focus]'),hostingFocusMarkup());
+    const main=root.querySelector(':scope > .main');
+    main.innerHTML=page;
+    return main;
   }
 
   async function configureRsdwToolkitSource(status = null) {
@@ -4174,6 +4292,7 @@
     document.documentElement.lang = languageCode();
     if (!state.entered) {
       root.className = 'welcome-root';
+      delete root.dataset.persistentShell;
       root.innerHTML = renderWelcome();
       bindEvents();
       return;
@@ -4181,6 +4300,7 @@
 
     if(minimalMode){
       root.className='app-shell minimal-shell';
+      delete root.dataset.persistentShell;
       root.innerHTML=`${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${renderMinimalMode()}</main>`;
       bindEvents();
       return;
@@ -4206,7 +4326,10 @@
     else page = renderWorldGallery();
     const collapsed = !!state.data?.application?.nav_collapsed;
     root.className = `app-shell route-${state.route} ${collapsed ? 'nav-collapsed' : ''} ${detachedMode ? 'detached-shell' : ''}`;
-    root.innerHTML = detachedMode ? `${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>` : `${renderTitlebar()}${renderSidebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>`;
+    if(detachedMode){
+      delete root.dataset.persistentShell;
+      root.innerHTML=`${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>`;
+    }else renderPersistentShell(page);
     const nextKey = scrollKey();
     state.lastScrollKey = nextKey;
     bindEvents();
@@ -4246,6 +4369,7 @@
       renderFailureCount+=1;
       console.error('[renderer] UI render failed',error);
       root.className='welcome-root renderer-recovery-root';
+      delete root.dataset.persistentShell;
       root.innerHTML=`<div class="fatal-error"><strong>Dragonwilds Sync recovered from a display error.</strong><span>${escapeHtml(error?.message||String(error||'Unknown renderer error'))}</span><button class="btn primary" id="reload-renderer-after-error">Reload Interface</button></div>`;
       root.querySelector('#reload-renderer-after-error')?.addEventListener('click',()=>location.reload());
       return null;
@@ -4316,7 +4440,7 @@
     root.querySelector('#splash-update-later')?.addEventListener('click', async () => { const cfg=state.data?.application?.application_updates||{}; state.data=await api.invoke('application.update',{application_updates:{...cfg,dismissed_version:state.applicationUpdate?.latestVersion||''}}); render(); });
     root.querySelector('#splash-changelog-open')?.addEventListener('click', () => { if (state.applicationUpdateResult?.releaseUrl) window.dragonwilds.openExternal(state.applicationUpdateResult.releaseUrl); });
     root.querySelector('#splash-changelog-dismiss')?.addEventListener('click', async () => { await window.dragonwilds.appUpdateDismissResult(); state.applicationUpdateResult=null; render(); });
-    root.querySelector('#toggle-nav-collapse')?.addEventListener('click', () => {
+    bindPersistentOnce(root.querySelector('#toggle-nav-collapse'),'click','nav-collapse',() => {
       const previous=!!state.data?.application?.nav_collapsed;
       const collapsed=!previous;
       state.data.application.nav_collapsed=collapsed;
@@ -4325,9 +4449,9 @@
       if(button)button.title=collapsed?t('expandNavigation'):t('collapseNavigation');
       api.invoke('application.update',{nav_collapsed:collapsed}).then((next)=>{state.data=next;window.__DWSYNC_STATE__=next;}).catch((error)=>{state.data.application.nav_collapsed=previous;root.classList.toggle('nav-collapsed',previous);toast('Navigation size was not saved',error.message,'error');});
     });
-    root.querySelector('#application-language')?.addEventListener('change', (event) => updateApplication({ language: event.target.value }));
-    root.querySelector('#global-back')?.addEventListener('click', goBack);
-    root.querySelector('#open-notification-center')?.addEventListener('click', openNotificationCenter);
+    bindPersistentOnce(root.querySelector('#application-language'),'change','language',(event) => updateApplication({ language: event.target.value }));
+    bindPersistentOnce(root.querySelector('#global-back'),'click','back',goBack);
+    bindPersistentOnce(root.querySelector('#open-notification-center'),'click','notifications',openNotificationCenter);
     root.querySelectorAll('[data-world-review-id]').forEach((button)=>button.addEventListener('click',(event)=>{
       event.preventDefault();event.stopPropagation();
       const world=browserWorlds().find((item)=>String(item.id||'')===String(button.dataset.worldReviewId||''));
@@ -4345,15 +4469,15 @@
       if(label)label.textContent=details.open?'Collapse ▴':'Expand ▾';
     }));
     root.querySelectorAll('[data-help-image]').forEach((button)=>button.addEventListener('click',()=>{const src=button.dataset.helpImage;const alt=button.dataset.helpAlt||'Help screenshot';showModal(`<div class="modal-header"><div><div class="eyebrow">Field Guide</div><h2>${escapeHtml(alt)}</h2></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body help-image-modal"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"/></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`,{title:alt,width:1320,height:900});}));
-    root.querySelector('#window-minimize')?.addEventListener('click', () => window.dragonwilds.windowMinimize());
-    root.querySelector('#window-maximize')?.addEventListener('click', () => window.dragonwilds.windowToggleMaximize());
-    root.querySelector('#window-close')?.addEventListener('click', () => window.dragonwilds.windowClose());
+    bindPersistentOnce(root.querySelector('#window-minimize'),'click','minimize',() => window.dragonwilds.windowMinimize());
+    bindPersistentOnce(root.querySelector('#window-maximize'),'click','maximize',() => window.dragonwilds.windowToggleMaximize());
+    bindPersistentOnce(root.querySelector('#window-close'),'click','close',() => window.dragonwilds.windowClose());
     root.querySelectorAll('[data-open-external]').forEach((button) => button.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); const ok = await window.dragonwilds.openExternal(button.dataset.openExternal); if (!ok) toast('Could not open link', 'Only valid HTTP/HTTPS links are allowed.', 'error'); }));
     root.querySelector('#view-community-license')?.addEventListener('click', async()=>{
       const text = await window.dragonwilds.legalText();
       showModal(`<div class="modal-header"><div><div class="eyebrow">Legal</div><h2>${escapeHtml(window.DWSYNC_RELEASE_META?.licenseTitle || 'Dragonwilds Sync Community License')}</h2><p>Dragonwilds Sync is intended to remain freely available to the community.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><pre class="license-full-text">${escapeHtml(text || window.DWSYNC_RELEASE_META?.licenseSummary || 'License text unavailable.')}</pre></div><div class="modal-footer"><span class="muted-small">Third-party components and game assets retain their own terms.</span><button class="btn primary" data-close-modal>Done</button></div>`);
     });
-    root.querySelector('#player-chip')?.addEventListener('click', async()=>{pushNavigation();state.route='profile';state.profileTab='user';stopPlayerPolling();render();try{const response=await api.invoke('characters.list',{});state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];if(state.route==='profile')render();}catch(_){} });
+    bindPersistentOnce(root.querySelector('#player-chip'),'click','profile',async()=>{pushNavigation();state.route='profile';state.profileTab='user';stopPlayerPolling();render();try{const response=await api.invoke('characters.list',{});state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];if(state.route==='profile')render();}catch(_){} });
     root.querySelector('#rsdwl-refresh')?.addEventListener('click',async()=>{try{const response=await api.invoke('application.rsdw.refresh',{force:true});if(response?.state)setData(response.state);toast('RSDW-L refreshed','Toolkit catalogs and launcher caches are current.','success');render();}catch(error){toast('RSDW-L refresh failed',error.message,'error');}});
     root.querySelector('#refresh-integration-status')?.addEventListener('click',async()=>{try{await hydrateIntegrations({force:true});toast('Integration status refreshed','RSDW, Discord, and Nexus status checks completed.','success');}catch(error){toast('Integration refresh failed',error.message,'error');}});
     root.querySelectorAll('[data-rsdwl-tool]').forEach((button)=>button.addEventListener('click',async()=>{

@@ -14,6 +14,7 @@ const performanceCss = read('renderer/release-performance.css');
 const preload = read('electron/preload.cjs');
 const phase3 = read('renderer/release-phase3.js');
 const legacy = read('backend/dragonwilds_service_legacy.py');
+const appV2 = read('renderer/app-v2.js');
 
 const appPos = index.indexOf('app.js?');
 const perfPos = index.indexOf('release-performance.js?');
@@ -30,6 +31,12 @@ must(performanceJs.includes("document.addEventListener('wheel'") && performanceJ
   'scroll/navigation interaction must take priority over presentation enhancement work');
 must(performanceCss.includes('content-visibility: auto'), 'long off-screen UI rows must use Chromium content visibility');
 must(performanceCss.includes('overscroll-behavior: contain'), 'main scroll surface must use bounded overscroll behavior');
+must(appV2.includes('function renderPersistentShell(page)') && appV2.includes("root.dataset.persistentShell='1'"),
+  'full-mode navigation must mount one persistent titlebar/sidebar shell');
+must(appV2.includes('else renderPersistentShell(page);') && appV2.includes('main.innerHTML=page;'),
+  'ordinary renders must update the main workspace without rebuilding the navigation rail');
+must(appV2.includes('const persistentShellBindings=new WeakMap()') && appV2.includes('bindPersistentOnce('),
+  'persistent shell controls must retain exactly one event binding across content renders');
 
 // Menu names/visibility must settle before paint. Decorative release enhancements
 // may stay coordinated/idle, but navigation itself must not pop into place later.

@@ -54,12 +54,50 @@ a{color:inherit;text-decoration:none}button,input{font:inherit}img{max-width:100
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important}.reveal{opacity:1;transform:none}.world-card-inner{transition:none}}
 
 /* Finished world presentation used in the homepage interface preview. */
-.product-window{isolation:isolate;background:#101416}
-.product-window::before{content:"";position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,rgba(9,12,13,.28),rgba(9,12,13,.78)),url('assets/download-placard-background.png') center/cover no-repeat;opacity:.68;pointer-events:none}
-.product-window::after{z-index:3}.window-bar,.window-body{position:relative;z-index:1}.window-bar{background:rgba(13,16,18,.8)}.mock-sidebar{background:rgba(13,16,18,.75)}.mock-content{background:radial-gradient(circle at 75% 10%,rgba(217,176,90,.1),transparent 16rem),rgba(15,19,20,.58)}
-.mock-world-card.mock-world-card-presented{position:relative;isolation:isolate;display:block;min-height:178px;padding:74px 18px 17px;overflow:hidden;background:linear-gradient(115deg,rgba(9,12,13,.78),rgba(16,20,21,.6)),url('assets/download-placard-background.png') center/cover no-repeat}
-.mock-world-banner{position:absolute;z-index:-1;inset:0 0 auto;width:100%;height:88px;object-fit:cover;opacity:.7;mask-image:linear-gradient(#000 55%,transparent);-webkit-mask-image:linear-gradient(#000 55%,transparent)}
-.mock-world-copy{display:flex;align-items:flex-end;gap:12px}.mock-world-icon{width:48px;height:48px;flex:0 0 48px;border:1px solid rgba(218,177,83,.36);border-radius:10px;background:rgba(10,13,14,.84);object-fit:cover;box-shadow:0 8px 22px rgba(0,0,0,.35)}
-.mock-world-card-presented h3{margin:3px 0 8px}.mock-world-card-presented .mock-health{position:absolute;z-index:2;top:14px;right:15px;padding:7px 8px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:rgba(8,11,12,.7);backdrop-filter:blur(8px)}
+:root{
+  --preview-shell:#101416;
+  --preview-art:linear-gradient(180deg,rgba(9,12,13,.28),rgba(9,12,13,.78)),url('assets/download-placard-background.png') center/cover no-repeat;
+  --preview-art-opacity:.68;
+  --preview-bar:rgba(13,16,18,.8);
+  --preview-sidebar:rgba(13,16,18,.75);
+  --preview-content:radial-gradient(circle at 75% 10%,rgba(217,176,90,.1),transparent 16rem),rgba(15,19,20,.58);
+  --preview-card:linear-gradient(115deg,rgba(9,12,13,.78),rgba(16,20,21,.6)),url('assets/download-placard-background.png') center/cover no-repeat;
+  --preview-banner-opacity:.7;
+  --preview-icon:rgba(10,13,14,.84);
+  --preview-health:rgba(8,11,12,.7);
+}
+html[data-theme="white"]{
+  --preview-shell:#fbfaf7;
+  --preview-art:linear-gradient(180deg,rgba(255,255,255,.78),rgba(244,242,236,.94)),url('assets/download-placard-background.png') center/cover no-repeat;
+  --preview-art-opacity:.82;
+  --preview-bar:rgba(253,252,249,.92);
+  --preview-sidebar:rgba(244,242,236,.9);
+  --preview-content:radial-gradient(circle at 75% 10%,rgba(168,121,37,.12),transparent 16rem),rgba(251,250,247,.78);
+  --preview-card:linear-gradient(115deg,rgba(255,255,255,.94),rgba(244,242,236,.86)),url('assets/download-placard-background.png') center/cover no-repeat;
+  --preview-banner-opacity:.42;
+  --preview-icon:rgba(255,255,255,.9);
+  --preview-health:rgba(255,255,255,.84);
+}
+html[data-theme="glass"]{
+  --preview-shell:rgba(14,24,33,.68);
+  --preview-art:linear-gradient(180deg,rgba(13,24,33,.2),rgba(11,20,28,.7)),url('assets/download-placard-background.png') center/cover no-repeat;
+  --preview-art-opacity:.76;
+  --preview-bar:rgba(17,29,39,.64);
+  --preview-sidebar:rgba(14,26,36,.58);
+  --preview-content:radial-gradient(circle at 75% 10%,rgba(228,189,104,.14),transparent 16rem),rgba(17,29,39,.42);
+  --preview-card:linear-gradient(115deg,rgba(13,24,33,.7),rgba(24,38,49,.5)),url('assets/download-placard-background.png') center/cover no-repeat;
+  --preview-banner-opacity:.64;
+  --preview-icon:rgba(10,21,29,.76);
+  --preview-health:rgba(10,21,29,.66);
+}
+.product-window{isolation:isolate;background:var(--preview-shell);transition:background .25s,border-color .25s,box-shadow .25s}
+.product-window::before{content:"";position:absolute;z-index:-1;inset:0;background:var(--preview-art);opacity:var(--preview-art-opacity);transition:background .25s,opacity .25s;pointer-events:none}
+.product-window::after{z-index:3}.window-bar,.window-body{position:relative;z-index:1}.window-bar{background:var(--preview-bar)}.mock-sidebar{background:var(--preview-sidebar)}.mock-content{background:var(--preview-content)}
+.window-bar,.mock-sidebar,.mock-content,.mock-world-card,.mock-stats div,.mock-actions button{transition:background .25s,border-color .25s,color .25s}
+.mock-world-card.mock-world-card-presented{position:relative;isolation:isolate;display:block;min-height:178px;padding:74px 18px 17px;overflow:hidden;background:var(--preview-card)}
+.mock-world-banner{position:absolute;z-index:-1;inset:0 0 auto;width:100%;height:88px;object-fit:cover;opacity:var(--preview-banner-opacity);transition:opacity .25s;mask-image:linear-gradient(#000 55%,transparent);-webkit-mask-image:linear-gradient(#000 55%,transparent)}
+.mock-world-copy{display:flex;align-items:flex-end;gap:12px}.mock-world-icon{width:48px;height:48px;flex:0 0 48px;border:1px solid color-mix(in srgb,var(--gold) 36%,transparent);border-radius:10px;background:var(--preview-icon);object-fit:cover;box-shadow:0 8px 22px rgba(0,0,0,.22);transition:background .25s,border-color .25s}
+.mock-world-card-presented h3{margin:3px 0 8px}.mock-world-card-presented .mock-health{position:absolute;z-index:2;top:14px;right:15px;padding:7px 8px;border:1px solid var(--line);border-radius:8px;background:var(--preview-health);backdrop-filter:blur(8px);transition:background .25s,border-color .25s,color .25s}
 .mock-steam-badge,.mock-cl-badge{display:inline-flex!important;align-items:center;gap:4px}.mock-steam-badge img{width:11px;height:11px;object-fit:contain;filter:none!important}.mock-cl-badge{color:#b8f1d4!important;border-color:rgba(84,201,143,.28)!important;background:rgba(84,201,143,.08)}
+html[data-theme="white"] .mock-cl-badge{color:#236b42!important;border-color:rgba(35,107,66,.28)!important;background:rgba(53,128,75,.1)}
 @media(max-width:470px){.mock-world-card.mock-world-card-presented{padding-left:13px;padding-right:13px}.mock-world-copy{gap:9px}.mock-world-icon{width:42px;height:42px;flex-basis:42px}}

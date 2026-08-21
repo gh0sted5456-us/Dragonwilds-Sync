@@ -246,6 +246,9 @@ jobs:
           test -s _site/assets/demo-world-icon.svg
           test -s _site/assets/rsdw-logo.png
           test -s _site/assets/runeschema-logo.png
+          grep -q 'styles.css?v=theme-preview-1' _site/index.html
+          grep -q -- '--preview-shell' _site/styles.css
+          grep -q 'html\[data-theme="white"\] .mock-cl-badge' _site/styles.css
           grep -q 'Steam Server' _site/index.html
           grep -q 'data-current-cl' _site/index.html
           grep -q 'Snorkles' _site/script.js

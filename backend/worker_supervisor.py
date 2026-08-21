@@ -23,6 +23,7 @@ from secret_store import SecretStore, is_reference
 
 START_TIMEOUT_SECONDS = 6.0
 STOP_TIMEOUT_SECONDS = 12.0
+STARTUP_LOG_LIMIT_BYTES = 256 * 1024
 _SECRET_STORE = SecretStore(app_data_root() / "State" / "Secrets")
 
 
@@ -31,6 +32,28 @@ class WorkerSupervisor:
         self.root = app_data_root() / "runtime"
         self.root.mkdir(parents=True, exist_ok=True)
         self._children: dict[str, subprocess.Popen] = {}
+
+    def _startup_log_path(self, profile_id: str) -> Path:
+        path = self.root / profile_id / "logs" / "worker.startup.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if path.is_file() and path.stat().st_size > STARTUP_LOG_LIMIT_BYTES:
+                rotated = path.with_suffix(".previous.log")
+                rotated.unlink(missing_ok=True)
+                path.replace(rotated)
+        except OSError:
+            pass
+        return path
+
+    @staticmethod
+    def _startup_log_tail(path: Path, limit: int = 4000) -> str:
+        try:
+            with path.open("rb") as handle:
+                size = handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, size - limit), os.SEEK_SET)
+                return handle.read().decode("utf-8", errors="replace").strip()
+        except OSError:
+            return ""
 
     @staticmethod
     def _worker_command(profile_id: str, runtime_id: str, role: str, auth_ref: str) -> list[str]:
@@ -184,21 +207,30 @@ class WorkerSupervisor:
         env = os.environ.copy()
         env[WORKER_AUTH_ENV] = auth_token
         env["DRAGONWILDS_SYNC_APPDATA"] = str(app_data_root())
+        startup_log = self._startup_log_path(profile_id)
+        log_handle = startup_log.open("ab", buffering=0)
         options = {
-            "stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
+            "stdin": subprocess.DEVNULL, "stdout": log_handle, "stderr": subprocess.STDOUT,
             "env": env, "close_fds": True,
         }
         if sys.platform == "win32":
             options["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) | int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
             options["start_new_session"] = True
-        child = subprocess.Popen(self._worker_command(profile_id, runtime_id, role, auth_ref), **options)
+        try:
+            child = subprocess.Popen(self._worker_command(profile_id, runtime_id, role, auth_ref), **options)
+        finally:
+            log_handle.close()
         self._children[profile_id] = child
 
         deadline = time.monotonic() + START_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if child.poll() is not None:
-                raise RuntimeError(f"Runtime worker exited during startup with code {child.returncode}.")
+                self._children.pop(profile_id, None)
+                self.cleanup_stale(profile_id, read_state(profile_id))
+                detail = self._startup_log_tail(startup_log)
+                suffix = f" Startup log: {detail}" if detail else f" See {startup_log}."
+                raise RuntimeError(f"Runtime worker exited during startup with code {child.returncode}.{suffix}")
             state = read_state(profile_id)
             if state.get("runtimeId") == runtime_id:
                 try:
@@ -212,8 +244,13 @@ class WorkerSupervisor:
         try:
             child.wait(timeout=1.0)
         except subprocess.TimeoutExpired:
-            pass
-        raise TimeoutError("Runtime worker did not become ready within the startup timeout.")
+            child.kill()
+            child.wait(timeout=1.0)
+        self.cleanup_stale(profile_id, read_state(profile_id))
+        self._children.pop(profile_id, None)
+        detail = self._startup_log_tail(startup_log)
+        suffix = f" Startup log: {detail}" if detail else f" See {startup_log}."
+        raise TimeoutError(f"Runtime worker did not become ready within the startup timeout.{suffix}")
 
     def status(self, profile_id: str) -> dict:
         state = self.reconcile(profile_id)

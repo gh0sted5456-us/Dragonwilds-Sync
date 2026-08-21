@@ -1,27 +1,23 @@
-# Publishing Dragonwilds Sync on GitHub — Release 1 "Speedy Spectre"
+# Publishing Dragonwilds Sync on GitHub
 
-Dragonwilds Sync v1.1.9 includes a portable-only GitHub Releases updater.
+GitHub Releases is the application update channel for the upstream repository.
+Application updates are not redirected by user-configured mod/source URLs.
 
-## Repository setting
+## Release procedure
 
-The repository is built in as `https://github.com/gh0sted5456-us/Dragonwilds-Sync`. Settings shows only **Check for Updates** and **Update Application**; users cannot redirect application updates to another repository.
+1. Select an exact commit that has passed every required row in `test-matrix.json`.
+2. Change `package.json`, `package-lock.json`, `renderer/release-meta.js`, release
+   notes, changelog status, filenames, and package metadata together.
+3. Build Windows and Linux candidates from a clean checkout using the documented
+   production scripts.
+4. Run clean-machine and real-environment gates against those exact artifacts.
+5. Record artifact SHA-256 values and relevant platform/game/runtime versions.
+6. Create a semantic `vX.Y.Z` tag from the tested commit and publish matching
+   assets and user-facing notes. Do not use a draft as the latest update target.
+7. Verify latest-release discovery, digest rejection, replacement/relaunch, and
+   rollback behavior from an older packaged version.
 
-UE4SS and RuneSchema keep their independent editable source fields under **Settings → Server**. UE4SS starts with the built-in upstream URL and the text box acts as an override. RuneSchema relies on the saved address or the bundled/local ZIP path.
-
-## Creating a release
-
-1. Build Release 1 with `build.bat` on Windows.
-2. Create a GitHub Release with a semantic tag such as `v1.0.0`, `v1.0.1`, or `v1.1.0`.
-3. Upload `Dragonwilds Sync and Launcher-Portable-<version>.exe` from `release/`.
-4. Put the user-facing changelog in the GitHub Release notes.
-5. Publish the release (not draft). The launcher queries GitHub's latest-release endpoint.
-
-## Smart update behavior
-
-- Portable mode selects the `Portable` EXE, validates the SHA-256 digest, closes Dragonwilds Sync, atomically replaces the portable executable, then relaunches.
-- A failed digest check blocks replacement.
-- The splash page shows a dismissible update card when a newer semantic release exists.
-- After a successful update the splash page shows a dismissible changelog card using the GitHub Release notes.
-- The shared RSDW APPDATA cache refresh pipeline is invoked after a successful application update when `Refresh after updates` is enabled. It remains revision-aware and does not redownload unchanged icons/manifests.
-
-The updater intentionally does not accept arbitrary non-GitHub application download URLs in Release 1.
+The updater must select the correct platform/package asset, verify its digest,
+avoid modifying an immutable package in place, preserve user state, and fail with
+a terminal actionable error. A successful build or source test alone is not
+authorization to publish.

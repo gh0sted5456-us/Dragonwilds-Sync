@@ -15,6 +15,7 @@ flatpak-repo/
 __pycache__/
 *.pyc
 Codex Outputs/
+test-results/
 
 # Cloudflare local state and development secrets
 .wrangler/

@@ -19,6 +19,9 @@ const invokeActivityListeners = new Set();
 const invokeMetrics = [];
 const MAX_METRICS = 160;
 const READ_TIMEOUT_MS = 15000;
+const DEFAULT_INVOKE_TIMEOUT_MS = 5 * 60 * 1000;
+const LONG_INVOKE_TIMEOUT_MS = 20 * 60 * 1000;
+const BACKGROUND_INVOKE_TIMEOUT_MS = 60 * 1000;
 const MAX_PREWARM_CONCURRENCY = 2;
 let cacheGeneration = 0;
 
@@ -140,13 +143,22 @@ function invalidateAfterMutation(method) {
   }
 }
 
+function rendererTimeoutFor(method) {
+  const name=String(method||'').toLowerCase();
+  if(READ_POLICIES[method]||DEDUPE_ONLY.has(method))return READ_TIMEOUT_MS;
+  if(['world.discovery.heartbeat','client.background.tick','server.scheduler.tick','server.network.benchmark.maybe','application.rsdw.maybe'].includes(name))return BACKGROUND_INVOKE_TIMEOUT_MS;
+  if(/(?:backup|restore|update|install|download|sync|refresh|import|export|scan|reconcile|materialize)/.test(name))return LONG_INVOKE_TIMEOUT_MS;
+  return DEFAULT_INVOKE_TIMEOUT_MS;
+}
+
 function ipcReadWithTimeout(method, params) {
-  const request = ipcRenderer.invoke('dragonwilds:invoke', method, params);
-  if (!READ_POLICIES[method] && !DEDUPE_ONLY.has(method)) return request;
+  const timeoutMs=rendererTimeoutFor(method);
+  const request = ipcRenderer.invoke('dragonwilds:invoke', method, params, {timeoutMs});
   let timer = null;
   const timeout = new Promise((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Backend read timed out after ${Math.round(READ_TIMEOUT_MS / 1000)}s: ${method}`)), READ_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error(`Backend request timed out after ${Math.round(timeoutMs / 1000)}s: ${method}`)), timeoutMs);
   });
+  timer.unref?.();
   return Promise.race([request, timeout]).finally(() => { if (timer) clearTimeout(timer); });
 }
 

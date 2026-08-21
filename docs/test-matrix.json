@@ -1,0 +1,140 @@
+{
+  "schema": "DragonwildsSync.TestMatrix.v1",
+  "dimensions": ["functional", "invalid_input", "persistence", "timeout_cancel", "responsiveness", "crash_recovery", "cleanup", "security", "platform_package", "stress_soak"],
+  "cases": [
+    {
+      "id": "SRC-MATRIX-DOCS",
+      "title": "Inventory, matrix, and documentation integrity",
+      "tier": "source",
+      "mode": "automated",
+      "systems": ["OBSERVABILITY", "PACKAGING"],
+      "dimensions": ["functional", "invalid_input"],
+      "timeout_seconds": 30,
+      "commands": [["{python}", "scripts/run_system_tests.py", "--validate-only"], ["node", "scripts/check_rpc_deadline_contract.cjs"]],
+      "required_for_release": true
+    },
+    {
+      "id": "SRC-JS-CONTRACTS",
+      "title": "Electron, renderer, website, Cloudflare, and release contracts",
+      "tier": "source",
+      "mode": "automated",
+      "systems": ["SHELL", "BRIDGE", "UI", "QUICK", "MODS", "WEBHOST", "DIRECTORY", "WEBSITE", "RSDW_L", "PACKAGING"],
+      "dimensions": ["functional", "invalid_input", "security", "responsiveness"],
+      "timeout_seconds": 900,
+      "commands": [["npm", "run", "check:renderer"]],
+      "required_for_release": true
+    },
+    {
+      "id": "SRC-PYTHON-SYNTAX",
+      "title": "Python source compilation",
+      "tier": "source",
+      "mode": "automated",
+      "systems": ["CORE", "STATE", "SECRETS", "WORLDS", "RUNTIME", "WORLD_WORKER", "FEATURE_WORKERS", "MODS", "SYNC_HOST", "SYNC_CLIENT", "DIRECT_CONNECT", "EXCHANGE", "NETWORK", "WEBHOST", "DIRECTORY", "CHARACTERS", "RSDW_L", "ITEMS", "MAP_TELEMETRY", "MAINTENANCE", "SECURITY", "UPDATES"],
+      "dimensions": ["functional"],
+      "timeout_seconds": 180,
+      "commands": [["{python}", "-m", "compileall", "-q", "backend", "scripts"]],
+      "required_for_release": true
+    },
+    {
+      "id": "AUTO-BACKEND-REGRESSION",
+      "title": "Isolated trusted-Core regression matrix",
+      "tier": "backend",
+      "mode": "automated",
+      "systems": ["CORE", "STATE", "SECRETS", "WORLDS", "RUNTIME", "WORLD_WORKER", "FEATURE_WORKERS", "MODS", "SYNC_HOST", "SYNC_CLIENT", "DIRECT_CONNECT", "EXCHANGE", "NETWORK", "WEBHOST", "DIRECTORY", "CHARACTERS", "RSDW_L", "ITEMS", "MAP_TELEMETRY", "MAINTENANCE", "SECURITY", "UPDATES", "OBSERVABILITY"],
+      "dimensions": ["functional", "invalid_input", "persistence", "timeout_cancel", "crash_recovery", "cleanup", "security"],
+      "timeout_seconds": 2400,
+      "commands": [["npm", "run", "test:backend"]],
+      "required_for_release": true
+    },
+    {
+      "id": "INT-DESKTOP-FREEZE",
+      "title": "Full and Quick responsiveness, deadline, cancellation, and restart",
+      "tier": "integrated",
+      "mode": "manual",
+      "systems": ["SHELL", "BRIDGE", "UI", "QUICK", "CORE", "STATE", "OBSERVABILITY"],
+      "dimensions": ["functional", "persistence", "timeout_cancel", "responsiveness", "crash_recovery", "cleanup"],
+      "procedure": "Run long Core operations from Full and Quick; interact with unrelated controls; cancel; close/reopen; kill Core; verify terminal errors, recovery, empty pending maps, and valid state.",
+      "required_for_release": true
+    },
+    {
+      "id": "INT-WORKER-FAULTS",
+      "title": "World and feature worker lifecycle fault injection",
+      "tier": "integrated",
+      "mode": "manual",
+      "systems": ["RUNTIME", "WORLD_WORKER", "FEATURE_WORKERS", "SYNC_HOST", "MAP_TELEMETRY", "OBSERVABILITY"],
+      "dimensions": ["timeout_cancel", "responsiveness", "crash_recovery", "cleanup", "stress_soak"],
+      "procedure": "Exercise spawn, idle reap, reattach, stale revision, blocked child, worker crash, parent crash, and repeated lifecycle; inspect process tree, ports, temp state, logs, and durable state.",
+      "required_for_release": true
+    },
+    {
+      "id": "INT-WORLD-DATA",
+      "title": "World, mod, character, item, exchange, and restore workflows",
+      "tier": "integrated",
+      "mode": "manual",
+      "systems": ["WORLDS", "MODS", "EXCHANGE", "CHARACTERS", "RSDW_L", "ITEMS", "MAINTENANCE", "STATE", "SECRETS"],
+      "dimensions": ["functional", "invalid_input", "persistence", "timeout_cancel", "security", "cleanup"],
+      "procedure": "Create/adopt/clone profiles, edit role-correct mods, import/export conflicts, character writeback, item tools, backup and destructive restore rehearsal using non-production data.",
+      "required_for_release": true
+    },
+    {
+      "id": "NET-WEBHOST-DIRECTORY",
+      "title": "WebHost, permissions, federation, offline, and partial failure",
+      "tier": "network",
+      "mode": "manual",
+      "systems": ["NETWORK", "WEBHOST", "DIRECTORY", "WEBSITE", "SECURITY", "OBSERVABILITY"],
+      "dimensions": ["functional", "invalid_input", "timeout_cancel", "responsiveness", "crash_recovery", "cleanup", "security"],
+      "procedure": "Test local/remote roles, CSRF, audit, unavailable endpoints, slow responses, retry/backoff, multi-destination partial failure, offline publication, and public-field leak inspection.",
+      "required_for_release": true
+    },
+    {
+      "id": "MANUAL-SYSTEM-DIMENSION-AUDIT",
+      "title": "Per-system ten-dimension certification audit",
+      "tier": "integrated",
+      "mode": "manual",
+      "systems": ["SHELL", "BRIDGE", "UI", "QUICK", "CORE", "STATE", "SECRETS", "WORLDS", "RUNTIME", "WORLD_WORKER", "FEATURE_WORKERS", "MODS", "SYNC_HOST", "SYNC_CLIENT", "DIRECT_CONNECT", "EXCHANGE", "NETWORK", "WEBHOST", "DIRECTORY", "WEBSITE", "CHARACTERS", "RSDW_L", "ITEMS", "MAP_TELEMETRY", "MAINTENANCE", "SECURITY", "UPDATES", "PACKAGING", "OBSERVABILITY"],
+      "dimensions": ["functional", "invalid_input", "persistence", "timeout_cancel", "responsiveness", "crash_recovery", "cleanup", "security", "platform_package", "stress_soak"],
+      "procedure": "For every listed system, record an evidence row for every dimension or an explicit not-applicable rationale reviewed by a maintainer; link concrete tests, logs, artifacts, defects, and waivers rather than inheriting another system's result.",
+      "required_for_release": true
+    },
+    {
+      "id": "REAL-CROSS-MACHINE-SYNC",
+      "title": "Real host-to-client Sync, Direct Connect, and join",
+      "tier": "real-environment",
+      "mode": "physical",
+      "systems": ["RUNTIME", "WORLD_WORKER", "SYNC_HOST", "SYNC_CLIENT", "DIRECT_CONNECT", "NETWORK", "MODS", "SECURITY"],
+      "dimensions": ["functional", "invalid_input", "timeout_cancel", "responsiveness", "crash_recovery", "cleanup", "security", "platform_package"],
+      "procedure": "Use two clean machines and a real World; verify identity/fingerprint, changed-file transfer, role-correct runtime, join, restart tracking, bad credentials, disconnect, and cleanup.",
+      "required_for_release": true
+    },
+    {
+      "id": "PKG-WINDOWS-CLEAN",
+      "title": "Clean Windows portable acceptance",
+      "tier": "packaged",
+      "mode": "physical",
+      "systems": ["SHELL", "BRIDGE", "UI", "CORE", "PACKAGING", "UPDATES", "WEBHOST", "OBSERVABILITY"],
+      "dimensions": ["functional", "persistence", "timeout_cancel", "crash_recovery", "cleanup", "security", "platform_package"],
+      "procedure": "Build from clean checkout; verify hashes; first run without developer runtimes; restart/persistence; packaged Core/crypto/assets/workers/WebHost; update and removal behavior.",
+      "required_for_release": true
+    },
+    {
+      "id": "PKG-UBUNTU-CLEAN",
+      "title": "Clean Ubuntu AppImage and Proton acceptance",
+      "tier": "packaged",
+      "mode": "physical",
+      "systems": ["SHELL", "BRIDGE", "UI", "CORE", "PACKAGING", "UPDATES", "RUNTIME", "WORLD_WORKER", "RSDW_L", "OBSERVABILITY"],
+      "dimensions": ["functional", "persistence", "timeout_cancel", "crash_recovery", "cleanup", "security", "platform_package"],
+      "procedure": "Verify clean AppImage behavior, packaged services/assets/workers, real native or Proton process tree, shutdown/crash cleanup, and graceful unavailable RSDW live bridge.",
+      "required_for_release": true
+    },
+    {
+      "id": "SOAK-RESOURCE-BOUNDS",
+      "title": "Lifecycle, large-data, network, and service soak",
+      "tier": "soak",
+      "mode": "physical",
+      "systems": ["SHELL", "CORE", "RUNTIME", "WORLD_WORKER", "FEATURE_WORKERS", "SYNC_HOST", "SYNC_CLIENT", "EXCHANGE", "NETWORK", "WEBHOST", "DIRECTORY", "MAP_TELEMETRY", "MAINTENANCE", "OBSERVABILITY"],
+      "dimensions": ["timeout_cancel", "responsiveness", "crash_recovery", "cleanup", "stress_soak"],
+      "procedure": "Run repeated lifecycle and fault cycles plus prolonged services and large data; chart CPU, RAM, handles, processes, listeners, pending requests, temp disk, logs, and operation latency.",
+      "required_for_release": true
+    }
+  ]
+}

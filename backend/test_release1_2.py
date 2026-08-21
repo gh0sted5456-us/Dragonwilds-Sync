@@ -221,7 +221,7 @@ def main():
     assert package["dependencies"]["three"] == "0.184.0"
     license_text = (ROOT / "LICENSE.txt").read_text(encoding="utf-8")
     assert ".rsdwl" in license_text and "mandatory payment" in license_text
-    assert (ROOT / "docs/RELEASE1_2_RSDW_TOOLKIT.md").is_file()
+    assert (ROOT / "docs/archive/RELEASE1_2_RSDW_TOOLKIT.md").is_file()
     print("Release 1.2 RSDW Toolkit tests passed")
 
 

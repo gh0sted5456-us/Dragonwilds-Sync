@@ -65,10 +65,10 @@ need('backend/v3_phase4_host_patch.py', ['_catalog_row', 'badge_refs', 'platform
 need('backend/web_release_polish_hook.py', ['v3_phase4_web', 'v3_phase4_host_patch']);
 need('renderer/release-v3-phase4-safety.js', ['v3p4-window', 'Open in Window', 'stopPropagation', '__DWSYNC_V3_PHASE4__']);
 need('renderer/index.html', ['release-v3-phase4.css', 'release-v3-phase4-manager.css', 'release-v3-phase4.js', 'release-v3-phase4-safety.js', 'release-v3-phase4-manager.js']);
-const phase4State = needInsensitive('PROJECT_STATE/V3_PHASE4.md', ['Front/Back', 'Animations Full/Reduced/Off', 'Custom badges', 'Heartbeat', 'WebHost']);
+const phase4State = needInsensitive('PROJECT_STATE/archive/V3_PHASE4.md', ['Front/Back', 'Animations Full/Reduced/Off', 'Custom badges', 'Heartbeat', 'WebHost']);
 const phase4StateFolded = phase4State.toLowerCase();
 if (!(phase4StateFolded.includes('horizontal') && phase4StateFolded.includes('open') && (phase4StateFolded.includes('right-click') || phase4StateFolded.includes('right click')))) {
-  failures.push('PROJECT_STATE/V3_PHASE4.md: missing horizontal right-click Open contract');
+  failures.push('PROJECT_STATE/archive/V3_PHASE4.md: missing horizontal right-click Open contract');
 }
 
 if (/setInterval\([^,]+,\s*(?:[1-9]\d{0,3})\s*\)/.test(renderer)) failures.push('Phase 4 renderer must not introduce high-frequency polling');

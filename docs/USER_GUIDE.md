@@ -1,215 +1,60 @@
-# Dragonwilds Sync 1.4.0 — Player/User Guide
+# Player and World Owner Guide
 
-## What Dragonwilds Sync does
+This guide describes the current `testing-ground` build. Packaged metadata remains
+`2.0.0`; entries labeled `2.1.0-rc` are staged and unreleased until version and
+release metadata move together.
 
-Dragonwilds Sync keeps Dragonwilds Worlds, characters, mods, configs and connection state organized around Profiles. A normal player can use it simply as a World launcher; deeper server, RSDW and Nexus tools remain available when needed.
+## Start safely
 
-## First launch
+1. Install or open the packaged launcher for your platform.
+2. Confirm the detected Dragonwilds installation and local data locations.
+3. Create or adopt a World profile: Singleplayer, Co-Op, or Dedicated.
+4. Review the World identity, role, save, mods, ports, and privacy before applying.
+5. Keep a backup before changing an existing save or runtime.
 
-1. Open Dragonwilds Sync.
-2. Complete the **Player Guided Setup**.
-3. Select the Dragonwilds installation.
-4. Let Sync validate the client layout.
-5. Player Setup installs/repairs the shared client UE4SS + RuneSchema baseline when required.
-6. Sync discovers your characters and local saves.
-7. Enter the main launcher.
+The launcher separates desired profile state, managed application data, and the
+materialized game/server runtime. Do not manually combine those locations.
 
-The Dragonwilds dedicated-server-only `version.dll` is never installed into the player runtime by Player Setup.
+## Worlds and profiles
 
-## Profile
+A World profile is the durable authority for one World identity. Use the supported
+adopt/import flow for existing saves. Stop a hosted World before switching active
+save or runtime material. Do not duplicate IDs, credentials, or fingerprints when
+cloning a World.
 
-Click the Player/Profile chip in the bottom-left.
+## Mods and runtime components
 
-### User Profile
+User mods are classified as UE4SS, RuneSchema, or Pak content. Core components and
+hidden infrastructure are managed by the launcher and are not ordinary user mods.
+Server and client material can differ; the client builds its own role-correct
+runtime and must never copy the server's literal `mods.txt`.
 
-Use this page to set:
+## Sync and joining
 
-- profile picture;
-- banner;
-- display name;
-- About Me/description;
-- optional Discord/Nexus/GitHub/Twitch/YouTube/website links.
+Before Play or Quick Start, the client authenticates, obtains a fresh manifest,
+checks the World identity/fingerprint, transfers changed content, verifies hashes,
+materializes the client runtime, and prepares Direct Connect. Treat identity or
+fingerprint mismatch as a hard stop.
 
-### Characters
+## `.rsdwl` exchange
 
-Every discovered character appears in one consolidated selector.
+Use `.rsdwl` packages for supported World/profile or character exchange. Inspect
+the preview and conflict result before import. Exchange packages must not contain
+durable plaintext credentials; secrets remain local references.
 
-Selecting a character refreshes the whole Character workspace. You do not have to pick the same save again inside each RSDW tool.
+## Quick and Full views
 
-The Character Card can show:
+Full and Quick/Minimal are views over the same trusted control plane. Closing a
+window is not proof that a hosted runtime stopped. Use the explicit Stop action and
+confirm its terminal status before modifying files or shutting down the host.
 
-- character identity;
-- save path/state;
-- save size/modified timestamp;
-- World associations;
-- last saved position when extractable;
-- 3D Avatar preview;
-- Character Image / Capture Face Card;
-- Favorite;
-- `.rsdwl` export.
+## Recovery
 
-Below the card are the integrated RSDW tools:
+If an action appears stuck, do not repeatedly click it. Capture the operation and
+time, try its cancellation control once, open logs/diagnostics, and verify whether
+the game, worker, Core, or WebHost is still running. Preserve the profile and logs
+before force-ending a process. Restore only from a verified backup.
 
-- Character Editor;
-- Item Editor;
-- Spell Editor;
-- Recipe Unlocker;
-- Quest Editor.
-
-### Saving RSDW edits
-
-RSDW editor save actions return through Dragonwilds Sync. Sync backs up the character first and rejects stale writes when the character changed after it was opened.
-
-## Private Worlds
-
-Private Worlds are named local Dragonwilds profiles. You can have more than one.
-
-Examples:
-
-- Main World;
-- Vanilla Test;
-- Mod Testing;
-- Building Sandbox.
-
-Each can keep a different save snapshot, mods/configs and preferred character.
-
-### Launch
-
-**Launch** activates that Private World, hydrates the correct local profile state and starts Dragonwilds.
-
-Launch by itself does **not** advertise a Sync endpoint.
-
-### Co-Op
-
-Use **Co-Op** when you want other Dragonwilds Sync users to discover/synchronize before joining your normal in-game co-op session.
-
-Co-Op:
-
-- advertises the launcher fingerprint;
-- exposes Sync metadata/manifests/client-required files;
-- runs on the separate Sync port;
-- does not create the Dragonwilds lobby.
-
-Create/start the actual co-op session normally inside Dragonwilds.
-
-### Private World menu
-
-In placard view, frequent actions are directly beneath the card. The three-dot/right-click menu includes management/backup/desktop/delete actions as appropriate.
-
-In Horizontal view, right-click the row for the complete action menu.
-
-## Worlds
-
-**Worlds** is the public/connected browser.
-
-Use:
-
-- Search;
-- All;
-- Favorites;
-- Recently Played;
-- Curated / Profiles;
-- Placard view;
-- Horizontal view.
-
-Dragonwilds public endpoints are discovered through Steam master/A2S in 1.4. Compatible Sync Worlds are enriched when a launcher fingerprint/endpoint is available.
-
-### Connecting for the first time
-
-1. Select a compatible World.
-2. Enter private connection/sync information that cannot be publicly broadcast.
-3. Start synchronization.
-4. The World becomes locally linked/usable.
-
-### Launching a linked World
-
-Launch performs the complete preflight:
-
-1. handshake;
-2. manifest refresh;
-3. character resolution;
-4. runtime/mod/config comparison;
-5. required repairs/synchronization;
-6. Direct IP preparation;
-7. game launch/join.
-
-## Quick Launch / Send to Desktop
-
-A locally usable World can be sent to the desktop.
-
-The shortcut targets that specific World profile. Opening it runs the same verify/sync/handshake/Direct IP path before starting Dragonwilds.
-
-## `.rsdwl` profiles
-
-### Export
-
-A Profile export can include your character package and curated/linked World snapshot in one `.rsdwl` file.
-
-### Import
-
-Sync verifies the package and compares its timestamped snapshot to the previous version. A changelog appears when Worlds were added, updated or removed.
-
-A World removed from a newly imported curated profile is not automatically destroyed if you already have an independent working connection to it.
-
-## Mods
-
-Open **Settings → Mod Management** for the single shared library used by every Private World and Server Profile. Entries are separated into UE4SS, RuneSchema, and PAK types and show their linked profiles. **Publish & Push** makes the chosen profile copy canonical and propagates its entire payload, including newly added schema/config files, to profiles already linked to that mod. Profile enablement, tags, and load order remain profile-specific.
-
-The same publish operation is available by right-clicking a mod in a World’s Mods tab and choosing **Push to Shared Library**.
-
-### Manual mods
-
-Use ZIP drag/drop or manual install through a Private/Server Mods surface. Sync stages and inspects the archive instead of blindly extracting it into the game directory. Nexus website downloads can be ZIP or 7z; the isolated in-app browser captures completed downloads and sends them through the same staging and validation path.
-
-Before changing profiles, right-click the currently loaded World and choose **Unload Profile**. Sync snapshots its current changes and returns the game/server directory to the shared core baseline. A hosted server must be stopped first. Client saves, account data, and runtime cores are not removed.
-
-### Nexus Mods
-
-Under **Settings → Integrations → Nexus Mods**:
-
-- production users will use Nexus application authorization once the public app is registered;
-- developers/testers can use a personal API key;
-- Dragonwilds Sync never asks for your Nexus password.
-
-Nexus is only the source. Sync remains responsible for actual profile placement, backup and rollback.
-
-## Live Map
-
-The Ashenfall background is automatically refreshed/cached from the latest supported RSDWArchive dataset.
-
-Profile → Live Map & Tracking can display a selected World and telemetry. Character cards can show their last saved location where it can be resolved. Accurate marker placement requires the World/map calibration/transform to be available.
-
-The map itself, cached points of interest, and player names derived from server logs remain usable without a tracking mod. Live player-position markers are optional and require the user to install and run the **RSDWTools UE4SS module from RSDWDevKit**. Dragonwilds Sync only reads its documented `RSDWTools_SharedLine_v1` bridge and `world.net.roster` response; it does not bundle, install, update, or modify RSDWTools. If the bridge is absent, the UI says that tracking is unavailable and the World continues normally.
-
-The same rule applies to authenticated WebHost Remote Management. Accounts need the **View live player map** permission, and the host must have the optional bridge running before remote live markers can appear.
-
-## Managed windows
-
-Secondary workflows are real app windows rather than trapped modal boxes. You can move them to another monitor and resize them.
-
-If you minimize one of Sync's managed child windows, it appears in the **built-in launcher taskbar** so you can restore it later.
-
-Right-click a task button for **Open** or **Close**. Right-click empty space on the taskbar to switch between labeled **Tabs** and compact **Navigation Icons**; the choice is remembered on that device.
-
-## Back button
-
-The persistent Back arrow restores the prior Dragonwilds Sync context—for example:
-
-`Worlds → World Details → Characters → Back`
-
-returns to the World you came from.
-
-## Themes
-
-Use **Settings → Application → Theme**:
-
-- Dark;
-- Light.
-
-Scrollbars and embedded RSDW surfaces follow the active application theme.
-
-## Close to tray
-
-By default, closing the main window keeps Dragonwilds Sync running quietly in the Windows notification area. This allows monitoring, passive notifications and updates to continue.
-
-You can change Close behavior under Settings → Application if you want X to fully exit the application.
+For hosting, ports, remote administration, and public directory behavior, read
+[`SERVER_ADMIN_GUIDE.md`](SERVER_ADMIN_GUIDE.md). Current constraints are listed in
+[`KNOWN_LIMITATIONS.md`](KNOWN_LIMITATIONS.md).

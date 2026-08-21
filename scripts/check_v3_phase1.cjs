@@ -57,10 +57,10 @@ if (worldSecretsCodeOwners.length) {
 }
 
 const requiredDocs = [
-  'PROJECT_STATE/V3_PHASE1_AUDIT.md',
-  'PROJECT_STATE/V3_PERSISTENCE_MATRIX.md',
-  'PROJECT_STATE/V3_MIGRATION_MATRIX.md',
-  'PROJECT_STATE/V3_PHASE1_BASELINE.json',
+  'PROJECT_STATE/archive/V3_PHASE1_AUDIT.md',
+  'PROJECT_STATE/archive/V3_PERSISTENCE_MATRIX.md',
+  'PROJECT_STATE/archive/V3_MIGRATION_MATRIX.md',
+  'PROJECT_STATE/archive/V3_PHASE1_BASELINE.json',
 ];
 for (const rel of requiredDocs) {
   if (!fs.existsSync(path.join(root, rel))) failures.push(`missing Phase 1 artifact: ${rel}`);

@@ -1,5 +1,12 @@
-Dragonwilds Sync V2.0.0 - Portable Worlds, Mod Library & WebHost
-Version: 2.0.0
-Release family: Portable-only Windows application with consolidated World management, Character Studio, federated WebHost, Remote Server, and source API documentation.
-See docs/WEBHOST_API.md, docs/webhost-openapi.json, docs/FEATURE_LIST.md, docs/CAPABILITIES.md, docs/USER_GUIDE.md, and docs/SERVER_ADMIN_GUIDE.md.
-Settings includes the shared cross-profile Mod Management repository; World right-click menus support backup-first Unload; source-linked mods retain Nexus IDs without bundling third-party archives; Creator/Community recommendations are link-only GitHub-compatible feeds; application updates default to https://github.com/gh0sted5456-us/Dragonwilds-Sync.
+Dragonwilds Sync — Current Build Authority
+
+Packaged version: 2.0.0
+Active development branch: testing-ground
+Staged changelog channel: 2.1.0-rc (unreleased)
+Package shapes: Windows Portable and Ubuntu AppImage
+
+The current source combines World management, Character/RSDW-L tools, mod profiles, authenticated Sync, Direct Connect/DragonConnect, WebHost/Remote Admin, public-directory integration, supervised World Runtime Workers, and disposable feature workers.
+
+No release is approved solely by source-contract or CI success. The exact commit and artifact hashes must pass docs/TESTING.md, including applicable clean-machine, real Dragonwilds, Steam/SteamCMD, cross-machine Sync, process-cleanup, stress/soak, router, Linux/Proton, and production-service gates.
+
+Current documentation begins at docs/README.md. Historical verification records are archived and are not current release authority.

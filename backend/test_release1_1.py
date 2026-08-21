@@ -112,7 +112,7 @@ def main():
     assert "Shared Worlds Feed" not in renderer
     assert not (project / "resources/webhost").exists()
     assert (project / "docs/RSDWL_V3_PROFILE_BUNDLE.md").is_file()
-    assert (project / "docs/RELEASE1_1_PROFILE_SYNC.md").is_file()
+    assert (project / "docs/archive/RELEASE1_1_PROFILE_SYNC.md").is_file()
     print("Release 1.1 unified Worlds/profile/broadcast tests passed")
 
 

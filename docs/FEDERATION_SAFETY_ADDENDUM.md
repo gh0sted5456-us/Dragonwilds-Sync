@@ -1,6 +1,7 @@
-# Dragonwilds Sync 1.4.0 — Federation Safety Addendum
+# Federation Safety Addendum
 
-Build date: 2026-08-14
+This document defines the current safety contract. Historical build evidence is
+not evidence for the current candidate; use `test-matrix.json`.
 
 ## Free Directory Sources
 
@@ -37,14 +38,10 @@ All website rows remain untrusted candidates. A World is promoted only when the 
 
 When explicitly enabled on a hosted World, an authenticated client can submit an `.rsdwl` character package. The server enforces a 32 MiB limit, validates the package envelope and checksums, invokes Microsoft Defender where available, and stores the result in a quarantine directory. Nothing is written to a live character save. The administrator must approve the entry before it enters the shared character library, or reject it to delete the quarantined package.
 
-## Verification evidence
+## Verification requirement
 
-- Renderer and Electron JavaScript syntax checks passed.
-- Full backend regression suite passed, including the new federation-safety test.
-- Ed25519 tamper rejection, source normalization/deduplication, quarantine approval, directory revocation, and observability were exercised directly.
-- PyInstaller included the cryptography runtime and its OpenSSL hook.
-- Packaged service JSON-RPC passed, including `application.operator_identity.status`.
-- Windows NSIS and Portable builds completed successfully.
-- The public landing page, trusted-LAN administration page, settings writeback, and responsive layout were exercised in the local browser fixture.
-
-The tests verify launcher behavior in controlled fixtures. They do not claim that an arbitrary Internet router, third-party directory, Dragonwilds public service, or offline World is reachable at a given moment.
+Exercise signature tamper rejection, source normalization/deduplication, quarantine
+approval, revocation, authentication/authorization, CSRF, public-field allowlists,
+offline behavior, retry/backoff, and partial destination failure. Controlled
+fixtures do not prove arbitrary routers, third-party directories, production
+services, or offline Worlds are reachable.

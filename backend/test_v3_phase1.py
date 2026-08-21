@@ -82,10 +82,10 @@ def _migration_backup_and_resume() -> None:
 def _project_artifacts() -> None:
     root = Path(__file__).resolve().parent.parent
     for relative in (
-        "PROJECT_STATE/V3_PHASE1_AUDIT.md",
-        "PROJECT_STATE/V3_PERSISTENCE_MATRIX.md",
-        "PROJECT_STATE/V3_MIGRATION_MATRIX.md",
-        "PROJECT_STATE/V3_PHASE1_BASELINE.json",
+        "PROJECT_STATE/archive/V3_PHASE1_AUDIT.md",
+        "PROJECT_STATE/archive/V3_PERSISTENCE_MATRIX.md",
+        "PROJECT_STATE/archive/V3_MIGRATION_MATRIX.md",
+        "PROJECT_STATE/archive/V3_PHASE1_BASELINE.json",
     ):
         assert (root / relative).is_file(), relative
 

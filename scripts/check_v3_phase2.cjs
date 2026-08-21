@@ -57,7 +57,7 @@ const networkStats = networkStatsStart >= 0 && networkStatsEnd > networkStatsSta
 if (!networkStats.includes("p.mode='client'") || !networkStats.includes("p.mode='dedicated_server'") || !networkStats.includes("p.mode='coop_host'")) failures.push('Network aggregate must break anonymous presence down by client/dedicated/coop mode');
 if (/\binstallation_id\s*:/.test(networkStats)) failures.push('Public network aggregate must never expose installation IDs');
 
-requireText('PROJECT_STATE/V3_PHASE2.md', ['Reuse → Migrate → Verify → Retire', 'Cloudflare', 'external deployment gate']);
+requireText('PROJECT_STATE/archive/V3_PHASE2.md', ['Reuse → Migrate → Verify → Retire', 'Cloudflare', 'external deployment gate']);
 
 const bootstrap = read('electron/bootstrap.cjs');
 if (!bootstrap.includes("argv.includes('--quick')") || !bootstrap.includes('suppressedBackgroundCallbacks')) failures.push('electron/bootstrap.cjs: Quick must own lean desktop background suppression');

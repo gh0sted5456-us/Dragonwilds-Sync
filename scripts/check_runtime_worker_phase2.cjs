@@ -20,8 +20,8 @@ const service = need('backend/dragonwilds_service.py', [
 need('backend/test_runtime_worker_phase2.py', [
   'duplicate spawn reuses compatible worker','fresh supervisor reattaches','PROTOCOL_MISMATCH','stale worker state cleaned','Phase 2 does not launch game'
 ]);
-need('PROJECT_STATE/RUNTIME_WORKER_PHASE1_AUDIT.md', ['AUDIT → REUSE → SEPARATE EXECUTION → VERIFY → RETIRE OLD EXECUTION PATH','Worker Candidate Decision Table','Phase 2 Readiness']);
-need('PROJECT_STATE/RUNTIME_WORKER_PHASE2.md', ['Completed','Processes Added','Processes Retired','Authoritative Owners Changed','Next Phase Readiness']);
+need('PROJECT_STATE/archive/RUNTIME_WORKER_PHASE1_AUDIT.md', ['AUDIT → REUSE → SEPARATE EXECUTION → VERIFY → RETIRE OLD EXECUTION PATH','Worker Candidate Decision Table','Phase 2 Readiness']);
+need('PROJECT_STATE/archive/RUNTIME_WORKER_PHASE2.md', ['Completed','Processes Added','Processes Retired','Authoritative Owners Changed','Next Phase Readiness']);
 
 if (protocol.includes('pickle.') || protocol.includes('.send(') || protocol.includes('.recv()')) failures.push('worker protocol must exchange bounded JSON bytes, not pickle objects');
 if (/socket\.(?:AF_INET|AF_INET6)/.test(protocol) || /localhost|127\.0\.0\.1/.test(protocol)) failures.push('worker control IPC must not use a normal TCP listener');

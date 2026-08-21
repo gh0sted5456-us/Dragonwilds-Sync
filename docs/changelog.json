@@ -1,18 +1,20 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-17T23:45:00Z",
+  "updated_at": "2026-08-21T00:00:00Z",
   "releases": [
     {
       "version": "2.1.0-rc",
       "title": "Release Client RC",
-      "date": "2026-08-17",
-      "status": "release-candidate",
+      "date": "2026-08-21",
+      "status": "unreleased-testing-ground",
       "highlights": [
         "Fresh password authentication and manifest negotiation before every Play or Quick Start.",
         "Per-mod/component fingerprints allow unchanged content to remain in place while changed components are transferred.",
         "Windows and Ubuntu release-candidate packaging and verification paths.",
         "WebGUI, catalog, Recommended Mods, RSDW item metadata, and server-management consolidation work.",
-        "Native detachable application windows and release-client UI polish."
+        "Native detachable application windows and release-client UI polish.",
+        "Revisioned World and feature-worker execution with isolated durable-state authority.",
+        "Consolidated current-build documentation and a system-wide phased test matrix."
       ]
     },
     {

@@ -1,94 +1,30 @@
 {
-  "schema": "DragonwildsSync.ProjectState.v1",
-  "snapshot": {
-    "phase": 6,
-    "phase6_code_checkpoint": "f7b714358066f66b8af24a4aa7b7eb8290dcf098",
-    "phase6_rc_run": 32212108914,
-    "phase6_rc_number": 465,
-    "ubuntu_test_files": 34,
-    "windows_test_files": 64,
-    "release_gate": "draft_pending_real_game_acceptance"
-  },
+  "schema": "DragonwildsSync.SystemMap.v2",
+  "branch": "testing-ground",
+  "version_authority": ["package.json", "package-lock.json", "renderer/release-meta.js", "RELEASE.txt"],
+  "inventory": "docs/SYSTEMS.md",
+  "test_matrix": "docs/test-matrix.json",
   "authorities": {
-    "runtime": "backend/runtime_manager.py::AuthoritativeRuntimeManager",
-    "server_materialization": "backend/server_engine.py + backend/phase4_runtime_startup.py",
-    "profile_desired_state": "backend/profile_settings.py / per-World settings.json",
-    "sync": "backend/sync_engine.py",
-    "phase6_adapter": "backend/phase6_integration.py",
-    "secret_references": "backend/secret_store.py",
-    "dragonconnect": "backend/persistent_direct_connect.py",
-    "mod_taxonomy": "backend/core_components.py",
-    "renderer_read_coordination": "electron/preload.cjs",
-    "internal_windows_explorer": "renderer/release-phase5.js",
-    "community_ui": "renderer/release-phase6.js",
-    "source_registry": "docs/upstream-sources.json"
+    "desktop_lifecycle": "electron/main.cjs + electron/main-v2.cjs",
+    "renderer_boundary": "electron/preload.cjs + electron/preload-v2.cjs",
+    "trusted_core": "backend/dragonwilds_service.py",
+    "desired_state": "backend/profile_store.py + backend/profile_settings.py",
+    "secrets": "backend/secret_store.py",
+    "runtime_policy": "backend/runtime_manager.py",
+    "runtime_materialization": "backend/server_engine.py",
+    "world_execution": "backend/runtime_worker.py + backend/worker_supervisor.py",
+    "feature_execution": "backend/feature_worker.py + backend/feature_worker_supervisor.py",
+    "client_sync": "backend/sync_engine.py + backend/phase6_integration.py",
+    "public_directory": "backend world-directory modules + cloudflare/dragonwilds-sync-directory",
+    "test_evidence": "scripts/run_system_tests.py"
   },
-  "user_mod_families": ["UE4SS", "RuneSchema", "Pak"],
-  "core_components": {
-    "ue4ss": {"roles": ["server", "client"], "user_manageable": false},
-    "runeschema": {"roles": ["server", "client"], "user_manageable_framework": false, "child_family": "RuneSchema"},
-    "dragoncore": {"roles": ["server", "host"], "user_manageable": false, "hidden": true},
-    "dragonconnect": {"roles": ["client"], "user_manageable": false, "hidden": true, "physical_name": "PersistentDirectConnectIP"}
+  "state_layers": ["desired", "managed_appdata", "materialized_runtime", "live_applied"],
+  "security_invariants": {
+    "secret_reference_prefix": "dws-secret://",
+    "public_fields": "allowlist_only",
+    "server_mods_txt_to_client": "forbidden",
+    "renderer_direct_core_access": "forbidden",
+    "worker_durable_profile_authority": "forbidden"
   },
-  "tooling_data": {
-    "rsdwtools": {"kind": "data", "repository": "RSDWArchive/RSDWTools", "runtime_component": false},
-    "rsdw_toolkit": {"kind": "runtime_tooling", "repository": "RSDWArchive/RSDWDevKit", "runtime_component": true}
-  },
-  "state_layers": ["desired", "managed_localappdata", "materialized_runtime"],
-  "server_start_order": [
-    "resolve_profile",
-    "materialize_verify_save_mods_config",
-    "generate_runtime_state_mods_txt",
-    "launch_server_exe",
-    "verify_process",
-    "arm_watchdog",
-    "start_sync_broadcast",
-    "reverify_process",
-    "verify_broadcast"
-  ],
-  "client_sync_order": [
-    "authenticate",
-    "fresh_manifest",
-    "resolve_client_both_roles",
-    "ensure_derived_client_core",
-    "compare",
-    "stage_download",
-    "hash_verify",
-    "materialize",
-    "generate_client_mods_txt_locally",
-    "final_host_parity_report",
-    "configure_dragonconnect_game_endpoint",
-    "launch_ready",
-    "launch_game"
-  ],
-  "security": {
-    "durable_secret_reference_prefix": "dws-secret://",
-    "handoff_receipt_contains_credentials": false,
-    "server_literal_mods_txt_to_client": "forbidden",
-    "webgui": ["session_auth", "csrf", "permission_checks", "audit"],
-    "source_registry_remote_commands": "forbidden"
-  },
-  "performance": {
-    "rule": "known_local_state_first",
-    "resolve": "cheap",
-    "reconcile": "only_when_required_or_explicit",
-    "character_index": "DragonwildsSync.CharacterIndex.v1",
-    "materialization": "path_size_mtime_ns_delta",
-    "explicit_rescan_bypasses_cache": true
-  },
-  "ui": {
-    "application_owned_tools": "internal_mdi_windows",
-    "external_websites": "external_browser_surface",
-    "mod_explorer": "DRAGONWILDS SYNC EXPLORER",
-    "explorer_roots": ["UE4SS", "RuneSchema", "Pak"],
-    "physical_profile_folder_action": "See in Explorer"
-  },
-  "known_future_work": [
-    "real_game_and_cross_machine_acceptance",
-    "full_uncategorized_save_adoption_ux",
-    "polished_runtime_safe_active_save_switching",
-    "profile_json_retirement_migration",
-    "optional_os_backed_secret_key_custody",
-    "independent_dragonconnect_release_channel_if_available"
-  ]
+  "release_rule": "all required_for_release matrix cases pass for the exact artifact or have an approved waiver"
 }

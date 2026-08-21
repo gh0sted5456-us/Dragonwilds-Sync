@@ -36,6 +36,7 @@ from secret_store import SecretStore, is_reference
 
 START_TIMEOUT_SECONDS = 6.0
 STOP_TIMEOUT_SECONDS = 8.0
+STARTUP_LOG_LIMIT_BYTES = 256 * 1024
 _SECRET_STORE = SecretStore(feature_root().parent / "State" / "Secrets")
 
 
@@ -47,6 +48,30 @@ class FeatureWorkerSupervisor:
         self._children: dict[str, subprocess.Popen] = {}
         self._leases: dict[str, set[str]] = {}
         self._held_leases: dict[tuple[str, str], str] = {}
+
+    @staticmethod
+    def _startup_log_path(domain: str) -> Path:
+        path = feature_dir(domain) / "logs" / "worker.startup.log"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            if path.is_file() and path.stat().st_size > STARTUP_LOG_LIMIT_BYTES:
+                rotated = path.with_suffix(".previous.log")
+                rotated.unlink(missing_ok=True)
+                path.replace(rotated)
+        except OSError:
+            pass
+        return path
+
+    @staticmethod
+    def _startup_log_tail(path: Path, limit: int = 4000) -> str:
+        try:
+            with path.open("rb") as handle:
+                size = handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, size - limit), os.SEEK_SET)
+                value = handle.read().decode("utf-8", errors="replace").strip()
+            return value
+        except OSError:
+            return ""
 
     @staticmethod
     def _worker_command(domain: str, worker_id: str, auth_ref: str, parent_pid: int, idle_seconds: float) -> list[str]:
@@ -213,10 +238,12 @@ class FeatureWorkerSupervisor:
         env = os.environ.copy()
         env[FEATURE_AUTH_ENV] = auth_token
         env["DRAGONWILDS_SYNC_APPDATA"] = str(feature_root().parent)
+        startup_log = self._startup_log_path(domain)
+        log_handle = startup_log.open("ab", buffering=0)
         options = {
             "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
+            "stdout": log_handle,
+            "stderr": subprocess.STDOUT,
             "env": env,
             "close_fds": True,
         }
@@ -224,13 +251,23 @@ class FeatureWorkerSupervisor:
             options["creationflags"] = int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)) | int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
         else:
             options["start_new_session"] = True
-        child = popen_hidden(self._worker_command(domain, worker_id, auth_ref, os.getpid(), self.idle_seconds), **options)
+        try:
+            child = popen_hidden(self._worker_command(domain, worker_id, auth_ref, os.getpid(), self.idle_seconds), **options)
+        finally:
+            log_handle.close()
         self._children[domain] = child
 
         deadline = time.monotonic() + START_TIMEOUT_SECONDS
         while time.monotonic() < deadline:
             if child.poll() is not None:
-                raise RuntimeError(f"Feature worker {domain} exited during startup with code {child.returncode}.")
+                self._children.pop(domain, None)
+                try:
+                    self.reconcile(domain)
+                except Exception:
+                    pass
+                detail = self._startup_log_tail(startup_log)
+                suffix = f" Startup log: {detail}" if detail else f" See {startup_log}."
+                raise RuntimeError(f"Feature worker {domain} exited during startup with code {child.returncode}.{suffix}")
             state = read_state(domain)
             if state.get("workerId") == worker_id:
                 try:
@@ -244,8 +281,16 @@ class FeatureWorkerSupervisor:
         try:
             child.wait(timeout=1.0)
         except subprocess.TimeoutExpired:
+            child.kill()
+            child.wait(timeout=1.0)
+        self._children.pop(domain, None)
+        try:
+            self.reconcile(domain)
+        except Exception:
             pass
-        raise TimeoutError(f"Feature worker {domain} did not become ready within the startup timeout.")
+        detail = self._startup_log_tail(startup_log)
+        suffix = f" Startup log: {detail}" if detail else f" See {startup_log}."
+        raise TimeoutError(f"Feature worker {domain} did not become ready within the startup timeout.{suffix}")
 
     def status(self, domain: str) -> dict:
         state = self.reconcile(domain)
@@ -341,7 +386,7 @@ class FeatureWorkerSupervisor:
                 try:
                     rows.append(future.result())
                 except Exception as exc:
-                    rows.append({"domain": domain, "ready": False, "error": str(exc)[:300]})
+                    rows.append({"domain": domain, "ready": False, "error": str(exc)[:4000]})
         rows.sort(key=lambda row: selected.index(row["domain"]))
         return {"ready": all(row.get("ready") for row in rows), "prepared": rows, "startupTier": "eager" if eager_only else "requested",
                 "applications": [{"id": app_id, **APPLICATION_IDENTITIES[app_id]} for app_id in selected_apps],

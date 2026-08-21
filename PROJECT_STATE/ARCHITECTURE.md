@@ -1,114 +1,55 @@
-# Architecture
+# Current Architecture
 
-## Core principle
+## Authority model
 
-Dragonwilds Sync has **one authoritative desired-state/control plane** and, for each active hosted World that uses the Phase 5 path, **one World Runtime Worker as the live execution plane**.
+The Electron main process owns desktop lifecycle and supervises the trusted Python
+Core. The Core owns desired state, validation, secrets, durable writes, runtime
+policy, operation locking, and public/security policy. Renderers are untrusted
+control surfaces and reach the Core only through the preload/main IPC boundary.
 
-Process separation is not permission to duplicate business authority.
-
-```text
-Full Desktop ───┐
-Quick/Minimal ──┼──> Authoritative Runtime Manager
-WebGUI ─────────┘             │
-                              ▼
-                       Worker Supervisor
-                              │
-                              ▼
-                     World Runtime Worker
-                     ├─ dedicated game
-                     └─ dedicated Sync/share
+```mermaid
+flowchart TD
+  UI["Full / Quick / WebHost"] --> IPC["Preload + Electron main"]
+  IPC --> CORE["Trusted Python Core"]
+  CORE --> WORLD["World worker"]
+  CORE --> FEATURE["Feature workers"]
+  WORLD --> GAME["Game + dedicated Sync"]
 ```
 
-## Main trusted backend owns
+## Execution planes
 
-- World/profile identity and desired configuration;
-- authoritative `settings.json` persistence and compatibility profile writes;
-- profile/mod/item/tag/platform/core registries;
-- Secret Store and creation of `dws-secret://` references;
-- update/version policy;
-- Runtime Manager lifecycle policy and operation locking;
-- Worker Supervisor lifecycle/discovery/reattach;
-- user-facing notifications;
-- anonymous installation presence;
-- currently, hosted-World heartbeat/directory scheduling;
-- currently, WebGUI / Remote Admin listener, authentication, authorization, CSRF and audit.
+The World Runtime Worker owns bounded live execution for one hosted World: the
+verified desired revision, Dragonwilds child process, logs/watchdog, and dedicated
+Sync listener. It cannot silently persist a second authoritative profile.
 
-## World Runtime Worker currently owns
+Feature workers execute bounded expensive operations such as indexing, exchange,
+maintenance, client sync, and diagnostics. They use leases, authenticated local
+IPC, deadlines, bounded results, and idle shutdown. Losing a feature worker must
+not damage durable state.
 
-For an active dedicated World:
+## Persistence boundary
 
-- runtime preparation/materialization through the existing ServerEngine;
-- role-correct runtime files and `mods.txt` generation;
-- Dragonwilds Dedicated Server child process;
-- PID/process verification;
-- stdout/stderr runtime logs;
-- watchdog/process containment relationship;
-- unexpected-game-exit monitoring;
-- the exact applied desired-config revision;
-- dedicated Sync/file-share listener and live SHARE payload/status.
+Before start, the Core validates and performs main-owned mutations, creates an
+immutable revisioned snapshot, and asks the worker to verify it. Compatibility
+save calls in worker execution are redirected away from durable profile/settings
+authority. Secrets are resolved only for the active operation and are not copied
+into reports, public payloads, or ordinary configuration.
 
-The worker is launched from the same packaged application in `--runtime-worker` mode and communicates over authenticated local-only IPC.
+## Responsiveness boundary
 
-## Durable-write boundary
+Every UI request has a bounded renderer and Electron-main deadline, with longer
+policies for backup/update/sync work. A timeout alone is insufficient because it
+does not yet cooperatively cancel work in Core. Long operations still require a
+propagated request identity, cancellation, progress/heartbeat, bounded subprocess
+I/O, and guaranteed cleanup. The serial Core dispatcher remains an explicit
+freeze-audit target until those guarantees are demonstrated by the matrix.
 
-A worker may resolve the secret references required by its active World, but it may not silently become a second profile/settings writer.
+## Network boundary
 
-Before Start:
+Installation presence and per-World publication are separate. World publication
+uses stable identity, unique credentials, exact-body timestamped signatures,
+allowlisted public fields, retry/backoff, and independent destinations. Public
+directory discovery never grants Remote Admin authority.
 
-```text
-main backend validates desired state
-→ performs main-owned durable pre-start mutations
-→ writes immutable revisioned snapshot
-→ worker verifies exact hash/revision
-→ worker installs read-only durable profile/state view
-→ legacy runtime save calls write only to worker memory overlay
-```
-
-Regression tests prove worker-side legacy saves do not alter durable `profile.json`, authoritative `settings.json`, or global launcher state.
-
-Kid-Friendly daily join-code rotation is therefore performed by the main backend before the immutable desired revision is created.
-
-## Dedicated SHARE boundary
-
-Phase 5D Slice 1 reuses the existing SHARE implementation **inside** the World worker. The parent process uses `WorkerBackedShare` only as an IPC read/control proxy.
-
-It does not open a duplicate dedicated listener.
-
-The retained application-owned heartbeat scheduler is rebound to read the worker SHARE proxy, so public publication still sees the live worker manifest while heartbeat ownership remains application-side for this stage.
-
-Router/UPnP mutation also remains application/profile-controller policy until separately migrated; moving SHARE did not silently move router authority.
-
-## Network authority
-
-The application/backend network contract preserves:
-
-- one canonical official endpoint source;
-- automatic anonymous installation ID + credential;
-- stable per-World ID + unique credential;
-- installation presence separate from World publication;
-- secret references rather than plaintext durable credentials;
-- exact-body timestamped HMAC;
-- sanitized/allowlisted public snapshots;
-- multi-destination failure isolation and retry/backoff;
-- self-hosted compatible destinations;
-- no Remote Admin authority in the public directory.
-
-`GET /api/v1/network` exposes anonymous aggregate counts only; installation IDs are never public.
-
-## Current ownership that has NOT moved yet
-
-These are later Phase 5 gates, not completed work:
-
-- hosted-World heartbeat / official-custom directory scheduler;
-- console/game command transport consolidation;
-- live player/runtime telemetry consolidation;
-- WebGUI / Remote Admin runtime listener;
-- live config reload/apply-mode execution;
-- worker-executed dedicated update/restart sequencing;
-- launcher self-update recovery/worker reattach.
-
-See `PHASE5_RUNTIME_OWNERSHIP_AUDIT.md` for the detailed subsystem table.
-
-## Compatibility rule
-
-Old direct dedicated execution and application-owned SHARE remain rollback paths during migration only. They are not permanent parallel products and must be retired only after parity plus required hands-on acceptance.
+See [`../docs/SYSTEMS.md`](../docs/SYSTEMS.md) for component ownership and
+[`../docs/KNOWN_LIMITATIONS.md`](../docs/KNOWN_LIMITATIONS.md) for current gaps.

@@ -72,6 +72,9 @@ let serviceBuffer = '';
 let serviceStderrTail = '';
 let requestCounter = 0;
 const pending = new Map();
+const DEFAULT_SERVICE_TIMEOUT_MS = 5 * 60 * 1000;
+const LONG_SERVICE_TIMEOUT_MS = 20 * 60 * 1000;
+const BACKGROUND_SERVICE_TIMEOUT_MS = 60 * 1000;
 const discordPresence = new DiscordRichPresence();
 let benchmarkTimer = null;
 let backgroundTimer = null;
@@ -162,7 +165,14 @@ function serviceCommand() {
   if (process.platform === 'win32') return { command: 'py', args: ['-3', script], cwd: path.dirname(script) };
   return { command: 'python3', args: [script], cwd: path.dirname(script) };
 }
-function rejectAllPending(message) { for (const { reject } of pending.values()) reject(new Error(message)); pending.clear(); }
+function clearPendingTimer(waiter) { if (waiter?.timer) clearTimeout(waiter.timer); }
+function rejectAllPending(message) { for (const waiter of pending.values()) { clearPendingTimer(waiter); waiter.reject(new Error(message)); } pending.clear(); }
+function serviceTimeoutFor(method) {
+  const name=String(method||'').toLowerCase();
+  if(['world.discovery.heartbeat','client.background.tick','server.scheduler.tick','server.network.benchmark.maybe','application.rsdw.maybe'].includes(name))return BACKGROUND_SERVICE_TIMEOUT_MS;
+  if(/(?:backup|restore|update|install|download|sync|refresh|import|export|scan|reconcile|materialize)/.test(name))return LONG_SERVICE_TIMEOUT_MS;
+  return DEFAULT_SERVICE_TIMEOUT_MS;
+}
 function serviceEnvironment() {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', DWSYNC_RESOURCES_DIR: app.isPackaged ? path.join(process.resourcesPath, 'resources') : path.join(projectRoot(), 'resources') };
   if (process.platform !== 'linux') return env;
@@ -195,7 +205,7 @@ function startService() {
       if (!line) continue;
       try {
         const message = JSON.parse(line); const waiter = pending.get(message.id); if (!waiter) continue;
-        pending.delete(message.id); if (message.ok) waiter.resolve(message.result); else waiter.reject(new Error(message.error || 'Service request failed'));
+        pending.delete(message.id); clearPendingTimer(waiter); if (message.ok) waiter.resolve(message.result); else waiter.reject(new Error(message.error || 'Service request failed'));
       } catch (error) { console.error('Invalid service response:', line, error); }
     }
   });
@@ -204,11 +214,21 @@ function startService() {
   service.on('exit', (code) => { const detail=serviceStderrTail.trim().split(/\r?\n/).slice(-4).join(' '); rejectAllPending(`Dragonwilds service stopped unexpectedly (exit ${code}).${detail ? ` ${detail}` : ' It will restart automatically on the next action.'}`); service = null; });
   service.on('error', (error) => { rejectAllPending(`Could not start Dragonwilds service: ${error.message}`); service = null; });
 }
-function serviceInvoke(method, params = {}) {
+function serviceInvoke(method, params = {}, options = {}) {
   startService();
   return new Promise((resolve, reject) => {
     if (!service || !service.stdin || service.killed) return reject(new Error('Dragonwilds service is not running.'));
-    const id = ++requestCounter; pending.set(id, { resolve, reject }); service.stdin.write(JSON.stringify({ id, method, params }) + '\n');
+    const id = ++requestCounter;
+    const configured=Number(options?.timeoutMs);
+    const timeoutMs=Number.isFinite(configured)&&configured>0?Math.max(1000,configured):serviceTimeoutFor(method);
+    const timer=setTimeout(()=>{
+      if(!pending.delete(id))return;
+      reject(new Error(`Dragonwilds service request timed out after ${Math.round(timeoutMs/1000)}s: ${String(method||'unknown')}`));
+    },timeoutMs);
+    timer.unref?.();
+    pending.set(id,{resolve,reject,timer,method:String(method||'')});
+    try{service.stdin.write(JSON.stringify({id,method,params})+'\n');}
+    catch(error){pending.delete(id);clearTimeout(timer);reject(error);}
   });
 }
 
@@ -609,7 +629,12 @@ function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind }) 
   return { ok: true, path: shortcutPath, icon };
 }
 
-ipcMain.handle('dragonwilds:invoke', (_event, method, params) => serviceInvoke(method, params || {}));
+ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {
+  const policyTimeout=serviceTimeoutFor(method);
+  const requested=Number(meta?.timeoutMs);
+  const timeoutMs=Number.isFinite(requested)&&requested>0?Math.min(policyTimeout,Math.max(1000,requested)):policyTimeout;
+  return serviceInvoke(method,params||{}, {timeoutMs});
+});
 ipcMain.handle('dragonwilds:admin-status', () => runtimePlatformStatus());
 ipcMain.handle('dragonwilds:restart-admin', () => restartElevated());
 ipcMain.handle('dragonwilds:pick-image', async () => {
@@ -827,7 +852,7 @@ async function performFullApplicationExit(){
     if(service&&!service.killed){
       let timeoutId;
       const timeout=new Promise((_,reject)=>{timeoutId=setTimeout(()=>reject(new Error('Backend shutdown verification timed out.')),30000);});
-      try{await Promise.race([serviceInvoke('application.shutdown',{}),timeout]);}
+      try{await Promise.race([serviceInvoke('application.shutdown',{}, {timeoutMs:30000}),timeout]);}
       finally{if(timeoutId)clearTimeout(timeoutId);}
     }
   }catch(error){console.error(`[shutdown] ${error?.stack||error}`);}

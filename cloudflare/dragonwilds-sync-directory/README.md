@@ -16,6 +16,6 @@ Do not put this secret in Git, launcher packages, application settings, examples
 
 ## Production activation sequence
 
-From an authenticated Cloudflare/Wrangler environment, apply `schema-v3.sql` to the existing D1 database, provision `CREDENTIAL_WRAP_KEY`, deploy the Worker, then execute the protocol acceptance tests documented in `PROJECT_STATE/V3_PHASE2.md`.
+From an authenticated Cloudflare/Wrangler environment, apply `schema-v3.sql` to the existing D1 database, provision `CREDENTIAL_WRAP_KEY`, deploy the Worker, then execute the current network gates in `docs/test-matrix.json`. The original V3 protocol checkpoint is archived at `PROJECT_STATE/archive/V3_PHASE2.md`.
 
 Do not retire the existing production heartbeat path or prototype data until production parity is proven.

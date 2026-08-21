@@ -1,6 +1,6 @@
 # Dragonwilds Sync WebHost API
 
-Version 1.1.9 ships the WebHost implementation and its public API in source form. The implementation is in `backend/directory_host.py`; the generated public pages are in `backend/directory_web.py`; and the machine-readable contract is `docs/webhost-openapi.json`.
+The current source includes the WebHost implementation and public API. The implementation is in `backend/directory_host.py`; the generated public pages are in `backend/directory_web.py`; and the machine-readable contract is `docs/webhost-openapi.json`.
 
 ## Run it through Dragonwilds Sync
 
@@ -45,4 +45,3 @@ Sessions expire after eight hours, are bound to the connecting address and user 
 ## Hosting from another site
 
 An external service can participate without running the desktop UI by implementing the public routes in `webhost-openapi.json`. Dragonwilds Sync accepts a base URL or a direct `/worlds`, `/manifest`, or `/api/worlds` URL. Publisher tokens authorize heartbeats only; they never grant player access or Remote Server authority.
-

@@ -37,10 +37,16 @@ assert(placardWindows.includes("event.target.closest?.('[data-phase5-placard-clo
   'Placard windows must expose capture-safe titlebar controls and Escape-to-close.');
 assert(!/dblclick[\s\S]{0,500}openPlacard\(card\.dataset\.worldId/.test(placardWindows),
   'Double-clicking a placard must not open an unexpected application window.');
-assert(responsiveCss.includes('grid-template-columns:minmax(0,1fr) auto') &&
-  responsiveCss.includes('.app-world-placard .card-title{min-width:0;overflow:hidden}') &&
-  responsiveCss.includes('.app-world-placard .world-card-back .card-topline{min-height:62px'),
-  'Placard identity rows must reserve independent icon, title, and status space.');
+assert(responsiveCss.includes('.placard-identity{display:grid;grid-template-columns:68px minmax(0,1fr)') &&
+  responsiveCss.includes('.placard-identity .world-icon{position:static!important') &&
+  responsiveCss.includes('.app-world-placard .card-title{width:100%;min-width:0;overflow:hidden}') &&
+  source.includes('<div class="placard-identity">'),
+  'Placard identity rows must reserve independent icon and title columns.');
+assert(source.includes('class="placard-runtime-strip"') &&
+  source.includes('class="placard-sync-status"') &&
+  responsiveCss.includes('.app-world-placard .placard-runtime-strip{position:relative') &&
+  !/world-card-front[\s\S]{0,1800}<span class="status-pill[^>]*>(?:● ONLINE|#\$\{instance\} RUNNING)/.test(source),
+  'Synchronization status and runtime load must live outside the artwork-driven placard faces.');
 assert(source.includes('selectedInventoryWarmRequests') &&
   !source.includes('...privateWorlds().map((world)=>({method:\'singleplayer.inventory\''),
   'Startup must hydrate only selected profile inventories, not every saved world.');

@@ -195,10 +195,10 @@
     card.dataset.v3p4Decorated = '1'; card.classList.add('v3p4-placard'); card.tabIndex = card.tabIndex >= 0 ? card.tabIndex : 0;
     if (card.classList.contains('app-world-placard')) {
       const frontBody=card.querySelector('.world-card-front .world-card-body');
-      if(frontBody&&!frontBody.querySelector('.v3p4-front-live')){
+      if(frontBody&&!card.querySelector('.v3p4-front-live')){
         const identity=document.createElement('span');identity.className='v3p4-front-live website-parity-live';identity.innerHTML=heartbeatMarkup(id,world);
-        const metrics=frontBody.querySelector('.card-footer .card-metrics');
-        if(metrics)metrics.prepend(identity);else frontBody.querySelector('.card-footer')?.insertAdjacentElement('beforebegin',identity) || frontBody.appendChild(identity);
+        const statusMount=card.querySelector('.placard-sync-status');
+        if(statusMount)statusMount.replaceChildren(identity);else card.querySelector('.placard-runtime-status')?.prepend(identity);
       }
       applySide(card,id);requestHeartbeat(id,card.dataset.serverCard==='1'?'dedicated':'local');return;
     }

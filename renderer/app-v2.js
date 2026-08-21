@@ -2298,7 +2298,7 @@
     const tags=[...(presentation?.game_tags||[]),...(presentation?.sync_tags||[]),...(presentation?.tags||[])];
     const rules=String(world?.community_rules||presentation?.community_rules||manifest.community_rules||'').trim();
     const endpoint=!server?String(world?.connection?.external_ip||world?.connection?.internal_ip||'').trim():'';
-    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div>${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}<div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div><div class="world-card-body">${icon?`<img class="world-icon" src="${icon}" alt=""/>`:`<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}<div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.id||'')}</small></div>${server?`<span class="status-pill unknown">HOST</span>`:statusPill(world)}</div><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Mods',mods)}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer"><div class="card-metrics"><span>Profile telemetry and presentation</span></div><span class="card-flip-hint">FRONT ↻</span></div></div></section>`;
+    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div>${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}<div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div><div class="world-card-body"><div class="placard-identity">${icon?`<img class="world-icon" src="${icon}" alt=""/>`:`<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}<div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.id||'')}</small></div></div></div><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Mods',mods)}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer placard-presentation-footer"><div class="card-metrics"><span>Profile presentation</span></div><span class="card-flip-hint">FRONT ↻</span></div></div></section>`;
   }
 
   function worldCard(world, server = false) {
@@ -2326,6 +2326,14 @@
     const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
     const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
     const originLabel=!server&&!single&&(world.shared?.curated||world.shared?.source_id)?String(world.shared?.profile_name||world.shared?.source_name||world.shared?.source_id||'Imported Manifest'):'';
+    const runtimeStatus=server
+      ? `<span class="status-pill ${liveServer?'online':'unknown'}">${liveServer?`#${instance} RUNNING`:`#${instance} STOPPED`}</span>`
+      : (single?`<span class="status-pill ${world.status?.broadcasting?'online':'unknown'}">${world.status?.broadcasting?'CO-OP LIVE':'LOCAL'}</span>`:statusPill(world));
+    const runtimeHistory=Array.isArray(serverRuntime.metric_history)?serverRuntime.metric_history:[];
+    const latestRuntime=liveServer&&runtimeHistory.length?runtimeHistory[runtimeHistory.length-1]:null;
+    const loadStats=server
+      ? (latestRuntime?`<span><b>CPU</b> ${Number(latestRuntime.process_cpu_percent??0).toFixed(1)}%</span><span><b>RAM</b> ${formatBytes(latestRuntime.process_ram_bytes||0)}</span>`:'<span><b>LOAD</b> —</span>')
+      : `${ping?`<span><b>PING</b> ${escapeHtml(ping)}</span>`:''}${players?`<span><b>PLAYERS</b> ${escapeHtml(players)}</span>`:''}${observed?`<span title="LobbySup public player history"><b>SEEN</b> ${escapeHtml(observed.replace(/^Observed\s*/,''))}</span>`:''}`;
     return `
       <article class="world-card app-world-placard has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}" tabindex="0" role="button" aria-label="Flip ${escapeHtml(title)} placard" aria-pressed="false">
        <div class="world-card-inner"><section class="world-card-face world-card-front">
@@ -2333,16 +2341,18 @@
         ${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}
         <div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div>
         <div class="world-card-body">
-          ${icon ? `<img class="world-icon" src="${icon}" alt="" />` : `<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}
-          <div class="card-topline">
+          <div class="placard-identity">
+           ${icon ? `<img class="world-icon" src="${icon}" alt="" />` : `<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}
+           <div class="card-topline">
             <div class="card-title"><h3>${escapeHtml(title)}</h3>${!server && world.nickname ? `<small>World: ${escapeHtml(authoritative)}</small>` : `<small>${server ? `Server #${instance}` : (single ? (world.status?.broadcasting ? 'CO-OP' : 'SINGLEPLAYER') : '&nbsp;')}</small>`}</div>
-            ${server ? `<span class="status-pill ${liveServer?'online':'unknown'}">${liveServer?`#${instance} RUNNING`:`#${instance} HOST`}</span>` : (single ? `<span class="status-pill ${world.status?.broadcasting?'online':'unknown'}">${world.status?.broadcasting?'CO-OP':'LOCAL'}</span>` : statusPill(world))}
+           </div>
           </div>
           <div class="card-description">${escapeHtml(desc)}</div>
           <div class="badges placard-front-summary">${placardFrontClassificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}</div>
-          <div class="card-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span>${escapeHtml(ping)}</span><span>${escapeHtml(players)}</span>${observed?`<span title="LobbySup public player history">${escapeHtml(observed)}</span>`:''}</div>${worldRatingMarkup(world)}<span class="card-flip-hint">DETAILS ↻</span></div>
+          <div class="card-footer placard-presentation-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}</div>${worldRatingMarkup(world)}<span class="card-flip-hint">DETAILS ↻</span></div>
         </div>
        </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel)}</div>
+       <div class="placard-runtime-strip" aria-label="World synchronization and load status"><div class="placard-runtime-status"><span class="placard-sync-status"></span>${runtimeStatus}</div><div class="placard-runtime-metrics">${loadStats||'<span><b>LOAD</b> —</span>'}</div></div>
        ${!server&&!single?`<div class="placard-actions integrated"><button class="btn play" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost" data-world-details="${escapeHtml(world.id)}">Details</button></div>`:''}
       </article>`;
   }

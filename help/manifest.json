@@ -1,0 +1,89 @@
+{
+  "schema": "DragonwildsSync.Help.v1",
+  "version": 4,
+  "title": "Dragonwilds Sync Helpy",
+  "subtitle": "One GitHub-managed field guide for the website and desktop application.",
+  "updated_at": "2026-08-21",
+  "pages": [
+    {
+      "id": "getting-started", "title": "Getting Started", "category": "Start Here",
+      "summary": "First launch, Player Setup, profiles, and the recommended first run.",
+      "image": "../assets/help/02-worlds.png", "image_alt": "Current Dragonwilds World Management workspace",
+      "intro": "Dragonwilds Sync organizes local saves, connected Worlds, hosted servers, characters, mods, and Sync metadata around profiles.",
+      "sections": [
+        {"title":"First launch","steps":["Complete Player Setup and select the Dragonwilds installation.","Let Sync validate the game layout before installing or repairing shared prerequisites.","Pick a character after discovery completes.","Use Dragonwilds for Singleplayer, Co-Op, Dedicated hosting, profiles, and connections."]},
+        {"title":"Recommended first run","steps":["Validate the local game folder in Dragonwilds > Game Setup.","Confirm Character saves and World associations under Profile.","Review the active profile and master repository under Mods.","Launch once, then open Sync only when ready to link or publish a verified World."]},
+        {"title":"Offline behavior","body":"The public Helpy page is cached by the browser. The desktop application also retains a packaged fallback when GitHub Pages is unavailable."}
+      ],
+      "tips":["Visible operation errors remain authoritative.","Profiles isolate saves, mods, and runtime choices.","Refresh Helpy after a published documentation update."]
+    },
+    {
+      "id": "appy-walkthrough", "title": "Appy Walkthrough", "category": "Navigation",
+      "summary": "Dragonwilds, Characters, Mods, RSDW-L, Sync, Helpy, and Settings.",
+      "image": "../assets/help/38-helpy-website.png", "image_alt": "The shared Helpy website rendered from the repository JSON guide",
+      "intro": "The persistent navigation shell preserves the active World context while each Appy loads only the bounded workspace it owns.",
+      "sections": [
+        {"title":"Dragonwilds","body":"Manage Singleplayer, Co-Op, Dedicated hosting, World profiles, installation paths, saves, and connections."},
+        {"title":"Profile and Characters","body":"Choose the exact save, inspect World associations, and hand it to the guarded RSDW Character Editor."},
+        {"title":"Mods","body":"Edit the canonical master repository or a profile-specific copy. Publishing and pulling are explicit actions."},
+        {"title":"RSDW-L","body":"Open Character, Item, Spell, Recipe, Quest, map, Spawner, and console tools with backup-first writes."},
+        {"title":"Sync","body":"Verify fingerprints, compare manifests, transfer only required files, and expose Website or Remote Access separately."},
+        {"title":"Helpy and Settings","body":"Helpy is this shared website page. Settings owns appearance, policy, integrations, updates, and system behavior."}
+      ],
+      "tips":["The navigation rail stays mounted between Appys.","A success message never replaces runtime verification.","Website and desktop Help use this same JSON."]
+    },
+    {
+      "id": "worlds-sync", "title": "Worlds & Sync", "category": "Worlds",
+      "summary": "Private, connected, declared, and hosted World profiles.",
+      "image": "../assets/help/02-worlds.png", "image_alt": "Placard and horizontal World management views",
+      "intro": "A World profile keeps the correct save, mods, configuration, connection identity, artwork, and character association together.",
+      "sections": [
+        {"title":"World views","steps":["Placard and Horizontal are two views of the same profile.","Declared means a live fingerprint-verified heartbeat reached this WebHost.","Sync Ready means the endpoint supports Sync, not necessarily that it declared itself."]},
+        {"title":"Connecting","body":"Sync verifies identity, compares client-required files, applies the minimum safe update, verifies the final manifest, and only then launches Dragonwilds."},
+        {"title":"Reviews","body":"Rating stars open the review window even when no reviews exist. Empty and unavailable states remain dismissible."},
+        {"title":"Heartbeat projection","body":"Stale declarations expire automatically when they leave the host TTL or fingerprint evidence no longer passes."}
+      ],
+      "tips":["Public metadata never includes passwords.","Duplicate launch clicks are rejected.","Timeouts return control to the launcher."]
+    },
+    {
+      "id": "characters-rsdw", "title": "Characters & RSDW Toolkit", "category": "Characters",
+      "summary": "Character selection, editors, Avatar preview, and safe writeback.",
+      "image": "../assets/help/04-character-editor.png", "image_alt": "Current three-column Character Editor",
+      "intro": "Profile > Characters uses the selected save as the hydration source for integrated RSDW tools and the Avatar preview.",
+      "sections": [
+        {"title":"Safe editing","steps":["Load the exact character through Sync.","Make bounded Character, Item, Spell, Recipe, or Quest changes.","Click See changes when you want the 3D preview to refresh.","Save through Sync so checksum, backup, write, and reparse verification run."]},
+        {"title":"Character Editor","body":"Appearance controls and wrapping color swatches live on the left, the stable 3D preview stays centered, and compatible equipped items remain on the right."},
+        {"title":"Preview behavior","body":"Draft edits do not reset the 3D model automatically. See changes is the explicit preview boundary; camera and pose controls remain preview-only."},
+        {"title":"Item Editor","body":"Canonical and modded definitions share one identity repository. Right-click menus are constrained to the visible application window."}
+      ],
+      "tips":["Undo, Redo, and Revert affect the draft.","Save Character creates a recovery backup.","Export uses the portable character package flow."]
+    },
+    {
+      "id": "server-webhost", "title": "Server & WebHost", "category": "Hosting",
+      "summary": "Dedicated profiles, runtime startup, heartbeats, and remote WebGUI.",
+      "image": "../assets/help/05-server-setup.png", "image_alt": "Dragonwilds dedicated Hosting setup",
+      "intro": "Hosted Worlds own presentation, save/config snapshots, mod state, and Sync settings while sharing the machine-level dedicated runtime.",
+      "sections": [
+        {"title":"Fluid startup sequence","steps":["Resolve the selected profile and desired revision.","Materialize save, configuration, and managed mods.","Launch and verify the dedicated process.","Start and verify the World-owned Sync listener.","Publish only after runtime and Sync evidence pass."]},
+        {"title":"WebHost","body":"WebHost projects the public browser, receives authenticated heartbeats, exposes public-safe APIs, and can pair remote administration when enabled."},
+        {"title":"Public safety","body":"Public surfaces may show identity, artwork, badges, counts, routes, and capability. Credentials and private configuration are never directory fields."},
+        {"title":"Remote administration","body":"Remote control is separate from discovery and requires an authenticated session plus explicit World-scoped permissions."}
+      ],
+      "tips":["Stop verifies process-tree cleanup.","Heartbeat declarations have a TTL.","Website and Remote Access remain independent switches."]
+    },
+    {
+      "id": "mods-items", "title": "Mods, Items & Spawner", "category": "Mods & Items",
+      "summary": "Master repository, profile copies, custom items, and spawning.",
+      "image": "../assets/help/37-mod-management.png", "image_alt": "Master mod repository and profile actions",
+      "intro": "Mod placement and item metadata remain profile-aware without turning custom content into global vanilla data.",
+      "sections": [
+        {"title":"Master repository","steps":["Edit Master changes only the canonical repository payload.","Edit Profile changes one deployed copy.","Publish as Master updates the canonical payload without overwriting profiles.","Pull Master replaces only the profile you choose."]},
+        {"title":"Managed editor","body":"Supported text files use atomic bounded writes. Binary and oversized files stay visible but read-only."},
+        {"title":"Modded items","body":"PersistenceID, ITEM_NAME, display name, category, equipment slot, stack metadata, description, and icon aliases merge into the shared Item Editor and Spawner repository."},
+        {"title":"Recommended mods","body":"Each recommendation uses one banner placard, the mod name, and its Nexus Mods or Steam source identity."},
+        {"title":"Spawner","body":"The server Spawner consumes the same normalized item record and requires an explicit item, count, and target before issuing a bounded command."}
+      ],
+      "tips":["Profile tags and load order remain profile-specific.","Pull Master is deliberately destructive only to the chosen copy.","Spawner definitions can come from portable mod manifests."]
+    }
+  ]
+}

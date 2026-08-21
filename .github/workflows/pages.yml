@@ -2,9 +2,10 @@ name: Deploy Dragonwilds Sync website
 
 on:
   push:
-    branches: [main]
+    branches: [webpage]
     paths:
       - 'website/**'
+      - 'help/**'
       - '.github/scripts/inject_public_servers_html.py'
       - 'resources/world-builder-presets.json'
       - 'resources/platform-registry.json'
@@ -13,6 +14,7 @@ on:
       - 'renderer/assets/world-selection-background.png'
       - 'renderer/assets/flags/**'
       - 'renderer/assets/platforms/**'
+      - 'renderer/assets/help/**'
       - '.github/workflows/pages.yml'
   schedule:
     - cron: '17 * * * *'
@@ -133,6 +135,8 @@ jobs:
           rm -rf _site
           mkdir -p _site/assets/placards
           cp -R website/. _site/
+          cp -R help _site/help
+          cp -R renderer/assets/help _site/assets/help
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png
@@ -236,6 +240,17 @@ jobs:
           node --check _site/world-draft-onboarding.js
           node --check _site/public-directory-fetch-fallback.js
           node --check _site/public-directory-view.js
+          node --check _site/helpy.js
+
+      - name: Verify Helpy route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/helpy.html
+          test -s _site/helpy.css
+          test -s _site/help/manifest.json
+          test -s _site/assets/help/38-helpy-website.png
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('_site/help/manifest.json','utf8'));if(m.schema!=='DragonwildsSync.Help.v1'||!Array.isArray(m.pages)||m.pages.length<5)throw new Error('Invalid Helpy manifest')"
 
       - name: Verify homepage presentation and download card
         shell: bash

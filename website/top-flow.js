@@ -16,6 +16,7 @@
     headerNav.innerHTML = `
       <a href="world-builder.html">World Builder</a>
       <a href="servers.html">Servers</a>
+      <a href="helpy.html">Helpy</a>
       <a href="#webgui">WebGUI</a>
       <a href="#downloads">Downloads</a>
       <a href="#community">Community</a>

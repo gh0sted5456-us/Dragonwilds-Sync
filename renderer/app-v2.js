@@ -552,6 +552,17 @@
     return !state.operation && !document.hidden && !isEditingControl() && !modalRoot?.children?.length;
   }
 
+  function activeComputerProfile() {
+    return state.data?.server?.runtime?.computer_profile || {};
+  }
+
+  function hostingFocusActive() {
+    const runtime=state.data?.server?.runtime||{};
+    const configured=state.data?.application?.computer_profile||{};
+    const resolved=activeComputerProfile();
+    return !!runtime.running && configured.hosting_focus!==false && resolved.hosting_focus!==false;
+  }
+
   function backgroundStateSignature(data, channel) {
     const application=data?.application||{};
     if(channel==='directory')return JSON.stringify({config:application.world_directory_host||{},status:application.world_directory_host_status||{}});
@@ -587,6 +598,8 @@
     if(state.backgroundRefreshBusy){scheduleBackgroundRefresh(1200);return;}
     const active=activeBackgroundRefresh();
     if(!active||!backgroundRefreshAllowed()){scheduleBackgroundRefresh(document.hidden?4000:1800);return;}
+    const profile=activeComputerProfile();
+    if(hostingFocusActive()&&profile.reduce_background_work!==false&&['worlds','directory'].includes(active.channel))active.interval*=Math.max(1,Number(profile.background_multiplier||2));
     const now=Date.now();
     const elapsed=now-Number(state.backgroundRefreshAt[active.channel]||0);
     if(elapsed<active.interval){scheduleBackgroundRefresh(Math.min(4000,Math.max(500,active.interval-elapsed)));return;}
@@ -767,6 +780,13 @@
       if(!button||button.contains(event.relatedTarget))return;
       cancelScheduledAppyWarm(button.dataset.appy);
     },{passive:true});
+  }
+
+  function hostingFocusMarkup() {
+    if(!hostingFocusActive())return '';
+    const profile=activeComputerProfile();
+    const mode=String(profile.effective_mode||'balanced').replaceAll('_',' ');
+    return `<div class="hosting-focus-banner" role="status"><span aria-hidden="true">◈</span><div><strong>Hosting Focus is active</strong><small>${escapeHtml(mode)} profile · launcher background work is reduced while the server runs</small></div></div>`;
   }
 
   function scrollKey() {
@@ -1432,6 +1452,8 @@
 
   function warmAppy(appy,{reason='idle'}={}) {
     const value=String(appy||'worlds');
+    const profile=activeComputerProfile();
+    if(hostingFocusActive()&&profile.reduce_background_work!==false&&['characters','mods','rsdw-l'].includes(value))return Promise.resolve({appy:value,ready:false,deferred:true});
     if(appyWarmPromises.has(value))return appyWarmPromises.get(value);
     const promise=(async()=>{
       const tasks=[api.invoke('feature.worker.prepare',{owner:`appy-${value}-${reason}`,applications:appyApplications(value),eager_only:false})];
@@ -1926,7 +1948,10 @@
     const liveAvatar=state.rsdwNativeDraft?.avatar||payload?.avatar||{};
     const avatarUrl=rsdwAvatarUrl(liveAvatar.url);
     const avatarBackground=String(state.rsdwAvatarBackground||'studio');
-    const avatarMarkup=`<section class="native-editor-section native-avatar-section"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview</h3></div><span>Save-backed RSDWModel renderer</span></div><div class="rsdw-avatar-pane"><div class="rsdw-avatar-stage-shell avatar-loading" style="--avatar-scale:${Number(state.rsdwAvatarScale||62)}vh"><webview id="rsdw-avatar-webview" class="rsdw-avatar-webview" src="${escapeHtml(avatarUrl)}" partition="persist:dragonwilds-rsdw"></webview><div class="rsdw-avatar-loading-cover" aria-live="polite"><div class="spinner"></div><strong>Preparing Character Preview</strong><span>Loading only the save-backed 3D renderer…</span></div><div class="rsdw-avatar-toolbar"><button class="btn ghost compact-btn" data-avatar-view="full" title="Full body">Full</button><button class="btn ghost compact-btn" data-avatar-view="face" title="Face view">Face</button><button class="btn ghost compact-btn" data-avatar-view="rotate-left" title="Rotate left">↶</button><button class="btn ghost compact-btn" data-avatar-view="rotate-right" title="Rotate right">↷</button><button class="btn ghost compact-btn" data-avatar-view="zoom-in" title="Zoom in">＋</button><button class="btn ghost compact-btn" data-avatar-view="zoom-out" title="Zoom out">−</button></div><span class="rsdw-avatar-gesture-note">${escapeHtml(et('avatarGestures'))}</span></div><div class="rsdw-avatar-actions"><span id="rsdw-avatar-status">Loading RSDWModel avatar…</span><label>Background <select class="select" id="rsdw-avatar-background">${[['theme','Theme'],['studio','Studio'],['forest','Forest'],['parchment','Parchment'],['black','Black'],['white','White']].map(([value,label])=>`<option value="${value}" ${avatarBackground===value?'selected':''}>${label}</option>`).join('')}</select></label></div></div></section>`;
+    const suspendAvatar=hostingFocusActive()&&activeComputerProfile().suspend_visuals!==false;
+    const avatarMarkup=suspendAvatar
+      ? `<section class="native-editor-section native-avatar-section hosting-focus-placeholder"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview Paused</h3></div><span>Hosting Focus</span></div><div><strong>The live 3D renderer is resting while your server is active.</strong><p>Stop the server or disable “Pause 3D previews” in Settings → Application to load the interactive character model.</p></div></section>`
+      : `<section class="native-editor-section native-avatar-section"><div class="native-section-heading"><div><div class="eyebrow">3D View</div><h3>Character Preview</h3></div><span>Save-backed RSDWModel renderer</span></div><div class="rsdw-avatar-pane"><div class="rsdw-avatar-stage-shell avatar-loading" style="--avatar-scale:${Number(state.rsdwAvatarScale||62)}vh"><webview id="rsdw-avatar-webview" class="rsdw-avatar-webview" src="${escapeHtml(avatarUrl)}" partition="persist:dragonwilds-rsdw"></webview><div class="rsdw-avatar-loading-cover" aria-live="polite"><div class="spinner"></div><strong>Preparing Character Preview</strong><span>Loading only the save-backed 3D renderer…</span></div><div class="rsdw-avatar-toolbar"><button class="btn ghost compact-btn" data-avatar-view="full" title="Full body">Full</button><button class="btn ghost compact-btn" data-avatar-view="face" title="Face view">Face</button><button class="btn ghost compact-btn" data-avatar-view="rotate-left" title="Rotate left">↶</button><button class="btn ghost compact-btn" data-avatar-view="rotate-right" title="Rotate right">↷</button><button class="btn ghost compact-btn" data-avatar-view="zoom-in" title="Zoom in">＋</button><button class="btn ghost compact-btn" data-avatar-view="zoom-out" title="Zoom out">−</button></div><span class="rsdw-avatar-gesture-note">${escapeHtml(et('avatarGestures'))}</span></div><div class="rsdw-avatar-actions"><span id="rsdw-avatar-status">Loading RSDWModel avatar…</span><label>Background <select class="select" id="rsdw-avatar-background">${[['theme','Theme'],['studio','Studio'],['forest','Forest'],['parchment','Parchment'],['black','Black'],['white','White']].map(([value,label])=>`<option value="${value}" ${avatarBackground===value?'selected':''}>${label}</option>`).join('')}</select></label></div></div></section>`;
     return `<div class="rsdw-native-character-editor" id="rsdw-native-character-editor">
       <section class="native-editor-section native-identity-section"><div class="native-section-heading"><div><div class="eyebrow">${escapeHtml(et('identity'))}</div><h3>${escapeHtml(et('characterIdentity'))}</h3></div><span>${escapeHtml(et('writtenToSave'))}</span></div><div class="native-editor-grid native-identity-grid">
         <label class="native-editor-field"><span>${escapeHtml(et('playerName'))}</span><input class="field" data-native-meta="player_name" maxlength="128" value="${escapeHtml(meta.player_name||'')}"/></label>
@@ -2542,6 +2567,7 @@
   }
 
   function hydrateRecommendationMedia() {
+    if(hostingFocusActive()&&activeComputerProfile().reduce_background_work!==false)return;
     if(state.recommendationMediaBusy || !state.nexusStatus?.connected || typeof window.dragonwilds?.nexusMod!=='function')return;
     const rows=(state.data?.application?.recommended_mods?.mods||[]).filter((mod)=>Number(mod.mod_id)>0&&!mod.banner_url&&!mod.artwork_url&&!Object.prototype.hasOwnProperty.call(state.recommendationMedia,String(mod.mod_id))).slice(0,8);
     if(!rows.length)return;
@@ -3694,6 +3720,12 @@
       const appUpdates = a.application_updates || {};
       const updateMode = state.applicationUpdateMode || {};
       const performance = a.performance || {};
+      const computerProfile = a.computer_profile || {};
+      const computerHardware = a.computer_profile_hardware || {};
+      const computerRecommendation = a.computer_profile_recommendation || {};
+      const computerRuntime = activeComputerProfile();
+      const computerMode = String(computerProfile.mode || 'automatic');
+      const hardwareReady = !!(computerHardware.cpu || computerHardware.ram_total_gb || computerHardware.cpu_cores);
       content = `
         <section class="settings-section"><h2>Application</h2>
           <div class="settings-row"><div class="settings-copy"><strong>Theme</strong><span>Applies across the launcher desktop, internal windows, Monaco, guided setup, and placards.</span></div><div class="theme-grid">${[['dark-fantasy','Dark','Dark graphite + gold'],['light','Light','Clean daylight UI']].map(([id,name,desc]) => `<button class="theme-card ${(a.theme === id || (id === 'dark-fantasy' && a.theme !== 'light')) ? 'active' : ''}" data-theme-choice="${id}"><strong>${name}</strong><span>${desc}</span></button>`).join('')}</div></div>
@@ -3705,6 +3737,14 @@
           <div class="settings-row"><div class="settings-copy"><strong>Passive notifications</strong><span>Notification center, Windows notifications, and optional top-screen World announcements. The overlay is click-through, never takes focus, and closes itself.</span></div><div class="toggle-list"><label><input type="checkbox" id="notify-enabled" ${(a.background_mode || {}).notifications_enabled === false ? '' : 'checked'} /> Enable notifications</label><label><input type="checkbox" id="announcement-overlay-enabled" ${(a.background_mode || {}).announcement_overlay_enabled === false ? '' : 'checked'} /> Top-screen announcements</label><label><input type="checkbox" id="notify-latency" ${(a.background_mode || {}).notify_high_latency === false ? '' : 'checked'} /> High latency</label><label><input type="checkbox" id="notify-restart" ${(a.background_mode || {}).notify_pending_restart === false ? '' : 'checked'} /> Pending restart</label><label><input type="checkbox" id="notify-updates" ${(a.background_mode || {}).notify_updates === false ? '' : 'checked'} /> Updates</label></div></div>
           <div class="settings-row"><div class="settings-copy"><strong>Favorite World alerts</strong><span>Notify only on meaningful state changes; repeated polls are deduplicated.</span></div><div class="toggle-list"><label><input type="checkbox" id="favorite-alerts-enabled" ${favoriteAlerts.enabled===false?'':'checked'}/> Enable</label><label><input type="checkbox" id="favorite-alerts-online" ${favoriteAlerts.online===false?'':'checked'}/> Online</label><label><input type="checkbox" id="favorite-alerts-offline" ${favoriteAlerts.offline===false?'':'checked'}/> Offline</label><label><input type="checkbox" id="favorite-alerts-maintenance" ${favoriteAlerts.maintenance===false?'':'checked'}/> Maintenance</label><label><input type="checkbox" id="favorite-alerts-identity" ${favoriteAlerts.identity_changed===false?'':'checked'}/> Identity changes</label><label><input type="checkbox" id="favorite-alerts-characters" ${favoriteAlerts.shared_characters===false?'':'checked'}/> Shared characters</label></div></div>
           <div class="settings-row"><div class="settings-copy"><strong>Guided tours</strong><span>Repeat onboarding without resetting profiles or deleting saved paths. Host-specific walkthroughs also live under Settings → Advanced.</span></div><div class="header-actions"><button class="btn ghost" id="start-player-tour">Player Tour</button><button class="btn ghost" id="start-server-tour">Server Tour</button><button class="btn ghost" id="start-webhost-tour">WebHost Tour</button></div></div>
+        </section>
+        <section class="settings-section computer-profile-section"><div class="panel-header settings-section-head"><div><h2>Computer Profile</h2><span class="panel-subtitle">Machine-local hosting behavior. Dragonwilds Sync never stops Windows services.</span></div><span class="status-pill ${computerRuntime.active?'online':'unknown'}">${computerRuntime.active?'HOSTING FOCUS ACTIVE':'READY FOR NEXT START'}</span></div>
+          <div class="computer-profile-hardware">${hardwareReady?`${metric('Processor',computerHardware.cpu||'Detected')}${metric('Cores / Threads',`${computerHardware.cpu_cores||'—'} / ${computerHardware.cpu_threads||'—'}`)}${metric('Memory',computerHardware.ram_total_gb?`${computerHardware.ram_total_gb} GB`:'—')}${metric('Graphics',computerHardware.primary_gpu||computerHardware.gpu||'—')}`:'<div class="empty-state compact-empty">Analyze this computer to receive a hardware-aware recommendation.</div>'}</div>
+          <div class="identity-box"><strong>${computerRecommendation.mode?`Recommended: ${escapeHtml(String(computerRecommendation.mode).replaceAll('_',' '))}`:'Conservative by default'}</strong><p>${escapeHtml(computerRecommendation.reason||'Automatic mode keeps Windows unchanged and only selects the low-resource profile when the hardware needs it.')}</p></div>
+          <div class="computer-profile-controls"><label class="form-group"><span>Profile</span><select class="select" id="computer-profile-mode">${[['automatic','Automatic (recommended)'],['balanced','Balanced'],['dedicated_host','Dedicated host'],['game_host','Play + host'],['low_resource','Low resource'],['custom','Custom']].map(([value,label])=>`<option value="${value}" ${computerMode===value?'selected':''}>${label}</option>`).join('')}</select></label><label class="form-group"><span>Server priority</span><select class="select" id="computer-profile-priority"><option value="normal" ${computerProfile.server_priority==='normal'?'selected':''}>Normal</option><option value="above_normal" ${!['normal','high'].includes(computerProfile.server_priority)?'selected':''}>Above normal</option><option value="high" ${computerProfile.server_priority==='high'?'selected':''}>High</option></select></label><label class="form-group"><span>Temporary power plan</span><select class="select" id="computer-profile-power"><option value="unchanged" ${computerProfile.power_plan!=='high_performance'?'selected':''}>Leave Windows unchanged</option><option value="high_performance" ${computerProfile.power_plan==='high_performance'?'selected':''}>High performance while hosting</option></select></label></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Hosting Focus</strong><span>While the dedicated server runs, reduce nonessential launcher refreshes and predictive loading. Server monitoring stays responsive.</span></div><div class="toggle-list"><label><input type="checkbox" id="computer-profile-hosting-focus" ${computerProfile.hosting_focus===false?'':'checked'}/> Enable focus mode</label><label><input type="checkbox" id="computer-profile-suspend-visuals" ${computerProfile.suspend_visuals===false?'':'checked'}/> Pause 3D previews</label><label><input type="checkbox" id="computer-profile-reduce-background" ${computerProfile.reduce_background_work===false?'':'checked'}/> Reduce background work</label></div></div>
+          <div class="warning-box compact"><strong>Safe process control.</strong><br/>Priority is applied only after the dedicated-server executable is verified, Realtime is never offered, and any temporary power-plan change is recorded before launch and restored when hosting stops or the launcher recovers.</div>
+          <div class="header-actions computer-profile-actions"><button class="btn ghost" id="analyze-computer-profile">Analyze This Computer</button><button class="btn primary" id="save-computer-profile">Save Computer Profile</button></div>
         </section>
         <section class="settings-section"><h2>Application Updates</h2>
           <div class="settings-row"><div class="settings-copy"><strong>Portable application updates</strong><span>Checks the official Dragonwilds Sync GitHub release and verifies the portable executable before replacement.</span></div><div class="header-actions"><button class="btn ghost" id="check-application-update">Check for Updates</button><button class="btn primary" id="update-application-now" ${state.applicationUpdate?.available ? '' : 'disabled'}>Update Application</button></div></div>
@@ -4035,6 +4075,8 @@
     const theme = state.data?.application?.theme === 'light' ? 'light' : 'dark-fantasy';
     document.body.dataset.theme = theme;
     document.body.dataset.showTips = state.data?.application?.advanced?.show_tips ? '1' : '0';
+    document.body.dataset.hostingFocus = hostingFocusActive() ? '1' : '0';
+    document.body.dataset.hostingFocusLevel = hostingFocusActive() ? String(activeComputerProfile().focus_level||'standard') : 'off';
     document.documentElement.lang = languageCode();
     if (!state.entered) {
       root.className = 'welcome-root';
@@ -4045,7 +4087,7 @@
 
     if(minimalMode){
       root.className='app-shell minimal-shell';
-      root.innerHTML=`${renderTitlebar()}${operationMarkup()}<main class="main">${renderMinimalMode()}</main>`;
+      root.innerHTML=`${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${renderMinimalMode()}</main>`;
       bindEvents();
       return;
     }
@@ -4070,7 +4112,7 @@
     else page = renderWorldGallery();
     const collapsed = !!state.data?.application?.nav_collapsed;
     root.className = `app-shell route-${state.route} ${collapsed ? 'nav-collapsed' : ''} ${detachedMode ? 'detached-shell' : ''}`;
-    root.innerHTML = detachedMode ? `${renderTitlebar()}${operationMarkup()}<main class="main">${page}</main>` : `${renderTitlebar()}${renderSidebar()}${operationMarkup()}<main class="main">${page}</main>`;
+    root.innerHTML = detachedMode ? `${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>` : `${renderTitlebar()}${renderSidebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>`;
     const nextKey = scrollKey();
     state.lastScrollKey = nextKey;
     bindEvents();
@@ -5370,6 +5412,8 @@
     root.querySelector('#toggle-start-minimized')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
     root.querySelector('#toggle-hardware-acceleration')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
     root.querySelector('#save-performance-settings')?.addEventListener('click',async()=>{try{await updateApplication({performance:{hardware_acceleration:root.querySelector('#toggle-hardware-acceleration')?.classList.contains('on')!==false,renderer_memory_mb:Number(root.querySelector('#renderer-memory-mb')?.value||0)}});toast('Performance settings saved','Restart Dragonwilds Sync to apply the GPU and renderer-memory startup settings.','success');}catch(error){toast('Could not save performance settings',error.message,'error');}});
+    root.querySelector('#analyze-computer-profile')?.addEventListener('click',async()=>{try{const response=await api.invoke('server.hardware.refresh',{});if(response.state)setData(response.state);else render();toast('Computer analysis complete','The recommendation now reflects this machine’s processor and memory headroom.','success');}catch(error){toast('Computer analysis failed',error.message,'error');}});
+    root.querySelector('#save-computer-profile')?.addEventListener('click',async()=>{try{const running=!!state.data?.server?.runtime?.running;await updateApplication({computer_profile:{mode:root.querySelector('#computer-profile-mode')?.value||'automatic',server_priority:root.querySelector('#computer-profile-priority')?.value||'above_normal',power_plan:root.querySelector('#computer-profile-power')?.value||'unchanged',hosting_focus:!!root.querySelector('#computer-profile-hosting-focus')?.checked,suspend_visuals:!!root.querySelector('#computer-profile-suspend-visuals')?.checked,reduce_background_work:!!root.querySelector('#computer-profile-reduce-background')?.checked}});toast('Computer profile saved',running?'Process priority and power-plan changes take effect on the next server start; launcher focus settings apply now.':'The profile will activate when the dedicated server starts.','success');}catch(error){toast('Could not save computer profile',error.message,'error');}});
     ['#notify-enabled','#announcement-overlay-enabled','#notify-latency','#notify-restart','#notify-updates'].forEach((id) => root.querySelector(id)?.addEventListener('change', saveBackgroundSettings));
     const saveFavoriteAlerts=async()=>{try{state.data=await api.invoke('world.favorite.alerts.settings',{enabled:!!root.querySelector('#favorite-alerts-enabled')?.checked,online:!!root.querySelector('#favorite-alerts-online')?.checked,offline:!!root.querySelector('#favorite-alerts-offline')?.checked,maintenance:!!root.querySelector('#favorite-alerts-maintenance')?.checked,identity_changed:!!root.querySelector('#favorite-alerts-identity')?.checked,shared_characters:!!root.querySelector('#favorite-alerts-characters')?.checked});render();}catch(error){toast('Favorite alert settings failed',error.message,'error');}};
     ['#favorite-alerts-enabled','#favorite-alerts-online','#favorite-alerts-offline','#favorite-alerts-maintenance','#favorite-alerts-identity','#favorite-alerts-characters'].forEach((id)=>root.querySelector(id)?.addEventListener('change',saveFavoriteAlerts));

@@ -65,6 +65,14 @@ assert(source.includes('startBackgroundRefreshScheduler();') &&
   !source.includes('serverMetricsTimer') &&
   !source.includes('directoryAdminSyncTimer'),
   'Visible background data must use one coordinated, route-aware scheduler.');
+assert(source.includes('function hostingFocusActive()') &&
+  source.includes('document.body.dataset.hostingFocus') &&
+  source.includes("['characters','mods','rsdw-l'].includes(value)") &&
+  source.includes('computer-profile-mode') &&
+  source.includes('save-computer-profile'),
+  'Computer Profiles must expose settings and defer nonessential Appy work only while verified hosting is active.');
+assert(source.includes('Pause 3D previews') && source.includes('hosting-focus-placeholder'),
+  'Hosting Focus must avoid instantiating the live 3D webview when visual suspension is enabled.');
 assert(!source.includes('characters.native.tools.read') &&
   source.includes("if(state.rsdwTool!=='character-editor')setTimeout(()=>hydrateNativeRsdwTool(state.rsdwTool),0)"),
   'Character Studio must parse only the selected subsystem instead of every editor at once.');

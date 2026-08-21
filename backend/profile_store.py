@@ -18,6 +18,7 @@ from health_model import default_health_config, normalize_health_config, normali
 from security_policy import default_access_policy, normalize_access_policy
 from world_classification import normalize_world_classification
 from networking import effective_game_port
+from computer_profiles import default_computer_profile, normalize_computer_profile
 
 SCHEMA_VERSION = 11
 
@@ -213,6 +214,7 @@ def default_state() -> dict:
             "network_diagnostics_enabled": True,
             "defender_review_enabled": False,
             "performance": {"hardware_acceleration": True, "renderer_memory_mb": 0},
+            "computer_profile": default_computer_profile(),
             "rsdw_cache": {"repo": "RSDWArchive/RSDWTools", "branch": "main", "model_repo": "RSDWArchive/RSDWModel", "model_branch": "main", "refresh_after_updates": True, "auto_refresh": True, "refresh_hours": 24},
             "world_discovery": {"enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": "", "directory_token": "", "directory_sources": [], "last_refresh_at": None},
             "recommended_mods": {"creator_feed_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/recommended-mods.json", "community_sources": [], "feeds": [], "mods": [], "last_refresh_at": None, "last_error": "", "nexus_activity_url": "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"},
@@ -347,6 +349,7 @@ def load_state() -> dict:
     except (TypeError, ValueError):
         memory_ceiling = 0
     performance["renderer_memory_mb"] = memory_ceiling if memory_ceiling in {0, 1024, 2048, 4096, 8192} else 0
+    application["computer_profile"] = normalize_computer_profile(application.get("computer_profile"))
     rsdw = application.setdefault("rsdw_cache", {})
     rsdw.setdefault("repo", "RSDWArchive/RSDWTools")
     rsdw.setdefault("branch", "main")

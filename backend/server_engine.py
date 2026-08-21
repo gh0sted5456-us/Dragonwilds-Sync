@@ -13,8 +13,9 @@ import zipfile
 from datetime import datetime
 from pathlib import Path
 
-from profile_store import SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
+from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
 from process_utils import check_output_hidden, popen_hidden, run_hidden
+from computer_profiles import apply_process_priority, resolve_computer_profile, begin_power_session, restore_power_session
 from health_model import apply_detected_hardware_references
 from server_layout import resolve_server_layout, resolve_server_layout_from_exe
 from active_world import write_active_world, remove_active_world
@@ -667,6 +668,12 @@ class ServerEngine:
         self._metric_prev_net: tuple[float, int, int] | None = None
         self._metric_proc_cpu: dict[int, object] = {}
         self._event_lock = threading.RLock()
+        self._computer_profile_status: dict = {"active": False}
+        self._power_recovery_path = APP_DATA_DIR / "computer_profile_session.json"
+        if _find_running_server_pid() is None:
+            recovered = restore_power_session(self._power_recovery_path, force=True)
+            if recovered.get("restored"):
+                self._computer_profile_status = {"active": False, "recovered_power_plan": True}
 
     def _event(self, message: str, level: str = "info"):
         event = {"ts": time.time(), "level": str(level or "info")[:20], "message": str(message or "")[:1000]}
@@ -698,6 +705,44 @@ class ServerEngine:
 
     def _profile_root(self, profile: dict) -> str:
         return server_root_for_profile(profile)
+
+    def _resolved_computer_profile(self) -> dict:
+        application = load_state().setdefault("application", {})
+        hardware = self.hw_stats or application.get("computer_profile_hardware") or {}
+        return resolve_computer_profile(application.get("computer_profile"), hardware)
+
+    def _apply_computer_profile(self, pid: int, exe: str, profile_id: str) -> dict:
+        resolved = self._resolved_computer_profile()
+        status = {**resolved, "active": True, "pid": int(pid), "priority_applied": False, "power_plan_applied": False, "warnings": []}
+        try:
+            priority = apply_process_priority(pid, resolved.get("server_priority") or "normal", exe)
+            status["priority_applied"] = bool(priority.get("applied"))
+            status["applied_priority"] = priority.get("priority") or "normal"
+        except Exception as exc:
+            status["warnings"].append(f"Priority unchanged: {type(exc).__name__}: {exc}")
+        try:
+            power = begin_power_session(self._power_recovery_path, resolved, pid, profile_id)
+            status["power_plan_applied"] = bool(power.get("applied"))
+            status["power_plan_status"] = power.get("mode") or "unchanged"
+            if power.get("error"):
+                status["warnings"].append(f"Power plan unchanged: {power['error']}")
+        except Exception as exc:
+            status["warnings"].append(f"Power plan unchanged: {type(exc).__name__}: {exc}")
+        self._computer_profile_status = status
+        for warning in status["warnings"]:
+            self._event(warning, "warn")
+        self._event(f"Computer profile {resolved.get('effective_mode', 'balanced')} active · server priority {status.get('applied_priority', 'normal')} · power plan {status.get('power_plan_status', 'unchanged')}.", "ok")
+        return status
+
+    def _restore_computer_profile(self) -> dict:
+        restored = restore_power_session(self._power_recovery_path, force=True)
+        previous = dict(self._computer_profile_status)
+        self._computer_profile_status = {"active": False, "last_profile": previous.get("effective_mode") or previous.get("selected_mode") or "", "power_restore": restored}
+        if restored.get("restored"):
+            self._event("Restored the Windows power plan that was active before hosting.", "ok")
+        elif restored.get("error"):
+            self._event(f"Windows power-plan restoration needs attention: {restored['error']}", "warn")
+        return restored
 
     def _maybe_schedule_runtime_check(self, running_pid: int | None) -> None:
         # Contract tests use disposable server trees.  A daemon repair/update
@@ -861,7 +906,7 @@ class ServerEngine:
                 "runtime_prerequisites": prereq, "runtime_update_in_progress": self._runtime_update_in_progress,
                 "cl_version": cl_version, "reported_cl": cl_version.get("reported_cl") or "",
                 "network_setup": dict(self.network_setup),
-                "metrics": metrics, "metric_history": list(self.metric_history), "events": (persistent_events or self.events)[-150:]}
+                "metrics": metrics, "metric_history": list(self.metric_history), "computer_profile": ({**self._resolved_computer_profile(), **self._computer_profile_status}), "events": (persistent_events or self.events)[-150:]}
 
     def assert_stopped(self):
         if self.status()["running"]: raise RuntimeError("Stop the dedicated server before switching or deleting Worlds.")
@@ -1108,6 +1153,7 @@ class ServerEngine:
         elif sys.platform.startswith("linux"):
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
         self.proc = popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
+        self._apply_computer_profile(self.proc.pid, exe, profile_id)
         self._event(f"Started {profile.get('name') or profile_id} dedicated server (PID {self.proc.pid}).", "ok"); return self.status()
 
     def start_world(self, profile_id: str) -> dict:
@@ -1124,15 +1170,17 @@ class ServerEngine:
     def stop_dedicated(self) -> dict:
         pid = self.status()["pid"]
         if pid is None:
-            result = self.status(); result["stop_verified"] = True; result["stop_method"] = "already-stopped"; return result
+            self._restore_computer_profile(); result = self.status(); result["stop_verified"] = True; result["stop_method"] = "already-stopped"; return result
         method = _terminate_process_tree(int(pid), timeout=10.0)
         if self.proc and self.proc.pid == pid:
             try: self.proc.wait(timeout=1)
             except (subprocess.TimeoutExpired, OSError): pass
         self.proc = None; self.started_at = None
-        result = self.status()
-        if result.get("running") and int(result.get("pid") or 0) == int(pid):
+        verification = self.status()
+        if verification.get("running") and int(verification.get("pid") or 0) == int(pid):
             raise RuntimeError(f"Dedicated server PID {pid} is still running after the stop request.")
+        self._restore_computer_profile()
+        result = self.status()
         result.update({"stop_verified": True, "stop_method": method, "stopped_pid": int(pid)})
         self._event(f"Stopped dedicated server PID {pid} ({method}).", "ok")
         return result

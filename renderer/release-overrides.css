@@ -187,3 +187,34 @@
   .recommended-mod-card > .btn { grid-column:2/-1; justify-self:end; margin-top:-2px !important; }
   .release-mod-world { align-items:flex-start; flex-direction:column; }
 }
+
+/* Hardware-aware hosting stays visible without taking over the workspace. */
+.hosting-focus-banner {
+  position:fixed;
+  z-index:118;
+  top:48px;
+  left:248px;
+  right:18px;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-height:46px;
+  padding:9px 14px;
+  border:1px solid color-mix(in srgb,#65c89a 50%,var(--border));
+  border-radius:11px;
+  background:color-mix(in srgb,var(--panel) 94%,#164b37);
+  box-shadow:0 12px 30px rgba(0,0,0,.22);
+}
+.hosting-focus-banner > span { color:#65c89a;font-size:20px; }
+.hosting-focus-banner > div { display:grid;gap:2px; }
+.hosting-focus-banner small { color:var(--muted);text-transform:capitalize; }
+body[data-hosting-focus="1"] .operation-banner { top:102px; }
+body[data-hosting-focus="1"] .content { padding-top:92px; }
+.computer-profile-hardware { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px;margin:14px 0; }
+.computer-profile-controls { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0; }
+.computer-profile-actions { justify-content:flex-end;margin-top:14px; }
+.hosting-focus-placeholder { min-height:250px;align-content:center;text-align:center; }
+.hosting-focus-placeholder > div:last-child { max-width:600px;margin:auto;padding:34px;border:1px dashed color-mix(in srgb,#65c89a 55%,var(--border));border-radius:16px;background:color-mix(in srgb,var(--panel-2) 92%,#164b37); }
+.hosting-focus-placeholder p { color:var(--muted);line-height:1.6; }
+@media(max-width:1180px){.hosting-focus-banner{left:18px}.computer-profile-hardware{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){.computer-profile-controls,.computer-profile-hardware{grid-template-columns:1fr}.hosting-focus-banner{right:10px;left:10px}.computer-profile-actions{justify-content:stretch}.computer-profile-actions .btn{flex:1}}

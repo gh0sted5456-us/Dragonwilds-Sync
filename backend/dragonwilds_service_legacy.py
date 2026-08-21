@@ -85,6 +85,7 @@ from recommendation_feeds import OFFICIAL_FEED_URL, NEXUS_ACTIVITY_URL, builtin_
 from operator_identity import public_operator_status, verify_world_identity
 from networking import effective_game_port, manual_router_rule, normalize_publication_mode, valid_port
 from crypto_runtime import cryptography_self_test
+from computer_profiles import normalize_computer_profile, recommend_computer_profile
 from character_submissions import list_submissions, approve_submission, reject_submission
 from mod_tags import normalize_tags, set_hotload_marker, set_tags_file, UE4SS_BAKED_IN_DEFAULT_MODS
 from world_maintenance import (
@@ -2778,6 +2779,8 @@ def handle(method: str, params: dict) -> object:
                     memory = 0
                 current_performance["renderer_memory_mb"] = memory if memory in {0, 1024, 2048, 4096, 8192} else 0
             incoming["performance"] = current_performance
+        if "computer_profile" in incoming:
+            incoming["computer_profile"] = normalize_computer_profile(incoming.get("computer_profile"))
         if "game_dir" in incoming:
             selected_game_dir = str(incoming.get("game_dir") or "").strip()
             if selected_game_dir:
@@ -4600,6 +4603,9 @@ def handle(method: str, params: dict) -> object:
 
     if method == "server.hardware.refresh":
         stats = ENGINE.refresh_hardware()
+        application = state.setdefault("application", {})
+        application["computer_profile_hardware"] = stats
+        application["computer_profile_recommendation"] = recommend_computer_profile(stats)
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
         if profile_id:
             profile = load_server_profile(profile_id)
@@ -4609,6 +4615,7 @@ def handle(method: str, params: dict) -> object:
                     profile.get("health_config"), stats, generated_at=stats.get("probed_at"))
                 _refresh_world_metadata_cache(profile, source="hardware-refresh")
                 save_server_profile(profile_id, profile)
+        save_state(state)
         return {"result": stats, "state": public_state(state)}
 
     if method in ("server.network.benchmark.run", "server.network.benchmark.maybe"):

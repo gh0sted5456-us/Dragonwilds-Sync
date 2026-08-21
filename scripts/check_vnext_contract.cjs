@@ -11,6 +11,9 @@ const vnext = read('renderer/release-vnext.js');
 const css = read('renderer/release-vnext.css');
 const helpMedia = read('renderer/release-vnext-help-media.js');
 const helpMediaCss = read('renderer/release-vnext-help-media.css');
+const helpyPage = read('website/helpy.html');
+const helpyScript = read('website/helpy.js');
+const pagesWorkflow = read('.github/workflows/pages.yml');
 const web = read('backend/directory_web.py');
 const legacy = read('backend/directory_web_legacy.py');
 const manifest = JSON.parse(read('help/manifest.json'));
@@ -23,10 +26,14 @@ must(vnext.includes('dws-profile-badges') && css.includes('.world-list-row .worl
 must(vnext.includes('Refresh Help') && vnext.includes('dragonwilds-sync-help-v1'), 'Refreshable cached Help shell is missing');
 must(helpMedia.includes('raw.githubusercontent.com') && helpMedia.includes('dws-help-figure') && helpMedia.includes('loading = \'lazy\''), 'Live Help image rendering must remain GitHub-scoped and lazy-loaded');
 must(helpMediaCss.includes('.dws-help-figure') && helpMediaCss.includes('object-fit:contain'), 'Live Help image layout contract is missing');
+must(helpyPage.includes('helpy.js') && helpyPage.includes('help/manifest.json'), 'Website Helpy route must identify the shared JSON source');
+must(helpyScript.includes('manifest.json') && helpyScript.includes('page.sections'), 'Website Helpy must render structured manifest content');
+must(pagesWorkflow.includes('cp -R help _site/help') && pagesWorkflow.includes('renderer/assets/help _site/assets/help'), 'GitHub Pages must publish Helpy JSON and screenshots');
+must(vnext.includes('helpy-website-shell') && index.includes('gh0sted5456-us.github.io'), 'Desktop Helpy must prefer the published website route');
 must(manifest.schema === 'DragonwildsSync.Help.v1' && Array.isArray(manifest.pages) && manifest.pages.length >= 5, 'Help manifest schema/pages invalid');
 for (const page of manifest.pages) {
-  must(page.id && page.title && page.markdown, `Help page entry is incomplete: ${JSON.stringify(page)}`);
-  must(fs.existsSync(path.join(root, 'help', page.markdown)), `Help page is missing: ${page.markdown}`);
+  must(page.id && page.title && page.summary && Array.isArray(page.sections) && page.sections.length, `Help page entry is incomplete: ${JSON.stringify(page)}`);
+  must(page.sections.every((section) => section.title && (section.body || (Array.isArray(section.steps) && section.steps.length))), `Help page section is incomplete: ${page.id}`);
 }
 must(web.includes('directory_web_legacy') && web.includes('_legacy_public_browser_html'), 'Public WebGUI wrapper must preserve the prior implementation');
 must(web.includes('data-filter=\\"declared\\"') || web.includes('data-filter="declared"'), 'Public Declared filter is missing');

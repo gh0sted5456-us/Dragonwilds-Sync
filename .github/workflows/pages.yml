@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'help/**'
+      - 'renderer/assets/help/**'
       - '.github/scripts/inject_public_servers_html.py'
       - 'resources/world-builder-presets.json'
       - 'resources/platform-registry.json'
@@ -133,6 +135,8 @@ jobs:
           rm -rf _site
           mkdir -p _site/assets/placards
           cp -R website/. _site/
+          cp -R help _site/help
+          cp -R renderer/assets/help _site/assets/help
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png

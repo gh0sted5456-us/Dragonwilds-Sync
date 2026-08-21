@@ -327,6 +327,7 @@
 
   async function mountLiveHelp(force = false) {
     const page = document.querySelector('.help-page');
+    if (page?.classList.contains('helpy-website-shell')) return;
     if (!page || page.dataset.liveHelpBusy === '1') return;
     page.dataset.liveHelpBusy = '1';
     const header = page.querySelector('.help-page-header');

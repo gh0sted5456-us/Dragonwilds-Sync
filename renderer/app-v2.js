@@ -1586,6 +1586,10 @@
     return `<button class="nav-button appy-nav ${active?'active':''}" data-route="${route}" data-appy="${appy}" data-appy-tone="${tone}" title="${escapeHtml(subapps||label)}"><span class="nav-icon">${icon}</span><span class="appy-nav-copy"><strong>${escapeHtml(label)}</strong>${subapps?`<small>${escapeHtml(subapps)}</small>`:''}</span></button>`;
   }
 
+  function navIconAsset(source) {
+    return `<img class="nav-icon-image" src="${escapeHtml(source)}" alt="" aria-hidden="true" draggable="false"/>`;
+  }
+
   function isLinkedDirectoryEndpoint(value) {
     const raw = String(value || '').trim();
     if (!raw) return false;
@@ -1649,9 +1653,9 @@
         ${navButton('world-management','⌂','Worlds',{appy:'worlds',tone:'worlds',active:worldsActive,subapps:'Profiles · placards · saves'})}
         ${navButton('characters-app','◉','Characters',{appy:'characters',tone:'characters',active:charactersActive,subapps:'Identity · 3D · appearance'})}
         ${navButton('mods-app','⬡','Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
-        ${navButton('rsdw-launcher','⌘','RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
+        ${navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png'),'RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
         <div class="nav-label">Host &amp; Connect</div>
-        ${navButton('rsdragonwilds-app','▣','RSDragonwilds',{appy:'rsdragonwilds',tone:'hosting',active:state.route==='servers'||state.route==='server-detail',subapps:'Singleplayer · Co-Op · Dedicated'})}
+        ${navButton('rsdragonwilds-app',navIconAsset('assets/dragonwilds_icon.ico'),'RSDragonwilds',{appy:'rsdragonwilds',tone:'hosting',active:state.route==='servers'||state.route==='server-detail',subapps:'Singleplayer · Co-Op · Dedicated'})}
         ${navButton('webhost',webhostLinked?'◆':'◇','Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
         <div class="nav-label">${t('system')}</div>
         ${navButton('help','?','Helpy',{appy:'help',tone:'system',subapps:'Guides · screenshots · safety'})}

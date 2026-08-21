@@ -7,6 +7,7 @@ const source = fs.readFileSync(path.join(root, 'renderer', 'app-v2.js'), 'utf8')
 const avatarPreload = fs.readFileSync(path.join(root, 'electron', 'rsdw_webview_preload.cjs'), 'utf8');
 const placardWindows = fs.readFileSync(path.join(root, 'renderer', 'release-phase5-placard-window.js'), 'utf8');
 const responsiveCss = fs.readFileSync(path.join(root, 'renderer', 'release-responsiveness.css'), 'utf8');
+const baseCss = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -20,6 +21,10 @@ assert(source.includes("navButton('webhost',webhostLinked?'◆':'◇','Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('rsdragonwilds-app'"),
   'Characters, Mods, and RSDragonwilds must be first-class Appy navigation entries.');
+assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
+  source.includes("navButton('rsdragonwilds-app',navIconAsset('assets/dragonwilds_icon.ico')") &&
+  baseCss.includes('.nav-icon-image{display:block;width:22px;height:22px'),
+  'RSDW-L and RSDragonwilds must use their approved navbar artwork.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),
@@ -75,6 +80,19 @@ function assertPng(relativePath) {
   assert(file.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
     `${relativePath} must be a valid PNG asset.`);
 }
+
+function assertIco(relativePath) {
+  const file = fs.readFileSync(path.join(root, relativePath));
+  assert(file.length > 6 && file[0] === 0 && file[1] === 0 && file[2] === 1 && file[3] === 0,
+    `${relativePath} must be a valid ICO asset.`);
+}
+
+assertPng('renderer/assets/navigation/rsdw-l.png');
+assert(sha256('renderer/assets/navigation/rsdw-l.png') === '6fca88b1bdfe9180bb3e86920889d18249f05756112d7246cabe2d0220bc91e2',
+  'The RSDW-L navbar icon must match the supplied approved artwork.');
+assertIco('renderer/assets/dragonwilds_icon.ico');
+assert(sha256('renderer/assets/dragonwilds_icon.ico') === '3ccd660ed77e252940fce0a53e0938d897b4f0ff0bcb71fee4bba41469fe5e8e',
+  'The RSDragonwilds navbar icon must remain the canonical game executable icon.');
 
 const platformAssets = {
   'renderer/assets/platforms/runeschema.png': '379a7b239490eb8fcc01ff6bafdaf291f09393ab30106658af02bf96c716b105',

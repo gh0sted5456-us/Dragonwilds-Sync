@@ -134,6 +134,16 @@ def main() -> None:
                  "target_section": "loadout", "target_slot": 0},
             )
             assert equipped["native_tool"]["sections"]["loadout"][0]["item_data"] == "ITEM_TestSword"
+            unequipped = characters.apply_native_rsdw_tool(
+                equipped["text"], "item-editor",
+                {"action": "remove", "section": "loadout", "slot": 0},
+            )
+            assert unequipped["native_tool"]["sections"]["loadout"] == []
+            reequipped = characters.apply_native_rsdw_tool(
+                unequipped["text"], "item-editor",
+                {"action": "add", "section": "loadout", "id": "ITEM_TestSword", "target_slot": 0},
+            )
+            assert reequipped["native_tool"]["sections"]["loadout"][0]["item_data"] == "ITEM_TestSword"
             _expect_error(
                 lambda: characters.apply_native_rsdw_tool(
                     moved["text"], "item-editor",
@@ -146,7 +156,7 @@ def main() -> None:
             # Apply is backup-first, optimistic, atomic, and immediately
             # readable.  Two rapid applies must retain two distinct backups.
             first_write = characters.write_character_from_toolkit(
-                str(game), character_id, equipped["text"], expected_sha256=loaded["sha256"]
+                str(game), character_id, reequipped["text"], expected_sha256=loaded["sha256"]
             )
             first_reload = characters.read_character_for_toolkit(str(game), character_id)
             first_reload_obj = json.loads(first_reload["text"])

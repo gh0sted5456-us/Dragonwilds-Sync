@@ -49,11 +49,15 @@ for (const token of [
   "nativeAppearanceSelector(editor,'FacialHairPreset','Beard')", 'characterEquipmentSurface(liveAvatar)',
   'Array.from({length:8}', 'data-character-save', 'data-character-export',
   'data-character-undo', 'data-character-redo', 'data-avatar-upstream-select="avatar-animation-select"',
+  'characterEquipmentCompatible(row, slot)', 'character-equipment-context-menu',
+  'openStudioEquipmentMenu(socket,event)', 'data-character-equip-item',
+  "action:'remove',section:'loadout'", 'Browse All Compatible Items…',
 ]) need(app.includes(token), `Character Editor redesign contract missing ${token}`);
 need(app.includes('nativeCharacterEditor.querySelectorAll(\'[data-character-editor-tab]\')') && app.includes('panel.classList.toggle(\'active\''), 'Character Editor tabs must swap panels in place without recreating the live preview');
 need(app.includes("target&&!target.matches('[data-native-meta], [data-native-customization]"), 'preview-only camera, background, and Pose controls must not dirty the save');
 need(styles.includes('grid-template-columns:minmax(320px,370px) minmax(480px,1fr) minmax(340px,400px)'), 'Character Editor desktop layout must preserve controls, dominant preview, and equipped columns');
 need(styles.includes('.character-action-bar{') && styles.includes('grid-template-columns:repeat(8'), 'Character Editor must render the exact eight-slot action bar');
+need(styles.includes('.character-equipment-context-menu{') && styles.includes('.character-equipment-menu-items{'), 'right-click equipment selection must retain a bounded searchable context-menu layout');
 
 for (const token of [
   "runOperation('Starting hosted World'",

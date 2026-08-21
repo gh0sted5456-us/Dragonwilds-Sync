@@ -19,7 +19,7 @@ The preview workspace now keeps the working character in one stable three-column
 
 - **Appearance** places Name, Face, Hair, Beard, body type, and save-backed color swatches in the left rail. Raw RSDW asset names remain visible so aliases never hide the value written to the save.
 - The center is the persistent live RSDWModel preview. Full, Face, rotate, zoom, and background controls affect the preview without marking the save dirty.
-- **Equipped** on the right groups Armour, Attachments, and Weapons. Armour and attachments use the authoritative Item Editor loadout. Weapon rows clearly identify preview mappings.
+- **Equipped** on the right groups Armour, Attachments, and Weapons. Armour and attachments use the authoritative Item Editor loadout. Weapon rows clearly identify preview mappings. Click a slot for the full repository, or right-click it for a searchable Quick Equip menu with compatible items, Browse All, and Unequip/Clear actions.
 - The bottom bar mirrors exactly eight current action slots. Select a slot or **Manage** to continue in the full Item Editor.
 - **Equipment** and **Pose** switch their left-side controls without rebuilding the 3D preview. Pose and camera changes are preview-only.
 

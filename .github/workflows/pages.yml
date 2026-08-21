@@ -245,6 +245,7 @@ jobs:
           test -s _site/assets/demo-world-banner.svg
           test -s _site/assets/demo-world-icon.svg
           test -s _site/assets/rsdw-logo.png
+          test -s _site/assets/runeschema-logo.png
           grep -q 'Steam Server' _site/index.html
           grep -q 'data-current-cl' _site/index.html
           grep -q 'Snorkles' _site/script.js
@@ -253,7 +254,7 @@ jobs:
           grep -q 'github.com/UnskippableCutscene' _site/script.js
           grep -q 'github.com/RSDWArchive' _site/script.js
           grep -q 'discord.gg/gQ7uY2cQ3q' _site/script.js
-          grep -q 'assets/platforms/runeschema.svg' _site/script.js
+          grep -q 'assets/runeschema-logo.png' _site/script.js
           grep -q 'assets/rsdw-logo.png' _site/script.js
           grep -q 'assets/platforms/discord.svg' _site/script.js
           grep -q 'browser_download_url' _site/script.js

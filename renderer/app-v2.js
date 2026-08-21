@@ -4744,36 +4744,6 @@
       nativeCharacterEditor.querySelectorAll('[data-character-undo]').forEach((button)=>button.addEventListener('click',()=>restoreCharacterSnapshot(state.rsdwCharacterHistory,state.rsdwCharacterFuture)));
       nativeCharacterEditor.querySelectorAll('[data-character-redo]').forEach((button)=>button.addEventListener('click',()=>restoreCharacterSnapshot(state.rsdwCharacterFuture,state.rsdwCharacterHistory)));
       nativeCharacterEditor.querySelectorAll('[data-open-item-editor], [data-character-action-slot]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwTool='item-editor';state.rsdwToolSearch='';state.rsdwToolPage=0;render();if(!state.rsdwNativeTools['item-editor'])setTimeout(()=>hydrateNativeRsdwTool('item-editor'),0);}));
-      // The MMO-style Appearance rail is a compact facade over the complete
-      // save-backed RSDW editor below it. Proxy each choice into the canonical
-      // control so preview validation and backup-first writeback retain one
-      // source of truth.
-      root.querySelectorAll('[data-studio-native-meta]').forEach((compact)=>{
-        const canonical=nativeCharacterEditor.querySelector(`[data-native-meta="${CSS.escape(compact.dataset.studioNativeMeta||'')}"]`);
-        if(!canonical)return;
-        const push=()=>{canonical.value=compact.value;canonical.dispatchEvent(new Event(compact.tagName==='SELECT'?'change':'input',{bubbles:true}));};
-        compact.addEventListener('input',push);compact.addEventListener('change',push);
-      });
-      root.querySelectorAll('select[data-studio-native-customization]').forEach((compact)=>{
-        const key=compact.dataset.studioNativeCustomization||'';
-        compact.addEventListener('change',()=>{
-          const canonical=Array.from(nativeCharacterEditor.querySelectorAll(`[data-native-customization="${CSS.escape(key)}"]`)).find((input)=>input.type!=='radio'||String(input.value)===String(compact.value));
-          if(!canonical)return;
-          if(canonical.type==='radio')canonical.checked=true;else canonical.value=compact.value;
-          canonical.dispatchEvent(new Event('change',{bubbles:true}));
-        });
-      });
-      root.querySelectorAll('button[data-studio-native-value]').forEach((compact)=>{
-        compact.addEventListener('click',()=>{
-          const key=compact.dataset.studioNativeCustomization||'';
-          const value=compact.dataset.studioNativeValue||'';
-          const canonical=Array.from(nativeCharacterEditor.querySelectorAll(`[data-native-customization="${CSS.escape(key)}"]`)).find((input)=>String(input.value)===String(value));
-          if(!canonical)return;
-          if(canonical.type==='radio')canonical.checked=true;else canonical.value=value;
-          root.querySelectorAll(`button[data-studio-native-customization="${CSS.escape(key)}"]`).forEach((button)=>button.classList.toggle('active',button===compact));
-          canonical.dispatchEvent(new Event('change',{bubbles:true}));
-        });
-      });
       nativeCharacterEditor.addEventListener('input',scheduleNativePreview);
       nativeCharacterEditor.addEventListener('change',scheduleNativePreview);
       nativeCharacterEditor.addEventListener('keydown',(event)=>{if((event.ctrlKey||event.metaKey)&&String(event.key).toLowerCase()==='s'){event.preventDefault();saveButton?.click();}});
@@ -4793,38 +4763,6 @@
       });
       nativeCharacterEditor.querySelectorAll('[data-character-save]').forEach((button)=>button.addEventListener('click',()=>saveButton?.click()));
       nativeCharacterEditor.querySelectorAll('[data-character-export]').forEach((button)=>button.addEventListener('click',exportToolkitCharacter));
-    }
-    // Appearance is persistent across Studio tabs.  When the full native
-    // editor is not mounted (for example while Item Editor is open), drive
-    // its compact controls through the same native preview contract directly.
-    if(!nativeCharacterEditor&&root.querySelector('[data-studio-native-customization], [data-studio-native-meta]')){
-      const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
-      const loaded=state.rsdwCharacterPayload;
-      let appearanceSequence=0;
-      const applyStudioAppearance=async(change)=>{
-        if(!selected||!loaded?.text)return;
-        const sequence=++appearanceSequence;
-        const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
-        try{
-          const response=await api.invoke('characters.native.preview',{text:baseText,changes:change});
-          if(sequence!==appearanceSequence)return;
-          state.rsdwNativeDraft={...response,characterId:selected.id};
-          await syncRsdwAvatarPreview(response?.avatar);
-          const status=root.querySelector('#rsdw-editor-status');if(status)status.textContent='Unsaved appearance · live 3D preview refreshed';
-          const dot=root.querySelector('#rsdw-editor-status-dot');if(dot)dot.className='dirty';
-          const save=root.querySelector('#rsdw-save-character');if(save)save.disabled=false;
-        }catch(error){toast('Appearance preview blocked',error.message,'error');}
-      };
-      root.querySelectorAll('[data-studio-native-meta]').forEach((control)=>{
-        const push=()=>applyStudioAppearance({meta:{[control.dataset.studioNativeMeta||'']:control.value}});
-        control.addEventListener('change',push);if(control.tagName!=='SELECT')control.addEventListener('input',push);
-      });
-      root.querySelectorAll('select[data-studio-native-customization]').forEach((control)=>control.addEventListener('change',()=>applyStudioAppearance({customization:{[control.dataset.studioNativeCustomization||'']:control.value}})));
-      root.querySelectorAll('button[data-studio-native-value]').forEach((control)=>control.addEventListener('click',()=>{
-        const key=control.dataset.studioNativeCustomization||'',value=control.dataset.studioNativeValue||'';
-        root.querySelectorAll(`button[data-studio-native-customization="${CSS.escape(key)}"]`).forEach((button)=>button.classList.toggle('active',button===control));
-        applyStudioAppearance({customization:{[key]:value}});
-      }));
     }
     const nativeToolSurface=root.querySelector('[data-rsdw-native-tool]');
     if(nativeToolSurface&&!nativeCharacterEditor){
@@ -5052,6 +4990,20 @@
     root.querySelector('#rsdw-revert-draft')?.addEventListener('click',async()=>{if(await managedConfirm('Revert every unapplied equipment and appearance change? Preview visibility and camera position remain preferences.','Revert Character Draft'))await discardRsdwDraft();});
     const openStudioRepository=(slot)=>{state.rsdwEquipmentRepositorySlot=slot;state.rsdwEquipmentSearch='';render();if(!state.rsdwNativeTools['item-editor'])hydrateNativeRsdwTool('item-editor');};
     const closeStudioEquipmentMenu=()=>{const menu=document.querySelector('.character-equipment-context-menu');if(!menu)return;menu._cleanup?.();menu.remove();};
+    const refreshStudioEquipmentSocket=(socket,row)=>{
+      const slot=String(socket.dataset.studioEquipmentSlot||'Equipment');
+      const occupied=!!row?.item_data;
+      socket.dataset.studioEquippedItem=occupied?String(row.item_data):'';
+      socket.classList.toggle('occupied',occupied);socket.classList.toggle('empty',!occupied);
+      socket.setAttribute('aria-label',`${slot} equipment slot · ${occupied?(row.name||row.item_data):'Empty'}`);
+      const existing=socket.querySelector(':scope > img, :scope > .studio-socket-glyph');
+      let media;
+      if(occupied&&row.icon){media=document.createElement('img');media.src=rsdwAssetUrl(row.icon);media.alt='';media.loading='lazy';}
+      else{media=document.createElement('span');media.className='studio-socket-glyph';media.textContent=slot.slice(0,1);}
+      if(existing)existing.replaceWith(media);else socket.prepend(media);
+      const label=socket.querySelector('small');if(label)label.textContent=occupied?(row.name||row.item_data):'Empty slot';
+      const status=socket.querySelector('i');if(status)status.textContent=socket.classList.contains('hidden-preview')?'Hidden in preview':'Save-backed';
+    };
     const applyStudioContextItem=async(socket,item)=>{
       const slot=String(socket.dataset.studioEquipmentSlot||'');
       const itemData=String(item.item_data||'');
@@ -5064,15 +5016,15 @@
         const result=await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(handId)});if(!select)return {ok:false};const clean=(v)=>String(v||'').toLowerCase().replace(/item|weapon|main|off|hand|one handed|two handed|1h|2h|[_./-]/g,' ').replace(/[^a-z0-9 ]/g,' ').replace(/\\s+/g,' ').trim();const wanted=clean(${JSON.stringify(itemName)});const tokens=wanted.split(' ').filter((v)=>v.length>2);const rows=[...select.options].map((option)=>{const hay=clean(option.textContent+' '+option.value);const score=tokens.reduce((sum,token)=>sum+(hay.includes(token)?token.length:0),0);return {option,score};}).sort((a,b)=>b.score-a.score);if(!rows[0]||rows[0].score<=0)return {ok:false};select.value=rows[0].option.value;select.dispatchEvent(new Event('change',{bubbles:true}));return {ok:true,label:rows[0].option.textContent,value:rows[0].option.value};})()`,true);
         if(!result?.ok){toast('No mapped 3D asset','This item is valid for the slot, but RSDWModel has no matching 3D asset yet.','error');return;}
         const avatar=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar;if(avatar?.params)avatar.params[slot==='Main Hand'?'rightHand':'leftHand']=result.value;
-        socket.dataset.studioEquippedItem=result.value||itemData;socket.classList.add('occupied');socket.classList.remove('empty');const label=socket.querySelector('small');if(label)label.textContent=itemName;
+        socket.dataset.studioEquippedItem=result.value||itemData;socket.classList.add('occupied');socket.classList.remove('empty');socket.setAttribute('aria-label',`${slot} slot · ${itemName}`);const label=socket.querySelector('small');if(label)label.textContent=itemName;
         toast('Weapon preview updated',`${itemName} matched ${result.label}.`,'success');
         return;
       }
       const index=Number(socket.dataset.studioEquipmentIndex);
       const response=await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:itemData,target_slot:index},{paint:false});
       closeStudioEquipmentMenu();
+      refreshStudioEquipmentSocket(socket,(response.native_tool?.sections?.loadout||[]).find((row)=>Number(row.slot)===index));
       await syncRsdwAvatarPreview(response.avatar);
-      render();
       toast('Equipment staged',`${itemName} is ready. Save Character writes it with a verified backup.`,'success');
     };
     const clearStudioContextSlot=async(socket)=>{
@@ -5082,12 +5034,12 @@
         const result=await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(handId)});if(!select)return {ok:false};const empty=[...select.options].find((option)=>!option.value||/none|empty|unequip|unarmed/i.test(option.textContent||''));if(!empty)return {ok:false};select.value=empty.value;select.dispatchEvent(new Event('change',{bubbles:true}));return {ok:true,value:empty.value};})()`,true);
         if(!result?.ok)throw new Error('RSDWModel does not expose an empty option for this hand.');
         const avatar=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar;if(avatar?.params)avatar.params[slot==='Main Hand'?'rightHand':'leftHand']=result.value||'';
-        socket.dataset.studioEquippedItem='';socket.classList.remove('occupied');socket.classList.add('empty');const label=socket.querySelector('small');if(label)label.textContent='Choose preview item';
+        socket.dataset.studioEquippedItem='';socket.classList.remove('occupied');socket.classList.add('empty');socket.setAttribute('aria-label',`${slot} slot · Empty`);const label=socket.querySelector('small');if(label)label.textContent='Choose preview item';
         closeStudioEquipmentMenu();toast('Weapon preview cleared',`${slot} is now empty in the preview.`,'success');return;
       }
       const index=Number(socket.dataset.studioEquipmentIndex);
       const response=await previewRsdwToolChange('item-editor',{action:'remove',section:'loadout',slot:index},{paint:false});
-      closeStudioEquipmentMenu();await syncRsdwAvatarPreview(response.avatar);render();toast('Equipment removed',`${slot} is empty in the staged loadout.`,'success');
+      closeStudioEquipmentMenu();refreshStudioEquipmentSocket(socket,null);await syncRsdwAvatarPreview(response.avatar);toast('Equipment removed',`${slot} is empty in the staged loadout.`,'success');
     };
     const openStudioEquipmentMenu=(socket,event)=>{
       closeStudioEquipmentMenu();
@@ -5111,7 +5063,7 @@
       socket.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();openStudioEquipmentMenu(socket,event);});
       socket.addEventListener('dragover',(event)=>{if(event.dataTransfer.types.includes('application/x-rsdw-equipment')){event.preventDefault();socket.classList.add('drag-allowed');}});
       socket.addEventListener('dragleave',()=>socket.classList.remove('drag-allowed'));
-      socket.addEventListener('drop',async(event)=>{event.preventDefault();socket.classList.remove('drag-allowed');let payload={};try{payload=JSON.parse(event.dataTransfer.getData('application/x-rsdw-equipment')||'{}');}catch(_){}if(payload.type!==socket.dataset.studioEquipmentSlot)return toast('Incompatible equipment',`This socket accepts ${socket.dataset.studioEquipmentSlot} items.`,'error');try{const response=await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:payload.id,target_slot:Number(socket.dataset.studioEquipmentIndex)},{paint:false});await syncRsdwAvatarPreview(response.avatar);}catch(error){toast('Equipment preview blocked',error.message,'error');}});
+      socket.addEventListener('drop',async(event)=>{event.preventDefault();socket.classList.remove('drag-allowed');let payload={};try{payload=JSON.parse(event.dataTransfer.getData('application/x-rsdw-equipment')||'{}');}catch(_){}if(payload.type!==socket.dataset.studioEquipmentSlot)return toast('Incompatible equipment',`This socket accepts ${socket.dataset.studioEquipmentSlot} items.`,'error');try{const index=Number(socket.dataset.studioEquipmentIndex);const response=await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:payload.id,target_slot:index},{paint:false});refreshStudioEquipmentSocket(socket,(response.native_tool?.sections?.loadout||[]).find((row)=>Number(row.slot)===index));await syncRsdwAvatarPreview(response.avatar);}catch(error){toast('Equipment preview blocked',error.message,'error');}});
     });
     root.querySelector('.studio-repository-grid')?.addEventListener('click',async(event)=>{
       const item=event.target.closest('[data-studio-equipment-item]');

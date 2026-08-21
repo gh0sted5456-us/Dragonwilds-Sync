@@ -54,6 +54,14 @@ for (const token of [
   "action:'remove',section:'loadout'", 'Browse All Compatible Items…',
 ]) need(app.includes(token), `Character Editor redesign contract missing ${token}`);
 need(app.includes('nativeCharacterEditor.querySelectorAll(\'[data-character-editor-tab]\')') && app.includes('panel.classList.toggle(\'active\''), 'Character Editor tabs must swap panels in place without recreating the live preview');
+const tabSwapStart = app.indexOf('const setCharacterEditorTab=');
+const tabSwap = app.slice(tabSwapStart, app.indexOf("nativeCharacterEditor.querySelectorAll('[data-native-step]')", tabSwapStart));
+need(tabSwap.includes("panel.classList.toggle('active'") && !tabSwap.includes('render('), 'Character Editor tab swaps must only toggle mounted panels');
+const equipmentApply = app.slice(app.indexOf('const applyStudioContextItem='), app.indexOf('const openStudioEquipmentMenu='));
+need(equipmentApply.includes('refreshStudioEquipmentSocket(') && !equipmentApply.includes('render();'), 'equipping or clearing a quick-select item must update its mounted socket without repainting the Character Editor');
+need(app.includes('Object.values(editor.tabs||{}).flatMap((tab)=>tab.items||[])'), 'Quick Equip must merge every Item Editor tab, including Modded Items');
+need(!app.includes('data-studio-native-meta') && !app.includes('data-studio-native-customization') && !app.includes('data-studio-native-value'), 'superseded pre-redesign appearance facade must stay removed');
+need(!styles.includes('.character-equipment-studio') && !styles.includes('.character-equipment-groups'), 'superseded pre-redesign equipment layout CSS must stay removed');
 need(app.includes("target&&!target.matches('[data-native-meta], [data-native-customization]"), 'preview-only camera, background, and Pose controls must not dirty the save');
 need(styles.includes('grid-template-columns:minmax(320px,370px) minmax(480px,1fr) minmax(340px,400px)'), 'Character Editor desktop layout must preserve controls, dominant preview, and equipped columns');
 need(styles.includes('.character-action-bar{') && styles.includes('grid-template-columns:repeat(8'), 'Character Editor must render the exact eight-slot action bar');

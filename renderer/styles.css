@@ -1776,11 +1776,6 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 .world-list-row.has-placard>.world-list-banner img{opacity:.66;filter:saturate(.94) contrast(1.04) brightness(.92)}
 .world-list-row.has-placard>.world-row-actions{background:linear-gradient(90deg,transparent,rgba(11,16,16,.88) 28%,#0b1010 72%)}
 
-/* Character Creator keeps the save-backed equipment sockets visible beside
-   the appearance tools without turning the page into a second Item Editor. */
-.character-equipment-studio{margin:14px 0;overflow:visible}.character-equipment-groups{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(260px,.8fr);gap:14px;padding:14px}.character-equipment-studio .studio-equipment-group{padding:10px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2)}.character-equipment-studio .studio-equipment-group>small{display:block;margin-top:9px;color:var(--muted);font-size:8px;line-height:1.5}
-@media(max-width:980px){.character-equipment-groups{grid-template-columns:1fr}}@media(max-width:620px){.character-equipment-studio .studio-socket-row.three{grid-template-columns:repeat(3,minmax(64px,1fr))}.character-equipment-studio .studio-socket-row.two{grid-template-columns:repeat(2,minmax(92px,1fr))}}
-
 /* Character Editor preview standard: one stable three-column surface backed by
    the existing RSDWModel webview, native save fields, and Item Editor catalog. */
 .native-character-surface[data-rsdw-native-tool="character-editor"]{padding:0!important;overflow:visible;background:transparent!important;border:0!important;box-shadow:none!important}

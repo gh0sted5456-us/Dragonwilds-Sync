@@ -5,6 +5,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+import client_layout
+from character_profiles import discover_characters
 from health_model import score_hardware
 from profile_bundle import export_profile_bundle, import_profile_bundle, inspect_profile_bundle
 from profile_store import default_state
@@ -39,16 +41,32 @@ def sample_world() -> dict:
 def main():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
+        original_local_appdata = client_layout.LOCAL_APPDATA
+        client_layout.LOCAL_APPDATA = root / "source-localappdata"
+        source_character_dir = client_layout.LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveCharacters"
+        source_character_dir.mkdir(parents=True)
+        source_character_bytes = b'{"PlayerName":"Rich Hero","Inventory":{"8":{"ItemData":"/Game/Mods/TestItem","Count":7}}}'
+        (source_character_dir / "RichHero.sav").write_bytes(source_character_bytes)
+        discovered = discover_characters(str(root / "source-game"), {}, {}, {})
+        assert len(discovered) == 1 and discovered[0]["player_name"] == "Rich Hero"
+        character_id = discovered[0]["id"]
         source = default_state()
         source["player_profile"]["profile_id"] = "profile-123"
         source["player_profile"]["display_name"] = "Luke"
+        source["player_profile"]["character_profiles"][character_id] = {
+            "label": "Rich Hero Main", "favorite": True,
+            "portrait_data": data_uri("image/png", b"character-portrait"),
+        }
+        source["player_profile"]["character_worlds"][character_id] = ["linked-world-1"]
+        source["client"]["world_character_selection"] = {"linked-world-1": character_id}
         source["client"]["worlds"] = [sample_world()]
         source["application"]["custom_items"] = [{"persistence_id": "/Game/Mods/TestItem", "name": "Test Item", "max_stack": 40,
                                                      "category": "Resource", "icon_data": data_uri("image/png", b"custom-icon")}]
         out = root / "Luke.rsdwl"
-        result = export_profile_bundle(source, out, profile_name="Luke Main", include_characters=False, include_worlds=True, include_world_artwork=True)
+        result = export_profile_bundle(source, out, profile_name="Luke Main", include_characters=True, include_worlds=True, include_world_artwork=True, game_dir=str(root / "source-game"))
         assert result["manifest"]["version"] == 3
         assert result["manifest"]["packageType"] == "profile"
+        assert result["character_count"] == 1 and result["world_count"] == 1
         with zipfile.ZipFile(out) as zf:
             names = set(zf.namelist())
             assert "profile/profile.json" in names
@@ -57,6 +75,9 @@ def main():
             assert any(n.startswith("items/icons/") for n in names)
             assert any(n.startswith("worlds/assets/") and "/icon." in n for n in names)
             assert any(n.startswith("worlds/assets/") and "/banner." in n for n in names)
+            assert any(n.startswith("profile/characters/") and "/save/" in n for n in names)
+            assert any(n.startswith("profile/characters/") and n.endswith("/metadata.json") for n in names)
+            assert any(n.startswith("profile/characters/") and "/portrait." in n for n in names)
             joined = b"\n".join(zf.read(n) for n in names if n.endswith(".json"))
             assert b"NEVER-EXPORT" not in joined
 
@@ -68,9 +89,18 @@ def main():
         assert shared_entry["modMetadata"][0]["tags"] == ["loot", "quality-of-life"]
         assert shared_entry["modMetadata"][0]["hotload_capable"] is True
         target = default_state()
-        imported = import_profile_bundle(target, out, import_characters=False)
+        client_layout.LOCAL_APPDATA = root / "target-localappdata"
+        imported = import_profile_bundle(target, out, game_dir=str(root / "target-game"), import_characters=True)
         assert target["application"]["custom_items"][0]["icon_data"].startswith("data:image/png;base64,")
+        assert base64.b64decode(target["application"]["custom_items"][0]["icon_data"].split(",", 1)[1]) == b"custom-icon"
         assert len(imported["changelog"]["added"]) == 1
+        assert imported["changelog"]["characters"] == [{"character": "Rich Hero", "change": "added"}]
+        imported_character = client_layout.LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveCharacters" / "RichHero.sav"
+        assert imported_character.read_bytes() == source_character_bytes
+        assert target["player_profile"]["character_profiles"][character_id]["label"] == "Rich Hero Main"
+        assert target["player_profile"]["character_profiles"][character_id]["favorite"] is True
+        assert target["player_profile"]["character_profiles"][character_id]["portrait_data"].startswith("data:image/png;base64,")
+        assert target["player_profile"]["character_worlds"][character_id] == ["linked-world-1"]
         hydrated = target["client"]["curated_worlds"][0]
         assert hydrated["presentation"]["icon_b64"].startswith("data:image/png;base64,")
         assert hydrated["presentation"]["banner_b64"].startswith("data:image/png;base64,")
@@ -93,6 +123,7 @@ def main():
         assert len(removed["changelog"]["removed"]) == 1
         assert "newer profile snapshot" in removed["changelog"]["removed"][0]["reason"]
         assert target["client"]["curated_worlds"] == []
+        client_layout.LOCAL_APPDATA = original_local_appdata
 
     # Live CPU/RAM pressure is explainable health evidence, not hidden telemetry.
     hardware = score_hardware({"ram_total_gb": 32, "ram_used_percent": 95, "cpu_usage_percent": 96})
@@ -101,7 +132,7 @@ def main():
     assert "cpu_headroom" in (hardware.get("components") or {})
 
     project = Path(__file__).resolve().parents[1]
-    renderer = (project / "renderer/app.js").read_text(encoding="utf-8")
+    renderer = (project / "renderer/app-v2.js").read_text(encoding="utf-8")
     assert "Private Worlds" in renderer and "Curated / Profiles" in renderer
     assert ("Every 30 seconds" in renderer) or ("every 30 seconds" in renderer) or ("30000" in renderer)
     assert "Enable Multiple Servers" in renderer

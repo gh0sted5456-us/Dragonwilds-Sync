@@ -242,6 +242,15 @@ def main() -> None:
                 [restored],
             )
             assert custom_added["native_tool"]["sections"]["inventory"][0]["count"] == 24
+            custom_equipped = characters.apply_native_rsdw_tool(
+                custom_added["text"], "item-editor",
+                {"action": "add", "section": "loadout", "id": persistence_id, "target_slot": 1},
+                [restored],
+            )
+            equipped_custom = custom_equipped["native_tool"]["sections"]["loadout"][0]
+            assert equipped_custom["slot"] == 1 and equipped_custom["item_data"] == persistence_id
+            assert equipped_custom["recognized"] is True and equipped_custom["custom"] is True
+            assert equipped_custom["equipment"] == "Body" and equipped_custom["name"] == "Custom Regression Item Refined"
 
             spawner_catalog.search_items = lambda query="", limit=250: {"items": [], "count": 0, "cache": {}}
             spawner = spawner_catalog.catalog("", kind="item", query="ITEM_Custom", custom_items=[restored])

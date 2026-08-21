@@ -1126,7 +1126,19 @@ def handle(method: str, params: dict) -> object:
                 raise ValueError("PersistenceID is required and must be 512 characters or fewer.")
             if not name or len(name) > 160:
                 raise ValueError("Item Name is required and must be 160 characters or fewer.")
-            max_stack = int(raw.get("max_stack") or raw.get("maxStack") or 1)
+            raw_max_stack = raw["max_stack"] if "max_stack" in raw else raw.get("maxStack", 1)
+            if raw_max_stack in (None, ""):
+                raw_max_stack = 1
+            try:
+                if isinstance(raw_max_stack, bool):
+                    raise ValueError
+                if isinstance(raw_max_stack, float) and not raw_max_stack.is_integer():
+                    raise ValueError
+                if isinstance(raw_max_stack, str) and not re.fullmatch(r"[+-]?\d+", raw_max_stack.strip()):
+                    raise ValueError
+                max_stack = int(raw_max_stack)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Stack limit must be a whole number between 1 and 1,000,000,000.") from exc
             if not 1 <= max_stack <= 1_000_000_000:
                 raise ValueError("Stack limit must be between 1 and 1,000,000,000.")
             icon_data = str(raw.get("icon_data") or raw.get("iconData") or "")

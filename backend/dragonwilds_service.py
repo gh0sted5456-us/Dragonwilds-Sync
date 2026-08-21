@@ -54,6 +54,16 @@ try:
 except Exception:
     pass
 
+# The packaged executable also installs this safety net from its PyInstaller
+# runtime hook.  Install it here as well so source/development launches have
+# identical Character and Item Editor behavior: a healthy canonical item
+# manifest remains usable when the optional RSDWTools website cache is absent.
+try:
+    from editor_runtime_stabilization import install as _install_editor_runtime_stabilization
+    _install_editor_runtime_stabilization()
+except Exception:
+    pass
+
 
 def _workers():
     global _WORKER_SUPERVISOR

@@ -1389,7 +1389,9 @@ def write_character_from_toolkit(game_dir: str, character_id: str, text: str, *,
         raise ValueError("RSDW Toolkit writeback requires an object-based character document.")
     CHAR_IMPORT_BACKUPS.mkdir(parents=True, exist_ok=True)
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    backup = CHAR_IMPORT_BACKUPS / f"rsdw-{stamp}-{target.name}"
+    # Multiple Apply operations can occur inside one second.  Never reuse a
+    # backup name: every verified write must retain its own recovery point.
+    backup = CHAR_IMPORT_BACKUPS / f"rsdw-{stamp}-{time.time_ns()}-{target.name}"
     shutil.copy2(target, backup)
     # Normalize only serialization, not schema/content. RSDWTools owns the edited document.
     payload = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")

@@ -25,6 +25,8 @@ in the test matrix evidence.
 - Host/client authentication, manifest, hash, role-correct materialization, Direct Connect, and join.
 - Router/NAT and offline/timeout/partial-directory failure recovery.
 - Real backup restore and `.rsdwl` conflict/writeback flows.
+- Real Character Editor/RSDWModel hydration, repeated Apply, game reload, and backup restore using disposable saves.
+- Full refreshed item-catalog category/search coverage plus vanilla and modded item refinement verified after game reload and through Spawner/WebGUI.
 - Public responses and diagnostics contain no secret or private state.
 
 ## Linux/Proton

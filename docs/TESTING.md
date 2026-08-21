@@ -38,6 +38,20 @@ investigation:
 python scripts/run_system_tests.py --tier all-automated --system RUNTIME
 ```
 
+The current Appy/subapp and Character/Item focused lanes can also be run
+directly while investigating those surfaces:
+
+```bash
+node scripts/check_app_subapp_regression.cjs
+python scripts/v3_backend_test_runner.py backend/test_character_item_regression.py
+```
+
+The Appy contract covers all identities in `APPLICATION_IDENTITIES`; the
+backend regression exercises real temporary save and manifest files rather
+than only checking source tokens. See
+[`CURRENT_REGRESSION_VERIFICATION.md`](CURRENT_REGRESSION_VERIFICATION.md) for
+the latest recorded scope and environment-only exclusions.
+
 Manual and physical rows are listed by the runner but never converted into an
 automatic pass. Record the tester, commit, package SHA-256, platform versions,
 Dragonwilds build ID, Steam/Proton version, network topology, observations, and

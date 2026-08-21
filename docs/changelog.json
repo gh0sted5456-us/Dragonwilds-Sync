@@ -17,7 +17,8 @@
         "Consolidated current-build documentation and a system-wide phased test matrix.",
         "Combined World Management and Dedicated hosting into the game-icon Dragonwilds Appy while retaining the other navigation icons and routes.",
         "Added Profile Character-save associations with direct RSDW-L editor handoff, guarded startup/Sync operations, editable managed mod files, and an updated in-app walkthrough.",
-        "Kept the titlebar and navigation rail mounted across Full-mode renders and added packaged image icons for every Appy to eliminate route-change icon flicker."
+        "Kept the titlebar and navigation rail mounted across Full-mode renders and added packaged image icons for every Appy to eliminate route-change icon flicker.",
+        "Added a 46-subapp regression contract and end-to-end Character Editor/full Item Repository tests; fixed source-launch item fallback, zero-stack validation, and same-second character backup collisions."
       ]
     },
     {

@@ -40,6 +40,7 @@ def main() -> int:
     current_service_tests = {
         "test_v3_phase1.py", "test_v3_phase2.py", "test_v3_phase3.py", "test_v3_phase4.py",
         "test_feature_workers.py", "test_phase5_runtime_worker_bridge.py",
+        "test_character_item_regression.py",
     }
     is_current_service_test = test.name in current_service_tests
     source = test.read_text(encoding="utf-8", errors="ignore")

@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 6,
+  "version": 7,
   "title": "Dragonwilds Sync Helpy",
   "subtitle": "A living, system-by-system field guide shared by the website and desktop application.",
   "updated_at": "2026-08-21",
@@ -713,7 +713,7 @@
       "sections": [
         {
           "title": "Canonical ID.txt",
-          "body": "Place UTF-8 ID.txt at the effective mod root. The parser is case-insensitive, bounded to 512 KiB, accepts colon or equals delimiters, and retains read compatibility for identity.txt and identities.txt."
+          "body": "Place UTF-8 ID.txt at the effective mod root. HOTLOAD = YES is valid as the only line and normalizes to hotload_capable true with runtime_role both and empty optional fields. The parser is case-insensitive, bounded to 512 KiB, accepts colon or equals delimiters, and retains read compatibility for identity.txt and identities.txt."
         },
         {
           "title": "Identity fields",
@@ -737,7 +737,7 @@
         }
       ],
       "tips": [
-        "Metadata is declarative and never executed.",
+        "HOTLOAD = YES works by itself; metadata is declarative and never executed.",
         "Do not place passwords, tokens, credentials, or local machine paths in ID.txt.",
         "Export through Dragonwilds Sync when you need a valid .rsdwl package."
       ]

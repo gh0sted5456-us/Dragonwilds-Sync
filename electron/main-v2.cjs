@@ -765,7 +765,7 @@ ipcMain.handle('dragonwilds:rsdw-toolkit-root', async (_event, incoming) => {
   catch (_) { rsdwToolkitRoot=''; stopRsdwToolkitServer(); return { ok:false, mode:'remote', baseUrl:'https://rsdwtools.com/' }; }
 });
 
-ipcMain.handle('dragonwilds:open-external', async (_event,target) => { try { const raw=String(target||'').trim(); const url=new URL(raw); const safeWeb=['http:','https:'].includes(url.protocol); const safeSteam=/^steam:\/\/(?:run|rungameid|validate|install)\/(?:1374490|4019830)$/i.test(raw); if(!safeWeb&&!safeSteam)return false; await shell.openExternal(url.toString()); return true; } catch(_){return false;} });
+ipcMain.handle('dragonwilds:open-external', async (_event,target) => { try { const raw=String(target||'').trim(); const url=new URL(raw); const safeWeb=['http:','https:'].includes(url.protocol); const safeSteam=/^steam:\/\/(?:(?:run|rungameid|validate|install)\/(?:1374490|4019830)|nav\/games\/details\/1374490)$/i.test(raw); if(!safeWeb&&!safeSteam)return false; await shell.openExternal(url.toString()); return true; } catch(_){return false;} });
 ipcMain.handle('dragonwilds:open-in-app-browser', (event,target) => createExternalBrowserWindow(target, event.sender));
 ipcMain.handle('dragonwilds:open-path', async (_event,target) => { if(!target)return false; return !(await shell.openPath(target)); });
 

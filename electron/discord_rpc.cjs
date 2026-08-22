@@ -128,10 +128,16 @@ class DiscordRichPresence {
       details: String(activity.details || '').slice(0, 128) || undefined,
       state: String(activity.state || '').slice(0, 128) || undefined,
       timestamps: activity.startTimestamp ? { start: Number(activity.startTimestamp) } : undefined,
-      assets: activity.largeImage || activity.largeText ? {
+      assets: activity.largeImage || activity.largeText || activity.smallImage || activity.smallText ? {
         large_image: activity.largeImage || undefined,
         large_text: String(activity.largeText || '').slice(0, 128) || undefined,
+        small_image: activity.smallImage || undefined,
+        small_text: String(activity.smallText || '').slice(0, 128) || undefined,
       } : undefined,
+      buttons: Array.isArray(activity.buttons) ? activity.buttons.slice(0, 2).map((button) => ({
+        label: String(button?.label || '').slice(0, 32),
+        url: /^https:\/\//i.test(String(button?.url || '')) ? String(button.url) : undefined,
+      })).filter((button) => button.label && button.url) : undefined,
       party: activity.partySize != null && activity.partyMax != null ? {
         size: [Number(activity.partySize) || 0, Number(activity.partyMax) || 0],
       } : undefined,

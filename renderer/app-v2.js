@@ -893,9 +893,14 @@
         details,
         state: stateText,
         startTimestamp: state.discordPresenceStartedAt,
+        largeImage: 'dragonwilds_sync',
         largeText: 'Dragonwilds Sync',
         partySize: extra.playerCount,
         partyMax: extra.playerMax,
+        buttons: [
+          { label: 'Dragonwilds Sync', url: 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/' },
+          { label: 'View on GitHub', url: 'https://github.com/gh0sted5456-us/Dragonwilds-Sync' },
+        ],
       });
     } catch (_) { /* Discord is optional; launcher state must never depend on it. */ }
   }
@@ -916,12 +921,28 @@
       return;
     }
     if (state.route === 'world-management') setDiscordPresence('Managing Worlds', null);
+    else if (state.route === 'characters-app') setDiscordPresence('Editing Characters', null, { state: 'Character Studio' });
+    else if (state.route === 'mods-app') setDiscordPresence('Managing Mods', null, { state: 'Mod Repository' });
+    else if (state.route === 'rsdw-launcher') setDiscordPresence('Using RSDW-L', null, { state: 'Dragonwilds Toolkit' });
+    else if (state.route === 'webhost') setDiscordPresence('Managing Sync', null, { state: 'Web Hosting' });
+    else if (state.route === 'profile') setDiscordPresence('Viewing Profile', null, { state: 'Dragonwilds Sync' });
     else if (state.route === 'servers') setDiscordPresence('Managing Servers', null);
     else if (state.route === 'singleplayer') setDiscordPresence('Managing SinglePlayer', singleplayerWorld());
     else if (state.route === 'private-worlds' || state.route === 'singleplayer') setDiscordPresence('Managing Worlds', null);
     else if (state.route === 'worlds') setDiscordPresence('Browsing Worlds', null);
     else if (state.route === 'help') setDiscordPresence('Reading Help', null);
-    else if (state.route === 'settings') setDiscordPresence('Configuring Launcher', null);
+    else if (state.route === 'settings') setDiscordPresence('Configuring Dragonwilds Sync', null);
+    else setDiscordPresence('Using Dragonwilds Sync', null);
+  }
+
+  async function openSteamCloudSettings() {
+    try {
+      const opened = await window.dragonwilds.openExternal('steam://nav/games/details/1374490');
+      if (!opened) throw new Error('Steam did not accept the game settings link.');
+      toast('Dragonwilds opened in Steam', 'Select the gear icon, then Properties > General, and disable Steam Cloud.', 'success');
+    } catch (error) {
+      toast('Could not open Steam', error?.message || 'Open Dragonwilds in your Steam Library, then use Properties > General.', 'error');
+    }
   }
 
   function gpuListMarkup(hw = {}) {
@@ -1332,7 +1353,7 @@
         <div class="flow-track">${nodes.map(([n,title,copy],i)=>`<div class="flow-node ${i===0?'current':''}"><small>${n}</small><strong>${escapeHtml(title)}</strong><span>${escapeHtml(copy)}</span></div>`).join('')}</div>
         <section class="panel"><div class="panel-header"><div><h2>${server ? 'Server Location & Identity' : 'Dragonwilds Installation'}</h2><span class="panel-subtitle">${server ? 'This becomes the shared machine-level host installation.' : 'Your saves, client mods, and local SinglePlayer profile resolve from here.'}</span></div></div><div class="panel-body">
           <div class="path-field"><input class="field" id="guided-setup-path" value="${escapeHtml(initialPath)}" placeholder="${server ? 'C:\\DragonwildsServer' : 'D:\\SteamLibrary\\steamapps\\common\\RSDragonwilds'}"/><button class="btn ghost" id="guided-browse">Browse</button><button class="btn primary" id="guided-validate">Validate</button></div>
-          ${server ? `<div class="setup-owner-box"><label>Dragonwilds Player ID / Owner ID</label><div class="path-field"><input class="field" id="guided-owner-id" value="${escapeHtml(owner)}" placeholder="Copy from Dragonwilds → Settings"/><button class="btn ghost" id="guided-detect-owner">Detect from Game</button></div><small>Saved to <code>DedicatedServer.ini</code>. SteamCMD uses anonymous login.</small></div>` : `<div class="identity-box"><strong>Character-aware setup</strong><p>After the path validates, Dragonwilds Sync reads SaveCharacters, creates the SinglePlayer placard, and keeps character switching/backups in APPDATA. Steam Cloud should be disabled when dynamic character profiles are used.</p></div>`}
+          ${server ? `<div class="setup-owner-box"><label>Dragonwilds Player ID / Owner ID</label><div class="path-field"><input class="field" id="guided-owner-id" value="${escapeHtml(owner)}" placeholder="Copy from Dragonwilds → Settings"/><button class="btn ghost" id="guided-detect-owner">Detect from Game</button></div><small>Saved to <code>DedicatedServer.ini</code>. SteamCMD uses anonymous login.</small></div>` : `<div class="identity-box steam-cloud-action" data-open-steam-cloud-settings role="button" tabindex="0"><strong>Character-aware setup</strong><p>After the path validates, Dragonwilds Sync reads SaveCharacters, creates the SinglePlayer placard, and keeps character switching/backups in APPDATA. Steam Cloud should be disabled when dynamic character profiles are used.</p><button type="button" class="btn ghost compact-btn">Open Steam Cloud Settings</button></div>`}
           <div id="guided-validation">${setupCheckRows(null)}</div>
         </div></section>
         <section class="setup-network"><div><strong>${server ? 'Deployment connectivity' : 'Connection readiness'}</strong><span>${server ? 'Checks outbound access needed for server/runtime updates. Firewall configuration is handled during Full Setup.' : 'Checks outbound access before LAN discovery and World synchronization.'}</span></div><button class="btn ghost" id="guided-network-test">Test Connection</button></section><div id="guided-network-result"></div>
@@ -1340,6 +1361,10 @@
       </div></div>
       <div class="modal-footer"><button class="btn ghost" id="guided-skip">${options.serverEnable ? 'Skip for now' : 'Skip Setup'}</button><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="guided-complete">${server ? 'Save & Prepare Server' : 'Save Client Setup'}</button></div></div>`);
     modalRoot.querySelector('.modal')?.classList.add('setup-modal');
+    modalRoot.querySelector('[data-open-steam-cloud-settings]')?.addEventListener('click', openSteamCloudSettings);
+    modalRoot.querySelector('[data-open-steam-cloud-settings]')?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openSteamCloudSettings(); }
+    });
     let validation = null;
     const validate = async () => {
       const path = modalRoot.querySelector('#guided-setup-path')?.value.trim() || '';
@@ -1735,7 +1760,7 @@
   function openNotificationCenter() {
     const items = [...(state.data?.application?.notifications || [])].filter(Boolean).sort((a,b) => Number(b.created_at || 0) - Number(a.created_at || 0));
     const bucket=(item)=>{const text=`${item.kind||''} ${item.title||''} ${item.body||''}`.toLowerCase();if(/warning|error|restart|attention/.test(text))return'warnings';if(/update|upgrade|refresh|version/.test(text))return'updates';if(item.world_id||/server|world|connection|network|host/.test(text))return'servers';return'general';};
-    const rows=items.map((item) => `<div class="notification-center-row ${item.read ? '' : 'unread'}" data-notification-row data-notification-id="${escapeHtml(item.id||'')}" data-notification-bucket="${bucket(item)}" data-notification-unread="${item.read===true?'0':'1'}"><div class="notification-kind ${escapeHtml(item.kind || 'info')}"></div><div><strong>${escapeHtml(item.title || 'Dragonwilds Sync')}</strong><p>${escapeHtml(item.body || '')}</p><small>${item.created_at ? new Date(Number(item.created_at) * 1000).toLocaleString() : ''}</small></div><button class="btn ghost compact-btn" data-dismiss-notification="${escapeHtml(item.id || '')}">Dismiss</button></div>`).join('');
+    const rows=items.map((item) => { const steamCloud=item.title==='Steam Cloud is enabled for Dragonwilds';return `<div class="notification-center-row ${item.read ? '' : 'unread'} ${steamCloud?'steam-cloud-action':''}" data-notification-row data-notification-id="${escapeHtml(item.id||'')}" data-notification-bucket="${bucket(item)}" data-notification-unread="${item.read===true?'0':'1'}" ${steamCloud?'data-open-steam-cloud-settings role="button" tabindex="0"':''}><div class="notification-kind ${escapeHtml(item.kind || 'info')}"></div><div><strong>${escapeHtml(item.title || 'Dragonwilds Sync')}</strong><p>${escapeHtml(item.body || '')}</p><small>${item.created_at ? new Date(Number(item.created_at) * 1000).toLocaleString() : ''}</small></div><div class="notification-row-actions">${steamCloud?'<button class="btn primary compact-btn" data-open-steam-cloud-settings>Open Steam</button>':''}<button class="btn ghost compact-btn" data-dismiss-notification="${escapeHtml(item.id || '')}">Dismiss</button></div></div>`;}).join('');
     showModal(`<div class="modal-header"><div><div class="eyebrow">Launcher</div><h2>Notifications</h2><p>Server operations, restart windows, updates, and connection notices.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body notification-center-body"><div class="notification-filter-bar"><button class="btn primary compact-btn" data-notification-filter="all">All</button><button class="btn ghost compact-btn" data-notification-filter="unread">Unread</button><button class="btn ghost compact-btn" data-notification-filter="warnings">Warnings</button><button class="btn ghost compact-btn" data-notification-filter="updates">Updates</button><button class="btn ghost compact-btn" data-notification-filter="servers">Worlds &amp; Servers</button></div>${items.length ? `<div class="notification-center-list">${rows}</div>` : '<div class="empty-state">No notifications yet.</div>'}</div><div class="modal-footer"><button class="btn ghost" id="clear-notifications" ${items.length ? '' : 'disabled'}>Dismiss All</button><div class="footer-right"><button class="btn primary" data-close-modal>Done</button></div></div>`);
     let activeFilter='all';
     const localNotifications=()=>state.data?.application?.notifications||[];
@@ -1743,7 +1768,8 @@
     const applyFilter=()=>{modalRoot.querySelectorAll('[data-notification-row]').forEach((row)=>{row.hidden=activeFilter!=='all'&&(activeFilter==='unread'?row.dataset.notificationUnread!=='1':row.dataset.notificationBucket!==activeFilter);});modalRoot.querySelectorAll('[data-notification-filter]').forEach((button)=>{const active=button.dataset.notificationFilter===activeFilter;button.classList.toggle('primary',active);button.classList.toggle('ghost',!active);});};
     modalRoot.querySelectorAll('[data-notification-filter]').forEach((button)=>button.addEventListener('click',()=>{activeFilter=button.dataset.notificationFilter||'all';applyFilter();}));
     if (items.some((item) => item.read !== true)) { items.forEach((item)=>item.read=true);localNotifications().forEach((item)=>{if(item)item.read=true;});root.querySelector('#open-notification-center span')?.remove();api.invoke('notifications.mark_all_read', {}).catch(()=>{}); }
-    modalRoot.querySelectorAll('[data-dismiss-notification]').forEach((button) => button.addEventListener('click', () => { const id=button.dataset.dismissNotification;const row=button.closest('.notification-center-row');state.data.application.notifications=localNotifications().filter((item)=>String(item?.id||'')!==String(id||''));row?.remove();syncNotificationCenterEmptyState();applyFilter();api.invoke('notifications.dismiss',{id}).catch((error)=>toast('Notification dismissal was not saved',error.message,'error')); }));
+    modalRoot.querySelectorAll('[data-dismiss-notification]').forEach((button) => button.addEventListener('click', (event) => { event.stopPropagation();const id=button.dataset.dismissNotification;const row=button.closest('.notification-center-row');state.data.application.notifications=localNotifications().filter((item)=>String(item?.id||'')!==String(id||''));row?.remove();syncNotificationCenterEmptyState();applyFilter();api.invoke('notifications.dismiss',{id}).catch((error)=>toast('Notification dismissal was not saved',error.message,'error')); }));
+    modalRoot.querySelectorAll('[data-open-steam-cloud-settings]').forEach((element) => { element.addEventListener('click',(event)=>{event.stopPropagation();openSteamCloudSettings();});element.addEventListener('keydown',(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();openSteamCloudSettings();}}); });
     modalRoot.querySelector('#clear-notifications')?.addEventListener('click', () => { state.data.application.notifications=[];const list=modalRoot.querySelector('.notification-center-list');if(list)list.replaceWith(Object.assign(document.createElement('div'),{className:'empty-state',textContent:'No notifications yet.'}));syncNotificationCenterEmptyState();api.invoke('notifications.clear',{}).catch((error)=>toast('Notification dismissal was not saved',error.message,'error')); });
   }
 

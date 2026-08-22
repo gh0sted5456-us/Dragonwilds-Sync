@@ -19,9 +19,10 @@ from security_policy import default_access_policy, normalize_access_policy
 from world_classification import normalize_world_classification
 from networking import effective_game_port
 from computer_profiles import default_computer_profile, normalize_computer_profile
+from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 
 SCHEMA_VERSION = 11
-OFFICIAL_DIRECTORY_URL = "https://dragonwilds-sync-directory.dragonwilds.workers.dev"
+OFFICIAL_DIRECTORY_URL = DRAGONWILDS_SYNC_NETWORK_URL
 
 
 def official_directory_source(token: str = "") -> dict:

@@ -15,6 +15,7 @@ from profile_store import APP_DATA_DIR
 from operator_identity import verify_world_identity
 from world_classification import normalize_world_classification
 from runtime_platforms import normalize_server_os, server_os_badge
+from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 
 
 DIRECTORY_PATH = APP_DATA_DIR / "world_heartbeat_directory.json"
@@ -25,7 +26,7 @@ PROBE_BUDGET_PER_REFRESH = 8
 PROTOCOL = "dragonwilds-world-sync"
 FINGERPRINT_RE = re.compile(r"^dws1-[0-9a-f]{24}$", re.I)
 DEFAULT_TTL_SECONDS = 300
-OFFICIAL_DIRECTORY_HOST = "dragonwilds-sync-directory.dragonwilds.workers.dev"
+OFFICIAL_DIRECTORY_HOST = urllib.parse.urlparse(DRAGONWILDS_SYNC_NETWORK_URL).hostname or ""
 
 
 def normalize_directory_sources(values: list[dict] | None, *, legacy_url: str = "", legacy_token: str = "") -> list[dict]:

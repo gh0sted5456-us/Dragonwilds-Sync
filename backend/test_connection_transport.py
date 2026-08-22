@@ -73,7 +73,7 @@ class ConnectionTransportTests(unittest.TestCase):
 
     def test_lan_source_uses_same_subnet_token_without_password(self):
         endpoint = network_client.normalize_endpoint("192.168.1.20:27051")
-        with patch.object(network_client, "_lan_token", return_value="lan-token") as token:
+        with patch.object(network_client, "_lan_token", return_value=("lan-token", "lan")) as token:
             self.assertEqual(network_client._auth_token(endpoint, "", credential_source="lan"), ("lan-token", "lan"))
             token.assert_called_once_with(endpoint)
 
@@ -151,8 +151,10 @@ class ConnectionTransportTests(unittest.TestCase):
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         broadcaster = None
         try:
+            fingerprint = "dws1-" + "a" * 24
             state.manifest = {"profile_id": "world-real", "profile_name": "Transport World", "version": 1, "files": [],
                 "mod_badges": ["PAKS", "UE4SS", "RUNESCHEMA"], "mod_summary": mods,
+                "world_sync": {"protocol": "dragonwilds-world-sync", "fingerprint": fingerprint},
                 "connection": {"internal_ip": "127.0.0.1", "sync_port": port, "game_port": 7777}}
             state.password = "BELTS"
             state.active_profile_id = ""
@@ -170,10 +172,12 @@ class ConnectionTransportTests(unittest.TestCase):
             self.assertEqual(identity["authentication"]["scope"], "world-sync")
             broadcaster = server_systems.Broadcaster(lambda: {"app": server_systems.DISCOVERY_MAGIC, "name": "Transport World",
                 "ip": "127.0.0.1", "port": port, "sync_port": port, "game_port": 7777,
+                "protocol": "dragonwilds-world-sync", "fingerprint": fingerprint,
                 "mod_badges": identity["mod_badges"], "mod_summary": identity["mod_summary"]})
             broadcaster.start(); time.sleep(0.15)
             discovered = next(row for row in server_systems.scan_for_servers(1.0) if int(row.get("sync_port") or 0) == port)
             self.assertTrue(discovered["mod_inventory_complete"])
+            self.assertTrue(discovered["identity_verified"])
             self.assertEqual(len(discovered["mod_summary"]), 180)
             normalized = world_directory.normalize_heartbeat({"protocol": "dragonwilds-world-sync", "fingerprint": "dws1-" + "a" * 24,
                 "world_name": "Transport World", "internal_ip": "127.0.0.1", "sync_port": port,

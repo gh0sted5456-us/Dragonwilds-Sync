@@ -33,7 +33,7 @@ from process_utils import check_output_hidden, popen_hidden, run_hidden
 from integrations import normalize_mod_source
 from network_health import summarize_client_reports
 from health_model import normalize_health_config, public_health_config, score_server_health
-from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, REGION_LABELS
+from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, trusted_ip_match, REGION_LABELS
 from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
 from client_layout import resolve_client_layout
@@ -1208,7 +1208,7 @@ class SyncState:
             return dict(self.token_sources.get(token) or {})
 
     def issue_lan_token(self, client_ip: str) -> str | None:
-        """Issue a normal bearer token only to a same-subnet private client.
+        """Issue a bearer token to a same-LAN or explicitly trusted IP.
 
         This is the password/key bypass used by LAN placards. It is deliberately
         constrained to private/link-local addresses and the host's own LAN subnet;
@@ -1216,28 +1216,29 @@ class SyncState:
         """
         with self.lock:
             enabled = bool(self.lan_trust_enabled)
-        if not enabled:
-            return None
+            policy = normalize_access_policy(self.access_policy)
+        trusted, trusted_reason = trusted_ip_match(str(client_ip or ""), policy)
         try:
             client = ipaddress.ip_address(str(client_ip).split('%', 1)[0])
             local = ipaddress.ip_address(local_ip_guess().split('%', 1)[0])
         except ValueError:
             return None
-        if client.is_loopback:
-            pass
-        elif not (client.is_private or client.is_link_local):
-            return None
-        elif client.version != local.version:
-            return None
-        else:
+        same_lan = False
+        if enabled and client.is_loopback:
+            same_lan = True
+        elif enabled and (client.is_private or client.is_link_local) and client.version == local.version:
             prefix = 24 if client.version == 4 else 64
             network = ipaddress.ip_network(f"{local}/{prefix}", strict=False)
-            if client not in network:
-                return None
+            same_lan = client in network
+        if not same_lan and not trusted:
+            return None
         token = secrets.token_hex(16)
+        source = "lan" if same_lan else "ip_allowlist"
         with self.lock:
             self.tokens.add(token)
-            self.token_sources[token] = {"credential_source": "lan", "auth_mode": "lan", "scope": "sync-read", "client_ip": str(client_ip or ""), "issued_at": time.time()}
+            self.token_sources[token] = {"credential_source": source, "auth_mode": source, "scope": "world-sync",
+                                         "client_ip": str(client_ip or ""), "trust_reason": trusted_reason if trusted else "same LAN subnet",
+                                         "issued_at": time.time()}
         return token
 
     def record_client_network(self, client_id: str, client_ip: str, network: dict | None) -> dict:
@@ -1570,8 +1571,11 @@ class SyncHandler(BaseHTTPRequestHandler):
             if not token:
                 self._send_json({"error": "LAN trust unavailable"}, 401); return
             with STATE.lock:
-                payload = {"token": token, "profile_id": STATE.manifest.get("profile_id"), "profile_name": STATE.manifest.get("profile_name"), "connection": STATE.manifest.get("connection") or {}}
-            STATE.activity(self.client_address[0], "authenticated by same-LAN trust")
+                context = STATE.token_sources.get(token) or {}
+                payload = {"token": token, "credential_source": context.get("credential_source") or "lan",
+                           "auth_mode": context.get("auth_mode") or "lan", "profile_id": STATE.manifest.get("profile_id"),
+                           "profile_name": STATE.manifest.get("profile_name"), "connection": STATE.manifest.get("connection") or {}}
+            STATE.activity(self.client_address[0], f"authenticated by {payload['auth_mode']} trust")
             self._send_json(payload); return
         if path == "/nonce":
             if not STATE.allow_nonce_request(self.client_address[0]): self._send_json({"error": "too many nonce requests"}, 429); return
@@ -1789,15 +1793,32 @@ def scan_for_servers(timeout: float = 3.0) -> list[dict]:
         port = int(info.get("sync_port") or info.get("port") or SYNC_PORT_DEFAULT)
         address = f"[{host}]" if ":" in host else host
         try:
-            with urllib.request.urlopen(f"http://{address}:{port}/identity", timeout=2.5) as response:
-                identity = json.loads(response.read(16 * 1024 * 1024))
+            from network_client import register_tls_pin, request as sync_request
+            scheme = "https" if info.get("sync_tls") else "http"
+            base_url = f"{scheme}://{address}:{port}"
+            if scheme == "https":
+                register_tls_pin(base_url, str(info.get("tls_cert_fingerprint") or ""))
+            response = sync_request(f"{base_url}/identity", timeout=2.5)
+            identity = json.loads(response.read(16 * 1024 * 1024))
+            world_sync = identity.get("world_sync") if isinstance(identity.get("world_sync"), dict) else {}
+            advertised_fingerprint = str(info.get("fingerprint") or "")
+            live_fingerprint = str(world_sync.get("fingerprint") or identity.get("launcher_fingerprint") or "")
+            info["identity_verified"] = bool(
+                advertised_fingerprint and live_fingerprint == advertised_fingerprint and
+                str(world_sync.get("protocol") or "") == WORLD_SYNC_PROTOCOL)
+            if not info["identity_verified"]:
+                info["identity_error"] = "The live Sync fingerprint did not match this LAN broadcast."
+                info["mod_inventory_complete"] = False
+                continue
             for key in ("description", "classification", "audience", "platform_compatibility", "tags", "mod_badges",
                         "mod_summary", "icon_b64", "banner_b64", "placard_background", "community", "community_rules"):
                 if key in identity:
                     info[key] = identity[key]
             info["mod_count"] = len(info.get("mod_summary") or [])
             info["mod_inventory_complete"] = True
-        except (OSError, ValueError, json.JSONDecodeError):
+        except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
+            info["identity_verified"] = False
+            info["identity_error"] = str(exc)
             info["mod_inventory_complete"] = False
     return results
 

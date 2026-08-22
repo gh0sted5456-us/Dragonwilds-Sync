@@ -112,6 +112,10 @@ def main():
         assert sync.issue_lan_token("192.168.50.22")
         assert sync.issue_lan_token("192.168.51.22") is None
         assert sync.issue_lan_token("8.8.8.8") is None
+        sync.configure_access_policy({}, {"trusted_ips": ["198.51.100.42"]})
+        trusted_token = sync.issue_lan_token("198.51.100.42")
+        assert trusted_token
+        assert sync.token_context(trusted_token)["auth_mode"] == "ip_allowlist"
     finally:
         server_systems.local_ip_guess = original_local_ip
 

@@ -57,6 +57,7 @@ def normalize_cidrs(value) -> list[str]:
 
 def default_access_policy() -> dict:
     return {
+        "trusted_ips": [],
         "blocked_ips": [],
         "blocked_profile_ids": [],
         "blocked_countries": [],
@@ -71,6 +72,7 @@ def normalize_access_policy(value) -> dict:
     base = deepcopy(default_access_policy())
     incoming = value if isinstance(value, dict) else {}
     # Accept legacy flat fields as well as the new policy object.
+    base["trusted_ips"] = normalize_cidrs(incoming.get("trusted_ips") or incoming.get("allowed_ips") or [])
     base["blocked_ips"] = normalize_cidrs(incoming.get("blocked_ips") or [])
     base["blocked_profile_ids"] = _clean_string_list(incoming.get("blocked_profile_ids"), max_items=20000)
     base["blocked_countries"] = [x for x in _clean_string_list(incoming.get("blocked_countries"), upper=True) if len(x) == 2]
@@ -89,7 +91,7 @@ def merge_access_policies(global_policy, world_policy) -> dict:
     a = normalize_access_policy(global_policy)
     b = normalize_access_policy(world_policy)
     result = default_access_policy()
-    for key in ("blocked_ips", "blocked_profile_ids", "blocked_countries", "blocked_regions", "blocked_vpn_providers"):
+    for key in ("trusted_ips", "blocked_ips", "blocked_profile_ids", "blocked_countries", "blocked_regions", "blocked_vpn_providers"):
         result[key] = list(dict.fromkeys([*a[key], *b[key]]))
     result["geo_lookup_enabled"] = bool(a.get("geo_lookup_enabled", True) and b.get("geo_lookup_enabled", True))
     for provider in VPN_PROVIDERS:
@@ -119,4 +121,19 @@ def direct_policy_match(client_ip: str, policy: dict) -> tuple[bool, str]:
                     return True, f"VPN provider policy {VPN_PROVIDERS.get(provider, provider)} ({rule})"
             except ValueError:
                 continue
+    return False, ""
+
+
+def trusted_ip_match(client_ip: str, policy: dict) -> tuple[bool, str]:
+    """Return whether a host-managed IP/CIDR may authenticate without a password."""
+    try:
+        address = ipaddress.ip_address(client_ip)
+    except ValueError:
+        return False, ""
+    for rule in normalize_access_policy(policy).get("trusted_ips") or []:
+        try:
+            if address in ipaddress.ip_network(rule, strict=False):
+                return True, f"trusted IP/CIDR {rule}"
+        except ValueError:
+            continue
     return False, ""

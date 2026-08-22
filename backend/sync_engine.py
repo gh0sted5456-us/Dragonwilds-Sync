@@ -610,6 +610,14 @@ def resolve_verified_manifest(world: dict, client_platform: str = "", client_pro
             if not ok:
                 attempts.append(f"{route}: {detail}")
                 continue
+            shared = world.get("shared") if isinstance(world.get("shared"), dict) else {}
+            claimed = str(shared.get("fingerprint") or shared.get("fingerprint_claimed") or "")
+            if claimed:
+                world_sync = manifest.get("world_sync") if isinstance(manifest.get("world_sync"), dict) else {}
+                actual = str(world_sync.get("fingerprint") or manifest.get("launcher_fingerprint") or "")
+                if str(world_sync.get("protocol") or "") != "dragonwilds-world-sync" or actual != claimed:
+                    attempts.append(f"{route}: The authenticated manifest fingerprint does not match the selected World.")
+                    continue
             return route, endpoint, manifest, token, base_url, ping_ms
         except Exception as exc:
             attempts.append(f"{route}: {exc}")

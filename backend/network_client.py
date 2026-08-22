@@ -160,18 +160,16 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
         raise ConnectionError(f"Could not reach server: {exc.reason}") from exc
 
 
-def _lan_token(endpoint) -> str:
-    try:
-        address = ipaddress.ip_address(endpoint.host.split('%', 1)[0])
-    except ValueError as exc:
-        raise ConnectionError("LAN trust requires a private IP address.") from exc
-    if not (address.is_private or address.is_loopback or address.is_link_local):
-        raise ConnectionError("LAN trust is only available to private-network addresses.")
+def _lan_token(endpoint) -> tuple[str, str]:
+    # The host is authoritative here: it grants this endpoint only when the
+    # observed source is on its LAN or matches its explicit trusted-IP policy.
+    # No credential is included in this probe.
     data = json.loads(request(f"{endpoint.base_url}/lan-auth", timeout=3.5).read())
     token = str(data.get("token") or "").strip()
     if not token:
         raise ConnectionError("The server did not grant same-LAN trust.")
-    return token
+    source = str(data.get("credential_source") or "lan")
+    return token, source if source in {"lan", "ip_allowlist"} else "lan"
 
 
 ALLOWED_CREDENTIAL_SOURCES = {"linked", "manual", "imported-rsdwl", "online-feed", "lan", "legacy-linked", "shared"}
@@ -189,13 +187,13 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     # authorize while the protected manifest/file transfer rejects the client.
     password = str(password or "").strip()
     source = _credential_source(credential_source)
-    if source == "lan":
+    if source == "lan" or not password:
         try:
-            return _lan_token(endpoint), "lan"
+            return _lan_token(endpoint)
         except ConnectionError:
-            # A saved LAN profile may later be reached through a routed/VPN
-            # address. In that case its World Password remains a valid fallback.
-            if not password:
+            # Same-LAN and host-allowlisted IPs need no password. Other clients
+            # continue through the ordinary challenge/fallback authentication.
+            if source == "lan" and not password:
                 raise
     nonce = json.loads(request(f"{base}/nonce").read())["nonce"]
     # The player connection contract is intentionally only IP + exact World

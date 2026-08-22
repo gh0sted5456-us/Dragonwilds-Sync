@@ -1,10 +1,13 @@
-name: Release Candidate Packages
+name: Desktop Release Packages
 
 on:
   workflow_dispatch:
   push:
     branches:
       - testing-ground
+      - main
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
@@ -14,7 +17,7 @@ permissions:
 
 jobs:
   ubuntu-package:
-    name: Ubuntu 24.04 AppImage RC
+    name: Ubuntu 24.04 AppImage
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -47,10 +50,10 @@ jobs:
         run: bash scripts/build_linux.sh
       - name: Smoke-test packaged AppImage
         run: bash scripts/test_packaged_linux.sh
-      - name: Upload Ubuntu release candidate
+      - name: Upload Ubuntu AppImage
         uses: actions/upload-artifact@v6
         with:
-          name: Dragonwilds-Sync-Ubuntu-RC
+          name: Dragonwilds-Sync-Ubuntu-AppImage
           if-no-files-found: error
           path: |
             release/*Ubuntu*.AppImage
@@ -59,7 +62,7 @@ jobs:
             dist-service/DragonwildsSync.Service
 
   windows-package:
-    name: Windows Portable RC
+    name: Windows Portable EXE
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -131,10 +134,10 @@ jobs:
           ) | Set-Content .\release\package-test-report-windows.txt -Encoding UTF8
           $hash = Get-FileHash $portable.FullName -Algorithm SHA256
           "$($hash.Hash.ToLower())  $($portable.Name)" | Set-Content .\release\checksums-windows.sha256 -Encoding ASCII
-      - name: Upload Windows release candidate
+      - name: Upload Windows Portable EXE
         uses: actions/upload-artifact@v6
         with:
-          name: Dragonwilds-Sync-Windows-RC
+          name: Dragonwilds-Sync-Windows-Portable
           if-no-files-found: error
           path: |
             release/*.exe
@@ -142,12 +145,59 @@ jobs:
             release/package-test-report-windows.txt
             build.log
 
-  rc-summary:
-    name: RC package summary
+  package-summary:
+    name: Package summary
     needs: [ubuntu-package, windows-package]
     runs-on: ubuntu-24.04
     steps:
       - run: |
-          echo 'Both packaged release-candidate jobs passed on the pinned Node 24 LTS toolchain.'
+          echo 'Both desktop package jobs passed on the pinned Node 24 LTS toolchain.'
           echo 'V3 Phase 1, Phase 2 and Phase 3 contracts passed on both package platforms.'
           echo 'Production Cloudflare V3 route deployment and real Dragonwilds/cross-platform acceptance remain external gates.'
+
+  publish-github-release:
+    name: Publish tagged GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ubuntu-package, windows-package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Dragonwilds-Sync-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Validate official release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          executables=(release-assets/*.exe)
+          appimages=(release-assets/*.AppImage)
+          windows_checksums=(release-assets/checksums-windows.sha256)
+          linux_checksums=(release-assets/checksums-linux.sha256)
+          [[ ${#executables[@]} -eq 1 ]] || { echo "Expected exactly one Windows Portable EXE; found ${#executables[@]}" >&2; exit 1; }
+          [[ ${#appimages[@]} -eq 1 ]] || { echo "Expected exactly one Linux AppImage; found ${#appimages[@]}" >&2; exit 1; }
+          [[ ${#windows_checksums[@]} -eq 1 ]] || { echo 'Windows checksum is missing.' >&2; exit 1; }
+          [[ ${#linux_checksums[@]} -eq 1 ]] || { echo 'Linux checksum is missing.' >&2; exit 1; }
+          chmod +x "${appimages[0]}"
+          ls -lh release-assets
+
+      - name: Publish EXE and AppImage to GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "${GITHUB_REF_NAME}" \
+            release-assets/*.exe \
+            release-assets/*.AppImage \
+            release-assets/checksums-*.sha256 \
+            release-assets/package-test-report-*.txt \
+            --repo "${GITHUB_REPOSITORY}" \
+            --verify-tag \
+            --generate-notes \
+            --title "Dragonwilds Sync ${GITHUB_REF_NAME}"

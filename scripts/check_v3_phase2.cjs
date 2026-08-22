@@ -25,8 +25,9 @@ requireText(phase2Service, [
 ]);
 requireText('electron/main.cjs', [
   "--quick", "--profile", "--mode", "--auto-start", "dragonwilds:create-v3-quick-shortcut",
-  "--quick --profile=${id} --mode=${shortcutMode}", "require('./main-v2.cjs')",
+  "buildQuickShortcutArgs", "require('./quick_shortcut.cjs')", "require('./main-v2.cjs')",
 ]);
+requireText('electron/quick_shortcut.cjs', ["--quick --profile=${id} --mode=${normalizedMode}", "--auto-start", "PROFILE_ID_PATTERN"]);
 requireText('electron/preload-v2.cjs', ['quickContext', 'createQuickShortcut', "exposeInMainWorld('dragonwilds'", "exposeInMainWorld('dragonwildsV3'"]);
 requireText('renderer/app.js', ['v3Quick', 'app-v2.js']);
 requireText('renderer/release-v3-phase2.js', [

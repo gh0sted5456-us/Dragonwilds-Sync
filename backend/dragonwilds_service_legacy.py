@@ -21,7 +21,7 @@ from pathlib import Path
 from process_utils import run_hidden
 
 from network_client import download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, worldsave_status
-from sync_engine import launch_game, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
+from sync_engine import activate_or_adopt_client_world_profile, launch_game, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
 from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
@@ -2475,19 +2475,14 @@ def handle(method: str, params: dict) -> object:
             raise ValueError("The configured Dragonwilds game folder is unavailable.")
         client_state = state.setdefault("client", {})
         live_world_id = str(client_state.get("live_world_id") or "").strip()
-        if not live_world_id:
-            # First adoption preserves the current directory as the selected
-            # profile. It must never turn an existing modded install into an
-            # empty profile simply because this is the first manual switch.
-            snapshot_client_world(profile_id, install_dir)
-            live_world_id = profile_id
         if live_world_id != profile_id:
-            cache_world_logs(live_world_id, game_dir)
+            if live_world_id:
+                cache_world_logs(live_world_id, game_dir)
             smart_character_switch(live_world_id, profile_id, game_dir,
                                    state.setdefault("player_profile", {}).get("character_worlds") or {},
                                    client_state.get("world_character_selection") or {},
                                    state.setdefault("player_profile", {}).get("character_profiles") or {})
-            switch_client_world_profile(live_world_id, profile_id, install_dir)
+        activation = activate_or_adopt_client_world_profile(live_world_id or None, profile_id, install_dir)
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
         direct_connect = clear_direct_connect_config(game_dir)
         snapshot_client_world(profile_id, install_dir)
@@ -2500,7 +2495,7 @@ def handle(method: str, params: dict) -> object:
         client_state["active_private_world_id"] = profile_id
         _record_notification(state, "World profile activated", f"{profile.get('name') or profile_id} · files, mods, settings and active marker exchanged", "success", key=f"profile-active:{profile_id}")
         save_state(state)
-        return {"profile": profile, "units": units, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect}, "state": public_state(state)}
+        return {"profile": profile, "units": units, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "activation": activation, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect}, "state": public_state(state)}
 
     if method == "singleplayer.profile.unload":
         client_state = state.setdefault("client", {})
@@ -2749,7 +2744,7 @@ def handle(method: str, params: dict) -> object:
                                state.setdefault("client", {}).get("world_character_selection") or {},
                                state.setdefault("player_profile", {}).get("character_profiles") or {})
         if live_world_id != profile_id:
-            switch_client_world_profile(live_world_id, profile_id, install_dir)
+            activate_or_adopt_client_world_profile(live_world_id, profile_id, install_dir)
             state["client"]["live_world_id"] = profile_id
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
         snapshot_client_world(profile_id, install_dir)

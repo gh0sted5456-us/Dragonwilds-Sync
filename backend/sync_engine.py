@@ -26,6 +26,7 @@ CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_STATE_DIR = ".dwsync"
 STATE_FILE = "state.json"
 META_FILE = "manifest-meta.json"
+SNAPSHOT_MARKER = ".snapshot-ready"
 PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # These are launcher/runtime infrastructure, never World-owned mod content.
 # They remain installed across profile swaps and are omitted from snapshots.
@@ -170,6 +171,15 @@ def client_world_dir(world_id: str) -> Path:
     return CLIENT_WORLDS_DIR / world_id / "snapshot"
 
 
+def client_world_has_snapshot(world_id: str) -> bool:
+    root = client_world_dir(str(world_id or "").strip())
+    if not root.is_dir():
+        return False
+    if (root / SNAPSHOT_MARKER).is_file():
+        return True
+    return any(path.is_file() for path in root.rglob("*"))
+
+
 def copy_tree(src: Path, dst: Path) -> None:
     if src.exists():
         shutil.copytree(src, dst, dirs_exist_ok=True)
@@ -262,6 +272,28 @@ def snapshot_client_world(world_id: str, selected_root: Path) -> None:
     if state_path.exists():
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(state_path, destination / STATE_FILE)
+    destination.mkdir(parents=True, exist_ok=True)
+    (destination / SNAPSHOT_MARKER).write_text("ready\n", encoding="utf-8")
+
+
+def activate_or_adopt_client_world_profile(outgoing_world_id: str | None, incoming_world_id: str,
+                                           selected_root: Path) -> dict:
+    """Materialize an existing snapshot, or adopt the live install for a new profile."""
+    outgoing = str(outgoing_world_id or "").strip()
+    incoming = str(incoming_world_id or "").strip()
+    if not incoming:
+        raise ValueError("Incoming World profile is required")
+    if outgoing == incoming:
+        return {"profile_id": incoming, "clean": True, "adopted": False, "already_active": True}
+    if not outgoing and not client_world_has_snapshot(incoming):
+        snapshot_client_world(incoming, selected_root)
+        report = audit_client_world_profile(incoming, selected_root)
+        if not report["clean"]:
+            raise ConnectionError(f"Profile adoption cleanliness check failed: {report['slots']}")
+        write_active_world(resolve_client_layout(selected_root).game_root, incoming, "singleplayer")
+        return {**report, "adopted": True, "already_active": False}
+    report = switch_client_world_profile(outgoing or None, incoming, selected_root)
+    return {**report, "adopted": False, "already_active": False}
 
 
 def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> dict:

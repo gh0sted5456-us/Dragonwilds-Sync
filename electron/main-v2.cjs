@@ -8,6 +8,7 @@ const { pathToFileURL } = require('url');
 const { DiscordRichPresence } = require('./discord_rpc.cjs');
 const { checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate } = require('./app_updater.cjs');
 const { NexusAdapter } = require('./nexus_adapter.cjs');
+const { buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId } = require('./quick_shortcut.cjs');
 
 function startupPerformanceSettings() {
   const defaults={hardware_acceleration:true,renderer_memory_mb:0};
@@ -616,7 +617,7 @@ function writeWorldIcon(worldId, iconData, iconAsset = '') {
 }
 function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind }) {
   if (process.platform !== 'win32') throw new Error('Send to Desktop is currently a Windows feature.');
-  const id = String(worldId || '').trim(); if (!id) throw new Error('World ID is required.');
+  const id = normalizeProfileId(worldId);
   const kind = ['world', 'private', 'server'].includes(String(worldKind || '').toLowerCase()) ? String(worldKind).toLowerCase() : 'world';
   const safeName = String(name || 'Dragonwilds World').replace(/[<>:"/\\|?*]/g, '').trim() || 'Dragonwilds World';
   let resolvedIconData = String(iconData || '');
@@ -626,11 +627,12 @@ function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind }) 
     if (fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) resolvedIconData = `data:image/png;base64,${fs.readFileSync(assetPath).toString('base64')}`;
   }
   const shortcutPath = path.join(app.getPath('desktop'), `${safeName}.lnk`); const icon = writeWorldIcon(id, resolvedIconData);
-  const quickArgs = `--quick-launch --world-id=${id} --world-kind=${kind}`;
+  const mode = modeForWorldKind(kind);
+  const quickArgs = buildQuickShortcutArgs({ profileId: id, mode, autoStart: true });
   const target = process.execPath; const args = app.isPackaged ? quickArgs : `"${projectRoot()}" ${quickArgs}`;
   const ok = shell.writeShortcutLink(shortcutPath, 'create', { target, args, description: `Quick launch ${safeName} with Dragonwilds Sync`, cwd: app.isPackaged ? path.dirname(process.execPath) : projectRoot(), icon, iconIndex: 0 });
   if (!ok) throw new Error('Windows did not create the desktop shortcut.');
-  return { ok: true, path: shortcutPath, icon };
+  return { ok: true, path: shortcutPath, icon, profileId: id, mode, arguments: quickArgs };
 }
 
 ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {

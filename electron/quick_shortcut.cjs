@@ -1,0 +1,26 @@
+'use strict';
+
+const PROFILE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,239}$/;
+
+function normalizeProfileId(value) {
+  const id = String(value || '').trim();
+  if (!PROFILE_ID_PATTERN.test(id)) throw new Error('World profile ID contains unsupported characters.');
+  return id;
+}
+
+function normalizeQuickMode(value, fallback = 'player') {
+  const mode = String(value || '').trim().toLowerCase();
+  return ['player', 'coop', 'server'].includes(mode) ? mode : fallback;
+}
+
+function modeForWorldKind(value) {
+  return String(value || '').trim().toLowerCase() === 'server' ? 'server' : 'player';
+}
+
+function buildQuickShortcutArgs({ profileId, mode = 'player', autoStart = true } = {}) {
+  const id = normalizeProfileId(profileId);
+  const normalizedMode = normalizeQuickMode(mode);
+  return `--quick --profile=${id} --mode=${normalizedMode}${autoStart ? ' --auto-start' : ''}`;
+}
+
+module.exports = { buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId, normalizeQuickMode };

@@ -68,6 +68,16 @@ def main():
             assert (live_mods / "RSDWTools" / "enabled.txt").is_file()
             assert (live_mods / "ModA").is_dir() and not (live_mods / "ModB").exists()
             assert live_config.read_text(encoding="utf-8") == "world=A"
+
+            # Lost launcher state must not overwrite a profile that already has
+            # a durable snapshot. Existing B is restored; brand-new C adopts
+            # the currently materialized install exactly once.
+            restored = sync_engine.activate_or_adopt_client_world_profile(None, "B", selected)
+            assert restored["adopted"] is False and restored["clean"] is True
+            assert (live_mods / "ModB").is_dir() and not (live_mods / "ModA").exists()
+            adopted = sync_engine.activate_or_adopt_client_world_profile(None, "C", selected)
+            assert adopted["adopted"] is True and sync_engine.client_world_has_snapshot("C")
+            assert (sync_engine.client_world_dir("C") / "mods" / "ue4ss_mods" / "ModB" / "main.lua").read_text(encoding="utf-8") == "B"
         finally:
             sync_engine.CLIENT_WORLDS_DIR = old_worlds
             client_layout.LOCAL_APPDATA = old_local_appdata

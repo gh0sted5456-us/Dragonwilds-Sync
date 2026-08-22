@@ -3,19 +3,19 @@
 // stable-profile-id window launch contract before main-v2.cjs initializes.
 const { app, ipcMain, shell } = require('electron');
 const path = require('path');
+const { buildQuickShortcutArgs, normalizeProfileId, normalizeQuickMode } = require('./quick_shortcut.cjs');
 
 
 function createV3QuickShortcut(data = {}) {
   if (process.platform !== 'win32') throw new Error('Create Quick Shortcut is currently a Windows desktop feature.');
-  const id = String(data.profileId || data.worldId || '').trim();
-  if (!id) throw new Error('World profile ID is required.');
-  const shortcutMode = ['player', 'coop', 'server'].includes(String(data.mode || '').toLowerCase()) ? String(data.mode).toLowerCase() : 'player';
+  const id = normalizeProfileId(data.profileId || data.worldId);
+  const shortcutMode = normalizeQuickMode(data.mode);
   const auto = data.autoStart === true;
   const baseName = String(data.name || 'Dragonwilds World').replace(/[<>:"/\\|?*]/g, '').trim() || 'Dragonwilds World';
   const role = shortcutMode === 'server' ? 'Server' : (shortcutMode === 'coop' ? 'Co-Op' : 'Player');
   const safeName = `${baseName} · ${role}`;
   const shortcutPath = path.join(app.getPath('desktop'), `${safeName}.lnk`);
-  const quickArgs = `--quick --profile=${id} --mode=${shortcutMode}${auto ? ' --auto-start' : ''}`;
+  const quickArgs = buildQuickShortcutArgs({ profileId: id, mode: shortcutMode, autoStart: auto });
   const projectRoot = path.resolve(__dirname, '..');
   const target = process.execPath;
   const shortcutArgs = app.isPackaged ? quickArgs : `"${projectRoot}" ${quickArgs}`;

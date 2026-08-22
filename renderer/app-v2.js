@@ -1287,7 +1287,7 @@
         const played = await api.invoke('server.world.quick_play', { id: world.id }); if (played.state) state.data = played.state;
         state.quickLaunch.stage='ready'; state.quickLaunch.detail='Hosted World is online. Dragonwilds is launching now.'; render(); setTimeout(() => window.dragonwilds.windowClose(), 1100); return;
       }
-      if (world.kind === 'singleplayer') {
+      if (quickWorldKind === 'private' || world.kind === 'singleplayer') {
         state.quickLaunch.stage='syncing'; state.quickLaunch.detail='Restoring the SinglePlayer mod and character profile…'; render();
         const played = await api.invoke('singleplayer.play', { id: world.id }); if (played.state) state.data = played.state;
         state.quickLaunch.stage='ready'; state.quickLaunch.detail='SinglePlayer is launching now.'; render(); setTimeout(() => window.dragonwilds.windowClose(), 1100); return;

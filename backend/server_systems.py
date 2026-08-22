@@ -1020,7 +1020,7 @@ class SyncState:
             geo = self._geo_for(ip, allow_lookup=False)
             network = next((r.get("network") for r in reports.values() if isinstance(r, dict) and r.get("ip") == ip and r.get("network")), None)
             by_ip[ip] = {
-                "ip": ip, "credential_source": ctx.get("credential_source") or "", "auth_mode": ctx.get("auth_mode") or "",
+                "ip": ip, "profile_id": ctx.get("client_profile_id") or "", "credential_source": ctx.get("credential_source") or "", "auth_mode": ctx.get("auth_mode") or "",
                 "connected_since": issued_at, "last_seen": last_seen,
                 "country": geo.get("country") or "", "region": geo.get("region") or "", "city": geo.get("city") or "",
                 "lan": bool(geo.get("lan")), "network": network or {},
@@ -1093,7 +1093,7 @@ class SyncState:
             self.pending_nonces[nonce] = time.time()
         return nonce
 
-    def check_proof(self, nonce: str, proof: str, *, mode: str = "world_password", credential_source: str = "linked", client_ip: str = "") -> dict | None:
+    def check_proof(self, nonce: str, proof: str, *, mode: str = "world_password", credential_source: str = "linked", client_ip: str = "", client_profile_id: str = "") -> dict | None:
         source = str(credential_source or "linked").strip().lower()[:32]
         if source not in {"linked", "manual", "imported-rsdwl", "online-feed", "legacy-linked", "shared"}:
             source = "linked"
@@ -1109,11 +1109,16 @@ class SyncState:
         expected = hmac.new(world_password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, str(proof or "")):
             return None
+        profile_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(client_profile_id or "").strip())[:96]
+        with self.lock:
+            if profile_id and profile_id in set(normalize_access_policy(self.access_policy).get("blocked_profile_ids") or []):
+                return {"blocked": True, "reason": f"profile policy {profile_id}", "client_profile_id": profile_id}
         with self.lock:
             scope = "world-sync"
             token = secrets.token_hex(16)
             self.tokens.add(token)
-            self.token_sources[token] = {"credential_source": source, "auth_mode": mode, "scope": scope, "client_ip": str(client_ip or ""), "issued_at": time.time()}
+            self.token_sources[token] = {"credential_source": source, "auth_mode": mode, "scope": scope, "client_ip": str(client_ip or ""),
+                                         "client_profile_id": profile_id, "issued_at": time.time()}
             # The same World Password protects Sync payloads and Dragonwilds.
             # Public heartbeat/identity metadata does not require this token.
             return {"token": token, **self.token_sources[token]}
@@ -1277,7 +1282,11 @@ class SyncHandler(BaseHTTPRequestHandler):
                 result = STATE.check_proof(str(body.get("nonce", "")), str(body.get("proof", "")),
                                            mode="world_password",
                                            credential_source=str(body.get("credential_source") or "linked"),
-                                           client_ip=self.client_address[0])
+                                           client_ip=self.client_address[0], client_profile_id=str(body.get("client_profile_id") or ""))
+                if result and result.get("blocked"):
+                    STATE.activity(self.client_address[0], f"blocked authenticated profile ({result.get('client_profile_id')})")
+                    self._send_json({"error": "blocked by server access policy", "blocked": True,
+                                     "reason": result.get("reason"), "reason_kind": "profile"}, 403); return
                 if result:
                     STATE.activity(self.client_address[0], f"authenticated via {result.get('credential_source')} ({result.get('auth_mode')})")
                     self._send_json({"token": result.get("token"), "credential_source": result.get("credential_source"), "scope": result.get("scope")})

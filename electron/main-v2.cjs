@@ -208,7 +208,7 @@ function serviceTimeoutFor(method) {
   return DEFAULT_SERVICE_TIMEOUT_MS;
 }
 function serviceEnvironment() {
-  const env = { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', DWSYNC_RESOURCES_DIR: app.isPackaged ? path.join(process.resourcesPath, 'resources') : path.join(projectRoot(), 'resources') };
+  const env = { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', DWSYNC_PARENT_PID: String(process.pid), DWSYNC_RESOURCES_DIR: app.isPackaged ? path.join(process.resourcesPath, 'resources') : path.join(projectRoot(), 'resources') };
   if (process.platform !== 'linux') return env;
   env.DRAGONWILDS_SYNC_APPDATA ||= app.getPath('userData');
   if (!env.LOCALAPPDATA) {

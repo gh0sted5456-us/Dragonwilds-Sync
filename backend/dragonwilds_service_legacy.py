@@ -1153,19 +1153,86 @@ def _run_server_update_job(job_id: str, install_dir: str, steamcmd_dir: str) -> 
 def _set_world_sync_job(job_id: str, **patch) -> None:
     with _WORLD_SYNC_LOCK:
         job = _WORLD_SYNC_JOBS.setdefault(job_id, {"id": job_id, "status": "queued", "phase": "connecting", "percent": 0})
+        previous = (job.get("status"), job.get("phase"), job.get("message"))
         job.update(patch); job["updated_at"] = time.time()
+        current = (job.get("status"), job.get("phase"), job.get("message"))
+        if current != previous and (job.get("phase") or job.get("message")):
+            job.setdefault("events", []).append({
+                "at": job["updated_at"], "status": job.get("status") or "running",
+                "phase": job.get("phase") or "", "message": job.get("message") or "",
+                "current_file": job.get("current_file") or "", "changed_files": job.get("changed_files"),
+                "unchanged_files": job.get("unchanged_files"), "downloaded_bytes": job.get("downloaded_bytes"),
+            })
+            job["events"] = job["events"][-250:]
 
 
-def _run_world_sync_job(job_id: str, world_id: str, action: str) -> None:
+def _write_world_sync_diagnostic(job_id: str, terminal_status: str) -> str:
+    with _WORLD_SYNC_LOCK:
+        job = deepcopy(_WORLD_SYNC_JOBS.get(job_id) or {})
+    target_root = Path(os.getenv("DWSYNC_DIAGNOSTICS_DIR") or (Path.home() / "Downloads"))
+    target_root.mkdir(parents=True, exist_ok=True)
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime(float(job.get("started_at") or time.time())))
+    safe_world = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(job.get("world_name") or "world")).strip("-.")[:48] or "world"
+    target = target_root / f"Dragonwilds-Sync-{safe_world}-{stamp}-{job_id[:8]}.txt"
+    result = job.get("result") if isinstance(job.get("result"), dict) else {}
+    acknowledgements = result.get("acknowledgements") if isinstance(result.get("acknowledgements"), dict) else {}
+    lines = [
+        "Dragonwilds Sync connection diagnostic", "=" * 40,
+        f"Result: {str(terminal_status or job.get('status') or 'unknown').upper()}",
+        f"World: {job.get('world_name') or job.get('world_id') or 'unknown'}",
+        f"World profile: {job.get('world_id') or 'unknown'}",
+        f"Client profile: {job.get('client_profile_id') or acknowledgements.get('client_profile_id') or 'unknown'}",
+        f"Action: {job.get('action') or 'sync'}", f"Route: {result.get('route') or 'not established'}",
+        f"Endpoint: {result.get('endpoint') or 'not established'}", f"Error: {job.get('error') or 'none'}", "",
+        "Acknowledgements", "----------------",
+        f"Host authenticated client: {'yes' if acknowledgements.get('host_authenticated') else 'no'}",
+        f"Host manifest received: {'yes' if acknowledgements.get('host_manifest_received') else 'no'}",
+        f"Client files verified: {'yes' if acknowledgements.get('client_files_verified') else 'no'}",
+        f"Host confirmed final match: {'yes' if acknowledgements.get('host_match_confirmed') else 'no'}",
+        f"Manifest version: {acknowledgements.get('host_manifest_version') or 'unknown'}",
+        f"Manifest fingerprint: {acknowledgements.get('host_manifest_fingerprint') or 'unknown'}", "",
+        "Transfer summary", "----------------",
+        f"Files transferred: {int(result.get('downloaded') or job.get('changed_files') or 0)}",
+        f"Bytes transferred: {int(result.get('downloaded_bytes') or job.get('downloaded_bytes') or 0)}",
+        f"Files unchanged: {int(result.get('up_to_date') or job.get('unchanged_files') or 0)}",
+        f"Files removed: {int(result.get('removed') or 0)}",
+    ]
+    changed = [str(item) for item in (result.get("changed_files") or [])]
+    if changed:
+        lines.extend(["", "Transferred files", "----------------", *changed])
+    lines.extend(["", "Connection timeline", "-------------------"])
+    for event in job.get("events") or []:
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(event.get("at") or 0)))
+        detail = f" [{event.get('phase') or event.get('status')}] {event.get('message') or ''}"
+        if event.get("current_file"): detail += f" ({event['current_file']})"
+        lines.append(when + detail)
+    lines.extend(["", "Security note: World Passwords, authentication proofs, and bearer tokens are never written to this report."])
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(target)
+
+
+def _run_world_sync_job(job_id: str, world_id: str, action: str, diagnostics: bool = False) -> None:
     try:
         _set_world_sync_job(job_id, status="running", phase="connecting", message="Connecting to the World host", percent=2)
         response = handle("world.play" if action == "play" else "world.sync", {"id": world_id, "_sync_job_id": job_id})
         result = response.get("result") if isinstance(response, dict) else {}
-        _set_world_sync_job(job_id, status="complete", phase="ready", message="Profile matched and ready", percent=100,
+        _set_world_sync_job(job_id, status="running", phase="ready", message="Client and host confirmed a complete profile match", percent=100,
                             changed_files=int((result or {}).get("downloaded") or 0), unchanged_files=int((result or {}).get("up_to_date") or 0),
-                            downloaded_bytes=int((result or {}).get("downloaded_bytes") or 0), response=response)
+                            downloaded_bytes=int((result or {}).get("downloaded_bytes") or 0), result=result or {}, response=response)
+        diagnostic_path = ""
+        diagnostic_error = ""
+        if diagnostics:
+            try: diagnostic_path = _write_world_sync_diagnostic(job_id, "complete")
+            except Exception as exc: diagnostic_error = str(exc)
+        _set_world_sync_job(job_id, status="complete", diagnostic_path=diagnostic_path, diagnostic_error=diagnostic_error)
     except Exception as exc:
-        _set_world_sync_job(job_id, status="failed", phase="failed", message=str(exc), error=str(exc))
+        _set_world_sync_job(job_id, status="running", phase="failed", message=str(exc), error=str(exc))
+        diagnostic_path = ""
+        diagnostic_error = ""
+        if diagnostics:
+            try: diagnostic_path = _write_world_sync_diagnostic(job_id, "failed")
+            except Exception as report_exc: diagnostic_error = str(report_exc)
+        _set_world_sync_job(job_id, status="failed", diagnostic_path=diagnostic_path, diagnostic_error=diagnostic_error)
 
 
 def handle(method: str, params: dict) -> object:
@@ -1182,9 +1249,16 @@ def handle(method: str, params: dict) -> object:
         world_id = str(params.get("id") or "")
         if not find_world(state, world_id): raise KeyError("World not found")
         action = "sync" if str(params.get("action") or "play").lower() == "sync" else "play"
+        application = state.get("application") or {}
+        diagnostics = bool(params.get("diagnostics", application.get("connection_diagnostic_reports", False)))
+        world = find_world(state, world_id) or {}
         job_id = secrets.token_hex(12)
-        _set_world_sync_job(job_id, status="queued", phase="connecting", message="Sync queued", percent=0)
-        threading.Thread(target=_run_world_sync_job, args=(job_id, world_id, action), daemon=True).start()
+        _set_world_sync_job(job_id, status="queued", phase="connecting", message="Sync queued", percent=0,
+                            started_at=time.time(), world_id=world_id,
+                            world_name=str(world.get("nickname") or (world.get("identity") or {}).get("world_name") or "World"),
+                            client_profile_id=str((state.get("client") or {}).get("client_id") or "client"),
+                            action=action, diagnostics=diagnostics)
+        threading.Thread(target=_run_world_sync_job, args=(job_id, world_id, action, diagnostics), daemon=True).start()
         return {"job_id": job_id, "status": "queued"}
 
     if method == "world.sync.job.status":
@@ -5703,22 +5777,25 @@ def _persist_directory_web_settings(config: dict) -> None:
 
 
 def _directory_public_worlds() -> list[dict]:
-    """Supply the self-hosted website with the same layered discovery data.
+    """Supply WebHost/Cloudflare only with fingerprint-verified Sync Worlds.
 
-    This remains read-only and public-safe.  Native sessions are not dropped
-    merely because they do not answer the Sync fingerprint; the website and
-    launcher annotate/promote verified matches independently.
+    Native Dragonwilds session discovery belongs to the game-facing browser.
+    The website is a Sync directory and must never turn a gameplay-only
+    announcement into an apparent file-transfer endpoint.
     """
     state = load_state(); client = state.get("client") or {}; rows: list[dict] = []
-    # WebHost republishes every public-safe World the application knows: saved
-    # links/imported Manifest collections, curated entries, directory feeds,
-    # and the current public-game discovery cache. DirectoryHost then merges
-    # verified fingerprints first and exact World Name + IP second.
+    # Saved links, curated manifests and directory feeds are eligible only
+    # after they carry the exact Sync protocol and a valid dws1 fingerprint.
+    # Gameplay-only discovered_worlds are intentionally excluded.
     for world in [
         *(client.get("worlds") or []), *(client.get("curated_worlds") or []),
-        *(client.get("discovered_worlds") or []), *(client.get("directory_worlds") or []),
+        *(client.get("directory_worlds") or []),
     ]:
         if not isinstance(world, dict): continue
+        identity = world.get("shared") if isinstance(world.get("shared"), dict) else {}
+        fingerprint = str(identity.get("fingerprint") or "")
+        if str(identity.get("protocol") or "") != WORLD_SYNC_PROTOCOL or not FINGERPRINT_RE.fullmatch(fingerprint):
+            continue
         clone = deepcopy(world); clone.pop("credentials", None)
         shared = clone.setdefault("shared", {})
         for key in ("password", "server_key", "share_access_key", "directory_token", "publisher_token"):
@@ -5731,6 +5808,9 @@ def _directory_public_worlds() -> list[dict]:
         classification = profile.get("classification") or {}; is_active = profile_id == active_id
         metadata_cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
         live_public = SHARE.broadcast_payload() if is_active and SHARE.httpd else {}
+        fingerprint = str(live_public.get("fingerprint") or sync.get("fingerprint") or profile.get("fingerprint") or "")
+        if not is_active or not SHARE.httpd or not FINGERPRINT_RE.fullmatch(fingerprint):
+            continue
         public_mod_badges = list(live_public.get("mod_badges") or metadata_cache.get("mod_badges") or profile.get("mod_badges") or [])
         public_mod_summary = list(live_public.get("mod_summary") or metadata_cache.get("mod_summary") or profile.get("mod_summary") or [])
         rows.append({
@@ -5742,7 +5822,7 @@ def _directory_public_worlds() -> list[dict]:
             "internet_strength": dict(((profile.get("health_config") or {}).get("host_network") or host_benchmark)),
             "platform_compatibility": dict(profile.get("platform_compatibility") or {"pc": True, "steam": True, "epic": True}),
             "icon_b64": str(profile.get("icon_b64") or ""),
-            "banner_b64": str(profile.get("banner_b64") or ""), "online": bool(is_active and runtime.get("running")),
+            "banner_b64": str(profile.get("banner_b64") or ""), "online": True,
             "placard_background": str(profile.get("placard_background") or "1"),
             "players": len(runtime.get("players") or []) if is_active else 0, "max_players": int(profile.get("max_players") or 0),
             "cl_version": (dict(runtime.get("cl_version") or {}) if is_active else
@@ -5752,7 +5832,7 @@ def _directory_public_worlds() -> list[dict]:
             "mod_badges": public_mod_badges, "mod_summary": public_mod_summary,
             "game_port": int(dedicated.get("port") or 7777), "sync_port": int(sync.get("port") or 27051),
             "source": "self-hosted-profile", "shared": {"source": "self-hosted-profile", "protocol": WORLD_SYNC_PROTOCOL,
-                "fingerprint": str(sync.get("fingerprint") or profile.get("fingerprint") or ""), "verified": bool(is_active and SHARE.httpd)},
+                "fingerprint": fingerprint, "verified": True},
         })
     return rows
 
@@ -6007,6 +6087,13 @@ def main() -> int:
             encoded = json.dumps(response, ensure_ascii=False)
         sys.stdout.write(encoded + "\n")
         sys.stdout.flush()
+    # EOF means the owning desktop process disappeared (including a forced
+    # Task Manager termination). Run the same shutdown graph used by the
+    # toolbar Exit action so owned workers and hosted processes are contained.
+    try:
+        handle("application.shutdown", {"reason": "owner_stdio_closed"})
+    except Exception:
+        pass
     return 0
 
 

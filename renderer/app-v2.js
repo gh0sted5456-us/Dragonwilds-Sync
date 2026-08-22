@@ -462,6 +462,7 @@
       return `<div class="connections-row" data-connection-ip="${escapeHtml(c.ip)}" title="Right-click for Kick / Block">
         <span class="connections-ip">${escapeHtml(c.ip)}</span>
         <span class="connections-location">${location}</span>
+        <span class="connections-meta">Profile ${escapeHtml(c.profile_id || 'not supplied')}</span>
         <span class="connections-meta">via ${escapeHtml(c.credential_source || 'unknown')}</span>
         <span class="connections-meta">connected ${since}</span>
         <span class="connections-meta">last seen ${seen}</span>
@@ -477,6 +478,7 @@
     const providers = new Set(p.blocked_vpn_providers || []);
     const ranges = p.vpn_provider_ranges || {};
     const ips = Array.isArray(p.blocked_ips) ? p.blocked_ips : [];
+    const profileIds = Array.isArray(p.blocked_profile_ids) ? p.blocked_profile_ids : [];
     const selectedCountries = [...countries].map((code)=>`<div class="network-selected-row" draggable="true" data-network-country-selected="${code}">${flagEmoji(code)}<strong>${escapeHtml(countryName(code))}</strong><button type="button" data-network-remove-country="${code}" title="Remove">×</button></div>`).join('');
     const selectedProviders = [...providers].map((id)=>{const label=VPN_PROVIDERS.find(([key])=>key===id)?.[1]||id;return `<div class="network-selected-row provider" draggable="true" data-network-provider-selected="${escapeHtml(id)}">${vpnIconMarkup(id)}<strong>${escapeHtml(label)}</strong><button type="button" data-network-remove-provider="${escapeHtml(id)}" title="Remove">×</button></div>`;}).join('');
     return `<div class="access-policy-editor network-policy" data-access-policy-prefix="${escapeHtml(prefix)}">
@@ -499,6 +501,9 @@
           <textarea hidden id="${prefix}-ips">${escapeHtml(csvLines(ips))}</textarea>
           <div class="network-selected-heading"><span>Blocked IP Addresses <b data-network-ip-count="${escapeHtml(prefix)}">${ips.length}</b></span><button type="button" data-network-clear-ips="${escapeHtml(prefix)}">Clear All</button></div>
           <div class="network-selected-list" data-network-ip-list="${escapeHtml(prefix)}">${ips.map((ip)=>`<div class="network-selected-row"><code>${escapeHtml(ip)}</code><button type="button" data-network-copy-ip="${escapeHtml(ip)}" title="Copy">⧉</button><button type="button" data-network-remove-ip="${escapeHtml(ip)}" title="Remove">×</button></div>`).join('') || '<div class="network-empty">No individual IP blocks.</div>'}</div>
+          <label>Blocked Sync Profile IDs</label>
+          <textarea class="textarea compact-policy-list" id="${prefix}-profiles" placeholder="One Profile ID per line">${escapeHtml(csvLines(profileIds))}</textarea>
+          <small class="network-help">Profile rules are checked after a valid World Password proof and can be combined with IP/CIDR rules.</small>
           <div class="network-info">ⓘ Supports both IPv4 (e.g. 203.0.113.1) and IPv6 (e.g. 2001:db8::1), plus CIDR networks.</div>
           <div class="network-region-row"><span>Optional broad regions</span><div>${ACCESS_REGIONS.map(([code,label])=>`<label class="network-region-chip"><input type="checkbox" data-${prefix}-region="${code}" ${regions.has(code)?'checked':''}/><span>${escapeHtml(label)}</span></label>`).join('')}</div></div>
         </section>
@@ -525,6 +530,7 @@
     scope.querySelectorAll(`[data-${prefix}-vpn-ranges]`).forEach((el) => { vpn_provider_ranges[el.getAttribute(`data-${prefix}-vpn-ranges`)] = el.value.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean); });
     return {
       blocked_ips: lines(`#${prefix}-ips`),
+      blocked_profile_ids: lines(`#${prefix}-profiles`),
       blocked_countries: [...scope.querySelectorAll(`[data-${prefix}-country]`)].filter((x) => x.checked).map((x) => x.getAttribute(`data-${prefix}-country`)),
       blocked_regions,
       blocked_vpn_providers,
@@ -567,7 +573,7 @@
       if(target.dataset.networkRemoveIp){const textarea=scope.querySelector(`#${CSS.escape(prefix)}-ips`);if(textarea){textarea.value=textarea.value.split(/[\n,]+/).map(x=>x.trim()).filter(x=>x&&x!==target.dataset.networkRemoveIp).join('\n');rerenderSelected();}return;}
       if(target.dataset.networkClearIps===prefix){const textarea=scope.querySelector(`#${CSS.escape(prefix)}-ips`);if(textarea)textarea.value='';rerenderSelected();return;}
       if(target.dataset.networkCopyIp){try{await window.dragonwilds.copyText(target.dataset.networkCopyIp);toast('IP copied','','success');}catch(_){}return;}
-      if(target.dataset.networkReset===prefix){scope.querySelectorAll(`[data-${prefix}-country],[data-${prefix}-vpn],[data-${prefix}-region]`).forEach(x=>x.checked=false);const textarea=scope.querySelector(`#${CSS.escape(prefix)}-ips`);if(textarea)textarea.value='';rerenderSelected();return;}
+      if(target.dataset.networkReset===prefix){scope.querySelectorAll(`[data-${prefix}-country],[data-${prefix}-vpn],[data-${prefix}-region]`).forEach(x=>x.checked=false);const textarea=scope.querySelector(`#${CSS.escape(prefix)}-ips`);if(textarea)textarea.value='';const profiles=scope.querySelector(`#${CSS.escape(prefix)}-profiles`);if(profiles)profiles.value='';rerenderSelected();return;}
     });
     scope.querySelector(`[data-network-ip-input="${prefix}"]`)?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();addIp();}});
     const filterRows=(selector,q)=>scope.querySelectorAll(selector).forEach(row=>{row.dataset.filtered=(q&&!String(row.dataset.search||'').includes(q))?'1':'0';const selected=row.querySelector('input[type=checkbox]')?.checked;row.hidden=!!selected||row.dataset.filtered==='1';});
@@ -761,8 +767,18 @@
     const operation=state.operation,percent=Math.max(0,Math.min(100,Number(operation.percent||0)));
     const phases=['connecting','comparing','downloading','unpacking','applying','verifying','profile','ready'];const active=Math.max(0,phases.indexOf(operation.phase||'connecting'));
     const counts=Number.isFinite(Number(operation.changed_files))?`<span>${Number(operation.changed_files||0)} changed</span><span>${Number(operation.unchanged_files||0)} unchanged</span>${operation.downloaded_bytes?`<span>${formatBytes(operation.downloaded_bytes)} transferred</span>`:''}`:'';
-    return `<div class="operation-banner detailed" role="status" aria-live="polite"><span class="operation-spinner" aria-hidden="true"></span><div class="operation-progress-copy"><strong>${escapeHtml(operation.title)}</strong><small data-operation-detail>${escapeHtml(operation.detail || 'This may take a moment. The application is still working.')}</small><div class="operation-progress-track"><i data-operation-progress style="width:${percent}%"></i></div><div class="operation-phases">${phases.map((phase,index)=>`<span data-operation-phase="${phase}" class="${index<active?'complete':index===active?'active':''}">${phase==='profile'?'Profile':phase[0].toUpperCase()+phase.slice(1)}</span>`).join('')}</div><div class="operation-counts" data-operation-counts>${counts}</div></div><b data-operation-percent>${Math.round(percent)}%</b></div>`;
+    const offset=operation.position||{x:0,y:0};
+    return `<div class="operation-banner detailed" role="status" aria-live="polite" style="--operation-x:${Number(offset.x||0)}px;--operation-y:${Number(offset.y||0)}px"><span class="operation-spinner" aria-hidden="true"></span><div class="operation-progress-copy"><strong data-operation-drag-handle title="Drag this progress window">${escapeHtml(operation.title)}</strong><small data-operation-detail>${escapeHtml(operation.detail || 'This may take a moment. The application is still working.')}</small><div class="operation-progress-track"><i data-operation-progress style="width:${percent}%"></i></div><div class="operation-phases">${phases.map((phase,index)=>`<span data-operation-phase="${phase}" class="${index<active?'complete':index===active?'active':''}">${phase==='profile'?'Profile':phase[0].toUpperCase()+phase.slice(1)}</span>`).join('')}</div><div class="operation-counts" data-operation-counts>${counts}</div><small class="operation-diagnostic-state">Connection report: ${operation.diagnostics?'ON · saved to Downloads':'OFF · enable in Settings → Networking'}</small></div><b data-operation-percent>${Math.round(percent)}%</b></div>`;
   }
+
+  document.addEventListener('pointerdown',(event)=>{
+    const handle=event.target.closest?.('[data-operation-drag-handle]');if(!handle||!state.operation)return;
+    event.preventDefault();const startX=event.clientX,startY=event.clientY,start={...(state.operation.position||{x:0,y:0})};
+    const banner=handle.closest('.operation-banner');
+    const move=(e)=>{const x=start.x+e.clientX-startX,y=start.y+e.clientY-startY;state.operation.position={x,y};banner?.style.setProperty('--operation-x',`${x}px`);banner?.style.setProperty('--operation-y',`${y}px`);};
+    const up=()=>{window.removeEventListener('pointermove',move);};
+    window.addEventListener('pointermove',move);window.addEventListener('pointerup',up,{once:true});
+  });
 
   async function runOperation(title, detail, task) {
     if (state.operation) throw new Error(`${state.operation.title} is already in progress.`);
@@ -1075,6 +1091,19 @@
       toast('IP blocked', `${ip} added to the global access policy and kicked.`, 'success');
       await refreshServerAccessConnections();
     } catch (error) { toast('Block failed', error.message, 'error'); }
+  }
+
+  async function blockServerConnectionProfile(profileId, ip) {
+    if (!profileId) return toast('Profile ID unavailable', 'This client did not include a Profile ID in its Sync handshake. Block its IP instead.', 'warning');
+    if (!await managedConfirm(`Block Sync Profile ${profileId} from every hosted World? Its current session will also be kicked.`, 'Block Profile')) return;
+    try {
+      const current=state.data?.application?.server_access_policy||{};
+      const ids=[...new Set([...(current.blocked_profile_ids||[]),profileId])];
+      await updateApplication({server_access_policy:{...current,blocked_profile_ids:ids}});
+      if(ip)await api.invoke('server.access.kick',{ip});
+      toast('Profile blocked', `${profileId} was added to the global Sync access policy.`, 'success');
+      await refreshServerAccessConnections();
+    } catch(error){toast('Profile block failed',error.message,'error');}
   }
 
   async function refreshServerBackups(world = activeServerWorld(), quiet = false) {
@@ -2583,7 +2612,7 @@
   function statusPill(world) {
     if (world.status?.blocked) {
       const kind = world.status.blocked_kind || 'ip';
-      const label = kind === 'country' ? 'Your country' : kind === 'region' ? 'Your region' : 'Your IP';
+      const label = kind === 'profile' ? 'Your Sync Profile' : kind === 'country' ? 'Your country' : kind === 'region' ? 'Your region' : 'Your IP';
       return `<span class="status-pill blocked" title="${escapeHtml(`${label} is blocked by this World's host: ${world.status.blocked_reason || ''}`)}">🚫 BLOCKED</span>`;
     }
     const online = world.status?.online;
@@ -2614,10 +2643,11 @@
 
   async function runWorldSyncJob(world, action='play') {
     if(state.operation)throw new Error(`${state.operation.title} is already in progress.`);
-    state.operation={title:action==='play'?'Synchronizing & launching World':'Synchronizing World',detail:'Connecting to the World host…',phase:'connecting',percent:0};render();
+    const diagnostics=state.data?.application?.connection_diagnostic_reports===true;
+    state.operation={title:action==='play'?'Synchronizing & launching World':'Synchronizing World',detail:'Connecting to the World host…',phase:'connecting',percent:0,diagnostics,position:{x:0,y:0}};render();
     try{
-      const started=await api.invoke('world.sync.job.start',{id:world.id,action});const jobId=started.job_id;if(!jobId)throw new Error('World Sync did not return a job identifier.');
-      while(true){await new Promise(resolve=>setTimeout(resolve,250));const job=await api.invoke('world.sync.job.status',{job_id:jobId});updateOperationProgress(job);if(job.status==='failed')throw new Error(job.error||job.message||'World Sync failed.');if(job.status==='complete')return job.response;}
+      const started=await api.invoke('world.sync.job.start',{id:world.id,action,diagnostics});const jobId=started.job_id;if(!jobId)throw new Error('World Sync did not return a job identifier.');
+      while(true){await new Promise(resolve=>setTimeout(resolve,250));const job=await api.invoke('world.sync.job.status',{job_id:jobId});updateOperationProgress(job);if(job.status==='failed'){if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'warning');throw new Error(job.error||job.message||'World Sync failed.');}if(job.status==='complete'){if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'success');return job.response;}}
     }finally{state.operation=null;render();}
   }
 
@@ -3023,7 +3053,7 @@
 
   function renderWorldManagement() {
     const tab = ['worlds','manifest','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
-    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management sections"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">Worlds</button><button class="${tab==='manifest'?'active':''}" data-world-management-tab="manifest">Manifest</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Setup</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Hosting</button></nav>`;
+    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management applications"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">World Profiles</button><button class="${tab==='manifest'?'active':''}" data-world-management-tab="manifest">Sync Files</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Connection</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Sync Hosting</button></nav>`;
     if(tab==='manifest'){
       state.data.client=state.data.client||{};state.data.client.world_browser=state.data.client.world_browser||{};state.data.client.world_browser.tab='directory';
       return renderWorldGallery(tabs);
@@ -4292,6 +4322,7 @@
         <section class="settings-section"><h2>Connection Behavior</h2>
           <div class="settings-row"><div class="settings-copy"><strong>Background World checks</strong><span>Lightweight status checks for saved Worlds. These never sync mods and never run a throughput test.</span></div><button class="toggle ${a.background_server_checks !== false ? 'on' : ''}" id="toggle-bg-checks"></button></div>
           <div class="settings-row"><div class="settings-copy"><strong>Allow explicit network diagnostics</strong><span>Enables the Run Link Test action. It measures the authenticated client↔host launcher path with small test payloads.</span></div><button class="toggle ${a.network_diagnostics_enabled !== false ? 'on' : ''}" id="toggle-network-diagnostics"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Write connection reports to Downloads</strong><span>For each Play or Sync attempt, writes a redacted text timeline with route selection, transferred files, client verification, host acknowledgement, and the exact failure stage.</span></div><button class="toggle ${a.connection_diagnostic_reports === true ? 'on' : ''}" id="toggle-connection-reports"></button></div>
         </section>
         <section class="settings-section"><h2>World Discovery</h2>
           <div class="settings-row"><div class="settings-copy"><strong>Augment Dragonwilds public discovery</strong><span>Vanilla public-session information remains the primary browser layer. Dragonwilds Sync independently probes reachable endpoints and adds enhanced placards only after the fingerprint protocol answers.</span></div><button class="toggle ${(a.world_discovery || {}).enabled === false ? '' : 'on'}" id="toggle-world-discovery"></button></div>
@@ -5952,6 +5983,7 @@
     root.querySelector('#toggle-core')?.addEventListener('click', () => updateApplication({ keep_core_persistent: !state.data.application.keep_core_persistent }));
     root.querySelector('#toggle-bg-checks')?.addEventListener('click', () => updateApplication({ background_server_checks: state.data.application.background_server_checks === false }));
     root.querySelector('#toggle-network-diagnostics')?.addEventListener('click', () => updateApplication({ network_diagnostics_enabled: state.data.application.network_diagnostics_enabled === false }));
+    root.querySelector('#toggle-connection-reports')?.addEventListener('click', () => updateApplication({ connection_diagnostic_reports: state.data.application.connection_diagnostic_reports !== true }));
     root.querySelector('#save-client-network-evidence')?.addEventListener('click', async () => {
       const optionalNumber = (id) => { const text = root.querySelector(id)?.value.trim() || ''; return text === '' ? null : Number(text); };
       await updateApplication({ client_network_profile: {
@@ -7029,13 +7061,15 @@
     document.querySelector('.context-menu')?.remove();
     const menu = document.createElement('div'); menu.className = 'context-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Connection actions');
     menu.style.left = `${Math.min(x, innerWidth - 200)}px`; menu.style.top = `${Math.min(y, innerHeight - 100)}px`;
-    menu.innerHTML = `<button role="menuitem" data-action="kick">Kick</button><button role="menuitem" class="danger" data-action="block">Block IP</button>`;
+    const connection=(state.serverAccessConnections||[]).find((row)=>row.ip===ip)||{};
+    menu.innerHTML = `<button role="menuitem" data-action="kick">Kick</button><button role="menuitem" class="danger" data-action="block-profile" ${connection.profile_id?'':'disabled'}>Block Profile</button><button role="menuitem" class="danger" data-action="block">Block IP</button>`;
     document.body.appendChild(menu);
     const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss); } };
     setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
     menu.addEventListener('click', async (e) => {
       const action = e.target.dataset.action; if (!action) return; menu.remove();
       if (action === 'kick') await kickServerConnection(ip);
+      if (action === 'block-profile') await blockServerConnectionProfile(connection.profile_id,ip);
       if (action === 'block') await blockServerConnectionIp(ip);
     });
   }

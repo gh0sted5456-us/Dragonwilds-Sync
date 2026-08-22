@@ -596,13 +596,13 @@ def report_manifest(base_url: str, token: str, files: list[dict], client_id: str
     return json.loads(response.read())
 
 
-def resolve_verified_manifest(world: dict, client_platform: str = ""):
+def resolve_verified_manifest(world: dict, client_platform: str = "", client_profile_id: str = ""):
     credentials = world.get("credentials") or {}
     attempts = []
     for route, endpoint in candidate_endpoints(world):
         try:
             manifest, token, base_url, ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"), client_platform)
+                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"), client_platform, client_profile_id)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{route}: {detail}")
@@ -652,7 +652,7 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
     platform_info = detect_client_platform(game_root)
     client_platform = str(platform_info["platform"])
     # This authenticated manifest exchange happens on every Play/Quick Start.
-    route, endpoint, manifest, token, base_url, ping_ms = resolve_verified_manifest(world, client_platform)
+    route, endpoint, manifest, token, base_url, ping_ms = resolve_verified_manifest(world, client_platform, client_id)
     emit("comparing", "Received the current host manifest; comparing SHA-256 fingerprints", 12,
          total_files=len(manifest.get("files") or []))
     # A new server filters before transmission. This client-side guard also
@@ -830,6 +830,15 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
         "component_fast_matches": sorted(component_fast_matches),
         "client_platform": platform_info,
         "report": report,
+        "acknowledgements": {
+            "client_profile_id": str(client_id or ""),
+            "host_authenticated": True,
+            "host_manifest_received": True,
+            "host_manifest_version": manifest.get("version"),
+            "host_manifest_fingerprint": remote_fingerprint,
+            "client_files_verified": True,
+            "host_match_confirmed": report.get("status") == "match",
+        },
         "downloaded": len(to_download),
         "downloaded_bytes": total_download_bytes,
         "changed_files": [entry.get("path") for entry in to_download],

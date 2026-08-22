@@ -51,10 +51,27 @@ class ConnectionTransportTests(unittest.TestCase):
                 unittest.mock.MagicMock(read=lambda: b'{"nonce":"abc"}'),
                 unittest.mock.MagicMock(read=lambda: b'{"token":"ok"}'),
             ]
-            token, source = network_client._auth_token(endpoint, "  shared-world-password  ", credential_source="manual")
+            token, source = network_client._auth_token(endpoint, "  shared-world-password  ", credential_source="manual", client_profile_id="profile-luke")
         self.assertEqual((token, source), ("ok", "manual"))
         body = json.loads(request.call_args_list[1].kwargs["data"])
         self.assertEqual(body["proof"], hmac.new(b"shared-world-password", b"abc", hashlib.sha256).hexdigest())
+        self.assertEqual(body["client_profile_id"], "profile-luke")
+
+    def test_profile_identity_is_rostered_and_can_be_blocked_after_password_proof(self):
+        state = server_systems.SyncState()
+        state.password = "BELTS"
+        nonce = state.issue_nonce()
+        proof = hmac.new(b"BELTS", nonce.encode(), hashlib.sha256).hexdigest()
+        auth = state.check_proof(nonce, proof, credential_source="manual", client_ip="192.168.1.2", client_profile_id="profile-luke")
+        self.assertEqual(auth.get("client_profile_id"), "profile-luke")
+        self.assertEqual(state.connected_clients()[0]["profile_id"], "profile-luke")
+
+        state.configure_access_policy({}, {"blocked_profile_ids": ["profile-luke"]})
+        nonce = state.issue_nonce()
+        proof = hmac.new(b"BELTS", nonce.encode(), hashlib.sha256).hexdigest()
+        blocked = state.check_proof(nonce, proof, credential_source="manual", client_ip="192.168.1.2", client_profile_id="profile-luke")
+        self.assertTrue(blocked.get("blocked"))
+        self.assertEqual(blocked.get("client_profile_id"), "profile-luke")
 
     def test_lan_heartbeat_exposes_mod_inventory(self):
         old_manifest = server_systems.STATE.manifest

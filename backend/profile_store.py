@@ -220,6 +220,7 @@ def default_state() -> dict:
             "keep_core_persistent": False,
             "background_server_checks": True,
             "network_diagnostics_enabled": True,
+            "connection_diagnostic_reports": False,
             "defender_review_enabled": False,
             "performance": {"hardware_acceleration": True, "renderer_memory_mb": 0},
             "computer_profile": default_computer_profile(),
@@ -349,6 +350,7 @@ def load_state() -> dict:
     application["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
     application.setdefault("background_server_checks", True)
     application.setdefault("network_diagnostics_enabled", True)
+    application.setdefault("connection_diagnostic_reports", False)
     application.setdefault("defender_review_enabled", True)
     performance = application.setdefault("performance", {})
     performance["hardware_acceleration"] = performance.get("hardware_acceleration") is not False

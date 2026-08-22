@@ -10,6 +10,7 @@ from security_scanner import defender_scan, defender_status
 def main():
     policy = normalize_access_policy({
         "blocked_ips": ["203.0.113.8", "198.51.100.7/24", "not-a-range"],
+        "blocked_profile_ids": ["profile-luke", "profile-luke", ""],
         "blocked_countries": ["us", "DE", "bad"],
         "blocked_regions": ["EU", "na", "XX"],
         "blocked_vpn_providers": ["nordvpn", "protonvpn", "unknown"],
@@ -20,10 +21,11 @@ def main():
     assert policy["blocked_countries"] == ["US", "DE"]
     assert policy["blocked_regions"] == ["EU", "NA"]
     assert policy["blocked_vpn_providers"] == ["nordvpn", "protonvpn"]
+    assert policy["blocked_profile_ids"] == ["profile-luke"]
 
     merged = merge_access_policies(
-        {"blocked_ips": ["10.1.0.0/16"], "blocked_regions": ["EU"]},
-        {"blocked_ips": ["203.0.113.0/24"], "blocked_countries": ["CA"],
+        {"blocked_ips": ["10.1.0.0/16"], "blocked_regions": ["EU"], "blocked_profile_ids": ["global-profile"]},
+        {"blocked_ips": ["203.0.113.0/24"], "blocked_countries": ["CA"], "blocked_profile_ids": ["world-profile"],
          "blocked_vpn_providers": ["nordvpn"], "vpn_provider_ranges": {"nordvpn": ["192.0.2.0/24"]}},
     )
     assert direct_policy_match("10.1.2.3", merged)[0]
@@ -31,6 +33,7 @@ def main():
     matched, reason = direct_policy_match("192.0.2.10", merged)
     assert matched and "NordVPN" in reason
     assert not direct_policy_match("8.8.8.8", merged)[0]
+    assert merged["blocked_profile_ids"] == ["global-profile", "world-profile"]
 
     status = defender_status()
     assert "available" in status and "enabled" in status

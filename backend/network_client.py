@@ -27,13 +27,13 @@ class RateLimitedError(ConnectionError):
 
 
 class BlockedError(ConnectionError):
-    """This machine's IP/country/region is denied by the host's access policy.
+    """This client's Profile/IP/location is denied by host access policy.
 
     Distinguished from a generic ConnectionError so callers can surface a
     "you are blocked" badge instead of a plain unreachable/offline state."""
     def __init__(self, reason: str = "", kind: str = "ip"):
         self.reason = str(reason or "Blocked by the host's access policy.")
-        self.kind = kind if kind in ("ip", "country", "region") else "ip"
+        self.kind = kind if kind in ("profile", "ip", "country", "region") else "ip"
         super().__init__(f"Blocked by this World's access policy ({self.reason}).")
 
 
@@ -86,7 +86,7 @@ def _credential_source(value: str) -> str:
     return source if source in ALLOWED_CREDENTIAL_SOURCES else "linked"
 
 
-def _auth_token(endpoint, password: str, server_key: str = "", share_access_key: str = "", credential_source: str = "linked") -> tuple[str, str]:
+def _auth_token(endpoint, password: str, server_key: str = "", share_access_key: str = "", credential_source: str = "linked", client_profile_id: str = "") -> tuple[str, str]:
     base = endpoint.base_url
     # DedicatedServer.ini trims WorldPassword. Use the same canonical value for
     # the companion Sync proof so invisible edge whitespace cannot let gameplay
@@ -106,7 +106,8 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     # One player-facing credential protects both the Sync payload and gameplay.
     # Legacy server/share parameters remain accepted but are never consulted.
     proof = hmac.new(password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
-    payload = json.dumps({"nonce": nonce, "proof": proof, "mode": "world_password", "credential_source": source}).encode()
+    payload = json.dumps({"nonce": nonce, "proof": proof, "mode": "world_password", "credential_source": source,
+                          "client_profile_id": str(client_profile_id or "")[:96]}).encode()
     response = json.loads(request(f"{base}/auth", method="POST", data=payload, headers={"Content-Type": "application/json"}).read())
     token = str(response.get("token") or "")
     if not token:
@@ -114,13 +115,13 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     return token, str(response.get("credential_source") or source)
 
 
-def auth_manifest(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked", client_platform: str = "") -> tuple[dict, str, str, float]:
+def auth_manifest(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked", client_platform: str = "", client_profile_id: str = "") -> tuple[dict, str, str, float]:
     endpoint = normalize_endpoint(endpoint_value)
     if endpoint is None:
         raise ConnectionError("Invalid server address.")
     base = endpoint.base_url
     started = time.monotonic()
-    token, accepted_source = _auth_token(endpoint, password, server_key, share_access_key, credential_source)
+    token, accepted_source = _auth_token(endpoint, password, server_key, share_access_key, credential_source, client_profile_id)
     headers = {"Authorization": f"Bearer {token}"}
     if client_platform:
         headers["X-DWS-Client-Platform"] = client_platform

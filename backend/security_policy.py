@@ -58,6 +58,7 @@ def normalize_cidrs(value) -> list[str]:
 def default_access_policy() -> dict:
     return {
         "blocked_ips": [],
+        "blocked_profile_ids": [],
         "blocked_countries": [],
         "blocked_regions": [],
         "blocked_vpn_providers": [],
@@ -71,6 +72,7 @@ def normalize_access_policy(value) -> dict:
     incoming = value if isinstance(value, dict) else {}
     # Accept legacy flat fields as well as the new policy object.
     base["blocked_ips"] = normalize_cidrs(incoming.get("blocked_ips") or [])
+    base["blocked_profile_ids"] = _clean_string_list(incoming.get("blocked_profile_ids"), max_items=20000)
     base["blocked_countries"] = [x for x in _clean_string_list(incoming.get("blocked_countries"), upper=True) if len(x) == 2]
     base["blocked_regions"] = [x for x in _clean_string_list(incoming.get("blocked_regions"), upper=True) if x in REGION_LABELS]
     providers = _clean_string_list(incoming.get("blocked_vpn_providers"))
@@ -87,7 +89,7 @@ def merge_access_policies(global_policy, world_policy) -> dict:
     a = normalize_access_policy(global_policy)
     b = normalize_access_policy(world_policy)
     result = default_access_policy()
-    for key in ("blocked_ips", "blocked_countries", "blocked_regions", "blocked_vpn_providers"):
+    for key in ("blocked_ips", "blocked_profile_ids", "blocked_countries", "blocked_regions", "blocked_vpn_providers"):
         result[key] = list(dict.fromkeys([*a[key], *b[key]]))
     result["geo_lookup_enabled"] = bool(a.get("geo_lookup_enabled", True) and b.get("geo_lookup_enabled", True))
     for provider in VPN_PROVIDERS:

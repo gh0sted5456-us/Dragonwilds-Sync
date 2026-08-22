@@ -65,6 +65,7 @@
       if (isForgottenSync(world)) return false;
       const online = typeof isOnline === 'function' && isOnline(world);
       const matchesFilter = activeFilter === 'all'
+        || (activeFilter === 'sync' && isSync(world))
         || (activeFilter === 'online' && online)
         || (activeFilter === 'modded' && typeof isModded === 'function' && isModded(world))
         || (activeFilter === 'current' && typeof buildState === 'function' && buildState(world) === 'current')

@@ -143,7 +143,8 @@ jobs:
           cp resources/world-builder-presets.json _site/assets/world-builder-presets.json
           cp resources/platform-registry.json _site/assets/platform-registry.json
           cp -R renderer/assets/flags _site/assets/flags
-          cp -R renderer/assets/platforms _site/assets/platforms
+          mkdir -p _site/assets/platforms
+          cp -R renderer/assets/platforms/. _site/assets/platforms/
 
           # Bake one ten-server first page directly into servers.html so the
           # directory never begins as a JavaScript-only blank surface. The full
@@ -242,6 +243,35 @@ jobs:
           node --check _site/public-directory-fetch-fallback.js
           node --check _site/public-directory-view.js
 
+      - name: Verify homepage presentation and download card
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/assets/download-placard-background.png
+          test -s _site/assets/demo-world-banner.svg
+          test -s _site/assets/demo-world-icon.svg
+          test -s _site/assets/rsdw-logo.png
+          test -s _site/assets/runeschema-logo.png
+          grep -q 'styles.css?v=theme-preview-1' _site/index.html
+          grep -q -- '--preview-shell' _site/styles.css
+          grep -q 'html\[data-theme="white"\] .mock-cl-badge' _site/styles.css
+          grep -q 'Steam Server' _site/index.html
+          grep -q 'data-current-cl' _site/index.html
+          grep -q 'Snorkles' _site/script.js
+          grep -q 'Hi im Tat' _site/script.js
+          grep -q 'Dragonwilds Modding Community' _site/script.js
+          grep -q 'github.com/UnskippableCutscene' _site/script.js
+          grep -q 'github.com/RSDWArchive' _site/script.js
+          grep -q 'discord.gg/gQ7uY2cQ3q' _site/script.js
+          grep -q 'assets/runeschema-logo.png' _site/script.js
+          grep -q 'assets/rsdw-logo.png' _site/script.js
+          grep -q 'assets/platforms/discord.svg' _site/script.js
+          grep -q 'browser_download_url' _site/script.js
+          ! grep -q 'release-channels' _site/index.html
+          ! grep -q 'primary-channel-note' _site/index.html
+          ! grep -q 'Download Experimental' _site/script.js
+          ! grep -q 'Preview what comes next' _site/script.js
+
       - name: Verify Public Server List route
         shell: bash
         run: |
@@ -252,10 +282,12 @@ jobs:
           grep -q 'data-static-public-world="1"' _site/servers.html
           grep -q 'data-directory-view="placards"' _site/servers.html
           grep -q 'data-directory-view="horizontal"' _site/servers.html
+          grep -q 'data-world-filter="sync"' _site/servers.html
           grep -q 'data-world-filter="offline-sync"' _site/servers.html
           grep -q 'id="world-pagination"' _site/servers.html
           grep -q 'id="stat-total-sync-starts"' _site/servers.html
-          grep -q 'public-directory-fetch-fallback.js?v=public-directory-6' _site/servers.html
+          grep -q 'public-directory-fetch-fallback.js?v=public-directory-7' _site/servers.html
+          grep -q 'public-directory-view.js?v=public-directory-7' _site/servers.html
           python3 - <<'PY'
           import json
           data=json.load(open('_site/assets/public-worlds-fallback.json',encoding='utf-8'))

@@ -8,6 +8,7 @@
   const network = new Map();
   const openRows = new Map();
   const windows = new Map();
+  const modDialogs = new Map();
   let decorating = false;
   let heartbeatTimer = null;
 
@@ -15,6 +16,7 @@
   const text = (value) => String(value ?? '').trim();
   const asArray = (value) => Array.isArray(value) ? value : [];
   const state = () => (window.__DWSYNC_STATE__ && typeof window.__DWSYNC_STATE__ === 'object') ? window.__DWSYNC_STATE__ : {};
+  const ecosystemAssets = {UE4SS:'assets/platforms/ue4ss.png',RuneSchema:'assets/platforms/runeschema.png'};
   const animationMode = () => {
     const value = text(state()?.application?.v3_phase4?.animation_mode || state()?.application?.performance?.animations || 'full').toLowerCase();
     return ['full','reduced','off'].includes(value) ? value : 'full';
@@ -85,6 +87,51 @@
     return rows.filter((row)=>{const key=`${row.type}:${row.name}`.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;}).slice(0,64);
   }
 
+  function placardId(world, card) {
+    const current=text(card?.style?.getPropertyValue('--world-placard')); const currentMatch=current.match(/placards\/([1-4])\.png/i);
+    const value=text(world?.placard_background || world?.presentation?.placard_background || world?.presentation?.placardBackground || world?.placardBackground || card?.dataset?.placardBackground || currentMatch?.[1] || '1');
+    return ['1','2','3','4'].includes(value) ? value : '1';
+  }
+
+  function applyPlacardArtwork(card, world) {
+    const id=placardId(world,card); const asset=`assets/placards/${id}.png`;
+    card.classList.add('has-placard'); card.dataset.placardBackground=id;
+    card.style.setProperty('--world-placard',`url("${asset}")`);
+    let preload=card.querySelector(':scope>.v3p4-placard-preload');
+    if(!preload){preload=document.createElement('img');preload.className='v3p4-placard-preload';preload.alt='';preload.setAttribute('aria-hidden','true');card.prepend(preload);}
+    if(preload.getAttribute('src')!==asset)preload.src=asset;
+  }
+
+  function ecosystemFamilies(world) {
+    const mods=modRows(world); const advertised=asArray(world?.presentation?.mod_badges).map((value)=>text(value).toLowerCase());
+    return ['UE4SS','RuneSchema'].filter((family)=>mods.some((row)=>row.type===family) || (family==='UE4SS'&&!!world?.auto_ue4ss) || (family==='RuneSchema'&&!!world?.auto_runeschema) || advertised.some((value)=>value.replace(/\s+/g,'')===family.toLowerCase()));
+  }
+
+  function ecosystemMarkup(id, world, compact=false) {
+    const families=ecosystemFamilies(world); if(!families.length)return '';
+    return `<div class="v3p4-ecosystems ${compact?'compact':''}" aria-label="Loaded mod frameworks">${families.map((family)=>`<button type="button" class="v3p4-ecosystem" data-v3p4-mod-family="${esc(family)}" data-v3p4-mod-world="${esc(id)}" title="Show loaded ${esc(family)} mods"><img src="${ecosystemAssets[family]}" alt=""/><span>${esc(family)}</span></button>`).join('')}</div>`;
+  }
+
+  function decorateEcosystemLabels(root=document) {
+    root.querySelectorAll('.badge,.tag,.status-pill,.v3p4-back-section h4').forEach((node)=>{
+      if(node.dataset.ecosystem)return;
+      const value=text(node.textContent).replace(/\s+/g,'').toLowerCase(); const family=value==='ue4ss'?'UE4SS':value==='runeschema'?'RuneSchema':'';
+      if(family){node.dataset.ecosystem=family;node.style.setProperty('--ecosystem-icon',`url("${ecosystemAssets[family]}")`);}
+    });
+  }
+
+  function openModsPopup(id, family) {
+    id=text(id); family=family==='RuneSchema'?'RuneSchema':'UE4SS'; if(!id)return;
+    const key=`${id}:${family}`; const existing=modDialogs.get(key);
+    if(existing){existing.querySelector('[data-v3p4-close-mods]')?.focus();return;}
+    const world=findWorld(id)||{id,name:'World'}; const rows=modRows(world).filter((row)=>row.type===family);
+    const host=document.createElement('section'); host.className='v3p4-mod-dialog'; host.dataset.v3p4ModDialog=key; host.setAttribute('role','dialog');host.setAttribute('aria-modal','true');host.setAttribute('aria-label',`${family} mods for ${text(world.name||world.nickname||'World')}`);
+    host.innerHTML=`<div class="v3p4-mod-dialog-card"><header><span><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS</small><strong>${esc(world.name||world.nickname||world.identity?.world_name||'World')}</strong></span></span><button type="button" class="btn ghost compact-btn" data-v3p4-close-mods="${esc(key)}" aria-label="Close loaded mods">×</button></header><div class="v3p4-mod-dialog-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div></div>`;
+    document.getElementById('modal-root')?.appendChild(host)||document.body.appendChild(host);modDialogs.set(key,host);host.querySelector('[data-v3p4-close-mods]')?.focus();
+  }
+
+  function closeModsPopup(key) { const host=modDialogs.get(key)||document.querySelector(`[data-v3p4-mod-dialog="${CSS.escape(key)}"]`);host?.remove();modDialogs.delete(key); }
+
   function candidateCollections(root) {
     return [
       root?.server_profiles, root?.server?.profiles, root?.server?.worlds,
@@ -139,7 +186,8 @@
     if (!mods.length) return '';
     return ['UE4SS','RuneSchema','Pak'].map((type)=>{
       const rows = mods.filter((row)=>row.type===type); if (!rows.length) return '';
-      return `<section class="v3p4-back-section"><h4>${type}</h4><div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version || 'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div></section>`;
+      const icon=ecosystemAssets[type]?`<img class="v3p4-family-icon" src="${ecosystemAssets[type]}" alt=""/>`:'';
+      return `<section class="v3p4-back-section"><h4>${icon}${type}</h4><div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version || 'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div></section>`;
     }).join('');
   }
 
@@ -192,7 +240,7 @@
   function decorateCard(card) {
     if (!card || card.dataset.v3p4Decorated === '1' || card.closest('.v3p4-window')) return;
     const {id,world} = cardWorld(card); if (!id) return;
-    card.dataset.v3p4Decorated = '1'; card.classList.add('v3p4-placard'); card.tabIndex = card.tabIndex >= 0 ? card.tabIndex : 0;
+    card.dataset.v3p4Decorated = '1'; card.classList.add('v3p4-placard'); card.tabIndex = card.tabIndex >= 0 ? card.tabIndex : 0; applyPlacardArtwork(card,world);
     if (card.classList.contains('app-world-placard')) {
       const frontBody=card.querySelector('.world-card-front .world-card-body');
       if(frontBody&&!card.querySelector('.v3p4-front-live')){
@@ -200,15 +248,17 @@
         const statusMount=card.querySelector('.placard-sync-status');
         if(statusMount)statusMount.replaceChildren(identity);else card.querySelector('.placard-runtime-status')?.prepend(identity);
       }
+      if(frontBody&&!card.querySelector('.v3p4-ecosystems'))frontBody.insertAdjacentHTML('beforeend',ecosystemMarkup(id,world,true));
+      decorateEcosystemLabels(card);
       applySide(card,id);requestHeartbeat(id,card.dataset.serverCard==='1'?'dedicated':'local');return;
     }
     const original = document.createElement('div'); original.className = 'v3p4-face v3p4-front';
     while (card.firstChild) original.appendChild(card.firstChild);
-    const identity = document.createElement('div'); identity.className='v3p4-front-live'; identity.innerHTML=`${heartbeatMarkup(id,world)}${platformMarkup(world)}`;
+    const identity = document.createElement('div'); identity.className='v3p4-front-live'; identity.innerHTML=`${heartbeatMarkup(id,world)}${platformMarkup(world)}${ecosystemMarkup(id,world,true)}`;
     original.appendChild(identity);
     const frontControls = document.createElement('div'); frontControls.className='v3p4-page-controls'; frontControls.innerHTML=`<span data-v3p4-page-status>Page 1 / 2</span><button class="btn ghost compact-btn" data-v3p4-toggle="${esc(id)}">Details →</button>`; original.appendChild(frontControls);
     const back = document.createElement('div'); back.className='v3p4-face v3p4-back'; back.innerHTML=backMarkup(id,world);
-    const inner = document.createElement('div'); inner.className='v3p4-inner'; inner.append(original,back); card.appendChild(inner);
+    const inner = document.createElement('div'); inner.className='v3p4-inner'; inner.append(original,back); card.appendChild(inner); decorateEcosystemLabels(card);
     applySide(card,id);
     requestHeartbeat(id, card.dataset.serverCard === '1' ? 'dedicated' : 'local');
   }
@@ -219,6 +269,7 @@
       document.body.dataset.v3p4Animations = animationMode();
       document.querySelectorAll('.world-card[data-world-id]:not([data-v3p4-decorated])').forEach(decorateCard);
       document.querySelectorAll('.v3p4-placard').forEach((card)=>applySide(card,text(card.dataset.worldId)));
+      decorateEcosystemLabels();
       injectSettings(); injectQuickHeartbeat();
     } finally { decorating = false; }
   }
@@ -298,6 +349,9 @@
   document.addEventListener('click',(event)=>{
     const animation=event.target.closest('[data-v3p4-animation]'); if(animation){event.preventDefault();saveAnimation(animation.dataset.v3p4Animation);return;}
     const external=event.target.closest('[data-v3p4-external]'); if(external){event.preventDefault();event.stopPropagation();const url=external.dataset.v3p4External;if(/^https:\/\//i.test(url))api.openExternal?.(url);return;}
+    const modFamily=event.target.closest('[data-v3p4-mod-family]');if(modFamily){event.preventDefault();event.stopPropagation();openModsPopup(modFamily.dataset.v3p4ModWorld,modFamily.dataset.v3p4ModFamily);return;}
+    const closeMods=event.target.closest('[data-v3p4-close-mods]');if(closeMods){event.preventDefault();event.stopPropagation();closeModsPopup(closeMods.dataset.v3p4CloseMods);return;}
+    const modBackdrop=event.target.closest('.v3p4-mod-dialog');if(modBackdrop&&event.target===modBackdrop){closeModsPopup(modBackdrop.dataset.v3p4ModDialog);return;}
     const toggleButton=event.target.closest('[data-v3p4-toggle]'); if(toggleButton){event.preventDefault();event.stopPropagation();const card=toggleButton.closest('.v3p4-placard');toggle(card);return;}
     const openMenu=event.target.closest('[data-v3p4-open-menu]'); if(openMenu){event.preventDefault();event.stopPropagation();const row=document.querySelector(`.world-list-row[data-world-id="${CSS.escape(openMenu.dataset.v3p4OpenMenu)}"]`);document.querySelector('.world-context-menu')?.remove();if(row)openRow(row);return;}
     const closeRow=event.target.closest('[data-v3p4-close-row]'); if(closeRow){event.preventDefault();event.stopPropagation();document.querySelector(`[data-v3p4-row-open="${CSS.escape(closeRow.dataset.v3p4CloseRow)}"]`)?.remove();return;}
@@ -307,6 +361,7 @@
   }, true);
 
   document.addEventListener('keydown',(event)=>{
+    if(event.key==='Escape'&&modDialogs.size){[...modDialogs.keys()].forEach(closeModsPopup);return;}
     if(!['Enter',' '].includes(event.key))return; const card=event.target.closest('.v3p4-placard,.app-world-placard'); if(!card||event.target.closest('button,a,input,select,textarea'))return; event.preventDefault();event.stopPropagation();toggle(card);
   });
 

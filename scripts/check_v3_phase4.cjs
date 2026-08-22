@@ -44,7 +44,10 @@ const renderer = need('renderer/release-v3-phase4.js', [
   'v3p4-placard', 'v3p4-back', 'data-v3p4-toggle', 'Page 1 / 2', 'Open Placard',
   'v3.phase4.world_status', "['full','reduced','off']", 'custom_badges',
   'heartbeatMarkup', 'Partial', 'data-v3p4-animation-settings', '__DWSYNC_V3_PHASE4__',
-  "closest('.v3p4-placard,.app-world-placard')"
+  "closest('.v3p4-placard,.app-world-placard')", 'applyPlacardArtwork', '--world-placard',
+  "card?.dataset?.placardBackground || currentMatch?.[1] || '1'",
+  "assets/platforms/ue4ss.png", "assets/platforms/runeschema.png", 'data-v3p4-mod-family',
+  'openModsPopup', 'No loaded ${esc(family)} mods are recorded for this profile.', "event.key==='Escape'"
 ]);
 const rendererFolded = renderer.toLowerCase();
 for (const coreMod of ['dragonconnect']) {
@@ -52,7 +55,8 @@ for (const coreMod of ['dragonconnect']) {
 }
 need('renderer/release-v3-phase4.css', [
   'rotateY(180deg)', 'v3p4-back-scroll', 'data-v3p4-animations="reduced"', 'data-v3p4-animations="off"',
-  '@keyframes v3p4-heart', 'v3p4-badge-rail', 'v3p4-window', 'v3p4-row-open'
+  '@keyframes v3p4-heart', 'v3p4-badge-rail', 'v3p4-window', 'v3p4-row-open',
+  'v3p4-placard-preload', 'v3p4-ecosystem', 'v3p4-mod-dialog', '[data-ecosystem]::before'
 ]);
 need('renderer/release-v3-phase4-manager.js', [
   'Custom Badge Manager', 'normalizePng', '256', 'image/png', 'v3.phase4.badges.list', 'v3.phase4.badges.add',

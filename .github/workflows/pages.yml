@@ -269,6 +269,8 @@ jobs:
           test -s _site/assets/rsdw-toolkit/modded-items.svg
           test -s _site/assets/platforms/runeschema.png
           test -s _site/assets/platforms/ue4ss.png
+          test -s _site/assets/platforms/runeschema.webp
+          test -s _site/assets/platforms/ue4ss.webp
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('_site/assets/launcher-preview.json','utf8'));if(m.schema!=='DragonwildsSync.LauncherPreview.v1'||!Array.isArray(m.appys)||m.appys.length<7)throw new Error('Invalid launcher preview model')"
 
       - name: Verify homepage presentation and download card

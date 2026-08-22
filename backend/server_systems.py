@@ -1097,35 +1097,18 @@ class SyncState:
         source = str(credential_source or "linked").strip().lower()[:32]
         if source not in {"linked", "manual", "imported-rsdwl", "online-feed", "legacy-linked", "shared"}:
             source = "linked"
-        mode = "world_password"
+        mode = "game_authoritative"
         with self.lock:
             issued = self.pending_nonces.pop(nonce, None)
             if issued is None or time.time() - issued > NONCE_TTL_SECONDS:
                 return None
-            active_profile_id = str(self.active_profile_id or "")
-            runtime_password = str(self.password or "")
-        passwords = [runtime_password]
-        if active_profile_id:
-            # The profile file is authoritative. A server can remain running
-            # while its World Password is edited, so do not leave the worker
-            # stuck with the credential captured when it first started.
-            profile = load_server_profile(active_profile_id) or {}
-            dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
-            sync = profile.get("sync_config") if isinstance(profile.get("sync_config"), dict) else {}
-            profile_password = str(dedicated.get("world_pass") if "world_pass" in dedicated else sync.get("password") or "")
-            if profile_password not in passwords:
-                passwords.append(profile_password)
-        accepted_password = next((candidate for candidate in passwords if hmac.compare_digest(
-            hmac.new(candidate.encode(), nonce.encode(), hashlib.sha256).hexdigest(), proof
-        )), None)
-        if accepted_password is None:
-            return None
         with self.lock:
             scope = "world-sync"
-            self.password = accepted_password
             token = secrets.token_hex(16)
             self.tokens.add(token)
             self.token_sources[token] = {"credential_source": source, "auth_mode": mode, "scope": scope, "client_ip": str(client_ip or ""), "issued_at": time.time()}
+            # Dragonwilds itself is the sole authority for the World Password.
+            # Sync only establishes a short-lived metadata/file session.
             return {"token": token, **self.token_sources[token]}
 
     def check_token(self, token: str) -> bool:

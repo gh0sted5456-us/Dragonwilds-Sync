@@ -76,6 +76,17 @@ async function verifyWorld(request, env, raw, worldId) {
   const secret=await openCredential(env,row);
   return await verifyHmac(secret,request.headers.get('x-dws-timestamp'),raw,request.headers.get('x-dws-signature')) ? row : null;
 }
+function sanitizeMod(value) {
+  if(value&&typeof value==='object'&&!Array.isArray(value)){
+    const mod={};
+    for(const key of ['key','name','kind','loader','section','classification','version','author']) if(value[key]!=null) mod[key]=String(value[key]).slice(0,160);
+    if(value.client_required!=null)mod.client_required=Boolean(value.client_required);
+    if(Array.isArray(value.tags))mod.tags=value.tags.slice(0,16).map((tag)=>String(tag).slice(0,64));
+    return mod.name?mod:null;
+  }
+  const name=String(value||'').trim().slice(0,160);
+  return name?{name,kind:'advertised'}:null;
+}
 function sanitizeWorld(input) {
   const status = ['active','stopping','offline'].includes(String(input.status||'').toLowerCase()) ? String(input.status).toLowerCase() : 'active';
   const connection = input.connection && typeof input.connection==='object' ? input.connection : null;
@@ -84,7 +95,7 @@ function sanitizeWorld(input) {
     region:String(input.region||'').slice(0,80), cl:String(input.cl||'').slice(0,80), status,
     host_type: ['dedicated','coop'].includes(String(input.host_type||'')) ? String(input.host_type) : 'dedicated',
     player_count: Math.max(0,Math.min(Number(input.player_count||0),10000)), max_players:Math.max(0,Math.min(Number(input.max_players||0),10000)),
-    tags:Array.isArray(input.tags)?input.tags.slice(0,24).map((v)=>String(v).slice(0,40)):[], mods:Array.isArray(input.mods)?input.mods.slice(0,64).map((v)=>String(v).slice(0,80)):[],
+    tags:Array.isArray(input.tags)?input.tags.slice(0,24).map((v)=>String(v).slice(0,40)):[], mods:(Array.isArray(input.mod_summary)?input.mod_summary:Array.isArray(input.mods)?input.mods:[]).slice(0,512).map(sanitizeMod).filter(Boolean),
     badges:Array.isArray(input.badges)?input.badges.slice(0,32).map((v)=>String(v).slice(0,80)):[], rules:String(input.rules||'').slice(0,4000),
     connection: connection && connection.address ? {address:String(connection.address).slice(0,255),game_port:Math.max(1,Math.min(Number(connection.game_port||7777),65535))}:null,
   };
@@ -133,7 +144,8 @@ async function handleHeartbeat(request,env) {
 }
 function publicWorld(row) {
   const effectiveStatus = Number(row.last_seen||0) < now()-ACTIVE_WINDOW_SECONDS ? 'offline' : row.status;
-  return {world_id:row.world_id,name:row.name,description:row.description,region:row.region,cl:row.cl,status:effectiveStatus,host_type:row.host_type,player_count:row.player_count,max_players:row.max_players,tags:JSON.parse(row.tags_json||'[]'),mods:JSON.parse(row.mods_json||'[]'),badges:JSON.parse(row.badges_json||'[]'),rules:row.rules,connection:JSON.parse(row.connection_json||'null'),last_seen:row.last_seen};
+  const mods=JSON.parse(row.mods_json||'[]');
+  return {world_id:row.world_id,name:row.name,description:row.description,region:row.region,cl:row.cl,status:effectiveStatus,host_type:row.host_type,player_count:row.player_count,max_players:row.max_players,tags:JSON.parse(row.tags_json||'[]'),mods,mod_summary:mods,badges:JSON.parse(row.badges_json||'[]'),rules:row.rules,connection:JSON.parse(row.connection_json||'null'),last_seen:row.last_seen};
 }
 async function listWorlds(env) {
   const cutoff=now()-ACTIVE_WINDOW_SECONDS;const result=await env.DB.prepare("SELECT * FROM worlds_v3 WHERE last_seen>=?1 AND status!='offline' ORDER BY last_seen DESC LIMIT 500").bind(cutoff).all();

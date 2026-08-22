@@ -1,5 +1,5 @@
 import coreWorker from './index';
-import { publicScanStatus, scanPublicSourcesIncrementally } from './rotating-public-scan';
+import { publicScanStatus } from './rotating-public-scan';
 
 const core = coreWorker as any;
 const DEFAULT_SYNC_FORGET_SECONDS = 6 * 60 * 60;
@@ -318,7 +318,6 @@ async function recordAcceptedSyncStart(env: any, payload: Record<string, any>): 
 }
 
 async function sourceResponseWithScanProgress(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
-  ctx.waitUntil(scanPublicSourcesIncrementally(env, false));
   const base = await core.fetch(request, env, ctx);
   if (!base.ok) return base;
   try {
@@ -352,9 +351,7 @@ export default {
     }
 
     if (request.method === 'GET' && isWorldRead(url.pathname)) {
-      // Reads never scrape providers in the browser. They may nudge one bounded
-      // background scan batch when the persisted scan state is due.
-      ctx.waitUntil(scanPublicSourcesIncrementally(env, false));
+      // Directory reads expose only registered Sync Worlds and heartbeats.
       if (url.pathname !== '/api/v1/worlds') {
         url.pathname = '/api/v1/worlds';
         const forwarded = new Request(url.toString(), request);
@@ -385,9 +382,7 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: any, ctx: ExecutionContext): Promise<void> {
-    // Do not call the older fixed-window source refresher here. This rotating
-    // scan keeps a generation/cursor in D1 and retires stale rows only after a
-    // complete provider pass, allowing the directory to grow beyond 500 rows.
-    ctx.waitUntil(scanPublicSourcesIncrementally(env, true));
+    // Signed Sync heartbeats are the only ingestion path. External server
+    // rosters are deliberately not scanned or copied into Cloudflare.
   },
 };

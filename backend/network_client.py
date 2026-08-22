@@ -52,7 +52,7 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
                 raise BlockedError(str(body.get("reason") or ""), str(body.get("reason_kind") or "ip")) from exc
             raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
         if exc.code == 401:
-            raise ConnectionError("Authentication failed: check the World Password.") from exc
+            raise ConnectionError("The World Sync session was rejected or expired.") from exc
         if exc.code == 429:
             try:
                 retry_after = float(exc.headers.get("Retry-After") or 2.0)
@@ -129,15 +129,15 @@ def auth_manifest(endpoint_value: str, password: str, server_key: str, share_acc
 
 
 def auth_metadata(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked") -> tuple[dict, str, str, float]:
-    """Authenticate and fetch World metadata without the file manifest payload."""
+    """Fetch public-safe World identity and advertised mods before joining."""
     endpoint = normalize_endpoint(endpoint_value)
     if endpoint is None:
         raise ConnectionError("Invalid server address.")
     base = endpoint.base_url
     started = time.monotonic()
-    token, accepted_source = _auth_token(endpoint, password, server_key, share_access_key, credential_source)
-    metadata = json.loads(request(f"{base}/metadata", headers={"Authorization": f"Bearer {token}"}).read())
-    metadata.setdefault("authentication", {})["credential_source"] = accepted_source
+    token, accepted_source = "", "public"
+    metadata = json.loads(request(f"{base}/identity").read())
+    metadata.setdefault("authentication", {}).update({"credential_source": accepted_source, "auth_mode": "game_authoritative", "scope": "metadata"})
     ping_ms = (time.monotonic() - started) * 1000.0
     return metadata, token, base, ping_ms
 

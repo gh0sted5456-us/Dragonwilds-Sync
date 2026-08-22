@@ -2,7 +2,7 @@
   'use strict';
 
   const api = window.dragonwilds;
-  const CHANGELOG_URL = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/codex/webgui-catalog-console-overhaul/docs/changelog.json';
+  const CHANGELOG_URL = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/docs/changelog.json';
   let cachedState = null;
   let stateFetchedAt = 0;
   let modMode = 'private';
@@ -80,23 +80,13 @@
       const button=card.querySelector('[data-recommended-open]');
       const url=String(button?.dataset.recommendedOpen||'');
       const mod=byUrl.get(url)||{};
-      const artwork=mod.banner_url||mod.artwork_url||mod.icon_url||'';
-      if(artwork&&!card.querySelector('.recommended-mod-artwork')){
-        const art=document.createElement('div');art.className='recommended-mod-artwork';
-        art.innerHTML=`<img src="${esc(artwork)}" alt="" loading="lazy"/>`;
-        card.insertBefore(art,card.firstChild);
-      }
-      const copy=[...card.children].find((node)=>node.tagName==='DIV'&&!node.classList.contains('recommended-mod-artwork'));
-      if(copy&&mod.description&&!copy.querySelector('.recommended-mod-summary')){
-        const summary=document.createElement('div');summary.className='recommended-mod-summary';summary.textContent=mod.description;copy.appendChild(summary);
-      }
       const openDetails=(event)=>{
         event?.preventDefault?.();event?.stopPropagation?.();event?.stopImmediatePropagation?.();
         if(!url||!api?.openInAppBrowser)return;
         const purpose=/nexusmods\.com/i.test(url)?'nexus':'recommended-mod';
         api.openInAppBrowser({url,purpose}).catch?.(()=>{});
       };
-      if(button){button.textContent='View Details';button.title='Open the original mod page inside Dragonwilds Sync';button.addEventListener('click',openDetails,true);}
+      if(button){button.textContent='Open Nexus';button.title='Open the original mod page inside Dragonwilds Sync';button.addEventListener('click',openDetails,true);}
       card.addEventListener('contextmenu',openDetails);
     });
   }
@@ -124,6 +114,7 @@
   }
 
   function enhanceModSettings(root = document) {
+    root.querySelector('.route-mods-app .settings-nav')?.remove();
     const activeNav=[...root.querySelectorAll('.settings-nav button.active')].find((node)=>/mod management/i.test(node.textContent||''));
     if(!activeNav) return;
     const note=root.querySelector('.settings-page-note'); const page=note?.parentElement;
@@ -158,8 +149,8 @@
     if(!/server management|sync/i.test(root.querySelector('.page-header h1')?.textContent||'')) return;
     root.querySelectorAll('[data-webhost-tab]').forEach((button)=>{
       const key=button.dataset.webhostTab||'';
-      if(key==='settings') button.textContent='Website & Networking';
-      if(key==='remote') button.textContent='Remote Users & Permissions';
+      if(key==='settings') button.textContent='WebHost';
+      if(key==='remote') button.textContent='Server Management';
     });
     const add=root.querySelector('#add-webhost-user');
     if(add){add.textContent='+ Add Remote User';add.title='Create login credentials and assign World-scoped permissions';}

@@ -48,19 +48,21 @@ assert(source.includes('recommended-mod-card recommended-mod-placard has-placard
   recommendedPlacardsCss.includes('opacity:.11'),
   'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
-assert(source.includes('data-webhost-tab="manifest">Manifest') &&
-  source.includes('data-webhost-tab="remote">Remote Login &amp; Permissions'),
-  'The normal Sync workspace must expose Manifest and Remote Login configuration.');
-assert(source.includes('data-webhost-tab="live">Advanced Webhost Preview') &&
-  source.includes('data-webhost-tab="settings">Advanced Webhost Settings') &&
+assert(source.includes('data-webhost-tab="manifest">Server Directory Manifest') &&
+  source.includes('data-webhost-tab="remote">Server Management'),
+  'The normal Sync workspace must expose directory and Server Management configuration.');
+assert(source.includes('data-webhost-tab="live">WebHost Preview') &&
+  source.includes('data-webhost-tab="settings">WebHost') &&
   !source.includes('data-webhost-tab="home">Server Directory') &&
   !source.includes('SYNC_HOME_URL'),
   'Advanced Webhost controls must remain explicit while the public directory stays in Worlds.');
 assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") &&
-  source.includes("navButton('world-management'") && source.includes("navButton('worlds'"),
-  'Characters, Mods, Dragonwilds, and Worlds must be first-class Appy navigation entries.');
+  source.includes("navButton('world-management'") && !source.includes("navButton('worlds'"),
+  'Characters and Mods must remain Appys while World browsing is owned by Dragonwilds.');
+assert(source.includes('TCP + UDP 27051 + instance offset'),
+  'Sync must identify TCP transfer and UDP LAN discovery on port 27051.');
 assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
   source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds'") &&
   source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods'") &&

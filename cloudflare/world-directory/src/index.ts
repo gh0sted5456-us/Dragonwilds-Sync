@@ -935,25 +935,13 @@ async function sourceStatus(env: Env) {
 
 async function collectDirectoryWorlds(env: Env) {
   const offlineAfter = clampInt(env.OFFLINE_AFTER_SECONDS, 1800, 60, 86400);
-  const [syncResult, externalResult] = await Promise.all([
-    env.DB.prepare(`
-      SELECT * FROM worlds
-      WHERE is_listed = 1
-      ORDER BY last_seen DESC, world_name COLLATE NOCASE ASC
-    `).all<Record<string, unknown>>(),
-    env.DB.prepare(`
-      SELECT * FROM public_source_worlds
-      WHERE is_listed = 1
-      ORDER BY last_seen DESC, world_name COLLATE NOCASE ASC
-    `).all<Record<string, unknown>>(),
-  ]);
-
+  const syncResult = await env.DB.prepare(`
+    SELECT * FROM worlds
+    WHERE is_listed = 1
+    ORDER BY last_seen DESC, world_name COLLATE NOCASE ASC
+  `).all<Record<string, unknown>>();
   const syncWorlds = (syncResult.results || []).map((row) => publicWorld(row, offlineAfter));
-  const externalRaw = (externalResult.results || []).map((row) => publicSourceWorld(row));
-  const externalMerged = mergeExternalProviders(externalRaw);
-  const finalMerged = matchExternalToSync(syncWorlds, externalMerged.worlds);
-
-  finalMerged.worlds.sort((a, b) => {
+  syncWorlds.sort((a, b) => {
     const aOnline = a.status === "online" || a.status === "starting" || a.status === "maintenance";
     const bOnline = b.status === "online" || b.status === "starting" || b.status === "maintenance";
     if (aOnline !== bOnline) return Number(bOnline) - Number(aOnline);
@@ -963,12 +951,12 @@ async function collectDirectoryWorlds(env: Env) {
   });
 
   return {
-    worlds: finalMerged.worlds,
+    worlds: syncWorlds,
     syncCount: syncWorlds.length,
-    externalInputCount: externalRaw.length,
-    externalPublishedCount: finalMerged.worlds.filter((world) => !world.is_sync_world).length,
-    suppressedProviderDuplicates: externalMerged.suppressedCount,
-    suppressedSyncDuplicates: finalMerged.suppressedCount,
+    externalInputCount: 0,
+    externalPublishedCount: 0,
+    suppressedProviderDuplicates: 0,
+    suppressedSyncDuplicates: 0,
   };
 }
 
@@ -1043,23 +1031,17 @@ export default {
       return json({
         ok: true,
         service: "dragonwilds-sync-directory",
-        public_source_aggregation: true,
-        public_sources: status,
+        public_source_aggregation: false,
+        public_sources: [],
       }, 200, publicCorsHeaders());
     }
 
     if (request.method === "GET" && url.pathname === "/api/v1/worlds") {
-      if (await publicSourcesNeedRefresh(env)) {
-        ctx.waitUntil(refreshPublicSources(env));
-      }
       return listWorlds(env);
     }
 
     if (request.method === "GET" && url.pathname === "/api/v1/sources") {
-      if (await publicSourcesNeedRefresh(env)) {
-        ctx.waitUntil(refreshPublicSources(env));
-      }
-      return listSources(env);
+      return json({generated_at:Math.floor(Date.now()/1000),precedence:"dragonwilds-sync",providers:[{id:"dragonwilds-sync-heartbeats",label:"Dragonwilds Sync Worlds",official:true}],status:[],note:"This directory publishes only registered Dragonwilds Sync Worlds and their heartbeats."},200,{...publicCorsHeaders(),"cache-control":"public, max-age=60"});
     }
 
     if (request.method === "GET" && url.pathname.startsWith("/api/v1/worlds/")) {
@@ -1075,6 +1057,7 @@ export default {
   },
 
   async scheduled(_controller: ScheduledController, env: Env, ctx: ExecutionContext): Promise<void> {
-    ctx.waitUntil(refreshPublicSources(env));
+    // Sync Worlds arrive through signed heartbeat requests. No external
+    // Dragonwilds server-roster providers are fetched by scheduled jobs.
   },
 };

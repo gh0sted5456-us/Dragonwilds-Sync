@@ -33,7 +33,8 @@ def main():
     assert "Sync Port (TCP + UDP)" in renderer
     assert 'id="toggle-runtime-ue4ss"' in renderer
     assert 'id="toggle-runtime-runeschema"' in renderer
-    assert "navButton('worlds'" in renderer
+    assert "navButton('worlds'" not in renderer
+    assert "'worlds'].includes(state.route)" in renderer
     assert 'data-webhost-tab="home">Server Directory' not in renderer
 
     baseline = ROOT / "resources/PersistentDirectConnectIP-baseline.zip"

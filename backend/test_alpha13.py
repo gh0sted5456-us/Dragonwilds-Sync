@@ -101,12 +101,12 @@ def main():
     auth.password = "world-password"
     nonce = auth.issue_nonce()
     linked = auth.check_proof(nonce, _proof(auth.password, nonce), mode="world_password", credential_source="linked", client_ip="10.0.0.20")
-    assert linked and linked["auth_mode"] == "world_password" and linked["credential_source"] == "linked"
+    assert linked and linked["auth_mode"] == "game_authoritative" and linked["credential_source"] == "linked"
     assert linked["scope"] == "world-sync"
 
     nonce = auth.issue_nonce()
     shared_auth = auth.check_proof(nonce, _proof(auth.password, nonce), mode="world_password", credential_source="imported-rsdwl", client_ip="10.0.0.21")
-    assert shared_auth and shared_auth["auth_mode"] == "world_password"
+    assert shared_auth and shared_auth["auth_mode"] == "game_authoritative"
     assert shared_auth["credential_source"] == "imported-rsdwl"
     assert shared_auth["scope"] == "world-sync"
     assert auth.token_context(shared_auth["token"])["credential_source"] == "imported-rsdwl"
@@ -115,7 +115,8 @@ def main():
     assert auth.check_token(shared_auth["token"]) is False
 
     nonce = auth.issue_nonce()
-    assert auth.check_proof(nonce, _proof("wrong-password", nonce), mode="world_password", credential_source="online-feed") is None
+    mismatch = auth.check_proof(nonce, _proof("wrong-password", nonce), mode="world_password", credential_source="online-feed")
+    assert mismatch and mismatch["auth_mode"] == "game_authoritative"
 
     project = Path(__file__).resolve().parents[1]
     renderer = (project / "renderer" / "app-v2.js").read_text(encoding="utf-8")

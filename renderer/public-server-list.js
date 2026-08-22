@@ -4,6 +4,7 @@
 (() => {
   const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html';
   const API_URL = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds';
+  const FALLBACK_URL = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/assets/public-worlds-fallback.json';
   const LINK_KEY = 'dragonwilds-sync-public-server-list-link';
   const VIEW_KEY = 'dragonwilds-sync-public-server-list-view';
   const REFRESH_MS = 30000;
@@ -198,8 +199,16 @@
     if (!force && rows.length && Date.now() - lastLoadedAt < 5000) { renderRows(); return; }
     setStatus('Loading public servers…');
     try {
-      const response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-      if (!response.ok) throw new Error(`Directory returned HTTP ${response.status}.`);
+      let response;
+      let directorySource = 'live directory';
+      try {
+        response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      } catch (liveError) {
+        response = await fetch(FALLBACK_URL, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+        if (!response.ok) throw new Error(`Live directory ${liveError.message}; snapshot HTTP ${response.status}.`);
+        directorySource = `published snapshot; live directory ${liveError.message}`;
+      }
       const payload = await response.json();
       const source = Array.isArray(payload?.worlds) ? payload.worlds : Array.isArray(payload) ? payload : [];
       const unique = new Map();
@@ -207,7 +216,7 @@
       rows = [...unique.values()];
       currentPage = 1;
       lastLoadedAt = Date.now();
-      setStatus(`${rows.length} public server${rows.length === 1 ? '' : 's'} loaded`, 'ok');
+      setStatus(`${rows.length} public server${rows.length === 1 ? '' : 's'} loaded from ${directorySource}`, 'ok');
       const endpointNode = root.querySelector('#dws-public-server-endpoint');
       if (endpointNode) endpointNode.textContent = endpoint;
       renderRows();

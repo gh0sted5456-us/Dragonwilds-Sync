@@ -864,7 +864,8 @@
     if(state.backgroundRefreshTimer)scheduleBackgroundRefresh(250);
     if (next === 'characters-app') { await enterRsdwToolkit(); return; }
     if (next === 'mods-app') {
-      if (!(state.route === 'settings' && state.settingsTab === 'mods')) navigateTo('settings', { settingsTab:'mods' });
+      state.settingsTab='mods';
+      if (state.route !== 'mods-app') navigateTo('mods-app');
       return;
     }
     if (next === 'rsdragonwilds-app') { state.worldManagementTab='server-setup';await handleRouteNavigation('world-management'); return; }
@@ -1838,10 +1839,9 @@
   function renderSidebar() {
     const p = player();
     const avatar = p.avatar_data ? `<img src="${p.avatar_data}" alt="" />` : escapeHtml(initials(p.display_name || 'Player'));
-    const dragonwildsActive=['world-management','world-detail','server-detail','servers','rsdragonwilds-app'].includes(state.route);
-    const worldsActive=state.route==='worlds';
+    const dragonwildsActive=['world-management','world-detail','server-detail','servers','rsdragonwilds-app','worlds'].includes(state.route);
     const charactersActive=state.route==='profile'&&state.profileTab==='characters';
-    const modsActive=state.route==='settings'&&state.settingsTab==='mods';
+    const modsActive=state.route==='mods-app'||(state.route==='settings'&&state.settingsTab==='mods');
     const rsdwLauncherActive=state.route==='rsdw-launcher';
     const systemSettingsActive=state.route==='settings'&&!modsActive;
     return `
@@ -1856,7 +1856,6 @@
         ${navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
         ${navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png'),'RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
         <div class="nav-label">Host &amp; Connect</div>
-        ${navButton('worlds',navIconAsset('assets/singleplayer-icon.png'),'Worlds',{appy:'world-browser',tone:'worlds',active:worldsActive,subapps:'Favorites · Manifest · Public · LAN'})}
         ${navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
         <div class="nav-label">${t('system')}</div>
         ${navButton('help',navIconAsset('assets/navigation/help.svg'),'Helpy',{appy:'help',tone:'system',subapps:'Guides · screenshots · safety'})}
@@ -1938,10 +1937,9 @@
     if(!sidebar)return;
     const p=player();
     const activeRoutes={
-      'world-management':['world-management','world-detail','server-detail','servers','rsdragonwilds-app'].includes(state.route),
-      'worlds':state.route==='worlds',
+      'world-management':['world-management','world-detail','server-detail','servers','rsdragonwilds-app','worlds'].includes(state.route),
       'characters-app':state.route==='profile'&&state.profileTab==='characters',
-      'mods-app':state.route==='settings'&&state.settingsTab==='mods',
+      'mods-app':state.route==='mods-app'||(state.route==='settings'&&state.settingsTab==='mods'),
       'rsdw-launcher':state.route==='rsdw-launcher',
       webhost:state.route==='webhost'||state.route==='remote-server',
       help:state.route==='help',
@@ -4218,7 +4216,7 @@
       if(!standaloneHostWorkspace&&externalTab==='live')state.webhostTab='live';
       else if(!standaloneHostWorkspace)state.webhostTab='settings';
       if(routedWebhost&&((!webhostFeatureEnabled&&['live','settings'].includes(state.webhostTab))||state.webhostTab==='home'))state.webhostTab='manifest';
-      const webhostTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" aria-label="Sync workspace"><button class="${state.webhostTab==='manifest'?'active':''}" data-webhost-tab="manifest">Manifest</button><button class="${state.webhostTab==='remote'?'active':''}" data-webhost-tab="remote">Remote Login &amp; Permissions</button>${webhostFeatureEnabled?`<button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Advanced Webhost Preview</button><button class="${state.webhostTab==='settings'?'active':''}" data-webhost-tab="settings">Advanced Webhost Settings</button>`:''}</nav>`:(externalTabs||`<nav class="settings-subnav webhost-tabs"><button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Live View</button><button class="${state.webhostTab!=='live'?'active':''}" data-webhost-tab="settings">${standaloneRemote?'Permissions &amp; Authority':'Settings &amp; Sharing'}</button></nav>`);
+      const webhostTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" aria-label="Sync workspace"><button class="${state.webhostTab==='manifest'?'active':''}" data-webhost-tab="manifest">Server Directory Manifest</button><button class="${state.webhostTab==='remote'?'active':''}" data-webhost-tab="remote">Server Management</button>${webhostFeatureEnabled?`<button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">WebHost Preview</button><button class="${state.webhostTab==='settings'?'active':''}" data-webhost-tab="settings">WebHost</button>`:''}</nav>`:(externalTabs||`<nav class="settings-subnav webhost-tabs"><button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Live View</button><button class="${state.webhostTab!=='live'?'active':''}" data-webhost-tab="settings">${standaloneRemote?'Permissions &amp; Authority':'Settings &amp; Sharing'}</button></nav>`);
       if(routedWebhost&&state.webhostTab==='manifest'){
         const sources=a.world_discovery?.directory_sources||[];
         const sourceRows=sources.map((source)=>`<div class="directory-source-row"><button class="toggle ${source.enabled===false?'':'on'}" data-directory-source-toggle="${escapeHtml(source.id||'')}"></button><div><strong>${escapeHtml(source.name||'Manifest Host')}</strong><small>${escapeHtml(source.url||'')}</small></div><span class="status-pill ${source.enabled===false?'unknown':'online'}">${source.enabled===false?'PAUSED':'HEARTBEAT ACTIVE'}</span><button class="btn ghost compact-btn" data-directory-source-remove="${escapeHtml(source.id||'')}">Remove</button></div>`).join('');
@@ -4247,7 +4245,7 @@
           <div class="settings-row"><div class="settings-copy"><strong>Heartbeat authority</strong><span>Anonymous publishing is independent of network exposure and remains off unless explicitly enabled.</span></div><label><input type="checkbox" id="directory-host-anonymous" ${directoryHost.allow_anonymous_heartbeats?'checked':''}/> Allow anonymous heartbeats</label></div>
           <div class="settings-row"><div class="settings-copy"><strong>Windows Firewall</strong><span>Repair manages only <code>Dragonwilds Sync - WebHost TCP</code> in the <code>Dragonwilds Sync</code> rule group. Elevation is requested only for this action.</span></div><button class="btn ghost" id="configure-webhost-firewall">Repair Firewall</button></div>
           <div class="health-evidence-grid"><div class="identity-box"><small>Listener</small><strong>${escapeHtml(directoryHostStatus.network_layers?.listener||'Stopped')}</strong></div><div class="identity-box"><small>Firewall</small><strong>${escapeHtml(directoryHostStatus.network_layers?.firewall||'Not checked')}</strong></div><div class="identity-box"><small>Router method</small><strong>${escapeHtml(directoryHostStatus.network_layers?.router_method||directoryHost.publication_mode||'Manual')}</strong></div><div class="identity-box"><small>External reachability</small><strong>${escapeHtml(directoryHostStatus.network_layers?.external_reachability||'Not tested')}</strong></div></div>
-          <div class="webhost-port-matrix"><div><strong>WebHost + optional Remote Server</strong><code>TCP ${escapeHtml(String(directoryHost.port||27080))}</code><span>Windows firewall and router forwarding are required for direct Internet access. An outbound HTTPS tunnel can replace the router forward.</span></div><div><strong>Dragonwilds dedicated instances</strong><code>UDP 7777, 7778, 7779…</code><span>Server 1 starts at 7777 and every additional server increments by one. Gameplay remains configured in Servers, never by this WebHost switch.</span></div><div><strong>Dragonwilds World Sync</strong><code>TCP 27051 + instance offset</code><span>Each simultaneous server receives an isolated Sync listener; ordinary joining clients connect outbound and need no inbound client rule.</span></div></div>
+          <div class="webhost-port-matrix"><div><strong>WebHost + optional Remote Server</strong><code>TCP ${escapeHtml(String(directoryHost.port||27080))}</code><span>Windows firewall and router forwarding are required for direct Internet access. An outbound HTTPS tunnel can replace the router forward.</span></div><div><strong>Dragonwilds dedicated instances</strong><code>UDP 7777, 7778, 7779…</code><span>Server 1 starts at 7777 and every additional server increments by one. Gameplay remains configured in Servers, never by this WebHost switch.</span></div><div><strong>Dragonwilds World Sync</strong><code>TCP + UDP 27051 + instance offset</code><span>TCP transfers profiles and mods; UDP provides LAN discovery. Joining clients connect outbound and need no inbound client rule.</span></div></div>
           <div class="settings-row" style="${standaloneWebhost?'display:none':''}"><div class="settings-copy"><strong>Remote Server</strong><span>A distinct remote-operation surface using desktop-created users or exact World Name + Server Admin Password. Its feature gate lives in Settings → Advanced.</span></div><span class="status-pill ${remoteSurface?'online':'unknown'}">${remoteSurface?'ENABLED':'DISABLED IN ADVANCED'}</span></div>
           <div class="webhost-authority" style="${standaloneWebhost?'display:none':''}"><div class="panel-header"><div><h3>Portal authority</h3><span class="panel-subtitle">The desktop application is the source of truth. New sessions receive this permission snapshot; revoke existing sessions from Activity.</span></div><span class="status-pill unknown">DENY WRITE BY DEFAULT</span></div><div class="webhost-permission-grid">
             ${permissionChoice('view_overview','View overview','World identity, routes, runtime, players, health.',true)}
@@ -4542,6 +4540,7 @@
     else if (state.route === 'help') page = renderHelp();
     else if (state.route === 'webhost') page = renderSettings();
     else if (state.route === 'remote-server') { state.webhostTab='remote';page=renderSettings(); }
+    else if (state.route === 'mods-app') { state.settingsTab='mods';page=renderSettings(); }
     else if (state.route === 'settings') page = renderSettings();
     else page = renderWorldGallery();
     const collapsed = !!state.data?.application?.nav_collapsed;

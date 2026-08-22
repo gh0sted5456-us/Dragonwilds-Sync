@@ -3,6 +3,18 @@
   "updated_at": "2026-08-22T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.0",
+      "title": "Dragonwilds Sync V2.7",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Dragonwilds is authoritative for World Password validation; Sync no longer creates a conflicting password gate.",
+        "Public and LAN discovery preserve complete structured PAK, UE4SS, and RuneSchema mod summaries before joining.",
+        "World Sync identifies TCP profile transfer and UDP LAN discovery on port 27051.",
+        "World browsing is integrated into Dragonwilds while Mods and Sync management have dedicated application surfaces."
+      ]
+    },
+    {
       "version": "2.6.0",
       "title": "Dragonwilds Sync V2.6",
       "date": "2026-08-22",

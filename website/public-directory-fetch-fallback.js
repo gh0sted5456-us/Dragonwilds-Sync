@@ -42,7 +42,6 @@
       if (!response.ok) throw new Error(`Public snapshot returned HTTP ${response.status}`);
       const payload = await response.json();
       const worlds = Array.isArray(payload?.worlds) ? payload.worlds : [];
-      if (!worlds.length) throw new Error('Public snapshot contains no Worlds');
       cachedSnapshot = payload;
       cachedSnapshotAt = Date.now();
       return payload;

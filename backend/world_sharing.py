@@ -61,7 +61,6 @@ def _clean_world_payload(world: dict, *, fallback_external_ip: str = "", source:
     if not manifest.get("mod_summary") and isinstance(src.get("mod_metadata"), list):
         manifest["mod_summary"] = deepcopy(src.get("mod_metadata") or [])
     identity = dict(src.get("identity") or {})
-    share_access_key = str(credentials.get("share_access_key") or credentials.get("share_key") or "").strip()[:256]
 
     payload = {
         "nickname": str(src.get("nickname") or "").strip()[:80],
@@ -80,7 +79,6 @@ def _clean_world_payload(world: dict, *, fallback_external_ip: str = "", source:
             # The private Server Key/passkey is NEVER exported. Shared packages use a
             # separate rotatable sync-scoped key when the server has supplied one.
             "password": str(credentials.get("password") or "")[:512],
-            "share_access_key": share_access_key,
             "remember": True,
             "source": str(credentials.get("source") or source or "shared")[:32],
         },
@@ -129,7 +127,6 @@ def export_world_package(world: dict, output_path: str | Path, *, client_id: str
             "worldName": world_payload["identity"]["world_name"],
             "profileSha256": profile_sha,
             "credentialPolicy": "share-scoped-no-server-key",
-            "hasShareAccessKey": bool(world_payload["credentials"].get("share_access_key")),
         },
     )
     manifest = result["manifest"]
@@ -205,8 +202,9 @@ def inspect_world_package(package_path: str | Path) -> dict:
     creds = world.setdefault("credentials", {})
     for forbidden in ("server_key", "serverKey", "passkey", "unique_passkey", "owner_key", "admin_key"):
         creds.pop(forbidden, None)
-    creds["server_key"] = ""
-    creds["share_access_key"] = str(creds.get("share_access_key") or "")[:256]
+    creds.pop("server_key", None)
+    creds.pop("share_access_key", None)
+    creds.pop("share_key", None)
     creds["source"] = "imported-rsdwl"
     world.setdefault("shared", {})["source"] = "imported-rsdwl"
     return inspected
@@ -261,8 +259,6 @@ def _sanitize_feed_world(entry: dict) -> dict:
         },
         "credentials": {
             "password": str(credentials.get("password") or entry.get("password") or "")[:512],
-            "share_access_key": str(credentials.get("share_access_key") or entry.get("share_access_key") or entry.get("share_key") or "")[:256],
-            "server_key": "",
             "remember": True,
             "source": "online-feed",
         },

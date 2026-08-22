@@ -14,8 +14,8 @@ from server_systems import SyncState
 from world_sharing import _sanitize_feed_world, export_world_package, inspect_world_package
 
 
-def _proof(secret: str, password: str, nonce: str) -> str:
-    return hmac.new(secret.encode(), (nonce + password).encode(), hashlib.sha256).hexdigest()
+def _proof(password: str, nonce: str) -> str:
+    return hmac.new(password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
 
 
 def main():
@@ -47,14 +47,14 @@ def main():
         assert exported["manifest"]["packageType"] == "world"
         assert exported["manifest"]["producer"]["fingerprint"]
         assert len(exported["manifest"]["security"]["exportKey"]) == 64
-        assert exported["world"]["credentials"]["share_access_key"] == "rotatable-share-key"
+        assert "share_access_key" not in exported["world"]["credentials"]
         assert "server_key" not in exported["world"]["credentials"]
         assert "passkey" not in exported["world"]["credentials"]
 
         inspected = inspect_world_package(world_path)
         assert inspected["world"]["credentials"]["source"] == "imported-rsdwl"
-        assert inspected["world"]["credentials"]["server_key"] == ""
-        assert inspected["world"]["credentials"]["share_access_key"] == "rotatable-share-key"
+        assert "server_key" not in inspected["world"]["credentials"]
+        assert "share_access_key" not in inspected["world"]["credentials"]
         generic = inspect_envelope(world_path, expected_type="world")
         assert generic["manifest"]["packageType"] == "world"
 
@@ -87,50 +87,46 @@ def main():
         else:
             raise AssertionError("character RSDWL was accepted as a World")
 
-    # Online feed sanitization keeps only the share-scoped credential.
+    # Online feed sanitization keeps only the optional World Password.
     feed = _sanitize_feed_world({
         "id": "feed-world", "name": "Feed World", "external_ip": "198.51.100.8",
         "credentials": {"password": "pw", "server_key": "DROP", "share_access_key": "SHARE"},
     })
-    assert feed["credentials"]["server_key"] == ""
-    assert feed["credentials"]["share_access_key"] == "SHARE"
+    assert "server_key" not in feed["credentials"]
+    assert "share_access_key" not in feed["credentials"]
     assert feed["credentials"]["source"] == "online-feed"
 
-    # Server accepts two distinct HMAC credential classes and records provenance.
+    # Server accepts one password-only nonce proof and records provenance.
     auth = SyncState()
     auth.password = "world-password"
-    auth.server_key = "owner-private-key"
-    auth.share_access_key = "share-read-key"
-    auth.allow_shared_access = True
+    nonce = auth.issue_nonce()
+    linked = auth.check_proof(nonce, _proof(auth.password, nonce), mode="world_password", credential_source="linked", client_ip="10.0.0.20")
+    assert linked and linked["auth_mode"] == "world_password" and linked["credential_source"] == "linked"
+    assert linked["scope"] == "world-sync"
 
     nonce = auth.issue_nonce()
-    linked = auth.check_proof(nonce, _proof(auth.server_key, auth.password, nonce), mode="server_key", credential_source="linked", client_ip="10.0.0.20")
-    assert linked and linked["auth_mode"] == "server_key" and linked["credential_source"] == "linked"
-    assert linked["scope"] == "linked-sync"
-
-    nonce = auth.issue_nonce()
-    shared_auth = auth.check_proof(nonce, _proof(auth.share_access_key, auth.password, nonce), mode="share_access", credential_source="imported-rsdwl", client_ip="10.0.0.21")
-    assert shared_auth and shared_auth["auth_mode"] == "share_access"
+    shared_auth = auth.check_proof(nonce, _proof(auth.password, nonce), mode="world_password", credential_source="imported-rsdwl", client_ip="10.0.0.21")
+    assert shared_auth and shared_auth["auth_mode"] == "world_password"
     assert shared_auth["credential_source"] == "imported-rsdwl"
-    assert shared_auth["scope"] == "sync-read"
+    assert shared_auth["scope"] == "world-sync"
     assert auth.token_context(shared_auth["token"])["credential_source"] == "imported-rsdwl"
     # Bearer tokens are bounded rather than living forever in the service process.
     auth.token_sources[shared_auth["token"]]["issued_at"] = 1
     assert auth.check_token(shared_auth["token"]) is False
 
-    auth.allow_shared_access = False
     nonce = auth.issue_nonce()
-    assert auth.check_proof(nonce, _proof(auth.share_access_key, auth.password, nonce), mode="share_access", credential_source="online-feed") is None
+    assert auth.check_proof(nonce, _proof("wrong-password", nonce), mode="world_password", credential_source="online-feed") is None
 
     project = Path(__file__).resolve().parents[1]
-    renderer = (project / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (project / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "Player connected" in renderer
     assert "Add to My Worlds" in renderer
     assert "Quick Connect" in renderer
     assert "data-desktop-shared-world" in renderer and "data-desktop-online-world" in renderer
-    # The user-facing contract is World Password + Share / Hash Code. The
+    # The user-facing contract is IP + World Name + optional World Password.
     # operator-only server key remains internal to the signed protocol.
-    assert "Share / Hash Code" in renderer and "Connection code protected" in renderer
+    assert "Share / Hash Code" not in renderer
+    assert 'id="f-address"' in renderer and 'id="f-password"' in renderer
     assert "Private Server Key never shared" not in renderer
     print("alpha 13 RSDWL/shared-world security tests passed")
 

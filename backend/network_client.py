@@ -52,7 +52,7 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
                 raise BlockedError(str(body.get("reason") or ""), str(body.get("reason_kind") or "ip")) from exc
             raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
         if exc.code == 401:
-            raise ConnectionError("Authentication failed: check the World Password and Share / Hash Code.") from exc
+            raise ConnectionError("Authentication failed: check the World Password.") from exc
         if exc.code == 429:
             try:
                 retry_after = float(exc.headers.get("Retry-After") or 2.0)
@@ -86,21 +86,17 @@ def _credential_source(value: str) -> str:
     return source if source in ALLOWED_CREDENTIAL_SOURCES else "linked"
 
 
-def _auth_token(endpoint, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked") -> tuple[str, str]:
+def _auth_token(endpoint, password: str, server_key: str = "", share_access_key: str = "", credential_source: str = "linked") -> tuple[str, str]:
     base = endpoint.base_url
     password = str(password or "")
-    server_key = str(server_key or "")
-    share_access_key = str(share_access_key or "")
     source = _credential_source(credential_source)
-    if not password.strip() and not server_key.strip() and not share_access_key.strip():
-        return _lan_token(endpoint), "lan"
-    key = server_key.strip() or share_access_key.strip()
-    if not key:
-        raise ConnectionError("This World needs its Share / Hash Code before synchronization.")
-    mode = "server_key" if server_key.strip() else "share_access"
     nonce = json.loads(request(f"{base}/nonce").read())["nonce"]
-    proof = hmac.new(key.encode(), (nonce + password).encode(), hashlib.sha256).hexdigest()
-    payload = json.dumps({"nonce": nonce, "proof": proof, "mode": mode, "credential_source": source}).encode()
+    # The player connection contract is intentionally only IP + exact World
+    # Name + optional World Password. A blank password represents an open World.
+    # Server/share keys remain accepted as ignored compatibility parameters so
+    # older saved profiles continue to load without becoming auth requirements.
+    proof = hmac.new(password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
+    payload = json.dumps({"nonce": nonce, "proof": proof, "mode": "world_password", "credential_source": source}).encode()
     response = json.loads(request(f"{base}/auth", method="POST", data=payload, headers={"Content-Type": "application/json"}).read())
     token = str(response.get("token") or "")
     if not token:

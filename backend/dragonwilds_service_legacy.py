@@ -342,8 +342,7 @@ def _directory_join_world_shape(row: dict, *, local_id: str = "", credentials: d
         "identity": {"world_name": str(row.get("world_name") or "World"), "server_profile_id_hint": ""},
         "connection": {"internal_ip": str(row.get("internal_ip") or ""), "external_ip": str(row.get("external_ip") or ""),
                        "game_port": int(row.get("game_port") or 7777), "sync_port": int(row.get("sync_port") or 27051), "preference": "auto"},
-        "credentials": {"password": str((credentials or {}).get("password") or ""), "server_key": str((credentials or {}).get("server_key") or ""),
-                        "share_access_key": str((credentials or {}).get("share_access_key") or ""), "source": "directory-link", "remember": True},
+        "credentials": {"password": str((credentials or {}).get("password") or ""), "source": "directory-link", "remember": True},
         "presentation": {"description": str(row.get("description") or ""), "tags": list(row.get("tags") or []),
                          "icon_b64": str(row.get("icon_b64") or ""), "banner_b64": str(row.get("banner_b64") or ""), "mod_badges": []},
         "classification": classification,
@@ -790,9 +789,6 @@ def _apply_metadata_refresh(world: dict, result: dict) -> None:
         shared.update({"fingerprint": fingerprint, "protocol": str(world_sync.get("protocol") or "dragonwilds-world-sync"), "protocol_version": int(world_sync.get("version") or 1)})
         shared["shared_character_count"] = max(0, int(metadata.get("shared_character_count") or remote.get("shared_character_count") or len(metadata.get("shared_characters") or metadata.get("starter_characters") or []) or shared.get("shared_character_count") or 0))
     _apply_verified_world_sync(world, metadata if metadata.get("world_sync") else remote)
-    share_profile = metadata.get("share_profile") or {}
-    if share_profile.get("enabled") and share_profile.get("access_key"):
-        world.setdefault("credentials", {})["share_access_key"] = str(share_profile.get("access_key") or "")
     status = world.setdefault("status", {})
     status.update({
         "online": bool(remote.get("server_online", True)),
@@ -880,14 +876,8 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
         credentials["password"] = str(incoming_credentials.get("password") or "")
     else:
         credentials.setdefault("password", "")
-    if "server_key" in incoming_credentials:
-        credentials["server_key"] = str(incoming_credentials.get("server_key") or "")
-    else:
-        credentials.setdefault("server_key", "")
-    if "share_access_key" in incoming_credentials:
-        credentials["share_access_key"] = str(incoming_credentials.get("share_access_key") or "")
-    else:
-        credentials.setdefault("share_access_key", "")
+    credentials.pop("server_key", None)
+    credentials.pop("share_access_key", None)
     if "source" in incoming_credentials:
         credentials["source"] = str(incoming_credentials.get("source") or "linked")[:32]
     else:
@@ -1023,6 +1013,37 @@ def _detect_local_owner_id() -> dict:
                 return {"ok": True, "owner_id": owner_id, "source": path.name,
                         "masked": f"{owner_id[:4]}…{owner_id[-4:]}"}
     return {"ok": False, "error": "No authenticated local Player ID was found. Open Dragonwilds Settings and use the copy button beside My Player ID."}
+
+
+_SERVER_UPDATE_JOBS: dict[str, dict] = {}
+_SERVER_UPDATE_LOCK = threading.RLock()
+
+
+def _set_server_update_job(job_id: str, **patch) -> None:
+    with _SERVER_UPDATE_LOCK:
+        job = _SERVER_UPDATE_JOBS.setdefault(job_id, {"id": job_id, "status": "queued", "phase": "queued", "percent": 0})
+        job.update(patch); job["updated_at"] = time.time()
+
+
+def _run_server_update_job(job_id: str, install_dir: str, steamcmd_dir: str) -> None:
+    def progress(update: dict) -> None:
+        _set_server_update_job(job_id, status="running", **dict(update or {}))
+    try:
+        progress({"phase": "preparing", "message": "Preparing SteamCMD and server folders", "percent": 0})
+        if not _steamcmd_executable(steamcmd_dir).exists():
+            download_steamcmd(steamcmd_dir, progress=progress)
+        latest = check_steam_build()
+        installed = install_dedicated_server(install_dir, steamcmd_dir, progress=progress)
+        state = load_state(); install = state.setdefault("application", {}).setdefault("server_install", {})
+        install.update({"install_dir": install_dir, "steamcmd_dir": steamcmd_dir, "installed_at": time.time(), "installed_build_source": "steamcmd_app_update_validate"})
+        if installed.get("server_exe"): install["server_exe"] = installed["server_exe"]
+        if (latest or {}).get("buildid"): install["installed_buildid"] = str(latest.get("buildid"))
+        save_state(state)
+        progress({"phase": "runtimes", "message": "Checking shared server runtimes", "percent": 98})
+        runtime = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
+        _set_server_update_job(job_id, status="complete", phase="complete", message="Dedicated server update complete", percent=100, result={"latest": latest, "installed": installed, "runtime": runtime})
+    except Exception as exc:
+        _set_server_update_job(job_id, status="failed", phase="failed", message=str(exc), error=str(exc))
 
 
 def handle(method: str, params: dict) -> object:
@@ -1761,8 +1782,8 @@ def handle(method: str, params: dict) -> object:
         credentials = world.get("credentials") or {}
         issues = []
         if not result.get("ok"): issues.append(result.get("error") or "Authenticated manifest is unavailable.")
-        if not (credentials.get("password") or credentials.get("server_key") or credentials.get("share_access_key")):
-            issues.append("Credentials are not saved; same-LAN trust may still work.")
+        if not credentials.get("password"):
+            issues.append("No World Password is saved; this is valid for an open World.")
         if not (world.get("shared") or {}).get("fingerprint_verified"):
             issues.append("Live Sync fingerprint has not been verified yet.")
         return {"ok": bool(result.get("ok")), "world_name": (world.get("identity") or {}).get("world_name") or "World",
@@ -2132,11 +2153,7 @@ def handle(method: str, params: dict) -> object:
         client = state.setdefault("client", {})
         fingerprint = str(row.get("fingerprint") or "")
         existing = next((item for item in client.setdefault("worlds", []) if str((item.get("shared") or {}).get("fingerprint") or "") == fingerprint), None)
-        credentials = {
-            "password": str(params.get("password") or "")[:256],
-            "server_key": str(params.get("server_key") or "")[:512],
-            "share_access_key": str(params.get("share_access_key") or "")[:512],
-        }
+        credentials = {"password": str(params.get("password") or "")[:256]}
         linked = _directory_join_world_shape(row, local_id=str((existing or {}).get("id") or ""), credentials=credentials)
         if existing is None: client["worlds"].append(linked)
         else: existing.clear(); existing.update(linked); linked = existing
@@ -2369,7 +2386,6 @@ def handle(method: str, params: dict) -> object:
             cfg["sync_port"] = max(1, min(65535, int(params.get("sync_port") or 27051)))
         cfg.setdefault("sync_port", 27051)
         cfg.setdefault("server_key", secrets.token_hex(16))
-        cfg.setdefault("share_access_key", secrets.token_hex(16))
         cfg.setdefault("lan_broadcast", True)
         units = singleplayer_distribution_units(game_dir, profile_id)
         profile_override = {
@@ -2394,9 +2410,9 @@ def handle(method: str, params: dict) -> object:
         if public_ip:
             cfg["external_ip"] = public_ip
             local["public_ip"] = public_ip
-        result = SHARE.publish(profile_id, units, str(cfg.get("password") or ""), str(cfg.get("server_key") or ""), int(cfg.get("sync_port") or 27051),
+        result = SHARE.publish(profile_id, units, str(cfg.get("password") or ""), "", int(cfg.get("sync_port") or 27051),
                                hw_stats=gather_server_hardware_stats(), game_port=7777, broadcast=bool(cfg.get("lan_broadcast", True)),
-                               public_ip=public_ip, game_root=game_dir, share_access_key=str(cfg.get("share_access_key") or ""),
+                               public_ip=public_ip, game_root=game_dir,
                                allow_shared_access=True, profile_override=profile_override, persist_profile=False)
         with STATE.lock:
             STATE.server_online = True
@@ -2511,7 +2527,7 @@ def handle(method: str, params: dict) -> object:
         if "broadcast_config" in incoming and isinstance(incoming.get("broadcast_config"), dict):
             cfg = dict(profile.get("broadcast_config") or {})
             next_cfg = dict(incoming.get("broadcast_config") or {})
-            for key in ("password", "server_key", "share_access_key"):
+            for key in ("password",):
                 if key in next_cfg: cfg[key] = str(next_cfg.get(key) or "")
             if "sync_port" in next_cfg:
                 try: cfg["sync_port"] = max(1, min(65535, int(next_cfg.get("sync_port") or 27051)))
@@ -2713,7 +2729,7 @@ def handle(method: str, params: dict) -> object:
             local = load_singleplayer_profile(profile_id); cfg = local.get("broadcast_config") or {}
             distribution = singleplayer_distribution_units(game_dir, profile_id)
             profile_override = {"name": local.get("name") or "Private World", "description": local.get("description") or "", "tags": list(local.get("tags") or ["PRIVATE", "CO-OP"]), "classification": normalize_world_classification({**(local.get("classification") or {}), "host_type": "coop", "visibility": "friends"}, tags=local.get("tags") or [], host_type="coop", visibility="friends"), "character_sharing": {"enabled": False}, "icon_b64": local.get("icon_b64") or "", "banner_b64": local.get("banner_b64") or "", "placard_background": str(local.get("placard_background") or "1"), "health_config": normalize_health_config(local.get("health_config")), "sync_config": cfg, "dedicated_config": {"port": 7777}, "mods_txt_mode": "auto", "mods_txt_writer": "client_generate", "hierarchy": {}, "feedback": [], "player_map": {"allow_remote_clients": False}, "world_save_download": {"enabled": False}, "service_notice": {}}
-            SHARE.publish(profile_id, distribution, str(cfg.get("password") or ""), str(cfg.get("server_key") or ""), int(cfg.get("sync_port") or 27051), hw_stats=gather_server_hardware_stats(), game_port=7777, broadcast=bool(cfg.get("lan_broadcast", True)), public_ip=str(cfg.get("external_ip") or local.get("public_ip") or ""), game_root=game_dir, share_access_key=str(cfg.get("share_access_key") or ""), allow_shared_access=True, profile_override=profile_override, persist_profile=False)
+            SHARE.publish(profile_id, distribution, str(cfg.get("password") or ""), "", int(cfg.get("sync_port") or 27051), hw_stats=gather_server_hardware_stats(), game_port=7777, broadcast=bool(cfg.get("lan_broadcast", True)), public_ip=str(cfg.get("external_ip") or local.get("public_ip") or ""), game_root=game_dir, allow_shared_access=True, profile_override=profile_override, persist_profile=False)
         if not content_only:
             _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"units": units, "state": public_state(state)}
@@ -3526,9 +3542,6 @@ def handle(method: str, params: dict) -> object:
                 manifest = result.get("manifest") or {}
                 world["manifest_cache"] = manifest
                 _apply_verified_world_sync(world, manifest)
-                share_profile = manifest.get("share_profile") or {}
-                if share_profile.get("enabled") and share_profile.get("access_key"):
-                    world.setdefault("credentials", {})["share_access_key"] = str(share_profile.get("access_key") or "")
                 _merge_advertised_connection(world, manifest.get("connection") or {})
                 world.setdefault("identity", {})["server_profile_id_hint"] = manifest.get("profile_id") or ""
                 world["presentation"] = {
@@ -3558,6 +3571,12 @@ def handle(method: str, params: dict) -> object:
                 status["runtime_stack"] = remote.get("runtime_stack") or {}
                 status["connection"] = remote.get("connection") or {}
                 _merge_advertised_connection(world, remote.get("connection") or {})
+                presentation = world.setdefault("presentation", {})
+                for key in ("description", "icon_b64", "banner_b64", "placard_background", "mod_badges", "mod_summary", "tags"):
+                    if remote.get(key) not in (None, "", []):
+                        presentation[key] = deepcopy(remote.get(key))
+                if remote.get("mod_summary"):
+                    world["mod_metadata"] = deepcopy(remote.get("mod_summary") or [])
                 status["external_hierarchy"] = remote.get("external_hierarchy") or {}
                 status["service_notice"] = remote.get("service_notice") or {}
         elif result.get("rate_limited"):
@@ -3668,9 +3687,6 @@ def handle(method: str, params: dict) -> object:
         connection["last_successful_route"] = result.get("route") or ""
         connection["last_successful_address"] = result.get("endpoint") or ""
         world["manifest_cache"] = manifest
-        share_profile = manifest.get("share_profile") or {}
-        if share_profile.get("enabled") and share_profile.get("access_key"):
-            world.setdefault("credentials", {})["share_access_key"] = str(share_profile.get("access_key") or "")
         world.setdefault("identity", {})["server_profile_id_hint"] = manifest.get("profile_id") or ""
         world["presentation"] = {
             "description": manifest.get("description") or "",
@@ -3766,6 +3782,12 @@ def handle(method: str, params: dict) -> object:
                         _apply_operator_identity(world, remote.get("operator_identity"))
                         _record_world_identity(state, world, source="background live status")
                         _merge_advertised_connection(world, remote.get("connection") or {})
+                        presentation = world.setdefault("presentation", {})
+                        for key in ("description", "icon_b64", "banner_b64", "placard_background", "mod_badges", "mod_summary", "tags"):
+                            if remote.get(key) not in (None, "", []):
+                                presentation[key] = deepcopy(remote.get(key))
+                        if remote.get("mod_summary"):
+                            world["mod_metadata"] = deepcopy(remote.get("mod_summary") or [])
                         # The lightweight status heartbeat carries dynamic health/uptime every minute.
                         # Only authenticate/fetch the full presentation envelope when the server says
                         # that non-file metadata changed. This keeps icon/banner traffic quiet.
@@ -3936,7 +3958,7 @@ def handle(method: str, params: dict) -> object:
         dedicated.setdefault("world_name", profile.get("name") or "World")
         sync = profile.setdefault("sync_config", {})
         incoming_sync = params.get("sync_config") if isinstance(params.get("sync_config"), dict) else {}
-        for key in ("password", "server_key", "share_access_key", "allow_shared_access", "port", "port_auto", "lan_broadcast"):
+        for key in ("password", "port", "port_auto", "lan_broadcast"):
             if key in incoming_sync:
                 sync[key] = incoming_sync.get(key)
         if "access_policy" in incoming_sync:
@@ -3944,12 +3966,11 @@ def handle(method: str, params: dict) -> object:
         elif "blocked_ips" in incoming_sync or "blocked_countries" in incoming_sync:
             sync["access_policy"] = normalize_access_policy({"blocked_ips": incoming_sync.get("blocked_ips") or [], "blocked_countries": incoming_sync.get("blocked_countries") or []})
         # One player-facing World Password is shared by the game and Sync
-        # handshake. Empty is valid for an open World; the share/server proof
-        # key still authenticates non-LAN synchronization.
+        # handshake. Empty is valid for an open World.
         sync["password"] = str(incoming_sync.get("password", dedicated.get("world_pass", sync.get("password") or "")) or "")
-        sync.setdefault("server_key", secrets.token_hex(16))
-        sync.setdefault("share_access_key", secrets.token_hex(16))
-        sync.setdefault("allow_shared_access", True)
+        sync.pop("server_key", None)
+        sync.pop("share_access_key", None)
+        sync.pop("allow_shared_access", None)
         sync.setdefault("port_auto", True)
         if bool(sync.get("port_auto", True)):
             sync["port"] = 27050 + instance_number
@@ -4158,9 +4179,7 @@ def handle(method: str, params: dict) -> object:
             "identity": {"world_name": world_name, "server_profile_id_hint": profile_id},
             "connection": {"internal_ip": "127.0.0.1", "external_ip": str(profile.get("public_ip") or ""),
                            "sync_port": sync_port, "game_port": game_port, "preference": "internal"},
-            "credentials": {"password": str(sync_config.get("password") or ""),
-                            "server_key": str(sync_config.get("server_key") or ""),
-                            "share_access_key": str(sync_config.get("share_access_key") or ""), "source": "linked"},
+            "credentials": {"password": str(sync_config.get("password") or ""), "source": "linked"},
         }
         latest_hint = (((profile.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
         client_runtime = client_runtime_status(game_dir, latest_hint=latest_hint, remote=False)
@@ -4691,8 +4710,7 @@ def handle(method: str, params: dict) -> object:
             "sync_port": int(sync.get("port") or 27051),
             "game_port": int(dedicated.get("port") or 7777),
             "password": str(sync.get("password") or ""),
-            "share_access_key": str(sync.get("share_access_key") or "") if bool(sync.get("allow_shared_access", True)) else "",
-            "shared_access_enabled": bool(sync.get("allow_shared_access", True) and sync.get("share_access_key")),
+            "shared_access_enabled": True,
         }
 
     if method == "world.worldsave.status":
@@ -4967,6 +4985,23 @@ def handle(method: str, params: dict) -> object:
             "message": "Open the listed TCP Sync and UDP game ports in the host firewall/router; the unprivileged launcher does not alter Linux firewall policy.",
         }
         return {"ok": bool(runtime.get("ok")), "installed": installed, "firewall": firewall, "latest": latest, "runtime": runtime, "config_file": str(config_file), "state": public_state(state)}
+
+    if method == "server.install.update.start":
+        ENGINE.assert_stopped()
+        install_dir, steamcmd_dir, _ = _server_install_paths(state)
+        install_dir = str(params.get("install_dir") or install_dir or "").strip()
+        steamcmd_dir = str(params.get("steamcmd_dir") or steamcmd_dir or (str(steamcmd_root_for_install(install_dir)) if install_dir else "")).strip()
+        if not install_dir: raise ValueError("Set Settings -> Server -> Server Directory first.")
+        job_id = secrets.token_hex(12)
+        _set_server_update_job(job_id, status="queued", phase="queued", message="Server update queued", percent=0)
+        threading.Thread(target=_run_server_update_job, args=(job_id, install_dir, steamcmd_dir), daemon=True).start()
+        return {"job_id": job_id, "status": "queued"}
+
+    if method == "server.install.update.status":
+        job_id = str(params.get("job_id") or "")
+        with _SERVER_UPDATE_LOCK: job = deepcopy(_SERVER_UPDATE_JOBS.get(job_id) or {})
+        if not job: raise KeyError("Server update job not found")
+        return job
 
     if method in ("server.install.update", "server.maintenance.install_dedicated"):
         ENGINE.assert_stopped()

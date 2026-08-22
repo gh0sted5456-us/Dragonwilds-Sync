@@ -32,7 +32,8 @@ def main():
         assert exported["world"]["credentials"]["password"] == "shareable-login"
         assert "server_key" not in exported["world"]["credentials"]
         inspected = inspect_world_package(out)
-        assert inspected["world"]["credentials"]["server_key"] == ""
+        assert "server_key" not in inspected["world"]["credentials"]
+        assert "share_access_key" not in inspected["world"]["credentials"]
         assert inspected["manifest"]["exporterFingerprint"]
         assert len(inspected["manifest"]["profileSha256"]) == 64
         assert len(inspected["manifest"]["exportKey"]) == 64
@@ -52,7 +53,8 @@ def main():
         "credentials": {"password": "player-password", "server_key": "MUST-DROP"},
         "tags": ["PVE", "QoL"],
     })
-    assert feed["credentials"]["server_key"] == ""
+    assert "server_key" not in feed["credentials"]
+    assert "share_access_key" not in feed["credentials"]
     assert feed["connection"]["external_ip"] == "198.51.100.10"
 
     project = Path(__file__).resolve().parents[1]

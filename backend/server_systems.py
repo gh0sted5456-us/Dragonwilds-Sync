@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import ipaddress
 import json
+import re
 import os
 import platform
 import re
@@ -27,7 +28,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote, quote_plus, unquote, urlparse
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile
-from process_utils import check_output_hidden, run_hidden
+from process_utils import check_output_hidden, popen_hidden, run_hidden
 from integrations import normalize_mod_source
 from network_health import summarize_client_reports
 from health_model import normalize_health_config, public_health_config, score_server_health
@@ -53,6 +54,7 @@ from networking import (DEFAULT_SYNC_PORT, apply_firewall_spec, backend_program,
 
 SYNC_PORT_DEFAULT = DEFAULT_SYNC_PORT
 DISCOVERY_PORT = 8421
+DISCOVERY_QUERY_PORT = 8422
 
 
 def _remove_generated_path(path: Path) -> None:
@@ -1091,25 +1093,17 @@ class SyncState:
             self.pending_nonces[nonce] = time.time()
         return nonce
 
-    def check_proof(self, nonce: str, proof: str, *, mode: str = "server_key", credential_source: str = "linked", client_ip: str = "") -> dict | None:
+    def check_proof(self, nonce: str, proof: str, *, mode: str = "world_password", credential_source: str = "linked", client_ip: str = "") -> dict | None:
         source = str(credential_source or "linked").strip().lower()[:32]
         if source not in {"linked", "manual", "imported-rsdwl", "online-feed", "legacy-linked", "shared"}:
             source = "linked"
-        mode = str(mode or "server_key").strip().lower()
+        mode = "world_password"
         with self.lock:
             issued = self.pending_nonces.pop(nonce, None)
             if issued is None or time.time() - issued > NONCE_TTL_SECONDS:
                 return None
-            if mode == "share_access":
-                if not self.allow_shared_access or not self.share_access_key:
-                    return None
-                secret = self.share_access_key
-                scope = "sync-read"
-            else:
-                secret = self.server_key
-                mode = "server_key"
-                scope = "linked-sync"
-            expected = hmac.new(secret.encode(), (nonce + self.password).encode(), hashlib.sha256).hexdigest()
+            scope = "world-sync"
+            expected = hmac.new(self.password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
             if not hmac.compare_digest(expected, proof):
                 return None
             token = secrets.token_hex(16)
@@ -1274,7 +1268,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                     self._send_json({"error": "too many authentication attempts"}, 429); return
                 body = self._read_json()
                 result = STATE.check_proof(str(body.get("nonce", "")), str(body.get("proof", "")),
-                                           mode=str(body.get("mode") or "server_key"),
+                                           mode="world_password",
                                            credential_source=str(body.get("credential_source") or "linked"),
                                            client_ip=self.client_address[0])
                 if result:
@@ -1415,6 +1409,11 @@ class SyncHandler(BaseHTTPRequestHandler):
                                  "console_policy": STATE.manifest.get("console_policy") or {},
                                  "tags": STATE.manifest.get("tags") or [],
                                  "mod_badges": STATE.manifest.get("mod_badges") or [],
+                                 "mod_summary": STATE.manifest.get("mod_summary") or [],
+                                 "description": STATE.manifest.get("description") or "",
+                                 "icon_b64": STATE.manifest.get("icon_b64") or "",
+                                 "banner_b64": STATE.manifest.get("banner_b64") or "",
+                                 "placard_background": STATE.manifest.get("placard_background") or "1",
                                  "rating_average": STATE.manifest.get("rating_average") or 0,
                                  "rating_count": STATE.manifest.get("rating_count") or 0,
                                  "community": STATE.manifest.get("community") or {},
@@ -1628,17 +1627,28 @@ class Broadcaster:
 
     def _run(self):
         sock4 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); sock4.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        query = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); query.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try: query.bind(("", DISCOVERY_QUERY_PORT)); query.settimeout(0.2)
+        except OSError: query.close(); query = None
         try: sock6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         except OSError: sock6 = None
         while not self.stop_event.is_set():
             payload = json.dumps(self.get_info()).encode()
             try: sock4.sendto(payload, ("255.255.255.255", DISCOVERY_PORT))
             except OSError: pass
+            if query:
+                try:
+                    request_data, request_addr = query.recvfrom(1024)
+                    request_info = json.loads(request_data.decode("utf-8", "replace"))
+                    if request_info.get("app") == DISCOVERY_MAGIC and request_info.get("discover") is True:
+                        query.sendto(payload, request_addr)
+                except (socket.timeout, OSError, ValueError, json.JSONDecodeError):
+                    pass
             if sock6:
                 try: sock6.sendto(payload, ("ff02::1", DISCOVERY_PORT, 0, 0))
                 except OSError: pass
             self.stop_event.wait(2)
-        sock4.close(); sock6 and sock6.close()
+        sock4.close(); sock6 and sock6.close(); query and query.close()
 
 
 def scan_for_servers(timeout: float = 3.0) -> list[dict]:
@@ -1648,6 +1658,14 @@ def scan_for_servers(timeout: float = 3.0) -> list[dict]:
             s = socket.socket(family, socket.SOCK_DGRAM); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             s.bind(("", DISCOVERY_PORT)); s.settimeout(0.25); sockets.append(s)
         except OSError: pass
+    try:
+        active = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        active.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        active.bind(("", 0)); active.settimeout(0.25)
+        active.sendto(json.dumps({"app": DISCOVERY_MAGIC, "discover": True}).encode(), ("255.255.255.255", DISCOVERY_QUERY_PORT))
+        sockets.append(active)
+    except OSError:
+        pass
     deadline = time.time() + max(0.1, min(timeout, 10.0))
     while time.time() < deadline:
         for s in sockets:
@@ -1831,7 +1849,6 @@ class ShareServer:
                 hw_stats: dict | None = None, game_port: int = 7777, broadcast: bool = True, public_ip: str = "", game_root: str = "",
                 share_access_key: str = "", allow_shared_access: bool = True, profile_override: dict | None = None,
                 persist_profile: bool = True) -> dict:
-        if not server_key: raise ValueError("Set a Server Key before publishing.")
         if not 1 <= int(port) <= 65535: raise ValueError("Sync port must be 1-65535")
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
@@ -1952,8 +1969,8 @@ class ShareServer:
         with STATE.lock:
             version = max(int(profile.get("manifest_version") or 0), int(STATE.manifest.get("version") or 0)) + 1
             metadata_revision = max(int(profile.get("metadata_revision") or 0), int(STATE.metadata_revision or 0), int(STATE.manifest.get("metadata_revision") or 0)) + 1
-            STATE.password = password; STATE.server_key = server_key; STATE.share_access_key = str(share_access_key or "")
-            STATE.allow_shared_access = bool(allow_shared_access and STATE.share_access_key); STATE.active_profile_id = profile_id
+            STATE.password = password; STATE.server_key = ""; STATE.share_access_key = ""
+            STATE.allow_shared_access = True; STATE.active_profile_id = profile_id
             STATE.lan_trust_enabled = bool(broadcast)
             STATE.tokens.clear(); STATE.token_sources.clear(); STATE.metadata_revision = metadata_revision
             fingerprint = world_sync_fingerprint(profile_id)
@@ -1986,11 +2003,7 @@ class ShareServer:
                                   "internal_ip": local_ip_guess(), "external_ip": str(public_ip or profile.get("public_ip") or ""),
                                   "sync_port": int(port), "game_port": int(game_port or 7777),
                               },
-                              "share_profile": {
-                                  "enabled": bool(allow_shared_access and share_access_key),
-                                  "access_key": str(share_access_key or "") if allow_shared_access else "",
-                                  "scope": "sync-read",
-                              },
+                              "share_profile": {"enabled": True, "scope": "world-password"},
                               "external_hierarchy": {
                                   "provider": "shrug.games",
                                   "label": "Public RuneScape Dragonwilds server hierarchy (unofficial)",
@@ -2006,7 +2019,7 @@ class ShareServer:
             client_meta = build_client_meta(STATE.manifest)
             STATE.manifest["manifest_fingerprint"] = client_meta["manifest_fingerprint"]
             STATE.manifest["component_fingerprints"] = client_meta["components"]
-            profile["manifest_version"] = version; profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile["server_key"] = server_key
+            profile["manifest_version"] = version; profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile.pop("server_key", None)
             profile.setdefault("sync_config", {})["port"] = int(port); profile["sync_config"]["password"] = password
             STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
         if persist_profile:
@@ -2208,11 +2221,15 @@ def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manu
 
 
 
-def download_steamcmd(steamcmd_dir: str) -> dict:
+def download_steamcmd(steamcmd_dir: str, progress=None) -> dict:
     root = Path(steamcmd_dir); root.mkdir(parents=True, exist_ok=True)
+    def report(blocks, block_size, total):
+        downloaded = min(max(0, int(blocks) * int(block_size)), max(0, int(total))) if int(total) > 0 else max(0, int(blocks) * int(block_size))
+        if progress:
+            progress({"phase": "steamcmd-download", "message": "Downloading SteamCMD", "downloaded_bytes": downloaded, "total_bytes": max(0, int(total)), "percent": round(downloaded * 100 / total, 1) if int(total) > 0 else None})
     if sys.platform.startswith("linux"):
         archive = root / "steamcmd_linux.tar.gz"
-        urllib.request.urlretrieve(DEDICATED_STEAMCMD_LINUX_URL, archive)
+        urllib.request.urlretrieve(DEDICATED_STEAMCMD_LINUX_URL, archive, reporthook=report)
         with tarfile.open(archive, "r:gz") as tf:
             destination = root.resolve()
             for member in tf.getmembers():
@@ -2229,25 +2246,51 @@ def download_steamcmd(steamcmd_dir: str) -> dict:
         steam.chmod(steam.stat().st_mode | stat.S_IXUSR)
         return {"ok": True, "steamcmd_exe": str(steam), "platform": "linux"}
     zip_path = root / "steamcmd.zip"
-    urllib.request.urlretrieve(DEDICATED_STEAMCMD_URL, zip_path)
+    urllib.request.urlretrieve(DEDICATED_STEAMCMD_URL, zip_path, reporthook=report)
     with zipfile.ZipFile(zip_path) as zf: safe_extract_zip(zf, root)
     zip_path.unlink(missing_ok=True); return {"ok": True, "steamcmd_exe": str(root / "steamcmd.exe"), "platform": "windows"}
 
 
-def install_dedicated_server(install_dir: str, steamcmd_dir: str) -> dict:
+def install_dedicated_server(install_dir: str, steamcmd_dir: str, progress=None) -> dict:
     install = Path(install_dir)
     steam_name = "steamcmd.sh" if sys.platform.startswith("linux") else "steamcmd.exe"
     steam = Path(steamcmd_dir) / steam_name
     if not steam.exists(): raise FileNotFoundError(f"{steam_name} not found")
     install.mkdir(parents=True, exist_ok=True)
     cmd = [str(steam), "+force_install_dir", str(install), "+login", "anonymous", "+app_update", DEDICATED_STEAM_APP_ID, "validate", "+quit"]
-    result = run_hidden(cmd, capture_output=True, text=True)
-    if result.returncode == 7: result = run_hidden(cmd, capture_output=True, text=True)
-    if result.returncode != 0: raise RuntimeError(f"SteamCMD exited with {result.returncode}: {(result.stderr or result.stdout)[-1500:]}")
+    def execute():
+        process = popen_hidden(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)
+        output = []
+        for raw in iter(process.stdout.readline, ""):
+            line = raw.strip()
+            if not line: continue
+            output.append(line); output = output[-300:]
+            phase = "steamcmd"
+            lowered = line.lower()
+            for candidate in ("preallocating", "downloading", "verifying", "committing"):
+                if candidate in lowered: phase = candidate; break
+            match = re.search(r"progress:\s*([0-9]+(?:\.[0-9]+)?)\s*\(([0-9]+)\s*/\s*([0-9]+)\)", line, re.I)
+            update = {"phase": phase, "message": line[-500:]}
+            if match:
+                update.update({"percent": float(match.group(1)), "downloaded_bytes": int(match.group(2)), "total_bytes": int(match.group(3))})
+            if progress: progress(update)
+        process.wait()
+        return process.returncode, "\n".join(output)
+    if progress:
+        returncode, output = execute()
+        if returncode == 7: returncode, output = execute()
+    else:
+        # Compatibility path for synchronous callers and deterministic unit
+        # tests. Interactive update jobs always provide progress and stream.
+        result = run_hidden(cmd, capture_output=True, text=True)
+        if result.returncode == 7: result = run_hidden(cmd, capture_output=True, text=True)
+        returncode = result.returncode
+        output = (result.stderr or result.stdout or "") if returncode else (result.stdout or "")
+    if returncode != 0: raise RuntimeError(f"SteamCMD exited with {returncode}: {output[-1500:]}")
     exe = next((candidate for name in DEDICATED_SERVER_EXE_ALIASES for candidate in install.rglob(name)), None)
     if exe and sys.platform.startswith("linux"):
         exe.chmod(exe.stat().st_mode | stat.S_IXUSR)
-    return {"ok": True, "server_exe": str(exe) if exe else "", "output": (result.stdout or "")[-4000:], "platform": "linux" if sys.platform.startswith("linux") else "windows"}
+    return {"ok": True, "server_exe": str(exe) if exe else "", "output": output[-4000:], "platform": "linux" if sys.platform.startswith("linux") else "windows"}
 
 
 def delete_dedicated_server_files(install_dir: str) -> dict:

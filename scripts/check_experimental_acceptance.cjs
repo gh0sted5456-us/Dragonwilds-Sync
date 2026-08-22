@@ -130,7 +130,7 @@ requireText(service, '"action": "Open Steam to update safely"', 'client update a
 requireText(service, 'RUNTIME.update(profile_id, lambda: _legacy_handle("server.install.update"', 'server-only SteamCMD lifecycle');
 requireText(legacyService, 'install_dedicated_server(install_dir, steamcmd_dir)', 'managed dedicated SteamCMD install/update');
 requireText(serverSystems, '"+app_update", DEDICATED_STEAM_APP_ID, "validate"', 'SteamCMD dedicated update command');
-requireText(serverSystems, '"output": (result.stdout or "")[-4000:]', 'SteamCMD success output');
+requireText(serverSystems, '"output": output[-4000:]', 'SteamCMD streamed success output');
 requireText(steamcmdTest, 'CLIENT_STEAM_APP_ID not in command', 'SteamCMD never targets retail client');
 requireText(steamcmdTest, 'test_failed_steamcmd_update_surfaces_output', 'failed SteamCMD regression');
 

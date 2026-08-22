@@ -79,7 +79,9 @@ def main():
             assert "01_Second.pak" in pak_files and "02_Example.pak" in pak_files
             contract = game / "Binaries/Win64/ue4ss/Mods/ServerOnly/ID.txt"
             assert contract.is_file()
-            assert "HotloadCapable:" in contract.read_text(encoding="utf-8")
+            contract_text = contract.read_text(encoding="utf-8")
+            assert "HOTLOAD = " in contract_text
+            assert "HotloadCapable:" not in contract_text
             try:
                 ss.move_mod_unit(profile_id, str(game), "runeschema_mod::BetterLoot", -1)
                 raise AssertionError("RuneSchema move should be rejected")

@@ -36,6 +36,7 @@
     "copyright":"Copyright © 2026 RSDW Modding Community",
     "directories":{"output":"release"},
     "files":["electron/**/*","renderer/**/*","package.json","LICENSE.txt"],
+    "fileAssociations":[{"ext":"rsdwl","name":"Dragonwilds Sync Launcher File","description":"Dragonwilds Sync profile and launcher package","icon":"renderer/assets/rsdwl-icon.ico","role":"Editor"}],
     "extraResources":[
       {"from":"resources","to":"resources","filter":["**/*"]},
       {"from":"node_modules/three/build","to":"rsdw-viewer/three/build"},

@@ -340,10 +340,19 @@ def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> None:
 
 
 def _peel_wrapper(root: Path) -> tuple[Path, str | None]:
-    entries = [p for p in root.iterdir() if not p.name.startswith(".")]
-    if len(entries) == 1 and entries[0].is_dir():
-        return entries[0], entries[0].name
-    return root, None
+    current = root
+    wrapper = None
+    payload_directories = {"scripts", "raw", "ue4ss", "mods", "content", "binaries", "runeschema"}
+    for _depth in range(12):
+        entries = [p for p in current.iterdir() if not p.name.startswith(".")]
+        names = {entry.name.casefold() for entry in entries}
+        if any(entry.is_file() for entry in entries) or names.intersection(payload_directories):
+            break
+        if len(entries) != 1 or not entries[0].is_dir():
+            break
+        current = entries[0]
+        wrapper = current.name
+    return current, wrapper
 
 
 def detect_mod_zip_kind(zip_path: str) -> str | None:

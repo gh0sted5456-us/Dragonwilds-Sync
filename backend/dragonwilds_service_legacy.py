@@ -18,6 +18,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+from zipfile import ZipFile
 from process_utils import run_hidden
 
 from network_client import download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, worldsave_status
@@ -99,6 +100,33 @@ from world_maintenance import (
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def inspect_manual_rsdwl_mod_archive(path_value: str) -> dict | None:
+    """Recognize a ZIP renamed to .rsdwl without bypassing signed package checks."""
+    path = Path(str(path_value or ""))
+    if path.suffix.casefold() != ".rsdwl" or not path.is_file():
+        return None
+    try:
+        with ZipFile(path, "r") as archive:
+            root_names = {name.replace("\\", "/").strip("/").casefold() for name in archive.namelist()}
+    except Exception:
+        return None
+    # A file claiming to be an application package must pass its normal
+    # manifest, checksum, and signature validation. Only manifest-less archives
+    # are eligible for renamed-ZIP compatibility.
+    if "manifest.json" in root_names:
+        return None
+    kind = detect_local_mod_zip_kind(str(path))
+    if kind not in {"ue4ss", "paks", "runeschema"}:
+        return None
+    return {
+        "kind": "compatibility-mod-archive",
+        "archive_kind": kind,
+        "name": path.stem,
+        "validated": False,
+        "compatibility": "renamed-zip",
+    }
 
 
 def _inventory_cache(profile: dict) -> dict:
@@ -1981,6 +2009,9 @@ def handle(method: str, params: dict) -> object:
                     legacy = inspect_character_package(path)
                     return {"kind": "legacy-character", "manifest": legacy.get("manifest"), "character": legacy.get("character") or legacy.get("metadata")}
                 except Exception:
+                    compatibility = inspect_manual_rsdwl_mod_archive(path)
+                    if compatibility:
+                        return compatibility
                     raise profile_error
 
     if method == "profile.package.export":

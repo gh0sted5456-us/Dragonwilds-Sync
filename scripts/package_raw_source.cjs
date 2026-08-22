@@ -14,12 +14,14 @@ const outputRoot = path.resolve(
 const sourceDirectories = [
   '.github',
   'backend',
+  'cloudflare',
   'docs',
   'electron',
-  'packaging',
+  'help',
   'renderer',
   'resources',
   'scripts',
+  'website',
 ];
 
 const sourceFiles = [

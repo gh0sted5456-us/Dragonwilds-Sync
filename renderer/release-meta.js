@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.0',
-  name: 'V2.6 · Connected Worlds, Live Sync Progress & Mod Discovery',
+  version: '2.7.1',
+  name: 'V2.7.1 · Connected World Profile and Mod Broadcast Corrections',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.1',
+    title: 'Connected World Profile and Mod Broadcast Corrections',
+    items: [
+      'LAN and direct World saves are idempotent by verified fingerprint or exact World identity and endpoint, preventing duplicate connected profiles.',
+      'Connected profiles retain complete PAK, UE4SS, and RuneSchema metadata through discovery, status checks, synchronization, and reloads.',
+      'Placard framework badges open the exact advertised mod family while card flipping occurs only through explicit front/back controls.',
+      'World Management includes the Manifest workspace and Local World selection presents populated save-backed profiles before creating a new profile.',
+      'The dedicated Mods application uses its own clean repository workspace instead of the Settings navigation shell.',
+    ],
+  }, {
     version: '2.7.0',
     title: 'Verified Connections, Complete Mod Discovery, and Live Delta Sync Progress',
     items: [

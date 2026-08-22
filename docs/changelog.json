@@ -3,6 +3,18 @@
   "updated_at": "2026-08-22T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.1",
+      "title": "Dragonwilds Sync V2.7.1",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "LAN and direct World creation is idempotent, preventing duplicate connected profiles.",
+        "Connected profiles retain complete PAK, UE4SS, and RuneSchema summaries through discovery, synchronization, and reloads.",
+        "Placard mod-family buttons show the broadcast inventory and cards flip only through explicit controls.",
+        "Dragonwilds World Management includes Manifest and populated Local World selection."
+      ]
+    },
+    {
       "version": "2.7.0",
       "title": "Dragonwilds Sync V2.7",
       "date": "2026-08-22",

@@ -851,6 +851,7 @@ def _apply_identity_preview(world: dict, result: dict) -> None:
 def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
     base = deepcopy(existing or {})
     base.setdefault("id", secrets.token_hex(8))
+    base["kind"] = str(payload.get("kind") or base.get("kind") or "connected").strip().casefold()
     base["nickname"] = str(payload.get("nickname", base.get("nickname", ""))).strip()
 
     identity = base.setdefault("identity", {})
@@ -3400,6 +3401,52 @@ def handle(method: str, params: dict) -> object:
             client["active_world_id"] = world_id
         save_state(state)
         return public_state(state)
+
+    if method in {"world.convert_to_singleplayer", "world.convert_to_server"}:
+        world_id = str(params.get("id") or "").strip()
+        world = find_world(state, world_id)
+        if world is None:
+            raise KeyError("Connected World not found")
+        name = str(params.get("name") or world.get("nickname") or (world.get("identity") or {}).get("world_name") or "Dragonwilds World").strip() or "Dragonwilds World"
+        presentation = deepcopy(world.get("presentation") or {})
+        provenance = {
+            "from": "connected",
+            "connected_world_id": world_id,
+            "converted_at": now_iso(),
+            "identity": deepcopy(world.get("identity") or {}),
+            "connection": deepcopy(world.get("connection") or {}),
+            "shared": deepcopy(world.get("shared") or {}),
+        }
+        if method.endswith("singleplayer"):
+            profile = create_private_profile(name)
+            profile_id = str(profile["id"])
+            profile["description"] = str(presentation.get("description") or "")
+            profile["icon_b64"] = str(presentation.get("icon_b64") or "")
+            profile["banner_b64"] = str(presentation.get("banner_b64") or "")
+            profile["tags"] = list(presentation.get("tags") or [])
+            profile["classification"] = normalize_world_classification({**(world.get("classification") or {}), "host_type": "singleplayer", "visibility": "private"}, tags=profile["tags"], host_type="singleplayer", visibility="private")
+            profile["conversion"] = provenance
+            save_singleplayer_profile(profile, profile_id)
+            ensure_singleplayer_state(state)
+            state.setdefault("client", {})["active_private_world_id"] = profile_id
+        else:
+            profile_id = create_server_profile(name)
+            profile = load_server_profile(profile_id)
+            if not profile:
+                raise RuntimeError("The Dedicated Server profile could not be created")
+            profile["description"] = str(presentation.get("description") or "")
+            profile["icon_b64"] = str(presentation.get("icon_b64") or "")
+            profile["banner_b64"] = str(presentation.get("banner_b64") or "")
+            profile["tags"] = list(presentation.get("tags") or [])
+            profile["classification"] = normalize_world_classification({**(world.get("classification") or {}), "host_type": "dedicated", "visibility": "public"}, tags=profile["tags"], host_type="dedicated", visibility="public")
+            profile["connected_source"] = provenance
+            dedicated = profile.setdefault("dedicated_config", {})
+            dedicated["server_name"] = name
+            dedicated["world_name"] = str((world.get("identity") or {}).get("world_name") or name)
+            save_server_profile(profile_id, profile)
+            state.setdefault("server", {})["active_world_id"] = profile_id
+        save_state(state)
+        return {"profile": profile, "profile_id": profile_id, "source_world_id": world_id, "state": public_state(state)}
 
     if method == "world.delete":
         world_id = str(params.get("id") or "")

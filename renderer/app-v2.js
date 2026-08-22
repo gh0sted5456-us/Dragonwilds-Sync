@@ -194,17 +194,30 @@
     { value:'backdrop-graveyard', label:'Graveyard', file:'graveyard.png' },
     { value:'backdrop-tavern', label:'Tavern', file:'tavern.png' },
   ]);
+  const characterBackdropDataUrls = new Map();
 
   function characterBackdropUrl(value) {
     const backdrop=CHARACTER_BACKDROPS.find((entry)=>entry.value===String(value||''));
     return backdrop?new URL(`assets/character-background/${backdrop.file}`,document.baseURI).href:'';
   }
 
-  function characterBackgroundScript(value) {
+  function characterBackdropDataUrl(value) {
+    const url=characterBackdropUrl(value);
+    if(!url)return Promise.resolve('');
+    if(characterBackdropDataUrls.has(url))return Promise.resolve(characterBackdropDataUrls.get(url));
+    return new Promise((resolve)=>{
+      const image=new Image();
+      image.onload=()=>{try{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);const dataUrl=canvas.toDataURL('image/png');characterBackdropDataUrls.set(url,dataUrl);resolve(dataUrl);}catch(_){resolve(url);}};
+      image.onerror=()=>resolve(url);
+      image.src=url;
+    });
+  }
+
+  function characterBackgroundScript(value, embeddedImageUrl = '') {
     const mode=String(value||'theme');
-    const imageUrl=characterBackdropUrl(mode);
+    const imageUrl=embeddedImageUrl||characterBackdropUrl(mode);
     const theme=(state.data?.application?.theme||'dark')==='light'?'#eee8dc':'#050708';
-    return `(()=>{const mode=${JSON.stringify(mode)};const imageUrl=${JSON.stringify(imageUrl)};const colors={theme:${JSON.stringify(theme)},transparent:'transparent',studio:'#34383d',parchment:'#d7c39d',forest:'#173426',black:'#000000',white:'#ffffff'};const color=colors[mode]||colors.theme;const surface=imageUrl?'linear-gradient(rgba(3,5,5,.08),rgba(3,5,5,.18)), url("'+imageUrl.replace(/"/g,'%22')+'") center / cover no-repeat':color;document.documentElement.style.background=color;document.body.style.setProperty('background',surface,'important');document.querySelector('#avatar-stage')?.style.setProperty('background',surface,'important');return true;})()`;
+    return `(()=>{const mode=${JSON.stringify(mode)};const imageUrl=${JSON.stringify(imageUrl)};const colors={theme:${JSON.stringify(theme)},transparent:'transparent',studio:'#34383d',parchment:'#d7c39d',forest:'#173426',black:'#000000',white:'#ffffff'};const color=colors[mode]||colors.theme;const surface=imageUrl?'linear-gradient(rgba(3,5,5,.08),rgba(3,5,5,.18)), url("'+imageUrl.replace(/"/g,'%22')+'") center / cover no-repeat':color;document.documentElement.style.background=color;document.body.style.setProperty('background',surface,'important');document.querySelector('#avatar-stage')?.style.setProperty('background',surface,'important');document.querySelectorAll('canvas').forEach((canvas)=>canvas.style.setProperty('background',surface,'important'));return true;})()`;
   }
 
   const CHARACTER_PORTRAITS = [
@@ -2684,6 +2697,7 @@
   function worldCard(world, server = false) {
     const presentation = server ? world : (world.presentation || {});
     const single = !server && world.kind === 'singleplayer';
+    const connected = !server && !single && (world.kind === 'connected' || world.credentials?.source === 'manual');
     const banner = b64Image(presentation.banner_b64) || (single ? 'assets/singleplayer-banner.png' : '');
     const icon = b64Image(presentation.icon_b64) || (single ? 'assets/singleplayer-icon.png' : '');
     const title = server ? (world.name || 'Hosted World') : (single ? (world.name || world.identity?.world_name || 'Private World') : (world.nickname || world.identity?.world_name || 'World'));
@@ -2717,7 +2731,7 @@
     return `
       <article class="world-card app-world-placard has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}" tabindex="0" role="button" aria-label="Flip ${escapeHtml(title)} placard" aria-pressed="false">
        <div class="world-card-inner"><section class="world-card-face world-card-front">
-        <div class="world-mode-banner ${modeTone}">${escapeHtml(modeLabel)}</div>
+        <div class="world-mode-banner ${modeTone}">${escapeHtml(connected ? 'CONNECTED WORLD' : modeLabel)}</div>
         ${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}
         <div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div>
         <div class="world-card-body">
@@ -5064,7 +5078,8 @@
           const upstream=await avatarWebview.executeJavaScript(`(()=>Object.fromEntries(['slot-hair','slot-beard','slot-rightHand','slot-leftHand','avatar-animation-select'].map(id=>{const select=document.getElementById(id);return [id,select?{value:select.value,options:[...select.options].map(option=>({value:option.value,label:option.textContent||option.label||option.value}))}:null]})))()`,true);
           root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>{const source=upstream?.[select.dataset.avatarUpstreamSelect];if(!source)return;const filter=String(select.dataset.avatarFilter||'').toLowerCase().replace(/[_-]/g,' ');const options=(source.options||[]).filter((option)=>!filter||String(option.label||'').toLowerCase().replace(/[_-]/g,' ').includes(filter));let selectedValue=source.value;if(select.dataset.avatarDefault==='idle'){const idle=options.find((option)=>/(^|[\s_/-])idle([\s_/-]|$)/i.test(String(option.label||'')))||options.find((option)=>/idle/i.test(String(option.label||'')));if(idle)selectedValue=idle.value;}select.innerHTML=options.map((option)=>`<option value="${escapeHtml(option.value)}" ${String(option.value)===String(selectedValue)?'selected':''}>${escapeHtml(option.label)}</option>`).join('')||'<option value="">No matching RSDWModel entries</option>';select.disabled=!options.length;select.dispatchEvent(new Event('avatar-options-ready'));if(select.dataset.avatarDefault==='idle'&&selectedValue&&String(selectedValue)!==String(source.value)){avatarWebview.executeJavaScript(`(()=>{const s=document.getElementById('avatar-animation-select');if(!s)return false;s.value=${JSON.stringify(selectedValue)};s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('avatar-animation-play')?.click();return true;})()`,true).catch(()=>{});}});
           const background=String(state.rsdwAvatarBackground||'theme');
-          await avatarWebview.executeJavaScript(characterBackgroundScript(background),true);
+          const backgroundImage=await characterBackdropDataUrl(background);
+          await avatarWebview.executeJavaScript(characterBackgroundScript(background,backgroundImage),true);
           avatarReady=true;
           const fields=Object.keys(state.rsdwCharacterPayload?.avatar?.params||{}).length;
           const modelCopy=result.models?` · ${result.models} live model layers`:'';
@@ -5093,7 +5108,7 @@
     }
     root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>select.addEventListener('change',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const id=select.dataset.avatarUpstreamSelect;const value=select.value;await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(id)});if(!select)return false;select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,true);}catch(error){toast('RSDWModel selection unavailable',error.message,'error');}}));
     root.querySelectorAll('[data-avatar-play]').forEach((button)=>button.addEventListener('click',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;const action=button.dataset.avatarPlay==='pause'?'pause':'play';try{await guest.executeJavaScript(`(()=>{const action=${JSON.stringify(action)};const direct=document.getElementById(action==='pause'?'avatar-animation-pause':'avatar-animation-play');if(direct){direct.click();return true;}const canvas=document.querySelector('canvas');if(action==='pause'&&canvas){canvas.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true}));return true;}return false;})()`,true);}catch(error){toast('Animation control unavailable',error.message,'error');}}));
-    const applyCharacterBackground=async(value)=>{state.rsdwAvatarBackground=value||'theme';root.querySelectorAll('[data-character-background-choice]').forEach((button)=>{const active=button.dataset.characterBackgroundChoice===state.rsdwAvatarBackground;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{await guest.executeJavaScript(characterBackgroundScript(state.rsdwAvatarBackground),true);}catch(error){toast('Background selection unavailable',error.message,'error');}};
+    const applyCharacterBackground=async(value)=>{state.rsdwAvatarBackground=value||'theme';root.querySelectorAll('[data-character-background-choice]').forEach((button)=>{const active=button.dataset.characterBackgroundChoice===state.rsdwAvatarBackground;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const backgroundImage=await characterBackdropDataUrl(state.rsdwAvatarBackground);await guest.executeJavaScript(characterBackgroundScript(state.rsdwAvatarBackground,backgroundImage),true);}catch(error){toast('Background selection unavailable',error.message,'error');}};
     root.querySelector('#rsdw-avatar-background')?.addEventListener('change',(event)=>applyCharacterBackground(event.currentTarget.value));
     root.querySelectorAll('[data-character-background-choice]').forEach((button)=>button.addEventListener('click',()=>{const value=button.dataset.characterBackgroundChoice||'theme';const select=root.querySelector('#rsdw-avatar-background');if(select)select.value=value;applyCharacterBackground(value);}));
     root.querySelectorAll('[data-rsdw-preview-slot]').forEach((button)=>button.addEventListener('click',()=>{const slot=button.dataset.rsdwPreviewSlot;if(state.rsdwPreviewHidden.has(slot))state.rsdwPreviewHidden.delete(slot);else state.rsdwPreviewHidden.add(slot);render();}));
@@ -6828,6 +6843,7 @@
     modalRoot.querySelector('#save-world').addEventListener('click', async () => {
       const payload = {
         ...(edit ? { id: world.id } : {}),
+        kind: edit ? (world.kind || 'connected') : 'connected',
         nickname: modalRoot.querySelector('#f-nickname').value.trim(),
         identity: { world_name: modalRoot.querySelector('#f-world-name').value.trim() },
         classification: {content_type:modalRoot.querySelector('#f-content-type').value,game_mode:modalRoot.querySelector('#f-game-mode').value,host_type:'public',visibility:'public',declared:true},
@@ -6847,8 +6863,11 @@
       if (!payload.connection.internal_ip && !payload.connection.external_ip) { toast('Address required', 'Add an Internal IP, External IP, or both.', 'error'); return; }
       try {
         setData(await api.invoke(edit ? 'world.update' : 'world.create', payload));
+        if (!edit) setData(await api.invoke('world.browser.settings', { tab:'direct', filter:'all', page:1 }));
         state.selectedWorldId = state.data.client.active_world_id;
+        state.route = 'worlds';
         closeModal();
+        render();
         toast(edit ? 'World updated' : 'World added', payload.identity.world_name, 'success');
       } catch (error) { toast('Could not save World', error.message, 'error'); }
     });
@@ -6879,8 +6898,9 @@
       const imported=curatedWorlds().some((world)=>String(world.id)===String(id));
       const manageable=saved||imported;
       const menuWorld=browserWorlds().find((world)=>String(world.id)===String(id));
+      const connected=saved&&(menuWorld?.kind==='connected'||menuWorld?.credentials?.source==='manual');
       const verified=worldSyncIdentity(menuWorld||{}).verified;
-      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="launch">Launch World</button><button role="menuitem" data-action="favorite">${favorite?'★ Remove Favorite':'☆ Favorite'}</button>${verified?'<button role="menuitem" data-action="metadata" title="Fetch directly from the verified World endpoint">Download Direct Metadata</button>':''}${saved?'<button role="menuitem" data-action="ping" title="Authenticated Ping / Refresh Metadata">Refresh World Status</button>':''}<button role="menuitem" data-action="compatibility">Compatibility Preview</button><button role="menuitem" data-action="identity-history">Identity History</button><button role="menuitem" data-action="identity-card">Export Identity Card</button><button role="menuitem" data-action="export">Export World .rsdwl</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" data-action="report">Report / Add Local Note</button><button role="menuitem" class="danger" data-action="block">Block World</button>${manageable?`${saved?'<button role="menuitem" data-action="edit">Connection & Credentials</button>':''}<button role="menuitem" class="danger" data-action="delete">${imported&&!saved?'Delete from Manifest':'Remove World'}</button>`:''}`;
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="launch">Launch World</button><button role="menuitem" data-action="favorite">${favorite?'★ Remove Favorite':'☆ Favorite'}</button>${verified?'<button role="menuitem" data-action="metadata" title="Fetch directly from the verified World endpoint">Download Direct Metadata</button>':''}${saved?'<button role="menuitem" data-action="ping" title="Authenticated Ping / Refresh Metadata">Refresh World Status</button>':''}${connected?'<button role="menuitem" data-action="convert-private">Convert to Singleplayer / Co-Op</button><button role="menuitem" data-action="convert-server">Convert to Dedicated Server</button>':''}<button role="menuitem" data-action="compatibility">Compatibility Preview</button><button role="menuitem" data-action="identity-history">Identity History</button><button role="menuitem" data-action="identity-card">Export Identity Card</button><button role="menuitem" data-action="export">Export World .rsdwl</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" data-action="report">Report / Add Local Note</button><button role="menuitem" class="danger" data-action="block">Block World</button>${manageable?`${saved?'<button role="menuitem" data-action="edit">Connection & Credentials</button>':''}<button role="menuitem" class="danger" data-action="delete">${imported&&!saved?'Delete from Manifest':'Remove World'}</button>`:''}`;
     }
     document.body.appendChild(menu);
     const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss); } };
@@ -6915,6 +6935,8 @@
       const world = browserWorlds().find((w) => w.id === id); if (!world) return;
       if (action === 'open') { pushNavigation(); state.selectedWorldId = id; state.route = 'world-detail'; render(); }
       if (action === 'launch') playWorld(world);
+      if (action === 'convert-private') { const name=await managedPrompt('Name for the new Singleplayer / Co-Op profile:',world.nickname||world.identity?.world_name||'Dragonwilds World','Convert Connected World');if(name){try{const response=await api.invoke('world.convert_to_singleplayer',{id,name});if(response.state)setData(response.state);state.selectedWorldId=response.profile_id;state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op','A separate private profile was created; the Connected World remains available.','success');}catch(error){toast('Conversion failed',error.message,'error');}} }
+      if (action === 'convert-server') { const name=await managedPrompt('Name for the new Dedicated Server profile:',world.nickname||world.identity?.world_name||'Dragonwilds World','Convert Connected World');if(name){try{const response=await api.invoke('world.convert_to_server',{id,name});if(response.state)setData(response.state);state.selectedServerWorldId=response.profile_id;state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server','A separate hosted profile was created; the Connected World remains available.','success');}catch(error){toast('Conversion failed',error.message,'error');}} }
       if (action === 'favorite') { try { const response=await api.invoke('world.favorite.toggle',{id}); if(response.state)state.data=response.state; render(); } catch(error){ toast('Favorite update failed',error.message,'error'); } }
       if (action === 'metadata') { try { const response=await api.invoke('world.metadata.download',{id}); if(response.state)state.data=response.state; state.selectedWorldId=response.world?.id||id; render(); toast('Direct World metadata downloaded',`${response.world?.identity?.world_name||'World'} was fingerprint-verified and added to Direct Connect. The website was not used for this transfer.`,'success'); } catch(error){ toast('Direct metadata rejected',error.message,'error'); } }
       if (action === 'ping') { try { const response=await api.invoke('world.ping',{id}); if(response.state)setData(response.state); toast('World metadata refreshed','Icon, banner, tags, description, uptime and status refreshed without syncing files.','success'); } catch(error){ toast('World ping failed',error.message,'error'); } }

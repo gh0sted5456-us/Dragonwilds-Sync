@@ -10,19 +10,23 @@
   flip.dataset.releaseSurface = 'true';
   flip.innerHTML = `
     <div class="download-flip-inner">
-      <section class="download-face main" aria-label="Main executable download" aria-hidden="false">
+      <section class="download-face main" aria-label="Desktop application downloads" aria-hidden="false">
         <div class="download-face-main">
           <div class="eyebrow">Main · Primary release</div>
           <h2>Ready when your world is.</h2>
-          <p>Download the newest published Dragonwilds Sync executable. Main is the recommended release for normal use.</p>
-          <div class="download-meta"><div><span>VERSION</span><strong data-main-version>Checking…</strong></div><div><span>PUBLISHED</span><strong data-main-date>Latest release</strong></div><div><span>FILE</span><strong>Windows EXE</strong></div></div>
+          <p>Download the newest published Dragonwilds Sync desktop package for Windows or Ubuntu Linux. Main is the recommended release for normal use.</p>
+          <div class="download-meta"><div><span>VERSION</span><strong data-main-version>v2.0.1</strong></div><div><span>PUBLISHED</span><strong data-main-date>Latest release</strong></div><div><span>PACKAGES</span><strong>EXE + AppImage</strong></div></div>
           <p>Dragonwilds Sync is a passion project. Donations help with hosting, tools, and development costs, but features will never be locked behind a paywall.</p>
         </div>
         <div class="download-face-side">
-          <div class="download-platform-icons" aria-label="Supported platform"><img src="assets/platforms/windows.svg" alt="Windows"><img src="assets/platforms/steam.svg" alt="Steam"></div>
+          <div class="download-platform-icons" aria-label="Supported platforms"><span class="download-platform-chip windows">WIN</span><span class="download-platform-chip linux">LINUX</span><img src="assets/platforms/steam.svg" alt="Steam"></div>
           <img src="assets/application-icon.ico" alt="Dragonwilds Sync icon">
-          <a class="button button-primary button-full is-disabled" data-main-download aria-disabled="true">Download Main <span aria-hidden="true">↓</span></a>
-          <small class="download-file-note" data-main-file>Finding the latest executable…</small>
+          <div class="download-platform-actions">
+            <a class="button button-primary button-full" data-windows-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Portable-2.0.1.exe"><span><b>Windows</b><small>Portable EXE</small></span><span aria-hidden="true">↓</span></a>
+            <small class="download-file-note" data-windows-file>Dragonwilds Sync and Launcher Portable 2.0.1</small>
+            <a class="button button-full linux-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Ubuntu-2.0.1.AppImage"><span><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
+            <small class="download-file-note" data-linux-file>Dragonwilds Sync and Launcher Ubuntu 2.0.1</small>
+          </div>
           <a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Main release history</a>
         </div>
         <button class="channel-ribbon" type="button" data-channel-flip="thanks" aria-label="Show special thanks"><span class="ribbon-dot"></span>Special Thanks <span aria-hidden="true">↻</span></button>
@@ -67,19 +71,20 @@
     .then((release) => {
       const date = new Date(release.published_at || release.created_at);
       const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
+      const appImage = (release.assets || []).find((asset) => /\.AppImage$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
       flip.querySelector('[data-main-version]').textContent = release.tag_name || release.name || 'Latest';
       flip.querySelector('[data-main-date]').textContent = Number.isNaN(date.getTime()) ? 'Latest release' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-      if (!executable) throw new Error('release has no executable');
-      const button = flip.querySelector('[data-main-download]');
-      button.href = executable.browser_download_url;
-      button.setAttribute('download', '');
-      button.removeAttribute('aria-disabled');
-      button.classList.remove('is-disabled');
-      flip.querySelector('[data-main-file]').textContent = executable.name;
+      if (executable) {
+        flip.querySelector('[data-windows-download]').href = executable.browser_download_url;
+        flip.querySelector('[data-windows-file]').textContent = executable.name;
+      }
+      if (appImage) {
+        flip.querySelector('[data-linux-download]').href = appImage.browser_download_url;
+        flip.querySelector('[data-linux-file]').textContent = appImage.name;
+      }
     }).catch(() => {
-      flip.querySelector('[data-main-version]').textContent = 'Latest available';
-      flip.querySelector('[data-main-date]').textContent = 'Latest release';
-      flip.querySelector('[data-main-file]').textContent = 'Open the latest release to download the EXE.';
+      flip.querySelector('[data-main-version]').textContent = 'v2.0.1';
+      flip.querySelector('[data-main-date]').textContent = 'Verified release';
     });
 
   setSide('main');

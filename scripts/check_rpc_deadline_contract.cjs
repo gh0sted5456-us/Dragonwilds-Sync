@@ -12,7 +12,8 @@ for (const required of [
   'pending.set(id,{resolve,reject,timer',
   'if(!pending.delete(id))return',
   'clearPendingTimer(waiter)',
-  "serviceInvoke('application.shutdown',{}, {timeoutMs:30000})",
+  "const shutdownTimeoutMs=process.platform==='linux'?7000:30000",
+  "serviceInvoke('application.shutdown',{}, {timeoutMs:shutdownTimeoutMs})",
 ]) {
   if (!main.includes(required)) failures.push(`electron/main-v2.cjs missing ${required}`);
 }

@@ -84,6 +84,15 @@ def _sensitive(path: Path) -> bool:
 
 def _unit_key_for_path(layout, path: Path) -> str:
     try:
+        pak_rel = path.relative_to(layout.paks_mods_dir)
+        # Directory-backed PAK mods may carry editable launcher metadata or
+        # configuration beside their binary payload. Loose top-level PAK files
+        # remain structural/view-only entries and are not adopted as configs.
+        if len(pak_rel.parts) >= 2:
+            return f"pak_mod::{pak_rel.parts[0]}"
+    except ValueError:
+        pass
+    try:
         rel = path.relative_to(layout.ue4ss_mods_dir)
     except ValueError:
         return ""
@@ -185,7 +194,19 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
     seen: set[str] = set()
     if not layout.game_root.exists():
         return {"ok": True, "locked": 0}
-    surfaces = ((layout.config_dir, True), (layout.ue4ss_core_dir, False), (layout.runeschema_config_dir, True))
+    # Mod Manager inventory and Mod Editor indexing must resolve the same live
+    # surfaces. RuneSchema mods may live under RuneSchema/mods or directly under
+    # the RuneSchema root on legacy installs; ServerLayout normalizes both into
+    # runeschema_mods_dir. Scan it before the broader UE4SS Mods tree so a large
+    # installation cannot starve RuneSchema entries from the bounded index.
+    surfaces = (
+        (layout.config_dir, True),
+        (layout.ue4ss_core_dir, False),
+        (layout.runeschema_config_dir, True),
+        (layout.runeschema_mods_dir, True),
+        (layout.paks_mods_dir, True),
+        (layout.ue4ss_mods_dir, True),
+    )
     for base, recursive in surfaces:
         if not base.exists():
             continue
@@ -226,7 +247,14 @@ def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[
     if active and layout.game_root.exists():
         lock_world_configs(profile_id, server_root)
         manifest = _read_manifest(profile_id)
-        roots = [(layout.config_dir, True), (layout.ue4ss_core_dir, False), (layout.runeschema_config_dir, True)]
+        roots = [
+            (layout.config_dir, True),
+            (layout.ue4ss_core_dir, False),
+            (layout.runeschema_config_dir, True),
+            (layout.runeschema_mods_dir, True),
+            (layout.paks_mods_dir, True),
+            (layout.ue4ss_mods_dir, True),
+        ]
         seen: set[str] = set()
         for base, recursive in roots:
             if not base.exists():

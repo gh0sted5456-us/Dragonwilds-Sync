@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "2.0.1"
+    assert package["version"] == "2.0.2"
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")
@@ -93,8 +93,9 @@ def main():
     assert '"poll_backoff"' in server_systems and "Retry-After" in server_systems
     assert 'status["poll_backoff_until"]' in service and 'status["last_error"] = ""' in service
 
-    # Close-to-tray is the recommended default and preserves background service capability.
-    assert "close_to_tray: true" in main_js
+    # Close-to-tray preserves Windows background capability without trapping Linux AppImage users.
+    assert "close_to_tray: process.platform !== 'linux'" in main_js
+    assert "backgroundSettings.close_to_tray && process.platform !== 'linux'" in main_js
     assert "dynamic patching, server monitoring, and passive notifications" in renderer
 
     # Safe world-operation behavior uses archives and complete-tree selection, never speculative .sav field merging.

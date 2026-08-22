@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-electron",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "private": true,
   "description": "A unified tool to create, launch, and share world servers with friends.",
   "main": "electron/bootstrap.cjs",
@@ -93,6 +93,7 @@
     },
     "linux": {
       "category": "Game",
+      "icon": "renderer/assets/application-icon.png",
       "extraResources": [
         {
           "from": "dist-service/DragonwildsSync.Service",

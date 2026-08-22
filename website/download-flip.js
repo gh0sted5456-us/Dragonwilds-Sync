@@ -15,17 +15,17 @@
           <div class="eyebrow">Main · Primary release</div>
           <h2>Ready when your world is.</h2>
           <p>Download the newest published Dragonwilds Sync desktop package for Windows or Ubuntu Linux. Main is the recommended release for normal use.</p>
-          <div class="download-meta"><div><span>VERSION</span><strong data-main-version>v2.0.1</strong></div><div><span>PUBLISHED</span><strong data-main-date>Latest release</strong></div><div><span>PACKAGES</span><strong>EXE + AppImage</strong></div></div>
+          <div class="download-meta"><div><span>VERSION</span><strong data-main-version>v2.0.2</strong></div><div><span>PUBLISHED</span><strong data-main-date>Latest release</strong></div><div><span>PACKAGES</span><strong>EXE + AppImage</strong></div></div>
           <p>Dragonwilds Sync is a passion project. Donations help with hosting, tools, and development costs, but features will never be locked behind a paywall.</p>
         </div>
         <div class="download-face-side">
           <div class="download-platform-icons" aria-label="Supported platforms"><span class="download-platform-chip windows">WIN</span><span class="download-platform-chip linux">LINUX</span><img src="assets/platforms/steam.svg" alt="Steam"></div>
           <img src="assets/application-icon.ico" alt="Dragonwilds Sync icon">
           <div class="download-platform-actions">
-            <a class="button button-primary button-full" data-windows-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Portable-2.0.1.exe"><span><b>Windows</b><small>Portable EXE</small></span><span aria-hidden="true">↓</span></a>
-            <small class="download-file-note" data-windows-file>Dragonwilds Sync and Launcher Portable 2.0.1</small>
-            <a class="button button-full linux-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Ubuntu-2.0.1.AppImage"><span><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
-            <small class="download-file-note" data-linux-file>Dragonwilds Sync and Launcher Ubuntu 2.0.1</small>
+            <a class="button button-primary button-full" data-windows-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.2/Dragonwilds.Sync.and.Launcher-Portable-2.0.2.exe"><span><b>Windows</b><small>Portable EXE</small></span><span aria-hidden="true">↓</span></a>
+            <small class="download-file-note" data-windows-file>Dragonwilds Sync and Launcher Portable 2.0.2</small>
+            <a class="button button-full linux-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.2/Dragonwilds.Sync.and.Launcher-Ubuntu-2.0.2.AppImage"><span><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
+            <small class="download-file-note" data-linux-file>Dragonwilds Sync and Launcher Ubuntu 2.0.2</small>
           </div>
           <a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Main release history</a>
         </div>
@@ -83,7 +83,7 @@
         flip.querySelector('[data-linux-file]').textContent = appImage.name;
       }
     }).catch(() => {
-      flip.querySelector('[data-main-version]').textContent = 'v2.0.1';
+      flip.querySelector('[data-main-version]').textContent = 'v2.0.2';
       flip.querySelector('[data-main-date]').textContent = 'Verified release';
     });
 

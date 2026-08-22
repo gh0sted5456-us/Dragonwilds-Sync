@@ -419,7 +419,14 @@ def _live_roots(game_dir: str) -> dict[str, Path]:
     # Current packages use RuneSchema/Mods. Older installs keep mod payloads
     # directly in RuneSchema; retain support for both layouts.
     if not rs_mods.exists() and rs_root.exists():
-        rs_mods = rs_root
+        # RuneSchema archives use both Mods and mods. Resolve the physical
+        # child case-insensitively so Linux/Proton behaves like Windows before
+        # falling back to the legacy direct-root layout.
+        try:
+            physical_mods = next((child for child in rs_root.iterdir() if child.is_dir() and child.name.casefold() == "mods"), None)
+        except OSError:
+            physical_mods = None
+        rs_mods = physical_mods or rs_root
     return {"ue4ss": layout.ue4ss_mods_dir, "paks": layout.paks_mods_dir, "runeschema": rs_mods}
 
 
@@ -861,8 +868,13 @@ def _unit_root(game_dir: str, key: str, live: bool, profile_id: str = SINGLEPLAY
         base = target["ue4ss"] / name
     elif group == "runeschema_mod":
         base = target["runeschema"] / name
+    elif group == "pak_mod":
+        pak_group = next((item for item in _pak_groups(target["paks"]) if item["name"].casefold() == name.casefold()), None)
+        if not pak_group:
+            raise FileNotFoundError("PAK mod payload was not found.")
+        base = Path(pak_group["paths"][0]) if pak_group.get("dir") else target["paks"]
     else:
-        raise ValueError("Only UE4SS and RuneSchema mod files can be edited in Monaco.")
+        raise ValueError("Only UE4SS, RuneSchema, and PAK mod payloads can be opened in Mod Editor.")
     base = base.resolve()
     if not base.exists():
         raise FileNotFoundError("SinglePlayer mod directory was not found.")
@@ -888,8 +900,15 @@ def _resolve_mod_path(base: Path, relative_path: str, *, require_file: bool = Tr
 
 def list_editable_mod_files(game_dir: str, key: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID, include_all: bool = False) -> list[dict]:
     base = _unit_root(game_dir, key, live, profile_id)
+    group, _, name = str(key or "").partition("::")
+    candidates = base.rglob("*")
+    if group == "pak_mod":
+        pak_group = next((item for item in _pak_groups(roots(game_dir, live, profile_id)["paks"]) if item["name"].casefold() == name.casefold()), None)
+        if not pak_group:
+            raise FileNotFoundError("PAK mod payload was not found.")
+        candidates = base.rglob("*") if pak_group.get("dir") else iter(Path(path) for path in pak_group["paths"])
     result = []
-    for path in base.rglob("*"):
+    for path in candidates:
         if not path.is_file():
             continue
         try:
@@ -910,6 +929,11 @@ def list_editable_mod_files(game_dir: str, key: str, *, live: bool = False, prof
 
 def open_mod_file(game_dir: str, key: str, relative_path: str, *, live: bool = False, profile_id: str = SINGLEPLAYER_ID) -> dict:
     base = _unit_root(game_dir, key, live, profile_id)
+    group, _, name = str(key or "").partition("::")
+    if group == "pak_mod":
+        pak_group = next((item for item in _pak_groups(roots(game_dir, live, profile_id)["paks"]) if item["name"].casefold() == name.casefold()), None)
+        if not pak_group or not pak_group.get("dir"):
+            raise PermissionError("Loose PAK payloads are view-only in Mod Editor.")
     rel, path = _resolve_mod_path(base, relative_path)
     if not path.is_file() or path.suffix.casefold() not in CONFIG_EXTENSIONS:
         raise FileNotFoundError("Editable mod file was not found.")

@@ -894,6 +894,14 @@
 
   function discordSettings() { return state.data?.application?.integrations?.discord_rich_presence || {}; }
 
+  function scheduleDiscordPresence(mode, world = null, extra = {}) {
+    if (state.discordPresenceInputTimer) window.clearTimeout(state.discordPresenceInputTimer);
+    state.discordPresenceInputTimer = window.setTimeout(() => {
+      state.discordPresenceInputTimer = null;
+      void setDiscordPresence(mode, world, extra);
+    }, 300);
+  }
+
   async function setDiscordPresence(mode, world = null, extra = {}) {
     const cfg = discordSettings();
     if (!window.dragonwilds?.discordActivity) return;
@@ -6153,7 +6161,7 @@
           files=(response.configs||[]).filter((item)=>item.unit_key===unitKey).map((item)=>({...item,editable:true}));
         }
       }else{
-        const profileId=world?.kind==='singleplayer'?world.id:(state.data?.client?.active_private_world_id||'singleplayer');
+        const profileId=world?.id||state.data?.client?.active_private_world_id||'singleplayer';
         const response=await api.invoke('singleplayer.mod.files',{key:unitKey,profile_id:profileId,tree:true});
         files=response.files||[];explorerRoot=String(response.root||'');
       }
@@ -6803,7 +6811,7 @@
         <div class="form-group"><label>Share / Hash Code</label><input class="field" id="f-key" type="password" value="${escapeHtml(creds.share_access_key || '')}" placeholder="Optional launcher synchronization code" /><small>There is no separate client password. This rotatable code authorizes launcher sync after the World identity is verified.</small></div>
       </div><div class="warning-box">Positive ID = <b>saved Internal IP OR saved External IP</b> + <b>exact World Name</b>. This allows one physical server to host several separate World profiles without clients confusing them.</div></div>
       <div class="modal-footer">${edit ? '<button class="btn danger" id="delete-world">Delete World</button>' : '<span></span>'}<div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-world">${edit ? 'Save Changes' : 'Add World'}</button></div></div>`);
-    if (!edit) modalRoot.querySelector('#f-world-name')?.addEventListener('input', (e) => setDiscordPresence('Creating World', null, { worldName: e.target.value.trim(), force: true }));
+    if (!edit) modalRoot.querySelector('#f-world-name')?.addEventListener('input', (e) => scheduleDiscordPresence('Creating World', null, { worldName: e.target.value.trim() }));
     modalRoot.querySelector('#use-my-public-ip')?.addEventListener('click', async () => {
       try {
         if (!state.clientPublicIp) {
@@ -7272,7 +7280,7 @@
   function openServerCreate() {
     setDiscordPresence('Creating World', null, { resetTimer: true });
     showModal(`<div class="modal-header"><div><h2>Create Hosted World</h2><p>Creates an advanced dedicated-server World profile with a declared browser identity.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="s-name" placeholder="Valhalla Friends" /></div><div class="form-group"><label>World Type</label><select class="select" id="s-content-type"><option value="vanilla">Vanilla</option><option value="modded">Modded</option><option value="handmade">Handmade</option><option value="hybrid">Hybrid</option></select></div><div class="form-group"><label>Game Mode</label><select class="select" id="s-game-mode"><option value="normal">Normal</option><option value="hardcore">Hardcore</option><option value="creative">Creative</option><option value="custom">Custom</option></select></div></div><div class="identity-box"><strong>Declared metadata</strong><p>Players can filter this classification. The live Sync fingerprint still proves the endpoint identity independently.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="create-server-world">Create World</button></div></div>`);
-    modalRoot.querySelector('#s-name')?.addEventListener('input', (e) => setDiscordPresence('Creating World', null, { worldName: e.target.value.trim(), force: true }));
+    modalRoot.querySelector('#s-name')?.addEventListener('input', (e) => scheduleDiscordPresence('Creating World', null, { worldName: e.target.value.trim() }));
     modalRoot.querySelector('#create-server-world').addEventListener('click', async () => {
       const name = modalRoot.querySelector('#s-name').value.trim(); if (!name) return toast('World Name required', '', 'error');
       try { const response = await api.invoke('server.world.create', { name, classification:{content_type:modalRoot.querySelector('#s-content-type')?.value||'vanilla',game_mode:modalRoot.querySelector('#s-game-mode')?.value||'normal',host_type:'dedicated',visibility:'public',declared:true} }); state.selectedServerWorldId = response.id; setData(response.state); closeModal(); state.route = 'server-detail'; render(); toast('Hosted World created', name, 'success'); } catch (error) { toast('Create failed', error.message, 'error'); }

@@ -101,8 +101,9 @@ let forceQuit = false;
 let shutdownInProgress = false;
 let shutdownComplete = false;
 let visualShutdownStarted = false;
+let shutdownWatchdog = null;
 let pendingJoinRequest = null;
-let backgroundSettings = { close_to_tray: true, start_minimized: false, notifications_enabled: true, announcement_overlay_enabled: true };
+let backgroundSettings = { close_to_tray: process.platform !== 'linux', start_minimized: false, notifications_enabled: true, announcement_overlay_enabled: true };
 const notificationSeen = new Map();
 
 function cryptoHashFile(file) { const hash=crypto.createHash('sha256'); hash.update(fs.readFileSync(file)); return hash.digest('hex'); }
@@ -213,7 +214,7 @@ function startService() {
   if (service && !service.killed) return;
   const cfg = serviceCommand();
   serviceStderrTail = '';
-  service = spawn(cfg.command, cfg.args, { cwd: cfg.cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, env: serviceEnvironment() });
+  service = spawn(cfg.command, cfg.args, { cwd: cfg.cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32', env: serviceEnvironment() });
   service.stdout.setEncoding('utf8');
   service.stdout.on('data', (chunk) => {
     serviceBuffer += chunk;
@@ -502,7 +503,7 @@ function createWindow({ show = true } = {}) {
   }
   mainWindow.once('ready-to-show', () => { if (show && !backgroundSettings.start_minimized) mainWindow.show(); });
   mainWindow.on('close', (event) => {
-    if (!forceQuit && backgroundSettings.close_to_tray) { event.preventDefault(); mainWindow.hide(); }
+    if (!forceQuit && backgroundSettings.close_to_tray && process.platform !== 'linux') { event.preventDefault(); mainWindow.hide(); }
   });
   mainWindow.on('closed', () => { mainWindow = null; });
   return mainWindow;
@@ -868,15 +869,22 @@ function terminateBackendProcessTree(){
   try{
     if(process.platform==='win32')execFileSync('taskkill.exe',['/PID',String(pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});
     else{
-      try{execFileSync('pkill',['-TERM','-P',String(pid)],{stdio:'ignore'});}catch(_){}
-      owned.kill('SIGTERM');
+      try{process.kill(-pid,'SIGKILL');}catch(_){owned.kill('SIGKILL');}
     }
   }catch(_){try{owned.kill('SIGKILL');}catch(__){}}
+  try{owned.stdin?.destroy();}catch(_){}
+  try{owned.stdout?.destroy();}catch(_){}
+  try{owned.stderr?.destroy();}catch(_){}
 }
 
 function beginVisualApplicationExit(){
   if(visualShutdownStarted)return;
   visualShutdownStarted=true;forceQuit=true;
+  if(!shutdownWatchdog){
+    shutdownWatchdog=setTimeout(()=>{
+      terminateBackendProcessTree();shutdownComplete=true;app.exit(0);
+    },process.platform==='linux'?10000:35000);
+  }
   // A verified backend shutdown can take several seconds when a dedicated
   // server is stopping. Remove the launcher UI immediately while that bounded
   // authority-preserving cleanup continues in the background.
@@ -889,9 +897,10 @@ async function performFullApplicationExit(){
   shutdownInProgress=true;beginVisualApplicationExit();
   try{
     if(service&&!service.killed){
+      const shutdownTimeoutMs=process.platform==='linux'?7000:30000;
       let timeoutId;
-      const timeout=new Promise((_,reject)=>{timeoutId=setTimeout(()=>reject(new Error('Backend shutdown verification timed out.')),30000);});
-      try{await Promise.race([serviceInvoke('application.shutdown',{}, {timeoutMs:30000}),timeout]);}
+      const timeout=new Promise((_,reject)=>{timeoutId=setTimeout(()=>reject(new Error('Backend shutdown verification timed out.')),shutdownTimeoutMs);});
+      try{await Promise.race([serviceInvoke('application.shutdown',{}, {timeoutMs:shutdownTimeoutMs}),timeout]);}
       finally{if(timeoutId)clearTimeout(timeoutId);}
     }
   }catch(error){console.error(`[shutdown] ${error?.stack||error}`);}
@@ -902,6 +911,7 @@ async function performFullApplicationExit(){
     // plain child.kill(), it cannot leave launcher-owned grandchildren alive.
     terminateBackendProcessTree();
     shutdownComplete=true;shutdownInProgress=false;
+    if(shutdownWatchdog){clearTimeout(shutdownWatchdog);shutdownWatchdog=null;}
     app.quit();
   }
 }

@@ -26,15 +26,30 @@ def main():
         root = Path(td)
         profiles = root / 'profiles'
         requested_server = root / 'server'
-        server = wm.resolve_server_layout(str(requested_server)).game_root
+        layout = wm.resolve_server_layout(str(requested_server))
+        server = layout.game_root
         config = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json'
         config.parent.mkdir(parents=True)
         config.write_text('{"enabled": true}', encoding='utf-8')
+        runeschema_mod = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/mods/BetterLoot/recipes/loot.jsonc'
+        runeschema_mod.parent.mkdir(parents=True)
+        runeschema_mod.write_text('// RuneSchema recipe\n{"enabled": true}', encoding='utf-8')
+        ue4ss_mod = layout.ue4ss_mods_dir / 'ServerTweaks/Scripts/main.lua'
+        ue4ss_mod.parent.mkdir(parents=True)
+        ue4ss_mod.write_text('return true', encoding='utf-8')
+        pak_mod = layout.paks_mods_dir / 'VisualPack/config/settings.json'
+        pak_mod.parent.mkdir(parents=True)
+        pak_mod.write_text('{"quality": "high"}', encoding='utf-8')
         old_profiles = wm.SERVER_PROFILES_DIR
         wm.SERVER_PROFILES_DIR = profiles
         try:
             rows = wm.list_world_configs('world-a', str(server), True)
             assert any(row['relative_path'].endswith('RuneSchema/config/config.json') for row in rows)
+            mod_row = next(row for row in rows if row['unit_key'] == 'runeschema_mod::BetterLoot')
+            assert mod_row['relative_path'].endswith('RuneSchema/mods/BetterLoot/recipes/loot.jsonc')
+            assert mod_row['readonly'] is True
+            assert any(row['unit_key'] == 'ue4ss_mod::ServerTweaks' for row in rows)
+            assert any(row['unit_key'] == 'pak_mod::VisualPack' for row in rows)
             opened = wm.open_world_config('world-a', str(server), 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json', True)
             assert opened['readonly'] is True
             assert Path(opened['path']).resolve() == config.resolve()

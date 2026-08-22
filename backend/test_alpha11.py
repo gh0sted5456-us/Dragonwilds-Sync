@@ -116,6 +116,11 @@ def main() -> None:
         lw.update_mod(str(game), "ue4ss_mod::Zulu", live=True, hotload_capable=True)
         files = lw.list_editable_mod_files(str(game), "ue4ss_mod::Zulu", live=True)
         assert any(item["relative_path"].endswith("main.lua") for item in files)
+        rs_files = lw.list_editable_mod_files(str(game), "runeschema_mod::BetterLoot", live=True, include_all=True)
+        assert any(item["relative_path"] == "raw/items.json" and item["editable"] for item in rs_files)
+        pak_files = lw.list_editable_mod_files(str(game), "pak_mod::Second", live=True, include_all=True)
+        assert len(pak_files) == 1 and pak_files[0]["relative_path"] == "01_Second.pak" and not pak_files[0]["editable"]
+        assert Path(lw.singleplayer_mod_root(str(game), "pak_mod::Second", live=True)).resolve() == (inner / "Content/Paks/~Mods").resolve()
         saved = lw.save_mod_file(str(game), "ue4ss_mod::Zulu", "Scripts/main.lua", "return false\n", live=True)
         assert saved["ok"] and (inner / "Binaries/Win64/ue4ss/Mods/Zulu/Scripts/main.lua").read_text() == "return false\n"
 

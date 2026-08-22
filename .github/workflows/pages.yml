@@ -279,7 +279,10 @@ jobs:
           test -s _site/assets/demo-world-icon.svg
           test -s _site/assets/rsdw-logo.png
           test -s _site/assets/runeschema-logo.png
-          grep -q 'styles.css?v=theme-preview-1' _site/index.html
+          grep -q 'styles.css?v=ubuntu-download-1' _site/index.html
+          grep -q 'script.js?v=ubuntu-download-1' _site/index.html
+          test -s _site/assets/ubuntu-logo.png
+          grep -q 'assets/ubuntu-logo.png' _site/script.js
           grep -q -- '--preview-shell' _site/styles.css
           grep -q 'html\[data-theme="white"\] .mock-cl-badge' _site/styles.css
           grep -q 'Steam Server' _site/index.html

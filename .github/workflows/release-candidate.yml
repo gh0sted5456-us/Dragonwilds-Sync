@@ -107,6 +107,16 @@ jobs:
           $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
           & .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload Windows failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Dragonwilds-Sync-Windows-Failure-Diagnostics
+          if-no-files-found: warn
+          path: |
+            test-results/*.md
+            build.log
+            build-logs/*.log
       - name: Create Windows package report and checksums
         shell: powershell
         run: |

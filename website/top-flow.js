@@ -14,12 +14,11 @@
   // remain correct.
   if (headerNav && hero) {
     headerNav.innerHTML = `
+      <div class="nav-home"><a href="index.html">Home <span aria-hidden="true"></span></a><div class="nav-home-menu"><a href="#webgui">WebGUI</a><a href="#downloads">Downloads</a><a href="#community">Community</a></div></div>
       <a href="world-builder.html">World Builder</a>
       <a href="servers.html">Servers</a>
       <a href="helpy.html">Helpy</a>
-      <a href="#webgui">WebGUI</a>
-      <a href="#downloads">Downloads</a>
-      <a href="#community">Community</a>
+      <a href="launcher-preview.html">Preview Launcher</a>
       <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>`;
   }
 

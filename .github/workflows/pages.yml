@@ -241,6 +241,7 @@ jobs:
           node --check _site/public-directory-fetch-fallback.js
           node --check _site/public-directory-view.js
           node --check _site/helpy.js
+          node --check _site/launcher-preview.js
 
       - name: Verify Helpy route
         shell: bash
@@ -251,6 +252,16 @@ jobs:
           test -s _site/help/manifest.json
           test -s _site/assets/help/38-helpy-website.png
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('_site/help/manifest.json','utf8'));if(m.schema!=='DragonwildsSync.Help.v1'||!Array.isArray(m.pages)||m.pages.length<5)throw new Error('Invalid Helpy manifest')"
+
+      - name: Verify Preview Launcher route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s _site/launcher-preview.html
+          test -s _site/launcher-preview.css
+          test -s _site/launcher-preview.js
+          test -s _site/assets/launcher-preview.json
+          node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('_site/assets/launcher-preview.json','utf8'));if(m.schema!=='DragonwildsSync.LauncherPreview.v1'||!Array.isArray(m.appys)||m.appys.length<7)throw new Error('Invalid launcher preview model')"
 
       - name: Verify homepage presentation and download card
         shell: bash

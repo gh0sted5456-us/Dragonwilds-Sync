@@ -25,10 +25,11 @@ assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('world-management'"),
   'Characters, Mods, and Dragonwilds must be first-class Appy navigation entries.');
 assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
-  source.includes("navButton('world-management',navIconAsset('assets/dragonwilds_icon.ico'),'Dragonwilds'") &&
+  source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds'") &&
+  source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods'") &&
   !source.includes("navButton('rsdragonwilds-app'") &&
   baseCss.includes('.nav-icon-image{display:block;width:22px;height:22px'),
-  'Dragonwilds must retain the game artwork and own Hosting without a duplicate navigation item.');
+  'Dragonwilds and Mods must retain their dedicated artwork, with Hosting owned by the single Dragonwilds entry.');
 assert(baseCss.includes('.studio-appearance-swatches{grid-column:1/-1;min-width:0') &&
   baseCss.includes('.studio-appearance-swatches>div{display:flex;flex-wrap:wrap;gap:6px') &&
   baseCss.includes('.studio-appearance-swatches button{flex:0 0 26px;width:26px'),

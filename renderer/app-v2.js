@@ -1762,9 +1762,9 @@
           <div class="brand-copy"><strong>Dragonwilds Sync</strong><span>${t('worldLauncher')}</span></div>
         </div>
         <div class="nav-label">Play &amp; Create</div>
-        ${navButton('world-management',navIconAsset('assets/dragonwilds_icon.ico'),'Dragonwilds',{appy:'worlds',tone:'worlds',active:dragonwildsActive,subapps:'Singleplayer · Co-Op · Dedicated · connect'})}
+        ${navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds',{appy:'worlds',tone:'worlds',active:dragonwildsActive,subapps:'Singleplayer · Co-Op · Dedicated · connect'})}
         ${navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.png'),'Characters',{appy:'characters',tone:'characters',active:charactersActive,subapps:'Saves · identity · appearance'})}
-        ${navButton('mods-app',navIconAsset('assets/rsdw-toolkit/modded-items.svg'),'Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
+        ${navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
         ${navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png'),'RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
         <div class="nav-label">Host &amp; Connect</div>
         ${navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}

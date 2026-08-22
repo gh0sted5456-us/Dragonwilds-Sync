@@ -1,7 +1,7 @@
 /* Homepage information hierarchy cleanup. */
 (() => {
   const main = document.querySelector('main');
-  const headerNav = document.querySelector('#main-nav');
+  const headerNav = document.querySelector('#main-nav:not([data-shared-nav])');
   const hero = document.querySelector('.hero');
   const network = document.querySelector('.network-section');
   const features = document.querySelector('#features');

@@ -2,7 +2,7 @@
 (() => {
   const EXACT_ECOSYSTEM_ASSETS = Object.freeze({
     ue4ss: 'assets/platforms/ue4ss.webp',
-    runeschema: 'assets/platforms/runeschema.webp',
+    runeschema: 'assets/platforms/runeschema.png',
     paks: 'assets/platforms/paks.svg',
   });
 

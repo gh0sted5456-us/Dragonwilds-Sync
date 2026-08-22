@@ -8,6 +8,7 @@ mutation unless an explicit ``upnp`` publication mode is supplied.
 """
 
 import os
+import shutil
 import socket
 import sys
 from pathlib import Path
@@ -23,7 +24,7 @@ DEFAULT_WEBHOST_PORT = 27080
 RULE_NAMES = {
     "pc_game": "Dragonwilds Sync - PC Game Host UDP",
     "dedicated_game": "Dragonwilds Sync - Dedicated Game Host UDP",
-    "world_sync": "Dragonwilds Sync - World Sync TCP",
+    "world_sync": "Dragonwilds Sync - World Sync",
     "webhost": "Dragonwilds Sync - WebHost TCP",
     "client_outbound": "Dragonwilds Sync - Client Outbound TCP",
 }
@@ -67,7 +68,8 @@ def normalize_publication_mode(value, *, service: str) -> str:
 
 def manual_router_rule(service: str, port: int, internal_address: str) -> dict:
     service = str(service or "").strip().casefold()
-    protocol = "UDP" if service in {"game", "pc_game", "dedicated_game"} else "TCP"
+    protocol = ("UDP" if service in {"game", "pc_game", "dedicated_game"}
+                else "TCP and UDP" if service == "world_sync" else "TCP")
     labels = {
         "game": "Dragonwilds gameplay",
         "pc_game": "Dragonwilds PC gameplay",
@@ -154,8 +156,49 @@ def apply_firewall_spec(spec: dict, *, action: str = "Ensure") -> dict:
     if not spec.get("required") and action.casefold() == "ensure":
         return {"ok": True, "changed": False, "required": False, "message": "Firewall rule not required for this mode."}
     if os.name != "nt":
-        return {"ok": False, "changed": False, "managed": False,
-                "message": "Windows Firewall management is only available on Windows.", **spec}
+        if not sys.platform.startswith("linux"):
+            return {"ok": False, "changed": False, "managed": False,
+                    "message": "Automatic firewall management is unavailable on this platform.", **spec}
+        protocol = str(spec.get("protocol") or "TCP").casefold()
+        port = valid_port(spec.get("port"))
+        requested = str(action or "Ensure").casefold()
+        mutating = requested in {"ensure", "remove"}
+        prefix = []
+        if mutating and hasattr(os, "geteuid") and os.geteuid() != 0:
+            elevate = shutil.which("pkexec") or shutil.which("sudo")
+            if not elevate:
+                return {**spec, "ok": False, "changed": False, "managed": False,
+                        "message": "Install polkit (pkexec) or run once with sudo to authorize Linux firewall changes."}
+            prefix = [elevate]
+        ufw = shutil.which("ufw")
+        firewalld = shutil.which("firewall-cmd")
+        if ufw:
+            if requested == "query":
+                command = [ufw, "status"]
+            elif requested == "remove":
+                command = prefix + [ufw, "--force", "delete", "allow", f"{port}/{protocol}"]
+            else:
+                command = prefix + [ufw, "allow", f"{port}/{protocol}", "comment", str(spec.get("display_name") or FIREWALL_GROUP)]
+            result = run_hidden(command, capture_output=True, text=True)
+            output = (result.stdout or result.stderr or "").strip()
+            present = f"{port}/{protocol}" in output.casefold() if requested == "query" else result.returncode == 0
+            return {**spec, "ok": present, "changed": mutating and result.returncode == 0,
+                    "managed": True, "firewall": "ufw", "message": output[-3000:] or ("Linux firewall rule is ready." if present else "Linux firewall rule was not found.")}
+        if firewalld:
+            flag = f"--{'remove' if requested == 'remove' else 'add'}-port={port}/{protocol}"
+            command = [firewalld, f"--query-port={port}/{protocol}"] if requested == "query" else prefix + [firewalld, "--permanent", flag]
+            result = run_hidden(command, capture_output=True, text=True)
+            output = (result.stdout or result.stderr or "").strip()
+            if mutating and result.returncode == 0:
+                reload_result = run_hidden(prefix + [firewalld, "--reload"], capture_output=True, text=True)
+                if reload_result.returncode != 0:
+                    result = reload_result
+                    output = (reload_result.stdout or reload_result.stderr or output).strip()
+            ok = result.returncode == 0
+            return {**spec, "ok": ok, "changed": mutating and ok, "managed": True,
+                    "firewall": "firewalld", "message": output[-3000:] or ("Linux firewall rule is ready." if ok else "Linux firewall command failed.")}
+        return {**spec, "ok": False, "changed": False, "managed": False,
+                "message": "No supported Linux firewall manager was found. Install ufw or firewalld, then retry."}
     helper = Path(__file__).with_name("firewall_rules.ps1")
     if not helper.is_file():
         raise RuntimeError("The Dragonwilds Sync firewall helper is missing.")

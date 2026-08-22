@@ -1,5 +1,5 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.6.0',
+  version: '2.7.0',
   name: 'V2.6 · Connected Worlds, Live Sync Progress & Mod Discovery',
   rsdwlVersion: 3,
   attributions: [
@@ -9,7 +9,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
-    version: '2.6.0',
+    version: '2.7.0',
     title: 'Verified Connections, Complete Mod Discovery, and Live Delta Sync Progress',
     items: [
       'One World Management workspace covers Singleplayer, Co-Op, dedicated, manifest, and favorited Worlds with clear mode/source banners, save discovery, conversion, Game Setup, and Server Setup.',

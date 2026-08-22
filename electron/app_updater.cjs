@@ -45,8 +45,8 @@ function requestJson(url, headers = {}, redirects = 0) {
 }
 
 function semverParts(value) {
-  const m = String(value || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/);
-  return m ? m.slice(1).map(Number) : null;
+  const m = String(value || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3] || 0)] : null;
 }
 function isNewer(candidate, current) {
   const a = semverParts(candidate), b = semverParts(current);
@@ -56,10 +56,12 @@ function isNewer(candidate, current) {
 }
 function detectMode(app) {
   if (!app.isPackaged) return 'development';
+  if (process.platform === 'linux') return process.env.APPIMAGE ? 'appimage' : 'linux-package';
   return 'portable';
 }
-function chooseAsset(release) {
+function chooseAsset(release, platform = process.platform) {
   const assets = Array.isArray(release.assets) ? release.assets : [];
+  if (platform === 'linux') return assets.find((a) => /\.AppImage$/i.test(String(a.name || ''))) || null;
   const exes = assets.filter((a) => /\.exe$/i.test(String(a.name || '')));
   return exes.find((a) => /portable/i.test(a.name))
     || exes.find((a) => !/(setup|installer)/i.test(a.name))
@@ -124,10 +126,11 @@ function psQuote(value) { return `'${String(value).replace(/'/g, "''")}'`; }
 
 async function stageAndApply({ app, release, repositoryUrl }) {
   if (!app.isPackaged) throw new Error('Application updating is disabled in development mode.');
-  if (process.platform !== 'win32') throw new Error('Dragonwilds Sync 2.6.0 updates require the Windows portable application.');
+  if (!['win32', 'linux'].includes(process.platform)) throw new Error(`Automatic application updating is not available on ${process.platform}.`);
   const mode = detectMode(app);
   const asset = release?.asset;
-  if (!asset?.url || !asset?.name) throw new Error('The GitHub release does not contain a Portable Windows EXE asset.');
+  const expected = process.platform === 'linux' ? 'Linux AppImage' : 'Portable Windows EXE';
+  if (!asset?.url || !asset?.name) throw new Error(`The GitHub release does not contain a ${expected} asset.`);
   if (!asset.digest) throw new Error('Update blocked: the selected GitHub release asset does not publish a SHA-256 digest.');
   const updateDir = path.join(app.getPath('userData'), 'updates'); fs.mkdirSync(updateDir, { recursive: true });
   const staged = path.join(updateDir, path.basename(asset.name).replace(/[^A-Za-z0-9_. -]/g, '_'));
@@ -137,11 +140,21 @@ async function stageAndApply({ app, release, repositoryUrl }) {
 
   const marker = path.join(app.getPath('userData'), 'update-result.json');
   fs.writeFileSync(marker, JSON.stringify({ version: release.latestVersion, name: release.name, notes: release.notes, releaseUrl: release.releaseUrl, repository: repositoryUrl, appliedAtUtc: new Date().toISOString(), mode }, null, 2));
-  const currentExe = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.ps1`);
-  const body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\ntry { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\nStart-Sleep -Milliseconds 600\nCopy-Item -LiteralPath $src -Destination $dst -Force\nRemove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $dst\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n`;
-  fs.writeFileSync(script, body, 'utf8');
-  const child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], { detached: true, stdio: 'ignore', windowsHide: true });
+  const currentExe = process.platform === 'linux' ? String(process.env.APPIMAGE || process.execPath) : String(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath);
+  if (!currentExe || !fs.existsSync(currentExe)) throw new Error(`The running ${expected} path could not be resolved.`);
+  let child;
+  if (process.platform === 'linux') {
+    const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.sh`);
+    const shQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
+    const body = `#!/bin/sh\nset -eu\npid=${process.pid}\nsrc=${shQuote(staged)}\ndst=${shQuote(currentExe)}\nwhile kill -0 "$pid" 2>/dev/null; do sleep 0.2; done\ncp "$src" "$dst"\nchmod +x "$dst"\nrm -f "$src"\nnohup "$dst" >/dev/null 2>&1 &\nrm -f "$0"\n`;
+    fs.writeFileSync(script, body, { encoding:'utf8', mode:0o700 });
+    child = spawn('/bin/sh', [script], { detached:true, stdio:'ignore' });
+  } else {
+    const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.ps1`);
+    const body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\ntry { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\nStart-Sleep -Milliseconds 600\nCopy-Item -LiteralPath $src -Destination $dst -Force\nRemove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $dst\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n`;
+    fs.writeFileSync(script, body, 'utf8');
+    child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], { detached:true, stdio:'ignore', windowsHide:true });
+  }
   child.unref();
   setTimeout(() => app.quit(), 250);
   return { ok: true, mode, staged, targetVersion: release.latestVersion };

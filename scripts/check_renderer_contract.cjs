@@ -42,23 +42,25 @@ assert(popupSafety.includes("event.key!=='Escape'") && popupSafety.includes('dat
   popupSafety.includes('closeModPopup') && popupSafety.includes('event.target===popup'),
   'Every modal popup must support a close control, Escape, backdrop dismissal, and placard-specific cleanup.');
 assert(source.includes('recommended-mod-card recommended-mod-placard has-placard ${providerKey}') &&
-  source.includes('recommended-mod-watermark') && source.includes('>View Details</button>') &&
+  source.includes('recommended-mod-watermark') && source.includes('>Open Nexus</button>') &&
   !source.includes('class="recommended-mod-media"') &&
   recommendedPlacardsCss.includes('var(--world-placard) center/cover no-repeat') &&
-  recommendedPlacardsCss.includes('opacity:.12'),
-  'Recommended mods must use local placard artwork, a faded provider watermark, and a View Details action.');
+  recommendedPlacardsCss.includes('opacity:.11'),
+  'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
-assert(source.includes('data-webhost-tab="home">Server Directory') &&
+assert(source.includes('data-webhost-tab="manifest">Manifest') &&
   source.includes('data-webhost-tab="remote">Remote Login &amp; Permissions'),
-  'The normal Sync workspace must expose the official directory and Remote Login.');
+  'The normal Sync workspace must expose Manifest and Remote Login configuration.');
 assert(source.includes('data-webhost-tab="live">Advanced Webhost Preview') &&
   source.includes('data-webhost-tab="settings">Advanced Webhost Settings') &&
-  source.includes("const SYNC_HOME_URL = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html'"),
-  'Advanced Webhost controls and the official website server-list link must remain explicit.');
+  !source.includes('data-webhost-tab="home">Server Directory') &&
+  !source.includes('SYNC_HOME_URL'),
+  'Advanced Webhost controls must remain explicit while the public directory stays in Worlds.');
 assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
-assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('world-management'"),
-  'Characters, Mods, and Dragonwilds must be first-class Appy navigation entries.');
+assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") &&
+  source.includes("navButton('world-management'") && source.includes("navButton('worlds'"),
+  'Characters, Mods, Dragonwilds, and Worlds must be first-class Appy navigation entries.');
 assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
   source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds'") &&
   source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods'") &&

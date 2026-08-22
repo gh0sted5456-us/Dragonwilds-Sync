@@ -70,7 +70,7 @@
 
   function modRows(world) {
     const worldId=text(world?.id || world?.profile_id || world?.world_id);
-    const sources = [modInventory.get(worldId)?.rows, world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
+    const sources = [modInventory.get(worldId)?.rows, world?.mod_metadata, world?.manifest_cache?.mod_summary, world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
     const rows = [];
     for (const source of sources) {
       for (const raw of asArray(source)) {
@@ -238,16 +238,14 @@
   function backMarkup(id, world) {
     const rules = publicRules(world);
     const badges = customBadgeMarkup(world);
-    const mods = modsMarkup(world);
     const compatibility = platformMarkup(world);
     const extra = text(world?.additional_information || world?.presentation?.additional_information || world?.region || world?.classification?.region);
     return `<div class="v3p4-back-scroll" tabindex="0" aria-label="World joining and community details">
       ${rules?`<section class="v3p4-back-section"><h4>Community Rules</h4><p>${esc(rules)}</p></section>`:''}
       ${badges?`<section class="v3p4-back-section"><h4>Community Badges</h4>${badges}</section>`:''}
-      ${mods?`<section class="v3p4-back-section"><h4>Required Mods</h4>${mods}</section>`:''}
       ${compatibility?`<section class="v3p4-back-section"><h4>Compatibility</h4>${compatibility}</section>`:''}
       ${extra?`<section class="v3p4-back-section"><h4>Additional Information</h4><p>${esc(extra)}</p></section>`:''}
-      ${(!rules&&!badges&&!mods&&!compatibility&&!extra)?'<div class="v3p4-empty">No additional joining requirements are published for this World.</div>':''}
+      ${(!rules&&!badges&&!compatibility&&!extra)?'<div class="v3p4-empty">No additional joining requirements are published for this World.</div>':''}
     </div>
     <div class="v3p4-back-footer">${heartbeatMarkup(id,world)}<button class="btn ghost compact-btn" data-v3p4-toggle="${esc(id)}">← Front</button></div>`;
   }

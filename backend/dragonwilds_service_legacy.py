@@ -86,7 +86,8 @@ from directory_host import DIRECTORY_HOST, REMOTE_PERMISSION_DEFAULTS, normalize
 from world_classification import normalize_world_classification
 from recommendation_feeds import OFFICIAL_FEED_URL, NEXUS_ACTIVITY_URL, builtin_recommendations, refresh_recommendations
 from operator_identity import public_operator_status, verify_world_identity
-from networking import effective_game_port, manual_router_rule, normalize_publication_mode, valid_port
+from networking import (apply_firewall_spec, backend_program, effective_game_port, firewall_spec,
+                        manual_router_rule, normalize_publication_mode, valid_port)
 from crypto_runtime import cryptography_self_test
 from computer_profiles import normalize_computer_profile, recommend_computer_profile
 from character_submissions import list_submissions, approve_submission, reject_submission
@@ -520,10 +521,11 @@ def find_world(state: dict, world_id: str) -> dict | None:
 def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | None = None) -> dict:
     connection = world.get("connection") if isinstance(world.get("connection"), dict) else {}
     advertised = manifest.get("connection") if isinstance(manifest, dict) and isinstance(manifest.get("connection"), dict) else {}
-    preference = str(connection.get("preference") or "automatic").casefold()
     internal = str(advertised.get("internal_ip") or connection.get("internal_ip") or "").strip()
     external = str(advertised.get("external_ip") or connection.get("external_ip") or (world.get("identity") or {}).get("external_ip") or "").strip()
-    host = internal if preference in {"internal", "lan"} and internal else (external or internal)
+    # LAN is a discovery/Sync optimization. DragonConnect must hand the game
+    # the host-advertised external endpoint whenever one is available.
+    host = external or internal
     port = int(advertised.get("game_port") or connection.get("game_port") or 7777)
     # The baseline mod and Dragonwilds' current Direct Connect field accept a
     # complete IPv4/hostname endpoint. Respect an already supplied port, but
@@ -1904,6 +1906,19 @@ def handle(method: str, params: dict) -> object:
         # already online. This never starts/stops the independent listener.
         if DIRECTORY_HOST.status().get("serving"):
             DIRECTORY_HOST.ensure(host_cfg)
+        return public_state(state)
+
+    if method == "application.runtime_updates.settings":
+        runtime_updates = state.setdefault("application", {}).setdefault("runtime_updates", {})
+        if "ue4ss" in params:
+            runtime_updates["ue4ss"] = bool(params.get("ue4ss"))
+            for profile in state.setdefault("server", {}).setdefault("profiles", []):
+                profile["auto_ue4ss"] = runtime_updates["ue4ss"]
+        if "runeschema" in params:
+            runtime_updates["runeschema"] = bool(params.get("runeschema"))
+            for profile in state.setdefault("server", {}).setdefault("profiles", []):
+                profile["auto_runeschema"] = runtime_updates["runeschema"]
+        save_state(state)
         return public_state(state)
 
     if method == "application.world_discovery.settings":
@@ -4467,6 +4482,12 @@ def handle(method: str, params: dict) -> object:
         return {"result": result, "state": public_state(state)}
 
     if method in ("server.discovery.scan", "client.discovery.scan"):
+        if sys.platform.startswith("linux"):
+            discovery_spec = firewall_spec("world_sync", 27051, program=backend_program(), mode="local", instance_id="lan-discovery")
+            discovery_spec.update({"display_name": "Dragonwilds Sync - LAN Discovery UDP", "protocol": "UDP",
+                                   "profiles": "Domain,Private", "remote_address": "LocalSubnet"})
+            if not apply_firewall_spec(discovery_spec, action="Query").get("ok"):
+                apply_firewall_spec(discovery_spec)
         found = scan_for_servers(float(params.get("timeout") or 3.0))
         remember_heartbeats(found, source="lan")
         return found

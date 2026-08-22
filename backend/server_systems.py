@@ -2240,11 +2240,6 @@ def configure_shared_firewall(sync_port: int, game_port: int | None = None, *,
                               game_program: str = "", game_mode: str | None = None,
                               sync_mode: str | None = None) -> dict:
     sync_port = int(sync_port); game_port = int(game_port if game_port is not None else 7777)
-    if os.name != "nt":
-        return {
-            "ok": True, "managed": False, "platform": "linux", "sync_port": sync_port, "game_port": game_port,
-            "message": "Linux firewall policy was not changed. Open TCP Sync, LocalSubnet UDP Sync discovery, and the UDP game port with the host's firewall tooling.",
-        }
     sync_spec = firewall_spec("world_sync", sync_port, program=backend_program(), mode=sync_mode or mode, instance_id=instance_id)
     discovery_spec = {**sync_spec, "display_name": f"{sync_spec['display_name']} - LAN Discovery",
                       "protocol": "UDP", "profiles": "Domain,Private", "remote_address": "LocalSubnet"}
@@ -2265,11 +2260,6 @@ def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manu
     """
     sync = sorted({int(p) for p in (sync_ports or [27051]) if 1 <= int(p) <= 65535}) or [27051]
     game = sorted({int(p) for p in (game_ports or [7777]) if 1 <= int(p) <= 65535}) or [7777]
-    if os.name != "nt":
-        return {
-            "ok": True, "managed": False, "platform": "linux", "sync_ports": sync, "game_ports": game,
-            "message": "Linux firewall policy was not changed. Open the listed TCP Sync, LocalSubnet UDP Sync discovery, and UDP game ports with the host's firewall tooling.",
-        }
     results = []
     for index, port in enumerate(sync, 1):
         sync_spec = firewall_spec("world_sync", port, program=backend_program(), mode=mode, instance_id=f"server-{index}")

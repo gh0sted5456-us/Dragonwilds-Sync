@@ -426,6 +426,7 @@ def _launch_verified_world(legacy, state: dict, world_id: str, verified: dict) -
         exe = str(candidates[0]) if candidates else ""
     if not exe:
         raise ValueError("Dragonwilds executable is not configured and could not be auto-detected.")
+    direct_connect = legacy._write_world_direct_connect(game_dir, world)
     pid = sync_engine.launch_game(Path(exe))
     world["last_played_at"] = legacy.now_iso()
     if (world.get("shared") or {}).get("source"):
@@ -442,7 +443,7 @@ def _launch_verified_world(legacy, state: dict, world_id: str, verified: dict) -
             "manifest_fingerprint": str(verified.get("manifest_fingerprint") or ""),
             "endpoint": str(verified.get("sync_endpoint") or ""),
             "route": str(verified.get("route") or ""),
-            "direct_connect": dict(verified.get("direct_connect") or {}),
+            "direct_connect": direct_connect,
             "client_mods_txt": dict(verified.get("client_mods_txt") or {}),
             "launched": True,
             "pid": pid,
@@ -648,6 +649,11 @@ def _community_refresh(legacy, original_handle, state: dict) -> dict:
 
 def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
     params = params if isinstance(params, dict) else {}
+    if method in {"server.runtime.start", "server.world.start", "server.install.ensure_runtimes"}:
+        state = legacy.load_state()
+        server_root = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
+        if server_root and Path(server_root).exists():
+            persistent_direct_connect.ensure_installed(server_root)
     if method in {"world.sync", "world.play"}:
         return _run_world_operation(legacy, original_handle, method, params)
     if method == "application.phase6.status":
@@ -664,13 +670,15 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
         if not game_dir:
             raise ValueError("Set the Dragonwilds game folder first.")
         result = persistent_direct_connect.ensure_installed(game_dir)
+        server_root = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
+        server_result = persistent_direct_connect.ensure_installed(server_root) if server_root and Path(server_root).exists() else None
         legacy._record_notification(
             state, "DragonConnect repaired",
             f"The hidden client connection component is current ({result.get('version') or 'bundled baseline'}).",
             "success", key=f"dragonconnect-repair:{result.get('version') or 'baseline'}",
         )
         legacy.save_state(state)
-        return {"result": result, "dragonconnect": _dragonconnect_status(state), "state": legacy.public_state(state)}
+        return {"result": result, "server_result": server_result, "dragonconnect": _dragonconnect_status(state), "state": legacy.public_state(state)}
     if method == "application.communities.refresh":
         return _community_refresh(legacy, original_handle, legacy.load_state())
     if method == "application.source_registry.status":

@@ -902,10 +902,12 @@ def list_editable_mod_files(game_dir: str, key: str, *, live: bool = False, prof
     base = _unit_root(game_dir, key, live, profile_id)
     group, _, name = str(key or "").partition("::")
     candidates = base.rglob("*")
+    loose_pak = False
     if group == "pak_mod":
         pak_group = next((item for item in _pak_groups(roots(game_dir, live, profile_id)["paks"]) if item["name"].casefold() == name.casefold()), None)
         if not pak_group:
             raise FileNotFoundError("PAK mod payload was not found.")
+        loose_pak = not bool(pak_group.get("dir"))
         candidates = base.rglob("*") if pak_group.get("dir") else iter(Path(path) for path in pak_group["paths"])
     result = []
     for path in candidates:
@@ -920,7 +922,8 @@ def list_editable_mod_files(game_dir: str, key: str, *, live: bool = False, prof
             continue
         ext = path.suffix.casefold()
         language = {".lua": "lua", ".json": "json", ".jsonc": "jsonc", ".ini": "ini", ".cfg": "plaintext", ".txt": "plaintext"}.get(ext, "plaintext")
-        result.append({"relative_path": path.relative_to(base).as_posix(), "name": path.name, "language": language, "size": size, "editable": editable})
+        relative_path = path.name if loose_pak else path.relative_to(base).as_posix()
+        result.append({"relative_path": relative_path, "name": path.name, "language": language, "size": size, "editable": editable})
         if len(result) >= 5000:
             break
     result.sort(key=lambda item: item["relative_path"].casefold())

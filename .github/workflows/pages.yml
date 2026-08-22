@@ -15,6 +15,7 @@ on:
       - 'renderer/assets/flags/**'
       - 'renderer/assets/platforms/**'
       - 'renderer/assets/help/**'
+      - 'renderer/assets/navigation/**'
       - '.github/workflows/pages.yml'
   schedule:
     - cron: '17 * * * *'
@@ -137,6 +138,7 @@ jobs:
           cp -R website/. _site/
           cp -R help _site/help
           cp -R renderer/assets/help _site/assets/help
+          cp -R renderer/assets/navigation _site/assets/navigation
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png

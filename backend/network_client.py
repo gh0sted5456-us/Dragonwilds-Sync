@@ -2,20 +2,26 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import http.client
 import json
 import re
 import time
 import urllib.error
 import urllib.request
 import ipaddress
+import ssl
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from world_identity import candidate_endpoints, normalize_endpoint, positive_world_identity
 from operator_identity import verify_world_identity
 
 
 class ConnectionError(RuntimeError):
+    pass
+
+
+class PasswordRejectedError(ConnectionError):
     pass
 
 
@@ -37,8 +43,95 @@ class BlockedError(ConnectionError):
         super().__init__(f"Blocked by this World's access policy ({self.reason}).")
 
 
+_TLS_PINS: dict[str, str] = {}
+_AUTH_MODES: dict[str, str] = {}
+
+
+def register_tls_pin(base_url: str, fingerprint: str) -> None:
+    value = re.sub(r"[^0-9a-f]", "", str(fingerprint or "").lower())
+    if len(value) != 64:
+        raise ConnectionError("This TLS Sync World does not provide a valid pinned certificate fingerprint.")
+    _TLS_PINS[str(base_url or "").rstrip("/")] = value
+
+
+def _world_tls_options(world: dict) -> dict:
+    connection = world.get("connection") if isinstance(world.get("connection"), dict) else {}
+    return {
+        "tls_cert_fingerprint": str(connection.get("tls_cert_fingerprint") or ""),
+        "allow_tls_password_fallback": bool(connection.get("tls_password_fallback")),
+    }
+
+
+def _prepare_world_endpoint(world: dict, endpoint_value: str) -> None:
+    endpoint = normalize_endpoint(endpoint_value)
+    if endpoint and endpoint.scheme == "https":
+        register_tls_pin(endpoint.base_url, _world_tls_options(world)["tls_cert_fingerprint"])
+
+
+def _auth_manifest_for_world(world: dict, endpoint_value: str, *, client_platform: str = "",
+                             client_profile_id: str = "") -> tuple[dict, str, str, float]:
+    credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
+    return auth_manifest(
+        endpoint_value,
+        str(credentials.get("password") or ""),
+        str(credentials.get("server_key") or ""),
+        str(credentials.get("share_access_key") or ""),
+        str(credentials.get("source") or "linked"),
+        client_platform,
+        client_profile_id,
+        **_world_tls_options(world),
+    )
+
+
 def request(url: str, *, method: str = "GET", data: bytes | None = None,
             headers: dict | None = None, timeout: float = 5.0):
+    parsed = urlsplit(url)
+    if parsed.scheme == "https":
+        base = f"https://{parsed.netloc}"
+        expected = _TLS_PINS.get(base)
+        if not expected:
+            raise ConnectionError("TLS Sync refused an unpinned server certificate.")
+        context = ssl.create_default_context()
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        connection = http.client.HTTPSConnection(parsed.hostname, parsed.port or 443, timeout=timeout, context=context)
+        try:
+            connection.connect()
+            actual = hashlib.sha256(connection.sock.getpeercert(binary_form=True)).hexdigest()
+            if not hmac.compare_digest(actual, expected):
+                connection.close()
+                raise ConnectionError("TLS certificate fingerprint mismatch. The Sync password was not sent.")
+            target = parsed.path or "/"
+            if parsed.query: target += "?" + parsed.query
+            connection.request(method, target, body=data, headers=headers or {})
+            response = connection.getresponse()
+            response._dws_connection = connection
+            if response.status >= 400:
+                body = response.read()
+                reason = response.reason
+                if response.status == 403:
+                    try: payload = json.loads(body.decode("utf-8", "replace"))
+                    except Exception: payload = {}
+                    if isinstance(payload, dict) and payload.get("blocked"):
+                        raise BlockedError(str(payload.get("reason") or ""), str(payload.get("reason_kind") or "ip"))
+                if response.status == 401:
+                    raise PasswordRejectedError("The saved World Password did not authorize the Sync payload. Edit the World connection and retry.")
+                if response.status == 429:
+                    raise RateLimitedError(retry_after=float(response.headers.get("Retry-After") or 2.0))
+                raise ConnectionError(f"Server returned HTTP {response.status}: {reason}")
+            return response
+        except ConnectionRefusedError as exc:
+            connection.close()
+            raise ConnectionError(f"World Sync connection was refused at {parsed.hostname}:{parsed.port or 443}. The host's Sync listener is not accepting this port.") from exc
+        except ssl.SSLError as exc:
+            connection.close()
+            raise ConnectionError(f"World Sync TLS negotiation failed at {parsed.hostname}:{parsed.port or 443}: {exc}") from exc
+        except OSError as exc:
+            connection.close()
+            raise ConnectionError(f"Could not reach the TLS Sync listener at {parsed.hostname}:{parsed.port or 443}: {exc}") from exc
+        except Exception:
+            if not getattr(locals().get("response", None), "_dws_connection", None): connection.close()
+            raise
     req = urllib.request.Request(url, data=data, method=method, headers=headers or {})
     try:
         return urllib.request.urlopen(req, timeout=timeout)
@@ -52,7 +145,7 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
                 raise BlockedError(str(body.get("reason") or ""), str(body.get("reason_kind") or "ip")) from exc
             raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
         if exc.code == 401:
-            raise ConnectionError("The saved World Password did not authorize the Sync payload. Edit the World connection and retry.") from exc
+            raise PasswordRejectedError("The saved World Password did not authorize the Sync payload. Edit the World connection and retry.") from exc
         if exc.code == 429:
             try:
                 retry_after = float(exc.headers.get("Retry-After") or 2.0)
@@ -61,6 +154,9 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
             raise RateLimitedError(retry_after=retry_after) from exc
         raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
     except urllib.error.URLError as exc:
+        if isinstance(exc.reason, ConnectionRefusedError):
+            target = urlsplit(url)
+            raise ConnectionError(f"World Sync connection was refused at {target.hostname}:{target.port or 80}. The Sync listener may be stopped, bound to another port, or blocked locally.") from exc
         raise ConnectionError(f"Could not reach server: {exc.reason}") from exc
 
 
@@ -86,7 +182,7 @@ def _credential_source(value: str) -> str:
     return source if source in ALLOWED_CREDENTIAL_SOURCES else "linked"
 
 
-def _auth_token(endpoint, password: str, server_key: str = "", share_access_key: str = "", credential_source: str = "linked", client_profile_id: str = "") -> tuple[str, str]:
+def _auth_token(endpoint, password: str, server_key: str = "", share_access_key: str = "", credential_source: str = "linked", client_profile_id: str = "", allow_tls_password_fallback: bool = False) -> tuple[str, str]:
     base = endpoint.base_url
     # DedicatedServer.ini trims WorldPassword. Use the same canonical value for
     # the companion Sync proof so invisible edge whitespace cannot let gameplay
@@ -108,35 +204,47 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     proof = hmac.new(password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
     payload = json.dumps({"nonce": nonce, "proof": proof, "mode": "world_password", "credential_source": source,
                           "client_profile_id": str(client_profile_id or "")[:96]}).encode()
-    response = json.loads(request(f"{base}/auth", method="POST", data=payload, headers={"Content-Type": "application/json"}).read())
+    try:
+        response = json.loads(request(f"{base}/auth", method="POST", data=payload, headers={"Content-Type": "application/json"}).read())
+    except PasswordRejectedError:
+        if not allow_tls_password_fallback or endpoint.scheme != "https":
+            raise
+        fallback = json.dumps({"password": password, "credential_source": source,
+                               "client_profile_id": str(client_profile_id or "")[:96]}).encode()
+        response = json.loads(request(f"{base}/auth/password-fallback", method="POST", data=fallback,
+                                      headers={"Content-Type": "application/json", "Cache-Control": "no-store"}).read())
     token = str(response.get("token") or "")
     if not token:
         raise ConnectionError("Server did not return an authentication token.")
+    _AUTH_MODES[base] = str(response.get("auth_mode") or "hmac_sha256_nonce")
     return token, str(response.get("credential_source") or source)
 
 
-def auth_manifest(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked", client_platform: str = "", client_profile_id: str = "") -> tuple[dict, str, str, float]:
+def auth_manifest(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked", client_platform: str = "", client_profile_id: str = "", tls_cert_fingerprint: str = "", allow_tls_password_fallback: bool = False) -> tuple[dict, str, str, float]:
     endpoint = normalize_endpoint(endpoint_value)
     if endpoint is None:
         raise ConnectionError("Invalid server address.")
     base = endpoint.base_url
+    if endpoint.scheme == "https": register_tls_pin(base, tls_cert_fingerprint)
     started = time.monotonic()
-    token, accepted_source = _auth_token(endpoint, password, server_key, share_access_key, credential_source, client_profile_id)
+    token, accepted_source = _auth_token(endpoint, password, server_key, share_access_key, credential_source, client_profile_id, allow_tls_password_fallback)
     headers = {"Authorization": f"Bearer {token}"}
     if client_platform:
         headers["X-DWS-Client-Platform"] = client_platform
     manifest = json.loads(request(f"{base}/manifest", headers=headers).read())
     manifest.setdefault("authentication", {})["credential_source"] = accepted_source
+    manifest["authentication"]["accepted_mode"] = _AUTH_MODES.get(base, "hmac_sha256_nonce")
     ping_ms = (time.monotonic() - started) * 1000.0
     return manifest, token, base, ping_ms
 
 
-def auth_metadata(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked") -> tuple[dict, str, str, float]:
+def auth_metadata(endpoint_value: str, password: str, server_key: str, share_access_key: str = "", credential_source: str = "linked", tls_cert_fingerprint: str = "") -> tuple[dict, str, str, float]:
     """Fetch public-safe World identity and advertised mods before joining."""
     endpoint = normalize_endpoint(endpoint_value)
     if endpoint is None:
         raise ConnectionError("Invalid server address.")
     base = endpoint.base_url
+    if endpoint.scheme == "https": register_tls_pin(base, tls_cert_fingerprint)
     started = time.monotonic()
     token, accepted_source = "", "public"
     metadata = json.loads(request(f"{base}/identity").read())
@@ -149,10 +257,12 @@ def ping_world(world: dict) -> dict:
     """Refresh presentation/runtime metadata only. No mod file bytes are fetched."""
     attempts = []
     credentials = world.get("credentials") or {}
+    connection = world.get("connection") or {}
     for kind, endpoint in candidate_endpoints(world):
         try:
             metadata, _token, _base, auth_ms = auth_metadata(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"),
+                str(connection.get("tls_cert_fingerprint") or ""))
             ok, detail = positive_world_identity(world, endpoint, metadata.get("profile_name"))
             if not ok:
                 attempts.append({"route": kind, "endpoint": endpoint, "error": detail, "identity_mismatch": True})
@@ -198,6 +308,7 @@ def fetch_world_identity(world: dict) -> dict:
     fingerprint_re = re.compile(r"^dws1-[0-9a-f]{24}$", re.I)
     for route, endpoint_value in candidate_endpoints(world):
         try:
+            _prepare_world_endpoint(world, endpoint_value)
             endpoint = normalize_endpoint(endpoint_value)
             if endpoint is None:
                 raise ConnectionError("Invalid World endpoint.")
@@ -230,8 +341,7 @@ def test_world(world: dict) -> dict:
     credentials = world.get("credentials") or {}
     for kind, endpoint in candidate_endpoints(world):
         try:
-            manifest, _token, _base, ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, _token, _base, ping_ms = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append({"route": kind, "endpoint": endpoint, "error": detail, "identity_mismatch": True})
@@ -267,6 +377,7 @@ def status_world(world: dict) -> dict:
     attempts = []
     for kind, endpoint in candidate_endpoints(world):
         try:
+            _prepare_world_endpoint(world, endpoint)
             status, ping_ms = fetch_status(endpoint)
             ok, detail = positive_world_identity(world, endpoint, status.get("profile_name"))
             if not ok:
@@ -371,8 +482,7 @@ def submit_feedback(world: dict, client_id: str, rating: int, report: str = "") 
     credentials = world.get("credentials") or {}
     for kind, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ping_ms = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{kind}: {detail}")
@@ -395,9 +505,7 @@ def fetch_world_reviews(world: dict, days: int = 30) -> dict:
     window = max(1, min(int(days or 30), 90))
     for kind, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""),
-                str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ping_ms = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{kind}: {detail}"); continue
@@ -422,8 +530,7 @@ def measure_world_link(world: dict, client_id: str, *, download_bytes: int = 256
     attempts = []
     for route, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, ping_ms = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append({"route": route, "error": detail})
@@ -480,8 +587,7 @@ def submit_compatibility(world: dict, client_id: str, *, success: bool = True, n
     clean_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(client_id or "client"))[:64] or "client"
     for kind, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ping_ms = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{kind}: {detail}")
@@ -509,7 +615,7 @@ def worldsave_status(world: dict) -> dict:
     attempts = []
     for route, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ = auth_manifest(endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{route}: {detail}"); continue
@@ -534,7 +640,7 @@ def download_worldsave(world: dict, destination: str) -> dict:
     for route, endpoint in candidate_endpoints(world):
         temp=target.with_suffix(target.suffix + ".part")
         try:
-            manifest, token, base_url, _ = auth_manifest(endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{route}: {detail}"); continue
@@ -564,7 +670,7 @@ def download_starter_character(world: dict, character_id: str, destination) -> d
     attempts = []
     for route, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ping_ms = auth_manifest(endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ping_ms = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{route}: {detail}"); continue
@@ -594,7 +700,7 @@ def submit_character_package(world: dict, package_path, client_id: str = "") -> 
     data = package.read_bytes(); credentials = world.get("credentials") or {}; attempts = []
     for route, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ = auth_manifest(endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"))
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok: attempts.append(f"{route}: {detail}"); continue
             response = request(f"{base_url}/character-submissions", method="POST", data=data, timeout=45.0,

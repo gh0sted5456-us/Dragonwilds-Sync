@@ -1,11 +1,15 @@
 import hashlib
 import hmac
 import json
+import ssl
+import tempfile
 import threading
 import time
 import unittest
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import urlparse
 from unittest.mock import patch
 
 import network_client
@@ -15,6 +19,58 @@ import world_directory
 
 
 class ConnectionTransportTests(unittest.TestCase):
+    def test_raw_password_fallback_is_never_attempted_over_http(self):
+        endpoint = network_client.normalize_endpoint("http://127.0.0.1:27051")
+        with patch.object(network_client, "request") as request:
+            request.side_effect = [
+                unittest.mock.MagicMock(read=lambda: b'{"nonce":"abc"}'),
+                network_client.PasswordRejectedError("challenge rejected"),
+            ]
+            with self.assertRaises(network_client.PasswordRejectedError):
+                network_client._auth_token(endpoint, "BELTS", credential_source="manual",
+                                           allow_tls_password_fallback=True)
+        self.assertEqual(request.call_count, 2)
+
+    def test_real_pinned_tls_password_fallback_connects_client_to_host(self):
+        class RejectChallengeHandler(server_systems.SyncHandler):
+            def do_POST(self):
+                if urlparse(self.path).path == "/auth":
+                    self._send_json({"error": "compatibility challenge rejected"}, 401)
+                    return
+                return super().do_POST()
+
+        state = server_systems.STATE
+        saved = {key: getattr(state, key) for key in ("manifest", "password", "tls_active", "tls_cert_fingerprint",
+                                                       "allow_tls_password_fallback", "tokens", "token_sources", "pending_nonces")}
+        httpd = None; thread = None
+        with tempfile.TemporaryDirectory() as td, patch.object(server_systems, "SERVER_PROFILES_DIR", Path(td)):
+            cert, key, fingerprint = server_systems._sync_tls_material("fallback-world", ["127.0.0.1"])
+            httpd = ThreadingHTTPServer(("127.0.0.1", 0), RejectChallengeHandler)
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); context.load_cert_chain(str(cert), str(key))
+            httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+            thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            try:
+                state.manifest = {"profile_id": "fallback-world", "profile_name": "Fallback World", "version": 1,
+                                  "files": [], "authentication": {"tls_password_fallback": True}}
+                state.password = "BELTS"; state.tls_active = True; state.tls_cert_fingerprint = fingerprint
+                state.allow_tls_password_fallback = True; state.tokens, state.token_sources, state.pending_nonces = set(), {}, {}
+                thread.start()
+                manifest, token, base, _ping = network_client.auth_manifest(
+                    f"https://127.0.0.1:{httpd.server_address[1]}", "BELTS", "", credential_source="manual",
+                    client_profile_id="profile-luke", tls_cert_fingerprint=fingerprint, allow_tls_password_fallback=True)
+                self.assertEqual(manifest["profile_name"], "Fallback World")
+                self.assertTrue(token)
+                self.assertEqual(state.token_context(token).get("auth_mode"), "tls_password_fallback")
+                self.assertTrue(base.startswith("https://"))
+                with self.assertRaisesRegex(network_client.ConnectionError, "fingerprint mismatch"):
+                    network_client.auth_manifest(
+                        f"https://127.0.0.1:{httpd.server_address[1]}", "BELTS", "", credential_source="manual",
+                        tls_cert_fingerprint="0" * 64, allow_tls_password_fallback=True)
+            finally:
+                httpd.shutdown(); httpd.server_close()
+                if thread: thread.join(timeout=2)
+                for name, value in saved.items(): setattr(state, name, value)
+
     def test_lan_source_uses_same_subnet_token_without_password(self):
         endpoint = network_client.normalize_endpoint("192.168.1.20:27051")
         with patch.object(network_client, "_lan_token", return_value="lan-token") as token:

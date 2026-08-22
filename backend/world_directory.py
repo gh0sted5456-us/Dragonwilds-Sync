@@ -123,6 +123,9 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "external_ip": external_ip, "internal_ip": internal_ip,
         "sync_port": max(1, min(int(row.get("sync_port") or row.get("port") or 27051), 65535)),
         "game_port": max(1, min(int(row.get("game_port") or 7777), 65535)),
+        "sync_tls": bool(row.get("sync_tls")),
+        "tls_cert_fingerprint": re.sub(r"[^0-9a-f]", "", str(row.get("tls_cert_fingerprint") or "").lower())[:64],
+        "tls_password_fallback": bool(row.get("tls_password_fallback")),
         "protocol": protocol, "protocol_version": int(row.get("protocol_version") or 1),
         "fingerprint_claimed": fingerprint, "host_type": host_type,
         **host_meta, "server_os_badge": server_os_badge(host_meta),
@@ -234,15 +237,22 @@ def _fetch_remote(directory_url: str, timeout: float) -> list[dict]:
 
 
 def probe_heartbeat(row: dict, timeout: float = 2.0) -> dict:
+    # Import locally to keep directory normalization independent while using
+    # the same pinned-TLS transport as real client connections.
+    from network_client import register_tls_pin, request as sync_request
+
     addresses = [row.get("internal_ip"), row.get("external_ip")]
     for address in [str(value or "").strip() for value in addresses if str(value or "").strip()]:
         host = f"[{address}]" if ":" in address and not address.startswith("[") else address
-        url = f"http://{host}:{int(row.get('sync_port') or 27051)}/status"
+        scheme = "https" if row.get("sync_tls") else "http"
+        base_url = f"{scheme}://{host}:{int(row.get('sync_port') or 27051)}"
+        url = f"{base_url}/status"
         try:
-            request = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "DragonwildsSync/1.0 fingerprint-probe"})
+            if scheme == "https":
+                register_tls_pin(base_url, str(row.get("tls_cert_fingerprint") or ""))
             started = time.perf_counter()
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                status = json.loads(response.read(256_000).decode("utf-8"))
+            response = sync_request(url, headers={"Accept": "application/json", "User-Agent": "DragonwildsSync/2.0 fingerprint-probe"}, timeout=timeout)
+            status = json.loads(response.read(256_000).decode("utf-8"))
             world_sync = status.get("world_sync") if isinstance(status, dict) else {}
             actual = str((world_sync or {}).get("fingerprint") or status.get("launcher_fingerprint") or "")
             protocol = str((world_sync or {}).get("protocol") or "")

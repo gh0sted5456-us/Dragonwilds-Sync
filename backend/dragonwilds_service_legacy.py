@@ -343,7 +343,9 @@ def _directory_join_world_shape(row: dict, *, local_id: str = "", credentials: d
         "id": local_id or secrets.token_hex(8), "kind": "linked", "nickname": "",
         "identity": {"world_name": str(row.get("world_name") or "World"), "server_profile_id_hint": ""},
         "connection": {"internal_ip": str(row.get("internal_ip") or ""), "external_ip": str(row.get("external_ip") or ""),
-                       "game_port": int(row.get("game_port") or 7777), "sync_port": int(row.get("sync_port") or 27051), "preference": "auto"},
+                       "game_port": int(row.get("game_port") or 7777), "sync_port": int(row.get("sync_port") or 27051), "preference": "auto",
+                       "sync_tls": bool(row.get("sync_tls")), "tls_cert_fingerprint": str(row.get("tls_cert_fingerprint") or ""),
+                       "tls_password_fallback": bool(row.get("tls_password_fallback"))},
         "credentials": {"password": str((credentials or {}).get("password") or ""), "source": "directory-link", "remember": True},
         "presentation": {"description": str(row.get("description") or ""), "tags": list(row.get("tags") or []),
                          "icon_b64": str(row.get("icon_b64") or ""), "banner_b64": str(row.get("banner_b64") or ""),
@@ -808,6 +810,12 @@ def _merge_advertised_connection(world: dict, advertised: dict | None) -> bool:
             continue
         if 1 <= value <= 65535 and value != int(connection.get(key) or 0):
             connection[key] = value; changed = True
+    for key in ("sync_tls", "tls_password_fallback"):
+        if key in advertised and bool(advertised.get(key)) != bool(connection.get(key)):
+            connection[key] = bool(advertised.get(key)); changed = True
+    tls_fingerprint = re.sub(r"[^0-9a-f]", "", str(advertised.get("tls_cert_fingerprint") or "").lower())
+    if len(tls_fingerprint) == 64 and tls_fingerprint != str(connection.get("tls_cert_fingerprint") or ""):
+        connection["tls_cert_fingerprint"] = tls_fingerprint; changed = True
     return changed
 
 
@@ -961,6 +969,9 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
         except (TypeError, ValueError):
             value = default
         connection[key] = value
+    connection["sync_tls"] = bool(incoming_connection.get("sync_tls", connection.get("sync_tls", False)))
+    connection["tls_password_fallback"] = bool(incoming_connection.get("tls_password_fallback", connection.get("tls_password_fallback", False)))
+    connection["tls_cert_fingerprint"] = re.sub(r"[^0-9a-f]", "", str(incoming_connection.get("tls_cert_fingerprint", connection.get("tls_cert_fingerprint", "")) or "").lower())[:64]
     preference = str(incoming_connection.get("preference", connection.get("preference", "auto"))).lower()
     connection["preference"] = preference if preference in ("auto", "internal", "external") else "auto"
     connection.setdefault("last_successful_route", "")
@@ -1186,6 +1197,7 @@ def _write_world_sync_diagnostic(job_id: str, terminal_status: str) -> str:
         f"Endpoint: {result.get('endpoint') or 'not established'}", f"Error: {job.get('error') or 'none'}", "",
         "Acknowledgements", "----------------",
         f"Host authenticated client: {'yes' if acknowledgements.get('host_authenticated') else 'no'}",
+        f"Authentication mode: {acknowledgements.get('authentication_mode') or 'not established'}",
         f"Host manifest received: {'yes' if acknowledgements.get('host_manifest_received') else 'no'}",
         f"Client files verified: {'yes' if acknowledgements.get('client_files_verified') else 'no'}",
         f"Host confirmed final match: {'yes' if acknowledgements.get('host_match_confirmed') else 'no'}",
@@ -4454,6 +4466,7 @@ def handle(method: str, params: dict) -> object:
             save_state(state)
             runtime = ENGINE.status()
         server_result = ENGINE.publish(profile_id) if runtime.get("running") else ENGINE.start_world(profile_id)
+        profile = load_server_profile(profile_id) or profile
         _start_profile_upnp(profile_id)
         handle("world.discovery.heartbeat", {})
 
@@ -4484,7 +4497,10 @@ def handle(method: str, params: dict) -> object:
             "id": client_world_id,
             "identity": {"world_name": world_name, "server_profile_id_hint": profile_id},
             "connection": {"internal_ip": "127.0.0.1", "external_ip": str(profile.get("public_ip") or ""),
-                           "sync_port": sync_port, "game_port": game_port, "preference": "internal"},
+                           "sync_port": sync_port, "game_port": game_port, "preference": "internal",
+                           "sync_tls": bool(sync_config.get("tls_enabled")),
+                           "tls_cert_fingerprint": str(sync_config.get("tls_cert_fingerprint") or ""),
+                           "tls_password_fallback": bool(sync_config.get("allow_tls_password_fallback"))},
             "credentials": {"password": str(sync_config.get("password") or ""), "source": "linked"},
         }
         latest_hint = (((profile.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
@@ -5022,6 +5038,9 @@ def handle(method: str, params: dict) -> object:
             "sync_port": int(sync.get("port") or 27051),
             "game_port": int(dedicated.get("port") or 7777),
             "password": str(sync.get("password") or ""),
+            "sync_tls": bool(sync.get("tls_enabled")),
+            "tls_password_fallback": bool(sync.get("allow_tls_password_fallback")),
+            "tls_cert_fingerprint": str(sync.get("tls_cert_fingerprint") or ""),
             "shared_access_enabled": True,
         }
 

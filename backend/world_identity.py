@@ -11,6 +11,7 @@ DEFAULT_SYNC_PORT = 7777
 class NormalizedEndpoint:
     host: str
     port: int
+    scheme: str = "http"
 
     @property
     def authority(self) -> str:
@@ -20,7 +21,7 @@ class NormalizedEndpoint:
 
     @property
     def base_url(self) -> str:
-        return f"http://{self.authority}"
+        return f"{self.scheme}://{self.authority}"
 
 
 def normalize_endpoint(value: str, default_port: int = DEFAULT_SYNC_PORT) -> NormalizedEndpoint | None:
@@ -36,6 +37,9 @@ def normalize_endpoint(value: str, default_port: int = DEFAULT_SYNC_PORT) -> Nor
         return None
     candidate = raw if "://" in raw else f"http://{raw}"
     parts = urlsplit(candidate)
+    scheme = str(parts.scheme or "http").lower()
+    if scheme not in {"http", "https"}:
+        return None
     host = (parts.hostname or "").strip().lower()
     if not host:
         return None
@@ -43,7 +47,7 @@ def normalize_endpoint(value: str, default_port: int = DEFAULT_SYNC_PORT) -> Nor
         port = parts.port or default_port
     except ValueError:
         return None
-    return NormalizedEndpoint(host=host, port=int(port))
+    return NormalizedEndpoint(host=host, port=int(port), scheme=scheme)
 
 
 def is_ip_literal(value: str) -> bool:
@@ -71,7 +75,7 @@ def is_private_ip(value: str) -> bool:
 def endpoints_equal(left: str, right: str) -> bool:
     a = normalize_endpoint(left)
     b = normalize_endpoint(right)
-    return bool(a and b and a == b)
+    return bool(a and b and a.host == b.host and a.port == b.port)
 
 
 def endpoint_hosts_equal(left: str, right: str) -> bool:
@@ -158,14 +162,16 @@ def candidate_endpoints(world: dict) -> list[tuple[str, str]]:
         sync_port = DEFAULT_SYNC_PORT
     for kind in order:
         endpoint = values.get(kind, "")
+        if endpoint and "://" not in endpoint and connection.get("sync_tls") is True:
+            endpoint = f"https://{endpoint}"
         normalized = normalize_endpoint(endpoint, default_port=sync_port)
         if not endpoint or normalized is None:
             continue
-        key = normalized.authority
+        key = normalized.base_url
         if key in seen:
             continue
         seen.add(key)
         # Always return an explicit Sync endpoint. This lets the saved identity stay
         # as a clean IP while the launcher transport can live on its own port.
-        result.append((kind, normalized.authority))
+        result.append((kind, normalized.base_url if normalized.scheme == "https" else normalized.authority))
     return result

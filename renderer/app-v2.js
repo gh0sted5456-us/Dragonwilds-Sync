@@ -5433,7 +5433,7 @@
       const world = activeServerWorld(); if (!world) return;
       try {
         const info = await api.invoke('server.connection.info', { id: world.id });
-        const lines = [`World: ${info.world_name}`, `Internal: ${info.internal_ip ? `${info.internal_ip}:${info.sync_port}` : '—'}`, `External: ${info.external_ip ? `${info.external_ip}:${info.sync_port}` : '—'}`, `Game Port: ${info.game_port}`, `World Password: ${info.password}`];
+        const lines = [`World: ${info.world_name}`, `Internal: ${info.internal_ip ? `${info.internal_ip}:${info.sync_port}` : '—'}`, `External: ${info.external_ip ? `${info.external_ip}:${info.sync_port}` : '—'}`, `Game Port: ${info.game_port}`, `World Password: ${info.password}`, `Sync TLS: ${info.sync_tls?'Enabled':'Disabled'}`, `TLS Password Fallback: ${info.tls_password_fallback?'Allowed':'Disabled'}`, `TLS Certificate SHA-256: ${info.tls_cert_fingerprint||'Not applicable'}`];
         await window.dragonwilds.copyText(lines.join('\n')); toast('Connection info copied', 'World Name, routes, password, and Share/Hash code are ready to share.', 'success');
       } catch (error) { toast('Copy failed', error.message, 'error'); }
     });
@@ -6942,6 +6942,8 @@
         <div class="form-group full"><label>World Name *</label><input class="field" id="f-world-name" value="${escapeHtml(world?.identity?.world_name || '')}" placeholder="Valhalla Friends" /><div class="help">Must exactly match the server's World Name. This is part of positive identification.</div></div>
         <div class="form-group full"><label>IP Address *</label><input class="field" id="f-address" value="${escapeHtml(c.internal_ip || c.external_ip || '')}" placeholder="192.168.1.50 or host.example.com:27051" /><div class="help">Use a LAN address for local connections or a public address for remote connections. The Sync port is optional.</div></div>
         <div class="form-group full"><label>World Password</label><input class="field" id="f-password" type="password" value="${escapeHtml(creds.password || '')}" placeholder="Leave blank for an open World" /></div>
+        <label class="checkbox-row"><input id="f-sync-tls" type="checkbox" ${c.sync_tls?'checked':''}/> This World serves Sync over pinned TLS</label>
+        <div class="form-group full"><label>TLS Certificate Fingerprint</label><input class="field" id="f-tls-fingerprint" value="${escapeHtml(c.tls_cert_fingerprint || '')}" maxlength="95" placeholder="64-character SHA-256 fingerprint"/><div class="help">Required for a manually entered TLS World. Prefer LAN discovery, a Sync directory, or connection info supplied directly by the host.</div></div>
       </div><div class="identity-box"><strong>Simple World connection</strong><p>Dragonwilds Sync uses only this IP address, the exact World Name, and the optional World Password. Identity fingerprints verify the responding World but are never connection codes.</p></div></div>
       <div class="modal-footer">${edit ? '<button class="btn danger" id="delete-world">Delete World</button>' : '<span></span>'}<div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-world">${edit ? 'Save Changes' : 'Add World'}</button></div></div>`);
     if (!edit) modalRoot.querySelector('#f-world-name')?.addEventListener('input', (e) => scheduleDiscordPresence('Creating World', null, { worldName: e.target.value.trim() }));
@@ -6956,6 +6958,9 @@
           internal_ip: modalRoot.querySelector('#f-address').value.trim(),
           external_ip: '',
           preference: 'auto',
+          sync_tls: !!modalRoot.querySelector('#f-sync-tls')?.checked,
+          tls_cert_fingerprint: modalRoot.querySelector('#f-tls-fingerprint')?.value.trim().replace(/[^0-9a-f]/gi,'').toLowerCase() || '',
+          tls_password_fallback: !!modalRoot.querySelector('#f-sync-tls')?.checked,
         },
         credentials: {
           password: modalRoot.querySelector('#f-password').value,
@@ -6964,6 +6969,7 @@
       };
       if (!payload.identity.world_name) { toast('World Name required', 'Positive identity requires the exact server World Name.', 'error'); return; }
       if (!payload.connection.internal_ip) { toast('IP Address required', 'Enter the local or public address for this World.', 'error'); return; }
+      if (payload.connection.sync_tls && payload.connection.tls_cert_fingerprint.length !== 64) { toast('TLS fingerprint required', 'Enter the host-provided 64-character SHA-256 certificate fingerprint.', 'error'); return; }
       try {
         setData(await api.invoke(edit ? 'world.update' : 'world.create', payload));
         if (!edit) setData(await api.invoke('world.browser.settings', { tab:'direct', filter:'all', page:1 }));
@@ -7452,6 +7458,7 @@
         <div class="form-group"><label>Server Admin Password</label><input class="field" id="se-admin-pass" type="password" value="${escapeHtml(d.admin_pass || '')}" /><small>Used for dedicated-server administration and the optional audited WebHost Server Admin login. It is not the player World Password.</small></div>
         <div class="form-group"><label>World Password</label><input class="field" id="se-world-pass" type="password" value="${escapeHtml(d.world_pass || sync.password || '')}" placeholder="Leave blank for an open World"/><small>The same player-facing password is used for the game connection and launcher handshake. There is no separate client password.</small></div>
         <div class="form-group"><label>Sync Port (TCP + UDP)</label><input class="field" id="se-sync-port" type="number" min="1" max="65535" value="${escapeHtml(sync.port || 27051)}" /><label class="checkbox-row"><input id="se-sync-port-auto" type="checkbox" ${sync.port_auto === false ? '' : 'checked'}/> Derive from Server Number</label><select class="select" id="se-sync-publication-mode"><option value="local" ${(sync.networking?.publication_mode||'manual')==='local'?'selected':''}>Local network only</option><option value="manual" ${(sync.networking?.publication_mode||'manual')==='manual'?'selected':''}>Manual router forwarding</option><option value="upnp" ${sync.networking?.publication_mode==='upnp'?'selected':''}>Automatic UPnP · verify before public</option><option value="none" ${sync.networking?.publication_mode==='none'?'selected':''}>Sync disabled externally</option></select><small>World Sync uses TCP for authenticated metadata and file transfer and UDP for LAN discovery on this port. Joining clients connect outbound; Linux may request one-time firewall authorization for discovery.</small></div>
+        <div class="form-group"><label>Secure Sync Authentication</label><label class="checkbox-row"><input id="se-sync-tls" type="checkbox" ${sync.tls_enabled?'checked':''}/> Serve the complete Sync connection over pinned TLS</label><label class="checkbox-row"><input id="se-tls-password-fallback" type="checkbox" ${sync.allow_tls_password_fallback?'checked':''} ${sync.tls_enabled?'':'disabled'}/> Allow one-time World Password fallback after challenge rejection</label><small>The fallback is impossible over HTTP. The generated certificate fingerprint is checked before credentials are sent.</small></div>
         <div class="form-group"><label>LAN Broadcast</label><label style="display:flex;align-items:center;gap:8px"><input id="se-lan" type="checkbox" ${sync.lan_broadcast === false ? '' : 'checked'} /> Advertise this World on the LAN while serving</label></div>
         <div class="form-group"><label>UE4SS mods.txt</label><input type="hidden" id="se-mods-txt-mode" value="auto"/><span class="status-pill online">AUTOMATIC · HIDDEN</span><small>Dragonwilds Sync writes exact <code>MODNAME : 1</code> entries and automatically pushes this hidden control file to clients whenever the World presents UE4SS mods. RuneSchema self-enables separately.</small></div>
         <div class="form-group"><label>Authoritative Runtimes</label><label style="display:flex;align-items:center;gap:8px"><input id="se-auto-ue4ss" type="checkbox" ${world.auto_ue4ss === false ? '' : 'checked'} /> Auto-check/update UE4SS every 6 hours when stopped</label><label style="display:flex;align-items:center;gap:8px;margin-top:6px"><input id="se-auto-runeschema" type="checkbox" ${world.auto_runeschema === false ? '' : 'checked'} /> Deploy stored RuneSchema core before publish/start</label></div>
@@ -7475,6 +7482,7 @@
 
     modalRoot.querySelector('#se-icon').addEventListener('click', async () => { const picked = await window.dragonwilds.pickImage(); if (picked) { iconB64 = picked.dataUrl; toast('World icon selected'); } });
     modalRoot.querySelector('#se-banner').addEventListener('click', async () => { const picked = await window.dragonwilds.pickImage(); if (picked) { bannerB64 = picked.dataUrl; toast('World banner selected'); } });
+    modalRoot.querySelector('#se-sync-tls')?.addEventListener('change',(event)=>{const fallback=modalRoot.querySelector('#se-tls-password-fallback');if(fallback){fallback.disabled=!event.target.checked;if(!event.target.checked)fallback.checked=false;}});
     modalRoot.querySelector('#save-server-world').addEventListener('click', async () => {
       const parseList = (id) => modalRoot.querySelector(id).value.split(',').map((x) => x.trim()).filter(Boolean);
       const optionalNumber = (id) => { const text = modalRoot.querySelector(id)?.value.trim() || ''; return text === '' ? null : Number(text); };
@@ -7530,6 +7538,8 @@
             port_auto: !!modalRoot.querySelector('#se-sync-port-auto')?.checked,
             networking: {publication_mode:modalRoot.querySelector('#se-sync-publication-mode')?.value||'manual'},
             lan_broadcast: modalRoot.querySelector('#se-lan').checked,
+            tls_enabled: !!modalRoot.querySelector('#se-sync-tls')?.checked,
+            allow_tls_password_fallback: !!modalRoot.querySelector('#se-sync-tls')?.checked && !!modalRoot.querySelector('#se-tls-password-fallback')?.checked,
             access_policy: readAccessPolicy(modalRoot, 'world-access'),
           },
         };

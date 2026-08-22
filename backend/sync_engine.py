@@ -598,11 +598,14 @@ def report_manifest(base_url: str, token: str, files: list[dict], client_id: str
 
 def resolve_verified_manifest(world: dict, client_platform: str = "", client_profile_id: str = ""):
     credentials = world.get("credentials") or {}
+    connection = world.get("connection") or {}
     attempts = []
     for route, endpoint in candidate_endpoints(world):
         try:
             manifest, token, base_url, ping_ms = auth_manifest(
-                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"), client_platform, client_profile_id)
+                endpoint, str(credentials.get("password") or ""), str(credentials.get("server_key") or ""), str(credentials.get("share_access_key") or ""), str(credentials.get("source") or "linked"), client_platform, client_profile_id,
+                tls_cert_fingerprint=str(connection.get("tls_cert_fingerprint") or ""),
+                allow_tls_password_fallback=bool(connection.get("tls_password_fallback")) and credentials.get("allow_tls_password_fallback", True) is not False)
             ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
             if not ok:
                 attempts.append(f"{route}: {detail}")
@@ -833,6 +836,7 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
         "acknowledgements": {
             "client_profile_id": str(client_id or ""),
             "host_authenticated": True,
+            "authentication_mode": (manifest.get("authentication") or {}).get("accepted_mode") or "hmac_sha256_nonce",
             "host_manifest_received": True,
             "host_manifest_version": manifest.get("version"),
             "host_manifest_fingerprint": remote_fingerprint,

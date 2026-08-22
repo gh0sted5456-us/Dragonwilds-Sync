@@ -724,6 +724,7 @@ def create_server_profile(name: str) -> str:
         "dedicated_config": {"server_name": world_name, "world_name": world_name, "admin_pass": "", "world_pass": "", "owner_id": "", "port": game_port, "base_port": 7777, "port_auto": True,
                              "networking": {"publication_mode": "manual", "external_port": game_port}},
         "sync_config": {"password": "", "server_key": secrets.token_hex(16), "share_access_key": secrets.token_hex(16), "family_join_rotated_at": "", "allow_shared_access": True, "port": 27050 + instance_number, "port_auto": True, "lan_broadcast": True,
+                        "tls_enabled": False, "allow_tls_password_fallback": False, "tls_cert_fingerprint": "",
                         "networking": {"publication_mode": "manual", "external_port": 27050 + instance_number}, "access_policy": default_access_policy()},
         "world_save_download": {"enabled": False, "cooldown_value": 6, "cooldown_unit": "hours"},
         "operations_schedule": {"enabled": False, "action": "restart", "mode": "daily", "daily_time": "04:00", "weekdays": [0,1,2,3,4,5,6], "repeat_days": 1, "interval_minutes": 1440, "blackout_windows": [], "next_run_at": None, "warning_minutes": [30, 10, 5, 1], "backup_retention_count": 10, "last_run_at": None},

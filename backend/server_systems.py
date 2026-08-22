@@ -12,6 +12,7 @@ import secrets
 import shutil
 import stat
 import socket
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -55,6 +56,45 @@ from networking import (DEFAULT_SYNC_PORT, apply_firewall_spec, backend_program,
 SYNC_PORT_DEFAULT = DEFAULT_SYNC_PORT
 DISCOVERY_PORT = 8421
 DISCOVERY_QUERY_PORT = 8422
+
+
+def _sync_tls_material(profile_id: str, host_values: list[str] | None = None) -> tuple[Path, Path, str]:
+    """Create/reuse an app-owned self-signed certificate for pinned Sync TLS."""
+    from datetime import datetime, timedelta, timezone
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(profile_id or "world"))[:96] or "world"
+    root = SERVER_PROFILES_DIR / safe_id / "sync_tls"
+    cert_path, key_path = root / "certificate.pem", root / "private-key.pem"
+    if cert_path.is_file() and key_path.is_file():
+        try:
+            cert = x509.load_pem_x509_certificate(cert_path.read_bytes())
+            if cert.not_valid_after.replace(tzinfo=timezone.utc) > datetime.now(timezone.utc) + timedelta(days=7):
+                return cert_path, key_path, cert.fingerprint(hashes.SHA256()).hex()
+        except Exception:
+            pass
+    root.mkdir(parents=True, exist_ok=True)
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, f"Dragonwilds Sync {safe_id}"[:64])])
+    san: list[x509.GeneralName] = [x509.DNSName("localhost")]
+    for value in host_values or []:
+        host = str(value or "").strip().split(":", 1)[0]
+        try: san.append(x509.IPAddress(ipaddress.ip_address(host)))
+        except ValueError:
+            if host and re.fullmatch(r"[A-Za-z0-9.-]+", host): san.append(x509.DNSName(host))
+    now = datetime.now(timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(subject).issuer_name(issuer).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now - timedelta(minutes=5))
+            .not_valid_after(now + timedelta(days=825)).add_extension(x509.SubjectAlternativeName(san), critical=False)
+            .sign(key, hashes.SHA256()))
+    key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
+    cert_path.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    try: os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)
+    except OSError: pass
+    return cert_path, key_path, cert.fingerprint(hashes.SHA256()).hex()
 
 
 def _remove_generated_path(path: Path) -> None:
@@ -914,6 +954,9 @@ class SyncState:
         self.access_policy: dict = normalize_access_policy({})
         self._country_cache: dict[str, tuple[float, dict]] = {}
         self.lan_trust_enabled: bool = True
+        self.tls_active: bool = False
+        self.tls_cert_fingerprint: str = ""
+        self.allow_tls_password_fallback: bool = False
 
     def activity(self, ip: str, message: str):
         with self.lock:
@@ -1123,6 +1166,27 @@ class SyncState:
             # Public heartbeat/identity metadata does not require this token.
             return {"token": token, **self.token_sources[token]}
 
+    def check_tls_password(self, password: str, *, credential_source: str = "linked", client_ip: str = "", client_profile_id: str = "") -> dict | None:
+        """TLS-only compatibility authentication; caller must enforce TLS."""
+        with self.lock:
+            if not self.tls_active or not self.allow_tls_password_fallback:
+                return None
+            expected = str(self.password or "").strip()
+        supplied = str(password or "").strip()
+        if not hmac.compare_digest(expected.encode("utf-8"), supplied.encode("utf-8")):
+            return None
+        profile_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(client_profile_id or "").strip())[:96]
+        with self.lock:
+            if profile_id and profile_id in set(normalize_access_policy(self.access_policy).get("blocked_profile_ids") or []):
+                return {"blocked": True, "reason": f"profile policy {profile_id}", "client_profile_id": profile_id}
+            source = str(credential_source or "linked").strip().lower()[:32]
+            if source not in {"linked", "manual", "imported-rsdwl", "online-feed", "legacy-linked", "shared"}: source = "linked"
+            token = secrets.token_hex(16)
+            self.tokens.add(token)
+            self.token_sources[token] = {"credential_source": source, "auth_mode": "tls_password_fallback", "scope": "world-sync",
+                                         "client_ip": str(client_ip or ""), "client_profile_id": profile_id, "issued_at": time.time()}
+            return {"token": token, **self.token_sources[token]}
+
     def check_token(self, token: str) -> bool:
         with self.lock:
             if token not in self.tokens:
@@ -1289,10 +1353,29 @@ class SyncHandler(BaseHTTPRequestHandler):
                                      "reason": result.get("reason"), "reason_kind": "profile"}, 403); return
                 if result:
                     STATE.activity(self.client_address[0], f"authenticated via {result.get('credential_source')} ({result.get('auth_mode')})")
-                    self._send_json({"token": result.get("token"), "credential_source": result.get("credential_source"), "scope": result.get("scope")})
+                    self._send_json({"token": result.get("token"), "credential_source": result.get("credential_source"), "scope": result.get("scope"),
+                                     "auth_mode": "hmac_sha256_nonce"})
                 else:
                     STATE.activity(self.client_address[0], "failed authentication")
                     self._send_json({"error": "invalid or expired proof"}, 401)
+                return
+            if path == "/auth/password-fallback":
+                if not isinstance(self.connection, ssl.SSLSocket):
+                    self._send_json({"error": "TLS is required for password fallback"}, 426, {"Cache-Control": "no-store"}); return
+                if not STATE.allow_auth_attempt(self.client_address[0]):
+                    self._send_json({"error": "too many authentication attempts"}, 429, {"Cache-Control": "no-store"}); return
+                body = self._read_json()
+                result = STATE.check_tls_password(str(body.get("password") or ""), credential_source=str(body.get("credential_source") or "linked"),
+                                                  client_ip=self.client_address[0], client_profile_id=str(body.get("client_profile_id") or ""))
+                if result and result.get("blocked"):
+                    self._send_json({"error": "blocked by server access policy", "blocked": True, "reason": result.get("reason"),
+                                     "reason_kind": "profile"}, 403, {"Cache-Control": "no-store"}); return
+                if not result:
+                    STATE.activity(self.client_address[0], "failed TLS password fallback")
+                    self._send_json({"error": "invalid password or fallback disabled"}, 401, {"Cache-Control": "no-store"}); return
+                STATE.activity(self.client_address[0], f"authenticated via TLS password fallback ({result.get('client_profile_id') or 'legacy client'})")
+                self._send_json({"token": result.get("token"), "credential_source": result.get("credential_source"),
+                                 "scope": result.get("scope"), "auth_mode": "tls_password_fallback"}, 200, {"Cache-Control": "no-store"})
                 return
             if not self._auth_ok():
                 self._send_json({"error": "unauthorized"}, 401); return
@@ -1855,7 +1938,31 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
 class ShareServer:
     def __init__(self):
         self.httpd: ThreadingHTTPServer | None = None; self.thread: threading.Thread | None = None; self.port = None
+        self.tls_enabled = False; self.tls_cert_fingerprint = ""
+        self.listener_evidence: dict = {}
         self.broadcaster = Broadcaster(self.broadcast_payload); self.live_keys: set[str] = set()
+
+    def _start_listener(self, port: int, tls_enabled: bool, cert_path: Path | None, key_path: Path | None, fingerprint: str) -> None:
+        try:
+            httpd = ThreadingHTTPServer(("0.0.0.0", int(port)), SyncHandler)
+        except OSError as exc:
+            raise RuntimeError(f"World Sync could not bind 0.0.0.0:{int(port)}. The port may already be in use or blocked ({exc}).") from exc
+        if tls_enabled:
+            context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER); context.minimum_version = ssl.TLSVersion.TLSv1_2
+            context.load_cert_chain(str(cert_path), str(key_path)); httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+        self.httpd = httpd; self.port = int(port); self.tls_enabled = bool(tls_enabled); self.tls_cert_fingerprint = str(fingerprint or "")
+        self.thread = threading.Thread(target=httpd.serve_forever, daemon=True); self.thread.start()
+        try:
+            probe = socket.create_connection(("127.0.0.1", int(port)), timeout=2.0)
+            if tls_enabled:
+                context = ssl.create_default_context(); context.check_hostname = False; context.verify_mode = ssl.CERT_NONE
+                probe = context.wrap_socket(probe, server_hostname="localhost")
+            probe.close()
+            self.listener_evidence = {"verified": True, "bind_host": "0.0.0.0", "probe_host": "127.0.0.1",
+                                      "port": int(port), "transport": "https" if tls_enabled else "http", "checked_at": time.time()}
+        except OSError as exc:
+            self.stop()
+            raise RuntimeError(f"World Sync bound port {int(port)} but its local listener probe failed ({exc}).") from exc
 
     def broadcast_payload(self):
         with STATE.lock:
@@ -1872,6 +1979,8 @@ class ShareServer:
                     "protocol": str(world_sync.get("protocol") or WORLD_SYNC_PROTOCOL),
                     "protocol_version": int(world_sync.get("version") or WORLD_SYNC_VERSION),
                     "fingerprint": str(world_sync.get("fingerprint") or STATE.manifest.get("launcher_fingerprint") or ""),
+                    "sync_tls": bool(self.tls_enabled), "tls_cert_fingerprint": str(self.tls_cert_fingerprint or ""),
+                    "tls_password_fallback": bool(STATE.allow_tls_password_fallback),
                     "lan_trust": bool(STATE.lan_trust_enabled),
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
                     "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "classification", "client_required", "version", "author", "tags") if row.get(key) not in (None, "")}
@@ -1903,6 +2012,14 @@ class ShareServer:
             password = str(dedicated.get("world_pass") or "").strip()
         else:
             password = str(password or "").strip()
+        sync_options = profile.get("sync_config") if isinstance(profile.get("sync_config"), dict) else {}
+        tls_enabled = bool(sync_options.get("tls_enabled"))
+        allow_tls_password_fallback = bool(sync_options.get("allow_tls_password_fallback")) and tls_enabled
+        cert_path = key_path = None
+        tls_cert_fingerprint = ""
+        if tls_enabled:
+            cert_path, key_path, tls_cert_fingerprint = _sync_tls_material(
+                profile_id, [local_ip_guess(), str(public_ip or profile.get("public_ip") or "")])
         required = [u for u in units if u.classification == "player_required"]
         security_reviews = []
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
@@ -2053,10 +2170,14 @@ class ShareServer:
                               "connection": {
                                   "internal_ip": local_ip_guess(), "external_ip": str(public_ip or profile.get("public_ip") or ""),
                                   "sync_port": int(port), "game_port": int(game_port or 7777),
+                                  "sync_tls": tls_enabled, "tls_cert_fingerprint": tls_cert_fingerprint,
+                                  "tls_password_fallback": allow_tls_password_fallback,
                               },
                               "share_profile": {"enabled": True, "scope": "world-password"},
                               "password_required": bool(password),
-                              "authentication": {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
+                              "authentication": {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce",
+                                                 "transport": "pinned-tls" if tls_enabled else "http",
+                                                 "tls_password_fallback": allow_tls_password_fallback},
                               "external_hierarchy": {
                                   "provider": "shrug.games",
                                   "label": "Public RuneScape Dragonwilds server hierarchy (unofficial)",
@@ -2074,16 +2195,20 @@ class ShareServer:
             STATE.manifest["component_fingerprints"] = client_meta["components"]
             profile["manifest_version"] = version; profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile.pop("server_key", None)
             profile.setdefault("sync_config", {})["port"] = int(port); profile["sync_config"]["password"] = password
+            profile["sync_config"]["tls_cert_fingerprint"] = tls_cert_fingerprint
             STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
+            STATE.tls_active = tls_enabled; STATE.tls_cert_fingerprint = tls_cert_fingerprint
+            STATE.allow_tls_password_fallback = allow_tls_password_fallback
         if persist_profile:
             save_server_profile(profile_id, profile); persist_unit_overrides(profile_id, units)
         self.live_keys = {u.key for u in required}
         if self.httpd is None:
-            self.httpd = ThreadingHTTPServer(("0.0.0.0", int(port)), SyncHandler); self.port = int(port)
-            self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True); self.thread.start()
-        elif self.port != int(port):
-            self.stop(); self.httpd = ThreadingHTTPServer(("0.0.0.0", int(port)), SyncHandler); self.port = int(port)
-            self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True); self.thread.start()
+            self._start_listener(int(port), tls_enabled, cert_path, key_path, tls_cert_fingerprint)
+        elif self.port != int(port) or self.tls_enabled != tls_enabled:
+            self.stop(); self._start_listener(int(port), tls_enabled, cert_path, key_path, tls_cert_fingerprint)
+        with STATE.lock:
+            STATE.tls_active = tls_enabled; STATE.tls_cert_fingerprint = tls_cert_fingerprint
+            STATE.allow_tls_password_fallback = allow_tls_password_fallback
         if broadcast: self.broadcaster.start()
         else: self.broadcaster.stop()
         return self.status()
@@ -2092,16 +2217,22 @@ class ShareServer:
         self.broadcaster.stop()
         if self.httpd:
             self.httpd.shutdown(); self.httpd.server_close()
-        self.httpd = None; self.thread = None; self.port = None; self.live_keys.clear()
+        self.httpd = None; self.thread = None; self.port = None; self.tls_enabled = False; self.tls_cert_fingerprint = ""; self.listener_evidence = {}; self.live_keys.clear()
         with STATE.lock:
             STATE.tokens.clear()
             STATE.token_sources.clear()
             STATE.pending_nonces.clear()
+            STATE.tls_active = False
+            STATE.tls_cert_fingerprint = ""
+            STATE.allow_tls_password_fallback = False
 
     def status(self):
         with STATE.lock:
             uptime = max(0, time.time() - STATE.server_start_ts) if STATE.server_online and STATE.server_start_ts else None
             return {"serving": self.httpd is not None, "port": self.port, "broadcasting": self.broadcaster.running,
+                    "tls_enabled": bool(self.tls_enabled), "tls_cert_fingerprint": str(self.tls_cert_fingerprint or ""),
+                    "tls_password_fallback": bool(STATE.allow_tls_password_fallback),
+                    "listener": dict(self.listener_evidence),
                     "manifest_version": STATE.manifest.get("version", 0), "manifest_file_count": len(STATE.manifest.get("files", [])),
                     "manifest_fingerprint": STATE.manifest.get("manifest_fingerprint") or "",
                     "component_fingerprints": dict(STATE.manifest.get("component_fingerprints") or {}),

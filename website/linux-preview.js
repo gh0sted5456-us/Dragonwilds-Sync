@@ -26,7 +26,7 @@
     if (!target) return;
     const host = document.createElement('div'); host.id = 'linux-detection-preview'; target.append(host); render(host);
   }
-  fetch('assets/launcher-preview.json?v=6',{cache:'no-cache'}).then((response)=>response.ok?response.json():Promise.reject()).then((model)=>{state.model=model;mount();}).catch(()=>{});
+  fetch('assets/launcher-preview.json?v=7',{cache:'no-cache'}).then((response)=>response.ok?response.json():Promise.reject()).then((model)=>{state.model=model;mount();}).catch(()=>{});
   addEventListener('hashchange',()=>setTimeout(mount,0)); addEventListener('click',()=>setTimeout(mount,0));
   new MutationObserver(mount).observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['class','aria-current']});
 })();

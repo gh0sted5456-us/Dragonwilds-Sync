@@ -1,13 +1,13 @@
 {
   "schema": "DragonwildsSync.LauncherPreview.v1",
-  "version": 6,
+  "version": 7,
   "appys": [
     {
       "id": "dragonwilds",
       "label": "Dragonwilds",
       "group": "Play & Create",
       "tone": "worlds",
-      "icon": "assets/application-icon.png",
+      "icon": "assets/navigation/dragonwilds.png",
       "navDescription": "Singleplayer - Co-Op - Dedicated - connect",
       "kicker": "Play and manage",
       "title": "World Management",
@@ -89,7 +89,7 @@
       "label": "Mods",
       "group": "Play & Create",
       "tone": "mods",
-      "icon": "assets/rsdw-toolkit/modded-items.svg",
+      "icon": "assets/navigation/mods.png",
       "navDescription": "Repository - editor - load order",
       "kicker": "Master and profile",
       "title": "Mod Selector & Breakdown",

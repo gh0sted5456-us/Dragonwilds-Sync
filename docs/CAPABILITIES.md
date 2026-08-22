@@ -47,7 +47,7 @@ This is the current source-level capability contract for `testing-ground`. A cap
 
 ## Network, directory, and WebHost
 
-- LAN discovery, connection tests, public-IP detection, firewall/UPnP helpers, network health/benchmarking, federated directory sources, public heartbeat, and multi-destination publication are present.
+- LAN discovery, IP-first Direct Connect queries on UDP `8422`, Sync transfer on TCP `27051` by default, connection tests, public-IP detection, scoped firewall/UPnP helpers, network health/benchmarking, federated directory sources, public heartbeat, and multi-destination publication are present. WebHost remains independent on TCP `27080` by default.
 - Installation presence is separate from per-World publication.
 - WebHost exposes a public directory and a separately authenticated Remote Admin surface with scoped users, CSRF protection, rate limiting, permissions, and audit history.
 - Public results are allowlisted and sanitized; public directory services never gain Remote Admin authority.

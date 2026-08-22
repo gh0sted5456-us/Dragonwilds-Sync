@@ -20,6 +20,7 @@ from health_model import apply_detected_hardware_references
 from server_layout import resolve_server_layout, resolve_server_layout_from_exe
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
+from networking import DEFAULT_SYNC_DISCOVERY_PORT
 from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
@@ -1113,7 +1114,7 @@ class ServerEngine:
                     "public_ip": detected,
                 }
                 if game_mode == "manual" or sync_mode == "manual":
-                    self._event(f"Manual forwarding selected. No UPnP request was sent; use UDP {game_port} and TCP {sync_port}.", "ok")
+                    self._event(f"Manual forwarding selected. No UPnP request was sent; use game UDP {game_port}, Sync TCP {sync_port}, and Direct Connect discovery UDP 8422.", "ok")
             except Exception as exc:
                 self.network_setup = {
                     "pending": False,
@@ -1121,7 +1122,7 @@ class ServerEngine:
                     "sync": {"mode": sync_mode, "port": sync_port, "mapping": "not_requested"},
                     "public_ip": str(self.public_ip or ""), "error": str(exc),
                 }
-                self._event(f"Public-address detection failed. Listener and router status remain unverified for UDP {game_port} and TCP {sync_port}.", "warn")
+                self._event(f"Public-address detection failed. Listener and router status remain unverified for game UDP {game_port}, Sync TCP {sync_port}, and Direct Connect discovery UDP 8422.", "warn")
 
         threading.Thread(target=worker, daemon=True, name="Dragonwilds-Server-NetworkSetup").start()
 
@@ -1136,10 +1137,12 @@ class ServerEngine:
         for suffix, protocol, cfg, fallback in (
             ("game", "UDP", dedicated, 7777),
             ("sync", "TCP", sync, 27051),
+            ("sync-discovery", "UDP", sync, DEFAULT_SYNC_DISCOVERY_PORT),
         ):
             networking = cfg.get("networking") or {}
-            if str(networking.get("publication_mode") or "manual") == "upnp" or str(networking.get("mapping_status") or "") == "confirmed":
-                candidates.append((suffix, protocol, int(cfg.get("port") or fallback)))
+            status_key = "discovery_mapping_status" if suffix == "sync-discovery" else "mapping_status"
+            if str(networking.get("publication_mode") or "manual") == "upnp" or str(networking.get(status_key) or "") == "confirmed":
+                candidates.append((suffix, protocol, fallback if suffix == "sync-discovery" else int(cfg.get("port") or fallback)))
         if not candidates:
             return
 

@@ -63,6 +63,12 @@ checks the World identity/fingerprint, transfers changed content, verifies hashe
 materializes the client runtime, and prepares Direct Connect. Treat identity or
 fingerprint mismatch as a hard stop.
 
+LAN discovery requires no router forwarding. For remote IP-first Direct Connect,
+the host exposes UDP `8422` for announcement queries and its configured World Sync
+TCP port (normally `27051`) for authentication and file transfer. Players do not
+open inbound ports. WebHost is a separate optional service on TCP `27080` by
+default and is not a substitute for the Sync transfer endpoint.
+
 ## `.rsdwl` exchange
 
 Use `.rsdwl` packages for supported World/profile or character exchange. Inspect

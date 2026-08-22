@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from networking import (FIREWALL_GROUP, RULE_NAMES, effective_game_port,
+import server_systems
+from networking import (DEFAULT_SYNC_DISCOVERY_PORT, FIREWALL_GROUP, RULE_NAMES, effective_game_port,
                         firewall_spec, layer_status, manual_router_rule,
                         normalize_publication_mode, valid_port)
 
@@ -32,6 +34,39 @@ class NetworkingPolicyTests(unittest.TestCase):
         self.assertTrue(public["display_name"].startswith(RULE_NAMES["world_sync"]))
         self.assertEqual((public["profiles"], public["remote_address"]), ("Any", "Any"))
         self.assertEqual((local["profiles"], local["remote_address"]), ("Domain,Private", "LocalSubnet"))
+
+        public_discovery = firewall_spec("sync_discovery", DEFAULT_SYNC_DISCOVERY_PORT,
+                                         program="C:/Runtime/backend.exe", mode="manual")
+        local_discovery = firewall_spec("sync_discovery", DEFAULT_SYNC_DISCOVERY_PORT,
+                                        program="C:/Runtime/backend.exe", mode="local")
+        self.assertEqual((public_discovery["protocol"], public_discovery["port"]), ("UDP", 8422))
+        self.assertEqual((public_discovery["profiles"], public_discovery["remote_address"]), ("Any", "Any"))
+        self.assertEqual((local_discovery["profiles"], local_discovery["remote_address"]), ("Domain,Private", "LocalSubnet"))
+
+    def test_manual_sync_forward_includes_fixed_discovery_companion(self):
+        rule = manual_router_rule("world_sync", 27051, "192.168.1.50")
+        self.assertEqual(rule["protocol"], "TCP")
+        self.assertEqual(rule["external_port"], 27051)
+        self.assertEqual(rule["companion_rules"], [{
+            "service": "Dragonwilds Sync Direct Connect discovery", "protocol": "UDP",
+            "external_port": 8422, "internal_address": "192.168.1.50",
+            "internal_port": 8422, "source": "Any",
+            "purpose": "Allows remote Direct Connect to query every Sync World announced by this host.",
+        }])
+        fixed = manual_router_rule("sync_discovery", None, "192.168.1.50")
+        self.assertEqual((fixed["protocol"], fixed["external_port"]), ("UDP", 8422))
+
+    def test_host_firewall_uses_one_fixed_discovery_rule(self):
+        def accepted(spec, **_kwargs):
+            return {**spec, "ok": True, "changed": True}
+
+        with patch.object(server_systems, "apply_firewall_spec", side_effect=accepted):
+            result = server_systems.configure_server_firewall_ports([27051, 27052], [7777, 7778], mode="manual")
+        discovery = [row for row in result["rules"] if row.get("service") == "sync_discovery"]
+        transfers = [row for row in result["rules"] if row.get("service") == "world_sync"]
+        self.assertEqual(result["sync_discovery_port"], 8422)
+        self.assertEqual([(row["protocol"], row["port"]) for row in discovery], [("UDP", 8422)])
+        self.assertEqual([(row["protocol"], row["port"]) for row in transfers], [("TCP", 27051), ("TCP", 27052)])
 
     def test_cloudflare_requires_no_public_firewall_rule(self):
         spec = firewall_spec("webhost", 27080, program="C:/Runtime/backend.exe", mode="tunnel")

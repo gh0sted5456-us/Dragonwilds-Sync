@@ -19,12 +19,14 @@ from process_utils import run_hidden
 FIREWALL_GROUP = "Dragonwilds Sync"
 DEFAULT_GAME_PORT = 7777
 DEFAULT_SYNC_PORT = 27051
+DEFAULT_SYNC_DISCOVERY_PORT = 8422
 DEFAULT_WEBHOST_PORT = 27080
 
 RULE_NAMES = {
     "pc_game": "Dragonwilds Sync - PC Game Host UDP",
     "dedicated_game": "Dragonwilds Sync - Dedicated Game Host UDP",
     "world_sync": "Dragonwilds Sync - World Sync",
+    "sync_discovery": "Dragonwilds Sync - Direct Discovery UDP",
     "webhost": "Dragonwilds Sync - WebHost TCP",
     "client_outbound": "Dragonwilds Sync - Client Outbound TCP",
 }
@@ -68,28 +70,36 @@ def normalize_publication_mode(value, *, service: str) -> str:
 
 def manual_router_rule(service: str, port: int, internal_address: str) -> dict:
     service = str(service or "").strip().casefold()
-    protocol = ("UDP" if service in {"game", "pc_game", "dedicated_game"}
-                else "TCP and UDP" if service == "world_sync" else "TCP")
+    protocol = "UDP" if service in {"game", "pc_game", "dedicated_game", "sync_discovery"} else "TCP"
     labels = {
         "game": "Dragonwilds gameplay",
         "pc_game": "Dragonwilds PC gameplay",
         "dedicated_game": "Dragonwilds dedicated gameplay",
         "world_sync": "Dragonwilds World Sync",
+        "sync_discovery": "Dragonwilds Sync Direct Connect discovery",
         "webhost": "Dragonwilds Sync WebHost",
     }
     if service not in labels:
         raise ValueError("Unknown router service")
-    port = valid_port(port)
+    port = DEFAULT_SYNC_DISCOVERY_PORT if service == "sync_discovery" else valid_port(port)
     address = str(internal_address or "").strip()
     if not address:
         raise ValueError("A host LAN address is required")
-    return {
+    result = {
         "service": labels[service], "protocol": protocol,
         "external_port": port, "internal_address": address,
         "internal_port": port, "source": "Any",
         "unifi_path": "Settings → Policy Engine → Port Forwarding",
         "static_address_warning": "Reserve this host's LAN address in the router before relying on this rule.",
     }
+    if service == "world_sync":
+        result["companion_rules"] = [{
+            "service": labels["sync_discovery"], "protocol": "UDP",
+            "external_port": DEFAULT_SYNC_DISCOVERY_PORT, "internal_address": address,
+            "internal_port": DEFAULT_SYNC_DISCOVERY_PORT, "source": "Any",
+            "purpose": "Allows remote Direct Connect to query every Sync World announced by this host.",
+        }]
+    return result
 
 
 def listener_state(bind_host: str, port: int, *, expected_pid: int | None = None) -> dict:
@@ -132,7 +142,7 @@ def firewall_spec(service: str, port: int, *, program: str, mode: str,
     if mode in {"tunnel", "none"}:
         return {"required": False, "service": service, "mode": mode}
     direction = "Outbound" if service == "client_outbound" else "Inbound"
-    protocol = "UDP" if service in {"pc_game", "dedicated_game"} else "TCP"
+    protocol = "UDP" if service in {"pc_game", "dedicated_game", "sync_discovery"} else "TCP"
     public = mode in {"manual", "upnp"}
     suffix = f" - {instance_id}" if instance_id and service in {"dedicated_game", "world_sync"} else ""
     return {

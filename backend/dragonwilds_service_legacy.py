@@ -87,7 +87,7 @@ from world_classification import normalize_world_classification
 from world_identity import normalize_endpoint
 from recommendation_feeds import OFFICIAL_FEED_URL, NEXUS_ACTIVITY_URL, builtin_recommendations, refresh_recommendations
 from operator_identity import public_operator_status, verify_world_identity
-from networking import (apply_firewall_spec, backend_program, effective_game_port, firewall_spec,
+from networking import (DEFAULT_SYNC_DISCOVERY_PORT, apply_firewall_spec, backend_program, effective_game_port, firewall_spec,
                         manual_router_rule, normalize_publication_mode, valid_port)
 from crypto_runtime import cryptography_self_test
 from computer_profiles import normalize_computer_profile, recommend_computer_profile
@@ -263,11 +263,13 @@ def _start_profile_upnp(profile_id: str) -> None:
         requests.append(("game", "UDP", int(dedicated.get("port") or 7777)))
     if str((sync.get("networking") or {}).get("publication_mode")) == "upnp":
         requests.append(("sync", "TCP", int(sync.get("port") or 27051)))
+        requests.append(("sync-discovery", "UDP", DEFAULT_SYNC_DISCOVERY_PORT))
     if not requests:
         return
     for suffix, _protocol, _port in requests:
         target = dedicated if suffix == "game" else sync
-        target.setdefault("networking", {})["mapping_status"] = "pending"
+        status_key = "discovery_mapping_status" if suffix == "sync-discovery" else "mapping_status"
+        target.setdefault("networking", {})[status_key] = "pending"
     save_server_profile(profile_id, profile)
 
     def worker():
@@ -296,8 +298,10 @@ def _start_profile_upnp(profile_id: str) -> None:
             return
         for suffix, protocol, port, result in rows:
             target = current.setdefault("dedicated_config" if suffix == "game" else "sync_config", {})
-            target.setdefault("networking", {})["mapping_status"] = "confirmed" if result.get("verified") else ("conflict" if result.get("conflict") else "failed")
-            target["networking"]["mapping_detail"] = str(result.get("error") or "")[:500]
+            status_key = "discovery_mapping_status" if suffix == "sync-discovery" else "mapping_status"
+            detail_key = "discovery_mapping_detail" if suffix == "sync-discovery" else "mapping_detail"
+            target.setdefault("networking", {})[status_key] = "confirmed" if result.get("verified") else ("conflict" if result.get("conflict") else "failed")
+            target["networking"][detail_key] = str(result.get("error") or "")[:500]
             current.setdefault("activity_log", []).append({"at": time.time(), "action": "upnp_create", "service": suffix,
                                                            "protocol": protocol, "port": port, "ok": bool(result.get("verified")),
                                                            "conflict": bool(result.get("conflict")), "detail": str(result.get("error") or "")[:500]})
@@ -2185,10 +2189,10 @@ def handle(method: str, params: dict) -> object:
 
     if method == "application.network.manual_rule":
         service = str(params.get("service") or "").casefold()
-        allowed_services = {"game", "dedicated_game", "pc_game", "world_sync", "webhost"}
+        allowed_services = {"game", "dedicated_game", "pc_game", "world_sync", "sync_discovery", "webhost"}
         if service not in allowed_services:
             raise ValueError("Choose gameplay, World Sync, or WebHost.")
-        return manual_router_rule(service, valid_port(params.get("port")), local_ip_guess())
+        return manual_router_rule(service, params.get("port"), local_ip_guess())
 
     if method == "server.network.upnp":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
@@ -2202,11 +2206,22 @@ def handle(method: str, params: dict) -> object:
         elif service == "sync":
             port = valid_port((profile.get("sync_config") or {}).get("port") or 27051)
             protocol, suffix = "TCP", "sync"
+        elif service == "sync-discovery":
+            port = DEFAULT_SYNC_DISCOVERY_PORT
+            protocol, suffix = "UDP", "sync-discovery"
         else:
             raise ValueError("Choose the gameplay or World Sync mapping.")
         description = f"DragonwildsSync:{str(profile.get('id') or profile_id)[:32]}:{suffix}"
         action = str(params.get("action") or "create").casefold()
         result = try_upnp_mapping(port, protocol=protocol, delete=action == "remove", description=description)
+        networking = profile.setdefault("dedicated_config" if suffix == "game" else "sync_config", {}).setdefault("networking", {})
+        status_key = "discovery_mapping_status" if suffix == "sync-discovery" else "mapping_status"
+        detail_key = "discovery_mapping_detail" if suffix == "sync-discovery" else "mapping_detail"
+        if action == "remove":
+            networking[status_key] = "not_requested" if result.get("deleted") else "failed"
+        else:
+            networking[status_key] = "confirmed" if result.get("verified") else ("conflict" if result.get("conflict") else "failed")
+        networking[detail_key] = str(result.get("error") or "")[:500]
         profile.setdefault("activity_log", []).append({
             "at": time.time(), "action": f"upnp_{action}", "service": suffix,
             "protocol": protocol, "port": port, "ok": bool(result.get("verified") or result.get("deleted")),
@@ -4729,8 +4744,8 @@ def handle(method: str, params: dict) -> object:
 
     if method in ("server.discovery.scan", "client.discovery.scan"):
         if sys.platform.startswith("linux"):
-            discovery_spec = firewall_spec("world_sync", 27051, program=backend_program(), mode="local", instance_id="lan-discovery")
-            discovery_spec.update({"display_name": "Dragonwilds Sync - LAN Discovery UDP", "protocol": "UDP",
+            discovery_spec = firewall_spec("sync_discovery", 8421, program=backend_program(), mode="local")
+            discovery_spec.update({"display_name": "Dragonwilds Sync - LAN Browse UDP",
                                    "profiles": "Domain,Private", "remote_address": "LocalSubnet"})
             if not apply_firewall_spec(discovery_spec, action="Query").get("ok"):
                 apply_firewall_spec(discovery_spec)
@@ -5063,6 +5078,7 @@ def handle(method: str, params: dict) -> object:
             "internal_ip": ENGINE.status().get("lan_ip") or "",
             "external_ip": str(profile.get("public_ip") or ENGINE.public_ip or ""),
             "sync_port": int(sync.get("port") or 27051),
+            "sync_discovery_port": DEFAULT_SYNC_DISCOVERY_PORT,
             "game_port": int(dedicated.get("port") or 7777),
             "password": str(sync.get("password") or ""),
             "sync_tls": bool(sync.get("tls_enabled")),
@@ -5340,7 +5356,7 @@ def handle(method: str, params: dict) -> object:
         sync_ports, game_ports = _server_ports()
         firewall = configure_server_firewall_ports(sync_ports, game_ports) if sys.platform.startswith("win") else {
             "ok": True, "managed": False, "platform": "linux", "sync_ports": sync_ports, "game_ports": game_ports,
-            "message": "Open the listed TCP Sync and UDP game ports in the host firewall/router; the unprivileged launcher does not alter Linux firewall policy.",
+            "message": "Open the listed TCP Sync ports, host-wide UDP 8422 Direct Connect discovery port, and UDP game ports in the host firewall/router; the unprivileged launcher does not alter Linux firewall policy.",
         }
         return {"ok": bool(runtime.get("ok")), "installed": installed, "firewall": firewall, "latest": latest, "runtime": runtime, "config_file": str(config_file), "state": public_state(state)}
 

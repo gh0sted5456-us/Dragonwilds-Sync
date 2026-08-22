@@ -50,12 +50,12 @@ from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS,
 from sync_manifest import build_client_meta
 from world_classification import normalize_world_classification
 from operator_identity import sign_world_identity
-from networking import (DEFAULT_SYNC_PORT, apply_firewall_spec, backend_program,
+from networking import (DEFAULT_SYNC_PORT, DEFAULT_SYNC_DISCOVERY_PORT, apply_firewall_spec, backend_program,
                         firewall_spec)
 
 SYNC_PORT_DEFAULT = DEFAULT_SYNC_PORT
 DISCOVERY_PORT = 8421
-DISCOVERY_QUERY_PORT = 8422
+DISCOVERY_QUERY_PORT = DEFAULT_SYNC_DISCOVERY_PORT
 
 
 def _sync_tls_material(profile_id: str, host_values: list[str] | None = None) -> tuple[Path, Path, str]:
@@ -2464,14 +2464,14 @@ def configure_shared_firewall(sync_port: int, game_port: int | None = None, *,
                               sync_mode: str | None = None) -> dict:
     sync_port = int(sync_port); game_port = int(game_port if game_port is not None else 7777)
     sync_spec = firewall_spec("world_sync", sync_port, program=backend_program(), mode=sync_mode or mode, instance_id=instance_id)
-    discovery_spec = {**sync_spec, "display_name": f"{sync_spec['display_name']} - LAN Discovery",
-                      "protocol": "UDP", "profiles": "Domain,Private", "remote_address": "LocalSubnet"}
+    discovery_spec = firewall_spec("sync_discovery", DISCOVERY_QUERY_PORT, program=backend_program(), mode=sync_mode or mode)
     game_spec = firewall_spec("dedicated_game", game_port, program=game_program, mode=game_mode or mode, instance_id=instance_id)
     sync_result = apply_firewall_spec(sync_spec)
     discovery_result = apply_firewall_spec(discovery_spec)
     game_result = apply_firewall_spec(game_spec)
     return {"ok": bool(sync_result.get("ok") and discovery_result.get("ok") and game_result.get("ok")), "sync_port": sync_port,
-            "game_port": game_port, "mode": mode, "rules": [sync_result, discovery_result, game_result]}
+            "sync_discovery_port": DISCOVERY_QUERY_PORT, "game_port": game_port,
+            "mode": mode, "rules": [sync_result, discovery_result, game_result]}
 
 
 def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manual",
@@ -2487,12 +2487,13 @@ def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manu
     for index, port in enumerate(sync, 1):
         sync_spec = firewall_spec("world_sync", port, program=backend_program(), mode=mode, instance_id=f"server-{index}")
         results.append(apply_firewall_spec(sync_spec))
-        results.append(apply_firewall_spec({**sync_spec, "display_name": f"{sync_spec['display_name']} - LAN Discovery",
-                                            "protocol": "UDP", "profiles": "Domain,Private", "remote_address": "LocalSubnet"}))
+    results.append(apply_firewall_spec(firewall_spec("sync_discovery", DISCOVERY_QUERY_PORT,
+                                                     program=backend_program(), mode=mode)))
     for index, port in enumerate(game, 1):
         results.append(apply_firewall_spec(firewall_spec("dedicated_game", port, program=game_program,
                                                         mode=mode, instance_id=f"server-{index}")))
-    return {"ok": all(row.get("ok") for row in results), "sync_ports": sync, "game_ports": game,
+    return {"ok": all(row.get("ok") for row in results), "sync_ports": sync,
+            "sync_discovery_port": DISCOVERY_QUERY_PORT, "game_ports": game,
             "mode": mode, "rules": results}
 
 

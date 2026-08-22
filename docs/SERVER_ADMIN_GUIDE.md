@@ -34,6 +34,28 @@ fresh manifest, hash changed content, build a role-correct client runtime, and o
 then receive a gameplay handoff. Never distribute the server's secret material or
 literal `mods.txt`.
 
+### Host ports and forwarding
+
+| Service | Default host port | Host firewall | Router forwarding |
+| --- | --- | --- | --- |
+| Dragonwilds gameplay | UDP `7777` for Server 1, then `7778`, `7779`… | Inbound on a game host | Required for direct Internet gameplay |
+| World Sync transfer | TCP `27051` plus the configured instance offset | Inbound on a Sync host | Required for direct Internet metadata, authentication, and file transfer |
+| Direct Connect discovery | UDP `8422`, shared by the host | Inbound on a Sync host; LocalSubnet-only in LAN mode | Required when remote users type the host IP and expect its active Sync announcements to appear |
+| WebHost / optional Remote Admin | TCP `27080` by default | Inbound only for direct hosting | Required for direct Internet WebHost access; not required with the outbound Cloudflare Tunnel mode |
+
+Joining clients initiate outbound connections and do not need inbound client
+rules. A Cloudflare-hosted World directory supplies discovery metadata but does
+not relay Sync file traffic, so the advertised Sync TCP endpoint must still be
+reachable. LAN discovery and Direct Connect discovery use the same host listener;
+the router forward is unnecessary when both machines are on the local network.
+
+**Manual forwarding** must create separate entries for Sync TCP and discovery
+UDP; do not configure TCP+UDP on `27051`. **Automatic UPnP** creates and verifies
+both mappings when Sync publication uses UPnP. The application's Repair Firewall
+action likewise creates one scoped TCP rule per active Sync transfer port and one
+host-wide UDP `8422` discovery rule. Reserve the host's LAN address before relying
+on router mappings, and verify remote access from outside the LAN.
+
 ## WebHost and Remote Admin
 
 Bind locally by default. For remote exposure, use the intended authenticated

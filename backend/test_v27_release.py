@@ -30,8 +30,11 @@ def main():
     assert "/bin/sh" in updater
 
     router = manual_router_rule("world_sync", 27051, "192.168.1.10")
-    assert router["protocol"] == "TCP and UDP"
+    assert router["protocol"] == "TCP"
     assert router["external_port"] == router["internal_port"] == 27051
+    discovery = router["companion_rules"][0]
+    assert discovery["protocol"] == "UDP"
+    assert discovery["external_port"] == discovery["internal_port"] == 8422
 
     networking = (ROOT / "backend/networking.py").read_text(encoding="utf-8")
     assert 'shutil.which("ufw")' in networking
@@ -39,7 +42,8 @@ def main():
     assert 'shutil.which("pkexec")' in networking
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-    assert "Sync Port (TCP + UDP)" in renderer
+    assert "Sync Transfer Port (TCP)" in renderer
+    assert "Direct Connect discovery uses the fixed host-wide UDP port 8422" in renderer
     assert 'id="toggle-runtime-ue4ss"' in renderer
     assert 'id="toggle-runtime-runeschema"' in renderer
     assert "navButton('worlds'" not in renderer

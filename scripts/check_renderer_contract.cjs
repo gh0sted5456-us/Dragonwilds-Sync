@@ -13,6 +13,8 @@ const releasePolish = fs.readFileSync(path.join(root, 'renderer', 'release-polis
 const performanceCss = fs.readFileSync(path.join(root, 'renderer', 'release-performance.css'), 'utf8');
 const characterLayout = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout.js'), 'utf8');
 const characterLayoutCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout.css'), 'utf8');
+const characterLayoutHotfixCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout-hotfix.css'), 'utf8');
+const characterTabsCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-tabs.css'), 'utf8');
 const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-menu.css'), 'utf8');
 const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
 
@@ -20,11 +22,15 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
-assert(characterLayout.includes("/^pose$/i") && characterLayout.includes("pose.insertAdjacentElement('afterend', background)"),
-  'Character Background must move beside Pose without recreating the control.');
+assert(characterLayout.includes("/^background$/i") && characterLayout.includes('backgroundPanel.appendChild(background)') &&
+  characterTabsCss.includes('grid-template-columns:repeat(4,minmax(100px,1fr))!important'),
+  'Character Background must be the fourth tab after Pose without recreating its live control.');
 assert(characterLayout.includes('character-hotbar-dock') && characterLayout.includes('dock.appendChild(hotbar)') &&
   characterLayoutCss.includes('justify-content:center') && characterLayoutCss.includes('width:max-content'),
   'The character hotbar must occupy its own centered row directly beneath the preview.');
+assert(characterLayoutHotfixCss.includes('grid-column:4!important') && characterLayoutHotfixCss.includes('grid-template-columns:repeat(8,64px)!important') &&
+  characterLayoutHotfixCss.includes('width:64px!important') && characterLayoutHotfixCss.includes('height:64px!important'),
+  'Background must remain beside Pose and the centered hotbar must retain eight compact square slots.');
 assert(characterLayout.includes('character-item-menu-filters') && characterLayout.includes('browse all compatible items/i') && characterMenuCss.includes('.character-hotbar-context-menu'),
   'Equipment and hotbar item selection must use the filtered right-click flow instead of a left-click repository shortcut.');
 assert(localProfileSync.includes('profile.local_sync.configure') && localProfileSync.includes('profile.local_sync.run') &&

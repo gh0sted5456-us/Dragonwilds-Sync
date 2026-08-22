@@ -30,11 +30,11 @@
     if (!webview) return;
     const editor = webview.closest('.rsdw-native-character-editor,.native-character-surface,.character-editor') || document;
     const background = backgroundControl(editor);
-    const pose = [...editor.querySelectorAll('button,[role="tab"]')].find((node) => /^pose$/i.test(text(node)));
-    if (background && pose) {
-      const toolbar = pose.parentElement;
+    const backgroundTab = [...editor.querySelectorAll('button,[role="tab"]')].find((node) => /^background$/i.test(text(node)));
+    const backgroundPanel = editor.querySelector('[data-character-tab-panel="background"] .character-background-control-mount');
+    if (background && backgroundTab && backgroundPanel) {
       background.classList.add('character-toolbar-background');
-      if (background.parentElement !== toolbar || pose.nextElementSibling !== background) pose.insertAdjacentElement('afterend', background);
+      if (background.parentElement !== backgroundPanel) backgroundPanel.appendChild(background);
     }
 
     const hotbar = hotbarControl(editor, background);

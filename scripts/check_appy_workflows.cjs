@@ -44,7 +44,7 @@ need(app.includes("state.rsdwTool='character-editor'") && app.includes('await en
 need(responsive.includes('.profile-character-save{') && responsive.includes('.profile-character-worlds{'), 'Profile Character saves must have responsive layout and World chips');
 
 for (const token of [
-  'character-editor-redesign', "[['appearance','Appearance'],['equipment','Equipment'],['pose','Pose']]",
+  'character-editor-redesign', "[['appearance','Appearance'],['equipment','Equipment'],['pose','Pose'],['background','Background']]",
   "nativeAppearanceSelector(editor,'Head','Face')", "nativeAppearanceSelector(editor,'HairPreset','Hair')",
   "nativeAppearanceSelector(editor,'FacialHairPreset','Beard')", 'characterEquipmentSurface(liveAvatar)',
   'Array.from({length:8}', 'data-character-save', 'data-character-export',

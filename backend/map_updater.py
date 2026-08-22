@@ -30,9 +30,21 @@ METAFORGE_ZOOM = 2
 METAFORGE_TILE_URL = "https://static.metaforge.app/dragonwilds/maptiles/{tileset}/{zoom}/{x}/{y}.webp"
 WIKI_TILE_URL = "https://maps.runescape.wiki/dw/tiles/{zoom}/{x}_{y}.png"
 WIKI_SOURCE_PAGE = "https://runescape.wiki/w/RuneScape:_Dragonwilds/Map"
+CODEX_MAP_SOURCE = "https://dragonwildscodex.com/map/"
+CODEX_MAP_CONFIG = "https://dragonwildscodex.com/data/map.json"
 WIKI_ZOOM = 3
 WIKI_GRID_SIZE = 12
-WORLD_BOUNDS = {"world_min_x": 0.0, "world_max_x": 302400.0, "world_min_y": -100800.0, "world_max_y": 201600.0, "invert_y": True}
+# Dragonwilds Codex's live CRS maps game X to longitude and game Y to
+# latitude. Its URL's third ``at`` component is Leaflet zoom, not game Z.
+# The composed tile raster therefore increases downward with game Y and must
+# not use the legacy Unreal-texture Y inversion.
+WORLD_BOUNDS = {
+    "world_min_x": -11075.0,
+    "world_max_x": 408925.0,
+    "world_min_y": -117685.0,
+    "world_max_y": 302315.0,
+    "invert_y": False,
+}
 
 
 def _request_json(url: str, timeout: int = 25):
@@ -80,7 +92,7 @@ def refresh_overlays(*, force: bool = False, limit_per_category: int = 2500) -> 
         raise RuntimeError("RSDWTools map data contained no usable coordinates.")
     xs.sort(); ys.sort()
     low=max(0,int(len(xs)*0.002)); high=min(len(xs)-1,int(len(xs)*0.998))
-    calibration={**WORLD_BOUNDS,"source":"RSDWTools / RuneScape Wiki world grid"}
+    calibration={**WORLD_BOUNDS,"source":"Dragonwilds Codex live CRS / RuneScape Wiki world grid"}
     compact=[]; categories={}
     for category, rows in buckets.items():
         stride=max(1,math.ceil(len(rows)/max(1,int(limit_per_category))))
@@ -88,7 +100,8 @@ def refresh_overlays(*, force: bool = False, limit_per_category: int = 2500) -> 
         categories[category]=sorted({r["subtype"] for r in rows})
         for row in sampled:
             row["map_x"]=max(0.0,min(1.0,(row["x"]-calibration["world_min_x"])/(calibration["world_max_x"]-calibration["world_min_x"])))
-            row["map_y"]=max(0.0,min(1.0,1-(row["y"]-calibration["world_min_y"])/(calibration["world_max_y"]-calibration["world_min_y"])))
+            normalized_y=(row["y"]-calibration["world_min_y"])/(calibration["world_max_y"]-calibration["world_min_y"])
+            row["map_y"]=max(0.0,min(1.0,1-normalized_y if calibration.get("invert_y") else normalized_y))
             compact.append(row)
     result={"ok":True,"source":"RSDWArchive/RSDWTools","source_url":RSDW_MAPDATA_URL,"generated_at":time.time(),"calibration":calibration,"categories":categories,"points":compact,"source_point_count":len(source or []),"point_count":len(compact)}
     write_json(OVERLAY_CACHE,result)
@@ -190,7 +203,7 @@ def _refresh_wiki_map(*, force: bool, max_dimension: int) -> dict:
     """Compose the public RuneScape Wiki grid using RSDWTools' exact CRS."""
     from PIL import Image
 
-    version = f"runescape-wiki-z{WIKI_ZOOM}"
+    version = f"runescape-wiki-z{WIKI_ZOOM}-codex-crs-v1"
     current = status()
     if not force and current.get("available") and current.get("version") == version and current.get("source_provider") == "runescape-wiki":
         return {**current, "ok": True, "changed": False, "data_url": _data_url(Path(current["image_path"]))}
@@ -228,8 +241,10 @@ def _refresh_wiki_map(*, force: bool, max_dimension: int) -> dict:
         "grid": {"min_x": 0, "max_x": WIKI_GRID_SIZE - 1, "min_y": 0, "max_y": WIKI_GRID_SIZE - 1, "columns": WIKI_GRID_SIZE, "rows": WIKI_GRID_SIZE, "zoom": WIKI_ZOOM},
         "width": tile_px * WIKI_GRID_SIZE,
         "height": tile_px * WIKI_GRID_SIZE,
-        "coordinate_source": "wiki-world-grid-rsdw-crs",
-        "calibration": {**WORLD_BOUNDS, "source": "RSDWTools public CRS"},
+        "coordinate_source": "dragonwilds-codex-live-crs",
+        "coordinate_config_url": CODEX_MAP_CONFIG,
+        "coordinate_axes": {"x": "game X / longitude", "y": "game Y / latitude", "z": "elevation (not projected)"},
+        "calibration": {**WORLD_BOUNDS, "source": "Dragonwilds Codex live map configuration"},
         "refreshed_at": time.time(),
     }
     write_json(MAP_STATE, meta)

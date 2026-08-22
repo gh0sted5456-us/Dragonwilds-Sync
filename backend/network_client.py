@@ -52,7 +52,7 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
                 raise BlockedError(str(body.get("reason") or ""), str(body.get("reason_kind") or "ip")) from exc
             raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
         if exc.code == 401:
-            raise ConnectionError("The World Sync session was rejected or expired.") from exc
+            raise ConnectionError("The saved World Password did not authorize the Sync payload. Edit the World connection and retry.") from exc
         if exc.code == 429:
             try:
                 retry_after = float(exc.headers.get("Retry-After") or 2.0)
@@ -100,9 +100,8 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
                 raise
     nonce = json.loads(request(f"{base}/nonce").read())["nonce"]
     # The player connection contract is intentionally only IP + exact World
-    # Name + optional World Password. A blank password represents an open World.
-    # Server/share keys remain accepted as ignored compatibility parameters so
-    # older saved profiles continue to load without becoming auth requirements.
+    # One player-facing credential protects both the Sync payload and gameplay.
+    # Legacy server/share parameters remain accepted but are never consulted.
     proof = hmac.new(password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
     payload = json.dumps({"nonce": nonce, "proof": proof, "mode": "world_password", "credential_source": source}).encode()
     response = json.loads(request(f"{base}/auth", method="POST", data=payload, headers={"Content-Type": "application/json"}).read())

@@ -30,7 +30,7 @@ must(index.includes('release-v2-trash.css') && index.includes('release-v2-trash.
 must(css.includes('grid-auto-rows:1fr') && css.includes('mask-image:linear-gradient'), 'Uniform placard/faded banner contract is missing');
 must(cardSizing.includes("Math.max(...cards.map") && cardSizing.includes('card.style.minHeight'), 'Placards are not normalized to the tallest visible profile');
 must(css.includes('data-dws-icon-mode="color"') && css.includes('data-dws-icon-mode="black"') && css.includes('data-dws-icon-mode="white"') && css.includes('data-dws-icon-mode="adaptive"'), 'Color/black/white/adaptive icon modes are incomplete');
-must(js.includes('data-webhost-tab="remote"') && js.includes('remoteEnabled') && js.includes('webHostActivated'), 'Unified WebHost Remote Server/Declared visibility contract is missing');
+must(js.includes('data-webhost-tab="remote"') && js.includes("remoteTab.textContent='Server Management'") && js.includes('Remote Server Manager') && js.includes('remoteEnabled') && js.includes('webHostActivated'), 'Integrated Sync Remote Server Manager contract is missing');
 must(js.includes('Users & Permissions') && js.includes('application.world_directory_host.user.create'), 'Remote Server user/permission manifest is not surfaced in WebHost');
 must(remoteLifecycle.includes('payload.enabled=remoteEnabled') && remoteLifecycle.includes('payload.directory_enabled=false'), 'Remote-only listener does not release when Remote Server is disabled');
 must(directoryHost.indexOf('if not directory_enabled and remote_enabled:') < directoryHost.indexOf('if self._private_console_allowed(): page = _admin_console_html'), 'Remote-only root must resolve to login before local private-console authority');

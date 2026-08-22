@@ -1097,18 +1097,25 @@ class SyncState:
         source = str(credential_source or "linked").strip().lower()[:32]
         if source not in {"linked", "manual", "imported-rsdwl", "online-feed", "legacy-linked", "shared"}:
             source = "linked"
-        mode = "game_authoritative"
+        mode = "world_password"
         with self.lock:
             issued = self.pending_nonces.pop(nonce, None)
             if issued is None or time.time() - issued > NONCE_TTL_SECONDS:
                 return None
+            # STATE.password is hot-applied from the active profile's exact
+            # dedicated_config.world_pass when its Sync share is published.
+            # Never mix it with legacy sync passwords or saved client fields.
+            world_password = str(self.password or "")
+        expected = hmac.new(world_password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, str(proof or "")):
+            return None
         with self.lock:
             scope = "world-sync"
             token = secrets.token_hex(16)
             self.tokens.add(token)
             self.token_sources[token] = {"credential_source": source, "auth_mode": mode, "scope": scope, "client_ip": str(client_ip or ""), "issued_at": time.time()}
-            # Dragonwilds itself is the sole authority for the World Password.
-            # Sync only establishes a short-lived metadata/file session.
+            # The same World Password protects Sync payloads and Dragonwilds.
+            # Public heartbeat/identity metadata does not require this token.
             return {"token": token, **self.token_sources[token]}
 
     def check_token(self, token: str) -> bool:

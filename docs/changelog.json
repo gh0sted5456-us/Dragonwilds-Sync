@@ -8,7 +8,7 @@
       "date": "2026-08-22",
       "status": "stable",
       "highlights": [
-        "Dragonwilds is authoritative for World Password validation; Sync no longer creates a conflicting password gate.",
+        "One World Password now protects both client Sync payload downloads and Dragonwilds gameplay, using the active profile as the sole password authority.",
         "Public and LAN discovery preserve complete structured PAK, UE4SS, and RuneSchema mod summaries before joining.",
         "World Sync identifies TCP profile transfer and UDP LAN discovery on port 27051.",
         "World browsing is integrated into Dragonwilds while Mods and Sync management have dedicated application surfaces."

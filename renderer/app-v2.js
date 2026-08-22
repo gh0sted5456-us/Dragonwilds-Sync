@@ -7224,18 +7224,7 @@
           if(local)await activatePrivateWorldProfile(world,true);
           return api.invoke(local?'singleplayer.play':'world.play',local?{id:world.id,profile_id:world.id}:{id:world.id});
         }):runWorldSyncJob(world,'play');
-      let response;
-      try { response=await launch(); }
-      catch(error){
-        const passwordFailure=!local&&/(authentication failed|world password|http\s*401|unauthorized)/i.test(String(error?.message||error||''));
-        if(!passwordFailure)throw error;
-        const password=await managedPrompt('The host rejected the saved World Password. Enter the current Dragonwilds World Password to update this connection and retry.','',`Password for ${world.nickname||world.identity?.world_name||'World'}`,'password');
-        if(password===null)throw error;
-        const updated=await api.invoke('world.update',{id:world.id,credentials:{...(world.credentials||{}),password,remember:true}});
-        setData(updated.state||updated);
-        world=worlds().find((item)=>String(item.id)===String(world.id))||world;
-        response=await launch();
-      }
+      const response=await launch();
       setData(response.state);
       if (world.kind === 'singleplayer') { setDiscordPresence('Playing Private World', world, { resetTimer: true }); toast('Dragonwilds launched', `${world.name || 'Private World'} activated and launched.`, 'success'); return; }
       const security = response.result?.security || {};

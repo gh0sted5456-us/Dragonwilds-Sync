@@ -63,6 +63,8 @@ assert(source.includes("navButton('characters-app'") && source.includes("navButt
   'Characters and Mods must remain Appys while World browsing is owned by Dragonwilds.');
 assert(source.includes('TCP + UDP 27051 + instance offset'),
   'Sync must identify TCP transfer and UDP LAN discovery on port 27051.');
+assert(!source.includes('passwordFailure=!local') && !source.includes('The host rejected the saved World Password'),
+  'Sync Play must not add a launcher password retry gateway before Dragonwilds validates the World Password.');
 assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
   source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds'") &&
   source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods'") &&

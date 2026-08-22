@@ -21,16 +21,20 @@ class ConnectionTransportTests(unittest.TestCase):
             self.assertEqual(network_client._auth_token(endpoint, "", credential_source="lan"), ("lan-token", "lan"))
             token.assert_called_once_with(endpoint)
 
-    def test_sync_session_does_not_reject_or_adopt_game_password(self):
+    def test_sync_payload_uses_only_live_world_password(self):
         state = server_systems.SyncState()
         state.active_profile_id = "world-1"
         state.password = "old-password"
         nonce = state.issue_nonce()
-        proof = hmac.new(b"different-client-value", nonce.encode(), hashlib.sha256).hexdigest()
+        bad_proof = hmac.new(b"different-client-value", nonce.encode(), hashlib.sha256).hexdigest()
         with patch.object(server_systems, "load_server_profile", return_value={"dedicated_config": {"world_pass": "BELTS"}}):
-            auth = state.check_proof(nonce, proof, credential_source="manual", client_ip="192.168.1.2")
+            rejected = state.check_proof(nonce, bad_proof, credential_source="manual", client_ip="192.168.1.2")
+        self.assertIsNone(rejected)
+        nonce = state.issue_nonce()
+        proof = hmac.new(b"old-password", nonce.encode(), hashlib.sha256).hexdigest()
+        auth = state.check_proof(nonce, proof, credential_source="manual", client_ip="192.168.1.2")
         self.assertIsNotNone(auth)
-        self.assertEqual(auth.get("auth_mode"), "game_authoritative")
+        self.assertEqual(auth.get("auth_mode"), "world_password")
         self.assertEqual(state.password, "old-password")
 
     def test_lan_heartbeat_exposes_mod_inventory(self):

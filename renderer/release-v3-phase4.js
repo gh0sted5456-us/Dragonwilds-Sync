@@ -129,7 +129,12 @@
     const world=findWorld(id)||{id,name:'World'}; const rows=modRows(world).filter((row)=>row.type===family);
     const host=document.createElement('section'); host.className='v3p4-mod-dialog'; host.dataset.v3p4ModDialog=key; host.setAttribute('role','dialog');host.setAttribute('aria-modal','true');host.setAttribute('aria-label',`${family} mods for ${text(world.name||world.nickname||'World')}`);
     host.innerHTML=`<div class="v3p4-mod-dialog-card"><header><span><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS</small><strong>${esc(world.name||world.nickname||world.identity?.world_name||'World')}</strong></span></span><button type="button" class="btn ghost compact-btn" data-v3p4-close-mods="${esc(key)}" aria-label="Close loaded mods">×</button></header><div class="v3p4-mod-dialog-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div></div>`;
-    document.getElementById('modal-root')?.appendChild(host)||document.body.appendChild(host);modDialogs.set(key,host);host.querySelector('[data-v3p4-close-mods]')?.focus();
+    document.getElementById('modal-root')?.appendChild(host)||document.body.appendChild(host);modDialogs.set(key,host);
+    const dismiss=(event)=>{event?.preventDefault?.();event?.stopPropagation?.();closeModsPopup(key);};
+    host.querySelector('[data-v3p4-close-mods]')?.addEventListener('pointerdown',dismiss,{capture:true});
+    host.addEventListener('pointerdown',(event)=>{if(event.target===host)dismiss(event);});
+    host.addEventListener('keydown',(event)=>{if(event.key==='Escape')dismiss(event);});
+    host.querySelector('[data-v3p4-close-mods]')?.focus();
   }
 
   function closeModsPopup(key) { const host=modDialogs.get(key)||document.querySelector(`[data-v3p4-mod-dialog="${CSS.escape(key)}"]`);host?.remove();modDialogs.delete(key); }
@@ -407,6 +412,6 @@
   }
   heartbeatTimer=setInterval(refreshHeartbeats,30000);
   window.addEventListener('beforeunload',()=>clearInterval(heartbeatTimer),{once:true});
-  window.__DWSYNC_V3_PHASE4__={openPlacard:openWindow,togglePlacard:(id)=>{const card=document.querySelector(`.v3p4-placard[data-world-id="${CSS.escape(text(id))}"]`);if(card)toggle(card);},animationMode};
+  window.__DWSYNC_V3_PHASE4__={openPlacard:openWindow,closeModPopup:closeModsPopup,togglePlacard:(id)=>{const card=document.querySelector(`.v3p4-placard[data-world-id="${CSS.escape(text(id))}"]`);if(card)toggle(card);},animationMode};
   requestAnimationFrame(decorateAll);
 })();

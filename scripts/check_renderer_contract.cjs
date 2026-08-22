@@ -17,6 +17,7 @@ const characterLayoutHotfixCss = fs.readFileSync(path.join(root, 'renderer', 're
 const characterTabsCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-tabs.css'), 'utf8');
 const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-menu.css'), 'utf8');
 const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
+const popupSafety = fs.readFileSync(path.join(root, 'renderer', 'release-popup-safety.js'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -36,6 +37,9 @@ assert(characterLayout.includes('character-item-menu-filters') && characterLayou
 assert(localProfileSync.includes('profile.local_sync.configure') && localProfileSync.includes('profile.local_sync.run') &&
   localProfileSync.includes('pickDirectory') && localProfileSync.includes('45000'),
   'Optional OneDrive/Google Drive profile sync must use a selected local folder and bounded automatic refresh.');
+assert(popupSafety.includes("event.key!=='Escape'") && popupSafety.includes('data-popup-safety-close') &&
+  popupSafety.includes('closeModPopup') && popupSafety.includes('event.target===popup'),
+  'Every modal popup must support a close control, Escape, backdrop dismissal, and placard-specific cleanup.');
 
 assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
   'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');

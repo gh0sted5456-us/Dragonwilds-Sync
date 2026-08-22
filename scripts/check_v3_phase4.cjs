@@ -47,7 +47,7 @@ const renderer = need('renderer/release-v3-phase4.js', [
   "closest('.v3p4-placard,.app-world-placard')", 'applyPlacardArtwork', '--world-placard',
   "card?.dataset?.placardBackground || currentMatch?.[1] || '1'",
   "assets/platforms/ue4ss.png", "assets/platforms/runeschema.png", 'data-v3p4-mod-family',
-  'openModsPopup', 'No loaded ${esc(family)} mods are recorded for this profile.', "event.key==='Escape'"
+  'openModsPopup', 'closeModPopup:closeModsPopup', 'No loaded ${esc(family)} mods are recorded for this profile.', "event.key==='Escape'"
   , 'requestProfileModInventory', "'server.world.inventory'", "'singleplayer.inventory'", 'rescan:false',
   "row.group || ''", 'refreshModIndicators', 'Date.now()-current.at<120000'
 ]);

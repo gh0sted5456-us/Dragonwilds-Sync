@@ -90,6 +90,14 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     base = endpoint.base_url
     password = str(password or "")
     source = _credential_source(credential_source)
+    if source == "lan":
+        try:
+            return _lan_token(endpoint), "lan"
+        except ConnectionError:
+            # A saved LAN profile may later be reached through a routed/VPN
+            # address. In that case its World Password remains a valid fallback.
+            if not password:
+                raise
     nonce = json.loads(request(f"{base}/nonce").read())["nonce"]
     # The player connection contract is intentionally only IP + exact World
     # Name + optional World Password. A blank password represents an open World.

@@ -344,7 +344,10 @@ def _directory_join_world_shape(row: dict, *, local_id: str = "", credentials: d
                        "game_port": int(row.get("game_port") or 7777), "sync_port": int(row.get("sync_port") or 27051), "preference": "auto"},
         "credentials": {"password": str((credentials or {}).get("password") or ""), "source": "directory-link", "remember": True},
         "presentation": {"description": str(row.get("description") or ""), "tags": list(row.get("tags") or []),
-                         "icon_b64": str(row.get("icon_b64") or ""), "banner_b64": str(row.get("banner_b64") or ""), "mod_badges": []},
+                         "icon_b64": str(row.get("icon_b64") or ""), "banner_b64": str(row.get("banner_b64") or ""),
+                         "mod_badges": list(row.get("mod_badges") or [])},
+        "mod_metadata": list(row.get("mod_summary") or []),
+        "manifest_cache": {"mod_badges": list(row.get("mod_badges") or []), "mod_summary": list(row.get("mod_summary") or [])},
         "classification": classification,
         "shared": {"source": "directory-link", "source_id": str(row.get("id") or ""), "directory_url": str(row.get("directory_url") or ""),
                    "fingerprint": str(row.get("fingerprint") or ""), "fingerprint_claimed": str(row.get("fingerprint") or ""),
@@ -1017,6 +1020,8 @@ def _detect_local_owner_id() -> dict:
 
 _SERVER_UPDATE_JOBS: dict[str, dict] = {}
 _SERVER_UPDATE_LOCK = threading.RLock()
+_WORLD_SYNC_JOBS: dict[str, dict] = {}
+_WORLD_SYNC_LOCK = threading.RLock()
 
 
 def _set_server_update_job(job_id: str, **patch) -> None:
@@ -1046,6 +1051,24 @@ def _run_server_update_job(job_id: str, install_dir: str, steamcmd_dir: str) -> 
         _set_server_update_job(job_id, status="failed", phase="failed", message=str(exc), error=str(exc))
 
 
+def _set_world_sync_job(job_id: str, **patch) -> None:
+    with _WORLD_SYNC_LOCK:
+        job = _WORLD_SYNC_JOBS.setdefault(job_id, {"id": job_id, "status": "queued", "phase": "connecting", "percent": 0})
+        job.update(patch); job["updated_at"] = time.time()
+
+
+def _run_world_sync_job(job_id: str, world_id: str, action: str) -> None:
+    try:
+        _set_world_sync_job(job_id, status="running", phase="connecting", message="Connecting to the World host", percent=2)
+        response = handle("world.play" if action == "play" else "world.sync", {"id": world_id, "_sync_job_id": job_id})
+        result = response.get("result") if isinstance(response, dict) else {}
+        _set_world_sync_job(job_id, status="complete", phase="ready", message="Profile matched and ready", percent=100,
+                            changed_files=int((result or {}).get("downloaded") or 0), unchanged_files=int((result or {}).get("up_to_date") or 0),
+                            downloaded_bytes=int((result or {}).get("downloaded_bytes") or 0), response=response)
+    except Exception as exc:
+        _set_world_sync_job(job_id, status="failed", phase="failed", message=str(exc), error=str(exc))
+
+
 def handle(method: str, params: dict) -> object:
     state = load_state()
     _ensure_server_install_migrated(state)
@@ -1053,6 +1076,21 @@ def handle(method: str, params: dict) -> object:
 
     if method in ("bootstrap", "state.get"):
         return public_state(state)
+
+    if method == "world.sync.job.start":
+        world_id = str(params.get("id") or "")
+        if not find_world(state, world_id): raise KeyError("World not found")
+        action = "sync" if str(params.get("action") or "play").lower() == "sync" else "play"
+        job_id = secrets.token_hex(12)
+        _set_world_sync_job(job_id, status="queued", phase="connecting", message="Sync queued", percent=0)
+        threading.Thread(target=_run_world_sync_job, args=(job_id, world_id, action), daemon=True).start()
+        return {"job_id": job_id, "status": "queued"}
+
+    if method == "world.sync.job.status":
+        job_id = str(params.get("job_id") or "")
+        with _WORLD_SYNC_LOCK: job = deepcopy(_WORLD_SYNC_JOBS.get(job_id) or {})
+        if not job: raise KeyError("World Sync job not found")
+        return job
 
     if method in {"application.communities.list", "application.communities.settings"}:
         application = state.setdefault("application", {})
@@ -1623,6 +1661,9 @@ def handle(method: str, params: dict) -> object:
         return {"result": result, "world": linked, "state": public_state(state)}
 
     if method == "world.discovery.heartbeat":
+        discovery_cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
+        if discovery_cfg.get("heartbeat_enabled", True) is False:
+            return {"published": False, "reason": "World heartbeat is disabled in application settings."}
         if not SHARE.status().get("serving"):
             return {"published": False, "reason": "No active Sync-enabled World."}
         # Co-op Sync is a companion to the retail game, never an independent
@@ -1640,7 +1681,7 @@ def handle(method: str, params: dict) -> object:
                 _private_profile_world(state, active_profile_id).setdefault("status", {})["broadcasting"] = False
             save_state(state)
             return {"published": False, "reason": "Dragonwilds stopped; the Co-Op Sync fingerprint was withdrawn."}
-        cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
+        cfg = discovery_cfg
         payload = SHARE.broadcast_payload()
         payload["world_name"] = payload.get("name") or "World"
         payload["internal_ip"] = payload.get("ip") or ""
@@ -3709,9 +3750,11 @@ def handle(method: str, params: dict) -> object:
 
         latest_hint = (((world.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
         client_runtime = client_runtime_status(game_dir, latest_hint=latest_hint, remote=False)
+        sync_job_id = str(params.get("_sync_job_id") or "")
         result = sync_world(
             world, install_dir, state.get("client", {}).get("client_id") or "client",
-            bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime)
+            bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime,
+            progress=(lambda update: _set_world_sync_job(sync_job_id, status="running", **dict(update or {}))) if sync_job_id else None)
         manifest = result.get("manifest") or {}
         connection = world.setdefault("connection", {})
         _merge_advertised_connection(world, manifest.get("connection") or {})
@@ -3747,6 +3790,10 @@ def handle(method: str, params: dict) -> object:
         # manifest apply, or accept the server-authored managed control file.
         result["client_mods_txt"] = write_client_mods_txt(install_dir, manifest)
         result["direct_connect"] = _write_world_direct_connect(game_dir, world, manifest)
+        if sync_job_id:
+            _set_world_sync_job(sync_job_id, status="running", phase="profile", message="Applying connection and mod settings to the World profile", percent=97,
+                                changed_files=result.get("downloaded") or 0, unchanged_files=result.get("up_to_date") or 0,
+                                downloaded_bytes=result.get("downloaded_bytes") or 0)
 
         if method == "world.play":
             exe = str(application.get("game_exe") or "").strip()
@@ -3766,6 +3813,10 @@ def handle(method: str, params: dict) -> object:
         else:
             _remember_client_connection(state, world)
         save_state(state)
+        if sync_job_id:
+            _set_world_sync_job(sync_job_id, status="running", phase="ready", message="Profile verified and ready to play", percent=99,
+                                changed_files=result.get("downloaded") or 0, unchanged_files=result.get("up_to_date") or 0,
+                                downloaded_bytes=result.get("downloaded_bytes") or 0)
         return {"result": result, "state": public_state(state)}
 
 
@@ -5522,6 +5573,10 @@ def _directory_public_worlds() -> list[dict]:
     for profile in list_server_profiles():
         profile_id = str(profile.get("id") or ""); dedicated = profile.get("dedicated_config") or {}; sync = profile.get("sync_config") or {}
         classification = profile.get("classification") or {}; is_active = profile_id == active_id
+        metadata_cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
+        live_public = SHARE.broadcast_payload() if is_active and SHARE.httpd else {}
+        public_mod_badges = list(live_public.get("mod_badges") or metadata_cache.get("mod_badges") or profile.get("mod_badges") or [])
+        public_mod_summary = list(live_public.get("mod_summary") or metadata_cache.get("mod_summary") or profile.get("mod_summary") or [])
         rows.append({
             "id": profile_id, "world_name": str(profile.get("name") or "World"), "description": str(profile.get("description") or ""),
             "community_rules": str(profile.get("community_rules") or "")[:4000],
@@ -5538,6 +5593,7 @@ def _directory_public_worlds() -> list[dict]:
                            cl_version_status(profile.get("last_reported_cl"),
                                              ((state.get("application") or {}).get("server_install") or {}).get("expected_cl"))),
             "password_required": bool(dedicated.get("world_pass")), "modded": str(classification.get("content_type") or "vanilla") != "vanilla",
+            "mod_badges": public_mod_badges, "mod_summary": public_mod_summary,
             "game_port": int(dedicated.get("port") or 7777), "sync_port": int(sync.get("port") or 27051),
             "source": "self-hosted-profile", "shared": {"source": "self-hosted-profile", "protocol": WORLD_SYNC_PROTOCOL,
                 "fingerprint": str(sync.get("fingerprint") or profile.get("fingerprint") or ""), "verified": bool(is_active and SHARE.httpd)},

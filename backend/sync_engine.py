@@ -629,7 +629,7 @@ def _entry_materialized(install_dir: Path, game_root: Path, entry: dict) -> bool
 
 
 def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persistent: bool = False,
-               client_runtime: dict | None = None) -> dict:
+               client_runtime: dict | None = None, progress=None) -> dict:
     """Authenticate, exchange manifests, delta-sync, verify, then return launch-ready.
 
     Every invocation deliberately fetches a fresh authenticated server manifest.
@@ -637,6 +637,11 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
     that network exchange. The function returns successfully only after the
     server confirms the final per-file SHA manifest is an exact match.
     """
+    def emit(phase: str, message: str, percent: float, **details) -> None:
+        if progress:
+            progress({"phase": phase, "message": message, "percent": max(0, min(100, round(float(percent), 1))), **details})
+
+    emit("connecting", "Connecting and authenticating with the World host", 3)
     if not install_dir.exists():
         raise ConnectionError(f"Dragonwilds folder does not exist: {install_dir}")
     layout = resolve_client_layout(install_dir)
@@ -648,6 +653,8 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
     client_platform = str(platform_info["platform"])
     # This authenticated manifest exchange happens on every Play/Quick Start.
     route, endpoint, manifest, token, base_url, ping_ms = resolve_verified_manifest(world, client_platform)
+    emit("comparing", "Received the current host manifest; comparing SHA-256 fingerprints", 12,
+         total_files=len(manifest.get("files") or []))
     # A new server filters before transmission. This client-side guard also
     # protects against an older/misconfigured host returning tagged entries.
     manifest["files"] = [entry for entry in (manifest.get("files") or [])
@@ -705,6 +712,9 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
 
     to_remove = [] if fast_manifest_match else [p for p in old_files if p not in remote_files]
     security_reviews = []
+    total_download_bytes = sum(max(0, int(entry.get("size") or 0)) for entry in to_download)
+    emit("comparing", f"{len(up_to_date)} unchanged; {len(to_download)} update(s) and {len(to_remove)} removal(s) required", 20,
+         total_files=len(remote_files), unchanged_files=len(up_to_date), changed_files=len(to_download), removed_files=len(to_remove), total_bytes=total_download_bytes)
 
     def review_download(path: Path, manifest_path: str) -> None:
         review = defender_scan(path)
@@ -717,13 +727,20 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
             path.unlink(missing_ok=True)
             raise ConnectionError(f"Microsoft Defender blocked the downloaded payload: {manifest_path}")
 
-    for entry in to_download:
+    downloaded_bytes = 0
+    for index, entry in enumerate(to_download, 1):
+        entry_size = max(0, int(entry.get("size") or 0))
+        transfer_percent = 22 + (44 * (index - 1) / max(1, len(to_download)))
+        emit("downloading", f"Downloading {entry['path']}", transfer_percent, current_file=entry["path"],
+             current=index, changed_files=len(to_download), unchanged_files=len(up_to_date), downloaded_bytes=downloaded_bytes, total_bytes=total_download_bytes)
         if entry.get("kind", "file") == "zip_bundle":
             temp = game_root / LOCAL_STATE_DIR / "downloads" / (Path(entry["path"]).name + ".download")
             download_entry(base_url, token, entry, temp, client_platform)
             review_download(temp, entry["path"])
             extract_to = str(entry.get("extract_to") or "")
             destination = safe_game_path(game_root, extract_to) if extract_to else game_root
+            emit("unpacking", f"Unpacking {entry['path']}", min(72, transfer_percent + 2), current_file=entry["path"],
+                 current=index, changed_files=len(to_download), unchanged_files=len(up_to_date))
             safe_extract_zip(temp, destination)
             temp.unlink(missing_ok=True)
         else:
@@ -737,7 +754,14 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
             os.replace(staged, target)
             if str(entry.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
                 _set_managed_readonly(target, True)
+        downloaded_bytes += entry_size
+        emit("applying", f"Applied {entry['path']} to the active profile", 22 + (50 * index / max(1, len(to_download))),
+             current_file=entry["path"], current=index, changed_files=len(to_download), unchanged_files=len(up_to_date),
+             downloaded_bytes=downloaded_bytes, total_bytes=total_download_bytes)
 
+    if to_remove:
+        emit("applying", f"Removing {len(to_remove)} file(s) no longer present on the host", 76,
+             changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
     for relative in to_remove:
         if keep_core_persistent and is_core_persistent_path(relative):
             continue
@@ -770,6 +794,8 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
 
     # Server confirmation is the final transfer gate. Do not mark the local
     # fingerprint as current until the server agrees every required SHA matches.
+    emit("verifying", "Verifying the final file hashes with the host", 88,
+         changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
     report = report_manifest(
         base_url, token,
         [{"path": f["path"], "sha256": f.get("sha256")} for f in manifest.get("files", [])],
@@ -788,6 +814,8 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
         "files": new_files,
     })
     snapshot_client_world(world["id"], install_dir)
+    emit("profile", "Saving the verified World profile snapshot", 94,
+         changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
     return {
         "ok": True,
         "launch_ready": True,
@@ -803,7 +831,9 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
         "client_platform": platform_info,
         "report": report,
         "downloaded": len(to_download),
-        "downloaded_bytes": sum(max(0, int(entry.get("size") or 0)) for entry in to_download),
+        "downloaded_bytes": total_download_bytes,
+        "changed_files": [entry.get("path") for entry in to_download],
+        "unchanged_files": list(up_to_date),
         "removed": len(to_remove),
         "up_to_date": len(up_to_date),
         "security": {

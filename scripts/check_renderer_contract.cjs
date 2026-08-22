@@ -41,11 +41,12 @@ assert(localProfileSync.includes('profile.local_sync.configure') && localProfile
 assert(popupSafety.includes("event.key!=='Escape'") && popupSafety.includes('data-popup-safety-close') &&
   popupSafety.includes('closeModPopup') && popupSafety.includes('event.target===popup'),
   'Every modal popup must support a close control, Escape, backdrop dismissal, and placard-specific cleanup.');
-assert(source.includes('recommended-mod-card recommended-mod-placard') && source.includes('recommended-mod-platform-link ${providerKey}') &&
-  source.includes('aria-label="Open ${escapeHtml(mod.name||\'mod\')} on ${escapeHtml(provider)}"') &&
-  recommendedPlacardsCss.includes('grid-template-columns:minmax(190px,38%) minmax(0,1fr)!important') &&
-  recommendedPlacardsCss.includes('object-fit:cover!important'),
-  'Recommended mods must render as banner-led placards whose platform icon directly opens the source mod page.');
+assert(source.includes('recommended-mod-card recommended-mod-placard has-placard ${providerKey}') &&
+  source.includes('recommended-mod-watermark') && source.includes('>View Details</button>') &&
+  !source.includes('class="recommended-mod-media"') &&
+  recommendedPlacardsCss.includes('var(--world-placard) center/cover no-repeat') &&
+  recommendedPlacardsCss.includes('opacity:.12'),
+  'Recommended mods must use local placard artwork, a faded provider watermark, and a View Details action.');
 
 assert(source.includes('data-webhost-tab="home">Server Directory') &&
   source.includes('data-webhost-tab="remote">Remote Login &amp; Permissions'),
@@ -119,6 +120,10 @@ assert(source.includes('startBackgroundRefreshScheduler();') &&
   !source.includes('serverMetricsTimer') &&
   !source.includes('directoryAdminSyncTimer'),
   'Visible background data must use one coordinated, route-aware scheduler.');
+assert(source.includes("api.invoke('world.sync.job.start'") && source.includes("api.invoke('world.sync.job.status'") &&
+  source.includes("['connecting','comparing','downloading','unpacking','applying','verifying','profile','ready']") &&
+  baseCss.includes('.operation-progress-track') && baseCss.includes('.operation-phases'),
+  'World connection must show pollable download, unpack, profile apply, verification, and ready progress.');
 assert(source.includes('function hostingFocusActive()') &&
   source.includes('document.body.dataset.hostingFocus') &&
   source.includes("['characters','mods','rsdw-l'].includes(value)") &&

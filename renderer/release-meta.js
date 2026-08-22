@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.5.0',
-  name: 'V2.5 · Connected Worlds, Mod Library & WebHost',
+  version: '2.6.0',
+  name: 'V2.6 · Connected Worlds, Live Sync Progress & Mod Discovery',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,8 +9,8 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
-    version: '2.5.0',
-    title: 'Connected Worlds, Community Metadata, and Shared Mod Management',
+    version: '2.6.0',
+    title: 'Verified Connections, Complete Mod Discovery, and Live Delta Sync Progress',
     items: [
       'One World Management workspace covers Singleplayer, Co-Op, dedicated, manifest, and favorited Worlds with clear mode/source banners, save discovery, conversion, Game Setup, and Server Setup.',
       'Vortex-style World profiles live under LocalAppData/DragonwildsSync/profiles/world and retain recoverable metadata, configuration, UE4SS/RuneSchema mods, PAKs, managed files, and activeworld identity for full profile exchange.',

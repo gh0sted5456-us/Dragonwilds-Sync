@@ -469,6 +469,9 @@ def _remote_advertisement_for_state(state: dict, payload: dict | None = None) ->
 
 
 def _heartbeat(state: dict) -> dict:
+    discovery_cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
+    if discovery_cfg.get("heartbeat_enabled", True) is False:
+        return {"published": False, "reason": "World heartbeat is disabled in application settings."}
     if not _legacy.SHARE.status().get("serving"):
         return {"published": False, "reason": "No active Sync-enabled World."}
     active_profile_id = str(_legacy.STATE.active_profile_id or "")
@@ -484,7 +487,7 @@ def _heartbeat(state: dict) -> dict:
         _legacy.save_state(state)
         return {"published": False, "reason": "Dragonwilds stopped; the Co-Op Sync fingerprint was withdrawn."}
 
-    cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
+    cfg = discovery_cfg
     _ensure_external_remote_default(state)
     payload = _legacy.SHARE.broadcast_payload()
     payload["world_name"] = payload.get("name") or "World"

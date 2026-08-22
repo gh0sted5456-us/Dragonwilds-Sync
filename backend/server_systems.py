@@ -1102,10 +1102,27 @@ class SyncState:
             issued = self.pending_nonces.pop(nonce, None)
             if issued is None or time.time() - issued > NONCE_TTL_SECONDS:
                 return None
+            active_profile_id = str(self.active_profile_id or "")
+            runtime_password = str(self.password or "")
+        passwords = [runtime_password]
+        if active_profile_id:
+            # The profile file is authoritative. A server can remain running
+            # while its World Password is edited, so do not leave the worker
+            # stuck with the credential captured when it first started.
+            profile = load_server_profile(active_profile_id) or {}
+            dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
+            sync = profile.get("sync_config") if isinstance(profile.get("sync_config"), dict) else {}
+            profile_password = str(dedicated.get("world_pass") if "world_pass" in dedicated else sync.get("password") or "")
+            if profile_password not in passwords:
+                passwords.append(profile_password)
+        accepted_password = next((candidate for candidate in passwords if hmac.compare_digest(
+            hmac.new(candidate.encode(), nonce.encode(), hashlib.sha256).hexdigest(), proof
+        )), None)
+        if accepted_password is None:
+            return None
+        with self.lock:
             scope = "world-sync"
-            expected = hmac.new(self.password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
-            if not hmac.compare_digest(expected, proof):
-                return None
+            self.password = accepted_password
             token = secrets.token_hex(16)
             self.tokens.add(token)
             self.token_sources[token] = {"credential_source": source, "auth_mode": mode, "scope": scope, "client_ip": str(client_ip or ""), "issued_at": time.time()}
@@ -1446,6 +1463,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                     "console_policy": STATE.manifest.get("console_policy") or {},
                     "tags": STATE.manifest.get("tags") or [],
                     "mod_badges": STATE.manifest.get("mod_badges") or [],
+                    "mod_summary": STATE.manifest.get("mod_summary") or [],
                     "icon_b64": STATE.manifest.get("icon_b64") or "",
                     "banner_b64": STATE.manifest.get("banner_b64") or "",
                     "rating_average": STATE.manifest.get("rating_average") or 0,
@@ -1633,7 +1651,12 @@ class Broadcaster:
         try: sock6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         except OSError: sock6 = None
         while not self.stop_event.is_set():
-            payload = json.dumps(self.get_info()).encode()
+            full_info = self.get_info()
+            wire_info = dict(full_info)
+            wire_info["mod_count"] = len(full_info.get("mod_summary") or [])
+            wire_info["mod_inventory_endpoint"] = "/identity"
+            wire_info.pop("mod_summary", None)
+            payload = json.dumps(wire_info).encode()
             try: sock4.sendto(payload, ("255.255.255.255", DISCOVERY_PORT))
             except OSError: pass
             if query:
@@ -1676,7 +1699,23 @@ def scan_for_servers(timeout: float = 3.0) -> list[dict]:
                 found[(ip, port)] = {**info, "ip": ip, "port": port}
             except (socket.timeout, OSError, ValueError, json.JSONDecodeError): pass
     for s in sockets: s.close()
-    return list(found.values())
+    results = list(found.values())
+    for info in results:
+        host = str(info.get("ip") or "").split("%", 1)[0]
+        port = int(info.get("sync_port") or info.get("port") or SYNC_PORT_DEFAULT)
+        address = f"[{host}]" if ":" in host else host
+        try:
+            with urllib.request.urlopen(f"http://{address}:{port}/identity", timeout=2.5) as response:
+                identity = json.loads(response.read(16 * 1024 * 1024))
+            for key in ("description", "classification", "audience", "platform_compatibility", "tags", "mod_badges",
+                        "mod_summary", "icon_b64", "banner_b64", "placard_background", "community", "community_rules"):
+                if key in identity:
+                    info[key] = identity[key]
+            info["mod_count"] = len(info.get("mod_summary") or [])
+            info["mod_inventory_complete"] = True
+        except (OSError, ValueError, json.JSONDecodeError):
+            info["mod_inventory_complete"] = False
+    return results
 
 
 def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]) -> dict:
@@ -1834,6 +1873,8 @@ class ShareServer:
                     "fingerprint": str(world_sync.get("fingerprint") or STATE.manifest.get("launcher_fingerprint") or ""),
                     "lan_trust": bool(STATE.lan_trust_enabled),
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
+                    "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "classification", "client_required", "version", "author", "tags") if row.get(key) not in (None, "")}
+                                    for row in (STATE.manifest.get("mod_summary") or []) if isinstance(row, dict)],
                     "tags": STATE.manifest.get("tags") or [],
                     "description": str(STATE.manifest.get("description") or "")[:300],
                     "classification": STATE.manifest.get("classification") or {},
@@ -2202,14 +2243,17 @@ def configure_shared_firewall(sync_port: int, game_port: int | None = None, *,
     if os.name != "nt":
         return {
             "ok": True, "managed": False, "platform": "linux", "sync_port": sync_port, "game_port": game_port,
-            "message": "Linux firewall policy was not changed. Open the TCP Sync and UDP game ports with the host's firewall/router tooling.",
+            "message": "Linux firewall policy was not changed. Open TCP Sync, LocalSubnet UDP Sync discovery, and the UDP game port with the host's firewall tooling.",
         }
     sync_spec = firewall_spec("world_sync", sync_port, program=backend_program(), mode=sync_mode or mode, instance_id=instance_id)
+    discovery_spec = {**sync_spec, "display_name": f"{sync_spec['display_name']} - LAN Discovery",
+                      "protocol": "UDP", "profiles": "Domain,Private", "remote_address": "LocalSubnet"}
     game_spec = firewall_spec("dedicated_game", game_port, program=game_program, mode=game_mode or mode, instance_id=instance_id)
     sync_result = apply_firewall_spec(sync_spec)
+    discovery_result = apply_firewall_spec(discovery_spec)
     game_result = apply_firewall_spec(game_spec)
-    return {"ok": bool(sync_result.get("ok") and game_result.get("ok")), "sync_port": sync_port,
-            "game_port": game_port, "mode": mode, "rules": [sync_result, game_result]}
+    return {"ok": bool(sync_result.get("ok") and discovery_result.get("ok") and game_result.get("ok")), "sync_port": sync_port,
+            "game_port": game_port, "mode": mode, "rules": [sync_result, discovery_result, game_result]}
 
 
 def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manual",
@@ -2224,12 +2268,14 @@ def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manu
     if os.name != "nt":
         return {
             "ok": True, "managed": False, "platform": "linux", "sync_ports": sync, "game_ports": game,
-            "message": "Linux firewall policy was not changed. Open the listed TCP Sync and UDP game ports with the host's firewall/router tooling.",
+            "message": "Linux firewall policy was not changed. Open the listed TCP Sync, LocalSubnet UDP Sync discovery, and UDP game ports with the host's firewall tooling.",
         }
     results = []
     for index, port in enumerate(sync, 1):
-        results.append(apply_firewall_spec(firewall_spec("world_sync", port, program=backend_program(),
-                                                        mode=mode, instance_id=f"server-{index}")))
+        sync_spec = firewall_spec("world_sync", port, program=backend_program(), mode=mode, instance_id=f"server-{index}")
+        results.append(apply_firewall_spec(sync_spec))
+        results.append(apply_firewall_spec({**sync_spec, "display_name": f"{sync_spec['display_name']} - LAN Discovery",
+                                            "protocol": "UDP", "profiles": "Domain,Private", "remote_address": "LocalSubnet"}))
     for index, port in enumerate(game, 1):
         results.append(apply_firewall_spec(firewall_spec("dedicated_game", port, program=game_program,
                                                         mode=mode, instance_id=f"server-{index}")))

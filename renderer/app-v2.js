@@ -759,7 +759,10 @@
 
   function operationMarkup() {
     if (!state.operation) return '';
-    return `<div class="operation-banner" role="status" aria-live="polite"><span class="operation-spinner" aria-hidden="true"></span><div><strong>${escapeHtml(state.operation.title)}</strong><small>${escapeHtml(state.operation.detail || 'This may take a moment. The application is still working.')}</small></div></div>`;
+    const operation=state.operation,percent=Math.max(0,Math.min(100,Number(operation.percent||0)));
+    const phases=['connecting','comparing','downloading','unpacking','applying','verifying','profile','ready'];const active=Math.max(0,phases.indexOf(operation.phase||'connecting'));
+    const counts=Number.isFinite(Number(operation.changed_files))?`<span>${Number(operation.changed_files||0)} changed</span><span>${Number(operation.unchanged_files||0)} unchanged</span>${operation.downloaded_bytes?`<span>${formatBytes(operation.downloaded_bytes)} transferred</span>`:''}`:'';
+    return `<div class="operation-banner detailed" role="status" aria-live="polite"><span class="operation-spinner" aria-hidden="true"></span><div class="operation-progress-copy"><strong>${escapeHtml(operation.title)}</strong><small data-operation-detail>${escapeHtml(operation.detail || 'This may take a moment. The application is still working.')}</small><div class="operation-progress-track"><i data-operation-progress style="width:${percent}%"></i></div><div class="operation-phases">${phases.map((phase,index)=>`<span data-operation-phase="${phase}" class="${index<active?'complete':index===active?'active':''}">${phase==='profile'?'Profile':phase[0].toUpperCase()+phase.slice(1)}</span>`).join('')}</div><div class="operation-counts" data-operation-counts>${counts}</div></div><b data-operation-percent>${Math.round(percent)}%</b></div>`;
   }
 
   async function runOperation(title, detail, task) {
@@ -2590,6 +2593,26 @@
     return { fingerprint, claimed, verified };
   }
 
+  function updateOperationProgress(job) {
+    if(!state.operation)return;Object.assign(state.operation,{phase:job.phase||state.operation.phase,percent:Number(job.percent||0),detail:job.message||state.operation.detail,changed_files:job.changed_files,unchanged_files:job.unchanged_files,downloaded_bytes:job.downloaded_bytes});
+    const banner=root.querySelector('.operation-banner');if(!banner)return;
+    const detail=banner.querySelector('[data-operation-detail]');if(detail)detail.textContent=state.operation.detail||'';
+    const bar=banner.querySelector('[data-operation-progress]');if(bar)bar.style.width=`${Math.max(0,Math.min(100,state.operation.percent||0))}%`;
+    const percent=banner.querySelector('[data-operation-percent]');if(percent)percent.textContent=`${Math.round(state.operation.percent||0)}%`;
+    const phases=['connecting','comparing','downloading','unpacking','applying','verifying','profile','ready'],active=Math.max(0,phases.indexOf(state.operation.phase||'connecting'));
+    banner.querySelectorAll('[data-operation-phase]').forEach((node,index)=>{node.classList.toggle('complete',index<active);node.classList.toggle('active',index===active);});
+    const counts=banner.querySelector('[data-operation-counts]');if(counts&&Number.isFinite(Number(job.changed_files)))counts.innerHTML=`<span>${Number(job.changed_files||0)} changed</span><span>${Number(job.unchanged_files||0)} unchanged</span>${job.downloaded_bytes?`<span>${formatBytes(job.downloaded_bytes)} transferred</span>`:''}`;
+  }
+
+  async function runWorldSyncJob(world, action='play') {
+    if(state.operation)throw new Error(`${state.operation.title} is already in progress.`);
+    state.operation={title:action==='play'?'Synchronizing & launching World':'Synchronizing World',detail:'Connecting to the World host…',phase:'connecting',percent:0};render();
+    try{
+      const started=await api.invoke('world.sync.job.start',{id:world.id,action});const jobId=started.job_id;if(!jobId)throw new Error('World Sync did not return a job identifier.');
+      while(true){await new Promise(resolve=>setTimeout(resolve,250));const job=await api.invoke('world.sync.job.status',{job_id:jobId});updateOperationProgress(job);if(job.status==='failed')throw new Error(job.error||job.message||'World Sync failed.');if(job.status==='complete')return job.response;}
+    }finally{state.operation=null;render();}
+  }
+
   function worldSaveDownloadPolicy(world) {
     const candidates=[world?.status?.world_save_download,world?.manifest_cache?.world_save_download,world?.shared?.world_save_download];
     const source=candidates.find((value)=>value&&typeof value.enabled==='boolean')||{};
@@ -2972,23 +2995,17 @@
   }
 
   function recommendedModCardMarkup(mod, target='all') {
-    const media=state.recommendationMedia[String(mod.mod_id||'')]||{};
-    const banner=String(mod.banner_url||mod.artwork_url||media.banner_url||media.picture_url||(Array.isArray(media.picture_urls)?media.picture_urls[0]:'')||mod.icon_url||media.icon_url||'assets/placards/2.png').trim();
-    const icon=String(mod.icon_url||media.icon_url||'assets/mod-icon.png').trim();
     const providerKey=/steam/i.test(String(mod.source_name||mod.provider||mod.page_url||''))?'steam':'nexus';
     const provider=providerKey==='steam'?'Steam Workshop':'Nexus Mods';
     const install=recommendationInstallStatus(mod,target);
-    return `<article class="recommended-mod-card recommended-mod-placard" data-recommended-url="${escapeHtml(mod.page_url||'')}"><div class="recommended-mod-media"><img src="${escapeHtml(banner)}" alt="${escapeHtml(mod.name||'Mod')} banner" loading="lazy"/></div><div class="recommended-mod-placard-body"><div class="recommended-mod-identity"><div class="recommended-mod-icon"><span aria-hidden="true">MOD</span><img src="${escapeHtml(icon)}" alt="${escapeHtml(mod.name||'Mod')} icon" loading="lazy"/></div><div class="recommended-mod-copy"><strong>${escapeHtml(mod.name||'Mod')}</strong><small>by ${escapeHtml(mod.author||provider)}</small><span>${escapeHtml(install.version)}</span></div></div><div class="recommended-mod-actions"><span class="status-pill ${install.className}">${escapeHtml(install.label)}</span><button type="button" class="recommended-mod-platform-link ${providerKey}" data-recommended-open="${escapeHtml(mod.page_url||'')}" aria-label="Open ${escapeHtml(mod.name||'mod')} on ${escapeHtml(provider)}" title="Open on ${escapeHtml(provider)}">${platformLogo(providerKey,provider)}<span>${escapeHtml(provider)}</span></button></div></div></article>`;
+    const placard=String(mod.placard_background||((Number(mod.mod_id)||mod.name?.length||1)%10)+1);
+    return `<article class="recommended-mod-card recommended-mod-placard has-placard ${providerKey}" style="--world-placard:url('assets/placards/${escapeHtml(placard)}.png')" data-recommended-url="${escapeHtml(mod.page_url||'')}"><div class="recommended-mod-watermark" aria-hidden="true">${platformLogo(providerKey,provider)}</div><div class="recommended-mod-copy"><strong>${escapeHtml(mod.name||'Mod')}</strong><small>by ${escapeHtml(mod.author||provider)}</small><span>${escapeHtml(install.version)}</span></div><div class="recommended-mod-actions"><span class="status-pill ${install.className}">${escapeHtml(install.label)}</span><button type="button" class="btn ghost compact-btn" data-recommended-open="${escapeHtml(mod.page_url||'')}" aria-label="View details for ${escapeHtml(mod.name||'mod')}">View Details</button></div></article>`;
   }
   function queueRsdwAvatarPreview(avatarState){if(avatarState)state.rsdwPendingAvatar=avatarState;state.rsdwPreviewPending=true;const button=root?.querySelector?.('#rsdw-see-changes');if(button)button.disabled=false;}
 
   function hydrateRecommendationMedia() {
-    if(hostingFocusActive()&&activeComputerProfile().reduce_background_work!==false)return;
-    if(state.recommendationMediaBusy || !state.nexusStatus?.connected || typeof window.dragonwilds?.nexusMod!=='function')return;
-    const rows=(state.data?.application?.recommended_mods?.mods||[]).filter((mod)=>Number(mod.mod_id)>0&&!mod.banner_url&&!mod.artwork_url&&!Object.prototype.hasOwnProperty.call(state.recommendationMedia,String(mod.mod_id))).slice(0,8);
-    if(!rows.length)return;
-    state.recommendationMediaBusy=true;
-    Promise.allSettled(rows.map(async(mod)=>{const id=String(mod.mod_id);try{state.recommendationMedia[id]=await window.dragonwilds.nexusMod(Number(mod.mod_id));}catch(_){state.recommendationMedia[id]=false;}})).finally(()=>{state.recommendationMediaBusy=false;if(document.querySelector('.recommended-mod-card'))render();});
+    // Recommendation placards intentionally use local artwork. Remote Nexus
+    // media caused late layout shifts and repainted the current workspace.
   }
 
   function placardBackgroundPicker(value='1', name='placard-background') {
@@ -3032,7 +3049,7 @@
     const directConnectPlacard=view==='list'
       ? '<button class="world-list-row add-world-list-row" id="add-world-card"><div class="world-list-icon"><span>＋</span></div><div class="world-list-main"><div class="world-list-title"><h3>Connect to World</h3><span class="status-pill unknown">DIRECT</span></div><div class="world-list-meta"><span>New or saved remote server</span><span>Address and credentials</span><span>Game port and World Sync endpoint</span></div></div><div></div><strong>CONNECT</strong></button>'
       : '<button class="add-world-card direct-connect-placard" id="add-world-card"><div><div class="plus">+</div><strong>Connect to World</strong><div style="font-size:10px;margin-top:5px;color:#7f8783">Enter a new server address, credentials, game port, and World Sync endpoint</div></div></button>';
-    return `<div class="content"><div class="page-header"><div><div class="eyebrow">Save-driven profiles</div><h1>World Management</h1><div class="page-subtitle">Singleplayer, Co-Op, and Dedicated Server are operating modes of the same World profile. Save filenames remain the authoritative default names.</div></div><div class="header-actions"><div class="world-view-toggle"><button class="btn ${view==='cards'?'primary':'ghost'} compact-btn" data-world-management-view="cards">▦</button><button class="btn ${view==='list'?'primary':'ghost'} compact-btn" data-world-management-view="list">☰</button></div><button class="btn ghost" id="create-private-world">+ Local World</button><button class="btn primary" id="add-server-world">+ Dedicated World</button></div></div>${tabs}<section class="${view==='list'?'world-list':'world-grid'}">${directConnectPlacard}${cards}${!rows.length?'<div class="empty-state">No local or dedicated World profiles were found. Direct Connect remains available above, or open Game Setup to select a root folder and rescan.</div>':''}</section>${rows.length?`<nav class="world-pagination"><span>Showing ${(page-1)*10+1}–${Math.min(rows.length,page*10)} of ${rows.length} · 10 per page</span><div><button class="btn ghost compact-btn" data-world-management-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><b>Page ${page} of ${pageCount}</b><button class="btn ghost compact-btn" data-world-management-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button></div></nav>`:''}</div>`;
+    return `<div class="content"><div class="page-header"><div><div class="eyebrow">Save-driven profiles</div><h1>World Management</h1><div class="page-subtitle">Singleplayer, Co-Op, and Dedicated Server are operating modes of the same World profile. Save filenames remain the authoritative default names.</div></div><div class="header-actions"><div class="world-view-toggle"><button class="btn ${view==='cards'?'primary':'ghost'} compact-btn" data-world-management-view="cards">▦</button><button class="btn ${view==='list'?'primary':'ghost'} compact-btn" data-world-management-view="list">☰</button></div><button class="btn ghost" id="create-private-world">+ Local World</button><button class="btn ghost" id="scan-lan-worlds">+ LAN</button><button class="btn primary" id="add-server-world">+ Dedicated World</button></div></div>${tabs}<section class="${view==='list'?'world-list':'world-grid'}">${directConnectPlacard}${cards}${!rows.length?'<div class="empty-state">No local or dedicated World profiles were found. Direct Connect remains available above, or open Game Setup to select a root folder and rescan.</div>':''}</section>${rows.length?`<nav class="world-pagination"><span>Showing ${(page-1)*10+1}–${Math.min(rows.length,page*10)} of ${rows.length} · 10 per page</span><div><button class="btn ghost compact-btn" data-world-management-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><b>Page ${page} of ${pageCount}</b><button class="btn ghost compact-btn" data-world-management-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button></div></nav>`:''}</div>`;
   }
 
   function sharedPackageCard(record) {
@@ -6820,6 +6837,9 @@
             identity: { world_name: item.name || 'Dragonwilds World' }, nickname: '',
             connection: { internal_ip: internalIp, external_ip: external, preference: 'internal', sync_port: syncPort, game_port: gamePort },
             credentials: { password: '', source: 'lan', remember: true },
+            presentation: { description:String(item.description||''), tags:item.tags||[], mod_badges:item.mod_badges||[] },
+            mod_metadata: item.mod_summary||[],
+            manifest_cache: { mod_badges:item.mod_badges||[], mod_summary:item.mod_summary||[] },
             shared: { source:'lan', fingerprint:String(item.fingerprint||''), protocol:String(item.protocol||'dragonwilds-world-sync'), protocol_version:Number(item.protocol_version||1) },
           });
           if (created) state.data = created;
@@ -6830,7 +6850,7 @@
         }
         if (existing?.id && item.fingerprint) {
           try {
-            state.data = await api.invoke('world.update', { id:existing.id, shared:{ source:'lan', fingerprint:String(item.fingerprint), protocol:String(item.protocol||'dragonwilds-world-sync'), protocol_version:Number(item.protocol_version||1) } });
+            state.data = await api.invoke('world.update', { id:existing.id, presentation:{ description:String(item.description||''), tags:item.tags||[], mod_badges:item.mod_badges||[] }, mod_metadata:item.mod_summary||[], manifest_cache:{mod_badges:item.mod_badges||[],mod_summary:item.mod_summary||[]}, shared:{ source:'lan', fingerprint:String(item.fingerprint), protocol:String(item.protocol||'dragonwilds-world-sync'), protocol_version:Number(item.protocol_version||1) } });
             existing = browserWorlds().find((world)=>String(world.id)===String(existing.id)) || existing;
           } catch (_) { /* metadata refresh below can still validate the endpoint */ }
         }
@@ -7201,10 +7221,10 @@
     state.busy.add(world.id); toast(world.kind === 'singleplayer' ? 'Preparing Private World' : 'Preparing World', world.kind === 'singleplayer' ? 'Activating this World profile, character, mods and settings.' : 'Verifying identity, synchronizing required files, then launching Dragonwilds.');
     try {
       const local=world.kind==='singleplayer';
-      const launch=()=>runOperation(local?'Launching Singleplayer':'Synchronizing & launching World',local?'Activating the selected save, character, settings, and profile mods before Dragonwilds starts…':'Verifying identity, applying client-required PAK, UE4SS and RuneSchema files, checking the final manifest, and launching Dragonwilds…',async()=>{
+      const launch=()=>local?runOperation('Launching Singleplayer','Activating the selected save, character, settings, and profile mods before Dragonwilds starts…',async()=>{
           if(local)await activatePrivateWorldProfile(world,true);
           return api.invoke(local?'singleplayer.play':'world.play',local?{id:world.id,profile_id:world.id}:{id:world.id});
-        });
+        }):runWorldSyncJob(world,'play');
       let response;
       try { response=await launch(); }
       catch(error){

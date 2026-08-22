@@ -75,8 +75,10 @@ for (const token of [
   "runOperation('Restarting hosted World'",
   "runOperation('Starting Co-Op Sync'",
   "runOperation('Stopping Co-Op Sync'",
-  "local?'Launching Singleplayer':'Synchronizing & launching World'",
+  "local?runOperation('Launching Singleplayer'",
 ]) need(app.includes(token), `${token} must use the shared non-overlapping operation guard`);
+need(app.includes("runWorldSyncJob(world,'play')") && app.includes("api.invoke('world.sync.job.status'"),
+  'remote World launch must use the guarded pollable delta-Sync progress job');
 need(app.includes("if (state.operation) throw new Error"), 'overlapping lifecycle/Sync actions must be rejected');
 need(app.includes("const labels = { idle:'Ready', connecting:'Connecting', authenticating:'Validating World', syncing:'Synchronizing Files', verifying:'Verifying Match', launching:'Launching Dragonwilds'"), 'Quick Launch must expose a staged Sync/startup flow');
 

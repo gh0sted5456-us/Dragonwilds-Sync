@@ -224,7 +224,7 @@ def default_state() -> dict:
             "performance": {"hardware_acceleration": True, "renderer_memory_mb": 0},
             "computer_profile": default_computer_profile(),
             "rsdw_cache": {"repo": "RSDWArchive/RSDWTools", "branch": "main", "model_repo": "RSDWArchive/RSDWModel", "model_branch": "main", "refresh_after_updates": True, "auto_refresh": True, "refresh_hours": 24},
-            "world_discovery": {"enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": OFFICIAL_DIRECTORY_URL, "directory_token": "", "directory_sources": [official_directory_source()], "last_refresh_at": None},
+            "world_discovery": {"enabled": True, "heartbeat_enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": OFFICIAL_DIRECTORY_URL, "directory_token": "", "directory_sources": [official_directory_source()], "last_refresh_at": None},
             "recommended_mods": {"creator_feed_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/recommended-mods.json", "community_sources": [], "feeds": [], "mods": [], "last_refresh_at": None, "last_error": "", "nexus_activity_url": "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"},
             "world_directory_host": {"identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": 27080, "public_base_url": "", "directory_enabled": False, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False, "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct", "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
                                      "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "update": True, "refresh": True}}},
@@ -371,6 +371,7 @@ def load_state() -> dict:
     # browser model with a lightweight 30-second metadata cadence.
     discovery = application.setdefault("world_discovery", {})
     discovery.setdefault("enabled", True)
+    discovery.setdefault("heartbeat_enabled", True)
     discovery.setdefault("prefetch_presentation", True)
     discovery.setdefault("refresh_seconds", 30)
     discovery.setdefault("source", "dragonwilds-public")

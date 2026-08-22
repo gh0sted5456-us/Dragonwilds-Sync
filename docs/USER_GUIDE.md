@@ -1,6 +1,6 @@
 # Player and World Owner Guide
 
-This guide describes Dragonwilds Sync `2.5.0`, published in parallel on the
+This guide describes Dragonwilds Sync `2.6.0`, published in parallel on the
 `main` and `testing-ground` release branches.
 
 ## Start safely

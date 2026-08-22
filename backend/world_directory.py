@@ -127,6 +127,9 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "fingerprint_claimed": fingerprint, "host_type": host_type,
         **host_meta, "server_os_badge": server_os_badge(host_meta),
         "mod_badges": [str(value)[:32] for value in (row.get("mod_badges") or [])[:12]],
+        "mod_summary": [{key: value for key in ("key", "name", "kind", "loader", "classification", "client_required", "version", "author", "tags")
+                         if (value := item.get(key)) not in (None, "")}
+                        for item in (row.get("mod_summary") or []) if isinstance(item, dict)],
         "tags": [str(value).strip()[:40] for value in (row.get("tags") or [])[:24] if str(value).strip()],
         "game_tags": [str(value).strip()[:40] for value in (row.get("game_tags") or [])[:24] if str(value).strip()],
         "sync_tags": [str(value).strip()[:40] for value in (row.get("sync_tags") or row.get("tags") or [])[:24] if str(value).strip()],

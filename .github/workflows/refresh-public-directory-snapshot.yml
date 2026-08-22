@@ -79,13 +79,43 @@ jobs:
           echo 'Unable to publish snapshot after three fast-forward retries.' >&2
           exit 1
 
+      - name: Propagate refreshed snapshot to webpage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # GITHUB_TOKEN pushes do not recursively launch workflows. Publish the
+          # generated data to the website branch first, then explicitly dispatch
+          # Pages from that branch in the next step.
+          for attempt in 1 2 3; do
+            echo "Website snapshot publish attempt $attempt/3"
+            git fetch origin webpage
+            git reset --hard origin/webpage
+            cp "$RUNNER_TEMP/public-worlds-fallback.json" website/assets/public-worlds-fallback.json
+
+            if git diff --quiet -- website/assets/public-worlds-fallback.json; then
+              echo 'Public server fallback snapshot is already current on webpage.'
+              break
+            fi
+
+            git add website/assets/public-worlds-fallback.json
+            git commit -m 'Refresh public server fallback snapshot'
+            if git push origin HEAD:webpage; then
+              echo 'Published refreshed snapshot to webpage.'
+              break
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              echo 'Unable to publish snapshot to webpage after three retries.' >&2
+              exit 1
+            fi
+            echo 'webpage advanced while publishing the snapshot; retrying.' >&2
+            sleep $((attempt * 2))
+          done
+
       - name: Deploy refreshed snapshot to GitHub Pages
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Pushes made by GITHUB_TOKEN do not recursively start the Pages push
-          # workflow. workflow_dispatch is the supported exception, so explicitly
-          # dispatch Pages after every successful snapshot validation. This also
-          # repairs a stale Pages deployment when the snapshot itself is unchanged.
-          gh workflow run pages.yml --ref main
-          echo 'Dispatched pages.yml for the current main branch.'
+          gh workflow run pages.yml --ref webpage
+          echo 'Dispatched pages.yml for the webpage branch.'

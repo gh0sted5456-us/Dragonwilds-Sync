@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "2.7.0"
+    assert package["version"].startswith("2.7.")
 
     renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")

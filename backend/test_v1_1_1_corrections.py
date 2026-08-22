@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_packaged_three_examples_are_explicit_resources():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "2.7.0"
+    assert package["version"].startswith("2.7.")
     resources = package["build"]["extraResources"]
     assert {"from": "node_modules/three/examples/jsm", "to": "rsdw-viewer/three/examples/jsm"} in resources
     main = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")

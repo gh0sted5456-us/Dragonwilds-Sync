@@ -69,11 +69,12 @@ def main():
     assert "pip', 'install', '--upgrade'" in text
     assert "windowsHide: true" in ELECTRON_MAIN_V2.read_text(encoding="utf-8")
 
+    package = json.loads(PACKAGE.read_text(encoding="utf-8"))
     build_bat = BUILD_BAT.read_text(encoding="utf-8")
     assert "backend\\dragonwilds_service.py" in build_bat
     assert "scripts\\build_windows.ps1" in build_bat
     assert "pause" in build_bat.lower()
-    assert "Dragonwilds Sync 2.7.0" in build_bat and "Portable Windows Build" in build_bat
+    assert f"Dragonwilds Sync {package['version']}" in build_bat and "Portable Windows Build" in build_bat
     assert "Alpha 3.2" not in build_bat
 
     process_utils = PROCESS_UTILS.read_text(encoding="utf-8")
@@ -107,8 +108,7 @@ def main():
     assert '"--runtime-worker"' in worker_supervisor, "worker spawn must use the same packaged application worker mode"
     assert "DWSYNC_DISABLE_RUNTIME_WORKERS" not in worker_supervisor, "rollback policy belongs above WorkerSupervisor"
 
-    package = json.loads(PACKAGE.read_text(encoding="utf-8"))
-    assert package["version"] == "2.7.0"
+    assert package["version"].startswith("2.7.")
     assert package["devDependencies"]["luaparse"] == "0.3.1"
     assert "scripts/check_ue4ss_lua.cjs" in package["scripts"]["check:renderer"]
     assert package["devDependencies"]["electron"] != "latest"

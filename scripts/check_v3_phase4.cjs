@@ -44,13 +44,14 @@ const renderer = need('renderer/release-v3-phase4.js', [
   'v3p4-placard', 'v3p4-back', 'data-v3p4-toggle', 'Page 1 / 2', 'Open Placard',
   'v3.phase4.world_status', "['full','reduced','off']", 'custom_badges',
   'heartbeatMarkup', 'Partial', 'data-v3p4-animation-settings', '__DWSYNC_V3_PHASE4__',
-  "closest('.v3p4-placard,.app-world-placard')", 'applyPlacardArtwork', '--world-placard',
+  "closest('[data-v3p4-toggle]')", 'applyPlacardArtwork', '--world-placard',
   "card?.dataset?.placardBackground || currentMatch?.[1] || '1'",
   "assets/platforms/ue4ss.png", "assets/platforms/runeschema.png", 'data-v3p4-mod-family',
   'openModsPopup', 'closeModPopup:closeModsPopup', 'No loaded ${esc(family)} mods are recorded for this profile.', "event.key==='Escape'"
   , 'requestProfileModInventory', "'server.world.inventory'", "'singleplayer.inventory'", 'rescan:false',
-  "row.group || ''", 'refreshModIndicators', 'Date.now()-current.at<120000'
+  "row.section || ''", "['Pak','UE4SS','RuneSchema']", 'refreshModIndicators', 'Date.now()-current.at<120000'
 ]);
+if (/const card=event\.target\.closest\('\.v3p4-placard,\.app-world-placard'\)/.test(renderer)) failures.push('Placards must flip only from explicit front/back controls');
 const rendererFolded = renderer.toLowerCase();
 for (const coreMod of ['dragonconnect']) {
   if (!rendererFolded.includes(coreMod)) failures.push(`renderer/release-v3-phase4.js: missing hidden-core-mod guard for ${coreMod}`);

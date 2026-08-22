@@ -85,6 +85,7 @@ class ConnectionTransportTests(unittest.TestCase):
                 "world_name": "Transport World", "internal_ip": "127.0.0.1", "sync_port": port,
                 "mod_badges": identity["mod_badges"], "mod_summary": identity["mod_summary"]})
             self.assertEqual(len(normalized["mod_summary"]), 180)
+            self.assertEqual({row["kind"] for row in normalized["mod_summary"]}, {"pak_mod", "ue4ss_mod", "runeschema_mod"})
         finally:
             if broadcaster:
                 broadcaster.stop()

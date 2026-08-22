@@ -2746,21 +2746,13 @@
     return [...merged.values()];
   }
 
-  function placardModSection(values) {
-    const rows=mergedModSummary(values).slice(0,24);
-    const family=(item)=>String(item.section||item.group||'MOD').replace(/_mod$/i,'').toUpperCase();
-    const requirement=(item)=>String(item.distribution||'').toLowerCase()==='client_required'||String(item.classification||'').toLowerCase()==='player_required'?'CLIENT REQUIRED':'SERVER ONLY';
-    return `<section class="world-back-section world-back-mods"><h4>Mods</h4><div class="world-back-list">${rows.length?rows.map((item)=>`<span class="world-back-mod"><b>${escapeHtml(item.name)}</b><small>${escapeHtml(family(item))} · ${requirement(item)}</small></span>`).join(''):'<span>None published</span>'}</div></section>`;
-  }
-
   function placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel='') {
     const manifest=world?.manifest_cache||{};
-    const mods=mergedModSummary(presentation?.mod_summary,world?.mod_metadata,manifest.mod_summary);
     const categoryTags=new Set(['paks','pak','ue4ss','runeschema','runescheme']);
     const tags=[...(presentation?.game_tags||[]),...(presentation?.sync_tags||[]),...(presentation?.tags||[])].filter((tag)=>!categoryTags.has(String(tag||'').trim().toLowerCase()));
     const rules=String(world?.community_rules||presentation?.community_rules||manifest.community_rules||'').trim();
     const endpoint=!server?String(world?.connection?.external_ip||world?.connection?.internal_ip||'').trim():'';
-    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div>${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}<div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div><div class="world-card-body"><div class="placard-identity">${icon?`<img class="world-icon" src="${icon}" alt=""/>`:`<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}<div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.id||'')}</small></div></div></div><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardModSection(mods)}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer placard-presentation-footer"><div class="card-metrics"><span>Profile presentation</span></div><span class="card-flip-hint">FRONT ↻</span></div></div></section>`;
+    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div>${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}<div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div><div class="world-card-body"><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer placard-presentation-footer"><div class="card-metrics"><span>Profile presentation</span></div><button type="button" class="btn ghost compact-btn card-flip-hint" data-v3p4-toggle="${escapeHtml(world.id)}">FRONT ↻</button></div></div></section>`;
   }
 
   function worldCard(world, server = false) {
@@ -2772,10 +2764,12 @@
     const title = server ? (world.name || 'Hosted World') : (single ? (world.name || world.identity?.world_name || 'Private World') : (world.nickname || world.identity?.world_name || 'World'));
     const authoritative = server ? world.name : world.identity?.world_name;
     const desc = presentation.description || (single ? 'Save-backed local Dragonwilds World.' : 'No World description has been provided yet.');
-    const serverSections=[...new Set((world.mod_metadata||world.manifest_cache?.mod_summary||[]).map((mod)=>String(mod.section||'').toLowerCase()))];
-    const badges = [...new Set((server
-      ? [serverSections.includes('paks')&&'PAKS',serverSections.includes('ue4ss')&&'UE4SS',serverSections.includes('runeschema')&&'RUNESCHEMA'].filter(Boolean)
-      : (single ? ['LOCAL'] : (presentation.mod_badges?.length ? presentation.mod_badges : ['VANILLA']))).map(String))];
+    const modSummary=mergedModSummary(presentation.mod_summary,world.mod_metadata,world.manifest_cache?.mod_summary);
+    const modFamily=(mod)=>String(mod.section||mod.group||mod.kind||mod.type||mod.loader||'').toLowerCase();
+    const modBadges=[modSummary.some((mod)=>modFamily(mod).includes('pak'))&&'PAKS',modSummary.some((mod)=>modFamily(mod).includes('ue4ss'))&&'UE4SS',modSummary.some((mod)=>modFamily(mod).includes('rune'))&&'RUNESCHEMA'].filter(Boolean);
+    const advertised=(presentation.mod_badges||[]).map((badge)=>String(badge).replace(/^runescheme$/i,'RUNESCHEMA'));
+    const badges = [...new Set(single?['LOCAL']:[...modBadges,...advertised])];
+    if(!single&&!badges.length)badges.push('VANILLA');
     const ping = !server && world.status?.ping_ms != null ? `${Math.round(world.status.ping_ms)} ms` : '';
     const players = !server && world.status?.player_count != null ? `${world.status.player_count} players` : '';
     const observed = !server && world.public_history?.provider === 'lobbysup' ? (world.public_history.last_seen ? `Observed ${new Date(world.public_history.last_seen).toLocaleDateString()}` : 'Public history') : '';
@@ -2799,7 +2793,7 @@
       ? (latestRuntime?`<span><b>CPU</b> ${Number(latestRuntime.process_cpu_percent??0).toFixed(1)}%</span><span><b>RAM</b> ${formatBytes(latestRuntime.process_ram_bytes||0)}</span>`:'<span><b>LOAD</b> —</span>')
       : `${ping?`<span><b>PING</b> ${escapeHtml(ping)}</span>`:''}${players?`<span><b>PLAYERS</b> ${escapeHtml(players)}</span>`:''}${observed?`<span title="LobbySup public player history"><b>SEEN</b> ${escapeHtml(observed.replace(/^Observed\s*/,''))}</span>`:''}`;
     return `
-      <article class="world-card app-world-placard has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}" tabindex="0" role="button" aria-label="Flip ${escapeHtml(title)} placard" aria-pressed="false">
+      <article class="world-card app-world-placard has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.png')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}" aria-label="${escapeHtml(title)} placard" aria-pressed="false">
        <div class="world-card-inner"><section class="world-card-face world-card-front">
         <div class="world-mode-banner ${modeTone}">${escapeHtml(connected ? 'CONNECTED WORLD' : modeLabel)}</div>
         ${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}
@@ -2813,7 +2807,7 @@
           </div>
           <div class="card-description">${escapeHtml(desc)}</div>
           <div class="badges placard-front-summary">${placardFrontClassificationMarkup(world,server)}${worldClMarkup(world,server)}${studio?syncBadgeMarkup(world):''}</div>
-          <div class="card-footer placard-presentation-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}</div>${worldRatingMarkup(world)}<span class="card-flip-hint">DETAILS ↻</span></div>
+          <div class="card-footer placard-presentation-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}</div>${worldRatingMarkup(world)}<button type="button" class="btn ghost compact-btn card-flip-hint" data-v3p4-toggle="${escapeHtml(world.id)}">CARD INFO ↻</button></div>
         </div>
        </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel)}</div>
        <div class="placard-runtime-strip" aria-label="World synchronization and load status"><div class="placard-runtime-status"><span class="placard-sync-status"></span>${runtimeStatus}</div><div class="placard-runtime-metrics">${loadStats||'<span><b>LOAD</b> —</span>'}</div></div>
@@ -2866,7 +2860,7 @@
     </article>`;
   }
 
-  function renderWorldGallery() {
+  function renderWorldGallery(managementTabs='') {
     const browser = state.data?.client?.world_browser || {};
     const requestedTab = String(browser.tab || 'directory');
     const tab = requestedTab === 'direct' ? 'direct' : 'directory';
@@ -2928,6 +2922,7 @@
           <div><div class="eyebrow">${wt('eyebrow')}</div><h1>${t('worlds')}</h1><div class="page-subtitle">${wt('subtitle')}</div></div>
           <div class="header-actions"><button class="btn ghost" id="detach-worlds">↗ ${wt('open')}</button><button class="btn ghost" id="scan-lan-worlds">${wt('lan')}</button><button class="btn ghost" id="refresh-worlds">↻ ${wt('refresh')}</button><button class="btn ghost" id="import-world-identity-card">${wt('importWorld')}</button><button class="btn ghost" id="import-profile-rsdwl">${wt('importProfile')}</button><button class="btn primary" id="export-profile-rsdwl">${wt('exportProfile')}</button></div>
         </div>
+        ${managementTabs}
         <nav class="world-source-tabs" aria-label="World source">
           <button class="${tab==='direct'?'active':''}" data-world-tab="direct"><strong>${wt('direct')}</strong><span>${wt('directSub')}</span></button>
           <button class="${tab==='directory'?'active':''}" data-world-tab="directory"><strong>${wt('manifest')}</strong><span>${wt('manifestSub')}</span></button>
@@ -3019,8 +3014,12 @@
   }
 
   function renderWorldManagement() {
-    const tab = ['worlds','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
-    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management sections"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">Worlds</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Setup</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Hosting</button></nav>`;
+    const tab = ['worlds','manifest','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
+    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management sections"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">Worlds</button><button class="${tab==='manifest'?'active':''}" data-world-management-tab="manifest">Manifest</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Setup</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Hosting</button></nav>`;
+    if(tab==='manifest'){
+      state.data.client=state.data.client||{};state.data.client.world_browser=state.data.client.world_browser||{};state.data.client.world_browser.tab='directory';
+      return renderWorldGallery(tabs);
+    }
     if (tab === 'game-setup') {
       const cfg=state.data?.application||{}, layout=state.data?.singleplayer?.layout||{};
       return `<div class="content"><div class="page-header"><div><div class="eyebrow">World Management · /Game</div><h1>Game Setup</h1><div class="page-subtitle">Update the live Dragonwilds client association here. The selected root resolves UE4SS, RuneSchema, PAK, configuration, and save locations.</div></div></div>${tabs}<section class="panel"><div class="panel-header"><div><h2>Dragonwilds Client Paths</h2><span class="panel-subtitle">Choose a Steam library, game folder, inner RSDragonwilds folder, or exact executable.</span></div></div><div class="panel-body"><div class="form-grid"><label class="form-group full"><span>Game directory</span><div class="path-field"><input class="field" id="wm-game-dir" value="${escapeHtml(cfg.game_dir||'')}" placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\RuneScape Dragonwilds"/><button class="btn ghost" id="wm-pick-game-dir">Browse</button></div></label><label class="form-group full"><span>Game executable</span><div class="path-field"><input class="field" id="wm-game-exe" value="${escapeHtml(cfg.game_exe||layout.game_exe||'')}" placeholder="RSDragonwilds.exe"/><button class="btn ghost" id="wm-pick-game-exe">Browse</button></div></label></div><div class="header-actions"><button class="btn primary" id="wm-save-game-paths">Save &amp; Validate /Game</button><button class="btn ghost" id="rescan-game-worlds">Rescan Worlds &amp; Mods</button></div><div class="identity-box"><strong>Path changes are explicit</strong><p>Saving validates the selected client tree before replacing the application’s current /Game association. Existing World Profiles remain in application storage.</p></div>${recommendedModsMarkup('client')}</div></section></div>`;
@@ -4049,6 +4048,7 @@
     const routedWebhost = state.route === 'webhost';
     const routedRemote = state.route === 'remote-server';
     const routedServers = state.route === 'servers' && state.serversTab === 'settings';
+    const routedMods = state.route === 'mods-app';
     const standaloneHostWorkspace = routedWebhost || routedRemote;
     let topTab = routedServers ? 'server' : (standaloneHostWorkspace ? 'webhost' : (state.settingsTab || 'application'));
     if(!standaloneHostWorkspace&&!routedServers&&!['application','mods','advanced','integrations','about'].includes(topTab))topTab='application';
@@ -4358,8 +4358,8 @@
       <div class="content">
         <div class="page-header"><div><div class="eyebrow">${standaloneHostWorkspace||routedServers?'Advanced Hosting':'System'}</div><h1>${routedServers?t('servers'):(routedWebhost?'Sync':(standaloneRemote?t('remoteServer'):(standaloneWebhost?t('webHosting'):'Settings')))}</h1><div class="page-subtitle">${routedServers?'Configure the shared dedicated-server installation, runtime cores, network benchmark, firewall, and global access policy.':(routedWebhost?'Preview Dragonwilds Sync and configure its independently gated website and Remote Server networking.':(standaloneRemote?'Manage desktop-owned remote users, permissions, audit boundaries, and the responsive login preview.':(standaloneWebhost?'Publish the independent joinable-World directory, manifest API, sharing address, and responsive public preview.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.')))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">↗ Open in Window</button></div></div>
         ${routedServers?'<nav class="settings-subnav server-workspace-tabs"><button data-servers-tab="worlds">Worlds</button><button class="active" data-servers-tab="settings">Server Setup</button></nav>':''}
-        <div class="settings-layout ${standaloneHostWorkspace||routedServers?'webhost-layout':''}">
-          ${standaloneHostWorkspace||routedServers?'':`<nav class="settings-nav">${settingsNav('application','⚙',t('application'))}${settingsNav('mods','▦','Mod Management')}${settingsNav('advanced','◇','Advanced')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('about','ⓘ',t('about'))}</nav>`}
+        <div class="settings-layout ${standaloneHostWorkspace||routedServers||routedMods?'webhost-layout':''}">
+          ${standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav">${settingsNav('application','⚙',t('application'))}${settingsNav('mods','▦','Mod Management')}${settingsNav('advanced','◇','Advanced')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('about','ⓘ',t('about'))}</nav>`}
           <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">${t('application')}</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}<div class="settings-page-note">Changes save to the launcher profile immediately.</div>${content}</div>
         </div>
       </div>`;
@@ -7210,9 +7210,11 @@
   }
 
   function openCreatePrivateWorld() {
-    showModal(`<div class="modal-header"><div><div class="eyebrow">World Management</div><h2>Create World Profile</h2><p>Create another named save-backed profile without overwriting an existing World.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="private-world-name" maxlength="80" placeholder="Building Test World" autofocus/></div><div class="form-group"><label>World Type</label><select class="select" id="private-world-content"><option value="vanilla">Vanilla</option><option value="modded">Modded</option><option value="handmade">Handmade</option><option value="hybrid">Hybrid</option></select></div><div class="form-group"><label>Game Mode</label><select class="select" id="private-world-mode"><option value="normal">Normal</option><option value="hardcore">Hardcore</option><option value="creative">Creative</option><option value="custom">Custom</option></select></div></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-create-private-world">Create World</button></div></div>`, { title: 'Create World Profile' });
+    const populated=privateWorlds();
+    showModal(`<div class="modal-header"><div><div class="eyebrow">World Management</div><h2>Local Worlds</h2><p>Select a populated save-backed World or create a separate profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body">${populated.length?`<section class="settings-section"><label class="form-group full"><span>Populated local Worlds</span><select class="select" id="private-world-existing">${populated.map((world)=>`<option value="${escapeHtml(world.id)}">${escapeHtml(world.name||world.identity?.world_name||'Local World')}</option>`).join('')}</select></label><button class="btn primary" id="open-existing-private-world">Open Selected World</button></section>`:'<div class="empty-state compact">No populated local save profiles were detected yet.</div>'}<section class="settings-section"><h3>Create a new profile</h3><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="private-world-name" maxlength="80" placeholder="Building Test World" autofocus/></div><div class="form-group"><label>World Type</label><select class="select" id="private-world-content"><option value="vanilla">Vanilla</option><option value="modded">Modded</option><option value="handmade">Handmade</option><option value="hybrid">Hybrid</option></select></div><div class="form-group"><label>Game Mode</label><select class="select" id="private-world-mode"><option value="normal">Normal</option><option value="hardcore">Hardcore</option><option value="creative">Creative</option><option value="custom">Custom</option></select></div></div></section></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-create-private-world">Create New World</button></div></div>`, { title: 'Local Worlds' });
     const create=async()=>{const name=modalRoot.querySelector('#private-world-name')?.value.trim()||'';if(!name)return toast('World name required','','error');try{const response=await api.invoke('singleplayer.profile.create',{name,classification:{content_type:modalRoot.querySelector('#private-world-content')?.value||'vanilla',game_mode:modalRoot.querySelector('#private-world-mode')?.value||'normal',host_type:'singleplayer',visibility:'private',declared:true}});if(response.state)state.data=response.state;const world=privateWorldById(response.profile?.id);closeModal();if(world)await managePrivateWorld(world);else render();toast('Private World created',name,'success');}catch(error){toast('Could not create Private World',error.message,'error');}};
     modalRoot.querySelector('#confirm-create-private-world')?.addEventListener('click',create);modalRoot.querySelector('#private-world-name')?.addEventListener('keydown',(e)=>{if(e.key==='Enter')create();});
+    modalRoot.querySelector('#open-existing-private-world')?.addEventListener('click',async()=>{const world=privateWorldById(modalRoot.querySelector('#private-world-existing')?.value||'');if(!world)return;closeModal();await managePrivateWorld(world);});
   }
 
   async function playWorld(world) {

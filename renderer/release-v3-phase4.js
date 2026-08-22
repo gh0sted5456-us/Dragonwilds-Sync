@@ -17,7 +17,7 @@
   const text = (value) => String(value ?? '').trim();
   const asArray = (value) => Array.isArray(value) ? value : [];
   const state = () => (window.__DWSYNC_STATE__ && typeof window.__DWSYNC_STATE__ === 'object') ? window.__DWSYNC_STATE__ : {};
-  const ecosystemAssets = {UE4SS:'assets/platforms/ue4ss.png',RuneSchema:'assets/platforms/runeschema.png'};
+  const ecosystemAssets = {UE4SS:'assets/platforms/ue4ss.png',RuneSchema:'assets/platforms/runeschema.png',Pak:'assets/platforms/paks.svg'};
   const animationMode = () => {
     const value = text(state()?.application?.v3_phase4?.animation_mode || state()?.application?.performance?.animations || 'full').toLowerCase();
     return ['full','reduced','off'].includes(value) ? value : 'full';
@@ -78,7 +78,7 @@
         if (!row) continue;
         const name = text(row.name || row.display_name || row.mod_name || row.id || row.key);
         if (!name || /^dragonconnect$/i.test(name.replace(/\s+/g,''))) continue;
-        const rawType = text(`${row.group || ''} ${row.type || ''} ${row.kind || ''} ${row.loader || ''} ${row.mod_type || ''}`).toLowerCase();
+        const rawType = text(`${row.section || ''} ${row.group || ''} ${row.type || ''} ${row.kind || ''} ${row.loader || ''} ${row.mod_type || ''}`).toLowerCase();
         const type = rawType.includes('rune') ? 'RuneSchema' : rawType.includes('pak') ? 'Pak' : 'UE4SS';
         const role = text(row.runtime_role || row.role || row.scope || 'BOTH').toUpperCase();
         rows.push({name, version:text(row.version || row.mod_version), type, role, required:row.required !== false});
@@ -106,7 +106,7 @@
 
   function ecosystemFamilies(world) {
     const mods=modRows(world); const advertised=asArray(world?.presentation?.mod_badges).map((value)=>text(value).toLowerCase());
-    return ['UE4SS','RuneSchema'].filter((family)=>mods.some((row)=>row.type===family) || (family==='UE4SS'&&!!world?.auto_ue4ss) || (family==='RuneSchema'&&!!world?.auto_runeschema) || advertised.some((value)=>value.replace(/\s+/g,'')===family.toLowerCase()));
+    return ['Pak','UE4SS','RuneSchema'].filter((family)=>mods.some((row)=>row.type===family) || (family==='UE4SS'&&!!world?.auto_ue4ss) || (family==='RuneSchema'&&!!world?.auto_runeschema) || advertised.some((value)=>value.replace(/\s+/g,'')===(family==='Pak'?'paks':family.toLowerCase())));
   }
 
   function ecosystemMarkup(id, world, compact=false) {
@@ -123,7 +123,7 @@
   }
 
   function openModsPopup(id, family) {
-    id=text(id); family=family==='RuneSchema'?'RuneSchema':'UE4SS'; if(!id)return;
+    id=text(id); family=family==='RuneSchema'?'RuneSchema':family==='Pak'?'Pak':'UE4SS'; if(!id)return;
     const key=`${id}:${family}`; const existing=modDialogs.get(key);
     if(existing){window.__DWSYNC_DESKTOP_WINDOWS__?.focus?.(existing);return;}
     const world=findWorld(id)||{id,name:'World'}; const rows=modRows(world).filter((row)=>row.type===family);
@@ -382,12 +382,10 @@
     const closeRow=event.target.closest('[data-v3p4-close-row]'); if(closeRow){event.preventDefault();event.stopPropagation();document.querySelector(`[data-v3p4-row-open="${CSS.escape(closeRow.dataset.v3p4CloseRow)}"]`)?.remove();return;}
     const closeWindow=event.target.closest('[data-v3p4-close-window]'); if(closeWindow){const id=closeWindow.dataset.v3p4CloseWindow;windows.get(id)?.remove();windows.delete(id);return;}
     const minWindow=event.target.closest('[data-v3p4-min-window]'); if(minWindow){windows.get(minWindow.dataset.v3p4MinWindow)?.classList.toggle('minimized');return;}
-    const card=event.target.closest('.v3p4-placard,.app-world-placard'); if(card && !event.target.closest('button,a,input,select,textarea,.v3p4-back-scroll')){event.preventDefault();event.stopPropagation();toggle(card);}
   }, true);
 
   document.addEventListener('keydown',(event)=>{
     if(event.key==='Escape'&&modDialogs.size){[...modDialogs.keys()].forEach(closeModsPopup);return;}
-    if(!['Enter',' '].includes(event.key))return; const card=event.target.closest('.v3p4-placard,.app-world-placard'); if(!card||event.target.closest('button,a,input,select,textarea'))return; event.preventDefault();event.stopPropagation();toggle(card);
   });
 
   document.addEventListener('contextmenu',(event)=>{

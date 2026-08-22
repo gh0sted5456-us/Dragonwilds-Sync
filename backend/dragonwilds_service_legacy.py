@@ -777,6 +777,10 @@ def _apply_metadata_refresh(world: dict, result: dict) -> None:
         "rating_average": metadata.get("rating_average") or 0,
         "rating_count": metadata.get("rating_count") or 0,
     })
+    mod_summary = metadata.get("mod_summary") or remote.get("mod_summary") or []
+    if mod_summary:
+        presentation["mod_summary"] = deepcopy(mod_summary)
+        world["mod_metadata"] = deepcopy(mod_summary)
     world["classification"] = normalize_world_classification(
         metadata.get("classification") or remote.get("classification") or world.get("classification"),
         tags=presentation.get("tags") or [], mod_badges=presentation.get("mod_badges") or [],
@@ -830,6 +834,9 @@ def _apply_identity_preview(world: dict, result: dict) -> None:
         "rating_average": float(identity_payload.get("rating_average") or presentation.get("rating_average") or 0),
         "rating_count": max(0, int(identity_payload.get("rating_count") or presentation.get("rating_count") or 0)),
     })
+    if identity_payload.get("mod_summary"):
+        presentation["mod_summary"] = deepcopy(identity_payload.get("mod_summary") or [])
+        world["mod_metadata"] = deepcopy(identity_payload.get("mod_summary") or [])
     world["classification"] = normalize_world_classification(
         identity_payload.get("classification") or world.get("classification"), tags=presentation.get("tags") or [],
         mod_badges=presentation.get("mod_badges") or [], host_type="public")
@@ -898,6 +905,12 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
         for key in ("tags", "mod_badges"):
             if key in incoming_presentation:
                 base["presentation"][key] = list(incoming_presentation.get(key) or [])
+    if "mod_metadata" in payload:
+        base["mod_metadata"] = deepcopy(payload.get("mod_metadata") or [])
+    else:
+        base.setdefault("mod_metadata", [])
+    if isinstance(payload.get("manifest_cache"), dict):
+        base["manifest_cache"] = deepcopy(payload.get("manifest_cache") or {})
     base["classification"] = normalize_world_classification(
         payload.get("classification") or base.get("classification"), tags=base["presentation"].get("tags") or [],
         mod_badges=base["presentation"].get("mod_badges") or [], host_type=str(payload.get("kind") or "public"))
@@ -3463,11 +3476,37 @@ def handle(method: str, params: dict) -> object:
         payload = deepcopy(params)
         payload.setdefault("credentials", {})
         payload["credentials"].setdefault("source", "manual")
-        world = ensure_world_shape(payload)
+        client = state.setdefault("client", {})
+        incoming_name = str((payload.get("identity") or {}).get("world_name") or "").strip().casefold()
+        incoming_connection = payload.get("connection") or {}
+        incoming_routes = {str(incoming_connection.get(key) or "").strip().casefold() for key in ("internal_ip", "external_ip")}
+        incoming_routes.discard("")
+        incoming_port = int(incoming_connection.get("sync_port") or 27051)
+        incoming_fingerprint = str((payload.get("shared") or {}).get("fingerprint") or "").strip()
+        existing = None
+        for candidate in client.setdefault("worlds", []):
+            candidate_fingerprint = str((candidate.get("shared") or {}).get("fingerprint") or "").strip()
+            candidate_name = str((candidate.get("identity") or {}).get("world_name") or "").strip().casefold()
+            candidate_connection = candidate.get("connection") or {}
+            candidate_routes = {str(candidate_connection.get(key) or "").strip().casefold() for key in ("internal_ip", "external_ip")}
+            candidate_routes.discard("")
+            candidate_port = int(candidate_connection.get("sync_port") or 27051)
+            if (incoming_fingerprint and candidate_fingerprint == incoming_fingerprint) or (
+                    incoming_name and candidate_name == incoming_name and incoming_routes.intersection(candidate_routes) and incoming_port == candidate_port):
+                existing = candidate
+                break
+        if existing is not None and not str((payload.get("credentials") or {}).get("password") or ""):
+            payload["credentials"].pop("password", None)
+        world = ensure_world_shape(payload, existing)
         if not world["identity"]["world_name"]:
             raise ValueError("World Name is required because it is part of positive server identity.")
-        state.setdefault("client", {}).setdefault("worlds", []).append(world)
-        state["client"]["active_world_id"] = world["id"]
+        if existing is None:
+            client["worlds"].append(world)
+        else:
+            existing.clear()
+            existing.update(world)
+            world = existing
+        client["active_world_id"] = world["id"]
         save_state(state)
         return public_state(state)
 
@@ -3642,6 +3681,8 @@ def handle(method: str, params: dict) -> object:
                     "rating_average": manifest.get("rating_average") or 0,
                     "rating_count": manifest.get("rating_count") or 0,
                 }
+                world["presentation"]["mod_summary"] = deepcopy(manifest.get("mod_summary") or [])
+                world["mod_metadata"] = deepcopy(manifest.get("mod_summary") or [])
                 status["manifest_version"] = manifest.get("version")
                 status["network_health"] = manifest.get("network_health") or {}
                 status["server_health"] = manifest.get("server_health") or {}
@@ -3788,6 +3829,8 @@ def handle(method: str, params: dict) -> object:
             "rating_average": manifest.get("rating_average") or 0,
             "rating_count": manifest.get("rating_count") or 0,
         }
+        world["presentation"]["mod_summary"] = deepcopy(manifest.get("mod_summary") or [])
+        world["mod_metadata"] = deepcopy(manifest.get("mod_summary") or [])
         world["status"] = {
             **(world.get("status") or {}), "online": True, "ping_ms": result.get("ping_ms"),
             "manifest_version": manifest.get("version"), "last_checked_at": now_iso(), "last_error": ""}

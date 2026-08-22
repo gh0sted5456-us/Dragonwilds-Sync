@@ -47,9 +47,10 @@ def main():
     assert "dragonwilds-sync-taskbar-mode" in renderer and ".internal-taskbar.icon-mode" in styles
     assert "body:has(.detached-shell) #internal-taskbar { display:none" in styles
 
-    # Mod Explorer is an internal, taskbar-managed editor and replaces its
+    # Mod Editor is an internal, taskbar-managed editor and replaces its
     # spinner with an actionable retry surface on any load error.
-    assert "mod-explorer-modal-body" in renderer and "title:`${name} Mod Explorer`" in renderer
+    assert "mod-explorer-host" in renderer and '<div class="eyebrow">MOD EDITOR</div>' in renderer
+    assert "title:`Dragonwilds Sync · ${name}`" in renderer
     assert "closeDesktopWindow(host.closest('.desktop-window'))" in renderer
     assert "id=\"retry-mod-explorer\"" in renderer and "The loading request failed." in renderer
     assert "!detachedMode && updateCfg.auto_check" in renderer

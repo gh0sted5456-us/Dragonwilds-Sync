@@ -16,4 +16,5 @@
   document.getElementById('dlg-min').addEventListener('click',()=>window.dragonwilds.windowMinimize());
   document.getElementById('dlg-max').addEventListener('click',()=>window.dragonwilds.windowToggleMaximize());
   document.getElementById('dlg-close').addEventListener('click',()=>window.dragonwilds.windowClose());
+  document.addEventListener('keydown',(event)=>{if(event.key!=='Escape')return;event.preventDefault();event.stopImmediatePropagation();window.dragonwilds.windowClose();},true);
 })();

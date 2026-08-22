@@ -5,7 +5,10 @@
   const internalTaskbar = document.getElementById('internal-taskbar');
   let taskbarDisplayMode = (()=>{ try { return localStorage.getItem('dragonwilds-sync-taskbar-mode') === 'icons' ? 'icons' : 'tabs'; } catch (_) { return 'tabs'; } })();
   let desktopWindowSeq = 0;
-  let desktopZ = 60;
+  // Popup windows must remain above placards (Phase 4/5 use the 10020-10100
+  // range). Starting below them made a visible mod/review window receive clicks
+  // through the higher placard surface.
+  let desktopZ = 11000;
   const query = new URLSearchParams(window.location.search);
   const quickMode = query.get('quick') === '1';
   const minimalMode = query.get('minimal') === '1';
@@ -6387,6 +6390,10 @@
     if(!win||win.dataset.desktopReady==='1')return win;
     win.dataset.desktopReady='1';
     win.dataset.windowId=`dialog-${++desktopWindowSeq}`;
+    win.setAttribute('role','dialog');
+    win.setAttribute('aria-modal','false');
+    win.setAttribute('aria-label',String(options.title||desktopWindowTitle(win)));
+    win._dwsReturnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
     const layer=modalRoot.getBoundingClientRect();
     const width=Math.min(Math.max(520,Number(options.width||900)),Math.max(520,layer.width-30));
     const height=Math.min(Math.max(360,Number(options.height||680)),Math.max(360,layer.height-30));
@@ -6452,6 +6459,16 @@
     const native = [...modalRoot.querySelectorAll('.managed-dialog-shadow')];
     return native[0] || null;
   }
+
+  // One top-level Escape contract covers mod previews, review windows, empty
+  // review states, editors, and every ordinary showModal surface. Close guards
+  // (for example unsaved Monaco files) still run through requestCloseDesktopWindow.
+  document.addEventListener('keydown',(event)=>{
+    if(event.key!=='Escape'||event.defaultPrevented)return;
+    const win=activeDesktopWindow();if(!win)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    requestCloseDesktopWindow(win);
+  },true);
 
   function dialogFields(win) {
     const fields={};
@@ -6554,11 +6571,13 @@
 
   function closeDesktopWindow(win) {
     if (!win) return;
+    const returnFocus=win._dwsReturnFocus;
     const nativeId=win.dataset?.nativeDialogId||'';
     if(nativeId){ managedDialogShadows.delete(nativeId); window.dragonwilds?.closeManagedDialog?.(nativeId).catch(()=>{}); disposeDesktopWindow(win); win.remove(); syncInternalTaskbar(); updateDiscordPresenceForRoute(); return; }
     disposeDesktopWindow(win);
     win.remove();
     const next = activeDesktopWindow(); if (next && next.classList.contains('desktop-window')) focusDesktopWindow(next);
+    else requestAnimationFrame(()=>{if(returnFocus?.isConnected)try{returnFocus.focus({preventScroll:true});}catch(_){returnFocus.focus();}});
     syncInternalTaskbar(); updateDiscordPresenceForRoute();
   }
 

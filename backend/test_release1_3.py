@@ -90,7 +90,7 @@ def main():
             assert "01_BetterCapes.pak" in zf.namelist()
 
     meta = (ROOT / "renderer/release-meta.js").read_text(encoding="utf-8")
-    assert "V2 · Portable Worlds, Mod Library & WebHost" in meta
+    assert "V2.5 · Connected Worlds, Mod Library & WebHost" in meta
     assert "portable-only" in meta and "Nexus provenance" in meta and "Remote Server login" in meta
     assert (ROOT / "docs/archive/RELEASE1_3_PROFILE_NEXUS.md").is_file()
     print("Release 1.3 Profile / detached windows / Nexus regression tests passed")

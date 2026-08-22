@@ -54,6 +54,8 @@
     document.body.dataset.theme=params.get('theme')||'dark';
     const rect=(node)=>{const value=node.getBoundingClientRect();return {left:value.left,top:value.top,right:value.right,bottom:value.bottom,width:value.width,height:value.height};};
     const intersects=(a,b)=>a.left<b.right-.5&&a.right>b.left+.5&&a.top<b.bottom-.5&&a.bottom>b.top+.5;
+    const luminance=(value)=>{const rgb=(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number).map((channel)=>{const normalized=channel/255;return normalized<=.03928?normalized/12.92:((normalized+.055)/1.055)**2.4;});return .2126*(rgb[0]||0)+.7152*(rgb[1]||0)+.0722*(rgb[2]||0);};
+    const contrast=(foreground,background)=>{const high=Math.max(luminance(foreground),luminance(background));const low=Math.min(luminance(foreground),luminance(background));return (high+.05)/(low+.05);};
     requestAnimationFrame(()=>requestAnimationFrame(()=>{
       const card=document.querySelector('#validation-placard');
       const body=rect(card.querySelector('.world-card-body'));
@@ -82,6 +84,11 @@
       if(!getComputedStyle(rowNode,'::before').backgroundImage.includes('placards/2.png'))errors.push('horizontal placard background missing');
       const rowBanner=rowNode.querySelector('.world-list-banner img');
       if(!rowBanner.complete||!rowBanner.naturalWidth)errors.push('horizontal server banner did not load');
+      const rowTitleStyle=getComputedStyle(rowNode.querySelector('.world-list-title h3'));
+      const rowActionStyle=getComputedStyle(rowNode.querySelector('.world-row-actions .btn.ghost'));
+      if(contrast(rowTitleStyle.color,'rgb(11, 16, 16)')<4.5)errors.push(`horizontal title contrast ${contrast(rowTitleStyle.color,'rgb(11, 16, 16)').toFixed(2)}`);
+      if(contrast(rowActionStyle.color,'rgb(11, 16, 16)')<4.5)errors.push(`horizontal action contrast ${contrast(rowActionStyle.color,'rgb(11, 16, 16)').toFixed(2)}`);
+      if(rowActionStyle.display==='none')errors.push('horizontal Manage action hidden');
       if(row.height>(innerWidth<=520?120.5:90.5))errors.push(`horizontal height ${row.height}px`);
       if(rowButtons.some((button)=>button.left<row.left-.5||button.right>row.right+.5||button.top<row.top-.5||button.bottom>row.bottom+.5))errors.push(`horizontal button escapes row ${JSON.stringify({row,actions:rowActions,buttons:rowButtons,actionsStyle:{display:getComputedStyle(rowActionsNode).display,position:getComputedStyle(rowActionsNode).position,alignSelf:getComputedStyle(rowActionsNode).alignSelf,justifyContent:getComputedStyle(rowActionsNode).justifyContent,gridColumn:getComputedStyle(rowActionsNode).gridColumn,gridRow:getComputedStyle(rowActionsNode).gridRow}})}`);
       if(pairOverlap(rowButtons))errors.push('horizontal buttons overlap');

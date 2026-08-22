@@ -1776,6 +1776,12 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 .world-list-row.has-placard>.world-list-banner{position:absolute;z-index:1}
 .world-list-row.has-placard>.world-list-banner img{opacity:.66;filter:saturate(.94) contrast(1.04) brightness(.92)}
 .world-list-row.has-placard>.world-row-actions{background:linear-gradient(90deg,transparent,rgba(11,16,16,.88) 28%,#0b1010 72%)}
+.world-list-row.has-placard{color:#f4f1e9!important}
+.world-list-row.has-placard .world-list-title h3,.world-list-row.has-placard .world-list-title strong{color:#f4f1e9!important}
+.world-list-row.has-placard .world-list-meta,.world-list-row.has-placard .world-list-meta span,.world-list-row.has-placard small{color:#c5ccc8!important}
+.world-list-row.has-placard .world-row-actions .btn{color:#f7f4ec!important;border-color:rgba(233,192,94,.48);background:rgba(12,17,17,.72);backdrop-filter:blur(8px)}
+.world-list-row.has-placard .world-row-actions .btn.play{color:#15130d!important;background:linear-gradient(180deg,#ecd078,#c99c3f)}
+@media(max-width:780px){.world-list-row.has-placard>.world-row-actions{background:linear-gradient(90deg,rgba(11,16,16,.3),rgba(11,16,16,.94) 24%,#0b1010)}.world-list-row.has-placard .world-row-actions .btn.ghost{display:inline-flex}}
 
 /* Character Editor preview standard: one stable three-column surface backed by
    the existing RSDWModel webview, native save fields, and Item Editor catalog. */

@@ -5003,11 +5003,18 @@
       avatarResizeObserver?.observe(avatarShell);
       let avatarReady=false;
       let avatarRecoveryAttempts=0;
-      const prepareAvatarPreview=async()=>{
-        if(avatarReady || root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return;
-        try{
+      let avatarCssInserted=false;
+      let avatarPreparePromise=null;
+      const prepareAvatarPreview=()=>{
+        if(avatarReady || root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return Promise.resolve(false);
+        if(avatarPreparePromise)return avatarPreparePromise;
+        avatarPreparePromise=(async()=>{
+         try{
           syncAvatarHostSize();
-          await avatarWebview.insertCSS(embeddedScrollbarCss(embeddedAvatarCss()));
+          if(!avatarCssInserted){
+            await avatarWebview.insertCSS(embeddedScrollbarCss(embeddedAvatarCss()));
+            avatarCssInserted=true;
+          }
           const result=await avatarWebview.executeJavaScript(`(()=>{document.body?.classList.add('dws-embedded');const stage=document.querySelector('#avatar-stage');const c=document.querySelector('canvas');if(!c)return {ok:false,ready:document.readyState};if(stage)Object.assign(stage.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',minHeight:'100vh',margin:'0'});Object.assign(c.style,{display:'block',width:'100vw',height:'100vh',minHeight:'100vh'});const models=(document.querySelector('#avatar-status')?.textContent.match(/(\\d+) layered models?\\./)||[])[1]||'';if(!Number(models))return {ok:false,ready:'models-pending'};return new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(()=>{window.dispatchEvent(new Event('resize'));const reset=document.querySelector('#reset-view');if(reset&&!reset.disabled)reset.click();resolve({ok:true,w:c.clientWidth,h:c.clientHeight,models});})));})()`,true);
           if(!result?.ok){if(result?.ready==='models-pending')setAvatarStatus('Canvas ready · streaming model layers…','streaming');return;}
           const upstream=await avatarWebview.executeJavaScript(`(()=>Object.fromEntries(['slot-hair','slot-beard','slot-rightHand','slot-leftHand','avatar-animation-select'].map(id=>{const select=document.getElementById(id);return [id,select?{value:select.value,options:[...select.options].map(option=>({value:option.value,label:option.textContent||option.label||option.value}))}:null]})))()`,true);
@@ -5018,9 +5025,12 @@
           const fields=Object.keys(state.rsdwCharacterPayload?.avatar?.params||{}).length;
           const modelCopy=result.models?` · ${result.models} live model layers`:'';
           setAvatarStatus(`Avatar loaded${modelCopy} · ${fields} save-backed appearance fields`,'ready');
-        }catch(_){ /* The next lifecycle or retry callback handles pages still navigating. */ }
+          return true;
+         }catch(_){return false; /* The next lifecycle or retry callback handles pages still navigating. */}
+        })().finally(()=>{avatarPreparePromise=null;});
+        return avatarPreparePromise;
       };
-      avatarWebview.addEventListener('did-start-loading',()=>{avatarReady=false;setAvatarStatus('Loading RSDWModel avatar…','loading');});
+      avatarWebview.addEventListener('did-start-loading',()=>{avatarReady=false;avatarCssInserted=false;setAvatarStatus('Loading RSDWModel avatar…','loading');});
       // A remote webview can finish before bindEvents runs. Listen to both native
       // lifecycle signals and retry against an already-complete document so the
       // Character card consistently opens on the live canvas rather than the
@@ -5028,8 +5038,9 @@
       avatarWebview.addEventListener('dom-ready',prepareAvatarPreview);
       avatarWebview.addEventListener('did-finish-load',()=>{avatarRecoveryAttempts=0;prepareAvatarPreview();});
       const avatarPollStarted=Date.now();
-      const pollAvatarPreview=async()=>{if(avatarReady||root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return;await prepareAvatarPreview();if(!avatarReady&&Date.now()-avatarPollStarted<45000)setTimeout(pollAvatarPreview,350);};
-      setTimeout(pollAvatarPreview,80);
+      let avatarPollDelay=120;
+      const pollAvatarPreview=async()=>{if(avatarReady||root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return;await prepareAvatarPreview();if(!avatarReady&&Date.now()-avatarPollStarted<45000){const delay=avatarPollDelay;avatarPollDelay=Math.min(1000,Math.round(avatarPollDelay*1.5));setTimeout(pollAvatarPreview,delay);}};
+      setTimeout(pollAvatarPreview,40);
       avatarWebview.addEventListener('did-fail-load',async(event)=>{const code=Number(event.errorCode);if(code===-3)return;if(code===-102&&avatarRecoveryAttempts<2){avatarRecoveryAttempts+=1;setAvatarStatus('Restarting the local 3D preview service…');try{await configureRsdwToolkitSource();const source=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar||{};await avatarWebview.loadURL(rsdwAvatarUrl(source.url));return;}catch(_){/* Surface the original connection failure below. */}}setAvatarStatus(`Avatar failed to load (${event.errorCode})`,'error');toast('Character preview failed',event.errorDescription||'RSDWModel could not load.','error');});
       root.querySelectorAll('[data-avatar-view]').forEach((button)=>button.addEventListener('click',async()=>{
         const action=button.dataset.avatarView||'full';

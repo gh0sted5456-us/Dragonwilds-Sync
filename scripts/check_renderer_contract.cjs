@@ -34,6 +34,12 @@ assert(baseCss.includes('.studio-appearance-swatches{grid-column:1/-1;min-width:
   baseCss.includes('.studio-appearance-swatches>div{display:flex;flex-wrap:wrap;gap:6px') &&
   baseCss.includes('.studio-appearance-swatches button{flex:0 0 26px;width:26px'),
   'Character Editor color swatches must span the appearance panel with readable, wrapping choices.');
+assert(source.includes('native-pastel-picker') && source.includes('native-pastel-wheel') && baseCss.includes('.native-pastel-wheel'),
+  'Character color controls must expose the styled radial painter palette.');
+assert(source.includes('id="rsdw-see-changes"') && source.includes('queueRsdwAvatarPreview'),
+  '3D appearance changes must remain queued until See changes is selected.');
+assert(source.includes('avatarCssInserted') && source.includes('avatarPreparePromise') && source.includes('avatarPollDelay'),
+  '3D preview readiness must deduplicate CSS injection and use adaptive polling.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),
@@ -137,6 +143,9 @@ assert(source.includes('world-card-media') && source.includes('world-card-banner
   'Desktop world cards must keep the banner and its blend layer at the top.');
 assert(source.includes('world-list-row has-placard') && source.includes('hosted-list-row has-placard'),
   'Horizontal World cards must inherit the selected placard background.');
+assert(baseCss.includes('.world-list-row.has-placard{color:#f4f1e9!important}') &&
+  baseCss.includes('.world-list-row.has-placard .world-row-actions .btn.ghost{display:inline-flex}'),
+  'Horizontal placards must keep readable controls in light, dark, and mobile layouts.');
 
 const websitePlacards = fs.readFileSync(path.join(root, 'website', 'placards.js'), 'utf8');
 assert(websitePlacards.includes('raw?.banner_b64') && websitePlacards.includes('raw?.icon_b64'),

@@ -43,6 +43,11 @@ def main():
     assert "Convert to Server · Download Disabled" in renderer
     assert "worldSaveDownloadPolicy" in renderer
     assert "nativePageDots(pageCount,page)" in renderer
+    assert "client.discovery.probe" in renderer
+    assert "data-direct-result" in renderer and "data-direct-connect" in renderer
+    assert "direct-rules-agree" in renderer and "connection_agreement" in renderer
+    assert "edit-private-default" in renderer
+    assert 'if method == "client.discovery.probe"' in service
     assert "settingsNav('mods','▦','Mod Management')" not in renderer
     assert "data-v3p4-page-status>Page 1 / 2" in renderer
     assert "}else if(standaloneRemote){" not in renderer

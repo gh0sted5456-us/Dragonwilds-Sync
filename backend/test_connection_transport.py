@@ -179,6 +179,11 @@ class ConnectionTransportTests(unittest.TestCase):
             self.assertTrue(discovered["mod_inventory_complete"])
             self.assertTrue(discovered["identity_verified"])
             self.assertEqual(len(discovered["mod_summary"]), 180)
+            direct = next(row for row in server_systems.probe_server_address("127.0.0.1", 3.0)
+                          if int(row.get("sync_port") or 0) == port)
+            self.assertTrue(direct["identity_verified"])
+            self.assertEqual(direct["queried_ip"], "127.0.0.1")
+            self.assertEqual(len(direct["mod_summary"]), 180)
             normalized = world_directory.normalize_heartbeat({"protocol": "dragonwilds-world-sync", "fingerprint": "dws1-" + "a" * 24,
                 "world_name": "Transport World", "internal_ip": "127.0.0.1", "sync_port": port,
                 "mod_badges": identity["mod_badges"], "mod_summary": identity["mod_summary"]})

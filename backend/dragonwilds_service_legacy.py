@@ -39,7 +39,7 @@ from network_benchmark import benchmark_due, benchmark_history, lightweight_late
 from client_layout import resolve_client_layout
 from active_world import write_active_world
 from local_world import (SINGLEPLAYER_ID, ensure_state as ensure_singleplayer_state, load_profile as load_singleplayer_profile, save_profile as save_singleplayer_profile,
-                         create_profile as create_private_profile, list_profiles as list_private_profiles, delete_profile as delete_private_profile, profile_world_shape,
+                         create_profile as create_private_profile, list_profiles as list_private_profiles, delete_profile as delete_private_profile, set_default_profile as set_default_private_profile, profile_world_shape,
                          scan_inventory as scan_singleplayer_inventory, install_mod_zip as install_singleplayer_mod_zip,
                          update_mod as update_singleplayer_mod, move_mod as move_singleplayer_mod, remove_mod as remove_singleplayer_mod,
                          write_mods_txt as write_singleplayer_mods_txt, detect_mod_zip_kind as detect_local_mod_zip_kind,
@@ -76,7 +76,7 @@ from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports,
     delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
-    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
+    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
     pop_scan_warnings as pop_server_scan_warnings,
 )
 from public_worlds import discover_public_worlds, augment_with_sync_directory, fetch_lobbysup_history
@@ -994,7 +994,7 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
     base.setdefault("presentation", {"description": "", "tags": [], "mod_badges": [], "icon_b64": "", "banner_b64": ""})
     incoming_presentation = payload.get("presentation") if isinstance(payload.get("presentation"), dict) else {}
     if incoming_presentation:
-        for key in ("description", "icon_b64", "banner_b64"):
+        for key in ("description", "community_rules", "icon_b64", "banner_b64"):
             if key in incoming_presentation:
                 base["presentation"][key] = str(incoming_presentation.get(key) or "")
         for key in ("tags", "mod_badges"):
@@ -1022,6 +1022,17 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
             shared["protocol_version"] = int(incoming_shared.get("protocol_version") or 1)
         except (TypeError, ValueError):
             shared["protocol_version"] = 1
+    if "fingerprint_verified" in incoming_shared:
+        shared["fingerprint_verified"] = bool(incoming_shared.get("fingerprint_verified"))
+    if isinstance(payload.get("connection_agreement"), dict):
+        agreement = payload.get("connection_agreement") or {}
+        base["connection_agreement"] = {
+            "accepted": bool(agreement.get("accepted")),
+            "accepted_at": str(agreement.get("accepted_at") or "")[:80],
+            "world_fingerprint": str(agreement.get("world_fingerprint") or "")[:80],
+            "metadata_revision": int(agreement.get("metadata_revision") or 0),
+            "rules_snapshot": str(agreement.get("rules_snapshot") or "")[:4000],
+        }
     base.setdefault("last_sync", None)
     base.setdefault("last_played_at", None)
     base.setdefault("created_at", now_iso())
@@ -2755,6 +2766,7 @@ def handle(method: str, params: dict) -> object:
         profile = load_singleplayer_profile(profile_id)
         previous_name = str(profile.get("name") or "")
         incoming = params.get("profile") if isinstance(params.get("profile"), dict) else params
+        requested_default = bool(incoming.get("is_default")) if "is_default" in incoming else None
         for key in ("name", "description", "community_rules"):
             if key in incoming:
                 limit = 80 if key == "name" else (300 if key == "description" else 4000)
@@ -2764,8 +2776,6 @@ def handle(method: str, params: dict) -> object:
         if "classification" in incoming:
             profile["classification"] = normalize_world_classification(
                 incoming.get("classification"), tags=profile.get("tags") or [], host_type="singleplayer", visibility="private")
-        if "is_default" in incoming:
-            profile["is_default"] = bool(incoming.get("is_default"))
         for artwork_key in ("icon_b64", "banner_b64"):
             if artwork_key in incoming:
                 profile[artwork_key] = str(incoming.get(artwork_key) or "")
@@ -2786,6 +2796,17 @@ def handle(method: str, params: dict) -> object:
             if "access_policy" in next_cfg: cfg["access_policy"] = normalize_access_policy(next_cfg.get("access_policy") or {})
             profile["broadcast_config"] = cfg
         save_singleplayer_profile(profile, profile_id)
+        if requested_default is not None:
+            if requested_default:
+                profile = set_default_private_profile(profile_id)
+                state.setdefault("client", {})["default_private_world_id"] = profile_id
+                state["client"]["active_private_world_id"] = profile_id
+            elif profile.get("is_default"):
+                fallback_id = SINGLEPLAYER_ID if profile_id != SINGLEPLAYER_ID else next(
+                    (str(row.get("id") or "") for row in list_private_profiles() if str(row.get("id") or "") != profile_id), SINGLEPLAYER_ID)
+                set_default_private_profile(fallback_id)
+                state.setdefault("client", {})["default_private_world_id"] = fallback_id
+                profile = load_singleplayer_profile(profile_id)
         if "name" in incoming and str(profile.get("name") or "") != previous_name:
             profile["name_source"] = "user"
             save_singleplayer_profile(profile, profile_id)
@@ -4716,6 +4737,12 @@ def handle(method: str, params: dict) -> object:
         found = scan_for_servers(float(params.get("timeout") or 3.0))
         remember_heartbeats(found, source="lan")
         return found
+
+    if method == "client.discovery.probe":
+        address = str(params.get("address") or "").strip()
+        if not address:
+            raise ValueError("address is required")
+        return probe_server_address(address, float(params.get("timeout") or 3.0))
 
     if method == "server.access.connections":
         return {"connections": STATE.connected_clients()}

@@ -278,6 +278,8 @@ def default_state() -> dict:
         "client": {
             "active_world_id": None,
             "live_world_id": None,
+            "default_private_world_id": "singleplayer",
+            "initial_environment_adopted": False,
             "client_id": secrets.token_hex(6),
             "worlds": [],
             "discovered_worlds": [],
@@ -497,6 +499,8 @@ def load_state() -> dict:
     history = player.setdefault("feedback_history", [])
     player["feedback_history"] = history[-500:] if isinstance(history, list) else []
     client = state.setdefault("client", {})
+    client.setdefault("default_private_world_id", "singleplayer")
+    client.setdefault("initial_environment_adopted", False)
     client.setdefault("world_character_selection", {})
     client.setdefault("discovered_worlds", [])
     client.setdefault("directory_worlds", [])

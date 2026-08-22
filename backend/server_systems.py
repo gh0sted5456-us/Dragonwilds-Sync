@@ -1823,6 +1823,70 @@ def scan_for_servers(timeout: float = 3.0) -> list[dict]:
     return results
 
 
+def probe_server_address(address_value: str, timeout: float = 3.0) -> list[dict]:
+    """Ask one host for every Sync World it is actively broadcasting."""
+    from world_identity import normalize_endpoint
+    endpoint = normalize_endpoint(address_value, default_port=SYNC_PORT_DEFAULT)
+    if endpoint is None:
+        raise ValueError("Enter a valid IP address or hostname.")
+    family = socket.AF_INET6 if ":" in endpoint.host else socket.AF_INET
+    target = (endpoint.host, DISCOVERY_QUERY_PORT, 0, 0) if family == socket.AF_INET6 else (endpoint.host, DISCOVERY_QUERY_PORT)
+    sock = socket.socket(family, socket.SOCK_DGRAM)
+    sock.settimeout(0.25)
+    found: dict[tuple[str, int], dict] = {}
+    try:
+        sock.sendto(json.dumps({"app": DISCOVERY_MAGIC, "discover": True, "direct": True}).encode(), target)
+        deadline = time.time() + max(0.25, min(float(timeout or 3.0), 10.0))
+        while time.time() < deadline:
+            try:
+                data, source = sock.recvfrom(65535)
+                info = json.loads(data.decode("utf-8", "replace"))
+                if info.get("app") != DISCOVERY_MAGIC:
+                    continue
+                source_ip = str(source[0] or "").split("%", 1)[0]
+                advertised_ip = str(info.get("ip") or source_ip).split("%", 1)[0]
+                port = int(info.get("sync_port") or info.get("port") or SYNC_PORT_DEFAULT)
+                found[(source_ip, port)] = {**info, "ip": source_ip, "queried_ip": endpoint.host,
+                                            "advertised_ip": advertised_ip, "port": port, "source": "direct-query"}
+            except socket.timeout:
+                continue
+            except (OSError, ValueError, json.JSONDecodeError):
+                break
+    finally:
+        sock.close()
+    # Reuse the same live identity and whole-fingerprint verification as LAN.
+    original_scan = list(found.values())
+    for info in original_scan:
+        host = str(info.get("ip") or "").split("%", 1)[0]
+        port = int(info.get("sync_port") or info.get("port") or SYNC_PORT_DEFAULT)
+        rendered_host = f"[{host}]" if ":" in host else host
+        try:
+            from network_client import register_tls_pin, request as sync_request
+            scheme = "https" if info.get("sync_tls") else "http"
+            base_url = f"{scheme}://{rendered_host}:{port}"
+            if scheme == "https":
+                register_tls_pin(base_url, str(info.get("tls_cert_fingerprint") or ""))
+            identity = json.loads(sync_request(f"{base_url}/identity", timeout=2.5).read(16 * 1024 * 1024))
+            world_sync = identity.get("world_sync") if isinstance(identity.get("world_sync"), dict) else {}
+            actual = str(world_sync.get("fingerprint") or identity.get("launcher_fingerprint") or "")
+            info["identity_verified"] = bool(str(info.get("fingerprint") or "") and actual == str(info.get("fingerprint") or "") and
+                                               str(world_sync.get("protocol") or "") == WORLD_SYNC_PROTOCOL)
+            if not info["identity_verified"]:
+                info["identity_error"] = "The live Sync fingerprint did not match this direct announcement."
+                continue
+            for key in ("description", "classification", "audience", "platform_compatibility", "tags", "mod_badges", "mod_summary",
+                        "icon_b64", "banner_b64", "placard_background", "community", "community_rules"):
+                if key in identity:
+                    info[key] = identity[key]
+            info["mod_count"] = len(info.get("mod_summary") or [])
+            info["mod_inventory_complete"] = True
+        except (OSError, ValueError, json.JSONDecodeError, RuntimeError) as exc:
+            info["identity_verified"] = False
+            info["identity_error"] = str(exc)
+            info["mod_inventory_complete"] = False
+    return original_scan
+
+
 def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]) -> dict:
     """Publish the machine-level client runtime baseline for a World.
 

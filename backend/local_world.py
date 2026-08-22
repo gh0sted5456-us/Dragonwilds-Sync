@@ -139,6 +139,64 @@ def create_profile(name: str = "Private World") -> dict:
     return profile
 
 
+def set_default_profile(profile_id: str) -> dict:
+    """Select exactly one local profile as the application's startup default."""
+    wanted = _safe_profile_id(profile_id)
+    profiles = list_profiles()
+    if not any(str(profile.get("id") or "") == wanted for profile in profiles):
+        raise KeyError("Private World profile not found")
+    selected = None
+    for profile in profiles:
+        profile["is_default"] = str(profile.get("id") or "") == wanted
+        save_profile(profile, str(profile.get("id") or SINGLEPLAYER_ID))
+        if profile["is_default"]:
+            selected = profile
+    return selected or load_profile(wanted)
+
+
+def _adopt_initial_default_environment(state: dict) -> None:
+    """Capture the pre-existing game environment once into the default profile.
+
+    Live saves remain in Dragonwilds' own SaveGames directory; recoverable
+    profile copies are stored beside the initial mod/settings snapshot.
+    """
+    client = state.setdefault("client", {})
+    if client.get("initial_environment_adopted"):
+        return
+    game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+    if not game_dir or not Path(game_dir).exists():
+        return
+    profile_id = _safe_profile_id(client.get("default_private_world_id") or SINGLEPLAYER_ID)
+    try:
+        from sync_engine import snapshot_client_world
+        snapshot_client_world(profile_id, Path(game_dir))
+        layout = resolve_client_layout(game_dir)
+        saves_destination = _world_cache(profile_id) / "saves"
+        save_names = []
+        if layout.savegames_dir.is_dir():
+            for source in sorted(layout.savegames_dir.glob("*.sav"), key=lambda path: path.name.casefold()):
+                if source.name.casefold() == "enhancedinputusersettings.sav":
+                    continue
+                saves_destination.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, saves_destination / source.name)
+                save_names.append(source.name)
+        profile = load_profile(profile_id)
+        profile["initial_environment_adopted"] = True
+        profile["initial_environment_adopted_at"] = time.time()
+        profile["initial_save_snapshot"] = save_names
+        profile["is_default"] = True
+        save_profile(profile, profile_id)
+        client["initial_environment_adopted"] = True
+        client["initial_environment_profile_id"] = profile_id
+        client["default_private_world_id"] = profile_id
+        client["active_private_world_id"] = profile_id
+        if not client.get("live_world_id"):
+            client["live_world_id"] = profile_id
+    except (OSError, ValueError, RuntimeError):
+        # Setup remains usable when the selected game directory is incomplete.
+        return
+
+
 def _save_profile_id(save_path: Path) -> str:
     digest = hashlib.sha256(save_path.name.casefold().encode("utf-8")).hexdigest()[:12]
     slug = re.sub(r"[^A-Za-z0-9]+", "-", save_path.stem).strip("-").lower()[:40]
@@ -202,7 +260,7 @@ def discover_save_profiles(state: dict) -> list[dict]:
          "save_file": p.get("save_file"), "size": p.get("save_size", 0),
          "modified_at": p.get("save_modified_at", 0)} for p in discovered
     ]
-    if discovered:
+    if discovered and not state.setdefault("client", {}).get("default_private_world_id"):
         newest = max(discovered, key=lambda item: float(item.get("save_modified_at") or 0))
         client = state.setdefault("client", {})
         previous_mtime = float(client.get("last_detected_save_mtime") or 0)
@@ -211,7 +269,7 @@ def discover_save_profiles(state: dict) -> list[dict]:
             client["detected_loaded_world_id"] = newest["id"]
             client["active_private_world_id"] = newest["id"]
             client["last_detected_save_mtime"] = newest_mtime
-    if newly_created and str(application.get("game_dir") or "").strip():
+    if newly_created and str(application.get("game_dir") or "").strip() and not state.setdefault("client", {}).get("initial_environment_adopted"):
         # A new in-game World may be created while a previous profile's mods are
         # still live. Capture that exact state once so returning to either World
         # remains deterministic; later scans never overwrite this first snapshot.
@@ -295,7 +353,7 @@ def profile_world_shape(profile: dict) -> dict:
         "classification": normalize_world_classification({**(profile.get("classification") or {}), "host_type": "coop" if profile.get("broadcasting") else "singleplayer"}, tags=tags,
                                                             host_type="coop" if profile.get("broadcasting") else "singleplayer",
                                                             visibility="friends" if profile.get("broadcasting") else "private"),
-        "presentation": {"description": str(profile.get("description") or ""), "tags": tags, "mod_badges": ["LOCAL", "SINGLEPLAYER"], "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or ""), "placard_background": str(profile.get("placard_background") or "1")},
+        "presentation": {"description": str(profile.get("description") or ""), "community_rules": str(profile.get("community_rules") or ""), "tags": tags, "mod_badges": ["LOCAL", "SINGLEPLAYER"], "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or ""), "placard_background": str(profile.get("placard_background") or "1")},
         "identity": {"world_name": str(profile.get("name") or "Private World"), "server_profile_id_hint": ""},
         "status": {"online": True, "local": True, "broadcasting": bool(profile.get("broadcasting", False)), "sync_port": int(cfg.get("sync_port") or 27051), "last_error": ""},
         "credentials": {}, "connection": {},
@@ -308,8 +366,17 @@ def profile_world_shape(profile: dict) -> dict:
 
 def ensure_state(state: dict) -> dict:
     client = state.setdefault("client", {})
+    client.setdefault("default_private_world_id", SINGLEPLAYER_ID)
+    _adopt_initial_default_environment(state)
     discover_save_profiles(state)
     profiles = list_profiles()
+    default_id = _safe_profile_id(client.get("default_private_world_id") or SINGLEPLAYER_ID)
+    if not any(str(profile.get("id") or "") == default_id for profile in profiles):
+        default_id = SINGLEPLAYER_ID
+        client["default_private_world_id"] = default_id
+    if any(bool(profile.get("is_default")) != (str(profile.get("id") or "") == default_id) for profile in profiles):
+        set_default_profile(default_id)
+        profiles = list_profiles()
     worlds = [profile_world_shape(p) for p in profiles]
     if bool(client.get("baseline_singleplayer_hidden", False)):
         worlds = [world for world in worlds if world.get("id") != SINGLEPLAYER_ID]

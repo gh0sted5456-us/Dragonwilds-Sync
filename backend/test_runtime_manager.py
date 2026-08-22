@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import local_world
 import runtime_versions
+import sync_engine
 from runtime_manager import AuthoritativeRuntimeManager
 from runtime_versions import cl_version_status, detect_steam_cloud_status, normalize_cl_version
 
@@ -452,6 +453,47 @@ def test_save_migration_and_generic_profile_hide():
              local_world.DELETED_SAVES_PATH, local_world.resolve_client_layout) = old
 
 
+def test_initial_environment_is_adopted_once_and_default_is_exclusive():
+    with tempfile.TemporaryDirectory(dir=Path.cwd()) as td:
+        root = Path(td)
+        profiles = root / "profiles"
+        game = root / "game"
+        saves = root / "saves"
+        game.mkdir(); saves.mkdir()
+        (saves / "ExistingWorld.sav").write_bytes(b"existing-save")
+        old = (local_world.WORLD_PROFILE_ROOT, local_world.LOCAL_PROFILE_DIR,
+               local_world.LOCAL_PROFILE_FILE, local_world.PRIVATE_PROFILES_DIR,
+               local_world.DELETED_SAVES_PATH, local_world.resolve_client_layout,
+               sync_engine.snapshot_client_world)
+        snapshots = []
+        try:
+            local_world.WORLD_PROFILE_ROOT = profiles
+            local_world.LOCAL_PROFILE_DIR = profiles / local_world.SINGLEPLAYER_ID
+            local_world.LOCAL_PROFILE_FILE = local_world.LOCAL_PROFILE_DIR / "profile.json"
+            local_world.PRIVATE_PROFILES_DIR = profiles
+            local_world.DELETED_SAVES_PATH = profiles / ".deleted-saves.json"
+            local_world.resolve_client_layout = lambda _selected: SimpleNamespace(savegames_dir=saves)
+            sync_engine.snapshot_client_world = lambda profile_id, selected: snapshots.append((profile_id, Path(selected)))
+            state = {"application": {"game_dir": str(game)}, "client": {}}
+            local_world.ensure_state(state)
+            local_world.ensure_state(state)
+            assert snapshots == [(local_world.SINGLEPLAYER_ID, game)]
+            assert state["client"]["initial_environment_adopted"] is True
+            assert state["client"]["default_private_world_id"] == local_world.SINGLEPLAYER_ID
+            assert (profiles / local_world.SINGLEPLAYER_ID / "snapshot" / "saves" / "ExistingWorld.sav").read_bytes() == b"existing-save"
+
+            alternate = local_world.create_profile("Alternate")
+            selected = local_world.set_default_profile(alternate["id"])
+            assert selected["is_default"] is True
+            profiles_after = local_world.list_profiles()
+            assert [row["id"] for row in profiles_after if row.get("is_default")] == [alternate["id"]]
+        finally:
+            (local_world.WORLD_PROFILE_ROOT, local_world.LOCAL_PROFILE_DIR,
+             local_world.LOCAL_PROFILE_FILE, local_world.PRIVATE_PROFILES_DIR,
+             local_world.DELETED_SAVES_PATH, local_world.resolve_client_layout,
+             sync_engine.snapshot_client_world) = old
+
+
 def main():
     test_lifecycle()
     test_start_never_advertises_before_process_and_cleans_publish_failure()
@@ -462,6 +504,7 @@ def main():
     test_independent_client_and_server_steam_version_checks()
     test_cl_and_steam_cloud()
     test_save_migration_and_generic_profile_hide()
+    test_initial_environment_is_adopted_once_and_default_is_exclusive()
     print("authoritative lifecycle, WebGUI projection, verified process-before-broadcast, shutdown, independent Steam version, CL, and Steam Cloud tests passed")
 
 

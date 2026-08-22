@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -12,7 +13,15 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "2.7.0"
+    package_lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    release_meta = (ROOT / "renderer/release-meta.js").read_text(encoding="utf-8")
+    changelog = json.loads((ROOT / "docs/changelog.json").read_text(encoding="utf-8"))
+    version = str(package["version"])
+    assert re.fullmatch(r"2\.7\.\d+", version)
+    assert package_lock["version"] == version
+    assert package_lock["packages"][""]["version"] == version
+    assert f"version: '{version}'" in release_meta
+    assert changelog["releases"][0]["version"] == version
     assert package["build"]["linux"]["target"] == ["AppImage"]
     assert package["build"]["win"]["target"] == ["portable"]
 

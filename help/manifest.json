@@ -1,89 +1,189 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 4,
-  "title": "Dragonwilds Sync Helpy",
-  "subtitle": "One GitHub-managed field guide for the website and desktop application.",
-  "updated_at": "2026-08-21",
+  "version": 5,
+  "updated": "2026-08-22",
+  "title": "Helpy: Dragonwilds Sync Field Guide",
+  "subtitle": "Detailed walkthroughs shared by the desktop application and the Dragonwilds Sync website.",
   "pages": [
     {
-      "id": "getting-started", "title": "Getting Started", "category": "Start Here",
-      "summary": "First launch, Player Setup, profiles, and the recommended first run.",
-      "image": "../assets/help/02-worlds.png", "image_alt": "Current Dragonwilds World Management workspace",
-      "intro": "Dragonwilds Sync organizes local saves, connected Worlds, hosted servers, characters, mods, and Sync metadata around profiles.",
+      "id": "getting-started",
+      "title": "Getting Started",
+      "category": "Start Here",
+      "summary": "Install, launch, detect Dragonwilds, and create your first usable profile.",
+      "image": "../assets/help/01-getting-started.png",
+      "image_alt": "Dragonwilds Sync getting-started screen",
+      "intro": "Dragonwilds Sync keeps Worlds, characters, mods, and launcher settings together without replacing Steam or the game.",
       "sections": [
-        {"title":"First launch","steps":["Complete Player Setup and select the Dragonwilds installation.","Let Sync validate the game layout before installing or repairing shared prerequisites.","Pick a character after discovery completes.","Use Dragonwilds for Singleplayer, Co-Op, Dedicated hosting, profiles, and connections."]},
-        {"title":"Recommended first run","steps":["Validate the local game folder in Dragonwilds > Game Setup.","Confirm Character saves and World associations under Profile.","Review the active profile and master repository under Mods.","Launch once, then open Sync only when ready to link or publish a verified World."]},
-        {"title":"Offline behavior","body":"The public Helpy page is cached by the browser. The desktop application also retains a packaged fallback when GitHub Pages is unavailable."}
+        {"title": "First launch", "steps": ["Launch the portable EXE or AppImage. On Linux, mark the AppImage executable or add it through Gear Lever.", "Open Settings and confirm the detected Dragonwilds installation, save directory, and preferred launch provider.", "Use Refresh Help if this guide was opened before the newest manifest downloaded."]},
+        {"title": "Create the first profile", "steps": ["Open Worlds and choose Add World or import an existing local save.", "Choose Singleplayer, Connected World, or Dedicated Server. Identical display names are allowed because profiles use independent internal IDs.", "Add an icon, banner, description, and character assignment, then save the profile."]},
+        {"title": "Safe operating pattern", "body": "Keep Steam Cloud disabled for saves managed by Sync, close the game before replacing save files, and use profile activation before launching so the correct mod set is staged."}
       ],
-      "tips":["Visible operation errors remain authoritative.","Profiles isolate saves, mods, and runtime choices.","Refresh Helpy after a published documentation update."]
+      "tips": ["A Connected World needs only IP or hostname, World Name, and World Password.", "Back up important saves before the first edit."]
     },
     {
-      "id": "appy-walkthrough", "title": "Appy Walkthrough", "category": "Navigation",
-      "summary": "Dragonwilds, Characters, Mods, RSDW-L, Sync, Helpy, and Settings.",
-      "image": "../assets/help/38-helpy-website.png", "image_alt": "The shared Helpy website rendered from the repository JSON guide",
-      "intro": "The persistent navigation shell preserves the active World context while each Appy loads only the bounded workspace it owns.",
+      "id": "appy-walkthrough",
+      "title": "Navigation & Appys",
+      "category": "Start Here",
+      "summary": "Understand the focused tools, global search, themes, notifications, and update controls.",
+      "image": "../assets/help/14-tours.png",
+      "image_alt": "Application tour and navigation",
+      "intro": "Each Appy is a focused workspace. Permissions and profile context follow you between them.",
       "sections": [
-        {"title":"Dragonwilds","body":"Manage Singleplayer, Co-Op, Dedicated hosting, World profiles, installation paths, saves, and connections."},
-        {"title":"Profile and Characters","body":"Choose the exact save, inspect World associations, and hand it to the guarded RSDW Character Editor."},
-        {"title":"Mods","body":"Edit the canonical master repository or a profile-specific copy. Publishing and pulling are explicit actions."},
-        {"title":"RSDW-L","body":"Open Character, Item, Spell, Recipe, Quest, map, Spawner, and console tools with backup-first writes."},
-        {"title":"Sync","body":"Verify fingerprints, compare manifests, transfer only required files, and expose Website or Remote Access separately."},
-        {"title":"Helpy and Settings","body":"Helpy is this shared website page. Settings owns appearance, policy, integrations, updates, and system behavior."}
-      ],
-      "tips":["The navigation rail stays mounted between Appys.","A success message never replaces runtime verification.","Website and desktop Help use this same JSON."]
+        {"title": "Core Appys", "steps": ["Worlds manages singleplayer, Connected World, and server profiles.", "Characters edits appearance, inventory, equipment, pose, and preview background.", "Mods manages the shared repository plus profile-specific overrides.", "Servers provides runtime, SteamCMD update, map, remote-user, and WebHost controls.", "Helpy opens this same GitHub-managed guide in a focused in-app view."]},
+        {"title": "Search and themes", "body": "The global search finds Appys, Worlds, characters, mods, Sync status, and help. Theme settings separate light or dark mode from the optional glass layer, including blur and stained-glass treatment."},
+        {"title": "Updates", "body": "Application update checks are separate from module and dedicated-server updates. Read the status text before restarting, especially while SteamCMD is downloading."}
+      ]
     },
     {
-      "id": "worlds-sync", "title": "Worlds & Sync", "category": "Worlds",
-      "summary": "Private, connected, declared, and hosted World profiles.",
-      "image": "../assets/help/02-worlds.png", "image_alt": "Placard and horizontal World management views",
-      "intro": "A World profile keeps the correct save, mods, configuration, connection identity, artwork, and character association together.",
+      "id": "worlds-profiles",
+      "title": "Worlds, Profiles & Local Sync",
+      "category": "Worlds",
+      "summary": "Build profiles, assign characters, activate mod sets, and use desktop quick launchers.",
+      "image": "../assets/help/02-worlds.png",
+      "image_alt": "World profile placards",
+      "intro": "A profile is the durable identity for a World. Its presentation, connection details, character links, and selected mods travel together.",
       "sections": [
-        {"title":"World views","steps":["Placard and Horizontal are two views of the same profile.","Declared means a live fingerprint-verified heartbeat reached this WebHost.","Sync Ready means the endpoint supports Sync, not necessarily that it declared itself."]},
-        {"title":"Connecting","body":"Sync verifies identity, compares client-required files, applies the minimum safe update, verifies the final manifest, and only then launches Dragonwilds."},
-        {"title":"Reviews","body":"Rating stars open the review window even when no reviews exist. Empty and unavailable states remain dismissible."},
-        {"title":"Heartbeat projection","body":"Stale declarations expire automatically when they leave the host TTL or fingerprint evidence no longer passes."}
+        {"title": "Profile types", "steps": ["Singleplayer profiles own or reference a local save.", "Connected World profiles retain remote connection metadata and may share a display name with a local World.", "Dedicated Server profiles control a server installation and runtime."]},
+        {"title": "Activate and launch", "steps": ["Select a profile and review its RuneSchema, UE4SS, and PAK badges.", "Activate it to stage the selected repository mods into the correct game directories.", "Launch from the profile or use Send to Desktop to create an RSDWL quick launcher with the profile argument."]},
+        {"title": "Cloud-folder sync", "body": "Optional local-file sync can target a folder already managed by OneDrive, Google Drive, Dropbox, or another provider. Sync treats it as a normal local path; the cloud client handles transport."}
       ],
-      "tips":["Public metadata never includes passwords.","Duplicate launch clicks are rejected.","Timeouts return control to the launcher."]
+      "tips": ["Click a mod badge to inspect the loaded mods for that profile.", "Placard and horizontal layouts show the same profile collection."]
     },
     {
-      "id": "characters-rsdw", "title": "Characters & RSDW Toolkit", "category": "Characters",
-      "summary": "Character selection, editors, Avatar preview, and safe writeback.",
-      "image": "../assets/help/04-character-editor.png", "image_alt": "Current three-column Character Editor",
-      "intro": "Profile > Characters uses the selected save as the hydration source for integrated RSDW tools and the Avatar preview.",
+      "id": "connected-worlds",
+      "title": "Connected Worlds & LAN Discovery",
+      "category": "Worlds",
+      "summary": "Connect by address, discover LAN hosts, receive metadata, and assign characters.",
+      "image": "../assets/help/09-networking.png",
+      "image_alt": "Networking and connection tools",
+      "intro": "Connected Worlds use a simple game connection. Sync fingerprints are metadata identifiers, not login requirements.",
       "sections": [
-        {"title":"Safe editing","steps":["Load the exact character through Sync.","Make bounded Character, Item, Spell, Recipe, or Quest changes.","Click See changes when you want the 3D preview to refresh.","Save through Sync so checksum, backup, write, and reparse verification run."]},
-        {"title":"Character Editor","body":"Appearance controls and wrapping color swatches live on the left, the stable 3D preview stays centered, and compatible equipped items remain on the right."},
-        {"title":"Preview behavior","body":"Draft edits do not reset the 3D model automatically. See changes is the explicit preview boundary; camera and pose controls remain preview-only."},
-        {"title":"Item Editor","body":"Canonical and modded definitions share one identity repository. Right-click menus are constrained to the visible application window."}
+        {"title": "Direct connection", "steps": ["Choose Add Connected World.", "Enter the IP address or hostname, World Name, and World Password. No client/server hash is required.", "Choose one of your characters. A character may be assigned to multiple Worlds.", "Connect once to receive the host icon, banner, description, mod list, and other published metadata."]},
+        {"title": "LAN scan", "steps": ["Keep both devices on the same local network and allow Dragonwilds Sync through the private-network firewall.", "Run LAN Scan and wait for the host heartbeat or local service discovery response.", "Select the discovered World, confirm its game address and password, then create the Connected World profile."]},
+        {"title": "Convert a profile", "body": "A Connected World may be converted to Singleplayer or Dedicated Server when the required save or server paths are available. Conversion keeps presentation metadata while changing runtime ownership."}
       ],
-      "tips":["Undo, Redo, and Revert affect the draft.","Save Character creates a recovery backup.","Export uses the portable character package flow."]
+      "tips": ["NAT, VPN isolation, guest Wi-Fi, or a blocked UDP discovery port can prevent LAN discovery.", "A heartbeat publishes status and presentation metadata, never a plaintext password."]
     },
     {
-      "id": "server-webhost", "title": "Server & WebHost", "category": "Hosting",
-      "summary": "Dedicated profiles, runtime startup, heartbeats, and remote WebGUI.",
-      "image": "../assets/help/05-server-setup.png", "image_alt": "Dragonwilds dedicated Hosting setup",
-      "intro": "Hosted Worlds own presentation, save/config snapshots, mod state, and Sync settings while sharing the machine-level dedicated runtime.",
+      "id": "characters",
+      "title": "Characters & Live 3D Preview",
+      "category": "Characters",
+      "summary": "Edit appearance, colors, pose, background, equipment, inventory, and hotbar safely.",
+      "image": "../assets/help/04-character-editor.png",
+      "image_alt": "Character Editor with live 3D preview",
+      "intro": "The Character Editor separates save-backed edits from preview rendering so repeated changes do not reload the model unexpectedly.",
       "sections": [
-        {"title":"Fluid startup sequence","steps":["Resolve the selected profile and desired revision.","Materialize save, configuration, and managed mods.","Launch and verify the dedicated process.","Start and verify the World-owned Sync listener.","Publish only after runtime and Sync evidence pass."]},
-        {"title":"WebHost","body":"WebHost projects the public browser, receives authenticated heartbeats, exposes public-safe APIs, and can pair remote administration when enabled."},
-        {"title":"Public safety","body":"Public surfaces may show identity, artwork, badges, counts, routes, and capability. Credentials and private configuration are never directory fields."},
-        {"title":"Remote administration","body":"Remote control is separate from discovery and requires an authenticated session plus explicit World-scoped permissions."}
-      ],
-      "tips":["Stop verifies process-tree cleanup.","Heartbeat declarations have a TTL.","Website and Remote Access remain independent switches."]
+        {"title": "Appearance", "steps": ["Choose Appearance and edit face, hair, beard, body type, and color palettes.", "Use the palette popup for skin, eyes, hair, or beard instead of narrow swatch rows.", "Save the character record when the intended values are complete."]},
+        {"title": "Pose and background", "steps": ["Open Pose to choose or filter an available stance.", "Open Background to choose a solid color or one of the image thumbnails such as forest, beach, tavern, desert, or graveyard.", "Backgrounds affect the preview stage only; they do not modify the game save."]},
+        {"title": "Preview refresh", "steps": ["Make appearance, equipment, or hotbar changes without waiting for a renderer reload.", "Click See Changes beside the character name when you want to rebuild the 3D preview.", "Orbit, pan, and zoom after the model is ready. The renderer remains centered as the window changes size."]},
+        {"title": "Inventory interactions", "body": "Right-click an equipment slot or hotbar slot for remove, change, and filtered repository actions. Drag compatible repository items into supported slots. Save only after checking item identity and stack count."}
+      ]
     },
     {
-      "id": "mods-items", "title": "Mods, Items & Spawner", "category": "Mods & Items",
-      "summary": "Master repository, profile copies, custom items, and spawning.",
-      "image": "../assets/help/37-mod-management.png", "image_alt": "Master mod repository and profile actions",
-      "intro": "Mod placement and item metadata remain profile-aware without turning custom content into global vanilla data.",
+      "id": "mods-repository",
+      "title": "Mods & Shared Repository",
+      "category": "Mods",
+      "summary": "Import, fingerprint, classify, edit, and assign mods to profiles.",
+      "image": "../assets/help/37-mod-management.png",
+      "image_alt": "Mod management placards and categories",
+      "intro": "The shared mod repository stores a master copy while profiles select repository versions or maintain profile-specific overrides.",
       "sections": [
-        {"title":"Master repository","steps":["Edit Master changes only the canonical repository payload.","Edit Profile changes one deployed copy.","Publish as Master updates the canonical payload without overwriting profiles.","Pull Master replaces only the profile you choose."]},
-        {"title":"Managed editor","body":"Supported text files use atomic bounded writes. Binary and oversized files stay visible but read-only."},
-        {"title":"Modded items","body":"PersistenceID, ITEM_NAME, display name, category, equipment slot, stack metadata, description, and icon aliases merge into the shared Item Editor and Spawner repository."},
-        {"title":"Recommended mods","body":"Each recommendation uses one banner placard, the mod name, and its Nexus Mods or Steam source identity."},
-        {"title":"Spawner","body":"The server Spawner consumes the same normalized item record and requires an explicit item, count, and target before issuing a bounded command."}
+        {"title": "Import and fingerprint", "steps": ["Import an archive or scan a supported game/server mod directory.", "Sync identifies RuneSchema, UE4SS, and PAK layouts and records an SHA-256 fingerprint.", "A later rescan detects added, removed, or replaced payloads even when names are unchanged."]},
+        {"title": "Assign to profiles", "steps": ["Open a mod placard and choose the target profiles.", "Use the repository copy for shared maintenance or create a profile override when that World needs unique files or metadata.", "Activate a profile to stage its exact selection into the game directory."]},
+        {"title": "Mod Editor paths", "body": "The Mod Editor resolves each mod from its logical root. RuneSchema content is shown relative to RuneSchema/Mods/ModName, including assets, blueprints, raw data, and matching PAK content, rather than exposing unrelated server-root prefixes."},
+        {"title": "ID.txt and hotload", "body": "Metadata parsing accepts individual KEY = VALUE fields in any supported order. HOTLOAD = YES is valid by itself and marks supported edits as hotload-capable; unsupported payload changes still require restart."}
       ],
-      "tips":["Profile tags and load order remain profile-specific.","Pull Master is deliberately destructive only to the chosen copy.","Spawner definitions can come from portable mod manifests."]
+      "tips": ["Recommended-mod placards link their Nexus Mods or Steam source icon directly to the listing.", "Do not edit a staged profile copy when the repository master is the intended source."]
+    },
+    {
+      "id": "item-spawner",
+      "title": "Item Repository & Spawner",
+      "category": "Tools",
+      "summary": "Search vanilla and modded items, inspect identities, and grant items through controlled permissions.",
+      "image": "../assets/help/16-spawner.png",
+      "image_alt": "Item Spawner repository",
+      "intro": "The Item Repository combines the RSDW baseline with item manifests supplied by installed mods.",
+      "sections": [
+        {"title": "Desktop use", "steps": ["Open Item Spawner and choose the active server profile.", "Filter by display name, internal name, Persistence ID, category, vanilla, modded, or unrecognized status.", "Select an online player, item, and safe stack quantity, then confirm the grant."]},
+        {"title": "Remote use", "steps": ["Grant the remote user View item repository to expose the Item Spawner Appy.", "Grant Give / spawn items only to operators who may alter player inventory.", "The catalog loads on demand; item grants are routed through the local RSDW service and written to the audit log."]},
+        {"title": "Modded items", "body": "Mod manifests can add display names, internal names, Persistence IDs, runtime paths, stack limits, and icons. Rescan the repository after installing or replacing a mod so new item definitions appear."}
+      ]
+    },
+    {
+      "id": "server-setup",
+      "title": "Dedicated Server Setup & Updates",
+      "category": "Servers",
+      "summary": "Install with SteamCMD, configure runtime, monitor updates, and manage server mods.",
+      "image": "../assets/help/05-server-setup.png",
+      "image_alt": "Dedicated server setup",
+      "intro": "Server Manager controls the local dedicated server. Public WebHost creation is a separate advanced feature.",
+      "sections": [
+        {"title": "Install", "steps": ["Create a Dedicated Server profile and choose an install directory.", "Provide SteamCMD or let Sync detect it, then start installation.", "Watch the status and progress text while Steam downloads, verifies, and applies the server build.", "Configure World Name, World Password, ports, save path, and startup options."]},
+        {"title": "Operate", "steps": ["Start, stop, or restart from Server Manager.", "Use Update Server to compare installed and available build IDs and follow live SteamCMD progress.", "Review health, players, logs, map bridge, and mod categories before launching clients."]},
+        {"title": "Server mod parity", "body": "Server and singleplayer Mod Managers use the same RuneSchema, UE4SS, and PAK categories, icons, logical mod roots, and repository metadata. Server indexing is cached and refreshed only when files change."}
+      ]
+    },
+    {
+      "id": "remote-users",
+      "title": "Remote Users, Login & Permissions",
+      "category": "Servers",
+      "summary": "Create World-scoped accounts with individual passwords and least-privilege Appy access.",
+      "image": "../assets/help/WebHost-Server-Admin-Login.png",
+      "image_alt": "Remote Server Admin login",
+      "intro": "Each remote user has an independent password hash, one assigned World, and an explicit permission snapshot.",
+      "sections": [
+        {"title": "Create an account", "steps": ["Open the server profile, then Remote Access or Server Manager users.", "Enter a unique username and a strong user-specific password. This is not the World Password and not the owner Admin Password.", "Choose the exact World and enable only the required permissions.", "Share the Server Admin URL, World selection, username, and that user's password through a secure channel."]},
+        {"title": "Permission groups", "steps": ["Read permissions expose Overview, Map, Maintenance, Mods, Configs, Item Repository, Console, or Audit.", "Write permissions allow maintenance changes, mod metadata, config saves, item grants, console commands, or broadcast messages.", "Lifecycle permissions separately control Start, Stop, Restart, Update, and Refresh Metadata."]},
+        {"title": "Item Spawner and broadcasts", "steps": ["View item repository displays the Item Spawner Appy; Give / spawn items enables grants to online players.", "Send announcements displays Broadcast Messages and permits time-limited info, success, warning, or critical notices.", "Both actions are validated by the desktop host and recorded in the remote audit log."]},
+        {"title": "Sign in and revoke", "body": "The user selects the World, enters their username and their own password, then receives an eight-hour session with CSRF protection. Disable or delete the account to block future sign-ins; change its password if credentials may have leaked."}
+      ],
+      "tips": ["Leave username blank only for the owner fallback that uses the server Admin Password.", "Never reuse the World Password as a remote operator password."]
+    },
+    {
+      "id": "webhost",
+      "title": "Server Manager, WebHost & Heartbeats",
+      "category": "Servers",
+      "summary": "Choose the correct external surface and publish accurate World metadata.",
+      "image": "../assets/help/28-webhost-preview.png",
+      "image_alt": "WebHost preview and public World page",
+      "intro": "Remote Server Admin and public World hosting are separate surfaces. WebHost is advanced because it combines both.",
+      "sections": [
+        {"title": "Remote Server Admin only", "body": "Enable Server Manager remote access to publish only the authenticated login surface. The public directory and World placards remain disabled."},
+        {"title": "WebHost", "steps": ["Enable WebHost only when you want a public World page plus Server Admin entry.", "Configure bind address, port, firewall profile, public transport, and Cloudflare or direct public URL.", "Preview the external site and verify that passwords and private paths never appear in public metadata."]},
+        {"title": "Heartbeat metadata", "body": "Heartbeat updates include online status, players, game and Sync ports, icon, banner, description, platform, version, and mod badges/list. Connection-time metadata creates or refreshes the local Connected World profile."},
+        {"title": "Troubleshoot publication", "steps": ["Confirm the local directory host is running and bound to the intended interface.", "Check firewall, tunnel, public URL, ingestion token, and heartbeat timestamp.", "Use remote-only mode when public hosting is not desired; use full WebHost only after its preview is correct."]}
+      ]
+    },
+    {
+      "id": "rsdwl-packages",
+      "title": "RSDWL Launchers & Exchange Packages",
+      "category": "Tools",
+      "summary": "Create desktop quick launchers and safely import or export validated package files.",
+      "image": "../assets/help/31-world-manifest-workspace.jpg",
+      "image_alt": "World manifest and package workspace",
+      "intro": "RSDWL is used for profile-aware launchers and validated exchange records. Normal mod ZIP archives remain installation payloads.",
+      "sections": [
+        {"title": "Desktop launcher", "steps": ["Choose Send to Desktop on a World or server profile.", "Sync writes an RSDWL launcher that carries the profile identifier as a quick-launch argument.", "Open it to activate the profile, stage its mods, and launch the intended client or server flow."]},
+        {"title": "Import compatibility", "body": "The importer recognizes application exports and manually converted ZIP containers. It normalizes an extra top-level folder and legacy layouts, validates safe paths, then distinguishes profile metadata from ordinary mod payloads."},
+        {"title": "Safety", "body": "Do not trust extension renaming alone. Sync rejects traversal paths and inspects manifests, package types, hashes, signatures, payload indexes, and known metadata before applying records."}
+      ]
+    },
+    {
+      "id": "troubleshooting",
+      "title": "Troubleshooting & Recovery",
+      "category": "Reference",
+      "summary": "Resolve connection, renderer, mod indexing, remote access, update, and shutdown problems.",
+      "image": "../assets/help/15-notifications.png",
+      "image_alt": "Application notifications and status messages",
+      "intro": "Start with the smallest affected layer: profile, local service, network, remote surface, then external transport.",
+      "sections": [
+        {"title": "Connected World missing", "steps": ["Search by profile type as well as display name; local and Connected profiles may share a name.", "Confirm IP or hostname, game port, World Name, and World Password.", "For LAN discovery, verify private-network firewall access and disable guest-network client isolation."]},
+        {"title": "Mods or icons missing", "steps": ["Rescan the correct game or server root.", "Check that the logical mod root contains the expected RuneSchema, UE4SS, or PAK payload.", "Refresh repository metadata so fingerprints, badges, custom items, and icons are rebuilt."]},
+        {"title": "Remote login rejected", "steps": ["Confirm Remote Server Admin is enabled for that profile.", "Select the assigned World and enter the account username plus that user's password, not the World Password.", "Check that the account is enabled and has not been deleted or reassigned."]},
+        {"title": "AppImage will not close", "body": "Wait for active save or server operations to finish, use the application Exit command, and inspect the latest log if shutdown stalls. Gear Lever integration should use the packaged Sync icon and desktop entry."},
+        {"title": "Get diagnostic context", "body": "Record the profile type, operation, visible status message, timestamp, application version, operating system, and relevant log excerpt. Remove passwords, tokens, public IPs, and personal paths before sharing."}
+      ],
+      "tips": ["Use Refresh Metadata before assuming cached presentation data is lost.", "A failed external heartbeat does not prevent local server management."]
     }
   ]
 }

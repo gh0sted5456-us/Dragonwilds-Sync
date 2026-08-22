@@ -227,7 +227,7 @@ def default_state() -> dict:
             "world_discovery": {"enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": OFFICIAL_DIRECTORY_URL, "directory_token": "", "directory_sources": [official_directory_source()], "last_refresh_at": None},
             "recommended_mods": {"creator_feed_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/recommended-mods.json", "community_sources": [], "feeds": [], "mods": [], "last_refresh_at": None, "last_error": "", "nexus_activity_url": "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"},
             "world_directory_host": {"identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": 27080, "public_base_url": "", "directory_enabled": False, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False, "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct", "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
-                                     "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "refresh": True}}},
+                                     "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "update": True, "refresh": True}}},
             # Legacy migration-only shape. The static Shared Worlds webhost UI/resource is retired in Release 1.1.
             "shared_worlds": {"feed_url": "", "feed_token": "", "auto_refresh": False, "refresh_minutes": 15, "last_refresh_at": None, "last_error": ""},
             "advanced": {"multiple_servers_enabled": False, "webhost_enabled": False, "remote_server_enabled": False},
@@ -410,7 +410,7 @@ def load_state() -> dict:
     for key, default in {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
                          "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False,
                          "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False,
-                         "start": True, "stop": True, "restart": True, "refresh": True}.items():
+                         "start": True, "stop": True, "restart": True, "update": True, "refresh": True}.items():
         remote_permissions.setdefault(key, default)
     legacy_shared = application.setdefault("shared_worlds", {})
     legacy_shared.setdefault("feed_url", "")

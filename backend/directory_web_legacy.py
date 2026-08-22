@@ -361,7 +361,7 @@ def detail_html(world_id: str) -> bytes:
 def remote_admin_html() -> bytes:
     page = _remote_admin_html_localized().decode("utf-8")
     page = page.replace('<button data-tab="mods">Mods</button><button data-tab="console">Console</button>',
-                        '<button data-tab="mods">Mods</button><button data-tab="items">Items</button><button data-tab="console">Console</button>', 1)
+                        '<button data-tab="mods">Mods</button><button data-tab="items">Item Spawner</button><button data-tab="console">Console</button>', 1)
     page = page.replace(
         '<button data-action="restart">↻ Soft Restart</button><button data-action="refresh">◇ Refresh Metadata</button>',
         '<button data-action="restart">↻ Restart</button><button data-action="update" data-permission="update">↑ Update Server</button><button data-action="update_restart" data-permission="update">↑ Update &amp; Restart</button><button data-action="refresh">◇ Refresh Metadata</button>', 1)
@@ -377,6 +377,14 @@ def remote_admin_html() -> bytes:
         '<div class="info" style="margin-bottom:12px"><h3>Runtime &amp; update status</h3>${kv(\'Installed server build\',(maintenance.game_version||{}).server_installed_buildid||\'—\')}${kv(\'Latest server build\',(maintenance.game_version||{}).server_latest_buildid||\'—\')}${kv(\'Server update\',maintenance.update_available?\'UPDATE AVAILABLE\':((maintenance.game_version||{}).server_current===true?\'Current\':\'Not checked yet\'))}${kv(\'Reported CL\',(maintenance.cl_version||{}).reported_cl||\'Not reported\')}${kv(\'Expected CL\',(maintenance.cl_version||{}).expected_cl||\'Not learned yet\')}${kv(\'CL status\',String((maintenance.cl_version||{}).status||\'unknown\').toUpperCase())}${Object.values(maintenance.update_status||{}).map(row=>kv(row.component||\'Component\',(row.installed_version||\'unknown\')+\' → \'+(row.available_version||\'latest\')+\' · \'+String(row.status||\'unknown\').replaceAll(\'_\',\' \'))).join(\'\')}<small class="muted">Launcher updates are staged only from the signed desktop updater. Remote users can inspect status without receiving local process authority.</small></div><div class="toolbar"><div><strong>World maintenance calendar</strong>', 1)
     page = page.replace("$$('[data-action]').forEach(b=>b.disabled=!allowed(b.dataset.action));",
                         "$$('[data-action]').forEach(b=>b.disabled=rt.busy||!allowed(b.dataset.permission||b.dataset.action));", 1)
+    page = page.replace(
+        "for(const [name,key] of Object.entries({map:'view_map',announcements:'send_announcements',mods:'view_mods',config:'view_config',audit:'view_audit'}))",
+        "for(const [name,key] of Object.entries({map:'view_map',announcements:'send_announcements',mods:'view_mods',items:'view_spawner',console:'view_console',config:'view_config',audit:'view_audit'}))", 1)
+    page = page.replace(
+        "(tab==='mods'&&!allowed('view_mods'))||(tab==='config'&&!allowed('view_config'))",
+        "(tab==='mods'&&!allowed('view_mods'))||(tab==='items'&&!allowed('view_spawner'))||(tab==='console'&&!allowed('view_console'))||(tab==='config'&&!allowed('view_config'))", 1)
+    page = page.replace('<button data-tab="announcements">Announcements</button>',
+                        '<button data-tab="announcements">Broadcast Messages</button>', 1)
     page = page.replace("$('#online').textContent=rt.running?'● Online':'○ Offline';",
                         "$('#online').textContent=(rt.busy?'◌ ':rt.running?'● ':'○ ')+(rt.state||(rt.running?'Running':'Stopped'));", 1)
     return _inject_web_localization(_inject_browser_credits(page.encode("utf-8")))

@@ -42,6 +42,7 @@ from character_profiles import list_starter_characters, starter_character_path
 from character_submissions import quarantine_submission_bytes
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS,
+                               detect_server_host,
                                entry_allowed_for_platform, filtered_manifest,
                                normalize_client_platform, runtime_variant_catalog)
 from sync_manifest import build_client_meta
@@ -1802,6 +1803,7 @@ class ShareServer:
         with STATE.lock:
             connection = STATE.manifest.get("connection") or {}
             world_sync = STATE.manifest.get("world_sync") or {}
+            hardware = STATE.manifest.get("hw_stats") or {}
             return {"app": DISCOVERY_MAGIC, "name": STATE.manifest.get("profile_name") or "World",
                     "ip": local_ip_guess(), "port": self.port or SYNC_PORT_DEFAULT,
                     "sync_port": int(connection.get("sync_port") or self.port or SYNC_PORT_DEFAULT),
@@ -1821,6 +1823,7 @@ class ShareServer:
                     "platform_compatibility": STATE.manifest.get("platform_compatibility") or {"pc": True},
                     "community": STATE.manifest.get("community") or {},
                     "community_rules": STATE.manifest.get("community_rules") or "",
+                    **{key: hardware.get(key) for key in ("host_os", "host_os_label", "distro", "distro_name", "distro_version", "distro_codename", "distro_family", "distro_icon", "distro_known", "distro_id_like", "ubuntu", "ubuntu_supported") if hardware.get(key) not in (None, "")},
                     "operator_identity": signed_operator_world_identity(STATE.manifest),
                     "shared_character_count": len(STATE.manifest.get("starter_characters") or [])}
 
@@ -2108,7 +2111,7 @@ SHARE = ShareServer()
 
 
 def gather_server_hardware_stats() -> dict:
-    stats = {"os": platform.platform(), "cpu": platform.processor() or "Unknown", "gpu": "Unknown", "gpus": [],
+    stats = {"os": platform.platform(), **detect_server_host(), "cpu": platform.processor() or "Unknown", "gpu": "Unknown", "gpus": [],
              "primary_gpu": "Unknown", "cpu_cores": os.cpu_count(), "cpu_threads": os.cpu_count(), "ram_total_gb": None,
              "ram_available_gb": None, "ram_used_gb": None, "ram_used_percent": None, "ram_speed_mhz": None, "probed_at": time.time()}
     try:

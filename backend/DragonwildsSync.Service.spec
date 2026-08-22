@@ -17,6 +17,7 @@ webhost_assets = [
     (str(renderer_assets / 'application-icon.png'), '.'),
     (str(renderer_assets / 'application-icon-web.png'), '.'),
     (str(renderer_assets / 'platforms'), 'renderer/assets/platforms'),
+    (str(renderer_assets / 'distros'), 'renderer/assets/distros'),
     (str(renderer_assets / 'placards'), 'renderer/assets/placards'),
 ]
 

@@ -9,18 +9,20 @@
   }
 
   function fallbackRemove(popup) {
-    requestAnimationFrame(() => {
-      if (!visible(popup)) return;
-      popup.dispatchEvent(new CustomEvent('dws:popup-force-close',{bubbles:true}));
-      if (visible(popup)) popup.remove();
-    });
+    if (!popup?.isConnected) return;
+    popup.dispatchEvent(new CustomEvent('dws:popup-force-close',{bubbles:true}));
+    popup.remove();
+    document.documentElement.classList.remove('modal-open','popup-open');
+    document.body?.classList.remove('modal-open','popup-open');
+    document.body?.style.removeProperty('overflow');
   }
 
   function closePopup(popup, nativeControl = null) {
     if (!popup) return;
     if (popup.classList.contains('v3p4-mod-dialog')) {
       const key = popup.dataset.v3p4ModDialog || nativeControl?.dataset?.v3p4CloseMods;
-      window.__DWSYNC_V3_PHASE4__?.closeModPopup?.(key); return;
+      window.__DWSYNC_V3_PHASE4__?.closeModPopup?.(key);
+      fallbackRemove(popup); return;
     }
     const control = nativeControl || popup.querySelector(closeSelector);
     if (control && !control.matches('[data-popup-safety-close]')) control.click();
@@ -41,6 +43,11 @@
     const close=event.target.closest?.(`${closeSelector},[data-popup-safety-close]`);
     if(close){event.preventDefault();event.stopPropagation();closePopup(popup,close);return;}
     if(event.target===popup){event.preventDefault();event.stopPropagation();closePopup(popup);}
+  },true);
+  document.addEventListener('click',(event)=>{
+    const close=event.target.closest?.(`${closeSelector},[data-popup-safety-close]`);if(!close)return;
+    const popup=close.closest?.(popupSelector);if(!popup)return;
+    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();closePopup(popup,close);
   },true);
   document.addEventListener('keydown',(event)=>{
     if(event.key!=='Escape')return;const popups=[...document.querySelectorAll(popupSelector)].filter(visible);const popup=popups.at(-1);if(!popup)return;event.preventDefault();event.stopPropagation();closePopup(popup);

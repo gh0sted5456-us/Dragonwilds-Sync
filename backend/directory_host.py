@@ -112,6 +112,27 @@ def _platform_icon_bytes(name: str) -> bytes:
     return b""
 
 
+def _distro_icon_bytes(name: str) -> bytes:
+    """Serve only baked Linux distribution marks; never resolve arbitrary paths."""
+    key = str(name or "").casefold().removesuffix(".svg")
+    if not key or len(key) > 40 or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789-" for char in key):
+        return b""
+    bundle_root = getattr(sys, "_MEIPASS", "")
+    candidates = []
+    if bundle_root:
+        candidates.extend((Path(bundle_root) / "renderer" / "assets" / "distros" / f"{key}.svg",
+                           Path(bundle_root) / "distros" / f"{key}.svg"))
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "distros" / f"{key}.svg")
+    for candidate in candidates:
+        try:
+            payload = candidate.read_bytes()
+            if payload.lstrip().startswith(b"<svg"):
+                return payload
+        except OSError:
+            continue
+    return b""
+
+
 def _placard_background_bytes(name: str) -> bytes:
     """Serve one of the built-in, metadata-addressed World backgrounds."""
     key = Path(str(name or "")).stem
@@ -1141,6 +1162,11 @@ class DirectoryHost:
                 if path.startswith("/assets/platforms/"):
                     icon = _platform_icon_bytes(path.rsplit("/", 1)[-1])
                     if not icon: self._json({"error": "platform icon unavailable"}, 404, cors=False); return
+                    self._send(icon, "image/svg+xml; charset=utf-8", cors=False); return
+                if path.startswith("/assets/distros/"):
+                    icon = _distro_icon_bytes(path.rsplit("/", 1)[-1])
+                    if not icon: icon = _platform_icon_bytes("linux")
+                    if not icon: self._json({"error": "distro icon unavailable"}, 404, cors=False); return
                     self._send(icon, "image/svg+xml; charset=utf-8", cors=False); return
                 if path.startswith("/assets/placards/"):
                     artwork = _placard_background_bytes(path.rsplit("/", 1)[-1])

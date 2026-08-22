@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import platform
+import re
+import shlex
 import sys
 from pathlib import Path
 
@@ -14,6 +16,70 @@ SERVER_OS_WINDOWS = "windows"
 SERVER_OS_LINUX = "linux"
 SERVER_OS_OTHER = "other"
 ALL_SERVER_OSES = (SERVER_OS_WINDOWS, SERVER_OS_LINUX, SERVER_OS_OTHER)
+
+# Canonical IDs follow os-release(5) where possible.  Aliases cover historical
+# and vendor-specific IDs observed in the wild; family is deliberately broader
+# and is used only as a fallback when a derivative has no dedicated artwork.
+LINUX_DISTROS = {
+    "ubuntu": ("Ubuntu", "debian"), "kubuntu": ("Kubuntu", "debian"),
+    "lubuntu": ("Lubuntu", "debian"), "xubuntu": ("Xubuntu", "debian"),
+    "ubuntu-mate": ("Ubuntu MATE", "debian"), "ubuntu-budgie": ("Ubuntu Budgie", "debian"),
+    "popos": ("Pop!_OS", "debian"), "linuxmint": ("Linux Mint", "debian"),
+    "zorin": ("Zorin OS", "debian"), "pikaos": ("PikaOS", "debian"),
+    "elementary": ("elementary OS", "debian"), "kdeneon": ("KDE neon", "debian"),
+    "debian": ("Debian", "debian"), "raspbian": ("Raspberry Pi OS", "debian"),
+    "kali": ("Kali Linux", "debian"), "parrot": ("Parrot OS", "debian"),
+    "devuan": ("Devuan", "debian"), "deepin": ("deepin", "debian"),
+    "mx": ("MX Linux", "debian"), "antix": ("antiX", "debian"),
+    "fedora": ("Fedora", "fedora"), "rhel": ("Red Hat Enterprise Linux", "fedora"),
+    "centos": ("CentOS", "fedora"), "rocky": ("Rocky Linux", "fedora"),
+    "almalinux": ("AlmaLinux", "fedora"), "nobara": ("Nobara Linux", "fedora"),
+    "bazzite": ("Bazzite", "fedora"), "ublue": ("Universal Blue", "fedora"),
+    "opensuse": ("openSUSE", "suse"), "opensuse-leap": ("openSUSE Leap", "suse"),
+    "opensuse-tumbleweed": ("openSUSE Tumbleweed", "suse"), "sles": ("SUSE Linux Enterprise", "suse"),
+    "arch": ("Arch Linux", "arch"), "manjaro": ("Manjaro", "arch"),
+    "endeavouros": ("EndeavourOS", "arch"), "cachyos": ("CachyOS", "arch"),
+    "garuda": ("Garuda Linux", "arch"), "artix": ("Artix Linux", "arch"),
+    "steamos": ("SteamOS", "arch"), "gentoo": ("Gentoo", "gentoo"),
+    "void": ("Void Linux", "void"), "alpine": ("Alpine Linux", "alpine"),
+    "nixos": ("NixOS", "nixos"), "guix": ("GNU Guix System", "guix"),
+    "clear-linux": ("Clear Linux OS", "clear-linux"), "solus": ("Solus", "solus"),
+    "mageia": ("Mageia", "mageia"), "openmandriva": ("OpenMandriva", "openmandriva"),
+    "slackware": ("Slackware", "slackware"),
+}
+LINUX_DISTRO_ALIASES = {
+    "pop": "popos", "pop-os": "popos", "mint": "linuxmint", "zorinos": "zorin",
+    "pika": "pikaos", "pika-os": "pikaos", "elementaryos": "elementary", "neon": "kdeneon",
+    "raspberrypi": "raspbian", "parrotsec": "parrot", "mxlinux": "mx", "redhat": "rhel",
+    "red-hat-enterprise-linux": "rhel", "almalinuxos": "almalinux", "rockylinux": "rocky",
+    "nobara-linux": "nobara", "bluefin": "ublue", "aurora": "ublue",
+    "opensuse-leap": "opensuse-leap", "opensuse-tumbleweed": "opensuse-tumbleweed",
+    "tumbleweed": "opensuse-tumbleweed", "suse": "sles", "sled": "sles",
+    "endeavour": "endeavouros", "garuda-linux": "garuda", "steam-os": "steamos",
+    "voidlinux": "void", "clear-linux-os": "clear-linux", "clearlinux": "clear-linux",
+    "openmandriva-lx": "openmandriva",
+}
+
+
+def normalize_linux_distro(value: str | None) -> str:
+    raw = re.sub(r"[^a-z0-9]+", "-", str(value or "").strip().casefold()).strip("-")
+    return LINUX_DISTRO_ALIASES.get(raw, raw)
+
+
+def linux_distro_identity(distro_id: str | None, id_like: str | list | tuple | None = None) -> dict:
+    distro = normalize_linux_distro(distro_id)
+    likes = id_like if isinstance(id_like, (list, tuple)) else str(id_like or "").split()
+    ancestry = [normalize_linux_distro(value) for value in likes if normalize_linux_distro(value)]
+    known = distro in LINUX_DISTROS
+    family = LINUX_DISTROS[distro][1] if known else ""
+    if not family:
+        for candidate in ancestry:
+            if candidate in LINUX_DISTROS:
+                family = LINUX_DISTROS[candidate][1]
+                break
+    icon = distro if known else next((candidate for candidate in ancestry if candidate in LINUX_DISTROS), "linux")
+    return {"distro": distro[:40], "distro_family": family[:40], "distro_icon": icon[:40],
+            "distro_known": known, "distro_id_like": ancestry[:8]}
 
 
 def normalize_client_platform(value: str | None) -> str:
@@ -31,32 +97,40 @@ def normalize_server_os(value: str | None) -> str:
     raw = str(value or "").strip().casefold().replace("_", "-")
     if raw in {"windows", "win", "win32", "win64", "windows-server"}:
         return SERVER_OS_WINDOWS
-    if raw in {"linux", "ubuntu", "debian", "fedora", "arch", "rhel", "centos", "steam-os", "steamos"}:
+    if raw == "linux" or normalize_linux_distro(raw) in LINUX_DISTROS:
         return SERVER_OS_LINUX
     return SERVER_OS_OTHER
 
 
-def _linux_release() -> dict:
+def _linux_release(paths: tuple[Path, ...] | list[Path] | None = None) -> dict:
     """Return small, public-safe Linux distribution metadata when available."""
     info = {}
-    os_release = Path("/etc/os-release")
-    try:
-        if os_release.is_file():
+    release_paths = tuple(paths or (Path("/etc/os-release"), Path("/usr/lib/os-release")))
+    for os_release in release_paths:
+        try:
+            if not os_release.is_file():
+                continue
             for line in os_release.read_text(encoding="utf-8", errors="replace").splitlines():
                 if "=" not in line:
                     continue
                 key, value = line.split("=", 1)
-                info[key.strip().casefold()] = value.strip().strip('"\'')
-    except OSError:
-        pass
-    distro_id = str(info.get("id") or "").casefold()
+                raw = value.strip()
+                try: parsed = shlex.split(raw, posix=True)
+                except ValueError: parsed = []
+                info[key.strip().casefold()] = parsed[0] if len(parsed) == 1 else raw.strip('"\'')
+            break
+        except OSError:
+            continue
+    identity = linux_distro_identity(info.get("id"), info.get("id_like"))
+    distro_id = identity["distro"]
     distro_name = str(info.get("pretty_name") or info.get("name") or "").strip()
     version = str(info.get("version_id") or "").strip()
     return {
-        "distro": distro_id[:40],
+        **identity,
         "distro_name": distro_name[:100],
         "distro_version": version[:40],
-        "ubuntu": distro_id == "ubuntu" or "ubuntu" in distro_name.casefold(),
+        "distro_codename": str(info.get("version_codename") or info.get("ubuntu_codename") or "")[:40],
+        "ubuntu": distro_id in {"ubuntu", "kubuntu", "lubuntu", "xubuntu", "ubuntu-mate", "ubuntu-budgie"},
     }
 
 
@@ -74,6 +148,7 @@ def detect_server_host() -> dict:
             "distro": "windows",
             "distro_name": "Windows",
             "distro_version": "",
+            "distro_family": "windows", "distro_icon": "windows", "distro_known": True,
             "ubuntu_supported": False,
         }
     if sys.platform.startswith("linux"):
@@ -92,6 +167,7 @@ def detect_server_host() -> dict:
         "distro": "",
         "distro_name": system_name,
         "distro_version": "",
+        "distro_family": "", "distro_icon": "linux", "distro_known": False,
         "ubuntu_supported": False,
     }
 
@@ -104,7 +180,11 @@ def server_os_badge(metadata: dict | None) -> dict:
         return {"key": "windows", "label": "Windows Server", "known": True}
     if host_os == SERVER_OS_LINUX:
         distro_name = str(metadata.get("distro_name") or metadata.get("host_os_label") or "Linux").strip()
-        return {"key": "linux", "label": distro_name[:100] or "Linux Server", "known": True,
+        identity = linux_distro_identity(metadata.get("distro"), metadata.get("distro_id_like"))
+        key = normalize_linux_distro(metadata.get("distro_icon")) or identity["distro_icon"] or "linux"
+        return {"key": key, "label": distro_name[:100] or "Linux Server", "known": True,
+                "family": str(metadata.get("distro_family") or identity["distro_family"]),
+                "version": str(metadata.get("distro_version") or "")[:40],
                 "ubuntu": bool(metadata.get("ubuntu") or metadata.get("ubuntu_supported"))}
     return {"key": "other", "label": "Server OS unknown", "known": False}
 

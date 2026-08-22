@@ -193,12 +193,12 @@
     'male_forest_ranger_dreadlocks.png','androgynous_burgundy_battlemage.png',
   ];
   const portraitAsset = (name) => `assets/character-portraits/${encodeURIComponent(name)}`;
-  const PLATFORM_LOGOS = {steam:'steam.svg',epic:'epicgames.svg',xbox:'xbox.svg',playstation:'playstation.svg',nintendo:'nintendo.svg',discord:'discord.svg',nexus:'nexusmods.svg',windows:'windows.svg',linux:'linux.svg'};
+  const PLATFORM_LOGOS = {steam:'assets/platforms/steam.svg',epic:'assets/platforms/epicgames.svg',xbox:'assets/platforms/xbox.svg',playstation:'assets/platforms/playstation.svg',nintendo:'assets/platforms/nintendo.svg',discord:'assets/platforms/discord.svg',nexus:'assets/platforms/nexusmods.svg',windows:'assets/platforms/windows.svg',linux:'assets/platforms/linux.svg'};
   const PLACARD_BACKGROUNDS = ['1','2','3','4'];
   const platformLogo = (key,label) => {
     const name=String(label||key);
     return PLATFORM_LOGOS[key]
-      ? `<span class="platform-logo-shell platform-${escapeHtml(key)}"><img class="platform-logo" src="assets/platforms/${PLATFORM_LOGOS[key]}" alt="${escapeHtml(name)}"/><b class="platform-logo-fallback" aria-hidden="true">${escapeHtml(String(key).toUpperCase().slice(0,4))}</b></span>`
+      ? `<span class="platform-logo-shell platform-${escapeHtml(key)}"><img class="platform-logo" src="${PLATFORM_LOGOS[key]}" alt="${escapeHtml(name)}"/><b class="platform-logo-fallback" aria-hidden="true">${escapeHtml(String(key).toUpperCase().slice(0,4))}</b></span>`
       : `<b class="platform-logo-fallback visible">${escapeHtml(name.slice(0,4))}</b>`;
   };
   const assetDataUrl = async (url) => {

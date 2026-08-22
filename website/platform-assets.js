@@ -28,6 +28,10 @@
     { key: 'runeschema', label: 'RuneSchema', src: 'assets/platforms/runeschema.png', test: /\brune\s*schema\b|\bruneschema\b/i },
     { key: 'paks', label: 'PAKs', src: 'assets/platforms/paks.svg', test: /\bpaks?\b|\.pak\b|\.utoc\b|\.ucas\b/i },
   ];
+  const DISTROS = Object.freeze({
+    ubuntu:'Ubuntu',kubuntu:'Kubuntu',lubuntu:'Lubuntu',xubuntu:'Xubuntu','ubuntu-mate':'Ubuntu MATE','ubuntu-budgie':'Ubuntu Budgie',popos:'Pop!_OS',linuxmint:'Linux Mint',zorin:'Zorin OS',pikaos:'PikaOS',elementary:'elementary OS',kdeneon:'KDE neon',debian:'Debian',raspbian:'Raspberry Pi OS',kali:'Kali Linux',parrot:'Parrot OS',devuan:'Devuan',deepin:'deepin',mx:'MX Linux',antix:'antiX',fedora:'Fedora',rhel:'Red Hat Enterprise Linux',centos:'CentOS',rocky:'Rocky Linux',almalinux:'AlmaLinux',nobara:'Nobara Linux',bazzite:'Bazzite',ublue:'Universal Blue',opensuse:'openSUSE','opensuse-leap':'openSUSE Leap','opensuse-tumbleweed':'openSUSE Tumbleweed',sles:'SUSE Linux Enterprise',arch:'Arch Linux',manjaro:'Manjaro',endeavouros:'EndeavourOS',cachyos:'CachyOS',garuda:'Garuda Linux',artix:'Artix Linux',steamos:'SteamOS',gentoo:'Gentoo',void:'Void Linux',alpine:'Alpine Linux',nixos:'NixOS',guix:'GNU Guix System','clear-linux':'Clear Linux OS',solus:'Solus',mageia:'Mageia',openmandriva:'OpenMandriva',slackware:'Slackware'
+  });
+  Object.entries(DISTROS).forEach(([key,label])=>PLATFORMS.push({key,label,src:`assets/distros/${key}.svg`,test:{test(value){const haystack=String(value||'').toLowerCase().replace(/[^a-z0-9]+/g,'');const needle=label.toLowerCase().replace(/[^a-z0-9]+/g,'');return Boolean(needle&&haystack.includes(needle));}}}));
 
   const byLabel = (value) => PLATFORMS.find((entry) => entry.test.test(String(value || '').trim())) || null;
   const publicEntry = (entry) => entry ? {
@@ -41,6 +45,7 @@
 
   window.DWS_PLATFORM_ASSETS = Object.freeze({
     list: PLATFORMS.map((entry) => Object.freeze(publicEntry(entry))),
+    distros: DISTROS,
     resolve(value) {
       return publicEntry(byLabel(value));
     },

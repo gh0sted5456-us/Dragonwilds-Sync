@@ -102,6 +102,11 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "distro": str(row.get("distro") or "")[:40],
         "distro_name": str(row.get("distro_name") or "")[:100],
         "distro_version": str(row.get("distro_version") or "")[:40],
+        "distro_codename": str(row.get("distro_codename") or "")[:40],
+        "distro_family": str(row.get("distro_family") or "")[:40],
+        "distro_icon": str(row.get("distro_icon") or "")[:40],
+        "distro_known": bool(row.get("distro_known")),
+        "distro_id_like": [str(value)[:40] for value in (row.get("distro_id_like") or [])[:8]],
         "ubuntu": bool(row.get("ubuntu") or row.get("ubuntu_supported")),
     }
     signed_identity = verify_world_identity(row.get("operator_identity")) if row.get("operator_identity") else {"verified": False, "operator_fingerprint": "", "payload": {}, "error": "not supplied"}

@@ -188,13 +188,15 @@ def render_id_text(identity: dict) -> str:
         ("Revision", value.get("revision") or value.get("Revision")),
         ("Author", value.get("author") or value.get("Author")),
         ("RuntimeRole", value.get("runtime_role") or value.get("RuntimeRole") or "both"),
-        ("HotloadCapable", "true" if bool(value.get("hotload_capable") or value.get("HotloadCapable")) else "false"),
         ("Description", value.get("description") or value.get("Description")),
     )
     for label, raw in fields:
         clean = _clean_scalar(raw, 4000)
         if clean:
             lines.append(f"{label}: {clean.replace(chr(10), ' ')}")
+    # Canonical and human-editable. Historical HotloadCapable:true remains
+    # readable, while a one-line "HOTLOAD = YES" file is fully valid.
+    lines.append("HOTLOAD = YES" if bool(value.get("hotload_capable") or value.get("HotloadCapable")) else "HOTLOAD = NO")
     tags = value.get("tags") or value.get("Tags") or []
     if tags:
         lines.append("Tags: " + "; ".join(_clean_scalar(x, 40) for x in tags if _clean_scalar(x, 40)))

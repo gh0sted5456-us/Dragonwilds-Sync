@@ -125,19 +125,15 @@
   function openModsPopup(id, family) {
     id=text(id); family=family==='RuneSchema'?'RuneSchema':'UE4SS'; if(!id)return;
     const key=`${id}:${family}`; const existing=modDialogs.get(key);
-    if(existing){existing.querySelector('[data-v3p4-close-mods]')?.focus();return;}
+    if(existing){window.__DWSYNC_DESKTOP_WINDOWS__?.focus?.(existing);return;}
     const world=findWorld(id)||{id,name:'World'}; const rows=modRows(world).filter((row)=>row.type===family);
-    const host=document.createElement('section'); host.className='v3p4-mod-dialog'; host.dataset.v3p4ModDialog=key; host.setAttribute('role','dialog');host.setAttribute('aria-modal','true');host.setAttribute('aria-label',`${family} mods for ${text(world.name||world.nickname||'World')}`);
-    host.innerHTML=`<div class="v3p4-mod-dialog-card"><header><span><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS</small><strong>${esc(world.name||world.nickname||world.identity?.world_name||'World')}</strong></span></span><button type="button" class="btn ghost compact-btn" data-v3p4-close-mods="${esc(key)}" aria-label="Close loaded mods">×</button></header><div class="v3p4-mod-dialog-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div></div>`;
-    document.getElementById('modal-root')?.appendChild(host)||document.body.appendChild(host);modDialogs.set(key,host);
-    const dismiss=(event)=>{event?.preventDefault?.();event?.stopPropagation?.();closeModsPopup(key);};
-    host.querySelector('[data-v3p4-close-mods]')?.addEventListener('pointerdown',dismiss,{capture:true});
-    host.addEventListener('pointerdown',(event)=>{if(event.target===host)dismiss(event);});
-    host.addEventListener('keydown',(event)=>{if(event.key==='Escape')dismiss(event);});
-    host.querySelector('[data-v3p4-close-mods]')?.focus();
+    const desktop=window.__DWSYNC_DESKTOP_WINDOWS__;if(!desktop?.open)return;
+    const worldName=world.name||world.nickname||world.identity?.world_name||'World';
+    const host=desktop.open(`<div class="modal-header v3p4-mod-window-header"><div class="v3p4-mod-window-title"><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS · ${esc(family)}</small><h2>${esc(worldName)}</h2></span></div></div><div class="modal-body v3p4-mod-window-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div>`,{title:`${family} mods · ${worldName}`,width:680,height:Math.min(760,Math.max(420,210+rows.length*38))});
+    host.classList.add('v3p4-mod-window');host.dataset.v3p4ModDialog=key;host._dwsDispose=()=>modDialogs.delete(key);modDialogs.set(key,host);
   }
 
-  function closeModsPopup(key) { const host=modDialogs.get(key)||document.querySelector(`[data-v3p4-mod-dialog="${CSS.escape(key)}"]`);host?.remove();modDialogs.delete(key); }
+  function closeModsPopup(key) { const host=modDialogs.get(key)||document.querySelector(`[data-v3p4-mod-dialog="${CSS.escape(key)}"]`);if(host)window.__DWSYNC_DESKTOP_WINDOWS__?.close?.(host);modDialogs.delete(key); }
 
   function refreshModIndicators(id) {
     const world=findWorld(id)||{id,name:'World'};

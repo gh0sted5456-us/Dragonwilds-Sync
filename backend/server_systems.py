@@ -1852,6 +1852,13 @@ class ShareServer:
         if not 1 <= int(port) <= 65535: raise ValueError("Sync port must be 1-65535")
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
+        dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
+        # Hosted Worlds expose one player credential. Prefer the same password
+        # Dragonwilds reads from DedicatedServer.ini even when an older profile
+        # still carries a stale hidden Sync password. Private/co-op publishing
+        # has no world_pass field and continues to use its explicit password.
+        if "world_pass" in dedicated:
+            password = str(dedicated.get("world_pass") or "")
         required = [u for u in units if u.classification == "player_required"]
         security_reviews = []
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)

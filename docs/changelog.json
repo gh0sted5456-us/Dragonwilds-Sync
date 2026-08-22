@@ -1,12 +1,12 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-21T00:00:00Z",
+  "updated_at": "2026-08-22T00:00:00Z",
   "releases": [
     {
-      "version": "2.1.0-rc",
-      "title": "Release Client RC",
-      "date": "2026-08-21",
-      "status": "unreleased-testing-ground",
+      "version": "2.5.0",
+      "title": "Dragonwilds Sync V2.5",
+      "date": "2026-08-22",
+      "status": "stable",
       "highlights": [
         "Fresh password authentication and manifest negotiation before every Play or Quick Start.",
         "Per-mod/component fingerprints allow unchanged content to remain in place while changed components are transferred.",

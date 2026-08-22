@@ -3967,7 +3967,7 @@ def handle(method: str, params: dict) -> object:
             sync["access_policy"] = normalize_access_policy({"blocked_ips": incoming_sync.get("blocked_ips") or [], "blocked_countries": incoming_sync.get("blocked_countries") or []})
         # One player-facing World Password is shared by the game and Sync
         # handshake. Empty is valid for an open World.
-        sync["password"] = str(incoming_sync.get("password", dedicated.get("world_pass", sync.get("password") or "")) or "")
+        sync["password"] = str(dedicated.get("world_pass") or "")
         sync.pop("server_key", None)
         sync.pop("share_access_key", None)
         sync.pop("allow_shared_access", None)

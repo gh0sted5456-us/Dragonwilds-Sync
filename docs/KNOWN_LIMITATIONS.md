@@ -4,7 +4,7 @@ This file lists current boundaries that must not be presented as certified behav
 
 ## Release and versioning
 
-- Packaged metadata remains 2.0.0. The 2.1.0-rc changelog entry is staged `testing-ground` work and is not a stable release.
+- Packaged metadata is 2.5.0 on the parallel `main` and `testing-ground` release branches.
 - Historical Alpha/RC/Phase green results do not certify the current head.
 
 ## Responsiveness and cancellation

@@ -51,7 +51,8 @@ def main():
                     "ue4ss_mod::ClientVisible": {"classification": "player_required", "category": "permanent", "order": 1},
                 },
                 "mods_txt_writer": "server_push",
-                "feedback": [], "dedicated_config": {"port": 7777}, "sync_config": {},
+                "feedback": [], "dedicated_config": {"port": 7777, "world_pass": "BELTS"},
+                "sync_config": {"password": "stale-hidden-password"},
             })
 
             units = ss.scan_mod_units(profile_id, str(game))
@@ -93,9 +94,13 @@ def main():
             units = ss.apply_unit_update(profile_id, str(game), "ue4ss_mod::ServerOnly", classification="server_only")
 
             port = free_port()
-            result = ss.SHARE.publish(profile_id, units, "pw", "key", port, {"os": "test"}, 7777, broadcast=False)
+            # A hosted World has one player-facing password. Share publication
+            # must use dedicated_config.world_pass even when a legacy hidden
+            # sync_config password (or stale caller argument) disagrees.
+            result = ss.SHARE.publish(profile_id, units, "stale-caller-password", "key", port, {"os": "test"}, 7777, broadcast=False)
             assert result["serving"] is True
-            manifest, token, base, _ping = auth_manifest(f"127.0.0.1:{port}", "pw", "key")
+            manifest, token, base, _ping = auth_manifest(f"127.0.0.1:{port}", "BELTS", "key")
+            assert ss.STATE.password == "BELTS"
             assert manifest["profile_name"] == "World A"
             assert manifest["hw_stats"]["os"] == "test"
             assert any(f["kind"] == "zip_bundle" for f in manifest["files"])

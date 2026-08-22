@@ -1,8 +1,7 @@
 # Player and World Owner Guide
 
-This guide describes the current `testing-ground` build. Packaged metadata remains
-`2.0.0`; entries labeled `2.1.0-rc` are staged and unreleased until version and
-release metadata move together.
+This guide describes Dragonwilds Sync `2.5.0`, published in parallel on the
+`main` and `testing-ground` release branches.
 
 ## Start safely
 

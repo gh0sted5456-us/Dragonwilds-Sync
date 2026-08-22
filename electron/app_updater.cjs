@@ -124,7 +124,7 @@ function psQuote(value) { return `'${String(value).replace(/'/g, "''")}'`; }
 
 async function stageAndApply({ app, release, repositoryUrl }) {
   if (!app.isPackaged) throw new Error('Application updating is disabled in development mode.');
-  if (process.platform !== 'win32') throw new Error('Dragonwilds Sync 2.0.0 updates require the Windows portable application.');
+  if (process.platform !== 'win32') throw new Error('Dragonwilds Sync 2.5.0 updates require the Windows portable application.');
   const mode = detectMode(app);
   const asset = release?.asset;
   if (!asset?.url || !asset?.name) throw new Error('The GitHub release does not contain a Portable Windows EXE asset.');

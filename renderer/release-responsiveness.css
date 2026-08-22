@@ -68,6 +68,10 @@
 .app-world-placard .placard-runtime-metrics span{white-space:nowrap}
 .app-world-placard .placard-runtime-metrics b{margin-right:3px;color:var(--text);font-size:8px;letter-spacing:.06em}
 .app-world-placard>.placard-actions{position:relative;z-index:3;flex:0 0 auto;margin-top:8px}
+.app-world-placard:has(>.placard-actions.integrated){min-height:625px!important}
+.app-world-placard:has(>.placard-actions.integrated) .world-card-inner{min-height:500px}
+.app-world-placard .world-card-front>.world-card-body{overflow-y:visible}
+.app-world-placard .world-card-back>.world-card-body{overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
 .renderer-recovery-root{min-height:100vh;display:grid!important;place-items:center;padding:24px;background:#070a0a!important;color:#f3eee2}
 .renderer-recovery-root .fatal-error{width:min(620px,100%);display:grid;gap:14px;padding:24px;border:1px solid #67522d;border-radius:16px;background:#111616;box-shadow:0 24px 80px #0009}
 .renderer-recovery-root .fatal-error strong{font-size:18px}.renderer-recovery-root .fatal-error span{color:#b8c0bc;overflow-wrap:anywhere}.renderer-recovery-root .fatal-error .btn{justify-self:start}

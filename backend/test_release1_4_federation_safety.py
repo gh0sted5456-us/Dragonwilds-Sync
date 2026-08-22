@@ -90,7 +90,9 @@ def main():
             directory_host.STORE_PATH, directory_host.OBSERVABILITY_PATH, directory_host.REVOCATIONS_PATH = old_store, old_obs, old_rev
 
     state = profile_store.default_state()
-    assert state["application"]["world_discovery"]["directory_sources"] == []
+    sources = state["application"]["world_discovery"]["directory_sources"]
+    assert len(sources) == 1
+    assert sources[0]["url"] == profile_store.OFFICIAL_DIRECTORY_URL and sources[0]["enabled"] is True
     assert state["client"]["favorite_alerts"]["identity_changed"] is True
     assert state["client"]["world_moderation"]["reports"] == []
     renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import hmac
 import re
 import tempfile
 import time
@@ -24,6 +25,7 @@ PROBE_BUDGET_PER_REFRESH = 8
 PROTOCOL = "dragonwilds-world-sync"
 FINGERPRINT_RE = re.compile(r"^dws1-[0-9a-f]{24}$", re.I)
 DEFAULT_TTL_SECONDS = 300
+OFFICIAL_DIRECTORY_HOST = "dragonwilds-sync-directory.dragonwilds.workers.dev"
 
 
 def normalize_directory_sources(values: list[dict] | None, *, legacy_url: str = "", legacy_token: str = "") -> list[dict]:
@@ -159,13 +161,31 @@ def publish_heartbeat(payload: dict, *, directory_url: str = "", token: str = ""
     url = _directory_base_url(directory_url)
     if not url:
         return result
-    request = urllib.request.Request(
-        url + "/heartbeats", data=json.dumps(payload).encode("utf-8"), method="POST",
-        headers={"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "DragonwildsSync/1.4", **({"Authorization": f"Bearer {token}"} if token else {})},
-    )
+    raw_body = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    parsed = urllib.parse.urlparse(url)
+    official = parsed.hostname and parsed.hostname.casefold() == OFFICIAL_DIRECTORY_HOST
+    headers = {"Content-Type": "application/json", "Accept": "application/json", "User-Agent": "DragonwildsSync/2.0"}
+    endpoint = url + "/heartbeats"
+    if official:
+        endpoint = url + "/api/v1/heartbeat"
+        if not token:
+            result["error"] = "Official Cloudflare heartbeat publishing needs this World's publisher token in its Manifest Host settings."
+            return result
+        timestamp = str(int(time.time()))
+        signature = hmac.new(token.encode("utf-8"), timestamp.encode("ascii") + b"." + raw_body, hashlib.sha256).hexdigest()
+        headers.update({"X-DWS-Timestamp": timestamp, "X-DWS-Signature": signature})
+    elif token:
+        headers["Authorization"] = f"Bearer {token}"
+    request = urllib.request.Request(endpoint, data=raw_body, method="POST", headers=headers)
     try:
         with urllib.request.urlopen(request, timeout=4) as response:
             result["remote"] = 200 <= int(response.status) < 300
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read(4096).decode("utf-8", "replace")).get("error") or exc.reason
+        except Exception:
+            detail = exc.reason
+        result["error"] = f"HTTP {exc.code}: {detail}"
     except Exception as exc:
         result["error"] = str(exc)
     return result

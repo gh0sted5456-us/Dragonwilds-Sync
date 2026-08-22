@@ -59,7 +59,7 @@ def main():
         persisted = []
         controller.set_settings_callback(lambda config: persisted.append(dict(config)))
         try:
-            status = controller.start({"enabled": True, "bind_host": "127.0.0.1", "port": host_port,
+            status = controller.start({"enabled": True, "directory_enabled": True, "bind_host": "127.0.0.1", "port": host_port,
                                        "ingestion_token": token, "upnp_enabled": False})
             assert status["serving"] is True and status["port"] == host_port
             deadline = threading.Event(); deadline.wait(.05)

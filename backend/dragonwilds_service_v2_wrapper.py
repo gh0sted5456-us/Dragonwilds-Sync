@@ -424,13 +424,15 @@ def _remote_choice(state: dict, enabled: bool, *, explicit: bool) -> dict:
         host_cfg["enabled"] = True
         if not bool(advanced.get("webhost_enabled", False)):
             host_cfg["directory_enabled"] = False
+    elif not bool(advanced.get("webhost_enabled", False)):
+        host_cfg["enabled"] = False
+        host_cfg["directory_enabled"] = False
     application["world_directory_host"] = host_cfg
     _legacy.save_state(state)
-    if enabled:
-        try:
-            _legacy.DIRECTORY_HOST.start(host_cfg)
-        except Exception:
-            pass
+    try:
+        _legacy.DIRECTORY_HOST.ensure(host_cfg)
+    except Exception:
+        pass
     return host_cfg
 
 
@@ -438,8 +440,20 @@ def _ensure_external_remote_default(state: dict) -> dict:
     application = state.setdefault("application", {})
     advanced = application.setdefault("advanced", {})
     host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
-    if _external_publish_sources(state) and not bool(advanced.get("remote_server_choice_made", False)):
-        host_cfg = _remote_choice(state, True, explicit=False)
+    if not bool(advanced.get("remote_server_choice_made", False)) and not bool(advanced.get("webhost_enabled", False)):
+        remote = dict(host_cfg.get("remote_admin") or {})
+        remote["enabled"] = False
+        host_cfg["remote_admin"] = remote
+        host_cfg["directory_enabled"] = False
+        host_cfg["enabled"] = False
+        advanced["remote_server_enabled"] = False
+        advanced["remote_server_choice_made"] = True
+        application["world_directory_host"] = host_cfg
+        _legacy.save_state(state)
+        try:
+            _legacy.DIRECTORY_HOST.ensure(host_cfg)
+        except Exception:
+            pass
     return host_cfg
 
 
@@ -733,11 +747,28 @@ def handle(method: str, params: dict) -> object:
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
         return _unified_console(profile_id, int(params.get("limit") or 350))
 
-    if method == "application.advanced.settings" and "remote_server_enabled" in params:
-        enabled = bool(params.get("remote_server_enabled"))
+    if method == "application.advanced.settings" and ("remote_server_enabled" in params or "webhost_enabled" in params):
         result = _legacy_handle(method, params)
         refreshed = _legacy.load_state()
-        _remote_choice(refreshed, enabled, explicit=True)
+        if "remote_server_enabled" in params:
+            _remote_choice(refreshed, bool(params.get("remote_server_enabled")), explicit=True)
+        else:
+            application = refreshed.setdefault("application", {})
+            advanced = application.setdefault("advanced", {})
+            host_cfg = _directory_host_module.normalize_host_config(application.get("world_directory_host"))
+            webhost_enabled = bool(params.get("webhost_enabled"))
+            remote_enabled = bool(advanced.get("remote_server_enabled", False))
+            host_cfg["directory_enabled"] = webhost_enabled
+            host_cfg["enabled"] = webhost_enabled or remote_enabled
+            remote = dict(host_cfg.get("remote_admin") or {})
+            remote["enabled"] = webhost_enabled or remote_enabled
+            host_cfg["remote_admin"] = remote
+            application["world_directory_host"] = host_cfg
+            _legacy.save_state(refreshed)
+            try:
+                _legacy.DIRECTORY_HOST.ensure(host_cfg)
+            except Exception:
+                pass
         return _legacy.public_state(_legacy.load_state()) if isinstance(result, dict) else result
 
     if method == "application.world_directory_host.settings":

@@ -21,6 +21,13 @@ from networking import effective_game_port
 from computer_profiles import default_computer_profile, normalize_computer_profile
 
 SCHEMA_VERSION = 11
+OFFICIAL_DIRECTORY_URL = "https://dragonwilds-sync-directory.dragonwilds.workers.dev"
+
+
+def official_directory_source(token: str = "") -> dict:
+    return {"name": "Dragonwilds Sync Live Directory", "url": OFFICIAL_DIRECTORY_URL,
+            "publisher_token": str(token or ""), "enabled": True,
+            "publish_enabled": True, "priority": 10}
 
 
 def app_data_root() -> Path:
@@ -216,9 +223,9 @@ def default_state() -> dict:
             "performance": {"hardware_acceleration": True, "renderer_memory_mb": 0},
             "computer_profile": default_computer_profile(),
             "rsdw_cache": {"repo": "RSDWArchive/RSDWTools", "branch": "main", "model_repo": "RSDWArchive/RSDWModel", "model_branch": "main", "refresh_after_updates": True, "auto_refresh": True, "refresh_hours": 24},
-            "world_discovery": {"enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": "", "directory_token": "", "directory_sources": [], "last_refresh_at": None},
+            "world_discovery": {"enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": OFFICIAL_DIRECTORY_URL, "directory_token": "", "directory_sources": [official_directory_source()], "last_refresh_at": None},
             "recommended_mods": {"creator_feed_url": "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/recommended-mods.json", "community_sources": [], "feeds": [], "mods": [], "last_refresh_at": None, "last_error": "", "nexus_activity_url": "https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14"},
-            "world_directory_host": {"identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": 27080, "public_base_url": "", "directory_enabled": True, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False, "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct", "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
+            "world_directory_host": {"identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": 27080, "public_base_url": "", "directory_enabled": False, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False, "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct", "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
                                      "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "refresh": True}}},
             # Legacy migration-only shape. The static Shared Worlds webhost UI/resource is retired in Release 1.1.
             "shared_worlds": {"feed_url": "", "feed_token": "", "auto_refresh": False, "refresh_minutes": 15, "last_refresh_at": None, "last_error": ""},
@@ -366,15 +373,21 @@ def load_state() -> dict:
     discovery.setdefault("prefetch_presentation", True)
     discovery.setdefault("refresh_seconds", 30)
     discovery.setdefault("source", "dragonwilds-public")
-    discovery.setdefault("directory_url", "")
+    discovery.setdefault("directory_url", OFFICIAL_DIRECTORY_URL)
     discovery.setdefault("directory_token", "")
     sources = discovery.setdefault("directory_sources", [])
     if not isinstance(sources, list):
         sources = []
-    if not sources and str(discovery.get("directory_url") or "").strip():
-        sources.append({"name": "Primary Directory", "url": str(discovery.get("directory_url") or "").strip(),
-                        "publisher_token": str(discovery.get("directory_token") or ""), "enabled": True,
-                        "publish_enabled": True, "priority": 100})
+    if not sources:
+        legacy_url = str(discovery.get("directory_url") or "").strip()
+        if legacy_url and legacy_url.rstrip("/").casefold() != OFFICIAL_DIRECTORY_URL.casefold():
+            sources.append({"name": "Primary Directory", "url": legacy_url,
+                            "publisher_token": str(discovery.get("directory_token") or ""), "enabled": True,
+                            "publish_enabled": True, "priority": 100})
+        sources.insert(0, official_directory_source(str(discovery.get("directory_token") or "")))
+    elif not any(str(row.get("url") or "").rstrip("/").casefold() == OFFICIAL_DIRECTORY_URL.casefold()
+                 for row in sources if isinstance(row, dict)):
+        sources.insert(0, official_directory_source(str(discovery.get("directory_token") or "")))
     discovery["directory_sources"] = sources
     discovery.setdefault("last_refresh_at", None)
     recommendations = application.setdefault("recommended_mods", {})

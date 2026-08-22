@@ -54,6 +54,15 @@ function allowedHelpyNavigation(value) {
   } catch (_) { return false; }
 }
 
+function allowedSyncHomeNavigation(value) {
+  try {
+    const u = new URL(String(value || ''));
+    return u.protocol === 'https:'
+      && u.hostname.toLowerCase() === 'gh0sted5456-us.github.io'
+      && (u.pathname === '/Dragonwilds-Sync/' || u.pathname.startsWith('/Dragonwilds-Sync/'));
+  } catch (_) { return false; }
+}
+
 function secureAttachedWebview(event, webPreferences, params) {
   const preview=String(params.partition||'')==='persist:webhost-preview';
   if (preview) {
@@ -65,6 +74,13 @@ function secureAttachedWebview(event, webPreferences, params) {
   const helpy=String(params.partition||'')==='persist:dragonwilds-help';
   if (helpy) {
     if (!allowedHelpyNavigation(params.src)) { event.preventDefault(); return; }
+    webPreferences.nodeIntegration=false; webPreferences.contextIsolation=true; webPreferences.sandbox=true; webPreferences.devTools=false;
+    delete webPreferences.preload;
+    return;
+  }
+  const syncHome=String(params.partition||'')==='persist:sync-home';
+  if (syncHome) {
+    if (!allowedSyncHomeNavigation(params.src)) { event.preventDefault(); return; }
     webPreferences.nodeIntegration=false; webPreferences.contextIsolation=true; webPreferences.sandbox=true; webPreferences.devTools=false;
     delete webPreferences.preload;
     return;
@@ -801,6 +817,7 @@ app.whenReady().then(async () => {
     if (contents.getType() !== 'webview') return;
     const preview = contents.session === session.fromPartition('persist:webhost-preview');
     const helpy = contents.session === session.fromPartition('persist:dragonwilds-help');
+    const syncHome = contents.session === session.fromPartition('persist:sync-home');
     contents.on('before-input-event', (event, input) => {
       if (!preview) return;
       const key=String(input.key||'').toLowerCase();
@@ -811,6 +828,11 @@ app.whenReady().then(async () => {
       if (preview) return { action:'deny' };
       if (helpy) {
         if (allowedHelpyNavigation(url)) contents.loadURL(url).catch(()=>{});
+        else if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
+        return { action:'deny' };
+      }
+      if (syncHome) {
+        if (allowedSyncHomeNavigation(url)) contents.loadURL(url).catch(()=>{});
         else if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
         return { action:'deny' };
       }
@@ -828,6 +850,12 @@ app.whenReady().then(async () => {
       if (preview) { if (!allowedWebhostPreviewNavigation(url)) event.preventDefault(); return; }
       if (helpy) {
         if (allowedHelpyNavigation(url)) return;
+        event.preventDefault();
+        if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
+        return;
+      }
+      if (syncHome) {
+        if (allowedSyncHomeNavigation(url)) return;
         event.preventDefault();
         if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
         return;

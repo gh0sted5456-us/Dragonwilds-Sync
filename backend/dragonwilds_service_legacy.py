@@ -1819,11 +1819,26 @@ def handle(method: str, params: dict) -> object:
         if "show_tips" in params:
             advanced["show_tips"] = bool(params.get("show_tips"))
         if "webhost_enabled" in params:
-            advanced["webhost_enabled"] = bool(params.get("webhost_enabled"))
-            state.setdefault("application", {}).setdefault("world_directory_host", {})["directory_enabled"] = bool(params.get("webhost_enabled"))
+            webhost_enabled = bool(params.get("webhost_enabled"))
+            advanced["webhost_enabled"] = webhost_enabled
+            host = state.setdefault("application", {}).setdefault("world_directory_host", {})
+            host["directory_enabled"] = webhost_enabled
+            if webhost_enabled:
+                host["enabled"] = True
+                host.setdefault("remote_admin", {})["enabled"] = True
+                advanced["remote_server_enabled"] = True
+                advanced["remote_server_choice_made"] = True
+            elif not bool(advanced.get("remote_server_enabled", False)):
+                host["enabled"] = False
+                host.setdefault("remote_admin", {})["enabled"] = False
         if "remote_server_enabled" in params:
-            advanced["remote_server_enabled"] = bool(params.get("remote_server_enabled"))
-            state.setdefault("application", {}).setdefault("world_directory_host", {}).setdefault("remote_admin", {})["enabled"] = bool(params.get("remote_server_enabled"))
+            remote_enabled = bool(params.get("remote_server_enabled"))
+            advanced["remote_server_enabled"] = remote_enabled
+            advanced["remote_server_choice_made"] = True
+            host = state.setdefault("application", {}).setdefault("world_directory_host", {})
+            host.setdefault("remote_admin", {})["enabled"] = remote_enabled
+            host["directory_enabled"] = bool(advanced.get("webhost_enabled", False))
+            host["enabled"] = remote_enabled or bool(advanced.get("webhost_enabled", False))
         if "server_enabled" in params:
             state.setdefault("application", {})["server_mode_enabled"] = bool(params.get("server_enabled"))
         save_state(state)

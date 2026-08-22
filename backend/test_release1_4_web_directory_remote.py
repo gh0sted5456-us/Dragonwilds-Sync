@@ -42,7 +42,7 @@ def test_public_catalog_remote_login_audit_and_structured_action():
         )
         port = _free_port(); base = f"http://127.0.0.1:{port}"
         try:
-            controller.start({"enabled": True, "bind_host": "127.0.0.1", "port": port, "upnp_enabled": False,
+            controller.start({"enabled": True, "directory_enabled": True, "bind_host": "127.0.0.1", "port": port, "upnp_enabled": False,
                               "allow_anonymous_heartbeats": False, "ingestion_token": "test-token"})
             with urllib.request.urlopen(base + "/servers") as response:
                 public_page = response.read()

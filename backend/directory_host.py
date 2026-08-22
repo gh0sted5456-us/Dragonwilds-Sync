@@ -255,7 +255,7 @@ def _admin_console_html(token: str) -> bytes:
 def default_host_config() -> dict:
     return {
         "identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": DEFAULT_PORT,
-        "public_base_url": "", "directory_enabled": True, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False,
+        "public_base_url": "", "directory_enabled": False, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False,
         "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct",
         "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public",
         "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": dict(REMOTE_PERMISSION_DEFAULTS)},
@@ -267,7 +267,7 @@ def normalize_host_config(value: dict | None) -> dict:
     cfg.update({key: raw[key] for key in cfg if key in raw})
     cfg["enabled"] = bool(cfg["enabled"])
     cfg["identity_name"] = str(cfg.get("identity_name") or "Dragonwilds Sync").strip()[:80] or "Dragonwilds Sync"
-    cfg["directory_enabled"] = bool(cfg.get("directory_enabled", True))
+    cfg["directory_enabled"] = bool(cfg.get("directory_enabled", False))
     cfg["bind_host"] = str(cfg["bind_host"] or "0.0.0.0").strip()[:255]
     cfg["port"] = max(1024, min(int(cfg["port"] or DEFAULT_PORT), 65535))
     public = str(cfg["public_base_url"] or "").strip().rstrip("/")[:1000]

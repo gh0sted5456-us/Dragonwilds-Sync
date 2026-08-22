@@ -33,7 +33,7 @@ must(js.includes('data-webhost-tab="remote"') && js.includes('remoteEnabled') &&
 must(js.includes('Users & Permissions') && js.includes('application.world_directory_host.user.create'), 'Remote Server user/permission manifest is not surfaced in WebHost');
 must(remoteLifecycle.includes('payload.enabled=remoteEnabled') && remoteLifecycle.includes('payload.directory_enabled=false'), 'Remote-only listener does not release when Remote Server is disabled');
 must(directoryHost.indexOf('if not directory_enabled and remote_enabled:') < directoryHost.indexOf('if self._private_console_allowed(): page = _admin_console_html'), 'Remote-only root must resolve to login before local private-console authority');
-must(appV2.includes('data-webhost-tab="home"') && appV2.includes('https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html'), 'Official Sync Home tab is missing');
+must(appV2.includes('data-webhost-tab="home"') && appV2.includes("const SYNC_HOME_URL = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/'"), 'Official Sync Home tab is missing');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');
 must(!web.includes('dws-router-password'), 'The routing hub must never collect a target server password');
 must(service.includes('_legacy_handle = _legacy.handle'), 'V2 service wrapper must preserve the original handler before patching recursion');

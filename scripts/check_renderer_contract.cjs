@@ -18,6 +18,7 @@ const characterTabsCss = fs.readFileSync(path.join(root, 'renderer', 'release-ch
 const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-menu.css'), 'utf8');
 const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
 const popupSafety = fs.readFileSync(path.join(root, 'renderer', 'release-popup-safety.js'), 'utf8');
+const recommendedPlacardsCss = fs.readFileSync(path.join(root, 'renderer', 'release-recommended-placards.css'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -40,6 +41,11 @@ assert(localProfileSync.includes('profile.local_sync.configure') && localProfile
 assert(popupSafety.includes("event.key!=='Escape'") && popupSafety.includes('data-popup-safety-close') &&
   popupSafety.includes('closeModPopup') && popupSafety.includes('event.target===popup'),
   'Every modal popup must support a close control, Escape, backdrop dismissal, and placard-specific cleanup.');
+assert(source.includes('recommended-mod-card recommended-mod-placard') && source.includes('recommended-mod-platform-link ${providerKey}') &&
+  source.includes('aria-label="Open ${escapeHtml(mod.name||\'mod\')} on ${escapeHtml(provider)}"') &&
+  recommendedPlacardsCss.includes('grid-template-columns:minmax(190px,38%) minmax(0,1fr)!important') &&
+  recommendedPlacardsCss.includes('object-fit:cover!important'),
+  'Recommended mods must render as banner-led placards whose platform icon directly opens the source mod page.');
 
 assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
   'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');

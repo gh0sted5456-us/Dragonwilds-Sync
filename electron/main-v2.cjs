@@ -45,10 +45,26 @@ function allowedWebhostPreviewNavigation(value) {
   catch (_) { return false; }
 }
 
+function allowedHelpyNavigation(value) {
+  try {
+    const u = new URL(String(value || ''));
+    return u.protocol === 'https:'
+      && u.hostname.toLowerCase() === 'gh0sted5456-us.github.io'
+      && u.pathname.replace(/\/+$/, '') === '/Dragonwilds-Sync/helpy.html';
+  } catch (_) { return false; }
+}
+
 function secureAttachedWebview(event, webPreferences, params) {
   const preview=String(params.partition||'')==='persist:webhost-preview';
   if (preview) {
     if (!allowedWebhostPreviewNavigation(params.src)) { event.preventDefault(); return; }
+    webPreferences.nodeIntegration=false; webPreferences.contextIsolation=true; webPreferences.sandbox=true; webPreferences.devTools=false;
+    delete webPreferences.preload;
+    return;
+  }
+  const helpy=String(params.partition||'')==='persist:dragonwilds-help';
+  if (helpy) {
+    if (!allowedHelpyNavigation(params.src)) { event.preventDefault(); return; }
     webPreferences.nodeIntegration=false; webPreferences.contextIsolation=true; webPreferences.sandbox=true; webPreferences.devTools=false;
     delete webPreferences.preload;
     return;
@@ -783,6 +799,7 @@ app.whenReady().then(async () => {
   app.on('web-contents-created', (_event, contents) => {
     if (contents.getType() !== 'webview') return;
     const preview = contents.session === session.fromPartition('persist:webhost-preview');
+    const helpy = contents.session === session.fromPartition('persist:dragonwilds-help');
     contents.on('before-input-event', (event, input) => {
       if (!preview) return;
       const key=String(input.key||'').toLowerCase();
@@ -791,6 +808,11 @@ app.whenReady().then(async () => {
     if (preview) contents.on('context-menu', (event)=>event.preventDefault());
     contents.setWindowOpenHandler(({ url }) => {
       if (preview) return { action:'deny' };
+      if (helpy) {
+        if (allowedHelpyNavigation(url)) contents.loadURL(url).catch(()=>{});
+        else if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
+        return { action:'deny' };
+      }
       // Keep locally served RSDWTools navigation inside the embedded guest. Opening
       // loopback URLs in the OS is both surprising and was the source of the old
       // rsdw-local:// Windows protocol popup. Remote links still open normally.
@@ -803,6 +825,12 @@ app.whenReady().then(async () => {
     });
     contents.on('will-navigate', (event, url) => {
       if (preview) { if (!allowedWebhostPreviewNavigation(url)) event.preventDefault(); return; }
+      if (helpy) {
+        if (allowedHelpyNavigation(url)) return;
+        event.preventDefault();
+        if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
+        return;
+      }
       if (allowedToolkitNavigation(url)) return;
       event.preventDefault();
       if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});

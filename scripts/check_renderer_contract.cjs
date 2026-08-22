@@ -11,10 +11,25 @@ const baseCss = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8
 const releaseNavigation = fs.readFileSync(path.join(root, 'renderer', 'release-navigation.js'), 'utf8');
 const releasePolish = fs.readFileSync(path.join(root, 'renderer', 'release-polish.js'), 'utf8');
 const performanceCss = fs.readFileSync(path.join(root, 'renderer', 'release-performance.css'), 'utf8');
+const characterLayout = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout.js'), 'utf8');
+const characterLayoutCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout.css'), 'utf8');
+const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-menu.css'), 'utf8');
+const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+
+assert(characterLayout.includes("/^pose$/i") && characterLayout.includes("pose.insertAdjacentElement('afterend', background)"),
+  'Character Background must move beside Pose without recreating the control.');
+assert(characterLayout.includes('character-hotbar-dock') && characterLayout.includes('dock.appendChild(hotbar)') &&
+  characterLayoutCss.includes('justify-content:center') && characterLayoutCss.includes('width:max-content'),
+  'The character hotbar must occupy its own centered row directly beneath the preview.');
+assert(characterLayout.includes('character-item-menu-filters') && characterLayout.includes('browse all compatible items/i') && characterMenuCss.includes('.character-hotbar-context-menu'),
+  'Equipment and hotbar item selection must use the filtered right-click flow instead of a left-click repository shortcut.');
+assert(localProfileSync.includes('profile.local_sync.configure') && localProfileSync.includes('profile.local_sync.run') &&
+  localProfileSync.includes('pickDirectory') && localProfileSync.includes('45000'),
+  'Optional OneDrive/Google Drive profile sync must use a selected local folder and bounded automatic refresh.');
 
 assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
   'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');
@@ -38,6 +53,8 @@ assert(source.includes('native-pastel-picker') && source.includes('native-pastel
   'Character color controls must expose the styled radial painter palette.');
 assert(source.includes('id="rsdw-see-changes"') && source.includes('queueRsdwAvatarPreview'),
   '3D appearance changes must remain queued until See changes is selected.');
+assert(source.includes('rsdwPreviewRefreshAuthorized') && source.includes('applyPendingWeaponChanges') && source.includes('will appear after See changes'),
+  'Equipment, weapon, and toolkit preview changes must not alter the mounted 3D view before See changes.');
 assert(source.includes('avatarCssInserted') && source.includes('avatarPreparePromise') && source.includes('avatarPollDelay'),
   '3D preview readiness must deduplicate CSS injection and use adaptive polling.');
 assert(!source.includes("navButton('remote-server'"),
@@ -116,7 +133,7 @@ function assertIco(relativePath) {
 }
 
 assertPng('renderer/assets/navigation/rsdw-l.png');
-assert(sha256('renderer/assets/navigation/rsdw-l.png') === '6fca88b1bdfe9180bb3e86920889d18249f05756112d7246cabe2d0220bc91e2',
+assert(sha256('renderer/assets/navigation/rsdw-l.png') === '2275ed1b2d08f8025a35812ec5293dfb6485acd3184a91b1519c05309d1c4695',
   'The RSDW-L navbar icon must match the supplied approved artwork.');
 assertIco('renderer/assets/dragonwilds_icon.ico');
 assert(sha256('renderer/assets/dragonwilds_icon.ico') === '3ccd660ed77e252940fce0a53e0938d897b4f0ff0bcb71fee4bba41469fe5e8e',

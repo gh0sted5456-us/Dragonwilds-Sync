@@ -2003,6 +2003,46 @@ def handle(method: str, params: dict) -> object:
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
+    if method == "profile.local_sync.configure":
+        provider = str(params.get("provider") or "onedrive").strip().lower()
+        if provider not in {"onedrive", "google-drive"}: raise ValueError("Choose OneDrive or Google Drive.")
+        enabled = bool(params.get("enabled")); folder = str(params.get("folder") or "").strip()
+        if enabled:
+            if not folder: raise ValueError("Choose the local synced folder first.")
+            selected = Path(folder).expanduser().resolve()
+            if not selected.is_dir(): raise ValueError("The linked sync folder is not available on this computer.")
+            folder = str(selected)
+        application = state.setdefault("application", {})
+        link = {**(application.get("profile_local_sync") or {}), "provider": provider, "folder": folder,
+                "enabled": enabled, "updated_at": now_iso()}
+        application["profile_local_sync"] = link; save_state(state)
+        return {"link": link, "state": public_state(state)}
+
+    if method == "profile.local_sync.run":
+        application = state.setdefault("application", {})
+        link = application.get("profile_local_sync") if isinstance(application.get("profile_local_sync"), dict) else {}
+        if not bool(link.get("enabled")): raise ValueError("Linked profile sync is not enabled.")
+        selected = Path(str(link.get("folder") or "")).expanduser().resolve()
+        if not selected.is_dir(): raise ValueError("The linked sync folder is unavailable. Open the sync client or choose the folder again.")
+        destination = selected / "Dragonwilds Sync Profiles"; destination.mkdir(parents=True, exist_ok=True)
+        player = state.setdefault("player_profile", {}); profile_id = str(player.get("profile_id") or player.get("id") or "default")
+        display_name = str(player.get("display_name") or "Dragonwilds Profile")
+        safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in display_name).strip(" ._")[:80] or "Dragonwilds Profile"
+        target = destination / f"{safe_name}-{profile_id}.rsdwl"; temporary = destination / f".{safe_name}-{profile_id}.syncing.rsdwl"
+        try:
+            result = export_profile_bundle(state, str(temporary), profile_name=display_name, include_characters=True,
+                                           include_worlds=True, include_world_artwork=True, include_world_passwords=False,
+                                           game_dir=str(application.get("game_dir") or ""))
+            temporary.replace(target)
+        finally:
+            try: temporary.unlink(missing_ok=True)
+            except OSError: pass
+        link = {**link, "last_synced_at": now_iso(), "last_path": str(target), "last_error": ""}
+        application["profile_local_sync"] = link; save_state(state)
+        _record_notification(state, "Linked profile saved", f"{display_name} · {link.get('provider') or 'local sync folder'}", "success", key="profile-local-sync")
+        save_state(state)
+        return {"result": {**result, "path": str(target)}, "link": link, "state": public_state(state)}
+
     if method == "profile.package.import":
         path = str(params.get("path") or "").strip()
         application = state.get("application") or {}

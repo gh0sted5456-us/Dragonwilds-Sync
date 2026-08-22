@@ -51,7 +51,7 @@ for (const token of [
   'data-character-undo', 'data-character-redo', 'data-avatar-upstream-select="avatar-animation-select"',
   'characterEquipmentCompatible(row, slot)', 'character-equipment-context-menu',
   'openStudioEquipmentMenu(socket,event)', 'data-character-equip-item',
-  "action:'remove',section:'loadout'", 'Browse All Compatible Items…',
+  "action:'remove',section:'loadout'", "slot==='Hotbar'", "section:'inventory'",
 ]) need(app.includes(token), `Character Editor redesign contract missing ${token}`);
 need(app.includes('nativeCharacterEditor.querySelectorAll(\'[data-character-editor-tab]\')') && app.includes('panel.classList.toggle(\'active\''), 'Character Editor tabs must swap panels in place without recreating the live preview');
 const tabSwapStart = app.indexOf('const setCharacterEditorTab=');

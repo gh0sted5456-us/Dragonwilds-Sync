@@ -106,10 +106,10 @@ def _entry_id(group: str, name: str, source: dict) -> str:
 
 
 def _load_index() -> dict:
-    value = read_json(INDEX_PATH, {"version": 1, "entries": {}})
+    value = read_json(INDEX_PATH, {"version": 2, "entries": {}})
     if not isinstance(value, dict):
-        value = {"version": 1, "entries": {}}
-    value.setdefault("version", 1); value.setdefault("entries", {})
+        value = {"version": 2, "entries": {}}
+    value.setdefault("version", 2); value.setdefault("entries", {})
     return value
 
 
@@ -175,6 +175,7 @@ def refresh_repository() -> dict:
     index = _load_index()
     previous = index.get("entries") or {}
     entries: dict[str, dict] = {}
+    scanned_at = time.time()
     for kind, profile_id, profile_file in _profile_specs():
         profile = read_json(profile_file, {})
         overrides = profile.get("unit_overrides") if isinstance(profile.get("unit_overrides"), dict) else {}
@@ -188,20 +189,47 @@ def refresh_repository() -> dict:
                 continue
             source = normalize_mod_source((override or {}).get("source"))
             entry_id = _entry_id(group, name, source)
-            content_hash, file_count, size = _content_hash(paths)
+            observed_hash, observed_file_count, observed_size = _content_hash(paths)
+            old = previous.get(entry_id) if isinstance(previous, dict) else None
+            old = old if isinstance(old, dict) else {}
+            current = entries.get(entry_id) if isinstance(entries.get(entry_id), dict) else {}
+            canonical_hash = str(current.get("content_hash") or old.get("content_hash") or observed_hash)
+            is_new_entry = not bool(current) and not bool(old.get("content_hash"))
             entry = entries.setdefault(entry_id, {
                 "id": entry_id, "key": key, "name": name, "group": group,
-                "source": source, "profiles": [], "content_hash": content_hash,
-                "file_count": file_count, "size": size, "updated_at": time.time(),
+                "source": source, "profiles": [], "content_hash": canonical_hash,
+                "fingerprint_algorithm": "sha256-tree-v1",
+                "file_count": int(old.get("file_count") or observed_file_count),
+                "size": int(old.get("size") or observed_size),
+                "first_seen_at": old.get("first_seen_at") or scanned_at,
+                "updated_at": old.get("updated_at") or scanned_at,
+                "last_scanned_at": scanned_at, "_new": not bool(old.get("content_hash")),
             })
-            entry["profiles"].append({"kind": kind, "id": profile_id, "name": str(profile.get("name") or profile_id)})
+            old_profiles = old.get("profiles") if isinstance(old.get("profiles"), list) else []
+            old_profile = next((row for row in old_profiles if isinstance(row, dict) and row.get("kind") == kind and row.get("id") == profile_id), {})
+            previous_observed = str(old_profile.get("content_hash") or "")
+            fingerprint_status = "baseline" if is_new_entry else ("unchanged" if observed_hash == canonical_hash else "replaced")
+            changed_at = (old_profile.get("changed_at") if previous_observed == observed_hash else scanned_at) or scanned_at
+            entry["profiles"].append({
+                "kind": kind, "id": profile_id, "name": str(profile.get("name") or profile_id),
+                "content_hash": observed_hash, "previous_content_hash": previous_observed,
+                "fingerprint_algorithm": "sha256-tree-v1", "fingerprint_status": fingerprint_status,
+                "file_count": observed_file_count, "size": observed_size,
+                "first_scanned_at": old_profile.get("first_scanned_at") or scanned_at,
+                "last_scanned_at": scanned_at, "changed_at": changed_at,
+            })
             payload = PAYLOAD_ROOT / entry_id
             if not payload.exists():
                 _copy_payload(paths, payload)
-            old = previous.get(entry_id) if isinstance(previous, dict) else None
-            if old and old.get("content_hash") == content_hash:
-                entry["updated_at"] = old.get("updated_at") or entry["updated_at"]
-    index = {"version": 1, "root": str(REPOSITORY_ROOT), "updated_at": time.time(), "entries": entries}
+    for entry in entries.values():
+        observed_hashes = sorted({str(row.get("content_hash") or "") for row in entry["profiles"] if row.get("content_hash")})
+        replacement_count = sum(row.get("fingerprint_status") == "replaced" for row in entry["profiles"])
+        entry["observed_hashes"] = observed_hashes
+        entry["replacement_count"] = replacement_count
+        entry["replacement_detected"] = replacement_count > 0
+        entry["scan_status"] = "replaced" if replacement_count else ("new" if entry.pop("_new", False) else "unchanged")
+        entry.pop("_new", None)
+    index = {"version": 2, "root": str(REPOSITORY_ROOT), "updated_at": scanned_at, "entries": entries}
     write_json(INDEX_PATH, index)
     return public_index(index)
 
@@ -342,7 +370,18 @@ def publish_from_profile(kind: str, profile_id: str, key: str, *, propagate: boo
     refs = list(old.get("profiles") or [])
     if not any(row.get("kind") == kind and row.get("id") == profile_id for row in refs):
         refs.append({"kind": kind, "id": profile_id, "name": str(profile.get("name") or profile_id)})
+    for ref in refs:
+        is_source = ref.get("kind") == kind and ref.get("id") == profile_id
+        if is_source or propagate:
+            ref.update({"content_hash": content_hash, "previous_content_hash": str(ref.get("content_hash") or ""),
+                        "fingerprint_algorithm": "sha256-tree-v1", "fingerprint_status": "unchanged",
+                        "last_scanned_at": time.time(), "changed_at": time.time()})
+        else:
+            ref["fingerprint_status"] = "unchanged" if ref.get("content_hash") == content_hash else "replaced"
     entry["profiles"] = refs
+    replacement_count = sum(row.get("fingerprint_status") == "replaced" for row in refs)
+    entry.update({"fingerprint_algorithm": "sha256-tree-v1", "replacement_detected": replacement_count > 0,
+                  "replacement_count": replacement_count, "scan_status": "replaced" if replacement_count else "unchanged"})
     _copy_payload(paths, PAYLOAD_ROOT / entry_id)
     deployed = []
     if propagate:
@@ -361,8 +400,17 @@ def deploy_entry(entry_id: str, kind: str, profile_id: str) -> dict:
     if not entry: raise KeyError("Shared mod was not found")
     files = _deploy(entry, kind, profile_id)
     refs = entry.setdefault("profiles", [])
-    if not any(row.get("kind") == kind and row.get("id") == profile_id for row in refs):
+    ref = next((row for row in refs if row.get("kind") == kind and row.get("id") == profile_id), None)
+    if ref is None:
         profile = read_json(_profile_file(kind, profile_id), {})
-        refs.append({"kind": kind, "id": profile_id, "name": str(profile.get("name") or profile_id)})
+        ref = {"kind": kind, "id": profile_id, "name": str(profile.get("name") or profile_id)}
+        refs.append(ref)
+    now = time.time()
+    ref.update({"previous_content_hash": str(ref.get("content_hash") or ""), "content_hash": entry.get("content_hash"),
+                "fingerprint_algorithm": "sha256-tree-v1", "fingerprint_status": "unchanged",
+                "last_scanned_at": now, "changed_at": now})
+    entry["replacement_count"] = sum(row.get("fingerprint_status") == "replaced" for row in refs)
+    entry["replacement_detected"] = entry["replacement_count"] > 0
+    entry["scan_status"] = "replaced" if entry["replacement_detected"] else "unchanged"
     index["updated_at"] = time.time(); write_json(INDEX_PATH, index)
     return {"entry": entry, "files": files, "repository": public_index(index)}

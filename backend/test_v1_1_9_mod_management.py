@@ -37,8 +37,25 @@ def main() -> None:
         scanned = repository.refresh_repository()
         assert len(scanned["entries"]) == 1
         assert len(scanned["entries"][0]["profiles"]) == 2
+        entry = scanned["entries"][0]
+        assert entry["fingerprint_algorithm"] == "sha256-tree-v1"
+        assert len(entry["content_hash"]) == 64
+        assert entry["replacement_detected"] is True and entry["replacement_count"] == 1
+        world_b = next(row for row in entry["profiles"] if row["id"] == "world-b")
+        assert world_b["fingerprint_status"] == "replaced" and len(world_b["content_hash"]) == 64
 
         source = repository.LOCAL_PROFILES_DIR / "world-a" / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
+        canonical_hash = entry["content_hash"]
+        (source / "schema.json").write_text("replacement", encoding="utf-8")
+        rescanned = repository.refresh_repository()["entries"][0]
+        world_a = next(row for row in rescanned["profiles"] if row["id"] == "world-a")
+        assert rescanned["content_hash"] == canonical_hash
+        assert rescanned["scan_status"] == "replaced" and world_a["fingerprint_status"] == "replaced"
+        assert world_a["previous_content_hash"] == canonical_hash and world_a["content_hash"] != canonical_hash
+        assert repository.open_repository_file(rescanned["id"], "schema.json")["content"] == "first"
+        (source / "schema.json").write_text("first", encoding="utf-8")
+        restored = repository.refresh_repository()["entries"][0]
+        assert next(row for row in restored["profiles"] if row["id"] == "world-a")["fingerprint_status"] == "unchanged"
         (source / "new-schema.json").write_text("new", encoding="utf-8")
         result = repository.publish_from_profile("local", "world-a", "runeschema_mod::SharedSchema", propagate=True)
         target = repository.LOCAL_PROFILES_DIR / "world-b" / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"

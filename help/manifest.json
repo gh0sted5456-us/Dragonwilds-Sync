@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 7,
+  "version": 8,
   "title": "Dragonwilds Sync Helpy",
   "subtitle": "A living, system-by-system field guide shared by the website and desktop application.",
   "updated_at": "2026-08-21",
@@ -714,6 +714,10 @@
         {
           "title": "Canonical ID.txt",
           "body": "Place UTF-8 ID.txt at the effective mod root. HOTLOAD = YES is valid as the only line and normalizes to hotload_capable true with runtime_role both and empty optional fields. The parser is case-insensitive, bounded to 512 KiB, accepts colon or equals delimiters, and retains read compatibility for identity.txt and identities.txt."
+        },
+        {
+          "title": "Drop-in ID.txt discovery",
+          "body": "A normal mod folder or ZIP may carry ID.txt at its effective payload root. Sync reads it during staged installation and every inventory scan, including through optional wrapper folders. No RSDWL conversion is required. If HOTLOAD = YES is the only line, hotload_capable becomes true, runtime_role defaults to both, and omitted metadata remains empty or uses inventory/folder presentation fallbacks."
         },
         {
           "title": "Identity fields",

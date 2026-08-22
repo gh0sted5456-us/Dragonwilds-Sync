@@ -403,7 +403,7 @@ def load_state() -> dict:
     for key, default in {"identity_name": "Dragonwilds Sync", "enabled": False, "bind_host": "0.0.0.0", "port": 27080, "public_base_url": "", "directory_enabled": True, "public_surface_mode": "full", "ingestion_token": "", "allow_anonymous_heartbeats": False, "publication_mode": "manual", "upnp_enabled": False, "public_transport": "direct", "heartbeat_ttl_seconds": 300, "max_entries": 500, "firewall_profiles": "private,public"}.items():
         directory_host.setdefault(key, default)
     remote_admin = directory_host.setdefault("remote_admin", {})
-    remote_admin.setdefault("enabled", True)
+    remote_admin.setdefault("enabled", False)
     remote_admin.setdefault("users", [])
     remote_admin.setdefault("permission_requests", [])
     remote_permissions = remote_admin.setdefault("permissions", {})

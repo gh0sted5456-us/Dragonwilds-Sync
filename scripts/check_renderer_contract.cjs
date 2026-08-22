@@ -47,10 +47,13 @@ assert(source.includes('recommended-mod-card recommended-mod-placard') && source
   recommendedPlacardsCss.includes('object-fit:cover!important'),
   'Recommended mods must render as banner-led placards whose platform icon directly opens the source mod page.');
 
-assert(source.includes('data-webhost-tab="live">Dragonwilds Sync'),
-  'The combined Sync workspace must expose its Dragonwilds Sync preview tab.');
-assert(source.includes('data-webhost-tab="settings">Website &amp; Networking'),
-  'The combined Sync workspace must expose its Networking tab.');
+assert(source.includes('data-webhost-tab="home">Server Directory') &&
+  source.includes('data-webhost-tab="remote">Remote Login &amp; Permissions'),
+  'The normal Sync workspace must expose the official directory and Remote Login.');
+assert(source.includes('data-webhost-tab="live">Advanced Webhost Preview') &&
+  source.includes('data-webhost-tab="settings">Advanced Webhost Settings') &&
+  source.includes("const SYNC_HOME_URL = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html'"),
+  'Advanced Webhost controls and the official website server-list link must remain explicit.');
 assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") && source.includes("navButton('world-management'"),
@@ -77,6 +80,9 @@ assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),
   'Sync Networking must independently expose Remote Server Access.');
+assert(source.includes("const profileDistribution=u.classification==='server_only'?'PROFILE RETAINED':'PROFILE ACTIVE'") &&
+  source.includes('${modCategoryIcon(section,true)}<strong title=') && source.includes('· SHA-256 ${escapeHtml(fingerprint)}'),
+  'Private and Singleplayer mod lists must retain server-grade family icons, lifecycle, distribution, and fingerprints.');
 assert(!source.includes("if(routedWebhost) state.webhostTab='live'"),
   'The routed WebHost workspace must not reset the selected tab during render.');
 assert(avatarPreload.includes('main>*:not(.avatar-layout):not(#avatar-stage)') &&

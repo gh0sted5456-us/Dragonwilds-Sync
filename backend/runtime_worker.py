@@ -355,7 +355,24 @@ class RuntimeWorker:
                 "desiredConfigRevision": desired["revision"], "appliedConfigRevision": self.applied_config_revision,
             }
 
-    def _start_share(self) -> dict:
+    def _apply_share_password(self, payload: dict | None = None) -> bool:
+        payload = payload if isinstance(payload, dict) else {}
+        if "worldPassword" not in payload:
+            return False
+        from server_systems import STATE
+        next_password = str(payload.get("worldPassword") or "")
+        with STATE.lock:
+            changed = next_password != STATE.password
+            STATE.password = next_password
+            if changed:
+                STATE.tokens.clear()
+                STATE.token_sources.clear()
+                STATE.pending_nonces.clear()
+        if changed:
+            self.log("SHARE_CREDENTIALS_REFRESHED", profile_id=self.profile_id)
+        return changed
+
+    def _start_share(self, payload: dict | None = None) -> dict:
         with self._runtime_lock:
             engine = self._engine()
             before = self._runtime_status()
@@ -363,8 +380,10 @@ class RuntimeWorker:
                 raise RuntimeError("Sync/file share cannot start before the dedicated process is verified running.")
             existing = before.get("share") if isinstance(before.get("share"), dict) else {}
             if existing.get("serving"):
-                return {"already_serving": True, "verified_serving": True, "share": dict(existing)}
+                changed = self._apply_share_password(payload)
+                return {"already_serving": True, "verified_serving": True, "credentials_refreshed": changed, "share": dict(existing)}
             published = engine.publish(self.profile_id)
+            changed = self._apply_share_password(payload)
             after = self._runtime_status()
             share = after.get("share") if isinstance(after.get("share"), dict) else {}
             if not share.get("serving"):
@@ -375,7 +394,7 @@ class RuntimeWorker:
                 raise RuntimeError("Worker started Sync/file share but could not verify that it is serving.")
             self.write_state(self.runtime_state)
             self.log("FILE_SHARE_STATUS", state="serving", port=share.get("port"))
-            return {**dict(published or {}), "verified_serving": True, "share": dict(share)}
+            return {**dict(published or {}), "verified_serving": True, "credentials_refreshed": changed, "share": dict(share)}
 
     def _stop_share(self) -> dict:
         with self._runtime_lock:
@@ -501,7 +520,7 @@ class RuntimeWorker:
             if command in {"START", "START_RUNTIME"}:
                 return {"ok": True, "result": self._start_runtime(payload), "status": self.status()}
             if command == "START_SHARE":
-                return {"ok": True, "result": self._start_share(), "status": self.status()}
+                return {"ok": True, "result": self._start_share(payload), "status": self.status()}
             if command == "STOP_SHARE":
                 return {"ok": True, "result": self._stop_share(), "status": self.status()}
             if command == "GET_SHARE_PAYLOAD":

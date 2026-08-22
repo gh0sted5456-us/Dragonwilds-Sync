@@ -270,12 +270,13 @@ class WorkerSupervisor:
             "result": dict(response.get("result") or {}), "status": {**status, "live": True, "attached": True},
         }
 
-    def start_share(self, profile_id: str) -> dict:
+    def start_share(self, profile_id: str, world_password: str | None = None) -> dict:
         profile_id = safe_id(profile_id, "profile ID")
         state = self.reconcile(profile_id)
         if not state.get("live") or not state.get("attached"):
             raise RuntimeError("A live authenticated World worker is required before Sync/file share can start.")
-        response = self._require_ok(self._call(state, "START_SHARE"), "share start")
+        payload = {"worldPassword": str(world_password or "")} if world_password is not None else None
+        response = self._require_ok(self._call(state, "START_SHARE", payload), "share start")
         status = response.get("status") if isinstance(response.get("status"), dict) else self.status(profile_id)
         return {
             "profileId": profile_id, "result": dict(response.get("result") or {}),

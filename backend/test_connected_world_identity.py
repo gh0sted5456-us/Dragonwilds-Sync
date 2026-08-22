@@ -26,6 +26,13 @@ def main():
     assert "tab:'direct', filter:'all', page:1" in renderer
     assert "world.convert_to_singleplayer" in renderer and "world.convert_to_server" in renderer
     assert 'method in {"world.convert_to_singleplayer", "world.convert_to_server"}' in service
+    assert "policy = worldsave_status(world)" in service
+    assert "source_world_retained" in service
+    assert "import_worldsave_archive" in service
+    assert "Convert to Private · Download Disabled" in renderer
+    assert "Convert to Server · Download Disabled" in renderer
+    assert "worldSaveDownloadPolicy" in renderer
+    assert "}else if(standaloneRemote){" not in renderer
     assert "characterBackdropDataUrl" in renderer and "canvas.toDataURL('image/png')" in renderer
     print("Connected World identity, conversion, and embedded character backdrop contracts passed")
 

@@ -578,6 +578,26 @@ def handle(method: str, params: dict) -> object:
                 return _import_website_draft(path, state)
         return _base_handle(method, params)
 
+    if method == "server.world.update":
+        result = _base_handle(method, params)
+        profile_id = str(params.get("id") or "").strip()
+        profile = _legacy.load_server_profile(profile_id) if profile_id else None
+        dedicated = profile.get("dedicated_config") if isinstance(profile, dict) and isinstance(profile.get("dedicated_config"), dict) else {}
+        # START_SHARE is idempotent. On an active worker it hot-applies the
+        # Dragonwilds World Password without restarting gameplay.
+        if profile and "world_pass" in dedicated:
+            try:
+                worker = _workers().status(profile_id)
+                share = worker.get("share") if isinstance(worker.get("share"), dict) else {}
+                if worker.get("live") and worker.get("attached") and share.get("serving"):
+                    refreshed = _workers().start_share(profile_id, str(dedicated.get("world_pass") or ""))
+                    if isinstance(result, dict):
+                        result["live_credentials"] = refreshed.get("result") or {"credentials_refreshed": True}
+            except Exception as exc:
+                if isinstance(result, dict):
+                    result["live_credentials_warning"] = f"Saved, but the live Sync credential could not be refreshed: {exc}"
+        return result
+
     return _base_handle(method, params)
 
 

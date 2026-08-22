@@ -2081,6 +2081,16 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
     with STATE.lock:
         if STATE.active_profile_id != profile_id or not STATE.manifest:
             return {"updated": False, "reason": "World is not the live published profile"}
+        dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
+        if "world_pass" in dedicated:
+            next_password = str(dedicated.get("world_pass") or "")
+            if next_password != STATE.password:
+                # A saved World Password is immediately authoritative for the
+                # live endpoint. Old sessions must negotiate again.
+                STATE.password = next_password
+                STATE.tokens.clear()
+                STATE.token_sources.clear()
+                STATE.pending_nonces.clear()
         avg, count = profile_rating_summary(profile)
         health_cfg = public_health_config(normalize_health_config(profile.get("health_config")))
         hierarchy = profile.get("external_hierarchy") or {}

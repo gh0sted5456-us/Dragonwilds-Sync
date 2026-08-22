@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import tempfile
 import time
 import zipfile
@@ -67,6 +68,51 @@ def _atomic_replace_tree(source: Path, destination: Path) -> None:
 def _overlay_tree(source: Path, destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     if source.exists(): shutil.copytree(source, destination, dirs_exist_ok=True)
+
+
+def import_worldsave_archive(archive_path: str | Path, destination: str | Path) -> dict:
+    """Safely stage and import a host-provided World save ZIP.
+
+    World-save downloads are ordinary ZIPs containing paths relative to the
+    host's SaveGames directory.  Extraction is bounded and rejects absolute,
+    traversal, drive-qualified, and symbolic-link members before touching the
+    destination tree.
+    """
+    archive = Path(archive_path)
+    target = Path(destination)
+    if not archive.is_file():
+        raise FileNotFoundError("The downloaded World save archive was not found.")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="worldsave-import-", dir=str(target.parent)))
+    imported: list[str] = []
+    total_bytes = 0
+    try:
+        with zipfile.ZipFile(archive, "r") as zf:
+            members = [item for item in zf.infolist() if not item.is_dir()]
+            if not members:
+                raise ValueError("The downloaded World save archive is empty.")
+            if len(members) > 50000:
+                raise ValueError("The downloaded World save archive contains too many files.")
+            for item in members:
+                raw = str(item.filename or "").replace("\\", "/")
+                relative = Path(raw)
+                unix_mode = (item.external_attr >> 16) & 0xFFFF
+                if (not raw or relative.is_absolute() or relative.drive or ".." in relative.parts
+                        or stat.S_IFMT(unix_mode) == stat.S_IFLNK):
+                    raise ValueError(f"Unsafe World save archive path: {raw or '<empty>'}")
+                total_bytes += max(0, int(item.file_size or 0))
+                if total_bytes > 4 * 1024 * 1024 * 1024:
+                    raise ValueError("The downloaded World save archive exceeds the 4 GB import limit.")
+                output = staging / relative
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(item, "r") as source, output.open("wb") as sink:
+                    shutil.copyfileobj(source, sink, length=1024 * 1024)
+                imported.append(relative.as_posix())
+        _overlay_tree(staging, target)
+        return {"ok": True, "destination": str(target), "files": imported,
+                "file_count": len(imported), "bytes": total_bytes}
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def archive_private(name: str = "SinglePlayer") -> dict:

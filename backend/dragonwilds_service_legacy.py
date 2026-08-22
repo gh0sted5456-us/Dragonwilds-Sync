@@ -65,7 +65,7 @@ from security_scanner import defender_scan, defender_status, set_defender_review
 from rsdw_cache import status as rsdw_cache_status, refresh_modules as refresh_rsdw_cache, search_items as search_rsdw_items
 from map_updater import status as map_cache_status, refresh as refresh_map_cache, refresh_overlays as refresh_map_overlays
 from vpn_catalog import status as vpn_catalog_status, refresh as refresh_vpn_catalog
-from world_operations import (CLIENT_SAVEGAMES, archive_private as archive_private_world, archive_server as archive_server_world, convert_private_to_server, convert_server_to_private, merge_changes as merge_world_changes, list_archives as list_world_archives)
+from world_operations import (CLIENT_SAVEGAMES, archive_private as archive_private_world, archive_server as archive_server_world, convert_private_to_server, convert_server_to_private, import_worldsave_archive, merge_changes as merge_world_changes, list_archives as list_world_archives)
 from world_save_editor import newest_save, parse_world_save, write_world_save
 from world_sharing import export_world_package, inspect_world_package, world_from_package
 from profile_bundle import export_profile_bundle, import_profile_bundle, inspect_profile_bundle
@@ -1844,14 +1844,9 @@ def handle(method: str, params: dict) -> object:
             advanced["webhost_enabled"] = webhost_enabled
             host = state.setdefault("application", {}).setdefault("world_directory_host", {})
             host["directory_enabled"] = webhost_enabled
-            if webhost_enabled:
-                host["enabled"] = True
-                host.setdefault("remote_admin", {})["enabled"] = True
-                advanced["remote_server_enabled"] = True
-                advanced["remote_server_choice_made"] = True
-            elif not bool(advanced.get("remote_server_enabled", False)):
-                host["enabled"] = False
-                host.setdefault("remote_admin", {})["enabled"] = False
+            # Full Webhost is advanced public-directory authority only. It
+            # never opts the operator into Remote Login.
+            host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))
         if "remote_server_enabled" in params:
             remote_enabled = bool(params.get("remote_server_enabled"))
             advanced["remote_server_enabled"] = remote_enabled
@@ -1910,6 +1905,15 @@ def handle(method: str, params: dict) -> object:
             incoming["remote_admin"] = {**incoming["remote_admin"], "users": list(stored_remote.get("users") or []),
                                         "permission_requests": list(stored_remote.get("permission_requests") or [])}
         merged = {**current, **incoming}
+        advanced = state.setdefault("application", {}).setdefault("advanced", {})
+        webhost_enabled = bool(advanced.get("webhost_enabled", False))
+        remote_enabled = bool(advanced.get("remote_server_enabled", False))
+        # Product feature gates are authoritative over form payloads. One TCP
+        # listener may carry either surface, but configuration cannot silently
+        # enable the other surface.
+        merged["enabled"] = webhost_enabled or remote_enabled
+        merged["directory_enabled"] = webhost_enabled
+        merged.setdefault("remote_admin", {})["enabled"] = remote_enabled
         if bool(merged.get("enabled")) and not str(merged.get("ingestion_token") or "").strip() and not bool(merged.get("allow_anonymous_heartbeats")):
             merged["ingestion_token"] = secrets.token_urlsafe(32)
         normalized = normalize_host_config(merged)
@@ -3438,6 +3442,14 @@ def handle(method: str, params: dict) -> object:
         world = find_world(state, world_id)
         if world is None:
             raise KeyError("Connected World not found")
+        policy = worldsave_status(world)
+        world.setdefault("status", {})["world_save_download"] = policy
+        save_state(state)
+        if not policy.get("enabled"):
+            raise PermissionError("World save download is disabled by this World's host, so conversion is unavailable.")
+        if not policy.get("allowed"):
+            remaining = max(0, int(policy.get("remaining_seconds") or 0))
+            raise PermissionError(f"World save download cooldown is active for another {remaining} second(s).")
         name = str(params.get("name") or world.get("nickname") or (world.get("identity") or {}).get("world_name") or "Dragonwilds World").strip() or "Dragonwilds World"
         presentation = deepcopy(world.get("presentation") or {})
         provenance = {
@@ -3448,36 +3460,55 @@ def handle(method: str, params: dict) -> object:
             "connection": deepcopy(world.get("connection") or {}),
             "shared": deepcopy(world.get("shared") or {}),
         }
-        if method.endswith("singleplayer"):
-            profile = create_private_profile(name)
-            profile_id = str(profile["id"])
-            profile["description"] = str(presentation.get("description") or "")
-            profile["icon_b64"] = str(presentation.get("icon_b64") or "")
-            profile["banner_b64"] = str(presentation.get("banner_b64") or "")
-            profile["tags"] = list(presentation.get("tags") or [])
-            profile["classification"] = normalize_world_classification({**(world.get("classification") or {}), "host_type": "singleplayer", "visibility": "private"}, tags=profile["tags"], host_type="singleplayer", visibility="private")
-            profile["conversion"] = provenance
-            save_singleplayer_profile(profile, profile_id)
-            ensure_singleplayer_state(state)
-            state.setdefault("client", {})["active_private_world_id"] = profile_id
-        else:
-            profile_id = create_server_profile(name)
-            profile = load_server_profile(profile_id)
-            if not profile:
-                raise RuntimeError("The Dedicated Server profile could not be created")
-            profile["description"] = str(presentation.get("description") or "")
-            profile["icon_b64"] = str(presentation.get("icon_b64") or "")
-            profile["banner_b64"] = str(presentation.get("banner_b64") or "")
-            profile["tags"] = list(presentation.get("tags") or [])
-            profile["classification"] = normalize_world_classification({**(world.get("classification") or {}), "host_type": "dedicated", "visibility": "public"}, tags=profile["tags"], host_type="dedicated", visibility="public")
-            profile["connected_source"] = provenance
-            dedicated = profile.setdefault("dedicated_config", {})
-            dedicated["server_name"] = name
-            dedicated["world_name"] = str((world.get("identity") or {}).get("world_name") or name)
-            save_server_profile(profile_id, profile)
-            state.setdefault("server", {})["active_world_id"] = profile_id
+        download_dir = APP_DATA_DIR / "connected_world_downloads"
+        download_dir.mkdir(parents=True, exist_ok=True)
+        download_path = download_dir / f"{world_id}-{secrets.token_hex(6)}.zip"
+        profile_id = ""
+        try:
+            download = download_worldsave(world, str(download_path))
+            if method.endswith("singleplayer"):
+                profile = create_private_profile(name)
+                profile_id = str(profile["id"])
+                backup = archive_private_world(f"{name}-before-connected-import") if CLIENT_SAVEGAMES.exists() and any(CLIENT_SAVEGAMES.rglob("*")) else None
+                imported = import_worldsave_archive(download_path, CLIENT_SAVEGAMES)
+                save_files = [CLIENT_SAVEGAMES / value for value in imported.get("files") or [] if str(value).casefold().endswith(".sav")]
+                if save_files:
+                    save_file = max(save_files, key=lambda path: path.stat().st_mtime if path.exists() else 0)
+                    profile.update({"save_path": str(save_file), "save_file": save_file.name,
+                                    "save_size": save_file.stat().st_size if save_file.exists() else 0,
+                                    "save_modified_at": save_file.stat().st_mtime if save_file.exists() else time.time(),
+                                    "save_present": save_file.exists()})
+                profile["description"] = str(presentation.get("description") or "")
+                profile["icon_b64"] = str(presentation.get("icon_b64") or "")
+                profile["banner_b64"] = str(presentation.get("banner_b64") or "")
+                profile["tags"] = list(presentation.get("tags") or [])
+                profile["classification"] = normalize_world_classification({**(world.get("classification") or {}), "host_type": "singleplayer", "visibility": "private"}, tags=profile["tags"], host_type="singleplayer", visibility="private")
+                profile["conversion"] = {**provenance, "download": download, "import": imported, "local_backup": backup}
+                save_singleplayer_profile(profile, profile_id)
+                ensure_singleplayer_state(state)
+                state.setdefault("client", {})["active_private_world_id"] = profile_id
+            else:
+                profile_id = create_server_profile(name)
+                profile = load_server_profile(profile_id)
+                if not profile:
+                    raise RuntimeError("The Dedicated Server profile could not be created")
+                imported = import_worldsave_archive(download_path, SERVER_PROFILES_DIR / profile_id / "savegame")
+                profile["description"] = str(presentation.get("description") or "")
+                profile["icon_b64"] = str(presentation.get("icon_b64") or "")
+                profile["banner_b64"] = str(presentation.get("banner_b64") or "")
+                profile["tags"] = list(presentation.get("tags") or [])
+                profile["classification"] = normalize_world_classification({**(world.get("classification") or {}), "host_type": "dedicated", "visibility": "public"}, tags=profile["tags"], host_type="dedicated", visibility="public")
+                profile["connected_source"] = {**provenance, "download": download, "import": imported}
+                dedicated = profile.setdefault("dedicated_config", {})
+                dedicated["server_name"] = name
+                dedicated["world_name"] = str((world.get("identity") or {}).get("world_name") or name)
+                save_server_profile(profile_id, profile)
+                state.setdefault("server", {})["active_world_id"] = profile_id
+        finally:
+            download_path.unlink(missing_ok=True)
         save_state(state)
-        return {"profile": profile, "profile_id": profile_id, "source_world_id": world_id, "state": public_state(state)}
+        return {"profile": profile, "profile_id": profile_id, "source_world_id": world_id,
+                "source_world_retained": find_world(state, world_id) is not None, "state": public_state(state)}
 
     if method == "world.delete":
         world_id = str(params.get("id") or "")

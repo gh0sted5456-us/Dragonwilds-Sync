@@ -9,6 +9,7 @@
   const openRows = new Map();
   const windows = new Map();
   const modDialogs = new Map();
+  const modInventory = new Map();
   let decorating = false;
   let heartbeatTimer = null;
 
@@ -68,7 +69,8 @@
   }
 
   function modRows(world) {
-    const sources = [world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
+    const worldId=text(world?.id || world?.profile_id || world?.world_id);
+    const sources = [modInventory.get(worldId)?.rows, world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
     const rows = [];
     for (const source of sources) {
       for (const raw of asArray(source)) {
@@ -76,7 +78,7 @@
         if (!row) continue;
         const name = text(row.name || row.display_name || row.mod_name || row.id || row.key);
         if (!name || /^dragonconnect$/i.test(name.replace(/\s+/g,''))) continue;
-        const rawType = text(row.type || row.kind || row.loader || row.mod_type).toLowerCase();
+        const rawType = text(`${row.group || ''} ${row.type || ''} ${row.kind || ''} ${row.loader || ''} ${row.mod_type || ''}`).toLowerCase();
         const type = rawType.includes('rune') ? 'RuneSchema' : rawType.includes('pak') ? 'Pak' : 'UE4SS';
         const role = text(row.runtime_role || row.role || row.scope || 'BOTH').toUpperCase();
         rows.push({name, version:text(row.version || row.mod_version), type, role, required:row.required !== false});
@@ -131,6 +133,29 @@
   }
 
   function closeModsPopup(key) { const host=modDialogs.get(key)||document.querySelector(`[data-v3p4-mod-dialog="${CSS.escape(key)}"]`);host?.remove();modDialogs.delete(key); }
+
+  function refreshModIndicators(id) {
+    const world=findWorld(id)||{id,name:'World'};
+    document.querySelectorAll(`.v3p4-placard[data-world-id="${CSS.escape(id)}"]`).forEach((card)=>{
+      card.querySelectorAll('.v3p4-ecosystems').forEach((node)=>node.remove());
+      const markup=ecosystemMarkup(id,world,true); if(!markup)return;
+      const mount=card.classList.contains('app-world-placard')?card.querySelector('.world-card-front .world-card-body'):card.querySelector('.v3p4-front-live');
+      mount?.insertAdjacentHTML('beforeend',markup);
+    });
+  }
+
+  function requestProfileModInventory(id, kind='private', force=false) {
+    id=text(id); if(!id)return Promise.resolve([]);
+    const current=modInventory.get(id); if(current?.pending)return current.pending;
+    if(!force&&current?.rows&&Date.now()-current.at<120000)return Promise.resolve(current.rows);
+    const method=kind==='server'?'server.world.inventory':'singleplayer.inventory';
+    const params=kind==='server'?{id,rescan:false}:{profile_id:id,rescan:false};
+    const pending=api.invoke(method,params).then((response)=>{
+      const rows=asArray(response?.units || response?.mods || response?.inventory);
+      modInventory.set(id,{rows,at:Date.now(),pending:null});refreshModIndicators(id);return rows;
+    }).catch(()=>{modInventory.set(id,{rows:current?.rows||[],at:current?.at||0,pending:null});return current?.rows||[];});
+    modInventory.set(id,{rows:current?.rows||[],at:current?.at||0,pending});return pending;
+  }
 
   function candidateCollections(root) {
     return [
@@ -250,7 +275,7 @@
       }
       if(frontBody&&!card.querySelector('.v3p4-ecosystems'))frontBody.insertAdjacentHTML('beforeend',ecosystemMarkup(id,world,true));
       decorateEcosystemLabels(card);
-      applySide(card,id);requestHeartbeat(id,card.dataset.serverCard==='1'?'dedicated':'local');return;
+      applySide(card,id);requestHeartbeat(id,card.dataset.serverCard==='1'?'dedicated':'local');requestProfileModInventory(id,card.dataset.serverCard==='1'?'server':'private');return;
     }
     const original = document.createElement('div'); original.className = 'v3p4-face v3p4-front';
     while (card.firstChild) original.appendChild(card.firstChild);
@@ -261,6 +286,7 @@
     const inner = document.createElement('div'); inner.className='v3p4-inner'; inner.append(original,back); card.appendChild(inner); decorateEcosystemLabels(card);
     applySide(card,id);
     requestHeartbeat(id, card.dataset.serverCard === '1' ? 'dedicated' : 'local');
+    requestProfileModInventory(id,card.dataset.serverCard==='1'?'server':'private');
   }
 
   function decorateAll() {

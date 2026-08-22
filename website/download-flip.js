@@ -19,12 +19,12 @@
           <p>Dragonwilds Sync is a passion project. Donations help with hosting, tools, and development costs, but features will never be locked behind a paywall.</p>
         </div>
         <div class="download-face-side">
-          <div class="download-platform-icons" aria-label="Supported platforms"><img src="assets/platforms/windows.svg" alt="Windows"><img src="assets/ubuntu-logo.png" alt="Ubuntu Linux"><img src="assets/platforms/steam.svg" alt="Steam"></div>
+          <div class="download-platform-icons" aria-label="Supported platforms"><img src="assets/platforms/windows.svg" alt="Windows"><img src="assets/linux-brands/ubuntu.png" alt="Ubuntu Linux"><img src="assets/platforms/steam.svg" alt="Steam"></div>
           <img src="assets/application-icon.png" alt="Dragonwilds Sync icon">
           <div class="download-platform-actions">
             <a class="button button-full windows-download" data-windows-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Portable-2.0.1.exe"><span><img src="assets/platforms/windows.svg" alt="" aria-hidden="true"><b>Windows</b><small>Portable EXE</small></span><span aria-hidden="true">↓</span></a>
             <small class="download-file-note" data-windows-file>Dragonwilds Sync and Launcher Portable 2.0.1</small>
-            <a class="button button-full linux-download ubuntu-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Ubuntu-2.0.1.AppImage"><span><img src="assets/ubuntu-logo.png" alt="" aria-hidden="true"><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
+            <a class="button button-full linux-download ubuntu-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.1/Dragonwilds.Sync.and.Launcher-Ubuntu-2.0.1.AppImage"><span><img src="assets/linux-brands/ubuntu.png" alt="" aria-hidden="true"><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
             <small class="download-file-note" data-linux-file>Dragonwilds Sync and Launcher Ubuntu 2.0.1</small>
           </div>
           <a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Main release history</a>

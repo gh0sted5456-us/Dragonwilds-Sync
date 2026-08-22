@@ -245,6 +245,7 @@ jobs:
           node --check _site/public-directory-view.js
           node --check _site/helpy.js
           node --check _site/launcher-preview.js
+          node --check _site/downloads-linux.js
 
       - name: Verify Helpy route
         shell: bash
@@ -270,10 +271,21 @@ jobs:
           test -s _site/assets/platforms/ue4ss.png
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('_site/assets/launcher-preview.json','utf8'));if(m.schema!=='DragonwildsSync.LauncherPreview.v1'||!Array.isArray(m.appys)||m.appys.length<7)throw new Error('Invalid launcher preview model')"
 
-      - name: Verify homepage presentation and download card
+      - name: Verify homepage presentation and Downloads route
         shell: bash
         run: |
           set -euo pipefail
+          test -s _site/downloads.html
+          test -s _site/downloads.css
+          test -s _site/downloads-linux.css
+          test -s _site/downloads-linux.js
+          test -s _site/assets/linux-brands/ubuntu.png
+          test -s _site/assets/linux-brands/bazzite.png
+          test -s _site/assets/linux-brands/zorin.png
+          grep -q 'id="downloads"' _site/downloads.html
+          grep -q 'downloads.html' _site/index.html
+          ! grep -q 'id="downloads"' _site/index.html
+          ! grep -q 'linux-preview.js' _site/launcher-preview.html
           test -s _site/assets/download-placard-background.png
           test -s _site/assets/demo-world-banner.svg
           test -s _site/assets/demo-world-icon.svg
@@ -281,8 +293,8 @@ jobs:
           test -s _site/assets/runeschema-logo.png
           grep -q 'styles.css?v=ubuntu-download-1' _site/index.html
           grep -q 'script.js?v=ubuntu-download-1' _site/index.html
-          test -s _site/assets/ubuntu-logo.png
-          grep -q 'assets/ubuntu-logo.png' _site/script.js
+          test -s _site/assets/linux-brands/ubuntu.png
+          grep -q 'assets/linux-brands/ubuntu.png' _site/script.js
           grep -q -- '--preview-shell' _site/styles.css
           grep -q 'html\[data-theme="white"\] .mock-cl-badge' _site/styles.css
           grep -q 'Steam Server' _site/index.html

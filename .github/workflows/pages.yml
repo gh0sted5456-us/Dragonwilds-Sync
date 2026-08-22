@@ -16,6 +16,7 @@ on:
       - 'renderer/assets/platforms/**'
       - 'renderer/assets/help/**'
       - 'renderer/assets/navigation/**'
+      - 'renderer/assets/rsdw-toolkit/**'
       - '.github/workflows/pages.yml'
   schedule:
     - cron: '17 * * * *'
@@ -139,6 +140,7 @@ jobs:
           cp -R help _site/help
           cp -R renderer/assets/help _site/assets/help
           cp -R renderer/assets/navigation _site/assets/navigation
+          cp -R renderer/assets/rsdw-toolkit _site/assets/rsdw-toolkit
           cp renderer/assets/application-icon.png _site/assets/application-icon.png
           cp renderer/assets/singleplayer-banner.png _site/assets/hero-banner.png
           cp renderer/assets/world-selection-background.png _site/assets/world-selection-background.png
@@ -263,6 +265,10 @@ jobs:
           test -s _site/launcher-preview.css
           test -s _site/launcher-preview.js
           test -s _site/assets/launcher-preview.json
+          test -s _site/assets/rsdw-toolkit/character-editor.png
+          test -s _site/assets/rsdw-toolkit/modded-items.svg
+          test -s _site/assets/platforms/runeschema.png
+          test -s _site/assets/platforms/ue4ss.png
           node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync('_site/assets/launcher-preview.json','utf8'));if(m.schema!=='DragonwildsSync.LauncherPreview.v1'||!Array.isArray(m.appys)||m.appys.length<7)throw new Error('Invalid launcher preview model')"
 
       - name: Verify homepage presentation and download card

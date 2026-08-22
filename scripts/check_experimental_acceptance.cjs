@@ -45,7 +45,8 @@ const remoteLifecycleTest = read('backend/test_release1_4_web_directory_remote.p
 const runtimeManagerTest = read('backend/test_runtime_manager.py');
 
 // Supplied placards must be a first-class World-card surface rather than a fallback texture.
-requireText(app, "const PLACARD_BACKGROUNDS = ['1','2','3','4'];", 'placard asset contract');
+requireText(app, "const PLACARD_BACKGROUNDS = ['1','2','3','4','5','6','7','8','9'];", 'expanded placard asset contract');
+requireText(app, 'PLACARD_BACKGROUND_LABELS', 'named placard background choices');
 requireText(app, 'class="world-card app-world-placard has-placard', 'CSS-layer placard card renderer');
 requireText(app, '--world-placard:url(', 'placard artwork variable');
 requireText(responsiveCss, '.world-card.has-placard::before', 'full-card placard background layer');

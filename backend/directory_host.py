@@ -136,7 +136,7 @@ def _distro_icon_bytes(name: str) -> bytes:
 def _placard_background_bytes(name: str) -> bytes:
     """Serve one of the built-in, metadata-addressed World backgrounds."""
     key = Path(str(name or "")).stem
-    if key not in {"1", "2", "3", "4"}:
+    if key not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
         return b""
     filename = f"{key}.png"
     bundle_root = getattr(sys, "_MEIPASS", "")

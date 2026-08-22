@@ -1743,7 +1743,7 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 .world-card::after{content:"";position:absolute;z-index:-1;inset:0;background:linear-gradient(180deg,rgba(12,16,16,.20),rgba(12,16,16,.84) 38%,rgba(12,16,16,.96));pointer-events:none}
 @keyframes placard-breathe{from{opacity:.11;transform:scale(1.015) translate3d(-.5%,0,0)}to{opacity:.23;transform:scale(1.065) translate3d(.6%,-.5%,0)}}
 @media (prefers-reduced-motion:reduce){.world-card>.world-placard-backdrop{animation:none}}
-.placard-background-picker{display:grid;grid-template-columns:repeat(4,minmax(105px,1fr));gap:10px}
+.placard-background-picker{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
 .placard-background-picker label{position:relative;display:grid;gap:5px;padding:7px;border:1px solid var(--border);border-radius:12px;background:var(--panel-2);cursor:pointer;overflow:hidden}
 .placard-background-picker label:has(input:checked){border-color:var(--gold);box-shadow:0 0 0 2px color-mix(in srgb,var(--gold) 20%,transparent)}
 .placard-background-picker input{position:absolute;opacity:0;pointer-events:none}
@@ -1771,10 +1771,10 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 /* Horizontal cards inherit the same absolute placard background and selected
    server banner as the full front/back placard. */
 .world-list-row.has-placard{isolation:isolate;background:#0b1010!important}
-.world-list-row.has-placard::before{content:"";position:absolute;z-index:0;inset:0;background-image:linear-gradient(90deg,rgba(7,10,10,.24),rgba(7,10,10,.58) 55%,rgba(7,10,10,.82)),var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.7;pointer-events:none}
+.world-list-row.has-placard::before{content:"";position:absolute;z-index:0;inset:0;background-image:linear-gradient(90deg,rgba(7,10,10,.12),rgba(7,10,10,.44) 55%,rgba(7,10,10,.78)),var(--world-placard);background-position:center;background-size:cover;background-repeat:no-repeat;opacity:.9;filter:saturate(1.06) contrast(1.03);pointer-events:none}
 .world-list-row.has-placard>.world-list-icon,.world-list-row.has-placard>.world-list-main,.world-list-row.has-placard>.world-list-banner,.world-list-row.has-placard>.world-row-actions{position:relative;z-index:2}
 .world-list-row.has-placard>.world-list-banner{position:absolute;z-index:1}
-.world-list-row.has-placard>.world-list-banner img{opacity:.66;filter:saturate(.94) contrast(1.04) brightness(.92)}
+.world-list-row.has-placard>.world-list-banner img{opacity:.72;filter:saturate(1.02) contrast(1.04) brightness(.94);mask-image:linear-gradient(90deg,transparent 0,#000 24%,#000 100%)}
 .world-list-row.has-placard>.world-row-actions{background:linear-gradient(90deg,transparent,rgba(11,16,16,.88) 28%,#0b1010 72%)}
 .world-list-row.has-placard{color:#f4f1e9!important}
 .world-list-row.has-placard .world-list-title h3,.world-list-row.has-placard .world-list-title strong{color:#f4f1e9!important}

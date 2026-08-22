@@ -90,9 +90,9 @@
   }
 
   function placardId(world, card) {
-    const current=text(card?.style?.getPropertyValue('--world-placard')); const currentMatch=current.match(/placards\/([1-4])\.png/i);
+    const current=text(card?.style?.getPropertyValue('--world-placard')); const currentMatch=current.match(/placards\/([1-9])\.png/i);
     const value=text(world?.placard_background || world?.presentation?.placard_background || world?.presentation?.placardBackground || world?.placardBackground || card?.dataset?.placardBackground || currentMatch?.[1] || '1');
-    return ['1','2','3','4'].includes(value) ? value : '1';
+    return ['1','2','3','4','5','6','7','8','9'].includes(value) ? value : '1';
   }
 
   function applyPlacardArtwork(card, world) {

@@ -19,7 +19,7 @@
   };
 
   const objectValue = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  const placardId = (value) => ['1','2','3','4'].includes(String(value)) ? String(value) : '1';
+  const placardId = (value) => ['1','2','3','4','5','6','7','8','9'].includes(String(value)) ? String(value) : '1';
   const initials = (value) => safeText(value, 'DW', 80).split(/\s+/).filter(Boolean).slice(0,2).map((part) => part[0]?.toUpperCase()).join('') || 'DW';
   const textList = (value, max = 24) => {
     const source = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/\r?\n|;/) : [];

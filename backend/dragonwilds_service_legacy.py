@@ -2521,7 +2521,7 @@ def handle(method: str, params: dict) -> object:
                 profile[artwork_key] = str(incoming.get(artwork_key) or "")
         if "placard_background" in incoming:
             value = str(incoming.get("placard_background") or "1")
-            if value not in {"1", "2", "3", "4"}:
+            if value not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
                 raise ValueError("Placard background must be one of the built-in choices.")
             profile["placard_background"] = value
         if "broadcast_config" in incoming and isinstance(incoming.get("broadcast_config"), dict):
@@ -3903,7 +3903,7 @@ def handle(method: str, params: dict) -> object:
             profile["banner_b64"] = str(params.get("banner_b64") or "")
         if "placard_background" in params:
             value = str(params.get("placard_background") or "1")
-            if value not in {"1", "2", "3", "4"}:
+            if value not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
                 raise ValueError("Placard background must be one of the built-in choices.")
             profile["placard_background"] = value
         if "auto_ue4ss" in params:

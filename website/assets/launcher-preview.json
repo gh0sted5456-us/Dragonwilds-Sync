@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.LauncherPreview.v1",
-  "version": 5,
+  "version": 6,
   "appys": [
     {
       "id": "dragonwilds",
@@ -432,5 +432,104 @@
         }
       ]
     }
-  ]
+  ],
+  "linuxDetection": {
+    "schema": "DragonwildsSync.LinuxHostPreview.v1",
+    "source": [
+      "/etc/os-release",
+      "/usr/lib/os-release"
+    ],
+    "privacy": "No kernel build, machine name, username, or local path is published.",
+    "catalog_count": 50,
+    "families": [
+      "debian",
+      "fedora",
+      "suse",
+      "arch",
+      "gentoo",
+      "void",
+      "alpine",
+      "nixos",
+      "guix",
+      "clear-linux",
+      "solus",
+      "mageia",
+      "openmandriva",
+      "slackware"
+    ],
+    "detected": {
+      "distro": "ubuntu",
+      "distro_name": "Ubuntu 24.04.3 LTS",
+      "short_name": "Ubuntu",
+      "distro_version": "24.04",
+      "distro_codename": "noble",
+      "distro_family": "debian",
+      "distro_icon": "ubuntu",
+      "distro_known": true,
+      "distro_id_like": [
+        "debian"
+      ],
+      "ubuntu_supported": true
+    },
+    "examples": [
+      {
+        "distro": "ubuntu",
+        "distro_name": "Ubuntu 24.04.3 LTS",
+        "short_name": "Ubuntu",
+        "distro_version": "24.04",
+        "distro_codename": "noble",
+        "distro_family": "debian",
+        "distro_icon": "ubuntu",
+        "distro_known": true,
+        "distro_id_like": [
+          "debian"
+        ],
+        "ubuntu_supported": true
+      },
+      {
+        "distro": "bazzite",
+        "distro_name": "Bazzite 42",
+        "short_name": "Bazzite",
+        "distro_version": "42",
+        "distro_codename": "",
+        "distro_family": "fedora",
+        "distro_icon": "bazzite",
+        "distro_known": true,
+        "distro_id_like": [
+          "fedora"
+        ],
+        "ubuntu_supported": false
+      },
+      {
+        "distro": "zorin",
+        "distro_name": "Zorin OS 18 Pro",
+        "short_name": "Zorin OS",
+        "distro_version": "18",
+        "distro_codename": "noble",
+        "distro_family": "debian",
+        "distro_icon": "zorin",
+        "distro_known": true,
+        "distro_id_like": [
+          "ubuntu",
+          "debian"
+        ],
+        "ubuntu_supported": false
+      },
+      {
+        "distro": "unknown-gaming-os",
+        "distro_name": "Unknown Gaming OS",
+        "short_name": "Family fallback",
+        "distro_version": "rolling",
+        "distro_codename": "",
+        "distro_family": "fedora",
+        "distro_icon": "fedora",
+        "distro_known": false,
+        "distro_id_like": [
+          "fedora",
+          "rhel"
+        ],
+        "ubuntu_supported": false
+      }
+    ]
+  }
 }

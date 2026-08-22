@@ -1,0 +1,71 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b0d0f"><meta name="description" content="A line-by-line Dragonwilds Sync ID.txt and RSDWL packaging guide for mod authors."><title>For Modders | Dragonwilds Sync</title><link rel="icon" href="assets/application-icon.png"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="modders.css?v=1"></head><body>
+<header class="site-header"><a class="brand" href="index.html"><img src="assets/application-icon.png" alt=""><span><strong>Dragonwilds <b>Sync</b></strong><small>MOD AUTHOR FIELD GUIDE</small></span></a><nav><a href="index.html">Home</a><a href="world-builder.html">World Builder</a><a href="servers.html">Servers</a><a href="helpy.html">Helpy</a><a class="active" href="for-modders.html">For Modders</a><a class="nav-button" href="launcher-preview.html">Preview Launcher</a><a class="nav-button" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub ↗</a></nav></header>
+<main class="modders-page"><section class="modders-hero"><div><span class="eyebrow">CANONICAL AUTHOR METADATA</span><h1>Make your mod <em>understandable.</em></h1><p><code>ID.txt</code> gives Dragonwilds Sync a safe, portable identity for your mod and its custom items. This guide explains every line, exactly how the parser treats it, and how icons travel from a normal mod archive into application-generated <code>.rsdwl</code> packages.</p><div class="hero-actions"><a href="#id-file">Build ID.txt</a><a href="#packages">Package files</a></div></div><aside><strong>Nothing in ID.txt executes.</strong><p>It is declarative display and registry metadata. Unknown instructions are ignored, secret-like values are stripped, and URLs are shown as links only.</p></aside></section>
+
+<section class="quick-contract"><div><span>Canonical filename</span><strong>ID.txt</strong></div><div><span>Encoding</span><strong>UTF-8 text</strong></div><div><span>Maximum size</span><strong>512 KiB</strong></div><div><span>Item merge key</span><strong>PersistenceID</strong></div><div><span>Archive rule</span><strong>Export, do not rename</strong></div></section>
+
+<section id="id-file" class="modders-section"><div class="section-heading"><span class="eyebrow">STEP 1 · PUT THIS AT THE MOD ROOT</span><h2>A complete <code>ID.txt</code></h2><p>Start with this example. Change the values after each colon; keep the field names on the left.</p></div><div class="contract-layout"><pre class="identity-code" aria-label="Complete ID.txt example"><button type="button" id="copy-id-example">Copy example</button><code id="id-example"># Dragonwilds Sync ID v1
+Schema: DragonwildsSync.ID.v1
+ModId: example-community-mod
+Name: Example Community Mod
+Version: 1.0.0
+Revision: 1
+Author: Your Modder Name
+RuntimeRole: both
+HotloadCapable: false
+Description: One plain sentence explaining what the mod does.
+Tags: QoL; Storage
+Nexus: https://www.nexusmods.com/runescapedragonwilds/mods/0000
+Item: {"ITEM Name":"ITEM_ExampleSword","PersistenceID":"/Game/Mods/Example/ITEM_ExampleSword.ITEM_ExampleSword","DisplayName":"Example Sword","Icon":"items/icons/example-sword.png","AssetPath":"/Game/Mods/Example/ITEM_ExampleSword"}</code></pre><div class="placement"><h3>Correct placement</h3><pre><code>ExampleCommunityMod/
+├── ID.txt
+├── Scripts/ or dlls/
+└── items/
+    ├── manifest.json
+    ├── icon-manifest.json
+    └── icons/
+        └── example-sword.png</code></pre><p>The effective mod root wins over an outer download-wrapper folder. For PAK files, recognized sidecars beside the payload may also provide metadata.</p></div></div></section>
+
+<section class="modders-section"><div class="section-heading"><span class="eyebrow">STEP 2 · LINE BY LINE</span><h2>What every field means</h2><p>Only <code>ModId</code> and a useful <code>Name</code> should be considered essential author hygiene. The remaining lines add versioning, presentation, runtime behavior, links, and item records.</p></div><div class="field-list">
+<article><b>1</b><div><code># Dragonwilds Sync ID v1</code><h3>Comment</h3><p>Any line beginning with <code>#</code>, <code>;;</code>, or <code>//</code> is ignored. Use comments for humans, not instructions.</p></div><span>IGNORED</span></article>
+<article><b>2</b><div><code>Schema: DragonwildsSync.ID.v1</code><h3>Schema declaration</h3><p>Documents the contract version. The current parser recognizes the file by its fields and ignores this value during normalization.</p></div><span>RECOMMENDED</span></article>
+<article><b>3</b><div><code>ModId: example-community-mod</code><h3>Stable mod identifier</h3><p>Use one durable ID and never recycle it for a different mod. Maximum 160 characters. It also becomes the default <code>ModId</code> on Item rows.</p></div><span>CORE IDENTITY</span></article>
+<article><b>4</b><div><code>Name: Example Community Mod</code><h3>Display name</h3><p>The readable title shown on placards and repositories. Maximum 200 characters. Aliases accepted: <code>ModName</code> and <code>Title</code>.</p></div><span>DISPLAY</span></article>
+<article><b>5</b><div><code>Version: 1.0.0</code><h3>Release version</h3><p>Your public version string, up to 80 characters. Keep it sortable and change it when users receive a new payload.</p></div><span>VERSIONING</span></article>
+<article><b>6</b><div><code>Revision: 1</code><h3>Metadata revision</h3><p>Use when the package metadata or item definitions change independently of the public mod version. Aliases: <code>Rev</code> and <code>MetadataRevision</code>.</p></div><span>MERGE HINT</span></article>
+<article><b>7</b><div><code>Author: Your Modder Name</code><h3>Attribution</h3><p>The creator name shown to users, up to 200 characters. <code>Creator</code>, <code>By</code>, <code>Modder</code>, and <code>Authors</code> are accepted aliases.</p></div><span>ATTRIBUTION</span></article>
+<article><b>8</b><div><code>RuntimeRole: both</code><h3>Where the mod belongs</h3><p>Choose exactly <code>client</code>, <code>server</code>, <code>both</code>, or <code>tooling</code>. Unknown values safely become <code>both</code>. <code>host</code>/<code>dedicated</code> normalize to server.</p></div><span>PLACEMENT</span></article>
+<article><b>9</b><div><code>HotloadCapable: false</code><h3>Live-edit promise</h3><p>Set true only if your supported config can be applied while the game/server is running. True values are <code>true</code>, <code>1</code>, <code>yes</code>, <code>on</code>, or <code>enabled</code>.</p></div><span>BE HONEST</span></article>
+<article><b>10</b><div><code>Description: One plain sentence...</code><h3>Short explanation</h3><p>Plain display text, never HTML or code. Maximum 4,000 characters. Aliases: <code>About</code> and <code>Summary</code>.</p></div><span>DISPLAY</span></article>
+<article><b>11</b><div><code>Tags: QoL; Storage</code><h3>Search and grouping</h3><p>Separate tags with semicolons or commas. Duplicates are removed case-insensitively; at most 24 tags are kept, each up to 40 characters.</p></div><span>MAX 24</span></article>
+<article><b>12</b><div><code>Nexus: https://...</code><h3>Author links</h3><p>Any field containing an <code>http://</code> or <code>https://</code> value becomes a labeled link. At most 12 unique links are kept. Non-web schemes are ignored.</p></div><span>URL ONLY</span></article>
+<article><b>13</b><div><code>Item: { ... }</code><h3>One custom-item record</h3><p>Repeat one line per item, up to 4,096. JSON is preferred; pipe-separated <code>key=value</code> pairs are also accepted. See the item-field table below.</p></div><span>REPEATABLE</span></article>
+</div></section>
+
+<section class="modders-section item-contract"><div class="section-heading"><span class="eyebrow">CUSTOM ITEMS</span><h2>Inside each <code>Item:</code> line</h2></div><div class="item-grid"><article><code>ITEM Name</code><strong>Internal searchable name</strong><p>Example: <code>ITEM_ExampleSword</code>. Aliases include Item, Name, and ITEM_NAME after normalization.</p></article><article><code>PersistenceID</code><strong>The merge identity</strong><p>The exact stable save/runtime identity. If two sources declare the same value, Dragonwilds Sync treats them as the same item.</p></article><article><code>DisplayName</code><strong>Human-facing label</strong><p>Optional but strongly recommended. Alias: Label.</p></article><article><code>Icon</code><strong>Portable relative icon path</strong><p>Use a path inside the package such as <code>items/icons/example-sword.png</code>. Never use a machine-absolute path.</p></article><article><code>AssetPath</code><strong>Runtime asset location</strong><p>The Unreal content path used to resolve or spawn the item, up to 1,000 characters.</p></article><article><code>ModId</code><strong>Owning mod</strong><p>Optional per row. When omitted, the file-level ModId is copied into the normalized item record.</p></article></div></section>
+
+<section class="modders-section read-flow"><div class="section-heading"><span class="eyebrow">HOW SYNC READS IT</span><h2>From disk to placard and Spawner</h2></div><ol><li><b>Discover.</b><span>The launcher searches the effective mod root case-insensitively for <code>ID.txt</code>, then legacy <code>identity.txt</code> and <code>identities.txt</code>.</span></li><li><b>Bound.</b><span>Files above 512 KiB are rejected. Text is read as UTF-8 with invalid bytes replaced rather than executed.</span></li><li><b>Parse.</b><span>Blank lines, comments, and section headers are skipped. Both <code>Key: Value</code> and <code>Key=Value</code> work.</span></li><li><b>Normalize.</b><span>Aliases become canonical fields; booleans, runtime roles, links, and tags are bounded and deduplicated.</span></li><li><b>Sanitize.</b><span>Keys resembling passwords, secrets, tokens, credentials, sessions, or server/admin keys are removed. <code>dws-secret://</code> values become blank.</span></li><li><b>Merge items.</b><span>Item Editor, Spawner, profile bundles, and WebGUI converge on <code>PersistenceID</code>; item-name and display-name searches remain available.</span></li><li><b>Present.</b><span>The mod receives name/version/author/link metadata, tags, runtime badges, and normalized custom-item/icon records. No line is run as a command.</span></li></ol></section>
+
+<section id="packages" class="modders-section package-guide"><div class="section-heading"><span class="eyebrow">ZIP AND RSDWL</span><h2>Two archives, two jobs</h2><p>A mod ZIP installs payload files. An application-generated <code>.rsdwl</code> safely exchanges Dragonwilds Sync records. They are both ZIP containers internally, but they are not interchangeable by renaming.</p></div><div class="package-columns"><article><span>AUTHOR CREATES</span><h3>Normal mod ZIP</h3><pre><code>ExampleMod.zip
+└── ExampleMod/
+    ├── ID.txt
+    ├── mod payload...
+    └── items/
+        ├── manifest.json
+        ├── icon-manifest.json
+        └── icons/*.png</code></pre><p>Install/import this as a normal archive. Sync stages it, finds the effective root, classifies UE4SS/RuneSchema/PAK payloads, validates paths, and reads only recognized metadata.</p></article><article class="gold"><span>APPLICATION EXPORTS</span><h3>Validated <code>.rsdwl</code></h3><pre><code>Package.rsdwl
+├── ID.txt
+├── manifest.json
+├── ModInfo/.../ID.txt
+├── PackageManifest/
+│   └── item-registry.json
+└── package-type payloads
+    └── item/icon assets*</code></pre><p>The exporter creates the package ID, payload index, sizes, media types, SHA-256 hashes, provenance, and signature. Icon assets are carried by package types that include custom-item payloads.</p></article></div><div class="never-rename"><strong>Do not rename <code>.zip</code> to <code>.rsdwl</code>.</strong><p>Use Dragonwilds Sync’s Export flow. A renamed ZIP lacks the required package type, manifest, payload index, hashes, and signature and should fail inspection.</p></div></section>
+
+<section class="modders-section icon-guide"><div class="section-heading"><span class="eyebrow">ICON CHECKLIST</span><h2>Icons that survive another machine</h2></div><div class="check-grid"><div><b>01</b><p>Use PNG, JPEG, WebP, or GIF. Keep a custom item icon at or below 2 MiB.</p></div><div><b>02</b><p>Store it under your mod, preferably <code>items/icons/</code>.</p></div><div><b>03</b><p>Reference it with a forward-slash relative path; never <code>C:\...</code> or <code>/home/...</code>.</p></div><div><b>04</b><p>Let Sync generate <code>icon-manifest.json</code>; it records path, SHA-256, and media type.</p></div><div><b>05</b><p>Keep each icon inside the import root. Paths containing escape traversal are rejected.</p></div><div><b>06</b><p>Export through Sync so package checksums and icon payload records are generated together.</p></div></div></section>
+
+<section class="modders-final"><span class="eyebrow">MINIMUM GOOD CITIZEN FILE</span><h2>Five lines are enough to start well.</h2><pre><code>Schema: DragonwildsSync.ID.v1
+ModId: your-stable-mod-id
+Name: Your Mod Name
+Version: 1.0.0
+Author: Your Name</code></pre><p>Add RuntimeRole, HotloadCapable, tags, links, and Item rows only when you know their correct values.</p></section></main>
+<footer class="site-footer"><div class="footer-brand"><img src="assets/application-icon.png" alt=""><div><strong>Dragonwilds Sync</strong><span>For Modders</span></div></div><div class="footer-links"><a href="helpy.html">Read Helpy</a><a href="launcher-preview.html">Preview Launcher</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div><p>ID.txt is declarative metadata. Dragonwilds Sync never executes package metadata.</p></footer><script src="script.js"></script><script src="modders.js?v=1"></script></body></html>

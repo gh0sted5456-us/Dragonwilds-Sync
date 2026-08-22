@@ -528,7 +528,7 @@ function createQuickWindow(worldId, worldKind = 'world', autoStart = false) {
   const id = String(worldId || '').trim(); if (!id) return createWindow({ show: true });
   const kind = ['world', 'private', 'server'].includes(String(worldKind || '').toLowerCase()) ? String(worldKind).toLowerCase() : 'world';
   if (quickWindow && !quickWindow.isDestroyed()) { quickWindow.close(); quickWindow = null; }
-  quickWindow = new BrowserWindow(windowOptions({ width: 520, height: 300, minWidth: 440, minHeight: 250, resizable: false, title: 'Dragonwilds Sync Quick Launch' }));
+  quickWindow = new BrowserWindow(windowOptions({ width: 920, height: 700, minWidth: 620, minHeight: 480, resizable: true, maximizable: true, movable: true, frame: true, title: 'Dragonwilds Sync Quick Launch' }));
   attachRendererDurability(quickWindow);
   quickWindow.loadFile(path.join(projectRoot(), 'renderer', 'quick.html'), { query: { quick: '1', worldId: id, worldKind: kind, autoStart: autoStart ? '1' : '0' } });
   quickWindow.once('ready-to-show', () => { quickWindow.show(); quickWindow.focus(); });
@@ -541,7 +541,7 @@ function createMinimalWindow(worldId, autoStart = false) {
     minimalWindow.loadFile(path.join(projectRoot(),'renderer','quick.html'),{query:{minimal:'1',worldId:id,worldKind:'server',autoStart:autoStart?'1':'0'}});
     minimalWindow.show();minimalWindow.focus();return minimalWindow;
   }
-  minimalWindow=new BrowserWindow(windowOptions({width:1050,height:760,minWidth:720,minHeight:520,resizable:true,title:'Dragonwilds Sync · Minimal Mode'}));
+  minimalWindow=new BrowserWindow(windowOptions({width:1050,height:760,minWidth:720,minHeight:520,resizable:true,maximizable:true,movable:true,frame:true,title:'Dragonwilds Sync · Minimal Mode'}));
   attachRendererDurability(minimalWindow);
   minimalWindow.loadFile(path.join(projectRoot(),'renderer','quick.html'),{query:{minimal:'1',worldId:id,worldKind:'server',autoStart:autoStart?'1':'0'}});
   minimalWindow.once('ready-to-show',()=>{minimalWindow.show();minimalWindow.focus();});

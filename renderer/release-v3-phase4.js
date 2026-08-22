@@ -221,7 +221,9 @@
     const cached = network.get(id)?.value;
     const advertised = text(world?.heartbeat?.state || world?.heartbeat_state || world?.network_state || world?.directory_state);
     const status = cached?.heartbeat || cached || {};
-    const value = text(status.state || advertised || ((world?.status?.broadcasting || world?.status?.running) ? 'Connecting' : 'Disabled'));
+    const connectedWorld = world?.kind && !['singleplayer','server','dedicated'].includes(text(world.kind).toLowerCase());
+    const observedConnection = connectedWorld && world?.status?.last_checked_at ? (world.status.online ? 'Active' : 'Failed') : '';
+    const value = text(status.state || advertised || observedConnection || ((world?.status?.broadcasting || world?.status?.running) ? 'Connecting' : 'Disabled'));
     const stateName = ['active','connecting','partial','failed','disabled'].includes(value.toLowerCase()) ? value[0].toUpperCase()+value.slice(1).toLowerCase() : 'Disabled';
     return {state:stateName,lastSuccess:status.last_success_at || null,destinations:asArray(status.destinations)};
   }
@@ -231,7 +233,7 @@
     const cls = info.state.toLowerCase();
     const mode = animationMode();
     const animated = ['Active','Connecting','Partial'].includes(info.state) && mode !== 'off';
-    const label = info.state === 'Partial' ? 'Heartbeat Partial' : `Heartbeat ${info.state}`;
+    const label = info.state === 'Active' ? 'Connected' : info.state === 'Failed' ? 'Not Connected' : info.state === 'Partial' ? 'Heartbeat Partial' : `Heartbeat ${info.state}`;
     return `<span class="v3p4-heartbeat ${cls} ${animated?'animated':'static'}" role="status" aria-label="${esc(label)}"><span class="v3p4-heart-shape" aria-hidden="true">♥</span><span>${esc(label)}</span></span>`;
   }
 

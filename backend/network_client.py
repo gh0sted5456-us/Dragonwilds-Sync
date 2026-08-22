@@ -88,7 +88,10 @@ def _credential_source(value: str) -> str:
 
 def _auth_token(endpoint, password: str, server_key: str = "", share_access_key: str = "", credential_source: str = "linked") -> tuple[str, str]:
     base = endpoint.base_url
-    password = str(password or "")
+    # DedicatedServer.ini trims WorldPassword. Use the same canonical value for
+    # the companion Sync proof so invisible edge whitespace cannot let gameplay
+    # authorize while the protected manifest/file transfer rejects the client.
+    password = str(password or "").strip()
     source = _credential_source(credential_source)
     if source == "lan":
         try:

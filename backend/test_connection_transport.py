@@ -37,6 +37,25 @@ class ConnectionTransportTests(unittest.TestCase):
         self.assertEqual(auth.get("auth_mode"), "world_password")
         self.assertEqual(state.password, "old-password")
 
+    def test_sync_password_matches_trimmed_dragonwilds_world_password(self):
+        state = server_systems.SyncState()
+        state.password = "  shared-world-password  "
+        nonce = state.issue_nonce()
+        proof = hmac.new(b"shared-world-password", nonce.encode(), hashlib.sha256).hexdigest()
+        auth = state.check_proof(nonce, proof, credential_source="manual", client_ip="192.168.1.2")
+        self.assertIsNotNone(auth)
+
+        endpoint = network_client.normalize_endpoint("127.0.0.1:27051")
+        with patch.object(network_client, "request") as request:
+            request.side_effect = [
+                unittest.mock.MagicMock(read=lambda: b'{"nonce":"abc"}'),
+                unittest.mock.MagicMock(read=lambda: b'{"token":"ok"}'),
+            ]
+            token, source = network_client._auth_token(endpoint, "  shared-world-password  ", credential_source="manual")
+        self.assertEqual((token, source), ("ok", "manual"))
+        body = json.loads(request.call_args_list[1].kwargs["data"])
+        self.assertEqual(body["proof"], hmac.new(b"shared-world-password", b"abc", hashlib.sha256).hexdigest())
+
     def test_lan_heartbeat_exposes_mod_inventory(self):
         old_manifest = server_systems.STATE.manifest
         old_port = server_systems.SHARE.port
@@ -74,6 +93,8 @@ class ConnectionTransportTests(unittest.TestCase):
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/identity") as response:
                 identity = json.loads(response.read())
             self.assertEqual(len(identity["mod_summary"]), 180)
+            self.assertNotIn("password", identity)
+            self.assertEqual(identity["authentication"]["scope"], "world-sync")
             broadcaster = server_systems.Broadcaster(lambda: {"app": server_systems.DISCOVERY_MAGIC, "name": "Transport World",
                 "ip": "127.0.0.1", "port": port, "sync_port": port, "game_port": 7777,
                 "mod_badges": identity["mod_badges"], "mod_summary": identity["mod_summary"]})

@@ -1105,7 +1105,7 @@ class SyncState:
             # STATE.password is hot-applied from the active profile's exact
             # dedicated_config.world_pass when its Sync share is published.
             # Never mix it with legacy sync passwords or saved client fields.
-            world_password = str(self.password or "")
+            world_password = str(self.password or "").strip()
         expected = hmac.new(world_password.encode(), nonce.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(expected, str(proof or "")):
             return None
@@ -1460,6 +1460,8 @@ class SyncHandler(BaseHTTPRequestHandler):
                     "rating_count": STATE.manifest.get("rating_count") or 0,
                     "community": STATE.manifest.get("community") or {},
                     "community_rules": STATE.manifest.get("community_rules") or "",
+                    "password_required": bool(STATE.manifest.get("password_required")),
+                    "authentication": STATE.manifest.get("authentication") or {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
                     "world_sync": STATE.manifest.get("world_sync") or {},
                     "launcher_fingerprint": STATE.manifest.get("launcher_fingerprint") or "",
                     "connection": STATE.manifest.get("connection") or {},
@@ -1889,7 +1891,9 @@ class ShareServer:
         # still carries a stale hidden Sync password. Private/co-op publishing
         # has no world_pass field and continues to use its explicit password.
         if "world_pass" in dedicated:
-            password = str(dedicated.get("world_pass") or "")
+            password = str(dedicated.get("world_pass") or "").strip()
+        else:
+            password = str(password or "").strip()
         required = [u for u in units if u.classification == "player_required"]
         security_reviews = []
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
@@ -2042,6 +2046,8 @@ class ShareServer:
                                   "sync_port": int(port), "game_port": int(game_port or 7777),
                               },
                               "share_profile": {"enabled": True, "scope": "world-password"},
+                              "password_required": bool(password),
+                              "authentication": {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
                               "external_hierarchy": {
                                   "provider": "shrug.games",
                                   "label": "Public RuneScape Dragonwilds server hierarchy (unofficial)",
@@ -2114,7 +2120,7 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             return {"updated": False, "reason": "World is not the live published profile"}
         dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
         if "world_pass" in dedicated:
-            next_password = str(dedicated.get("world_pass") or "")
+            next_password = str(dedicated.get("world_pass") or "").strip()
             if next_password != STATE.password:
                 # A saved World Password is immediately authoritative for the
                 # live endpoint. Old sessions must negotiate again.
@@ -2142,6 +2148,8 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "community": {"discord_invite": str((profile.get("community") or {}).get("discord_invite") or "")[:300],
                           "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]},
             "community_rules": str(profile.get("community_rules") or "")[:4000],
+            "password_required": bool(str(dedicated.get("world_pass") or "").strip()),
+            "authentication": {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
             "icon_b64": str(profile.get("icon_b64") or ""),
             "banner_b64": str(profile.get("banner_b64") or ""),
             "rating_average": avg,

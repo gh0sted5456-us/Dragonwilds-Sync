@@ -1,0 +1,57 @@
+/* Responsive desktop treatment shared by player, co-op, and server Quick Launch. */
+html[data-v3-quick="1"],
+html[data-v3-quick="1"] body {
+  min-width: 0 !important;
+}
+
+.v3q-shell {
+  width: 100%;
+  max-width: 1180px;
+}
+
+.v3q-header {
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.v3q-header button,
+.v3q-header input,
+.v3q-header a {
+  -webkit-app-region: no-drag;
+}
+
+.v3q-status-grid {
+  grid-template-columns: repeat(3, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.v3q-metric strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+@media (max-width: 800px) {
+  .v3q-header-actions {
+    width: 100%;
+  }
+
+  .v3q-header-actions .v3q-btn {
+    flex: 1;
+  }
+
+  .v3q-status-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .v3q-status-grid,
+  .v3q-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .v3q-toolbar .v3q-btn {
+    flex: 1 1 45%;
+  }
+}

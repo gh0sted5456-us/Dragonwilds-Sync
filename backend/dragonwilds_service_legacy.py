@@ -84,6 +84,7 @@ from world_directory import (discover_sync_worlds, remember_heartbeats, publish_
                              normalize_directory_sources, FINGERPRINT_RE, PROTOCOL as WORLD_SYNC_PROTOCOL)
 from directory_host import DIRECTORY_HOST, REMOTE_PERMISSION_DEFAULTS, normalize_host_config, try_upnp_mapping
 from world_classification import normalize_world_classification
+from world_identity import normalize_endpoint
 from recommendation_feeds import OFFICIAL_FEED_URL, NEXUS_ACTIVITY_URL, builtin_recommendations, refresh_recommendations
 from operator_identity import public_operator_status, verify_world_identity
 from networking import (apply_firewall_spec, backend_program, effective_game_port, firewall_spec,
@@ -622,6 +623,89 @@ def _remember_shared_connection(state: dict, world: dict) -> None:
     _remember_client_connection(state, world, source=str(meta.get("source") or "linked"))
 
 
+def _same_saved_world(left: dict, right: dict) -> bool:
+    """Conservatively identify duplicate saved connection profiles."""
+    left_shared = left.get("shared") if isinstance(left.get("shared"), dict) else {}
+    right_shared = right.get("shared") if isinstance(right.get("shared"), dict) else {}
+    left_fingerprint = str(left_shared.get("fingerprint") or left_shared.get("fingerprint_claimed") or "").strip().casefold()
+    right_fingerprint = str(right_shared.get("fingerprint") or right_shared.get("fingerprint_claimed") or "").strip().casefold()
+    if left_fingerprint and left_fingerprint == right_fingerprint:
+        return True
+    left_id, right_id = str(left.get("id") or "").strip(), str(right.get("id") or "").strip()
+    if left_id and left_id == right_id:
+        return True
+    left_name = str((left.get("identity") or {}).get("world_name") or "").strip().casefold()
+    right_name = str((right.get("identity") or {}).get("world_name") or "").strip().casefold()
+    if not left_name or left_name != right_name:
+        return False
+
+    def route_hosts(row: dict) -> set[str]:
+        connection = row.get("connection") if isinstance(row.get("connection"), dict) else {}
+        hosts: set[str] = set()
+        for key in ("internal_ip", "external_ip"):
+            endpoint = normalize_endpoint(str(connection.get(key) or ""), default_port=int(connection.get("sync_port") or 27051))
+            if endpoint:
+                hosts.add(endpoint.host.casefold())
+        return hosts
+
+    left_connection = left.get("connection") if isinstance(left.get("connection"), dict) else {}
+    right_connection = right.get("connection") if isinstance(right.get("connection"), dict) else {}
+    return (bool(route_hosts(left).intersection(route_hosts(right))) and
+            int(left_connection.get("sync_port") or 27051) == int(right_connection.get("sync_port") or 27051))
+
+
+def _merge_saved_world(primary: dict, duplicate: dict) -> dict:
+    """Merge useful fields while retaining the first profile's stable ID."""
+    result = deepcopy(primary)
+    for section in ("identity", "connection", "presentation", "shared", "status", "manifest_cache"):
+        incoming = duplicate.get(section)
+        if not isinstance(incoming, dict):
+            continue
+        target = result.setdefault(section, {})
+        for key, value in incoming.items():
+            if value not in (None, "", [], {}) and target.get(key) in (None, "", [], {}):
+                target[key] = deepcopy(value)
+    credentials = result.setdefault("credentials", {})
+    incoming_credentials = duplicate.get("credentials") if isinstance(duplicate.get("credentials"), dict) else {}
+    if not str(credentials.get("password") or "").strip() and str(incoming_credentials.get("password") or "").strip():
+        credentials["password"] = str(incoming_credentials.get("password") or "").strip()
+    for key in ("last_played_at", "updated_at"):
+        if str(duplicate.get(key) or "") > str(result.get(key) or ""):
+            result[key] = duplicate.get(key)
+    return result
+
+
+def _dedupe_client_worlds(state: dict) -> bool:
+    client = state.setdefault("client", {})
+    original = [row for row in (client.get("worlds") or []) if isinstance(row, dict)]
+    cleaned: list[dict] = []
+    replaced_ids: dict[str, str] = {}
+    for candidate in original:
+        index = next((i for i, saved in enumerate(cleaned) if _same_saved_world(saved, candidate)), None)
+        if index is None:
+            cleaned.append(candidate)
+            continue
+        retained_id = str(cleaned[index].get("id") or "")
+        duplicate_id = str(candidate.get("id") or "")
+        cleaned[index] = _merge_saved_world(cleaned[index], candidate)
+        if retained_id and duplicate_id and retained_id != duplicate_id:
+            replaced_ids[duplicate_id] = retained_id
+    if len(cleaned) == len(original):
+        return False
+    client["worlds"] = cleaned
+    for key in ("active_world_id", "live_world_id"):
+        current = str(client.get(key) or "")
+        if current in replaced_ids:
+            client[key] = replaced_ids[current]
+    favorites: list[str] = []
+    for value in client.get("favorites") or []:
+        normalized = replaced_ids.get(str(value), str(value))
+        if normalized and normalized not in favorites:
+            favorites.append(normalized)
+    client["favorites"] = favorites
+    return True
+
+
 def _propagate_machine_owner_id(owner_id: str) -> int:
     """Hydrate every hosted World's profile and live DedicatedServer.ini from the machine Player ID."""
     owner_id = str(owner_id or "").strip()
@@ -1086,6 +1170,8 @@ def _run_world_sync_job(job_id: str, world_id: str, action: str) -> None:
 
 def handle(method: str, params: dict) -> object:
     state = load_state()
+    if _dedupe_client_worlds(state):
+        save_state(state)
     _ensure_server_install_migrated(state)
     set_defender_review_enabled(False)
 
@@ -2225,8 +2311,13 @@ def handle(method: str, params: dict) -> object:
             return {"world": sanitize_world_for_renderer(preview), "live_fingerprint_required": True}
         client = state.setdefault("client", {})
         fingerprint = str(row.get("fingerprint") or "")
-        existing = next((item for item in client.setdefault("worlds", []) if str((item.get("shared") or {}).get("fingerprint") or "") == fingerprint), None)
-        credentials = {"password": str(params.get("password") or "")[:256]}
+        preview = _directory_join_world_shape(row)
+        existing = next((item for item in client.setdefault("worlds", []) if
+                         (fingerprint and str((item.get("shared") or {}).get("fingerprint") or "") == fingerprint) or
+                         _same_saved_world(item, preview)), None)
+        entered_password = str(params.get("password") or "").strip()[:256]
+        saved_password = str(((existing or {}).get("credentials") or {}).get("password") or "").strip()
+        credentials = {"password": entered_password or saved_password}
         linked = _directory_join_world_shape(row, local_id=str((existing or {}).get("id") or ""), credentials=credentials)
         if existing is None: client["worlds"].append(linked)
         else: existing.clear(); existing.update(linked); linked = existing
@@ -4107,7 +4198,8 @@ def handle(method: str, params: dict) -> object:
             sync["access_policy"] = normalize_access_policy({"blocked_ips": incoming_sync.get("blocked_ips") or [], "blocked_countries": incoming_sync.get("blocked_countries") or []})
         # One player-facing World Password is shared by the game and Sync
         # handshake. Empty is valid for an open World.
-        sync["password"] = str(dedicated.get("world_pass") or "")
+        dedicated["world_pass"] = str(dedicated.get("world_pass") or "").strip()
+        sync["password"] = dedicated["world_pass"]
         sync.pop("server_key", None)
         sync.pop("share_access_key", None)
         sync.pop("allow_shared_access", None)

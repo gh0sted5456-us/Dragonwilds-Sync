@@ -6,9 +6,24 @@ const {app,BrowserWindow}=require('electron');
 app.commandLine.appendSwitch('disable-gpu');
 
 let finished=false;
-function finish(code,message){if(finished)return;finished=true;(code?console.error:console.log)(message);app.exit(code);}
+function finish(code,message){if(finished)return;finished=true;process.exitCode=code;(code?console.error:console.log)(message);app.exit(code);}
 const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
 async function until(fn,timeout=20000){const end=Date.now()+timeout;while(Date.now()<end){const value=await fn();if(value)return value;await wait(80);}throw new Error('Timed out waiting for the renderer.');}
+
+app.on('web-contents-created',(_event,contents)=>{
+  if(contents.getType()!=='window')return;
+  contents.on('console-message',(event,level,legacyMessage,lineNumber,sourceId)=>{
+    const params=event&&typeof event==='object'?event:{};
+    const message=String(params.message||legacyMessage||'');
+    if(!/Uncaught|SyntaxError|ReferenceError|TypeError/i.test(message))return;
+    const source=params.sourceId||sourceId||'renderer';
+    const line=params.lineNumber||lineNumber||0;
+    finish(1,`Navigation swap timing: FAIL · renderer error: ${message} (${source}:${line})`);
+  });
+  contents.on('render-process-gone',(_goneEvent,details)=>{
+    if(String(details?.reason||'')!=='clean-exit')finish(1,`Navigation swap timing: FAIL · renderer process ${details?.reason||'exited'}`);
+  });
+});
 
 require('../electron/main.cjs');
 app.whenReady().then(async()=>{

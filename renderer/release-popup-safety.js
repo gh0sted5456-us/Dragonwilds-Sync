@@ -41,13 +41,16 @@
   document.addEventListener('pointerdown',(event)=>{
     const popup=event.target.closest?.(popupSelector); if(!popup)return;
     const close=event.target.closest?.(`${closeSelector},[data-popup-safety-close]`);
-    if(close){event.preventDefault();event.stopPropagation();closePopup(popup,close);return;}
-    if(event.target===popup){event.preventDefault();event.stopPropagation();closePopup(popup);}
+    // Never remove a popup on pointerdown. Doing so causes Chromium to retarget
+    // the subsequent click at the placard underneath, flipping or opening it.
+    // Stop legacy pointerdown dismissers here and finish on the click below.
+    if(close||event.target===popup){event.stopImmediatePropagation();}
   },true);
   document.addEventListener('click',(event)=>{
-    const close=event.target.closest?.(`${closeSelector},[data-popup-safety-close]`);if(!close)return;
-    const popup=close.closest?.(popupSelector);if(!popup)return;
-    event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();closePopup(popup,close);
+    const popup=event.target.closest?.(popupSelector);if(!popup)return;
+    const close=event.target.closest?.(`${closeSelector},[data-popup-safety-close]`);
+    if(!close&&event.target!==popup)return;
+    event.preventDefault();event.stopImmediatePropagation();closePopup(popup,close);
   },true);
   document.addEventListener('keydown',(event)=>{
     if(event.key!=='Escape')return;const popups=[...document.querySelectorAll(popupSelector)].filter(visible);const popup=popups.at(-1);if(!popup)return;event.preventDefault();event.stopPropagation();closePopup(popup);

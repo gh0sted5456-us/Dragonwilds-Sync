@@ -46,7 +46,7 @@ def main():
     assert "Wait-Process" in updater
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "2.0.0"
+    assert package["version"] == "2.0.1"
     assert package["build"]["win"]["target"] == ["portable"]
     assert "nsis" not in package["build"]
     assert package["build"]["portable"]["artifactName"].startswith("${productName}-Portable-")

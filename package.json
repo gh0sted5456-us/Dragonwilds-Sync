@@ -1,10 +1,12 @@
 {
   "name": "dragonwilds-sync-electron",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "private": true,
   "description": "A unified tool to create, launch, and share world servers with friends.",
   "main": "electron/bootstrap.cjs",
-  "engines": {"node": ">=24.18.0 <25"},
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
   "packageManager": "npm@11.17.0",
   "scripts": {
     "start": "npm run check:runtime && npm run prepare:monaco && electron .",
@@ -28,25 +30,91 @@
     "package:raw": "node scripts/package_raw_source.cjs",
     "prepare:monaco": "node scripts/prepare_monaco.cjs"
   },
-  "devDependencies": {"@electron/asar":"4.2.1","electron":"43.2.0","electron-builder":"26.15.3","luaparse":"0.3.1","monaco-editor":"0.52.2"},
-  "build": {
-    "appId":"com.dragonwilds.sync",
-    "asarUnpack":["node_modules/7zip-bin/**"],
-    "productName":"Dragonwilds Sync and Launcher",
-    "copyright":"Copyright © 2026 RSDW Modding Community",
-    "directories":{"output":"release"},
-    "files":["electron/**/*","renderer/**/*","package.json","LICENSE.txt"],
-    "fileAssociations":[{"ext":"rsdwl","name":"Dragonwilds Sync Launcher File","description":"Dragonwilds Sync profile and launcher package","icon":"renderer/assets/rsdwl-icon.ico","role":"Editor"}],
-    "extraResources":[
-      {"from":"resources","to":"resources","filter":["**/*"]},
-      {"from":"node_modules/three/build","to":"rsdw-viewer/three/build"},
-      {"from":"node_modules/three/examples/jsm","to":"rsdw-viewer/three/examples/jsm"}
-    ],
-    "win":{"icon":"renderer/assets/dragonwilds_icon.ico","extraResources":[{"from":"dist-service/DragonwildsSync.Service.exe","to":"backend/DragonwildsSync.Service.exe"}],"target":["portable"]},
-    "linux":{"category":"Game","extraResources":[{"from":"dist-service/DragonwildsSync.Service","to":"backend/DragonwildsSync.Service"}],"target":["AppImage"],"artifactName":"${productName}-Ubuntu-${version}.${ext}"},
-    "portable":{"artifactName":"${productName}-Portable-${version}.${ext}"}
+  "devDependencies": {
+    "@electron/asar": "4.2.1",
+    "electron": "43.2.0",
+    "electron-builder": "26.15.3",
+    "luaparse": "0.3.1",
+    "monaco-editor": "0.52.2"
   },
-  "dependencies":{"7zip-bin":"^5.2.0","three":"0.184.0","ws":"8.21.3"},
-  "author":"RSDW Modding Community",
-  "allowScripts":{"electron@43.2.0":true}
+  "build": {
+    "appId": "com.dragonwilds.sync",
+    "asarUnpack": [
+      "node_modules/7zip-bin/**"
+    ],
+    "productName": "Dragonwilds Sync and Launcher",
+    "copyright": "Copyright © 2026 RSDW Modding Community",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "renderer/**/*",
+      "package.json",
+      "LICENSE.txt"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "rsdwl",
+        "name": "Dragonwilds Sync Launcher File",
+        "description": "Dragonwilds Sync profile and launcher package",
+        "icon": "renderer/assets/rsdwl-icon.ico",
+        "role": "Editor"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "node_modules/three/build",
+        "to": "rsdw-viewer/three/build"
+      },
+      {
+        "from": "node_modules/three/examples/jsm",
+        "to": "rsdw-viewer/three/examples/jsm"
+      }
+    ],
+    "win": {
+      "icon": "renderer/assets/dragonwilds_icon.ico",
+      "extraResources": [
+        {
+          "from": "dist-service/DragonwildsSync.Service.exe",
+          "to": "backend/DragonwildsSync.Service.exe"
+        }
+      ],
+      "target": [
+        "portable"
+      ]
+    },
+    "linux": {
+      "category": "Game",
+      "extraResources": [
+        {
+          "from": "dist-service/DragonwildsSync.Service",
+          "to": "backend/DragonwildsSync.Service"
+        }
+      ],
+      "target": [
+        "AppImage"
+      ],
+      "artifactName": "${productName}-Ubuntu-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}"
+    }
+  },
+  "dependencies": {
+    "7zip-bin": "^5.2.0",
+    "three": "0.184.0",
+    "ws": "8.21.3"
+  },
+  "author": "RSDW Modding Community",
+  "allowScripts": {
+    "electron@43.2.0": true
+  }
 }

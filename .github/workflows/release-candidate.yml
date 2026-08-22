@@ -170,6 +170,15 @@ jobs:
           path: release-assets
           merge-multiple: true
 
+      - name: Normalize downloaded release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' asset; do
+            destination="release-assets/$(basename "${asset}")"
+            [[ "${asset}" == "${destination}" ]] || cp "${asset}" "${destination}"
+          done < <(find release-assets -mindepth 2 -type f -print0)
+
       - name: Validate official release payload
         shell: bash
         run: |

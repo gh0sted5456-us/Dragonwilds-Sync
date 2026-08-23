@@ -40,9 +40,9 @@ def main() -> None:
     finally:
         service.load_state, service.save_state, service.public_state, service._ensure_server_install_migrated, service.set_defender_review_enabled = original
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     dialog_host = (ROOT / "renderer" / "dialog-host.js").read_text(encoding="utf-8")
-    main_source = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
+    main_source = (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     assert "closeModal(); setData(fresh); openNotificationCenter()" not in renderer
     assert "row?.remove();syncNotificationCenterEmptyState();applyFilter()" in renderer

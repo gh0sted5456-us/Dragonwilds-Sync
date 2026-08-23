@@ -42,7 +42,7 @@ def main():
     assert directory_host.normalize_host_config({"public_transport": "unsupported"})["public_transport"] == "direct"
     assert WEB_TUNNEL.status()["state"] in {"stopped", "error"}
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert 'data-profile-tab="ledger"' not in renderer
     assert 'data-profile-tab="character-map"' not in renderer
     assert 'data-character-profile-tab="ledger"' not in renderer

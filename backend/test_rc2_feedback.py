@@ -10,7 +10,7 @@ def main():
     # dragonwilds_service_legacy.py handler. Contract tokens may live in either.
     service=((ROOT/'backend/dragonwilds_service.py').read_text(encoding='utf-8')
              + (ROOT/'backend/dragonwilds_service_legacy.py').read_text(encoding='utf-8'))
-    app=(ROOT/'renderer/app.js').read_text(encoding='utf-8')
+    app=(ROOT/'renderer/app-v2.js').read_text(encoding='utf-8')
     rc2=(ROOT/'renderer/release-rc2.js').read_text(encoding='utf-8')
     assert '"server_mode_enabled": False' in profile
     assert '"remote_admin": {"enabled": False' in profile

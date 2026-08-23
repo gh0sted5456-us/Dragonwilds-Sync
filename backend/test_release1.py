@@ -26,7 +26,7 @@ def main():
 
     assert not (ROOT / "resources/webhost/shared-worlds.json").exists()
 
-    renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     renderer_v2 = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     assert "Release 1." in renderer and "Application Updates" in renderer
     assert "application-github-url" not in renderer

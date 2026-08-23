@@ -16,7 +16,7 @@ def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["version"].startswith("2.7.")
 
-    renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
     # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
@@ -24,7 +24,7 @@ def main():
                + (ROOT / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
     network = (ROOT / "backend/network_client.py").read_text(encoding="utf-8")
     server_systems = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
-    main_js = (ROOT / "electron/main.cjs").read_text(encoding="utf-8")
+    main_js = (ROOT / "electron/main-v2.cjs").read_text(encoding="utf-8")
 
     # Persistent navigation and native detachable World windows.
     assert "navigationHistory" in renderer and "id=\"global-back\"" in renderer and "function goBack()" in renderer

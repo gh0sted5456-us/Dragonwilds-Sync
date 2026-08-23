@@ -173,7 +173,7 @@ def main():
 
     integrations = (ROOT / "backend/integrations.py").read_text(encoding="utf-8")
     discord = (ROOT / "electron/discord_rpc.cjs").read_text(encoding="utf-8")
-    renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")
     assert '1537292761303097364' in integrations and '1537292761303097364' in discord
     assert '0583e9dc6227d2a7cca010adf1d9a233d8ffbe23246d871521c6fc1bd7693402' in integrations

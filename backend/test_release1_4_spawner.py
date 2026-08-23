@@ -56,7 +56,7 @@ def main():
     root = Path(__file__).resolve().parents[1]
     service = ((root / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
                + (root / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
-    renderer = (root / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (root / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for token in ("server.spawner.catalog", "server.spawner.spawn", "confirmed", "PLAYER_BRIDGE.command"):
         assert token in service, token
     assert 'metrics.get("process_cpu_percent")' in service

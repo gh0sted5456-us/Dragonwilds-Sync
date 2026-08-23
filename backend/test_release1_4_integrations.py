@@ -208,7 +208,7 @@ def test_hotload_tags_and_language_contract() -> None:
     fingerprint = server_systems.world_sync_fingerprint("tag-world")
     heartbeat = world_directory.normalize_heartbeat({"protocol": world_directory.PROTOCOL, "fingerprint": fingerprint, "world_name": "Tag World", "internal_ip": "192.168.1.2", "tags": ["combat", "loot"]})
     assert heartbeat and heartbeat["tags"] == ["combat", "loot"]
-    renderer = (Path(__file__).parents[1] / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (Path(__file__).parents[1] / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for code in ("en", "fr", "de", "es", "it"):
         assert f"{code}:{{" in renderer
     assert 'id="application-language"' in renderer and "data-sp-tags" in renderer and "data-mod-tags" in renderer

@@ -58,7 +58,7 @@ def main():
     assert feed["connection"]["external_ip"] == "198.51.100.10"
 
     project = Path(__file__).resolve().parents[1]
-    renderer = (project / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (project / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "Singleplayer" in renderer and "My Worlds" in renderer and "Shared Worlds" in renderer
     assert "Imported / Exported" in renderer and "Online Worlds" in renderer
     assert "Export World .rsdwl" in renderer

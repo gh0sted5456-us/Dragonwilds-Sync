@@ -36,7 +36,7 @@ def test_review_integrity_and_visibility() -> None:
 def test_world_browser_contract() -> None:
     state = profile_store.default_state()
     assert state["client"]["world_browser"]["page"] == 1
-    renderer = Path(__file__).parents[1].joinpath("renderer", "app.js").read_text(encoding="utf-8")
+    renderer = Path(__file__).parents[1].joinpath("renderer", "app-v2.js").read_text(encoding="utf-8")
     styles = Path(__file__).parents[1].joinpath("renderer", "styles.css").read_text(encoding="utf-8")
     assert "const pageSize=10" in renderer
     assert "data-private-page" in renderer and "data-server-page" in renderer

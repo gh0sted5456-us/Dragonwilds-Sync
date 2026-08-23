@@ -95,7 +95,7 @@ def main():
     assert sources[0]["url"] == profile_store.OFFICIAL_DIRECTORY_URL and sources[0]["enabled"] is True
     assert state["client"]["favorite_alerts"]["identity_changed"] is True
     assert state["client"]["world_moderation"]["reports"] == []
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for marker in ("Free Directory Sources", "Compatibility Preview", "Identity History", "Quarantine Inbox", "Favorite World alerts"):
         assert marker in renderer
     print("release 1.4 federation safety tests passed")

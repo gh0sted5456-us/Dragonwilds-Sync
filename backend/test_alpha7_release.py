@@ -142,9 +142,9 @@ def main():
         point = pt.world_to_map(50, 25, {"world_min_x": 0, "world_max_x": 100, "world_min_y": 0, "world_max_y": 100, "invert_y": True})
         assert point == {"x": 0.5, "y": 0.75}
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
-    main = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
+    main = (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
     # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")

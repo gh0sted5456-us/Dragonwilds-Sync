@@ -24,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_character_and_world_ui_contract():
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     assert "Array.from({length:80}" in renderer
     assert 'data-native-inventory-section="personal"' in renderer
@@ -55,7 +55,7 @@ def test_portable_item_manifest_replaces_runtime_companion():
     # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
                + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert 'application.custom_items.discover' in service
     assert 'dragonwilds-sync-items.json' in service and '*.dwsync-items.json' in service
     assert 'application.rsdw.runtime_assets.install' not in service
@@ -93,7 +93,7 @@ def test_local_appdata_migration_and_default_off_tips():
         assert (local / "DragonwildsSync" / "launcher_v2.json").is_file()
         assert (legacy / "launcher_v2.json").is_file()
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     assert 'id="toggle-show-tips"' in renderer
     assert 'data-show-tips="0"' in styles
@@ -106,7 +106,7 @@ def test_admin_relaunch_and_rsdw_toolkit_contracts():
     assert "ProcessStartInfo" in electron
     assert "$psi.UseShellExecute = $true" in electron
     assert "$psi.Verb = 'runas'" in electron
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "ADMINISTRATOR MODE" in renderer and "STANDARD MODE" in renderer
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
     # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
@@ -126,7 +126,7 @@ def test_admin_relaunch_and_rsdw_toolkit_contracts():
 
 def test_player_roster_poll_is_cached_and_not_a_five_second_log_flood():
     tracker = (ROOT / "backend" / "player_tracker.py").read_text(encoding="utf-8")
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "self.poll_interval = 15.0" in tracker
     assert "self._minimum_roster_age = 12.0" in tracker
     assert "now - self._last_roster_poll >= self._minimum_roster_age" in tracker
@@ -207,7 +207,7 @@ def test_profile_socials_and_character_visibility_contract():
     assert links["steam"].startswith("https://steamcommunity.com/")
     assert links["epic"] == "EpicPlayer" and links["xbox"] == "XboxPlayer"
     assert links["playstation"] == "PsnPlayer" and links["nintendo"].startswith("SW-")
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "<h2>Socials</h2>" in renderer
     assert "Known Worlds" not in renderer
     assert "Preview Visibility · Preview Only" not in renderer
@@ -239,7 +239,7 @@ def test_reset_is_backup_first_and_path_guarded():
         finally:
             server_systems.APP_DATA_DIR = original
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert 'id="reset-client-install"' in renderer and 'id="reset-server-install"' in renderer
     assert "RESET DRAGONWILDS" in renderer and "RESET SERVER" in renderer
 

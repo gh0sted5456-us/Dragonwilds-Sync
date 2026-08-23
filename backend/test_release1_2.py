@@ -177,7 +177,7 @@ def main():
         rsdw_cache.RSDW_DATA_DIR = old_data_dir
         rsdw_cache_legacy.RSDW_DATA_DIR = rsdw_cache.RSDW_DATA_DIR
 
-    renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     assert "RSDW Toolkit" in renderer
     assert "User Profile" in renderer and "<h1>Characters</h1>" in renderer and "Live Map & Tracking" in renderer
     assert "playerMapPanelMarkup" in renderer
@@ -206,7 +206,7 @@ def main():
     assert "hydrate-rsdw-character" in preload and "rsdw-save" in preload and "rsdw-preview" in preload
     assert "document.documentElement?.scrollHeight" not in preload
     assert "overflow-y:auto!important" in preload
-    main_js = (ROOT / "electron/main.cjs").read_text(encoding="utf-8")
+    main_js = (ROOT / "electron/main-v2.cjs").read_text(encoding="utf-8")
     assert "startRsdwToolkitServer" in main_js and "127.0.0.1" in main_js and "will-attach-webview" in main_js
     assert "rsdwToolkitServer?.listening" in main_js and "relative === '__health'" in main_js
     assert "__rsdwmodel/vendor/three/" in main_js and "application/wasm" in main_js

@@ -16,10 +16,10 @@ def main():
     assert package["version"].startswith("2.7.")
     assert package.get("dependencies", {}).get("ws")
 
-    renderer = (ROOT / "renderer/app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")
-    main_js = (ROOT / "electron/main.cjs").read_text(encoding="utf-8")
-    preload = (ROOT / "electron/preload.cjs").read_text(encoding="utf-8")
+    main_js = (ROOT / "electron/main-v2.cjs").read_text(encoding="utf-8")
+    preload = (ROOT / "electron/preload-v2.cjs").read_text(encoding="utf-8")
     nexus = (ROOT / "electron/nexus_adapter.cjs").read_text(encoding="utf-8")
 
     # Profile owns the RSDW character experience; the old standalone nav route is gone.

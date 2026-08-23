@@ -7,7 +7,7 @@ COMPANION = ROOT / "resources" / "DragonwildsSyncAssetCatalog"
 def test_portable_catalog_replaces_runtime_companion():
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
                + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     cache = (ROOT / "backend" / "rsdw_cache.py").read_text(encoding="utf-8")
     assert not COMPANION.exists()
     assert "RSDW_ITEM_MANIFEST_PATH" in cache

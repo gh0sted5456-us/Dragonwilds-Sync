@@ -20,7 +20,7 @@ def main():
     assert direct and direct["filename"] == "RuneSchema-v1.2.3.zip"
     assert direct["download_url"].endswith("RuneSchema-v1.2.3.zip")
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for marker in (
         "server-ue4ss-source-url", "settings-update-ue4ss", "settings-import-ue4ss-core", "settings-ue4ss-dropzone",
         "server-runeschema-source-url", "settings-update-runeschema", "settings-import-runeschema-core", "settings-runeschema-dropzone",

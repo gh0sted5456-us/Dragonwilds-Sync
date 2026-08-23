@@ -27,7 +27,7 @@ def main():
     assert 'unifi.ui.com' not in app
     assert 'Open Default Router Homepage' in app
     assert 'Microsoft Defender Review' not in app
-    assert "settings.textContent='WebHost'" in rc2
+    assert "settings.textContent='Website & Directory'" in rc2
     assert "b.textContent='Server Management'" in rc2
     assert "[data-webhost-tab=\"remote\"]" in rc2 and "classList.remove('rc2-retired')" in rc2
     assert 'Community' in rc2 and 'directory_sources' in rc2

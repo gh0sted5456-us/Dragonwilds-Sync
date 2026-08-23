@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.7',
-  name: 'V2.7.7 · Sync Recovery and RuneSchema Variants',
+  version: '2.7.8',
+  name: 'V2.7.8 · Dedicated Password and Route Retention',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.8',
+    title: 'Dedicated Password and Route Retention',
+    items: [
+      'Server launch now hydrates both the install-root and nested RSDragonwilds DedicatedServer.ini trees so either executable layout receives the same WorldPassword and gameplay settings.',
+      'Dedicated configuration verification rejects launch when any existing candidate INI copy disagrees and reports the stale paths explicitly.',
+      'Blank LAN or Direct Connect refresh fields no longer erase a saved working route; intentional clearing uses an explicit cleared-routes operation.',
+      'Direct Connect no longer sends an empty internal route when adding an externally queried World.',
+      'Source-contract tests now inspect the active V2 renderer, Electron main process, and preload implementations instead of their compatibility shims.',
+    ],
+  }, {
     version: '2.7.7',
     title: 'Sync Recovery and RuneSchema Variants',
     items: [

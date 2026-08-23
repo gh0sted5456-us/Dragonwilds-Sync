@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.8",
+      "title": "Dragonwilds Sync V2.7.8",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Both possible SteamCMD DedicatedServer.ini trees receive identical WorldPassword and gameplay configuration before launch.",
+        "Launch verification fails and identifies paths when any existing dedicated configuration copy remains stale.",
+        "Blank discovery, Direct Connect, or editor fields no longer erase a saved working internal or external route.",
+        "Routes can still be cleared deliberately through an explicit cleared-routes operation.",
+        "Source-contract tests inspect the active V2 implementations rather than compatibility shims."
+      ]
+    },
+    {
       "version": "2.7.7",
       "title": "Dragonwilds Sync V2.7.7",
       "date": "2026-08-22",

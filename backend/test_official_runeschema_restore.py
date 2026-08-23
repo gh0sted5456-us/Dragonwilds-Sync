@@ -7,6 +7,7 @@ from pathlib import Path
 
 def main():
     import server_systems as systems
+    import server_engine
     from server_layout import resolve_server_layout
 
     with tempfile.TemporaryDirectory() as tmp:
@@ -54,6 +55,18 @@ def main():
             systems.RUNESCHEMA_RUNTIME_DIR = old_runtime
             systems.RUNESCHEMA_UPLOAD_DIR = old_upload
             systems.RUNESCHEMA_CORE_CACHE_ZIP = old_cache
+
+        root_key = __import__("os").path.normcase(str(resolve_server_layout(root).game_root.resolve(strict=False)))
+        old_load_state = server_engine.load_state
+        old_installer = server_engine.install_authoritative_runeschema_update
+        server_engine.load_state = lambda: {"application": {"server_install": {"runeschema_manual_override_roots": [root_key]}}}
+        server_engine.install_authoritative_runeschema_update = lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("manual override attempted an official download"))
+        try:
+            retained = server_engine._restore_official_runeschema_once(str(root))
+            assert retained["ok"] is True and retained["manual_override"] is True and retained["changed"] is False
+        finally:
+            server_engine.load_state = old_load_state
+            server_engine.install_authoritative_runeschema_update = old_installer
 
     with tempfile.TemporaryDirectory() as tmp:
         mods = Path(tmp) / "Mods"

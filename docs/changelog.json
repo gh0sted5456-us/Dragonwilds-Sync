@@ -11,7 +11,7 @@
         "The launcher-specific RuneSchema variant and bundled archive are removed.",
         "The first server start restores the complete original RuneSchema release from upstream GitHub.",
         "Core DLL, configuration, support files, and enable marker are replaced as one matched unit while child mods are preserved.",
-        "Server settings now offer only the official RuneSchema restore/update action."
+        "Server settings offer the official restore/update action plus an explicit launch-safe manual override for unreleased complete core ZIPs."
       ]
     },
     {

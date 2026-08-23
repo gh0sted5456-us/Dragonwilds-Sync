@@ -28,6 +28,8 @@ def main():
         assert marker in renderer, marker
     for retired in ("server-runeschema-source-url", "settings-import-runeschema-core", "settings-runeschema-dropzone"):
         assert retired not in renderer, retired
+    assert "settings-import-runeschema-override" in renderer
+    assert "settings-runeschema-override-dropzone" in renderer
 
     # A launcher-bundled RuneSchema core is an offline Server Setup source.
     with tempfile.TemporaryDirectory() as td:

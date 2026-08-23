@@ -133,6 +133,7 @@ def main():
     )
     assert "settings-repair-runtimes" in renderer
     assert "settings-import-runeschema-core" not in renderer
+    assert "settings-import-runeschema-override" in renderer
     assert 'server.install.ensure_runtimes' in service
     assert 'server.install.runeschema_core' in service
     assert 'Dragonwilds-Base-Runtime-Repair' in service

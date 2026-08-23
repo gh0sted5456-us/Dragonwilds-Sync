@@ -541,6 +541,9 @@ def _restore_official_runeschema_once(game_root: str) -> dict:
     root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
     state = load_state()
     install = state.setdefault("application", {}).setdefault("server_install", {})
+    manual = [str(item) for item in (install.get("runeschema_manual_override_roots") or []) if str(item)]
+    if root_key in manual:
+        return {"ok": True, "changed": False, "manual_override": True, "source": "manual override"}
     restored = [str(item) for item in (install.get("official_runeschema_restored_roots") or []) if str(item)]
     if root_key in restored:
         return {"ok": True, "changed": False, "source": OFFICIAL_RUNESCHEMA_REPOSITORY}

@@ -5595,7 +5595,12 @@ def handle(method: str, params: dict) -> object:
             raise ValueError("The selected ZIP was not recognized as a RuneSchema core package (expected a core package containing a mods/ directory).")
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
         install_meta["runeschema_installed_at"] = time.time()
-        install_meta["runeschema_source_name"] = Path(zip_path).name
+        install_meta["runeschema_source_name"] = "Manual override · " + Path(zip_path).name
+        root_key = os.path.normcase(str(resolve_server_layout(install_dir).game_root.resolve(strict=False)))
+        overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
+        restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
+        install_meta["runeschema_manual_override_roots"] = [*([item for item in overrides if item != root_key][-7:]), root_key]
+        install_meta["official_runeschema_restored_roots"] = [item for item in restored if item != root_key]
         save_state(state)
         repaired = ensure_base_runtimes(install_dir, allow_ue4ss_download=True)
         return {"result": result, "runtime": repaired, "state": public_state(state)}
@@ -5627,6 +5632,11 @@ def handle(method: str, params: dict) -> object:
         install_meta["runeschema_source_url"] = source_url + "/releases"
         install_meta["runeschema_installed_at"] = time.time()
         install_meta["runeschema_source_name"] = str(result.get("filename") or result.get("source") or source_url)
+        root_key = os.path.normcase(str(resolve_server_layout(install_dir).game_root.resolve(strict=False)))
+        overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
+        restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
+        install_meta["runeschema_manual_override_roots"] = [item for item in overrides if item != root_key]
+        install_meta["official_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
         save_state(state)
         repaired = ensure_base_runtimes(install_dir, allow_ue4ss_download=True, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=source_url)
         return {"result": result, "runtime": repaired, "state": public_state(state)}

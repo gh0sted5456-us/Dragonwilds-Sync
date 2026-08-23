@@ -16,7 +16,8 @@ window.DWSYNC_RELEASE_META = Object.freeze({
       'The first server start after updating restores one complete matched RuneSchema release from the original upstream GitHub repository.',
       'Official core DLL, configuration, support files, and enable marker are replaced together so mixed-version cores cannot survive.',
       'Separately installed RuneSchema child mods remain profile-owned and are preserved during the official restoration.',
-      'Server settings now expose only Restore / Update Official; arbitrary RuneSchema source and local core selectors are removed from the GUI.',
+      'Editable RuneSchema source URLs and the named launcher variant selector are removed; Restore / Update Official remains the standard path.',
+      'An explicit manual override ZIP/drop target supports unreleased complete cores; launch preserves the override until Restore Official is selected.',
     ],
   }, {
     version: '2.7.11',

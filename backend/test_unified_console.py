@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import unified_console as console
+import runeschema_tools
 
 
 def test_console_world_runtime_authority() -> None:
@@ -27,6 +28,59 @@ def test_console_world_runtime_authority() -> None:
             raise AssertionError("an inactive World was allowed to edit the active runtime")
         except RuntimeError as exc:
             assert "Activate this Server World" in str(exc)
+    finally:
+        legacy.load_server_profile = original_load
+        legacy.server_root_for_profile = original_root
+        legacy.ENGINE = original_engine
+
+
+def test_runeschema_context_and_settings_round_trip() -> None:
+    import dragonwilds_service_v2_wrapper as service
+
+    legacy = service._legacy
+    original_load = legacy.load_server_profile
+    original_root = legacy.server_root_for_profile
+    original_engine = legacy.ENGINE
+    try:
+        with tempfile.TemporaryDirectory() as temp_name:
+            game_root = Path(temp_name) / "server-root"
+            mods_dir = game_root / "Binaries" / "Win64" / "ue4ss" / "Mods"
+            (mods_dir / "RuneSchema" / "mods" / "Base Balance").mkdir(parents=True)
+            (mods_dir / "RuneSchema" / "mods" / "Harder Enemies").mkdir(parents=True)
+
+            legacy.load_server_profile = lambda profile_id: {"id": profile_id} if profile_id == "world-a" else None
+            legacy.server_root_for_profile = lambda profile: str(game_root)
+            legacy.ENGINE = SimpleNamespace(status=lambda: {"active_profile_id": "world-a", "running": True})
+
+            profile_id, runtime, paths = service._runeschema_context("world-a")
+            assert profile_id == "world-a"
+            assert paths["mods"] == mods_dir / "RuneSchema" / "mods"
+            assert paths["config"] == mods_dir / "RuneSchema" / "config"
+            assert sorted(runeschema_tools.discover_mod_folders(paths["mods"])) == ["Base Balance", "Harder Enemies"]
+
+            # A World with no config.json yet still gets full, correct
+            # defaults (mirrors PSConfigSettings' in-memory defaults).
+            defaults = service._parse_runeschema_settings("")
+            assert defaults["tooling"]["enabled"] is True
+            assert defaults["tooling"]["compatibilityReports"]["writeFile"] is True
+            assert defaults["enableExperimentalDropScaling"] is False
+
+            # A partial config.json (as a hand-edited or older file might be)
+            # keeps its explicit values and fills in everything else from
+            # defaults, exactly like PSConfig::Load()'s data.value(key, default).
+            partial = '{"enableDebugLogging": true, "tooling": {"modsTxt": {"strictValues": false}}}'
+            merged = service._parse_runeschema_settings(partial)
+            assert merged["enableDebugLogging"] is True
+            assert merged["tooling"]["modsTxt"]["strictValues"] is False
+            assert merged["tooling"]["modsTxt"]["autoCreate"] is True  # untouched key keeps its default
+            assert merged["tooling"]["enabled"] is True  # untouched key keeps its default
+
+            # Serializing then re-parsing must be lossless and must never
+            # reintroduce the retired configVersion migration marker.
+            serialized = service._serialize_runeschema_settings(merged)
+            assert "configVersion" not in serialized
+            reparsed = service._parse_runeschema_settings(serialized)
+            assert reparsed == merged
     finally:
         legacy.load_server_profile = original_load
         legacy.server_root_for_profile = original_root
@@ -188,12 +242,29 @@ def main():
                 raise AssertionError("unregistered mod key was accepted")
             except ValueError:
                 pass
+
+            # Exporting a shareable copy must not disturb the live log the
+            # console keeps appending to (a plain byte-for-byte copy at an
+            # operator-chosen destination, e.g. their Desktop).
+            export_destination = Path(temp_name) / "shared" / "world-3-console-log.txt"
+            exported = console.export_log("world-3", str(export_destination))
+            assert exported["bytes"] > 0
+            assert export_destination.is_file()
+            assert export_destination.read_bytes() == Path(rs_payload["current_log"]).read_bytes()
+            assert Path(rs_payload["current_log"]).is_file()  # source untouched
+
+            try:
+                console.export_log("world-with-no-session-yet", str(Path(temp_name) / "nope.txt"))
+                raise AssertionError("exporting a World with no session log was accepted")
+            except ValueError:
+                pass
     finally:
         console.SERVER_PROFILES_DIR = original_root
         console._SESSION_STARTED.clear()
         console._SEEN.clear()
 
     test_console_world_runtime_authority()
+    test_runeschema_context_and_settings_round_trip()
     print("unified console tests passed")
 
 

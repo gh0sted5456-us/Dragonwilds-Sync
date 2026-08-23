@@ -624,6 +624,7 @@ def list_server_profiles() -> list[dict]:
             "player_map": {**(meta.get("player_map") or {}), "calibration": {"world_min_x": -11075.0, "world_max_x": 408925.0, "world_min_y": -117685.0, "world_max_y": 302315.0, "invert_y": False, **((meta.get("player_map") or {}).get("calibration") or {})}},
             "runeschema_flavors": meta.get("runeschema_flavors") or [{"id": "official", "name": "Official GitHub", "kind": "official"}],
             "runeschema_flavor_id": str(meta.get("runeschema_flavor_id") or "official"),
+            "ue4ss_active_version_id": str(meta.get("ue4ss_active_version_id") or "baseline"),
             "manifest_version": int(meta.get("manifest_version") or 0),
         })
     return result

@@ -26,7 +26,12 @@ from unified_console import (
     snapshot as unified_console_snapshot,
     read_mod_config as unified_console_read_mod_config,
     write_mod_config as unified_console_write_mod_config,
+    export_log as unified_console_export_log,
+    runeschema_paths as unified_console_runeschema_paths,
 )
+import runeschema_tools
+import ue4ss_repository
+from server_engine import _apply_profile_ue4ss
 from v2_remote_routing import install_directory_patches, remote_advertisement
 from runtime_versions import CLIENT_STEAM_APP_ID, detect_steam_cloud_status
 from runtime_manager import AuthoritativeRuntimeManager
@@ -558,6 +563,101 @@ def _console_world_runtime(profile_id: str) -> tuple[str, dict]:
     return profile_id, {**runtime, "game_root": root}
 
 
+def _default_runeschema_settings() -> dict:
+    # Mirrors PSConfigSettings' in-memory defaults (Utility/Config.h) exactly,
+    # so a World with no config.json yet still gets accurate Settings-tab
+    # values instead of empty/zeroed fields.
+    return {
+        "languageOverride": "", "enableAutoReload": False, "enableDebugLogging": False,
+        "enableExperimentalDropScaling": False,
+        "tooling": {
+            "enabled": True,
+            "modsTxt": {"enabled": True, "autoCreate": True, "reconcileFolders": True, "preserveComments": True, "strictValues": True},
+            "compatibilityReports": {"enabled": True, "writeFile": True, "warnSameTarget": True, "warnSameProperty": True, "warnArrayReplacement": True},
+            "enableSchemaGeneration": True, "enableFModelSnippetGenerator": False,
+        },
+    }
+
+
+def _parse_runeschema_settings(raw: str) -> dict:
+    """Mirrors PSConfig::Load()'s field-by-field merge over defaults --
+    missing keys keep their default, and a config that fails to parse is
+    treated as all-defaults rather than raising (RuneSchema itself repairs
+    an unparseable config the same way, by rewriting defaults over it)."""
+    import json as _json
+    settings = _default_runeschema_settings()
+    text = str(raw or "").strip()
+    if not text:
+        return settings
+    try:
+        data = runeschema_tools._parse_jsonc(text)
+    except (ValueError, _json.JSONDecodeError):
+        return settings
+    if not isinstance(data, dict):
+        return settings
+    for key in ("languageOverride", "enableAutoReload", "enableDebugLogging", "enableExperimentalDropScaling"):
+        if key in data:
+            settings[key] = data[key]
+    tooling = data.get("tooling")
+    if isinstance(tooling, dict):
+        for key in ("enabled", "enableSchemaGeneration", "enableFModelSnippetGenerator"):
+            if key in tooling:
+                settings["tooling"][key] = tooling[key]
+        mods_txt = tooling.get("modsTxt")
+        if isinstance(mods_txt, dict):
+            for key in ("enabled", "autoCreate", "reconcileFolders", "preserveComments", "strictValues"):
+                if key in mods_txt:
+                    settings["tooling"]["modsTxt"][key] = mods_txt[key]
+        reports = tooling.get("compatibilityReports")
+        if isinstance(reports, dict):
+            for key in ("enabled", "writeFile", "warnSameTarget", "warnSameProperty", "warnArrayReplacement"):
+                if key in reports:
+                    settings["tooling"]["compatibilityReports"][key] = reports[key]
+    return settings
+
+
+def _serialize_runeschema_settings(settings: dict) -> str:
+    """Mirrors PSConfig::Save()'s field order (no configVersion, tooling
+    nested last) so a file saved from here reads identically to one saved by
+    RuneSchema's own Settings tab."""
+    import json as _json
+    tooling = settings.get("tooling", {})
+    mods_txt = tooling.get("modsTxt", {})
+    reports = tooling.get("compatibilityReports", {})
+    data = {
+        "languageOverride": settings.get("languageOverride", ""),
+        "enableAutoReload": bool(settings.get("enableAutoReload", False)),
+        "enableDebugLogging": bool(settings.get("enableDebugLogging", False)),
+        "enableExperimentalDropScaling": bool(settings.get("enableExperimentalDropScaling", False)),
+        "tooling": {
+            "enabled": bool(tooling.get("enabled", True)),
+            "enableSchemaGeneration": bool(tooling.get("enableSchemaGeneration", True)),
+            "enableFModelSnippetGenerator": bool(tooling.get("enableFModelSnippetGenerator", False)),
+            "modsTxt": {
+                "enabled": bool(mods_txt.get("enabled", True)), "autoCreate": bool(mods_txt.get("autoCreate", True)),
+                "reconcileFolders": bool(mods_txt.get("reconcileFolders", True)), "preserveComments": bool(mods_txt.get("preserveComments", True)),
+                "strictValues": bool(mods_txt.get("strictValues", True)),
+            },
+            "compatibilityReports": {
+                "enabled": bool(reports.get("enabled", True)), "writeFile": bool(reports.get("writeFile", True)),
+                "warnSameTarget": bool(reports.get("warnSameTarget", True)), "warnSameProperty": bool(reports.get("warnSameProperty", True)),
+                "warnArrayReplacement": bool(reports.get("warnArrayReplacement", True)),
+            },
+        },
+    }
+    return _json.dumps(data, indent=4) + "\n"
+
+
+def _runeschema_context(profile_id: str) -> tuple[str, dict, dict]:
+    """Resolves (profile_id, runtime, paths) for RuneSchema tooling RPCs, or
+    raises a message fit to show directly in the UI."""
+    profile_id, runtime = _console_world_runtime(profile_id)
+    paths = unified_console_runeschema_paths(runtime)
+    if not paths:
+        raise ValueError("This World's UE4SS Mods folder was not found. Start the World once to install it.")
+    return profile_id, runtime, paths
+
+
 _legacy_public_worlds = _legacy._directory_public_worlds
 _legacy._directory_public_worlds = _public_worlds_with_remote
 
@@ -585,6 +685,7 @@ def handle(method: str, params: dict) -> object:
         result = _legacy_handle(method, params)
         if isinstance(result, dict):
             result.setdefault("application", {})["trash_status"] = _trash_summary()
+            result.setdefault("application", {})["ue4ss_repository"] = ue4ss_repository.list_versions(state)["versions"]
             lifecycle = RUNTIME.get_status()
             result.setdefault("application", {})["runtime_manager"] = lifecycle
             result.setdefault("server", {}).setdefault("runtime", {}).update({
@@ -682,8 +783,12 @@ def handle(method: str, params: dict) -> object:
                 installer = lambda: _legacy_handle("server.install.ue4ss_update", {"releases_url": source})
                 label = "UE4SS"
             else:
-                source = _managed_updates.RUNESCHEMA_REPOSITORY_URL
-                installer = lambda: _legacy_handle("server.install.runeschema_update", {"releases_url": source})
+                variant = str(params.get("variant") or "official").strip().casefold()
+                if variant not in {"official", "experimental"}:
+                    raise ValueError("RuneSchema variant must be official or experimental.")
+                source = (_managed_updates.RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL
+                          if variant == "experimental" else _managed_updates.RUNESCHEMA_REPOSITORY_URL)
+                installer = lambda: _legacy_handle("server.install.runeschema_update", {"releases_url": source, "variant": variant})
                 label = "RuneSchema"
 
             result = RUNTIME.update(profile_id, installer, restart=restart, component=label)
@@ -779,6 +884,146 @@ def handle(method: str, params: dict) -> object:
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
         _, runtime = _console_world_runtime(profile_id)
         return unified_console_write_mod_config(runtime, str(params.get("mod") or ""), str(params.get("raw") or ""))
+
+    if method == "server.console.runeschema.overview":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, paths = _runeschema_context(profile_id)
+        config = unified_console_read_mod_config(runtime, "runeschema")
+        settings = _parse_runeschema_settings(config.get("raw") or "")
+        detected = runeschema_tools.detect_variant(runtime, config.get("raw") or "")
+        mod_names = runeschema_tools.discover_mod_folders(paths["mods"])
+        return {
+            "profile_id": profile_id, "variant": detected["variant"], "version": detected["version"],
+            "variant_source": detected["source"], "tooling_enabled": bool(settings["tooling"]["enabled"]),
+            "mod_count": len(mod_names), "root_path": str(paths["root"]), "mods_path": str(paths["mods"]),
+            "config_path": config.get("path") or str(paths["config"] / "config.json"),
+            "config_exists": bool(config.get("exists")), "settings": settings,
+        }
+
+    if method == "server.console.runeschema.settings.write":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, _paths = _runeschema_context(profile_id)
+        current = unified_console_read_mod_config(runtime, "runeschema")
+        settings = _parse_runeschema_settings(current.get("raw") or "")
+        patch = params.get("settings") if isinstance(params.get("settings"), dict) else {}
+        for key in ("languageOverride", "enableAutoReload", "enableDebugLogging", "enableExperimentalDropScaling"):
+            if key in patch:
+                settings[key] = patch[key]
+        tooling_patch = patch.get("tooling") if isinstance(patch.get("tooling"), dict) else {}
+        for key in ("enabled", "enableSchemaGeneration", "enableFModelSnippetGenerator"):
+            if key in tooling_patch:
+                settings["tooling"][key] = tooling_patch[key]
+        for group, keys in (
+            ("modsTxt", ("enabled", "autoCreate", "reconcileFolders", "preserveComments", "strictValues")),
+            ("compatibilityReports", ("enabled", "writeFile", "warnSameTarget", "warnSameProperty", "warnArrayReplacement")),
+        ):
+            group_patch = tooling_patch.get(group) if isinstance(tooling_patch.get(group), dict) else {}
+            for key in keys:
+                if key in group_patch:
+                    settings["tooling"][group][key] = group_patch[key]
+        written = unified_console_write_mod_config(runtime, "runeschema", _serialize_runeschema_settings(settings))
+        return {"path": written.get("path"), "settings": settings}
+
+    if method == "server.console.runeschema.load_order.read":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, paths = _runeschema_context(profile_id)
+        config = unified_console_read_mod_config(runtime, "runeschema")
+        settings = _parse_runeschema_settings(config.get("raw") or "")
+        discovered = runeschema_tools.discover_mod_folders(paths["mods"])
+        resolved = runeschema_tools.load_order_resolve(paths["mods"], discovered, settings["tooling"]["modsTxt"])
+        resolved["mods_path"] = str(paths["mods"] / "mods.txt")
+        return resolved
+
+    if method == "server.console.runeschema.load_order.reconcile":
+        # Same reconcile pass as .read, exposed separately so the UI's
+        # explicit "Reconcile Now" action reads as its own operation (and can
+        # report "changed"/"persisted" distinctly) even though today it's the
+        # identical call -- read already reconciles every time, matching how
+        # RuneSchema itself reconciles on every load.
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, paths = _runeschema_context(profile_id)
+        config = unified_console_read_mod_config(runtime, "runeschema")
+        settings = _parse_runeschema_settings(config.get("raw") or "")
+        discovered = runeschema_tools.discover_mod_folders(paths["mods"])
+        resolved = runeschema_tools.load_order_resolve(paths["mods"], discovered, settings["tooling"]["modsTxt"])
+        resolved["mods_path"] = str(paths["mods"] / "mods.txt")
+        return resolved
+
+    if method == "server.console.runeschema.load_order.write":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, paths = _runeschema_context(profile_id)
+        entries_param = params.get("entries")
+        if not isinstance(entries_param, list):
+            raise ValueError("entries must be a list of {name, enabled}")
+        entries = [{"name": str(row.get("name") or ""), "enabled": bool(row.get("enabled"))}
+                   for row in entries_param if isinstance(row, dict) and str(row.get("name") or "").strip()]
+        config = unified_console_read_mod_config(runtime, "runeschema")
+        settings = _parse_runeschema_settings(config.get("raw") or "")
+        runeschema_tools.load_order_write(paths["mods"], entries, bool(settings["tooling"]["modsTxt"]["preserveComments"]))
+        return {"entries": entries, "mods_path": str(paths["mods"] / "mods.txt")}
+
+    if method == "server.console.runeschema.compatibility.generate":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, paths = _runeschema_context(profile_id)
+        config = unified_console_read_mod_config(runtime, "runeschema")
+        settings = _parse_runeschema_settings(config.get("raw") or "")
+        discovered = runeschema_tools.discover_mod_folders(paths["mods"])
+        resolved = runeschema_tools.load_order_resolve(paths["mods"], discovered, settings["tooling"]["modsTxt"])
+        return runeschema_tools.generate_compatibility_report(
+            paths["mods"], resolved["ordered_enabled_names"], settings["tooling"]["compatibilityReports"])
+
+    if method == "server.console.runeschema.fmodel.generate":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime, paths = _runeschema_context(profile_id)
+        return runeschema_tools.generate_fmodel_snippets(paths["config"])
+
+    if method == "application.ue4ss_repository.list":
+        return ue4ss_repository.list_versions(state)
+
+    if method == "application.ue4ss_repository.import":
+        zip_path = str(params.get("zip_path") or "").strip()
+        if not zip_path:
+            raise ValueError("Choose a UE4SS ZIP package first.")
+        result = ue4ss_repository.import_version(state, zip_path, str(params.get("label") or ""))
+        return {**result, "state": _legacy.public_state(_legacy.load_state())}
+
+    if method == "application.ue4ss_repository.fetch_experimental":
+        result = ue4ss_repository.fetch_experimental(state, str(params.get("source_url") or ""))
+        return {**result, "state": _legacy.public_state(_legacy.load_state())}
+
+    if method == "application.ue4ss_repository.delete":
+        version_id = str(params.get("version_id") or "").strip()
+        if not version_id:
+            raise ValueError("Choose a UE4SS build to delete.")
+        result = ue4ss_repository.delete_version(state, version_id)
+        return {**result, "state": _legacy.public_state(_legacy.load_state())}
+
+    if method == "server.world.ue4ss_version.select":
+        # Mirrors server.world.runeschema_flavors.select exactly: the World's
+        # own UE4SS engine files are shared/authoritative machine state, so
+        # swapping which build backs them is refused while that World is
+        # actually running, and is applied immediately only when the World
+        # being edited is also the one currently active.
+        _legacy.ENGINE.assert_stopped()
+        profile_id = str(params.get("id") or "")
+        version_id = str(params.get("version_id") or "")
+        if not profile_id:
+            raise ValueError("Select a World before changing its UE4SS build.")
+        status, profile = ue4ss_repository.select_version(state, profile_id, version_id)
+        if state.setdefault("server", {}).get("active_world_id") == profile_id:
+            root = _legacy.server_root_for_profile(profile)
+            applied = _apply_profile_ue4ss(profile_id, profile, root)
+        else:
+            applied = {"deferred": True, "message": "UE4SS build saved; activate this World to apply it to the shared server runtime."}
+        return {**status, "applied": applied, "state": _legacy.public_state(_legacy.load_state())}
+
+    if method == "server.console.export_log":
+        # Deliberately does not go through _console_world_runtime: the log
+        # file for a World lives on disk regardless of whether that World is
+        # the one currently running, so an operator can still hand someone a
+        # copy of last session's log after stopping/switching Worlds.
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        return unified_console_export_log(profile_id, str(params.get("destination") or ""))
 
     if method == "application.advanced.settings" and ("remote_server_enabled" in params or "webhost_enabled" in params):
         result = _legacy_handle(method, params)

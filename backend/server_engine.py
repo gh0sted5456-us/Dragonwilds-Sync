@@ -28,8 +28,10 @@ from secret_store import SecretStore, is_reference
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
                             ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
                             install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
-                            install_runeschema_zip, local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
+                            install_runeschema_zip, install_ue4ss_zip, local_ip_guess, detect_public_ip,
+                            scan_mod_units, generate_server_mods_txt, _bundled_app_resource, BUNDLED_UE4SS_RESOURCE)
 from runeschema_flavors import list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
+import ue4ss_repository
 
 DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
 DEDICATED_SERVER_EXE_ALIASES = ("RSDragonwildsServer.sh", "RSDragonwildsServer", "RSDragonwilds.exe", "RSDragonwildsServer.exe")
@@ -42,6 +44,7 @@ SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
 OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
 RUNESCHEMA_FLAVOR_MARKER = ".dragonwilds-sync-flavor.json"
+UE4SS_VERSION_MARKER = ".dragonwilds-sync-ue4ss.json"
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
@@ -597,6 +600,68 @@ def _installed_flavor_matches(game_root: str, flavor_id: str, archive_sha256: st
         )
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
         return False
+
+
+def _write_installed_ue4ss_marker(game_root: str, version_id: str, archive_sha256: str) -> None:
+    core = resolve_server_layout(game_root).ue4ss_core_dir
+    main_dll = core / "UE4SS.dll"
+    if not main_dll.is_file():
+        raise RuntimeError("The selected UE4SS build did not install UE4SS.dll.")
+    marker = core / UE4SS_VERSION_MARKER
+    temporary = marker.with_suffix(marker.suffix + ".tmp")
+    temporary.write_text(json.dumps({
+        "schema": 1, "version_id": str(version_id), "archive_sha256": str(archive_sha256),
+        "main_dll_sha256": _file_sha256(main_dll), "installed_at": time.time(),
+    }, indent=2), encoding="utf-8")
+    os.replace(temporary, marker)
+
+
+def _installed_ue4ss_matches(game_root: str, version_id: str, archive_sha256: str) -> bool:
+    """Prove that the selected UE4SS build, including its native DLL, is live."""
+    core = resolve_server_layout(game_root).ue4ss_core_dir
+    marker = core / UE4SS_VERSION_MARKER
+    main_dll = core / "UE4SS.dll"
+    if not marker.is_file() or not main_dll.is_file():
+        return False
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+        return (
+            str(payload.get("version_id") or "") == str(version_id)
+            and str(payload.get("archive_sha256") or "") == str(archive_sha256)
+            and str(payload.get("main_dll_sha256") or "") == _file_sha256(main_dll)
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return False
+
+
+def _apply_profile_ue4ss(profile_id: str, profile: dict, game_root: str) -> dict:
+    """Materialize the World profile's selected UE4SS build (baseline /
+    downloaded-experimental / imported -- see ue4ss_repository.py) without
+    touching anything else already installed under Mods/. install_ue4ss_zip
+    already excludes RuneSchema's own child-mod folder, and none of these
+    source ZIPs (bundled baseline, GitHub releases, user imports) ever
+    contain a World's *other* installed mods in the first place, so a normal
+    extraction only ever overwrites UE4SS's own engine files and its own
+    baked-in default Mods -- mirrors _apply_profile_runeschema's skip-if-
+    unchanged shape via a installed-version marker keyed on the live DLL hash."""
+    selected_id = str(profile.get("ue4ss_active_version_id") or ue4ss_repository.BASELINE_ID)
+    try:
+        archive = ue4ss_repository.resolve_archive(selected_id)
+    except (KeyError, FileNotFoundError):
+        # A deleted/renamed repository entry, or a build shipped without the
+        # bundled baseline resource, must not block launch -- keep whatever
+        # is already installed and let the operator pick a build again.
+        return {"ok": True, "changed": False, "source": selected_id, "fallback": True}
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if _installed_ue4ss_matches(game_root, selected_id, digest):
+        return {"ok": True, "changed": False, "source": selected_id, "verified": True}
+    result = install_ue4ss_zip(str(archive), str(resolve_server_layout(game_root).win64_dir))
+    _write_installed_ue4ss_marker(game_root, selected_id, digest)
+    profile = load_server_profile(profile_id)
+    profile["ue4ss_active_version_id"] = selected_id
+    profile["ue4ss_installed_at"] = time.time()
+    save_server_profile(profile_id, profile)
+    return {**result, "changed": True, "source": selected_id}
 
 
 def _write_installed_flavor_marker(game_root: str, flavor_id: str, archive_sha256: str) -> None:
@@ -1430,6 +1495,9 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        ue4ss_applied = _apply_profile_ue4ss(profile_id, profile, root)
+        if ue4ss_applied.get("changed"):
+            self._event(f"Applied the selected UE4SS build ({ue4ss_applied.get('source') or 'repository build'}).", "ok")
         official = _apply_profile_runeschema(profile_id, profile, root)
         if official.get("changed"):
             self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
@@ -1555,6 +1623,9 @@ class ServerEngine:
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
         cfg = profile.setdefault("dedicated_config", {})
         try:
+            ue4ss_applied = _apply_profile_ue4ss(profile_id, profile, self._profile_root(profile))
+            if ue4ss_applied.get("changed"):
+                self._event(f"Applied the selected UE4SS build ({ue4ss_applied.get('source') or 'repository build'}).", "ok")
             official = _apply_profile_runeschema(profile_id, profile, self._profile_root(profile))
             if official.get("changed"):
                 self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")

@@ -234,6 +234,9 @@ def test_manual_client_cores_are_cached_separately_from_server_runtime() -> None
 
 
 def main() -> None:
+    assert managed_updates.RUNESCHEMA_REPOSITORY_URL == "https://github.com/UnskippableCutscene/RuneSchema"
+    assert managed_updates.RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL == "https://github.com/gh0sted5456-us/RuneSchema"
+    assert managed_updates.RUNESCHEMA_REPOSITORY_URL != managed_updates.RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL
     test_client_github_update_cannot_install_server_loader()
     test_github_release_pages_resolve_real_assets_via_api()
     test_runeschema_official_source_is_default_and_api_resolved()

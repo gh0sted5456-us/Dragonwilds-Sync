@@ -299,6 +299,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   openMainWindow: () => ipcRenderer.invoke('dragonwilds:open-main-window'),
   openMinimalMode: (worldId) => ipcRenderer.invoke('dragonwilds:open-minimal-mode', worldId),
   openPath: (target) => ipcRenderer.invoke('dragonwilds:open-path', target),
+  revealPath: (target) => ipcRenderer.invoke('dragonwilds:reveal-path', target),
   copyText: (text) => ipcRenderer.invoke('dragonwilds:copy-text', text),
   fileSha256: (target) => ipcRenderer.invoke('dragonwilds:file-sha256', target),
   openExternal: (target) => ipcRenderer.invoke('dragonwilds:open-external', target),

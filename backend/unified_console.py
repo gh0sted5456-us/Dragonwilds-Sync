@@ -77,6 +77,36 @@ def log_paths(profile_id: object) -> dict:
     }
 
 
+def export_log(profile_id: object, destination: object) -> dict:
+    """Copy the current unified session log to an operator-chosen path.
+
+    The on-disk log is named ``DragonwildsSync.log`` (rotated per session),
+    but "share this with someone" implies a plain, unambiguous text file at
+    a path the operator picked themselves -- e.g. their Desktop, ready to
+    drag into Discord -- not the app's internal per-World logs folder. This
+    is a byte-for-byte copy: it never touches the live log the console is
+    still appending to.
+    """
+    key = _profile_key(profile_id)
+    dest = str(destination or "").strip()
+    if not dest:
+        raise ValueError("A destination path is required")
+    dest_path = Path(dest).expanduser().resolve()
+    paths = log_paths(key)
+    source: Path = paths["current"]
+    if not source.is_file():
+        raise ValueError("No unified session log exists for this Server World yet")
+    if source.resolve() == dest_path:
+        raise ValueError("Choose a different destination; the live session log cannot overwrite itself")
+    with _LOCK:
+        data = source.read_bytes()
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = dest_path.with_name(f".{dest_path.name}.dragonwilds-sync.tmp")
+    temporary.write_bytes(data)
+    temporary.replace(dest_path)
+    return {"profile_id": key, "source": str(source), "destination": str(dest_path), "bytes": len(data)}
+
+
 def _iso(ts: float) -> str:
     return datetime.fromtimestamp(float(ts), timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
@@ -293,6 +323,27 @@ def _ue4ss_mods_roots(runtime: dict) -> list[Path]:
         except OSError:
             continue
     return resolved
+
+
+def runeschema_paths(runtime: dict) -> dict | None:
+    """Resolve RuneSchema's own root/mods/config folders for this World.
+
+    Shares the same authority-ordered ``Mods`` folder resolution as
+    ``mod_config_path`` (and refuses the same escape-outside-Mods case), so
+    RuneSchema's load-order/compatibility/generator tooling always operates
+    on the exact same install ``server.console.mod_config.*`` already reads.
+    """
+    mods_roots = _ue4ss_mods_roots(runtime)
+    if not mods_roots:
+        return None
+    for mods_root in mods_roots:
+        root = (mods_root / "RuneSchema").resolve()
+        if root != mods_root and mods_root not in root.parents:
+            continue
+        if root.is_dir():
+            return {"root": root, "mods": root / "mods", "config": root / "config"}
+    root = (mods_roots[0] / "RuneSchema").resolve()
+    return {"root": root, "mods": root / "mods", "config": root / "config"}
 
 
 def mod_config_path(runtime: dict, mod_key: str) -> Path | None:

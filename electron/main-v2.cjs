@@ -381,6 +381,19 @@ function createDetachedWindow(payload = {}) {
   const route = String(payload.route || 'profile');
   const title = String(payload.title || 'Dragonwilds Sync').slice(0, 120);
   const context = payload.context && typeof payload.context === 'object' ? payload.context : {};
+  // An automatic server-console open can race a manual click. Reuse that
+  // World's existing Runtime Console without collapsing unrelated detached
+  // editors or other route windows.
+  if (route === 'server-console') {
+    const worldKey = context.selectedServerWorldId != null ? String(context.selectedServerWorldId) : null;
+    for (const [existingId, entry] of detachedWindows) {
+      if (entry.route !== route || !entry.window || entry.window.isDestroyed()) continue;
+      const entryWorldKey = entry.context?.selectedServerWorldId != null ? String(entry.context.selectedServerWorldId) : null;
+      if (entryWorldKey !== worldKey) continue;
+      entry.window.show(); entry.window.focus();
+      return { id: existingId, title: entry.title, route: entry.route };
+    }
+  }
   const id = `dw-${Date.now().toString(36)}-${(++detachedCounter).toString(36)}`;
   const win = new BrowserWindow(windowOptions({ width: Number(payload.width || 1120), height: Number(payload.height || 760), minWidth: 720, minHeight: 520, title, skipTaskbar: true }));
   attachRendererDurability(win);
@@ -835,6 +848,7 @@ ipcMain.handle('dragonwilds:rsdw-toolkit-root', async (_event, incoming) => {
 ipcMain.handle('dragonwilds:open-external', async (_event,target) => { try { const raw=String(target||'').trim(); const url=new URL(raw); const safeWeb=['http:','https:'].includes(url.protocol); const safeSteam=/^steam:\/\/(?:(?:run|rungameid|validate|install)\/(?:1374490|4019830)|nav\/games\/details\/1374490)$/i.test(raw); if(!safeWeb&&!safeSteam)return false; await shell.openExternal(url.toString()); return true; } catch(_){return false;} });
 ipcMain.handle('dragonwilds:open-in-app-browser', (event,target) => createExternalBrowserWindow(target, event.sender));
 ipcMain.handle('dragonwilds:open-path', async (_event,target) => { if(!target)return false; return !(await shell.openPath(target)); });
+ipcMain.handle('dragonwilds:reveal-path', (_event,target) => { const value=String(target||'').trim(); if(!value||!fs.existsSync(value))return false; shell.showItemInFolder(value); return true; });
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) app.quit();

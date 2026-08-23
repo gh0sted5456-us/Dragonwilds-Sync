@@ -5753,11 +5753,16 @@ def handle(method: str, params: dict) -> object:
         if not install_dir:
             raise ValueError("Set Settings → Server → Server Directory first.")
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        source_url = "https://github.com/UnskippableCutscene/RuneSchema"
+        variant = str(params.get("variant") or "official").strip().casefold()
+        if variant not in {"official", "experimental"}:
+            raise ValueError("RuneSchema variant must be official or experimental.")
+        source_url = ("https://github.com/gh0sted5456-us/RuneSchema" if variant == "experimental"
+                      else "https://github.com/UnskippableCutscene/RuneSchema")
         result = install_authoritative_runeschema_update(source_url, install_dir)
         install_meta["runeschema_source_url"] = source_url + "/releases"
         install_meta["runeschema_installed_at"] = time.time()
-        install_meta["runeschema_source_name"] = str(result.get("filename") or result.get("source") or source_url)
+        source_name = str(result.get("filename") or result.get("source") or source_url)
+        install_meta["runeschema_source_name"] = (f"Experimental · {source_name}" if variant == "experimental" else source_name)
         root_key = os.path.normcase(str(resolve_server_layout(install_dir).game_root.resolve(strict=False)))
         overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
         restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]

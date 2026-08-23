@@ -13,6 +13,8 @@ RUNESCHEMA_CHECK_SECONDS = 15 * 60
 DEFAULT_UE4SS_SOURCE = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
 RUNESCHEMA_REPOSITORY_URL = "https://github.com/UnskippableCutscene/RuneSchema"
 RUNESCHEMA_RELEASES_URL = f"{RUNESCHEMA_REPOSITORY_URL}/releases"
+RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL = "https://github.com/gh0sted5456-us/RuneSchema"
+RUNESCHEMA_EXPERIMENTAL_RELEASES_URL = f"{RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL}/releases"
 
 
 def _is_runeschema_core_zip(path: Path) -> bool:

@@ -1,21 +1,99 @@
 (() => {
   'use strict';
-  const bridge=window.dragonwilds;let busy=false,lastPayload=null,lastRead=0,page=1;
+  const bridge=window.dragonwilds;let opening=false,lastPayload=null,lastRead=0,page=1;
+  let selected=new Set();
   const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const size=n=>{n=Number(n||0);if(n<1024)return `${n} B`;if(n<1024**2)return `${(n/1024).toFixed(1)} KiB`;if(n<1024**3)return `${(n/1024**2).toFixed(1)} MiB`;return `${(n/1024**3).toFixed(2)} GiB`;};
   const invoke=(method,params={})=>{if(!bridge?.invoke)throw Error('Backend bridge unavailable.');return bridge.invoke(method,params);};
   const kindLabel=kind=>({private_world:'Private World',server_world:'Server World',character:'Character'})[String(kind||'')]||String(kind||'Deleted item').replaceAll('_',' ');
   const signature=payload=>JSON.stringify([payload?.count||0,payload?.size||0,(payload?.entries||[])[0]?.deleted_at||0]);
+  // A 10s front-end cache keeps the idle sticker from hammering the backend
+  // every poll; opening the Trash always forces a fresh read underneath, but
+  // the overlay itself paints instantly using whatever is cached first (see
+  // openTrash below) so the fresh read never blocks the click.
   async function read(force=false){if(!force&&lastPayload&&Date.now()-lastRead<10000)return lastPayload;lastPayload=await invoke('application.trash.list',{});lastRead=Date.now();return lastPayload;}
   function sticker(payload){
     let node=document.querySelector('#dws-trash-sticker');if(!node){node=document.createElement('aside');node.id='dws-trash-sticker';node.innerHTML='<button class="dws-trash-sticker-open" title="Open Trash"><span>♲</span><b>Trash</b><small></small></button><button class="dws-trash-sticker-dismiss" title="Dismiss Trash sticker">×</button>';document.body.appendChild(node);node.querySelector('.dws-trash-sticker-open').onclick=()=>openTrash();node.querySelector('.dws-trash-sticker-dismiss').onclick=()=>{localStorage.setItem('dws-trash-dismissed',signature(lastPayload));node.hidden=true;};}
     const count=Number(payload?.count||0);node.querySelector('small').textContent=count?String(count):'Empty';node.classList.toggle('has-items',count>0);node.hidden=localStorage.getItem('dws-trash-dismissed')===signature(payload);
   }
   async function refresh(force=false){try{sticker(await read(force));}catch(_){/* Keep background status unobtrusive. */}}
-  async function openTrash(){
-    if(busy)return;busy=true;try{const payload=await read(true),entries=payload.entries||[],pages=Math.max(1,Math.ceil(entries.length/25));page=Math.min(page,pages);const shown=entries.slice((page-1)*25,page*25);document.querySelector('#dws-trash-overlay')?.remove();const overlay=document.createElement('section');overlay.className='dws-trash-overlay';overlay.id='dws-trash-overlay';overlay.innerHTML=`<div class="dws-trash-card"><div class="dws-trash-head"><div><div class="eyebrow">Recoverable deletion</div><h2>Trash</h2><p>Restore verified Worlds and Characters, or permanently delete their Trash copy.</p></div><button class="btn ghost" data-trash-close>×</button></div><div class="dws-trash-policy"><label><span>Automatically empty</span><select class="select" id="dws-trash-retention"><option value="0">Never</option>${[7,14,30,60,90,180,365].map(days=>`<option value="${days}" ${Number(payload.settings?.auto_empty_days||0)===days?'selected':''}>After ${days} days</option>`).join('')}</select></label><span>${entries.length} item${entries.length===1?'':'s'} · ${size(payload.size)}</span></div><div class="dws-trash-list">${shown.length?shown.map(entry=>`<article class="dws-trash-entry"><div><strong>${esc(entry.display_name||'Deleted item')}</strong><small>${entry.deleted_at?new Date(Number(entry.deleted_at)*1000).toLocaleString():'Deleted'} · ${size(entry.size)} · ${Number(entry.files||0)} files</small><span class="dws-trash-kind">${esc(kindLabel(entry.kind))}</span></div><div class="header-actions"><button class="btn primary compact-btn" data-trash-restore="${esc(entry.id)}">Restore</button><button class="btn danger compact-btn" data-trash-empty="${esc(entry.id)}">Delete Permanently</button></div></article>`).join(''):'<div class="empty-state">Trash is empty.</div>'}</div><div class="dws-trash-footer"><div class="pager-row"><button class="btn ghost compact-btn" data-trash-page="${page-1}" ${page<=1?'disabled':''}>Previous</button><span>Page ${page} of ${pages}</span><button class="btn ghost compact-btn" data-trash-page="${page+1}" ${page>=pages?'disabled':''}>Next</button></div><div class="header-actions"><button class="btn danger" id="dws-trash-empty-all" ${entries.length?'':'disabled'}>Empty Trash</button><button class="btn ghost" data-trash-close>Done</button></div></div></div>`;document.body.appendChild(overlay);
-      const close=()=>{overlay.remove();busy=false;void refresh(true);};overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=close);overlay.onclick=e=>{if(e.target===overlay)close();};overlay.querySelector('#dws-trash-retention').onchange=async e=>{await invoke('application.trash.settings',{auto_empty_days:Number(e.target.value||0)});lastRead=0;};overlay.querySelectorAll('[data-trash-page]').forEach(button=>button.onclick=()=>{page=Math.max(1,Number(button.dataset.trashPage||1));overlay.remove();busy=false;void openTrash();});overlay.querySelectorAll('[data-trash-restore]').forEach(button=>button.onclick=async()=>{await invoke('application.trash.restore',{entry_id:button.dataset.trashRestore});lastRead=0;overlay.remove();busy=false;void openTrash();});overlay.querySelectorAll('[data-trash-empty]').forEach(button=>button.onclick=async()=>{if(!confirm('Permanently delete this Trash copy? This cannot be undone.'))return;await invoke('application.trash.empty',{entry_id:button.dataset.trashEmpty});lastRead=0;overlay.remove();busy=false;void openTrash();});overlay.querySelector('#dws-trash-empty-all').onclick=async()=>{if(!confirm('Permanently empty all Dragonwilds Sync Trash? This cannot be undone.'))return;await invoke('application.trash.empty',{});lastRead=0;close();};
-    }catch(error){busy=false;alert(error.message||error);}
+
+  function rowsHtml(shown){
+    if(!shown.length)return '<div class="empty-state">Trash is empty.</div>';
+    return shown.map(entry=>`<article class="dws-trash-entry"><label class="dws-trash-select-row" title="Select"><input type="checkbox" data-trash-select="${esc(entry.id)}" ${selected.has(String(entry.id))?'checked':''}/></label><div><strong>${esc(entry.display_name||'Deleted item')}</strong><small>${entry.deleted_at?new Date(Number(entry.deleted_at)*1000).toLocaleString():'Deleted'} · ${size(entry.size)} · ${Number(entry.files||0)} files</small><span class="dws-trash-kind">${esc(kindLabel(entry.kind))}</span></div><div class="header-actions"><button class="btn primary compact-btn" data-trash-restore="${esc(entry.id)}">Restore</button><button class="btn danger compact-btn" data-trash-empty="${esc(entry.id)}">Delete Permanently</button></div></article>`).join('');
   }
+
+  function shell(seedPayload){
+    const overlay=document.createElement('section');overlay.className='dws-trash-overlay';overlay.id='dws-trash-overlay';
+    const settings=seedPayload?.settings||{};
+    overlay.innerHTML=`<div class="dws-trash-card"><div class="dws-trash-head"><div><div class="eyebrow">Recoverable deletion</div><h2>Trash</h2><p>Restore verified Worlds and Characters, or permanently delete their Trash copy.</p></div><button class="btn ghost" data-trash-close>×</button></div><div class="dws-trash-policy"><label><span>Automatically empty</span><select class="select" id="dws-trash-retention">${[0,7,14,30,60,90,180,365].map(days=>`<option value="${days}" ${Number(settings.auto_empty_days||0)===days?'selected':''}>${days?`After ${days} days`:'Never'}</option>`).join('')}</select></label><span data-trash-meta>Loading…</span></div><div class="dws-trash-select-all-row"><label><input type="checkbox" id="dws-trash-select-all"/> <span>Select page</span></label><div class="header-actions"><button class="btn ghost compact-btn" id="dws-trash-restore-selected" disabled>Restore Selected (0)</button><button class="btn danger compact-btn" id="dws-trash-empty-selected" disabled>Empty Selected (0)</button></div></div><div class="dws-trash-list"><div class="dws-trash-skeleton">Loading Trash…</div></div><div class="dws-trash-footer"><div class="pager-row"><button class="btn ghost compact-btn" data-trash-page-prev disabled>Previous</button><span data-trash-pager-label>Page 1 of 1</span><button class="btn ghost compact-btn" data-trash-page-next disabled>Next</button></div><div class="header-actions"><button class="btn danger" id="dws-trash-empty-all" disabled>Empty Trash</button><button class="btn ghost" data-trash-close>Done</button></div></div></div>`;
+    return overlay;
+  }
+
+  function paintSelectionControls(overlay){
+    const restoreBtn=overlay.querySelector('#dws-trash-restore-selected'),emptyBtn=overlay.querySelector('#dws-trash-empty-selected');
+    if(restoreBtn){restoreBtn.disabled=selected.size===0;restoreBtn.textContent=`Restore Selected (${selected.size})`;}
+    if(emptyBtn){emptyBtn.disabled=selected.size===0;emptyBtn.textContent=`Empty Selected (${selected.size})`;}
+    const shownIds=[...overlay.querySelectorAll('[data-trash-select]')].map(node=>node.dataset.trashSelect);
+    const selectAll=overlay.querySelector('#dws-trash-select-all');
+    if(selectAll){const allSelected=shownIds.length>0&&shownIds.every(id=>selected.has(id));selectAll.checked=allSelected;selectAll.indeterminate=!allSelected&&shownIds.some(id=>selected.has(id));}
+  }
+
+  function wireRowHandlers(overlay){
+    overlay.querySelectorAll('[data-trash-select]').forEach(node=>node.onchange=()=>{const id=node.dataset.trashSelect;if(node.checked)selected.add(id);else selected.delete(id);paintSelectionControls(overlay);});
+    overlay.querySelectorAll('[data-trash-restore]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await invoke('application.trash.restore',{entry_id:button.dataset.trashRestore});selected.delete(button.dataset.trashRestore);await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}});
+    overlay.querySelectorAll('[data-trash-empty]').forEach(button=>button.onclick=async()=>{if(!confirm('Permanently delete this Trash copy? This cannot be undone.'))return;button.disabled=true;try{await invoke('application.trash.empty',{entry_id:button.dataset.trashEmpty});selected.delete(button.dataset.trashEmpty);await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}});
+  }
+
+  // Re-renders only the list body, page controls, and selection state --
+  // never tears down and rebuilds the overlay card itself. Doing a full
+  // overlay.remove()+recreate on every click (the old behavior) is what made
+  // Trash feel like it was glitching open/closed on every restore, delete,
+  // or page change.
+  async function paintBody(overlay){
+    if(!overlay?.isConnected)return;
+    try{
+      const payload=await read(true);
+      const entries=payload.entries||[];
+      selected=new Set([...selected].filter(id=>entries.some(entry=>String(entry.id)===id)));
+      const pages=Math.max(1,Math.ceil(entries.length/25));
+      page=Math.min(page,pages);
+      const shown=entries.slice((page-1)*25,page*25);
+      const body=overlay.querySelector('.dws-trash-list');if(body)body.innerHTML=rowsHtml(shown);
+      const meta=overlay.querySelector('[data-trash-meta]');if(meta)meta.textContent=`${entries.length} item${entries.length===1?'':'s'} · ${size(payload.size)}`;
+      const pagerLabel=overlay.querySelector('[data-trash-pager-label]');if(pagerLabel)pagerLabel.textContent=`Page ${page} of ${pages}`;
+      const prev=overlay.querySelector('[data-trash-page-prev]');if(prev)prev.disabled=page<=1;
+      const next=overlay.querySelector('[data-trash-page-next]');if(next)next.disabled=page>=pages;
+      const emptyAll=overlay.querySelector('#dws-trash-empty-all');if(emptyAll)emptyAll.disabled=!entries.length;
+      wireRowHandlers(overlay);
+      paintSelectionControls(overlay);
+      sticker(payload);
+    }catch(error){
+      const body=overlay.querySelector('.dws-trash-list');if(body)body.innerHTML=`<div class="warning-box">${esc(error.message||error)}</div>`;
+    }
+  }
+
+  async function openTrash(){
+    const existing=document.querySelector('#dws-trash-overlay');
+    if(existing){existing.scrollIntoView?.({block:'center'});return void paintBody(existing);}
+    if(opening)return;opening=true;
+    // Build and mount the overlay with cached (or empty) content immediately
+    // -- the click feels instant -- then fill in a fresh read in the
+    // background instead of blocking the open on network/disk latency.
+    const overlay=shell(lastPayload);
+    document.body.appendChild(overlay);
+    overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=()=>{overlay.remove();opening=false;void refresh(true);});
+    overlay.onclick=e=>{if(e.target===overlay){overlay.remove();opening=false;void refresh(true);}};
+    overlay.querySelector('#dws-trash-retention').onchange=async e=>{await invoke('application.trash.settings',{auto_empty_days:Number(e.target.value||0)});lastRead=0;};
+    overlay.querySelector('#dws-trash-select-all').onchange=e=>{const shownIds=[...overlay.querySelectorAll('[data-trash-select]')].map(node=>node.dataset.trashSelect);if(e.target.checked)shownIds.forEach(id=>selected.add(id));else shownIds.forEach(id=>selected.delete(id));overlay.querySelectorAll('[data-trash-select]').forEach(node=>{node.checked=selected.has(node.dataset.trashSelect);});paintSelectionControls(overlay);};
+    overlay.querySelector('[data-trash-page-prev]').onclick=()=>{page=Math.max(1,page-1);void paintBody(overlay);};
+    overlay.querySelector('[data-trash-page-next]').onclick=()=>{page=page+1;void paintBody(overlay);};
+    overlay.querySelector('#dws-trash-empty-all').onclick=async()=>{if(!confirm('Permanently empty all Dragonwilds Sync Trash? This cannot be undone.'))return;const button=overlay.querySelector('#dws-trash-empty-all');button.disabled=true;try{selected=new Set();await invoke('application.trash.empty',{});page=1;await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}};
+    overlay.querySelector('#dws-trash-restore-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||!confirm(`Restore ${ids.length} selected item${ids.length===1?'':'s'}?`))return;const button=overlay.querySelector('#dws-trash-restore-selected');button.disabled=true;let ok=0,failed=0;for(const id of ids){try{await invoke('application.trash.restore',{entry_id:id});selected.delete(id);ok++;}catch(_){failed++;}}await paintBody(overlay);if(failed)alert(`Restored ${ok} item(s); ${failed} could not be restored (likely a conflicting file already exists).`);};
+    overlay.querySelector('#dws-trash-empty-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||!confirm(`Permanently delete ${ids.length} selected item${ids.length===1?'':'s'}? This cannot be undone.`))return;const button=overlay.querySelector('#dws-trash-empty-selected');button.disabled=true;try{await invoke('application.trash.empty',{entry_ids:ids});selected=new Set();await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}};
+    opening=false;
+    void paintBody(overlay);
+  }
+
   const boot=()=>{void refresh(true);setInterval(()=>void refresh(false),30000);};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

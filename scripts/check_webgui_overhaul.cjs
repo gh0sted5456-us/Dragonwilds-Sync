@@ -52,7 +52,7 @@ requireText(consoleModule, 'def _process_entries(runtime: dict)', 'dedicated pro
 requireText(consoleModule, 'def _ue4ss_entries(runtime: dict, started: float', 'UE4SS log stream');
 requireText(desktop, 'function openUnifiedLaunchConsole(', 'movable desktop launch console');
 requireText(desktop, 'open-unified-server-console', 'manual desktop console action');
-requireText(desktop, "filter==='ue4ss'?`ue4ss.exec ${command}`:command", 'targeted UE4SS command dispatch');
+requireText(desktop, "commandTarget==='ue4ss'?`ue4ss.exec ${command}`:command", 'targeted UE4SS command dispatch');
 requireText(directoryWeb, 'dws-remote-unified-console-script', 'authenticated WebHost unified console UI');
 requireText(directoryWeb, 'data-dws-web-console-filter="sync"', 'WebHost Sync console filter');
 requireText(directoryWeb, 'data-dws-web-console-filter="runeschema"', 'WebHost RuneSchema console filter');

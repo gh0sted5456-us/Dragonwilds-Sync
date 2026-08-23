@@ -4,29 +4,30 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0d0f">
-  <meta name="description" content="Dragonwilds Sync — client synchronization, dedicated server management, public world discovery, mod coordination, and secure remote administration for RuneScape: Dragonwilds.">
+  <meta name="description" content="Dragonwilds Sync — keep Dragonwilds worlds, clients, servers, and mods in sync.">
   <meta property="og:title" content="Dragonwilds Sync">
-  <meta property="og:description" content="One clean toolkit for Dragonwilds clients, worlds, mods, servers, and remote management.">
+  <meta property="og:description" content="One focused toolkit for Dragonwilds clients, worlds, mods, servers, and remote management.">
   <meta property="og:type" content="website">
   <title>Dragonwilds Sync</title>
   <link rel="icon" href="assets/application-icon.png">
-  <link rel="stylesheet" href="styles.css?v=ubuntu-download-1">
+  <link rel="stylesheet" href="styles.css?v=home-clean-1">
   <style>
-    .remote-manager-launcher{margin-top:28px;border:1px solid var(--line-strong);border-radius:16px;padding:18px;background:var(--panel);backdrop-filter:blur(var(--glass-blur));box-shadow:inset 0 1px rgba(255,255,255,.025)}
-    .remote-manager-launcher h3{margin:0 0 6px;font-size:15px;letter-spacing:-.02em}.remote-manager-launcher>p{margin:0 0 15px;color:var(--muted);font-size:11px;line-height:1.6}
-    .remote-manager-form{display:grid;grid-template-columns:1fr auto;gap:8px}.remote-manager-field{min-width:0}.remote-manager-field label{display:block;margin-bottom:6px;color:var(--faint);font-size:8px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}
-    .remote-manager-field input{width:100%;min-height:44px;border:1px solid var(--line);border-radius:9px;background:var(--surface-3);color:var(--text);padding:0 12px;outline:none}.remote-manager-field input:focus{border-color:var(--line-strong);box-shadow:0 0 0 3px color-mix(in srgb,var(--gold) 8%,transparent)}
-    .remote-manager-form button{align-self:end;min-height:44px;border:1px solid var(--line-strong);border-radius:9px;padding:0 15px;background:color-mix(in srgb,var(--gold) 11%,var(--panel-soft));color:var(--text);font-size:10px;font-weight:760;cursor:pointer}.remote-manager-form button:disabled{opacity:.6;cursor:wait}
-    .remote-manager-status{margin-top:10px;min-height:18px;color:var(--muted);font-size:10px}.remote-manager-status.checking{color:var(--gold)}.remote-manager-status.online{color:var(--green)}.remote-manager-status.error{color:var(--red)}
-    .remote-manager-safety{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.remote-manager-safety span{padding:5px 7px;border:1px solid var(--line);border-radius:999px;color:var(--faint);font-size:8px}
-    @media(max-width:720px){.remote-manager-form{grid-template-columns:1fr}.remote-manager-form button{width:100%}}
+    .home-learn-more{padding:14px 0 72px}
+    .home-learn-card{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px 24px;border:1px solid var(--line);border-radius:16px;background:var(--panel);backdrop-filter:blur(var(--glass-blur))}
+    .home-learn-card h2{margin:0 0 5px;font-size:18px;letter-spacing:-.025em}.home-learn-card p{margin:0;color:var(--muted);font-size:11px;line-height:1.6;max-width:660px}
+    @media(max-width:720px){.home-learn-card{align-items:flex-start;flex-direction:column}.home-learn-card .button{width:100%;justify-content:center}}
   </style>
 </head>
 <body>
   <div class="ambient ambient-one" aria-hidden="true"></div>
   <div class="ambient ambient-two" aria-hidden="true"></div>
 
-  <header class="site-header" id="top" data-shared-nav="1"><a class="brand" href="index.html#top" aria-label="Dragonwilds Sync home"><img src="assets/application-icon.png" alt="" class="brand-icon"><span class="brand-copy"><strong>Dragonwilds</strong><span>Sync</span></span></a><button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav"><span></span><span></span><span class="sr-only">Toggle navigation</span></button><nav class="main-nav" id="main-nav" data-shared-nav="1"><div class="nav-home"><a href="index.html" aria-current="page">Home <span aria-hidden="true"></span></a><div class="nav-home-menu"><a href="index.html#webgui">WebGUI</a><a href="downloads.html">Downloads</a><a href="index.html#community">Community</a></div></div><a href="world-builder.html">World Builder</a><a href="servers.html">Servers</a><a href="helpy.html">Helpy</a><a href="for-modders.html">For Modders</a><a href="launcher-preview.html">Preview Launcher</a><a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a></nav><div class="theme-switcher" role="group" aria-label="Website theme"><button type="button" data-theme-choice="dark" aria-pressed="true"><span class="theme-dot dark-dot"></span><span class="theme-label">Dark</span></button><button type="button" data-theme-choice="white"><span class="theme-dot white-dot"></span><span class="theme-label">White</span></button><button type="button" data-theme-choice="glass"><span class="theme-dot glass-dot"></span><span class="theme-label">Glass</span></button></div></header>
+  <header class="site-header" id="top" data-shared-nav="1">
+    <a class="brand" href="index.html" aria-label="Dragonwilds Sync home"><img src="assets/application-icon.png" alt="" class="brand-icon"><span class="brand-copy"><strong>Dragonwilds</strong><span>Sync</span></span></a>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="main-nav"><span></span><span></span><span class="sr-only">Toggle navigation</span></button>
+    <nav class="main-nav" id="main-nav" data-shared-nav="1"></nav>
+    <div class="theme-switcher" role="group" aria-label="Website theme"><button type="button" data-theme-choice="dark" aria-pressed="true"><span class="theme-dot dark-dot"></span><span class="theme-label">Dark</span></button><button type="button" data-theme-choice="white"><span class="theme-dot white-dot"></span><span class="theme-label">White</span></button><button type="button" data-theme-choice="glass"><span class="theme-dot glass-dot"></span><span class="theme-label">Glass</span></button></div>
+  </header>
 
   <main>
     <section class="hero section-shell">
@@ -40,7 +41,7 @@
             <a class="button button-primary" href="downloads.html">Get Dragonwilds Sync <span aria-hidden="true">↓</span></a>
             <a class="button button-secondary" href="servers.html">Explore public servers <span aria-hidden="true">→</span></a>
           </div>
-          <div class="hero-meta"><span>Windows</span><i></i><span>Open source</span><i></i><span>Community project</span></div>
+          <div class="hero-meta"><span>Windows &amp; Linux</span><i></i><span>Open source</span><i></i><span>Community project</span></div>
         </div>
 
         <div class="product-window reveal delay-1" aria-label="Dragonwilds Sync interface preview">
@@ -57,10 +58,7 @@
               <div class="mock-topline"><span>WORLD MANAGEMENT</span><span class="tiny-pill">CONNECTED</span></div>
               <div class="mock-world-card mock-world-card-presented">
                 <img class="mock-world-banner" src="assets/demo-world-banner.svg" alt="" aria-hidden="true">
-                <div class="mock-world-copy">
-                  <img class="mock-world-icon" src="assets/demo-world-icon.svg" alt="Ashenvale world icon">
-                  <div><div class="mock-kicker">DEDICATED WORLD</div><h3>Ashenvale</h3><div class="mock-tags"><span>Modded</span><span>Co-op</span><span class="mock-steam-badge"><img src="assets/platforms/steam.svg" alt="">Steam Server</span><span class="mock-cl-badge" data-current-cl>CL-232224</span></div></div>
-                </div>
+                <div class="mock-world-copy"><img class="mock-world-icon" src="assets/demo-world-icon.svg" alt="Ashenvale world icon"><div><div class="mock-kicker">DEDICATED WORLD</div><h3>Ashenvale</h3><div class="mock-tags"><span>Modded</span><span>Co-op</span><span class="mock-steam-badge"><img src="assets/platforms/steam.svg" alt="">Steam Server</span><span class="mock-cl-badge" data-current-cl>CL-232224</span></div></div></div>
                 <div class="mock-health"><span></span><b>Online</b><small>12 / 20</small></div>
               </div>
               <div class="mock-stats"><div><small>SERVER</small><strong>Healthy</strong></div><div><small>MOD SYNC</small><strong>Current</strong></div><div><small>UPDATE</small><strong>Ready</strong></div></div>
@@ -72,191 +70,20 @@
       <div class="hero-strip reveal delay-2"><span>CLIENT SYNC</span><span>SERVER CONTROL</span><span>MOD MANAGEMENT</span><span>WEBGUI</span><span>PUBLIC WORLDS</span><span>AUTO UPDATE</span></div>
     </section>
 
-    <section class="network-section section-shell" id="network">
-      <div class="network-heading reveal">
-        <div><div class="eyebrow"><span class="network-live-dot" id="network-live-dot"></span> Dragonwilds Sync Network</div><h2>Live community pulse.</h2></div>
-        <p id="network-message">Connecting to the public Dragonwilds Sync network…</p>
+    <section class="section-shell home-learn-more">
+      <div class="home-learn-card reveal">
+        <div><div class="eyebrow">New here?</div><h2>Learn what Dragonwilds Sync actually does.</h2><p>See how profiles, synchronization, server management, public discovery, remote administration, updates, and the wider modding ecosystem fit together.</p></div>
+        <a class="button button-secondary" href="about.html">Learn More <span aria-hidden="true">→</span></a>
       </div>
-      <div class="network-stats reveal delay-1" aria-live="polite">
-        <article><span>ACTIVE USERS</span><strong id="stat-users">—</strong><small>anonymous active installations</small></article>
-        <article><span>WORLDS ONLINE</span><strong id="stat-worlds">—</strong><small>publicly broadcasting worlds</small></article>
-        <article><span>PLAYERS LISTED</span><strong id="stat-players">—</strong><small>across public worlds</small></article>
-        <article><span>CURRENT BUILD</span><strong id="stat-build">—</strong><small>network-reported CL build</small></article>
-      </div>
-    </section>
-
-    <section class="section-shell intro" id="features">
-      <div class="section-heading reveal">
-        <div class="eyebrow">One authoritative toolkit</div>
-        <h2>Less server babysitting.<br>More time in Ashenfall.</h2>
-        <p>Built around a single source of truth for runtime state, updates, synchronization, and world management — whether you're at the desktop or checking in remotely.</p>
-      </div>
-      <div class="feature-grid">
-        <article class="feature-card feature-card-wide reveal">
-          <div class="feature-number">01</div>
-          <div class="feature-copy"><div class="feature-symbol">⇄</div><h3>Client & mod synchronization</h3><p>Connect to a configured world, compare what you have, synchronize what you need, and launch from a consistent profile.</p></div>
-          <div class="feature-visual" aria-hidden="true"><div class="sync-node server"><span></span><strong>WORLD</strong><small>Authoritative</small></div><div class="sync-line"><i></i></div><div class="sync-node client"><span></span><strong>CLIENT</strong><small>In sync</small></div></div>
-        </article>
-        <article class="feature-card reveal delay-1"><div class="feature-number">02</div><div class="feature-symbol">⌁</div><h3>Dedicated server control</h3><p>Start, stop, restart, update, verify, and monitor server lifecycle from one controller instead of a pile of scripts.</p></article>
-        <article class="feature-card reveal delay-2"><div class="feature-number">03</div><div class="feature-symbol">◇</div><h3>WebGUI & remote access</h3><p>Use the web interface for supported server operations while keeping the same backend authority, authentication, and lifecycle rules.</p></article>
-        <article class="feature-card reveal"><div class="feature-number">04</div><div class="feature-symbol">↻</div><h3>Updates that finish the job</h3><p>Coordinate launcher, dedicated-server, and Core updates with controlled stop, update, restart, verification, and rebroadcast behavior.</p></article>
-        <article class="feature-card reveal delay-1"><div class="feature-number">05</div><div class="feature-symbol">◎</div><h3>Public world discovery</h3><p>Opt-in public world cards expose only sanitized discovery data while private administration remains entirely separate.</p></article>
-      </div>
-    </section>
-
-    <section class="section-shell main-directory-cta" id="worlds">
-      <div class="main-directory-card reveal">
-        <div class="section-heading">
-          <div class="eyebrow"><span class="pulse-heart" aria-hidden="true">♥</span> Public Server Directory</div>
-          <h2>The live server list has its own space.</h2>
-          <p>Browse opt-in Dragonwilds Sync servers, search by tags and region, check build status, and flip placards for mods, rules, badges, and public connection details.</p>
-        </div>
-        <a class="button button-primary" href="servers.html">Open Server Directory <span aria-hidden="true">→</span></a>
-      </div>
-    </section>
-
-    <section class="webgui-section section-shell" id="webgui">
-      <div class="webgui-layout">
-        <div class="section-heading reveal">
-          <div class="eyebrow">WebHost / WebGUI</div>
-          <h2>Your server authority,<br>available remotely.</h2>
-          <p>The WebGUI is not a second server manager. It routes supported actions through the same authoritative runtime and update controller used by the desktop application.</p>
-          <div class="security-chips"><span>Authenticated sessions</span><span>CSRF protected</span><span>Permission checks</span><span>Audit records</span></div>
-          <div class="remote-manager-launcher">
-            <h3>Remote Server Manager</h3>
-            <p>Enter the WebGUI address configured for your server. Dragonwilds Sync checks that endpoint first, then opens that server's own login page in a new tab. The website never stores or sends your administrator credentials.</p>
-            <form class="remote-manager-form" id="remote-manager-form">
-              <div class="remote-manager-field">
-                <label for="remote-manager-address">Server manager address</label>
-                <input id="remote-manager-address" name="remote-manager-address" type="text" inputmode="url" autocomplete="url" spellcheck="false" placeholder="https://your-server.example:port" aria-describedby="remote-manager-status">
-              </div>
-              <button type="submit" id="remote-manager-open">Check &amp; Open Login ↗</button>
-            </form>
-            <div class="remote-manager-status" id="remote-manager-status" role="status" aria-live="polite">Enter a hostname/IP and WebGUI port. HTTPS is recommended for remote access.</div>
-            <div class="remote-manager-safety"><span>Address stays in your browser</span><span>No admin credentials in directory</span><span>Explicit login required</span></div>
-          </div>
-        </div>
-        <div class="webgui-console reveal delay-1" aria-label="WebGUI capability preview">
-          <div class="console-head"><span>WORLD / ASHENVALE</span><span class="console-online">● ONLINE</span></div>
-          <div class="console-status"><div><small>RUNTIME</small><strong>Authoritative</strong></div><div><small>ACCESS</small><strong>Authenticated</strong></div><div><small>AUDIT</small><strong>Recording</strong></div></div>
-          <div class="console-row"><span>Restart world</span><b>Routes through runtime authority</b></div>
-          <div class="console-row"><span>Apply update</span><b>Managed stop → update → restart</b></div>
-          <div class="console-row"><span>Review status</span><b>Shared desktop / WebGUI state</b></div>
-          <div class="console-note">Public directory credentials and WebGUI administrator credentials remain separate by design.</div>
-        </div>
-      </div>
-    </section>
-
-    <section class="community-section" id="community">
-      <div class="section-shell community-grid">
-        <div class="community-copy reveal">
-          <div class="eyebrow">Built with the community</div>
-          <h2>Mod, host, share,<br>and discover together.</h2>
-          <p>Dragonwilds Sync is designed to work alongside the wider RSDW modding ecosystem. Join the community for modding discussion, world discovery, shared tools, and project feedback.</p>
-          <div class="community-actions"><a class="button button-primary" href="https://discord.gg/gQ7uY2cQ3q">Join RSDW Modding Community <span aria-hidden="true">↗</span></a><a class="button button-secondary" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">Contribute on GitHub <span aria-hidden="true">↗</span></a></div>
-        </div>
-        <div class="directory-ecosystem reveal delay-1">
-          <div class="eco-node official"><span>OFFICIAL</span><strong>Dragonwilds Sync Network</strong><small>Built-in public discovery</small></div>
-          <div class="eco-line"></div>
-          <div class="eco-row"><div class="eco-node"><span>COMMUNITY</span><strong>Compatible directories</strong><small>Independent listings</small></div><div class="eco-node"><span>SELF-HOSTED</span><strong>Your own directory</strong><small>Protocol-compatible hosts</small></div></div>
-        </div>
-      </div>
-    </section>
-
-    <section class="section-shell docs" id="docs">
-      <div class="section-heading reveal"><div class="eyebrow">Documentation</div><h2>From first launch<br>to full world control.</h2><p>The repository remains the authoritative source for setup notes, implementation details, releases, and issue tracking.</p></div>
-      <div class="docs-grid"><a class="doc-card reveal" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync#readme"><span>01</span><div><h3>Getting started</h3><p>Project overview and current setup information.</p></div><b>↗</b></a><a class="doc-card reveal delay-1" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/docs"><span>02</span><div><h3>Documentation</h3><p>Build notes, implementation details, and reference material.</p></div><b>↗</b></a><a class="doc-card reveal delay-2" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues"><span>03</span><div><h3>Issues &amp; feedback</h3><p>Report a problem or follow development work.</p></div><b>↗</b></a></div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="footer-brand"><img src="assets/application-icon.png" alt=""><div><strong>Dragonwilds Sync</strong><span>Community toolkit for RuneScape: Dragonwilds</span></div></div>
-    <div class="footer-links"><a href="#network">Network</a><a href="servers.html">Servers</a><a href="helpy.html">Helpy</a><a href="#webgui">WebGUI</a><a href="https://discord.gg/gQ7uY2cQ3q">RSDW Community</a><a href="https://www.paypal.me/luke0494" target="_blank" rel="noopener noreferrer">Support</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
+    <div class="footer-links"><a href="about.html">About</a><a href="experience.html">Experience</a><a href="servers.html">Servers</a><a href="helpy.html">Help</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
     <p>Dragonwilds Sync is an independent community project and is not affiliated with, endorsed by, or sponsored by Jagex Ltd.</p>
   </footer>
 
-  <script src="script.js?v=ubuntu-download-1"></script>
-  <script>
-    (() => {
-      const form = document.getElementById('remote-manager-form');
-      const input = document.getElementById('remote-manager-address');
-      const button = document.getElementById('remote-manager-open');
-      const status = document.getElementById('remote-manager-status');
-      if (!form || !input || !button || !status) return;
-
-      const setStatus = (kind, message) => {
-        status.className = `remote-manager-status${kind ? ` ${kind}` : ''}`;
-        status.textContent = message;
-      };
-
-      const parseTarget = (raw) => {
-        let value = String(raw || '').trim();
-        if (!value) throw new Error('Enter the server manager hostname/IP and port.');
-        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(value)) value = `https://${value}`;
-        const url = new URL(value);
-        if (!['https:', 'http:'].includes(url.protocol)) throw new Error('Only HTTP or HTTPS server manager addresses are supported.');
-        if (url.username || url.password) throw new Error('Do not put a username or password in the address. Use the server login page instead.');
-        return url;
-      };
-
-      const probe = async (target, timeoutMs = 6500) => {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-          const health = new URL('/health', target);
-          try {
-            await fetch(health.href, { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
-            return;
-          } catch (healthError) {
-            if (controller.signal.aborted) throw healthError;
-          }
-          await fetch(target.href, { method: 'GET', mode: 'no-cors', cache: 'no-store', signal: controller.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
-        } finally {
-          clearTimeout(timer);
-        }
-      };
-
-      form.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        let target;
-        try {
-          target = parseTarget(input.value);
-        } catch (error) {
-          setStatus('error', error.message || 'That server manager address is not valid.');
-          return;
-        }
-
-        if (location.protocol === 'https:' && target.protocol === 'http:') {
-          setStatus('error', 'This HTTPS website cannot safely probe an HTTP-only remote manager. Enable HTTPS for the WebGUI, then try again.');
-          return;
-        }
-
-        const loginTab = window.open('about:blank', '_blank');
-        if (!loginTab) {
-          setStatus('error', 'Your browser blocked the login tab. Allow pop-ups for this site and try again.');
-          return;
-        }
-        try {
-          loginTab.document.title = 'Checking Dragonwilds Sync server…';
-          loginTab.document.body.style.cssText = 'background:#0b0d0f;color:#f2f0eb;font:16px system-ui;padding:32px';
-          loginTab.document.body.textContent = 'Checking Dragonwilds Sync Remote Server Manager…';
-        } catch (_) {}
-
-        button.disabled = true;
-        setStatus('checking', `Checking ${target.host}…`);
-        try {
-          await probe(target);
-          setStatus('online', `Remote Server Manager reachable at ${target.host}. Opening secure login…`);
-          loginTab.opener = null;
-          loginTab.location.replace(target.href);
-        } catch (_) {
-          try { loginTab.close(); } catch (_) {}
-          setStatus('error', `Could not reach ${target.host}. Check the address, WebGUI port, HTTPS certificate, firewall, and remote-access setting.`);
-        } finally {
-          button.disabled = false;
-        }
-      });
-    })();
-  </script>
+  <script src="script.js?v=nav-about-1"></script>
 </body>
 </html>

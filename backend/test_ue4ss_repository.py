@@ -156,6 +156,21 @@ def test_select_version_records_per_world_choice_without_installing():
             pass
 
 
+def test_nickname_and_bulk_delete_local_builds():
+    with _sandbox() as root:
+        ids = []
+        for index in range(2):
+            archive = root / f"ue4ss-{index}.zip"
+            _make_ue4ss_zip(archive, readme=f"UE4SS v3.0.{index}\n")
+            result = repo.import_version(profile_store.load_state(), str(archive), f"Build {index}")
+            ids.append(next(row["id"] for row in result["versions"] if row.get("label") == f"Build {index}"))
+        renamed = repo.rename_version(None, ids[0], "Known Good")
+        assert next(row for row in renamed["versions"] if row["id"] == ids[0])["label"] == "Known Good"
+        deleted = repo.delete_versions(None, ids)
+        assert deleted["deleted_count"] == 2
+        assert all(row["id"] not in ids for row in deleted["versions"])
+
+
 def test_rpc_dispatch_import_select_and_deferred_apply():
     """Exercises the actual handle() dispatch layer -- application.ue4ss_
     repository.import and server.world.ue4ss_version.select -- not just the
@@ -207,6 +222,7 @@ def main():
     test_import_validates_and_dedups_by_content()
     test_delete_refuses_baseline_and_in_use_version_then_succeeds()
     test_select_version_records_per_world_choice_without_installing()
+    test_nickname_and_bulk_delete_local_builds()
     test_rpc_dispatch_import_select_and_deferred_apply()
     print("ue4ss_repository tests passed")
 

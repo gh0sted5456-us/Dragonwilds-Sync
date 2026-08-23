@@ -53,6 +53,8 @@ for (const token of [
   'data-character-undo', 'data-character-redo', 'data-avatar-upstream-select="avatar-animation-select"',
   'data-character-tab-popover="pose"', 'data-character-tab-popover="background"',
   'data-character-pose-filter', 'data-character-background-choice',
+  "file:'placards/6.png'", "file:'placards/8.png'", "file:'placards/5.png'",
+  "file:'placards/9.png'", "file:'placards/7.png'",
   'characterEquipmentCompatible(row, slot)', 'character-equipment-context-menu',
   'openStudioEquipmentMenu(socket,event)', 'data-character-equip-item',
   "action:'remove',section:'loadout'", "slot==='Hotbar'", "section:'inventory'",

@@ -119,6 +119,7 @@ def list_versions(state: dict | None = None) -> dict:
             "kind": str(row.get("kind") or "imported"), "version": str(row.get("version") or ""),
             "available": True, "size": archive.stat().st_size, "source": str(row.get("source") or ""),
             "sha256": str(row.get("sha256") or ""), "added_at": row.get("added_at") or 0,
+            "published_at": str(row.get("published_at") or ""),
         })
     if changed:
         _set_rows(state, kept_rows)
@@ -127,13 +128,16 @@ def list_versions(state: dict | None = None) -> dict:
     return {"versions": versions}
 
 
-def _store(state: dict, source: Path, *, kind: str, label: str, version: str, source_label: str) -> dict:
+def _store(state: dict, source: Path, *, kind: str, label: str, version: str,
+           source_label: str, published_at: str = "") -> dict:
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     rows = _rows(state)
     existing = next((row for row in rows if str(row.get("sha256")) == digest), None)
     if existing:
         if label:
             existing["label"] = label
+        if published_at:
+            existing["published_at"] = published_at
         _set_rows(state, rows)
         save_state(state)
         return list_versions(state)
@@ -143,6 +147,7 @@ def _store(state: dict, source: Path, *, kind: str, label: str, version: str, so
     rows.append({
         "id": version_id, "label": label or version or filename, "kind": kind, "archive": filename,
         "sha256": digest, "version": version, "source": source_label, "added_at": time.time(),
+        "published_at": str(published_at or ""),
     })
     _set_rows(state, rows)
     save_state(state)
@@ -175,7 +180,8 @@ def fetch_experimental(state: dict, source_url: str = "") -> dict:
             or Path(str(resolved.get("filename") or "")).stem
         label = version or "Experimental"
         return _store(state, zip_path, kind="experimental", label=label, version=version,
-                      source_label=str(resolved.get("download_url") or url))
+                      source_label=str(resolved.get("download_url") or url),
+                      published_at=str(resolved.get("published_at") or ""))
     finally:
         temp.cleanup()
 
@@ -209,6 +215,51 @@ def delete_version(state: dict, version_id: str) -> dict:
     if _repo_dir().resolve() in archive.parents:
         archive.unlink(missing_ok=True)
     _set_rows(state, [row for row in rows if str(row.get("id")) != str(version_id)])
+    save_state(state)
+    return list_versions(state)
+
+
+def delete_versions(state: dict, version_ids: list[str]) -> dict:
+    """Delete several unused local builds as one validated operation."""
+    state = state if state is not None else load_state()
+    requested = list(dict.fromkeys(str(item or "").strip() for item in version_ids))
+    requested = [item for item in requested if item]
+    if not requested:
+        raise ValueError("Select at least one UE4SS build to delete.")
+    if BASELINE_ID in requested:
+        raise ValueError("The bundled Baseline build cannot be deleted.")
+    rows = _rows(state)
+    known = {str(row.get("id")): row for row in rows if isinstance(row, dict)}
+    missing = [item for item in requested if item not in known]
+    if missing:
+        raise KeyError(f"UE4SS repository build not found: {', '.join(missing)}")
+    blocked = {item: _worlds_using(item) for item in requested}
+    blocked = {item: names for item, names in blocked.items() if names}
+    if blocked:
+        details = "; ".join(f"{known[item].get('label') or item}: {', '.join(names)}" for item, names in blocked.items())
+        raise ValueError(f"Active UE4SS builds cannot be deleted. Switch these Worlds first: {details}")
+    for item in requested:
+        archive = (_repo_dir() / str(known[item].get("archive") or "")).resolve()
+        if _repo_dir().resolve() in archive.parents:
+            archive.unlink(missing_ok=True)
+    _set_rows(state, [row for row in rows if str(row.get("id")) not in set(requested)])
+    save_state(state)
+    return {**list_versions(state), "deleted_ids": requested, "deleted_count": len(requested)}
+
+
+def rename_version(state: dict | None, version_id: str, nickname: str) -> dict:
+    state = state if state is not None else load_state()
+    if not version_id or version_id == BASELINE_ID:
+        raise ValueError("The bundled Baseline nickname cannot be changed.")
+    label = _clean_label(nickname)
+    if not label:
+        raise ValueError("Enter a nickname for this UE4SS build.")
+    rows = _rows(state)
+    target = next((row for row in rows if str(row.get("id")) == str(version_id)), None)
+    if not target:
+        raise KeyError("UE4SS repository version not found")
+    target["label"] = label
+    _set_rows(state, rows)
     save_state(state)
     return list_versions(state)
 

@@ -1402,7 +1402,7 @@ h1,h2,h3,h4,p,strong,span,small,label{overflow-wrap:anywhere}
 .panel-grid{grid-template-columns:repeat(auto-fit,minmax(min(360px,100%),1fr))}
 .panel-grid.world-ops-grid{grid-template-columns:minmax(0,1fr)}
 .metric-grid{grid-template-columns:repeat(auto-fit,minmax(min(150px,100%),1fr))}
-.world-grid{grid-template-columns:repeat(auto-fill,minmax(min(310px,100%),1fr));align-items:start}
+.world-grid{grid-template-columns:repeat(auto-fill,minmax(min(310px,100%),1fr));align-items:stretch}
 .world-placard-stack{width:100%;max-width:100%}.world-placard-stack>.world-card{width:100%;height:100%}.placard-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(96px,1fr));gap:7px;margin-top:8px}.placard-actions>.btn{width:100%}
 .world-list-row{grid-template-columns:72px minmax(0,1fr) minmax(120px,28%) auto;min-width:0}.world-list-main,.world-list-title,.world-list-meta{min-width:0}.world-list-meta{display:flex;gap:10px;flex-wrap:wrap}.world-list-banner{min-width:0;overflow:hidden}
 .server-tabs{display:flex;overflow-x:auto;overflow-y:hidden;max-width:100%;scrollbar-width:thin}.server-tabs button{flex:0 0 auto;min-width:max-content}

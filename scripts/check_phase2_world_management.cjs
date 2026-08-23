@@ -12,6 +12,7 @@ const forbidText = (text, needle, label) => {
 
 const index = read('renderer/index.html');
 const phase2 = read('renderer/release-phase2.js');
+const appV2 = read('renderer/app-v2.js');
 const profileSettings = read('backend/profile_settings.py');
 const routing = read('backend/v2_remote_routing.py');
 const runner = read('scripts/run_backend_tests.cjs');
@@ -29,6 +30,18 @@ requireText(phase2, "['profiles', 'world', 'local', id]", 'local profile root');
 requireText(phase2, "invoke('server.world.save.status'", 'dedicated save evidence');
 for (const group of ["['Profile'", "['Tools'", "['Hosting'", "['Roster'"]) requireText(phase2, group, `consolidated tab group ${group}`);
 forbidText(phase2, 'window.location.reload', 'World Management must not reload the renderer');
+for (const token of [
+  'openRuntimeBuildManager(kind)',
+  'RuneSchema Version Manager',
+  'UE4SS Version Manager',
+  'data-runtime-build-check',
+  'data-runtime-build-delete-selected',
+  'Publish / stored date',
+  'manage-runeschema-builds',
+  'manage-ue4ss-builds',
+]) requireText(appV2, token, `shared runtime version manager ${token}`);
+forbidText(appV2, 'id="runeschema-flavor-select"', 'legacy inline RuneSchema selector');
+forbidText(appV2, 'id="ue4ss-version-select"', 'legacy inline UE4SS selector');
 
 requireText(profileSettings, 'DragonwildsSync.WorldProfileSettings.v1', 'settings.json schema');
 requireText(profileSettings, 'DragonwildsSync.WorldProfileRegistry.v1', 'profile registry schema');

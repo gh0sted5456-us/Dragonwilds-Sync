@@ -30,7 +30,7 @@ def main() -> None:
         try:
             profile_store.save_server_profile("world", {"name": "Test"})
             managed = runeschema_flavors.list_flavors("world")
-            assert [row["id"] for row in managed["flavors"][:2]] == ["official", "experimental"]
+            assert managed["flavors"][0]["id"] == "official"
             try:
                 runeschema_flavors.delete_flavor("world", "experimental")
                 raise AssertionError("Experimental managed RuneSchema channel was deletable")

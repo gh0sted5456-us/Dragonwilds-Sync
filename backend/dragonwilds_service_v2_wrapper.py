@@ -30,6 +30,7 @@ from unified_console import (
     runeschema_paths as unified_console_runeschema_paths,
 )
 import runeschema_tools
+import runeschema_repository
 import ue4ss_repository
 from server_engine import _apply_profile_ue4ss
 from v2_remote_routing import install_directory_patches, remote_advertisement
@@ -662,6 +663,16 @@ _legacy_public_worlds = _legacy._directory_public_worlds
 _legacy._directory_public_worlds = _public_worlds_with_remote
 
 
+def _public_state_with_runtime_repositories(state: dict | None = None) -> dict:
+    """Project normalized runtime repositories into a renderer-facing state."""
+    current = state if state is not None else _legacy.load_state()
+    public = _legacy.public_state(current)
+    application = public.setdefault("application", {})
+    application["ue4ss_repository"] = ue4ss_repository.list_versions(current)["versions"]
+    application["runeschema_repository"] = runeschema_repository.list_versions(current)["versions"]
+    return public
+
+
 def handle(method: str, params: dict) -> object:
     params = params if isinstance(params, dict) else {}
     state = _legacy.load_state()
@@ -686,6 +697,7 @@ def handle(method: str, params: dict) -> object:
         if isinstance(result, dict):
             result.setdefault("application", {})["trash_status"] = _trash_summary()
             result.setdefault("application", {})["ue4ss_repository"] = ue4ss_repository.list_versions(state)["versions"]
+            result.setdefault("application", {})["runeschema_repository"] = runeschema_repository.list_versions(state)["versions"]
             lifecycle = RUNTIME.get_status()
             result.setdefault("application", {})["runtime_manager"] = lifecycle
             result.setdefault("server", {}).setdefault("runtime", {}).update({
@@ -985,18 +997,41 @@ def handle(method: str, params: dict) -> object:
         if not zip_path:
             raise ValueError("Choose a UE4SS ZIP package first.")
         result = ue4ss_repository.import_version(state, zip_path, str(params.get("label") or ""))
-        return {**result, "state": _legacy.public_state(_legacy.load_state())}
+        return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "application.ue4ss_repository.fetch_experimental":
         result = ue4ss_repository.fetch_experimental(state, str(params.get("source_url") or ""))
-        return {**result, "state": _legacy.public_state(_legacy.load_state())}
+        return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "application.ue4ss_repository.delete":
         version_id = str(params.get("version_id") or "").strip()
         if not version_id:
             raise ValueError("Choose a UE4SS build to delete.")
         result = ue4ss_repository.delete_version(state, version_id)
-        return {**result, "state": _legacy.public_state(_legacy.load_state())}
+        return {**result, "state": _public_state_with_runtime_repositories()}
+
+    if method == "application.ue4ss_repository.delete_many":
+        result = ue4ss_repository.delete_versions(state, list(params.get("version_ids") or []))
+        return {**result, "state": _public_state_with_runtime_repositories()}
+
+    if method == "application.ue4ss_repository.rename":
+        result = ue4ss_repository.rename_version(state, str(params.get("version_id") or ""), str(params.get("nickname") or ""))
+        return {**result, "state": _public_state_with_runtime_repositories()}
+
+    if method == "application.runeschema_repository.list":
+        return runeschema_repository.list_versions(state)
+
+    if method == "application.runeschema_repository.fetch_experimental":
+        result = runeschema_repository.fetch_experimental(state, str(params.get("source_url") or ""))
+        return {**result, "state": _public_state_with_runtime_repositories()}
+
+    if method == "application.runeschema_repository.delete_many":
+        result = runeschema_repository.delete_versions(state, list(params.get("version_ids") or []))
+        return {**result, "state": _public_state_with_runtime_repositories()}
+
+    if method == "application.runeschema_repository.rename":
+        result = runeschema_repository.rename_version(state, str(params.get("version_id") or ""), str(params.get("nickname") or ""))
+        return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "server.world.ue4ss_version.select":
         # Mirrors server.world.runeschema_flavors.select exactly: the World's

@@ -2824,7 +2824,9 @@ def _github_release_zip(api_url: str, source: str, prefer_contains: tuple[str, .
     if not download_url:
         return None
     return {"filename": str(asset.get("name") or "runtime.zip"), "download_url": download_url,
-            "source": source, "release_tag": str(payload.get("tag_name") or ""), "resolver": "github-api"}
+            "source": source, "release_tag": str(payload.get("tag_name") or ""),
+            "published_at": str(payload.get("published_at") or payload.get("created_at") or ""),
+            "resolver": "github-api"}
 
 
 def resolve_runtime_zip_source(source_url: str, *, prefer_contains: tuple[str, ...] = (), timeout: float = 10.0) -> dict | None:

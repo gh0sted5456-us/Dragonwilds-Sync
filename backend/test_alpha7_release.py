@@ -165,7 +165,10 @@ def main():
     assert "close_to_tray" in renderer and "start_minimized" in renderer
     assert "createWorldShortcut" in main and "--quick-launch" in main
     assert "--world-kind=" in main and "iconAsset" in main
-    assert "server.world.quick_play" in renderer and "server.world.quick_play" in service
+    # The current shell's lightweight hosted-World Quick Launch starts the
+    # authoritative runtime directly. Keep the legacy RPC in the service for
+    # old shortcuts, but do not force the renderer to retain dead call sites.
+    assert "server.runtime.start" in renderer and "server.world.quick_play" in service
     assert "height:82px" in styles and "mask-image:linear-gradient" in styles
     assert "Notification" in main and "silent: true" in main
     assert "overflow-wrap" in styles and "min-width: 0" in styles

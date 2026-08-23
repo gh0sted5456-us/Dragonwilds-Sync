@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from profile_store import SERVER_PROFILES_DIR, load_server_profile, save_server_profile
+import runeschema_repository
 
 
 OFFICIAL = {"id": "official", "name": "Official · UnskippableCutscene", "kind": "official"}
@@ -29,7 +30,8 @@ def list_flavors(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile:
         raise KeyError("Server World not found")
-    rows = [OFFICIAL, EXPERIMENTAL]
+    rows = [OFFICIAL]
+    rows.extend(runeschema_repository.list_versions()["versions"])
     for row in profile.get("runeschema_flavors") or []:
         if not isinstance(row, dict) or str(row.get("id")) in MANAGED_IDS:
             continue
@@ -38,6 +40,8 @@ def list_flavors(profile_id: str) -> dict:
             rows.append({"id": str(row.get("id")), "name": _clean_name(row.get("name")) or archive.stem,
                          "kind": "custom", "sha256": str(row.get("sha256") or ""), "size": archive.stat().st_size})
     selected = str(profile.get("runeschema_flavor_id") or "official")
+    if selected == EXPERIMENTAL["id"]:
+        rows.insert(1, {**EXPERIMENTAL, "name": "Experimental · Legacy latest"})
     if selected not in {str(row["id"]) for row in rows}:
         selected = "official"
     return {"flavors": rows, "selected_id": selected}
@@ -90,7 +94,9 @@ def select_flavor(profile_id: str, flavor_id: str) -> tuple[dict, Path | None]:
     profile["runeschema_flavor_id"] = str(flavor_id)
     save_server_profile(profile_id, profile)
     archive = None
-    if str(flavor_id) not in MANAGED_IDS:
+    if str(flavor_id).startswith(runeschema_repository.EXPERIMENTAL_PREFIX):
+        archive = runeschema_repository.resolve_archive(str(flavor_id))
+    elif str(flavor_id) not in MANAGED_IDS:
         saved = next(row for row in profile.get("runeschema_flavors") or [] if str(row.get("id")) == str(flavor_id))
         archive = (_folder(profile_id) / str(saved.get("archive"))).resolve()
         if _folder(profile_id).resolve() not in archive.parents or not archive.is_file():

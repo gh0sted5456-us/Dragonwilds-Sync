@@ -19,6 +19,7 @@ const crossPlatformTests = [
   'backend/test_v27_13_runtime_profiles.py',
   'backend/test_v27_14_final_cleanup.py',
   'backend/test_v27_15_runeschema_flavor_lock.py',
+  'backend/test_runeschema_repository.py',
   'backend/test_connection_transport.py',
   'backend/test_direct_connect_route.py',
   'backend/test_connection_diagnostics.py',

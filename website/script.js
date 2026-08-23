@@ -6,6 +6,61 @@ const CURRENT_CL_FALLBACK = 'CL-232224';
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
+function configureSharedNavigation() {
+  const nav = $('.main-nav[data-shared-nav="1"]') || $('.main-nav');
+  if (!nav) return;
+
+  const page = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
+  const active = (...names) => names.includes(page) ? ' aria-current="page"' : '';
+  const experienceActive = ['experience.html', 'setup.html', 'world-builder.html', 'launcher-preview.html'].includes(page);
+
+  nav.innerHTML = `
+    <div class="nav-group nav-home">
+      <a class="nav-group-trigger" href="index.html"${active('index.html')}><span>Home</span><span class="nav-caret" aria-hidden="true">⌄</span></a>
+      <div class="nav-group-menu">
+        <a href="downloads.html"${active('downloads.html')}>Downloads</a>
+        <a href="index.html#webgui">WebGUI</a>
+        <a href="index.html#community">Community</a>
+      </div>
+    </div>
+    <div class="nav-group nav-experience">
+      <a class="nav-group-trigger" href="experience.html"${experienceActive ? ' aria-current="page"' : ''}><span>Experience</span><span class="nav-caret" aria-hidden="true">⌄</span></a>
+      <div class="nav-group-menu">
+        <a href="setup.html"${active('setup.html')}>Setup Instructions</a>
+        <a href="world-builder.html"${active('world-builder.html')}>World Builder</a>
+        <a href="launcher-preview.html"${active('launcher-preview.html')}>Preview Launcher</a>
+      </div>
+    </div>
+    <a href="servers.html"${active('servers.html')}>Servers</a>
+    <a href="helpy.html"${active('helpy.html')}>Help</a>
+    <a href="for-modders.html"${active('for-modders.html')}>For Modders</a>
+    <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>
+  `;
+
+  if (!$('#shared-nav-styles')) {
+    const style = document.createElement('style');
+    style.id = 'shared-nav-styles';
+    style.textContent = `
+      .nav-group{position:relative}
+      .nav-group-trigger{display:flex!important;align-items:center;gap:6px}
+      .nav-caret{font-size:9px;opacity:.65;transform:translateY(-1px)}
+      .nav-group-menu{position:absolute;top:calc(100% + 7px);left:0;min-width:190px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--header);backdrop-filter:blur(var(--glass-blur)) saturate(135%);box-shadow:0 14px 40px rgba(0,0,0,.25);opacity:0;visibility:hidden;pointer-events:none;transform:translateY(-5px);transition:opacity .16s,transform .16s,visibility .16s;z-index:60}
+      .nav-group-menu a{display:block!important;white-space:nowrap;padding:9px 10px!important}
+      .nav-group:hover .nav-group-menu,.nav-group:focus-within .nav-group-menu{opacity:1;visibility:visible;pointer-events:auto;transform:none}
+      .main-nav a[aria-current="page"]{color:var(--text);background:color-mix(in srgb,var(--gold) 9%,var(--panel-soft))}
+      @media(max-width:900px){
+        .nav-group{width:100%}
+        .nav-group-trigger{justify-content:space-between}
+        .nav-group-menu{position:static;min-width:0;padding:0 0 3px 12px;border:0;box-shadow:none;background:transparent;backdrop-filter:none;opacity:1;visibility:visible;pointer-events:auto;transform:none}
+        .nav-group-menu a{padding:6px 9px!important;font-size:11px!important}
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
+configureSharedNavigation();
+
 function setTheme(theme, persist = true) {
   const allowed = ['dark', 'white', 'glass'];
   const next = allowed.includes(theme) ? theme : 'dark';
@@ -20,23 +75,6 @@ function setTheme(theme, persist = true) {
 
 setTheme(localStorage.getItem(THEME_KEY) || 'dark', false);
 $$('.theme-switcher [data-theme-choice]').forEach((button) => button.addEventListener('click', () => setTheme(button.dataset.themeChoice)));
-
-function applySharedNavigation() {
-  const nav = $('#main-nav');
-  if (!nav) return;
-  const page = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
-  const current = (name) => page === name ? ' aria-current="page"' : '';
-  const experienceCurrent = ['experience.html', 'world-builder.html', 'launcher-preview.html'].includes(page) ? ' aria-current="page"' : '';
-  nav.innerHTML = `
-    <div class="nav-home"><a href="index.html"${current('index.html')}>Home <span aria-hidden="true"></span></a><div class="nav-home-menu"><a href="index.html#webgui">WebGUI</a><a href="downloads.html"${current('downloads.html')}>Downloads</a><a href="index.html#community">Community</a></div></div>
-    <div class="nav-home"><a href="experience.html"${experienceCurrent}>Experience <span aria-hidden="true"></span></a><div class="nav-home-menu"><a href="experience.html"${current('experience.html')}>Setup Instructions</a><a href="world-builder.html"${current('world-builder.html')}>World Builder</a><a href="launcher-preview.html"${current('launcher-preview.html')}>Preview Launcher</a></div></div>
-    <a href="servers.html"${current('servers.html')}>Servers</a>
-    <a href="helpy.html"${current('helpy.html')}>Helpy</a>
-    <a href="for-modders.html"${current('for-modders.html')}>For Modders</a>
-    <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>`;
-}
-
-applySharedNavigation();
 
 const navToggle = $('.nav-toggle');
 const nav = $('.main-nav');
@@ -294,8 +332,10 @@ function setDirectoryState(kind, title, detail) {
 
 function deriveStatsFromWorlds() {
   const online = allWorlds.filter(isOnline);
-  $('#stat-worlds').textContent = String(online.length);
-  $('#stat-players').textContent = String(online.reduce((sum, world) => sum + world.currentPlayers, 0));
+  const worldsNode = $('#stat-worlds');
+  const playersNode = $('#stat-players');
+  if (worldsNode) worldsNode.textContent = String(online.length);
+  if (playersNode) playersNode.textContent = String(online.reduce((sum, world) => sum + world.currentPlayers, 0));
 }
 
 async function loadWorlds() {
@@ -330,6 +370,7 @@ async function loadWorlds() {
 async function loadNetwork() {
   const message = $('#network-message');
   const dot = $('#network-live-dot');
+  if (!message && !dot && !$('#stat-users') && !$('#stat-build')) return;
   try {
     const data = await fetchJson('/api/v1/network');
     const users = data?.active_users;
@@ -337,18 +378,24 @@ async function loadNetwork() {
     const players = data?.players_in_listed_worlds;
     currentBuild = safeText(data?.current_build ?? data?.version, '', 40) || null;
     const productionCl = publishCurrentCl(canonicalCl(currentBuild) || CURRENT_CL_FALLBACK);
-    $('#stat-users').textContent = Number.isFinite(Number(users)) ? String(Number(users)) : '—';
-    $('#stat-worlds').textContent = Number.isFinite(Number(worlds)) ? String(Number(worlds)) : $('#stat-worlds').textContent;
-    $('#stat-players').textContent = Number.isFinite(Number(players)) ? String(Number(players)) : $('#stat-players').textContent;
-    $('#stat-build').textContent = productionCl;
-    message.textContent = 'Live aggregate presence from participating Dragonwilds Sync installations and public Worlds.';
-    dot.className = 'network-live-dot';
+    const usersNode = $('#stat-users');
+    const worldsNode = $('#stat-worlds');
+    const playersNode = $('#stat-players');
+    const buildNode = $('#stat-build');
+    if (usersNode) usersNode.textContent = Number.isFinite(Number(users)) ? String(Number(users)) : '—';
+    if (worldsNode && Number.isFinite(Number(worlds))) worldsNode.textContent = String(Number(worlds));
+    if (playersNode && Number.isFinite(Number(players))) playersNode.textContent = String(Number(players));
+    if (buildNode) buildNode.textContent = productionCl;
+    if (message) message.textContent = 'Live aggregate presence from participating Dragonwilds Sync installations and public Worlds.';
+    if (dot) dot.className = 'network-live-dot';
     renderWorlds();
   } catch (_) {
-    $('#stat-users').textContent = '—';
-    $('#stat-build').textContent = publishCurrentCl(CURRENT_CL_FALLBACK);
-    message.textContent = 'Public World telemetry is live. Anonymous active-user totals will appear automatically when the network-presence endpoint is enabled.';
-    dot.className = 'network-live-dot offline';
+    const usersNode = $('#stat-users');
+    const buildNode = $('#stat-build');
+    if (usersNode) usersNode.textContent = '—';
+    if (buildNode) buildNode.textContent = publishCurrentCl(CURRENT_CL_FALLBACK);
+    if (message) message.textContent = 'Public World telemetry is live. Anonymous active-user totals will appear automatically when the network-presence endpoint is enabled.';
+    if (dot) dot.className = 'network-live-dot offline';
   }
 }
 
@@ -363,21 +410,22 @@ async function loadLatestRelease() {
   const releaseVersion = $('#release-version');
   const releaseDate = $('#release-date');
   const releaseLink = $('#release-link');
+  if (!releaseVersion && !releaseDate && !releaseLink) return;
   try {
     const response = await fetch(RELEASE_API, { headers: { Accept: 'application/vnd.github+json' } });
     if (!response.ok) throw new Error('No public release');
     const release = await response.json();
     const date = new Date(release.published_at || release.created_at);
-    releaseVersion.textContent = safeText(release.tag_name || release.name, 'Latest');
-    releaseDate.textContent = Number.isNaN(date.getTime()) ? 'GitHub Releases' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    if (releaseVersion) releaseVersion.textContent = safeText(release.tag_name || release.name, 'Latest');
+    if (releaseDate) releaseDate.textContent = Number.isNaN(date.getTime()) ? 'GitHub Releases' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
     const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
-    if (executable) {
+    if (releaseLink && executable) {
       releaseLink.href = executable.browser_download_url;
       releaseLink.setAttribute('download', '');
     }
   } catch (_) {
-    releaseVersion.textContent = 'Latest available';
-    releaseDate.textContent = 'GitHub Releases';
+    if (releaseVersion) releaseVersion.textContent = 'Latest available';
+    if (releaseDate) releaseDate.textContent = 'GitHub Releases';
   }
 }
 

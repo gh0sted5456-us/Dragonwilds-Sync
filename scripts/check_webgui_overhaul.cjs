@@ -30,17 +30,19 @@ requireText(release, 'Right-click for full item details', 'Spawner item inspecto
 requireText(release, 'server.console.unified', 'unified console polling');
 requireText(release, "data-dws-console-filter=\"game\"", 'game console filter');
 requireText(release, "data-dws-console-filter=\"ue4ss\"", 'UE4SS console filter');
+requireText(release, "data-dws-console-filter=\"runeschema\"", 'RuneSchema console filter');
 requireText(release, "data-dws-console-filter=\"server\"", 'server console filter');
 requireText(release, "data-dws-console-filter=\"sync\"", 'sync console filter');
 requireText(css, '.dws-console-row.source-game', 'game console colour');
 requireText(css, '.dws-console-row.source-ue4ss', 'UE4SS console colour');
+requireText(css, '.dws-console-row.source-runeschema', 'RuneSchema console colour');
 requireText(css, '.dws-console-row.source-server', 'server console colour');
 requireText(css, '.dws-console-row.source-sync', 'sync console colour');
 
 requireText(service, 'install_engine_session_hook(_legacy.ENGINE)', 'per-process session log hook');
 requireText(service, 'if method == "server.console.unified":', 'unified console RPC');
 requireText(consoleModule, 'DragonwildsSync.previous.log', 'previous-session rotation');
-requireText(consoleModule, 'Streams: GAME CMD/STDOUT | UE4SS | SERVER | SYNC TRAFFIC', 'merged text log contract');
+requireText(consoleModule, 'Streams: GAME CMD/STDOUT | UE4SS | RUNESCHEMA | SERVER | SYNC TRAFFIC', 'merged text log contract');
 requireText(consoleModule, 'def record_entry(profile_id: object, entry: dict)', 'continuous disk log writer');
 requireText(consoleModule, '_install_live_source_hooks(engine)', 'live server/sync/game source hooks');
 requireText(consoleModule, 'state.activity = activity', 'live Sync traffic hook');
@@ -53,6 +55,7 @@ requireText(desktop, 'open-unified-server-console', 'manual desktop console acti
 requireText(desktop, "filter==='ue4ss'?`ue4ss.exec ${command}`:command", 'targeted UE4SS command dispatch');
 requireText(directoryWeb, 'dws-remote-unified-console-script', 'authenticated WebHost unified console UI');
 requireText(directoryWeb, 'data-dws-web-console-filter="sync"', 'WebHost Sync console filter');
+requireText(directoryWeb, 'data-dws-web-console-filter="runeschema"', 'WebHost RuneSchema console filter');
 requireText(runner, 'backend/test_unified_console.py', 'unified console regression test');
 
 requireText(recommendations, '_enrich_public_artwork', 'public artwork enrichment');

@@ -2,7 +2,7 @@ const API_BASE = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev';
 const RELEASE_API = 'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/releases/latest';
 const THEME_KEY = 'dragonwilds-sync-theme';
 const CURRENT_CL_FALLBACK = 'CL-232224';
-const SHARED_NAV_VERSION = 'nav-unified-20260822-1';
+const SHARED_NAV_VERSION = 'nav-unified-20260822-2';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -10,6 +10,7 @@ const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 function sharedNavMarkup(page) {
   const active = (...names) => names.includes(page) ? ' aria-current="page"' : '';
   const experienceActive = ['experience.html', 'setup.html', 'world-builder.html', 'launcher-preview.html'].includes(page);
+  const learnMoreActive = ['helpy.html', 'for-modders.html'].includes(page);
   const chevron = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
   return `
@@ -36,8 +37,16 @@ function sharedNavMarkup(page) {
       </div>
     </div>
     <a href="servers.html"${active('servers.html')}>Servers</a>
-    <a href="helpy.html"${active('helpy.html')}>Help</a>
-    <a href="for-modders.html"${active('for-modders.html')}>For Modders</a>
+    <div class="nav-group nav-learn-more" data-nav-group>
+      <div class="nav-group-main">
+        <a class="nav-group-link" href="helpy.html"${learnMoreActive ? ' aria-current="page"' : ''}>Learn More</a>
+        <button class="nav-disclosure" type="button" aria-expanded="false" aria-label="Open Learn More menu">${chevron}</button>
+      </div>
+      <div class="nav-group-menu" role="menu">
+        <a role="menuitem" href="helpy.html"${active('helpy.html')}>Help</a>
+        <a role="menuitem" href="for-modders.html"${active('for-modders.html')}>For Modders</a>
+      </div>
+    </div>
     <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>
   `;
 }

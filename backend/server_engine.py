@@ -921,7 +921,7 @@ class ServerEngine:
             profile = load_server_profile(profile_id)
             root = self._profile_root(profile) if profile else ""
             if root and Path(root).exists():
-                repaired = ensure_base_runtimes(root)
+                repaired = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
                 if repaired.get("repaired"):
                     self._event("Base runtime self-heal: " + "; ".join(repaired.get("repaired") or []), "ok")
                 if not repaired.get("ok"):
@@ -1069,7 +1069,7 @@ class ServerEngine:
             remove_active_world(marker_root)
         incoming_exe = server_exe or find_dedicated_server_exe(incoming)
         if incoming_root and Path(incoming_root).exists():
-            preflight = ensure_base_runtimes(incoming_root)
+            preflight = ensure_base_runtimes(incoming_root, auto_rsdwtools=bool(incoming.get("auto_rsdwtools", True)))
             if not preflight.get("ok"):
                 raise RuntimeError("Base runtime validation failed before World swap: " + "; ".join(preflight.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
             if preflight.get("repaired"):
@@ -1082,7 +1082,7 @@ class ServerEngine:
             if outgoing_exe: snapshot_profile_savegame(outgoing_id, outgoing_exe)
         mods = restore_profile_mods(incoming_id, Path(incoming_root)) if incoming_root and Path(incoming_root).exists() else 0
         configs = restore_profile_server_config(incoming_id, incoming_root) if incoming_root and Path(incoming_root).exists() else 0
-        runtime = ensure_base_runtimes(incoming_root) if incoming_root and Path(incoming_root).exists() else {"ok": False, "errors": ["Dedicated server root is unavailable."]}
+        runtime = ensure_base_runtimes(incoming_root, auto_rsdwtools=bool(incoming.get("auto_rsdwtools", True))) if incoming_root and Path(incoming_root).exists() else {"ok": False, "errors": ["Dedicated server root is unavailable."]}
         if not runtime.get("ok"):
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
@@ -1127,7 +1127,7 @@ class ServerEngine:
         if live_save is not None and live_save.exists():
             _clear_children(live_save)
         remove_active_world(layout.game_root)
-        runtime = ensure_base_runtimes(root)
+        runtime = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
         if not runtime.get("ok"):
             raise RuntimeError("Core runtime validation failed after unload: " + "; ".join(runtime.get("errors") or []))
         self.active_profile_id = None; STATE.active_profile_id = None
@@ -1138,7 +1138,7 @@ class ServerEngine:
     def scan_mods(self, profile_id: str) -> dict:
         profile = load_server_profile(profile_id); root = self._profile_root(profile)
         if not root: raise ValueError("Set the machine-wide Server Directory under Settings → Server before scanning mods.")
-        runtime = ensure_base_runtimes(root)
+        runtime = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
         if not runtime.get("ok"):
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
@@ -1158,7 +1158,7 @@ class ServerEngine:
         if not profile: raise KeyError("Server World not found")
         root = self._profile_root(profile)
         if not root: raise ValueError("Set the machine-wide Server Directory under Settings → Server before publishing mods.")
-        runtime = ensure_base_runtimes(root)
+        runtime = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
         if not runtime.get("ok"):
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):

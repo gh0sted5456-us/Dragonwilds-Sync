@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.9',
-  name: 'V2.7.9 · Game Password and Launch Recovery',
+  version: '2.7.10',
+  name: 'V2.7.10 · Base Runtime Update Controls',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.10',
+    title: 'Base Runtime Update Controls',
+    items: [
+      'World settings explicitly select Official Base from the RuneSchema GitHub source or the Dragonwilds Sync Launcher Variant.',
+      'RuneSchema and RSDW Tools remain enabled base mods; their new toggles control automatic updates only.',
+      'Disabling RSDW Tools updates retains and self-enables the installed base mod without replacing its files during runtime repair.',
+      'The chosen RuneSchema source and both update policies persist when World settings are reopened.',
+    ],
+  }, {
     version: '2.7.9',
     title: 'Game Password and Launch Recovery',
     items: [

@@ -4407,6 +4407,8 @@ def handle(method: str, params: dict) -> object:
             profile["auto_ue4ss"] = bool(params.get("auto_ue4ss"))
         if "auto_runeschema" in params:
             profile["auto_runeschema"] = bool(params.get("auto_runeschema"))
+        if "auto_rsdwtools" in params:
+            profile["auto_rsdwtools"] = bool(params.get("auto_rsdwtools"))
         if "runeschema_variant" in params:
             variant = str(params.get("runeschema_variant") or "standard").strip().casefold()
             if variant not in {"standard", "extended"}:

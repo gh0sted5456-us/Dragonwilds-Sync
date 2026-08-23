@@ -3114,10 +3114,16 @@ def _normalize_bundled_integration_contract(target_root: Path) -> dict:
     return result
 
 
-def ensure_rsdwtools_baseline(mods_dir: Path) -> dict:
-    """Install/update the self-enabled RSDWTools bridge without mods.txt."""
+def ensure_rsdwtools_baseline(mods_dir: Path, *, allow_update: bool = True) -> dict:
+    """Install or optionally update the self-enabled RSDWTools base mod."""
     target = Path(mods_dir) / "RSDWTools"
     bundle = _bundled_app_resource(*BUNDLED_RSDWTOOLS_RESOURCE)
+    live_main = target / "scripts" / "main.lua"
+    live_dll = target / "dlls" / "main.dll"
+    if target.is_dir() and live_main.is_file() and live_dll.is_file() and not allow_update:
+        _write_launcher_control_file(target / "enabled.txt")
+        return {"ok": True, "installed": True, "changed": False, "update_skipped": True,
+                "path": str(target), "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
     if not bundle.is_file():
         return {"ok": target.is_dir(), "installed": target.is_dir(), "changed": False,
                 "path": str(target), "error": "Bundled RSDWTools baseline is unavailable."}
@@ -3127,7 +3133,6 @@ def ensure_rsdwtools_baseline(mods_dir: Path) -> dict:
         current = json.loads(marker.read_text(encoding="utf-8"))
     except Exception:
         current = {}
-    live_main = target / "scripts" / "main.lua"
     if current == signature and live_main.is_file() and (target / "dlls" / "main.dll").is_file() and (target / "enabled.txt").is_file():
         text = live_main.read_text(encoding="utf-8-sig", errors="replace")
         if re.search(r"(?m)^\s*DEBUG_BRIDGE\s*=\s*false\s*$", text):
@@ -3370,7 +3375,7 @@ def capture_authoritative_runtimes(game_root: str) -> dict:
     return {**captured, "status": runtime_prerequisite_status(game_root)}
 
 
-def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "") -> dict:
+def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
     """Serialize runtime repair with startup/manual update operations."""
     with RUNTIME_MUTATION_LOCK:
         return _ensure_base_runtimes_unlocked(
@@ -3378,6 +3383,7 @@ def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, u
             allow_ue4ss_download=allow_ue4ss_download,
             ue4ss_source_url=ue4ss_source_url,
             runeschema_source_url=runeschema_source_url,
+            auto_rsdwtools=auto_rsdwtools,
         )
 
 
@@ -3440,7 +3446,7 @@ def activate_runeschema_variant(game_root: str, variant: str = "standard") -> di
                 "destination": str(live)}
 
 
-def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "") -> dict:
+def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
     """Self-heal UE4SS and RuneSchema before a hosted World is used.
 
     Server Setup owns these machine-wide prerequisites. UE4SS can bootstrap
@@ -3520,7 +3526,7 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
             errors.append("RuneSchema is missing. Load a core ZIP, configure a GitHub/release ZIP source, or use a launcher build containing the bundled RuneSchema core.")
 
     try:
-        rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir)
+        rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir, allow_update=auto_rsdwtools)
         if rsdwtools.get("changed"):
             repaired.append("RSDWTools bridge baseline installed/updated (DEBUG_BRIDGE=false)")
         if not rsdwtools.get("ok"):

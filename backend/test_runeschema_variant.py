@@ -54,6 +54,18 @@ def main():
             systems.RUNESCHEMA_RUNTIME_DIR = old_runtime
             systems.RUNESCHEMA_STANDARD_RUNTIME_DIR = old_standard
 
+    with tempfile.TemporaryDirectory() as tmp:
+        mods = Path(tmp) / "Mods"
+        tools = mods / "RSDWTools"
+        (tools / "scripts").mkdir(parents=True)
+        (tools / "dlls").mkdir()
+        (tools / "scripts" / "main.lua").write_text("DEBUG_BRIDGE = false", encoding="utf-8")
+        (tools / "dlls" / "main.dll").write_bytes(b"retained-base-mod")
+        result = systems.ensure_rsdwtools_baseline(mods, allow_update=False)
+        assert result["ok"] is True and result["update_skipped"] is True
+        assert (tools / "dlls" / "main.dll").read_bytes() == b"retained-base-mod"
+        assert (tools / "enabled.txt").is_file()
+
     print("RuneSchema variant tests passed")
 
 

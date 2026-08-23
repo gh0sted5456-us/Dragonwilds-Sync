@@ -242,6 +242,14 @@ def main():
             "duration_seconds": round(duration, 3), "output": "\n".join(outputs),
         })
         print(f"[{case['id']}] {status} in {duration:.2f}s", flush=True)
+        if status != "PASS":
+            # CI workspaces disappear after a failed packaging job. Emit the
+            # already-sanitized failing command output as well as retaining it
+            # in the report so a platform-only regression is actionable.
+            failure_output = "\n".join(outputs)
+            if len(failure_output) > 40_000:
+                failure_output = "[failure output truncated]\n" + failure_output[-40_000:]
+            print(failure_output, flush=True)
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
     args.output_dir.mkdir(parents=True, exist_ok=True)
     json_path = args.output_dir / f"system-tests-{stamp}.json"

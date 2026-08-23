@@ -19,10 +19,32 @@ const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-ch
 const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
 const popupSafety = fs.readFileSync(path.join(root, 'renderer', 'release-popup-safety.js'), 'utf8');
 const recommendedPlacardsCss = fs.readFileSync(path.join(root, 'renderer', 'release-recommended-placards.css'), 'utf8');
+const electronMain = fs.readFileSync(path.join(root, 'electron', 'main-v2.cjs'), 'utf8');
+const publicServers = fs.readFileSync(path.join(root, 'renderer', 'public-server-list.js'), 'utf8');
+const liveHelp = fs.readFileSync(path.join(root, 'renderer', 'release-vnext.js'), 'utf8');
+const liveHelpMedia = fs.readFileSync(path.join(root, 'renderer', 'release-vnext-help-media.js'), 'utf8');
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
+
+const websiteBase = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/';
+const websiteRepository = 'https://github.com/gh0sted5456-us/Dragonwilds-Sync-Web';
+const websiteRaw = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/help/';
+const applicationRepository = 'https://github.com/gh0sted5456-us/Dragonwilds-Sync';
+assert(source.includes(websiteBase) && source.includes(`${websiteBase}helpy.html`) &&
+  electronMain.includes('/Dragonwilds-Sync-Web/helpy.html') && publicServers.includes(websiteBase),
+  'Public website, Helpy, and directory-page links must use the standalone website deployment.');
+assert(liveHelp.includes(`${websiteRaw}manifest.json`) && liveHelpMedia.includes(websiteRaw) &&
+  websiteRepository.endsWith('/Dragonwilds-Sync-Web'),
+  'Live Help content must come from the standalone website repository.');
+assert(source.includes(`const repositoryUrl = '${applicationRepository}'`) &&
+  source.includes(`appUpdateApply({ repositoryUrl: '${applicationRepository}'`),
+  'Application update checks and installers must remain on the application repository.');
+assert(![source,electronMain,publicServers,liveHelp,liveHelpMedia,releasePolish].some((text)=>
+  text.includes('gh0sted5456-us.github.io/Dragonwilds-Sync/') ||
+  text.includes('Dragonwilds-Sync/main/help/')),
+  'Runtime application sources must not retain the retired website or Help paths.');
 
 assert(characterLayout.includes("/^background$/i") && characterLayout.includes('backgroundPanel.appendChild(background)') &&
   characterTabsCss.includes('grid-template-columns:repeat(4,minmax(100px,1fr))!important'),

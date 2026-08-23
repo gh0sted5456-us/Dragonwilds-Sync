@@ -135,7 +135,7 @@
     const section=document.createElement('section'); section.id='github-release-changelog'; section.className='settings-section';
     section.innerHTML='<div class="panel-header"><div><h2>GitHub Changelog</h2><span class="panel-subtitle">Release notes update from GitHub without requiring a new launcher build.</span></div><button class="btn ghost compact-btn" data-open-changelog-page>Open Full Changelog</button></div><div data-changelog-body class="empty-state">Loading current release notes…</div>';
     page.appendChild(section);
-    section.querySelector('[data-open-changelog-page]')?.addEventListener('click',()=>api.openInAppBrowser?.({url:'https://gh0sted5456-us.github.io/Dragonwilds-Sync/changelog.html',purpose:'docs'}));
+    section.querySelector('[data-open-changelog-page]')?.addEventListener('click',()=>api.openInAppBrowser?.({url:'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/downloads.html',purpose:'docs'}));
     try {
       const response=await fetch(CHANGELOG_URL,{cache:'no-store'}); if(!response.ok)throw new Error(`HTTP ${response.status}`); const data=await response.json();
       const rows=data.releases||[]; const body=section.querySelector('[data-changelog-body]');

@@ -50,7 +50,7 @@ function allowedHelpyNavigation(value) {
     const u = new URL(String(value || ''));
     return u.protocol === 'https:'
       && u.hostname.toLowerCase() === 'gh0sted5456-us.github.io'
-      && u.pathname.replace(/\/+$/, '') === '/Dragonwilds-Sync/helpy.html';
+      && u.pathname.replace(/\/+$/, '') === '/Dragonwilds-Sync-Web/helpy.html';
   } catch (_) { return false; }
 }
 
@@ -59,7 +59,7 @@ function allowedSyncHomeNavigation(value) {
     const u = new URL(String(value || ''));
     return u.protocol === 'https:'
       && u.hostname.toLowerCase() === 'gh0sted5456-us.github.io'
-      && (u.pathname === '/Dragonwilds-Sync/' || u.pathname.startsWith('/Dragonwilds-Sync/'));
+      && (u.pathname === '/Dragonwilds-Sync-Web/' || u.pathname.startsWith('/Dragonwilds-Sync-Web/'));
   } catch (_) { return false; }
 }
 

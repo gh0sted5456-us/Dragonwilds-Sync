@@ -2,9 +2,8 @@
    Discovery-only: this consumes the same merged Cloudflare response as the
    website and never imports admin credentials, World passwords, or authority. */
 (() => {
-  const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html';
+  const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/';
   const API_URL = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds';
-  const FALLBACK_URL = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/assets/public-worlds-fallback.json';
   const LINK_KEY = 'dragonwilds-sync-public-server-list-link';
   const VIEW_KEY = 'dragonwilds-sync-public-server-list-view';
   const REFRESH_MS = 30000;
@@ -41,7 +40,7 @@
 
     const host = url.hostname.toLowerCase();
     const path = url.pathname.toLowerCase().replace(/\/$/, '');
-    if (host === 'gh0sted5456-us.github.io' && path.startsWith('/dragonwilds-sync')) return API_URL;
+    if (host === 'gh0sted5456-us.github.io' && path.startsWith('/dragonwilds-sync-web')) return API_URL;
     if (host === 'dragonwilds-sync-directory.dragonwilds.workers.dev') {
       if (['/api/v1/worlds', '/worlds', '/api/worlds', '/manifest'].includes(path)) return url.toString();
       url.pathname = '/api/v1/worlds'; url.search = ''; url.hash = '';
@@ -199,16 +198,9 @@
     if (!force && rows.length && Date.now() - lastLoadedAt < 5000) { renderRows(); return; }
     setStatus('Loading public servers…');
     try {
-      let response;
-      let directorySource = 'live directory';
-      try {
-        response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      } catch (liveError) {
-        response = await fetch(FALLBACK_URL, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-        if (!response.ok) throw new Error(`Live directory ${liveError.message}; snapshot HTTP ${response.status}.`);
-        directorySource = `published snapshot; live directory ${liveError.message}`;
-      }
+      const response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+      if (!response.ok) throw new Error(`Live directory HTTP ${response.status}`);
+      const directorySource = 'live directory';
       const payload = await response.json();
       const source = Array.isArray(payload?.worlds) ? payload.worlds : Array.isArray(payload) ? payload : [];
       const unique = new Map();

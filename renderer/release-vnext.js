@@ -2,7 +2,7 @@
   'use strict';
 
   const api = window.dragonwilds;
-  const HELP_MANIFEST_URL = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/help/manifest.json';
+  const HELP_MANIFEST_URL = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/help/manifest.json';
   const HELP_CACHE = 'dragonwilds-sync-help-v1';
   let stateCache = null;
   let stateFetchedAt = 0;

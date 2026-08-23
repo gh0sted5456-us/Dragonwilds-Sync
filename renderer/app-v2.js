@@ -1031,7 +1031,7 @@
         partySize: extra.playerCount,
         partyMax: extra.playerMax,
         buttons: [
-          { label: 'Dragonwilds Sync', url: 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/' },
+          { label: 'Dragonwilds Sync', url: 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/' },
           { label: 'View on GitHub', url: 'https://github.com/gh0sted5456-us/Dragonwilds-Sync' },
         ],
       });
@@ -4165,7 +4165,7 @@
         <div class="help-tip-strip"><strong>${escapeHtml(helpUi.tips)}</strong>${guide.tips.map((tip)=>`<span>${escapeHtml(tip)}</span>`).join('')}</div>` : `<button class="btn ghost" data-help-category="${escapeHtml(id)}">${escapeHtml(helpUi.read)}</button>`}
     </article>`;
     const helpyTheme=state.data?.application?.glass_theme?'glass':state.data?.application?.theme==='light'?'white':'dark';
-    const helpyUrl=`https://gh0sted5456-us.github.io/Dragonwilds-Sync/helpy.html?embed=1&theme=${helpyTheme}#getting-started`;
+    const helpyUrl=`https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/helpy.html?embed=1&theme=${helpyTheme}#getting-started`;
     return `<div class="content help-page helpy-website-shell"><div class="helpy-focus-toolbar"><div><strong>Helpy</strong><span>Getting Started · website-managed guide</span></div><div class="header-actions"><button class="btn ghost compact-btn" id="helpy-reload">Refresh</button><button class="btn ghost compact-btn" data-open-external="${escapeHtml(helpyUrl)}">Open in browser ↗</button></div></div><section class="helpy-webview-frame"><webview id="helpy-webview" src="${escapeHtml(helpyUrl)}" partition="persist:dragonwilds-help"></webview><div class="helpy-webview-cover"><div class="spinner"></div><strong>Opening Helpy...</strong><span>Loading the focused Getting Started guide.</span></div></section>
       <details class="helpy-offline-fallback"><summary><span>Packaged offline guide</span><small>Available if the website cannot load</small></summary><div class="page-header help-page-header"><div class="help-title-lockup"><img class="help-brand-icon" src="assets/application-icon.png" alt=""/><div><div class="eyebrow">${escapeHtml(helpUi.fieldGuide)}</div><h1>${escapeHtml(helpUi.title)}</h1><div class="page-subtitle">${escapeHtml(helpUi.subtitle)}</div></div></div><div class="help-search"><span>⌕</span><input class="field" id="help-search" value="${escapeHtml(state.helpSearch||'')}" placeholder="${escapeHtml(helpUi.search)}"/><button class="btn ghost" id="help-search-clear" ${state.helpSearch?'':'disabled'}>${escapeHtml(helpUi.clear)}</button></div></div>
       <div class="help-layout"><nav class="help-nav" aria-label="Help categories">${categories.map(([id,icon,label])=>`<button class="${state.helpCategory===id&&!query?'active':''}" data-help-category="${id}"><span>${icon}</span>${escapeHtml(label)}</button>`).join('')}</nav><div class="help-content">${query ? `<div class="help-results-head"><strong>${results.length}</strong><span>${escapeHtml(helpUi.results)} “${escapeHtml(state.helpSearch)}”</span></div>${results.length?results.map(([id,guide])=>guideCard(guide,id,true)).join(''):`<div class="empty-state">${escapeHtml(helpUi.none)}</div>`}` : guideCard(selected,state.helpCategory)}</div></div>

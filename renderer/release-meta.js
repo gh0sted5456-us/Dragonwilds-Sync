@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.17',
-  name: 'V2.7.17 · Accurate Mod Management',
+  version: '2.7.18',
+  name: 'V2.7.18 · Standalone Website Boundary',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.18',
+    title: 'Standalone Website Boundary',
+    items: [
+      'The desktop website, Helpy, Discord website button, downloads page, and live Help content now use the standalone Dragonwilds-Sync-Web repository and GitHub Pages deployment.',
+      'Application update checks, portable installers, release history, and application source remain on the separate Dragonwilds-Sync application repository.',
+      'The desktop public server browser connects directly to the authoritative Cloudflare Sync directory because the standalone website intentionally does not publish a server roster or static snapshot.',
+      'Regression guards prevent future application changes from restoring the retired website path or mixing website content with application updater authority.',
+    ],
+  }, {
     version: '2.7.17',
     title: 'Accurate Mod Management',
     items: [

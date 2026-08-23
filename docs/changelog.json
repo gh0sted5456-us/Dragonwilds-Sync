@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.18",
+      "title": "Dragonwilds Sync V2.7.18",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Website, Helpy, downloads-page, and live Help links use the standalone Dragonwilds-Sync-Web deployment.",
+        "Application updates and release downloads remain on the separate Dragonwilds-Sync application repository.",
+        "The public server browser uses the live Cloudflare Sync directory without a retired static website snapshot.",
+        "Repository-boundary regression checks prevent the website and application authorities from being mixed again."
+      ]
+    },
+    {
       "version": "2.7.17",
       "title": "Dragonwilds Sync V2.7.17",
       "date": "2026-08-23",

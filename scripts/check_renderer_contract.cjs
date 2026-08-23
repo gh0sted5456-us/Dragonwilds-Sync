@@ -70,14 +70,19 @@ assert(source.includes('recommended-mod-card recommended-mod-placard has-placard
   recommendedPlacardsCss.includes('opacity:.11'),
   'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
-assert(source.includes('data-webhost-tab="manifest">Directory Hosts') &&
+assert(source.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
   source.includes('data-webhost-tab="remote">Server Management'),
   'The normal Sync workspace must expose directory and Server Management configuration.');
-assert(source.includes('data-webhost-tab="live">WebGUI Preview') &&
-  source.includes('data-webhost-tab="settings">Sync Settings') &&
+assert(source.includes("syncTab('live','WebGUI Preview')") &&
+  source.includes("syncTab('settings','Website &amp; Directory')") &&
   !source.includes('data-webhost-tab="home">Server Directory') &&
   !source.includes('SYNC_HOME_URL'),
   'Sync settings, WebGUI preview, and the public directory must remain distinct tabs.');
+assert(source.includes("if(!routedWebhost&&!standaloneHostWorkspace&&externalTab==='live')") &&
+  source.includes("if(state.route==='webhost'&&state.webhostTab==='live')return null") &&
+  source.includes("event.key==='ArrowRight'") && source.includes("event.key==='ArrowLeft'") &&
+  source.includes('view.reloadIgnoringCache()') && source.includes("classList.toggle('mobile',mode==='mobile')"),
+  'Sync tabs must preserve routed selection, support keyboard navigation, and keep the WebGUI preview mounted between refreshes.');
 assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") &&

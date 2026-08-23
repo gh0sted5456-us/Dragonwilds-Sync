@@ -132,8 +132,8 @@
 
     root.querySelectorAll('button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
       const text = normalize(node.textContent);
-      if (text === 'webhost' || text === 'web hosting') node.textContent = 'Website & Directory';
-      if (text === 'remote server' || text === 'remote server admin') node.textContent = 'Remote Users & Access';
+      if ((text === 'webhost' || text === 'web hosting') && node.textContent !== 'Website & Directory') node.textContent = 'Website & Directory';
+      if ((text === 'remote server' || text === 'remote server admin') && node.textContent !== 'Remote Users & Access') node.textContent = 'Remote Users & Access';
     });
 
     root.querySelectorAll('[data-nexus-account], [data-nexus-login], #nexus-account-panel, #nexus-auth-panel, .nexus-account-settings').forEach(hideLegacyEntry);

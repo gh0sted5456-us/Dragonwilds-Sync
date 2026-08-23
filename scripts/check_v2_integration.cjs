@@ -31,7 +31,7 @@ must(index.includes('release-v2-trash.css') && index.includes('release-v2-trash.
 must(css.includes('grid-auto-rows:1fr') && css.includes('mask-image:linear-gradient'), 'Uniform placard/faded banner contract is missing');
 must(cardSizing.includes("Math.max(...cards.map") && cardSizing.includes('card.style.minHeight'), 'Placards are not normalized to the tallest visible profile');
 must(css.includes('data-dws-icon-mode="color"') && css.includes('data-dws-icon-mode="black"') && css.includes('data-dws-icon-mode="white"') && css.includes('data-dws-icon-mode="adaptive"'), 'Color/black/white/adaptive icon modes are incomplete');
-must(js.includes('data-webhost-tab="remote"') && js.includes("remoteTab.textContent='Server Management'") && js.includes('Remote Server Manager') && js.includes('remoteEnabled') && js.includes('webHostActivated'), 'Integrated Sync Remote Server Manager contract is missing');
+must(js.includes('data-webhost-tab="remote"') && js.includes("remoteTab.textContent!=='Server Management'") && js.includes('Remote Server Manager') && js.includes('remoteEnabled') && js.includes('webHostActivated'), 'Integrated Sync Remote Server Manager contract is missing');
 must(js.includes('remoteTab.hidden=false') && js.includes("remoteTab.style.removeProperty('display')") && !js.includes('remoteTab.hidden=!remoteEnabled'), 'Server Management must remain visible while disabled so setup does not flicker away');
 must(appV2.includes("api.invoke('world.discovery.add'") && appV2.includes("api.invoke('world.status',{id:world.id,compact:true}") && appV2.includes("api.invoke('world.directory.refresh', {compact:true}") && !appV2.includes('await prefetchVisibleWorldPresentation();'), 'Discovery profiles and background refreshes must use the durable compact lifecycle');
 must(legacyService.includes('Discovery is a read-only client operation') && !legacyService.includes('apply_firewall_spec(discovery_spec, action="Query")'), 'LAN scan must not elevate or mutate the Linux firewall');
@@ -41,7 +41,7 @@ must(directoryHost.indexOf('if not directory_enabled and remote_enabled:') < dir
 must(!appV2.includes("navButton('worlds'") && appV2.includes("'worlds'].includes(state.route)") && appV2.includes('data-webhost-tab="manifest"') &&
   !appV2.includes('data-webhost-tab="home"') && !appV2.includes('SYNC_HOME_URL'),
   'Public World discovery must live under Dragonwilds while Sync remains configuration-only');
-must(appV2.includes('Server Management') && appV2.includes('data-webhost-tab="settings">Sync Settings'), 'Server Management login and local Sync configuration are not separated');
+must(appV2.includes('Server Management') && appV2.includes("syncTab('settings','Website &amp; Directory')"), 'Server Management login and local Sync configuration are not separated');
 must(legacyService.includes('host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))') && !legacyService.includes('advanced["remote_server_enabled"] = True\n                advanced["remote_server_choice_made"] = True'), 'Webhost must not silently enable Remote Login');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');
 must(!web.includes('dws-router-password'), 'The routing hub must never collect a target server password');

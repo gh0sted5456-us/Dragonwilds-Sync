@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.19",
+      "title": "Dragonwilds Sync V2.7.19",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "All four Sync workspaces retain their selected tab instead of snapping back to Website & Directory.",
+        "WebGUI Preview stays mounted during background status cycles and reloads in place on request.",
+        "Desktop and Mobile preview controls update without rebuilding the Sync page.",
+        "Keyboard tab navigation and idempotent UI observers prevent focus loss and repaint loops."
+      ]
+    },
+    {
       "version": "2.7.18",
       "title": "Dragonwilds Sync V2.7.18",
       "date": "2026-08-23",

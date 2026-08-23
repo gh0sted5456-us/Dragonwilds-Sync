@@ -38,12 +38,27 @@ app.whenReady().then(async()=>{
     '[data-route="profile"]','[data-profile-tab="characters"]','[data-profile-tab="user"]',
     '[data-route="world-management"]','[data-world-management-tab="game-setup"]','[data-world-management-tab="worlds"]',
     '[data-route="settings"]','[data-settings-tab="mods"]','[data-settings-tab="application"]',
-    '[data-route="help"]','[data-route="worlds"]',
+    '[data-route="help"]','[data-route="webhost"]','[data-webhost-tab="manifest"]',
+    '[data-webhost-tab="remote"]','[data-webhost-tab="live"]','[data-webhost-tab="settings"]','[data-route="worlds"]',
   ];
   for(let round=0;round<3;round+=1){for(const selector of selectors){
     const clicked=await win.webContents.executeJavaScript(`(()=>{const el=document.querySelector(${JSON.stringify(selector)});if(!el)return false;el.click();return true;})()`);
     if(clicked)await wait(260);
   }}
+  const assertSyncTabSticks=async(key)=>{
+    const exists=await win.webContents.executeJavaScript(`!!document.querySelector('.webhost-tabs [data-webhost-tab="${key}"]')`);
+    if(!exists)return;
+    await win.webContents.executeJavaScript(`document.querySelector('.webhost-tabs [data-webhost-tab="${key}"]').click()`);
+    await wait(450);
+    const selected=await win.webContents.executeJavaScript(`document.querySelector('.webhost-tabs [data-webhost-tab="${key}"]')?.classList.contains('active')===true`);
+    if(!selected)throw new Error(`Sync tab ${key} repainted or lost its selected state.`);
+  };
+  await win.webContents.executeJavaScript("document.querySelector('[data-route=\"webhost\"]')?.click()");
+  await wait(260);
+  await assertSyncTabSticks('manifest');
+  await assertSyncTabSticks('remote');
+  await assertSyncTabSticks('live');
+  await assertSyncTabSticks('settings');
   await wait(300);
   const metrics=await win.webContents.executeJavaScript("window.__DWSYNC_SWAP_METRICS__?.snapshot()||null");
   if(!metrics||metrics.count<5)throw new Error(`Too few measured swaps: ${JSON.stringify(metrics)}`);

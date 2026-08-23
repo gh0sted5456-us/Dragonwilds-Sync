@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.18',
-  name: 'V2.7.18 · Standalone Website Boundary',
+  version: '2.7.19',
+  name: 'V2.7.19 · Stable Sync Workspaces',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.19',
+    title: 'Stable Sync Workspaces',
+    items: [
+      'Website & Directory, Manifest & Heartbeats, Server Management, and WebGUI Preview retain their selected workspace instead of snapping back to the first tab.',
+      'The WebGUI preview remains mounted during background status cycles, and Desktop/Mobile viewport changes no longer rebuild the Sync page.',
+      'Refresh Preview reloads the embedded site in place after its first load, preventing flashes and lost preview state.',
+      'Sync tabs expose proper tab semantics plus Left, Right, Home, and End keyboard navigation while retaining focus after selection.',
+      'Legacy presentation observers use one canonical set of Sync tab labels and skip unchanged DOM writes, preventing repaint loops.',
+    ],
+  }, {
     version: '2.7.18',
     title: 'Standalone Website Boundary',
     items: [

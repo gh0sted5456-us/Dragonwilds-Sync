@@ -149,11 +149,11 @@
     if(!/server management|sync/i.test(root.querySelector('.page-header h1')?.textContent||'')) return;
     root.querySelectorAll('[data-webhost-tab]').forEach((button)=>{
       const key=button.dataset.webhostTab||'';
-      if(key==='settings') button.textContent='WebHost';
-      if(key==='remote') button.textContent='Server Management';
+      const label={settings:'Website & Directory',manifest:'Manifest & Heartbeats',remote:'Server Management',live:'WebGUI Preview'}[key];
+      if(label&&button.textContent!==label) button.textContent=label;
     });
     const add=root.querySelector('#add-webhost-user');
-    if(add){add.textContent='+ Add Remote User';add.title='Create login credentials and assign World-scoped permissions';}
+    if(add){if(add.textContent!=='+ Add Remote User')add.textContent='+ Add Remote User';add.title='Create login credentials and assign World-scoped permissions';}
   }
 
   function enhance() {

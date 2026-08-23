@@ -125,7 +125,7 @@ def _load_index() -> dict:
     value = read_json(INDEX_PATH, {"version": 3, "entries": {}})
     if not isinstance(value, dict):
         value = {"version": 3, "entries": {}}
-    value.setdefault("version", 3); value.setdefault("entries", {})
+    value.setdefault("version", 3); value.setdefault("entries", {}); value.setdefault("deleted_entries", {})
     return value
 
 
@@ -190,6 +190,7 @@ def refresh_repository() -> dict:
     REPOSITORY_ROOT.mkdir(parents=True, exist_ok=True)
     index = _load_index()
     previous = index.get("entries") or {}
+    deleted_entries = index.get("deleted_entries") if isinstance(index.get("deleted_entries"), dict) else {}
     entries: dict[str, dict] = {}
     scanned_at = time.time()
     for kind, profile_id, profile_file in _profile_specs():
@@ -205,6 +206,8 @@ def refresh_repository() -> dict:
                 continue
             source = normalize_mod_source((override or {}).get("source"))
             entry_id = _entry_id(group, name, source)
+            if entry_id in deleted_entries:
+                continue
             observed_hash, observed_file_count, observed_size = _content_hash(paths)
             old = previous.get(entry_id) if isinstance(previous, dict) else None
             old = old if isinstance(old, dict) else {}
@@ -257,7 +260,8 @@ def refresh_repository() -> dict:
         entry["replacement_detected"] = replacement_count > 0
         entry["scan_status"] = "replaced" if replacement_count else ("new" if entry.pop("_new", False) else "unchanged")
         entry.pop("_new", None)
-    index = {"version": 3, "root": str(REPOSITORY_ROOT), "updated_at": scanned_at, "entries": entries}
+    index = {"version": 3, "root": str(REPOSITORY_ROOT), "updated_at": scanned_at,
+             "entries": entries, "deleted_entries": deleted_entries}
     write_json(INDEX_PATH, index)
     return public_index(index)
 
@@ -370,6 +374,44 @@ def save_repository_file(entry_id: str, relative_path: str, content: str) -> dic
             "path": str(path), "language": opened["language"], "content_hash": content_hash}
 
 
+def delete_repository_entry(entry_id: str) -> dict:
+    """Delete only the canonical master copy; linked profile payloads remain intact."""
+    safe_id = _safe_component(entry_id, "Repository entry")
+    index = _load_index()
+    entry = (index.get("entries") or {}).pop(safe_id, None)
+    index.setdefault("deleted_entries", {})[safe_id] = {"deleted_at": time.time(), "name": str((entry or {}).get("name") or safe_id)}
+    payload = (PAYLOAD_ROOT / safe_id).resolve()
+    if payload.exists() and PAYLOAD_ROOT.resolve() in payload.parents:
+        shutil.rmtree(payload)
+    index["updated_at"] = time.time()
+    write_json(INDEX_PATH, index)
+    return {"ok": True, "removed": bool(entry), "entry_id": safe_id, "repository": public_index(index)}
+
+
+def remove_profile_entry(kind: str, profile_id: str, key: str) -> dict:
+    """Remove a mod from one APPDATA-owned profile snapshot, never from siblings."""
+    normalized_kind = str(kind or "").strip().lower()
+    group, separator, name = str(key or "").partition("::")
+    if not separator or group not in SUPPORTED_GROUPS:
+        raise ValueError("A valid mod key is required")
+    removed: list[str] = []
+    for path in _paths_for(normalized_kind, profile_id, group, name):
+        resolved = path.resolve()
+        profile_root = _profile_dir(normalized_kind, profile_id).resolve()
+        if profile_root not in resolved.parents:
+            raise ValueError("Profile mod path escaped the selected profile")
+        if resolved.is_dir(): shutil.rmtree(resolved)
+        elif resolved.exists(): resolved.unlink()
+        removed.append(str(resolved))
+    profile_path = _profile_file(normalized_kind, profile_id)
+    profile = read_json(profile_path, {})
+    if isinstance(profile.get("unit_overrides"), dict):
+        profile["unit_overrides"].pop(key, None)
+        write_json(profile_path, profile)
+    return {"ok": True, "removed": removed, "kind": normalized_kind, "profile_id": profile_id,
+            "key": key, "repository": refresh_repository()}
+
+
 def _remove_existing(kind: str, profile_id: str, group: str, name: str) -> None:
     for path in _paths_for(kind, profile_id, group, name):
         if path.is_dir(): shutil.rmtree(path)
@@ -413,6 +455,7 @@ def publish_from_profile(kind: str, profile_id: str, key: str, *, propagate: boo
         raise FileNotFoundError("The selected profile mod payload was not found")
     index = _load_index()
     entry_id = _entry_id(group, name, source)
+    index.setdefault("deleted_entries", {}).pop(entry_id, None)
     old = (index.get("entries") or {}).get(entry_id) or {}
     content_hash, file_count, size = _content_hash(paths)
     entry = {**old, "id": entry_id, "key": key, "name": name, "group": group, "source": source,

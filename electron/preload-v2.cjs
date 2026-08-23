@@ -37,6 +37,7 @@ const READ_POLICIES = Object.freeze({
   'singleplayer.config.list': { ttl: 30000, stale: 120000 },
   'server.world.config.list': { ttl: 30000, stale: 120000 },
   'singleplayer.mod.files': { ttl: 30000, stale: 120000 },
+  'server.world.mod.files': { ttl: 60000, stale: 600000 },
   'singleplayer.profile.get': { ttl: 30000, stale: 120000 },
   'world.save.editor.read': { ttl: 10000, stale: 30000 },
   'server.world.save.status': { ttl: 10000, stale: 30000 },
@@ -131,6 +132,7 @@ function invalidateAfterMutation(method) {
   }
   if (name.startsWith('server.world.mod.') || name.startsWith('server.world.activate') || name.startsWith('server.world.update')) {
     invalidatePrefix('server.world.inventory::');
+    if (name !== 'server.world.mod.files') invalidatePrefix('server.world.mod.files::');
   }
   if (name.startsWith('server.world.config.') && name !== 'server.world.config.list') invalidatePrefix('server.world.config.list::');
   if (name.startsWith('server.backups.') && name !== 'server.backups.list') invalidatePrefix('server.backups.list::');

@@ -141,6 +141,12 @@ def main() -> None:
         client_layout.LOCAL_APPDATA = root / "LocalAppData"
         live_ue4ss = inner / "Binaries/Win64/ue4ss/Mods"
         live_paks = inner / "Content/Paks/~Mods"
+        client_core = inner / "Binaries/Win64/ue4ss"
+        (inner / "Binaries/Win64/dwmapi.dll").write_bytes(b"bootstrap")
+        (client_core / "UE4SS.dll").parent.mkdir(parents=True, exist_ok=True)
+        (client_core / "UE4SS.dll").write_bytes(b"core")
+        (client_core / "UE4SS-settings.ini").write_text("[General]\n", encoding="utf-8")
+        (client_core / "imgui.ini").write_text("[Window]\n", encoding="utf-8")
         (live_ue4ss / "RuneSchema/DLLs").mkdir(parents=True, exist_ok=True)
         (live_ue4ss / "RuneSchema/DLLs/main.dll").write_bytes(b"managed-baseline")
         (live_ue4ss / "WorldA/Scripts").mkdir(parents=True, exist_ok=True)
@@ -173,6 +179,9 @@ def main() -> None:
         assert json.loads(marker.read_text(encoding="utf-8"))["profile_id"] == "private-a"
         assert (live_ue4ss / "WorldA/Scripts/main.lua").read_text(encoding="utf-8") == "return 'A-updated'\n"
         assert (live_ue4ss / "RuneSchema/DLLs/main.dll").read_bytes() == b"managed-baseline"
+        assert (inner / "Binaries/Win64/dwmapi.dll").read_bytes() == b"bootstrap"
+        assert (client_core / "UE4SS.dll").read_bytes() == b"core"
+        assert (client_core / "UE4SS-settings.ini").is_file() and (client_core / "imgui.ini").is_file()
 
         # RuneSchema also exists in the wild without a Mods child. Direct-root
         # child mods (including their internal PAK payloads) must scan, snapshot,

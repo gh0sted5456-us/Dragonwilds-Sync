@@ -16,6 +16,7 @@ from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
 MAX_CONFIG_BYTES = 2 * 1024 * 1024
 MAX_CONFIG_FILES = 600
+MAX_MOD_FILES = 5000
 SENSITIVE_SERVER_CONFIG_NAMES = {"dedicatedserver.ini"}
 SENSITIVE_NAME_HINTS = ("password", "secret", "token", "apikey", "api_key", "serverkey", "server_key")
 LAUNCHER_INFRASTRUCTURE_UE4SS_DIRS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
@@ -76,6 +77,126 @@ def is_readonly(path: Path) -> bool:
 
 def _language(path: Path) -> str:
     return {".json": "json", ".jsonc": "jsonc", ".lua": "lua", ".ini": "ini", ".cfg": "ini", ".txt": "plaintext"}.get(path.suffix.lower(), "plaintext")
+
+
+def _safe_mod_key(key: str) -> tuple[str, str]:
+    group, separator, name = str(key or "").partition("::")
+    if not separator or group not in {"ue4ss_mod", "runeschema_mod", "pak_mod"}:
+        raise ValueError("A valid UE4SS, RuneSchema, or PAK mod key is required.")
+    if not name.strip() or name in {".", ".."} or any(token in name for token in ("/", "\\")):
+        raise ValueError("The mod name is not a safe path component.")
+    return group, name
+
+
+def _matching_child(root: Path, name: str) -> Path:
+    direct = root / name
+    if direct.exists():
+        return direct
+    wanted = name.casefold()
+    if root.is_dir():
+        for child in root.iterdir():
+            if child.name.casefold() == wanted:
+                return child
+    return direct
+
+
+def _server_mod_paths(profile_id: str, server_root: str, key: str, active: bool) -> tuple[Path, list[Path]]:
+    group, name = _safe_mod_key(key)
+    if active:
+        layout = resolve_server_layout(server_root)
+        group_root = {
+            "ue4ss_mod": layout.ue4ss_mods_dir,
+            "runeschema_mod": layout.runeschema_mods_dir,
+            "pak_mod": layout.paks_mods_dir,
+        }[group].resolve()
+    else:
+        group_root = (_profile_dir(profile_id) / "mods" / {
+            "ue4ss_mod": "ue4ss_mods",
+            "runeschema_mod": "runeschema_mods",
+            "pak_mod": "pak_mods",
+        }[group]).resolve()
+    if group != "pak_mod":
+        candidate = _matching_child(group_root, name).resolve()
+        return group_root, [candidate] if candidate.exists() and (candidate == group_root or group_root in candidate.parents) else []
+    wanted = name.casefold()
+    matches: list[Path] = []
+    if group_root.is_dir():
+        for child in group_root.iterdir():
+            clean = child.stem if child.is_file() else child.name
+            if len(clean) > 3 and clean[:2].isdigit() and clean[2] == "_":
+                clean = clean[3:]
+            if clean.casefold() == wanted:
+                matches.append(child.resolve())
+    return group_root, matches
+
+
+def list_server_mod_files(profile_id: str, server_root: str, key: str, active: bool, *, include_all: bool = False) -> dict:
+    _group_root, paths = _server_mod_paths(profile_id, server_root, key, active)
+    if not paths:
+        raise FileNotFoundError("The selected mod was not found in this Server profile's resolved mod path.")
+    rows: list[dict] = []
+    unit_root = paths[0] if len(paths) == 1 and paths[0].is_dir() else paths[0].parent
+    for source in paths:
+        members = [source] if source.is_file() else source.rglob("*")
+        for path in members:
+            if not path.is_file():
+                continue
+            size = path.stat().st_size
+            editable = path.suffix.lower() in CONFIG_EXTENSIONS and size <= MAX_CONFIG_BYTES
+            if include_all or editable:
+                relative = path.relative_to(unit_root).as_posix()
+                rows.append({"relative_path": relative, "name": path.name, "size": size,
+                             "language": _language(path), "editable": editable})
+            if len(rows) >= MAX_MOD_FILES:
+                break
+    return {"files": sorted(rows, key=lambda row: row["relative_path"].casefold()),
+            "root": str(unit_root), "active": active, "profile_id": profile_id, "unit_key": key}
+
+
+def _server_mod_file(profile_id: str, server_root: str, key: str, relative_path: str, active: bool) -> tuple[Path, Path]:
+    listing = list_server_mod_files(profile_id, server_root, key, active, include_all=True)
+    root = Path(listing["root"]).resolve()
+    target = _resolve_inside(root, relative_path)
+    allowed = {str(row["relative_path"]).casefold() for row in listing["files"]}
+    if str(relative_path or "").replace("\\", "/").casefold() not in allowed:
+        raise FileNotFoundError("The requested file is not part of the selected Server mod.")
+    return root, target
+
+
+def open_server_mod_file(profile_id: str, server_root: str, key: str, relative_path: str, active: bool) -> dict:
+    root, target = _server_mod_file(profile_id, server_root, key, relative_path, active)
+    if target.suffix.lower() not in CONFIG_EXTENSIONS or target.stat().st_size > MAX_CONFIG_BYTES:
+        raise ValueError("This Server mod file is not editable in Dragonwilds Sync.")
+    return {"relative_path": target.relative_to(root).as_posix(), "name": target.name,
+            "language": _language(target), "content": target.read_text(encoding="utf-8-sig", errors="replace"),
+            "path": str(target), "folder": str(target.parent), "root": str(root)}
+
+
+def save_server_mod_file(profile_id: str, server_root: str, key: str, relative_path: str, content: str, active: bool) -> dict:
+    root, target = _server_mod_file(profile_id, server_root, key, relative_path, active)
+    encoded = str(content).encode("utf-8")
+    if target.suffix.lower() not in CONFIG_EXTENSIONS or len(encoded) > MAX_CONFIG_BYTES:
+        raise ValueError("This Server mod file is not editable in Dragonwilds Sync.")
+    if target.suffix.lower() == ".json":
+        try: json.loads(str(content))
+        except Exception as exc: raise ValueError(f"JSON validation failed: {exc}") from exc
+    tmp = target.with_suffix(target.suffix + ".dragonwilds.tmp")
+    try:
+        tmp.write_bytes(encoded); os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return {"ok": True, "relative_path": target.relative_to(root).as_posix(), "path": str(target),
+            "root": str(root), "language": _language(target), "size": len(encoded)}
+
+
+def remove_server_mod(profile_id: str, server_root: str, key: str, active: bool) -> dict:
+    _root, paths = _server_mod_paths(profile_id, server_root, key, active)
+    removed: list[str] = []
+    for path in paths:
+        if path.is_dir(): shutil.rmtree(path)
+        elif path.exists(): path.unlink()
+        removed.append(str(path))
+    return {"ok": True, "removed": removed, "unit_key": key, "active": active}
 
 
 def _sensitive(path: Path) -> bool:

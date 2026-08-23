@@ -30,7 +30,8 @@ from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated
                            server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
                            _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
-                                   PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract)
+                                   PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract,
+                                   delete_repository_entry, remove_profile_entry)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
@@ -98,7 +99,8 @@ from mod_tags import normalize_tags, set_hotload_marker, set_tags_file, UE4SS_BA
 from world_maintenance import (
     create_world_backup, delete_world_managed_files, list_world_configs, open_world_config,
     restore_world_backup, save_world_config, copy_world_config, delete_world_config,
-    update_world_config_policy, world_save_status,
+    update_world_config_policy, world_save_status, list_server_mod_files, open_server_mod_file,
+    save_server_mod_file, remove_server_mod,
 )
 from runeschema_flavors import delete_flavor as delete_runeschema_flavor, import_flavor as import_runeschema_flavor, list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
 
@@ -3102,6 +3104,24 @@ def handle(method: str, params: dict) -> object:
         result = save_repository_file(str(params.get("entry_id") or ""), str(params.get("relative_path") or ""), str(params.get("content") or ""))
         return {"result": result, "repository": cached_mod_repository(), "state": public_state(state)}
 
+    if method == "mod.repository.delete":
+        result = delete_repository_entry(str(params.get("entry_id") or ""))
+        return {"result": result, "repository": result.get("repository") or cached_mod_repository(), "state": public_state(state)}
+
+    if method == "mod.repository.profile.remove":
+        kind = str(params.get("kind") or params.get("profile_kind") or "").strip().lower()
+        profile_id = str(params.get("profile_id") or "").strip()
+        key = str(params.get("key") or "").strip()
+        if kind == "dedicated" and state.setdefault("server", {}).get("active_world_id") == profile_id:
+            if ENGINE.status().get("running"):
+                raise RuntimeError("Stop this Server World before removing a live mod.")
+            profile = load_server_profile(profile_id)
+            if not profile: raise KeyError("Server World not found")
+            remove_server_mod(profile_id, server_root_for_profile(profile), key, True)
+            snapshot_profile_mods(profile_id, Path(server_root_for_profile(profile)))
+        result = remove_profile_entry(kind, profile_id, key)
+        return {"result": result, "repository": result.get("repository") or cached_mod_repository(), "state": public_state(state)}
+
     if method == "singleplayer.inventory":
         profile_id = _private_profile_id(state, params)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
@@ -3340,7 +3360,7 @@ def handle(method: str, params: dict) -> object:
             application["integrations"] = merge_integrations(application.get("integrations"), incoming.pop("integrations"))
         if "theme" in incoming:
             theme = str(incoming.get("theme") or "dark-fantasy")
-            incoming["theme"] = theme if theme in ("dark-fantasy", "light", "fantasy", "high-contrast") else "dark-fantasy"
+            incoming["theme"] = theme if theme in ("dark-fantasy", "light", "fantasy", "high-contrast", "desert-script", "eastern") else "dark-fantasy"
         if "language" in incoming:
             language = str(incoming.get("language") or "en").casefold()
             incoming["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
@@ -4203,6 +4223,8 @@ def handle(method: str, params: dict) -> object:
             state["client"]["live_world_id"] = world_id
             save_state(state)
 
+        ensure_client_base_runtimes(game_dir)
+
         latest_hint = (((world.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
         client_runtime = client_runtime_status(game_dir, latest_hint=latest_hint, remote=False)
         sync_job_id = str(params.get("_sync_job_id") or "")
@@ -4210,6 +4232,7 @@ def handle(method: str, params: dict) -> object:
             world, install_dir, state.get("client", {}).get("client_id") or "client",
             bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime,
             progress=(lambda update: _set_world_sync_job(sync_job_id, status="running", **dict(update or {}))) if sync_job_id else None)
+        ensure_client_base_runtimes(game_dir)
         manifest = result.get("manifest") or {}
         connection = world.setdefault("connection", {})
         _merge_advertised_connection(world, manifest.get("connection") or {})
@@ -4748,6 +4771,8 @@ def handle(method: str, params: dict) -> object:
             switch_client_world_profile(live_world_id, client_world_id, install_dir)
             state["client"]["live_world_id"] = client_world_id
 
+        ensure_client_base_runtimes(game_dir)
+
         sync_config = profile.get("sync_config") or {}
         dedicated = profile.get("dedicated_config") or {}
         world_name = str(profile.get("name") or dedicated.get("world_name") or "Hosted World")
@@ -4767,6 +4792,7 @@ def handle(method: str, params: dict) -> object:
         client_runtime = client_runtime_status(game_dir, latest_hint=latest_hint, remote=False)
         result = sync_world(local_world, install_dir, str(state.get("client", {}).get("client_id") or "client"),
                             bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime)
+        ensure_client_base_runtimes(game_dir)
         manifest = result.get("manifest") or {}
         result["client_mods_txt"] = write_client_mods_txt(install_dir, manifest)
         result["direct_connect"] = _write_world_direct_connect(game_dir, local_world, manifest)
@@ -5943,6 +5969,32 @@ def handle(method: str, params: dict) -> object:
             raise KeyError("Server World not found")
         active = state.setdefault("server", {}).get("active_world_id") == profile_id
         return open_world_config(profile_id, server_root_for_profile(profile), str(params.get("relative_path") or ""), active)
+
+    if method == "server.world.mod.files":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile: raise KeyError("Server World not found")
+        active = state.setdefault("server", {}).get("active_world_id") == profile_id
+        return list_server_mod_files(profile_id, server_root_for_profile(profile), str(params.get("key") or ""), active,
+                                     include_all=bool(params.get("tree")))
+
+    if method == "server.world.mod.file.open":
+        profile_id = str(params.get("id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile: raise KeyError("Server World not found")
+        active = state.setdefault("server", {}).get("active_world_id") == profile_id
+        return open_server_mod_file(profile_id, server_root_for_profile(profile), str(params.get("key") or ""),
+                                    str(params.get("relative_path") or ""), active)
+
+    if method == "server.world.mod.file.save":
+        profile_id = str(params.get("id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile: raise KeyError("Server World not found")
+        active = state.setdefault("server", {}).get("active_world_id") == profile_id
+        result = save_server_mod_file(profile_id, server_root_for_profile(profile), str(params.get("key") or ""),
+                                      str(params.get("relative_path") or ""), str(params.get("content") or ""), active)
+        if active: snapshot_profile_mod_unit(profile_id, Path(server_root_for_profile(profile)), str(params.get("key") or ""))
+        return {"result": result, "state": public_state(state)}
 
     if method == "server.world.config.save":
         profile_id = str(params.get("id") or "")

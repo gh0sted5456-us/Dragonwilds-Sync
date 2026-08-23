@@ -334,11 +334,22 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         return
     layout = resolve_client_layout(selected_root)
     game_root = layout.game_root
+    # UE4SS's client bootstrap is machine-level runtime infrastructure. It is
+    # never owned by a World profile and must survive every profile swap even
+    # when an older managed-state manifest incorrectly lists it as payload.
+    runtime_core = {
+        (layout.win64_dir / "dwmapi.dll").resolve(),
+        (layout.win64_dir / "ue4ss" / "UE4SS.dll").resolve(),
+        (layout.win64_dir / "ue4ss" / "UE4SS-settings.ini").resolve(),
+        (layout.win64_dir / "ue4ss" / "imgui.ini").resolve(),
+    }
     stored = client_world_dir(world_id)
     outgoing = load_local_state(game_root)
     for relative, info in outgoing.get("files", {}).items():
         if info.get("kind", "file") == "file":
             target = target_for_state(selected_root, relative, info)
+            if target.resolve() in runtime_core:
+                continue
             if target.is_file():
                 _set_managed_readonly(target, False)
                 target.unlink()
@@ -396,6 +407,8 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         cached = managed / Path(*PurePosixPath(relative).parts)
         if cached.is_file():
             target = target_for_state(selected_root, relative, info)
+            if target.resolve() in runtime_core:
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
                 _set_managed_readonly(target, False)

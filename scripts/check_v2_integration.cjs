@@ -55,7 +55,7 @@ must(cache.includes('item-manifest.json') && cache.includes('iconPath') && cache
 must(spawner.includes('custom_items') && spawner.includes('"source": "dragonwilds-sync:mod-manifest"') && spawner.includes('Modded Items') && spawner.includes('"custom": True'), 'Spawner custom-item overlay / Modded Items category is missing');
 must(trash.includes('copy one logical launcher object into Trash') || trash.includes('Copy one logical launcher object into Trash'), 'Verified Trash move contract is missing');
 must(trashUi.includes('application.trash.restore') && trashUi.includes('application.trash.settings') && trashUi.includes('Empty Trash'), 'Trash restore/retention/empty controls are incomplete');
-must(trashUi.includes('section.dataset.stamp') && trashUi.includes('mounting'), 'Trash observer rendering must be stamped/non-reentrant');
+must(trashUi.includes('dws-trash-dismissed') && trashUi.includes('lastRead') && trashUi.includes('setInterval'), 'Trash sticker must be dismissible and use throttled polling rather than mutation-driven repainting');
 
 // The V2 shell relies on GitHub-managed content so docs/help/catalog changes do
 // not require another executable release.

@@ -428,6 +428,16 @@ body[data-theme="high-contrast"] {
   --border:#777; --border-strong:#fff; --text:#fff; --muted:#ddd; --gold:#ffe600; --gold-soft:#7c7000;
   --green:#65ff9b; --amber:#ffd35c; --red:#ff7373; --cyan:#6cecff; --shadow:none;
 }
+body[data-theme="desert-script"] {
+  --bg:#201710;--bg-2:#2b1e13;--panel:rgba(48,34,22,.94);--panel-2:rgba(62,43,27,.94);--panel-3:rgba(76,52,31,.92);
+  --border:rgba(218,174,102,.26);--border-strong:rgba(231,187,108,.5);--text:#fff0cf;--muted:#cbb891;
+  --gold:#efbd62;--gold-soft:#8d652e;--green:#82c59b;--amber:#f0b657;--red:#e47c69;--cyan:#73bac0;--shadow:0 18px 48px rgba(18,9,3,.42);
+}
+body[data-theme="eastern"] {
+  --bg:#0d1010;--bg-2:#151919;--panel:rgba(22,27,26,.95);--panel-2:rgba(30,36,34,.95);--panel-3:rgba(39,46,43,.93);
+  --border:rgba(197,173,124,.22);--border-strong:rgba(215,182,116,.44);--text:#f4efe2;--muted:#aeb7af;
+  --gold:#d7b46a;--gold-soft:#695833;--green:#76b693;--amber:#e0aa57;--red:#d85e4c;--cyan:#72adb2;--shadow:0 18px 48px rgba(0,0,0,.38);
+}
 
 .app-shell { padding-top:38px; }
 .app-shell.nav-collapsed { --rail:76px; }
@@ -485,6 +495,12 @@ body[data-theme="light"] .metric, body[data-theme="light"] .mod-row, body[data-t
 body[data-theme="fantasy"] .app-shell { background:linear-gradient(90deg,rgba(5,12,9,.95),rgba(10,20,15,.86)),url('assets/world-selection-background.png') center/cover fixed; }
 body[data-theme="fantasy"] .sidebar { background:linear-gradient(180deg,rgba(7,16,12,.98),rgba(12,23,17,.96)); }
 body[data-theme="fantasy"] .world-card-banner-fallback::after, body[data-theme="fantasy"] .detail-banner-fallback::after { opacity:.27; filter:sepia(.25) hue-rotate(55deg); }
+body[data-theme="desert-script"] .app-shell{background-image:linear-gradient(112deg,rgba(37,22,12,.94),rgba(71,43,20,.78)),repeating-linear-gradient(7deg,transparent 0 44px,rgba(239,189,98,.035) 45px 46px),url('assets/world-selection-background.png');background-position:center;background-size:cover;background-attachment:fixed}
+body[data-theme="desert-script"] .sidebar{background:linear-gradient(180deg,rgba(43,28,17,.98),rgba(31,20,14,.97));border-right-color:rgba(239,189,98,.28)}
+body[data-theme="desert-script"] .panel,body[data-theme="desert-script"] .settings-section,body[data-theme="desert-script"] .modal{background-image:linear-gradient(118deg,rgba(255,225,171,.025),transparent 44%),repeating-linear-gradient(0deg,transparent 0 27px,rgba(239,189,98,.025) 28px 29px)}
+body[data-theme="eastern"] .app-shell{background-image:linear-gradient(104deg,rgba(8,12,12,.96),rgba(23,29,27,.82)),radial-gradient(circle at 78% 20%,rgba(210,75,55,.17),transparent 23%),url('assets/world-selection-background.png');background-position:center;background-size:cover;background-attachment:fixed}
+body[data-theme="eastern"] .sidebar{background-image:linear-gradient(180deg,rgba(12,16,16,.98),rgba(22,27,25,.97)),repeating-linear-gradient(90deg,transparent 0 38px,rgba(215,180,106,.05) 39px 40px)}
+body[data-theme="eastern"] .panel,body[data-theme="eastern"] .settings-section,body[data-theme="eastern"] .modal{background-image:linear-gradient(135deg,transparent 0 72%,rgba(216,94,76,.035) 73%),repeating-linear-gradient(90deg,transparent 0 64px,rgba(215,180,106,.025) 65px 66px)}
 
 body[data-theme="high-contrast"] .app-shell, body[data-theme="high-contrast"] .sidebar { background:#000; }
 body[data-theme="high-contrast"] .btn, body[data-theme="high-contrast"] .field, body[data-theme="high-contrast"] .textarea, body[data-theme="high-contrast"] .select,
@@ -1813,12 +1829,17 @@ body[data-theme="light"] .character-editor-preview{background:#d9ddd8}body[data-
 input[type="search"],input[id*="search"],input[placeholder^="Search"],input[placeholder*=" search"]{padding-left:36px!important;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23cda552' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='6'/%3E%3Cpath d='m16 16 4 4'/%3E%3C/svg%3E")!important;background-repeat:no-repeat!important;background-position:11px 50%!important;background-size:15px 15px!important}
 .world-search>span,.help-search>span,.native-item-search>span,.native-catalog-toolbar label>span,.character-equipment-menu-search>span{display:none!important}
 
-/* Optional stained-glass layer; this augments rather than replaces light/dark. */
-body[data-glass="1"] .app-shell{background-image:radial-gradient(circle at 16% 12%,rgba(28,156,134,.17),transparent 28%),radial-gradient(circle at 82% 18%,rgba(198,77,48,.16),transparent 30%),radial-gradient(circle at 62% 84%,rgba(48,92,178,.16),transparent 34%),linear-gradient(105deg,rgba(8,13,12,.82),rgba(17,23,21,.72)),url('assets/world-selection-background.png')}
-body[data-theme="light"][data-glass="1"] .app-shell{background-image:radial-gradient(circle at 16% 12%,rgba(21,144,126,.18),transparent 28%),radial-gradient(circle at 82% 18%,rgba(202,88,53,.17),transparent 30%),radial-gradient(circle at 62% 84%,rgba(54,99,185,.16),transparent 34%),linear-gradient(105deg,rgba(246,247,242,.74),rgba(236,240,236,.66)),url('assets/theme/light-mode.png')}
-body[data-glass="1"] .sidebar,body[data-glass="1"] .panel,body[data-glass="1"] .settings-section,body[data-glass="1"] .world-card,body[data-glass="1"] .server-shell-card,body[data-glass="1"] .modal,body[data-glass="1"] .detached-window-toolbar,body[data-glass="1"] .recommended-mod-card{background-color:color-mix(in srgb,var(--panel) 70%,transparent)!important;backdrop-filter:blur(18px) saturate(1.28);-webkit-backdrop-filter:blur(18px) saturate(1.28);border-color:color-mix(in srgb,var(--gold) 38%,var(--border))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 18px 44px rgba(0,0,0,.18)}
-body[data-glass="1"] .settings-section,body[data-glass="1"] .panel{position:relative;overflow:hidden}
-body[data-glass="1"] .settings-section::before,body[data-glass="1"] .panel::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(125deg,transparent 24%,rgba(43,157,137,.07) 25% 38%,transparent 39% 59%,rgba(195,75,47,.06) 60% 72%,transparent 73%);mix-blend-mode:screen}
+/* Cathedral stained glass: actual leaded artwork with readable transparent panes. */
+body[data-glass="1"] .app-shell{background-image:linear-gradient(102deg,rgba(3,5,9,.42),rgba(5,8,14,.26)),url('assets/theme/stained-glass-v2.png')!important;background-position:center!important;background-size:cover!important;background-attachment:fixed!important}
+body[data-theme="light"][data-glass="1"] .app-shell{background-image:linear-gradient(102deg,rgba(242,241,230,.48),rgba(230,235,236,.36)),url('assets/theme/stained-glass-v2.png')!important}
+body[data-glass="1"] .sidebar,body[data-glass="1"] .panel,body[data-glass="1"] .settings-section,body[data-glass="1"] .world-card,body[data-glass="1"] .server-shell-card,body[data-glass="1"] .modal,body[data-glass="1"] .detached-window-toolbar,body[data-glass="1"] .recommended-mod-card{background-color:color-mix(in srgb,var(--panel) 57%,transparent)!important;backdrop-filter:blur(15px) saturate(1.42);-webkit-backdrop-filter:blur(15px) saturate(1.42);border-color:color-mix(in srgb,#d9b45f 46%,var(--border))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.13),inset 0 0 0 1px rgba(12,15,22,.22),0 20px 48px rgba(0,0,0,.24)}
+body[data-glass="1"] .settings-section,body[data-glass="1"] .panel{position:relative;overflow:hidden;isolation:isolate}
+body[data-glass="1"] .settings-section::before,body[data-glass="1"] .panel::before{content:"";position:absolute;z-index:-1;inset:0;pointer-events:none;background:linear-gradient(62deg,transparent 0 21%,rgba(11,14,20,.42) 21.3% 21.8%,transparent 22.1% 54%,rgba(11,14,20,.36) 54.3% 54.8%,transparent 55.1%),linear-gradient(118deg,transparent 0 37%,rgba(110,62,157,.08) 37.3% 52%,transparent 52.3%),linear-gradient(148deg,rgba(40,129,155,.08),transparent 35%,rgba(190,62,70,.07));mix-blend-mode:screen}
+
+/* Readable theme cards and compact navigation/menu refinement. */
+.theme-card{position:relative;isolation:isolate;min-height:88px;overflow:hidden;text-align:left}.theme-card::before{content:"";position:absolute;z-index:-1;inset:0;opacity:.42}.theme-preview-dark-fantasy::before{background:linear-gradient(135deg,#07110d,#2c2514)}.theme-preview-light::before{background:linear-gradient(135deg,#faf8f0,#cad2cc)}.theme-preview-desert-script::before{background:repeating-linear-gradient(8deg,transparent 0 15px,rgba(86,49,20,.18) 16px),linear-gradient(135deg,#6b3e20,#d19c58)}.theme-preview-eastern::before{background:linear-gradient(135deg,#0b1010 0 68%,#982f29 69% 77%,#d8b76d 78%)}
+.server-tabs{scroll-snap-type:x proximity;padding:7px 10px!important;gap:5px!important}.server-tabs>*{scroll-snap-align:start}.server-tab-group{padding-inline:5px;white-space:nowrap;font-size:7px!important;letter-spacing:.12em}.server-tabs button{padding:9px 12px!important}.settings-nav{gap:7px!important}.settings-nav button{min-height:38px;border:1px solid transparent!important}.settings-nav button:hover,.settings-nav button:focus-visible{border-color:var(--border)!important;background:var(--panel-2);outline:none}.compact-action-menu[open]>summary{border-color:var(--gold);background:color-mix(in srgb,var(--gold) 10%,var(--panel))}.compact-action-menu-pop{max-width:min(320px,calc(100vw - 24px));background:var(--panel)!important;border-color:var(--border-strong)!important}.pager-row{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid var(--border)}.pager-row>span{color:var(--muted);font-size:9px;font-weight:750}
+@media(max-width:760px){.server-tab-group{display:none}.server-tabs button{min-width:auto!important}.settings-nav button{min-height:42px}}
 
 .character-preview-label{grid-template-columns:auto auto;align-items:center;pointer-events:auto}.character-preview-label>span,.character-preview-label>strong{grid-column:1}.character-preview-label>.btn{grid-column:2;grid-row:1/3;min-height:28px;margin-left:8px}
 

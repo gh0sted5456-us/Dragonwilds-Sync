@@ -237,10 +237,10 @@ def test_ui_contract():
     for label in ("Character Editor", "Item Editor", "Spell Editor", "Recipe Unlocker", "Quest Editor"):
         assert label in renderer
 
-    # Settings white-bar regression + themed scrollbars + only Dark/Light surface.
+    # Settings white-bar regression + themed scrollbars + expanded theme surface.
     assert ".settings-subnav button{appearance:none" in styles
     assert "::-webkit-scrollbar-thumb" in styles and "scrollbar-color" in styles
-    assert "['dark-fantasy','Dark','Dark graphite + gold'],['light','Light','Clean daylight UI']" in renderer
+    assert "['desert-script','Desert Script'" in renderer and "['eastern','Eastern'" in renderer
 
     # Networking surface + per-World tab + drag/drop + provider icons.
     assert "Country Blocking" in renderer and "Block Individual IP" in renderer and "Block Common VPN Providers" in renderer

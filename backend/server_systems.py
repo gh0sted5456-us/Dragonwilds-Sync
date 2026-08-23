@@ -2994,7 +2994,8 @@ def client_runtime_status(game_root: str) -> dict:
     ue_checks = {
         "bootstrap": (layout.win64_dir / "dwmapi.dll").is_file(),
         "core_dll": (core / "UE4SS.dll").is_file(),
-        "settings": _ue4ss_settings_present(core),
+        "settings": (core / "UE4SS-settings.ini").is_file(),
+        "imgui": (core / "imgui.ini").is_file(),
     }
     rs = layout.runeschema_root
     rs_checks = {
@@ -3025,6 +3026,12 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
     before = client_runtime_status(game_root)
     repaired = []
     errors = []
+    imgui_settings = layout.win64_dir / "ue4ss" / "imgui.ini"
+    if not imgui_settings.is_file() and (layout.win64_dir / "ue4ss" / "UE4SS.dll").is_file():
+        imgui_settings.parent.mkdir(parents=True, exist_ok=True)
+        imgui_settings.write_text("", encoding="utf-8")
+        repaired.append("UE4SS imgui.ini baseline restored")
+        before = client_runtime_status(game_root)
     if not before["ue4ss"]["installed"]:
         bundle = _bundled_app_resource(*BUNDLED_UE4SS_RESOURCE)
         if bundle.is_file():
@@ -3032,6 +3039,10 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
             repaired.append("UE4SS client baseline installed/repaired")
         else:
             errors.append("Bundled UE4SS baseline is unavailable.")
+    if not imgui_settings.is_file() and (layout.win64_dir / "ue4ss" / "UE4SS.dll").is_file():
+        imgui_settings.parent.mkdir(parents=True, exist_ok=True)
+        imgui_settings.write_text("", encoding="utf-8")
+        repaired.append("UE4SS imgui.ini baseline restored")
     mid = client_runtime_status(game_root)
     if not mid["runeschema"]["installed"]:
         rs_bundle = _bundled_app_resource("RuneSchema-core-latest.zip")

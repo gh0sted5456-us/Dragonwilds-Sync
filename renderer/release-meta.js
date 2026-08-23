@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.8',
-  name: 'V2.7.8 · Dedicated Password and Route Retention',
+  version: '2.7.9',
+  name: 'V2.7.9 · Game Password and Launch Recovery',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.9',
+    title: 'Game Password and Launch Recovery',
+    items: [
+      'DedicatedServer.ini now receives the decrypted gameplay and admin passwords; encrypted dws-secret references remain confined to Dragonwilds Sync profile storage.',
+      'Launch verification resolves the same protected values and refuses to launch when a saved credential can no longer be recovered.',
+      'RuneSchema variant activation atomically repairs a legacy read-only enabled.txt marker instead of failing server launch.',
+      'RuneSchema runtime DLLs and its enable marker are excluded from World Configuration management, while the RuneSchema root config remains editable.',
+    ],
+  }, {
     version: '2.7.8',
     title: 'Dedicated Password and Route Retention',
     items: [

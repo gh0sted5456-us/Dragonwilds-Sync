@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.9",
+      "title": "Dragonwilds Sync V2.7.9",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "The game receives resolved plaintext WorldPassword and AdminPassword values while encrypted secret references remain in launcher storage only.",
+        "A missing encrypted credential now blocks launch with an actionable re-entry message instead of writing an unusable token or blank password.",
+        "RuneSchema activation repairs legacy read-only enable markers atomically.",
+        "RuneSchema runtime plumbing is excluded from Configuration management while its root configuration remains editable."
+      ]
+    },
+    {
       "version": "2.7.8",
       "title": "Dragonwilds Sync V2.7.8",
       "date": "2026-08-22",

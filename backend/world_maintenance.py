@@ -11,13 +11,14 @@ from pathlib import Path
 from profile_store import SERVER_PROFILES_DIR, load_server_profile
 from server_engine import dedicated_savegames_paths_from_exe
 from server_layout import resolve_server_layout
+from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
 MAX_CONFIG_BYTES = 2 * 1024 * 1024
 MAX_CONFIG_FILES = 600
 SENSITIVE_SERVER_CONFIG_NAMES = {"dedicatedserver.ini"}
 SENSITIVE_NAME_HINTS = ("password", "secret", "token", "apikey", "api_key", "serverkey", "server_key")
-LAUNCHER_INFRASTRUCTURE_UE4SS_DIRS = set()
+LAUNCHER_INFRASTRUCTURE_UE4SS_DIRS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
 
 
 def _profile_dir(profile_id: str) -> Path:
@@ -141,7 +142,15 @@ def _is_launcher_infrastructure_file(layout, file: Path) -> bool:
         rel = file.relative_to(layout.ue4ss_mods_dir)
     except ValueError:
         return False
-    return bool(rel.parts) and rel.parts[0].casefold() in LAUNCHER_INFRASTRUCTURE_UE4SS_DIRS
+    if not rel.parts:
+        return False
+    first = rel.parts[0].casefold()
+    if first != "runeschema":
+        return first in LAUNCHER_INFRASTRUCTURE_UE4SS_DIRS
+    # RuneSchema's DLLs and root enable marker are launcher-owned runtime
+    # plumbing. Its root config and child mods remain World-editable.
+    nested = tuple(part.casefold() for part in rel.parts[1:])
+    return nested == ("enabled.txt",) or bool(nested and nested[0] == "dlls")
 
 
 def _file_metadata(profile_id: str, layout, file: Path, manifest: dict) -> dict:
@@ -194,6 +203,19 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
     seen: set[str] = set()
     if not layout.game_root.exists():
         return {"ok": True, "locked": 0}
+    # Migrate manifests written by releases that mistakenly treated runtime
+    # markers (notably RuneSchema/enabled.txt) as editable World config.
+    for relative in list(files):
+        try:
+            candidate = _resolve_inside(layout.game_root, relative)
+        except (OSError, ValueError):
+            continue
+        if _is_launcher_infrastructure_file(layout, candidate):
+            try:
+                _set_readonly(candidate, False)
+            except OSError:
+                pass
+            files.pop(relative, None)
     # Mod Manager inventory and Mod Editor indexing must resolve the same live
     # surfaces. RuneSchema mods may live under RuneSchema/mods or directly under
     # the RuneSchema root on legacy installs; ServerLayout normalizes both into

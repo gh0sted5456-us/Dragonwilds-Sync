@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import zipfile
+import stat
 from pathlib import Path
 
 
@@ -23,6 +24,9 @@ def main():
         (live / "config" / "config.json").write_text("{}", encoding="utf-8")
         (live / "mods" / "Keep Me" / "recipe.json").write_text("{}", encoding="utf-8")
         (live / "enabled.txt").write_text("", encoding="utf-8")
+        # Older releases could adopt this launcher-owned marker as a managed
+        # config and leave it read-only. Variant activation must self-repair it.
+        (live / "enabled.txt").chmod(stat.S_IREAD)
 
         old_runtime = systems.RUNESCHEMA_RUNTIME_DIR
         old_standard = systems.RUNESCHEMA_STANDARD_RUNTIME_DIR
@@ -38,6 +42,7 @@ def main():
             extended = systems.activate_runeschema_variant(str(root), "extended")
             assert extended["variant"] == "extended"
             assert (live / "mods" / "Keep Me" / "recipe.json").is_file()
+            assert (live / "enabled.txt").is_file()
             with zipfile.ZipFile(Path(__file__).resolve().parent.parent / "resources" / "RuneSchema-extended.zip") as archive:
                 expected = archive.read("RuneSchema/dlls/main.dll")
             assert (live / "dlls" / "main.dll").read_bytes() == expected

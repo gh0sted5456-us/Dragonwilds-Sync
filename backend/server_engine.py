@@ -23,6 +23,7 @@ from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 from networking import DEFAULT_SYNC_DISCOVERY_PORT
 from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
+from secret_store import SecretStore, is_reference
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
                             ensure_base_runtimes, activate_runeschema_variant, runtime_prerequisite_status, gather_server_hardware_stats,
                             install_authoritative_ue4ss_update, local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
@@ -35,6 +36,7 @@ DEDICATED_CONFIG_FILE = DEDICATED_CONFIG_DIR / "DedicatedServer.ini"
 DEDICATED_SAVEGAMES_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames"
 PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
 SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
+RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
@@ -519,9 +521,22 @@ def dedicated_config_targets(cfg: dict, server_root: str = "") -> list[Path]:
     return result
 
 
+def _runtime_secret(value: object, label: str) -> str:
+    """Resolve an at-rest reference before handing a credential to the game."""
+    text = str(value or "").strip()
+    if not is_reference(text):
+        return text
+    resolved = str(RUNTIME_SECRET_STORE.resolve(text) or "").strip()
+    if not resolved:
+        raise ValueError(f"The saved {label} is unavailable. Re-enter it in DragonConnect before launching.")
+    return resolved
+
+
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
     owner_id = str(cfg.get("owner_id", "")).strip(); server_name = str(cfg.get("server_name", "")).strip(); world_name = str(cfg.get("world_name", "")).strip()
-    admin_pass = str(cfg.get("admin_pass", "")).strip(); world_pass = str(cfg.get("world_pass", "")).strip(); port = str(cfg.get("port", "7777")).strip() or "7777"
+    admin_pass = _runtime_secret(cfg.get("admin_pass", ""), "admin password")
+    world_pass = _runtime_secret(cfg.get("world_pass", ""), "World password")
+    port = str(cfg.get("port", "7777")).strip() or "7777"
     managed = {
         "adminpassword": ("AdminPassword", admin_pass), "ownerid": ("OwnerId", owner_id),
         "worldpassword": ("WorldPassword", world_pass), "servername": ("ServerName", server_name),
@@ -586,9 +601,9 @@ def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
 def verify_dedicated_config(cfg: dict, server_root: str = "") -> dict:
     """Verify managed values in the config resolved from the launched executable."""
     expected = {
-        "adminpassword": str(cfg.get("admin_pass") or "").strip(),
+        "adminpassword": _runtime_secret(cfg.get("admin_pass", ""), "admin password"),
         "ownerid": str(cfg.get("owner_id") or "").strip(),
-        "worldpassword": str(cfg.get("world_pass") or "").strip(),
+        "worldpassword": _runtime_secret(cfg.get("world_pass", ""), "World password"),
         "servername": str(cfg.get("server_name") or "").strip(),
         "defaultworldname": str(cfg.get("world_name") or "").strip(),
         "port": str(cfg.get("port") or "7777").strip(),

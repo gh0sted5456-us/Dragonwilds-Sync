@@ -18,6 +18,7 @@ import server_engine as se
 import dragonwilds_service as service
 from dragonwilds_service_legacy import ensure_world_shape
 from server_layout import NATIVE_LINUX
+from secret_store import SecretStore
 
 PLATFORM_DIR = "LinuxServer" if NATIVE_LINUX else "WindowsServer"
 
@@ -62,6 +63,32 @@ def test_both_saved_trees_are_hydrated():
         drifted = se.verify_dedicated_config(cfg, str(server))
         assert drifted["ok"] is False
         assert str(outer / "DedicatedServer.ini") in drifted["stale_targets"]
+
+
+def test_secret_references_are_resolved_before_game_config_write():
+    with tempfile.TemporaryDirectory() as raw:
+        base = Path(raw)
+        server = base / "RuneScape Dragonwilds Dedicated Server"
+        game = server / "RSDragonwilds"
+        exe = game / "Binaries" / "Win64" / "RSDragonwilds.exe"
+        exe.parent.mkdir(parents=True)
+        exe.write_bytes(b"fixture")
+        old_store = se.RUNTIME_SECRET_STORE
+        se.RUNTIME_SECRET_STORE = SecretStore(base / "Secrets")
+        try:
+            world_ref = se.RUNTIME_SECRET_STORE.put("BELTS", hint="world")
+            admin_ref = se.RUNTIME_SECRET_STORE.put("admin-cleartext", hint="admin")
+            cfg = {"owner_id": "PLAYER-ABC-123", "server_name": "Test Server", "world_name": "Test World",
+                   "admin_pass": admin_ref, "world_pass": world_ref, "port": 7777, "server_exe": str(exe)}
+            se.write_dedicated_config(cfg, str(server))
+            for target in se.dedicated_config_targets(cfg, str(server)):
+                text = target.read_text(encoding="utf-8")
+                assert "WorldPassword=BELTS" in text
+                assert "AdminPassword=admin-cleartext" in text
+                assert "dws-secret://" not in text
+            assert se.verify_dedicated_config(cfg, str(server))["ok"] is True
+        finally:
+            se.RUNTIME_SECRET_STORE = old_store
 
 
 def test_blank_payload_does_not_erase_a_saved_route():
@@ -113,6 +140,7 @@ def test_world_update_retains_the_route_end_to_end():
 
 def main():
     test_both_saved_trees_are_hydrated()
+    test_secret_references_are_resolved_before_game_config_write()
     test_blank_payload_does_not_erase_a_saved_route()
     test_world_update_retains_the_route_end_to_end()
     print("dedicated config target and route retention tests passed")

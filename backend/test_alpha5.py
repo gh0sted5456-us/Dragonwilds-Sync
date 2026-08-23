@@ -31,6 +31,8 @@ def main():
         config = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json'
         config.parent.mkdir(parents=True)
         config.write_text('{"enabled": true}', encoding='utf-8')
+        runtime_marker = config.parent.parent / 'enabled.txt'
+        runtime_marker.write_text('', encoding='utf-8')
         runeschema_mod = server / 'Binaries/Win64/ue4ss/Mods/RuneSchema/mods/BetterLoot/recipes/loot.jsonc'
         runeschema_mod.parent.mkdir(parents=True)
         runeschema_mod.write_text('// RuneSchema recipe\n{"enabled": true}', encoding='utf-8')
@@ -43,12 +45,18 @@ def main():
         old_profiles = wm.SERVER_PROFILES_DIR
         wm.SERVER_PROFILES_DIR = profiles
         try:
+            marker_rel = runtime_marker.relative_to(server).as_posix()
+            runtime_marker.chmod(0o444)
+            wm._write_manifest('world-a', {'files': {marker_rel: {'language': 'text'}}})
             rows = wm.list_world_configs('world-a', str(server), True)
             assert any(row['relative_path'].endswith('RuneSchema/config/config.json') for row in rows)
+            assert not any(row['relative_path'].endswith('RuneSchema/enabled.txt') for row in rows)
             assert not any(row['unit_key'] == 'runeschema_mod::BetterLoot' for row in rows)
             assert not any(row['unit_key'] == 'ue4ss_mod::ServerTweaks' for row in rows)
             assert not any(row['unit_key'] == 'pak_mod::VisualPack' for row in rows)
             managed = wm._read_manifest('world-a').get('files') or {}
+            assert not any(rel.endswith('RuneSchema/enabled.txt') for rel in managed)
+            assert not wm.is_readonly(runtime_marker)
             assert any((meta or {}).get('unit_key') == 'runeschema_mod::BetterLoot' for meta in managed.values())
             assert any((meta or {}).get('unit_key') == 'ue4ss_mod::ServerTweaks' for meta in managed.values())
             assert any((meta or {}).get('unit_key') == 'pak_mod::VisualPack' for meta in managed.values())

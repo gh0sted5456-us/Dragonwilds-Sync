@@ -124,6 +124,27 @@ def _remove_generated_path(path: Path) -> None:
         except PermissionError:
             path.chmod(stat.S_IWRITE | stat.S_IREAD)
             path.unlink()
+
+
+def _write_launcher_control_file(path: Path, data: bytes = b"") -> None:
+    """Atomically replace a launcher-owned marker, repairing legacy read-only state."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + ".dragonwilds.tmp")
+    temporary.write_bytes(data)
+    if path.exists():
+        try:
+            path.chmod(path.stat().st_mode | stat.S_IWUSR)
+        except OSError:
+            pass
+    try:
+        os.replace(temporary, path)
+    except PermissionError:
+        # Windows represents chmod's missing owner-write bit as the read-only
+        # attribute. Retry once after explicitly clearing it on the destination.
+        if path.exists():
+            path.chmod(stat.S_IWRITE | stat.S_IREAD)
+        os.replace(temporary, path)
 DISCOVERY_MAGIC = "dragonwilds-sync-v1"
 WORLD_SYNC_PROTOCOL = "dragonwilds-world-sync"
 WORLD_SYNC_VERSION = 1
@@ -3375,7 +3396,7 @@ def activate_runeschema_variant(game_root: str, variant: str = "standard") -> di
             _copy_baseline_integration(source, RUNESCHEMA_STANDARD_RUNTIME_DIR, exclude_mods=True)
             (RUNESCHEMA_STANDARD_RUNTIME_DIR / "config").mkdir(parents=True, exist_ok=True)
             (RUNESCHEMA_STANDARD_RUNTIME_DIR / "dlls").mkdir(parents=True, exist_ok=True)
-            (RUNESCHEMA_STANDARD_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
+            _write_launcher_control_file(RUNESCHEMA_STANDARD_RUNTIME_DIR / "enabled.txt")
 
         core_files: dict[Path, bytes] = {}
         source_label = "stored standard core"
@@ -3413,7 +3434,7 @@ def activate_runeschema_variant(game_root: str, variant: str = "standard") -> di
             destination.write_bytes(data)
         for required in (live / "config", live / "dlls", live / "mods"):
             required.mkdir(parents=True, exist_ok=True)
-        (live / "enabled.txt").write_text("", encoding="utf-8")
+        _write_launcher_control_file(live / "enabled.txt")
         return {"ok": True, "variant": selected, "source": source_label,
                 "files_written": len(core_files), "mods_preserved": True,
                 "destination": str(live)}

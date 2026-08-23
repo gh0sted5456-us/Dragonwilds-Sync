@@ -1,7 +1,21 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-22T00:00:00Z",
+  "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
+    {
+      "version": "2.7.2",
+      "title": "Dragonwilds Sync V2.7.2",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Direct Connect discovers active Sync Worlds through host-wide UDP 8422 and transfers files through the advertised TCP Sync endpoint.",
+        "World Password authentication has pinned-TLS fallback and complete connection-stage diagnostics.",
+        "LAN trust, profile/IP access controls, community-rule acceptance, and stable fingerprints govern local joining.",
+        "Connected Worlds and default profiles are deduplicated by verified identity.",
+        "Quick Launch windows are movable, consistently formatted, and expose reliable progress and heartbeat state.",
+        "Firewall, UPnP, forwarding guidance, and WebHost documentation now use distinct authoritative ports."
+      ]
+    },
     {
       "version": "2.7.1",
       "title": "Dragonwilds Sync V2.7.1",

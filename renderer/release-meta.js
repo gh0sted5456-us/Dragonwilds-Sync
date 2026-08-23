@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.1',
-  name: 'V2.7.1 · Connected World Profile and Mod Broadcast Corrections',
+  version: '2.7.2',
+  name: 'V2.7.2 · Verified Direct Connect and Reliable World Sync',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.2',
+    title: 'Verified Direct Connect and Reliable World Sync',
+    items: [
+      'Direct Connect now queries the typed host on UDP 8422, presents matching Sync Worlds for selection, and uses the advertised TCP Sync endpoint for authenticated metadata and file transfer.',
+      'World Password authentication uses the active hosted World authority, with a pinned-TLS password fallback and detailed safe diagnostics when challenge authentication fails.',
+      'LAN Worlds support password-free local trust, selectable discovery results, profile/IP allowlisting and blocking, community-rule acceptance, and stable World fingerprints.',
+      'Connected World saves and default profiles are deduplicated by verified identity so repeated discovery or connection does not create duplicate profiles.',
+      'Quick Launch windows are movable and consistently laid out, with visible connection stages, heartbeat state, diagnostics export, and reliable child-process cleanup.',
+      'Firewall, UPnP, router guidance, and connection information now distinguish game UDP 7777+, Sync transfer TCP 27051+, Direct Connect discovery UDP 8422, and optional WebHost TCP 27080.',
+    ],
+  }, {
     version: '2.7.1',
     title: 'Connected World Profile and Mod Broadcast Corrections',
     items: [

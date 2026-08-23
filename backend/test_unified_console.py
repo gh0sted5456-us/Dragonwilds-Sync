@@ -54,8 +54,12 @@ def test_runeschema_context_and_settings_round_trip() -> None:
 
             profile_id, runtime, paths = service._runeschema_context("world-a")
             assert profile_id == "world-a"
-            assert paths["mods"] == mods_dir / "RuneSchema" / "mods"
-            assert paths["config"] == mods_dir / "RuneSchema" / "config"
+            # GitHub's Windows runner can expose %TEMP% through its RUNNER~1
+            # 8.3 alias while Path.resolve() returns the long account path.
+            # Compare canonical locations so the test verifies authority, not
+            # which equivalent spelling Windows supplied for the same folder.
+            assert paths["mods"].resolve() == (mods_dir / "RuneSchema" / "mods").resolve()
+            assert paths["config"].resolve() == (mods_dir / "RuneSchema" / "config").resolve()
             assert sorted(runeschema_tools.discover_mod_folders(paths["mods"])) == ["Base Balance", "Harder Enemies"]
 
             # A World with no config.json yet still gets full, correct

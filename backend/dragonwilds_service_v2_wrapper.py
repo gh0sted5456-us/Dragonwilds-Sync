@@ -665,9 +665,7 @@ def handle(method: str, params: dict) -> object:
                 installer = lambda: _legacy_handle("server.install.ue4ss_update", {"releases_url": source})
                 label = "UE4SS"
             else:
-                source = str(params.get("releases_url") or install_meta.get("runeschema_source_url") or "").strip()
-                if not source:
-                    raise ValueError("Set a RuneSchema GitHub/release ZIP URL first.")
+                source = _managed_updates.RUNESCHEMA_REPOSITORY_URL
                 installer = lambda: _legacy_handle("server.install.runeschema_update", {"releases_url": source})
                 label = "RuneSchema"
 

@@ -3335,9 +3335,10 @@ def handle(method: str, params: dict) -> object:
             current_install = dict(application.get("server_install") or {})
             proposed = incoming.get("server_install") if isinstance(incoming.get("server_install"), dict) else {}
             previous_owner_id = str(current_install.get("owner_id") or "").strip()
-            for key in ("install_dir", "server_exe", "steamcmd_dir", "owner_id", "linux_server_mode", "proton_executable", "proton_prefix", "wine_dll_overrides", "ue4ss_source_url", "runeschema_source_url"):
+            for key in ("install_dir", "server_exe", "steamcmd_dir", "owner_id", "linux_server_mode", "proton_executable", "proton_prefix", "wine_dll_overrides", "ue4ss_source_url"):
                 if key in proposed:
                     current_install[key] = str(proposed.get(key) or "").strip()
+            current_install["runeschema_source_url"] = "https://github.com/UnskippableCutscene/RuneSchema/releases"
             selected_server_dir = str(current_install.get("install_dir") or "").strip()
             if selected_server_dir:
                 resolved_server = validate_server_path(selected_server_dir, allow_new=True)
@@ -4409,11 +4410,7 @@ def handle(method: str, params: dict) -> object:
             profile["auto_runeschema"] = bool(params.get("auto_runeschema"))
         if "auto_rsdwtools" in params:
             profile["auto_rsdwtools"] = bool(params.get("auto_rsdwtools"))
-        if "runeschema_variant" in params:
-            variant = str(params.get("runeschema_variant") or "standard").strip().casefold()
-            if variant not in {"standard", "extended"}:
-                raise ValueError("RuneSchema variant must be standard or extended.")
-            profile["runeschema_variant"] = variant
+        profile.pop("runeschema_variant", None)
         if "mods_txt_mode" in params:
             mode = str(params.get("mods_txt_mode") or "auto").casefold()
             if mode not in {"auto", "manual"}:
@@ -5625,10 +5622,9 @@ def handle(method: str, params: dict) -> object:
         if not install_dir:
             raise ValueError("Set Settings → Server → Server Directory first.")
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        source_url = str(params.get("releases_url") or install_meta.get("runeschema_source_url") or "").strip()
-        if not source_url:
-            raise ValueError("Set a RuneSchema GitHub/release ZIP URL first, or load a local ZIP.")
+        source_url = "https://github.com/UnskippableCutscene/RuneSchema"
         result = install_authoritative_runeschema_update(source_url, install_dir)
+        install_meta["runeschema_source_url"] = source_url + "/releases"
         install_meta["runeschema_installed_at"] = time.time()
         install_meta["runeschema_source_name"] = str(result.get("filename") or result.get("source") or source_url)
         save_state(state)

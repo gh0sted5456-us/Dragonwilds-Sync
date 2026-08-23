@@ -13,7 +13,7 @@ def main():
     state = profile_store.default_state()
     install = state["application"]["server_install"]
     assert install["ue4ss_source_url"].startswith("https://github.com/")
-    assert "runeschema_source_url" in install
+    assert install["runeschema_source_url"] == "https://github.com/UnskippableCutscene/RuneSchema/releases"
 
     # Direct ZIP sources require no GitHub-specific assumptions.
     direct = ss.resolve_runtime_zip_source("https://example.invalid/releases/RuneSchema-v1.2.3.zip", prefer_contains=("runeschema",))
@@ -23,9 +23,11 @@ def main():
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for marker in (
         "server-ue4ss-source-url", "settings-update-ue4ss", "settings-import-ue4ss-core", "settings-ue4ss-dropzone",
-        "server-runeschema-source-url", "settings-update-runeschema", "settings-import-runeschema-core", "settings-runeschema-dropzone",
+        "settings-update-runeschema", "github.com/UnskippableCutscene/RuneSchema",
     ):
         assert marker in renderer, marker
+    for retired in ("server-runeschema-source-url", "settings-import-runeschema-core", "settings-runeschema-dropzone"):
+        assert retired not in renderer, retired
 
     # A launcher-bundled RuneSchema core is an offline Server Setup source.
     with tempfile.TemporaryDirectory() as td:

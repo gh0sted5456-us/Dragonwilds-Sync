@@ -261,7 +261,7 @@ def default_state() -> dict:
                 "ue4ss_source_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest",
                 "runeschema_installed_at": None,
                 "runeschema_source_name": "",
-                "runeschema_source_url": "",
+                "runeschema_source_url": "https://github.com/UnskippableCutscene/RuneSchema/releases",
             },
         },
         "player_profile": {
@@ -486,7 +486,7 @@ def load_state() -> dict:
     server_install.setdefault("ue4ss_source_url", "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest")
     server_install.setdefault("runeschema_installed_at", None)
     server_install.setdefault("runeschema_source_name", "")
-    server_install.setdefault("runeschema_source_url", "")
+    server_install.setdefault("runeschema_source_url", "https://github.com/UnskippableCutscene/RuneSchema/releases")
     player = state.setdefault("player_profile", {})
     player.setdefault("profile_id", secrets.token_hex(12))
     player.setdefault("display_name", "Player")
@@ -600,7 +600,6 @@ def list_server_profiles() -> list[dict]:
             "auto_ue4ss": bool(meta.get("auto_ue4ss", True)),
             "auto_runeschema": bool(meta.get("auto_runeschema", True)),
             "auto_rsdwtools": bool(meta.get("auto_rsdwtools", True)),
-            "runeschema_variant": str(meta.get("runeschema_variant") or "standard"),
             "mod_management": meta.get("mod_management") or {"nexus_auto_check": False, "nexus_auto_apply": False},
             "mods_txt_mode": str(meta.get("mods_txt_mode") or "auto"),
             "mods_txt_writer": str(meta.get("mods_txt_writer") or "client_generate"),
@@ -717,7 +716,7 @@ def create_server_profile(name: str) -> str:
         "character_sharing": {"enabled": False, "allow_submissions": False, "request_backups": False},
         "community": {"discord_invite": "", "discord_guild_id": ""},
         "unit_overrides": {}, "feedback": [], "rating_average": 0.0, "rating_count": 0,
-        "auto_ue4ss": True, "auto_runeschema": True, "auto_rsdwtools": True, "runeschema_variant": "standard",
+        "auto_ue4ss": True, "auto_runeschema": True, "auto_rsdwtools": True,
         "mods_txt_mode": "auto",
         "mods_txt_writer": "client_generate",
         "hierarchy": {"provider": "shrug.games", "confirmed": False, "confirmed_at": None, "confirmed_by": ""},

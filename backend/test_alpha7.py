@@ -126,13 +126,13 @@ def main():
                 profile_store.SERVER_PROFILES_DIR, ss.SERVER_PROFILES_DIR, se.SERVER_PROFILES_DIR,
             ) = old_dirs
 
-    renderer = (Path(__file__).resolve().parent.parent / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (Path(__file__).resolve().parent.parent / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     service = (
         (Path(__file__).resolve().parent / "dragonwilds_service.py").read_text(encoding="utf-8")
         + (Path(__file__).resolve().parent / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
     )
     assert "settings-repair-runtimes" in renderer
-    assert "settings-import-runeschema-core" in renderer
+    assert "settings-import-runeschema-core" not in renderer
     assert 'server.install.ensure_runtimes' in service
     assert 'server.install.runeschema_core' in service
     assert 'Dragonwilds-Base-Runtime-Repair' in service

@@ -157,7 +157,6 @@
     });
 
     const ue4ss=page.querySelector('#server-ue4ss-source-url'); if(ue4ss)ue4ss.value=String(src('ue4ss').release_url||src('ue4ss').download_url||ue4ss.value||'');
-    const rune=page.querySelector('#server-runeschema-source-url'); if(rune)rune.value=String(src('runeschema').download_url||src('runeschema').release_url||rune.value||'');
   }
 
   function enhance() {

@@ -154,7 +154,6 @@ PUBLISH_DIR = APP_DATA_DIR / "published"
 RUNTIME_LIBRARY_DIR = APP_DATA_DIR / "runtime_library"
 UE4SS_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "ue4ss"
 RUNESCHEMA_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "runeschema"
-RUNESCHEMA_STANDARD_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "runeschema-standard"
 RUNESCHEMA_UPLOAD_DIR = APP_DATA_DIR / "runeschema_uploads"
 RUNESCHEMA_CORE_CACHE_ZIP = RUNESCHEMA_UPLOAD_DIR / "RuneSchema-core-latest.zip"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
@@ -2346,7 +2345,6 @@ class ShareServer:
                               "security_posture": {"package_validation": "hash-staging-rollback"},
                               "health_config": broadcast_health_config,
                               "runtime_stack": runtime_stack, "baseline_runtime": baseline_runtime,
-                              "runeschema_variant": str(profile.get("runeschema_variant") or "standard"),
                               "connection": {
                                   "internal_ip": local_ip_guess(), "external_ip": str(public_ip or profile.get("public_ip") or ""),
                                   "sync_port": int(port), "game_port": int(game_port or 7777),
@@ -3390,67 +3388,6 @@ def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, u
         )
 
 
-def activate_runeschema_variant(game_root: str, variant: str = "standard") -> dict:
-    """Select a RuneSchema core while preserving profile-owned child mods."""
-    selected = str(variant or "standard").strip().casefold()
-    if selected not in {"standard", "extended"}:
-        raise ValueError("RuneSchema variant must be standard or extended.")
-    live = resolve_server_layout(game_root).runeschema_root
-    if not live.is_dir():
-        raise RuntimeError("RuneSchema must be installed before selecting a core variant.")
-    with RUNTIME_MUTATION_LOCK:
-        if not RUNESCHEMA_STANDARD_RUNTIME_DIR.is_dir():
-            RUNESCHEMA_STANDARD_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-            source = RUNESCHEMA_RUNTIME_DIR if RUNESCHEMA_RUNTIME_DIR.is_dir() else live
-            _copy_baseline_integration(source, RUNESCHEMA_STANDARD_RUNTIME_DIR, exclude_mods=True)
-            (RUNESCHEMA_STANDARD_RUNTIME_DIR / "config").mkdir(parents=True, exist_ok=True)
-            (RUNESCHEMA_STANDARD_RUNTIME_DIR / "dlls").mkdir(parents=True, exist_ok=True)
-            _write_launcher_control_file(RUNESCHEMA_STANDARD_RUNTIME_DIR / "enabled.txt")
-
-        core_files: dict[Path, bytes] = {}
-        source_label = "stored standard core"
-        if selected == "standard":
-            for source in RUNESCHEMA_STANDARD_RUNTIME_DIR.rglob("*"):
-                if source.is_file() and source.name.casefold() != "enabled.txt":
-                    core_files[source.relative_to(RUNESCHEMA_STANDARD_RUNTIME_DIR)] = source.read_bytes()
-        else:
-            bundle = _bundled_app_resource("RuneSchema-extended.zip")
-            if not bundle.is_file():
-                raise FileNotFoundError("The bundled extended RuneSchema branch is unavailable.")
-            source_label = bundle.name
-            with zipfile.ZipFile(bundle) as archive:
-                for info in archive.infolist():
-                    if info.is_dir():
-                        continue
-                    parts = list(PurePosixPath(info.filename.replace("\\", "/")).parts)
-                    if len(parts) > 1 and parts[0].casefold() == "runeschema":
-                        parts = parts[1:]
-                    if not parts or ".." in parts or parts[0].casefold() == "mods" or (len(parts) == 1 and parts[0].casefold() == "enabled.txt"):
-                        continue
-                    core_files[Path(*parts)] = archive.read(info)
-        if not any(path.as_posix().casefold() == "dlls/main.dll" for path in core_files):
-            raise RuntimeError(f"The {selected} RuneSchema variant has no dlls/main.dll.")
-        mods = live / "mods"
-        enabled_marker = live / "enabled.txt"
-        for child in list(live.iterdir()):
-            if child not in {mods, enabled_marker}:
-                _remove_generated_path(child)
-        for relative, data in core_files.items():
-            destination = (live / relative).resolve()
-            root = live.resolve()
-            if destination != root and root not in destination.parents:
-                raise RuntimeError("RuneSchema variant path escaped its runtime root.")
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(data)
-        for required in (live / "config", live / "dlls", live / "mods"):
-            required.mkdir(parents=True, exist_ok=True)
-        if not enabled_marker.exists():
-            _write_launcher_control_file(enabled_marker)
-        return {"ok": True, "variant": selected, "source": source_label,
-                "files_written": len(core_files), "mods_preserved": True,
-                "destination": str(live)}
-
-
 def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
     """Self-heal UE4SS and RuneSchema before a hosted World is used.
 
@@ -3980,6 +3917,13 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
         )
         written = 0
         if is_core:
+            # A core update is a complete upstream replacement. Preserve only
+            # profile-owned child mods; never mix one release's DLL with
+            # another release's config/support files.
+            live_mods = live_rs / "mods"
+            for child in list(live_rs.iterdir()):
+                if child != live_mods:
+                    _remove_generated_path(child)
             RUNESCHEMA_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
             src_zip = Path(zip_path).resolve()
             cache_zip = RUNESCHEMA_CORE_CACHE_ZIP.resolve()
@@ -4003,7 +3947,8 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
             # presence of a blank enabled.txt. Normalize both authoritative
             # library and live install so it never needs an entry in mods.txt.
             for base in (RUNESCHEMA_RUNTIME_DIR, live_rs):
-                (base / "enabled.txt").write_text("", encoding="utf-8")
+                if not (base / "enabled.txt").exists():
+                    (base / "enabled.txt").write_text("", encoding="utf-8")
                 (base / "mods").mkdir(parents=True, exist_ok=True)
             ignored_mod_files = sum(1 for child in mods_dir.rglob("*") if child.is_file()) if mods_dir.is_dir() else 0
             return {"ok": True, "kind": "core", "role": normalized_role, "files_written": written,

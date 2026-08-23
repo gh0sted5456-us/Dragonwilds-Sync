@@ -25,8 +25,9 @@ from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
 from secret_store import SecretStore, is_reference
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
-                            ensure_base_runtimes, activate_runeschema_variant, runtime_prerequisite_status, gather_server_hardware_stats,
-                            install_authoritative_ue4ss_update, local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
+                            ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
+                            install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
+                            local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
 
 DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
 DEDICATED_SERVER_EXE_ALIASES = ("RSDragonwildsServer.sh", "RSDragonwildsServer", "RSDragonwilds.exe", "RSDragonwildsServer.exe")
@@ -37,6 +38,7 @@ DEDICATED_SAVEGAMES_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames
 PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
 SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
+OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
@@ -530,6 +532,31 @@ def _runtime_secret(value: object, label: str) -> str:
     if not resolved:
         raise ValueError(f"The saved {label} is unavailable. Re-enter it in DragonConnect before launching.")
     return resolved
+
+
+def _restore_official_runeschema_once(game_root: str) -> dict:
+    """Replace retired launcher variants with one complete official GitHub core."""
+    if not str(game_root or "").strip():
+        raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
+    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
+    state = load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    restored = [str(item) for item in (install.get("official_runeschema_restored_roots") or []) if str(item)]
+    if root_key in restored:
+        return {"ok": True, "changed": False, "source": OFFICIAL_RUNESCHEMA_REPOSITORY}
+    result = install_authoritative_runeschema_update(OFFICIAL_RUNESCHEMA_REPOSITORY, game_root)
+    # The GitHub transfer may take long enough for unrelated application state
+    # to change. Reload before recording the completed migration so those
+    # changes are never replaced by the pre-download snapshot.
+    state = load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    restored = [str(item) for item in (install.get("official_runeschema_restored_roots") or []) if str(item)]
+    install["runeschema_source_url"] = OFFICIAL_RUNESCHEMA_REPOSITORY + "/releases"
+    install["runeschema_source_name"] = str(result.get("filename") or "Official GitHub RuneSchema")
+    install["runeschema_installed_at"] = time.time()
+    install["official_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
+    save_state(state)
+    return {**result, "ok": True, "changed": True}
 
 
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
@@ -1143,8 +1170,6 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        variant = activate_runeschema_variant(root, str(profile.get("runeschema_variant") or "standard"))
-        profile["runeschema_variant"] = variant["variant"]
         save_server_profile(profile_id, profile)
         units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
@@ -1163,8 +1188,9 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        variant = activate_runeschema_variant(root, str(profile.get("runeschema_variant") or "standard"))
-        profile["runeschema_variant"] = variant["variant"]
+        official = _restore_official_runeschema_once(root)
+        if official.get("changed"):
+            self._event(f"Restored the complete official RuneSchema core from GitHub ({official.get('filename') or 'latest release'}).", "ok")
         units = scan_mod_units(profile_id, root)
         if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generated = generate_server_mods_txt(profile_id, root, units=units)
@@ -1286,6 +1312,9 @@ class ServerEngine:
         exe = find_dedicated_server_exe(profile)
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
         cfg = profile.setdefault("dedicated_config", {})
+        official = _restore_official_runeschema_once(self._profile_root(profile))
+        if official.get("changed"):
+            self._event(f"Restored the complete official RuneSchema core from GitHub ({official.get('filename') or 'latest release'}).", "ok")
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;

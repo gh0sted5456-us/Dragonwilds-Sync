@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.11',
-  name: 'V2.7.11 · Upstream UE4SS Marker Ownership',
+  version: '2.7.12',
+  name: 'V2.7.12 · Official RuneSchema Restoration',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.12',
+    title: 'Official RuneSchema Restoration',
+    items: [
+      'The Dragonwilds Sync launcher RuneSchema variant and its bundled archive have been removed.',
+      'The first server start after updating restores one complete matched RuneSchema release from the original upstream GitHub repository.',
+      'Official core DLL, configuration, support files, and enable marker are replaced together so mixed-version cores cannot survive.',
+      'Separately installed RuneSchema child mods remain profile-owned and are preserved during the official restoration.',
+      'Server settings now expose only Restore / Update Official; arbitrary RuneSchema source and local core selectors are removed from the GUI.',
+    ],
+  }, {
     version: '2.7.11',
     title: 'Upstream UE4SS Marker Ownership',
     items: [

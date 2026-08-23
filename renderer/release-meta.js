@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.2',
-  name: 'V2.7.2 · Verified Direct Connect and Reliable World Sync',
+  version: '2.7.3',
+  name: 'V2.7.3 · Durable World Discovery and Responsive Sync',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.3',
+    title: 'Durable World Discovery and Responsive Sync',
+    items: [
+      'LAN and Direct Connect now save one durable, fingerprint-deduplicated World profile before testing Sync, so an unreachable host or rejected password cannot make the profile disappear.',
+      'Newly discovered profiles open under Direct Worlds with stale search and classification filters cleared, keeping the saved card immediately visible.',
+      'Linux LAN browsing is read-only and no longer invokes privilege elevation or changes firewall rules during an ordinary scan.',
+      'Heartbeat and directory refreshes use compact bounded batches without repeatedly transferring cached artwork, characters, or the complete application state.',
+      'Automatic bulk presentation prefetching was removed; full World details load only when requested.',
+      'Server Management remains visible inside Sync for setup and status instead of being hidden by a legacy compatibility layer.',
+    ],
+  }, {
     version: '2.7.2',
     title: 'Verified Direct Connect and Reliable World Sync',
     items: [

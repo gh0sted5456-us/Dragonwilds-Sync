@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.3",
+      "title": "Dragonwilds Sync V2.7.3",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "LAN and Direct Connect save one durable, fingerprint-deduplicated World profile before testing Sync.",
+        "Failed authentication or an unreachable host leaves the saved profile visible with a needs-attention result.",
+        "Linux LAN scanning no longer elevates privileges or modifies firewall rules.",
+        "Heartbeat and directory refreshes use compact bounded requests without bulk artwork or full-state retransmission.",
+        "Full World presentation metadata loads on demand instead of through automatic background prefetching.",
+        "Server Management remains consistently visible inside Sync for setup and status."
+      ]
+    },
+    {
       "version": "2.7.2",
       "title": "Dragonwilds Sync V2.7.2",
       "date": "2026-08-23",

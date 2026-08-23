@@ -289,7 +289,7 @@ def fetch_status(endpoint_value: str) -> tuple[dict, float]:
     if endpoint is None:
         raise ConnectionError("Invalid server address.")
     started = time.monotonic()
-    data = json.loads(request(f"{endpoint.base_url}/status", timeout=3.0).read())
+    data = json.loads(request(f"{endpoint.base_url}/status?compact=1", timeout=3.0).read(4 * 1024 * 1024))
     return data, (time.monotonic() - started) * 1000.0
 
 

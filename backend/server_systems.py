@@ -1492,6 +1492,7 @@ class SyncHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/ping": self._send_json({"ok": True}); return
         if path == "/status":
+            compact = "compact=1" in urlparse(self.path).query
             if not STATE.allow_status_request(self.client_address[0]): self._send_json({"error": "poll_backoff", "retry_after": self.STATUS_PER_IP_MIN_INTERVAL}, 429, {"Retry-After": str(int(max(1, self.STATUS_PER_IP_MIN_INTERVAL)))}); return
             with STATE.lock:
                 uptime = max(0, time.time() - STATE.server_start_ts) if STATE.server_online and STATE.server_start_ts else None
@@ -1509,10 +1510,10 @@ class SyncHandler(BaseHTTPRequestHandler):
                                  "console_policy": STATE.manifest.get("console_policy") or {},
                                  "tags": STATE.manifest.get("tags") or [],
                                  "mod_badges": STATE.manifest.get("mod_badges") or [],
-                                 "mod_summary": STATE.manifest.get("mod_summary") or [],
+                                 "mod_summary": [] if compact else (STATE.manifest.get("mod_summary") or []),
                                  "description": STATE.manifest.get("description") or "",
-                                 "icon_b64": STATE.manifest.get("icon_b64") or "",
-                                 "banner_b64": STATE.manifest.get("banner_b64") or "",
+                                 "icon_b64": "" if compact else (STATE.manifest.get("icon_b64") or ""),
+                                 "banner_b64": "" if compact else (STATE.manifest.get("banner_b64") or ""),
                                  "placard_background": STATE.manifest.get("placard_background") or "1",
                                  "rating_average": STATE.manifest.get("rating_average") or 0,
                                  "rating_count": STATE.manifest.get("rating_count") or 0,
@@ -1535,6 +1536,7 @@ class SyncHandler(BaseHTTPRequestHandler):
             # World name before caching anything. Credentials and file manifests
             # are never included here.
             with STATE.lock:
+                compact = "compact=1" in urlparse(self.path).query
                 payload = {
                     "schema": "DragonwildsSync.WorldIdentity.v1",
                     "profile_id": STATE.manifest.get("profile_id"),
@@ -1564,6 +1566,10 @@ class SyncHandler(BaseHTTPRequestHandler):
                     "character_backup_requested": bool((STATE.manifest.get("character_sharing") or {}).get("request_backups")),
                     "operator_identity": signed_operator_world_identity(STATE.manifest),
                 }
+                if compact:
+                    payload["icon_b64"] = ""
+                    payload["banner_b64"] = ""
+                    payload["shared_characters"] = []
             STATE.activity(self.client_address[0], "downloaded public World identity metadata")
             self._send_json(payload); return
         if path == "/lan-auth":
@@ -1798,8 +1804,8 @@ def scan_for_servers(timeout: float = 3.0) -> list[dict]:
             base_url = f"{scheme}://{address}:{port}"
             if scheme == "https":
                 register_tls_pin(base_url, str(info.get("tls_cert_fingerprint") or ""))
-            response = sync_request(f"{base_url}/identity", timeout=2.5)
-            identity = json.loads(response.read(16 * 1024 * 1024))
+            response = sync_request(f"{base_url}/identity?compact=1", timeout=2.5)
+            identity = json.loads(response.read(4 * 1024 * 1024))
             world_sync = identity.get("world_sync") if isinstance(identity.get("world_sync"), dict) else {}
             advertised_fingerprint = str(info.get("fingerprint") or "")
             live_fingerprint = str(world_sync.get("fingerprint") or identity.get("launcher_fingerprint") or "")
@@ -1866,7 +1872,7 @@ def probe_server_address(address_value: str, timeout: float = 3.0) -> list[dict]
             base_url = f"{scheme}://{rendered_host}:{port}"
             if scheme == "https":
                 register_tls_pin(base_url, str(info.get("tls_cert_fingerprint") or ""))
-            identity = json.loads(sync_request(f"{base_url}/identity", timeout=2.5).read(16 * 1024 * 1024))
+            identity = json.loads(sync_request(f"{base_url}/identity?compact=1", timeout=2.5).read(4 * 1024 * 1024))
             world_sync = identity.get("world_sync") if isinstance(identity.get("world_sync"), dict) else {}
             actual = str(world_sync.get("fingerprint") or identity.get("launcher_fingerprint") or "")
             info["identity_verified"] = bool(str(info.get("fingerprint") or "") and actual == str(info.get("fingerprint") or "") and

@@ -65,8 +65,8 @@
   async function applyWebHostContract(root=document){
     const snapshot=await state(),application=snapshot?.application||{},advanced=application.advanced||{},host=application.world_directory_host||{},remote=host.remote_admin||{},webHostActivated=!!advanced.webhost_enabled,remoteEnabled=!!remote.enabled;
     const declared=root.querySelector('[data-vnext-world-tab="declared"]');if(declared){declared.hidden=!webHostActivated;declared.style.display=webHostActivated?'':'none';}
-    const remoteTab=root.querySelector('[data-webhost-tab="remote"]');if(remoteTab){remoteTab.hidden=!remoteEnabled;remoteTab.style.display=remoteEnabled?'':'none';remoteTab.textContent='Server Management';remoteTab.title='Remote Server Manager users, permissions, and requests';}
-    const toggle=root.querySelector('#toggle-webhost-remote-admin'),row=toggle?.closest('.settings-row');if(row){const title=row.querySelector('.settings-copy strong'),copy=row.querySelector('.settings-copy span');if(title)title.textContent='Remote Server';if(copy)copy.textContent='Enable target-owned remote login. The public WebHost shows Server Management only while this is enabled.';}
+    const remoteTab=root.querySelector('[data-webhost-tab="remote"]');if(remoteTab){remoteTab.hidden=false;remoteTab.style.removeProperty('display');remoteTab.textContent='Server Management';remoteTab.title=remoteEnabled?'Remote Server Manager users, permissions, and requests':'Set up Remote Server Manager users and permissions';}
+    const toggle=root.querySelector('#toggle-webhost-remote-admin'),row=toggle?.closest('.settings-row');if(row){const title=row.querySelector('.settings-copy strong'),copy=row.querySelector('.settings-copy span');if(title)title.textContent='Remote Server';if(copy)copy.textContent='Enable target-owned remote login. Server Management remains available here for setup and status.';}
     root.querySelectorAll('[data-webhost-tab="manifest"]').forEach(button=>button.textContent='Manifest & Heartbeats');
     // Old authority sections are duplicates. The dedicated Remote Server tab is
     // now the only desktop place that exposes users and grants.

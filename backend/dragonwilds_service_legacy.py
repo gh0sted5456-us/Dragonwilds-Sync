@@ -797,6 +797,18 @@ def public_state(state: dict) -> dict:
     return clone
 
 
+def compact_world_for_renderer(world: dict) -> dict:
+    """Return heartbeat/discovery fields without retransmitting cached artwork."""
+    clone = sanitize_world_for_renderer(world)
+    for container_name in ("presentation", "manifest_cache"):
+        container = clone.get(container_name)
+        if isinstance(container, dict):
+            container.pop("icon_b64", None)
+            container.pop("banner_b64", None)
+            container.pop("shared_characters", None)
+    return clone
+
+
 def _merge_advertised_connection(world: dict, advertised: dict | None) -> bool:
     """Learn the server's own LAN/public routes only after a trusted response."""
     if not isinstance(advertised, dict):
@@ -1801,6 +1813,11 @@ def handle(method: str, params: dict) -> object:
         state.setdefault("client", {})["directory_worlds"] = list(normalized.get("worlds") or [])
         cfg["last_directory_refresh_at"] = now_iso(); cfg["last_directory_error"] = "; ".join((result.get("errors") or [])[:3])
         save_state(state)
+        if params.get("compact"):
+            compact_worlds = [compact_world_for_renderer(world) for world in (normalized.get("worlds") or [])]
+            return {"result": {**result, "worlds": compact_worlds},
+                    "directory_worlds": compact_worlds,
+                    "world_discovery": deepcopy(cfg)}
         return {"result": {**result, "worlds": normalized.get("worlds") or []}, "state": public_state(state)}
 
     if method == "world.metadata.preview":
@@ -1813,9 +1830,12 @@ def handle(method: str, params: dict) -> object:
             raise RuntimeError(result.get("error") or "The World did not return verified identity metadata.")
         _apply_identity_preview(candidate, result)
         save_state(state)
-        return {"result": {"ok": True, "presentation_only": True, "files_transferred": 0,
-                           "fingerprint": result.get("fingerprint"), "ping_ms": result.get("ping_ms")},
-                "world": sanitize_world_for_renderer(candidate), "state": public_state(state)}
+        response = {"result": {"ok": True, "presentation_only": True, "files_transferred": 0,
+                               "fingerprint": result.get("fingerprint"), "ping_ms": result.get("ping_ms")},
+                    "world": sanitize_world_for_renderer(candidate)}
+        if not params.get("compact"):
+            response["state"] = public_state(state)
+        return response
 
     if method == "world.public.history":
         world_id = str(params.get("id") or "").strip()
@@ -1931,6 +1951,8 @@ def handle(method: str, params: dict) -> object:
         if "tag" in params:
             browser["tag"] = str(params.get("tag") or "all").strip()[:40] or "all"
         save_state(state)
+        if params.get("compact"):
+            return {"browser": deepcopy(browser)}
         return public_state(state)
 
     if method == "world.favorite.toggle":
@@ -3685,8 +3707,12 @@ def handle(method: str, params: dict) -> object:
         cfg.update({"completed": False, "skipped": True, "last_mode": str(params.get("mode") or cfg.get("last_mode") or "player")})
         save_state(state); return public_state(state)
 
-    if method == "world.create":
+    if method in ("world.create", "world.discovery.add"):
         payload = deepcopy(params)
+        compact = bool(payload.pop("compact", False))
+        payload.pop("_compact", None)
+        if method == "world.discovery.add" and not bool((payload.get("shared") or {}).get("fingerprint_verified")):
+            raise ValueError("A discovered World must have a verified identity fingerprint before it can be saved.")
         payload.setdefault("credentials", {})
         payload["credentials"].setdefault("source", "manual")
         client = state.setdefault("client", {})
@@ -3720,7 +3746,15 @@ def handle(method: str, params: dict) -> object:
             existing.update(world)
             world = existing
         client["active_world_id"] = world["id"]
+        if method == "world.discovery.add":
+            browser = client.setdefault("world_browser", {})
+            browser.update({"tab": "direct", "filter": "all", "search": "", "content_type": "all",
+                            "game_mode": "all", "host_type": "all", "tag": "all", "page": 1})
         save_state(state)
+        if compact or method == "world.discovery.add":
+            return {"world": sanitize_world_for_renderer(world),
+                    "browser": deepcopy(client.get("world_browser") or {}),
+                    "created": existing is None}
         return public_state(state)
 
     if method == "world.update":
@@ -3933,7 +3967,10 @@ def handle(method: str, params: dict) -> object:
             status["blocked_kind"] = result.get("blocked_kind") or ""
         world["updated_at"] = now_iso()
         save_state(state)
-        return {"result": result, "state": public_state(state)}
+        response = {"result": result, "world": compact_world_for_renderer(world) if params.get("compact") else sanitize_world_for_renderer(world)}
+        if not params.get("compact"):
+            response["state"] = public_state(state)
+        return response
 
 
     if method == "world.network.test":
@@ -4743,12 +4780,9 @@ def handle(method: str, params: dict) -> object:
         return {"result": result, "state": public_state(state)}
 
     if method in ("server.discovery.scan", "client.discovery.scan"):
-        if sys.platform.startswith("linux"):
-            discovery_spec = firewall_spec("sync_discovery", 8421, program=backend_program(), mode="local")
-            discovery_spec.update({"display_name": "Dragonwilds Sync - LAN Browse UDP",
-                                   "profiles": "Domain,Private", "remote_address": "LocalSubnet"})
-            if not apply_firewall_spec(discovery_spec, action="Query").get("ok"):
-                apply_firewall_spec(discovery_spec)
+        # Discovery is a read-only client operation. In particular, never run
+        # pkexec/sudo or mutate Linux firewall state during a routine LAN scan;
+        # firewall setup remains an explicit host setup action.
         found = scan_for_servers(float(params.get("timeout") or 3.0))
         remember_heartbeats(found, source="lan")
         return found

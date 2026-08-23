@@ -813,6 +813,28 @@
     });
     return result;
   }
+  function mergeConnectedWorld(world) {
+    if (!world?.id || !state.data?.client) return null;
+    const rows=state.data.client.worlds ||= [];
+    const index=rows.findIndex((row)=>String(row?.id||'')===String(world.id));
+    if(index<0)rows.push(world);else{
+      const current=rows[index]||{};
+      rows[index]={...current,...world,
+        identity:{...(current.identity||{}),...(world.identity||{})},
+        connection:{...(current.connection||{}),...(world.connection||{})},
+        credentials:{...(current.credentials||{}),...(world.credentials||{})},
+        presentation:{...(current.presentation||{}),...(world.presentation||{})},
+        manifest_cache:{...(current.manifest_cache||{}),...(world.manifest_cache||{})},
+        shared:{...(current.shared||{}),...(world.shared||{})},
+        status:{...(current.status||{}),...(world.status||{})}};
+    }
+    state.data.client.active_world_id=world.id;
+    return rows[index<0?rows.length-1:index];
+  }
+  function applyWorldBrowser(browser={}) {
+    if(!state.data?.client)return;
+    state.data.client.world_browser={...(state.data.client.world_browser||{}),...browser};
+  }
   function privateWorlds() { return state.data?.client?.private_worlds || (state.data?.client?.singleplayer ? [state.data.client.singleplayer] : []); }
   function privateWorldById(id) { return privateWorlds().find((w)=>String(w.id)===String(id||'')) || null; }
   function singleplayerWorld() { const active=state.data?.client?.active_private_world_id; return privateWorldById(active) || privateWorldById('singleplayer') || state.data?.client?.singleplayer || null; }
@@ -5620,7 +5642,7 @@
     root.querySelectorAll('[data-server-stop]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverStop));if(!world||button.disabled)return;if(!await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server'))return;const label=button.textContent;button.disabled=true;button.textContent='Stopping…';try{const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('World stopped',`PID ${response.result?.stopped_pid||'—'} · ${response.result?.stop_method||'verified'}`,'success');}catch(error){button.disabled=false;button.textContent=label;toast('Stop failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-manage]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverManage));if(!world)return;stopPlayerPolling();pushNavigation();state.selectedServerWorldId=world.id;state.serverTab='overview';state.route='server-detail';render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{}));}));
     root.querySelectorAll('[data-world-launch]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=browserWorlds().find((w)=>String(w.id)===String(button.dataset.worldLaunch));if(world)playWorld(world);}));
-    root.querySelectorAll('[data-world-details]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const id=button.dataset.worldDetails;const world=browserWorlds().find((w)=>String(w.id)===String(id));if(!world||button.disabled)return;button.disabled=true;try{if(world.shared?.fingerprint_verified||world.status?.sync_verified||world.shared?.verified){const preview=await api.invoke('world.metadata.preview',{id});if(preview?.state)state.data=preview.state;}if(world.public_history?.provider==='lobbysup'){const observed=await api.invoke('world.public.history',{id,days:7});if(observed?.state)state.data=observed.state;}await api.invoke('world.select',{id}).catch(()=>{});}catch(error){toast('Live details unavailable',`${error.message} Showing cached metadata.`,'');}finally{pushNavigation();state.selectedWorldId=id;state.route='world-detail';render();}}));
+    root.querySelectorAll('[data-world-details]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const id=button.dataset.worldDetails;const world=browserWorlds().find((w)=>String(w.id)===String(id));if(!world||button.disabled)return;button.disabled=true;try{if(world.shared?.fingerprint_verified||world.status?.sync_verified||world.shared?.verified){const preview=await api.invoke('world.metadata.preview',{id,compact:true});if(preview?.world)mergeConnectedWorld(preview.world);}if(world.public_history?.provider==='lobbysup'){const observed=await api.invoke('world.public.history',{id,days:7});if(observed?.state)state.data=observed.state;}await api.invoke('world.select',{id}).catch(()=>{});}catch(error){toast('Live details unavailable',`${error.message} Showing cached metadata.`,'');}finally{pushNavigation();state.selectedWorldId=id;state.route='world-detail';render();}}));
     const worldSearch=root.querySelector('#world-search');
     if(worldSearch){ let searchTimer=null; worldSearch.addEventListener('input',()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(async()=>{ try { state.data=await api.invoke('world.browser.settings',{search:worldSearch.value,page:1}); render(); } catch(_){} },320); }); }
     root.querySelector('#play-singleplayer-gallery')?.addEventListener('click', () => playWorld(singleplayerWorld()));
@@ -6885,9 +6907,9 @@
         let existing=(state.data?.client?.worlds||[]).find((world)=>(fingerprint&&String(world.shared?.fingerprint||'')===fingerprint)||(world.identity?.world_name===item.name&&String(world.connection?.internal_ip||'').split(':')[0]===internalIp));
         button.disabled=true;
         try{
-        if (!existing) {
-          const external = String(item.external_ip || '').trim();
-          const created = await api.invoke('world.create', {
+        {
+          const external = String(item.external_ip || existing?.connection?.external_ip || '').trim();
+          const saved = await api.invoke('world.discovery.add', {
             identity: { world_name: item.name || 'Dragonwilds World' }, nickname: '',
             connection: { internal_ip: internalIp, external_ip: external, preference: 'internal', sync_port: syncPort, game_port: gamePort, sync_tls:!!item.sync_tls, tls_cert_fingerprint:String(item.tls_cert_fingerprint||''), tls_password_fallback:!!item.tls_password_fallback },
             credentials: { password: '', source: 'lan', remember: true },
@@ -6896,14 +6918,10 @@
             manifest_cache: { mod_badges:item.mod_badges||[], mod_summary:item.mod_summary||[] },
             shared: { source:'lan', fingerprint:String(item.fingerprint||''), fingerprint_verified:true, protocol:String(item.protocol||'dragonwilds-world-sync'), protocol_version:Number(item.protocol_version||1) },
           });
-          if (created) state.data = created;
-          existing=(state.data?.client?.worlds||[]).find((world)=>(fingerprint&&String(world.shared?.fingerprint||'')===fingerprint)||(world.identity?.world_name===(item.name||'Dragonwilds World')&&String(world.connection?.internal_ip||'').split(':')[0]===internalIp));
+          existing=mergeConnectedWorld(saved.world)||existing;
+          applyWorldBrowser(saved.browser);
         }
-        if (existing?.id && item.fingerprint) {
-            state.data = await api.invoke('world.update', { id:existing.id, connection:{...existing.connection,internal_ip:internalIp,external_ip:String(item.external_ip||existing.connection?.external_ip||''),preference:'internal',sync_port:syncPort,game_port:gamePort,sync_tls:!!item.sync_tls,tls_cert_fingerprint:String(item.tls_cert_fingerprint||''),tls_password_fallback:!!item.tls_password_fallback}, presentation:{ description:String(item.description||''), tags:item.tags||[], mod_badges:item.mod_badges||[],icon_b64:String(item.icon_b64||existing.presentation?.icon_b64||''),banner_b64:String(item.banner_b64||existing.presentation?.banner_b64||'') }, mod_metadata:item.mod_summary||[], manifest_cache:{mod_badges:item.mod_badges||[],mod_summary:item.mod_summary||[]}, shared:{ source:'lan', fingerprint:String(item.fingerprint), fingerprint_verified:true, protocol:String(item.protocol||'dragonwilds-world-sync'), protocol_version:Number(item.protocol_version||1) } });
-            existing = browserWorlds().find((world)=>String(world.id)===String(existing.id)) || existing;
-        }
-        closeModal();state.data=await api.invoke('world.browser.settings',{tab:'direct',filter:'all',page:1});render();toast('LAN World saved',`${item.name||'World'} retained its LAN route and advertised external gameplay route.`,'success');
+        closeModal();state.selectedWorldId=existing?.id||null;render();toast('LAN World saved',`${item.name||'World'} retained its LAN route and advertised external gameplay route.`,'success');
         }catch(error){button.disabled=false;toast('Could not save LAN World',error.message,'error');}
       }));
       const showLanMods=(index)=>{const item=state.lanDiscoveries?.[Number(index)];if(!item)return;const mods=item.mod_summary||[];showModal(`<div class="modal-header"><div><div class="eyebrow">Verified LAN Metadata</div><h2>${escapeHtml(item.name||'World')} Mods</h2><p>${mods.length} advertised mod${mods.length===1?'':'s'} · fingerprint ${escapeHtml(String(item.fingerprint||'unknown'))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${mods.length?mods.map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):'<div class="empty-state">This verified World advertises no mods.</div>'}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'LAN World Mods',width:760,height:650});};
@@ -6921,7 +6939,27 @@
       const rules=String(item.community_rules||'').trim();
       const connectWin=showModal(`<div class="modal-header"><div><div class="eyebrow">Verified Direct World</div><h2>Connect to ${escapeHtml(item.name||'World')}</h2><p>Fingerprint ${escapeHtml(item.fingerprint||'')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Password</label><input class="field" id="direct-world-password" type="password" placeholder="Leave blank for LAN, open, or IP-allowlisted access"/><small>The host first checks same-LAN/IP allowlist trust, then the normal password challenge.</small></div><div class="form-group full"><label>Server & Community Rules</label><div class="identity-box" style="max-height:240px;overflow:auto"><p style="white-space:pre-wrap">${escapeHtml(rules||'No additional community rules were published.')}</p></div></div>${rules?'<label class="checkbox-row full"><input id="direct-rules-agree" type="checkbox"/> I have read and agree to this World’s server and community rules.</label>':''}</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="direct-world-connect" ${rules?'disabled':''}>Connect</button></div>`,{title:`Connect · ${item.name||'World'}`,width:760,height:680});
       const agree=connectWin.querySelector('#direct-rules-agree');const action=connectWin.querySelector('#direct-world-connect');agree?.addEventListener('change',()=>{action.disabled=!agree.checked;});
-      action?.addEventListener('click',async()=>{const password=connectWin.querySelector('#direct-world-password')?.value||'';action.disabled=true;action.textContent='Connecting…';try{const queried=String(item.queried_ip||item.ip||'').trim();const syncPort=Number(item.sync_port||item.port||27051);const gamePort=Number(item.game_port||7777);const fingerprint=String(item.fingerprint||'');state.data=await api.invoke('world.create',{identity:{world_name:item.name||'Dragonwilds World'},nickname:'',connection:{internal_ip:'',external_ip:queried,preference:'external',sync_port:syncPort,game_port:gamePort,sync_tls:!!item.sync_tls,tls_cert_fingerprint:String(item.tls_cert_fingerprint||''),tls_password_fallback:!!item.tls_password_fallback},credentials:{password,source:'manual',remember:true},presentation:{description:String(item.description||''),community_rules:rules,tags:item.tags||[],mod_badges:item.mod_badges||[],icon_b64:String(item.icon_b64||''),banner_b64:String(item.banner_b64||'')},mod_metadata:item.mod_summary||[],manifest_cache:{mod_badges:item.mod_badges||[],mod_summary:item.mod_summary||[],community_rules:rules},shared:{source:'direct-query',fingerprint,fingerprint_verified:true,protocol:String(item.protocol||'dragonwilds-world-sync'),protocol_version:Number(item.protocol_version||1)},connection_agreement:{accepted:!rules||!!agree?.checked,accepted_at:new Date().toISOString(),world_fingerprint:fingerprint,metadata_revision:Number(item.metadata_revision||0),rules_snapshot:rules}});const world=(state.data?.client?.worlds||[]).find((row)=>String(row.shared?.fingerprint||'')===fingerprint);if(!world)throw new Error('The verified World profile could not be prepared.');const tested=await api.invoke('world.test',{id:world.id});if(!tested.result?.ok)throw new Error(tested.result?.error||'The host did not accept this connection.');if(tested.state)state.data=tested.state;closeDesktopWindow(connectWin);closeDesktopWindow(win);state.data=await api.invoke('world.browser.settings',{tab:'direct',filter:'all',page:1});state.selectedWorldId=world.id;render();toast('Direct World connected',`${item.name||'World'} · fingerprint and rules agreement saved.`,'success');}catch(error){action.disabled=rules?!agree?.checked:false;action.textContent='Connect';toast('Direct connection failed',error.message,'error');}});
+      action?.addEventListener('click',async()=>{
+        const password=connectWin.querySelector('#direct-world-password')?.value||'';
+        action.disabled=true;action.textContent='Saving profile…';
+        let world=null;
+        try{
+          const queried=String(item.queried_ip||item.ip||'').trim();
+          const syncPort=Number(item.sync_port||item.port||27051),gamePort=Number(item.game_port||7777),fingerprint=String(item.fingerprint||'');
+          const saved=await api.invoke('world.discovery.add',{identity:{world_name:item.name||'Dragonwilds World'},nickname:'',connection:{internal_ip:'',external_ip:queried,preference:'external',sync_port:syncPort,game_port:gamePort,sync_tls:!!item.sync_tls,tls_cert_fingerprint:String(item.tls_cert_fingerprint||''),tls_password_fallback:!!item.tls_password_fallback},credentials:{password,source:'manual',remember:true},presentation:{description:String(item.description||''),community_rules:rules,tags:item.tags||[],mod_badges:item.mod_badges||[],icon_b64:String(item.icon_b64||''),banner_b64:String(item.banner_b64||'')},mod_metadata:item.mod_summary||[],manifest_cache:{mod_badges:item.mod_badges||[],mod_summary:item.mod_summary||[],community_rules:rules},shared:{source:'direct-query',fingerprint,fingerprint_verified:true,protocol:String(item.protocol||'dragonwilds-world-sync'),protocol_version:Number(item.protocol_version||1)},connection_agreement:{accepted:!rules||!!agree?.checked,accepted_at:new Date().toISOString(),world_fingerprint:fingerprint,metadata_revision:Number(item.metadata_revision||0),rules_snapshot:rules}});
+          world=mergeConnectedWorld(saved.world);applyWorldBrowser(saved.browser);
+          if(!world)throw new Error('The verified World profile could not be prepared.');
+          action.textContent='Testing Sync…';
+          const tested=await api.invoke('world.test',{id:world.id,compact:true});
+          if(tested.world)world=mergeConnectedWorld(tested.world);
+          closeDesktopWindow(connectWin);closeDesktopWindow(win);state.selectedWorldId=world.id;render();
+          if(!tested.result?.ok)toast('World profile saved',`${item.name||'World'} was added. Sync needs attention: ${tested.result?.error||'The host did not accept this connection.'}`,'warning');
+          else toast('Direct World connected',`${item.name||'World'} · fingerprint and rules agreement saved.`,'success');
+        }catch(error){
+          if(world){closeDesktopWindow(connectWin);closeDesktopWindow(win);state.selectedWorldId=world.id;render();toast('World profile saved',`${item.name||'World'} was added, but Sync could not finish: ${error.message}`,'warning');}
+          else{action.disabled=rules?!agree?.checked:false;action.textContent='Connect';toast('Could not save World profile',error.message,'error');}
+        }
+      });
     };
     const paint=(rows)=>{results.innerHTML=rows.length?`<div class="lan-world-results" role="listbox" aria-label="Direct Sync Worlds">${rows.map((item,index)=>`<article class="lan-world-result ${item.identity_verified===true?'verified':'unverified'}" tabindex="0" role="option" aria-selected="false" data-direct-result="${index}"><div><strong>${escapeHtml(item.name||'Dragonwilds World')}</strong><small>${escapeHtml(item.queried_ip||item.ip||'')} · Sync ${escapeHtml(String(item.sync_port||item.port||27051))} · ${item.identity_verified===true?'Fingerprint verified':'Identity not verified'}</small><div class="badge-row">${(item.mod_badges||[]).map((badge)=>`<button type="button" class="badge" data-direct-mods="${index}">${escapeHtml(badge)}</button>`).join('')}</div></div><button class="btn primary" data-direct-connect="${index}" ${item.identity_verified===true?'':'disabled'}>${item.identity_verified===true?'Connect':'Cannot Connect'}</button></article>`).join('')}</div>`:'<div class="empty-state"><strong>No Sync announcements answered at this address.</strong><span>Confirm the host is broadcasting Sync and that UDP discovery query port 8422 is reachable.</span></div>';results.querySelectorAll('[data-direct-connect]').forEach((button)=>button.addEventListener('click',()=>connect(rows[Number(button.dataset.directConnect)])));results.querySelectorAll('[data-direct-mods]').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();showMods(rows[Number(button.dataset.directMods)]);}));results.querySelectorAll('[data-direct-result]').forEach((row)=>{const select=()=>{results.querySelectorAll('[data-direct-result]').forEach((other)=>{other.classList.toggle('selected',other===row);other.setAttribute('aria-selected',other===row?'true':'false');});};row.addEventListener('click',(event)=>{if(!event.target.closest('button'))select();});row.addEventListener('focus',select);row.addEventListener('dblclick',(event)=>{if(!event.target.closest('[data-direct-mods]'))row.querySelector('[data-direct-connect]:not(:disabled)')?.click();});row.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();row.querySelector('[data-direct-connect]:not(:disabled)')?.click();}});row.addEventListener('contextmenu',(event)=>{event.preventDefault();select();document.querySelector('.context-menu')?.remove();const menu=document.createElement('div');menu.className='context-menu';menu.style.left=`${Math.min(event.clientX,innerWidth-210)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-110)}px`;menu.innerHTML=`<button data-action="connect" ${row.classList.contains('unverified')?'disabled':''}>Connect</button><button data-action="mods">View Advertised Mods</button>`;document.body.appendChild(menu);menu.addEventListener('click',(click)=>{if(click.target.dataset.action==='connect')row.querySelector('[data-direct-connect]:not(:disabled)')?.click();if(click.target.dataset.action==='mods')showMods(rows[Number(row.dataset.directResult)]);if(click.target.dataset.action)menu.remove();});});});};
     const search=async()=>{const address=win.querySelector('#direct-connect-address')?.value.trim()||'';if(!address)return toast('Address required','Enter the host IP address or hostname.','error');const button=win.querySelector('#direct-connect-search');button.disabled=true;button.textContent='Searching…';results.innerHTML='<div class="empty-state compact">Querying this address and verifying live fingerprints…</div>';try{paint(await api.invoke('client.discovery.probe',{address,timeout:3.0}));}catch(error){results.innerHTML=`<div class="empty-state"><strong>Direct search failed.</strong><span>${escapeHtml(error.message)}</span></div>`;}finally{button.disabled=false;button.textContent='Search';}};
@@ -7315,10 +7353,10 @@
     const page=Math.max(1,Number(browser.page||1));
     const eligible=worlds().filter((world)=>world.kind!=='singleplayer'&&world.kind!=='public'&&Number(world.connection?.sync_port||0)>0);
     const checkedAt=(world)=>{const value=world.status?.last_checked_at;if(!value)return 0;const numeric=Number(value);return Number.isFinite(numeric)?numeric:(Date.parse(value)||0)/1000;};
-    const targets=eligible.slice((page-1)*10,page*10).filter((world)=>Date.now()/1000-checkedAt(world)>20);
-    for (const world of targets) {
-      if (world.kind === 'singleplayer' || world.kind === 'public' || Number(world.connection?.sync_port || 0) <= 0) continue;
-      try { const response = await api.invoke('world.status', { id: world.id }); if(response.state) state.data = response.state; } catch (_) {}
+    const targets=eligible.slice((page-1)*10,page*10).filter((world)=>Date.now()/1000-checkedAt(world)>20).slice(0,4);
+    for(let offset=0;offset<targets.length;offset+=2){
+      const responses=await Promise.all(targets.slice(offset,offset+2).map((world)=>api.invoke('world.status',{id:world.id,compact:true}).catch(()=>null)));
+      responses.forEach((response)=>{if(response?.world)mergeConnectedWorld(response.world);});
     }
     if(state.data?.application?.world_discovery) state.data.application.world_discovery.last_refresh_at = new Date().toISOString();
     render(); if(!quiet) toast('World status refreshed');
@@ -7329,8 +7367,9 @@
     let discoveryError = '';
     if (state.data?.application?.world_discovery?.enabled !== false) {
       try {
-        const response = await api.invoke('world.directory.refresh', {});
-        if (response.state) state.data = response.state;
+        const response = await api.invoke('world.directory.refresh', {compact:true});
+        if(response.directory_worlds)state.data.client.directory_worlds=response.directory_worlds;
+        if(response.world_discovery)state.data.application.world_discovery=response.world_discovery;
         publicCount = Number(response.result?.worlds?.length || 0) + Number(response.result?.merged_known || 0);
         discoveryError = (response.result?.errors || []).join('; ');
       } catch (error) {
@@ -7341,7 +7380,6 @@
     // needs endpoint polling, and only its visible ten rows are touched.
     if ((state.data?.client?.world_browser?.tab||'directory')==='direct') await refreshAllWorldStatuses(true);
     else render();
-    await prefetchVisibleWorldPresentation();
     if (!quiet) {
       if (discoveryError && !publicCount) toast('World discovery unavailable', `${discoveryError} Known and curated Worlds are still available.`, '');
       else toast('Worlds refreshed', `${publicCount} World${publicCount===1?'':'s'} discovered or merged.`, 'success');

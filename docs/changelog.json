@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.6",
+      "title": "Dragonwilds Sync V2.7.6",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Connected World Details open the durable saved profile without requiring a live route.",
+        "DedicatedServer.ini updates preserve Dragonwilds-owned ServerGuid and roster fields and leave the file writable by the server.",
+        "Each managed gameplay setting, including WorldPassword, is written exactly once in the canonical dedicated-server section.",
+        "DragonConnect 0.4.2 performs one delayed password handoff to the completed UMG widget and no longer repeatedly rewrites live fields.",
+        "DragonConnect diagnostics identify the exact target widget without exposing the password."
+      ]
+    },
+    {
       "version": "2.7.5",
       "title": "Dragonwilds Sync V2.7.5",
       "date": "2026-08-22",

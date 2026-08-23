@@ -497,11 +497,11 @@ def dedicated_config_targets(cfg: dict, server_root: str = "") -> list[Path]:
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
     owner_id = str(cfg.get("owner_id", "")).strip(); server_name = str(cfg.get("server_name", "")).strip(); world_name = str(cfg.get("world_name", "")).strip()
     admin_pass = str(cfg.get("admin_pass", "")).strip(); world_pass = str(cfg.get("world_pass", "")).strip(); port = str(cfg.get("port", "7777")).strip() or "7777"
-    content = (";METADATA=(Diff=true, UseCommands=true)\n[SectionsToSave]\nbCanSaveAllSections=true\n\n"
-               "[/Script/Dominion.DedicatedServerSettings]\n"
-               f"AdminPassword={admin_pass}\nOwnerId={owner_id}\nWorldPassword={world_pass}\nServerName={server_name}\nDefaultWorldName={world_name}\nPort={port}\n\n"
-               "[/Script/RSDragonwilds.DedicatedServerConfig]\n"
-               f"OwnerID={owner_id}\nServerName={server_name}\nDefaultWorldName={world_name}\nAdminPassword={admin_pass}\nWorldPassword={world_pass}\nPort={port}\n")
+    managed = {
+        "adminpassword": ("AdminPassword", admin_pass), "ownerid": ("OwnerId", owner_id),
+        "worldpassword": ("WorldPassword", world_pass), "servername": ("ServerName", server_name),
+        "defaultworldname": ("DefaultWorldName", world_name), "port": ("Port", port),
+    }
     targets = dedicated_config_targets(cfg, server_root)
     if not targets:
         raise RuntimeError("Could not resolve a DedicatedServer.ini target.")
@@ -513,17 +513,41 @@ def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
                 config_file.chmod(previous_mode | stat.S_IWUSR)
             except OSError:
                 pass
+        # Dragonwilds adds identity and roster fields (for example ServerGuid
+        # and KnownPlayerList) to this section. Preserve every engine-owned
+        # line while replacing each launcher-owned key exactly once.
+        preserved: list[str] = []
+        if config_file.is_file():
+            try:
+                previous = config_file.read_text(encoding="utf-8-sig", errors="replace")
+            except OSError:
+                previous = ""
+            in_canonical = False
+            for line in previous.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    in_canonical = stripped.casefold() == "[/script/dominion.dedicatedserversettings]"
+                    continue
+                if not in_canonical or not stripped or stripped.startswith((";", "#")):
+                    continue
+                key = stripped.split("=", 1)[0].strip().casefold() if "=" in stripped else ""
+                if key not in managed:
+                    preserved.append(line)
+        content = (";METADATA=(Diff=true, UseCommands=true)\n[SectionsToSave]\nbCanSaveAllSections=true\n\n"
+                   "[/Script/Dominion.DedicatedServerSettings]\n"
+                   + "\n".join(f"{key}={value}" for key, value in managed.values()) + "\n"
+                   + (("\n".join(preserved) + "\n") if preserved else ""))
         tmp = config_file.with_suffix(config_file.suffix + ".dragonwilds.tmp")
         try:
             tmp.write_text(content, encoding="utf-8")
             os.replace(tmp, config_file)
         finally:
             tmp.unlink(missing_ok=True)
-        # DedicatedServer.ini is launcher-owned. Keep it read-only on disk so
-        # Player ID / credentials cannot silently drift outside the launcher.
+        # The dedicated process must be able to persist ServerGuid and its
+        # KnownPlayerList. The launcher owns the managed values, not the file.
         try:
             mode = config_file.stat().st_mode
-            config_file.chmod(mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
+            config_file.chmod(mode | stat.S_IWUSR)
         except OSError:
             pass
     for save_dir in {target.parent.parent.parent / "SaveGames" for target in targets}:

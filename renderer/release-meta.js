@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.5',
-  name: 'V2.7.5 · Gameplay Password and Core Configuration Reliability',
+  version: '2.7.6',
+  name: 'V2.7.6 · DragonConnect and Dedicated Identity Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.6',
+    title: 'DragonConnect and Dedicated Identity Reliability',
+    items: [
+      'Connected World Details open the durable saved profile immediately and no longer require a currently reachable Sync route.',
+      'DedicatedServer.ini updates preserve Dragonwilds-owned ServerGuid, roster, and future settings while replacing each managed gameplay value exactly once.',
+      'The dedicated server can continue writing its own identity state because Dragonwilds Sync no longer marks DedicatedServer.ini read-only.',
+      'DragonConnect 0.4.2 waits for the real password widget to finish construction, performs one bounded handoff, and stops repeatedly rewriting live fields.',
+      'UE4SS diagnostics now identify the helper as DragonConnect and record the exact password widget used without logging the password.',
+    ],
+  }, {
     version: '2.7.5',
     title: 'Gameplay Password and Core Configuration Reliability',
     items: [

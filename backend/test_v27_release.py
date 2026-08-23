@@ -58,12 +58,16 @@ def main():
         main_lua = archive.read("PersistentDirectConnectIP/Scripts/main.lua").decode("utf-8")
         assert 'IP = ""' in config and 'PASSWORD = ""' in config
         assert "24.9.154.151" not in config and "BELTS" not in config
-        assert 'VERSION = "0.4.1"' in main_lua
+        assert 'TAG = "[DragonConnect]"' in main_lua
+        assert 'VERSION = "0.4.2"' in main_lua
         assert "editable:SetText(FText(value))" in main_lua
         assert 'FindAllOf, class_name' in main_lua
+        assert "restored_password_objects" in main_lua
 
     assert "const world=worlds().find" in renderer
     assert "if(selected?.client)setData(selected)" in renderer
+    details_handler = renderer[renderer.index("root.querySelectorAll('[data-world-details]'"):renderer.index("const worldSearch=root.querySelector('#world-search')")]
+    assert "world.metadata.preview" not in details_handler
     assert "apply_gameplay_now: true" in renderer
     assert "hostingFocusDismissedProfileId" in renderer
     assert "localHostedProfile" in renderer

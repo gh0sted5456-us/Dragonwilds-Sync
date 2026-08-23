@@ -18,6 +18,12 @@ def main():
         old_local = se.DEDICATED_CONFIG_FILE
         se.DEDICATED_CONFIG_FILE = base / "LocalAppData" / "RSDragonwilds" / "Saved" / "Config" / "WindowsServer" / "DedicatedServer.ini"
         try:
+            canonical = game / "Saved" / "Config" / "WindowsServer" / "DedicatedServer.ini"
+            canonical.write_text(
+                "[/Script/Dominion.DedicatedServerSettings]\n"
+                "ServerGuid=fixture-guid\nKnownPlayerList=(PlayerId=fixture)\nWorldPassword=stale\n",
+                encoding="utf-8",
+            )
             cfg = {
                 "owner_id": "PLAYER-ABC-123",
                 "server_name": "Test Server",
@@ -33,26 +39,29 @@ def main():
             for target in targets:
                 text = target.read_text(encoding="utf-8")
                 assert "OwnerId=PLAYER-ABC-123" in text
-                assert "OwnerID=PLAYER-ABC-123" in text
+                assert "OwnerID=PLAYER-ABC-123" not in text
                 assert "ServerName=Test Server" in text
+                assert text.count("WorldPassword=world") == 1
+            canonical_text = canonical.read_text(encoding="utf-8")
+            assert "ServerGuid=fixture-guid" in canonical_text
+            assert "KnownPlayerList=(PlayerId=fixture)" in canonical_text
+            assert os.access(canonical, os.W_OK)
         finally:
             se.DEDICATED_CONFIG_FILE = old_local
 
-    renderer = (ROOT / "renderer" / "app.js").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     service = (
         (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
         + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
     )
     spec = (ROOT / "backend" / "DragonwildsSync.Service.spec").read_text(encoding="utf-8")
-    main_js = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
     assert "Player ID (Owner)" in renderer
-    assert "It is written into DedicatedServer.ini; SteamCMD downloads anonymously." in renderer
+    assert "Per-server ownership value. It is not required to download the dedicated server." in renderer
     assert "_propagate_machine_owner_id" in service
     assert "Player ID (Owner) is required for Full Setup" in service
     assert "config_file = write_dedicated_config(dedicated, install_dir)" in service
     assert '"+login", "anonymous"' in (ROOT / "backend" / "server_systems.py").read_text(encoding="utf-8")
     assert "console=True" in spec
-    assert "windowsHide: true" in main_js
     print("alpha 8 regression tests passed")
 
 

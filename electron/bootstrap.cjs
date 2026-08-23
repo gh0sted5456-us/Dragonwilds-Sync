@@ -1,6 +1,8 @@
 // Dragonwilds Sync Electron bootstrap — V3 Quick-aware.
-// Quick is a presentation mode. It keeps the same service/runtime authority but
-// suppresses desktop-only periodic work before the retained main module starts.
+// Quick is a presentation mode. It keeps the same service/runtime authority;
+// main-v2 owns mode-aware background services so a Quick process can promote
+// itself into the full application without inheriting permanently suppressed
+// timers.
 const electron = require('electron');
 
 // Preserve the established Minimal Mode detection expression as a compatibility
@@ -9,17 +11,6 @@ const minimalMode = process.argv.includes('--minimal-mode');
 const quickRequested = process.argv.includes('--quick') || process.argv.includes('--quick-launch') || minimalMode;
 if (quickRequested) {
   process.env.DWS_V3_QUICK = '1';
-  const suppressedBackgroundCallbacks = new Set(['maybeBenchmark', 'backgroundTick', 'rsdwModuleTick']);
-  const nativeSetTimeout = global.setTimeout;
-  const nativeSetInterval = global.setInterval;
-  global.setTimeout = function dragonwildsQuickTimeout(callback, delay, ...args) {
-    if (suppressedBackgroundCallbacks.has(String(callback?.name || ''))) return null;
-    return nativeSetTimeout(callback, delay, ...args);
-  };
-  global.setInterval = function dragonwildsQuickInterval(callback, delay, ...args) {
-    if (suppressedBackgroundCallbacks.has(String(callback?.name || ''))) return null;
-    return nativeSetInterval(callback, delay, ...args);
-  };
 }
 
 process.on('uncaughtException', (error) => {

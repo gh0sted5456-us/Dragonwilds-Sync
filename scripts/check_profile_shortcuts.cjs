@@ -17,4 +17,7 @@ const retainedMain = fs.readFileSync(path.join(root, 'electron', 'main-v2.cjs'),
 assert(renderer.includes("fallbackKind === 'private' ? 'coop' : 'player'"));
 assert(renderer.includes("api.invoke('quick.status'"));
 assert(retainedMain.includes("createQuickWindow(q.worldId,q.worldKind,q.autoStart)"), 'legacy --quick-launch shortcuts must remain supported');
+assert(retainedMain.includes('promoteToFullApplication(event.sender)'), 'Open Full must promote the existing Quick process');
+assert(renderer.includes("quickState?.profile_kind==='linked'"), 'Connected Quick must explain its verified Sync pipeline');
+assert(renderer.includes("without contacting a remote Sync host"), 'Local Quick must remain independent from remote Sync');
 console.log('profile desktop shortcut contracts passed');

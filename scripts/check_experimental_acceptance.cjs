@@ -27,6 +27,7 @@ const phase4Renderer = read('renderer/release-v3-phase4.js');
 const preload = read('electron/preload.cjs');
 const bootstrap = read('electron/bootstrap.cjs');
 const main = read('electron/main.cjs');
+const mainV2 = read('electron/main-v2.cjs');
 const service = read('backend/dragonwilds_service.py');
 const legacyService = read('backend/dragonwilds_service_legacy.py');
 const runtimeManager = read('backend/runtime_manager.py');
@@ -70,10 +71,14 @@ requireText(preload, 'managedDialogContent:', 'state-preserving in-app dialog ho
 requireText(preload, 'updateManagedDialog:', 'owner-side live dialog synchronization');
 requireText(preload, 'openInAppBrowser:', 'external website browser contract');
 
-// Minimal Mode retains server lifecycle/scheduler but suppresses desktop/client background work.
+// Minimal Mode retains server lifecycle/scheduler while the main process starts
+// only the background services required by the selected Quick role.
 requireText(bootstrap, "process.argv.includes('--minimal-mode')", 'Minimal Mode detection');
-for (const name of ['maybeBenchmark', 'backgroundTick', 'rsdwModuleTick']) requireText(bootstrap, `'${name}'`, `Minimal Mode ${name} suppression`);
-forbidText(bootstrap, "'schedulerTick'", 'Minimal Mode must not suppress server scheduler');
+requireText(bootstrap, 'main-v2 owns mode-aware background services', 'Quick background-service ownership');
+requireText(mainV2, "(full || ['coop','server'].includes(mode))", 'Quick host heartbeat policy');
+requireText(mainV2, "(full || mode==='server')", 'Minimal Mode scheduler policy');
+requireText(mainV2, 'if (full && !benchmarkTimer)', 'Quick benchmark suppression');
+requireText(mainV2, 'if (full && !rsdwModuleTimer)', 'Quick module update suppression');
 requireText(main, 'createMinimalWindow(worldId)', 'Minimal Mode selected-world launch');
 requireText(quick, "mode === 'server'", 'Minimal Mode dedicated surface');
 requireText(quick, 'Update & Restart', 'Minimal Mode update/restart control');

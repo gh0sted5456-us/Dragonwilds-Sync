@@ -61,7 +61,7 @@ if (/\binstallation_id\s*:/.test(networkStats)) failures.push('Public network ag
 requireText('PROJECT_STATE/archive/V3_PHASE2.md', ['Reuse → Migrate → Verify → Retire', 'Cloudflare', 'external deployment gate']);
 
 const bootstrap = read('electron/bootstrap.cjs');
-if (!bootstrap.includes("argv.includes('--quick')") || !bootstrap.includes('suppressedBackgroundCallbacks')) failures.push('electron/bootstrap.cjs: Quick must own lean desktop background suppression');
+if (!bootstrap.includes("argv.includes('--quick')") || !bootstrap.includes('main-v2 owns mode-aware background services')) failures.push('electron/bootstrap.cjs: Quick must defer lean service policy to the promotable main process');
 
 const renderer = read('renderer/release-v3-phase2.js');
 for (const forbidden of ['x-dws-signature', 'x-dws-timestamp', 'installation_credential_ref', 'credential_ref =', 'setInterval(()=>api.invoke(\'network.heartbeat']) {
@@ -76,6 +76,15 @@ if (!retainedMain.includes("preload: path.join(__dirname, 'preload-v2.cjs')")) f
 if (!retainedMain.includes('sandbox: true')) failures.push('electron/main-v2.cjs: BrowserWindow preload must remain sandboxed');
 if (!retainedMain.includes("'renderer', 'quick.html'")) failures.push('electron/main-v2.cjs: Quick windows must use the lean dedicated renderer entry');
 if (!retainedMain.includes("autoStart: argv.includes('--auto-start')")) failures.push('electron/main-v2.cjs: second-instance Quick handoff must preserve auto-start');
+for (const token of ['startBackgroundServices', 'promoteToFullApplication', "process.env.DWS_V3_QUICK='0'", "['coop','server'].includes(mode)"]) {
+  if (!retainedMain.includes(token)) failures.push(`electron/main-v2.cjs: Quick promotion/resource contract missing ${token}`);
+}
+for (const token of ['profile_scope', 'launch_sequence', '_quick_console_execute', 'unified_console_snapshot']) {
+  if (!read(phase2Service).includes(token)) failures.push(`${phase2Service}: profile-scoped Quick contract missing ${token}`);
+}
+for (const token of ['quickConsole()', 'data-v3q-console-filter', 'Runtime Console', 'launchPlan()', 'same launcher process']) {
+  if (!renderer.includes(token)) failures.push(`renderer/release-v3-phase2.js: scoped Quick management missing ${token}`);
+}
 const retainedPreload = read('electron/preload-v2.cjs');
 if (/require\(['"]\.\/preload[^'"]*['"]\)/.test(retainedPreload)) failures.push('electron/preload-v2.cjs: sandbox preload must not require another local preload');
 

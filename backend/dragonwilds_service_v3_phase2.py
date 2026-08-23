@@ -9,6 +9,7 @@ available while V3 adds new presentation and publication contracts.
 """
 
 import time
+from pathlib import Path
 
 import dragonwilds_service_v2_wrapper as _base
 from dragonwilds_service_v2_wrapper import *  # noqa: F401,F403
@@ -133,10 +134,18 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         "network_service": NETWORK.status(),
         "runtime": runtime,
         "active": False,
+        "profile_scope": "Hosted Server" if kind == "dedicated" else ("Connected World" if kind == "linked" else "Local World"),
+        "launch_sequence": (
+            ["Load server profile", "Materialize World files", "Start dedicated process", "Verify process", "Publish Sync"]
+            if kind == "dedicated" else
+            ["Match host manifest", "Transfer changed files", "Verify file parity", "Prepare DragonConnect", "Launch Dragonwilds"]
+            if kind == "linked" else
+            ["Load local profile", "Materialize profile files", "Verify runtime files", "Launch Dragonwilds"]
+        ),
         "controls": {
             "play": mode == "player", "host": mode == "coop", "start": mode == "server",
             "stop": mode in {"coop", "server"}, "restart": mode == "server", "update_restart": mode == "server",
-            "console": mode == "server", "broadcast_message": mode in {"coop", "server"},
+            "console": True, "broadcast_message": mode in {"coop", "server"},
         },
     }
     if mode == "server":
@@ -219,6 +228,60 @@ def _quick_broadcast(state: dict, params: dict) -> dict:
             _legacy.STATE.manifest["service_notice"] = dict(notice)
             _legacy.STATE.manifest["metadata_revision"] = int(_legacy.STATE.manifest.get("metadata_revision") or 0) + 1
     return {"ok": True, "notice": notice, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
+
+
+def _quick_console(state: dict, profile_id: str, mode: str, limit: int = 250) -> dict:
+    profile_id, _profile, kind = _quick_profile(state, profile_id, mode)
+    if kind == "dedicated":
+        return _base_handle("server.console.unified", {"id": profile_id, "limit": limit})
+    application = state.get("application") or {}
+    game_root = str(application.get("game_dir") or "").strip()
+    live_id = str(state.setdefault("client", {}).get("live_world_id") or "")
+    runtime = {
+        "active_profile_id": live_id,
+        "running": bool(_legacy._dragonwilds_client_running() and live_id == profile_id),
+        "game_root": game_root if live_id == profile_id else "",
+        "events": [],
+        "process_output": [],
+    }
+    with _legacy.STATE.lock:
+        activities = list(_legacy.STATE.activities) if str(_legacy.STATE.active_profile_id or "") == profile_id else []
+    return _base.unified_console_snapshot(
+        profile_id, runtime=runtime, sync_activities=activities,
+        command_history=_legacy.rsdw_console_history(profile_id, max(200, min(int(limit or 250), 1000))),
+        limit=limit,
+    )
+
+
+def _quick_console_execute(state: dict, params: dict) -> dict:
+    mode = _quick_mode(params.get("mode"))
+    profile_id, _profile, kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+    command = str(params.get("command") or "").strip()
+    target = str(params.get("target") or "game").strip().casefold()
+    dispatched = f"ue4ss.exec {command}" if target == "ue4ss" and not command.casefold().startswith("ue4ss.exec ") else command
+    if kind == "dedicated":
+        return _base_handle("server.console.execute", {
+            "id": profile_id, "command": dispatched, "confirmed": True,
+            "source": "quick-ue4ss" if target == "ue4ss" else "quick", "actor": "owner",
+        })
+    live_id = str(state.setdefault("client", {}).get("live_world_id") or "")
+    if not _legacy._dragonwilds_client_running() or live_id != profile_id:
+        raise RuntimeError("Launch this World before sending a client console command")
+    game_root = str((state.get("application") or {}).get("game_dir") or "").strip()
+    if not game_root:
+        raise ValueError("Set the Dragonwilds game folder before using the client console")
+    checked = _legacy.validate_rsdw_command(Path(game_root), dispatched)
+    if not _legacy.PLAYER_BRIDGE.status().get("available"):
+        raise RuntimeError("The active DragonConnect/RSDWToolkit command bridge is unavailable")
+    try:
+        ack = _legacy.PLAYER_BRIDGE.command(checked["line"], timeout=8.0)
+        if str(ack).casefold().startswith("err") or " failed:" in str(ack).casefold():
+            raise RuntimeError(str(ack))
+        _legacy.record_rsdw_event(profile_id, source="quick-client", actor="owner", command=checked["line"], ok=True, ack=ack)
+        return {"ok": True, "ack": ack, "command": checked}
+    except Exception as exc:
+        _legacy.record_rsdw_event(profile_id, source="quick-client", actor="owner", command=checked["line"], ok=False, ack=str(exc))
+        raise
 
 
 def handle(method: str, params: dict) -> object:
@@ -318,13 +381,9 @@ def handle(method: str, params: dict) -> object:
     if method == "quick.broadcast":
         return _quick_broadcast(state, params)
     if method == "quick.console.execute":
-        if _quick_mode(params.get("mode")) != "server":
-            raise ValueError("Console is available only in Server Quick mode")
-        return _base_handle("server.console.execute", {"id": str(params.get("profile_id") or params.get("id") or ""), "command": str(params.get("command") or ""), "source": "quick", "actor": "owner"})
+        return _quick_console_execute(state, params)
     if method == "quick.console.get":
-        if _quick_mode(params.get("mode")) != "server":
-            raise ValueError("Console is available only in Server Quick mode")
-        return _base_handle("server.console.unified", {"id": str(params.get("profile_id") or params.get("id") or ""), "limit": int(params.get("limit") or 250)})
+        return _quick_console(state, str(params.get("profile_id") or params.get("id") or ""), _quick_mode(params.get("mode")), int(params.get("limit") or 250))
 
     if method == "application.shutdown":
         NETWORK.world_stopping(reason="application_shutdown")

@@ -16,7 +16,10 @@
   let autoStartConsumed = false;
   let quickState = null;
   let consoleState = null;
-  let consoleOpen = false;
+  let consoleOpen = true;
+  let consoleFilter = 'all';
+  let consoleTarget = 'game';
+  let activeOperation = '';
   let busy = false;
   let refreshInFlight = false;
   let refreshTimer = null;
@@ -24,6 +27,7 @@
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const statusClass = (value) => /active|running|current|success/i.test(String(value||'')) ? 'ok' : /partial|connecting|starting|updating/i.test(String(value||'')) ? 'warn' : /failed|error|stopped|disabled/i.test(String(value||'')) ? 'bad' : 'muted';
   const roleLabel = mode === 'server' ? 'Server' : (mode === 'coop' ? 'Co-Op' : 'Player');
+  const scopeLabel = () => quickState?.profile_scope || (mode === 'server' ? 'Hosted Server' : 'World Profile');
 
   function toast(message, kind='info') {
     const node = document.createElement('div');
@@ -44,7 +48,7 @@
     refreshInFlight = true;
     try {
       quickState = await api.invoke('quick.status', { profile_id: profileId, mode });
-      if (mode === 'server' && consoleToo && quickState?.controls?.console) {
+      if (consoleToo && quickState?.controls?.console) {
         try { consoleState = await api.invoke('quick.console.get', { profile_id: quickState.profile_id, mode, limit: 220 }); }
         catch (_) { consoleState = null; }
       }
@@ -75,19 +79,30 @@
     return `<div class="v3q-metric"><span>${esc(label)}</span><strong class="${cls}">${esc(value ?? '—')}</strong></div>`;
   }
 
-  function serverConsole() {
-    if (mode !== 'server' || !consoleOpen) return '';
+  function quickConsole() {
+    if (!consoleOpen) return '';
     const events = consoleState?.events || consoleState?.entries || consoleState?.history || [];
-    const rows = Array.isArray(events) ? events.slice(-120) : [];
+    const allRows = Array.isArray(events) ? events.slice(-220) : [];
+    const rows = consoleFilter==='all' ? allRows : allRows.filter((row)=>String(row.source||'').toLowerCase()===consoleFilter);
+    const filters=[['all','ALL'],['game','GAME'],['ue4ss','UE4SS'],['runeschema','RUNESCHEMA'],['server','SERVER'],['sync','SYNC']];
     return `<section class="v3q-panel v3q-console-panel">
-      <div class="v3q-panel-head"><div><b>Console</b><small>Shared command backend · desktop / Quick / WebGUI</small></div><button class="v3q-btn ghost" data-v3q-clear-console>Clear View</button></div>
+      <div class="v3q-panel-head"><div><b>Runtime Console</b><small>One profile-scoped stream · source colors, filters, and guarded commands</small></div><button class="v3q-btn ghost" data-v3q-clear-console>Clear View</button></div>
+      <nav class="v3q-console-filters" aria-label="Console source filters">${filters.map(([key,label])=>`<button class="v3q-btn ${consoleFilter===key?'primary':'ghost'}" data-v3q-console-filter="${key}">${label} <span>${key==='all'?allRows.length:allRows.filter((row)=>String(row.source||'').toLowerCase()===key).length}</span></button>`).join('')}</nav>
       <div class="v3q-console" data-v3q-console>${rows.length ? rows.map((row)=>{
         const ts = row.ts || row.time || row.created_at || '';
         const message = row.message || row.ack || row.command || row.line || JSON.stringify(row);
-        return `<div><time>${esc(ts ? new Date(Number(ts)*1000 || ts).toLocaleTimeString?.() || ts : '')}</time><span>${esc(message)}</span></div>`;
-      }).join('') : '<div class="empty"><span>No console events yet.</span></div>'}</div>
-      <form class="v3q-command" data-v3q-command-form><input name="command" autocomplete="off" placeholder="Enter established RSDW Toolkit / game command…"/><button class="v3q-btn primary" type="submit">Run</button></form>
+        const source=String(row.source||'system').toLowerCase().replace(/[^a-z0-9_-]/g,'-');
+        return `<div class="source-${esc(source)}"><time>${esc(ts ? new Date(Number(ts)*1000 || ts).toLocaleTimeString?.() || ts : '')}</time><b>${esc(source.toUpperCase())}</b><span>${esc(message)}</span></div>`;
+      }).join('') : '<div class="empty"><span>No console events for this filter yet.</span></div>'}</div>
+      <form class="v3q-command" data-v3q-command-form><select name="target" aria-label="Command target"><option value="game" ${consoleTarget==='game'?'selected':''}>GAME / RSDWToolkit</option><option value="ue4ss" ${consoleTarget==='ue4ss'?'selected':''}>UE4SS / Unreal</option></select><input name="command" autocomplete="off" placeholder="Enter a command for the selected runtime…" ${quickState?.active?'':'disabled'}/><button class="v3q-btn primary" type="submit" ${quickState?.active?'':'disabled'}>Run</button></form>
     </section>`;
+  }
+
+  function launchPlan() {
+    const steps=Array.isArray(quickState?.launch_sequence)?quickState.launch_sequence:[];
+    if(!steps.length)return '';
+    const launching=['play','host','start','restart','update_restart'].includes(activeOperation);
+    return `<section class="v3q-panel v3q-launch-plan ${launching?'running':''}"><div class="v3q-panel-head"><div><b>${esc(scopeLabel())} launch path</b><small>${launching?'Running these guarded stages in order…':'Quick uses the same authoritative profile pipeline as Full.'}</small></div></div><ol>${steps.map((step,index)=>`<li><i>${index+1}</i><span>${esc(step)}</span></li>`).join('')}</ol></section>`;
   }
 
   function broadcastBox() {
@@ -110,7 +125,7 @@
     const error = quickState?.error;
     const markup = `<main class="v3q-shell" data-v3-quick-root>
       <header class="v3q-header">
-        <div class="v3q-brand"><span class="v3q-mark">DW</span><div><small>DRAGONWILDS SYNC QUICK · ${esc(roleLabel.toUpperCase())}</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1></div></div>
+        <div class="v3q-brand"><span class="v3q-mark">DW</span><div><small>DRAGONWILDS SYNC QUICK · ${esc(scopeLabel().toUpperCase())} MANAGEMENT</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1></div></div>
         <div class="v3q-header-actions"><button class="v3q-btn ghost" data-v3q-refresh ${busy?'disabled':''}>Refresh</button><button class="v3q-btn" data-v3q-full>Open Full Dragonwilds Sync</button></div>
       </header>
       ${error ? `<div class="v3q-error">${esc(error)}</div>` : ''}
@@ -130,7 +145,7 @@
         ${quickState?.controls?.restart ? `<button class="v3q-btn" data-v3q-action="restart" ${busy||!quickState?.active?'disabled':''}>Restart</button>`:''}
         ${quickState?.controls?.update_restart ? `<button class="v3q-btn" data-v3q-action="update_restart" ${busy?'disabled':''}>Update & Restart</button>`:''}
         <button class="v3q-btn ghost" data-v3q-mods>View Mods</button>
-        ${mode==='server'&&quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}
+        ${quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}
       </section>
       <div class="v3q-columns">
         <section class="v3q-panel">
@@ -140,11 +155,12 @@
           ${quickState?.profile_kind !== 'linked' ? `<label class="v3q-toggle"><input type="checkbox" data-v3q-public ${publicEnabled?'checked':''}/><span><b>Broadcast this World publicly</b><small>Official World publication. Does not control anonymous application presence.</small></span></label>`:''}
           <div class="v3q-destinations">${networkState.length ? networkState.map((row)=>`<div><span class="dot ${statusClass(row.state)}"></span><b>${esc(row.name)}</b><em>${esc(row.state)}</em><small>${esc(row.detail)}</small></div>`).join('') : '<small>No public destinations configured.</small>'}</div>
         </section>
-        ${mode === 'server' ? `<section class="v3q-panel"><div class="v3q-panel-head"><div><b>Players</b><small>${players.length} connected / observed</small></div></div><div class="v3q-players">${players.length ? players.map((p)=>`<span>${esc(p.name || p.player_name || p.id || 'Player')}</span>`).join('') : '<small>No players reported.</small>'}</div></section>` : `<section class="v3q-panel"><div class="v3q-panel-head"><div><b>${mode==='coop'?'Co-Op Host':'Connection'}</b><small>Same profile/runtime materialization used by Full</small></div></div><p class="v3q-copy">${esc(quickState?.description || (mode==='coop'?'Launch the World normally, then Quick can enable the existing Co-Op Sync host.':'Play performs the existing verified sync/DragonConnect handoff before Dragonwilds launches.'))}</p></section>`}
+        ${mode === 'server' ? `<section class="v3q-panel"><div class="v3q-panel-head"><div><b>Players</b><small>${players.length} connected / observed</small></div></div><div class="v3q-players">${players.length ? players.map((p)=>`<span>${esc(p.name || p.player_name || p.id || 'Player')}</span>`).join('') : '<small>No players reported.</small>'}</div></section>` : `<section class="v3q-panel"><div class="v3q-panel-head"><div><b>${mode==='coop'?'Co-Op Host':scopeLabel()}</b><small>Same profile/runtime materialization used by Full</small></div></div><p class="v3q-copy">${esc(quickState?.description || (mode==='coop'?'Launch the local profile, then Quick can enable its Co-Op Sync host.':quickState?.profile_kind==='linked'?'Match files, transfer changes, verify parity, prepare DragonConnect, then play.':'Materialize this local profile and launch it without contacting a remote Sync host.'))}</p></section>`}
       </div>
+      ${launchPlan()}
       ${broadcastBox()}
-      ${serverConsole()}
-      <footer class="v3q-footer"><span>${busy?'Working…':'Ready'}</span><span>Closing this window does not stop a deliberately running Server World.</span></footer>
+      ${quickConsole()}
+      <footer class="v3q-footer"><span>${busy?'Working…':'Ready'}</span><span>Open Full promotes this same launcher process; it does not duplicate the backend or runtime.</span></footer>
     </main>`;
     if (root.__dwsQuickMarkup === markup) return;
     root.__dwsQuickMarkup = markup;
@@ -154,6 +170,7 @@
 
   async function action(name) {
     if (busy) return;
+    activeOperation=name;renderQuick();
     try {
       if (name === 'start') await invoke('quick.start', { profile_id: quickState?.profile_id || profileId, mode });
       else if (name === 'stop') await invoke('quick.stop', { profile_id: quickState?.profile_id || profileId, mode });
@@ -161,6 +178,7 @@
       else if (name === 'update_restart') await invoke('quick.update_restart', { profile_id: quickState?.profile_id || profileId, mode });
       toast(`${roleLabel} ${name.replace('_',' ')} completed`, 'success');
     } catch (error) { toast(error?.message || String(error), 'error'); }
+    activeOperation='';
     await refresh();
   }
 
@@ -177,6 +195,7 @@
       api.openMainWindow?.();
     });
     root.querySelector('[data-v3q-console-toggle]')?.addEventListener('click',async()=>{consoleOpen=!consoleOpen;if(consoleOpen)await refresh({consoleToo:true});else renderQuick();});
+    root.querySelectorAll('[data-v3q-console-filter]').forEach((button)=>button.addEventListener('click',()=>{consoleFilter=button.dataset.v3qConsoleFilter||'all';renderQuick();}));
     root.querySelectorAll('[data-v3q-action]').forEach((button)=>button.addEventListener('click', ()=>action(button.dataset.v3qAction)));
     root.querySelector('[data-v3q-public]')?.addEventListener('change', async(event)=>{
       const enabled = !!event.currentTarget.checked;
@@ -188,8 +207,8 @@
       await refresh({consoleToo:false});
     });
     root.querySelector('[data-v3q-command-form]')?.addEventListener('submit', async(event)=>{
-      event.preventDefault(); const input=event.currentTarget.elements.command; const command=String(input?.value||'').trim(); if(!command)return;
-      try { await invoke('quick.console.execute',{profile_id:quickState?.profile_id||profileId,mode,command}); input.value=''; toast('Command completed','success'); }
+      event.preventDefault(); const input=event.currentTarget.elements.command; const command=String(input?.value||'').trim(); if(!command)return;consoleTarget=event.currentTarget.elements.target?.value||'game';
+      try { await invoke('quick.console.execute',{profile_id:quickState?.profile_id||profileId,mode,command,target:consoleTarget}); input.value=''; toast('Command completed','success'); }
       catch(error){toast(error?.message||String(error),'error');}
       await refresh();
     });

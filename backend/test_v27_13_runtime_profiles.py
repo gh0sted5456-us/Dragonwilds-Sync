@@ -58,7 +58,9 @@ def main() -> None:
             assert result["selected_id"] != "official"
             assert result["flavors"][-1]["name"] == "Experimental Nightly"
             _, saved = runeschema_flavors.select_flavor("world", result["selected_id"])
-            assert saved and saved.is_file() and profiles in saved.parents
+            # GitHub's Windows runner may expose the temp directory through an
+            # 8.3 path while Path.resolve() expands it to the long form.
+            assert saved and saved.is_file() and profiles.resolve() in saved.resolve().parents
         finally:
             profile_store.SERVER_PROFILES_DIR = old_store
             runeschema_flavors.SERVER_PROFILES_DIR = old_flavors

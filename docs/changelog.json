@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.11",
+      "title": "Dragonwilds Sync V2.7.11",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Existing upstream RuneSchema enabled.txt files are preserved byte-for-byte during launch and variant selection.",
+        "Read-only upstream enable markers are no longer replaced by the launcher.",
+        "A blank UE4SS presence marker is created only when the original is missing.",
+        "RSDW Tools update opt-out also preserves its existing enable marker."
+      ]
+    },
+    {
       "version": "2.7.10",
       "title": "Dragonwilds Sync V2.7.10",
       "date": "2026-08-22",

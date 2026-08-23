@@ -3108,9 +3108,11 @@ def _normalize_bundled_integration_contract(target_root: Path) -> dict:
     if runeschema.is_dir():
         for name in ("config", "dlls", "mods"):
             (runeschema / name).mkdir(parents=True, exist_ok=True)
-        (runeschema / "enabled.txt").write_text("", encoding="utf-8")
+        if not (runeschema / "enabled.txt").exists():
+            (runeschema / "enabled.txt").write_text("", encoding="utf-8")
     if rsdwtools.is_dir():
-        (rsdwtools / "enabled.txt").write_text("", encoding="utf-8")
+        if not (rsdwtools / "enabled.txt").exists():
+            (rsdwtools / "enabled.txt").write_text("", encoding="utf-8")
     return result
 
 
@@ -3121,7 +3123,8 @@ def ensure_rsdwtools_baseline(mods_dir: Path, *, allow_update: bool = True) -> d
     live_main = target / "scripts" / "main.lua"
     live_dll = target / "dlls" / "main.dll"
     if target.is_dir() and live_main.is_file() and live_dll.is_file() and not allow_update:
-        _write_launcher_control_file(target / "enabled.txt")
+        if not (target / "enabled.txt").exists():
+            _write_launcher_control_file(target / "enabled.txt")
         return {"ok": True, "installed": True, "changed": False, "update_skipped": True,
                 "path": str(target), "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
     if not bundle.is_file():
@@ -3408,7 +3411,7 @@ def activate_runeschema_variant(game_root: str, variant: str = "standard") -> di
         source_label = "stored standard core"
         if selected == "standard":
             for source in RUNESCHEMA_STANDARD_RUNTIME_DIR.rglob("*"):
-                if source.is_file():
+                if source.is_file() and source.name.casefold() != "enabled.txt":
                     core_files[source.relative_to(RUNESCHEMA_STANDARD_RUNTIME_DIR)] = source.read_bytes()
         else:
             bundle = _bundled_app_resource("RuneSchema-extended.zip")
@@ -3422,14 +3425,15 @@ def activate_runeschema_variant(game_root: str, variant: str = "standard") -> di
                     parts = list(PurePosixPath(info.filename.replace("\\", "/")).parts)
                     if len(parts) > 1 and parts[0].casefold() == "runeschema":
                         parts = parts[1:]
-                    if not parts or ".." in parts or parts[0].casefold() == "mods":
+                    if not parts or ".." in parts or parts[0].casefold() == "mods" or (len(parts) == 1 and parts[0].casefold() == "enabled.txt"):
                         continue
                     core_files[Path(*parts)] = archive.read(info)
         if not any(path.as_posix().casefold() == "dlls/main.dll" for path in core_files):
             raise RuntimeError(f"The {selected} RuneSchema variant has no dlls/main.dll.")
         mods = live / "mods"
+        enabled_marker = live / "enabled.txt"
         for child in list(live.iterdir()):
-            if child != mods:
+            if child not in {mods, enabled_marker}:
                 _remove_generated_path(child)
         for relative, data in core_files.items():
             destination = (live / relative).resolve()
@@ -3440,7 +3444,8 @@ def activate_runeschema_variant(game_root: str, variant: str = "standard") -> di
             destination.write_bytes(data)
         for required in (live / "config", live / "dlls", live / "mods"):
             required.mkdir(parents=True, exist_ok=True)
-        _write_launcher_control_file(live / "enabled.txt")
+        if not enabled_marker.exists():
+            _write_launcher_control_file(enabled_marker)
         return {"ok": True, "variant": selected, "source": source_label,
                 "files_written": len(core_files), "mods_preserved": True,
                 "destination": str(live)}

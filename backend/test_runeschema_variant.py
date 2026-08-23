@@ -23,9 +23,9 @@ def main():
         (live / "dlls" / "main.dll").write_bytes(b"standard-core")
         (live / "config" / "config.json").write_text("{}", encoding="utf-8")
         (live / "mods" / "Keep Me" / "recipe.json").write_text("{}", encoding="utf-8")
-        (live / "enabled.txt").write_text("", encoding="utf-8")
-        # Older releases could adopt this launcher-owned marker as a managed
-        # config and leave it read-only. Variant activation must self-repair it.
+        (live / "enabled.txt").write_text("upstream-marker", encoding="utf-8")
+        # Upstream owns this marker. A read-only original must be preserved,
+        # never rewritten merely because a RuneSchema core is selected.
         (live / "enabled.txt").chmod(stat.S_IREAD)
 
         old_runtime = systems.RUNESCHEMA_RUNTIME_DIR
@@ -43,6 +43,7 @@ def main():
             assert extended["variant"] == "extended"
             assert (live / "mods" / "Keep Me" / "recipe.json").is_file()
             assert (live / "enabled.txt").is_file()
+            assert (live / "enabled.txt").read_text(encoding="utf-8") == "upstream-marker"
             with zipfile.ZipFile(Path(__file__).resolve().parent.parent / "resources" / "RuneSchema-extended.zip") as archive:
                 expected = archive.read("RuneSchema/dlls/main.dll")
             assert (live / "dlls" / "main.dll").read_bytes() == expected
@@ -50,6 +51,7 @@ def main():
             assert restored["variant"] == "standard"
             assert (live / "dlls" / "main.dll").read_bytes() == b"standard-core"
             assert (live / "mods" / "Keep Me" / "recipe.json").is_file()
+            assert (live / "enabled.txt").read_text(encoding="utf-8") == "upstream-marker"
         finally:
             systems.RUNESCHEMA_RUNTIME_DIR = old_runtime
             systems.RUNESCHEMA_STANDARD_RUNTIME_DIR = old_standard
@@ -61,10 +63,13 @@ def main():
         (tools / "dlls").mkdir()
         (tools / "scripts" / "main.lua").write_text("DEBUG_BRIDGE = false", encoding="utf-8")
         (tools / "dlls" / "main.dll").write_bytes(b"retained-base-mod")
+        (tools / "enabled.txt").write_text("upstream-marker", encoding="utf-8")
+        (tools / "enabled.txt").chmod(stat.S_IREAD)
         result = systems.ensure_rsdwtools_baseline(mods, allow_update=False)
         assert result["ok"] is True and result["update_skipped"] is True
         assert (tools / "dlls" / "main.dll").read_bytes() == b"retained-base-mod"
         assert (tools / "enabled.txt").is_file()
+        assert (tools / "enabled.txt").read_text(encoding="utf-8") == "upstream-marker"
 
     print("RuneSchema variant tests passed")
 

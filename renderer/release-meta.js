@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.10',
-  name: 'V2.7.10 · Base Runtime Update Controls',
+  version: '2.7.11',
+  name: 'V2.7.11 · Upstream UE4SS Marker Ownership',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.11',
+    title: 'Upstream UE4SS Marker Ownership',
+    items: [
+      'Dragonwilds Sync no longer replaces an existing RuneSchema enabled.txt during launch or variant selection.',
+      'The original upstream marker is preserved byte-for-byte even when it is read-only.',
+      'A blank marker is created only when enabled.txt is genuinely missing, matching the original UE4SS presence-marker behavior.',
+      'RSDW Tools update opt-out follows the same rule and leaves its existing upstream enable marker untouched.',
+    ],
+  }, {
     version: '2.7.10',
     title: 'Base Runtime Update Controls',
     items: [

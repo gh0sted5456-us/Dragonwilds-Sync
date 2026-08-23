@@ -21,6 +21,23 @@ function setTheme(theme, persist = true) {
 setTheme(localStorage.getItem(THEME_KEY) || 'dark', false);
 $$('.theme-switcher [data-theme-choice]').forEach((button) => button.addEventListener('click', () => setTheme(button.dataset.themeChoice)));
 
+function applySharedNavigation() {
+  const nav = $('#main-nav');
+  if (!nav) return;
+  const page = (location.pathname.split('/').pop() || 'index.html').toLowerCase();
+  const current = (name) => page === name ? ' aria-current="page"' : '';
+  const experienceCurrent = ['experience.html', 'world-builder.html', 'launcher-preview.html'].includes(page) ? ' aria-current="page"' : '';
+  nav.innerHTML = `
+    <div class="nav-home"><a href="index.html"${current('index.html')}>Home <span aria-hidden="true"></span></a><div class="nav-home-menu"><a href="index.html#webgui">WebGUI</a><a href="downloads.html"${current('downloads.html')}>Downloads</a><a href="index.html#community">Community</a></div></div>
+    <div class="nav-home"><a href="experience.html"${experienceCurrent}>Experience <span aria-hidden="true"></span></a><div class="nav-home-menu"><a href="experience.html"${current('experience.html')}>Setup Instructions</a><a href="world-builder.html"${current('world-builder.html')}>World Builder</a><a href="launcher-preview.html"${current('launcher-preview.html')}>Preview Launcher</a></div></div>
+    <a href="servers.html"${current('servers.html')}>Servers</a>
+    <a href="helpy.html"${current('helpy.html')}>Helpy</a>
+    <a href="for-modders.html"${current('for-modders.html')}>For Modders</a>
+    <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>`;
+}
+
+applySharedNavigation();
+
 const navToggle = $('.nav-toggle');
 const nav = $('.main-nav');
 if (navToggle && nav) {

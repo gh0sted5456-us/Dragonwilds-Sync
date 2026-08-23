@@ -1862,3 +1862,4 @@ body[data-glass="1"] .settings-section::before,body[data-glass="1"] .panel::befo
 .mod-category-icon.compact{width:15px;height:15px;flex-basis:15px;margin-right:5px}
 .mod-group-title,.mod-name-line,.panel-header h2{align-items:center}
 .panel-header h2{display:flex}
+.compact-action-menu{position:relative}.compact-action-menu>summary{list-style:none;cursor:pointer}.compact-action-menu>summary::-webkit-details-marker{display:none}.compact-action-menu-pop{position:absolute;right:0;top:calc(100% + 7px);z-index:80;min-width:220px;padding:8px;display:grid;gap:6px;background:#101616;border:1px solid rgba(190,151,78,.35);border-radius:12px;box-shadow:0 16px 44px rgba(0,0,0,.5)}.compact-action-menu-pop .btn{width:100%;justify-content:flex-start;white-space:normal;text-align:left}

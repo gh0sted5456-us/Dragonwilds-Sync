@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.13",
+      "title": "Dragonwilds Sync V2.7.13",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "World Configuration is restricted to game/server, UE4SS core, and RuneSchema core settings.",
+        "Hosted World profiles retain nameable custom RuneSchema ZIP flavors with an Official GitHub default.",
+        "A closable smart mod-import review detects and can override UE4SS, RuneSchema, and PAK archive types.",
+        "Player identity reconciliation prefers coordinate-bearing in-game characters while retaining Steam/log names as aliases.",
+        "Default Ashenfall calibration restores map plotting, unsupported item bridge commands are blocked, and World actions are consolidated.",
+        "DragonCore is not included in baked defaults or bundled archives."
+      ]
+    },
+    {
       "version": "2.7.12",
       "title": "Dragonwilds Sync V2.7.12",
       "date": "2026-08-22",

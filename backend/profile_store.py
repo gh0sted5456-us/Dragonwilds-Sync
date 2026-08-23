@@ -617,7 +617,9 @@ def list_server_profiles() -> list[dict]:
             "character_sharing": {"enabled": bool((meta.get("character_sharing") or {}).get("enabled", False)), "allow_submissions": bool((meta.get("character_sharing") or {}).get("allow_submissions", False)), "request_backups": bool((meta.get("character_sharing") or {}).get("request_backups", False))},
             "operations_schedule": meta.get("operations_schedule") or {"enabled": False, "action": "restart", "interval_minutes": 1440, "next_run_at": None, "warning_minutes": [30,10,5,1], "backup_retention_count": 10},
             "service_notice": meta.get("service_notice") or {},
-            "player_map": meta.get("player_map") or {"allow_remote_clients": False, "background_data": "", "calibration": {}},
+            "player_map": {**(meta.get("player_map") or {}), "calibration": {"world_min_x": -11075.0, "world_max_x": 408925.0, "world_min_y": -117685.0, "world_max_y": 302315.0, "invert_y": False, **((meta.get("player_map") or {}).get("calibration") or {})}},
+            "runeschema_flavors": meta.get("runeschema_flavors") or [{"id": "official", "name": "Official GitHub", "kind": "official"}],
+            "runeschema_flavor_id": str(meta.get("runeschema_flavor_id") or "official"),
             "manifest_version": int(meta.get("manifest_version") or 0),
         })
     return result
@@ -722,6 +724,8 @@ def create_server_profile(name: str) -> str:
         "hierarchy": {"provider": "shrug.games", "confirmed": False, "confirmed_at": None, "confirmed_by": ""},
         "ue4ss_installed_version": "", "ue4ss_installed_at": None,
         "runeschema_installed_at": None, "runeschema_source_name": "",
+        "runeschema_flavors": [{"id": "official", "name": "Official GitHub", "kind": "official"}],
+        "runeschema_flavor_id": "official",
         "mod_management": {"nexus_auto_check": False, "nexus_auto_apply": False},
         "health_config": default_health_config(),
         "hw_stats": {},
@@ -735,7 +739,7 @@ def create_server_profile(name: str) -> str:
         "operations_schedule": {"enabled": False, "action": "restart", "mode": "daily", "daily_time": "04:00", "weekdays": [0,1,2,3,4,5,6], "repeat_days": 1, "interval_minutes": 1440, "blackout_windows": [], "next_run_at": None, "warning_minutes": [30, 10, 5, 1], "backup_retention_count": 10, "last_run_at": None},
         "activity_log": [],
         "service_notice": {"level": "info", "message": "", "expires_at": None, "updated_at": None},
-        "player_map": {"allow_remote_clients": False, "background_data": "", "calibration": {}},
+        "player_map": {"allow_remote_clients": False, "background_data": "", "calibration": {"world_min_x": -11075.0, "world_max_x": 408925.0, "world_min_y": -117685.0, "world_max_y": 302315.0, "invert_y": False}},
         "public_ip": "",
         "manifest_version": 0,
         "created_ts": datetime.now(timezone.utc).timestamp(),

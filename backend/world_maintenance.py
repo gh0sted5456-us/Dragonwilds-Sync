@@ -153,6 +153,37 @@ def _is_launcher_infrastructure_file(layout, file: Path) -> bool:
     return nested == ("enabled.txt",) or bool(nested and nested[0] == "dlls")
 
 
+def _is_core_config_file(layout, file: Path) -> bool:
+    """Keep Configuration strictly scoped to game and loader *core* files.
+
+    Mod recipes/content belong to Mod Management.  This check is deliberately
+    path based so stale manifests from older releases cannot make a mod file
+    editable through a crafted or previously indexed relative path.
+    """
+    try:
+        file.relative_to(layout.config_dir)
+        return True
+    except ValueError:
+        pass
+    try:
+        rel = file.relative_to(layout.ue4ss_core_dir)
+        # UE4SS core configuration is flat.  Anything below Mods is content.
+        if len(rel.parts) == 1:
+            return True
+    except ValueError:
+        pass
+    try:
+        file.relative_to(layout.runeschema_config_dir)
+        return True
+    except ValueError:
+        return False
+
+
+def _require_core_config(layout, file: Path) -> None:
+    if not _is_core_config_file(layout, file):
+        raise PermissionError("Mod files are edited in Mod Management; Configuration contains only game, UE4SS, and RuneSchema core settings.")
+
+
 def _file_metadata(profile_id: str, layout, file: Path, manifest: dict) -> dict:
     rel = file.relative_to(layout.game_root).as_posix()
     profile = load_server_profile(profile_id)
@@ -191,7 +222,7 @@ def _file_metadata(profile_id: str, layout, file: Path, manifest: dict) -> dict:
 
 
 def lock_world_configs(profile_id: str, server_root: str) -> dict:
-    """Adopt supported live config/mod files as launcher-managed read-only files.
+    """Adopt supported live game/loader core configs as managed files.
 
     The launcher is the write authority: files stay read-only on disk, while
     Monaco saves use a temporary unlock + atomic replace + re-lock sequence.
@@ -210,24 +241,18 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
             candidate = _resolve_inside(layout.game_root, relative)
         except (OSError, ValueError):
             continue
-        if _is_launcher_infrastructure_file(layout, candidate):
+        if not _is_core_config_file(layout, candidate) or _is_launcher_infrastructure_file(layout, candidate):
             try:
                 _set_readonly(candidate, False)
             except OSError:
                 pass
             files.pop(relative, None)
-    # Mod Manager inventory and Mod Editor indexing must resolve the same live
-    # surfaces. RuneSchema mods may live under RuneSchema/mods or directly under
-    # the RuneSchema root on legacy installs; ServerLayout normalizes both into
-    # runeschema_mods_dir. Scan it before the broader UE4SS Mods tree so a large
-    # installation cannot starve RuneSchema entries from the bounded index.
+    # Mod content has its own inventory/editor. Configuration intentionally scans
+    # only these three core surfaces.
     surfaces = (
         (layout.config_dir, True),
         (layout.ue4ss_core_dir, False),
         (layout.runeschema_config_dir, True),
-        (layout.runeschema_mods_dir, True),
-        (layout.paks_mods_dir, True),
-        (layout.ue4ss_mods_dir, True),
     )
     for base, recursive in surfaces:
         if not base.exists():
@@ -238,6 +263,8 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
             if not file.is_file() or file.suffix.lower() not in CONFIG_EXTENSIONS:
                 continue
             if _is_launcher_infrastructure_file(layout, file):
+                continue
+            if not _is_core_config_file(layout, file):
                 continue
             try:
                 if file.stat().st_size > MAX_CONFIG_BYTES:
@@ -285,6 +312,8 @@ def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[
                     continue
                 if _is_launcher_infrastructure_file(layout, file):
                     continue
+                if not _is_core_config_file(layout, file):
+                    continue
                 try:
                     if file.stat().st_size > MAX_CONFIG_BYTES:
                         continue
@@ -298,9 +327,11 @@ def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[
     else:
         for rel, meta in sorted((manifest.get("files") or {}).items()):
             meta = meta or {}
-            # Per-mod recipes/configs are edited from that mod's Explorer.
-            # Live Config retains only overarching World/runtime surfaces.
-            if str(meta.get("unit_key") or "") and str(meta.get("special") or "") != "mods_txt":
+            try:
+                candidate = _resolve_inside(layout.game_root, rel)
+            except (OSError, ValueError):
+                continue
+            if not _is_core_config_file(layout, candidate):
                 continue
             results.append({
                 "relative_path": rel, "name": Path(rel).name, "size": int((meta or {}).get("size") or 0),
@@ -321,6 +352,7 @@ def open_world_config(profile_id: str, server_root: str, relative_path: str, act
         raise RuntimeError("Activate this World before opening its live configuration/mod files.")
     layout = resolve_server_layout(server_root)
     target = _resolve_inside(layout.game_root, relative_path)
+    _require_core_config(layout, target)
     if not target.is_file() or target.suffix.lower() not in CONFIG_EXTENSIONS:
         raise FileNotFoundError("Editable World file was not found.")
     if target.stat().st_size > MAX_CONFIG_BYTES:
@@ -353,6 +385,7 @@ def save_world_config(profile_id: str, server_root: str, relative_path: str, con
         raise RuntimeError("Activate this World before saving its live configuration/mod files.")
     layout = resolve_server_layout(server_root)
     target = _resolve_inside(layout.game_root, relative_path)
+    _require_core_config(layout, target)
     if target.suffix.lower() not in CONFIG_EXTENSIONS:
         raise ValueError("This file type is not editable in Dragonwilds Sync.")
     encoded = str(content).encode("utf-8")
@@ -389,6 +422,7 @@ def copy_world_config(profile_id: str, server_root: str, relative_path: str, act
         raise RuntimeError("Activate this World before copying its live mod files.")
     layout = resolve_server_layout(server_root)
     source = _resolve_inside(layout.game_root, relative_path)
+    _require_core_config(layout, source)
     if not source.is_file():
         raise FileNotFoundError("World mod file was not found.")
     destination = source.with_name(f"{source.stem} - Copy{source.suffix}")
@@ -413,6 +447,7 @@ def delete_world_config(profile_id: str, server_root: str, relative_path: str, a
         raise RuntimeError("Activate this World before deleting its live mod files.")
     layout = resolve_server_layout(server_root)
     target = _resolve_inside(layout.game_root, relative_path)
+    _require_core_config(layout, target)
     if not target.is_file():
         raise FileNotFoundError("World mod file was not found.")
     _set_readonly(target, False)
@@ -426,6 +461,7 @@ def delete_world_config(profile_id: str, server_root: str, relative_path: str, a
 def update_world_config_policy(profile_id: str, server_root: str, relative_path: str, *, client_sync=None, hotload_capable=None) -> dict:
     layout = resolve_server_layout(server_root)
     target = _resolve_inside(layout.game_root, relative_path)
+    _require_core_config(layout, target)
     if not target.is_file():
         raise FileNotFoundError("World file was not found.")
     manifest = _read_manifest(profile_id)

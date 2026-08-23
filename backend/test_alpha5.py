@@ -57,9 +57,9 @@ def main():
             managed = wm._read_manifest('world-a').get('files') or {}
             assert not any(rel.endswith('RuneSchema/enabled.txt') for rel in managed)
             assert not wm.is_readonly(runtime_marker)
-            assert any((meta or {}).get('unit_key') == 'runeschema_mod::BetterLoot' for meta in managed.values())
-            assert any((meta or {}).get('unit_key') == 'ue4ss_mod::ServerTweaks' for meta in managed.values())
-            assert any((meta or {}).get('unit_key') == 'pak_mod::VisualPack' for meta in managed.values())
+            assert not any((meta or {}).get('unit_key') == 'runeschema_mod::BetterLoot' for meta in managed.values())
+            assert not any((meta or {}).get('unit_key') == 'ue4ss_mod::ServerTweaks' for meta in managed.values())
+            assert not any((meta or {}).get('unit_key') == 'pak_mod::VisualPack' for meta in managed.values())
             opened = wm.open_world_config('world-a', str(server), 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json', True)
             assert opened['readonly'] is True
             assert Path(opened['path']).resolve() == config.resolve()

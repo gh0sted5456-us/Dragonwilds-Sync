@@ -13,6 +13,9 @@ if os.name == "nt":
     from ctypes import wintypes
 
 MAX_SHM_BYTES = 1024 * 1024
+DEFAULT_WORLD_CALIBRATION = {"world_min_x": -11075.0, "world_max_x": 408925.0,
+                             "world_min_y": -117685.0, "world_max_y": 302315.0,
+                             "invert_y": False}
 
 
 def _finite(value):
@@ -91,12 +94,21 @@ class ServerPlayerService:
                     if not rec.get("tracker_available"):
                         rec["connected"] = False; rec["disconnected_at"] = now
             for name in current:
-                key = next((k for k, r in self.records.items() if str(r.get("name") or "").casefold() == name.casefold()), f"name:{name.casefold()}")
+                key = next((k for k, r in self.records.items() if str(r.get("name") or "").casefold() == name.casefold()
+                            or name.casefold() in {str(alias).casefold() for alias in (r.get("aliases") or [])}), f"name:{name.casefold()}")
                 rec = self.records.setdefault(key, {"id": key, "name": name, "connected": True, "connected_at": now})
                 if not rec.get("connected"):
                     rec["connected_at"] = now
                 rec["connected"] = True; rec["log_available"] = True; rec["last_log_seen"] = now
-                rec["name"] = name; rec.pop("disconnected_at", None)
+                # A coordinate-bearing tracker identity is the in-game character.
+                # Keep the log/Steam identity as an alias instead of replacing it.
+                if rec.get("tracker_available") and rec.get("has_position"):
+                    aliases = {str(value) for value in (rec.get("aliases") or []) if str(value)}
+                    aliases.add(name); rec["aliases"] = sorted(aliases, key=str.casefold)
+                    rec["account_name"] = name
+                else:
+                    rec["name"] = name
+                rec.pop("disconnected_at", None)
             # Bound stale disconnected records.
             cutoff = now - 86400
             self.records = {k: r for k, r in self.records.items() if r.get("connected") or float(r.get("disconnected_at") or now) >= cutoff}
@@ -106,11 +118,27 @@ class ServerPlayerService:
         with self.lock:
             self.last_tracker_update = now; self.tracker_connected = True
             seen = set()
+            positioned = [item for item in snap["players"] if item.get("has_position")]
+            unmatched_logs = [(key, rec) for key, rec in self.records.items()
+                              if rec.get("log_available") and not rec.get("tracker_available")]
             for item in snap["players"]:
-                key = next((k for k, r in self.records.items() if (item["id"] and str(r.get("tracker_id") or "") == item["id"]) or str(r.get("name") or "").casefold() == item["name"].casefold()), f"tracker:{item['id']}")
+                key = next((k for k, r in self.records.items() if (item["id"] and str(r.get("tracker_id") or "") == item["id"])
+                            or str(r.get("name") or "").casefold() == item["name"].casefold()
+                            or item["name"].casefold() in {str(alias).casefold() for alias in (r.get("aliases") or [])}), "")
+                # RSDW emits the character/pawn name while the game log commonly
+                # emits the Steam account name. With a one-to-one live set, merge
+                # those two observations into the coordinate-bearing character.
+                if not key and item.get("has_position") and len(positioned) == len(unmatched_logs) == 1:
+                    key, account = unmatched_logs[0]
+                    aliases = {str(value) for value in (account.get("aliases") or []) if str(value)}
+                    aliases.add(str(account.get("name") or ""))
+                    account["aliases"] = sorted((value for value in aliases if value), key=str.casefold)
+                    account["account_name"] = str(account.get("name") or "")
+                if not key:
+                    key = f"tracker:{item['id']}"
                 rec = self.records.setdefault(key, {"id": item["id"], "name": item["name"], "connected": True, "connected_at": now})
                 was_connected = bool(rec.get("connected"))
-                update = {"tracker_id": item["id"], "name": item["name"],
+                update = {"tracker_id": item["id"], "name": item["name"], "has_position": bool(item.get("has_position")),
                             "yaw": item.get("yaw"), "tracker_available": True,
                             "position_2d": bool(item.get("position_2d")), "connected": True, "last_seen": now}
                 if item.get("has_position"):
@@ -390,7 +418,7 @@ class PlayerTrackerBridge:
 
 
 def world_to_map(x: float, y: float, calibration: dict | None) -> dict | None:
-    c=calibration if isinstance(calibration,dict) else {}
+    c={**DEFAULT_WORLD_CALIBRATION, **(calibration if isinstance(calibration,dict) else {})}
     try:
         xmin=float(c["world_min_x"]); xmax=float(c["world_max_x"]); ymin=float(c["world_min_y"]); ymax=float(c["world_max_y"])
     except (KeyError,TypeError,ValueError): return None

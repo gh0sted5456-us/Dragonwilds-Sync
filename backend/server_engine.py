@@ -27,7 +27,8 @@ from secret_store import SecretStore, is_reference
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
                             ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
                             install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
-                            local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
+                            install_runeschema_zip, local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
+from runeschema_flavors import list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
 
 DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
 DEDICATED_SERVER_EXE_ALIASES = ("RSDragonwildsServer.sh", "RSDragonwildsServer", "RSDragonwilds.exe", "RSDragonwildsServer.exe")
@@ -560,6 +561,44 @@ def _restore_official_runeschema_once(game_root: str) -> dict:
     install["official_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
     save_state(state)
     return {**result, "ok": True, "changed": True}
+
+
+def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) -> dict:
+    """Materialize the World profile's selected core without mixing releases."""
+    selected_id = str(profile.get("runeschema_flavor_id") or "official")
+    if selected_id == "official":
+        if profile.get("runeschema_flavor_applied_sha256"):
+            root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
+            state = load_state(); install = state.setdefault("application", {}).setdefault("server_install", {})
+            install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
+            save_state(state)
+        result = _restore_official_runeschema_once(game_root)
+        profile = load_server_profile(profile_id)
+        profile.pop("runeschema_flavor_applied_sha256", None)
+        profile["runeschema_source_name"] = "Official GitHub"
+        save_server_profile(profile_id, profile)
+        return result
+    status = list_runeschema_flavors(profile_id)
+    selected = next((row for row in status["flavors"] if str(row.get("id")) == selected_id), None)
+    if not selected:
+        raise RuntimeError("The selected RuneSchema flavor is missing from this World profile.")
+    digest = str(selected.get("sha256") or "")
+    if digest and str(profile.get("runeschema_flavor_applied_sha256") or "") == digest:
+        return {"ok": True, "changed": False, "source": selected.get("name")}
+    _, archive = select_runeschema_flavor(profile_id, selected_id)
+    result = install_runeschema_zip(str(archive), game_root)
+    if str(result.get("kind") or "") != "core":
+        raise RuntimeError("The saved RuneSchema flavor is not a complete core runtime.")
+    profile = load_server_profile(profile_id)
+    profile["runeschema_flavor_applied_sha256"] = digest
+    profile["runeschema_source_name"] = str(selected.get("name") or "Custom RuneSchema")
+    profile["runeschema_installed_at"] = time.time()
+    save_server_profile(profile_id, profile)
+    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
+    state = load_state(); install = state.setdefault("application", {}).setdefault("server_install", {})
+    install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
+    save_state(state)
+    return {**result, "changed": True, "source": selected.get("name")}
 
 
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
@@ -1191,9 +1230,9 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        official = _restore_official_runeschema_once(root)
+        official = _apply_profile_runeschema(profile_id, profile, root)
         if official.get("changed"):
-            self._event(f"Restored the complete official RuneSchema core from GitHub ({official.get('filename') or 'latest release'}).", "ok")
+            self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
         units = scan_mod_units(profile_id, root)
         if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generated = generate_server_mods_txt(profile_id, root, units=units)
@@ -1315,9 +1354,9 @@ class ServerEngine:
         exe = find_dedicated_server_exe(profile)
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
         cfg = profile.setdefault("dedicated_config", {})
-        official = _restore_official_runeschema_once(self._profile_root(profile))
+        official = _apply_profile_runeschema(profile_id, profile, self._profile_root(profile))
         if official.get("changed"):
-            self._event(f"Restored the complete official RuneSchema core from GitHub ({official.get('filename') or 'latest release'}).", "ok")
+            self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;

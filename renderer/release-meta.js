@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.12',
-  name: 'V2.7.12 · Official RuneSchema Restoration',
+  version: '2.7.13',
+  name: 'V2.7.13 · Profile Runtime & Mod Import',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.13',
+    title: 'Profile Runtime & Mod Import',
+    items: [
+      'Configuration now contains only game/server, UE4SS root, and RuneSchema root settings; child-mod files stay in Mod Management.',
+      'Each hosted World can retain nameable custom RuneSchema core ZIP flavors and select them from its Configuration workspace.',
+      'Manual mod import now opens a closable review dialog with automatic UE4SS, RuneSchema, and PAK structure detection plus an explicit override.',
+      'Coordinate-bearing RSDW character telemetry is canonical and merges a coordinate-less Steam/log identity as an account alias.',
+      'Ashenfall map tracking receives working default world bounds, and the item spawner no longer emits an unsupported private bridge command.',
+      'World actions and update controls are consolidated, and DragonCore remains absent from baked defaults and packaged runtime archives.',
+    ],
+  }, {
     version: '2.7.12',
     title: 'Official RuneSchema Restoration',
     items: [

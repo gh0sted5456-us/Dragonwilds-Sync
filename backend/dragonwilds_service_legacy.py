@@ -99,6 +99,7 @@ from world_maintenance import (
     restore_world_backup, save_world_config, copy_world_config, delete_world_config,
     update_world_config_policy, world_save_status,
 )
+from runeschema_flavors import delete_flavor as delete_runeschema_flavor, import_flavor as import_runeschema_flavor, list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
 
 
 def now_iso() -> str:
@@ -503,6 +504,10 @@ def _apply_operator_identity(world: dict, envelope: dict | None) -> dict:
 def find_world(state: dict, world_id: str) -> dict | None:
     wanted = str(world_id or "")
     ensure_singleplayer_state(state)
+    connected_before = next((row for row in (state.get("client", {}).get("worlds") or []) if str(row.get("id") or "") == wanted), None)
+    _repair_connected_world_id_collisions(state)
+    if connected_before is not None and str(connected_before.get("id") or "") != wanted:
+        return connected_before
     client = state.get("client", {})
     private = next((w for w in (client.get("private_worlds") or []) if str(w.get("id") or "") == wanted), None)
     if private is not None:
@@ -770,6 +775,8 @@ def _propagate_machine_owner_id(owner_id: str) -> int:
 
 def public_state(state: dict) -> dict:
     ensure_singleplayer_state(state)
+    if _repair_connected_world_id_collisions(state):
+        save_state(state)
     active_server_id = state.get("server", {}).get("active_world_id")
     if ENGINE.active_profile_id is None and active_server_id:
         ENGINE.active_profile_id = active_server_id
@@ -819,6 +826,45 @@ def public_state(state: dict) -> dict:
     clone.setdefault("application", {})["world_directory_host_status"] = DIRECTORY_HOST.status()
     clone.setdefault("application", {})["cryptography_status"] = cryptography_self_test()
     return clone
+
+
+def _connected_id(state: dict, world: dict) -> str:
+    """Give network profiles their own namespace when a host ID is 'singleplayer'."""
+    client = state.setdefault("client", {})
+    current = str(world.get("id") or "").strip()
+    private_ids = {str(row.get("id") or "") for row in (client.get("private_worlds") or [])}
+    private_ids.add(str(client.get("active_private_world_id") or ""))
+    if current and current not in private_ids:
+        return current
+    connection = world.get("connection") or {}
+    fingerprint = str((world.get("shared") or {}).get("fingerprint") or "")
+    name = str((world.get("identity") or {}).get("world_name") or world.get("nickname") or "World")
+    seed = "|".join((current, fingerprint, name, str(connection.get("internal_ip") or ""), str(connection.get("external_ip") or ""), str(connection.get("sync_port") or "")))
+    base = "connected-" + hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+    used = {str(row.get("id") or "") for row in (client.get("worlds") or []) if row is not world}
+    candidate = base; suffix = 2
+    while candidate in used:
+        candidate = f"{base}-{suffix}"; suffix += 1
+    return candidate
+
+
+def _repair_connected_world_id_collisions(state: dict) -> bool:
+    client = state.setdefault("client", {})
+    changed = False
+    for world in client.get("worlds") or []:
+        old = str(world.get("id") or "")
+        new = _connected_id(state, world)
+        if not new or new == old:
+            continue
+        world["id"] = new; changed = True
+        if str(client.get("active_world_id") or "") == old:
+            client["active_world_id"] = new
+        favorites = [new if str(value) == old else value for value in (client.get("favorites") or [])]
+        client["favorites"] = list(dict.fromkeys(favorites))
+        selections = client.get("world_character_selection")
+        if isinstance(selections, dict) and old in selections and new not in selections:
+            selections[new] = selections.pop(old)
+    return changed
 
 
 def compact_world_for_renderer(world: dict) -> dict:
@@ -3790,6 +3836,7 @@ def handle(method: str, params: dict) -> object:
         payload.setdefault("credentials", {})
         payload["credentials"].setdefault("source", "manual")
         client = state.setdefault("client", {})
+        payload["id"] = _connected_id(state, payload)
         incoming_name = str((payload.get("identity") or {}).get("world_name") or "").strip().casefold()
         incoming_connection = payload.get("connection") or {}
         incoming_routes = {str(incoming_connection.get(key) or "").strip().casefold() for key in ("internal_ip", "external_ip")}
@@ -5196,11 +5243,9 @@ def handle(method: str, params: dict) -> object:
                 selected_player = next((row for row in live if bool(row.get("is_local"))), None)
             if selected_player is None:
                 raise RuntimeError("Select a connected player before giving an item")
-            def wire(value):
-                return str(value or "").replace("%", "%25").replace("|", "%7C").replace("\r", "").replace("\n", "")
-            command = "|".join(("dws.admin.item.v1", wire(selected_player.get("tracker_id") or selected_player.get("id")),
-                                wire(selected_player.get("name")), wire(params.get("runtime_path")),
-                                str(max(1, min(int(params.get("count") or 1), 9999))), ""))
+            if not bool(selected_player.get("is_local")):
+                raise RuntimeError("The installed RSDWTools bridge cannot give items to a remote pawn on a headless dedicated server yet. Select the local player on a listen server; Dragonwilds Sync will not send an unsupported command.")
+            command = spawn_command("item", str(params.get("runtime_path") or ""), {"kind": "local"}, int(params.get("count") or 1))
         else:
             command = spawn_command(kind, str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
         ack = PLAYER_BRIDGE.command(command, timeout=8.0)
@@ -5288,6 +5333,8 @@ def handle(method: str, params: dict) -> object:
     if method == "world.feedback.list":
         world = find_world(state, str(params.get("id") or ""))
         if world is None: raise KeyError("World not found")
+        if str(world.get("kind") or "").casefold() == "singleplayer" or bool((world.get("status") or {}).get("local")):
+            return {"reviews": [], "rating_count": 0, "rating_average": 0.0, "local": True}
         return fetch_world_reviews(world, int(params.get("days") or 30))
 
 
@@ -5581,6 +5628,43 @@ def handle(method: str, params: dict) -> object:
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
         result = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
         return {"result": result, "state": public_state(state)}
+
+    if method == "server.world.runeschema_flavors.list":
+        return list_runeschema_flavors(str(params.get("id") or ""))
+
+    if method == "server.world.runeschema_flavors.import":
+        profile_id = str(params.get("id") or "")
+        result = import_runeschema_flavor(profile_id, str(params.get("zip_path") or ""), str(params.get("name") or ""))
+        return {**result, "state": public_state(state)}
+
+    if method == "server.world.runeschema_flavors.select":
+        ENGINE.assert_stopped()
+        profile_id = str(params.get("id") or "")
+        result, archive = select_runeschema_flavor(profile_id, str(params.get("flavor_id") or "official"))
+        profile = load_server_profile(profile_id)
+        if state.setdefault("server", {}).get("active_world_id") == profile_id:
+            root = server_root_for_profile(profile)
+            if archive is None:
+                applied = install_authoritative_runeschema_update("https://github.com/UnskippableCutscene/RuneSchema", root)
+            else:
+                applied = install_runeschema_zip(str(archive), root)
+            profile = load_server_profile(profile_id)
+            selected = next((row for row in result["flavors"] if row["id"] == result["selected_id"]), {})
+            profile["runeschema_source_name"] = str(selected.get("name") or "Official GitHub")
+            profile["runeschema_installed_at"] = time.time()
+            if archive is None:
+                profile.pop("runeschema_flavor_applied_sha256", None)
+            else:
+                profile["runeschema_flavor_applied_sha256"] = str(selected.get("sha256") or "")
+            save_server_profile(profile_id, profile)
+            ENGINE.scan_mods(profile_id)
+        else:
+            applied = {"deferred": True, "message": "Flavor saved; activate this World to apply it to the shared server runtime."}
+        return {**result, "applied": applied, "state": public_state(state)}
+
+    if method == "server.world.runeschema_flavors.delete":
+        result = delete_runeschema_flavor(str(params.get("id") or ""), str(params.get("flavor_id") or ""))
+        return {**result, "state": public_state(state)}
 
     if method == "server.install.runeschema_core":
         ENGINE.assert_stopped()

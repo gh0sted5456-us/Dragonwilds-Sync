@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.15",
+      "title": "Dragonwilds Sync V2.7.15",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Custom RuneSchema flavors are verified by their live DLL hash instead of being rewritten during every launch and publish.",
+        "Locked native DLLs are detected before runtime mutation, and optional flavor updates defer without blocking a valid existing runtime from launching.",
+        "RSDWTools character/pawn telemetry is authoritative for player counts and map coordinates while log names remain separate account observations.",
+        "Player tracking resets between server processes and World sessions so stale identities cannot leak into the active roster."
+      ]
+    },
+    {
       "version": "2.7.14",
       "title": "Dragonwilds Sync V2.7.14",
       "date": "2026-08-23",

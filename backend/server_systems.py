@@ -3917,6 +3917,24 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
         )
         written = 0
         if is_core:
+            # A loaded native RuneSchema DLL cannot be replaced on Windows. Test
+            # every live DLL before removing or copying anything so a stray or
+            # still-shutting-down server process can never leave a half-written
+            # runtime behind.
+            live_dlls = live_rs / "dlls"
+            if live_dlls.is_dir():
+                for live_dll in live_dlls.rglob("*"):
+                    if not live_dll.is_file():
+                        continue
+                    try:
+                        with live_dll.open("r+b"):
+                            pass
+                    except PermissionError as exc:
+                        raise PermissionError(
+                            f"RuneSchema is still in use by a Dragonwilds process: {live_dll}. "
+                            "Stop the dedicated server and wait for it to exit before applying the flavor. "
+                            "No live RuneSchema files were changed."
+                        ) from exc
             # A core update is a complete upstream replacement. Preserve only
             # profile-owned child mods; never mix one release's DLL with
             # another release's config/support files.

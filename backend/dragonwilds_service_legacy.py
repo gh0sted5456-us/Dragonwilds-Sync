@@ -27,7 +27,8 @@ from sync_engine import activate_or_adopt_client_world_profile, launch_game, res
 from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
-                           server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config)
+                           server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
+                           _apply_profile_runeschema)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
                                    PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
@@ -5640,23 +5641,11 @@ def handle(method: str, params: dict) -> object:
     if method == "server.world.runeschema_flavors.select":
         ENGINE.assert_stopped()
         profile_id = str(params.get("id") or "")
-        result, archive = select_runeschema_flavor(profile_id, str(params.get("flavor_id") or "official"))
+        result, _archive = select_runeschema_flavor(profile_id, str(params.get("flavor_id") or "official"))
         profile = load_server_profile(profile_id)
         if state.setdefault("server", {}).get("active_world_id") == profile_id:
             root = server_root_for_profile(profile)
-            if archive is None:
-                applied = install_authoritative_runeschema_update("https://github.com/UnskippableCutscene/RuneSchema", root)
-            else:
-                applied = install_runeschema_zip(str(archive), root)
-            profile = load_server_profile(profile_id)
-            selected = next((row for row in result["flavors"] if row["id"] == result["selected_id"]), {})
-            profile["runeschema_source_name"] = str(selected.get("name") or "Official GitHub")
-            profile["runeschema_installed_at"] = time.time()
-            if archive is None:
-                profile.pop("runeschema_flavor_applied_sha256", None)
-            else:
-                profile["runeschema_flavor_applied_sha256"] = str(selected.get("sha256") or "")
-            save_server_profile(profile_id, profile)
+            applied = _apply_profile_runeschema(profile_id, profile, root)
             ENGINE.scan_mods(profile_id)
         else:
             applied = {"deferred": True, "message": "Flavor saved; activate this World to apply it to the shared server runtime."}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import json
+import hashlib
 import secrets
 import shutil
 import stat
@@ -40,6 +41,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
 SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
 OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
+RUNESCHEMA_FLAVOR_MARKER = ".dragonwilds-sync-flavor.json"
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
@@ -563,6 +565,57 @@ def _restore_official_runeschema_once(game_root: str) -> dict:
     return {**result, "ok": True, "changed": True}
 
 
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _runeschema_main_dll(root: Path) -> Path | None:
+    dll_dir = root / "dlls"
+    if not dll_dir.is_dir():
+        return None
+    return next((path for path in dll_dir.iterdir()
+                 if path.is_file() and path.name.casefold() == "main.dll"), None)
+
+
+def _installed_flavor_matches(game_root: str, flavor_id: str, archive_sha256: str) -> bool:
+    """Prove that the selected flavor, including its native DLL, is live."""
+    root = resolve_server_layout(game_root).runeschema_root
+    marker = root / RUNESCHEMA_FLAVOR_MARKER
+    main_dll = _runeschema_main_dll(root)
+    if not marker.is_file() or main_dll is None:
+        return False
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+        return (
+            str(payload.get("flavor_id") or "") == str(flavor_id)
+            and str(payload.get("archive_sha256") or "") == str(archive_sha256)
+            and str(payload.get("main_dll_sha256") or "") == _file_sha256(main_dll)
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return False
+
+
+def _write_installed_flavor_marker(game_root: str, flavor_id: str, archive_sha256: str) -> None:
+    root = resolve_server_layout(game_root).runeschema_root
+    main_dll = _runeschema_main_dll(root)
+    if main_dll is None:
+        raise RuntimeError("The selected RuneSchema flavor did not install dlls/main.dll.")
+    marker = root / RUNESCHEMA_FLAVOR_MARKER
+    temporary = marker.with_suffix(marker.suffix + ".tmp")
+    temporary.write_text(json.dumps({
+        "schema": 1,
+        "flavor_id": str(flavor_id),
+        "archive_sha256": str(archive_sha256),
+        "main_dll_sha256": _file_sha256(main_dll),
+        "installed_at": time.time(),
+    }, indent=2), encoding="utf-8")
+    os.replace(temporary, marker)
+
+
 def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) -> dict:
     """Materialize the World profile's selected core without mixing releases."""
     selected_id = str(profile.get("runeschema_flavor_id") or "official")
@@ -583,13 +636,17 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
     if not selected:
         raise RuntimeError("The selected RuneSchema flavor is missing from this World profile.")
     digest = str(selected.get("sha256") or "")
-    # Runtime repair may restore the official core before this profile is
-    # activated. The saved digest is provenance, not proof of live files, so
-    # rematerialize the selected World flavor every time activation prepares it.
+    # The marker includes the live native DLL hash, so it proves that repair did
+    # not replace the selected flavor. Avoid rewriting a loaded main.dll on every
+    # launch or manifest publish.
+    if digest and _installed_flavor_matches(game_root, selected_id, digest):
+        return {"ok": True, "changed": False, "source": selected.get("name"),
+                "verified_flavor": True}
     _, archive = select_runeschema_flavor(profile_id, selected_id)
     result = install_runeschema_zip(str(archive), game_root)
     if str(result.get("kind") or "") != "core":
         raise RuntimeError("The saved RuneSchema flavor is not a complete core runtime.")
+    _write_installed_flavor_marker(game_root, selected_id, digest)
     profile = load_server_profile(profile_id)
     profile["runeschema_flavor_applied_sha256"] = digest
     profile["runeschema_source_name"] = str(selected.get("name") or "Custom RuneSchema")
@@ -1355,9 +1412,18 @@ class ServerEngine:
         exe = find_dedicated_server_exe(profile)
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
         cfg = profile.setdefault("dedicated_config", {})
-        official = _apply_profile_runeschema(profile_id, profile, self._profile_root(profile))
-        if official.get("changed"):
-            self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
+        try:
+            official = _apply_profile_runeschema(profile_id, profile, self._profile_root(profile))
+            if official.get("changed"):
+                self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
+        except PermissionError as exc:
+            # A custom/manual override is optional runtime policy. If an orphaned
+            # process still owns its DLL, retain the last complete runtime and do
+            # not turn that update collision into a launch blocker.
+            current = runtime_prerequisite_status(self._profile_root(profile))
+            if not current.get("ok"):
+                raise
+            self._event(f"RuneSchema flavor update deferred; launching with the last complete runtime. {exc}", "warn")
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;
@@ -1388,6 +1454,8 @@ class ServerEngine:
             command, launch_env = linux_windows_server_command(exe)
         elif sys.platform.startswith("linux"):
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
+        PLAYER_BRIDGE.stop()
+        PLAYER_SERVICE.reset_session()
         self.proc = popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
         self._apply_computer_profile(self.proc.pid, exe, profile_id)
         self._event(f"Started {profile.get('name') or profile_id} dedicated server (PID {self.proc.pid}).", "ok"); return self.status()
@@ -1406,6 +1474,7 @@ class ServerEngine:
     def stop_dedicated(self) -> dict:
         pid = self.status()["pid"]
         if pid is None:
+            PLAYER_BRIDGE.stop(); PLAYER_SERVICE.reset_session()
             self._restore_computer_profile(); result = self.status(); result["stop_verified"] = True; result["stop_method"] = "already-stopped"; return result
         method = _terminate_process_tree(int(pid), timeout=10.0)
         if self.proc and self.proc.pid == pid:
@@ -1415,6 +1484,7 @@ class ServerEngine:
         verification = self.status()
         if verification.get("running") and int(verification.get("pid") or 0) == int(pid):
             raise RuntimeError(f"Dedicated server PID {pid} is still running after the stop request.")
+        PLAYER_BRIDGE.stop(); PLAYER_SERVICE.reset_session()
         self._restore_computer_profile()
         result = self.status()
         result.update({"stop_verified": True, "stop_method": method, "stopped_pid": int(pid)})

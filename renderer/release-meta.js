@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.14',
-  name: 'V2.7.14 · Final Profile & Interface Cleanup',
+  version: '2.7.15',
+  name: 'V2.7.15 · RuneSchema & Player Tracking Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.15',
+    title: 'RuneSchema & Player Tracking Reliability',
+    items: [
+      'Custom RuneSchema flavors are verified by the installed native DLL hash and are no longer rewritten on every launch or publish.',
+      'A loaded RuneSchema DLL is detected before any live runtime file is changed, preventing partial flavor installs.',
+      'A locked optional flavor update is deferred while the last complete RuneSchema runtime remains launchable.',
+      'Coordinate-bearing RSDWTools character rows are authoritative for player count and map tracking; unmatched log names remain account observations.',
+      'Live player tracking resets across dedicated-server process and World changes so stale roster entries cannot leak between sessions.',
+    ],
+  }, {
     version: '2.7.14',
     title: 'Final Profile & Interface Cleanup',
     items: [

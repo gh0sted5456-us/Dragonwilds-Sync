@@ -85,6 +85,13 @@ class ServerPlayerService:
         self.last_tracker_update = 0.0
         self.tracker_connected = False
 
+    def reset_session(self) -> None:
+        """Discard process-global live identity when a World process changes."""
+        with self.lock:
+            self.records.clear()
+            self.last_tracker_update = 0.0
+            self.tracker_connected = False
+
     def update_log_players(self, names: list[str]) -> None:
         now = time.time(); current = {str(n).strip() for n in names if str(n).strip()}
         with self.lock:
@@ -178,19 +185,35 @@ class ServerPlayerService:
     def status(self) -> dict:
         self.mark_timeout(); now = time.time()
         with self.lock:
-            players=[]; recent=[]
+            players=[]; recent=[]; account_observations=[]
+            tracker_is_authoritative = self.tracker_connected and any(
+                rec.get("connected") and rec.get("tracker_available")
+                for rec in self.records.values()
+            )
             for rec in self.records.values():
                 item=dict(rec)
                 if rec.get("connected"):
                     item["connected_seconds"] = max(0, int(now - float(rec.get("connected_at") or now)))
-                    players.append(item)
+                    # Logs report account/presence names while RSDWTools reports
+                    # the playable pawn and its coordinates. Once a live tracker
+                    # roster exists, an unmatched log-only observation is not a
+                    # second player. Retain it as identity evidence but keep it
+                    # out of the authoritative count and map.
+                    if tracker_is_authoritative and rec.get("log_available") and not rec.get("tracker_available"):
+                        item["identity_role"] = "account_observation"
+                        account_observations.append(item)
+                    else:
+                        item["identity_role"] = "character" if rec.get("tracker_available") else "account"
+                        players.append(item)
                 else:
                     item["last_seen"] = float(item.get("last_seen") or item.get("disconnected_at") or 0) or None
                     recent.append(item)
             players.sort(key=lambda x: str(x.get("name") or "").casefold())
+            account_observations.sort(key=lambda x: str(x.get("name") or "").casefold())
             recent.sort(key=lambda x: (float(x.get("last_seen") or 0), int(x.get("visit_count") or 0)), reverse=True)
             return {"tracker_connected": self.tracker_connected, "last_tracker_update": self.last_tracker_update or None,
-                    "players": players, "player_count": len(players), "recent_players": recent[:250]}
+                    "players": players, "player_count": len(players), "recent_players": recent[:250],
+                    "account_observations": account_observations}
 
 
 class RSDWSharedLineClient:
@@ -369,7 +392,9 @@ class PlayerTrackerBridge:
 
     def stop(self):
         self.stop_event.set()
-        if self.thread and self.thread.is_alive(): self.thread.join(timeout=1.0)
+        # The bridge command timeout is 1.8s. Wait past that boundary so a
+        # previous World's final roster cannot arrive after reset_session().
+        if self.thread and self.thread.is_alive(): self.thread.join(timeout=2.5)
         self.thread=None
 
     def command(self, line: str, timeout: float = 2.5) -> str:

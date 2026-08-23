@@ -17,7 +17,7 @@ from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile
 from process_utils import check_output_hidden, popen_hidden, run_hidden
 from computer_profiles import apply_process_priority, resolve_computer_profile, begin_power_session, restore_power_session
 from health_model import apply_detected_hardware_references
-from server_layout import resolve_server_layout, resolve_server_layout_from_exe
+from server_layout import NATIVE_LINUX, resolve_server_layout, resolve_server_layout_from_exe
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 from networking import DEFAULT_SYNC_DISCOVERY_PORT
@@ -466,6 +466,31 @@ def adopt_existing_server_install(profile_id: str, selected: str | Path, *, owne
             "layout": layout.as_dict()}
 
 
+def _layout_config_targets(layout) -> list[Path]:
+    """Return every DedicatedServer.ini the dedicated process may actually read.
+
+    A SteamCMD dedicated install carries two Saved trees: one beside the
+    executable at the install root, and one inside the nested ``RSDragonwilds``
+    project directory.  ``resolve_server_layout`` deliberately reports only the
+    nested project tree as ``config_dir``, so writing just that path leaves the
+    install-root copy stale.  Which of the two the shipped server binary reads
+    has varied across builds, so hydrate both rather than guessing.
+    """
+    platform_dir = layout.config_dir.name or ("LinuxServer" if NATIVE_LINUX else "WindowsServer")
+    roots = [layout.game_root, layout.install_root]
+    targets: list[Path] = []
+    for root in roots:
+        if not root:
+            continue
+        candidate = Path(root) / "Saved" / "Config" / platform_dir / "DedicatedServer.ini"
+        if candidate not in targets:
+            targets.append(candidate)
+    canonical = layout.config_dir / "DedicatedServer.ini"
+    if canonical in targets:
+        targets.remove(canonical)
+    return [canonical, *targets]
+
+
 def dedicated_config_targets(cfg: dict, server_root: str = "") -> list[Path]:
     """Return every supported DedicatedServer.ini target, de-duplicated.
 
@@ -475,14 +500,14 @@ def dedicated_config_targets(cfg: dict, server_root: str = "") -> list[Path]:
     """
     selected = server_root or str(cfg.get("install_dir") or "")
     layout = resolve_server_layout(selected)
-    targets = [layout.config_dir / "DedicatedServer.ini"]
+    targets = list(_layout_config_targets(layout))
     if os.name == "nt":
         targets.append(DEDICATED_CONFIG_FILE)
 
     server_exe = str(cfg.get("server_exe") or server_install_config().get("server_exe") or "").strip()
     if server_exe:
         exe_layout = resolve_server_layout_from_exe(server_exe)
-        targets.append(exe_layout.config_dir / "DedicatedServer.ini")
+        targets.extend(_layout_config_targets(exe_layout))
 
     result: list[Path] = []
     seen: set[str] = set()
@@ -595,9 +620,17 @@ def verify_dedicated_config(cfg: dict, server_root: str = "") -> dict:
                      "password_matches": bool(matches.get("worldpassword")),
                      "managed_matches": matches, "error": error})
     exact_row = next((row for row in rows if row["exact_executable_target"]), None)
-    return {"ok": bool(exact_row and exact_row["ok"]), "exact_path": str(exact or ""),
+    # Every resolved target is written on each launch, so any existing target
+    # that disagrees means the launcher is not the write authority for a file
+    # the dedicated process may still read. Treat that as a failure rather than
+    # trusting the executable-resolved copy alone.
+    present = [row for row in rows if row["exists"]]
+    stale = [row["path"] for row in present if not row["ok"]]
+    return {"ok": bool(exact_row and exact_row["ok"] and not stale), "exact_path": str(exact or ""),
             "password_configured": bool(expected["worldpassword"]),
-            "password_matches": bool(exact_row and exact_row["password_matches"]), "targets": rows}
+            "password_matches": bool(exact_row and exact_row["password_matches"]
+                                     and all(row["password_matches"] for row in present)),
+            "stale_targets": stale, "targets": rows}
 
 
 def server_install_config() -> dict:
@@ -1252,7 +1285,10 @@ class ServerEngine:
         profile["dedicated_config_verification"] = verification
         if not verification.get("ok"):
             save_server_profile(profile_id, profile)
-            raise RuntimeError("DedicatedServer.ini verification failed for the executable-resolved path: " + str(verification.get("exact_path") or "unresolved"))
+            stale = verification.get("stale_targets") or []
+            detail = ("; disagreeing copies: " + ", ".join(stale)) if stale else ""
+            raise RuntimeError("DedicatedServer.ini verification failed for the executable-resolved path: "
+                               + str(verification.get("exact_path") or "unresolved") + detail)
         save_server_profile(profile_id, profile)
         try:
             from world_maintenance import lock_world_configs

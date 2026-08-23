@@ -1002,7 +1002,18 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
     connection = base.setdefault("connection", {})
     incoming_connection = payload.get("connection") or {}
     for key in ("internal_ip", "external_ip"):
-        connection[key] = str(incoming_connection.get(key, connection.get(key, ""))).strip()
+        # dict.get(key, default) only falls back when the key is absent. Callers
+        # that always emit the full connection shape (the World editor and the
+        # Direct Connect add path both send internal_ip: '') would otherwise
+        # erase a working route and leave the profile with no reachable
+        # endpoint at all. Clearing a route is an explicit action, not a
+        # side effect of saving an unrelated field.
+        incoming_value = str(incoming_connection.get(key, "") or "").strip()
+        cleared = {str(name).strip() for name in (incoming_connection.get("cleared_routes") or [])}
+        if key in cleared:
+            connection[key] = ""
+            continue
+        connection[key] = incoming_value or str(connection.get(key, "") or "").strip()
     for key, default in (("sync_port", 27051), ("game_port", 7777), ("server_number", 1)):
         try:
             value = int(incoming_connection.get(key, connection.get(key, default)) or default)

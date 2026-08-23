@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.5",
+      "title": "Dragonwilds Sync V2.7.5",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Active hosted Worlds restart after their canonical World Password is written to DedicatedServer.ini.",
+        "DragonConnect commits saved passwords through the live UMG widget rather than display-only reflection.",
+        "Connected World Details retain and display the selected saved profile.",
+        "Core Configuration excludes individual UE4SS, RuneSchema, and PAK mod files."
+      ]
+    },
+    {
       "version": "2.7.4",
       "title": "Dragonwilds Sync V2.7.4",
       "date": "2026-08-22",

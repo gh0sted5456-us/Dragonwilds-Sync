@@ -251,9 +251,6 @@ def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[
             (layout.config_dir, True),
             (layout.ue4ss_core_dir, False),
             (layout.runeschema_config_dir, True),
-            (layout.runeschema_mods_dir, True),
-            (layout.paks_mods_dir, True),
-            (layout.ue4ss_mods_dir, True),
         ]
         seen: set[str] = set()
         for base, recursive in roots:

@@ -579,8 +579,27 @@ def handle(method: str, params: dict) -> object:
         return _base_handle(method, params)
 
     if method == "server.world.update":
-        result = _base_handle(method, params)
         profile_id = str(params.get("id") or "").strip()
+        previous = _legacy.load_server_profile(profile_id) if profile_id else None
+        previous_dedicated = previous.get("dedicated_config") if isinstance(previous, dict) and isinstance(previous.get("dedicated_config"), dict) else {}
+        incoming_dedicated = params.get("dedicated_config") if isinstance(params.get("dedicated_config"), dict) else {}
+        old_game_password = str(previous_dedicated.get("world_pass") or "").strip()
+        new_game_password = str(incoming_dedicated.get("world_pass") if "world_pass" in incoming_dedicated else old_game_password).strip()
+        # Dragonwilds only reads WorldPassword at process start and may discard
+        # an INI edit made while it is running. Stop first, write the profile
+        # and every resolved DedicatedServer.ini target, then start again.
+        restart_for_password = (old_game_password != new_game_password or bool(params.get("apply_gameplay_now"))) and bool(_runtime_for(profile_id).get("matches_profile"))
+        if restart_for_password:
+            handle("server.runtime.stop", {"id": profile_id})
+        try:
+            result = _base_handle(method, params)
+        except Exception:
+            if restart_for_password:
+                try:
+                    handle("server.runtime.start", {"id": profile_id})
+                except Exception:
+                    pass
+            raise
         profile = _legacy.load_server_profile(profile_id) if profile_id else None
         dedicated = profile.get("dedicated_config") if isinstance(profile, dict) and isinstance(profile.get("dedicated_config"), dict) else {}
         # START_SHARE is idempotent. On an active worker it hot-applies the
@@ -596,6 +615,11 @@ def handle(method: str, params: dict) -> object:
             except Exception as exc:
                 if isinstance(result, dict):
                     result["live_credentials_warning"] = f"Saved, but the live Sync credential could not be refreshed: {exc}"
+        if restart_for_password:
+            restarted = handle("server.runtime.start", {"id": profile_id})
+            if isinstance(result, dict):
+                result["game_password_restarted"] = True
+                result["game_password_runtime"] = restarted.get("result", restarted) if isinstance(restarted, dict) else restarted
         return result
 
     return _base_handle(method, params)

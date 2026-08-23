@@ -45,11 +45,13 @@ def main():
         try:
             rows = wm.list_world_configs('world-a', str(server), True)
             assert any(row['relative_path'].endswith('RuneSchema/config/config.json') for row in rows)
-            mod_row = next(row for row in rows if row['unit_key'] == 'runeschema_mod::BetterLoot')
-            assert mod_row['relative_path'].endswith('RuneSchema/mods/BetterLoot/recipes/loot.jsonc')
-            assert mod_row['readonly'] is True
-            assert any(row['unit_key'] == 'ue4ss_mod::ServerTweaks' for row in rows)
-            assert any(row['unit_key'] == 'pak_mod::VisualPack' for row in rows)
+            assert not any(row['unit_key'] == 'runeschema_mod::BetterLoot' for row in rows)
+            assert not any(row['unit_key'] == 'ue4ss_mod::ServerTweaks' for row in rows)
+            assert not any(row['unit_key'] == 'pak_mod::VisualPack' for row in rows)
+            managed = wm._read_manifest('world-a').get('files') or {}
+            assert any((meta or {}).get('unit_key') == 'runeschema_mod::BetterLoot' for meta in managed.values())
+            assert any((meta or {}).get('unit_key') == 'ue4ss_mod::ServerTweaks' for meta in managed.values())
+            assert any((meta or {}).get('unit_key') == 'pak_mod::VisualPack' for meta in managed.values())
             opened = wm.open_world_config('world-a', str(server), 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json', True)
             assert opened['readonly'] is True
             assert Path(opened['path']).resolve() == config.resolve()

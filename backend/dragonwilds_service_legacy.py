@@ -4407,16 +4407,19 @@ def handle(method: str, params: dict) -> object:
         sync["access_policy"] = normalize_access_policy(sync.get("access_policy") or {"blocked_ips": sync.pop("blocked_ips", []), "blocked_countries": sync.pop("blocked_countries", [])})
         _refresh_world_metadata_cache(profile, source="apply")
         save_server_profile(profile_id, profile)
-        if "name" in params:
-            try:
-                live_root = server_root_for_profile(profile)
-                if live_root and Path(live_root).exists():
-                    write_dedicated_config(dedicated, live_root)
-            except Exception as exc:
-                # Keep the profile rename. Start/Activate will retry the
-                # launcher-owned INI write and the UI gets an actionable note.
-                profile["dedicated_config_write_warning"] = f"DedicatedServer.ini will be updated on next start: {exc}"
-                save_server_profile(profile_id, profile)
+        try:
+            # Every gameplay-setting save hydrates the actual server file. A
+            # password-only edit must not update Sync while leaving
+            # DedicatedServer.ini on the previous value until another launch.
+            live_root = server_root_for_profile(profile)
+            if live_root and Path(live_root).exists():
+                write_dedicated_config(dedicated, live_root)
+            profile.pop("dedicated_config_write_warning", None)
+        except Exception as exc:
+            # Keep the profile edit. Start/Activate retries this write before
+            # launching and the UI retains an actionable warning meanwhile.
+            profile["dedicated_config_write_warning"] = f"DedicatedServer.ini will be updated on next start: {exc}"
+        save_server_profile(profile_id, profile)
         if state.setdefault("server", {}).get("active_world_id") == profile_id:
             STATE.configure_access_policy((state.get("application") or {}).get("server_access_policy") or {}, sync.get("access_policy") or {})
             refresh_live_profile_metadata(profile_id, profile)

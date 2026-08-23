@@ -55,8 +55,16 @@ def main():
         names = set(archive.namelist())
         assert "PersistentDirectConnectIP/Scripts/main.lua" in names
         config = archive.read("PersistentDirectConnectIP/Scripts/config.lua").decode("utf-8")
+        main_lua = archive.read("PersistentDirectConnectIP/Scripts/main.lua").decode("utf-8")
         assert 'IP = ""' in config and 'PASSWORD = ""' in config
         assert "24.9.154.151" not in config and "BELTS" not in config
+        assert 'VERSION = "0.4.1"' in main_lua
+        assert "editable:SetText(FText(value))" in main_lua
+        assert 'FindAllOf, class_name' in main_lua
+
+    assert "const world=worlds().find" in renderer
+    assert "if(selected?.client)setData(selected)" in renderer
+    assert "apply_gameplay_now: true" in renderer
 
     print("v2.7 updater, navigation, runtime, networking, and DragonConnect contracts passed")
 

@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.4',
-  name: 'V2.7.4 · Connected World and LAN Sync Reliability',
+  version: '2.7.5',
+  name: 'V2.7.5 · Gameplay Password and Core Configuration Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.5',
+    title: 'Gameplay Password and Core Configuration Reliability',
+    items: [
+      'Saving an active hosted World now writes the canonical WorldPassword to every resolved DedicatedServer.ini target and restarts Dragonwilds so the running game process actually loads it.',
+      'DragonConnect commits saved credentials through the live UMG SetText function and scans already-created password fields, preventing a password that looks filled but is not used by Join.',
+      'Connected World Details now retain the backend-selected saved profile and enrich it with live metadata instead of discarding the selected profile state.',
+      'Core Configuration now shows only server/player files plus UE4SS and RuneSchema root configuration; individual mod files remain in Mod Management.',
+    ],
+  }, {
     version: '2.7.4',
     title: 'Connected World and LAN Sync Reliability',
     items: [

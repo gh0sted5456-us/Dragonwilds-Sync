@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.20',
-  name: 'V2.7.20 · Protected Client Runtime Overrides',
+  version: '2.7.21',
+  name: 'V2.7.21 · Profile-Scoped Quick Launch',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.21',
+    title: 'Profile-Scoped Quick Launch',
+    items: [
+      'Local, Connected World, and Server Quick Launch use the same authoritative profile pipelines as the full application.',
+      'Connected World Quick Launch visibly follows manifest match, changed-file transfer, parity verification, DragonConnect preparation, and play.',
+      'Every Quick Launch role includes the unified source-colored Runtime Console with GAME, UE4SS, RuneSchema, SERVER, and SYNC filters.',
+      'Quick Launch starts only the background services required by its role and promotes into the full launcher without duplicating the backend or runtime.',
+      'Opening another Quick shortcut in a resident Quick process correctly changes its profile, role, tray target, and lightweight service set.',
+    ],
+  }, {
     version: '2.7.20',
     title: 'Protected Client Runtime Overrides',
     items: [

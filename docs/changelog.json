@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.21",
+      "title": "Dragonwilds Sync V2.7.21",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Local, Connected World, and Server Quick Launch use the same authoritative profile pipelines as the full application.",
+        "Connected World Quick Launch performs manifest matching, changed-file transfer, parity verification, DragonConnect preparation, and play.",
+        "Every Quick role includes the unified source-colored Runtime Console with GAME, UE4SS, RuneSchema, SERVER, and SYNC filters.",
+        "Quick starts only role-required background services and promotes into the full launcher without duplicating the backend or runtime.",
+        "Resident Quick processes correctly adopt newly opened shortcut profiles, roles, tray targets, and lightweight services."
+      ]
+    },
+    {
       "version": "2.7.20",
       "title": "Dragonwilds Sync V2.7.20",
       "date": "2026-08-23",

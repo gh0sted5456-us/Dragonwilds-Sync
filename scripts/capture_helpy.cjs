@@ -10,9 +10,12 @@ const website=path.join(project,'website');
 const help=path.join(project,'help');
 const helpAssets=path.join(project,'renderer','assets','help');
 const captures=[
-  ['getting-started','38-helpy-website.png'],
-  ['characters','39-helpy-characters.png'],
-  ['mods-repository','40-helpy-mods.png'],
+  ['getting-started','63-helpy-start.png'],
+  ['connected-worlds','64-helpy-connected.png'],
+  ['sync-files','65-helpy-sync.png'],
+  ['characters','66-helpy-characters.png'],
+  ['mods-repository','67-helpy-mods.png'],
+  ['settings-reference','68-helpy-settings.png'],
 ];
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.svg':'image/svg+xml','.ico':'image/x-icon'};
 
@@ -35,7 +38,7 @@ app.whenReady().then(async()=>{
   try{
     for(const [pageId,filename] of captures){
       await win.loadURL(`http://127.0.0.1:${port}/helpy.html?embed=1&theme=dark&capture=${encodeURIComponent(pageId)}#${encodeURIComponent(pageId)}`);
-      await win.webContents.executeJavaScript(`new Promise((resolve,reject)=>{const started=Date.now();const ready=()=>{const selected=document.querySelector('[data-helpy-page].active');const image=document.querySelector('.helpy-article-shot img');if(selected?.dataset.helpyPage===${JSON.stringify(pageId)}&&(!image||image.complete))return requestAnimationFrame(()=>requestAnimationFrame(resolve));if(Date.now()-started>10000)return reject(new Error('Helpy render timed out'));setTimeout(ready,100);};ready();})`);
+      await win.webContents.executeJavaScript(`new Promise((resolve,reject)=>{const started=Date.now();const ready=()=>{const selected=document.querySelector('[data-helpy-page].active');const images=[...document.querySelectorAll('.helpy-article-shot img')];if(selected?.dataset.helpyPage===${JSON.stringify(pageId)}&&images.every((image)=>image.complete))return requestAnimationFrame(()=>requestAnimationFrame(resolve));if(Date.now()-started>15000)return reject(new Error('Helpy render timed out'));setTimeout(ready,100);};ready();})`);
       const image=await win.webContents.capturePage();fs.writeFileSync(path.join(helpAssets,filename),image.toPNG());console.log(`[OK] ${pageId} -> renderer/assets/help/${filename}`);
     }
   }finally{win.destroy();server.close();app.quit();}

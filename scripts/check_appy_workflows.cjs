@@ -90,7 +90,7 @@ for (const token of [
 
 need(helpManifest.schema === 'DragonwildsSync.Help.v1' && helpManifest.version >= 2, 'Help manifest must identify the refreshed walkthrough');
 need(helpManifest.pages.some((page) => page.id === 'appy-walkthrough'), 'Help must include the end-to-end Appy walkthrough');
-need(capture.includes('assertAppyNavigation') && capture.includes("'42-profile-character-saves.png'"), 'Help capture must exercise all Appys and the Profile character-save handoff');
+need(capture.includes('assertAppyNavigation') && capture.includes("'61-profile-and-saves.png'") && capture.includes("'62-helpy-in-app.png'"), 'Help capture must exercise all Appys, the Profile character-save handoff, and the current Helpy surface');
 
 for (const relative of [
   'help/appy-walkthrough.md', 'help/getting-started.md', 'help/characters-rsdw.md',

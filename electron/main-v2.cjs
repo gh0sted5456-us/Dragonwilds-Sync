@@ -488,30 +488,37 @@ function createWindow({ show = true } = {}) {
     mainWindow.webContents.once('did-finish-load', async () => {
       const output=path.resolve(process.env.DWS_HELP_CAPTURE_DIR);
       const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
-      const shot=async(name)=>{await wait(900);const image=await mainWindow.webContents.capturePage();fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,name),image.toPNG());};
+      const shot=async(name)=>{await wait(900);await mainWindow.webContents.executeJavaScript(`(()=>{const replace=(value)=>String(value||'').replace(/Effing Desync/gi,'Ashenfall Fellowship').replace(/Jonesing4Space/gi,'Demo Ranger').replace(/24\\.9\\.154\\.151/g,'203.0.113.24');const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode()))node.nodeValue=replace(node.nodeValue);document.querySelectorAll('input,textarea').forEach((field)=>{field.value=replace(field.value);field.placeholder=replace(field.placeholder);});})()`);const image=await mainWindow.webContents.capturePage();fs.mkdirSync(output,{recursive:true});fs.writeFileSync(path.join(output,name),image.toPNG());};
       const click=async(selector,{optional=false}={})=>{for(let attempt=0;attempt<30;attempt++){const clicked=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.click();return true;})()`);if(clicked){await wait(700);const healthy=await mainWindow.webContents.executeJavaScript(`!document.querySelector('.fatal-error')&&!!document.querySelector('.main')`);if(!healthy)throw new Error(`Appy render failed after clicking ${selector}`);return true;}await wait(250);}if(optional)return false;throw new Error(`Help capture control was not found: ${selector}`);};
       const scrollTo=async(selector)=>{for(let attempt=0;attempt<120;attempt++){const found=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.scrollIntoView({block:'start'});return true;})()`);if(found){await wait(1400);return true;}await wait(250);}return false;};
       const waitFor=async(selector,attempts=120)=>{for(let attempt=0;attempt<attempts;attempt++){if(await mainWindow.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`))return true;await wait(250);}return false;};
       const enterWhenReady=async()=>{for(let attempt=0;attempt<160;attempt++){const state=await mainWindow.webContents.executeJavaScript(`(()=>{const nav=document.querySelector('[data-route="world-management"]');if(nav)return 'ready';const enter=document.querySelector('#enter-launcher');if(enter){enter.click();return 'entered';}return 'waiting';})()`);if(state==='ready'){await wait(500);return;}await wait(state==='entered'?900:250);}throw new Error('Launcher did not reach its Appy navigation within 40 seconds.');};
       const assertAppyNavigation=async()=>{const result=await mainWindow.webContents.executeJavaScript(`(()=>{const expected=['world-management','characters-app','mods-app','rsdw-launcher','webhost','help','settings'];const app=document.querySelector('#app');const sidebar=app?.querySelector(':scope > .sidebar');const titlebar=app?.querySelector(':scope > .titlebar');const rows=[...document.querySelectorAll('.appy-nav[data-route]')];const routes=rows.map((node)=>node.dataset.route);const images=new Map(rows.map((node)=>[node.dataset.route,node.querySelector('.nav-icon img')]));const missing=expected.filter((route)=>!routes.includes(route));const missingImages=rows.filter((node)=>!node.querySelector('.nav-icon img')).map((node)=>node.dataset.route);const brokenImages=rows.filter((node)=>{const image=node.querySelector('.nav-icon img');return image&&(!image.complete||!image.naturalWidth);}).map((node)=>node.dataset.route);const baseline=window.__DWSYNC_HELP_SHELL__||(window.__DWSYNC_HELP_SHELL__={sidebar,titlebar,images});const replacedShell=!sidebar||!titlebar||baseline.sidebar!==sidebar||baseline.titlebar!==titlebar;const replacedIcons=expected.filter((route)=>baseline.images.get(route)!==images.get(route));return {ok:!missing.length&&!missingImages.length&&!brokenImages.length&&!replacedShell&&!replacedIcons.length&&!routes.includes('rsdragonwilds-app'),missing,missingImages,brokenImages,replacedShell,replacedIcons,routes};})()`);if(!result?.ok)throw new Error(`Appy navigation contract failed: ${JSON.stringify(result)}`);};
+      const sanitizeCaptureState=async()=>mainWindow.webContents.executeJavaScript(`(()=>{const root=window.__DWSYNC_STATE__;if(!root)return false;const replacements=[[/Effing Desync/gi,'Ashenfall Fellowship'],[/Jonesing4Space/gi,'Demo Ranger'],[/Luke/gi,'Demo Ranger'],[/24\\.9\\.154\\.151/g,'203.0.113.24']];const visit=(value,key='')=>{if(Array.isArray(value)){value.forEach((item)=>visit(item,key));return;}if(!value||typeof value!=='object')return;for(const [name,item] of Object.entries(value)){if(typeof item==='string'){const lowered=name.toLowerCase();if(/password|secret|token|owner_id|api_key/.test(lowered)){value[name]='';continue;}if(lowered==='internal_ip'){value[name]='192.0.2.24:7777';continue;}if(lowered==='external_ip'){value[name]='203.0.113.24:7777';continue;}let next=item;for(const [pattern,replacement] of replacements)next=next.replace(pattern,replacement);next=next.replace(/[A-Z]:\\\\Users\\\\[^\\\\]+/gi,'C:\\\\Users\\\\Demo');value[name]=next;}else visit(item,name);}};visit(root);if(root.player_profile)root.player_profile.display_name='Demo Ranger';return true;})()`);
       try {
         await wait(2200); await shot('01-getting-started.png');
-        await enterWhenReady();await assertAppyNavigation();await shot('02-worlds.png');
-        await click('[data-route="characters-app"]');await assertAppyNavigation(); await shot('40-character-creator-top.png'); await scrollTo('.native-avatar-section'); await waitFor('.native-avatar-section .avatar-ready'); await shot('03-characters.png');
-        await click('[data-route="mods-app"]');await assertAppyNavigation(); await wait(1200); await shot('07-mods.png');
+        await enterWhenReady();await sanitizeCaptureState();await click('[data-route="world-management"]');await assertAppyNavigation();await shot('43-world-profiles.png');
+        await click('[data-world-management-tab="connected"]');await shot('44-connected-worlds.png');
+        await click('[data-world-management-tab="manifest"]');await shot('45-sync-files.png');
+        await click('[data-world-management-tab="game-setup"]');await shot('46-game-connection.png');
+        await click('[data-world-management-tab="server-setup"]');await shot('47-sync-hosting.png');
+        await click('[data-route="characters-app"]');await assertAppyNavigation(); await shot('48-characters.png'); await scrollTo('.native-avatar-section'); await waitFor('.native-avatar-section .avatar-ready'); await shot('49-character-preview.png');
+        await click('[data-route="mods-app"]');await assertAppyNavigation(); await wait(1200); await shot('50-mod-repository.png');
         if(await click('[data-release-open-mods]',{optional:true})){
           if(!await waitFor('[data-private-tab="mods"].active,[data-server-tab="mods"].active',40))throw new Error('Manage Mods did not open the selected profile Mods tab.');
-          await shot('41-profile-mod-editor.png');
+          await shot('51-profile-mod-editor.png');
         }
-        await click('[data-route="rsdw-launcher"]');await assertAppyNavigation(); await shot('38-rsdwl.png');
-        await click('[data-route="world-management"]');await assertAppyNavigation();await click('[data-world-management-tab="server-setup"]');await shot('05-server-setup.png');
-        await click('[data-route="webhost"]');await assertAppyNavigation(); await click('[data-webhost-tab="settings"]'); await shot('09-networking.png');
-        await click('[data-webhost-tab="manifest"]'); await shot('29-manifest-hosts.png');
-        await click('[data-route="settings"]');await assertAppyNavigation(); await shot('13-settings.png');
-        await click('[data-settings-tab="integrations"]'); await shot('39-integrations.png');
-        await click('[data-settings-tab="mods"]'); await wait(1200); await shot('37-mod-management.png');
-        await click('#player-chip');await assertAppyNavigation();await waitFor('.profile-character-saves');await shot('42-profile-character-saves.png');
-        await click('[data-route="help"]');await assertAppyNavigation(); await shot('27-help-flow.png');
+        await click('[data-route="rsdw-launcher"]');await assertAppyNavigation(); await shot('52-rsdwl-toolkit.png');
+        await click('[data-route="webhost"]');await assertAppyNavigation(); await shot('53-sync-server-login.png');
+        if(await click('[data-webhost-tab="manifest"]',{optional:true}))await shot('54-sync-directory-manifest.png');
+        await click('[data-route="settings"]');await assertAppyNavigation(); await shot('55-settings-application.png');
+        await click('[data-application-settings-tab="network"]');await shot('56-settings-network.png');
+        await click('[data-application-settings-tab="storage"]');await shot('57-settings-storage.png');
+        await click('[data-settings-tab="advanced"]');await shot('58-settings-advanced.png');
+        await click('[data-settings-tab="integrations"]');await shot('59-settings-integrations.png');
+        await click('[data-settings-tab="about"]');await shot('60-settings-about.png');
+        await click('#player-chip');await assertAppyNavigation();await waitFor('.profile-character-saves');await shot('61-profile-and-saves.png');
+        await click('[data-route="help"]');await assertAppyNavigation(); await shot('62-helpy-in-app.png');
         console.log(`[OK] Current Help screenshots captured: ${output}`);
       } catch (error) { console.error(`[help-capture] ${error?.stack||error}`); process.exitCode=1; }
       finally { forceQuit=true; app.quit(); }

@@ -2,10 +2,10 @@
 <html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b0d0f">
-  <meta name="description" content="Helpy, the shared Dragonwilds Sync field guide for desktop and web.">
+  <meta name="description" content="The complete Dragonwilds Sync field guide: Worlds, DragonConnect, file Sync, servers, mods, characters, RSDW-L, Quick Launch, and recovery.">
   <title>Helpy | Dragonwilds Sync</title><link rel="icon" href="assets/application-icon.ico"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="helpy.css"><link rel="stylesheet" href="helpy-overhaul.css">
 </head>
-<body>
+<body class="helpy-page">
   <div class="ambient ambient-one" aria-hidden="true"></div><div class="ambient ambient-two" aria-hidden="true"></div>
   <header class="site-header" id="top">
     <a class="brand" href="index.html"><img src="assets/application-icon.ico" alt="" class="brand-icon"><span class="brand-copy"><strong>Dragonwilds</strong><span>Sync</span></span></a>
@@ -13,13 +13,17 @@
     <nav class="main-nav" id="main-nav"><a href="index.html">Home</a><a href="world-builder.html">World Builder</a><a href="servers.html">Servers</a><a href="helpy.html" aria-current="page">Helpy</a><a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a></nav>
     <div class="theme-switcher" role="group" aria-label="Website theme"><button type="button" data-theme-choice="dark" aria-pressed="true"><span class="theme-dot dark-dot"></span><span class="theme-label">Dark</span></button><button type="button" data-theme-choice="white"><span class="theme-dot white-dot"></span><span class="theme-label">White</span></button><button type="button" data-theme-choice="glass"><span class="theme-dot glass-dot"></span><span class="theme-label">Glass</span></button></div>
   </header>
-  <main class="helpy-shell">
-    <section class="helpy-hero"><div><div class="eyebrow">GitHub-managed field guide</div><h1>Meet <span>Helpy.</span></h1><p id="helpy-subtitle">The same living guide inside Dragonwilds Sync and on the web.</p></div><div class="helpy-source"><span class="status-dot"></span><div><strong>One source of truth</strong><small>help/manifest.json</small></div><button type="button" id="helpy-refresh">Refresh</button></div></section>
-    <section class="helpy-toolbar"><label><span class="sr-only">Search Helpy</span><input id="helpy-search" type="search" placeholder="Search Worlds, characters, mods, Sync, or hosting..."></label><span id="helpy-version">Loading guide...</span></section>
-    <section class="helpy-layout"><aside class="helpy-nav" id="helpy-nav" aria-label="Helpy pages"></aside><article class="helpy-article" id="helpy-article" aria-live="polite"><div class="helpy-loading"><span class="status-dot"></span><strong>Loading Helpy from GitHub...</strong></div></article></section>
+  <main class="helpy-shell" data-guide-source="help/manifest.json">
+    <section class="helpy-hero">
+      <div class="helpy-hero-copy"><div class="eyebrow">Dragonwilds Sync field manual</div><h1>Find the answer.<br><span>Keep the World moving.</span></h1><p id="helpy-subtitle">Current, visual guidance for every workspace in Dragonwilds Sync.</p><div class="helpy-hero-actions"><a href="#getting-started" class="helpy-primary-link">Start here</a><a href="#troubleshooting" class="helpy-secondary-link">Fix a problem</a></div></div>
+      <div class="helpy-command-card"><div class="helpy-command-head"><span class="status-dot"></span><strong>Guide status</strong><button type="button" id="helpy-refresh">Refresh</button></div><div class="helpy-command-stats"><div><strong id="helpy-guide-count">—</strong><span>walkthroughs</span></div><div><strong id="helpy-shot-count">—</strong><span>screenshots</span></div><div><strong>1</strong><span>shared source</span></div></div><small id="helpy-version">Loading current guide…</small></div>
+    </section>
+    <section class="helpy-jump-strip" aria-label="Popular tasks"><span>Jump to</span><button data-helpy-jump="connected-worlds">Connect to a World</button><button data-helpy-jump="sync-files">Sync files</button><button data-helpy-jump="server-setup">Host a server</button><button data-helpy-jump="mods-repository">Import a mod</button><button data-helpy-jump="troubleshooting">Connection failed</button></section>
+    <section class="helpy-toolbar"><label><span class="sr-only">Search Helpy</span><input id="helpy-search" type="search" autocomplete="off" placeholder="Search a feature, error, port, or task…"><kbd>/</kbd></label><select id="helpy-mobile-nav" aria-label="Choose a guide"></select><span id="helpy-results" aria-live="polite"></span></section>
+    <section class="helpy-layout"><aside class="helpy-nav" id="helpy-nav" aria-label="Helpy pages"></aside><article class="helpy-article" id="helpy-article" aria-live="polite"><div class="helpy-loading"><span class="status-dot"></span><strong>Loading Helpy…</strong></div></article></section>
   </main>
-  <footer class="site-footer"><div class="footer-brand"><img src="assets/application-icon.ico" alt=""><div><strong>Dragonwilds Sync</strong><span>Community toolkit for RuneScape: Dragonwilds</span></div></div><div class="footer-links"><a href="index.html">Home</a><a href="servers.html">Servers</a><a href="helpy.html">Helpy</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/help">Edit on GitHub</a></div><p>Helpy content is versioned with the application and published through GitHub Pages.</p></footer>
-  <dialog id="helpy-image-dialog"><button type="button" aria-label="Close screenshot">x</button><img alt=""><p></p></dialog>
+  <footer class="site-footer"><div class="footer-brand"><img src="assets/application-icon.ico" alt=""><div><strong>Dragonwilds Sync</strong><span>Community toolkit for RuneScape: Dragonwilds</span></div></div><div class="footer-links"><a href="index.html">Home</a><a href="servers.html">Servers</a><a href="helpy.html">Helpy</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/help">Improve this guide</a></div><p>Helpy is versioned with the application and published from the same guide manifest.</p></footer>
+  <dialog id="helpy-image-dialog"><button type="button" aria-label="Close screenshot">×</button><img alt=""><p></p></dialog>
   <script src="script.js"></script><script src="helpy.js"></script>
 </body>
 </html>

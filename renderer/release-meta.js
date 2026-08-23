@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.19',
-  name: 'V2.7.19 · Stable Sync Workspaces & Launch Console',
+  version: '2.7.20',
+  name: 'V2.7.20 · Protected Client Runtime Overrides',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.20',
+    title: 'Protected Client Runtime Overrides',
+    items: [
+      'Dedicated-server managed resets preserve the colocated dwmapi.dll and version.dll runtime loaders in place.',
+      'Retail clients retain independent UE4SS and RuneSchema repair caches that cannot overwrite hosted-server runtime libraries.',
+      'Player Settings accepts complete custom UE4SS and RuneSchema ZIPs for regular client and Private World play.',
+      'Client core repair preserves dwmapi.dll, UE4SS.dll, UE4SS-settings.ini, imgui.ini, and the selected RuneSchema baseline across profile synchronization.',
+      'Server-only version.dll is rejected from retail-client UE4SS imports, while wrapped RuneSchema core archives are detected correctly.',
+    ],
+  }, {
     version: '2.7.19',
     title: 'Stable Sync Workspaces',
     items: [

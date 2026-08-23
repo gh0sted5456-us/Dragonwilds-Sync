@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.20",
+      "title": "Dragonwilds Sync V2.7.20",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Dedicated-server managed resets preserve the colocated dwmapi.dll and version.dll runtime loaders in place.",
+        "Retail clients retain independent UE4SS and RuneSchema repair caches that cannot overwrite hosted-server runtime libraries.",
+        "Player Settings accepts complete custom UE4SS and RuneSchema ZIPs for regular client and Private World play.",
+        "Client runtime repair preserves its selected UE4SS and RuneSchema baselines across profile synchronization.",
+        "Server-only version.dll is rejected from retail-client UE4SS imports, and wrapped RuneSchema core archives are recognized correctly."
+      ]
+    },
+    {
       "version": "2.7.19",
       "title": "Dragonwilds Sync V2.7.19",
       "date": "2026-08-23",

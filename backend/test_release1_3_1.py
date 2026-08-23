@@ -75,8 +75,12 @@ def main():
     assert "Refresh Ashenfall Map" in renderer and "application.map.refresh" in service
     assert "metaforge.app/runescape-dragonwilds/map/ashenfall" in map_updater.METAFORGE_SOURCE_PAGE
 
-    # Theme and layout hardening: only Light/Dark are exposed, while old themes are normalized to Dark.
-    assert "['dark-fantasy','Dark','Dark graphite + gold'],['light','Light','Clean daylight UI']" in renderer
+    # Theme and layout hardening: the current catalog remains explicit and legacy fantasy IDs stay retired.
+    assert "['dark-fantasy','Dark','Dark graphite and antique gold']" in renderer
+    assert "['light','Light','Clean daylight UI']" in renderer
+    assert "['desert-script','Desert Script','Papyrus, indigo ink and sun-baked clay']" in renderer
+    assert "['eastern','Eastern','Sumi ink, vermilion and traditional Japanese screens']" in renderer
+    assert "Cathedral stained glass" in renderer
     assert "['fantasy'" not in renderer[renderer.find("function renderSettings"):renderer.find("function renderWelcome")]
     assert "grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))" in styles
     assert ".settings-nav{max-height:none!important;overflow:visible!important" in styles

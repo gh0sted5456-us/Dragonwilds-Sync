@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const protocol = read('backend/feature_worker_protocol.py');
 const implementationFiles = [
-  'renderer/app-v2.js', 'renderer/release-phase2.js', 'renderer/release-phase3.js',
+  'renderer/app-v2.js', 'renderer/release-v3-phase2.js', 'renderer/release-phase2.js', 'renderer/release-phase3.js',
   'electron/main-v2.cjs', 'electron/preload-v2.cjs',
   'backend/dragonwilds_service.py', 'backend/dragonwilds_service_v2_wrapper.py',
   'backend/dragonwilds_service_legacy.py', 'backend/character_profiles.py',
@@ -40,7 +40,7 @@ const expected = {
 // registry. These are workflow/RPC symbols, not the registry display labels.
 const evidence = {
   navigation: ['renderPersistentShell'], settings: ['renderSettings'], help: ['renderHelp'],
-  'in-app-windows': ['prepareDesktopWindow'], 'quick-launch': ['runQuickLaunch'],
+  'in-app-windows': ['prepareDesktopWindow'], 'quick-launch': ["api.invoke('quick.status'"],
   placards: ['placardFrontClassificationMarkup'], 'private-worlds': ['privateWorldById'],
   'hosted-worlds': ['serverWorlds()'], 'world-save-editor': ['world.save.editor.write'],
   manifests: ['sync_manifest'], 'world-map': ['ensureAshenfallMap'],

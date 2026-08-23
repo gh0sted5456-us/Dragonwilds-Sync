@@ -8,6 +8,7 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 const need = (condition, message) => { if (!condition) throw new Error(`Appy workflow contract: ${message}`); };
 
 const app = read('renderer/app-v2.js');
+const quick = read('renderer/release-v3-phase2.js');
 const styles = read('renderer/styles.css');
 const responsive = read('renderer/release-responsiveness.css');
 const capture = read('electron/main-v2.cjs');
@@ -36,7 +37,8 @@ need(app.includes("'Singleplayer · Co-Op · Dedicated · connect'"), 'Dragonwil
 need(app.includes("next === 'rsdragonwilds-app'") && app.includes("handleRouteNavigation('world-management')"), 'legacy Hosting shortcuts must redirect into Dragonwilds safely');
 need(app.includes('function renderPersistentShell(page)') && app.includes("root.dataset.persistentShell='1'"), 'normal navigation must keep one persistent shell instance');
 need(app.includes("syncPersistentTitlebar(root.querySelector(':scope > .titlebar'))") && app.includes("syncPersistentSidebar(root.querySelector(':scope > .sidebar'))"), 'persistent shell state must be synchronized without replacing the navigation DOM');
-need(app.includes('else renderPersistentShell(page);') && !app.includes("`${renderTitlebar()}${renderSidebar()}${operationMarkup()}"), 'normal renders must replace only the main workspace, not the titlebar/sidebar');
+need(app.includes('else shellUpdate=renderPersistentShell(page);') && !app.includes("`${renderTitlebar()}${renderSidebar()}${operationMarkup()}"), 'normal renders must replace only the main workspace, not the titlebar/sidebar');
+need(app.includes('main.__dwsPageMarkup!==page') && app.includes('if(!shellUpdate.changed)'), 'unchanged application state must not repaint or rebind the mounted workspace');
 need(app.includes('bindPersistentOnce(') && app.includes('const persistentShellBindings=new WeakMap()'), 'persistent titlebar/Profile controls must not accumulate duplicate event handlers');
 
 need(app.includes('Associated Character Saves') && app.includes('data-profile-character-editor='), 'Profile must list associated Character saves with an editor handoff');
@@ -80,7 +82,7 @@ for (const token of [
 need(app.includes("runWorldSyncJob(world,'play')") && app.includes("api.invoke('world.sync.job.status'"),
   'remote World launch must use the guarded pollable delta-Sync progress job');
 need(app.includes("if (state.operation) throw new Error"), 'overlapping lifecycle/Sync actions must be rejected');
-need(app.includes("const labels = { idle:'Ready', connecting:'Connecting', authenticating:'Validating World', syncing:'Synchronizing Files', verifying:'Verifying Match', launching:'Launching Dragonwilds'"), 'Quick Launch must expose a staged Sync/startup flow');
+need(quick.includes("api.invoke('quick.status'") && quick.includes("invoke('quick.start'") && quick.includes('refreshInFlight'), 'Quick Launch must expose a guarded status/startup flow');
 
 for (const token of [
   "'singleplayer.mod.file.open'", "'singleplayer.mod.file.save'",

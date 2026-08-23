@@ -10,10 +10,6 @@
   // through the higher placard surface.
   let desktopZ = 11000;
   const query = new URLSearchParams(window.location.search);
-  const quickMode = query.get('quick') === '1';
-  const minimalMode = query.get('minimal') === '1';
-  const quickWorldId = query.get('worldId') || '';
-  const quickWorldKind = ['world','private','server'].includes(query.get('worldKind')) ? query.get('worldKind') : 'world';
   const detachedMode = query.get('detached') === '1';
   // UE4SS ships these Lua mods baked into its own default distribution (loader/console/cheat
   // scaffolding, not something the player installed). They physically exist on disk and stay
@@ -120,7 +116,6 @@
     discordPresenceStartedAt: 0,
     setupWizardOpen: false,
     setupValidation: null,
-    quickLaunch: { stage: 'idle', detail: '', error: '', started: false },
     selectedPlayerId: '',
     playerPollTimer: null,
     serverPlayers: {},
@@ -732,7 +727,6 @@
   }
 
   function activeBackgroundRefresh() {
-    if(minimalMode)return {channel:'minimal',interval:5000};
     if(!state.entered)return null;
     if(state.route==='worlds'&&state.data?.application?.world_discovery?.enabled!==false)return {channel:'worlds',interval:30000};
     if((state.route==='server-detail'&&['overview','maintenance'].includes(state.serverTab))||(state.route==='world-detail'&&activeWorld()?.kind==='singleplayer'&&['overview','maintenance'].includes(state.privateTab)))return {channel:'runtime',interval:10000};
@@ -1485,7 +1479,8 @@
     win.querySelectorAll('[data-native-console-toggle]').forEach((button)=>button.addEventListener('click',async()=>{button.disabled=true;try{const response=await api.invoke('server.console.policy',{id:world.id,native_consoles_enabled:!nativePolicy?.native_consoles_enabled});if(response?.state)setData(response.state);nativePolicy=response?.policy||{};paintNativePolicy();toast('Runtime console policy saved',nativePolicy.reason||'The change applies on the next server launch.','success');}catch(error){toast('Console policy failed',error.message,'error');}finally{button.disabled=false;}}));
     win.querySelectorAll('[data-runtime-tool-command]').forEach((button)=>button.addEventListener('click',async()=>{const command=button.dataset.runtimeToolCommand||'';if(!command||!await managedConfirm(`Run this runtime dumper?\n\n${command}`,'Confirm Runtime Dumper'))return;button.disabled=true;try{const result=await api.invoke('server.console.execute',{id:world.id,command,confirmed:true,source:'desktop-runtime-tools',actor:'owner'});toast('Runtime dumper acknowledged',result?.ack||command,'success');await refresh();}catch(error){toast('Runtime dumper failed',error.message,'error');}finally{button.disabled=false;}}));
     win.querySelector('[data-open-runeschema-configuration]')?.addEventListener('click',()=>{state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab='configuration';render();});
-    const timer=setInterval(refresh,1000);win._dwsDispose=()=>{disposed=true;clearInterval(timer);};refresh();
+    let timer=null;const schedule=()=>{if(disposed)return;timer=setTimeout(async()=>{await refresh();schedule();},document.hidden?5000:1000);};
+    win._dwsDispose=()=>{disposed=true;if(timer)clearTimeout(timer);};refresh().finally(schedule);
     refreshNativePolicy();
     return win;
   }
@@ -1620,73 +1615,6 @@
     state.privateTabLoading[cacheKey]=load;
     try{await load;state.privateTabLoadedAt[cacheKey]=Date.now();}
     finally{delete state.privateTabLoading[cacheKey];}
-  }
-
-  function quickStageLabel(stage) {
-    const labels = { idle:'Ready', connecting:'Connecting', authenticating:'Validating World', syncing:'Synchronizing Files', verifying:'Verifying Match', launching:'Launching Dragonwilds', ready:'Ready', error:'Needs Attention' };
-    return labels[stage] || stage;
-  }
-
-  function renderQuickLaunch() {
-    const world = quickWorldKind === 'server'
-      ? serverWorlds().find((w) => String(w.id) === String(quickWorldId))
-      : (quickWorldKind === 'private'
-        ? privateWorldById(quickWorldId)
-        : browserWorlds().find((w) => String(w.id) === String(quickWorldId)));
-    const q = state.quickLaunch;
-    const presentation = quickWorldKind === 'server' ? (world || {}) : (world?.presentation || {});
-    const icon = world?.kind === 'singleplayer' && !presentation.icon_b64 ? 'assets/singleplayer-icon.png' : b64Image(presentation.icon_b64);
-    const name = world?.nickname || world?.identity?.world_name || world?.name || 'Dragonwilds World';
-    const progress = { idle:4, connecting:18, authenticating:34, syncing:62, verifying:82, launching:94, ready:100, error:100 }[q.stage] || 4;
-    return `<main class="quick-launch-shell"><section class="quick-launch-card">
-      <img class="quick-launch-backdrop" src="${escapeHtml(state.data?.application?.loading_art_url||'assets/theme/animated-splash.gif')}" alt="" />
-      <div class="quick-launch-drag"><span>DRAGONWILDS SYNC</span></div>
-      <div class="quick-launch-overlay">
-        <div class="quick-launch-head">${icon ? `<img src="${icon}" alt="" />` : `<div class="quick-world-fallback">${escapeHtml(initials(name))}</div>`}<div><div class="eyebrow">Quick Launch</div><h1 title="${escapeHtml(name)}">${escapeHtml(name)}</h1><span>${escapeHtml(quickStageLabel(q.stage))}</span></div></div>
-        <div class="quick-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><div style="width:${progress}%"></div></div>
-        <div class="quick-detail">${escapeHtml(q.detail || 'Preparing secure World verification…')}</div>
-        ${q.error ? `<div class="warning-box">${escapeHtml(q.error)}</div>` : ''}
-        <div class="quick-actions">${q.error ? '<button class="btn primary" id="quick-retry">Retry</button><button class="btn ghost" id="quick-open-full">Open Full Launcher</button>' : '<button class="btn ghost" id="quick-cancel">Cancel</button>'}</div>
-      </div>
-    </section></main>`;
-  }
-
-  async function runQuickLaunch() {
-    if (state.quickLaunch.started) return;
-    const world = quickWorldKind === 'server'
-      ? serverWorlds().find((w) => String(w.id) === String(quickWorldId))
-      : (quickWorldKind === 'private'
-        ? privateWorldById(quickWorldId)
-        : browserWorlds().find((w) => String(w.id) === String(quickWorldId)));
-    if (!world) {
-      state.quickLaunch = { stage:'error', detail:'Saved World could not be found.', error:'This shortcut points to a World that is no longer saved in Dragonwilds Sync.', started:true };
-      render(); return;
-    }
-    state.quickLaunch.started = true;
-    try {
-      if (quickWorldKind === 'server') {
-        state.quickLaunch.stage='syncing'; state.quickLaunch.detail='Activating the hosted World and preparing its client-required files…'; render();
-        const played = await api.invoke('server.world.quick_play', { id: world.id }); if (played.state) state.data = played.state;
-        state.quickLaunch.stage='ready'; state.quickLaunch.detail='Hosted World is online. Dragonwilds is launching now.'; render(); setTimeout(() => window.dragonwilds.windowClose(), 1100); return;
-      }
-      if (quickWorldKind === 'private' || world.kind === 'singleplayer') {
-        state.quickLaunch.stage='syncing'; state.quickLaunch.detail='Restoring the SinglePlayer mod and character profile…'; render();
-        const played = await api.invoke('singleplayer.play', { id: world.id }); if (played.state) state.data = played.state;
-        state.quickLaunch.stage='ready'; state.quickLaunch.detail='SinglePlayer is launching now.'; render(); setTimeout(() => window.dragonwilds.windowClose(), 1100); return;
-      }
-      state.quickLaunch.stage='connecting'; state.quickLaunch.detail='Contacting the saved LAN/public routes…'; render();
-      const tested = await api.invoke('world.test', { id: world.id }); if (tested.state) state.data = tested.state;
-      if (!tested.result?.ok) throw new Error(tested.result?.error || 'The server did not pass World identity verification.');
-      state.quickLaunch.stage='authenticating'; state.quickLaunch.detail=`World identity confirmed · ${Math.round(tested.result.ping_ms || 0)} ms`; render();
-      state.quickLaunch.stage='syncing'; state.quickLaunch.detail='Comparing client-required mods, configs, and UE4SS enablement…'; render();
-      const synced = await api.invoke('world.sync', { id: world.id }); if (synced.state) state.data = synced.state;
-      state.quickLaunch.stage='verifying'; state.quickLaunch.detail='File hashes match. Preparing the associated character and Direct Connect profile…'; render();
-      const played = await api.invoke('world.play', { id: world.id }); if (played.state) state.data = played.state;
-      state.quickLaunch.stage='ready'; state.quickLaunch.detail='Ready. Dragonwilds is launching now.'; render();
-      setTimeout(() => window.dragonwilds.windowClose(), 1100);
-    } catch (error) {
-      state.quickLaunch.stage='error'; state.quickLaunch.error=error.message || String(error); state.quickLaunch.detail='Quick Launch stopped safely. Your launcher remains available.'; render();
-    }
   }
 
   function setupCheckRows(validation) {
@@ -1986,7 +1914,7 @@
   }
 
   async function prepareLauncherWorkspaces() {
-    if(minimalMode||detachedMode||quickMode)return;
+    if(detachedMode)return;
     const tasks=[
       ['Core World workspace',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',eager_only:true,applications:['shell','worlds']})],
       ['Selected profile cache',()=>window.dragonwilds.prewarm?.(selectedInventoryWarmRequests())],
@@ -2037,8 +1965,6 @@
       if (!state.selectedWorldId) state.selectedWorldId = state.data?.client?.active_world_id || null;
       if (!state.selectedServerWorldId) state.selectedServerWorldId = state.data?.server?.active_world_id || null;
       seedPersistedInventories(state.data);
-      if (quickMode) { state.entered = true; state.selectedWorldId = quickWorldId; }
-      if (minimalMode) { state.entered=true;state.route='server-detail';state.serverTab='overview';state.selectedServerWorldId=quickWorldId||state.data?.server?.active_world_id||state.data?.server_profiles?.[0]?.id||null; }
       if (detachedMode) {
         state.entered = true;
         state.route = detachedRoute || 'profile';
@@ -2071,15 +1997,15 @@
       // usable shell immediately; warm expensive Appy caches in parallel.
       const workspaceWarmPromise=prepareLauncherWorkspaces();
       render();
-      void workspaceWarmPromise.catch(()=>{});
+      void workspaceWarmPromise.then(()=>{if(!detachedMode)render();}).catch(()=>{});
       // Native shell status, account status, update checks, and toolkit feed
       // hydration are secondary. They must never hold the first usable frame.
-      if(minimalMode||detachedMode||quickMode) Promise.allSettled([
-        !minimalMode?window.dragonwilds.adminStatus?.():Promise.resolve(null),
-        !minimalMode?window.dragonwilds.appUpdateMode?.():Promise.resolve(null),
-        !minimalMode?window.dragonwilds.appUpdateResult?.():Promise.resolve(null),
-        !minimalMode?window.dragonwilds.nexusStatus?.():Promise.resolve(null),
-        !detachedMode&&!minimalMode ? window.dragonwilds.listDetachedWindows?.() : Promise.resolve([]),
+      if(detachedMode) Promise.allSettled([
+        window.dragonwilds.adminStatus?.(),
+        window.dragonwilds.appUpdateMode?.(),
+        window.dragonwilds.appUpdateResult?.(),
+        window.dragonwilds.nexusStatus?.(),
+        Promise.resolve([]),
       ]).then((results)=>{
         if(results[0]?.status==='fulfilled'&&results[0].value)state.adminStatus=results[0].value;
         if(results[1]?.status==='fulfilled')state.applicationUpdateMode=results[1].value;
@@ -2088,16 +2014,15 @@
         if(results[4]?.status==='fulfilled')state.detachedWindows=results[4].value||[];
         render();
       });
-      if (!detachedMode && !minimalMode && window.dragonwilds?.listDetachedWindows) {
+      if (!detachedMode && window.dragonwilds?.listDetachedWindows) {
         window.dragonwilds.onDetachedWindowsChanged?.((items)=>{ state.detachedWindows=items||[]; syncInternalTaskbar(); });
       }
       setTimeout(async()=>{
-        if(minimalMode)return;
         if (!detachedMode && state.applicationUpdateResult && state.data?.application?.rsdw_cache?.refresh_after_updates !== false) {
           try { const refreshed = await api.invoke('application.rsdw.refresh', { force: false }); if (refreshed?.state) setData(refreshed.state); } catch (_) {}
         }
         const updateCfg = state.data?.application?.application_updates || {};
-        if (!quickMode && !detachedMode && updateCfg.auto_check !== false && String(updateCfg.github_url || '').trim()) {
+        if (!detachedMode && updateCfg.auto_check !== false && String(updateCfg.github_url || '').trim()) {
           try { await checkApplicationUpdate(false); } catch (_) {}
         }
       },250);
@@ -2106,7 +2031,6 @@
       if (detachedMode && state.route === 'custom-item-repository') setTimeout(()=>openCustomItemRepository(detachedContext.customItemSeed||{}),60);
       if (state.pendingDirectoryJoin) setTimeout(()=>openDirectoryJoin(state.pendingDirectoryJoin),80);
       // The map remains lazy: only a visible Map view warms its large asset cache.
-      if (quickMode) setTimeout(runQuickLaunch, 60);
       startBackgroundRefreshScheduler();
     } catch (error) {
       root.innerHTML = `<div class="fantasy-loading"><div class="fantasy-loading-card error-card"><strong>Could not start Dragonwilds Sync.</strong><span>${escapeHtml(error.message)}</span></div></div>`;
@@ -2224,11 +2148,12 @@
   }
 
   function syncTransientShellMarkup(host,markup) {
-    if(!host)return;
+    if(!host)return false;
     const next=String(markup||'');
-    if(host.__dwsShellMarkup===next)return;
+    if(host.__dwsShellMarkup===next)return false;
     host.__dwsShellMarkup=next;
     host.innerHTML=next;
+    return true;
   }
 
   function syncShellText(node,value) {
@@ -2327,11 +2252,13 @@
     }
     syncPersistentTitlebar(root.querySelector(':scope > .titlebar'));
     syncPersistentSidebar(root.querySelector(':scope > .sidebar'));
-    syncTransientShellMarkup(root.querySelector('[data-shell-operation]'),operationMarkup());
-    syncTransientShellMarkup(root.querySelector('[data-shell-hosting-focus]'),hostingFocusMarkup());
+    const operationChanged=syncTransientShellMarkup(root.querySelector('[data-shell-operation]'),operationMarkup());
+    const hostingChanged=syncTransientShellMarkup(root.querySelector('[data-shell-hosting-focus]'),hostingFocusMarkup());
+    if(hostingChanged)bindPersistentOnce(root.querySelector('#dismiss-hosting-focus'),'click','dismiss-hosting-focus',()=>{state.hostingFocusDismissedProfileId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');render();});
     const main=root.querySelector(':scope > .main');
-    main.innerHTML=page;
-    return main;
+    const pageChanged=!mounted||main.__dwsPageMarkup!==page;
+    if(pageChanged){main.__dwsPageMarkup=page;main.innerHTML=page;}
+    return {main,changed:pageChanged,transientChanged:operationChanged||hostingChanged};
   }
 
   async function configureRsdwToolkitSource(status = null) {
@@ -3954,7 +3881,11 @@
     const blackoutWeekdays = new Set((blackoutWindow.weekdays || [0,1,2,3,4,5,6]).map(Number));
     const weekdayLabels = [['Mon',0],['Tue',1],['Wed',2],['Thu',3],['Fri',4],['Sat',5],['Sun',6]];
     const tabButton = (id, label) => `<button class="${tab === id ? 'active' : ''}" data-server-tab="${id}">${label}</button>`;
-    const runeFlavors = (p.runeschema_flavors || [{id:'official',name:'Official GitHub',kind:'official'}]).filter((row,index,all)=>row&&all.findIndex(x=>String(x.id)===String(row.id))===index);
+    const runeFlavors = ([
+      {id:'official',name:'Official · UnskippableCutscene',kind:'official'},
+      {id:'experimental',name:'Experimental · Dragonwilds Sync',kind:'experimental'},
+      ...(p.runeschema_flavors || []),
+    ]).filter((row,index,all)=>row&&all.findIndex(x=>String(x.id)===String(row.id))===index);
     if(!runeFlavors.some(row=>String(row.id)==='official'))runeFlavors.unshift({id:'official',name:'Official GitHub',kind:'official'});
     const selectedRuneFlavor=String(p.runeschema_flavor_id||'official');
     const selectedRuneFlavorRow=runeFlavors.find((row)=>String(row.id)===selectedRuneFlavor)||runeFlavors[0]||{name:'Official GitHub'};
@@ -4065,7 +3996,7 @@
       body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Networking & Hosting</h2><span class="panel-subtitle">Gameplay, Sync transfer, and Direct Connect discovery remain separate</span></div><button class="btn primary" id="save-server-networking">Apply Access Rules</button></summary><div class="panel-body"><div class="network-port-matrix"><div><b>Dragonwilds gameplay</b><span>UDP ${escapeHtml(d.port||7777)} · ${escapeHtml(d.networking?.publication_mode||'manual')}</span><small>Server ${escapeHtml(p.instance_number||1)}. Native gameplay format is unchanged.</small></div><div><b>World Sync transfer</b><span>TCP ${escapeHtml(sync.port||27051)} · ${escapeHtml(sync.networking?.publication_mode||'manual')}</span><small>Authenticated metadata and file transfer.</small></div><div><b>Direct Connect discovery</b><span>UDP 8422 · ${escapeHtml(sync.networking?.publication_mode||'manual')}</span><small>Allows a typed host IP to return its active Sync announcements.</small></div><div><b>WebHost</b><span>TCP ${escapeHtml(state.data?.application?.world_directory_host?.port||27080)}</span><small>Configured independently under Remote Server / Dragonwilds Sync.</small></div></div><div class="reference-links">${d.networking?.publication_mode==='upnp'?'<button class="btn ghost" id="recreate-game-upnp">Recreate Gameplay UPnP</button><button class="btn ghost" id="remove-game-upnp">Remove App Gameplay Mapping</button>':''}${sync.networking?.publication_mode==='upnp'?'<button class="btn ghost" id="recreate-sync-upnp">Recreate Sync + Discovery UPnP</button><button class="btn ghost" id="remove-sync-upnp">Remove App Sync + Discovery Mappings</button>':''}<button class="btn ghost" id="configure-server-firewall">Repair Firewall</button><button class="btn ghost" id="open-default-router-home" data-router-home="1">Open Default Router Homepage</button></div>${accessPolicyMarkup(sync.access_policy || {blocked_ips:sync.blocked_ips||[],blocked_countries:sync.blocked_countries||[]},'server-world-access')}<div class="identity-box"><strong>Layered policy</strong><p>Firewall elevation is requested only when Repair Firewall is chosen. Manual mode sends no UPnP requests. UPnP never overwrites a foreign mapping and remains unverified until read-back and an outside-LAN test succeed.</p></div></div></details></div>`;
     } else if (tab === 'configuration') {
       body = `<div style="padding:18px" class="panel-grid"><details class="panel collapsible-panel" open><summary class="panel-header"><h2>World & Sync</h2><button class="btn ghost" id="edit-server-world">Edit</button></summary><div class="panel-body">${metric('Name', p.name)}${metric('Server Directory', serverInstall.install_dir || 'Settings → Server')}${metric('Game UDP Port', d.port || 7777)}${metric('Sync Transfer TCP Port', sync.port || 27051)}${metric('Direct Discovery UDP Port', 8422)}${metric('RuneSchema Core', 'Official GitHub Release')}${metric('DedicatedServer.ini', p.dedicated_config_verification?.ok?'Verified for launched executable':'Verified on next start')}${metric('Game Password Readback', p.dedicated_config_verification?.password_matches?'Matches saved World Password':(p.dedicated_config_verification?'Mismatch / not written':'Checked on next start'))}${metric('Active INI Path', p.dedicated_config_verification?.exact_path||'Resolved on next start')}<div class="identity-box"><strong>World-owned files</strong><p>This profile keeps its save, World Password, ports, mods, configuration, and backups together. The shared server installation remains under Settings → Server.</p></div></div></details><details class="panel collapsible-panel" open><summary class="panel-header"><h2>Connection</h2><div class="header-actions"><button class="btn ghost" id="detect-server-public-ip">Detect Public IP</button><button class="btn ghost" id="copy-server-connection">Copy Connection Info</button></div></summary><div class="panel-body">${metric('LAN IP', runtime.lan_ip || 'Not detected')}${metric('Public IP', externalIp)}${metric('Public Listing', hierarchy.confirmed ? 'Confirmed' : 'Not confirmed')}<div class="network-port-matrix"><div><b>Dragonwilds gameplay</b><span>UDP ${escapeHtml(d.port || 7777)} · ${escapeHtml(d.networking?.publication_mode||'manual')}</span><small>Native Dragonwilds traffic. Server ${escapeHtml(p.instance_number||1)} uses ${escapeHtml(d.port||7777)}.</small></div><div><b>Dragonwilds World Sync</b><span>TCP ${escapeHtml(sync.port || 27051)} · UDP 8422</span><small>TCP transfers files; UDP 8422 answers Direct Connect discovery. Joining clients need no inbound rule.</small></div></div><div class="reference-links"><button class="btn ghost" id="copy-server-game-rule">Copy Gameplay Rule</button><button class="btn ghost" id="copy-server-sync-rule">Copy Sync + Discovery Rules</button><button class="btn ghost" id="open-default-router-home" data-router-home="1">Open Default Router Homepage</button><button class="btn ghost" data-open-external="${escapeHtml(hierarchyUrl)}">Search Public Listing ↗</button></div><div class="identity-box"><strong>Simple connection</strong><p>Players use the server IP, exact World Name, and optional World Password. Application URLs are never substituted into Dragonwilds’ native gameplay connection.</p></div></div></details></div>`;
-      body += `<details class="panel collapsible-panel" open style="margin:18px 18px 0"><summary class="panel-header"><div><h2>RuneSchema Runtime Flavor</h2><span class="panel-subtitle">Profile-owned runtime selection · custom ZIPs are named and retained with this World.</span></div><span class="status-pill ${selectedRuneFlavor==='official'?'online':'unknown'}">${selectedRuneFlavor==='official'?'OFFICIAL':'CUSTOM'}</span></summary><div class="panel-body"><div class="header-actions" style="justify-content:flex-start"><select class="select" id="runeschema-flavor-select" style="min-width:260px">${runeFlavors.map(row=>`<option value="${escapeHtml(row.id)}" ${String(row.id)===selectedRuneFlavor?'selected':''}>${escapeHtml(row.name||'Unnamed flavor')}</option>`).join('')}</select><button class="btn primary" id="apply-runeschema-flavor" ${isRunning?'disabled':''}>Apply Flavor</button><button class="btn ghost" id="import-runeschema-flavor">Import &amp; Name ZIP</button>${selectedRuneFlavor!=='official'?`<button class="btn danger" id="delete-runeschema-flavor" ${isRunning?'disabled':''}>Delete Custom Flavor</button>`:''}</div><div class="mod-drop-zone inline-drop" id="runeschema-flavor-dropzone" style="margin-top:10px">Drop a RuneSchema core ZIP to add a named flavor to this profile</div><div class="identity-box"><strong>Launch-safe selection</strong><p>Official GitHub remains the default. A custom flavor is copied into this World profile and is never silently overwritten; applying a flavor requires the server to be stopped.</p></div></div></details>`;
+      body += `<details class="panel collapsible-panel" open style="margin:18px 18px 0"><summary class="panel-header"><div><h2>RuneSchema Build</h2><span class="panel-subtitle">Official and Experimental are separate managed channels; named custom ZIPs remain profile-owned.</span></div><span class="status-pill ${selectedRuneFlavor==='official'?'online':'unknown'}">${escapeHtml((runeFlavors.find(row=>String(row.id)===selectedRuneFlavor)?.kind||'custom').toUpperCase())}</span></summary><div class="panel-body"><div class="header-actions" style="justify-content:flex-start"><select class="select" id="runeschema-flavor-select" style="min-width:280px">${runeFlavors.map(row=>`<option value="${escapeHtml(row.id)}" ${String(row.id)===selectedRuneFlavor?'selected':''}>${escapeHtml(row.name||'Unnamed flavor')}</option>`).join('')}</select><button class="btn primary" id="apply-runeschema-flavor" ${isRunning?'disabled':''}>Apply Build</button><button class="btn ghost" id="update-runeschema-official" ${isRunning?'disabled':''}>Update Official</button><button class="btn ghost" id="update-runeschema-experimental" ${isRunning?'disabled':''}>Fetch Latest Experimental</button><button class="btn ghost" id="import-runeschema-flavor">Import ZIP</button>${!['official','experimental'].includes(selectedRuneFlavor)?`<button class="btn danger" id="delete-runeschema-flavor" ${isRunning?'disabled':''}>Delete Selected Build</button>`:''}</div><div class="mod-drop-zone inline-drop" id="runeschema-flavor-dropzone" style="margin-top:10px">Drop a RuneSchema core ZIP to add a named build to this World profile</div><div class="identity-box"><strong>Repository-style runtime control</strong><p>Official uses UnskippableCutscene/RuneSchema. Experimental uses gh0sted5456-us/RuneSchema. A custom ZIP is retained with this World and never silently replaced; applying any build requires the server to be stopped.</p></div></div></details>`;
       body += `<details class="panel collapsible-panel" open style="margin:18px 18px 0"><summary class="panel-header"><div><h2>UE4SS Build</h2><span class="panel-subtitle">Shared application repository · Baseline is bundled, Experimental is fetched from GitHub, imports are kept alongside them.</span></div><span class="status-pill ${selectedUe4ssVersion==='baseline'?'online':'unknown'}">${escapeHtml((selectedUe4ssRow.kind||'baseline').toUpperCase())}</span></summary><div class="panel-body"><div class="header-actions" style="justify-content:flex-start"><select class="select" id="ue4ss-version-select" style="min-width:280px">${ue4ssVersions.map(row=>`<option value="${escapeHtml(row.id)}" ${!row.available?'disabled':''} ${String(row.id)===selectedUe4ssVersion?'selected':''}>${escapeHtml(row.label||row.id)}${row.version&&row.version!==row.label?` (${escapeHtml(row.version)})`:''}${!row.available?' · missing':''}</option>`).join('')}</select><button class="btn primary" id="apply-ue4ss-version" ${isRunning?'disabled':''}>Apply Build</button><button class="btn ghost" id="fetch-ue4ss-experimental">Fetch Latest Experimental</button><button class="btn ghost" id="import-ue4ss-version">Import ZIP</button>${selectedUe4ssVersion!=='baseline'?`<button class="btn danger" id="delete-ue4ss-version" ${isRunning?'disabled':''}>Delete Selected Build</button>`:''}</div><div class="mod-drop-zone inline-drop" id="ue4ss-version-dropzone" style="margin-top:10px">Drop a UE4SS ZIP to add it to the application's build repository</div><div class="identity-box"><strong>Repository, not per-World copies</strong><p>Every fetched or imported build is kept in one shared, version-numbered repository so you can hold onto old builds and switch back. Each World only records which build it wants; applying it requires the server to be stopped, and never touches this World's own installed Mods.</p></div></div></details>`;
       body += managedWorldConfigMarkup(configs, isActive);
     } else if (tab === 'maintenance') {
@@ -4884,24 +4815,6 @@
     `;
   }
 
-  function renderMinimalMode() {
-    const world=activeServerWorld()||serverWorlds().find((row)=>String(row.id)===String(quickWorldId))||serverWorlds()[0]||{};
-    const manager=state.data?.application?.runtime_manager||{};
-    const runtime=manager.runtime||state.data?.server?.runtime||{};
-    const running=!!runtime.running&&String(runtime.active_profile_id||state.data?.server?.active_world_id||'')===String(world.id||'');
-    const busy=!!manager.busy;
-    const phase=String(manager.state||(running?'Running':'Stopped'));
-    const broadcast=manager.broadcast||runtime.share||{};
-    const cl=runtime.cl_version||{};
-    const clStatus=String(cl.status||'unknown').toLowerCase();
-    const clClass=clStatus==='current'||clStatus==='newer'?'online':clStatus==='outdated'?'offline':'unknown';
-    const icon=b64Image(world.icon_b64);
-    return `<div class="minimal-mode-page"><section class="minimal-mode-head"><div class="minimal-world-identity">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(world.name||'Server'))}</span>`}<div><div class="eyebrow">Minimal Mode · Dedicated World</div><h1>${escapeHtml(world.name||'Select a hosted World')}</h1><p>Direct lifecycle control with reduced launcher services and animation.</p></div></div><div class="header-actions"><button class="btn ghost" id="minimal-refresh">Refresh</button><button class="btn ghost" id="minimal-open-full">Open Full Launcher</button></div></section>
-      <section class="minimal-runtime-card"><div class="minimal-runtime-state"><span class="runtime-orb ${busy?'busy':running?'running':'stopped'}"></span><div><small>Authoritative state</small><strong>${escapeHtml(phase)}</strong>${manager.last_error?`<p>${escapeHtml(manager.last_error)}</p>`:''}</div></div><div class="minimal-actions"><button class="btn primary" id="broadcast-server-world" ${running||busy||!world.id?'disabled':''}>Start</button><button class="btn danger" id="stop-server-world" ${(!running&&!broadcast.serving)||busy?'disabled':''}>Stop</button><button class="btn ghost" id="restart-server-world" ${!running||busy?'disabled':''}>Restart</button><button class="btn ghost" id="update-server-world" ${busy||!world.id?'disabled':''}>Update</button><button class="btn ghost" id="update-restart-server-world" ${busy||!world.id?'disabled':''}>Update &amp; Restart</button></div></section>
-      <section class="minimal-metrics"><div><span>Process</span><strong>${running?`PID ${escapeHtml(runtime.pid||'—')}`:'Stopped'}</strong></div><div><span>Players</span><strong>${escapeHtml(String(runtime.player_count||0))}</strong></div><div><span>Uptime</span><strong>${escapeHtml(formatUptime(runtime.uptime_seconds||0))}</strong></div><div><span>Sync broadcast</span><strong>${broadcast.serving?'Verified live':'Stopped'}</strong></div><div><span>Reported CL</span><strong>${escapeHtml(cl.reported_cl||'Not reported')}</strong></div><div><span>CL status</span><strong class="status-pill ${clClass}">${escapeHtml(clStatus.toUpperCase())}</strong></div></section>
-      <section class="minimal-note"><strong>Shared authority</strong><p>These controls use the same lifecycle queue as the full launcher and remote WebGUI. The server is never advertised during an update or before startup verification completes.</p></section></div>`;
-  }
-
   function renderRsdwLauncher() {
     const hosted=activeServerWorld()||serverWorlds()[0]||null;
     const catalog=state.data?.application?.system_process_catalog||{};
@@ -4959,13 +4872,6 @@
       return;
     }
 
-    if(minimalMode){
-      root.className='app-shell minimal-shell';
-      delete root.dataset.persistentShell;
-      root.innerHTML=`${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${renderMinimalMode()}</main>`;
-      bindEvents();
-      return;
-    }
     let page = '';
     if (state.route === 'world-detail' && activeWorld()) page = activeWorld().kind === 'singleplayer' ? renderSinglePlayerDetail(activeWorld()) : renderWorldDetail(activeWorld());
     else if (state.route === 'world-management' || state.route === 'private-worlds' || state.route === 'singleplayer') { state.route='world-management'; page = renderWorldManagement(); }
@@ -4989,12 +4895,14 @@
     else page = renderWorldGallery();
     const collapsed = !!state.data?.application?.nav_collapsed;
     root.className = `app-shell route-${state.route} ${collapsed ? 'nav-collapsed' : ''} ${detachedMode ? 'detached-shell' : ''}`;
+    let shellUpdate={main:null,changed:true};
     if(detachedMode){
       delete root.dataset.persistentShell;
       root.innerHTML=`${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>`;
-    }else renderPersistentShell(page);
+    }else shellUpdate=renderPersistentShell(page);
     const nextKey = scrollKey();
     state.lastScrollKey = nextKey;
+    if(!shellUpdate.changed){updateDiscordPresenceForRoute();return;}
     bindEvents();
     root.querySelectorAll('.identity-box').forEach((box)=>{
       if(box.textContent.includes('File security evidence'))box.innerHTML='<strong>File integrity evidence</strong><p>Published units are verified by manifest membership, safe relative paths, file sizes, and SHA-256 hashes. Missing or changed payloads are blocked before activation and reported as validation failures.</p>';
@@ -5119,8 +5027,6 @@
 
   function bindEvents() {
     root.querySelector('#dismiss-hosting-focus')?.addEventListener('click',()=>{state.hostingFocusDismissedProfileId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');render();});
-    root.querySelector('#minimal-open-full')?.addEventListener('click',()=>window.dragonwilds.openMainWindow?.());
-    root.querySelector('#minimal-refresh')?.addEventListener('click',async()=>{try{state.data=await api.invoke('state.get',{});render();}catch(error){toast('Refresh failed',error.message,'error');}});
     root.querySelector('#enter-launcher')?.addEventListener('click', () => { state.entered = true; state.route = 'world-management'; render(); const gs=state.data?.application?.guided_setup || {}; if (!gs.completed && !gs.skipped) setTimeout(() => openGuidedSetup('player'), 80); });
     root.querySelector('#splash-update-now')?.addEventListener('click', () => applyApplicationUpdate());
     root.querySelector('#splash-update-notes')?.addEventListener('click', () => { if (state.applicationUpdate?.releaseUrl) window.dragonwilds.openExternal(state.applicationUpdate.releaseUrl); });
@@ -5961,8 +5867,10 @@
     const importRuneFlavor=async(zipPath)=>{const world=activeServerWorld();if(!world||!zipPath)return;const suggested=String(zipPath).split(/[\\/]/).pop().replace(/\.zip$/i,'');const name=await managedPrompt('Name this RuneSchema flavor:',suggested,'Save RuneSchema Flavor');if(!name?.trim())return;try{const response=await api.invoke('server.world.runeschema_flavors.import',{id:world.id,zip_path:zipPath,name:name.trim()});if(response.state)setData(response.state);toast('RuneSchema flavor saved',`${name.trim()} is retained inside this World profile.`,'success');}catch(error){toast('RuneSchema import failed',error.message,'error');}};
     root.querySelector('#import-runeschema-flavor')?.addEventListener('click',async()=>{const zipPath=await window.dragonwilds.pickFile('zip');if(zipPath)await importRuneFlavor(zipPath);});
     const runeDrop=root.querySelector('#runeschema-flavor-dropzone');if(runeDrop){runeDrop.addEventListener('dragover',(event)=>{event.preventDefault();runeDrop.classList.add('dragging');});runeDrop.addEventListener('dragleave',()=>runeDrop.classList.remove('dragging'));runeDrop.addEventListener('drop',async(event)=>{event.preventDefault();runeDrop.classList.remove('dragging');const file=event.dataTransfer?.files?.[0];const path=file?window.dragonwilds.filePath(file):'';if(!path?.toLowerCase().endsWith('.zip'))return toast('Drop a RuneSchema ZIP','Only ZIP runtime packages are accepted.','error');await importRuneFlavor(path);});}
-    root.querySelector('#apply-runeschema-flavor')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;const flavorId=root.querySelector('#runeschema-flavor-select')?.value||'official';if(!await managedConfirm('Apply this RuneSchema runtime flavor to the active server installation? The World must be stopped.','Apply RuneSchema Flavor'))return;try{const response=await api.invoke('server.world.runeschema_flavors.select',{id:world.id,flavor_id:flavorId});if(response.state)setData(response.state);toast(response.applied?.deferred?'RuneSchema selection saved':'RuneSchema flavor applied',response.applied?.message||'The selected runtime core is ready.','success');}catch(error){toast('Could not apply RuneSchema flavor',error.message,'error');}});
-    root.querySelector('#delete-runeschema-flavor')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;const flavorId=root.querySelector('#runeschema-flavor-select')?.value||world.runeschema_flavor_id;if(flavorId==='official')return;if(!await managedConfirm('Delete this saved custom RuneSchema ZIP from the World profile?','Delete RuneSchema Flavor'))return;try{const response=await api.invoke('server.world.runeschema_flavors.delete',{id:world.id,flavor_id:flavorId});if(response.state)setData(response.state);toast('RuneSchema flavor deleted','Official GitHub is selected when the deleted flavor was active.','success');}catch(error){toast('Could not delete RuneSchema flavor',error.message,'error');}});
+    const applyRuneSchemaFlavor=async(flavorId,{confirm=true}={})=>{const world=activeServerWorld();if(!world)return false;if(confirm&&!await managedConfirm('Apply this RuneSchema build to the active server installation? The World must be stopped.','Apply RuneSchema Build'))return false;try{const response=await api.invoke('server.world.runeschema_flavors.select',{id:world.id,flavor_id:flavorId});if(response.state)setData(response.state);toast(response.applied?.deferred?'RuneSchema selection saved':'RuneSchema build applied',response.applied?.message||'The selected runtime core is ready.','success');return true;}catch(error){toast('Could not apply RuneSchema build',error.message,'error');return false;}};
+    root.querySelector('#apply-runeschema-flavor')?.addEventListener('click',()=>applyRuneSchemaFlavor(root.querySelector('#runeschema-flavor-select')?.value||'official'));
+    [['#update-runeschema-official','official','Updating…'],['#update-runeschema-experimental','experimental','Fetching…']].forEach(([selector,flavorId,pending])=>root.querySelector(selector)?.addEventListener('click',async(event)=>{const button=event.currentTarget;const label=button.textContent;button.disabled=true;button.textContent=pending;try{const updated=await api.invoke('server.install.runeschema_update',{variant:flavorId});if(updated.state)setData(updated.state);await applyRuneSchemaFlavor(flavorId,{confirm:false});}catch(error){toast(`RuneSchema ${flavorId} update failed`,error.message,'error');}finally{if(button.isConnected){button.disabled=false;button.textContent=label;}}}));
+    root.querySelector('#delete-runeschema-flavor')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;const flavorId=root.querySelector('#runeschema-flavor-select')?.value||world.runeschema_flavor_id;if(['official','experimental'].includes(flavorId))return;if(!await managedConfirm('Delete this saved custom RuneSchema ZIP from the World profile?','Delete RuneSchema Build'))return;try{const response=await api.invoke('server.world.runeschema_flavors.delete',{id:world.id,flavor_id:flavorId});if(response.state)setData(response.state);toast('RuneSchema build deleted','Official is selected when the deleted build was active.','success');}catch(error){toast('Could not delete RuneSchema build',error.message,'error');}});
     const importUe4ssVersion=async(zipPath)=>{if(!zipPath)return;const suggested=String(zipPath).split(/[\\/]/).pop().replace(/\.zip$/i,'');const label=await managedPrompt('Label this UE4SS build:',suggested,'Save UE4SS Build');if(label===null)return;try{const response=await api.invoke('application.ue4ss_repository.import',{zip_path:zipPath,label:label.trim()});if(response.state)setData(response.state);toast('UE4SS build added',`${(label.trim()||suggested)} is stored in the application repository.`,'success');}catch(error){toast('UE4SS import failed',error.message,'error');}};
     root.querySelector('#import-ue4ss-version')?.addEventListener('click',async()=>{const zipPath=await window.dragonwilds.pickFile('zip');if(zipPath)await importUe4ssVersion(zipPath);});
     const ue4ssDrop=root.querySelector('#ue4ss-version-dropzone');if(ue4ssDrop){ue4ssDrop.addEventListener('dragover',(event)=>{event.preventDefault();ue4ssDrop.classList.add('dragging');});ue4ssDrop.addEventListener('dragleave',()=>ue4ssDrop.classList.remove('dragging'));ue4ssDrop.addEventListener('drop',async(event)=>{event.preventDefault();ue4ssDrop.classList.remove('dragging');const file=event.dataTransfer?.files?.[0];const path=file?window.dragonwilds.filePath(file):'';if(!path?.toLowerCase().endsWith('.zip'))return toast('Drop a UE4SS ZIP','Only ZIP runtime packages are accepted.','error');await importUe4ssVersion(path);});}

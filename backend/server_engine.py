@@ -43,6 +43,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
 SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
 OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
+EXPERIMENTAL_RUNESCHEMA_REPOSITORY = "https://github.com/gh0sted5456-us/RuneSchema"
 RUNESCHEMA_FLAVOR_MARKER = ".dragonwilds-sync-flavor.json"
 UE4SS_VERSION_MARKER = ".dragonwilds-sync-ue4ss.json"
 
@@ -568,6 +569,35 @@ def _restore_official_runeschema_once(game_root: str) -> dict:
     return {**result, "ok": True, "changed": True}
 
 
+def _restore_managed_runeschema_once(game_root: str, variant: str) -> dict:
+    """Materialize the selected managed RuneSchema channel once per server root."""
+    selected = str(variant or "official").strip().casefold()
+    if selected not in {"official", "experimental"}:
+        raise ValueError("Managed RuneSchema variant must be official or experimental.")
+    if selected == "official":
+        return _restore_official_runeschema_once(game_root)
+    if not str(game_root or "").strip():
+        raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
+    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
+    state = load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    managed = dict(install.get("runeschema_managed_variant_roots") or {})
+    if managed.get(root_key) == selected and _runeschema_main_dll(resolve_server_layout(game_root).runeschema_root):
+        return {"ok": True, "changed": False, "source": EXPERIMENTAL_RUNESCHEMA_REPOSITORY, "variant": selected}
+    result = install_authoritative_runeschema_update(EXPERIMENTAL_RUNESCHEMA_REPOSITORY, game_root)
+    state = load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    managed = dict(install.get("runeschema_managed_variant_roots") or {})
+    managed[root_key] = selected
+    install["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
+    install["runeschema_source_url"] = EXPERIMENTAL_RUNESCHEMA_REPOSITORY + "/releases"
+    install["runeschema_source_name"] = f"Experimental · {result.get('filename') or 'Dragonwilds Sync RuneSchema'}"
+    install["runeschema_installed_at"] = time.time()
+    install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
+    save_state(state)
+    return {**result, "ok": True, "changed": True, "variant": selected}
+
+
 def _file_sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -684,16 +714,17 @@ def _write_installed_flavor_marker(game_root: str, flavor_id: str, archive_sha25
 def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) -> dict:
     """Materialize the World profile's selected core without mixing releases."""
     selected_id = str(profile.get("runeschema_flavor_id") or "official")
-    if selected_id == "official":
+    if selected_id in {"official", "experimental"}:
         if profile.get("runeschema_flavor_applied_sha256"):
             root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-            state = load_state(); install = state.setdefault("application", {}).setdefault("server_install", {})
+            state = load_state()
+            install = state.setdefault("application", {}).setdefault("server_install", {})
             install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
             save_state(state)
-        result = _restore_official_runeschema_once(game_root)
+        result = _restore_managed_runeschema_once(game_root, selected_id)
         profile = load_server_profile(profile_id)
         profile.pop("runeschema_flavor_applied_sha256", None)
-        profile["runeschema_source_name"] = "Official GitHub"
+        profile["runeschema_source_name"] = ("Experimental · Dragonwilds Sync" if selected_id == "experimental" else "Official · UnskippableCutscene")
         save_server_profile(profile_id, profile)
         return result
     status = list_runeschema_flavors(profile_id)
@@ -712,13 +743,21 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
     if str(result.get("kind") or "") != "core":
         raise RuntimeError("The saved RuneSchema flavor is not a complete core runtime.")
     _write_installed_flavor_marker(game_root, selected_id, digest)
+    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
+    state = load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    managed = dict(install.get("runeschema_managed_variant_roots") or {})
+    managed.pop(root_key, None)
+    install["runeschema_managed_variant_roots"] = managed
+    save_state(state)
     profile = load_server_profile(profile_id)
     profile["runeschema_flavor_applied_sha256"] = digest
     profile["runeschema_source_name"] = str(selected.get("name") or "Custom RuneSchema")
     profile["runeschema_installed_at"] = time.time()
     save_server_profile(profile_id, profile)
     root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-    state = load_state(); install = state.setdefault("application", {}).setdefault("server_install", {})
+    state = load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
     install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
     save_state(state)
     return {**result, "changed": True, "source": selected.get("name")}

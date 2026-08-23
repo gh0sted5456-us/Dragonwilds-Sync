@@ -5767,7 +5767,13 @@ def handle(method: str, params: dict) -> object:
         overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
         restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
         install_meta["runeschema_manual_override_roots"] = [item for item in overrides if item != root_key]
-        install_meta["official_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
+        managed = dict(install_meta.get("runeschema_managed_variant_roots") or {})
+        managed[root_key] = variant
+        install_meta["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
+        install_meta["official_runeschema_restored_roots"] = (
+            [*([item for item in restored if item != root_key][-7:]), root_key]
+            if variant == "official" else [item for item in restored if item != root_key]
+        )
         save_state(state)
         repaired = ensure_base_runtimes(install_dir, allow_ue4ss_download=True, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=source_url)
         return {"result": result, "runtime": repaired, "state": public_state(state)}

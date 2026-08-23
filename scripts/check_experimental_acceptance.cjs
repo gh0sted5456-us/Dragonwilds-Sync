@@ -20,6 +20,7 @@ const requireOrder = (text, needles, label) => {
 };
 
 const app = read('renderer/app.js');
+const quick = read('renderer/release-v3-phase2.js');
 const css = read('renderer/release-overrides.css');
 const responsiveCss = read('renderer/release-responsiveness.css');
 const phase4Renderer = read('renderer/release-v3-phase4.js');
@@ -74,8 +75,8 @@ requireText(bootstrap, "process.argv.includes('--minimal-mode')", 'Minimal Mode 
 for (const name of ['maybeBenchmark', 'backgroundTick', 'rsdwModuleTick']) requireText(bootstrap, `'${name}'`, `Minimal Mode ${name} suppression`);
 forbidText(bootstrap, "'schedulerTick'", 'Minimal Mode must not suppress server scheduler');
 requireText(main, 'createMinimalWindow(worldId)', 'Minimal Mode selected-world launch');
-requireText(app, 'Minimal Mode · Dedicated World', 'Minimal Mode dedicated surface');
-requireText(app, 'Update &amp; Restart', 'Minimal Mode update/restart control');
+requireText(quick, "mode === 'server'", 'Minimal Mode dedicated surface');
+requireText(quick, 'Update & Restart', 'Minimal Mode update/restart control');
 
 // Phase 1: one runtime authority and verified shutdown.
 requireText(service, 'RUNTIME = AuthoritativeRuntimeManager', 'authoritative runtime controller');
@@ -173,7 +174,7 @@ requireText(runtimeVersions, 'def cl_version_status', 'CL comparison');
 requireText(runtimeVersions, 'reported_number = int(', 'numeric CL comparison');
 requireText(runtimeVersions, 'current_expected_cl', 'dynamic expected CL status');
 requireText(app, 'reported_cl', 'desktop CL visibility');
-requireText(app, 'CL status', 'Minimal Mode CL visibility');
+requireText(quick, "metric('CL / Build'", 'Minimal Mode CL visibility');
 requireText(directoryWeb, 'function clBadge(w)', 'WebGUI Worlds CL badge');
 requireText(directoryWeb, 'Reported CL', 'WebGUI management CL detail');
 requireText(directoryWeb, 'Expected CL', 'WebGUI management expected CL');

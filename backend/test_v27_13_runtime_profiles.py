@@ -29,6 +29,13 @@ def main() -> None:
         world_maintenance.SERVER_PROFILES_DIR = profiles
         try:
             profile_store.save_server_profile("world", {"name": "Test"})
+            managed = runeschema_flavors.list_flavors("world")
+            assert [row["id"] for row in managed["flavors"][:2]] == ["official", "experimental"]
+            try:
+                runeschema_flavors.delete_flavor("world", "experimental")
+                raise AssertionError("Experimental managed RuneSchema channel was deletable")
+            except ValueError:
+                pass
             game = root / "server"
             layout = resolve_server_layout(str(game))
             layout.config_dir.mkdir(parents=True, exist_ok=True)
@@ -92,7 +99,7 @@ def main() -> None:
             assert not any("dragoncore" in name.casefold() for name in zf.namelist()), f"DragonCore is bundled in {archive}"
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-    for token in ("RuneSchema Runtime Flavor", "Import &amp; Name ZIP", "Import Mod Package", "Core Configuration"):
+    for token in ("RuneSchema Build", "Update Official", "Fetch Latest Experimental", "Import Mod Package", "Core Configuration"):
         assert token in renderer
     assert "This private SinglePlayer profile has no network endpoint" in renderer
     assert 'world.get("kind") or "").casefold() == "singleplayer"' in legacy

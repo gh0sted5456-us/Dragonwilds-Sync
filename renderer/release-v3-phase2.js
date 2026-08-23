@@ -16,7 +16,9 @@
   let autoStartConsumed = false;
   let quickState = null;
   let consoleState = null;
+  let consoleOpen = false;
   let busy = false;
+  let refreshInFlight = false;
   let refreshTimer = null;
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -37,7 +39,9 @@
     finally { busy = false; }
   }
 
-  async function refresh({consoleToo=true}={}) {
+  async function refresh({consoleToo=consoleOpen}={}) {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
     try {
       quickState = await api.invoke('quick.status', { profile_id: profileId, mode });
       if (mode === 'server' && consoleToo && quickState?.controls?.console) {
@@ -52,7 +56,7 @@
     } catch (error) {
       quickState = { profile_id: profileId, mode, world_name: 'Quick Launch', error: error?.message || String(error), controls:{} };
       renderQuick();
-    }
+    } finally { refreshInFlight = false; }
   }
 
   function destinationRows() {
@@ -72,7 +76,7 @@
   }
 
   function serverConsole() {
-    if (mode !== 'server') return '';
+    if (mode !== 'server' || !consoleOpen) return '';
     const events = consoleState?.events || consoleState?.entries || consoleState?.history || [];
     const rows = Array.isArray(events) ? events.slice(-120) : [];
     return `<section class="v3q-panel v3q-console-panel">
@@ -104,7 +108,7 @@
     const publicEnabled = !!quickState?.network?.public_directory_enabled;
     const players = Array.isArray(quickState?.players) ? quickState.players : [];
     const error = quickState?.error;
-    root.innerHTML = `<main class="v3q-shell" data-v3-quick-root>
+    const markup = `<main class="v3q-shell" data-v3-quick-root>
       <header class="v3q-header">
         <div class="v3q-brand"><span class="v3q-mark">DW</span><div><small>DRAGONWILDS SYNC QUICK · ${esc(roleLabel.toUpperCase())}</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1></div></div>
         <div class="v3q-header-actions"><button class="v3q-btn ghost" data-v3q-refresh ${busy?'disabled':''}>Refresh</button><button class="v3q-btn" data-v3q-full>Open Full Dragonwilds Sync</button></div>
@@ -126,6 +130,7 @@
         ${quickState?.controls?.restart ? `<button class="v3q-btn" data-v3q-action="restart" ${busy||!quickState?.active?'disabled':''}>Restart</button>`:''}
         ${quickState?.controls?.update_restart ? `<button class="v3q-btn" data-v3q-action="update_restart" ${busy?'disabled':''}>Update & Restart</button>`:''}
         <button class="v3q-btn ghost" data-v3q-mods>View Mods</button>
+        ${mode==='server'&&quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}
       </section>
       <div class="v3q-columns">
         <section class="v3q-panel">
@@ -141,6 +146,9 @@
       ${serverConsole()}
       <footer class="v3q-footer"><span>${busy?'Working…':'Ready'}</span><span>Closing this window does not stop a deliberately running Server World.</span></footer>
     </main>`;
+    if (root.__dwsQuickMarkup === markup) return;
+    root.__dwsQuickMarkup = markup;
+    root.innerHTML = markup;
     bindQuick();
   }
 
@@ -168,6 +176,7 @@
       }
       api.openMainWindow?.();
     });
+    root.querySelector('[data-v3q-console-toggle]')?.addEventListener('click',async()=>{consoleOpen=!consoleOpen;if(consoleOpen)await refresh({consoleToo:true});else renderQuick();});
     root.querySelectorAll('[data-v3q-action]').forEach((button)=>button.addEventListener('click', ()=>action(button.dataset.v3qAction)));
     root.querySelector('[data-v3q-public]')?.addEventListener('change', async(event)=>{
       const enabled = !!event.currentTarget.checked;
@@ -237,8 +246,10 @@
   }
 
   if (quickEnabled) {
-    document.addEventListener('DOMContentLoaded',()=>{ refresh(); refreshTimer=setInterval(()=>refresh({consoleToo:mode==='server'}),5000); },{once:true});
-    window.addEventListener('beforeunload',()=>{if(refreshTimer)clearInterval(refreshTimer);});
+    const scheduleRefresh=()=>{if(refreshTimer)clearTimeout(refreshTimer);refreshTimer=setTimeout(async()=>{await refresh();scheduleRefresh();},document.hidden?30000:(quickState?.active?5000:10000));};
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh();scheduleRefresh();});
+    document.addEventListener('DOMContentLoaded',async()=>{await refresh();scheduleRefresh();},{once:true});
+    window.addEventListener('beforeunload',()=>{if(refreshTimer)clearTimeout(refreshTimer);});
   } else {
     const observer=new MutationObserver(()=>{enhanceShortcuts();enhanceNetworkSettings();});
     observer.observe(document.documentElement,{subtree:true,childList:true});

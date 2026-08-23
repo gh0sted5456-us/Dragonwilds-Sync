@@ -11,7 +11,9 @@ from pathlib import Path
 from profile_store import SERVER_PROFILES_DIR, load_server_profile, save_server_profile
 
 
-OFFICIAL = {"id": "official", "name": "Official GitHub", "kind": "official"}
+OFFICIAL = {"id": "official", "name": "Official · UnskippableCutscene", "kind": "official"}
+EXPERIMENTAL = {"id": "experimental", "name": "Experimental · Dragonwilds Sync", "kind": "experimental"}
+MANAGED_IDS = {OFFICIAL["id"], EXPERIMENTAL["id"]}
 
 
 def _folder(profile_id: str) -> Path:
@@ -27,9 +29,9 @@ def list_flavors(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile:
         raise KeyError("Server World not found")
-    rows = [OFFICIAL]
+    rows = [OFFICIAL, EXPERIMENTAL]
     for row in profile.get("runeschema_flavors") or []:
-        if not isinstance(row, dict) or str(row.get("id")) == "official":
+        if not isinstance(row, dict) or str(row.get("id")) in MANAGED_IDS:
             continue
         archive = _folder(profile_id) / str(row.get("archive") or "")
         if archive.is_file():
@@ -70,7 +72,7 @@ def import_flavor(profile_id: str, source_path: str, name: str) -> dict:
         destination_dir = _folder(profile_id); destination_dir.mkdir(parents=True, exist_ok=True)
         filename = f"{flavor_id}.zip"
         shutil.copy2(source, destination_dir / filename)
-        rows = [row for row in (profile.get("runeschema_flavors") or []) if isinstance(row, dict) and str(row.get("id")) != "official"]
+        rows = [row for row in (profile.get("runeschema_flavors") or []) if isinstance(row, dict) and str(row.get("id")) not in MANAGED_IDS]
         rows.append({"id": flavor_id, "name": flavor_name, "kind": "custom", "archive": filename,
                      "sha256": digest, "source_name": source.name})
         profile["runeschema_flavors"] = rows
@@ -88,7 +90,7 @@ def select_flavor(profile_id: str, flavor_id: str) -> tuple[dict, Path | None]:
     profile["runeschema_flavor_id"] = str(flavor_id)
     save_server_profile(profile_id, profile)
     archive = None
-    if str(flavor_id) != "official":
+    if str(flavor_id) not in MANAGED_IDS:
         saved = next(row for row in profile.get("runeschema_flavors") or [] if str(row.get("id")) == str(flavor_id))
         archive = (_folder(profile_id) / str(saved.get("archive"))).resolve()
         if _folder(profile_id).resolve() not in archive.parents or not archive.is_file():
@@ -97,8 +99,8 @@ def select_flavor(profile_id: str, flavor_id: str) -> tuple[dict, Path | None]:
 
 
 def delete_flavor(profile_id: str, flavor_id: str) -> dict:
-    if not flavor_id or flavor_id == "official":
-        raise ValueError("The Official GitHub flavor cannot be deleted.")
+    if not flavor_id or flavor_id in MANAGED_IDS:
+        raise ValueError("Official and Experimental managed RuneSchema builds cannot be deleted.")
     profile = load_server_profile(profile_id)
     rows = list(profile.get("runeschema_flavors") or [])
     target = next((row for row in rows if str(row.get("id")) == str(flavor_id)), None)

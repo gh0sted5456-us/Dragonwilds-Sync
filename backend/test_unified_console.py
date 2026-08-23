@@ -1,8 +1,36 @@
 import tempfile
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import unified_console as console
+
+
+def test_console_world_runtime_authority() -> None:
+    import dragonwilds_service_v2_wrapper as service
+
+    legacy = service._legacy
+    original_load = legacy.load_server_profile
+    original_root = legacy.server_root_for_profile
+    original_engine = legacy.ENGINE
+    try:
+        legacy.load_server_profile = lambda profile_id: {"id": profile_id} if profile_id in {"world-a", "world-b"} else None
+        legacy.server_root_for_profile = lambda profile: f"C:/servers/{profile['id']}"
+        legacy.ENGINE = SimpleNamespace(status=lambda: {
+            "active_profile_id": "world-a", "game_root": "C:/wrong-runtime", "running": True,
+        })
+        profile_id, runtime = service._console_world_runtime("world-a")
+        assert profile_id == "world-a"
+        assert runtime["game_root"] == "C:/servers/world-a"
+        try:
+            service._console_world_runtime("world-b")
+            raise AssertionError("an inactive World was allowed to edit the active runtime")
+        except RuntimeError as exc:
+            assert "Activate this Server World" in str(exc)
+    finally:
+        legacy.load_server_profile = original_load
+        legacy.server_root_for_profile = original_root
+        legacy.ENGINE = original_engine
 
 
 def main():
@@ -50,7 +78,7 @@ def main():
                 limit=100,
             )
             assert payload["running"] is True
-            assert payload["counts"] == {"game": 2, "ue4ss": 3, "server": 1, "sync": 1}
+            assert payload["counts"] == {"game": 2, "ue4ss": 3, "server": 1, "sync": 1, "runeschema": 0}
             assert {row["source"] for row in payload["entries"]} == {"game", "ue4ss", "server", "sync"}
             assert payload["ue4ss_log"] == str(ue4ss_log)
             log_text = Path(payload["current_log"]).read_text(encoding="utf-8")
@@ -92,7 +120,7 @@ def main():
                 limit=100,
             )
             assert isolated["running"] is False
-            assert isolated["counts"] == {"game": 1, "ue4ss": 0, "server": 0, "sync": 0}
+            assert isolated["counts"] == {"game": 1, "ue4ss": 0, "server": 0, "sync": 0, "runeschema": 0}
             assert all(row["source"] == "game" for row in isolated["entries"])
 
             try:
@@ -100,11 +128,72 @@ def main():
                 raise AssertionError("unsafe profile id was accepted")
             except ValueError:
                 pass
+
+            # RuneSchema self-tags its own UE4SS.log lines with a leading
+            # "[RuneSchema]" marker. Those must be reclassified into their own
+            # "runeschema" source -- never counted under the generic "ue4ss"
+            # bucket -- so a dedicated RuneSchema view is never a duplicate of
+            # the raw UE4SS view.
+            console._SESSION_STARTED.clear()
+            console._SEEN.clear()
+            rs_started = console.begin_session("world-3")["started_at"]
+            rs_root = Path(temp_name) / "runeschema-root"
+            rs_log = rs_root / "Binaries" / "Win64" / "UE4SS.log"
+            rs_log.parent.mkdir(parents=True)
+            rs_log.write_text(
+                "[UE4SS] loader initialized\n12:34:56.123456 [Info] [RuneSchema] Loaded 6 schemas from Mods/RuneSchema/schemas\n",
+                encoding="utf-8",
+            )
+            rs_payload = console.snapshot(
+                "world-3",
+                runtime={"running": True, "active_profile_id": "world-3", "game_root": str(rs_root)},
+                limit=100,
+            )
+            assert rs_payload["counts"]["ue4ss"] == 1
+            assert rs_payload["counts"]["runeschema"] == 1
+            sources = [row["source"] for row in rs_payload["entries"]]
+            assert sources.count("runeschema") == 1 and sources.count("ue4ss") == 1
+            runeschema_row = next(row for row in rs_payload["entries"] if row["source"] == "runeschema")
+            assert "[RuneSchema]" in runeschema_row["message"]
+
+            # Per-mod config read/write: RuneSchema's config.json lives under
+            # the UE4SS Mods folder, not the log folder above.
+            mods_runtime = {"game_root": str(rs_root)}
+            missing = console.read_mod_config(mods_runtime, "runeschema")
+            assert missing["exists"] is False
+
+            rs_config_dir = rs_root / "Binaries" / "Win64" / "ue4ss" / "Mods" / "RuneSchema" / "config"
+            rs_config_dir.mkdir(parents=True)
+            (rs_config_dir / "config.json").write_text(
+                '{"languageOverride":"","enableAutoReload":true,"enableDebugLogging":true}', encoding="utf-8"
+            )
+            loaded = console.read_mod_config(mods_runtime, "runeschema")
+            assert loaded["exists"] is True
+            assert '"enableAutoReload": true' not in loaded["raw"]  # raw passthrough, not re-serialized
+            assert "enableAutoReload" in loaded["raw"]
+
+            updated = console.write_mod_config(mods_runtime, "runeschema", '{"enableDebugLogging": false}')
+            assert updated["exists"] is True
+            assert "enableDebugLogging" in updated["raw"]
+            assert (rs_config_dir / "config.json").read_text(encoding="utf-8") == '{"enableDebugLogging": false}'
+
+            try:
+                console.write_mod_config(mods_runtime, "runeschema", "{not json")
+                raise AssertionError("invalid JSON was accepted")
+            except ValueError:
+                pass
+
+            try:
+                console.read_mod_config(mods_runtime, "no-such-mod")
+                raise AssertionError("unregistered mod key was accepted")
+            except ValueError:
+                pass
     finally:
         console.SERVER_PROFILES_DIR = original_root
         console._SESSION_STARTED.clear()
         console._SEEN.clear()
 
+    test_console_world_runtime_authority()
     print("unified console tests passed")
 
 

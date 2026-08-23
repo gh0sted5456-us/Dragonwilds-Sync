@@ -21,7 +21,12 @@ from profile_store import SERVER_PROFILES_DIR
 from trash_store import empty as empty_trash
 from trash_store import list_entries as list_trash
 from trash_store import purge_older_than, restore as restore_trash, trash_paths
-from unified_console import install_engine_session_hook, snapshot as unified_console_snapshot
+from unified_console import (
+    install_engine_session_hook,
+    snapshot as unified_console_snapshot,
+    read_mod_config as unified_console_read_mod_config,
+    write_mod_config as unified_console_write_mod_config,
+)
 from v2_remote_routing import install_directory_patches, remote_advertisement
 from runtime_versions import CLIENT_STEAM_APP_ID, detect_steam_cloud_status
 from runtime_manager import AuthoritativeRuntimeManager
@@ -541,6 +546,18 @@ def _unified_console(profile_id: str, limit: int = 350) -> dict:
     )
 
 
+def _console_world_runtime(profile_id: str) -> tuple[str, dict]:
+    profile_id = str(profile_id or "").strip()
+    profile = _legacy.load_server_profile(profile_id) if profile_id else None
+    if not profile:
+        raise KeyError("Server World not found")
+    runtime = _legacy.ENGINE.status()
+    if str(runtime.get("active_profile_id") or "") != profile_id:
+        raise RuntimeError("Activate this Server World before editing its live RuneSchema configuration.")
+    root = str(_legacy.server_root_for_profile(profile) or runtime.get("game_root") or "").strip()
+    return profile_id, {**runtime, "game_root": root}
+
+
 _legacy_public_worlds = _legacy._directory_public_worlds
 _legacy._directory_public_worlds = _public_worlds_with_remote
 
@@ -752,6 +769,16 @@ def handle(method: str, params: dict) -> object:
     if method == "server.console.unified":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
         return _unified_console(profile_id, int(params.get("limit") or 350))
+
+    if method == "server.console.mod_config.read":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime = _console_world_runtime(profile_id)
+        return unified_console_read_mod_config(runtime, str(params.get("mod") or ""))
+
+    if method == "server.console.mod_config.write":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        _, runtime = _console_world_runtime(profile_id)
+        return unified_console_write_mod_config(runtime, str(params.get("mod") or ""), str(params.get("raw") or ""))
 
     if method == "application.advanced.settings" and ("remote_server_enabled" in params or "webhost_enabled" in params):
         result = _legacy_handle(method, params)

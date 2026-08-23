@@ -17,7 +17,9 @@ A new server process rotates the previous session to
 ``DragonwildsSync.log``.
 """
 
+import json
 import os
+import re
 import sys
 import threading
 import time
@@ -25,12 +27,37 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from profile_store import SERVER_PROFILES_DIR
+from server_layout import resolve_server_layout
 
 _LOG_NAME = "DragonwildsSync.log"
 _PREVIOUS_LOG_NAME = "DragonwildsSync.previous.log"
 _LOCK = threading.RLock()
 _SESSION_STARTED: dict[str, float] = {}
 _SEEN: dict[str, set[str]] = {}
+
+# Log lines a UE4SS mod DLL/Lua script self-tags with a bracketed module name
+# (e.g. "[RuneSchema] Loaded 6 schemas") are reclassified out of the generic
+# "ue4ss" bucket into their own source. This is what lets the Console treat a
+# mod as a first-class stream instead of noise buried in raw loader output,
+# and it is also the dedup: a line only ever gets one source, so a dedicated
+# per-mod view can never double-count what the generic UE4SS view also shows.
+# Add an entry here for any other mod that should get the same treatment; the
+# key becomes both the stream "source" and the config lookup key used by
+# read_mod_config/write_mod_config below.
+_MOD_LOG_TAGS: dict[str, re.Pattern] = {
+    # UE4SS builds may prepend timestamp/level brackets before the mod tag.
+    "runeschema": re.compile(
+        r"^(?:\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s*)?(?:\[[^\]\r\n]{1,64}\]\s*){0,4}\[RuneSchema\]",
+        re.IGNORECASE,
+    ),
+}
+
+# Where each registered mod keeps its own editable config, relative to the
+# UE4SS Mods folder. Mirrors the install-path convention in
+# server_systems.py's MOD_KIND_EXTRACT_PATHS ("Binaries/Win64/ue4ss/Mods/...").
+_MOD_CONFIG_RELATIVE: dict[str, str] = {
+    "runeschema": "RuneSchema/config/config.json",
+}
 
 
 def _profile_key(profile_id: object) -> str:
@@ -67,7 +94,7 @@ def _write_header(path: Path, profile_id: str, started: float) -> None:
         "Dragonwilds Sync Unified Server Log\n"
         f"World: {profile_id}\n"
         f"Session started: {_iso(started)}\n"
-        "Streams: GAME CMD/STDOUT | UE4SS | SERVER | SYNC TRAFFIC\n"
+        "Streams: GAME CMD/STDOUT | UE4SS | RUNESCHEMA | SERVER | SYNC TRAFFIC\n"
         + ("-" * 78) + "\n",
         encoding="utf-8",
     )
@@ -231,14 +258,99 @@ def _ue4ss_entries(runtime: dict, started: float, limit: int = 250) -> tuple[lis
             continue
         folded = message.casefold()
         level = "error" if any(token in folded for token in ("error", "fatal", "exception", "failed")) else ("warning" if "warn" in folded else "info")
+        source = "ue4ss"
+        for mod_key, pattern in _MOD_LOG_TAGS.items():
+            if pattern.match(message):
+                source = mod_key
+                break
         rows.append({
             "ts": mtime - ((len(offsets) - index) * 0.0001),
-            "source": "ue4ss",
+            "source": source,
             "level": level,
             "message": message[:4000],
             "_identity": f"ue4ss:{path}:{offset}",
         })
     return rows, str(path)
+
+
+def _ue4ss_mods_roots(runtime: dict) -> list[Path]:
+    """Resolve this World's possible UE4SS ``Mods`` folders in authority order."""
+    root_value = str(runtime.get("game_root") or "").strip()
+    if not root_value:
+        return []
+    root = Path(root_value)
+    candidates = (
+        resolve_server_layout(root).ue4ss_mods_dir,
+        root / "Binaries" / "Win64" / "ue4ss" / "Mods",
+        root / "RSDragonwilds" / "Binaries" / "Win64" / "ue4ss" / "Mods",
+    )
+    resolved: list[Path] = []
+    for candidate in candidates:
+        try:
+            value = candidate.resolve()
+            if value.is_dir() and value not in resolved:
+                resolved.append(value)
+        except OSError:
+            continue
+    return resolved
+
+
+def mod_config_path(runtime: dict, mod_key: str) -> Path | None:
+    """Resolve a registered mod's own config file under this World's Mods folder."""
+    relative = _MOD_CONFIG_RELATIVE.get(str(mod_key or "").strip().casefold())
+    if not relative:
+        return None
+    mods_roots = _ue4ss_mods_roots(runtime)
+    if not mods_roots:
+        return None
+    fallback = None
+    for mods_root in mods_roots:
+        target = (mods_root / relative).resolve()
+        if target != mods_root and mods_root not in target.parents:
+            continue  # refuse to walk outside the Mods folder
+        if target.is_file():
+            return target
+        if fallback is None:
+            fallback = target
+    return fallback
+
+
+def read_mod_config(runtime: dict, mod_key: str) -> dict:
+    """Return a registered mod's own config file, unparsed, for the Console to edit."""
+    key = str(mod_key or "").strip().casefold()
+    if key not in _MOD_CONFIG_RELATIVE:
+        raise ValueError(f"No config is registered for mod '{mod_key}'")
+    path = mod_config_path(runtime, key)
+    if path is None:
+        return {"mod": key, "path": "", "exists": False, "raw": "",
+                "error": "This World's UE4SS Mods folder was not found. Start the World once to install it."}
+    if not path.is_file():
+        return {"mod": key, "path": str(path), "exists": False, "raw": ""}
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {"mod": key, "path": str(path), "exists": True, "raw": "", "error": str(exc)[:300]}
+    return {"mod": key, "path": str(path), "exists": True, "raw": raw}
+
+
+def write_mod_config(runtime: dict, mod_key: str, raw: str) -> dict:
+    """Validate and atomically write a registered mod's own config file."""
+    key = str(mod_key or "").strip().casefold()
+    if key not in _MOD_CONFIG_RELATIVE:
+        raise ValueError(f"No config is registered for mod '{mod_key}'")
+    text = str(raw or "")
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Not valid JSON: {exc.msg} (line {exc.lineno}, column {exc.colno})") from exc
+    path = mod_config_path(runtime, key)
+    if path is None:
+        raise ValueError("This World's UE4SS Mods folder was not found. Start the World once to install it.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(text, encoding="utf-8")
+    os.replace(tmp_path, path)
+    return read_mod_config(runtime, key)
 
 
 def _sync_entries(activities: list[dict]) -> list[dict]:
@@ -342,11 +454,13 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
     for row in rows:
         record_entry(key, row)
 
-    counts = {"game": 0, "ue4ss": 0, "server": 0, "sync": 0}
+    # Seed the base four so existing UI/tests keep a stable shape even when no
+    # rows are present; any registered mod source (or an unforeseen future
+    # one) still gets counted correctly via the .get(..., 0) fallback below.
+    counts = {"game": 0, "ue4ss": 0, "server": 0, "sync": 0, **{key: 0 for key in _MOD_LOG_TAGS}}
     for row in rows:
         source = str(row.get("source") or "")
-        if source in counts:
-            counts[source] += 1
+        counts[source] = counts.get(source, 0) + 1
 
     paths = log_paths(key)
     return {
@@ -386,7 +500,8 @@ def _install_remote_state_hook() -> None:
             )
         except Exception as exc:
             payload["unified_console"] = {
-                "profile_id": str(profile_id or ""), "entries": [], "counts": {"game": 0, "ue4ss": 0, "server": 0, "sync": 0},
+                "profile_id": str(profile_id or ""), "entries": [],
+                "counts": {"game": 0, "ue4ss": 0, "server": 0, "sync": 0, **{key: 0 for key in _MOD_LOG_TAGS}},
                 "current_log": "", "previous_log": "", "error": str(exc)[:300],
             }
         return payload

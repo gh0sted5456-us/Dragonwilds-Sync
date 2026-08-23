@@ -282,6 +282,31 @@ def local_ip_guess() -> str:
         return "127.0.0.1"
 
 
+def local_interface_addresses(default: str = "") -> list:
+    """Return every usable local interface address visible to this host."""
+    found = []
+    seen = set()
+
+    def add(value: str) -> None:
+        text = str(value or "").split("%", 1)[0].strip()
+        if not text or text in seen:
+            return
+        seen.add(text)
+        try:
+            found.append(ipaddress.ip_address(text))
+        except ValueError:
+            pass
+
+    add(default)
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None):
+            add(info[4][0])
+    except (socket.gaierror, OSError, UnicodeError):
+        pass
+    add(local_ip_guess())
+    return found
+
+
 def detect_public_ip(timeout: float = 4.0) -> str | None:
     for url in ("https://api.ipify.org", "https://ifconfig.me/ip", "https://icanhazip.com"):
         try:
@@ -1226,10 +1251,16 @@ class SyncState:
         same_lan = False
         if enabled and client.is_loopback:
             same_lan = True
-        elif enabled and (client.is_private or client.is_link_local) and client.version == local.version:
-            prefix = 24 if client.version == 4 else 64
-            network = ipaddress.ip_network(f"{local}/{prefix}", strict=False)
-            same_lan = client in network
+        elif enabled and (client.is_private or client.is_link_local):
+            # VPN and virtual adapters can own the default route. Compare the
+            # client against every local interface instead of one guessed NIC.
+            for host_address in local_interface_addresses(default=str(local)):
+                if host_address.version != client.version:
+                    continue
+                prefix = 24 if client.version == 4 else 64
+                if client in ipaddress.ip_network(f"{host_address}/{prefix}", strict=False):
+                    same_lan = True
+                    break
         if not same_lan and not trusted:
             return None
         token = secrets.token_hex(16)

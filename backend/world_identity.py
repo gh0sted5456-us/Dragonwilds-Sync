@@ -4,7 +4,11 @@ from dataclasses import dataclass
 from ipaddress import ip_address
 from urllib.parse import urlsplit
 
+# Historical identity default: saved endpoint identities originally used the
+# Dragonwilds gameplay port. Keep it stable so existing profiles still match.
 DEFAULT_SYNC_PORT = 7777
+# The companion Sync HTTP transport listens on its own port.
+DEFAULT_SYNC_TRANSPORT_PORT = 27051
 
 
 @dataclass(frozen=True)
@@ -155,11 +159,11 @@ def candidate_endpoints(world: dict) -> list[tuple[str, str]]:
     result: list[tuple[str, str]] = []
     seen: set[str] = set()
     try:
-        sync_port = int(connection.get("sync_port") or DEFAULT_SYNC_PORT)
+        sync_port = int(connection.get("sync_port") or DEFAULT_SYNC_TRANSPORT_PORT)
     except (TypeError, ValueError):
-        sync_port = DEFAULT_SYNC_PORT
+        sync_port = DEFAULT_SYNC_TRANSPORT_PORT
     if not 1 <= sync_port <= 65535:
-        sync_port = DEFAULT_SYNC_PORT
+        sync_port = DEFAULT_SYNC_TRANSPORT_PORT
     for kind in order:
         endpoint = values.get(kind, "")
         if endpoint and "://" not in endpoint and connection.get("sync_tls") is True:

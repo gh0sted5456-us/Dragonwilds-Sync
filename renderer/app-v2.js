@@ -212,25 +212,36 @@
     return backdrop?new URL(`assets/character-background/${backdrop.file}`,document.baseURI).href:'';
   }
 
-  function characterBackdropDataUrl(value) {
+  function characterBackdropFile(value) {
+    const backdrop=CHARACTER_BACKDROPS.find((entry)=>entry.value===String(value||''));
+    return backdrop?`assets/character-background/${backdrop.file}`:'';
+  }
+
+  async function characterBackdropDataUrl(value) {
     const url=characterBackdropUrl(value);
-    if(!url)return Promise.resolve('');
-    if(characterBackdropDataUrls.has(url))return Promise.resolve(characterBackdropDataUrls.get(url));
-    return new Promise((resolve)=>{
+    if(!url)return '';
+    if(characterBackdropDataUrls.has(url))return characterBackdropDataUrls.get(url);
+    try{
+      const asset=await window.dragonwilds?.readRendererAsset?.(characterBackdropFile(value));
+      const dataUrl=String(asset?.dataUrl||'');
+      if(dataUrl.startsWith('data:')){characterBackdropDataUrls.set(url,dataUrl);return dataUrl;}
+    }catch(_){/* use the served-origin fallback below */}
+    return await new Promise((resolve)=>{
       const image=new Image();
-      image.onload=()=>{try{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);const dataUrl=canvas.toDataURL('image/png');characterBackdropDataUrls.set(url,dataUrl);resolve(dataUrl);}catch(_){resolve(url);}};
-      image.onerror=()=>resolve(url);
+      image.onload=()=>{try{const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;canvas.getContext('2d').drawImage(image,0,0);const dataUrl=canvas.toDataURL('image/png');characterBackdropDataUrls.set(url,dataUrl);resolve(dataUrl);}catch(_){resolve('');}};
+      image.onerror=()=>resolve('');
       image.src=url;
     });
   }
 
   function characterBackgroundScript(value, embeddedImageUrl = '') {
     const mode=String(value||'theme');
-    const imageUrl=embeddedImageUrl||characterBackdropUrl(mode);
+    const candidate=String(embeddedImageUrl||'');
+    const imageUrl=/^(data:|https?:)/i.test(candidate)?candidate:'';
     const theme=(state.data?.application?.theme||'dark')==='light'?'#eee8dc':'#050708';
     const style=CHARACTER_BACKGROUND_STYLES.find((entry)=>entry.value===mode);
     const fallbackSurface=mode==='theme'?theme:(style?.surface||theme);
-    return `(()=>{const imageUrl=${JSON.stringify(imageUrl)};const fallback=${JSON.stringify(fallbackSurface)};const surface=imageUrl?'linear-gradient(rgba(3,5,5,.06),rgba(3,5,5,.2)),url("'+imageUrl.replace(/"/g,'%22')+'") center/cover no-repeat':fallback;document.documentElement.style.background=fallback;document.body.style.setProperty('background',fallback,'important');document.body.style.isolation='isolate';let backdrop=document.querySelector('#dws-avatar-backdrop');if(!backdrop){backdrop=document.createElement('div');backdrop.id='dws-avatar-backdrop';document.body.prepend(backdrop);}Object.assign(backdrop.style,{position:'fixed',inset:'0',zIndex:'9997',pointerEvents:'none',background:surface,backgroundPosition:'center',backgroundSize:'cover',backgroundRepeat:'no-repeat'});const stage=document.querySelector('#avatar-stage');if(stage){stage.style.setProperty('background','transparent','important');stage.style.zIndex='9998';}document.querySelectorAll('canvas').forEach((canvas)=>{canvas.style.setProperty('background','transparent','important');canvas.style.mixBlendMode=imageUrl?'screen':'normal';canvas.style.position='relative';canvas.style.zIndex='1';});return {ok:true,image:!!imageUrl};})()`;
+    return `(()=>{const imageUrl=${JSON.stringify(imageUrl)};const fallback=${JSON.stringify(fallbackSurface)};const surface=imageUrl?'linear-gradient(rgba(3,5,5,.06),rgba(3,5,5,.2)),url("'+imageUrl.replace(/"/g,'%22')+'") center/cover no-repeat':fallback;document.documentElement.style.background=fallback;document.body.style.setProperty('background',fallback,'important');document.body.style.isolation='isolate';let backdrop=document.querySelector('#dws-avatar-backdrop');if(!backdrop){backdrop=document.createElement('div');backdrop.id='dws-avatar-backdrop';document.body.prepend(backdrop);}Object.assign(backdrop.style,{position:'fixed',inset:'0',zIndex:'9997',pointerEvents:'none',background:surface,backgroundPosition:'center',backgroundSize:'cover',backgroundRepeat:'no-repeat'});const stage=document.querySelector('#avatar-stage');if(stage){stage.style.setProperty('background','transparent','important');stage.style.zIndex='9998';}document.querySelectorAll('canvas').forEach((canvas)=>{canvas.style.setProperty('background','transparent','important');canvas.style.mixBlendMode=imageUrl?'screen':'normal';canvas.style.position='relative';canvas.style.zIndex='9999';});return {ok:true,image:!!imageUrl,canvases:document.querySelectorAll('canvas').length,stage:!!stage};})()`;
   }
 
   const CHARACTER_PORTRAITS = [
@@ -812,6 +823,17 @@
       const key = String(world?.id || ''); if (!key || seen.has(key)) return; seen.add(key); result.push(world);
     });
     return result;
+  }
+  // Connected LAN, Direct Connect, and manual Worlds live in client.worlds.
+  // Route additions back to the view that actually renders that collection.
+  function revealConnectedWorld(worldId) {
+    if (worldId) state.selectedWorldId = worldId;
+    state.data = state.data || {};
+    state.data.client = state.data.client || {};
+    const browser = state.data.client.world_browser = state.data.client.world_browser || {};
+    browser.tab = 'direct'; browser.filter = 'all'; browser.search = ''; browser.page = 1;
+    if (state.route === 'world-management') state.worldManagementTab = 'connected';
+    else state.route = 'worlds';
   }
   function mergeConnectedWorld(world) {
     if (!world?.id || !state.data?.client) return null;
@@ -3079,8 +3101,12 @@
   }
 
   function renderWorldManagement() {
-    const tab = ['worlds','manifest','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
-    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management applications"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">World Profiles</button><button class="${tab==='manifest'?'active':''}" data-world-management-tab="manifest">Sync Files</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Connection</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Sync Hosting</button></nav>`;
+    const tab = ['worlds','connected','manifest','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
+    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management applications"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">World Profiles</button><button class="${tab==='connected'?'active':''}" data-world-management-tab="connected">Connected Worlds${worlds().length?` · ${worlds().length}`:''}</button><button class="${tab==='manifest'?'active':''}" data-world-management-tab="manifest">Sync Files</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Connection</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Sync Hosting</button></nav>`;
+    if(tab==='connected'){
+      state.data.client=state.data.client||{};state.data.client.world_browser=state.data.client.world_browser||{};state.data.client.world_browser.tab='direct';
+      return renderWorldGallery(tabs);
+    }
     if(tab==='manifest'){
       state.data.client=state.data.client||{};state.data.client.world_browser=state.data.client.world_browser||{};state.data.client.world_browser.tab='directory';
       return renderWorldGallery(tabs);
@@ -5221,7 +5247,7 @@
     }
     root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>select.addEventListener('change',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const id=select.dataset.avatarUpstreamSelect;const value=select.value;await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(id)});if(!select)return false;select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,true);}catch(error){toast('RSDWModel selection unavailable',error.message,'error');}}));
     root.querySelectorAll('[data-avatar-play]').forEach((button)=>button.addEventListener('click',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;const action=button.dataset.avatarPlay==='pause'?'pause':'play';try{await guest.executeJavaScript(`(()=>{const action=${JSON.stringify(action)};const direct=document.getElementById(action==='pause'?'avatar-animation-pause':'avatar-animation-play');if(direct){direct.click();return true;}const canvas=document.querySelector('canvas');if(action==='pause'&&canvas){canvas.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true}));return true;}return false;})()`,true);}catch(error){toast('Animation control unavailable',error.message,'error');}}));
-    const applyCharacterBackground=async(value)=>{state.rsdwAvatarBackground=value||'theme';root.querySelectorAll('[data-character-background-choice]').forEach((button)=>{const active=button.dataset.characterBackgroundChoice===state.rsdwAvatarBackground;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const backgroundImage=await characterBackdropDataUrl(state.rsdwAvatarBackground);await guest.executeJavaScript(characterBackgroundScript(state.rsdwAvatarBackground,backgroundImage),true);}catch(error){toast('Background selection unavailable',error.message,'error');}};
+    const applyCharacterBackground=async(value)=>{state.rsdwAvatarBackground=value||'theme';root.querySelectorAll('[data-character-background-choice]').forEach((button)=>{const active=button.dataset.characterBackgroundChoice===state.rsdwAvatarBackground;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const backgroundImage=await characterBackdropDataUrl(state.rsdwAvatarBackground);const isScene=CHARACTER_BACKDROPS.some((entry)=>entry.value===state.rsdwAvatarBackground);await guest.executeJavaScript(characterBackgroundScript(state.rsdwAvatarBackground,backgroundImage),true);if(isScene&&!backgroundImage)toast('Backdrop image unavailable',`The ${state.rsdwAvatarBackground} scene could not be loaded, so the viewer is using a solid background.`,'warning');}catch(error){toast('Background selection unavailable',error.message,'error');}};
     root.querySelector('#rsdw-avatar-background')?.addEventListener('change',(event)=>applyCharacterBackground(event.currentTarget.value));
     root.querySelectorAll('[data-character-background-choice]').forEach((button)=>button.addEventListener('click',()=>{const value=button.dataset.characterBackgroundChoice||'theme';const select=root.querySelector('#rsdw-avatar-background');if(select)select.value=value;applyCharacterBackground(value);}));
     root.querySelectorAll('[data-rsdw-preview-slot]').forEach((button)=>button.addEventListener('click',()=>{const slot=button.dataset.rsdwPreviewSlot;if(state.rsdwPreviewHidden.has(slot))state.rsdwPreviewHidden.delete(slot);else state.rsdwPreviewHidden.add(slot);render();}));
@@ -6921,7 +6947,7 @@
           existing=mergeConnectedWorld(saved.world)||existing;
           applyWorldBrowser(saved.browser);
         }
-        closeModal();state.selectedWorldId=existing?.id||null;render();toast('LAN World saved',`${item.name||'World'} retained its LAN route and advertised external gameplay route.`,'success');
+        closeModal();revealConnectedWorld(existing?.id||null);render();toast('LAN World saved',`${item.name||'World'} retained its LAN route and advertised external gameplay route.`,'success');
         }catch(error){button.disabled=false;toast('Could not save LAN World',error.message,'error');}
       }));
       const showLanMods=(index)=>{const item=state.lanDiscoveries?.[Number(index)];if(!item)return;const mods=item.mod_summary||[];showModal(`<div class="modal-header"><div><div class="eyebrow">Verified LAN Metadata</div><h2>${escapeHtml(item.name||'World')} Mods</h2><p>${mods.length} advertised mod${mods.length===1?'':'s'} · fingerprint ${escapeHtml(String(item.fingerprint||'unknown'))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${mods.length?mods.map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):'<div class="empty-state">This verified World advertises no mods.</div>'}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'LAN World Mods',width:760,height:650});};
@@ -6952,11 +6978,11 @@
           action.textContent='Testing Sync…';
           const tested=await api.invoke('world.test',{id:world.id,compact:true});
           if(tested.world)world=mergeConnectedWorld(tested.world);
-          closeDesktopWindow(connectWin);closeDesktopWindow(win);state.selectedWorldId=world.id;render();
+          closeDesktopWindow(connectWin);closeDesktopWindow(win);revealConnectedWorld(world.id);render();
           if(!tested.result?.ok)toast('World profile saved',`${item.name||'World'} was added. Sync needs attention: ${tested.result?.error||'The host did not accept this connection.'}`,'warning');
           else toast('Direct World connected',`${item.name||'World'} · fingerprint and rules agreement saved.`,'success');
         }catch(error){
-          if(world){closeDesktopWindow(connectWin);closeDesktopWindow(win);state.selectedWorldId=world.id;render();toast('World profile saved',`${item.name||'World'} was added, but Sync could not finish: ${error.message}`,'warning');}
+          if(world){closeDesktopWindow(connectWin);closeDesktopWindow(win);revealConnectedWorld(world.id);render();toast('World profile saved',`${item.name||'World'} was added, but Sync could not finish: ${error.message}`,'warning');}
           else{action.disabled=rules?!agree?.checked:false;action.textContent='Connect';toast('Could not save World profile',error.message,'error');}
         }
       });
@@ -7004,12 +7030,15 @@
         <div class="form-group full"><label>World Name *</label><input class="field" id="f-world-name" value="${escapeHtml(world?.identity?.world_name || '')}" placeholder="Valhalla Friends" /><div class="help">Must exactly match the server's World Name. This is part of positive identification.</div></div>
         <div class="form-group full"><label>IP Address *</label><input class="field" id="f-address" value="${escapeHtml(c.internal_ip || c.external_ip || initialAddress)}" placeholder="192.168.1.50 or host.example.com:27051" /><div class="help">Use a LAN address for local connections or a public address for remote connections. The Sync port is optional.</div></div>
         <div class="form-group full"><label>World Password</label><input class="field" id="f-password" type="password" value="${escapeHtml(creds.password || '')}" placeholder="Leave blank for an open World" /></div>
+        <div class="form-group full"><label>DragonConnect address</label><select class="field" id="f-direct-route">${['auto','external','internal'].map((option)=>`<option value="${option}" ${String(c.direct_connect_route||'auto')===option?'selected':''}>${{auto:'Automatic — public address when known',external:'Always the public address',internal:'Always the LAN address'}[option]}</option>`).join('')}</select><div class="help">Which address is written into the in-game Direct Connect field. Keep Automatic unless you are joining from inside the host's network and the router cannot loop back to its public IP.</div></div>
         <label class="checkbox-row"><input id="f-sync-tls" type="checkbox" ${c.sync_tls?'checked':''}/> This World serves Sync over pinned TLS</label>
         <div class="form-group full"><label>TLS Certificate Fingerprint</label><input class="field" id="f-tls-fingerprint" value="${escapeHtml(c.tls_cert_fingerprint || '')}" maxlength="95" placeholder="64-character SHA-256 fingerprint"/><div class="help">Required for a manually entered TLS World. Prefer LAN discovery, a Sync directory, or connection info supplied directly by the host.</div></div>
       </div><div class="identity-box"><strong>Simple World connection</strong><p>Dragonwilds Sync uses only this IP address, the exact World Name, and the optional World Password. Identity fingerprints verify the responding World but are never connection codes.</p></div></div>
       <div class="modal-footer">${edit ? '<button class="btn danger" id="delete-world">Delete World</button>' : '<span></span>'}<div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-world">${edit ? 'Save Changes' : 'Add World'}</button></div></div>`);
     if (!edit) modalRoot.querySelector('#f-world-name')?.addEventListener('input', (e) => scheduleDiscordPresence('Creating World', null, { worldName: e.target.value.trim() }));
     modalRoot.querySelector('#save-world').addEventListener('click', async () => {
+      const enteredAddress = modalRoot.querySelector('#f-address').value.trim();
+      const directRoute = modalRoot.querySelector('#f-direct-route')?.value || 'auto';
       const payload = {
         ...(edit ? { id: world.id } : {}),
         kind: edit ? (world.kind || 'connected') : 'connected',
@@ -7017,9 +7046,10 @@
         identity: { world_name: modalRoot.querySelector('#f-world-name').value.trim() },
         classification,
         connection: {
-          internal_ip: modalRoot.querySelector('#f-address').value.trim(),
-          external_ip: '',
+          internal_ip: directRoute === 'external' ? String(c.internal_ip || '') : enteredAddress,
+          external_ip: directRoute === 'external' ? enteredAddress : String(c.external_ip || ''),
           preference: 'auto',
+          direct_connect_route: directRoute,
           sync_tls: !!modalRoot.querySelector('#f-sync-tls')?.checked,
           tls_cert_fingerprint: modalRoot.querySelector('#f-tls-fingerprint')?.value.trim().replace(/[^0-9a-f]/gi,'').toLowerCase() || '',
           tls_password_fallback: !!modalRoot.querySelector('#f-sync-tls')?.checked,
@@ -7035,8 +7065,7 @@
       try {
         setData(await api.invoke(edit ? 'world.update' : 'world.create', payload));
         if (!edit) setData(await api.invoke('world.browser.settings', { tab:'direct', filter:'all', page:1 }));
-        state.selectedWorldId = state.data.client.active_world_id;
-        state.route = 'worlds';
+        revealConnectedWorld(state.data.client.active_world_id);
         closeModal();
         render();
         toast(edit ? 'World updated' : 'World added', payload.identity.world_name, 'success');
@@ -7340,6 +7369,9 @@
       setData(response.state);
       if (world.kind === 'singleplayer') { setDiscordPresence('Playing Private World', world, { resetTimer: true }); toast('Dragonwilds launched', `${world.name || 'Private World'} activated and launched.`, 'success'); return; }
       const security = response.result?.security || {};
+      const directConnect = response.result?.direct_connect || {};
+      if (directConnect.warning) toast('DragonConnect address', directConnect.warning, 'warning');
+      else if (directConnect.configured && directConnect.address) toast('DragonConnect address', `In-game Direct Connect is set to ${directConnect.address}${directConnect.route_used === 'internal' ? ' (LAN route)' : ' (public route)'}.`, '');
       const skipped = Number(security.skipped_count || 0);
       setDiscordPresence('Joined World', world, { resetTimer: true, playerCount: world.status?.player_count, health: world.status?.server_health || world.manifest_cache?.server_health });
       toast('Dragonwilds launched', `${response.result.downloaded} updated · ${response.result.up_to_date} already current${skipped ? ` · ${skipped} Defender review(s) skipped` : ''}`, 'success');

@@ -676,6 +676,31 @@ ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {
 });
 ipcMain.handle('dragonwilds:admin-status', () => runtimePlatformStatus());
 ipcMain.handle('dragonwilds:restart-admin', () => restartElevated());
+ipcMain.handle('dragonwilds:read-renderer-asset', async (_event, relativePath) => {
+  const requested = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
+  if (!requested || requested.includes('..') || !/^assets\/[A-Za-z0-9._\/-]+$/.test(requested)) {
+    throw new Error('Only bundled renderer assets can be read.');
+  }
+  const assetsRoot = path.join(projectRoot(), 'renderer', 'assets');
+  const target = path.resolve(projectRoot(), 'renderer', requested);
+  if (target !== assetsRoot && !target.startsWith(assetsRoot + path.sep)) {
+    throw new Error('Only bundled renderer assets can be read.');
+  }
+  let image = nativeImage.createFromPath(target);
+  if (image.isEmpty()) throw new Error('That bundled asset could not be decoded.');
+  const size = image.getSize();
+  const scale = Math.min(1, 1920 / Math.max(1, size.width), 1080 / Math.max(1, size.height));
+  if (scale < 1) image = image.resize({
+    width: Math.max(1, Math.round(size.width * scale)),
+    height: Math.max(1, Math.round(size.height * scale)),
+    quality: 'best',
+  });
+  let bytes = image.toJPEG(86);
+  if (bytes.length > 6 * 1024 * 1024) bytes = image.toJPEG(70);
+  const finalSize = image.getSize();
+  return { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`,
+    width: finalSize.width, height: finalSize.height, bytes: bytes.length };
+});
 ipcMain.handle('dragonwilds:pick-image', async () => {
   const r=await dialog.showOpenDialog(mainWindow,{title:'Choose image',properties:['openFile'],filters:[{name:'Images',extensions:['png','jpg','jpeg','webp','ico']}]});
   if(r.canceled||!r.filePaths[0])return null;

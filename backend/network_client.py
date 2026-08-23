@@ -13,8 +13,14 @@ import ssl
 from pathlib import Path
 from urllib.parse import quote, urlsplit
 
-from world_identity import candidate_endpoints, normalize_endpoint, positive_world_identity
+from world_identity import (DEFAULT_SYNC_TRANSPORT_PORT, candidate_endpoints,
+                            normalize_endpoint as _normalize_endpoint, positive_world_identity)
 from operator_identity import verify_world_identity
+
+
+def normalize_endpoint(value, default_port: int = DEFAULT_SYNC_TRANSPORT_PORT):
+    """Normalize an endpoint that will be dialed by the Sync HTTP client."""
+    return _normalize_endpoint(value, default_port=default_port)
 
 
 class ConnectionError(RuntimeError):
@@ -187,15 +193,22 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     # authorize while the protected manifest/file transfer rejects the client.
     password = str(password or "").strip()
     source = _credential_source(credential_source)
+    lan_failure = None
     if source == "lan" or not password:
         try:
             return _lan_token(endpoint)
-        except ConnectionError:
+        except ConnectionError as exc:
             # Same-LAN and host-allowlisted IPs need no password. Other clients
-            # continue through the ordinary challenge/fallback authentication.
-            if source == "lan" and not password:
-                raise
-    nonce = json.loads(request(f"{base}/nonce").read())["nonce"]
+            # continue through the ordinary challenge. An open World accepts an
+            # empty proof; a protected World returns the useful password error.
+            if source == "lan":
+                lan_failure = exc
+    try:
+        nonce = json.loads(request(f"{base}/nonce").read())["nonce"]
+    except ConnectionError:
+        if lan_failure is not None:
+            raise lan_failure
+        raise
     # The player connection contract is intentionally only IP + exact World
     # One player-facing credential protects both the Sync payload and gameplay.
     # Legacy server/share parameters remain accepted but are never consulted.

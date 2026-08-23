@@ -530,9 +530,19 @@ def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | Non
     advertised = manifest.get("connection") if isinstance(manifest, dict) and isinstance(manifest.get("connection"), dict) else {}
     internal = str(advertised.get("internal_ip") or connection.get("internal_ip") or "").strip()
     external = str(advertised.get("external_ip") or connection.get("external_ip") or (world.get("identity") or {}).get("external_ip") or "").strip()
-    # LAN is a discovery/Sync optimization. DragonConnect must hand the game
-    # the host-advertised external endpoint whenever one is available.
-    host = external or internal
+    # Sync routing and the address handed to DragonConnect are separate choices.
+    # Automatic preserves the existing external-first behavior, while a LAN
+    # client can explicitly avoid a router that does not support NAT hairpinning.
+    route = str(connection.get("direct_connect_route") or "auto").strip().lower()
+    if route not in {"auto", "external", "internal"}:
+        route = "auto"
+    if route == "internal":
+        host, route_used = internal, "internal"
+    elif route == "external":
+        host, route_used = external, "external"
+    else:
+        host = external or internal
+        route_used = "external" if external else ("internal" if internal else "")
     port = int(advertised.get("game_port") or connection.get("game_port") or 7777)
     # The baseline mod and Dragonwilds' current Direct Connect field accept a
     # complete IPv4/hostname endpoint. Respect an already supplied port, but
@@ -544,13 +554,24 @@ def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | Non
             port = int(candidate_port)
     if ":" in host or host.startswith("["):
         cleared = clear_direct_connect_config(game_dir)
-        return {**cleared, "configured": False, "unsupported_address": external or internal,
+        return {**cleared, "configured": False, "unsupported_address": host,
+                "route": route, "route_used": route_used,
+                "internal_candidate": internal, "external_candidate": external,
                 "warning": "Dragonwilds Direct Connect currently supports IPv4 addresses and hostnames, not IPv6."}
     address = f"{host}:{port}" if host else ""
     credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
     classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
-    return write_direct_connect_config(game_dir, address=address, password=str(credentials.get("password") or ""),
-                                       server_type=str(classification.get("game_mode") or "normal"), enabled=bool(address))
+    written = write_direct_connect_config(game_dir, address=address, password=str(credentials.get("password") or ""),
+                                          server_type=str(classification.get("game_mode") or "normal"), enabled=bool(address))
+    written.update({"route": route, "route_used": route_used if address else "",
+                    "internal_candidate": internal, "external_candidate": external})
+    if route == "external" and not external:
+        written["warning"] = ("This World is pinned to its public address for DragonConnect, but no external IP is "
+                              "known yet. Sync once while the host is online, or switch the route to Automatic.")
+    elif route == "internal" and not internal:
+        written["warning"] = ("This World is pinned to its LAN address for DragonConnect, but no internal IP is saved. "
+                              "Rescan the LAN or switch the route to Automatic.")
+    return written
 
 
 def _editable_world_save(state: dict, kind: str, profile_id: str) -> Path:
@@ -990,6 +1011,8 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
     connection["tls_cert_fingerprint"] = re.sub(r"[^0-9a-f]", "", str(incoming_connection.get("tls_cert_fingerprint", connection.get("tls_cert_fingerprint", "")) or "").lower())[:64]
     preference = str(incoming_connection.get("preference", connection.get("preference", "auto"))).lower()
     connection["preference"] = preference if preference in ("auto", "internal", "external") else "auto"
+    direct_route = str(incoming_connection.get("direct_connect_route", connection.get("direct_connect_route", "auto")) or "auto").lower()
+    connection["direct_connect_route"] = direct_route if direct_route in ("auto", "internal", "external") else "auto"
     connection.setdefault("last_successful_route", "")
     connection.setdefault("last_successful_address", "")
 

@@ -283,6 +283,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   adminStatus: () => ipcRenderer.invoke('dragonwilds:admin-status'),
   restartAsAdmin: () => ipcRenderer.invoke('dragonwilds:restart-admin'),
   pickImage: () => ipcRenderer.invoke('dragonwilds:pick-image'),
+  readRendererAsset: (relativePath) => ipcRenderer.invoke('dragonwilds:read-renderer-asset', String(relativePath || '')),
   pickLoadingArt: () => ipcRenderer.invoke('dragonwilds:pick-loading-art'),
   pickDirectory: () => ipcRenderer.invoke('dragonwilds:pick-directory'),
   pickExecutable: () => ipcRenderer.invoke('dragonwilds:pick-executable'),

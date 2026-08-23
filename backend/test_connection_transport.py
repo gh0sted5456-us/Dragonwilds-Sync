@@ -16,6 +16,7 @@ import network_client
 import profile_store
 import server_systems
 import world_directory
+import world_identity
 
 
 class ConnectionTransportTests(unittest.TestCase):
@@ -76,6 +77,39 @@ class ConnectionTransportTests(unittest.TestCase):
         with patch.object(network_client, "_lan_token", return_value=("lan-token", "lan")) as token:
             self.assertEqual(network_client._auth_token(endpoint, "", credential_source="lan"), ("lan-token", "lan"))
             token.assert_called_once_with(endpoint)
+
+    def test_declined_lan_token_falls_through_to_empty_password_challenge(self):
+        endpoint = network_client.normalize_endpoint("192.168.1.20:27051")
+        responses = [
+            unittest.mock.MagicMock(read=lambda: b'{"nonce":"abc"}'),
+            unittest.mock.MagicMock(read=lambda: b'{"token":"open-token","credential_source":"lan"}'),
+        ]
+        with patch.object(network_client, "_lan_token", side_effect=network_client.ConnectionError("LAN trust declined")), \
+                patch.object(network_client, "request", side_effect=responses) as request:
+            token = network_client._auth_token(endpoint, "", credential_source="lan")
+        self.assertEqual(token, ("open-token", "lan"))
+        self.assertEqual(request.call_count, 2)
+        posted = json.loads(request.call_args_list[1].kwargs["data"])
+        self.assertEqual(posted["proof"], hmac.new(b"", b"abc", hashlib.sha256).hexdigest())
+
+    def test_sync_transport_and_identity_keep_distinct_port_defaults(self):
+        self.assertEqual(network_client.normalize_endpoint("192.168.1.20").port, 27051)
+        self.assertEqual(world_identity.normalize_endpoint("192.168.1.20").port, 7777)
+        candidates = world_identity.candidate_endpoints({
+            "connection": {"internal_ip": "192.168.1.20"}
+        })
+        self.assertEqual(candidates, [("internal", "192.168.1.20:27051")])
+
+    def test_lan_trust_checks_all_host_interfaces(self):
+        state = server_systems.SyncState()
+        state.lan_trust_enabled = True
+        with patch.object(server_systems, "local_ip_guess", return_value="10.8.0.2"), \
+                patch.object(server_systems, "local_interface_addresses",
+                             return_value=[server_systems.ipaddress.ip_address("10.8.0.2"),
+                                           server_systems.ipaddress.ip_address("192.168.50.10")]):
+            token = state.issue_lan_token("192.168.50.44")
+        self.assertTrue(token)
+        self.assertEqual(state.token_context(token).get("credential_source"), "lan")
 
     def test_sync_payload_uses_only_live_world_password(self):
         state = server_systems.SyncState()

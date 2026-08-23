@@ -80,7 +80,7 @@ class AuthoritativeRuntimeManager:
         if not callable(setter) or bool(getattr(host, "_dws_runtime_state_bridge", False)):
             return
         manager = self
-        def bridged_set_remote_admin_callbacks(*, authenticate=None, state=None, action=None):
+        def bridged_set_remote_admin_callbacks(*, authenticate=None, state=None, action=None, profiles=None):
             provider = state
             if callable(state):
                 def state_with_lifecycle(profile_id: str):
@@ -105,7 +105,10 @@ class AuthoritativeRuntimeManager:
                     result["runtime"] = runtime
                     return result
                 provider = state_with_lifecycle
-            return setter(authenticate=authenticate, state=provider, action=action)
+            try:
+                return setter(authenticate=authenticate, state=provider, action=action, profiles=profiles)
+            except TypeError:
+                return setter(authenticate=authenticate, state=provider, action=action)
         host.set_remote_admin_callbacks = bridged_set_remote_admin_callbacks
         host._dws_runtime_state_bridge = True
 

@@ -140,14 +140,17 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         },
     }
     if mode == "server":
-        result["active"] = bool((runtime.get("runtime") or {}).get("running"))
+        active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+        result["active"] = bool((runtime.get("runtime") or {}).get("running") and active_id == profile_id)
+        result["sync"]["serving"] = bool(result["sync"]["serving"] and active_id == profile_id)
         result["cl"] = str(((runtime.get("runtime") or {}).get("cl_version") or {}).get("reported_cl") or (runtime.get("runtime") or {}).get("reported_cl") or profile.get("last_reported_cl") or "")
         result["players"] = list((runtime.get("runtime") or {}).get("player_details") or [])[:100]
     elif mode == "coop":
         result["active"] = bool(share.get("serving") and str(_legacy.STATE.active_profile_id or "") == profile_id)
         result["players"] = list((_legacy.PLAYER_SERVICE.status() or {}).get("players") or [])[:100]
     else:
-        result["active"] = bool(_legacy._dragonwilds_client_running())
+        live_id = str(state.setdefault("client", {}).get("live_world_id") or "")
+        result["active"] = bool(_legacy._dragonwilds_client_running() and live_id == profile_id)
         status = profile.get("status") if isinstance(profile.get("status"), dict) else {}
         result["cl"] = str(status.get("reported_cl") or status.get("game_version") or "")
     return result
@@ -178,6 +181,9 @@ def _quick_start(state: dict, params: dict) -> dict:
     # Player mode must never create a second Dragonwilds process. Existing game
     # process ownership remains with the current runtime/profile.
     if _legacy._dragonwilds_client_running():
+        live_id = str(state.setdefault("client", {}).get("live_world_id") or "")
+        if live_id and live_id != profile_id:
+            raise RuntimeError("A different World profile is already active. Exit Dragonwilds before Quick Launch swaps profiles.")
         return {"already_running": True, "quick": _quick_status(state, profile_id, mode)}
     method = "world.play" if kind == "linked" else "singleplayer.play"
     response = _base_handle(method, {"id": profile_id, "profile_id": profile_id})

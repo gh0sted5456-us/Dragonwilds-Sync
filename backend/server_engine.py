@@ -583,8 +583,9 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
     if not selected:
         raise RuntimeError("The selected RuneSchema flavor is missing from this World profile.")
     digest = str(selected.get("sha256") or "")
-    if digest and str(profile.get("runeschema_flavor_applied_sha256") or "") == digest:
-        return {"ok": True, "changed": False, "source": selected.get("name")}
+    # Runtime repair may restore the official core before this profile is
+    # activated. The saved digest is provenance, not proof of live files, so
+    # rematerialize the selected World flavor every time activation prepares it.
     _, archive = select_runeschema_flavor(profile_id, selected_id)
     result = install_runeschema_zip(str(archive), game_root)
     if str(result.get("kind") or "") != "core":

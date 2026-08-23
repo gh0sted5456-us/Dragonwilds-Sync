@@ -11,8 +11,8 @@ const help=path.join(project,'help');
 const helpAssets=path.join(project,'renderer','assets','help');
 const captures=[
   ['getting-started','38-helpy-website.png'],
-  ['characters-rsdw','39-helpy-characters.png'],
-  ['mods-items','40-helpy-mods.png'],
+  ['characters','39-helpy-characters.png'],
+  ['mods-repository','40-helpy-mods.png'],
 ];
 const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.svg':'image/svg+xml','.ico':'image/x-icon'};
 

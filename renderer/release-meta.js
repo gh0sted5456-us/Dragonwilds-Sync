@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.13',
-  name: 'V2.7.13 · Profile Runtime & Mod Import',
+  version: '2.7.14',
+  name: 'V2.7.14 · Final Profile & Interface Cleanup',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,18 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.14',
+    title: 'Final Profile & Interface Cleanup',
+    items: [
+      'Custom RuneSchema flavors are rematerialized after runtime repair and displayed by their saved name on the active server profile.',
+      'Remote Server Login lists every saved server profile and binds the session to its immutable profile ID.',
+      'Quick Launch now scopes running and Sync state to the exact local, connected, co-op, or server profile.',
+      'Character Studio centers its three tabs and keeps the 3D WebGL guest at full rendering priority.',
+      'Settings uses a final coherent alignment layer and retired Microsoft Defender controls no longer appear.',
+      'Helpy now provides subsystem screenshot galleries, refreshed captures, and .rsdwl-first nested-package guidance.',
+      'Discord Rich Presence includes fuller route, profile type, player, health, timer, asset, and settings context.',
+    ],
+  }, {
     version: '2.7.13',
     title: 'Profile Runtime & Mod Import',
     items: [

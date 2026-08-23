@@ -6153,8 +6153,8 @@ def _directory_public_worlds() -> list[dict]:
     return rows
 
 
-def _directory_remote_authenticate(world_name: str, username: str, password: str) -> dict:
-    world_name = str(world_name or "").strip(); username = str(username or "").strip(); password = str(password or "")
+def _directory_remote_authenticate(world_name: str, username: str, password: str, profile_id: str = "") -> dict:
+    world_name = str(world_name or "").strip(); username = str(username or "").strip(); password = str(password or ""); profile_id = str(profile_id or "").strip()
     if not world_name or not password: return {"ok": False}
     host_config = ((load_state().get("application") or {}).get("world_directory_host") or {})
     remote_admin = host_config.get("remote_admin") if isinstance(host_config.get("remote_admin"), dict) else {}
@@ -6162,6 +6162,7 @@ def _directory_remote_authenticate(world_name: str, username: str, password: str
     permissions = remote_admin.get("permissions") if isinstance(remote_admin.get("permissions"), dict) else {}
     for profile in list_server_profiles():
         stored_name = str(profile.get("name") or "").strip(); stored_password = str((profile.get("dedicated_config") or {}).get("admin_pass") or "")
+        if profile_id and str(profile.get("id") or "") != profile_id: continue
         if not stored_name or not secrets.compare_digest(stored_name, world_name): continue
         if not username and stored_password and secrets.compare_digest(stored_password, password):
             return {"ok": True, "world_id": str(profile.get("id") or ""), "world_name": stored_name, "username": "owner", "role": "owner", "permissions": permissions}
@@ -6175,6 +6176,22 @@ def _directory_remote_authenticate(world_name: str, username: str, password: str
                 return {"ok": True, "world_id": str(profile.get("id") or ""), "world_name": stored_name, "username": username,
                         "role": "server-user", "permissions": dict(user.get("permissions") or {})}
     return {"ok": False}
+
+
+def _directory_remote_profiles() -> list[dict]:
+    """List every saved host profile, independent of its public heartbeat."""
+    state = load_state()
+    active_id = str((state.get("server") or {}).get("active_world_id") or "")
+    runtime = ENGINE.status()
+    running_id = active_id if runtime.get("running") else ""
+    return [{
+        "id": str(profile.get("id") or ""),
+        "profile_id": str(profile.get("id") or ""),
+        "name": str(profile.get("name") or "World"),
+        "world_name": str(profile.get("name") or "World"),
+        "online": str(profile.get("id") or "") == running_id,
+        "running": str(profile.get("id") or "") == running_id,
+    } for profile in list_server_profiles() if str(profile.get("id") or "")]
 
 
 def _directory_remote_item_catalog(profile: dict, state: dict) -> dict:
@@ -6379,7 +6396,7 @@ def main() -> int:
                 pass
     DIRECTORY_HOST.set_settings_callback(_persist_directory_web_settings)
     DIRECTORY_HOST.set_public_worlds_provider(_directory_public_worlds)
-    DIRECTORY_HOST.set_remote_admin_callbacks(authenticate=_directory_remote_authenticate, state=_directory_remote_state, action=_directory_remote_action)
+    DIRECTORY_HOST.set_remote_admin_callbacks(authenticate=_directory_remote_authenticate, state=_directory_remote_state, action=_directory_remote_action, profiles=_directory_remote_profiles)
     threading.Thread(target=_startup_runtime_repair, daemon=True, name="Dragonwilds-Base-Runtime-Repair").start()
     threading.Thread(target=_startup_world_directory, daemon=True, name="Dragonwilds-World-Directory-Startup").start()
     # Newline-delimited JSON-RPC over stdio. Electron owns the service

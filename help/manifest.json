@@ -1,7 +1,7 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 5,
-  "updated": "2026-08-22",
+  "version": 6,
+  "updated": "2026-08-23",
   "title": "Helpy: Dragonwilds Sync Field Guide",
   "subtitle": "Detailed walkthroughs shared by the desktop application and the Dragonwilds Sync website.",
   "pages": [
@@ -12,6 +12,7 @@
       "summary": "Install, launch, detect Dragonwilds, and create your first usable profile.",
       "image": "../assets/help/01-getting-started.png",
       "image_alt": "Dragonwilds Sync getting-started screen",
+      "images": [{"src":"../assets/help/01-getting-started.png","alt":"Getting Started workspace"},{"src":"../assets/help/14-tours.png","alt":"Guided navigation tour"},{"src":"../assets/help/15-notifications.png","alt":"Notifications and progress center"}],
       "intro": "Dragonwilds Sync keeps Worlds, characters, mods, and launcher settings together without replacing Steam or the game.",
       "sections": [
         {"title": "First launch", "steps": ["Launch the portable EXE or AppImage. On Linux, mark the AppImage executable or add it through Gear Lever.", "Open Settings and confirm the detected Dragonwilds installation, save directory, and preferred launch provider.", "Use Refresh Help if this guide was opened before the newest manifest downloaded."]},
@@ -27,6 +28,7 @@
       "summary": "Understand the focused tools, global search, themes, notifications, and update controls.",
       "image": "../assets/help/14-tours.png",
       "image_alt": "Application tour and navigation",
+      "images": [{"src":"../assets/help/14-tours.png","alt":"Appy navigation and guided tours"},{"src":"../assets/help/13-settings.png","alt":"Application Settings workspace"},{"src":"../assets/help/38-helpy-website.png","alt":"Helpy field guide"}],
       "intro": "Each Appy is a focused workspace. Permissions and profile context follow you between them.",
       "sections": [
         {"title": "Core Appys", "steps": ["Worlds manages singleplayer, Connected World, and server profiles.", "Characters edits appearance, inventory, equipment, pose, and preview background.", "Mods manages the shared repository plus profile-specific overrides.", "Servers provides runtime, SteamCMD update, map, remote-user, and WebHost controls.", "Helpy opens this same GitHub-managed guide in a focused in-app view."]},
@@ -41,6 +43,7 @@
       "summary": "Build profiles, assign characters, activate mod sets, and use desktop quick launchers.",
       "image": "../assets/help/02-worlds.png",
       "image_alt": "World profile placards",
+      "images": [{"src":"../assets/help/02-worlds.png","alt":"World profile placards"},{"src":"../assets/help/31-world-manifest-workspace.jpg","alt":"World manifest workspace"},{"src":"../assets/help/12-world-save.png","alt":"World save management"}],
       "intro": "A profile is the durable identity for a World. Its presentation, connection details, character links, and selected mods travel together.",
       "sections": [
         {"title": "Profile types", "steps": ["Singleplayer profiles own or reference a local save.", "Connected World profiles retain remote connection metadata and may share a display name with a local World.", "Dedicated Server profiles control a server installation and runtime."]},
@@ -56,6 +59,7 @@
       "summary": "Connect by address, discover LAN hosts, receive metadata, and assign characters.",
       "image": "../assets/help/09-networking.png",
       "image_alt": "Networking and connection tools",
+      "images": [{"src":"../assets/help/09-networking.png","alt":"Direct Connect and LAN discovery"},{"src":"../assets/help/29-manifest-hosts.png","alt":"Saved Sync hosts"},{"src":"../assets/help/24-world-browser-pagination.jpg","alt":"World browser and discovery"}],
       "intro": "Connected Worlds use a simple game connection. Sync fingerprints are metadata identifiers, not login requirements.",
       "sections": [
         {"title": "Direct connection", "steps": ["Choose Add Connected World.", "Enter the IP address or hostname, World Name, and World Password. No client/server hash is required.", "Choose one of your characters. A character may be assigned to multiple Worlds.", "Connect once to receive the host icon, banner, description, mod list, and other published metadata."]},
@@ -71,6 +75,7 @@
       "summary": "Edit appearance, colors, pose, background, equipment, inventory, and hotbar safely.",
       "image": "../assets/help/04-character-editor.png",
       "image_alt": "Character Editor with live 3D preview",
+      "images": [{"src":"../assets/help/04-character-editor.png","alt":"Character Editor and 3D preview"},{"src":"../assets/help/29-character-studio.png","alt":"Character Studio workspace"},{"src":"../assets/help/32-character-studio-live.jpg","alt":"Live save-backed character editing"},{"src":"../assets/help/33-magic-wheel.jpg","alt":"Character spell and action wheel"}],
       "intro": "The Character Editor separates save-backed edits from preview rendering so repeated changes do not reload the model unexpectedly.",
       "sections": [
         {"title": "Appearance", "steps": ["Choose Appearance and edit face, hair, beard, body type, and color palettes.", "Use the palette popup for skin, eyes, hair, or beard instead of narrow swatch rows.", "Save the character record when the intended values are complete."]},
@@ -86,6 +91,7 @@
       "summary": "Import, fingerprint, classify, edit, and assign mods to profiles.",
       "image": "../assets/help/37-mod-management.png",
       "image_alt": "Mod management placards and categories",
+      "images": [{"src":"../assets/help/37-mod-management.png","alt":"Mod Management repository"},{"src":"../assets/help/40-helpy-mods.png","alt":"Mod and item guidance"},{"src":"../assets/help/08-monaco.png","alt":"Built-in configuration editor"}],
       "intro": "The shared mod repository stores a master copy while profiles select repository versions or maintain profile-specific overrides.",
       "sections": [
         {"title": "Import and fingerprint", "steps": ["Import an archive or scan a supported game/server mod directory.", "Sync identifies RuneSchema, UE4SS, and PAK layouts and records an SHA-256 fingerprint.", "A later rescan detects added, removed, or replaced payloads even when names are unchanged."]},
@@ -102,6 +108,7 @@
       "summary": "Search vanilla and modded items, inspect identities, and grant items through controlled permissions.",
       "image": "../assets/help/16-spawner.png",
       "image_alt": "Item Spawner repository",
+      "images": [{"src":"../assets/help/16-spawner.png","alt":"Item Spawner repository"},{"src":"../assets/help/36-themed-item-editor.png","alt":"Themed item editor"},{"src":"../assets/help/34-recipe-categories.jpg","alt":"Recipe categories"}],
       "intro": "The Item Repository combines the RSDW baseline with item manifests supplied by installed mods.",
       "sections": [
         {"title": "Desktop use", "steps": ["Open Item Spawner and choose the active server profile.", "Filter by display name, internal name, Persistence ID, category, vanilla, modded, or unrecognized status.", "Select an online player, item, and safe stack quantity, then confirm the grant."]},
@@ -116,6 +123,7 @@
       "summary": "Install with SteamCMD, configure runtime, monitor updates, and manage server mods.",
       "image": "../assets/help/05-server-setup.png",
       "image_alt": "Dedicated server setup",
+      "images": [{"src":"../assets/help/05-server-setup.png","alt":"Dedicated Server setup"},{"src":"../assets/help/06-server-health.png","alt":"Server health and runtime"},{"src":"../assets/help/11-maintenance.png","alt":"Server maintenance"},{"src":"../assets/help/10-map.png","alt":"Live server map"}],
       "intro": "Server Manager controls the local dedicated server. Public WebHost creation is a separate advanced feature.",
       "sections": [
         {"title": "Install", "steps": ["Create a Dedicated Server profile and choose an install directory.", "Provide SteamCMD or let Sync detect it, then start installation.", "Watch the status and progress text while Steam downloads, verifies, and applies the server build.", "Configure World Name, World Password, ports, save path, and startup options."]},
@@ -130,6 +138,7 @@
       "summary": "Create World-scoped accounts with individual passwords and least-privilege Appy access.",
       "image": "../assets/help/WebHost-Server-Admin-Login.png",
       "image_alt": "Remote Server Admin login",
+      "images": [{"src":"../assets/help/WebHost-Server-Admin-Login.png","alt":"Server Management login"},{"src":"../assets/help/WebHost-Remote-Mobile.png","alt":"Remote Server mobile workspace"},{"src":"../assets/help/WebHost-Remote-Audit.png","alt":"Remote user audit"},{"src":"../assets/help/WebHost-Remote-Config.png","alt":"Remote configuration editor"}],
       "intro": "Each remote user has an independent password hash, one assigned World, and an explicit permission snapshot.",
       "sections": [
         {"title": "Create an account", "steps": ["Open the server profile, then Remote Access or Server Manager users.", "Enter a unique username and a strong user-specific password. This is not the World Password and not the owner Admin Password.", "Choose the exact World and enable only the required permissions.", "Share the Server Admin URL, World selection, username, and that user's password through a secure channel."]},
@@ -146,6 +155,7 @@
       "summary": "Choose the correct external surface and publish accurate World metadata.",
       "image": "../assets/help/28-webhost-preview.png",
       "image_alt": "WebHost preview and public World page",
+      "images": [{"src":"../assets/help/28-webhost-preview.png","alt":"WebHost preview"},{"src":"../assets/help/WebHost-World-Detail-Mobile.png","alt":"Public World detail"},{"src":"../assets/help/19-webhost-mods.png","alt":"Published mod metadata"},{"src":"../assets/help/26-hosted-worlds.jpg","alt":"Hosted Worlds browser"}],
       "intro": "Remote Server Admin and public World hosting are separate surfaces. WebHost is advanced because it combines both.",
       "sections": [
         {"title": "Remote Server Admin only", "body": "Enable Server Manager remote access to publish only the authenticated login surface. The public directory and World placards remain disabled."},
@@ -161,10 +171,12 @@
       "summary": "Create desktop quick launchers and safely import or export validated package files.",
       "image": "../assets/help/31-world-manifest-workspace.jpg",
       "image_alt": "World manifest and package workspace",
-      "intro": "RSDWL is used for profile-aware launchers and validated exchange records. Normal mod ZIP archives remain installation payloads.",
+      "images": [{"src":"../assets/help/31-world-manifest-workspace.jpg","alt":"Validated .rsdwl manifest workspace"},{"src":"../assets/help/30-help-numbered-screenshots.jpg","alt":"Package and subsystem walkthrough"}],
+      "intro": "A validated .rsdwl is the primary exchange path. Sync also accepts safely structured ZIP files and renamed .rsdwl compatibility archives so creators may keep their own nested folder layout.",
       "sections": [
+        {"title": "Validated .rsdwl — primary path", "steps": ["Export from Dragonwilds Sync to create the package ID, manifest, payload index, sizes, SHA-256 hashes, provenance, and signature.", "Creators may organize payload files in their own nested folders; the manifest maps those safe relative paths for Sync.", "Import the .rsdwl directly. Sync validates it before reading or applying any profile, World, character, or mod records."]},
         {"title": "Desktop launcher", "steps": ["Choose Send to Desktop on a World or server profile.", "Sync writes an RSDWL launcher that carries the profile identifier as a quick-launch argument.", "Open it to activate the profile, stage its mods, and launch the intended client or server flow."]},
-        {"title": "Import compatibility", "body": "The importer recognizes application exports and manually converted ZIP containers. It normalizes an extra top-level folder and legacy layouts, validates safe paths, then distinguishes profile metadata from ordinary mod payloads."},
+        {"title": "ZIP and custom-folder compatibility", "body": "As a secondary path, the importer recognizes ordinary mod ZIPs and manually renamed .rsdwl ZIP containers. It walks nested members, normalizes an extra top-level folder and legacy layouts, rejects unsafe paths, then identifies RuneSchema, UE4SS, or PAK payloads without requiring creators to flatten their folders."},
         {"title": "Safety", "body": "Do not trust extension renaming alone. Sync rejects traversal paths and inspects manifests, package types, hashes, signatures, payload indexes, and known metadata before applying records."}
       ]
     },

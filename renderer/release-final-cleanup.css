@@ -1,0 +1,42 @@
+/* Final layout authority. Keep this stylesheet last so retired compatibility
+   views cannot reintroduce obsolete spacing or four-column character tabs. */
+.character-editor-redesign-head .character-editor-tabs{
+  grid-template-columns:repeat(3,minmax(112px,1fr))!important;
+  justify-self:center!important;
+  width:min(100%,520px)!important;
+  min-height:44px!important;
+}
+.character-editor-redesign-head .character-editor-tabs>button{
+  display:flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  min-width:0!important;
+  padding:8px 12px!important;
+  text-align:center!important;
+}
+.settings-layout{grid-template-columns:minmax(180px,220px) minmax(0,1fr)!important;gap:18px!important;align-items:start!important}
+.settings-layout>div{min-width:0!important}
+.settings-nav{display:grid!important;gap:7px!important;padding:8px!important}
+.settings-nav button,.settings-subnav button{display:flex!important;align-items:center!important;justify-content:center!important;min-height:40px!important;padding:9px 12px!important;text-align:center!important;white-space:normal!important}
+.settings-subnav{display:flex!important;justify-content:center!important;align-items:stretch!important;gap:7px!important;flex-wrap:wrap!important;margin:0 auto 14px!important;padding:7px!important}
+.settings-subnav button{flex:1 1 140px!important;max-width:260px!important}
+.settings-section{margin:0 0 16px!important;border-radius:14px!important;overflow:hidden!important}
+.settings-section>h2,.settings-section>.panel-header,.settings-section>.settings-section-head{padding:15px 18px!important}
+.settings-section>.settings-row{grid-template-columns:minmax(220px,.78fr) minmax(0,1.22fr)!important;align-items:center!important;gap:22px!important;margin:0 18px!important;padding:15px 0!important}
+.settings-row>*:last-child{justify-self:stretch!important;max-width:100%!important}
+.settings-row>.toggle,.settings-row>.status-pill{justify-self:end!important}
+.settings-row .header-actions{justify-content:flex-end!important}
+.settings-row .path-field,.settings-row .health-evidence-grid{width:100%!important}
+.settings-page-note{margin:0 0 14px!important;text-align:center!important}
+@media(max-width:1050px){
+  .settings-layout{grid-template-columns:1fr!important}
+  .settings-nav{grid-template-columns:repeat(4,minmax(120px,1fr))!important;overflow-x:auto!important}
+  .settings-section>.settings-row{grid-template-columns:1fr!important;gap:10px!important}
+  .settings-row>.toggle,.settings-row>.status-pill{justify-self:start!important}
+  .settings-row .header-actions{justify-content:flex-start!important}
+}
+@media(max-width:700px){
+  .character-editor-redesign-head .character-editor-tabs{grid-template-columns:repeat(3,minmax(84px,1fr))!important;width:100%!important}
+  .settings-nav{grid-template-columns:repeat(2,minmax(120px,1fr))!important}
+  .settings-section>.settings-row{margin-inline:12px!important}
+}

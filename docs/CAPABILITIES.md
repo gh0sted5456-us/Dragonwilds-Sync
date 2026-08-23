@@ -61,7 +61,7 @@ This is the current source-level capability contract for `testing-ground`. A cap
 
 ## Maintenance, security, and updates
 
-- Atomic JSON/profile writes, Windows replace retry, durable secret references, signing/verification, path-bounded imports, archive validation, Defender integration, access policies, and audit/notification paths are present.
+- Atomic JSON/profile writes, Windows replace retry, durable secret references, signing/verification, path-bounded imports, archive validation, SHA-256 integrity checks, access policies, and audit/notification paths are present.
 - Launcher, dedicated server, UE4SS, RuneSchema, DragonConnect, RSDW, and Community sources have explicit ownership and update status.
 - Backups and scheduled maintenance use conservative stop-first behavior unless a real live-save quiesce contract is proven.
 
@@ -69,5 +69,5 @@ This is the current source-level capability contract for `testing-ground`. A cap
 
 - Windows Portable is the primary packaged desktop shape.
 - Ubuntu AppImage has build and automated smoke paths but remains subject to real Linux/Proton/game acceptance.
-- Platform-specific actions such as Windows shortcuts, firewall, elevation, Defender, and process-tree behavior must be tested on their real platform.
+- Platform-specific actions such as Windows shortcuts, firewall, elevation, and process-tree behavior must be tested on their real platform.
 - A green source check is not a substitute for clean-machine packaged acceptance.

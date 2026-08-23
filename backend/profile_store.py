@@ -353,7 +353,7 @@ def load_state() -> dict:
     application.setdefault("background_server_checks", True)
     application.setdefault("network_diagnostics_enabled", True)
     application.setdefault("connection_diagnostic_reports", False)
-    application.setdefault("defender_review_enabled", True)
+    application.pop("defender_review_enabled", None)
     performance = application.setdefault("performance", {})
     performance["hardware_acceleration"] = performance.get("hardware_acceleration") is not False
     try:

@@ -540,7 +540,7 @@ class DirectoryHost:
         self.reachability = {"checked": False, "loopback_ok": False, "public_ok": False, "message": "Not tested"}
         self.mapping_stop = threading.Event(); self.mapping_thread: threading.Thread | None = None
         self.admin_token = secrets.token_urlsafe(32); self.settings_changed = None
-        self.public_worlds_provider = None; self.remote_authenticator = None
+        self.public_worlds_provider = None; self.remote_profiles_provider = None; self.remote_authenticator = None
         self.remote_state_provider = None; self.remote_action_handler = None
         self.remote_sessions: dict[str, dict] = {}; self.remote_login_attempts: dict[str, list[float]] = {}
 
@@ -550,8 +550,9 @@ class DirectoryHost:
     def set_public_worlds_provider(self, callback) -> None:
         self.public_worlds_provider = callback
 
-    def set_remote_admin_callbacks(self, *, authenticate=None, state=None, action=None) -> None:
+    def set_remote_admin_callbacks(self, *, authenticate=None, state=None, action=None, profiles=None) -> None:
         self.remote_authenticator = authenticate; self.remote_state_provider = state; self.remote_action_handler = action
+        self.remote_profiles_provider = profiles
 
     @staticmethod
     def _catalog_row(row: dict) -> dict:
@@ -736,9 +737,10 @@ class DirectoryHost:
     def remote_login_profiles(self) -> list[dict]:
         """Return only the safe identity needed to choose a hosted profile."""
         rows: list[dict] = []
-        if self.public_worlds_provider:
+        provider = self.remote_profiles_provider or self.public_worlds_provider
+        if provider:
             try:
-                candidates = self.public_worlds_provider() or []
+                candidates = provider() or []
             except Exception as exc:
                 self._event("remote_login_profiles", ok=False, detail=str(exc))
                 candidates = []
@@ -749,18 +751,21 @@ class DirectoryHost:
                 world_name = str(source.get("world_name") or source.get("name") or "").strip()[:160]
                 if not profile_id or not world_name:
                     continue
-                rows.append({"profile_id": profile_id, "world_name": world_name, "running": bool(source.get("online"))})
+                rows.append({"profile_id": profile_id, "world_name": world_name, "running": bool(source.get("running", source.get("online")))})
         unique = {str(row["profile_id"]): row for row in rows}
         return sorted(unique.values(), key=lambda row: (not row["running"], str(row["world_name"]).casefold()))
 
-    def remote_login(self, world_name: str, username: str, password: str, remote_ip: str, user_agent: str) -> tuple[str, dict]:
+    def remote_login(self, world_name: str, username: str, password: str, remote_ip: str, user_agent: str, profile_id: str = "") -> tuple[str, dict]:
         now = time.time(); key = f"{remote_ip}|{str(world_name).casefold()}|{str(username).casefold()}"
         attempts = [stamp for stamp in self.remote_login_attempts.get(key, []) if now - stamp < 600]
         if len(attempts) >= 5:
             self._remote_audit("login_rate_limited", ok=False, world_name=world_name, remote_ip=remote_ip, user_agent=user_agent, detail="Too many failed attempts")
             raise RuntimeError("Too many attempts. Wait ten minutes before trying again.")
         if not self.remote_authenticator: raise RuntimeError("Remote Server Admin is not available")
-        result = self.remote_authenticator(str(world_name or ""), str(username or ""), str(password or "")) or {}
+        try:
+            result = self.remote_authenticator(str(world_name or ""), str(username or ""), str(password or ""), str(profile_id or "")) or {}
+        except TypeError:
+            result = self.remote_authenticator(str(world_name or ""), str(username or ""), str(password or "")) or {}
         if not result.get("ok"):
             attempts.append(now); self.remote_login_attempts[key] = attempts
             self._remote_audit("login_failed", ok=False, world_name=world_name, remote_ip=remote_ip, user_agent=user_agent, detail="World, server user, or password was rejected")
@@ -1220,7 +1225,7 @@ class DirectoryHost:
                         length = int(self.headers.get("Content-Length", "0"))
                         if length <= 0 or length > 16 * 1024: raise ValueError("Login body must be 1-16384 bytes")
                         values = json.loads(self.rfile.read(length)); token, session = controller.remote_login(
-                            str(values.get("world_name") or ""), str(values.get("username") or ""), str(values.get("password") or ""), self.client_address[0], str(self.headers.get("User-Agent") or ""))
+                            str(values.get("world_name") or ""), str(values.get("username") or ""), str(values.get("password") or ""), self.client_address[0], str(self.headers.get("User-Agent") or ""), str(values.get("profile_id") or ""))
                         cookie = f"dws_remote_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={8 * 60 * 60}"
                         self._json({"ok": True, "world_name": session.get("world_name"), "role": session.get("role")}, cors=False, extra_headers={"Set-Cookie": cookie})
                     except RuntimeError as exc: self._json({"error": str(exc)}, 429, cors=False)

@@ -462,13 +462,16 @@ def install_directory_patches(directory_host_module) -> None:
 
     original_set_remote_callbacks = host_class.set_remote_admin_callbacks
 
-    def set_remote_admin_callbacks(self, *, authenticate=None, state=None, action=None) -> None:
-        original_set_remote_callbacks(
-            self,
-            authenticate=authenticate,
-            state=_core_state_provider(state),
-            action=_core_action_handler(action),
-        )
+    def set_remote_admin_callbacks(self, *, authenticate=None, state=None, action=None, profiles=None) -> None:
+        payload = {
+            "authenticate": authenticate,
+            "state": _core_state_provider(state),
+            "action": _core_action_handler(action),
+        }
+        try:
+            original_set_remote_callbacks(self, **payload, profiles=profiles)
+        except TypeError:
+            original_set_remote_callbacks(self, **payload)
 
     host_class.set_remote_admin_callbacks = set_remote_admin_callbacks
 

@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.14",
+      "title": "Dragonwilds Sync V2.7.14",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Custom RuneSchema flavors are re-applied after runtime repair and shown by their saved names.",
+        "Remote Server Login and Quick Launch bind to the exact selected profile ID.",
+        "Character Studio preview priority, centered tabs, and Settings alignment are cleaned up.",
+        "Retired Microsoft Defender UI is removed in favor of explicit path, manifest, and checksum validation.",
+        "Helpy adds subsystem screenshot galleries, refreshed captures, and .rsdwl-first nested-package guidance.",
+        "Discord Rich Presence reports fuller World, route, player, health, and workspace context."
+      ]
+    },
+    {
       "version": "2.7.13",
       "title": "Dragonwilds Sync V2.7.13",
       "date": "2026-08-23",

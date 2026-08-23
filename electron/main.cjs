@@ -5,6 +5,14 @@ const { app, ipcMain, shell } = require('electron');
 const path = require('path');
 const { buildQuickShortcutArgs, normalizeProfileId, normalizeQuickMode } = require('./quick_shortcut.cjs');
 
+// The save-backed RSDWModel preview is a WebContents guest. Keep its WebGL
+// renderer at full priority even when a popover or another launcher window has
+// focus; Chromium's background throttling otherwise makes initial model-layer
+// hydration look stalled on Linux and lower-power Windows systems.
+app.on('web-contents-created', (_event, contents) => {
+  try { contents.setBackgroundThrottling(false); } catch (_) {}
+});
+
 
 function createV3QuickShortcut(data = {}) {
   if (process.platform !== 'win32') throw new Error('Create Quick Shortcut is currently a Windows desktop feature.');

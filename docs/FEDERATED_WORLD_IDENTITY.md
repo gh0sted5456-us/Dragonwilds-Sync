@@ -19,7 +19,7 @@ World classification is consistent across native/public sessions, directory cand
 - **Compatibility preview:** authenticated preflight reports route, latency, required file count/bytes, runtime evidence, restart likelihood, fingerprint state, and credential warnings before Join.
 - **Favorites and alerts:** opt-in, deduplicated online/offline, maintenance, identity-change, and shared-character notifications.
 - **Directory moderation:** exact-fingerprint/operator local blocks, local report notes, and self-hosted directory fingerprint revocations.
-- **Character consent inbox:** authenticated `.rsdwl` uploads are size-bounded, package-inspected, Defender-reviewed where available, quarantined, and accepted/rejected by a server administrator.
+- **Character consent inbox:** authenticated `.rsdwl` uploads are size-bounded, safe-path and checksum inspected, quarantined, and accepted/rejected by a server administrator.
 - **World identity cards:** `.dwsworld` JSON cards carry safe presentation/routes/fingerprint data, preserve a verified operator signature when available, and never include credentials.
 - **Observability:** the self-hosted directory retains a bounded heartbeat/failure/revocation activity log and 24-hour summary.
 

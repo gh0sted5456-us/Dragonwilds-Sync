@@ -36,7 +36,7 @@ All website rows remain untrusted candidates. A World is promoted only when the 
 
 ## Character consent inbox
 
-When explicitly enabled on a hosted World, an authenticated client can submit an `.rsdwl` character package. The server enforces a 32 MiB limit, validates the package envelope and checksums, invokes Microsoft Defender where available, and stores the result in a quarantine directory. Nothing is written to a live character save. The administrator must approve the entry before it enters the shared character library, or reject it to delete the quarantined package.
+When explicitly enabled on a hosted World, an authenticated client can submit an `.rsdwl` character package. The server enforces a 32 MiB limit, validates safe paths, the package envelope, and checksums, and stores the result in a quarantine directory. Nothing is written to a live character save. The administrator must approve the entry before it enters the shared character library, or reject it to delete the quarantined package.
 
 ## Verification requirement
 

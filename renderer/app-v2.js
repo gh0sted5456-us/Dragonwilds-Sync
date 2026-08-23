@@ -108,7 +108,6 @@
     integrationsLoading: false,
     detachedWindows: [],
     busy: new Set(),
-    defenderStatus: null,
     adminStatus: { platform:'', elevated:false, canRelaunch:false, linux:false, wineProton:false, showLinuxSettings:false },
     discordStatus: null,
     entered: false,
@@ -606,13 +605,6 @@
     rerenderSelected();
   }
 
-  function defenderStatusMarkup(status) {
-    if (!status) return `<span class="status-pill unknown">NOT CHECKED</span>`;
-    if (status.enabled) return `<span class="status-pill online">ACTIVE · ${escapeHtml(status.mode || 'Defender')}</span>`;
-    if (status.available) return `<span class="status-pill unknown">AVAILABLE · NOT ACTIVE</span>`;
-    return `<span class="status-pill offline">UNAVAILABLE / DISABLED</span>`;
-  }
-
   function escapeHtml(value = '') {
     return String(value).replace(/[&<>'"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[ch]));
   }
@@ -1019,7 +1011,8 @@
     const details = showWorld && name ? `${mode}: ${name}` : mode;
     const health = extra.health?.score != null && cfg.show_server_health ? `Health ${Math.round(Number(extra.health.score))}` : '';
     const players = extra.playerCount != null && cfg.show_player_count !== false ? `${extra.playerCount} player${Number(extra.playerCount) === 1 ? '' : 's'}` : '';
-    const stateText = [players, health, extra.state || ''].filter(Boolean).join(' · ');
+    const modeState = extra.state || (world?.kind === 'singleplayer' ? 'Local World' : world?.kind === 'linked' ? 'Connected World' : world ? 'DragonConnect World' : 'Desktop launcher');
+    const stateText = [players, health, modeState].filter(Boolean).join(' · ');
     const key = `${details}|${stateText}`;
     if (!extra.force && key === state.discordPresenceKey) return;
     if (!state.discordPresenceStartedAt || extra.resetTimer || state.discordPresenceKey.split('|')[0] !== details) state.discordPresenceStartedAt = Math.floor(Date.now() / 1000);
@@ -1031,6 +1024,8 @@
         startTimestamp: state.discordPresenceStartedAt,
         largeImage: 'dragonwilds_sync',
         largeText: 'Dragonwilds Sync',
+        smallImage: extra.smallImage || 'dragonwilds_sync',
+        smallText: extra.smallText || mode,
         partySize: extra.playerCount,
         partyMax: extra.playerMax,
         buttons: [
@@ -1057,8 +1052,8 @@
       return;
     }
     if (state.route === 'world-management') setDiscordPresence('Managing Worlds', null);
-    else if (state.route === 'characters-app') setDiscordPresence('Editing Characters', null, { state: 'Character Studio' });
-    else if (state.route === 'mods-app') setDiscordPresence('Managing Mods', null, { state: 'Mod Repository' });
+    else if (state.route === 'characters-app') setDiscordPresence('Editing Characters', null, { state: state.characterSelectedId ? 'Live 3D Character Studio' : 'Character Library' });
+    else if (state.route === 'mods-app') setDiscordPresence('Managing Mods', null, { state: `${state.modExplorerScope === 'server' ? 'Server' : 'Player'} Mod Repository` });
     else if (state.route === 'rsdw-launcher') setDiscordPresence('Using RSDW-L', null, { state: 'Dragonwilds Toolkit' });
     else if (state.route === 'webhost') setDiscordPresence('Managing Sync', null, { state: 'Web Hosting' });
     else if (state.route === 'profile') setDiscordPresence('Viewing Profile', null, { state: 'Dragonwilds Sync' });
@@ -1067,7 +1062,7 @@
     else if (state.route === 'private-worlds' || state.route === 'singleplayer') setDiscordPresence('Managing Worlds', null);
     else if (state.route === 'worlds') setDiscordPresence('Browsing Worlds', null);
     else if (state.route === 'help') setDiscordPresence('Reading Help', null);
-    else if (state.route === 'settings') setDiscordPresence('Configuring Dragonwilds Sync', null);
+    else if (state.route === 'settings') setDiscordPresence('Configuring Dragonwilds Sync', null, { state: `${String(state.settingsTab||'application').replaceAll('-',' ')} settings` });
     else setDiscordPresence('Using Dragonwilds Sync', null);
   }
 
@@ -3248,6 +3243,12 @@
 
 
   function metric(label, value) {
+    if(label==='RuneSchema Core'&&value==='Official GitHub Release'){
+      const profile=activeServerWorld?.();
+      const flavors=Array.isArray(profile?.runeschema_flavors)?profile.runeschema_flavors:[];
+      const selected=flavors.find((row)=>String(row?.id)===String(profile?.runeschema_flavor_id||'official'));
+      value=String(profile?.runeschema_flavor_id||'official')!=='official'?(selected?.name||profile?.runeschema_source_name||'Custom RuneSchema'):(profile?.runeschema_source_name||selected?.name||'Official GitHub');
+    }
     return `<div class="metric"><span>${escapeHtml(label)}</span><strong title="${escapeHtml(value || '—')}">${escapeHtml(value || '—')}</strong></div>`;
   }
 
@@ -3534,8 +3535,6 @@
     const serverSecurity = manifest.security_posture || {};
     const runtimeStack = manifest.runtime_stack || world.status?.runtime_stack || {};
     const clientRuntime = state.data?.client?.runtime || {};
-    const serverDefender = serverSecurity.defender || {};
-    const clientDefender = world.last_sync?.security?.defender || {};
     const route = world.connection?.last_successful_route;
     const routeLabel = route ? `${route[0].toUpperCase()}${route.slice(1)} · ${world.connection?.last_successful_address || ''}` : 'Not connected yet';
     const advertisedConnection = manifest.connection || world.status?.connection || {};
@@ -3586,8 +3585,6 @@
             ${metric('Server CPU', hw.cpu || '—')}
             ${gpuListMarkup(hw)}
             ${metric('Server Memory', ramSummary)}
-            ${metric('Server Defender', serverDefender.enabled ? `Active · ${serverDefender.mode || 'Normal'}` : (manifest.version ? 'Not active / not reported' : '—'))}
-            ${metric('Client Defender', clientDefender.enabled ? `Active · ${clientDefender.mode || 'Normal'}` : (world.last_sync?.timestamp ? 'Skipped / unavailable' : '—'))}
             <div style="height:10px"></div>
             ${metric('Last Sync', world.last_sync?.timestamp || 'Never')}
             ${community.discord_invite ? `<div class="world-community-inline"><button class="btn primary" data-open-external="${escapeHtml(community.discord_invite)}">Open World Discord ↗</button><small>This operator-provided invite became available only after the World was successfully linked.</small>${community.discord_guild_id?`<iframe class="discord-world-widget" title="Live Discord community" src="https://discord.com/widget?id=${escapeHtml(community.discord_guild_id)}&theme=dark" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts" referrerpolicy="no-referrer"></iframe><small>Live occupants appear only when the Discord community enables its public Server Widget.</small>`:''}</div>`:''}
@@ -3695,6 +3692,8 @@
     const runeFlavors = (p.runeschema_flavors || [{id:'official',name:'Official GitHub',kind:'official'}]).filter((row,index,all)=>row&&all.findIndex(x=>String(x.id)===String(row.id))===index);
     if(!runeFlavors.some(row=>String(row.id)==='official'))runeFlavors.unshift({id:'official',name:'Official GitHub',kind:'official'});
     const selectedRuneFlavor=String(p.runeschema_flavor_id||'official');
+    const selectedRuneFlavorRow=runeFlavors.find((row)=>String(row.id)===selectedRuneFlavor)||runeFlavors[0]||{name:'Official GitHub'};
+    const selectedRuneFlavorName=String(selectedRuneFlavor!=='official'?(selectedRuneFlavorRow.name||p.runeschema_source_name||'Custom RuneSchema'):(p.runeschema_source_name||selectedRuneFlavorRow.name||'Official GitHub')).trim();
     const fmtSize = (n) => n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(0, n || 0) / 1024 < 1 ? (n || 0) + ' B' : ((n || 0) / 1024).toFixed(1) + ' KB'}`;
     const ramSummary = serverHw.ram_total_gb ? `${serverHw.ram_total_gb} GB total${serverHw.ram_available_gb != null ? ` · ${serverHw.ram_available_gb} GB available` : ''}${serverHw.ram_used_gb != null ? ` · ${serverHw.ram_used_gb} GB used` : ''}` : '—';
     const updateBanner = gameVersion.server_current === false ? `<div class="server-update-banner"><div><strong>Dragonwilds dedicated server update available</strong><span>Installed build ${escapeHtml(gameVersion.server_installed_buildid || 'unknown')} · latest ${escapeHtml(gameVersion.server_latest_buildid || 'unknown')}${gameVersion.release_dates_align ? ' · client/server release dates align' : ''}</span></div><button class="btn primary" id="banner-update-server">Update in Settings</button></div>` : '';
@@ -4017,7 +4016,7 @@
           ['Recipe categories','Recipe filters use the authoritative created-item identifiers from the current RSDW catalog. Equipment, Building, Consumables, Ammunition, and Materials show live counts; only genuine quest/special outputs remain Other / Unclassified.','34-recipe-categories.jpg','V1.1.1 corrected recipe category counts and cards'],
           ['Character identity','Character Overview keeps the selected save identity, statistics, combat tags, export controls, and World associations together. The retired Ledger and Character Map surfaces are no longer duplicated.'],
           ['Clone or delete','Clone makes an independent identity and save. Delete first creates a checksum-verified recovery backup, then removes the selected character.'],
-          ['Share for operator review','A World that accepts character submissions places every authenticated .rsdwl package in quarantine. Structural limits, checksums and Defender review run before the operator can approve it into the shared starter library.'],
+          ['Share for operator review','A World that accepts character submissions places every authenticated .rsdwl package in quarantine. Structural limits, safe paths, and checksums are verified before the operator can approve it into the shared starter library.'],
           ['RSDW icons without launcher replacement','RSDWTools data and the complete upstream icon manifest can refresh on a schedule without replacing Dragonwilds Sync. Upstream icon records are replaced atomically; custom items retain their own selected or embedded icon associations.']
         ], tips:['Do not edit the same save in the game and the editor simultaneously.','A preserve-only save can be backed up but is not presented as safely editable.','The status bar reports loading, unsaved changes, validation and save results.']
       },
@@ -4261,9 +4260,6 @@
       </section><section class="settings-section"><h2>Advanced Hosting</h2>
         <div class="settings-row"><div class="settings-copy"><strong>Enable Multiple Servers</strong><span>Dedicated World profiles expose a Server Number/Instance; game and Sync ports derive automatically from that number.</span></div><button class="toggle ${(a.advanced || {}).multiple_servers_enabled ? 'on' : ''}" id="toggle-multiple-servers"></button></div>
         <div class="settings-row"><div class="settings-copy"><strong>Guided setup</strong><span>Repeat a host walkthrough without deleting profiles or changing the other host feature.</span></div><div class="header-actions"><button class="btn ghost" id="start-server-tour">Server Setup</button><button class="btn ghost" id="start-webhost-tour">WebHost Setup</button></div></div>
-      </section><section class="settings-section"><h2>Microsoft Defender</h2>
-        <div class="settings-row"><div class="settings-copy"><strong>Review new mod/sync payloads</strong><span>Enabled by default and persisted. Disable only if you intentionally do not want Dragonwilds Sync to request Defender pre-install verdicts.</span></div><button class="toggle ${a.defender_review_enabled === false ? '' : 'on'}" id="toggle-defender-review"></button></div>
-        <div class="settings-row"><div class="settings-copy"><strong>Windows security status</strong><span>${escapeHtml(state.defenderStatus?.detail || 'Use Check Defender to query the current local status.')}</span></div><div><div style="margin-bottom:8px">${defenderStatusMarkup(state.defenderStatus)}</div><button class="btn ghost" id="check-defender-status">Check Defender</button></div></div>
       </section><section class="settings-section"><div class="panel-header"><div><h2>Backup-first installation reset</h2><span class="panel-subtitle">Last-resort recovery. User saves, configs, and mods are copied to LocalAppData before an install is removed.</span></div><span class="status-pill offline">DESTRUCTIVE</span></div>
         <div class="settings-row"><div class="settings-copy"><strong>Reset Dragonwilds managed mods</strong><span>Back up saves, configuration, mods, and Dragonwilds LocalAppData; remove only launcher-managed UE4SS/PAK mod surfaces; then repair the managed runtime baseline. Steam game files and persistent EOS/account data are never deleted.</span></div><div class="header-actions"><button class="btn danger" id="reset-client-install">Reset Managed Mods…</button><button class="btn ghost" id="repair-client-runtimes">Repair Client Runtimes</button></div></div>
         <div class="settings-row"><div class="settings-copy"><strong>Reset dedicated server</strong><span>Requires every hosted World to be stopped. The selected server install is backed up, removed, reinstalled with SteamCMD validation, and its managed runtimes are repaired. Server Profiles remain in LocalAppData.</span></div><button class="btn danger" id="reset-server-install">Reset Server…</button></div>
@@ -4709,6 +4705,9 @@
     const nextKey = scrollKey();
     state.lastScrollKey = nextKey;
     bindEvents();
+    root.querySelectorAll('.identity-box').forEach((box)=>{
+      if(box.textContent.includes('File security evidence'))box.innerHTML='<strong>File integrity evidence</strong><p>Published units are verified by manifest membership, safe relative paths, file sizes, and SHA-256 hashes. Missing or changed payloads are blocked before activation and reported as validation failures.</p>';
+    });
     setTimeout(hydrateRecommendationMedia, 0);
     root.querySelectorAll('details.collapsible-panel').forEach((detail, index) => {
       const title = detail.querySelector('summary h2')?.textContent?.trim() || `panel-${index}`;
@@ -5993,15 +5992,6 @@
     root.querySelector('#reset-loading-art')?.addEventListener('click',async()=>{try{await updateApplication({loading_art_url:''});toast('V2 loading artwork restored','','success');}catch(error){toast('Could not reset loading artwork',error.message,'error');}});
     root.querySelector('#edit-profile-settings')?.addEventListener('click', openPlayerProfile);
     root.querySelector('#open-character-profiles')?.addEventListener('click', ()=>enterRsdwToolkit());
-    root.querySelector('#check-defender-status')?.addEventListener('click', async () => {
-      try { state.defenderStatus = await api.invoke('security.defender.status', {}); render(); toast(state.defenderStatus.enabled ? 'Microsoft Defender active' : 'Defender scan layer unavailable', state.defenderStatus.enabled ? `Mode: ${state.defenderStatus.mode || 'active'}` : 'Sync will continue when Defender is disabled or unavailable.', state.defenderStatus.enabled ? 'success' : ''); }
-      catch (error) { toast('Defender status check failed', error.message, 'error'); }
-    });
-    root.querySelector('#toggle-defender-review')?.addEventListener('click', async () => {
-      const enabled = state.data?.application?.defender_review_enabled !== false;
-      await updateApplication({ defender_review_enabled: !enabled });
-      toast(!enabled ? 'Microsoft Defender review enabled' : 'Microsoft Defender review disabled', !enabled ? 'Newly staged launcher-managed payloads will be submitted to Defender when available.' : 'This preference is persisted. Hash/integrity validation remains enabled.', !enabled ? 'success' : '');
-    });
     root.querySelector('#refresh-rsdw-cache')?.addEventListener('click', async () => {
       try {
         const cfg = state.data?.application?.rsdw_cache || {};
@@ -7473,8 +7463,7 @@
       else if (directConnect.configured && directConnect.address) toast('DragonConnect address', `In-game Direct Connect is set to ${directConnect.address}${directConnect.route_used === 'internal' ? ' (LAN route)' : ' (public route)'}.`, '');
       const skipped = Number(security.skipped_count || 0);
       setDiscordPresence('Joined World', world, { resetTimer: true, playerCount: world.status?.player_count, health: world.status?.server_health || world.manifest_cache?.server_health });
-      toast('Dragonwilds launched', `${response.result.downloaded} updated · ${response.result.up_to_date} already current${skipped ? ` · ${skipped} Defender review(s) skipped` : ''}`, 'success');
-      if (skipped) toast('Defender was not active for every downloaded file', 'Sync continued as configured. You can check Defender under Settings → Server.', '');
+      toast('Dragonwilds launched', `${response.result.downloaded} updated · ${response.result.up_to_date} already current${skipped ? ` · ${skipped} optional review(s) unavailable` : ''}`, 'success');
     } catch (error) { toast('Play blocked', error.message, 'error'); }
     finally { state.busy.delete(world.id); }
   }

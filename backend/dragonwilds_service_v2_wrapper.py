@@ -742,6 +742,11 @@ def handle(method: str, params: dict) -> object:
         return _legacy.public_state(state)
 
     if method == "world.discovery.heartbeat":
+        # Reconcile the required local Sync/file-transfer lane before emitting
+        # any directory heartbeat. This background RPC runs even when the Sync
+        # page is not open, so a live dedicated server cannot silently lose its
+        # announcement after a worker/listener failure.
+        RUNTIME.get_status()
         return _heartbeat(state)
 
     if method == "server.console.unified":

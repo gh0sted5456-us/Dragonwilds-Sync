@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.16",
+      "title": "Dragonwilds Sync V2.7.16",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Running dedicated servers continuously supervise and repair their Sync broadcast and file-transfer service.",
+        "Local Sync configuration and directory views remain available beside the separate Server Management login.",
+        "DragonConnect is restored as hidden baseline infrastructure for hosts and clients.",
+        "The WebGUI and default profile artwork now follow the official Sync visual language.",
+        "Character Preview reduces high-DPI WebGL rendering cost while preserving saved data and export fidelity."
+      ]
+    },
+    {
       "version": "2.7.15",
       "title": "Dragonwilds Sync V2.7.15",
       "date": "2026-08-23",

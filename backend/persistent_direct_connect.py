@@ -119,7 +119,7 @@ def status(selected_root: str | Path) -> dict:
 
 
 def ensure_installed(selected_root: str | Path) -> dict:
-    """Install/repair the hidden client component; profile values are separate."""
+    """Install/repair hidden host/client baseline; profile values are separate."""
     layout = resolve_client_layout(selected_root)
     target = layout.ue4ss_mods_dir / MOD_NAME
     main = target / "Scripts" / "main.lua"

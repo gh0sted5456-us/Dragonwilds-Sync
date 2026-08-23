@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.15',
-  name: 'V2.7.15 · RuneSchema & Player Tracking Reliability',
+  version: '2.7.16',
+  name: 'V2.7.16 · Evergreen Sync & Interface Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.16',
+    title: 'Evergreen Sync & Interface Reliability',
+    items: [
+      'A running dedicated server continuously supervises and repairs its Sync broadcast and file-transfer service, including adopted server processes.',
+      'Sync Settings and Directory Hosts remain available locally while remote Server Management stays in its own login workspace.',
+      'DragonConnect is restored as hidden baseline infrastructure for both hosts and clients.',
+      'The embedded WebGUI uses the official Sync visual language and built-in profiles use the full Sync icon, Dragonwilds icon, and default banner.',
+      'Character Preview caps high-DPI WebGL pixel density to reduce GPU fragment work without changing saved character data or exports.',
+    ],
+  }, {
     version: '2.7.15',
     title: 'RuneSchema & Player Tracking Reliability',
     items: [

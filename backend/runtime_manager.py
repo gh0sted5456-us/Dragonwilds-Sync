@@ -72,6 +72,10 @@ class AuthoritativeRuntimeManager:
         self._last_result: dict = {}
         self._orphan_watchdog: dict = {}
         self._managed_running = False
+        self._last_broadcast_repair_at = 0.0
+        self._broadcast_repair_failures = 0
+        self._broadcast_repair_error = ""
+        self._broadcast_repair_lock = threading.Lock()
         self._install_directory_state_bridge()
 
     def _install_directory_state_bridge(self) -> None:
@@ -151,8 +155,36 @@ class AuthoritativeRuntimeManager:
 
     def get_status(self) -> dict:
         actual = self._actual()
+        # Sync/file transfer is a required parallel lane, not a one-shot side
+        # effect of Start. If that lane drops while the verified dedicated game
+        # remains alive, republish it from the active profile. Status is polled
+        # by desktop/minimal/WebGUI even when no management page is open, which
+        # makes this a durable self-healing heartbeat without another authority.
         with self._state_lock:
             transitional = self._phase in {"Starting", "Stopping", "Restarting", "Updating"}
+            repair_suppressed = self._phase in {"Stop Failed", "Update Failed", "Shutdown Failed"}
+        active_profile_id = str(getattr(self.engine, "active_profile_id", "") or "")
+        now = time.monotonic()
+        repair_delay = min(60.0, 2.0 * (2 ** min(self._broadcast_repair_failures, 5)))
+        if actual["running"] and not actual["broadcast_active"] and not transitional and not repair_suppressed and active_profile_id and now - self._last_broadcast_repair_at >= repair_delay and self._broadcast_repair_lock.acquire(blocking=False):
+            self._last_broadcast_repair_at = now
+            try:
+                self.engine.record_event("Sync broadcast stopped while the dedicated server remained running; republishing it now.", "warning")
+                self.engine.publish(active_profile_id)
+                actual = self._actual()
+                if not actual["broadcast_active"]:
+                    raise RuntimeError("publication returned without a serving Sync endpoint")
+                self._broadcast_repair_failures = 0
+                self._broadcast_repair_error = ""
+                self._managed_running = True
+                self.engine.record_event("Sync broadcast was restored and verified while the dedicated server remained running.", "ok")
+            except Exception as exc:
+                self._broadcast_repair_failures += 1
+                self._broadcast_repair_error = f"{type(exc).__name__}: {exc}"[:1000]
+                self.engine.record_event(f"Sync broadcast repair failed; retrying with backoff: {exc}", "error")
+            finally:
+                self._broadcast_repair_lock.release()
+        with self._state_lock:
             if self._managed_running and not actual["running"] and not transitional:
                 try:
                     self.share.stop(); actual["broadcast"] = self.share.status(); actual["broadcast_active"] = bool(actual["broadcast"].get("serving"))
@@ -163,7 +195,9 @@ class AuthoritativeRuntimeManager:
             processes = self._process_topology(actual)
             return {**actual, "processes": processes, "state": phase, "operation": self._operation, "busy": transitional, "accepting_requests": self._accepting_requests,
                     "started_at": self._started_at, "completed_at": self._completed_at, "last_error": self._last_error,
-                    "last_result": dict(self._last_result), "orphan_watchdog": dict(self._orphan_watchdog)}
+                    "last_result": dict(self._last_result), "orphan_watchdog": dict(self._orphan_watchdog),
+                    "broadcast_repair": {"failures": self._broadcast_repair_failures, "last_attempt_at": self._last_broadcast_repair_at,
+                                         "last_error": self._broadcast_repair_error, "self_healing": True}}
 
     def _begin(self, operation: str, phase: str) -> None:
         if not self._accepting_requests:

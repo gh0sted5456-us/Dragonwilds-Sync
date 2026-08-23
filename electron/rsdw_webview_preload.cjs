@@ -1,10 +1,20 @@
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, webFrame } = require('electron');
 let hydrating = false;
 let dirtyTimer = null;
 let previewTimer = null;
 let capturePurpose = 'save';
 let latestPalette = {};
 const appearanceMode = new URLSearchParams(location.search).get('dws-mode') === 'appearance';
+const avatarViewport = /\/Avatar\/index\.html$/i.test(location.pathname);
+
+// RSDWModel used the monitor's full device pixel ratio even inside a large
+// embedded preview. On 1440p/4K displays that can multiply fragment work by
+// four without adding useful detail at the preview's CSS size. Install the
+// cap in the page world before the viewer creates its WebGL renderer; saved
+// data and exported captures remain untouched.
+if (avatarViewport) {
+  webFrame.executeJavaScript(`(()=>{try{const nativeRatio=Number(window.devicePixelRatio||1);const previewRatio=Math.max(1,Math.min(nativeRatio,1.25));Object.defineProperty(window,'devicePixelRatio',{configurable:true,get:()=>previewRatio});window.__DWS_PREVIEW_PIXEL_RATIO__={native:nativeRatio,active:previewRatio};return window.__DWS_PREVIEW_PIXEL_RATIO__;}catch(_){return null;}})()`).catch(() => {});
+}
 
 function post(channel, payload = {}) {
   try { ipcRenderer.sendToHost(channel, payload); } catch (_) {}
@@ -221,7 +231,7 @@ ipcRenderer.on('request-rsdw-preview', () => requestPreview());
 
 window.addEventListener('DOMContentLoaded', () => {
   document.body?.classList.add('dws-embedded');
-  if (/\/Avatar\/index\.html$/i.test(location.pathname)) {
+  if (avatarViewport) {
     const style = document.createElement('style');
     style.id = 'dws-avatar-viewport-only';
     style.textContent = `

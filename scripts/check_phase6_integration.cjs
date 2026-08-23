@@ -53,7 +53,7 @@ requireText(direct, 'durable credentials stay in the encrypted launcher secret v
 
 if (registry.sources.rsdwtools.runtime_component !== false) throw new Error('RSDWTools must remain data-only in the source registry.');
 if (registry.sources['rsdw-toolkit'].repository !== 'RSDWArchive/RSDWDevKit') throw new Error('RSDW Toolkit must use RSDWArchive/RSDWDevKit.');
-if (!registry.sources.dragonconnect.runtime_roles.includes('client') || registry.sources.dragonconnect.runtime_roles.includes('server')) throw new Error('DragonConnect source registry role must be CLIENT-only.');
+if (!['client','server','host'].every((role)=>registry.sources.dragonconnect.runtime_roles.includes(role))) throw new Error('DragonConnect source registry must cover host and client baselines.');
 if (!registry.sources.dragonconnect.legacy_physical_names.includes('PersistentDirectConnectIP')) throw new Error('DragonConnect legacy physical identity was lost.');
 requireText(upstream, "'rsdw-toolkit'", 'offline/source UI knows Toolkit separately');
 requireText(upstream, 'Repair DragonConnect', 'central dependency panel DragonConnect repair');

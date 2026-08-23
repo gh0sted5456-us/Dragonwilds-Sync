@@ -15,6 +15,18 @@ from directory_web_legacy import public_browser_html as _legacy_public_browser_h
 from directory_web_legacy import remote_admin_html as _legacy_remote_admin_html
 
 
+_OFFICIAL_SYNC_THEME = b'''<style id="dws-official-sync-theme">
+:root{--bg:#090b0d!important;--panel:rgba(18,21,24,.82)!important;--line:#313638!important;--line2:rgba(255,255,255,.09)!important;--gold:#d9b05a!important;--gold2:#f0ca73!important;--text:#f2f0eb!important;--muted:#9b9da1!important;--good:#78c58c!important;--bad:#df7a76!important;--shadow:0 22px 70px rgba(0,0,0,.38)!important}
+html{min-width:320px;background:#090b0d}body{min-height:100vh;background:radial-gradient(circle at 8% -10%,rgba(172,121,30,.13),transparent 30rem),radial-gradient(circle at 95% 25%,rgba(67,85,65,.12),transparent 34rem),linear-gradient(180deg,#090b0d,#0d1013 48%,#090b0d)!important;color:var(--text);font-family:Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important}
+body::after{content:"";position:fixed;z-index:-1;inset:0;background:linear-gradient(180deg,rgba(9,11,13,.7),rgba(9,11,13,.94)),url('/assets/placards/1.png') center/cover no-repeat;opacity:.24;pointer-events:none}.topbar{width:min(1240px,calc(100% - 36px));margin:18px auto 0!important;top:14px!important;border:1px solid rgba(255,255,255,.09)!important;border-radius:16px;background:rgba(12,15,17,.78)!important;backdrop-filter:blur(18px) saturate(135%);box-shadow:0 10px 35px rgba(0,0,0,.18)}
+.panel,.login-card,.world-card,.stat,.actions,.workspace{border-color:rgba(255,255,255,.09)!important;border-radius:16px!important;background:rgba(18,21,24,.78)!important;backdrop-filter:blur(18px);box-shadow:inset 0 1px rgba(255,255,255,.025),0 22px 70px rgba(0,0,0,.24)}button,.button,input,select,textarea{border-radius:10px!important}button.primary,.button.primary{color:#16130c!important;background:linear-gradient(180deg,#ebc46e,#c99c45)!important;border-color:#f3d58d!important}.tabs button.active,.topnav a.active{color:var(--gold2)!important}.brand img,.login-intro img{filter:drop-shadow(0 5px 14px rgba(216,176,90,.18))}.eyebrow{color:var(--gold)!important;letter-spacing:.14em}.admin-wrap,.catalog,.detail,.login-wrap{position:relative;z-index:1}@media(max-width:720px){.topbar{width:calc(100% - 20px);margin-top:10px!important}.admin-wrap{width:calc(100% - 20px)!important}}
+</style>'''
+
+
+def _official_theme(page: bytes) -> bytes:
+    return page.replace(b"</head>", _OFFICIAL_SYNC_THEME + b"</head>", 1) if b"</head>" in page else _OFFICIAL_SYNC_THEME + page
+
+
 def _public_extension(remote_admin_enabled: bool) -> str:
     remote_flag = "true" if remote_admin_enabled else "false"
     return rf'''
@@ -89,7 +101,8 @@ def public_browser_html(*, remote_admin_enabled: bool = False) -> bytes:
     page = _legacy_public_browser_html(remote_admin_enabled=remote_admin_enabled)
     marker = b"</body>"
     extension = _public_extension(remote_admin_enabled).encode("utf-8")
-    return page.replace(marker, extension + marker, 1) if marker in page else page + extension
+    page = page.replace(marker, extension + marker, 1) if marker in page else page + extension
+    return _official_theme(page)
 
 
 def admin_login_html() -> bytes:
@@ -106,18 +119,19 @@ def admin_login_html() -> bytes:
         1,
     )
     script = b'''<script id="dws-prefill-world">(async()=>{const select=document.getElementById('world'),message=document.getElementById('message'),wanted=new URLSearchParams(location.search).get('world')||'';if(!select)return;try{const response=await fetch('/api/v1/admin/profiles',{cache:'no-store',headers:{Accept:'application/json'}}),data=await response.json();if(!response.ok)throw Error(data.error||'Hosted profiles are unavailable');const profiles=Array.isArray(data.profiles)?data.profiles:[];select.replaceChildren(new Option(profiles.length?'Select a hosted World':'No hosted World profiles are available',''));for(const profile of profiles){const name=String(profile.world_name||'').trim(),id=String(profile.profile_id||'').trim();if(!name||!id)continue;const option=new Option(name+(profile.running?' (running)':''),id);option.dataset.worldName=name;select.appendChild(option)}const matched=profiles.find(profile=>String(profile.world_name||'')===wanted);if(matched)select.value=String(matched.profile_id||'');if(select.value)document.getElementById('account')?.focus()}catch(error){select.replaceChildren(new Option(wanted||'Hosted profiles unavailable',''));if(message)message.textContent=error.message||String(error)}})();</script>'''
-    return page.replace(b"</body>", script + b"</body>", 1)
+    return _official_theme(page.replace(b"</body>", script + b"</body>", 1))
 
 
 def remote_admin_html() -> bytes:
     page = _legacy_remote_admin_html()
     marker = b"</body>"
     extension = _remote_admin_extension()
-    return page.replace(marker, extension + marker, 1) if marker in page else page + extension
+    page = page.replace(marker, extension + marker, 1) if marker in page else page + extension
+    return _official_theme(page)
 
 
 def detail_html(world_id: str) -> bytes:
     page = _legacy_detail_html(world_id)
     # Public specs/network evidence remain useful. Raw debug dumps/buttons do not.
     cleanup = b'''<style>.all-world-metadata{display:none!important}.detail-actions a[href^="/api/v1/worlds/"]{display:none!important}</style>'''
-    return page.replace(b"</head>", cleanup + b"</head>", 1)
+    return _official_theme(page.replace(b"</head>", cleanup + b"</head>", 1))

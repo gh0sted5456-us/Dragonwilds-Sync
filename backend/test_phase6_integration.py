@@ -195,7 +195,7 @@ def test_source_registry_keeps_rsdwtools_and_toolkit_separate():
     assert registry["data"]["rsdwtools"]["repository"] == "RSDWArchive/RSDWTools"
     assert registry["data"]["rsdwtools"]["runtime_component"] is False
     assert registry["tooling"]["rsdw_toolkit"]["repository"] == "RSDWArchive/RSDWDevKit"
-    assert registry["core"]["dragonconnect"]["runtime_roles"] == ["client"]
+    assert registry["core"]["dragonconnect"]["runtime_roles"] == ["server", "host", "client"]
     assert registry["core"]["dragonconnect"]["physical_name"] == "PersistentDirectConnectIP"
 
 

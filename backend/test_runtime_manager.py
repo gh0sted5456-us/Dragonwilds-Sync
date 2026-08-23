@@ -188,6 +188,31 @@ def test_start_never_advertises_before_process_and_cleans_publish_failure():
     assert "stop" in names[3:], "failed post-launch publish did not clean up the process"
 
 
+def test_live_dedicated_server_repairs_a_dropped_sync_broadcast():
+    share = FakeShare()
+    engine = FakeEngine(share)
+    manager = AuthoritativeRuntimeManager(engine, share)
+    manager.start("world-evergreen")
+    engine.calls.clear()
+
+    # Model a listener/worker failure without stopping the dedicated game.
+    share.serving = False
+    status = manager.get_status()
+    assert status["running"] is True
+    assert status["broadcast_active"] is True
+    assert status["broadcast_repair"]["failures"] == 0
+    assert engine.calls == [("publish", "world-evergreen")]
+    assert any("restored and verified" in message for message, _level in engine.events)
+
+    # A launcher/backend that adopts an already-running active profile must
+    # also restore Sync instead of requiring a full server restart.
+    share.serving = False
+    adopted = AuthoritativeRuntimeManager(engine, share)
+    adopted_status = adopted.get_status()
+    assert adopted_status["broadcast_active"] is True
+    assert adopted_status["state"] == "Running"
+
+
 def test_webgui_state_bridge_uses_authoritative_lifecycle():
     share = FakeShare()
     engine = FakeEngine(share)
@@ -497,6 +522,7 @@ def test_initial_environment_is_adopted_once_and_default_is_exclusive():
 def main():
     test_lifecycle()
     test_start_never_advertises_before_process_and_cleans_publish_failure()
+    test_live_dedicated_server_repairs_a_dropped_sync_broadcast()
     test_webgui_state_bridge_uses_authoritative_lifecycle()
     test_shutdown_while_server_is_running()
     test_shutdown_uses_process_fallback_and_withdraws_share()

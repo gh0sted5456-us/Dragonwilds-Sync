@@ -14,6 +14,7 @@ const cardSizing = read('renderer/release-v2-card-sizing.js');
 const trashUi = read('renderer/release-v2-trash.js');
 const web = read('backend/directory_web.py');
 const service = read('backend/dragonwilds_service.py');
+const v2Service = read('backend/dragonwilds_service_v2_wrapper.py');
 const legacyService = read('backend/dragonwilds_service_legacy.py');
 const routing = read('backend/v2_remote_routing.py');
 const cache = read('backend/rsdw_cache.py');
@@ -40,12 +41,12 @@ must(directoryHost.indexOf('if not directory_enabled and remote_enabled:') < dir
 must(!appV2.includes("navButton('worlds'") && appV2.includes("'worlds'].includes(state.route)") && appV2.includes('data-webhost-tab="manifest"') &&
   !appV2.includes('data-webhost-tab="home"') && !appV2.includes('SYNC_HOME_URL'),
   'Public World discovery must live under Dragonwilds while Sync remains configuration-only');
-must(appV2.includes('Server Management') && appV2.includes('data-webhost-tab="settings">WebHost'), 'Server Management and WebHost navigation are not separated');
+must(appV2.includes('Server Management') && appV2.includes('data-webhost-tab="settings">Sync Settings'), 'Server Management login and local Sync configuration are not separated');
 must(legacyService.includes('host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))') && !legacyService.includes('advanced["remote_server_enabled"] = True\n                advanced["remote_server_choice_made"] = True'), 'Webhost must not silently enable Remote Login');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');
 must(!web.includes('dws-router-password'), 'The routing hub must never collect a target server password');
-must(service.includes('_legacy_handle = _legacy.handle'), 'V2 service wrapper must preserve the original handler before patching recursion');
-must(service.includes('remote_server_choice_made') && service.includes('world.discovery.heartbeat'), 'External-heartbeat Remote Server default/explicit choice contract is missing');
+must(v2Service.includes('_legacy_handle = _legacy.handle'), 'V2 service wrapper must preserve the original handler before patching recursion');
+must(v2Service.includes('remote_server_choice_made') && v2Service.includes('world.discovery.heartbeat'), 'External-heartbeat Remote Server default/explicit choice contract is missing');
 must(routing.includes('target-world') && routing.includes('parsed.username') && routing.includes('parsed.password'), 'Remote endpoint sanitization/target authority is incomplete');
 must(registry.sources['rsdw-icons'].path === 'website/shared/icons', 'RSDW icon path is not canonical');
 must(registry.sources['rsdw-item-manifest'].path === 'data/items/json/RSDragonwilds', 'RSDW item JSON path is not canonical');

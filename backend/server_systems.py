@@ -3468,6 +3468,14 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
             errors.append("RuneSchema is missing. Load a core ZIP, configure a GitHub/release ZIP source, or use a launcher build containing the bundled RuneSchema core.")
 
     try:
+        from persistent_direct_connect import ensure_installed as ensure_dragonconnect
+        dragonconnect = ensure_dragonconnect(layout.game_root)
+        if dragonconnect.get("changed"):
+            repaired.append("DragonConnect host baseline installed/repaired")
+    except Exception as exc:
+        errors.append(f"DragonConnect host baseline repair failed: {exc}")
+
+    try:
         rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir, allow_update=auto_rsdwtools)
         if rsdwtools.get("changed"):
             repaired.append("RSDWTools bridge baseline installed/updated (DEBUG_BRIDGE=false)")

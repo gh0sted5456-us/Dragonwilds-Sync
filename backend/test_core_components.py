@@ -40,7 +40,7 @@ def main() -> None:
     assert by_id["runeschema"]["physical_relationship"] == "UE4SS/Mods/RuneSchema"
     assert by_id["runeschema"]["update_available"] is True
     assert by_id["dragonconnect"]["legacy_name"] == "PersistentDirectConnectIP"
-    assert by_id["dragonconnect"]["runtime_roles"] == ["client"]
+    assert by_id["dragonconnect"]["runtime_roles"] == ["server", "host", "client"]
     assert by_id["rsdw_toolkit"]["ui_group"] == "tooling"
     assert by_id["rsdw_toolkit"]["source_repository"] == "RSDWArchive/RSDWDevKit"
     assert by_id["rsdw_toolkit"]["remote_update_supported"] is False
@@ -64,7 +64,7 @@ def main() -> None:
     assert runtime_role_allows("DragonCore", "ue4ss_mod", "server") is True
     assert runtime_role_allows("DragonCore", "ue4ss_mod", "client") is True
     assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "client") is True
-    assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "server") is False
+    assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "server") is True
 
     assert component_for_remote_update("UE4SS") == "ue4ss"
     assert component_for_remote_update("RuneSchema") == "runeschema"

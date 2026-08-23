@@ -48,14 +48,14 @@ assert(source.includes('recommended-mod-card recommended-mod-placard has-placard
   recommendedPlacardsCss.includes('opacity:.11'),
   'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
-assert(source.includes('data-webhost-tab="manifest">Server Directory Manifest') &&
+assert(source.includes('data-webhost-tab="manifest">Directory Hosts') &&
   source.includes('data-webhost-tab="remote">Server Management'),
   'The normal Sync workspace must expose directory and Server Management configuration.');
-assert(source.includes('data-webhost-tab="live">WebHost Preview') &&
-  source.includes('data-webhost-tab="settings">WebHost') &&
+assert(source.includes('data-webhost-tab="live">WebGUI Preview') &&
+  source.includes('data-webhost-tab="settings">Sync Settings') &&
   !source.includes('data-webhost-tab="home">Server Directory') &&
   !source.includes('SYNC_HOME_URL'),
-  'Advanced Webhost controls must remain explicit while the public directory stays in Worlds.');
+  'Sync settings, WebGUI preview, and the public directory must remain distinct tabs.');
 assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") &&
@@ -83,6 +83,8 @@ assert(source.includes('rsdwPreviewRefreshAuthorized') && source.includes('apply
   'Equipment, weapon, and toolkit preview changes must not alter the mounted 3D view before See changes.');
 assert(source.includes('avatarCssInserted') && source.includes('avatarPreparePromise') && source.includes('avatarPollDelay'),
   '3D preview readiness must deduplicate CSS injection and use adaptive polling.');
+assert(avatarPreload.includes('__DWS_PREVIEW_PIXEL_RATIO__') && avatarPreload.includes('Math.min(nativeRatio,1.25)'),
+  'The embedded Character Preview must cap excessive 3D pixel density before WebGL initializes.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),

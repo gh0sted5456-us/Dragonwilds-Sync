@@ -58,7 +58,7 @@
       "type": "bundled-resource",
       "bundled_fallback": "resources/PersistentDirectConnectIP-baseline.zip",
       "runtime_component": true,
-      "runtime_roles": ["client"],
+      "runtime_roles": ["server", "host", "client"],
       "legacy_physical_names": ["PersistentDirectConnectIP"],
       "description": "Hidden client Direct Connect handoff component. The legacy physical directory remains for compatibility; launcher/UI identity is DragonConnect."
     },

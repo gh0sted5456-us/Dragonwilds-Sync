@@ -674,7 +674,7 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
         server_result = persistent_direct_connect.ensure_installed(server_root) if server_root and Path(server_root).exists() else None
         legacy._record_notification(
             state, "DragonConnect repaired",
-            f"The hidden client connection component is current ({result.get('version') or 'bundled baseline'}).",
+            f"The hidden host/client connection baseline is current ({result.get('version') or 'bundled baseline'}).",
             "success", key=f"dragonconnect-repair:{result.get('version') or 'baseline'}",
         )
         legacy.save_state(state)

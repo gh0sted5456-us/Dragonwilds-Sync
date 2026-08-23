@@ -82,7 +82,7 @@
     clientPublicIp: '',
     clientModFilter: 'required',
     settingsTab: 'application',
-    webhostTab: 'login',
+    webhostTab: 'settings',
     webhostPreviewMode: 'desktop',
     webhostPreviewLoaded: false,
     serverManagementAddress: '',
@@ -732,8 +732,9 @@
     if(!state.entered)return null;
     if(state.route==='worlds'&&state.data?.application?.world_discovery?.enabled!==false)return {channel:'worlds',interval:30000};
     if((state.route==='server-detail'&&['overview','maintenance'].includes(state.serverTab))||(state.route==='world-detail'&&activeWorld()?.kind==='singleplayer'&&['overview','maintenance'].includes(state.privateTab)))return {channel:'runtime',interval:10000};
-    // The routed WebHost surface is now only an embedded Server Management
-    // login. It must not poll directory/configuration data in the background.
+    if(state.route==='webhost'&&state.webhostTab!=='remote')return {channel:'directory',interval:10000};
+    // Remote Server Management is an embedded login and does not poll local
+    // directory/configuration data while the authenticated portal owns view.
     return null;
   }
 
@@ -934,7 +935,7 @@
     if (next === 'rsdragonwilds-app') { state.worldManagementTab='server-setup';await handleRouteNavigation('world-management'); return; }
     if (next === 'servers' && next === state.route && state.serversTab !== 'worlds') { state.serversTab = 'worlds'; render(); return; }
     if (next === 'servers') state.serversTab = 'worlds';
-    if (next === 'webhost') state.webhostTab = 'login';
+    if (next === 'webhost' && !['settings','manifest','live','remote'].includes(state.webhostTab)) state.webhostTab = 'settings';
     if (next === 'rsdw-toolkit') { state.profileTab = 'characters'; await enterRsdwToolkit(); return; }
     if (next === state.route) {
       if (next === 'worlds') await refreshWorldDiscoveryAndStatuses(true);
@@ -2890,8 +2891,8 @@
     const presentation = server ? world : (world.presentation || {});
     const single = !server && world.kind === 'singleplayer';
     const connected = !server && !single && (world.kind === 'connected' || world.credentials?.source === 'manual');
-    const banner = b64Image(presentation.banner_b64) || (single ? 'assets/singleplayer-banner.png' : '');
-    const icon = b64Image(presentation.icon_b64) || (single ? 'assets/singleplayer-icon.png' : '');
+    const banner = b64Image(presentation.banner_b64) || 'assets/default-world-banner.png';
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.png';
     const title = server ? (world.name || 'Hosted World') : (single ? (world.name || world.identity?.world_name || 'Private World') : (world.nickname || world.identity?.world_name || 'World'));
     const authoritative = server ? world.name : world.identity?.world_name;
     const desc = presentation.description || (single ? 'Save-backed local Dragonwilds World.' : 'No World description has been provided yet.');
@@ -2950,7 +2951,7 @@
     const presentation = world.presentation || {};
     const title = world.nickname || world.identity?.world_name || 'World';
     const icon = b64Image(presentation.icon_b64);
-    const banner = b64Image(presentation.banner_b64);
+    const banner = b64Image(presentation.banner_b64) || 'assets/default-world-banner.png';
     const studio = worldSyncIdentity(world).verified;
     const tags = worldTagGroupsMarkup(world,presentation,false,6);
     const players = world.status?.player_count != null ? `${world.status.player_count} players` : 'Players —';
@@ -2970,8 +2971,8 @@
   function renderHostedWorldListRow(world, server = false) {
     const presentation = server ? world : (world.presentation || {});
     const title = server ? (world.name || 'Hosted World') : (world.name || world.identity?.world_name || 'Private World');
-    const icon = b64Image(presentation.icon_b64) || (!server ? 'assets/singleplayer-icon.png' : '');
-    const banner = b64Image(presentation.banner_b64) || (!server ? 'assets/singleplayer-banner.png' : '');
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.png';
+    const banner = b64Image(presentation.banner_b64) || 'assets/default-world-banner.png';
     const runtime = state.data?.server?.runtime || {};
     const livePrivate = !server && String(state.data?.client?.live_world_id || '') === String(world.id || '');
     const liveServer = server && !!runtime.running && String(runtime.active_profile_id || '') === String(world.id || '');
@@ -3199,8 +3200,8 @@
 
   function renderSharedProfileCard(world) {
     const presentation = world.presentation || {};
-    const banner = b64Image(presentation.banner_b64);
-    const icon = b64Image(presentation.icon_b64);
+    const banner = b64Image(presentation.banner_b64) || 'assets/default-world-banner.png';
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.png';
     const title = world.nickname || world.identity?.world_name || 'Shared World';
     const connected = sharedConnected(world.shared?.source_id || world.id, world);
     const tags = (presentation.tags || []).slice(0,5).map((t)=>`<span class="tag ${tagTone(t)}">#${escapeHtml(t)}</span>`).join('');
@@ -3209,8 +3210,8 @@
 
   function renderOnlineWorldCard(world) {
     const presentation = world.presentation || {};
-    const banner = b64Image(presentation.banner_b64);
-    const icon = b64Image(presentation.icon_b64);
+    const banner = b64Image(presentation.banner_b64) || 'assets/default-world-banner.png';
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.png';
     const title = world.nickname || world.identity?.world_name || 'Shared World';
     const connected = sharedConnected(world.shared?.source_id || world.id);
     const tags = (presentation.tags || []).slice(0,5).map((t)=>`<span class="tag ${tagTone(t)}">#${escapeHtml(t)}</span>`).join('');
@@ -4193,9 +4194,9 @@
     const routedRemote = state.route === 'remote-server';
     const routedServers = state.route === 'servers' && state.serversTab === 'settings';
     const routedMods = state.route === 'mods-app';
-    const standaloneHostWorkspace = routedWebhost || routedRemote;
-    let topTab = routedServers ? 'server' : (standaloneHostWorkspace ? 'webhost' : (state.settingsTab || 'application'));
-    if(!standaloneHostWorkspace&&!routedServers&&!routedMods&&!['application','advanced','integrations','about'].includes(topTab))topTab='application';
+    const standaloneHostWorkspace = routedRemote || (routedWebhost && state.webhostTab === 'remote');
+    let topTab = routedServers ? 'server' : ((routedWebhost || routedRemote) ? 'webhost' : (state.settingsTab || 'application'));
+    if(!routedWebhost&&!standaloneHostWorkspace&&!routedServers&&!routedMods&&!['application','advanced','integrations','about'].includes(topTab))topTab='application';
     if(topTab==='server'&&!serverEnabled)topTab='advanced';
     const externalSettingsTab = state.externalDeclarationTab || 'overview';
     const externalSettings = topTab === 'external';
@@ -4336,7 +4337,8 @@
         const detectedManagementAddress=state.serverManagementAddress||advertisedManagementEndpoint||directoryHostStatus.local_url||directoryHostStatus.lan_url||directoryHostStatus.public_url||'';
         const loginUrl=state.serverManagementLoginUrl||serverManagementLoginUrl(detectedManagementAddress);
         const addressValue=state.serverManagementAddress||advertisedManagementEndpoint||directoryHostStatus.lan_url||directoryHostStatus.public_url||directoryHostStatus.local_url||'';
-        content=`<section class="settings-section server-management-login-only">
+        const syncTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" aria-label="Sync workspace"><button data-webhost-tab="settings">Sync Settings</button><button data-webhost-tab="manifest">Directory Hosts</button><button class="active" data-webhost-tab="remote">Server Management</button>${webhostFeatureEnabled?'<button data-webhost-tab="live">WebGUI Preview</button>':''}</nav>`:'';
+        content=syncTabs+`<section class="settings-section server-management-login-only">
           <div class="server-management-login-bar"><label for="server-management-address"><span>Server Management address</span><input class="field" id="server-management-address" value="${escapeHtml(addressValue)}" placeholder="192.168.1.20:27080" autocomplete="url" spellcheck="false"/></label><button class="btn primary" id="load-server-management-login">Open Login</button>${loginUrl?`<button class="btn ghost" data-open-external="${escapeHtml(loginUrl)}">Open in Browser ↗</button>`:''}</div>
           ${loginUrl?`<div class="server-management-login-frame"><webview id="server-management-login" src="${escapeHtml(loginUrl)}" partition="persist:server-management" webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes,devTools=no"></webview></div>`:`<div class="empty-state server-management-login-empty"><strong>Enter the server address to sign in.</strong><br/>Dragonwilds Sync will open only that server's authenticated Server Management login.</div>`}
         </section>`;
@@ -4366,8 +4368,9 @@
       const permissionChoice=(id,label,description,defaultValue)=>`<label class="webhost-permission"><input type="checkbox" data-webhost-permission="${id}" ${remotePermissions[id]===undefined?(defaultValue?'checked':''):(remotePermissions[id]?'checked':'')}/><span><strong>${label}</strong><small>${description}</small></span></label>`;
       if(!standaloneHostWorkspace&&externalTab==='live')state.webhostTab='live';
       else if(!standaloneHostWorkspace)state.webhostTab='settings';
-      if(routedWebhost&&((!webhostFeatureEnabled&&['live','settings'].includes(state.webhostTab))||state.webhostTab==='home'))state.webhostTab='manifest';
-      const webhostTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" aria-label="Sync workspace"><button class="${state.webhostTab==='manifest'?'active':''}" data-webhost-tab="manifest">Server Directory Manifest</button><button class="${state.webhostTab==='remote'?'active':''}" data-webhost-tab="remote">Server Management</button>${webhostFeatureEnabled?`<button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">WebHost Preview</button><button class="${state.webhostTab==='settings'?'active':''}" data-webhost-tab="settings">WebHost</button>`:''}</nav>`:(externalTabs||`<nav class="settings-subnav webhost-tabs"><button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Live View</button><button class="${state.webhostTab!=='live'?'active':''}" data-webhost-tab="settings">${standaloneRemote?'Permissions &amp; Authority':'Settings &amp; Sharing'}</button></nav>`);
+      if(routedWebhost&&state.webhostTab==='home')state.webhostTab='settings';
+      if(routedWebhost&&state.webhostTab==='live'&&!webhostFeatureEnabled)state.webhostTab='settings';
+      const webhostTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" aria-label="Sync workspace"><button class="${state.webhostTab==='settings'?'active':''}" data-webhost-tab="settings">Sync Settings</button><button class="${state.webhostTab==='manifest'?'active':''}" data-webhost-tab="manifest">Directory Hosts</button><button class="${state.webhostTab==='remote'?'active':''}" data-webhost-tab="remote">Server Management</button>${webhostFeatureEnabled?`<button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">WebGUI Preview</button>`:''}</nav>`:(externalTabs||`<nav class="settings-subnav webhost-tabs"><button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Live View</button><button class="${state.webhostTab!=='live'?'active':''}" data-webhost-tab="settings">${standaloneRemote?'Permissions &amp; Authority':'Settings &amp; Sharing'}</button></nav>`);
       if(routedWebhost&&state.webhostTab==='manifest'){
         const sources=a.world_discovery?.directory_sources||[];
         const sourceRows=sources.map((source)=>`<div class="directory-source-row"><button class="toggle ${source.enabled===false?'':'on'}" data-directory-source-toggle="${escapeHtml(source.id||'')}"></button><div><strong>${escapeHtml(source.name||'Manifest Host')}</strong><small>${escapeHtml(source.url||'')}</small></div><span class="status-pill ${source.enabled===false?'unknown':'online'}">${source.enabled===false?'PAUSED':'HEARTBEAT ACTIVE'}</span><button class="btn ghost compact-btn" data-directory-source-remove="${escapeHtml(source.id||'')}">Remove</button></div>`).join('');
@@ -4508,10 +4511,10 @@
     }
     return `
       <div class="content">
-        <div class="page-header"><div><div class="eyebrow">${standaloneHostWorkspace?'Authenticated access':(routedServers?'Advanced Hosting':'System')}</div><h1>${routedServers?t('servers'):(standaloneHostWorkspace?'Server Management':'Settings')}</h1><div class="page-subtitle">${routedServers?'Configure the shared dedicated-server installation, runtime cores, network benchmark, firewall, and global access policy.':(standaloneHostWorkspace?'Sign in to manage a server. No public directory, manifest, preview, or host configuration is loaded on this page.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.')}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">↗ Open in Window</button></div></div>
+        <div class="page-header"><div><div class="eyebrow">${standaloneHostWorkspace?'Authenticated access':(routedWebhost?'Host &amp; Connect':(routedServers?'Advanced Hosting':'System'))}</div><h1>${routedServers?t('servers'):(standaloneHostWorkspace?'Server Management':(routedWebhost?'Sync':'Settings'))}</h1><div class="page-subtitle">${routedServers?'Configure the shared dedicated-server installation, runtime cores, network benchmark, firewall, and global access policy.':(standaloneHostWorkspace?'Sign in to manage a server. Local Sync configuration remains available on the Sync Settings tab.':(routedWebhost?'Configure continuous World discovery, transfer, heartbeat, and optional WebGUI services.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.'))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">↗ Open in Window</button></div></div>
         ${routedServers?'<nav class="settings-subnav server-workspace-tabs"><button data-servers-tab="worlds">Worlds</button><button class="active" data-servers-tab="settings">Server Setup</button></nav>':''}
-        <div class="settings-layout ${standaloneHostWorkspace||routedServers||routedMods?'webhost-layout':''}">
-          ${standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav">${settingsNav('application','⚙',t('application'))}${settingsNav('advanced','◇','Advanced')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('about','ⓘ',t('about'))}</nav>`}
+        <div class="settings-layout ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'webhost-layout':''}">
+          ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav">${settingsNav('application','⚙',t('application'))}${settingsNav('advanced','◇','Advanced')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('about','ⓘ',t('about'))}</nav>`}
           <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">${t('application')}</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}${standaloneHostWorkspace?'':'<div class="settings-page-note">Changes save to the launcher profile immediately.</div>'}${content}</div>
         </div>
       </div>`;

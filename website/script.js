@@ -2,7 +2,7 @@ const API_BASE = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev';
 const RELEASE_API = 'https://api.github.com/repos/gh0sted5456-us/Dragonwilds-Sync/releases/latest';
 const THEME_KEY = 'dragonwilds-sync-theme';
 const CURRENT_CL_FALLBACK = 'CL-232224';
-const SHARED_NAV_VERSION = 'nav-unified-20260822-3';
+const SHARED_NAV_VERSION = 'nav-unified-20260822-4';
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -34,7 +34,6 @@ function sharedNavMarkup(page) {
         <a role="menuitem" href="launcher-preview.html"${active('launcher-preview.html')}>Preview Launcher</a>
       </div>
     </div>
-    <a href="servers.html"${active('servers.html')}>Servers</a>
     <div class="nav-group nav-learn-more" data-nav-group>
       <div class="nav-group-main">
         <a class="nav-group-link" href="about.html"${learnMoreActive ? ' aria-current="page"' : ''}>Learn More</a>
@@ -46,6 +45,7 @@ function sharedNavMarkup(page) {
         <a role="menuitem" href="for-modders.html"${active('for-modders.html')}>For Modders</a>
       </div>
     </div>
+    <a href="servers.html"${active('servers.html')}>Servers</a>
     <a class="nav-github" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub <span aria-hidden="true">↗</span></a>
   `;
 }

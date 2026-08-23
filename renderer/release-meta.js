@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
   version: '2.7.19',
-  name: 'V2.7.19 · Stable Sync Workspaces',
+  name: 'V2.7.19 · Stable Sync Workspaces & Launch Console',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -17,6 +17,9 @@ window.DWSYNC_RELEASE_META = Object.freeze({
       'Refresh Preview reloads the embedded site in place after its first load, preventing flashes and lost preview state.',
       'Sync tabs expose proper tab semantics plus Left, Right, Home, and End keyboard navigation while retaining focus after selection.',
       'Legacy presentation observers use one canonical set of Sync tab labels and skip unchanged DOM writes, preventing repaint loops.',
+      'Starting a dedicated World opens one movable unified console with filterable GAME CMD/stdout, UE4SS, SERVER, and SYNC traffic.',
+      'Dedicated-server stdout is drained continuously and the active UE4SS log is tailed without blocking either process or rebuilding the application view.',
+      'Selecting GAME CMD or UE4SS enables one confirmed command input; UE4SS commands travel through the game-thread bridge and report their real acknowledgement.',
     ],
   }, {
     version: '2.7.18',

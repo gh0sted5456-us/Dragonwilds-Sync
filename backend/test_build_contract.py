@@ -1,5 +1,6 @@
 import json
 import re
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -150,6 +151,13 @@ def main():
     assert "Staging reproducible raw-source folder" not in text
     assert "resources\\RSDWTools-baseline.zip" in text
     assert "Bundled RSDWTools bridge baseline" in text
+    with zipfile.ZipFile(ROOT / "resources" / "RSDWTools-baseline.zip") as archive:
+        router = archive.read("scripts/router_cvars.lua").decode("utf-8-sig")
+        feature = archive.read("scripts/feature_cvars.lua").decode("utf-8-sig")
+        catalog_source = archive.read("scripts/command_line_router.lua").decode("utf-8-sig")
+    assert 'line == "ue4ss.exec"' in router and "feature_cvars.execute(command)" in router
+    assert "function M.execute(command)" in feature and "ExecuteConsoleCommand(world)" in feature
+    assert "ue4ss.exec <command>" in catalog_source
     assert "DRAGONWILDS_SYNC_PYTHON" in text
     assert "win-unpacked.tmp" in text
     assert "Clear-ReleaseDirectory" in text

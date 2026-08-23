@@ -933,6 +933,7 @@ class ServerEngine:
     def __init__(self):
         self.proc: subprocess.Popen | None = None; self.started_at: float | None = None; self.active_profile_id: str | None = None
         self.events: list[dict] = []; self.monitor = PlayerLogMonitor(); self.hw_stats: dict = {}; self.public_ip: str | None = None
+        self.process_output: list[dict] = []
         self.network_setup: dict = {"pending": False, "game": {}, "sync": {}, "public_ip": ""}
         self._last_runtime_check = 0.0
         self._runtime_check_thread: threading.Thread | None = None
@@ -963,6 +964,25 @@ class ServerEngine:
 
     def record_event(self, message: str, level: str = "info") -> None:
         self._event(message, level)
+
+    def _capture_process_output(self, stream) -> None:
+        """Drain the owned dedicated console without exposing an OS shell."""
+        try:
+            for raw in iter(stream.readline, ""):
+                message = str(raw or "").rstrip("\r\n")
+                if not message:
+                    continue
+                level = "error" if any(token in message.casefold() for token in ("error", "fatal", "exception", "failed")) else ("warning" if "warn" in message.casefold() else "info")
+                with self._event_lock:
+                    self.process_output.append({"ts": time.time(), "source": "game", "level": level, "message": message[:4000]})
+                    self.process_output = self.process_output[-1200:]
+        except (OSError, ValueError):
+            pass
+        finally:
+            try:
+                stream.close()
+            except (OSError, ValueError):
+                pass
 
     def clear_activity(self, profile_id: str) -> int:
         profile = load_server_profile(profile_id)
@@ -1178,7 +1198,7 @@ class ServerEngine:
                 "share": SHARE.status(), "hw_stats": self.hw_stats, "lan_ip": local_ip_guess(), "public_ip": self.public_ip,
                 "runtime_prerequisites": prereq, "runtime_update_in_progress": self._runtime_update_in_progress,
                 "cl_version": cl_version, "reported_cl": cl_version.get("reported_cl") or "",
-                "network_setup": dict(self.network_setup),
+                "network_setup": dict(self.network_setup), "game_root": root, "process_output": list(self.process_output),
                 "metrics": metrics, "metric_history": list(self.metric_history), "computer_profile": ({**self._resolved_computer_profile(), **self._computer_profile_status}), "events": (persistent_events or self.events)[-150:]}
 
     def assert_stopped(self):
@@ -1456,7 +1476,11 @@ class ServerEngine:
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
         PLAYER_BRIDGE.stop()
         PLAYER_SERVICE.reset_session()
-        self.proc = popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
+        with self._event_lock:
+            self.process_output = []
+        self.proc = popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
+        if self.proc.stdout is not None:
+            threading.Thread(target=self._capture_process_output, args=(self.proc.stdout,), daemon=True, name="Dragonwilds-Dedicated-Console").start()
         self._apply_computer_profile(self.proc.pid, exe, profile_id)
         self._event(f"Started {profile.get('name') or profile_id} dedicated server (PID {self.proc.pid}).", "ok"); return self.status()
 

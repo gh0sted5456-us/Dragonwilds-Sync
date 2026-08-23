@@ -67,7 +67,7 @@ def _write_header(path: Path, profile_id: str, started: float) -> None:
         "Dragonwilds Sync Unified Server Log\n"
         f"World: {profile_id}\n"
         f"Session started: {_iso(started)}\n"
-        "Streams: GAME COMMANDS | SERVER | SYNC TRAFFIC\n"
+        "Streams: GAME CMD/STDOUT | UE4SS | SERVER | SYNC TRAFFIC\n"
         + ("-" * 78) + "\n",
         encoding="utf-8",
     )
@@ -138,6 +138,8 @@ def _level(value: object, *, ok: object = None) -> str:
 
 
 def _event_key(entry: dict) -> str:
+    if entry.get("_identity"):
+        return str(entry["_identity"])
     return "|".join((
         str(entry.get("source") or ""),
         f"{float(entry.get('ts') or 0):.6f}",
@@ -161,6 +163,82 @@ def _server_entries(runtime: dict) -> list[dict]:
             "message": message,
         })
     return rows
+
+
+def _process_entries(runtime: dict) -> list[dict]:
+    rows = []
+    for raw in runtime.get("process_output") or []:
+        if not isinstance(raw, dict) or not str(raw.get("message") or "").strip():
+            continue
+        rows.append({
+            "ts": float(raw.get("ts") or time.time()),
+            "source": "game",
+            "level": _level(raw.get("level"), ok=raw.get("ok")),
+            "message": str(raw.get("message") or "")[:4000],
+        })
+    return rows
+
+
+def _ue4ss_entries(runtime: dict, started: float, limit: int = 250) -> tuple[list[dict], str]:
+    root_value = str(runtime.get("game_root") or "").strip()
+    if not root_value:
+        return [], ""
+    root = Path(root_value)
+    candidates = [
+        root / "Binaries" / "Win64" / "UE4SS.log",
+        root / "Binaries" / "Win64" / "ue4ss" / "UE4SS.log",
+        root / "RSDragonwilds" / "Binaries" / "Win64" / "UE4SS.log",
+        root / "RSDragonwilds" / "Binaries" / "Win64" / "ue4ss" / "UE4SS.log",
+    ]
+    available = []
+    for path in candidates:
+        try:
+            if path.is_file():
+                available.append((float(path.stat().st_mtime), path))
+        except OSError:
+            continue
+    if not available:
+        return [], ""
+    mtime, path = max(available, key=lambda item: item[0])
+    if mtime < started - 2:
+        return [], str(path)
+    try:
+        size = int(path.stat().st_size)
+        start = max(0, size - 262144)
+        with path.open("rb") as handle:
+            handle.seek(start)
+            data = handle.read(262144)
+        base = start
+        if start:
+            marker = data.find(b"\n")
+            if marker < 0:
+                return [], str(path)
+            base += marker + 1
+            data = data[marker + 1:]
+        chunks = data.splitlines(keepends=True)
+        offsets = []
+        cursor = base
+        for chunk in chunks:
+            offsets.append((cursor, chunk))
+            cursor += len(chunk)
+        offsets = offsets[-max(20, min(int(limit), 500)):]
+    except OSError:
+        return [], str(path)
+    rows = []
+    for index, (offset, chunk) in enumerate(offsets):
+        message = chunk.decode("utf-8", errors="replace").strip()
+        if not message:
+            continue
+        folded = message.casefold()
+        level = "error" if any(token in folded for token in ("error", "fatal", "exception", "failed")) else ("warning" if "warn" in folded else "info")
+        rows.append({
+            "ts": mtime - ((len(offsets) - index) * 0.0001),
+            "source": "ue4ss",
+            "level": level,
+            "message": message[:4000],
+            "_identity": f"ue4ss:{path}:{offset}",
+        })
+    return rows, str(path)
 
 
 def _sync_entries(activities: list[dict]) -> list[dict]:
@@ -196,9 +274,10 @@ def _command_entries(history: list[dict]) -> list[dict]:
         body = command or "Game command"
         if ack:
             body += f" → {ack}"
+        command_source = str(raw.get("source") or "").casefold()
         rows.append({
             "ts": float(raw.get("at") or raw.get("ts") or time.time()),
-            "source": "game",
+            "source": "ue4ss" if "ue4ss" in command_source else "game",
             "level": _level(raw.get("level"), ok=raw.get("ok")),
             "message": f"{prefix} · {body}" if prefix else body,
             "command": command,
@@ -252,17 +331,18 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
     if runtime_active and runtime_active != key:
         # Never leak another active World's lifecycle or Sync traffic when an
         # operator opens the Console for a stopped/inactive profile.
-        runtime = {**runtime, "running": False, "events": []}
+        runtime = {**runtime, "running": False, "events": [], "process_output": [], "game_root": ""}
         activities = []
 
-    rows = _server_entries(runtime) + _sync_entries(activities) + _command_entries(commands)
+    ue4ss_rows, ue4ss_log = _ue4ss_entries(runtime, started)
+    rows = _server_entries(runtime) + _process_entries(runtime) + ue4ss_rows + _sync_entries(activities) + _command_entries(commands)
     rows = [row for row in rows if float(row.get("ts") or 0) >= started - 0.5]
     rows.sort(key=lambda row: (float(row.get("ts") or 0), str(row.get("source") or "")))
 
     for row in rows:
         record_entry(key, row)
 
-    counts = {"game": 0, "server": 0, "sync": 0}
+    counts = {"game": 0, "ue4ss": 0, "server": 0, "sync": 0}
     for row in rows:
         source = str(row.get("source") or "")
         if source in counts:
@@ -277,6 +357,7 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
         "counts": counts,
         "current_log": str(paths["current"]),
         "previous_log": str(paths["previous"]) if paths["previous"].is_file() else "",
+        "ue4ss_log": ue4ss_log,
     }
 
 
@@ -305,7 +386,7 @@ def _install_remote_state_hook() -> None:
             )
         except Exception as exc:
             payload["unified_console"] = {
-                "profile_id": str(profile_id or ""), "entries": [], "counts": {"game": 0, "server": 0, "sync": 0},
+                "profile_id": str(profile_id or ""), "entries": [], "counts": {"game": 0, "ue4ss": 0, "server": 0, "sync": 0},
                 "current_log": "", "previous_log": "", "error": str(exc)[:300],
             }
         return payload

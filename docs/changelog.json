@@ -11,7 +11,10 @@
         "All four Sync workspaces retain their selected tab instead of snapping back to Website & Directory.",
         "WebGUI Preview stays mounted during background status cycles and reloads in place on request.",
         "Desktop and Mobile preview controls update without rebuilding the Sync page.",
-        "Keyboard tab navigation and idempotent UI observers prevent focus loss and repaint loops."
+        "Keyboard tab navigation and idempotent UI observers prevent focus loss and repaint loops.",
+        "Dedicated World launch opens a movable unified console with GAME CMD/stdout, UE4SS, SERVER, and SYNC filters.",
+        "Dedicated stdout and the active UE4SS log are captured continuously without blocking the launched server.",
+        "The GAME CMD and UE4SS filters provide confirmed command input with game-thread dispatch and acknowledgement reporting."
       ]
     },
     {

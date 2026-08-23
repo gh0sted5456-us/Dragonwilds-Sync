@@ -8,6 +8,7 @@ function requireText(haystack, needle, label) {
 const index = read('renderer/index.html');
 const release = read('renderer/release-webgui-overhaul.js');
 const css = read('renderer/release-webgui-overhaul.css');
+const desktop = read('renderer/app-v2.js');
 const service = read('backend/dragonwilds_service.py');
 const legacyService = read('backend/dragonwilds_service_legacy.py');
 const consoleModule = read('backend/unified_console.py');
@@ -28,21 +29,28 @@ requireText(release, 'dws-native-context-detail', 'Item Editor rich context card
 requireText(release, 'Right-click for full item details', 'Spawner item inspector');
 requireText(release, 'server.console.unified', 'unified console polling');
 requireText(release, "data-dws-console-filter=\"game\"", 'game console filter');
+requireText(release, "data-dws-console-filter=\"ue4ss\"", 'UE4SS console filter');
 requireText(release, "data-dws-console-filter=\"server\"", 'server console filter');
 requireText(release, "data-dws-console-filter=\"sync\"", 'sync console filter');
 requireText(css, '.dws-console-row.source-game', 'game console colour');
+requireText(css, '.dws-console-row.source-ue4ss', 'UE4SS console colour');
 requireText(css, '.dws-console-row.source-server', 'server console colour');
 requireText(css, '.dws-console-row.source-sync', 'sync console colour');
 
 requireText(service, 'install_engine_session_hook(_legacy.ENGINE)', 'per-process session log hook');
 requireText(service, 'if method == "server.console.unified":', 'unified console RPC');
 requireText(consoleModule, 'DragonwildsSync.previous.log', 'previous-session rotation');
-requireText(consoleModule, 'Streams: GAME COMMANDS | SERVER | SYNC TRAFFIC', 'merged text log contract');
+requireText(consoleModule, 'Streams: GAME CMD/STDOUT | UE4SS | SERVER | SYNC TRAFFIC', 'merged text log contract');
 requireText(consoleModule, 'def record_entry(profile_id: object, entry: dict)', 'continuous disk log writer');
 requireText(consoleModule, '_install_live_source_hooks(engine)', 'live server/sync/game source hooks');
 requireText(consoleModule, 'state.activity = activity', 'live Sync traffic hook');
 requireText(consoleModule, 'legacy.record_rsdw_event = record_rsdw_event', 'live game-command hook');
 requireText(consoleModule, '_install_remote_state_hook()', 'authenticated WebHost unified stream hook');
+requireText(consoleModule, 'def _process_entries(runtime: dict)', 'dedicated process stdout stream');
+requireText(consoleModule, 'def _ue4ss_entries(runtime: dict, started: float', 'UE4SS log stream');
+requireText(desktop, 'function openUnifiedLaunchConsole(', 'movable desktop launch console');
+requireText(desktop, 'open-unified-server-console', 'manual desktop console action');
+requireText(desktop, "filter==='ue4ss'?`ue4ss.exec ${command}`:command", 'targeted UE4SS command dispatch');
 requireText(directoryWeb, 'dws-remote-unified-console-script', 'authenticated WebHost unified console UI');
 requireText(directoryWeb, 'data-dws-web-console-filter="sync"', 'WebHost Sync console filter');
 requireText(runner, 'backend/test_unified_console.py', 'unified console regression test');

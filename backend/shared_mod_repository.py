@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from integrations import normalize_mod_source
-from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
+from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS, preview_identity_consolidation, consolidate_identity_files
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, read_json, write_json
 
 
@@ -20,6 +20,14 @@ INDEX_PATH = REPOSITORY_ROOT / "index.json"
 LOCAL_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 SUPPORTED_GROUPS = {"ue4ss_mod", "runeschema_mod", "pak_mod"}
 EDITABLE_EXTENSIONS = {".lua", ".json", ".jsonc", ".ini", ".cfg", ".txt"}
+FINGERPRINT_ALGORITHM = "sha256-mod-payload-v2"
+# Inventory/publish repairs may create or normalize these application-facing
+# control files. They describe activation and launcher metadata, not gameplay
+# payload, so a server push must never turn them into a false content alert.
+NON_PAYLOAD_ROOT_FILES = {
+    "id.txt", "enabled.txt", "disabled.txt", "tags.json", "tags.txt",
+    "hotload.json", "hotload.txt",
+}
 _PREFIX = re.compile(r"^\d{2,3}_(.+)$")
 
 
@@ -87,6 +95,14 @@ def _content_hash(paths: list[Path]) -> tuple[str, int, int]:
     for root in sorted(paths, key=lambda item: item.name.casefold()):
         members = [root] if root.is_file() else sorted((p for p in root.rglob("*") if p.is_file()), key=lambda p: p.as_posix().casefold())
         for path in members:
+            if root.is_dir():
+                rel = path.relative_to(root)
+                lowered = [part.casefold() for part in rel.parts]
+                name = path.name.casefold()
+                if (len(rel.parts) == 1 and name in NON_PAYLOAD_ROOT_FILES) or any(
+                    part.startswith(".dwsync") or part.startswith(".dragonwilds-sync-") for part in lowered
+                ) or name.endswith((".dwsync.tmp", ".dragonwilds.tmp")):
+                    continue
             relative = path.name if root.is_file() else (Path(root.name) / path.relative_to(root)).as_posix()
             digest.update(relative.encode("utf-8", errors="replace")); digest.update(b"\0")
             with path.open("rb") as stream:
@@ -106,10 +122,10 @@ def _entry_id(group: str, name: str, source: dict) -> str:
 
 
 def _load_index() -> dict:
-    value = read_json(INDEX_PATH, {"version": 2, "entries": {}})
+    value = read_json(INDEX_PATH, {"version": 3, "entries": {}})
     if not isinstance(value, dict):
-        value = {"version": 2, "entries": {}}
-    value.setdefault("version", 2); value.setdefault("entries", {})
+        value = {"version": 3, "entries": {}}
+    value.setdefault("version", 3); value.setdefault("entries", {})
     return value
 
 
@@ -193,12 +209,22 @@ def refresh_repository() -> dict:
             old = previous.get(entry_id) if isinstance(previous, dict) else None
             old = old if isinstance(old, dict) else {}
             current = entries.get(entry_id) if isinstance(entries.get(entry_id), dict) else {}
-            canonical_hash = str(current.get("content_hash") or old.get("content_hash") or observed_hash)
+            if current.get("content_hash"):
+                canonical_hash = str(current["content_hash"])
+            elif old.get("fingerprint_algorithm") == FINGERPRINT_ALGORITHM and old.get("content_hash"):
+                canonical_hash = str(old["content_hash"])
+            else:
+                # Transparently migrate v1 indexes. Re-hash the canonical
+                # repository payload with the same v2 rules instead of marking
+                # every profile as changed merely because metadata is excluded.
+                payload = PAYLOAD_ROOT / entry_id
+                payload_children = list(payload.iterdir()) if payload.is_dir() else []
+                canonical_hash = _content_hash(payload_children)[0] if payload_children else observed_hash
             is_new_entry = not bool(current) and not bool(old.get("content_hash"))
             entry = entries.setdefault(entry_id, {
                 "id": entry_id, "key": key, "name": name, "group": group,
                 "source": source, "profiles": [], "content_hash": canonical_hash,
-                "fingerprint_algorithm": "sha256-tree-v1",
+                "fingerprint_algorithm": FINGERPRINT_ALGORITHM,
                 "file_count": int(old.get("file_count") or observed_file_count),
                 "size": int(old.get("size") or observed_size),
                 "first_seen_at": old.get("first_seen_at") or scanned_at,
@@ -207,13 +233,15 @@ def refresh_repository() -> dict:
             })
             old_profiles = old.get("profiles") if isinstance(old.get("profiles"), list) else []
             old_profile = next((row for row in old_profiles if isinstance(row, dict) and row.get("kind") == kind and row.get("id") == profile_id), {})
-            previous_observed = str(old_profile.get("content_hash") or "")
+            old_profile_algorithm = str(old_profile.get("fingerprint_algorithm") or old.get("fingerprint_algorithm") or "")
+            previous_observed = (str(old_profile.get("content_hash") or "")
+                                 if old_profile_algorithm == FINGERPRINT_ALGORITHM else observed_hash)
             fingerprint_status = "baseline" if is_new_entry else ("unchanged" if observed_hash == canonical_hash else "replaced")
             changed_at = (old_profile.get("changed_at") if previous_observed == observed_hash else scanned_at) or scanned_at
             entry["profiles"].append({
                 "kind": kind, "id": profile_id, "name": str(profile.get("name") or profile_id),
                 "content_hash": observed_hash, "previous_content_hash": previous_observed,
-                "fingerprint_algorithm": "sha256-tree-v1", "fingerprint_status": fingerprint_status,
+                "fingerprint_algorithm": FINGERPRINT_ALGORITHM, "fingerprint_status": fingerprint_status,
                 "file_count": observed_file_count, "size": observed_size,
                 "first_scanned_at": old_profile.get("first_scanned_at") or scanned_at,
                 "last_scanned_at": scanned_at, "changed_at": changed_at,
@@ -229,7 +257,7 @@ def refresh_repository() -> dict:
         entry["replacement_detected"] = replacement_count > 0
         entry["scan_status"] = "replaced" if replacement_count else ("new" if entry.pop("_new", False) else "unchanged")
         entry.pop("_new", None)
-    index = {"version": 2, "root": str(REPOSITORY_ROOT), "updated_at": scanned_at, "entries": entries}
+    index = {"version": 3, "root": str(REPOSITORY_ROOT), "updated_at": scanned_at, "entries": entries}
     write_json(INDEX_PATH, index)
     return public_index(index)
 
@@ -253,6 +281,28 @@ def _repository_entry(entry_id: str) -> tuple[dict, Path]:
     children = list(payload.iterdir())
     root = children[0].resolve() if entry.get("group") != "pak_mod" and len(children) == 1 and children[0].is_dir() else payload
     return entry, root
+
+
+def mod_identity_contract(entry_id: str, *, apply: bool = False, kind: str = "", profile_id: str = "") -> dict:
+    """Preview/apply ID.txt consolidation for a master or one linked profile."""
+    entry, master_root = _repository_entry(entry_id)
+    root = master_root
+    target_label = "Master repository"
+    if kind or profile_id:
+        normalized_kind = str(kind or "").strip().lower()
+        paths = _paths_for(normalized_kind, str(profile_id or "").strip(), entry["group"], entry["name"])
+        if len(paths) != 1 or not paths[0].is_dir():
+            raise ValueError("ID.txt is available for directory-based UE4SS and RuneSchema mods")
+        root = paths[0]
+        target_label = "Server Profile" if normalized_kind == "dedicated" else "Private World"
+    if not root.is_dir() or entry.get("group") == "pak_mod":
+        raise ValueError("ID.txt is available for directory-based UE4SS and RuneSchema mods")
+    result = consolidate_identity_files(root) if apply else preview_identity_consolidation(root)
+    result.update({"entry_id": entry["id"], "name": entry["name"], "target_label": target_label,
+                   "kind": kind or "master", "profile_id": profile_id})
+    if apply:
+        result["repository"] = refresh_repository()
+    return result
 
 
 def _repository_path(entry_id: str, relative_path: str) -> tuple[dict, Path, Path]:
@@ -374,13 +424,13 @@ def publish_from_profile(kind: str, profile_id: str, key: str, *, propagate: boo
         is_source = ref.get("kind") == kind and ref.get("id") == profile_id
         if is_source or propagate:
             ref.update({"content_hash": content_hash, "previous_content_hash": str(ref.get("content_hash") or ""),
-                        "fingerprint_algorithm": "sha256-tree-v1", "fingerprint_status": "unchanged",
+                        "fingerprint_algorithm": FINGERPRINT_ALGORITHM, "fingerprint_status": "unchanged",
                         "last_scanned_at": time.time(), "changed_at": time.time()})
         else:
             ref["fingerprint_status"] = "unchanged" if ref.get("content_hash") == content_hash else "replaced"
     entry["profiles"] = refs
     replacement_count = sum(row.get("fingerprint_status") == "replaced" for row in refs)
-    entry.update({"fingerprint_algorithm": "sha256-tree-v1", "replacement_detected": replacement_count > 0,
+    entry.update({"fingerprint_algorithm": FINGERPRINT_ALGORITHM, "replacement_detected": replacement_count > 0,
                   "replacement_count": replacement_count, "scan_status": "replaced" if replacement_count else "unchanged"})
     _copy_payload(paths, PAYLOAD_ROOT / entry_id)
     deployed = []
@@ -407,7 +457,7 @@ def deploy_entry(entry_id: str, kind: str, profile_id: str) -> dict:
         refs.append(ref)
     now = time.time()
     ref.update({"previous_content_hash": str(ref.get("content_hash") or ""), "content_hash": entry.get("content_hash"),
-                "fingerprint_algorithm": "sha256-tree-v1", "fingerprint_status": "unchanged",
+                "fingerprint_algorithm": FINGERPRINT_ALGORITHM, "fingerprint_status": "unchanged",
                 "last_scanned_at": now, "changed_at": now})
     entry["replacement_count"] = sum(row.get("fingerprint_status") == "replaced" for row in refs)
     entry["replacement_detected"] = entry["replacement_count"] > 0

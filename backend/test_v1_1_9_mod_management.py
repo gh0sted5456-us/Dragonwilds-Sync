@@ -38,11 +38,21 @@ def main() -> None:
         assert len(scanned["entries"]) == 1
         assert len(scanned["entries"][0]["profiles"]) == 2
         entry = scanned["entries"][0]
-        assert entry["fingerprint_algorithm"] == "sha256-tree-v1"
+        assert entry["fingerprint_algorithm"] == repository.FINGERPRINT_ALGORITHM
         assert len(entry["content_hash"]) == 64
         assert entry["replacement_detected"] is True and entry["replacement_count"] == 1
         world_b = next(row for row in entry["profiles"] if row["id"] == "world-b")
         assert world_b["fingerprint_status"] == "replaced" and len(world_b["content_hash"]) == 64
+
+        # A server scan/publish is allowed to normalize launcher-owned metadata
+        # without creating a false gameplay-content replacement warning.
+        for profile_id in ("world-a", "world-b"):
+            payload = repository.LOCAL_PROFILES_DIR / profile_id / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
+            (payload / "ID.txt").write_text(f"mod_id: SharedSchema\nscan: {profile_id}\n", encoding="utf-8")
+            (payload / "enabled.txt").write_text("", encoding="utf-8")
+        metadata_scan = repository.refresh_repository()["entries"][0]
+        assert next(row for row in metadata_scan["profiles"] if row["id"] == "world-a")["fingerprint_status"] == "unchanged"
+        assert next(row for row in metadata_scan["profiles"] if row["id"] == "world-b")["fingerprint_status"] == "replaced"
 
         source = repository.LOCAL_PROFILES_DIR / "world-a" / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
         canonical_hash = entry["content_hash"]

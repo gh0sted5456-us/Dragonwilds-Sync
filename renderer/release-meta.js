@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.16',
-  name: 'V2.7.16 · Evergreen Sync & Interface Reliability',
+  version: '2.7.17',
+  name: 'V2.7.17 · Accurate Mod Management',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.17',
+    title: 'Accurate Mod Management',
+    items: [
+      'Mod replacement warnings now compare gameplay payload only; server-push metadata, activation markers, and publication bookkeeping no longer create false alerts.',
+      'Existing repository fingerprints migrate to the content-only format without marking every linked profile as changed.',
+      'Mod Management adds instant in-memory search across mod names, types, sources, and linked Private World or Server profiles.',
+      'Difference labels now explicitly say CONTENT DIFFERENCE so they are not confused with ordinary Sync publication updates.',
+      'RSDWL profile exports keep connected Worlds, character saves, and presentation wrapped under their launcher profile while always excluding World passwords.',
+      'Nested ExampleMod-style .rsdwl mod archives remain importable, and Mod Management can safely consolidate identity.txt plus hotload markers into one verified ID.txt.',
+    ],
+  }, {
     version: '2.7.16',
     title: 'Evergreen Sync & Interface Reliability',
     items: [

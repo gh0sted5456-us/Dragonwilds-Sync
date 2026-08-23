@@ -10,7 +10,9 @@ script directive is ever executed.
 
 from copy import deepcopy
 import json
+import os
 import re
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
@@ -217,7 +219,16 @@ def write_identity(root: str | Path, identity: dict) -> Path:
     base = Path(root)
     base.mkdir(parents=True, exist_ok=True)
     target = base / CANONICAL_FILENAME
-    target.write_text(render_id_text(identity), encoding="utf-8")
+    fd, temporary = tempfile.mkstemp(prefix=".ID.", suffix=".dwsync.tmp", dir=str(base))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(render_id_text(identity))
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, target)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
     return target
 
 

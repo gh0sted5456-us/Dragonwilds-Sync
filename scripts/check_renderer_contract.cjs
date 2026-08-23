@@ -148,6 +148,15 @@ assert(releaseNavigation.includes("if(button.textContent!=='▣ Open Placard')bu
   source.includes("document.addEventListener('dws:open-profile-mods'") &&
   /\.mod-clean-row \{\r?\n  content-visibility: visible;/.test(performanceCss),
   'World Manage and profile Mods navigation must remain idempotent and free of observer/layout loops.');
+assert(source.includes('id="mod-repository-search"') &&
+  source.includes("row.dataset.modSearch||''") &&
+  source.includes('modRepositorySearch.addEventListener(\'input\',applyModRepositorySearch)'),
+  'Mod Management must provide an in-memory name/type/source/profile search without rescanning on each keystroke.');
+assert(source.includes('data-repository-build-id') && source.includes("'mod.repository.identity'") &&
+  source.includes('Write &amp; verify ID.txt'),
+  'Mod Management must preview and safely consolidate legacy metadata into ID.txt.');
+assert(source.includes('include_world_passwords:false') && source.includes('Profile-wrapped and safe to share'),
+  'Connected-world profile exports must always exclude passwords and explain their profile wrapper.');
 
 function sha256(relativePath) {
   return crypto.createHash('sha256')

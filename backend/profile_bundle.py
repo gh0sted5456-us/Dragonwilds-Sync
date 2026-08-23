@@ -215,6 +215,9 @@ def export_profile_bundle(state: dict, output_path: str | Path, *, profile_name:
                           include_worlds: bool = True, include_world_artwork: bool = True, game_dir: str = "",
                           character_ids: list[str] | None = None, world_ids: list[str] | None = None,
                           include_world_passwords: bool = False) -> dict:
+    # Retained in the signature for compatibility with older callers only.
+    # Connected-world packages are portable records, never credential stores.
+    include_world_passwords = False
     target = Path(output_path)
     if target.suffix.lower() != ".rsdwl":
         target = target.with_suffix(".rsdwl")

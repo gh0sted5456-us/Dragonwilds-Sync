@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from v3_identity import CANONICAL_FILENAME, discover_identity_file, read_identity, write_identity
+from v3_identity import CANONICAL_FILENAME, LEGACY_FILENAMES, discover_identity_file, read_identity, write_identity
 
 MAX_TAGS = 24
 MAX_TAG_LEN = 40
@@ -313,6 +313,81 @@ def ensure_mod_contract_files(root: str | Path) -> dict:
     parsed = read_identity(base) or {}
     return {"hotload": bool(parsed.get("hotload_capable")), "tags": bool(parsed.get("tags")),
             "identity": identity is not None, "canonical": bool(identity and identity.name == CANONICAL_FILENAME), "error": error}
+
+
+def preview_identity_consolidation(root: str | Path) -> dict:
+    """Describe the canonical ID.txt that can replace legacy identity markers.
+
+    This is intentionally read-only.  The matching apply operation writes and
+    verifies ID.txt before it removes identity.txt/identities.txt and the old
+    hotload marker, so a failed conversion never destroys author metadata.
+    """
+    base = Path(root)
+    if not base.is_dir():
+        raise FileNotFoundError("The selected mod folder is unavailable")
+    identity = read_identity(base) or {}
+    identity.setdefault("mod_id", base.name)
+    identity.setdefault("name", base.name)
+    identity.setdefault("runtime_role", "both")
+    if not identity.get("tags"):
+        identity["tags"] = parse_tags_file(base / "tags.json") or parse_tags_file(base / "tags.txt")
+    # During an explicit migration, a legacy marker is the source being
+    # consolidated even when an older canonical ID.txt already exists.
+    marker_value = None
+    json_marker = base / "hotload.json"
+    text_marker = base / "hotload.txt"
+    if json_marker.is_file():
+        marker_value = True
+        try:
+            value = json.loads(json_marker.read_text(encoding="utf-8", errors="replace"))
+            if isinstance(value, dict) and value.get("enabled") is False:
+                marker_value = False
+        except (OSError, json.JSONDecodeError, TypeError):
+            pass
+    elif text_marker.is_file():
+        marker_value = True
+        try:
+            meaningful = [line.strip().casefold() for line in text_marker.read_text(encoding="utf-8", errors="replace").splitlines()
+                          if line.strip() and not line.lstrip().startswith(("#", ";", "//"))]
+            if any(line in {"0", "false", "off", "disabled", "enabled=false"} for line in meaningful):
+                marker_value = False
+        except OSError:
+            pass
+    identity["hotload_capable"] = hotload_capable_from_root(base) if marker_value is None else marker_value
+    legacy = []
+    for child in base.iterdir():
+        if not child.is_file():
+            continue
+        folded = child.name.casefold()
+        if folded in {name.casefold() for name in LEGACY_FILENAMES} or folded in HOTLOAD_MARKERS:
+            legacy.append(child.name)
+    return {"root": str(base), "target": str(base / CANONICAL_FILENAME),
+            "identity": identity, "legacy_files": sorted(legacy, key=str.casefold),
+            "will_remove": sorted(legacy, key=str.casefold)}
+
+
+def consolidate_identity_files(root: str | Path) -> dict:
+    """Create canonical ID.txt, verify it, then retire legacy marker files."""
+    preview = preview_identity_consolidation(root)
+    base = Path(preview["root"])
+    target = write_identity(base, preview["identity"])
+    verified = read_identity(target)
+    if not verified or not verified.get("mod_id") or target.name != CANONICAL_FILENAME:
+        raise RuntimeError("ID.txt could not be verified; legacy files were left untouched")
+    removed, warnings = [], []
+    for name in preview["will_remove"]:
+        legacy = base / name
+        # Never remove the newly written canonical file on case-insensitive
+        # filesystems. identity.txt is a distinct name; ID.txt is not legacy.
+        if legacy.resolve() == target.resolve():
+            continue
+        try:
+            legacy.unlink(missing_ok=True)
+            removed.append(name)
+        except OSError as exc:
+            warnings.append(f"{name}: {exc}")
+    return {**preview, "ok": True, "verified": True, "removed": removed,
+            "warnings": warnings, "identity": verified}
 
 
 def parse_identity_text(text: str) -> dict:

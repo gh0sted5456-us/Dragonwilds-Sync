@@ -30,7 +30,7 @@ from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated
                            server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
                            _apply_profile_runeschema)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
-                                   PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file)
+                                   PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
@@ -2475,7 +2475,10 @@ def handle(method: str, params: dict) -> object:
             include_characters=bool(params.get("include_characters", True)),
             include_worlds=bool(params.get("include_worlds", True)),
             include_world_artwork=bool(params.get("include_world_artwork", True)),
-            include_world_passwords=bool(params.get("include_world_passwords", False)),
+            # Connected-world packages are shareable discovery/profile records,
+            # never credential containers. Passwords remain local even if an
+            # older renderer attempts to submit the historical option.
+            include_world_passwords=False,
             game_dir=str(application.get("game_dir") or ""),
             world_ids=[str(x) for x in (params.get("world_ids") or []) if str(x)] if isinstance(params.get("world_ids"), list) else None,
         )
@@ -3077,6 +3080,15 @@ def handle(method: str, params: dict) -> object:
     if method == "mod.repository.deploy":
         result = deploy_entry(str(params.get("entry_id") or ""), str(params.get("profile_kind") or params.get("kind") or "local"), str(params.get("profile_id") or ""))
         return {"result": result, "state": public_state(state)}
+
+    if method == "mod.repository.identity":
+        result = mod_identity_contract(
+            str(params.get("entry_id") or ""), apply=bool(params.get("apply", False)),
+            kind=str(params.get("kind") or params.get("profile_kind") or ""),
+            profile_id=str(params.get("profile_id") or ""),
+        )
+        return {"result": result, "repository": result.get("repository") or cached_mod_repository(),
+                "state": public_state(state)}
 
     if method == "mod.repository.files":
         entry_id = str(params.get("entry_id") or "").strip()

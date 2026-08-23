@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.17",
+      "title": "Dragonwilds Sync V2.7.17",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Mod change warnings compare gameplay payload instead of server-push and launcher metadata.",
+        "Existing fingerprints migrate without creating a one-time wave of false replacement alerts.",
+        "Mod Management provides instant search by mod, type, source, and linked profile.",
+        "Difference indicators clearly identify actual content differences.",
+        "Connected World RSDWL exports keep Worlds and character saves profile-wrapped while always excluding passwords.",
+        "Nested mod RSDWL archives and safe per-mod ID.txt consolidation are supported."
+      ]
+    },
+    {
       "version": "2.7.16",
       "title": "Dragonwilds Sync V2.7.16",
       "date": "2026-08-23",

@@ -28,7 +28,16 @@ def test_candidate_order_prefers_last_success():
     assert [kind for kind, _ in candidate_endpoints(world)] == ["external", "internal"]
 
 
+def test_candidate_recovers_verified_endpoint_after_legacy_route_loss():
+    world = {"connection": {"internal_ip": "", "external_ip": "", "sync_port": 27051,
+                            "last_successful_route": "internal", "last_successful_address": "192.168.1.50:27051"}}
+    assert candidate_endpoints(world) == [("internal", "192.168.1.50:27051")]
+    assert positive_world_identity({**world, "identity": {"world_name": "Recovered"}},
+                                   "192.168.1.50:27051", "Recovered")[0]
+
+
 if __name__ == "__main__":
     test_positive_identity_requires_saved_ip_and_name()
     test_candidate_order_prefers_last_success()
+    test_candidate_recovers_verified_endpoint_after_legacy_route_loss()
     print("identity tests passed")

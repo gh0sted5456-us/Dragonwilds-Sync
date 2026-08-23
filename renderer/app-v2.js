@@ -82,9 +82,11 @@
     clientPublicIp: '',
     clientModFilter: 'required',
     settingsTab: 'application',
-    webhostTab: 'manifest',
+    webhostTab: 'login',
     webhostPreviewMode: 'desktop',
     webhostPreviewLoaded: false,
+    serverManagementAddress: '',
+    serverManagementLoginUrl: '',
     operation: null,
     applicationSettingsTab: 'application',
     helpCategory: 'getting-started',
@@ -134,6 +136,7 @@
     sharedWorldsTab: 'packages',
     applicationUpdate: null,
     applicationUpdateResult: null,
+    hostingFocusDismissedProfileId: '',
     applicationUpdateMode: null,
     backgroundRefreshTimer: null,
     backgroundRefreshBusy: false,
@@ -710,7 +713,9 @@
     const runtime=state.data?.server?.runtime||{};
     const configured=state.data?.application?.computer_profile||{};
     const resolved=activeComputerProfile();
-    return !!runtime.running && configured.hosting_focus!==false && resolved.hosting_focus!==false;
+    const profileId=String(runtime.active_profile_id||state.data?.server?.active_world_id||'');
+    const localHostedProfile=!!profileId&&serverWorlds().some((profile)=>String(profile.id||'')===profileId);
+    return !!runtime.running && localHostedProfile && configured.hosting_focus!==false && resolved.hosting_focus!==false;
   }
 
   function backgroundStateSignature(data, channel) {
@@ -735,7 +740,8 @@
     if(!state.entered)return null;
     if(state.route==='worlds'&&state.data?.application?.world_discovery?.enabled!==false)return {channel:'worlds',interval:30000};
     if((state.route==='server-detail'&&['overview','maintenance'].includes(state.serverTab))||(state.route==='world-detail'&&activeWorld()?.kind==='singleplayer'&&['overview','maintenance'].includes(state.privateTab)))return {channel:'runtime',interval:10000};
-    if(state.route==='webhost'&&state.webhostTab!=='live')return {channel:'directory',interval:8000};
+    // The routed WebHost surface is now only an embedded Server Management
+    // login. It must not poll directory/configuration data in the background.
     return null;
   }
 
@@ -936,7 +942,7 @@
     if (next === 'rsdragonwilds-app') { state.worldManagementTab='server-setup';await handleRouteNavigation('world-management'); return; }
     if (next === 'servers' && next === state.route && state.serversTab !== 'worlds') { state.serversTab = 'worlds'; render(); return; }
     if (next === 'servers') state.serversTab = 'worlds';
-    if (next === 'webhost') state.webhostTab = 'manifest';
+    if (next === 'webhost') state.webhostTab = 'login';
     if (next === 'rsdw-toolkit') { state.profileTab = 'characters'; await enterRsdwToolkit(); return; }
     if (next === state.route) {
       if (next === 'worlds') await refreshWorldDiscoveryAndStatuses(true);
@@ -978,8 +984,10 @@
   function hostingFocusMarkup() {
     if(!hostingFocusActive())return '';
     const profile=activeComputerProfile();
+    const profileId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');
+    if(profileId&&state.hostingFocusDismissedProfileId===profileId)return '';
     const mode=String(profile.effective_mode||'balanced').replaceAll('_',' ');
-    return `<div class="hosting-focus-banner" role="status"><span aria-hidden="true">◈</span><div><strong>Hosting Focus is active</strong><small>${escapeHtml(mode)} profile · launcher background work is reduced while the server runs</small></div></div>`;
+    return `<div class="hosting-focus-banner" role="status"><span aria-hidden="true">◈</span><div><strong>Hosting Focus is active</strong><small>${escapeHtml(mode)} profile · launcher background work is reduced while the server runs</small></div><button type="button" id="dismiss-hosting-focus" aria-label="Dismiss Hosting Focus banner" title="Dismiss">×</button></div>`;
   }
 
   function scrollKey() {
@@ -1881,6 +1889,18 @@
     } catch (_) { return false; }
   }
 
+  function serverManagementLoginUrl(value) {
+    const raw=String(value||'').trim();
+    if(!raw)return '';
+    try{
+      const url=new URL(/^https?:\/\//i.test(raw)?raw:`http://${raw}`);
+      if(!['http:','https:'].includes(url.protocol)||!url.hostname)return '';
+      if(url.protocol==='http:'&&!url.port)url.port='27080';
+      url.username='';url.password='';url.hash='';url.pathname='/admin/login';
+      return url.toString();
+    }catch(_){return '';}
+  }
+
   function renderTitlebar() {
     const collapsed = !!state.data?.application?.nav_collapsed;
     const notices = Array.isArray(state.data?.application?.notifications) ? state.data.application.notifications : [];
@@ -2735,6 +2755,34 @@
     const key = String(badge || '').toLowerCase();
     const cls = key.includes('rune') ? 'runeschema' : key.includes('ue4') ? 'ue4ss' : key.includes('pak') ? 'paks' : 'vanilla';
     return `<span class="badge ${cls}">${escapeHtml(String(badge).toUpperCase())}</span>`;
+  }
+
+  function advertisedModFamily(value) {
+    const text=typeof value==='string'?value:[value?.section,value?.group,value?.kind,value?.type,value?.loader,value?.classification,value?.path,value?.name].filter(Boolean).join(' ');
+    const key=String(text||'').toLowerCase();
+    if(key.includes('rune'))return 'runeschema';
+    if(key.includes('pak'))return 'paks';
+    if(key.includes('ue4'))return 'ue4ss';
+    return 'other';
+  }
+
+  function showAdvertisedMods(item, family='', sourceLabel='Verified World Metadata') {
+    const all=Array.isArray(item?.mod_summary)?item.mod_summary:[];
+    const familyKey=advertisedModFamily(family);
+    const filtered=family&&familyKey!=='other'?all.filter((mod)=>advertisedModFamily(mod)===familyKey):all;
+    const familyLabel=familyKey==='paks'?'PAK':familyKey==='ue4ss'?'UE4SS':familyKey==='runeschema'?'RuneSchema':'';
+    const title=`${String(item?.name||'World')} ${familyLabel?`${familyLabel} `:''}Mods`;
+    showModal(`<div class="modal-header"><div><div class="eyebrow">${escapeHtml(sourceLabel)}</div><h2>${escapeHtml(title)}</h2><p>${filtered.length} advertised ${familyLabel||'total'} mod${filtered.length===1?'':'s'} · fingerprint ${escapeHtml(String(item?.fingerprint||'unknown'))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${filtered.length?filtered.map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||advertisedModFamily(mod)||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):`<div class="empty-state">This verified World advertises no ${escapeHtml(familyLabel||'')} mods in this category.</div>`}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title,width:760,height:650});
+  }
+
+  function filterDisplayedAdvertisedMods(family) {
+    const familyKey=advertisedModFamily(family);
+    if(familyKey==='other')return;
+    const lists=[...document.querySelectorAll('.activity-list')];
+    const list=lists.at(-1);if(!list)return;
+    let visible=0;
+    list.querySelectorAll('.activity-row').forEach((row)=>{const matches=advertisedModFamily(row.textContent)===familyKey;row.hidden=!matches;if(matches)visible+=1;});
+    if(!visible)list.insertAdjacentHTML('beforeend',`<div class="empty-state category-empty">No ${escapeHtml(String(family||''))} mods were advertised.</div>`);
   }
 
   function worldClassification(world, server = false) {
@@ -4280,7 +4328,17 @@
       const remoteFeatureEnabled=!!(a.advanced||{}).remote_server_enabled;
       const externalTab=externalSettingsTab;
       const externalTabs=!standaloneHostWorkspace?`<nav class="settings-subnav webhost-tabs"><button class="${externalTab==='overview'?'active':''}" data-external-tab="overview">Overview</button>${webhostFeatureEnabled?`<button class="${externalTab==='website'?'active':''}" data-external-tab="website">Website Management</button>`:''}${remoteFeatureEnabled?`<button class="${externalTab==='remote'?'active':''}" data-external-tab="remote">Remote Management</button>`:''}${(webhostFeatureEnabled||remoteFeatureEnabled)?`<button class="${externalTab==='live'?'active':''}" data-external-tab="live">Live Preview</button>`:''}</nav>`:'';
-      if(!standaloneHostWorkspace&&externalTab==='overview'){
+      if(standaloneHostWorkspace){
+        const selectedManagementWorld=activeWorld()||worlds().find((world)=>String(world.id||'')===String(state.selectedWorldId||''))||null;
+        const advertisedManagementEndpoint=selectedManagementWorld?.remote_management?.endpoint||selectedManagementWorld?.shared?.remote_management?.endpoint||selectedManagementWorld?.connection?.remote_management?.endpoint||'';
+        const detectedManagementAddress=state.serverManagementAddress||advertisedManagementEndpoint||directoryHostStatus.local_url||directoryHostStatus.lan_url||directoryHostStatus.public_url||'';
+        const loginUrl=state.serverManagementLoginUrl||serverManagementLoginUrl(detectedManagementAddress);
+        const addressValue=state.serverManagementAddress||advertisedManagementEndpoint||directoryHostStatus.lan_url||directoryHostStatus.public_url||directoryHostStatus.local_url||'';
+        content=`<section class="settings-section server-management-login-only">
+          <div class="server-management-login-bar"><label for="server-management-address"><span>Server Management address</span><input class="field" id="server-management-address" value="${escapeHtml(addressValue)}" placeholder="192.168.1.20:27080" autocomplete="url" spellcheck="false"/></label><button class="btn primary" id="load-server-management-login">Open Login</button>${loginUrl?`<button class="btn ghost" data-open-external="${escapeHtml(loginUrl)}">Open in Browser ↗</button>`:''}</div>
+          ${loginUrl?`<div class="server-management-login-frame"><webview id="server-management-login" src="${escapeHtml(loginUrl)}" partition="persist:server-management" webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes,devTools=no"></webview></div>`:`<div class="empty-state server-management-login-empty"><strong>Enter the server address to sign in.</strong><br/>Dragonwilds Sync will open only that server's authenticated Server Management login.</div>`}
+        </section>`;
+      }else if(!standaloneHostWorkspace&&externalTab==='overview'){
         content=externalTabs+`<section class="settings-section"><div class="panel-header"><div><h2>External Declaration</h2><span class="panel-subtitle">Choose the public surfaces this computer is allowed to expose. Website discovery and remote operation remain independent.</span></div><span class="status-pill unknown">ADVANCED</span></div>
           <div class="settings-row"><div class="settings-copy"><strong>Website</strong><span>Publish the World directory, manifest API, heartbeat intake, artwork, and join links. It grants no server-control authority.</span></div><button class="toggle ${webhostFeatureEnabled?'on':''}" id="toggle-webhost-feature"></button></div>
           <div class="settings-row"><div class="settings-copy"><strong>Enable Remote Management</strong><span>Expose authenticated, World-scoped server operation with desktop-owned users, permissions, requests, and audit history.</span></div><button class="toggle ${remoteFeatureEnabled?'on':''}" id="toggle-remote-server-feature"></button></div>
@@ -4448,11 +4506,11 @@
     }
     return `
       <div class="content">
-        <div class="page-header"><div><div class="eyebrow">${standaloneHostWorkspace||routedServers?'Advanced Hosting':'System'}</div><h1>${routedServers?t('servers'):(routedWebhost?'Sync':(standaloneRemote?t('remoteServer'):(standaloneWebhost?t('webHosting'):'Settings')))}</h1><div class="page-subtitle">${routedServers?'Configure the shared dedicated-server installation, runtime cores, network benchmark, firewall, and global access policy.':(routedWebhost?'Preview Dragonwilds Sync and configure its independently gated website and Remote Server networking.':(standaloneRemote?'Manage desktop-owned remote users, permissions, audit boundaries, and the responsive login preview.':(standaloneWebhost?'Publish the independent joinable-World directory, manifest API, sharing address, and responsive public preview.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.')))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">↗ Open in Window</button></div></div>
+        <div class="page-header"><div><div class="eyebrow">${standaloneHostWorkspace?'Authenticated access':(routedServers?'Advanced Hosting':'System')}</div><h1>${routedServers?t('servers'):(standaloneHostWorkspace?'Server Management':'Settings')}</h1><div class="page-subtitle">${routedServers?'Configure the shared dedicated-server installation, runtime cores, network benchmark, firewall, and global access policy.':(standaloneHostWorkspace?'Sign in to manage a server. No public directory, manifest, preview, or host configuration is loaded on this page.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.')}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">↗ Open in Window</button></div></div>
         ${routedServers?'<nav class="settings-subnav server-workspace-tabs"><button data-servers-tab="worlds">Worlds</button><button class="active" data-servers-tab="settings">Server Setup</button></nav>':''}
         <div class="settings-layout ${standaloneHostWorkspace||routedServers||routedMods?'webhost-layout':''}">
           ${standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav">${settingsNav('application','⚙',t('application'))}${settingsNav('advanced','◇','Advanced')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('about','ⓘ',t('about'))}</nav>`}
-          <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">${t('application')}</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}<div class="settings-page-note">Changes save to the launcher profile immediately.</div>${content}</div>
+          <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">${t('application')}</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}${standaloneHostWorkspace?'':'<div class="settings-page-note">Changes save to the launcher profile immediately.</div>'}${content}</div>
         </div>
       </div>`;
   }
@@ -4598,6 +4656,7 @@
     document.body.dataset.glass = state.data?.application?.glass_theme ? '1' : '0';
     document.body.dataset.showTips = state.data?.application?.advanced?.show_tips ? '1' : '0';
     document.body.dataset.hostingFocus = hostingFocusActive() ? '1' : '0';
+    document.body.dataset.hostingFocusBanner = hostingFocusMarkup() ? '1' : '0';
     document.body.dataset.hostingFocusLevel = hostingFocusActive() ? String(activeComputerProfile().focus_level||'standard') : 'off';
     document.documentElement.lang = languageCode();
     if (!state.entered) {
@@ -4631,7 +4690,7 @@
     else if (state.route === 'nexus') page = renderNexusBrowser();
     else if (state.route === 'help') page = renderHelp();
     else if (state.route === 'webhost') page = renderSettings();
-    else if (state.route === 'remote-server') { state.webhostTab='remote';page=renderSettings(); }
+    else if (state.route === 'remote-server') { state.webhostTab='login';page=renderSettings(); }
     else if (state.route === 'mods-app') { state.settingsTab='mods';page=renderSettings(); }
     else if (state.route === 'settings') page = renderSettings();
     else page = renderWorldGallery();
@@ -4752,6 +4811,7 @@
   }
 
   function bindEvents() {
+    root.querySelector('#dismiss-hosting-focus')?.addEventListener('click',()=>{state.hostingFocusDismissedProfileId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');render();});
     root.querySelector('#minimal-open-full')?.addEventListener('click',()=>window.dragonwilds.openMainWindow?.());
     root.querySelector('#minimal-refresh')?.addEventListener('click',async()=>{try{state.data=await api.invoke('state.get',{});render();}catch(error){toast('Refresh failed',error.message,'error');}});
     root.querySelector('#enter-launcher')?.addEventListener('click', () => { state.entered = true; state.route = 'world-management'; render(); const gs=state.data?.application?.guided_setup || {}; if (!gs.completed && !gs.skipped) setTimeout(() => openGuidedSetup('player'), 80); });
@@ -5886,6 +5946,9 @@
     root.querySelectorAll('[data-resolve-webhost-request]').forEach((button)=>button.addEventListener('click',async()=>{try{state.data=await api.invoke('application.world_directory_host.permission.resolve',{id:button.dataset.resolveWebhostRequest,approve:button.dataset.approve==='1'});render();toast(button.dataset.approve==='1'?'Permission approved':'Permission denied','The decision was persisted to the server user.','success');}catch(error){toast('Could not resolve request',error.message,'error');}}));
       const saveDirectoryHost=async(enabledOverride=null)=>{const current=state.data?.application?.world_directory_host||{};const currentRemote=current.remote_admin||{};const featureFlags=state.data?.application?.advanced||{};const webhostEnabled=!!featureFlags.webhost_enabled,remoteEnabled=!!featureFlags.remote_server_enabled;const remotePermissions={...(currentRemote.permissions||{})};root.querySelectorAll('[data-webhost-permission]').forEach(input=>{remotePermissions[input.dataset.webhostPermission]=!!input.checked;});const publicationMode=root.querySelector('#directory-host-publication-mode')?.value||current.publication_mode||'manual';const payload={...current,identity_name:root.querySelector('#directory-host-identity')?.value.trim()||current.identity_name||'Dragonwilds Sync',enabled:enabledOverride===null?(webhostEnabled||remoteEnabled):!!enabledOverride,directory_enabled:webhostEnabled,port:Number(root.querySelector('#directory-host-port')?.value||current.port||27080),public_base_url:root.querySelector('#directory-host-public-url')?.value.trim()||current.public_base_url||'',publication_mode:publicationMode,public_transport:publicationMode==='tunnel'?'cloudflare_quick':'direct',public_surface_mode:root.querySelector('#directory-host-surface')?.value||current.public_surface_mode||'full',ingestion_token:root.querySelector('#directory-host-token')?.value||current.ingestion_token||'',heartbeat_ttl_seconds:Number(root.querySelector('#directory-host-ttl')?.value||current.heartbeat_ttl_seconds||300),max_entries:Number(root.querySelector('#directory-host-max-entries')?.value||current.max_entries||500),upnp_enabled:publicationMode==='upnp',allow_anonymous_heartbeats:root.querySelector('#directory-host-anonymous')?!!root.querySelector('#directory-host-anonymous').checked:!!current.allow_anonymous_heartbeats,remote_admin:{...currentRemote,enabled:remoteEnabled,permissions:remotePermissions}};const response=await api.invoke('application.world_directory_host.settings',payload);if(response.state)state.data=response.state;render();return response;};
     root.querySelectorAll('[data-webhost-tab]').forEach(button=>button.addEventListener('click',()=>{state.webhostTab=button.dataset.webhostTab||'settings';render();}));
+    const openServerManagementLogin=()=>{const address=root.querySelector('#server-management-address')?.value.trim()||'';const loginUrl=serverManagementLoginUrl(address);if(!loginUrl){toast('Server address is not valid','Enter an IP address or an HTTP/HTTPS WebHost address.','error');return;}state.serverManagementAddress=address;state.serverManagementLoginUrl=loginUrl;render();};
+    root.querySelector('#load-server-management-login')?.addEventListener('click',openServerManagementLogin);
+    root.querySelector('#server-management-address')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();openServerManagementLogin();}});
     root.querySelectorAll('[data-webhost-preview]').forEach(button=>button.addEventListener('click',()=>{state.webhostPreviewMode=button.dataset.webhostPreview==='mobile'?'mobile':'desktop';render();}));
     root.querySelector('#refresh-webhost-preview')?.addEventListener('click',()=>{state.webhostPreviewLoaded=true;render();});
     root.querySelector('#toggle-webhost-directory')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
@@ -6924,6 +6987,8 @@
       state.lanDiscoveries=found;
       const savedRows=state.data?.client?.worlds||[];
       showModal(`<div class="modal-header"><div><div class="eyebrow">Local Network Discovery</div><h2>Available LAN Worlds</h2><p>Select a verified broadcast. Double-click or right-click a World to add it; click its mod badges to inspect the advertised files.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="lan-world-results" role="listbox" aria-label="Verified LAN Worlds">${found.map((item,index)=>{const fingerprint=String(item.fingerprint||'');const existing=savedRows.find((world)=>fingerprint&&String(world.shared?.fingerprint||'')===fingerprint);const external=String(item.external_ip||'').trim();const verified=item.identity_verified===true;return `<article class="lan-world-result ${verified?'verified':'unverified'}" tabindex="0" role="option" aria-selected="false" data-lan-world-row="${index}"><div><strong>${escapeHtml(item.name||'Dragonwilds World')}</strong><small>${escapeHtml(external||item.ip||'No route')} · Sync ${escapeHtml(String(item.sync_port||item.port||27051))} · ${verified?'Fingerprint verified':'Identity not verified'}</small><div class="badge-row">${(item.mod_badges||[]).map((badge)=>`<button type="button" class="badge" data-lan-mods="${index}" title="View advertised mods">${escapeHtml(badge)}</button>`).join('')}</div></div><button class="btn ${existing?'ghost':'primary'}" data-lan-world-select="${index}" ${verified?'':'disabled'}>${verified?(existing?'Refresh Saved World':'Add Connected World'):'Cannot Add'}</button></article>`;}).join('')}</div></div><div class="modal-footer"><span>${found.filter((item)=>item.identity_verified===true).length} fingerprint-verified LAN World${found.filter((item)=>item.identity_verified===true).length===1?'':'s'}</span><button class="btn ghost" data-close-modal>Close</button></div>`,{title:'LAN Worlds',width:900,height:720});
+      modalRoot.querySelectorAll('[data-lan-mods]').forEach((button)=>{button.classList.add(advertisedModFamily(button.textContent));button.title=`View ${button.textContent.trim()} mods`;});
+      modalRoot.querySelector('.lan-world-results')?.addEventListener('click',(event)=>{const button=event.target.closest('[data-lan-mods]');if(!button)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const item=state.lanDiscoveries?.[Number(button.dataset.lanMods)];if(item)showAdvertisedMods(item,button.textContent,'Verified LAN Metadata');},true);
       modalRoot.querySelectorAll('[data-lan-world-select]').forEach((button)=>button.addEventListener('click',async()=>{
         const item=state.lanDiscoveries?.[Number(button.dataset.lanWorldSelect)];if(!item)return;
         const internalIp = String(item.ip || '').trim();
@@ -6959,6 +7024,9 @@
   function openDirectConnect(initialAddress='') {
     const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Direct Connect</div><h2>Find Sync Worlds at an IP</h2><p>The address is queried for active Dragonwilds Sync announcements. Nothing is saved until you choose Connect.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="path-field"><input class="field" id="direct-connect-address" value="${escapeHtml(initialAddress)}" placeholder="IP address or hostname" autocomplete="off"/><button class="btn primary" id="direct-connect-search">Search</button></div><div id="direct-connect-results" style="margin-top:14px"><div class="empty-state compact">Enter the host address to find its fingerprint-verified Sync Worlds.</div></div></div><div class="modal-footer"><button class="btn ghost" id="direct-connect-manual">Manual Connection</button><button class="btn ghost" data-close-modal>Close</button></div>`,{title:'Direct Connect',width:900,height:720});
     const results=win.querySelector('#direct-connect-results');
+    const styleDirectModBadges=()=>results.querySelectorAll('[data-direct-mods]').forEach((button)=>{button.classList.add(advertisedModFamily(button.textContent));button.title=`View ${button.textContent.trim()} mods`;});
+    new MutationObserver(styleDirectModBadges).observe(results,{childList:true,subtree:true});
+    results.addEventListener('click',(event)=>{const button=event.target.closest('[data-direct-mods]');if(button)filterDisplayedAdvertisedMods(button.textContent);});
     const showMods=(item)=>showModal(`<div class="modal-header"><div><div class="eyebrow">Verified Direct Metadata</div><h2>${escapeHtml(item.name||'World')} Mods</h2><p>${(item.mod_summary||[]).length} advertised mod${(item.mod_summary||[]).length===1?'':'s'} · ${escapeHtml(item.fingerprint||'')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${(item.mod_summary||[]).length?(item.mod_summary||[]).map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):'<div class="empty-state">This World advertises no mods.</div>'}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'Direct World Mods',width:760,height:650});
     const connect=(item)=>{
       if(item.identity_verified!==true)return toast('World identity not verified',item.identity_error||'The announcement and live fingerprint did not match.','error');

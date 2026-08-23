@@ -16,6 +16,10 @@ window.DWSYNC_RELEASE_META = Object.freeze({
       'DragonConnect commits saved credentials through the live UMG SetText function and scans already-created password fields, preventing a password that looks filled but is not used by Join.',
       'Connected World Details now retain the backend-selected saved profile and enrich it with live metadata instead of discarding the selected profile state.',
       'Core Configuration now shows only server/player files plus UE4SS and RuneSchema root configuration; individual mod files remain in Mod Management.',
+      'Incomplete LAN or Direct Connect refreshes can no longer erase a working profile route; retry also recovers from the last authenticated Sync endpoint.',
+      'WebHost is now a focused Server Management login page with no manifest, preview, configuration tabs, or background directory polling.',
+      'Hosting Focus is limited to the local running hosted profile and includes a dismiss control.',
+      'LAN and Direct server-finder cards keep readable dark controls, and PAK, UE4SS, and RuneSchema badges filter the advertised inventory correctly.',
     ],
   }, {
     version: '2.7.4',

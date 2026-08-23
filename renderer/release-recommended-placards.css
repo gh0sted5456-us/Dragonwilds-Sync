@@ -6,7 +6,7 @@
 .lan-world-result:hover,.lan-world-result:focus-visible,.lan-world-result.selected{border-color:var(--gold);background:color-mix(in srgb,var(--panel) 86%,var(--gold) 14%);box-shadow:0 0 0 2px color-mix(in srgb,var(--gold) 18%,transparent)}
 .lan-world-result.unverified{opacity:.66}
 .lan-world-result .badge-row{margin-top:8px}
-.lan-world-result .badge-row .badge{border:1px solid var(--line);cursor:pointer;font:inherit}
+.lan-world-result .badge-row .badge{appearance:none;border:1px solid var(--line);background:color-mix(in srgb,var(--panel-strong) 92%,transparent);color:var(--text);cursor:pointer;font:inherit;line-height:1.2}
 .lan-world-result .badge-row .badge:hover,.lan-world-result .badge-row .badge:focus-visible{border-color:var(--gold);color:var(--gold)}
 .lan-world-result strong,.lan-world-result small{display:block;overflow-wrap:anywhere}
 .lan-world-result small{color:var(--muted);margin-top:4px}

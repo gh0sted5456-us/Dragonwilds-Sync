@@ -157,7 +157,28 @@ def resolve_server_layout(selected: str | Path) -> ServerLayout:
     # Keep non-existent paths deterministic so Settings can preview where Full Setup will install.
     candidates = _install_candidates(raw) if str(raw) else []
 
-    matched_install = next((p for p in candidates if _looks_like_install_root(p)), None)
+    # A broad ancestor can contain an unrelated Dragonwilds installation (for
+    # example AppData\Local) while the selected server folder contains the
+    # exact SteamCMD child. Prefer the deepest valid candidate so the explicit
+    # selection cannot be displaced by machine-wide evidence above it.
+    def relevant_match(candidate: Path) -> bool:
+        if candidate == raw or candidate in raw.parents:
+            try:
+                relative = raw.relative_to(candidate)
+            except ValueError:
+                return False
+            first = relative.parts[0].casefold() if relative.parts else ""
+            return (candidate == raw or candidate.name.casefold() == DEDICATED_FOLDER.casefold()
+                    or first == "rsdragonwilds"
+                    or first in {name.casefold() for name in SERVER_EXE_ALIASES})
+        try:
+            candidate.relative_to(raw)
+            return True
+        except ValueError:
+            return False
+
+    matched_candidates = [p for p in candidates if _looks_like_install_root(p) and relevant_match(p)]
+    matched_install = max(matched_candidates, key=lambda p: len(p.parts), default=None)
     install_root = matched_install if matched_install is not None else planned_steamcmd_install_root(raw)
     if _looks_like_game_root(raw):
         # Official SteamCMD installs may contain a small top-level Binaries

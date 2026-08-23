@@ -3759,6 +3759,15 @@ def handle(method: str, params: dict) -> object:
                 break
         if existing is not None and not str((payload.get("credentials") or {}).get("password") or ""):
             payload["credentials"].pop("password", None)
+        if existing is not None and method == "world.discovery.add":
+            # Discovery is an incremental refresh. A transient/partial UDP or
+            # direct-query response must never erase the route that already
+            # connected successfully for this fingerprint.
+            incoming = payload.setdefault("connection", {})
+            saved = existing.get("connection") if isinstance(existing.get("connection"), dict) else {}
+            for key in ("internal_ip", "external_ip"):
+                if not str(incoming.get(key) or "").strip() and str(saved.get(key) or "").strip():
+                    incoming[key] = saved[key]
         world = ensure_world_shape(payload, existing)
         if not world["identity"]["world_name"]:
             raise ValueError("World Name is required because it is part of positive server identity.")

@@ -41,6 +41,15 @@ def main():
     assert matching[0]["id"] == first["world"]["id"]
     assert matching[0]["presentation"]["description"] == "Refreshed LAN metadata"
 
+    partial = announcement("")
+    partial["presentation"]["description"] = "Partial refresh"
+    third = service.handle("world.discovery.add", partial)
+    assert third["created"] is False
+    assert third["world"]["connection"]["internal_ip"] == "192.168.50.22", "partial discovery must retain the working route"
+    reloaded = service.handle("bootstrap", {})
+    matching = [row for row in reloaded["client"]["worlds"] if (row.get("shared") or {}).get("fingerprint") == "a" * 64]
+    assert len(matching) == 1 and matching[0]["connection"]["internal_ip"] == "192.168.50.22"
+
     try:
         invalid = announcement("192.168.50.23")
         invalid["shared"]["fingerprint_verified"] = False

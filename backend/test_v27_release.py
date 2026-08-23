@@ -65,6 +65,16 @@ def main():
     assert "const world=worlds().find" in renderer
     assert "if(selected?.client)setData(selected)" in renderer
     assert "apply_gameplay_now: true" in renderer
+    assert "hostingFocusDismissedProfileId" in renderer
+    assert "localHostedProfile" in renderer
+    assert "server-management-login-only" in renderer
+    assert "serverManagementLoginUrl" in renderer
+    assert "advertisedModFamily" in renderer
+    assert "showAdvertisedMods(item,button.textContent,'Verified LAN Metadata')" in renderer
+    assert "filterDisplayedAdvertisedMods(button.textContent)" in renderer
+    routed_login = renderer.index("if(standaloneHostWorkspace){")
+    routed_overview = renderer.index("}else if(!standaloneHostWorkspace&&externalTab==='overview'){")
+    assert routed_login < routed_overview
 
     print("v2.7 updater, navigation, runtime, networking, and DragonConnect contracts passed")
 

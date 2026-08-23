@@ -188,7 +188,8 @@ def main():
                    "Download Direct Metadata", "data-world-selector", "Shared Character Library", "Sync Website",
                    "17-directory-admin.png", "18-directory-public.png", "startBackgroundRefreshScheduler"):
         assert marker in renderer
-    assert "return {channel:'directory',interval:8000}" in renderer
+    assert "return {channel:'directory',interval:8000}" not in renderer
+    assert "server-management-login-only" in renderer
     assert "['directory','minimal'].includes(active.channel)" in renderer
     assert "Public Internet address" in renderer and "PORT FORWARD REQUIRED" in renderer and "copy-webhost-public-address" in renderer
     print("release 1.4 self-hosted directory tests passed")

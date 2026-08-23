@@ -100,6 +100,16 @@ def saved_endpoint_kind(world: dict, contacted: str) -> str | None:
         return "internal"
     if connection.get("external_ip") and endpoint_hosts_equal(contacted, connection.get("external_ip", "")):
         return "external"
+    # This endpoint was persisted only after a successful authenticated
+    # connection. Retain it as a recovery identity alias for profiles damaged
+    # by an older partial discovery refresh.
+    last_address = str(connection.get("last_successful_address") or "").strip()
+    if last_address and endpoint_hosts_equal(contacted, last_address):
+        last_route = str(connection.get("last_successful_route") or "").lower()
+        if last_route in ("internal", "external"):
+            return last_route
+        endpoint = normalize_endpoint(last_address)
+        return "internal" if endpoint and endpoint_is_private(endpoint) else "external"
     return None
 
 
@@ -146,6 +156,12 @@ def candidate_endpoints(world: dict) -> list[tuple[str, str]]:
     }
     preference = str(connection.get("preference") or "auto").lower()
     last = str(connection.get("last_successful_route") or "").lower()
+    last_address = str(connection.get("last_successful_address") or "").strip()
+    if last_address and not any(values.values()):
+        endpoint = normalize_endpoint(last_address)
+        recovered_kind = last if last in ("internal", "external") else ("internal" if endpoint and endpoint_is_private(endpoint) else "external")
+        values[recovered_kind] = last_address
+        last = recovered_kind
 
     order: list[str] = []
     if preference in ("internal", "external"):

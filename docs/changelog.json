@@ -11,7 +11,11 @@
         "Active hosted Worlds restart after their canonical World Password is written to DedicatedServer.ini.",
         "DragonConnect commits saved passwords through the live UMG widget rather than display-only reflection.",
         "Connected World Details retain and display the selected saved profile.",
-        "Core Configuration excludes individual UE4SS, RuneSchema, and PAK mod files."
+        "Core Configuration excludes individual UE4SS, RuneSchema, and PAK mod files.",
+        "Partial LAN/direct refreshes retain the last working route, and damaged profiles recover from their last authenticated endpoint.",
+        "WebHost now opens only the authenticated Server Management login and performs no background directory polling.",
+        "Hosting Focus appears only for a locally hosted running World and can be dismissed.",
+        "LAN and Direct server-finder cards use readable dark controls and framework badges open only their matching advertised mods."
       ]
     },
     {

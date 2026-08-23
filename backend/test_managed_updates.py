@@ -191,6 +191,48 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
         managed_updates.server_systems.install_authoritative_runeschema_update = old_rs
 
 
+def test_manual_client_cores_are_cached_separately_from_server_runtime() -> None:
+    systems = managed_updates.server_systems
+    old = (systems.CLIENT_RUNTIME_OVERRIDE_DIR, systems.CLIENT_UE4SS_OVERRIDE_ZIP,
+           systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP, systems.CLIENT_RUNESCHEMA_RUNTIME_DIR,
+           systems.RUNESCHEMA_RUNTIME_DIR, systems.review_with_defender)
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); game = root / "RSDragonwilds"; (game / "Content/Paks").mkdir(parents=True)
+            systems.CLIENT_RUNTIME_OVERRIDE_DIR = root / "client-cache"
+            systems.CLIENT_UE4SS_OVERRIDE_ZIP = systems.CLIENT_RUNTIME_OVERRIDE_DIR / "UE4SS-client-custom.zip"
+            systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP = systems.CLIENT_RUNTIME_OVERRIDE_DIR / "RuneSchema-client-custom.zip"
+            systems.CLIENT_RUNESCHEMA_RUNTIME_DIR = systems.CLIENT_RUNTIME_OVERRIDE_DIR / "runeschema"
+            systems.RUNESCHEMA_RUNTIME_DIR = root / "server-runtime" / "runeschema"
+            systems.review_with_defender = lambda *_args, **_kwargs: None
+            ue_zip = root / "MyUE4SS.zip"
+            with zipfile.ZipFile(ue_zip, "w") as archive:
+                archive.writestr("dwmapi.dll", b"bootstrap")
+                archive.writestr("version.dll", b"server-only")
+                archive.writestr("ue4ss/UE4SS.dll", b"core")
+                archive.writestr("ue4ss/UE4SS-settings.ini", b"[Settings]\n")
+                archive.writestr("ue4ss/imgui.ini", b"[Window]\n")
+            rs_zip = root / "MyRuneSchema.zip"
+            with zipfile.ZipFile(rs_zip, "w") as archive:
+                archive.writestr("RuneSchema/enabled.txt", "")
+                archive.writestr("RuneSchema/config/config.json", "{}")
+                archive.writestr("RuneSchema/dlls/main.dll", b"dll")
+                archive.writestr("RuneSchema/mods/.keep", "")
+            application = {}
+            ue = managed_updates.install_client_core("ue4ss", str(game), application, {"zip_path": str(ue_zip)})
+            rs = managed_updates.install_client_core("runeschema", str(game), application, {"zip_path": str(rs_zip)})
+            win64 = game / "Binaries/Win64"
+            assert ue["manual_override"] and rs["manual_override"]
+            assert systems.CLIENT_UE4SS_OVERRIDE_ZIP.is_file() and systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP.is_file()
+            assert (win64 / "dwmapi.dll").is_file() and not (win64 / "version.dll").exists()
+            assert (systems.CLIENT_RUNESCHEMA_RUNTIME_DIR / "dlls/main.dll").is_file()
+            assert not systems.RUNESCHEMA_RUNTIME_DIR.exists(), "client RuneSchema import polluted the server runtime cache"
+    finally:
+        (systems.CLIENT_RUNTIME_OVERRIDE_DIR, systems.CLIENT_UE4SS_OVERRIDE_ZIP,
+         systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP, systems.CLIENT_RUNESCHEMA_RUNTIME_DIR,
+         systems.RUNESCHEMA_RUNTIME_DIR, systems.review_with_defender) = old
+
+
 def main() -> None:
     test_client_github_update_cannot_install_server_loader()
     test_github_release_pages_resolve_real_assets_via_api()
@@ -199,6 +241,7 @@ def main() -> None:
     test_runeschema_missing_release_asset_fails_cleanly()
     test_runtime_cache_refresh_defaults_to_local_only()
     test_client_ue4ss_and_runeschema_never_use_steamcmd()
+    test_manual_client_cores_are_cached_separately_from_server_runtime()
     print("managed UE4SS/RuneSchema update helper contract: PASS")
 
 

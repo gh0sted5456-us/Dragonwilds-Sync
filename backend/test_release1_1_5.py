@@ -221,6 +221,9 @@ def test_reset_is_backup_first_and_path_guarded():
         mods = install / "RSDragonwilds" / "Binaries" / "Win64" / "ue4ss" / "Mods" / "Example"
         mods.mkdir(parents=True)
         (mods / "main.lua").write_text("return true", encoding="utf-8")
+        win64 = install / "RSDragonwilds" / "Binaries" / "Win64"
+        (win64 / "dwmapi.dll").write_bytes(b"client-loader")
+        (win64 / "version.dll").write_bytes(b"dedicated-server-loader")
         original = server_systems.APP_DATA_DIR
         try:
             server_systems.APP_DATA_DIR = root / "LocalAppData" / "DragonwildsSync"
@@ -231,6 +234,9 @@ def test_reset_is_backup_first_and_path_guarded():
             assert removed["deleted"] is False and install.exists()
             assert removed["steam_files_preserved"] is True and removed["eos_data_preserved"] is True
             assert not (install / "RSDragonwilds" / "Binaries" / "Win64" / "ue4ss").exists()
+            assert (win64 / "dwmapi.dll").read_bytes() == b"client-loader"
+            assert (win64 / "version.dll").read_bytes() == b"dedicated-server-loader"
+            assert len(removed["protected_runtime_loaders"]) == 2
             try:
                 server_systems.wipe_install_after_backup(str(root))
                 raise AssertionError("Non-Dragonwilds directory should be rejected")

@@ -156,6 +156,10 @@ UE4SS_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "ue4ss"
 RUNESCHEMA_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "runeschema"
 RUNESCHEMA_UPLOAD_DIR = APP_DATA_DIR / "runeschema_uploads"
 RUNESCHEMA_CORE_CACHE_ZIP = RUNESCHEMA_UPLOAD_DIR / "RuneSchema-core-latest.zip"
+CLIENT_RUNTIME_OVERRIDE_DIR = APP_DATA_DIR / "client_runtime_overrides"
+CLIENT_UE4SS_OVERRIDE_ZIP = CLIENT_RUNTIME_OVERRIDE_DIR / "UE4SS-client-custom.zip"
+CLIENT_RUNESCHEMA_CORE_CACHE_ZIP = CLIENT_RUNTIME_OVERRIDE_DIR / "RuneSchema-client-custom.zip"
+CLIENT_RUNESCHEMA_RUNTIME_DIR = CLIENT_RUNTIME_OVERRIDE_DIR / "runeschema"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
 BUNDLED_RSDWTOOLS_RESOURCE = ("RSDWTools-baseline.zip",)
 def user_visible_mod_unit(unit: "ModUnit") -> bool:
@@ -2730,9 +2734,11 @@ def wipe_install_after_backup(install_dir: str) -> dict:
 
     Steam/EOS-owned binaries, saves, account data, and configuration remain in
     place. ``backup_install_for_reset`` must run first; this function then
-    removes only the injection/runtime and PAK-mod locations that the launcher
-    can reconstruct. The historical function name is retained for RPC/backward
-    compatibility, but a reset is no longer a recursive install wipe.
+    removes only the reconstructable UE4SS child tree and PAK-mod locations.
+    The colocated machine-level loaders (client ``dwmapi.dll`` and dedicated
+    server ``version.dll``) are protected in place. The historical function
+    name is retained for RPC/backward compatibility, but a reset is no longer
+    a recursive install wipe.
     """
     target = Path(install_dir).resolve()
     if not target.is_dir() or target == Path(target.anchor) or len(target.parts) < 3:
@@ -2746,10 +2752,6 @@ def wipe_install_after_backup(install_dir: str) -> dict:
     candidates = (
         "Binaries/Win64/ue4ss",
         "RSDragonwilds/Binaries/Win64/ue4ss",
-        "Binaries/Win64/dwmapi.dll",
-        "RSDragonwilds/Binaries/Win64/dwmapi.dll",
-        "Binaries/Win64/version.dll",
-        "RSDragonwilds/Binaries/Win64/version.dll",
         "Content/Paks/~mods",
         "Content/Paks/~Mods",
         "RSDragonwilds/Content/Paks/~mods",
@@ -2767,8 +2769,13 @@ def wipe_install_after_backup(install_dir: str) -> dict:
         else:
             candidate.unlink()
         removed.append(relative)
+    protected = [str(path) for path in (
+        target / "Binaries/Win64/dwmapi.dll", target / "Binaries/Win64/version.dll",
+        target / "RSDragonwilds/Binaries/Win64/dwmapi.dll", target / "RSDragonwilds/Binaries/Win64/version.dll",
+    ) if path.is_file()]
     return {"ok": True, "deleted": False, "path": str(target), "removed": removed,
-            "scope": "managed_mods_only", "steam_files_preserved": True, "eos_data_preserved": True}
+            "protected_runtime_loaders": protected, "scope": "managed_mods_only",
+            "steam_files_preserved": True, "eos_data_preserved": True}
 
 
 def _find_public_branch_info(obj):
@@ -3033,7 +3040,7 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
         repaired.append("UE4SS imgui.ini baseline restored")
         before = client_runtime_status(game_root)
     if not before["ue4ss"]["installed"]:
-        bundle = _bundled_app_resource(*BUNDLED_UE4SS_RESOURCE)
+        bundle = CLIENT_UE4SS_OVERRIDE_ZIP if CLIENT_UE4SS_OVERRIDE_ZIP.is_file() else _bundled_app_resource(*BUNDLED_UE4SS_RESOURCE)
         if bundle.is_file():
             install_client_ue4ss_zip(str(bundle), str(layout.game_root))
             repaired.append("UE4SS client baseline installed/repaired")
@@ -3045,14 +3052,11 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
         repaired.append("UE4SS imgui.ini baseline restored")
     mid = client_runtime_status(game_root)
     if not mid["runeschema"]["installed"]:
-        rs_bundle = _bundled_app_resource("RuneSchema-core-latest.zip")
+        rs_bundle = CLIENT_RUNESCHEMA_CORE_CACHE_ZIP if CLIENT_RUNESCHEMA_CORE_CACHE_ZIP.is_file() else _bundled_app_resource("RuneSchema-core-latest.zip")
         try:
             if rs_bundle.is_file():
                 install_runeschema_zip(str(rs_bundle), str(layout.game_root), role="client")
                 repaired.append("RuneSchema client baseline installed/repaired")
-            elif RUNESCHEMA_CORE_CACHE_ZIP.is_file():
-                install_runeschema_zip(str(RUNESCHEMA_CORE_CACHE_ZIP), str(layout.game_root), role="client")
-                repaired.append("RuneSchema client baseline restored from cache")
             else:
                 errors.append("Bundled RuneSchema baseline is unavailable.")
         except Exception as exc:
@@ -3936,6 +3940,8 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
         )
         written = 0
         if is_core:
+            runtime_dir = CLIENT_RUNESCHEMA_RUNTIME_DIR if normalized_role == "client" else RUNESCHEMA_RUNTIME_DIR
+            cache_target = CLIENT_RUNESCHEMA_CORE_CACHE_ZIP if normalized_role == "client" else RUNESCHEMA_CORE_CACHE_ZIP
             # A loaded native RuneSchema DLL cannot be replaced on Windows. Test
             # every live DLL before removing or copying anything so a stray or
             # still-shutting-down server process can never leave a half-written
@@ -3961,13 +3967,13 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
             for child in list(live_rs.iterdir()):
                 if child != live_mods:
                     _remove_generated_path(child)
-            RUNESCHEMA_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            cache_target.parent.mkdir(parents=True, exist_ok=True)
             src_zip = Path(zip_path).resolve()
-            cache_zip = RUNESCHEMA_CORE_CACHE_ZIP.resolve()
+            cache_zip = cache_target.resolve()
             cache_zip.parent.mkdir(parents=True, exist_ok=True)
             if src_zip != cache_zip:
                 shutil.copy2(src_zip, cache_zip)
-            shutil.rmtree(RUNESCHEMA_RUNTIME_DIR, ignore_errors=True); RUNESCHEMA_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.rmtree(runtime_dir, ignore_errors=True); runtime_dir.mkdir(parents=True, exist_ok=True)
             for root, dirs, files in os.walk(content_root):
                 if Path(root) == content_root: dirs[:] = [d for d in dirs if d.lower() != "mods"]
                 dirs[:] = [d for d in dirs if not d.startswith(".")]
@@ -3975,15 +3981,15 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
                 for filename in files:
                     if filename.startswith("."): continue
                     src = Path(root) / filename; rel = rel_root / filename
-                    for base in (RUNESCHEMA_RUNTIME_DIR, live_rs):
+                    for base in (runtime_dir, live_rs):
                         dest = base / rel; dest.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src, dest)
                     written += 1
-            (RUNESCHEMA_RUNTIME_DIR / "config").mkdir(parents=True, exist_ok=True)
-            (RUNESCHEMA_RUNTIME_DIR / "dlls").mkdir(parents=True, exist_ok=True)
+            (runtime_dir / "config").mkdir(parents=True, exist_ok=True)
+            (runtime_dir / "dlls").mkdir(parents=True, exist_ok=True)
             # RuneSchema is launcher infrastructure and self-enables by the
             # presence of a blank enabled.txt. Normalize both authoritative
             # library and live install so it never needs an entry in mods.txt.
-            for base in (RUNESCHEMA_RUNTIME_DIR, live_rs):
+            for base in (runtime_dir, live_rs):
                 if not (base / "enabled.txt").exists():
                     (base / "enabled.txt").write_text("", encoding="utf-8")
                 (base / "mods").mkdir(parents=True, exist_ok=True)

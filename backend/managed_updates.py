@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import time
+import shutil
+import zipfile
 from pathlib import Path
 
 import server_systems
@@ -11,6 +13,22 @@ RUNESCHEMA_CHECK_SECONDS = 15 * 60
 DEFAULT_UE4SS_SOURCE = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
 RUNESCHEMA_REPOSITORY_URL = "https://github.com/UnskippableCutscene/RuneSchema"
 RUNESCHEMA_RELEASES_URL = f"{RUNESCHEMA_REPOSITORY_URL}/releases"
+
+
+def _is_runeschema_core_zip(path: Path) -> bool:
+    with zipfile.ZipFile(path) as archive:
+        rows = [name.replace("\\", "/").strip("/") for name in archive.namelist() if name.strip("/")]
+    first = {row.split("/", 1)[0] for row in rows}
+    if len(first) == 1:
+        wrapper = next(iter(first))
+        wrapped_rows = [row[len(wrapper) + 1:] for row in rows if row.startswith(f"{wrapper}/")]
+        if wrapped_rows:
+            rows = wrapped_rows
+    lowered = {row.casefold() for row in rows}
+    return (any(row == "mods" or row.startswith("mods/") for row in lowered)
+            or (any(row == "config" or row.startswith("config/") for row in lowered)
+                and any(row == "dlls" or row.startswith("dlls/") for row in lowered)
+                and "enabled.txt" in lowered))
 
 
 def ensure_runeschema_source(application: dict) -> str:
@@ -146,6 +164,27 @@ def install_client_core(component: str, game_root: str, application: dict, param
     if not root or not Path(root).exists():
         raise ValueError("The configured Dragonwilds client root does not exist.")
     metadata = application.setdefault("client_core_runtime", {})
+    manual_zip = Path(str(params.get("zip_path") or "")).expanduser()
+
+    if str(params.get("zip_path") or "").strip():
+        if not manual_zip.is_file() or manual_zip.suffix.casefold() != ".zip":
+            raise ValueError("Choose a readable runtime ZIP file.")
+        if component == "ue4ss":
+            target = server_systems.CLIENT_UE4SS_OVERRIDE_ZIP
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if manual_zip.resolve() != target.resolve(): shutil.copy2(manual_zip, target)
+            result = server_systems.install_client_ue4ss_zip(str(target), root)
+            metadata.update({"ue4ss_source_url": "", "ue4ss_installed_version": manual_zip.name,
+                             "ue4ss_installed_at": time.time(), "ue4ss_manual_override": True,
+                             "ue4ss_override_zip": str(target)})
+            return {"component": "UE4SS", "manual_override": True, "result": result}
+        if not _is_runeschema_core_zip(manual_zip):
+            raise ValueError("The selected ZIP is a RuneSchema mod, not a complete RuneSchema core.")
+        result = server_systems.install_runeschema_zip(str(manual_zip), root, role="client")
+        metadata.update({"runeschema_source_url": "", "runeschema_installed_version": manual_zip.name,
+                         "runeschema_installed_at": time.time(), "runeschema_manual_override": True,
+                         "runeschema_override_zip": str(server_systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP)})
+        return {"component": "RuneSchema", "manual_override": True, "result": result}
 
     if component == "ue4ss":
         source = str(params.get("releases_url") or metadata.get("ue4ss_source_url") or DEFAULT_UE4SS_SOURCE).strip()

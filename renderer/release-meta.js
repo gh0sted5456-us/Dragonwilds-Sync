@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.3',
-  name: 'V2.7.3 · Durable World Discovery and Responsive Sync',
+  version: '2.7.4',
+  name: 'V2.7.4 · Connected World and LAN Sync Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.4',
+    title: 'Connected World and LAN Sync Reliability',
+    items: [
+      'LAN, Direct Connect, and manually added Worlds now open in a dedicated Connected Worlds tab and remain reachable after saving or a failed first Sync attempt.',
+      'LAN authentication falls through to the ordinary empty-password challenge when LAN trust is unavailable, while hosts recognize clients across physical, VPN, Hyper-V, WSL, and other local interfaces.',
+      'Sync HTTP transport defaults to TCP 27051 without changing legacy gameplay identity on UDP 7777, preventing portless Sync addresses from dialing the game port.',
+      'DragonConnect can use Automatic, Public, or LAN routing per World so local players can bypass routers without NAT hairpin support.',
+      'Character-viewer backdrops are decoded through a constrained Electron bridge and embedded safely into the remote viewer.',
+    ],
+  }, {
     version: '2.7.3',
     title: 'Durable World Discovery and Responsive Sync',
     items: [

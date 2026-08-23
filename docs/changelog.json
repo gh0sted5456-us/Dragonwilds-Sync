@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.4",
+      "title": "Dragonwilds Sync V2.7.4",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Connected LAN, Direct Connect, and manual Worlds remain visible in a dedicated Connected Worlds tab.",
+        "LAN authentication supports open-World challenge fallback and recognizes clients across multiple host interfaces.",
+        "Sync transport defaults to TCP 27051 while gameplay identity remains compatible with UDP 7777.",
+        "DragonConnect supports Automatic, Public, and LAN address routing per World.",
+        "Character-viewer backdrops load through a constrained Electron asset bridge."
+      ]
+    },
+    {
       "version": "2.7.3",
       "title": "Dragonwilds Sync V2.7.3",
       "date": "2026-08-22",

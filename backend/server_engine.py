@@ -24,7 +24,7 @@ from networking import DEFAULT_SYNC_DISCOVERY_PORT
 from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
-                            ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
+                            ensure_base_runtimes, activate_runeschema_variant, runtime_prerequisite_status, gather_server_hardware_stats,
                             install_authoritative_ue4ss_update, local_ip_guess, detect_public_ip, scan_mod_units, generate_server_mods_txt)
 
 DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
@@ -558,6 +558,48 @@ def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
     return targets[0]
 
 
+def verify_dedicated_config(cfg: dict, server_root: str = "") -> dict:
+    """Verify managed values in the config resolved from the launched executable."""
+    expected = {
+        "adminpassword": str(cfg.get("admin_pass") or "").strip(),
+        "ownerid": str(cfg.get("owner_id") or "").strip(),
+        "worldpassword": str(cfg.get("world_pass") or "").strip(),
+        "servername": str(cfg.get("server_name") or "").strip(),
+        "defaultworldname": str(cfg.get("world_name") or "").strip(),
+        "port": str(cfg.get("port") or "7777").strip(),
+    }
+    exe = str(cfg.get("server_exe") or server_install_config().get("server_exe") or "").strip()
+    exact = (resolve_server_layout_from_exe(exe).config_dir / "DedicatedServer.ini") if exe else None
+    rows = []
+    for path in dedicated_config_targets(cfg, server_root):
+        values: dict[str, list[str]] = {}; section_found = False; error = ""
+        try:
+            text = path.read_text(encoding="utf-8-sig", errors="replace")
+            active = False
+            for line in text.splitlines():
+                stripped = line.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    active = stripped.casefold() == "[/script/dominion.dedicatedserversettings]"
+                    section_found = section_found or active
+                    continue
+                if active and "=" in stripped and not stripped.startswith((";", "#")):
+                    key, value = stripped.split("=", 1)
+                    values.setdefault(key.strip().casefold(), []).append(value.strip())
+            matches = {key: len(values.get(key, [])) == 1 and values[key][0] == value for key, value in expected.items()}
+            ok = section_found and all(matches.values())
+        except OSError as exc:
+            matches = {key: False for key in expected}; ok = False; error = str(exc)
+        rows.append({"path": str(path), "exact_executable_target": bool(exact and path.resolve(strict=False) == exact.resolve(strict=False)),
+                     "exists": path.is_file(), "section_found": section_found, "ok": ok,
+                     "password_configured": bool(expected["worldpassword"]),
+                     "password_matches": bool(matches.get("worldpassword")),
+                     "managed_matches": matches, "error": error})
+    exact_row = next((row for row in rows if row["exact_executable_target"]), None)
+    return {"ok": bool(exact_row and exact_row["ok"]), "exact_path": str(exact or ""),
+            "password_configured": bool(expected["worldpassword"]),
+            "password_matches": bool(exact_row and exact_row["password_matches"]), "targets": rows}
+
+
 def server_install_config() -> dict:
     application = (load_state().get("application") or {})
     cfg = application.get("server_install") or {}
@@ -1053,6 +1095,9 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        variant = activate_runeschema_variant(root, str(profile.get("runeschema_variant") or "standard"))
+        profile["runeschema_variant"] = variant["variant"]
+        save_server_profile(profile_id, profile)
         units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generate_server_mods_txt(profile_id, root, units=units)
@@ -1070,6 +1115,8 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        variant = activate_runeschema_variant(root, str(profile.get("runeschema_variant") or "standard"))
+        profile["runeschema_variant"] = variant["variant"]
         units = scan_mod_units(profile_id, root)
         if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generated = generate_server_mods_txt(profile_id, root, units=units)
@@ -1200,7 +1247,13 @@ class ServerEngine:
             cfg["owner_id"] = machine_owner_id
         if not str(cfg.get("owner_id") or "").strip():
             raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
-        write_dedicated_config(cfg, self._profile_root(profile)); save_server_profile(profile_id, profile)
+        write_dedicated_config(cfg, self._profile_root(profile))
+        verification = verify_dedicated_config(cfg, self._profile_root(profile))
+        profile["dedicated_config_verification"] = verification
+        if not verification.get("ok"):
+            save_server_profile(profile_id, profile)
+            raise RuntimeError("DedicatedServer.ini verification failed for the executable-resolved path: " + str(verification.get("exact_path") or "unresolved"))
+        save_server_profile(profile_id, profile)
         try:
             from world_maintenance import lock_world_configs
             lock_world_configs(profile_id, self._profile_root(profile))

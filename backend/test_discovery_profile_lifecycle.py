@@ -5,6 +5,7 @@ import os
 os.environ.setdefault("DWSYNC_TEST_MODE", "1")
 
 import dragonwilds_service as service
+from world_identity import candidate_endpoints
 
 
 def announcement(address="192.168.50.22"):
@@ -57,6 +58,10 @@ def main():
         raise AssertionError("unverified discovery was saved")
     except ValueError as exc:
         assert "verified identity fingerprint" in str(exc)
+
+    recovered = announcement("")
+    recovered["manifest_cache"] = {"connection": {"internal_ip": "192.168.50.22", "sync_port": 27051}}
+    assert candidate_endpoints(recovered)[0][1] == "192.168.50.22:27051"
 
     print("discovery profile lifecycle tests passed")
 

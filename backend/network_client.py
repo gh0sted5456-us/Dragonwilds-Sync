@@ -166,11 +166,12 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
         raise ConnectionError(f"Could not reach server: {exc.reason}") from exc
 
 
-def _lan_token(endpoint) -> tuple[str, str]:
+def _lan_token(endpoint, client_profile_id: str = "") -> tuple[str, str]:
     # The host is authoritative here: it grants this endpoint only when the
     # observed source is on its LAN or matches its explicit trusted-IP policy.
     # No credential is included in this probe.
-    data = json.loads(request(f"{endpoint.base_url}/lan-auth", timeout=3.5).read())
+    headers = {"X-DWS-Client-Profile": str(client_profile_id or "")[:96]} if client_profile_id else {}
+    data = json.loads(request(f"{endpoint.base_url}/lan-auth", headers=headers, timeout=3.5).read())
     token = str(data.get("token") or "").strip()
     if not token:
         raise ConnectionError("The server did not grant same-LAN trust.")
@@ -196,7 +197,7 @@ def _auth_token(endpoint, password: str, server_key: str = "", share_access_key:
     lan_failure = None
     if source == "lan" or not password:
         try:
-            return _lan_token(endpoint)
+            return _lan_token(endpoint, client_profile_id) if client_profile_id else _lan_token(endpoint)
         except ConnectionError as exc:
             # Same-LAN and host-allowlisted IPs need no password. Other clients
             # continue through the ordinary challenge. An open World accepts an
@@ -719,4 +720,43 @@ def submit_character_package(world: dict, package_path, client_id: str = "") -> 
                                         "X-DWS-File-Name": package.name, "X-DWS-Client": str(client_id or "")[:64]})
             value = json.loads(response.read()); return {**value, "route": route, "endpoint": endpoint}
         except Exception as exc: attempts.append(f"{route}: {exc}")
+    raise ConnectionError("; ".join(attempts) if attempts else "No saved route is available for this World.")
+
+
+def upload_player_backup(world: dict, package_path, client_profile_id: str) -> dict:
+    package = Path(package_path)
+    if not package.is_file() or package.suffix.casefold() != ".rsdwl":
+        raise FileNotFoundError("Choose a valid .rsdwl player save backup.")
+    if package.stat().st_size > 32 * 1024 * 1024:
+        raise ValueError("Player save backup exceeds the 32 MiB safety limit.")
+    data = package.read_bytes(); attempts = []
+    for route, endpoint in candidate_endpoints(world):
+        try:
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint, client_profile_id=client_profile_id)
+            ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
+            if not ok: attempts.append(f"{route}: {detail}"); continue
+            response = request(f"{base_url}/player-backups", method="POST", data=data, timeout=45.0,
+                               headers={"Authorization": f"Bearer {token}", "Content-Type": "application/vnd.dragonwilds.rsdwl"})
+            return {**json.loads(response.read()), "route": route, "endpoint": endpoint}
+        except Exception as exc: attempts.append(f"{route}: {exc}")
+    raise ConnectionError("; ".join(attempts) if attempts else "No saved route is available for this World.")
+
+
+def download_latest_player_backup(world: dict, destination, client_profile_id: str) -> dict:
+    target = Path(destination); target.parent.mkdir(parents=True, exist_ok=True); attempts = []
+    for route, endpoint in candidate_endpoints(world):
+        temp = target.with_suffix(target.suffix + ".part")
+        try:
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint, client_profile_id=client_profile_id)
+            ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
+            if not ok: attempts.append(f"{route}: {detail}"); continue
+            response = request(f"{base_url}/player-backups/latest", headers={"Authorization": f"Bearer {token}"}, timeout=45.0)
+            data = response.read(); expected = str(response.headers.get("X-DWS-SHA256") or "")
+            actual = hashlib.sha256(data).hexdigest()
+            if expected and not hmac.compare_digest(expected, actual):
+                raise ConnectionError("Player save backup checksum mismatch.")
+            temp.write_bytes(data); temp.replace(target)
+            return {"ok": True, "path": str(target), "size": len(data), "sha256": actual, "route": route, "endpoint": endpoint}
+        except Exception as exc:
+            temp.unlink(missing_ok=True); attempts.append(f"{route}: {exc}")
     raise ConnectionError("; ".join(attempts) if attempts else "No saved route is available for this World.")

@@ -100,6 +100,10 @@ def saved_endpoint_kind(world: dict, contacted: str) -> str | None:
         return "internal"
     if connection.get("external_ip") and endpoint_hosts_equal(contacted, connection.get("external_ip", "")):
         return "external"
+    cached = ((world.get("manifest_cache") or {}).get("connection") or {}) if isinstance(world.get("manifest_cache"), dict) else {}
+    for kind, key in (("internal", "internal_ip"), ("external", "external_ip")):
+        if cached.get(key) and endpoint_hosts_equal(contacted, cached.get(key, "")):
+            return kind
     # This endpoint was persisted only after a successful authenticated
     # connection. Retain it as a recovery identity alias for profiles damaged
     # by an older partial discovery refresh.
@@ -154,6 +158,10 @@ def candidate_endpoints(world: dict) -> list[tuple[str, str]]:
         "internal": str(connection.get("internal_ip") or "").strip(),
         "external": str(connection.get("external_ip") or "").strip(),
     }
+    cached = ((world.get("manifest_cache") or {}).get("connection") or {}) if isinstance(world.get("manifest_cache"), dict) else {}
+    status_cached = ((world.get("status") or {}).get("connection") or {}) if isinstance(world.get("status"), dict) else {}
+    values["internal"] = values["internal"] or str(cached.get("internal_ip") or status_cached.get("internal_ip") or "").strip()
+    values["external"] = values["external"] or str(cached.get("external_ip") or status_cached.get("external_ip") or "").strip()
     preference = str(connection.get("preference") or "auto").lower()
     last = str(connection.get("last_successful_route") or "").lower()
     last_address = str(connection.get("last_successful_address") or "").strip()

@@ -36,7 +36,8 @@ def main():
     assert "tab:'direct', filter:'all', page:1" in renderer
     assert "world.convert_to_singleplayer" in renderer and "world.convert_to_server" in renderer
     assert 'method in {"world.convert_to_singleplayer", "world.convert_to_server"}' in service
-    assert "policy = worldsave_status(world)" in service
+    assert "retained_client_copy" in service and "else worldsave_status(world)" in service
+    assert 'APP_DATA_DIR / "connected_world_snapshots"' in service
     assert "source_world_retained" in service
     assert "import_worldsave_archive" in service
     assert "Convert to Private · Download Disabled" in renderer

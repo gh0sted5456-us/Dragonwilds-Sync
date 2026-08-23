@@ -3,6 +3,21 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.7",
+      "title": "Dragonwilds Sync V2.7.7",
+      "date": "2026-08-22",
+      "status": "stable",
+      "highlights": [
+        "Hosts can switch between standard RuneSchema and the extended persistence branch, and clients receive the host's exact selected core.",
+        "DedicatedServer.ini is verified at the exact dedicated executable target before launch, including WorldPassword readback.",
+        "Connected World Details are offline-safe and incomplete profiles recover their last working Sync route.",
+        "Player save recovery retains changed assigned-character saves under the authenticated player profile, separate from administrator quarantine.",
+        "Only the same player profile can restore its latest retained save, with local replacement backup and package integrity checks.",
+        "Offered World-save snapshots are retained separately on clients for conversion continuity.",
+        "Configuration sections are collapsible and limited to game, UE4SS root, and RuneSchema root files."
+      ]
+    },
+    {
       "version": "2.7.6",
       "title": "Dragonwilds Sync V2.7.6",
       "date": "2026-08-22",

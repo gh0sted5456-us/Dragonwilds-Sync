@@ -65,9 +65,10 @@ def main():
         assert "restored_password_objects" in main_lua
 
     assert "const world=worlds().find" in renderer
-    assert "if(selected?.client)setData(selected)" in renderer
     details_handler = renderer[renderer.index("root.querySelectorAll('[data-world-details]'"):renderer.index("const worldSearch=root.querySelector('#world-search')")]
     assert "world.metadata.preview" not in details_handler
+    assert "world.select" not in details_handler
+    assert "state.data.client.active_world_id=String(world.id)" in details_handler
     assert "apply_gameplay_now: true" in renderer
     assert "hostingFocusDismissedProfileId" in renderer
     assert "localHostedProfile" in renderer

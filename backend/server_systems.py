@@ -42,6 +42,7 @@ from server_scheduler import normalize_notice
 from player_tracker import PLAYER_SERVICE
 from character_profiles import list_starter_characters, starter_character_path
 from character_submissions import quarantine_submission_bytes
+from player_backups import latest_player_backup, player_backup_status, store_player_backup
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS,
                                detect_server_host,
@@ -132,6 +133,7 @@ PUBLISH_DIR = APP_DATA_DIR / "published"
 RUNTIME_LIBRARY_DIR = APP_DATA_DIR / "runtime_library"
 UE4SS_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "ue4ss"
 RUNESCHEMA_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "runeschema"
+RUNESCHEMA_STANDARD_RUNTIME_DIR = RUNTIME_LIBRARY_DIR / "runeschema-standard"
 RUNESCHEMA_UPLOAD_DIR = APP_DATA_DIR / "runeschema_uploads"
 RUNESCHEMA_CORE_CACHE_ZIP = RUNESCHEMA_UPLOAD_DIR / "RuneSchema-core-latest.zip"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
@@ -1232,7 +1234,7 @@ class SyncState:
         with self.lock:
             return dict(self.token_sources.get(token) or {})
 
-    def issue_lan_token(self, client_ip: str) -> str | None:
+    def issue_lan_token(self, client_ip: str, client_profile_id: str = "") -> str | None:
         """Issue a bearer token to a same-LAN or explicitly trusted IP.
 
         This is the password/key bypass used by LAN placards. It is deliberately
@@ -1265,11 +1267,12 @@ class SyncState:
             return None
         token = secrets.token_hex(16)
         source = "lan" if same_lan else "ip_allowlist"
+        profile_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(client_profile_id or "").strip())[:96]
         with self.lock:
             self.tokens.add(token)
             self.token_sources[token] = {"credential_source": source, "auth_mode": source, "scope": "world-sync",
                                          "client_ip": str(client_ip or ""), "trust_reason": trusted_reason if trusted else "same LAN subnet",
-                                         "issued_at": time.time()}
+                                         "client_profile_id": profile_id, "issued_at": time.time()}
         return token
 
     def record_client_network(self, client_id: str, client_ip: str, network: dict | None) -> dict:
@@ -1422,6 +1425,19 @@ class SyncHandler(BaseHTTPRequestHandler):
                                                      client_id=str(self.headers.get("X-DWS-Client") or ""), remote_ip=self.client_address[0])
                 STATE.activity(self.client_address[0], f"submitted character '{result.get('player_name') or result.get('file_name')}' to quarantine")
                 self._send_json({"ok": True, "status": "quarantined", "submission": result}, 202); return
+            if path == "/player-backups":
+                with STATE.lock: profile_id = STATE.active_profile_id
+                profile = load_server_profile(profile_id) if profile_id else {}
+                sharing = profile.get("character_sharing") if isinstance(profile.get("character_sharing"), dict) else {}
+                player_profile_id = str(self._auth_context().get("client_profile_id") or "").strip()
+                if not profile_id or not sharing.get("request_backups"):
+                    self._send_json({"error": "This World is not retaining player save backups."}, 403); return
+                if not player_profile_id:
+                    self._send_json({"error": "An authenticated player profile is required for backup recovery."}, 403); return
+                payload = self._read_bytes(32 * 1024 * 1024)
+                result = store_player_backup(profile_id, player_profile_id, payload, remote_ip=self.client_address[0])
+                STATE.activity(self.client_address[0], f"retained player save backup for profile {player_profile_id}")
+                self._send_json({"ok": True, "status": "retained", "backup": result}, 201); return
             if path == "/diagnostics/upload":
                 data = self._read_bytes(); client_id = re.sub(r"[^A-Za-z0-9_-]+", "_", str(self.headers.get("X-DWS-Client") or self.client_address[0]))[:64]
                 STATE.activity(self.client_address[0], f"network diagnostic upload ({len(data)} bytes)")
@@ -1604,7 +1620,7 @@ class SyncHandler(BaseHTTPRequestHandler):
             STATE.activity(self.client_address[0], "downloaded public World identity metadata")
             self._send_json(payload); return
         if path == "/lan-auth":
-            token = STATE.issue_lan_token(self.client_address[0])
+            token = STATE.issue_lan_token(self.client_address[0], str(self.headers.get("X-DWS-Client-Profile") or ""))
             if not token:
                 self._send_json({"error": "LAN trust unavailable"}, 401); return
             with STATE.lock:
@@ -1651,6 +1667,26 @@ class SyncHandler(BaseHTTPRequestHandler):
             with STATE.lock: profile_id = STATE.active_profile_id
             if not profile_id: self._send_json({"error": "no active World"}, 404); return
             self._send_json(status_for_ip(profile_id, self.client_address[0])); return
+        if path in {"/player-backups/status", "/player-backups/latest"}:
+            with STATE.lock: profile_id = STATE.active_profile_id
+            profile = load_server_profile(profile_id) if profile_id else {}
+            sharing = profile.get("character_sharing") if isinstance(profile.get("character_sharing"), dict) else {}
+            player_profile_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            if not profile_id or not sharing.get("request_backups"):
+                self._send_json({"error": "This World is not retaining player save backups."}, 403); return
+            if not player_profile_id:
+                self._send_json({"error": "An authenticated player profile is required for backup recovery."}, 403); return
+            if path.endswith("/status"):
+                self._send_json(player_backup_status(profile_id, player_profile_id)); return
+            try: target, record = latest_player_backup(profile_id, player_profile_id)
+            except FileNotFoundError as exc:
+                self._send_json({"error": str(exc)}, 404); return
+            data = target.read_bytes()
+            STATE.activity(self.client_address[0], f"restored latest player save backup for profile {player_profile_id}")
+            self.send_response(200); self.send_header("Content-Type", "application/vnd.dragonwilds.rsdwl")
+            self.send_header("Content-Disposition", f'attachment; filename="{target.name}"')
+            self.send_header("X-DWS-SHA256", str(record.get("sha256") or ""))
+            self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path == "/worldsave/download":
             with STATE.lock:
                 profile_id = STATE.active_profile_id
@@ -2289,6 +2325,7 @@ class ShareServer:
                               "security_posture": {"package_validation": "hash-staging-rollback"},
                               "health_config": broadcast_health_config,
                               "runtime_stack": runtime_stack, "baseline_runtime": baseline_runtime,
+                              "runeschema_variant": str(profile.get("runeschema_variant") or "standard"),
                               "connection": {
                                   "internal_ip": local_ip_guess(), "external_ip": str(public_ip or profile.get("public_ip") or ""),
                                   "sync_port": int(port), "game_port": int(game_port or 7777),
@@ -3321,6 +3358,65 @@ def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, u
             ue4ss_source_url=ue4ss_source_url,
             runeschema_source_url=runeschema_source_url,
         )
+
+
+def activate_runeschema_variant(game_root: str, variant: str = "standard") -> dict:
+    """Select a RuneSchema core while preserving profile-owned child mods."""
+    selected = str(variant or "standard").strip().casefold()
+    if selected not in {"standard", "extended"}:
+        raise ValueError("RuneSchema variant must be standard or extended.")
+    live = resolve_server_layout(game_root).runeschema_root
+    if not live.is_dir():
+        raise RuntimeError("RuneSchema must be installed before selecting a core variant.")
+    with RUNTIME_MUTATION_LOCK:
+        if not RUNESCHEMA_STANDARD_RUNTIME_DIR.is_dir():
+            RUNESCHEMA_STANDARD_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+            source = RUNESCHEMA_RUNTIME_DIR if RUNESCHEMA_RUNTIME_DIR.is_dir() else live
+            _copy_baseline_integration(source, RUNESCHEMA_STANDARD_RUNTIME_DIR, exclude_mods=True)
+            (RUNESCHEMA_STANDARD_RUNTIME_DIR / "config").mkdir(parents=True, exist_ok=True)
+            (RUNESCHEMA_STANDARD_RUNTIME_DIR / "dlls").mkdir(parents=True, exist_ok=True)
+            (RUNESCHEMA_STANDARD_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
+
+        core_files: dict[Path, bytes] = {}
+        source_label = "stored standard core"
+        if selected == "standard":
+            for source in RUNESCHEMA_STANDARD_RUNTIME_DIR.rglob("*"):
+                if source.is_file():
+                    core_files[source.relative_to(RUNESCHEMA_STANDARD_RUNTIME_DIR)] = source.read_bytes()
+        else:
+            bundle = _bundled_app_resource("RuneSchema-extended.zip")
+            if not bundle.is_file():
+                raise FileNotFoundError("The bundled extended RuneSchema branch is unavailable.")
+            source_label = bundle.name
+            with zipfile.ZipFile(bundle) as archive:
+                for info in archive.infolist():
+                    if info.is_dir():
+                        continue
+                    parts = list(PurePosixPath(info.filename.replace("\\", "/")).parts)
+                    if len(parts) > 1 and parts[0].casefold() == "runeschema":
+                        parts = parts[1:]
+                    if not parts or ".." in parts or parts[0].casefold() == "mods":
+                        continue
+                    core_files[Path(*parts)] = archive.read(info)
+        if not any(path.as_posix().casefold() == "dlls/main.dll" for path in core_files):
+            raise RuntimeError(f"The {selected} RuneSchema variant has no dlls/main.dll.")
+        mods = live / "mods"
+        for child in list(live.iterdir()):
+            if child != mods:
+                _remove_generated_path(child)
+        for relative, data in core_files.items():
+            destination = (live / relative).resolve()
+            root = live.resolve()
+            if destination != root and root not in destination.parents:
+                raise RuntimeError("RuneSchema variant path escaped its runtime root.")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+        for required in (live / "config", live / "dlls", live / "mods"):
+            required.mkdir(parents=True, exist_ok=True)
+        (live / "enabled.txt").write_text("", encoding="utf-8")
+        return {"ok": True, "variant": selected, "source": source_label,
+                "files_written": len(core_files), "mods_preserved": True,
+                "destination": str(live)}
 
 
 def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "") -> dict:

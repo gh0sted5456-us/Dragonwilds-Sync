@@ -715,7 +715,7 @@ def create_server_profile(name: str) -> str:
         "character_sharing": {"enabled": False, "allow_submissions": False, "request_backups": False},
         "community": {"discord_invite": "", "discord_guild_id": ""},
         "unit_overrides": {}, "feedback": [], "rating_average": 0.0, "rating_count": 0,
-        "auto_ue4ss": True, "auto_runeschema": True,
+        "auto_ue4ss": True, "auto_runeschema": True, "runeschema_variant": "standard",
         "mods_txt_mode": "auto",
         "mods_txt_writer": "client_generate",
         "hierarchy": {"provider": "shrug.games", "confirmed": False, "confirmed_at": None, "confirmed_by": ""},

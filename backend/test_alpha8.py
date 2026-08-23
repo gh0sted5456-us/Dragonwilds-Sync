@@ -15,6 +15,8 @@ def main():
         server = base / "RuneScape Dragonwilds Dedicated Server"
         game = server / "RSDragonwilds"
         (game / "Saved" / "Config" / "WindowsServer").mkdir(parents=True)
+        exe = game / "Binaries" / "Win64" / "RSDragonwilds.exe"
+        exe.parent.mkdir(parents=True); exe.write_bytes(b"fixture")
         old_local = se.DEDICATED_CONFIG_FILE
         se.DEDICATED_CONFIG_FILE = base / "LocalAppData" / "RSDragonwilds" / "Saved" / "Config" / "WindowsServer" / "DedicatedServer.ini"
         try:
@@ -31,6 +33,7 @@ def main():
                 "admin_pass": "admin",
                 "world_pass": "world",
                 "port": 7777,
+                "server_exe": str(exe),
             }
             primary = se.write_dedicated_config(cfg, str(server))
             targets = se.dedicated_config_targets(cfg, str(server))
@@ -46,6 +49,12 @@ def main():
             assert "ServerGuid=fixture-guid" in canonical_text
             assert "KnownPlayerList=(PlayerId=fixture)" in canonical_text
             assert os.access(canonical, os.W_OK)
+            verified = se.verify_dedicated_config(cfg, str(server))
+            assert verified["ok"] is True
+            assert verified["exact_path"] == str(canonical)
+            assert verified["password_configured"] is True and verified["password_matches"] is True
+            canonical.write_text(canonical_text.replace("WorldPassword=world", "WorldPassword=wrong"), encoding="utf-8")
+            assert se.verify_dedicated_config(cfg, str(server))["ok"] is False
         finally:
             se.DEDICATED_CONFIG_FILE = old_local
 

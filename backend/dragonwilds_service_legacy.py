@@ -8,6 +8,7 @@ import mimetypes
 import os
 import re
 import secrets
+import shutil
 import socket
 import sys
 import time
@@ -21,12 +22,12 @@ from pathlib import Path
 from zipfile import ZipFile
 from process_utils import run_hidden
 
-from network_client import download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, worldsave_status
+from network_client import download_latest_player_backup, download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, upload_player_backup, worldsave_status
 from sync_engine import activate_or_adopt_client_world_profile, launch_game, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
 from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
-                           server_root_for_profile, server_install_config, write_dedicated_config)
+                           server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
                                    PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
@@ -561,10 +562,12 @@ def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | Non
     address = f"{host}:{port}" if host else ""
     credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
     classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
-    written = write_direct_connect_config(game_dir, address=address, password=str(credentials.get("password") or ""),
+    handoff_password = str(credentials.get("password") or "") if connection.get("dragonconnect_password_handoff", True) else ""
+    written = write_direct_connect_config(game_dir, address=address, password=handoff_password,
                                           server_type=str(classification.get("game_mode") or "normal"), enabled=bool(address))
     written.update({"route": route, "route_used": route_used if address else "",
-                    "internal_candidate": internal, "external_candidate": external})
+                    "internal_candidate": internal, "external_candidate": external,
+                    "password_handoff": bool(connection.get("dragonconnect_password_handoff", True))})
     if route == "external" and not external:
         written["warning"] = ("This World is pinned to its public address for DragonConnect, but no external IP is "
                               "known yet. Sync once while the host is online, or switch the route to Automatic.")
@@ -1013,6 +1016,8 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
     connection["preference"] = preference if preference in ("auto", "internal", "external") else "auto"
     direct_route = str(incoming_connection.get("direct_connect_route", connection.get("direct_connect_route", "auto")) or "auto").lower()
     connection["direct_connect_route"] = direct_route if direct_route in ("auto", "internal", "external") else "auto"
+    connection["dragonconnect_password_handoff"] = bool(incoming_connection.get(
+        "dragonconnect_password_handoff", connection.get("dragonconnect_password_handoff", True)))
     connection.setdefault("last_successful_route", "")
     connection.setdefault("last_successful_address", "")
 
@@ -1295,6 +1300,40 @@ def _run_world_sync_job(job_id: str, world_id: str, action: str, diagnostics: bo
             try: diagnostic_path = _write_world_sync_diagnostic(job_id, "failed")
             except Exception as report_exc: diagnostic_error = str(report_exc)
         _set_world_sync_job(job_id, status="failed", diagnostic_path=diagnostic_path, diagnostic_error=diagnostic_error)
+
+
+def _send_assigned_player_backup(state: dict, world: dict, character_id: str = "", *, force: bool = False) -> dict:
+    world_id = str(world.get("id") or "")
+    player = state.setdefault("player_profile", {})
+    client = state.setdefault("client", {})
+    client_profile_id = str(client.get("client_id") or "").strip()
+    if not client_profile_id:
+        raise ValueError("This installation does not have a player profile identity yet.")
+    character_id = str(character_id or client.setdefault("world_character_selection", {}).get(world_id) or "").strip()
+    if not character_id:
+        raise ValueError("Assign a character to this World before enabling its recovery backup.")
+    game_dir = str((state.get("application") or {}).get("game_dir") or "")
+    characters = discover_characters(game_dir, player.get("character_worlds") or {}, client.get("world_character_selection") or {}, player.get("character_profiles") or {})
+    character = next((row for row in characters if str(row.get("id") or "") == character_id), None)
+    if not character:
+        raise KeyError("Assigned character not found")
+    source = Path(str(character.get("path") or ""))
+    source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
+    recovery = world.setdefault("player_backup", {})
+    if not force and source_sha == str(recovery.get("last_uploaded_sha256") or ""):
+        return {"ok": True, "unchanged": True, "backup": deepcopy(recovery.get("latest") or {})}
+    target = APP_DATA_DIR / "outgoing_player_backups" / f"{world_id}-{character_id}-{int(time.time())}.rsdwl"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    meta = (player.get("character_profiles") or {}).get(character_id) or {}
+    export_character_package(character, target, launcher_meta=meta,
+                             source_profile_name=str(player.get("display_name") or "Dragonwilds Profile"), client_id=client_profile_id)
+    try:
+        result = upload_player_backup(world, target, client_profile_id)
+    finally:
+        target.unlink(missing_ok=True)
+    recovery.update({"enabled": True, "character_id": character_id, "last_uploaded_sha256": source_sha,
+                     "last_uploaded_at": now_iso(), "latest": deepcopy(result.get("backup") or {})})
+    return result
 
 
 def handle(method: str, params: dict) -> object:
@@ -3816,7 +3855,9 @@ def handle(method: str, params: dict) -> object:
         world = find_world(state, world_id)
         if world is None:
             raise KeyError("Connected World not found")
-        policy = worldsave_status(world)
+        retained_path = Path(str((world.get("retained_world_save") or {}).get("path") or ""))
+        has_retained_copy = retained_path.is_file() and retained_path.stat().st_size > 0
+        policy = {"enabled": True, "allowed": True, "source": "retained_client_copy"} if has_retained_copy else worldsave_status(world)
         world.setdefault("status", {})["world_save_download"] = policy
         save_state(state)
         if not policy.get("enabled"):
@@ -3839,7 +3880,11 @@ def handle(method: str, params: dict) -> object:
         download_path = download_dir / f"{world_id}-{secrets.token_hex(6)}.zip"
         profile_id = ""
         try:
-            download = download_worldsave(world, str(download_path))
+            if has_retained_copy:
+                shutil.copy2(retained_path, download_path)
+                download = {"ok": True, "path": str(retained_path), "size": retained_path.stat().st_size, "source": "retained_client_copy"}
+            else:
+                download = download_worldsave(world, str(download_path))
             if method.endswith("singleplayer"):
                 profile = create_private_profile(name)
                 profile_id = str(profile["id"])
@@ -4130,6 +4175,25 @@ def handle(method: str, params: dict) -> object:
         # manifest apply, or accept the server-authored managed control file.
         result["client_mods_txt"] = write_client_mods_txt(install_dir, manifest)
         result["direct_connect"] = _write_world_direct_connect(game_dir, world, manifest)
+        retained = world.get("retained_world_save") if isinstance(world.get("retained_world_save"), dict) else {}
+        retained_path = Path(str(retained.get("path") or ""))
+        if bool((manifest.get("world_save_download") or {}).get("enabled")) and not (retained_path.is_file() and retained_path.stat().st_size > 0):
+            try:
+                access = worldsave_status(world)
+                world.setdefault("status", {})["world_save_download"] = access
+                if access.get("allowed"):
+                    retained_path = APP_DATA_DIR / "connected_world_snapshots" / world_id / "world-save-latest.zip"
+                    snapshot = download_worldsave(world, str(retained_path))
+                    world["retained_world_save"] = {**snapshot, "retained_at": now_iso(), "purpose": "conversion_continuity"}
+                    result["retained_world_save"] = deepcopy(world["retained_world_save"])
+            except Exception as exc:
+                result["retained_world_save"] = {"ok": False, "error": str(exc)}
+        if bool((manifest.get("character_sharing") or {}).get("request_backups")) and bool((world.get("player_backup") or {}).get("enabled")):
+            try:
+                result["player_backup"] = _send_assigned_player_backup(state, world)
+            except Exception as exc:
+                result["player_backup"] = {"ok": False, "error": str(exc)}
+                _record_notification(state, "Player backup was not updated", str(exc), "warning", key=f"player-backup-failed:{world_id}")
         if sync_job_id:
             _set_world_sync_job(sync_job_id, status="running", phase="profile", message="Applying connection and mod settings to the World profile", percent=97,
                                 changed_files=result.get("downloaded") or 0, unchanged_files=result.get("up_to_date") or 0,
@@ -4332,6 +4396,11 @@ def handle(method: str, params: dict) -> object:
             profile["auto_ue4ss"] = bool(params.get("auto_ue4ss"))
         if "auto_runeschema" in params:
             profile["auto_runeschema"] = bool(params.get("auto_runeschema"))
+        if "runeschema_variant" in params:
+            variant = str(params.get("runeschema_variant") or "standard").strip().casefold()
+            if variant not in {"standard", "extended"}:
+                raise ValueError("RuneSchema variant must be standard or extended.")
+            profile["runeschema_variant"] = variant
         if "mods_txt_mode" in params:
             mode = str(params.get("mods_txt_mode") or "auto").casefold()
             if mode not in {"auto", "manual"}:
@@ -4423,6 +4492,9 @@ def handle(method: str, params: dict) -> object:
             live_root = server_root_for_profile(profile)
             if live_root and Path(live_root).exists():
                 write_dedicated_config(dedicated, live_root)
+                profile["dedicated_config_verification"] = verify_dedicated_config(dedicated, live_root)
+                if not profile["dedicated_config_verification"].get("ok"):
+                    raise RuntimeError("DedicatedServer.ini readback did not match the saved gameplay settings.")
             profile.pop("dedicated_config_write_warning", None)
         except Exception as exc:
             # Keep the profile edit. Start/Activate retries this write before
@@ -4522,23 +4594,33 @@ def handle(method: str, params: dict) -> object:
         if world is None: raise KeyError("World not found")
         if not bool((((world.get("manifest_cache") or {}).get("character_sharing") or {}).get("request_backups"))):
             raise PermissionError("This World is not currently requesting character backups.")
-        player = state.setdefault("player_profile", {}); client = state.setdefault("client", {})
+        client = state.setdefault("client", {})
         character_id = str(params.get("character_id") or client.setdefault("world_character_selection", {}).get(world_id) or "").strip()
-        if not character_id: raise ValueError("Assign a character to this World before approving its backup request.")
-        game_dir = str((state.get("application") or {}).get("game_dir") or "")
-        characters = discover_characters(game_dir, player.get("character_worlds") or {}, client.get("world_character_selection") or {}, player.get("character_profiles") or {})
-        if not any(str(row.get("id") or "") == character_id for row in characters): raise KeyError("Assigned character not found")
-        target = APP_DATA_DIR / "outgoing_character_backups" / f"{world_id}-{character_id}-{int(time.time())}.rsdwl"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        export_profile_bundle(state, str(target), profile_name=str(player.get("display_name") or "Dragonwilds Profile"), include_characters=True,
-                              include_worlds=False, game_dir=game_dir, character_ids=[character_id])
-        try: result = submit_character_package(world, target, str(client.get("client_id") or ""))
-        finally:
-            try: target.unlink(missing_ok=True)
-            except OSError: pass
-        _record_notification(state, "Character backup approved", f"A backup was sent directly to {(world.get('identity') or {}).get('world_name') or 'the World'} and placed in quarantine.", "success", key=f"character-backup:{world_id}:{character_id}")
+        result = _send_assigned_player_backup(state, world, character_id, force=True)
+        world.setdefault("player_backup", {})["enabled"] = True
+        _record_notification(state, "Player recovery backup enabled", f"The latest assigned-character save is retained by {(world.get('identity') or {}).get('world_name') or 'the World'} for this player profile only.", "success", key=f"character-backup:{world_id}:{character_id}")
         save_state(state)
         return {"result": result, "state": public_state(state)}
+
+    if method == "world.character.backup.restore":
+        world_id = str(params.get("id") or "")
+        world = find_world(state, world_id)
+        if world is None: raise KeyError("World not found")
+        client_profile_id = str((state.get("client") or {}).get("client_id") or "").strip()
+        game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+        if not game_dir: raise ValueError("Set the Dragonwilds game folder before restoring a player save.")
+        target = APP_DATA_DIR / "incoming_player_backups" / f"{world_id}-{secrets.token_hex(6)}.rsdwl"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            download = download_latest_player_backup(world, target, client_profile_id)
+            inspected = inspect_character_package(target)
+            restored = import_character_package(target, game_dir, overwrite=bool(params.get("overwrite", True)))
+        finally:
+            target.unlink(missing_ok=True)
+        world.setdefault("player_backup", {})["last_restored_at"] = now_iso()
+        _record_notification(state, "Player save restored", f"Restored {restored.get('file_name') or inspected.get('save_name') or 'the retained character save'}; any replaced local file was backed up first.", "success", key=f"character-restore:{world_id}")
+        save_state(state)
+        return {"result": {"download": download, "restore": restored}, "state": public_state(state)}
 
     if method == "server.world.broadcast":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")

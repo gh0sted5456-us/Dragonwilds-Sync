@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.6',
-  name: 'V2.7.6 · DragonConnect and Dedicated Identity Reliability',
+  version: '2.7.7',
+  name: 'V2.7.7 · Sync Recovery and RuneSchema Variants',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.7',
+    title: 'Sync Recovery and RuneSchema Variants',
+    items: [
+      'Hosts can select the standard RuneSchema core or the extended persistence branch; the exact live core is distributed through the authenticated World Sync manifest while child mods remain profile-owned.',
+      'DedicatedServer.ini writes are verified against the exact executable target before launch, including an exact WorldPassword readback without exposing the password.',
+      'Connected World Details use the durable saved profile and missing routes recover from the last authenticated or advertised endpoint.',
+      'Player save recovery is profile-bound: players approve once, changed assigned-character saves are retained separately from submissions, and only the same authenticated profile can restore its latest copy.',
+      'An offered World-save snapshot is retained locally for conversion continuity, while player backups remain separate from the World save.',
+      'Core Configuration is limited to collapsible game, UE4SS, and RuneSchema root sections with loader icons.',
+    ],
+  }, {
     version: '2.7.6',
     title: 'DragonConnect and Dedicated Identity Reliability',
     items: [

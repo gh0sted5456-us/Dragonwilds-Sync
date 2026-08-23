@@ -155,6 +155,7 @@ try {
     Test-RequiredFile 'resources\recommended-mods.json' 'GitHub-ready creator recommendation feed'
     Test-RequiredFile 'scripts\check_ue4ss_lua.cjs' 'UE4SS Lua syntax verifier'
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
+    Test-RequiredFile 'resources\RuneSchema-extended.zip' 'Bundled extended RuneSchema branch'
     Test-RequiredFile 'resources\RSDWTools-baseline.zip' 'Bundled RSDWTools bridge baseline'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\version.dll' 'Bundled Dragonwilds server-only version.dll'
@@ -171,6 +172,7 @@ try {
     Test-RequiredFile 'backend\operator_identity.py' 'Ed25519 operator identity signing'
     Test-RequiredFile 'backend\crypto_runtime.py' 'Packaged Ed25519 runtime and protected-key diagnostics'
     Test-RequiredFile 'backend\character_submissions.py' 'Quarantined character submission workflow'
+    Test-RequiredFile 'backend\player_backups.py' 'Authenticated player save recovery workflow'
     Test-RequiredFile 'backend\rsdwl_packages.py' 'Typed RSDWL v2 package envelope'
     Test-RequiredFile 'backend\world_sharing.py' 'Legacy RSDWL v2 compatibility engine'
     Test-RequiredFile 'backend\profile_bundle.py' 'Unified RSDWL v3 profile bundle engine'
@@ -447,6 +449,9 @@ try {
         if (-not (Test-Path -LiteralPath $packedRuneSchema -PathType Leaf)) { Fail-Build 'Bundled RuneSchema core was present in source but missing from packaged resources.' }
         Write-BuildLine '[OK] Packaged RuneSchema core resource is present.'
     }
+    $packedExtendedRuneSchema = Join-Path $unpacked 'resources\resources\RuneSchema-extended.zip'
+    if (-not (Test-Path -LiteralPath $packedExtendedRuneSchema -PathType Leaf)) { Fail-Build 'Bundled extended RuneSchema branch is missing from packaged resources.' }
+    Write-BuildLine '[OK] Packaged extended RuneSchema branch resource is present.'
     $packedUe4ss = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\UE4SS-core-latest.zip'
     $packedServerLoader = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\version.dll'
     foreach ($requiredRuntime in @($packedUe4ss, $packedServerLoader)) {

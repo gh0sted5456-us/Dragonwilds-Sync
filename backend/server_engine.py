@@ -790,6 +790,128 @@ def server_install_config() -> dict:
     }
 
 
+def _ue4ss_settings_path(game_root: str) -> Path:
+    core = resolve_server_layout(game_root).ue4ss_core_dir
+    for name in ("UE4SS-settings.ini", "UE4SS-Settings.ini", "ue4ss-settings.ini"):
+        candidate = core / name
+        if candidate.is_file():
+            return candidate
+    return core / "UE4SS-settings.ini"
+
+
+def _read_ini_section_values(path: Path, section: str) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    values: dict[str, str] = {}
+    active = False
+    try:
+        for raw in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
+            line = raw.strip()
+            if line.startswith("[") and line.endswith("]"):
+                active = line[1:-1].strip().casefold() == section.casefold()
+                continue
+            if active and "=" in line and not line.startswith((";", "#")):
+                key, value = line.split("=", 1)
+                values[key.strip().casefold()] = value.strip()
+    except OSError:
+        return {}
+    return values
+
+
+def ue4ss_console_policy_status(profile_id: str) -> dict:
+    profile = load_server_profile(profile_id)
+    if not profile:
+        raise KeyError("Server World not found")
+    root = server_root_for_profile(profile)
+    path = _ue4ss_settings_path(root) if root else Path()
+    values = _read_ini_section_values(path, "Debug") if root else {}
+    configured = bool(((load_state().get("application") or {}).get("advanced") or {}).get("native_runtime_consoles_enabled", False))
+    return {
+        "mode": "native-and-sync" if configured else "sync-only",
+        "native_consoles_enabled": configured,
+        "settings_path": str(path) if root else "",
+        "settings_present": bool(root and path.is_file()),
+        "effective": {
+            "console": values.get("consoleenabled", ""),
+            "gui": values.get("guiconsoleenabled", ""),
+            "visible": values.get("guiconsolevisible", ""),
+        },
+    }
+
+
+def apply_ue4ss_console_policy(profile_id: str, native_enabled: bool | None = None) -> dict:
+    """Patch only UE4SS's three console switches, preserving the upstream INI.
+
+    The native ImGui tools are valuable for Live View/debugger work, but they
+    are separate top-level windows and expensive to render continuously. Sync
+    is therefore the default sole console; operators can opt into both native
+    UE4SS windows for a troubleshooting launch.
+    """
+    profile = load_server_profile(profile_id)
+    if not profile:
+        raise KeyError("Server World not found")
+    if native_enabled is None:
+        native_enabled = bool(((load_state().get("application") or {}).get("advanced") or {}).get("native_runtime_consoles_enabled", False))
+    root = server_root_for_profile(profile)
+    path = _ue4ss_settings_path(root) if root else Path()
+    if not root or not path.is_file():
+        status = ue4ss_console_policy_status(profile_id)
+        status.update({"applied": False, "reason": "UE4SS settings are not installed yet; policy will apply on launch."})
+        return status
+    desired = "1" if native_enabled else "0"
+    replacements = {"consoleenabled": ("ConsoleEnabled", desired),
+                    "guiconsoleenabled": ("GuiConsoleEnabled", desired),
+                    "guiconsolevisible": ("GuiConsoleVisible", desired)}
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    lines = text.splitlines()
+    output: list[str] = []
+    active = False
+    found_debug = False
+    seen: set[str] = set()
+    inserted = False
+    for raw in lines:
+        stripped = raw.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            if active and not inserted:
+                output.extend(f"{name} = {value}" for key, (name, value) in replacements.items() if key not in seen)
+                inserted = True
+            active = stripped[1:-1].strip().casefold() == "debug"
+            found_debug = found_debug or active
+            output.append(raw)
+            continue
+        if active and "=" in stripped and not stripped.startswith((";", "#")):
+            key = stripped.split("=", 1)[0].strip().casefold()
+            if key in replacements:
+                if key in seen:
+                    # Collapse stale duplicate policy keys so UE4SS never has
+                    # two competing answers for the same launch switch.
+                    continue
+                name, value = replacements[key]
+                indent = raw[:len(raw) - len(raw.lstrip())]
+                output.append(f"{indent}{name} = {value}")
+                seen.add(key)
+                continue
+        output.append(raw)
+    if found_debug and not inserted:
+        output.extend(f"{name} = {value}" for key, (name, value) in replacements.items() if key not in seen)
+    elif not found_debug:
+        if output and output[-1].strip():
+            output.append("")
+        output.extend(["[Debug]", *(f"{name} = {value}" for name, value in replacements.values())])
+    previous_mode = path.stat().st_mode
+    try:
+        path.chmod(previous_mode | stat.S_IWUSR)
+        path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+    finally:
+        try:
+            path.chmod(previous_mode)
+        except OSError:
+            pass
+    status = ue4ss_console_policy_status(profile_id)
+    status.update({"applied": True, "reason": "UE4SS native windows enabled for next launch." if native_enabled else "Dragonwilds Sync is the sole console for next launch."})
+    return status
+
+
 def linux_windows_server_command(exe: str, install: dict | None = None) -> tuple[list[str], dict]:
     """Build a Wine/Proton command for a Win64 dedicated server on Linux.
 
@@ -1463,6 +1585,8 @@ class ServerEngine:
             raise RuntimeError("DedicatedServer.ini verification failed for the executable-resolved path: "
                                + str(verification.get("exact_path") or "unresolved") + detail)
         save_server_profile(profile_id, profile)
+        console_policy = apply_ue4ss_console_policy(profile_id)
+        self._event(console_policy.get("reason") or "Applied runtime console policy.", "ok")
         try:
             from world_maintenance import lock_world_configs
             lock_world_configs(profile_id, self._profile_root(profile))
@@ -1472,7 +1596,7 @@ class ServerEngine:
         launch_env = None
         if sys.platform.startswith("linux") and Path(exe).suffix.casefold() == ".exe":
             command, launch_env = linux_windows_server_command(exe)
-        elif sys.platform.startswith("linux"):
+        elif sys.platform.startswith("linux") and bool(((load_state().get("application") or {}).get("advanced") or {}).get("native_runtime_consoles_enabled", False)):
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
         PLAYER_BRIDGE.stop()
         PLAYER_SERVICE.reset_session()

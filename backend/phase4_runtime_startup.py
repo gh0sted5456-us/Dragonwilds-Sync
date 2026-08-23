@@ -393,6 +393,10 @@ def _install_server_pipeline(server_engine_module) -> None:
                 raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
             server_engine_module.write_dedicated_config(cfg, root)
             server_engine_module.save_server_profile(profile_id, profile)
+            apply_console_policy = getattr(server_engine_module, "apply_ue4ss_console_policy", None)
+            if callable(apply_console_policy):
+                policy = apply_console_policy(profile_id)
+                self._event(policy.get("reason") or "Applied runtime console policy.", "ok")
             launch_ready = True
 
         locked = 0
@@ -451,15 +455,21 @@ def _install_server_pipeline(server_engine_module) -> None:
         profile = prepared["profile"]
         exe = prepared["exe"]
         cfg = profile.get("dedicated_config") or {}
+        read_state = getattr(server_engine_module, "load_state", lambda: {})
+        native_consoles = bool(((read_state().get("application") or {}).get("advanced") or {}).get("native_runtime_consoles_enabled", False))
         command = [exe, "-log"]
         launch_env = None
         if server_engine_module.sys.platform.startswith("linux") and Path(exe).suffix.casefold() == ".exe":
             command, launch_env = server_engine_module.linux_windows_server_command(exe)
-        elif server_engine_module.sys.platform.startswith("linux"):
+        elif server_engine_module.sys.platform.startswith("linux") and native_consoles:
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
         self.proc = server_engine_module.popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env,
-                                                      stdout=server_engine_module.subprocess.DEVNULL,
-                                                      stderr=server_engine_module.subprocess.DEVNULL)
+                                                      stdout=server_engine_module.subprocess.PIPE,
+                                                      stderr=server_engine_module.subprocess.STDOUT,
+                                                      text=True, encoding="utf-8", errors="replace", bufsize=1)
+        if self.proc.stdout is not None:
+            threading.Thread(target=self._capture_process_output, args=(self.proc.stdout,), daemon=True,
+                             name="Dragonwilds-Dedicated-Console").start()
         self.started_at = time.time()
         self.monitor.start_ts = self.started_at
         self.active_profile_id = profile_id

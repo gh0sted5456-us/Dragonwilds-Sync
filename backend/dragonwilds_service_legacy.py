@@ -28,7 +28,7 @@ from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_prof
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                            server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
-                           _apply_profile_runeschema)
+                           _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
                                    PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
@@ -5193,6 +5193,21 @@ def handle(method: str, params: dict) -> object:
         root = server_root_for_profile(profile)
         return {"toolkit": rsdw_toolkit_status(root), "catalog": rsdw_command_catalog(root),
                 "bridge": PLAYER_BRIDGE.status(), "history": rsdw_console_history(profile_id, int(params.get("limit") or 200))}
+
+    if method == "server.console.policy":
+        profile_id = str(params.get("id") or "")
+        if not load_server_profile(profile_id):
+            raise KeyError("Server World not found")
+        if "native_consoles_enabled" in params:
+            enabled = bool(params.get("native_consoles_enabled"))
+            state.setdefault("application", {}).setdefault("advanced", {})["native_runtime_consoles_enabled"] = enabled
+            save_state(state)
+            policy = apply_ue4ss_console_policy(profile_id, enabled)
+        else:
+            policy = ue4ss_console_policy_status(profile_id)
+        runtime = ENGINE.status()
+        policy["next_launch_required"] = bool(runtime.get("running") and str(runtime.get("active_profile_id") or "") == profile_id)
+        return {"policy": policy, "state": public_state(state)}
 
     if method == "server.console.execute":
         profile_id = str(params.get("id") or "")

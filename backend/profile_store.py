@@ -231,7 +231,8 @@ def default_state() -> dict:
                                      "remote_admin": {"enabled": False, "users": [], "permission_requests": [], "permissions": {"view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False, "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False, "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False, "start": True, "stop": True, "restart": True, "update": True, "refresh": True}}},
             # Legacy migration-only shape. The static Shared Worlds webhost UI/resource is retired in Release 1.1.
             "shared_worlds": {"feed_url": "", "feed_token": "", "auto_refresh": False, "refresh_minutes": 15, "last_refresh_at": None, "last_error": ""},
-            "advanced": {"multiple_servers_enabled": False, "webhost_enabled": False, "remote_server_enabled": False},
+            "advanced": {"multiple_servers_enabled": False, "webhost_enabled": False, "remote_server_enabled": False,
+                         "native_runtime_consoles_enabled": False},
             "application_updates": {"github_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync", "auto_check": True, "etag": "", "last_checked_at": None, "last_available_version": "", "dismissed_version": "", "last_error": ""},
             "nav_collapsed": False,
             "guided_setup": {"completed": False, "skipped": False, "last_mode": "player"},
@@ -427,6 +428,9 @@ def load_state() -> dict:
     advanced = application.setdefault("advanced", {})
     advanced.setdefault("multiple_servers_enabled", False)
     advanced.setdefault("show_tips", False)
+    # Dragonwilds Sync owns the normal runtime console. UE4SS's native Win32
+    # console/debugging-tools windows are an explicit troubleshooting fallback.
+    advanced.setdefault("native_runtime_consoles_enabled", False)
     advanced.setdefault("webhost_enabled", bool(directory_host.get("enabled")))
     # WebHost Directory and Remote Server are independent product features.
     # Older profiles exposed Remote Admin from inside WebHost, so preserve that

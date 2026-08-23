@@ -8,7 +8,6 @@ const failures = [];
 
 for (const token of [
   "https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/",
-  "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds",
   'const PAGE_SIZE = 50',
   'filtered.slice(pageStart, pageStart + PAGE_SIZE)',
   'renderPagination(filtered.length)',

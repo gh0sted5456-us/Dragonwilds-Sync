@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.24",
+      "title": "Dragonwilds Sync V2.7.24",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "UE4SS Experimental resolves the upstream experimental-latest release asset.",
+        "RuneSchema Experimental resolves the newest fork release asset even when GitHub exposes it only as a prerelease.",
+        "GitHub tags URLs remain valid manual runtime sources and resolve through the newest tag's attached release.",
+        "Runtime channel cards and Trash controls keep complete titles readable at narrow widths.",
+        "Helpy adds current redacted application captures and expanded runtime, Sync, profile, and recovery walkthroughs."
+      ]
+    },
+    {
       "version": "2.7.23",
       "title": "Dragonwilds Sync V2.7.23",
       "date": "2026-08-23",

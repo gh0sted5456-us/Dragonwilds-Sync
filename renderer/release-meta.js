@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.23',
-  name: 'V2.7.23 · Runtime Channels & Character Inventory',
+  version: '2.7.24',
+  name: 'V2.7.24 · Runtime Resolution & Helpy',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,7 +9,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
-    version: '2.7.23',
+    version: '2.7.24',
     title: 'Runtime Channels & Character Inventory',
     items: [
       'Trash is a compact bottom-right icon and uses cached, batched restore/delete updates for faster interaction.',
@@ -24,7 +24,9 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     title: 'Uniform Interface & Host Firewall',
     items: [
       'Shared panels, forms, buttons, tabs, headers, modals, and action groups use one consistent spacing and alignment rhythm.',
-      'Settings consolidates UE4SS, RuneSchema, and RSDW maintenance into one Runtime & Data workspace.',
+      'UE4SS and RuneSchema Experimental channels resolve their newest published ZIP assets, including prerelease-only RuneSchema releases.',
+      'Runtime channel and Trash layouts keep titles and controls readable without clipping at narrow widths.',
+      'Helpy includes a broader redacted visual walkthrough sourced from the separate website repository.',
       'Navigation cleanup processes only newly inserted subtrees, reducing unnecessary repaint work.',
       'One explicit firewall repair covers configured local/co-op gameplay, dedicated gameplay, Sync transfer, Direct Connect discovery, and enabled direct WebHost ports.',
       'Loopback IPC, joining clients, and outbound-only WebHost tunnels never receive inbound firewall rules.',

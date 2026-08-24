@@ -73,6 +73,75 @@ def test_github_release_pages_resolve_real_assets_via_api() -> None:
         managed_updates.server_systems.urllib.request.urlopen = old_urlopen
 
 
+def test_prerelease_only_repository_falls_back_to_release_collection() -> None:
+    old_urlopen = managed_updates.server_systems.urllib.request.urlopen
+    seen = []
+
+    class Response:
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self): return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout=0):
+        url = str(getattr(request, "full_url", request))
+        seen.append(url)
+        if url.endswith("/releases/latest"):
+            raise managed_updates.server_systems.urllib.error.HTTPError(url, 404, "Not Found", {}, None)
+        return Response([{"tag_name": "0.6.1-experimental.2", "prerelease": True, "assets": [{
+            "name": "RuneSchema-0.6.1-Experimental.zip",
+            "browser_download_url": "https://example.invalid/RuneSchema-0.6.1-Experimental.zip",
+        }]}])
+
+    try:
+        managed_updates.server_systems.urllib.request.urlopen = fake_urlopen
+        resolved = managed_updates.server_systems.resolve_runtime_zip_source(
+            managed_updates.RUNESCHEMA_EXPERIMENTAL_RELEASES_URL, prefer_contains=("runeschema",))
+        assert resolved["release_tag"] == "0.6.1-experimental.2"
+        assert resolved["filename"] == "RuneSchema-0.6.1-Experimental.zip"
+        assert any("releases?per_page=20" in url for url in seen)
+    finally:
+        managed_updates.server_systems.urllib.request.urlopen = old_urlopen
+
+
+def test_runeschema_experimental_releases_page_normalizes_to_repository() -> None:
+    assert managed_updates._runeschema_resolver_source(
+        managed_updates.RUNESCHEMA_EXPERIMENTAL_RELEASES_URL
+    ) == managed_updates.RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL
+
+
+def test_tags_page_selects_latest_tag_release_asset() -> None:
+    old_urlopen = managed_updates.server_systems.urllib.request.urlopen
+    seen = []
+
+    class Response:
+        def __init__(self, payload): self.payload = payload
+        def __enter__(self): return self
+        def __exit__(self, *_args): return False
+        def read(self): return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout=0):
+        url = str(getattr(request, "full_url", request))
+        seen.append(url)
+        if "/tags?per_page=1" in url:
+            return Response([{"name": "0.6.1-experimental.2"}])
+        return Response({"tag_name": "0.6.1-experimental.2", "assets": [{
+            "name": "RuneSchema-0.6.1-Experimental.zip",
+            "browser_download_url": "https://example.invalid/RuneSchema-0.6.1-Experimental.zip",
+        }]})
+
+    try:
+        managed_updates.server_systems.urllib.request.urlopen = fake_urlopen
+        resolved = managed_updates.server_systems.resolve_runtime_zip_source(
+            managed_updates.RUNESCHEMA_EXPERIMENTAL_TAGS_URL, prefer_contains=("runeschema",))
+        assert resolved["release_tag"] == "0.6.1-experimental.2"
+        assert resolved["resolver"] == "github-latest-tag-release"
+        assert any("/tags?per_page=1" in url for url in seen)
+        assert any("/releases/tags/0.6.1-experimental.2" in url for url in seen)
+    finally:
+        managed_updates.server_systems.urllib.request.urlopen = old_urlopen
+
+
 def test_runeschema_official_source_is_default_and_api_resolved() -> None:
     old_resolve = managed_updates.server_systems.resolve_runtime_zip_source
     calls = []

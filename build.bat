@@ -14,10 +14,10 @@ if exist "%LAUNCH_ERR%" del /q "%LAUNCH_ERR%" >nul 2>nul
 >>"%BUILD_LOG%" echo Started: %DATE% %TIME%
 >>"%BUILD_LOG%" echo.
 
-title Dragonwilds Sync 2.7.23 - Portable Build
+title Dragonwilds Sync 2.7.24 - Portable Build
 
 echo ============================================================
-echo   Dragonwilds Sync 2.7.23 - Portable Windows Build
+echo   Dragonwilds Sync 2.7.24 - Portable Windows Build
 echo ============================================================
 echo Project:   %CD%
 echo Build log: "%BUILD_LOG%"
@@ -81,7 +81,7 @@ echo.
 echo ============================================================
 echo   PORTABLE BUILD COMPLETE
 echo ============================================================
-echo Output: "%CD%\release\Dragonwilds Sync and Launcher-Portable-2.7.23.exe"
+echo Output: "%CD%\release\Dragonwilds Sync and Launcher-Portable-2.7.24.exe"
 echo Log:    "%BUILD_LOG%"
 echo.
 echo Opening the release folder now.

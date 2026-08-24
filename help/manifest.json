@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 7,
+  "version": 8,
   "updated": "2026-08-23",
   "title": "Helpy: Dragonwilds Sync Field Guide",
   "subtitle": "A task-first visual guide to Worlds, DragonConnect, file Sync, servers, characters, mods, RSDW-L, Quick Launch, and recovery.",
@@ -243,6 +243,8 @@
       "intro": "Settings now keeps machine-wide controls together and leaves profile-owned mods, World rules, and server runtime controls in their owning workspaces.",
       "sections": [
         {"title":"Application, Network, Storage","body":"Application selects the game installation and launch behavior. Network controls discovery and client evidence. Storage explains APPDATA ownership, isolation, backups, and persistent runtime cores."},
+        {"title":"Runtime & Data channels","body":"UE4SS and RuneSchema each provide Official and Experimental controls. UE4SS Experimental resolves the experimental-latest release tag. RuneSchema Experimental resolves the newest published release from gh0sted5456-us/RuneSchema, including prereleases, and labels it as testing current RuneSchema fixes and features."},
+        {"title":"Stored build libraries","body":"Resolved builds retain version, nickname, publication date, source, and local archive. Select one or several stored copies to reapply or delete; World-specific manual ZIP overrides remain explicit and profile-scoped."},
         {"title":"Advanced","body":"Advanced switches opt optional hosting and remote surfaces into the application. Disabling a surface preserves its profiles and does not silently start or stop an unrelated service."},
         {"title":"Integrations","body":"Optional integrations such as Nexus Mods and Discord Rich Presence remain independent of local Worlds and dedicated-server operation. Rich Presence uses the selected profile and current activity without publishing credentials or private paths."},
         {"title":"What is intentionally absent","body":"Mod Management is not duplicated under Settings. World-owned mods live with the World; the shared repository lives in Mods; server installation and runtime cores live under Sync Hosting or the server profile."}

@@ -15,6 +15,7 @@ RUNESCHEMA_REPOSITORY_URL = "https://github.com/UnskippableCutscene/RuneSchema"
 RUNESCHEMA_RELEASES_URL = f"{RUNESCHEMA_REPOSITORY_URL}/releases"
 RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL = "https://github.com/gh0sted5456-us/RuneSchema"
 RUNESCHEMA_EXPERIMENTAL_RELEASES_URL = f"{RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL}/releases"
+RUNESCHEMA_EXPERIMENTAL_TAGS_URL = f"{RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL}/tags"
 
 
 def _is_runeschema_core_zip(path: Path) -> bool:
@@ -50,10 +51,15 @@ def ensure_runeschema_source(application: dict) -> str:
 
 
 def _runeschema_resolver_source(source_url: str) -> str:
-    """Use GitHub's release API-capable repository form for the official source."""
+    """Use GitHub's API-capable repository form for managed RuneSchema channels."""
     source = str(source_url or "").strip()
-    if source.rstrip("/").casefold() == RUNESCHEMA_RELEASES_URL.rstrip("/").casefold():
-        return RUNESCHEMA_REPOSITORY_URL
+    release_sources = {
+        RUNESCHEMA_RELEASES_URL.rstrip("/").casefold(): RUNESCHEMA_REPOSITORY_URL,
+        RUNESCHEMA_EXPERIMENTAL_RELEASES_URL.rstrip("/").casefold(): RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL,
+        RUNESCHEMA_EXPERIMENTAL_TAGS_URL.rstrip("/").casefold(): RUNESCHEMA_EXPERIMENTAL_TAGS_URL,
+    }
+    if source.rstrip("/").casefold() in release_sources:
+        return release_sources[source.rstrip("/").casefold()]
     return source
 
 

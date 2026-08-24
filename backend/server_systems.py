@@ -229,6 +229,7 @@ _GITHUB_RELEASE_TAG_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/rele
 _GITHUB_REPO_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?$")
 _GITHUB_RELEASES_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/releases/?$")
 _GITHUB_RELEASES_LATEST_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/releases/latest/?$")
+_GITHUB_TAGS_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/tags/?$")
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
 _DEDICATED_JOIN_RE = re.compile(r"Join succeeded:\s*(.+)")
 _DEDICATED_LEAVE_RE = re.compile(r"Player Removed from session \[[^\]]+\]-\[(.+)\]")
@@ -2845,6 +2846,12 @@ def _github_release_zip(api_url: str, source: str, prefer_contains: tuple[str, .
     req = urllib.request.Request(api_url, headers={"User-Agent": "DragonwildsSync/2", "Accept": "application/vnd.github+json"})
     with urllib.request.urlopen(req, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8", "replace"))
+    releases = payload if isinstance(payload, list) else [payload]
+    releases = [release for release in releases if isinstance(release, dict) and not release.get("draft")]
+    payload = next((release for release in releases if any(
+        str(asset.get("name") or "").casefold().endswith(".zip")
+        for asset in (release.get("assets") or []) if isinstance(asset, dict)
+    )), {})
     assets = [asset for asset in (payload.get("assets") or []) if str(asset.get("name") or "").casefold().endswith(".zip")]
     if prefer_contains:
         preferred = [asset for asset in assets if any(token.casefold() in str(asset.get("name") or "").casefold() for token in prefer_contains)]
@@ -2869,7 +2876,7 @@ def resolve_runtime_zip_source(source_url: str, *, prefer_contains: tuple[str, .
     """Resolve an editable runtime source into a downloadable ZIP.
 
     Accepts a direct ZIP URL, a GitHub repository URL, /releases/latest, or a
-    concrete /releases/tag/<tag> URL.  GitHub release assets are preferred over
+    concrete /releases/tag/<tag> URL, or a repository /tags page. GitHub release assets are preferred over
     source-code archives because UE4SS/RuneSchema are installed runtimes.
     """
     source = str(source_url or "").strip()
@@ -2894,6 +2901,26 @@ def resolve_runtime_zip_source(source_url: str, *, prefer_contains: tuple[str, .
         except Exception:
             pass
     else:
+        tags_match = _GITHUB_TAGS_RE.match(source)
+        if tags_match:
+            owner, repo = tags_match.groups()
+            try:
+                req = urllib.request.Request(
+                    f"https://api.github.com/repos/{owner}/{repo}/tags?per_page=1",
+                    headers={"User-Agent": "DragonwildsSync/2", "Accept": "application/vnd.github+json"})
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    tag_rows = json.loads(response.read().decode("utf-8", "replace"))
+                tag = str(tag_rows[0].get("name") or "").strip() if isinstance(tag_rows, list) and tag_rows else ""
+                if tag:
+                    resolved = _github_release_zip(
+                        f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{quote(tag, safe='')}",
+                        source, prefer_contains, timeout)
+                    if resolved:
+                        resolved["resolver"] = "github-latest-tag-release"
+                        return resolved
+            except Exception:
+                return None
+            return None
         match = _GITHUB_RELEASES_LATEST_RE.match(source) or _GITHUB_RELEASES_RE.match(source) or _GITHUB_REPO_RE.match(source)
         if match:
             owner, repo = match.groups()
@@ -2903,7 +2930,18 @@ def resolve_runtime_zip_source(source_url: str, *, prefer_contains: tuple[str, .
                 if resolved:
                     return resolved
             except Exception:
-                return None
+                # GitHub's /releases/latest endpoint excludes prereleases. Runtime
+                # testing channels commonly publish prerelease-only builds, so
+                # fall back to the ordered releases collection before reporting
+                # the source as unresolved.
+                try:
+                    resolved = _github_release_zip(
+                        f"https://api.github.com/repos/{owner}/{repo}/releases?per_page=20",
+                        source, prefer_contains, timeout)
+                    if resolved:
+                        return resolved
+                except Exception:
+                    return None
     if not (owner and repo and tag):
         return None
     expanded = f"https://github.com/{owner}/{repo}/releases/expanded_assets/{tag}"

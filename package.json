@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-electron",
-  "version": "2.7.23",
+  "version": "2.7.24",
   "private": true,
   "description": "A unified tool to create, launch, and share world servers with friends.",
   "main": "electron/bootstrap.cjs",

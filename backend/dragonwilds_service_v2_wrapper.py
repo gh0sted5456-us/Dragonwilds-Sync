@@ -796,13 +796,37 @@ def handle(method: str, params: dict) -> object:
         if target == "server":
             profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
             profile = _legacy.load_server_profile(profile_id) if profile_id else {}
-            if not profile_id or not profile:
+            reset = bool(params.get("reset"))
+            if (not profile_id or not profile) and not reset:
                 raise ValueError("Select the hosted World whose core runtime should be updated.")
             install_meta = state.setdefault("application", {}).setdefault("server_install", {})
             install_dir = str(install_meta.get("install_dir") or "").strip()
             if not install_dir:
                 raise ValueError("Set Settings → Server → Server Directory first.")
             restart = bool(params.get("restart", False))
+
+            if reset:
+                if restart and (not profile_id or not profile):
+                    raise ValueError("Select the hosted World that should restart after the runtime reset.")
+                installer = lambda: _managed_updates.reset_server_core(
+                    component, install_dir, state.setdefault("application", {}), params)
+                label = "UE4SS" if component == "ue4ss" else "RuneSchema"
+                if profile_id and profile:
+                    result = RUNTIME.update(profile_id, installer, restart=restart, component=label)
+                else:
+                    _legacy.ENGINE.assert_stopped()
+                    result = installer()
+                refreshed = _legacy.load_state()
+                refreshed.setdefault("application", {})["server_install"] = dict(
+                    state.setdefault("application", {}).get("server_install") or {})
+                _refresh_managed_update_state(refreshed, profile_id, force_runeschema=component == "runeschema")
+                _legacy._record_notification(
+                    refreshed, f"{label} server reset complete",
+                    f"The configured dedicated-server {label} core was cleanly reinstalled. Profile-owned mods and dedicated loader DLLs were preserved.",
+                    "success", world_id=profile_id, key=f"core-server-reset:{component}:{int(time.time())}",
+                )
+                _legacy.save_state(refreshed)
+                return {"result": result, "state": _legacy.public_state(refreshed)}
 
             if component == "ue4ss":
                 source = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or _managed_updates.DEFAULT_UE4SS_SOURCE).strip()

@@ -21,7 +21,7 @@ def dedicated_exit_error(runtime: dict | None) -> RuntimeError:
         code_detail = " an unavailable exit code"
     output = [str(row.get("message") or "").strip() for row in (runtime.get("process_output") or [])[-3:]
               if isinstance(row, dict) and str(row.get("message") or "").strip()]
-    output_detail = f" Last game output: {' | '.join(output)[:1200]}" if output else " No final game-console line was emitted."
+    output_detail = f" Last runtime output: {' | '.join(output)[:1200]}" if output else " No final game-console or current runtime-log line was emitted."
     return RuntimeError(f"The dedicated server exited with{code_detail} before Sync publication completed.{output_detail}")
 
 

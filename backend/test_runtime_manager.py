@@ -8,6 +8,7 @@ import runtime_versions
 import sync_engine
 from runtime_manager import AuthoritativeRuntimeManager
 from runtime_versions import cl_version_status, detect_steam_cloud_status, normalize_cl_version
+from server_engine import ServerEngine
 
 
 class FakeShare:
@@ -104,6 +105,17 @@ class FakeDirectory:
 
     def stop(self):
         self.stopped = True
+
+
+def test_windows_no_stdout_falls_back_to_current_runtime_log() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "RuneScape Dragonwilds Dedicated Server"
+        log = root / "RSDragonwilds" / "Binaries" / "Win64" / "ue4ss" / "UE4SS.log"
+        log.parent.mkdir(parents=True)
+        log.write_text("startup\nRuneSchema fatal detail\n", encoding="utf-8")
+        rows = ServerEngine._runtime_log_tail(str(root), 0)
+        assert rows and rows[-1]["source"] == "log:UE4SS.log"
+        assert "RuneSchema fatal detail" in rows[-1]["message"]
 
 
 def assert_start_order(engine):
@@ -520,6 +532,7 @@ def test_initial_environment_is_adopted_once_and_default_is_exclusive():
 
 
 def main():
+    test_windows_no_stdout_falls_back_to_current_runtime_log()
     test_lifecycle()
     test_start_never_advertises_before_process_and_cleans_publish_failure()
     test_live_dedicated_server_repairs_a_dropped_sync_broadcast()

@@ -1231,6 +1231,37 @@ class ServerEngine:
             except (OSError, ValueError):
                 pass
 
+    @staticmethod
+    def _runtime_log_tail(game_root: str, started_at: float | None, limit: int = 5) -> list[dict]:
+        """Recover useful final lines when a Windows UE process emits no stdout."""
+        if not game_root:
+            return []
+        try:
+            layout = resolve_server_layout(game_root)
+            candidates = [layout.ue4ss_core_dir / "UE4SS.log"]
+            if layout.logs_dir.is_dir():
+                candidates.extend(layout.logs_dir.glob("*.log"))
+            recent = []
+            threshold = float(started_at or 0) - 5.0
+            for path in candidates:
+                try:
+                    if path.is_file() and path.stat().st_mtime >= threshold:
+                        recent.append(path)
+                except OSError:
+                    continue
+            if not recent:
+                return []
+            path = max(recent, key=lambda item: item.stat().st_mtime)
+            with path.open("rb") as stream:
+                stream.seek(0, 2); length = stream.tell(); stream.seek(max(0, length - 131072))
+                text = stream.read().decode("utf-8", errors="replace")
+            lines = [line.strip() for line in text.splitlines() if line.strip()][-max(1, int(limit)) :]
+            return [{"ts": path.stat().st_mtime, "source": f"log:{path.name}",
+                     "level": "error" if any(token in line.casefold() for token in ("error", "fatal", "exception", "failed")) else "info",
+                     "message": f"[{path.name}] {line[:3800]}"} for line in lines]
+        except (OSError, ValueError):
+            return []
+
     def clear_activity(self, profile_id: str) -> int:
         profile = load_server_profile(profile_id)
         if not profile:
@@ -1440,13 +1471,16 @@ class ServerEngine:
                 live_hw["ram_available_gb"] = round((metrics["ram_total_bytes"] - metrics["ram_used_bytes"]) / (1024 ** 3), 1)
             STATE.manifest["hw_stats"] = live_hw
         persistent_events = list((profile or {}).get("activity_log") or []) if profile else []
+        diagnostic_output = list(self.process_output)
+        if exit_code is not None and not diagnostic_output:
+            diagnostic_output = self._runtime_log_tail(root, self.started_at)
         return {"running": pid is not None, "pid": pid, "exit_code": exit_code, "uptime_seconds": monitor.get("uptime_seconds"),
                 "active_profile_id": self.active_profile_id, "players": [p.get("name") for p in merged_players.get("players", [])], "player_details": merged_players.get("players", []), "player_count": merged_players.get("player_count", monitor.get("player_count", 0)),
                 "player_tracker": {"connected": merged_players.get("tracker_connected", False), "last_update": merged_players.get("last_tracker_update")},
                 "share": SHARE.status(), "hw_stats": self.hw_stats, "lan_ip": local_ip_guess(), "public_ip": self.public_ip,
                 "runtime_prerequisites": prereq, "runtime_update_in_progress": self._runtime_update_in_progress,
                 "cl_version": cl_version, "reported_cl": cl_version.get("reported_cl") or "",
-                "network_setup": dict(self.network_setup), "game_root": root, "process_output": list(self.process_output),
+                "network_setup": dict(self.network_setup), "game_root": root, "process_output": diagnostic_output,
                 "metrics": metrics, "metric_history": list(self.metric_history), "computer_profile": ({**self._resolved_computer_profile(), **self._computer_profile_status}), "events": (persistent_events or self.events)[-150:]}
 
     def assert_stopped(self):

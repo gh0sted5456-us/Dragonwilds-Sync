@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.28',
-  name: 'V2.7.28 · Working Console & Runtime Recovery',
+  version: '2.7.29',
+  name: 'V2.7.29 · Server Runtime Reset & Native Utilities',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.29',
+    title: 'Server Runtime Reset & Native Utilities',
+    items: [
+      'UE4SS and RuneSchema Reset now offers player-only, dedicated-server-only, or combined repair scopes.',
+      'Dedicated-server core resets preserve World/profile mods plus the server dwmapi.dll and version.dll loaders.',
+      'Trash and Notifications use lightweight draggable native application windows instead of page overlays.',
+      'UE4SS/RuneSchema repository checkboxes retain state across the native-window bridge so Delete Selected visibly enables.',
+      'Early dedicated exits that emit no console stdout now include the newest current UE4SS or game-log tail in diagnostics.',
+    ],
+  }, {
     version: '2.7.28',
     title: 'Working Console Windows & Runtime Recovery',
     items: [

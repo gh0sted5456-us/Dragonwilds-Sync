@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.29",
+      "title": "Dragonwilds Sync V2.7.29",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "UE4SS and RuneSchema Reset can repair the player install, configured dedicated-server path, or both.",
+        "Dedicated-server runtime resets preserve profile mods, dwmapi.dll, and the dedicated version.dll loader.",
+        "Trash and Notifications open as lightweight draggable native application windows.",
+        "Runtime repository selections correctly enable and highlight Delete Selected across the native-window bridge.",
+        "Early server exits without stdout recover the current UE4SS/game log tail for actionable diagnostics."
+      ]
+    },
+    {
       "version": "2.7.28",
       "title": "Dragonwilds Sync V2.7.28",
       "date": "2026-08-23",

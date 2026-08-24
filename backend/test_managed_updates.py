@@ -302,6 +302,42 @@ def test_manual_client_cores_are_cached_separately_from_server_runtime() -> None
          systems.RUNESCHEMA_RUNTIME_DIR, systems.review_with_defender) = old
 
 
+def test_server_core_delete_preserves_mods_and_dedicated_loaders() -> None:
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td) / "RuneScape Dragonwilds Dedicated Server"
+        game = root / "RSDragonwilds"
+        win64 = game / "Binaries" / "Win64"
+        ue4ss = win64 / "ue4ss"
+        runeschema = ue4ss / "Mods" / "RuneSchema"
+        (runeschema / "mods" / "WorldMod").mkdir(parents=True)
+        (ue4ss / "Mods" / "OtherMod").mkdir(parents=True)
+        (ue4ss / "UE4SS.dll").write_bytes(b"old core")
+        (ue4ss / "UE4SS-settings.ini").write_text("[Settings]", encoding="utf-8")
+        (ue4ss / "Mods" / "OtherMod" / "main.lua").write_text("return true", encoding="utf-8")
+        (runeschema / "dlls").mkdir(parents=True)
+        (runeschema / "dlls" / "main.dll").write_bytes(b"old schema")
+        (runeschema / "mods" / "WorldMod" / "ID.txt").write_text("world-mod", encoding="utf-8")
+        (win64 / "dwmapi.dll").write_bytes(b"bootstrap")
+        (win64 / "version.dll").write_bytes(b"dedicated loader")
+        application = {"server_install": {"ue4ss_installed_version": "old", "runeschema_source_name": "old"}}
+
+        ue = managed_updates.delete_server_core("ue4ss", str(root), application)
+        assert ue["ok"] and not (ue4ss / "UE4SS.dll").exists()
+        assert (ue4ss / "Mods" / "OtherMod" / "main.lua").is_file()
+        assert (runeschema / "mods" / "WorldMod" / "ID.txt").is_file()
+        assert (win64 / "dwmapi.dll").read_bytes() == b"bootstrap"
+        assert (win64 / "version.dll").read_bytes() == b"dedicated loader"
+
+        # Recreate only the RuneSchema core after the UE4SS clean, then prove
+        # its separate reset boundary also leaves content mods and loaders.
+        (runeschema / "dlls").mkdir(parents=True, exist_ok=True)
+        (runeschema / "dlls" / "main.dll").write_bytes(b"old schema")
+        rs = managed_updates.delete_server_core("runeschema", str(root), application)
+        assert rs["ok"] and not (runeschema / "dlls").exists()
+        assert (runeschema / "mods" / "WorldMod" / "ID.txt").is_file()
+        assert (win64 / "dwmapi.dll").is_file() and (win64 / "version.dll").is_file()
+
+
 def main() -> None:
     assert managed_updates.RUNESCHEMA_REPOSITORY_URL == "https://github.com/UnskippableCutscene/RuneSchema"
     assert managed_updates.RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL == "https://github.com/gh0sted5456-us/RuneSchema"
@@ -314,6 +350,7 @@ def main() -> None:
     test_runtime_cache_refresh_defaults_to_local_only()
     test_client_ue4ss_and_runeschema_never_use_steamcmd()
     test_manual_client_cores_are_cached_separately_from_server_runtime()
+    test_server_core_delete_preserves_mods_and_dedicated_loaders()
     print("managed UE4SS/RuneSchema update helper contract: PASS")
 
 

@@ -295,6 +295,84 @@ def delete_client_core(component: str, game_root: str, application: dict) -> dic
     raise ValueError("Managed client core component must be UE4SS or RuneSchema.")
 
 
+def delete_server_core(component: str, game_root: str, application: dict) -> dict:
+    """Remove one dedicated-server core without touching World-owned mods/loaders.
+
+    The server's ``dwmapi.dll`` and ``version.dll`` sit beside UE4SS rather than
+    inside its core directory.  They are deliberately outside this deletion
+    boundary, as are UE4SS ``Mods`` and RuneSchema ``mods``.
+    """
+    component = str(component or "").strip().casefold()
+    layout = server_systems.resolve_server_layout(game_root)
+    install = application.setdefault("server_install", {})
+    removed: list[str] = []
+    if component == "ue4ss":
+        core = layout.ue4ss_core_dir
+        if core.is_dir():
+            for child in list(core.iterdir()):
+                if child.name.casefold() == "mods":
+                    continue
+                _remove_writable(child); removed.append(str(child))
+        for key in ("ue4ss_installed_version", "ue4ss_installed_at"):
+            install.pop(key, None)
+        return {"ok": True, "component": "UE4SS", "removed": removed,
+                "mods_preserved": str(layout.ue4ss_mods_dir),
+                "loaders_preserved": [str(layout.ue4ss_bootstrap), str(layout.server_loader)]}
+    if component == "runeschema":
+        root = layout.runeschema_root
+        if root.is_dir():
+            for child in list(root.iterdir()):
+                if child.name.casefold() == "mods":
+                    continue
+                _remove_writable(child); removed.append(str(child))
+        for key in ("runeschema_installed_at", "runeschema_source_name", "runeschema_update_check"):
+            install.pop(key, None)
+        return {"ok": True, "component": "RuneSchema", "removed": removed,
+                "mods_preserved": str(layout.runeschema_mods_dir)}
+    raise ValueError("Managed server core component must be UE4SS or RuneSchema.")
+
+
+def reset_server_core(component: str, game_root: str, application: dict, params: dict) -> dict:
+    """Download and validate a replacement before cleaning the live server core."""
+    component = str(component or "").strip().casefold()
+    install = application.setdefault("server_install", {})
+    if component == "ue4ss":
+        source = str(params.get("releases_url") or install.get("ue4ss_source_url") or DEFAULT_UE4SS_SOURCE).strip()
+        archive, resolved, temp = server_systems.download_runtime_zip(source, prefer_contains=("ue4ss",))
+        try:
+            removed = delete_server_core(component, game_root, application)
+            result = server_systems.install_authoritative_ue4ss_zip(str(archive), game_root)
+        finally:
+            temp.cleanup()
+        install.update({"ue4ss_source_url": source,
+                        "ue4ss_installed_version": str(resolved.get("filename") or source),
+                        "ue4ss_installed_at": time.time()})
+        return {"component": "UE4SS", "removed": removed, "result": result,
+                "source": resolved}
+    if component == "runeschema":
+        variant = str(params.get("variant") or params.get("channel") or "official").strip().casefold()
+        if variant not in {"official", "experimental"}:
+            raise ValueError("RuneSchema variant must be official or experimental.")
+        source = str(params.get("releases_url") or (
+            RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL if variant == "experimental" else RUNESCHEMA_REPOSITORY_URL
+        )).strip()
+        archive, resolved, temp = server_systems.download_runtime_zip(
+            _runeschema_resolver_source(source), prefer_contains=("runeschema",))
+        try:
+            if not _is_runeschema_core_zip(archive):
+                raise ValueError("The resolved RuneSchema ZIP is not a complete RuneSchema core.")
+            removed = delete_server_core(component, game_root, application)
+            result = server_systems.install_runeschema_zip(str(archive), game_root, role="server")
+        finally:
+            temp.cleanup()
+        install.update({"runeschema_source_url": source,
+                        "runeschema_source_name": str(resolved.get("filename") or source),
+                        "runeschema_installed_at": time.time()})
+        return {"component": "RuneSchema", "removed": removed, "result": result,
+                "source": resolved, "variant": variant}
+    raise ValueError("Managed server core component must be UE4SS or RuneSchema.")
+
+
 # dragonwilds_service imports this module only after the retained V2 service has
 # finished loading. Install the additive Phase 3 character/index optimization at
 # that point without replacing the service or its RPC authority.

@@ -81,15 +81,18 @@
 
   async function openTrash(){
     const existing=document.querySelector('#dws-trash-overlay');
-    if(existing){existing.scrollIntoView?.({block:'center'});return void paintBody(existing);}
+    if(existing){window.__DWSYNC_DESKTOP_WINDOWS__?.focus?.(existing);return void paintBody(existing);}
     if(opening)return;opening=true;
     // Build and mount the overlay with cached (or empty) content immediately
     // -- the click feels instant -- then fill in a fresh read in the
     // background instead of blocking the open on network/disk latency.
-    const overlay=shell(lastPayload);
-    document.body.appendChild(overlay);
-    overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=()=>{overlay.remove();opening=false;void refresh(false);});
-    overlay.onclick=e=>{if(e.target===overlay){overlay.remove();opening=false;void refresh(false);}};
+    const shellNode=shell(lastPayload);const desktop=window.__DWSYNC_DESKTOP_WINDOWS__;
+    const overlay=desktop?.openNative?desktop.openNative(shellNode.innerHTML,{title:'Trash',width:980,height:820}):shellNode;
+    if(!desktop?.openNative)document.body.appendChild(overlay);
+    overlay.id='dws-trash-overlay';overlay._dwsOnNativeClosed=()=>{opening=false;void refresh(false);};
+    const close=()=>{opening=false;if(desktop?.close)desktop.close(overlay);else overlay.remove();void refresh(false);};
+    overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=close);
+    if(!desktop?.openNative)overlay.onclick=e=>{if(e.target===overlay)close();};
     overlay.querySelector('#dws-trash-retention').onchange=async e=>{await invoke('application.trash.settings',{auto_empty_days:Number(e.target.value||0)});lastRead=0;};
     overlay.querySelector('#dws-trash-select-all').onchange=e=>{const shownIds=[...overlay.querySelectorAll('[data-trash-select]')].map(node=>node.dataset.trashSelect);if(e.target.checked)shownIds.forEach(id=>selected.add(id));else shownIds.forEach(id=>selected.delete(id));overlay.querySelectorAll('[data-trash-select]').forEach(node=>{node.checked=selected.has(node.dataset.trashSelect);});paintSelectionControls(overlay);};
     overlay.querySelector('[data-trash-page-prev]').onclick=()=>{page=Math.max(1,page-1);void paintBody(overlay,false);};

@@ -167,6 +167,9 @@ def install_client_core(component: str, game_root: str, application: dict, param
         raise ValueError("The configured Dragonwilds client root does not exist.")
     metadata = application.setdefault("client_core_runtime", {})
     manual_zip = Path(str(params.get("zip_path") or "")).expanduser()
+    channel = str(params.get("channel") or "official").strip().casefold()
+    if channel not in {"official", "experimental"}:
+        raise ValueError("Runtime channel must be official or experimental.")
 
     if str(params.get("zip_path") or "").strip():
         if not manual_zip.is_file() or manual_zip.suffix.casefold() != ".zip":
@@ -196,6 +199,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
         result = server_systems.install_client_ue4ss_update(str(update["download_url"]), root)
         metadata.update({
             "ue4ss_source_url": source,
+            "ue4ss_channel": channel,
             "ue4ss_installed_version": str(update.get("filename") or "experimental-latest"),
             "ue4ss_installed_at": time.time(),
         })
@@ -215,6 +219,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
         result = server_systems.install_authoritative_runeschema_update(resolver_source, root, role="client")
         metadata.update({
             "runeschema_source_url": source,
+            "runeschema_channel": channel,
             "runeschema_installed_version": str(result.get("filename") or result.get("source") or source),
             "runeschema_installed_at": time.time(),
         })

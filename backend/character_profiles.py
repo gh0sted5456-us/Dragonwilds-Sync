@@ -473,6 +473,7 @@ def _avatar_state_from_object(obj) -> dict:
     # hydration current across game/tool updates without baking item mappings
     # into Dragonwilds Sync releases.
     resolved_equipment: list[dict] = []
+    resolved_equipment_slots: set[str] = set()
     equipment_slots = {
         "body": "torso", "torso": "torso", "chest": "torso",
         "legs": "legs", "leg": "legs", "head": "helmet", "helmet": "helmet", "helm": "helmet",
@@ -510,6 +511,7 @@ def _avatar_state_from_object(obj) -> dict:
             # value from an earlier preview must never win over the item the
             # user just equipped in the native editor.
             params[slot] = str(resolved["id"])
+            resolved_equipment_slots.add(slot)
             resolved_equipment.append({"slot": slot, "item_data": item_data, "item": name, "model": resolved.get("id"), "model_label": resolved.get("label")})
 
     slots = {
@@ -525,6 +527,11 @@ def _avatar_state_from_object(obj) -> dict:
         "leftHand": ("lefthand", "left_hand"),
     }
     for slot, hints in slots.items():
+        # The catalog + avatar-index resolution above is authoritative for
+        # equipped armour. A generic model-like string elsewhere in the save
+        # must not overwrite it with a stale or unrelated asset.
+        if slot in resolved_equipment_slots:
+            continue
         # A present customization row is authoritative even when it explicitly
         # selects None. Do not let an unrelated/stale mesh string elsewhere in
         # the save undo the user's current hair or facial-hair selection.
@@ -998,7 +1005,31 @@ def native_rsdw_tool_state(value: dict, tool: str, custom_items: list[dict] | No
                 "equipment": compact["equipment"], "baseDurability": compact["base_durability"],
                 "custom": True,
             }
-        tabs["custom"] = {"label": "Modded Items", "items": custom_rows}
+        def custom_tab(category: str) -> str:
+            normalized = str(category or "").strip().casefold().replace("_", " ").replace("-", " ")
+            collapsed = normalized.replace(" ", "")
+            for key in tabs:
+                candidate = str(key).casefold().replace("_", "").replace("-", "").replace(" ", "")
+                if candidate and (candidate == collapsed or candidate.rstrip("s") == collapsed.rstrip("s")):
+                    return str(key)
+            if "rune" in normalized:
+                return "rune"
+            if "ammo" in normalized or "ammunition" in normalized:
+                return "ammo"
+            if "quest" in normalized:
+                return "quest"
+            if normalized and normalized not in {"other", "modded", "modded items", "uncategorized", "uncategorized / modded"}:
+                return "bag"
+            return "custom"
+
+        uncategorized_rows = []
+        for row in custom_rows:
+            target = custom_tab(row.get("category", ""))
+            if target != "custom" and target in tabs:
+                tabs[target].setdefault("items", []).append(row)
+            else:
+                uncategorized_rows.append(row)
+        tabs["custom"] = {"label": "Uncategorized / Modded", "items": uncategorized_rows}
         container = _inventory_container(value)
         sections = {
             "inventory": _inventory_rows(container.get("Inventory"), index),

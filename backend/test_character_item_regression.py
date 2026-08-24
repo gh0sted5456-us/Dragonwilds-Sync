@@ -59,6 +59,22 @@ def _manifest() -> dict:
     }
 
 
+def _catalog() -> dict:
+    converted = []
+    for row in _manifest()["items"]:
+        converted.append({
+            "name": row["display_name"], "displayName": row["display_name"],
+            "itemData": row["item_data"], "persistenceId": row["persistence_id"],
+            "maxStack": row["max_stack"], "iconPath": row["icon_ref"],
+            "category": row["category"], "equipment": row["equipment"],
+            "baseDurability": row.get("base_durability"), "sourcePath": row["source_path"],
+        })
+    return {"tabs": {
+        "weapons": {"label": "Weapons", "items": [converted[0]]},
+        "resources": {"label": "Resources", "items": [converted[1]]},
+    }}
+
+
 def main() -> None:
     with tempfile.TemporaryDirectory(prefix="dws-character-item-") as temporary:
         root = Path(temporary)
@@ -86,10 +102,15 @@ def main() -> None:
 
         original_manifest = rsdw_cache.item_manifest
         original_search = spawner_catalog.search_items
+        original_tool_json = characters._read_rsdw_tool_json
         try:
             # Source and packaged launches must share this fallback.  The
             # optional RSDWTools website tree is intentionally absent here.
             rsdw_cache.item_manifest = _manifest
+            characters._read_rsdw_tool_json = lambda tool, name: (
+                _catalog() if tool == "item-editor" and name == "catalog.json"
+                else original_tool_json(tool, name)
+            )
             assert getattr(characters, "_DWS_EDITOR_RUNTIME_STABILIZATION", False) is True
 
             discovered = characters.discover_characters(str(game))
@@ -234,8 +255,33 @@ def main() -> None:
             assert restored["max_stack"] == 24 and restored["icon_data"].startswith("data:image/png;base64,")
 
             custom_tool_state = characters.native_rsdw_tool_state({}, "item-editor", [restored])
-            custom_row = custom_tool_state["tabs"]["custom"]["items"][0]
+            # Categorized mod items now join their functional inventory tab;
+            # only genuinely uncategorized definitions remain in Modded.
+            custom_row = custom_tool_state["tabs"]["weapons"]["items"][-1]
             assert custom_row["custom"] is True and custom_row["internal_name"] == "ITEM_Custom"
+            assert custom_tool_state["tabs"]["custom"]["label"] == "Uncategorized / Modded"
+
+            # The catalog/avatar-index match for equipped armour is
+            # authoritative. A later broad scan of model-like save strings
+            # must not overwrite the resolved loadout model.
+            original_resolve_catalog = characters.resolve_catalog_item
+            original_resolve_avatar = characters.resolve_avatar_model
+            try:
+                characters.resolve_catalog_item = lambda item: {
+                    "equipment": "Body", "name": "Regression Armour", "sourcePath": "/Game/Armour/Regression"
+                } if item == "ITEM_Armour" else None
+                characters.resolve_avatar_model = lambda slot, sex, hints: {
+                    "id": "SK:ResolvedRegressionArmour", "label": "Regression Armour"
+                } if slot == "torso" else None
+                avatar = characters._avatar_state_from_object({
+                    "GameProgress": {"Loadout": {"0": {"ItemData": "ITEM_Armour"}}},
+                    "LegacyPreview": {"Torso": "SK:StaleRegressionArmour"},
+                })
+                assert avatar["params"]["torso"] == "SK:ResolvedRegressionArmour"
+                assert avatar["resolved_equipment"][0]["item_data"] == "ITEM_Armour"
+            finally:
+                characters.resolve_catalog_item = original_resolve_catalog
+                characters.resolve_avatar_model = original_resolve_avatar
             custom_added = characters.apply_native_rsdw_tool(
                 "{}", "item-editor",
                 {"action": "add", "section": "inventory", "tab": "bag", "id": persistence_id, "max": True},
@@ -260,6 +306,7 @@ def main() -> None:
         finally:
             rsdw_cache.item_manifest = original_manifest
             spawner_catalog.search_items = original_search
+            characters._read_rsdw_tool_json = original_tool_json
 
     print("Current Character Editor + full Item Repository/refinement regression: PASS")
 

@@ -1116,16 +1116,34 @@ def handle(method: str, params: dict) -> object:
         return {**result, "trash": list_trash(), "state": _legacy.public_state(state)}
 
     if method == "application.trash.restore":
-        entry_id = str(params.get("entry_id") or "").strip()
-        result = restore_trash(entry_id, overwrite=bool(params.get("overwrite", False)))
-        entry = result.get("entry") if isinstance(result.get("entry"), dict) else {}
+        entry_ids = params.get("entry_ids") if isinstance(params.get("entry_ids"), list) else None
+        if not entry_ids:
+            entry_ids = [str(params.get("entry_id") or "").strip()]
+        entry_ids = list(dict.fromkeys(str(item or "").strip() for item in entry_ids if str(item or "").strip()))
+        if not entry_ids:
+            raise ValueError("Choose at least one Trash item to restore.")
+        restored_entries = []
+        restored_paths = []
+        failed = []
+        for entry_id in entry_ids:
+            try:
+                result = restore_trash(entry_id, overwrite=bool(params.get("overwrite", False)))
+                entry = result.get("entry") if isinstance(result.get("entry"), dict) else {}
+                restored_entries.append(entry)
+                restored_paths.extend(str(path) for path in (result.get("paths") or []))
+            except Exception as exc:
+                failed.append({"entry_id": entry_id, "message": str(exc)})
         state = _legacy.load_state()
-        _restore_launcher_metadata(state, entry)
+        for entry in restored_entries:
+            _restore_launcher_metadata(state, entry)
         _legacy.save_state(state)
         state = _legacy.load_state()
         _legacy.ensure_singleplayer_state(state)
         _legacy.save_state(state)
-        return {**result, "trash": list_trash(), "state": _legacy.public_state(state)}
+        return {"ok": not failed, "restored": bool(restored_entries), "restored_count": len(restored_entries),
+                "entry": restored_entries[0] if len(restored_entries) == 1 else {},
+                "entries": restored_entries, "paths": restored_paths, "failed": failed,
+                "trash": list_trash(), "state": _legacy.public_state(state)}
 
     if method == "singleplayer.profile.delete":
         return _private_delete(method, params, state)

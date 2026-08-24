@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.23",
+      "title": "Dragonwilds Sync V2.7.23",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Trash is a compact icon and uses cached, batched restore and delete updates.",
+        "Mods owns its page identity instead of inheriting the Settings cover.",
+        "UE4SS and RuneSchema expose branded Official and Experimental client channels with working server build libraries.",
+        "Save-backed equipped armour remains authoritative when the 3D character model initializes.",
+        "Inventory category tabs stay within their panel and route categorized mod items into functional repositories.",
+        "The spellbook uses compact radial rune sockets with center page-turn controls."
+      ]
+    },
+    {
       "version": "2.7.22",
       "title": "Dragonwilds Sync V2.7.22",
       "date": "2026-08-23",

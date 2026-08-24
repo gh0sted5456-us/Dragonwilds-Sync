@@ -13,8 +13,8 @@
   // openTrash below) so the fresh read never blocks the click.
   async function read(force=false){if(!force&&lastPayload&&Date.now()-lastRead<10000)return lastPayload;lastPayload=await invoke('application.trash.list',{});lastRead=Date.now();return lastPayload;}
   function sticker(payload){
-    let node=document.querySelector('#dws-trash-sticker');if(!node){node=document.createElement('aside');node.id='dws-trash-sticker';node.innerHTML='<button class="dws-trash-sticker-open" title="Open Trash"><span>♲</span><b>Trash</b><small></small></button><button class="dws-trash-sticker-dismiss" title="Dismiss Trash sticker">×</button>';document.body.appendChild(node);node.querySelector('.dws-trash-sticker-open').onclick=()=>openTrash();node.querySelector('.dws-trash-sticker-dismiss').onclick=()=>{localStorage.setItem('dws-trash-dismissed',signature(lastPayload));node.hidden=true;};}
-    const count=Number(payload?.count||0);node.querySelector('small').textContent=count?String(count):'Empty';node.classList.toggle('has-items',count>0);node.hidden=localStorage.getItem('dws-trash-dismissed')===signature(payload);
+    let node=document.querySelector('#dws-trash-sticker');if(!node){node=document.createElement('aside');node.id='dws-trash-sticker';node.innerHTML='<button class="dws-trash-sticker-open" title="Open Trash" aria-label="Open Trash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3m-9 0 1 13h10l1-13M10 11v5m4-5v5"/></svg><small></small></button><button class="dws-trash-sticker-dismiss" title="Dismiss Trash icon" aria-label="Dismiss Trash icon">×</button>';document.body.appendChild(node);node.querySelector('.dws-trash-sticker-open').onclick=()=>openTrash();node.querySelector('.dws-trash-sticker-dismiss').onclick=()=>{localStorage.setItem('dws-trash-dismissed',signature(lastPayload));node.hidden=true;};}
+    const count=Number(payload?.count||0);node.querySelector('small').textContent=count?String(count):'';node.classList.toggle('has-items',count>0);node.hidden=localStorage.getItem('dws-trash-dismissed')===signature(payload);
   }
   async function refresh(force=false){try{sticker(await read(force));}catch(_){/* Keep background status unobtrusive. */}}
 
@@ -39,10 +39,16 @@
     if(selectAll){const allSelected=shownIds.length>0&&shownIds.every(id=>selected.has(id));selectAll.checked=allSelected;selectAll.indeterminate=!allSelected&&shownIds.some(id=>selected.has(id));}
   }
 
+  function acceptMutation(response){
+    if(!response?.trash)return;
+    lastPayload={...response.trash,settings:lastPayload?.settings||response.settings||{}};
+    lastRead=Date.now();
+  }
+
   function wireRowHandlers(overlay){
     overlay.querySelectorAll('[data-trash-select]').forEach(node=>node.onchange=()=>{const id=node.dataset.trashSelect;if(node.checked)selected.add(id);else selected.delete(id);paintSelectionControls(overlay);});
-    overlay.querySelectorAll('[data-trash-restore]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{await invoke('application.trash.restore',{entry_id:button.dataset.trashRestore});selected.delete(button.dataset.trashRestore);await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}});
-    overlay.querySelectorAll('[data-trash-empty]').forEach(button=>button.onclick=async()=>{if(!confirm('Permanently delete this Trash copy? This cannot be undone.'))return;button.disabled=true;try{await invoke('application.trash.empty',{entry_id:button.dataset.trashEmpty});selected.delete(button.dataset.trashEmpty);await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}});
+    overlay.querySelectorAll('[data-trash-restore]').forEach(button=>button.onclick=async()=>{button.disabled=true;try{const response=await invoke('application.trash.restore',{entry_id:button.dataset.trashRestore});acceptMutation(response);selected.delete(button.dataset.trashRestore);await paintBody(overlay,false);}catch(error){button.disabled=false;alert(error.message||error);}});
+    overlay.querySelectorAll('[data-trash-empty]').forEach(button=>button.onclick=async()=>{if(!confirm('Permanently delete this Trash copy? This cannot be undone.'))return;button.disabled=true;try{const response=await invoke('application.trash.empty',{entry_id:button.dataset.trashEmpty});acceptMutation(response);selected.delete(button.dataset.trashEmpty);await paintBody(overlay,false);}catch(error){button.disabled=false;alert(error.message||error);}});
   }
 
   // Re-renders only the list body, page controls, and selection state --
@@ -50,10 +56,10 @@
   // overlay.remove()+recreate on every click (the old behavior) is what made
   // Trash feel like it was glitching open/closed on every restore, delete,
   // or page change.
-  async function paintBody(overlay){
+  async function paintBody(overlay,force=true){
     if(!overlay?.isConnected)return;
     try{
-      const payload=await read(true);
+      const payload=await read(force);
       const entries=payload.entries||[];
       selected=new Set([...selected].filter(id=>entries.some(entry=>String(entry.id)===id)));
       const pages=Math.max(1,Math.ceil(entries.length/25));
@@ -82,15 +88,15 @@
     // background instead of blocking the open on network/disk latency.
     const overlay=shell(lastPayload);
     document.body.appendChild(overlay);
-    overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=()=>{overlay.remove();opening=false;void refresh(true);});
-    overlay.onclick=e=>{if(e.target===overlay){overlay.remove();opening=false;void refresh(true);}};
+    overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=()=>{overlay.remove();opening=false;void refresh(false);});
+    overlay.onclick=e=>{if(e.target===overlay){overlay.remove();opening=false;void refresh(false);}};
     overlay.querySelector('#dws-trash-retention').onchange=async e=>{await invoke('application.trash.settings',{auto_empty_days:Number(e.target.value||0)});lastRead=0;};
     overlay.querySelector('#dws-trash-select-all').onchange=e=>{const shownIds=[...overlay.querySelectorAll('[data-trash-select]')].map(node=>node.dataset.trashSelect);if(e.target.checked)shownIds.forEach(id=>selected.add(id));else shownIds.forEach(id=>selected.delete(id));overlay.querySelectorAll('[data-trash-select]').forEach(node=>{node.checked=selected.has(node.dataset.trashSelect);});paintSelectionControls(overlay);};
-    overlay.querySelector('[data-trash-page-prev]').onclick=()=>{page=Math.max(1,page-1);void paintBody(overlay);};
-    overlay.querySelector('[data-trash-page-next]').onclick=()=>{page=page+1;void paintBody(overlay);};
-    overlay.querySelector('#dws-trash-empty-all').onclick=async()=>{if(!confirm('Permanently empty all Dragonwilds Sync Trash? This cannot be undone.'))return;const button=overlay.querySelector('#dws-trash-empty-all');button.disabled=true;try{selected=new Set();await invoke('application.trash.empty',{});page=1;await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}};
-    overlay.querySelector('#dws-trash-restore-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||!confirm(`Restore ${ids.length} selected item${ids.length===1?'':'s'}?`))return;const button=overlay.querySelector('#dws-trash-restore-selected');button.disabled=true;let ok=0,failed=0;for(const id of ids){try{await invoke('application.trash.restore',{entry_id:id});selected.delete(id);ok++;}catch(_){failed++;}}await paintBody(overlay);if(failed)alert(`Restored ${ok} item(s); ${failed} could not be restored (likely a conflicting file already exists).`);};
-    overlay.querySelector('#dws-trash-empty-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||!confirm(`Permanently delete ${ids.length} selected item${ids.length===1?'':'s'}? This cannot be undone.`))return;const button=overlay.querySelector('#dws-trash-empty-selected');button.disabled=true;try{await invoke('application.trash.empty',{entry_ids:ids});selected=new Set();await paintBody(overlay);}catch(error){button.disabled=false;alert(error.message||error);}};
+    overlay.querySelector('[data-trash-page-prev]').onclick=()=>{page=Math.max(1,page-1);void paintBody(overlay,false);};
+    overlay.querySelector('[data-trash-page-next]').onclick=()=>{page=page+1;void paintBody(overlay,false);};
+    overlay.querySelector('#dws-trash-empty-all').onclick=async()=>{if(!confirm('Permanently empty all Dragonwilds Sync Trash? This cannot be undone.'))return;const button=overlay.querySelector('#dws-trash-empty-all');button.disabled=true;try{selected=new Set();const response=await invoke('application.trash.empty',{});acceptMutation(response);page=1;await paintBody(overlay,false);}catch(error){button.disabled=false;alert(error.message||error);}};
+    overlay.querySelector('#dws-trash-restore-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||!confirm(`Restore ${ids.length} selected item${ids.length===1?'':'s'}?`))return;const button=overlay.querySelector('#dws-trash-restore-selected');button.disabled=true;try{const response=await invoke('application.trash.restore',{entry_ids:ids});acceptMutation(response);selected=new Set((response.failed||[]).map(row=>String(row.entry_id||'')));await paintBody(overlay,false);if(response.failed?.length)alert(`Restored ${Number(response.restored_count||0)} item(s); ${response.failed.length} could not be restored (likely a conflicting file already exists).`);}catch(error){button.disabled=false;alert(error.message||error);}};
+    overlay.querySelector('#dws-trash-empty-selected').onclick=async()=>{const ids=[...selected];if(!ids.length||!confirm(`Permanently delete ${ids.length} selected item${ids.length===1?'':'s'}? This cannot be undone.`))return;const button=overlay.querySelector('#dws-trash-empty-selected');button.disabled=true;try{const response=await invoke('application.trash.empty',{entry_ids:ids});acceptMutation(response);selected=new Set();await paintBody(overlay,false);}catch(error){button.disabled=false;alert(error.message||error);}};
     opening=false;
     void paintBody(overlay);
   }

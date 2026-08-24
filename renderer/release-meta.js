@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.22',
-  name: 'V2.7.22 · Uniform Interface & Host Firewall',
+  version: '2.7.23',
+  name: 'V2.7.23 · Runtime Channels & Character Inventory',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.23',
+    title: 'Runtime Channels & Character Inventory',
+    items: [
+      'Trash is a compact bottom-right icon and uses cached, batched restore/delete updates for faster interaction.',
+      'Mods owns its page identity instead of inheriting the Settings cover and navigation state.',
+      'UE4SS and RuneSchema expose distinct branded Official and Experimental client channels, and Server Build Library opens against the active or first hosted World.',
+      'Save-backed equipped armour stays authoritative in the 3D character preview, and preview payloads/backgrounds are reapplied after model layers initialize.',
+      'Inventory tabs remain within their panel, use dedicated category icons, and route categorized mod items into their functional repositories.',
+      'The spellbook uses compact radial rune sockets with center page-turn controls.',
+    ],
+  }, {
     version: '2.7.22',
     title: 'Uniform Interface & Host Firewall',
     items: [

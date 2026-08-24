@@ -1002,13 +1002,35 @@ def apply_ue4ss_console_policy(profile_id: str, native_enabled: bool | None = No
         if output and output[-1].strip():
             output.append("")
         output.extend(["[Debug]", *(f"{name} = {value}" for name, value in replacements.values())])
+    rendered = "\n".join(output).rstrip() + "\n"
     previous_mode = path.stat().st_mode
+    if text.replace("\r\n", "\n") == rendered:
+        try:
+            path.chmod(previous_mode | stat.S_IWUSR)
+        except OSError:
+            pass
+        status = ue4ss_console_policy_status(profile_id)
+        status.update({"applied": True, "reason": "UE4SS console policy already matches; no file rewrite was needed."})
+        return status
+    temporary = path.with_suffix(path.suffix + ".dragonwilds.tmp")
     try:
         path.chmod(previous_mode | stat.S_IWUSR)
-        path.write_text("\n".join(output).rstrip() + "\n", encoding="utf-8")
+        temporary.write_text(rendered, encoding="utf-8")
+        os.replace(temporary, path)
+    except PermissionError as exc:
+        # Console-window preference is never allowed to block a valid game
+        # launch. This most often means an older elevated process owns the
+        # file; preserve it and report the deferred policy in diagnostics.
+        status = ue4ss_console_policy_status(profile_id)
+        status.update({"applied": False, "deferred": True,
+                       "reason": f"UE4SS settings are currently permission-locked; launch will continue with the existing console policy ({exc})."})
+        return status
     finally:
+        temporary.unlink(missing_ok=True)
         try:
-            path.chmod(previous_mode)
+            # Runtime roots remain writable so UE4SS and RuneSchema can save
+            # their own settings while the server is running.
+            path.chmod(path.stat().st_mode | stat.S_IWUSR)
         except OSError:
             pass
     status = ue4ss_console_policy_status(profile_id)

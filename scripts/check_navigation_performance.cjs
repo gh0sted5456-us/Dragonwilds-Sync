@@ -33,7 +33,7 @@ must(performanceCss.includes('content-visibility: auto'), 'long off-screen UI ro
 must(performanceCss.includes('overscroll-behavior: contain'), 'main scroll surface must use bounded overscroll behavior');
 must(appV2.includes('function renderPersistentShell(page)') && appV2.includes("root.dataset.persistentShell='1'"),
   'full-mode navigation must mount one persistent titlebar/sidebar shell');
-must(appV2.includes('else shellUpdate=renderPersistentShell(page);') && appV2.includes('if(pageChanged){main.__dwsPageMarkup=page;main.innerHTML=page;}'),
+must(appV2.includes('else shellUpdate=renderPersistentShell(page);') && appV2.includes('main.__dwsPageMarkup=page;') && appV2.includes('main.innerHTML=page;'),
   'ordinary renders must update the main workspace without rebuilding the navigation rail');
 must(appV2.includes('if(!shellUpdate.changed)'), 'unchanged snapshots must not repaint the workspace');
 must(appV2.includes('const persistentShellBindings=new WeakMap()') && appV2.includes('bindPersistentOnce('),

@@ -343,15 +343,16 @@ def _file_metadata(profile_id: str, layout, file: Path, manifest: dict) -> dict:
 
 
 def lock_world_configs(profile_id: str, server_root: str) -> dict:
-    """Adopt supported live game/loader core configs as managed files.
+    """Adopt supported live game/loader core configs without locking them.
 
-    The launcher is the write authority: files stay read-only on disk, while
-    Monaco saves use a temporary unlock + atomic replace + re-lock sequence.
+    UE4SS, RuneSchema, and Dragonwilds all update their own root configuration
+    at runtime. The manifest remains the launcher's inventory boundary, but it
+    must never turn those upstream-owned files read-only.
     """
     layout = resolve_server_layout(server_root)
     manifest = _read_manifest(profile_id)
     files = manifest.setdefault("files", {})
-    locked = 0
+    adopted = 0
     seen: set[str] = set()
     if not layout.game_root.exists():
         return {"ok": True, "locked": 0}
@@ -379,7 +380,7 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
         if not base.exists():
             continue
         for file in (base.rglob("*") if recursive else base.glob("*")):
-            if locked >= MAX_CONFIG_FILES:
+            if adopted >= MAX_CONFIG_FILES:
                 break
             if not file.is_file() or file.suffix.lower() not in CONFIG_EXTENSIONS:
                 continue
@@ -402,12 +403,15 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
                     "managed_since": previous.get("managed_since") or time.time(),
                     "size": file.stat().st_size,
                 }
-                _set_readonly(file, True)
-                locked += 1
+                # Repair the read-only bit left by older Sync builds. Keeping
+                # a runtime root config writable avoids launch-time EACCES and
+                # lets UE4SS/RuneSchema persist their own settings normally.
+                _set_readonly(file, False)
+                adopted += 1
             except OSError:
                 continue
     _write_manifest(profile_id, manifest)
-    return {"ok": True, "locked": locked}
+    return {"ok": True, "locked": 0, "adopted": adopted}
 
 
 def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[dict]:
@@ -495,8 +499,8 @@ def open_world_config(profile_id: str, server_root: str, relative_path: str, act
         "size": len(text.encode("utf-8")),
     }
     _write_manifest(profile_id, manifest)
-    _set_readonly(target, True)
-    return {**meta, "content": text, "readonly": True, "parse_error": parse_error,
+    _set_readonly(target, False)
+    return {**meta, "content": text, "readonly": False, "parse_error": parse_error,
             "path": str(target), "folder": str(target.parent), "root": str(layout.game_root),
             "mods_txt_mode": str(load_server_profile(profile_id).get("mods_txt_mode") or "auto") if meta.get("special") == "mods_txt" else ""}
 
@@ -525,7 +529,7 @@ def save_world_config(profile_id: str, server_root: str, relative_path: str, con
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)
-        _set_readonly(target, True)
+        _set_readonly(target, False)
     manifest = _read_manifest(profile_id)
     files = manifest.setdefault("files", {})
     meta = _file_metadata(profile_id, layout, target, manifest)
@@ -535,7 +539,7 @@ def save_world_config(profile_id: str, server_root: str, relative_path: str, con
         "managed_since": previous.get("managed_since") or time.time(), "last_saved": time.time(), "size": len(encoded),
     }
     _write_manifest(profile_id, manifest)
-    return {"ok": True, **meta, "size": len(encoded), "readonly": True}
+    return {"ok": True, **meta, "size": len(encoded), "readonly": False}
 
 
 def copy_world_config(profile_id: str, server_root: str, relative_path: str, active: bool) -> dict:

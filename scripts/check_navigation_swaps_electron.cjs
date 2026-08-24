@@ -59,6 +59,25 @@ app.whenReady().then(async()=>{
   await assertSyncTabSticks('remote');
   await assertSyncTabSticks('live');
   await assertSyncTabSticks('settings');
+  await win.webContents.executeJavaScript("document.querySelector('[data-route=\"settings\"]')?.click()");
+  await wait(260);
+  const stableSettings=await win.webContents.executeJavaScript(`(()=>{
+    const header=document.querySelector('.main>.content>.page-header');
+    const nav=document.querySelector('.settings-layout>.settings-nav');
+    const subnav=document.querySelector('.settings-layout>div>.settings-subnav');
+    if(!header||!nav||!subnav)return {ok:false,stage:'initial'};
+    window.__DWSYNC_SETTINGS_STABLE__={header,nav,subnav};
+    document.querySelector('[data-settings-tab="advanced"]')?.click();
+    const first=window.__DWSYNC_SETTINGS_STABLE__.header===document.querySelector('.main>.content>.page-header')&&window.__DWSYNC_SETTINGS_STABLE__.nav===document.querySelector('.settings-layout>.settings-nav');
+    document.querySelector('[data-settings-tab="application"]')?.click();
+    const second=window.__DWSYNC_SETTINGS_STABLE__.header===document.querySelector('.main>.content>.page-header')&&window.__DWSYNC_SETTINGS_STABLE__.nav===document.querySelector('.settings-layout>.settings-nav');
+    const restoredSubnav=document.querySelector('.settings-layout>div>.settings-subnav');
+    window.__DWSYNC_SETTINGS_STABLE__.subnav=restoredSubnav;
+    document.querySelector('[data-application-settings-tab="runtimes"]')?.click();
+    const third=window.__DWSYNC_SETTINGS_STABLE__.subnav===document.querySelector('.settings-layout>div>.settings-subnav');
+    return {ok:first&&second&&third,first,second,third};
+  })()`);
+  if(!stableSettings.ok)throw new Error(`Settings shell repainted during category swap: ${JSON.stringify(stableSettings)}`);
   await wait(300);
   const metrics=await win.webContents.executeJavaScript("window.__DWSYNC_SWAP_METRICS__?.snapshot()||null");
   if(!metrics||metrics.count<5)throw new Error(`Too few measured swaps: ${JSON.stringify(metrics)}`);

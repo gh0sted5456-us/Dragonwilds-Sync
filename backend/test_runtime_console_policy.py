@@ -20,6 +20,7 @@ def test_runtime_console_policy_preserves_upstream_ini() -> None:
         original_profile = server_engine.load_server_profile
         original_root = server_engine.server_root_for_profile
         original_state = server_engine.load_state
+        original_replace = server_engine.os.replace
         try:
             server_engine.load_server_profile = lambda _profile_id: {"id": "test"}
             server_engine.server_root_for_profile = lambda _profile=None: str(root)
@@ -33,10 +34,15 @@ def test_runtime_console_policy_preserves_upstream_ini() -> None:
             assert text.count("GuiConsoleVisible") == 1
             disabled = server_engine.apply_ue4ss_console_policy("test", False)
             assert disabled["effective"] == {"console": "0", "gui": "0", "visible": "0"}
+            server_engine.os.replace = lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("locked for test"))
+            deferred = server_engine.apply_ue4ss_console_policy("test", True)
+            assert deferred["applied"] is False and deferred["deferred"] is True
+            assert "launch will continue" in deferred["reason"]
         finally:
             server_engine.load_server_profile = original_profile
             server_engine.server_root_for_profile = original_root
             server_engine.load_state = original_state
+            server_engine.os.replace = original_replace
 
 
 if __name__ == "__main__":

@@ -61,15 +61,15 @@ def main():
             assert not any((meta or {}).get('unit_key') == 'ue4ss_mod::ServerTweaks' for meta in managed.values())
             assert not any((meta or {}).get('unit_key') == 'pak_mod::VisualPack' for meta in managed.values())
             opened = wm.open_world_config('world-a', str(server), 'Binaries/Win64/ue4ss/Mods/RuneSchema/config/config.json', True)
-            assert opened['readonly'] is True
+            assert opened['readonly'] is False
             assert Path(opened['path']).resolve() == config.resolve()
             assert Path(opened['folder']).resolve() == config.parent.resolve()
             assert config.resolve().is_relative_to(Path(opened['root']).resolve())
-            assert wm.is_readonly(config)
+            assert not wm.is_readonly(config)
             saved = wm.save_world_config('world-a', str(server), opened['relative_path'], '{\n  "enabled": false,\n  "count": 2\n}', True)
-            assert saved['readonly'] is True
+            assert saved['readonly'] is False
             assert '"count": 2' in config.read_text(encoding='utf-8')
-            assert wm.is_readonly(config)
+            assert not wm.is_readonly(config)
             try:
                 wm.save_world_config('world-a', str(server), opened['relative_path'], '{bad json', True)
                 raise AssertionError('invalid JSON must not be written')
@@ -81,7 +81,7 @@ def main():
                 raise AssertionError('managed config must not be released writable')
             except PermissionError:
                 pass
-            assert wm.is_readonly(config)
+            assert not wm.is_readonly(config)
             try:
                 wm.open_world_config('world-a', str(server), '../escape.json', True)
                 raise AssertionError('unsafe config path must be rejected')

@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.25",
+      "title": "Dragonwilds Sync V2.7.25",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "The complete Runtime Console is embedded in hosted World Management and remains optionally detachable.",
+        "World launch and restart no longer create duplicate console windows or polling sessions.",
+        "Heartbeat renders retain the live console DOM and unchanged log payloads do not repaint the stream.",
+        "UE4SS, RuneSchema, and game root configurations remain writable for their owning runtimes.",
+        "A permission-locked optional UE4SS console preference can no longer block server launch.",
+        "Settings category navigation retains its shared shell to avoid visible repainting."
+      ]
+    },
+    {
       "version": "2.7.24",
       "title": "Dragonwilds Sync V2.7.24",
       "date": "2026-08-23",

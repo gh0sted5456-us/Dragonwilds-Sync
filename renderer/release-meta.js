@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.24',
-  name: 'V2.7.24 · Runtime Resolution & Helpy',
+  version: '2.7.25',
+  name: 'V2.7.25 · Integrated Runtime Console',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.25',
+    title: 'Integrated Console & Writable Runtime Configs',
+    items: [
+      'The complete Runtime Console now lives inside hosted World Management by default, with an explicit Open Console Window option.',
+      'Starting, restarting, and updating a World no longer spawns or duplicates detached console windows.',
+      'The retained console survives heartbeat renders, skips unchanged stream paints, and uses calmer foreground/background polling.',
+      'UE4SS, RuneSchema, and game root configuration remain writable so their owning runtimes can persist changes.',
+      'Optional UE4SS console-policy writes are atomic and can never block an otherwise valid server launch.',
+      'Settings retains its shared header and navigation DOM while switching categories to eliminate visual repainting.',
+    ],
+  }, {
     version: '2.7.24',
     title: 'Runtime Channels & Character Inventory',
     items: [

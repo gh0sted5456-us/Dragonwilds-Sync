@@ -29,6 +29,12 @@
     if (value.includes(from)) node.textContent = value.replace(from, to);
   }
 
+  function matchingNodes(root, selector) {
+    if (!root || root.nodeType !== Node.ELEMENT_NODE) return [];
+    const rows = root.matches?.(selector) ? [root] : [];
+    return rows.concat([...root.querySelectorAll(selector)]);
+  }
+
   async function loadRecommendations() {
     if (recommendationRows && Date.now() - recommendationLoadedAt < 5 * 60 * 1000) return recommendationRows;
     if (recommendationLoading) return recommendationLoading;
@@ -123,20 +129,20 @@
   }
 
   function applyNavigationCritical(root = document) {
-    root.querySelectorAll('[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
-    root.querySelectorAll('[data-external-tab]').forEach(hideLegacyEntry);
-    root.querySelectorAll('#detach-private-world, #detach-server-world').forEach((button)=>{
+    matchingNodes(root, '[data-route="shared-worlds"], [data-nav-route="shared-worlds"], [data-settings-tab="external"]').forEach(hideLegacyEntry);
+    matchingNodes(root, '[data-external-tab]').forEach(hideLegacyEntry);
+    matchingNodes(root, '#detach-private-world, #detach-server-world').forEach((button)=>{
       if(button.textContent!=='▣ Open Placard')button.textContent='▣ Open Placard';
       button.title='Open an application-owned placard window without reloading Dragonwilds Sync';
     });
 
-    root.querySelectorAll('button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
+    matchingNodes(root, 'button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
       const text = normalize(node.textContent);
       if ((text === 'webhost' || text === 'web hosting') && node.textContent !== 'Website & Directory') node.textContent = 'Website & Directory';
       if ((text === 'remote server' || text === 'remote server admin') && node.textContent !== 'Remote Users & Access') node.textContent = 'Remote Users & Access';
     });
 
-    root.querySelectorAll('[data-nexus-account], [data-nexus-login], #nexus-account-panel, #nexus-auth-panel, .nexus-account-settings').forEach(hideLegacyEntry);
+    matchingNodes(root, '[data-nexus-account], [data-nexus-login], #nexus-account-panel, #nexus-auth-panel, .nexus-account-settings').forEach(hideLegacyEntry);
   }
 
   function applyPresentationEnhancements(root = document) {
@@ -154,7 +160,13 @@
   // as a native MutationObserver microtask before the next browser paint.
   const appRoot = document.getElementById('app');
   if (appRoot) {
-    new MutationObserver(() => applyNavigationCritical(appRoot)).observe(appRoot, { childList: true, subtree: true });
+    new MutationObserver((records) => {
+      const added = new Set();
+      for (const record of records) {
+        for (const node of record.addedNodes || []) if (node.nodeType === Node.ELEMENT_NODE) added.add(node);
+      }
+      for (const node of added) applyNavigationCritical(node);
+    }).observe(appRoot, { childList: true, subtree: true });
     applyNavigationCritical(appRoot);
   }
 

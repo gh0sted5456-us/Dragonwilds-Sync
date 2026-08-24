@@ -47,8 +47,16 @@ must(navigationJs.includes("const appRoot = document.getElementById('app')"),
   'navigation-critical cleanup must target the app root');
 must(navigationJs.includes("observe(appRoot, { childList: true, subtree: true })"),
   'app-root navigation observer must run as a targeted native microtask before paint');
+must(navigationJs.includes('function matchingNodes') && navigationJs.includes('for (const node of record.addedNodes'),
+  'navigation cleanup must inspect only newly inserted subtrees instead of rescanning the app root');
 must(navigationJs.includes("observe(document.documentElement, { childList: true, subtree: true })"),
   'noncritical release enhancement may retain the coordinated broad observer');
+
+for (const token of ['Runtime &amp; Data Center', 'update-client-ue4ss', 'update-client-runeschema', "data-application-settings-tab=\"runtimes\""]) {
+  must(appV2.includes(token), `coherent Runtime & Data controls must retain ${token}`);
+}
+must(!appV2.includes('Client &amp; Singleplayer Runtime'),
+  'legacy duplicate client runtime settings must remain consolidated into Runtime & Data');
 
 for (const method of ['singleplayer.inventory', 'server.world.inventory']) {
   const match = preload.match(new RegExp(`'${method.replaceAll('.', '\\.')}'\\s*:\\s*\\{\\s*ttl:\\s*(\\d+),\\s*stale:\\s*(\\d+)`));

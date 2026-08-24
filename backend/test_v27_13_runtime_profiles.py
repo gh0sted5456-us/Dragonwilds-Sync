@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import stat
 import tempfile
 import zipfile
 from pathlib import Path
@@ -45,9 +46,13 @@ def main() -> None:
             (layout.config_dir / "GameUserSettings.ini").write_text("[Game]\n", encoding="utf-8")
             (layout.ue4ss_core_dir / "UE4SS-settings.ini").write_text("[UE4SS]\n", encoding="utf-8")
             (layout.runeschema_config_dir / "config.json").write_text("{}", encoding="utf-8")
+            (layout.ue4ss_core_dir / "UE4SS-settings.ini").chmod(stat.S_IREAD)
+            (layout.runeschema_config_dir / "config.json").chmod(stat.S_IREAD)
             mod_file = layout.runeschema_mods_dir / "Example" / "recipe.json"
             mod_file.parent.mkdir(parents=True, exist_ok=True); mod_file.write_text("{}", encoding="utf-8")
             world_maintenance.lock_world_configs("world", str(game))
+            assert (layout.ue4ss_core_dir / "UE4SS-settings.ini").stat().st_mode & stat.S_IWUSR
+            assert (layout.runeschema_config_dir / "config.json").stat().st_mode & stat.S_IWUSR
             rows = world_maintenance.list_world_configs("world", str(game), True)
             assert {row["name"] for row in rows} == {"GameUserSettings.ini", "UE4SS-settings.ini", "config.json"}
             try:

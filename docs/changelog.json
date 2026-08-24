@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.26",
+      "title": "Dragonwilds Sync V2.7.26",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "RuneSchema stages into one canonical AppData runtime root containing config, dlls, enabled.txt, and mods even when an archive has repeated wrapper folders.",
+        "Client and server RuneSchema paths use lowercase canonical child directories while retaining case-insensitive compatibility with existing Windows installs.",
+        "UE4SS and RuneSchema configuration is restored to writable state after runtime capture, installation, deployment, and client setup.",
+        "Large mod archives expose each detected UE4SS, RuneSchema, and PAK payload as a separately selectable and assignable profile import.",
+        "Main manifests remain attached to their selected mod payload and unrelated archive content is not installed."
+      ]
+    },
+    {
       "version": "2.7.25",
       "title": "Dragonwilds Sync V2.7.25",
       "date": "2026-08-23",

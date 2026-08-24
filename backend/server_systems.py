@@ -43,6 +43,7 @@ from player_tracker import PLAYER_SERVICE
 from character_profiles import list_starter_characters, starter_character_path
 from character_submissions import quarantine_submission_bytes
 from player_backups import latest_player_backup, player_backup_status, store_player_backup
+from mod_archive_layout import inspect_mod_payloads, locate_mod_payload
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS,
                                detect_server_host,
@@ -3152,11 +3153,13 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
             errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
     except Exception as exc:
         errors.append(f"RSDWTools client baseline repair failed: {exc}")
+    writable = _set_runtime_configs_writable(layout.win64_dir / "ue4ss", layout.runeschema_root)
     after = client_runtime_status(game_root)
     # Defensive cleanup: Player Setup never owns the dedicated-server loader.
     # If a user already has a file named version.dll we do not delete it here;
     # we only guarantee our package never creates or syncs one.
-    return {"ok": after["ok"], "before": before, "after": after, "repaired": repaired, "errors": errors}
+    return {"ok": after["ok"], "before": before, "after": after, "repaired": repaired, "errors": errors,
+            "editable_configs_repaired": writable}
 
 
 def install_ue4ss_zip(zip_path: str, binaries_dir: str) -> dict:
@@ -3328,6 +3331,42 @@ def _set_runtime_tree_writable(root: Path, writable: bool) -> None:
             continue
 
 
+def _set_runtime_configs_writable(*roots: Path) -> int:
+    """Clear stale read-only attributes from operator-editable core configs.
+
+    Runtime DLLs and launcher-owned control files may remain protected, but
+    UE4SS settings and RuneSchema's config tree are user configuration. Copies
+    made with ``copy2`` can inherit a read-only source bit, so this runs after
+    every materialization boundary as well as before editing.
+    """
+    changed = 0
+    for root in roots:
+        if not root:
+            continue
+        candidates: list[Path] = []
+        if root.name.casefold() == "ue4ss":
+            candidates.extend(root / name for name in ("UE4SS-settings.ini", "UE4SS-Settings.ini", "ue4ss-settings.ini", "imgui.ini"))
+        else:
+            config = root / "config"
+            if root.is_dir():
+                try:
+                    config = next((child for child in root.iterdir() if child.name.casefold() == "config"), config)
+                except OSError:
+                    pass
+            if config.exists():
+                candidates.extend([config, *config.rglob("*")])
+        for path in candidates:
+            if not path.exists():
+                continue
+            try:
+                before = path.stat().st_mode
+                path.chmod(before | stat.S_IWUSR)
+                changed += int(path.stat().st_mode != before)
+            except OSError:
+                continue
+    return changed
+
+
 def runtime_prerequisite_status(game_root: str) -> dict:
     """Report whether the dedicated-server runtime contract is present.
 
@@ -3462,8 +3501,13 @@ def capture_authoritative_runtimes(game_root: str) -> dict:
         # happens to contain empty config/dlls directories.
         (RUNESCHEMA_RUNTIME_DIR / "config").mkdir(parents=True, exist_ok=True)
         (RUNESCHEMA_RUNTIME_DIR / "dlls").mkdir(parents=True, exist_ok=True)
+        (RUNESCHEMA_RUNTIME_DIR / "mods").mkdir(parents=True, exist_ok=True)
         (RUNESCHEMA_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
         layout.runeschema_enabled_file.write_text("", encoding="utf-8")
+    _set_runtime_configs_writable(
+        layout.ue4ss_core_dir, layout.runeschema_root,
+        UE4SS_RUNTIME_DIR / "ue4ss", RUNESCHEMA_RUNTIME_DIR,
+    )
     return {**captured, "status": runtime_prerequisite_status(game_root)}
 
 
@@ -3626,7 +3670,14 @@ def deploy_authoritative_runtimes(game_root: str, include_ue4ss: bool = True, in
         # generated mods.txt; presence of a blank enabled.txt is authoritative.
         (target / "enabled.txt").write_text("", encoding="utf-8")
         (RUNESCHEMA_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
-    return {"ok": True, "ue4ss_files": copied_ue4ss, "runeschema_files": copied_runeschema}
+        (target / "mods").mkdir(parents=True, exist_ok=True)
+        (RUNESCHEMA_RUNTIME_DIR / "mods").mkdir(parents=True, exist_ok=True)
+    writable = _set_runtime_configs_writable(
+        layout.ue4ss_core_dir, layout.runeschema_root,
+        UE4SS_RUNTIME_DIR / "ue4ss", RUNESCHEMA_RUNTIME_DIR,
+    )
+    return {"ok": True, "ue4ss_files": copied_ue4ss, "runeschema_files": copied_runeschema,
+            "editable_configs_repaired": writable}
 
 
 def _preserved_server_loader_bytes(game_root: str) -> tuple[bytes | None, str]:
@@ -3851,7 +3902,27 @@ def _snapshot_world_mod_rollback(profile_id: str, paths: list[Path], label: str)
     return str(target)
 
 
-def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, active: bool = True, preferred_kind: str | None = None) -> dict:
+def inspect_world_mod_zip(zip_path: str) -> dict:
+    archive = Path(zip_path)
+    detected = detect_mod_zip_kind(zip_path)
+    with tempfile.TemporaryDirectory(prefix="dwsync_mod_inspect_") as temp:
+        scratch = Path(temp)
+        with zipfile.ZipFile(archive) as zf:
+            safe_extract_zip(zf, scratch)
+        payloads = inspect_mod_payloads(scratch)
+        if not payloads and detected:
+            located = locate_mod_payload(scratch, detected, archive.stem)
+            content = Path(located["content"])
+            payloads = [{"id": f"{detected}:{content.relative_to(scratch).as_posix()}", "kind": detected,
+                         "name": str(located.get("name") or archive.stem),
+                         "payload_root": content.relative_to(scratch).as_posix(), "payload_name": "", "selected": True}]
+    kinds = {str(item.get("kind") or "") for item in payloads}
+    return {"kind": next(iter(kinds)) if len(payloads) == 1 and len(kinds) == 1 else "",
+            "detected_kind": detected or "", "payloads": payloads, "count": len(payloads)}
+
+
+def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, active: bool = True,
+                          preferred_kind: str | None = None, payload_root: str = "", payload_name: str = "") -> dict:
     """Install a normal World mod ZIP into its authoritative live/snapshot slot.
 
     UE4SS imports deliberately lose embedded enabled.txt so Dragonwilds Sync owns
@@ -3876,18 +3947,15 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
         scratch = Path(temp)
         with zipfile.ZipFile(archive) as zf:
             safe_extract_zip(zf, scratch)
-        content, wrapper = _peel_mod_wrapper(scratch)
+        located = locate_mod_payload(scratch, kind, archive.stem, payload_root=payload_root, payload_name=payload_name)
+        content = Path(located["content"])
+        payload_root = content.relative_to(scratch).as_posix() or "."
         metadata_root = content
         archive_metadata = {"tags": [], "hotload_capable": False, "tag_files": [], "hotload_files": []}
-        mod_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", wrapper or archive.stem).strip(" .") or "ImportedMod"
+        mod_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", str(located.get("name") or archive.stem)).strip(" .") or "ImportedMod"
         if kind == "ue4ss":
             if mod_name.casefold() == "runeschema":
                 raise ValueError(f"{mod_name} is launcher-managed infrastructure and cannot be imported as a normal UE4SS mod.")
-            for base in (content / "ue4ss" / "Mods", content / "Mods"):
-                candidates = [p for p in base.iterdir() if p.is_dir()] if base.is_dir() else []
-                if len(candidates) == 1:
-                    content, mod_name = candidates[0], candidates[0].name
-                    break
             if mod_name.casefold() == "runeschema":
                 raise ValueError(f"{mod_name} is launcher-managed infrastructure and cannot be imported as a normal UE4SS mod.")
             archive_metadata = discover_packaged_metadata(metadata_root, effective_root=content, recursive_fallback=False)
@@ -3911,7 +3979,7 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
             result = {"ok": True, "kind": kind, "name": mod_name, "destination": str(dest), "files_written": written, "enabled_markers_removed": 0, "rollback_archive": rollback_archive}
         else:
             paks_root.mkdir(parents=True, exist_ok=True)
-            package_files = [p for p in content.rglob("*") if p.is_file() and p.suffix.casefold() in _PAK_PACKAGE_EXTENSIONS]
+            package_files = list(located.get("files") or [])
             if not package_files:
                 raise ValueError("No .pak/.utoc/.ucas files were found in this archive.")
             archive_metadata = discover_packaged_metadata(metadata_root, effective_root=content, payload_files=package_files)
@@ -3924,6 +3992,15 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
             order = [item["name"] for item in _pak_physical_groups(paks_root)]
             _materialize_pak_order(paks_root, order)
             result = {"ok": True, "kind": kind, "name": _strip_pak_load_prefix(package_files[0].stem)[1], "destination": str(paks_root), "files_written": len(package_files), "enabled_markers_removed": 0, "rollback_archive": rollback_archive}
+        source_manifest = Path(str(located.get("manifest") or "")) if located.get("manifest") else None
+        installed_manifest = ""
+        if source_manifest and source_manifest.is_file():
+            if kind in {"ue4ss", "runeschema"}:
+                installed = dest / source_manifest.relative_to(content)
+            else:
+                installed = paks_root / f"{result['name']}.{source_manifest.name}"
+                shutil.copy2(source_manifest, installed)
+            installed_manifest = str(installed)
     units = scan_mod_units(profile_id, game_root) if active else scan_profile_snapshot_units(profile_id)
     persist_unit_overrides(profile_id, units)
     archive_tags = normalize_tags(archive_metadata.get("tags"))
@@ -3938,6 +4015,8 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
     result["tags"] = archive_tags
     result["hotload_capable"] = archive_hotload
     result["metadata_detected"] = {"tag_files": list(archive_metadata.get("tag_files") or []), "hotload_files": list(archive_metadata.get("hotload_files") or [])}
+    result["payload_root"] = payload_root
+    result["main_manifest"] = installed_manifest
     if active:
         generate_server_mods_txt(profile_id, game_root)
     return result
@@ -4001,18 +4080,29 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
         scratch = Path(temp)
         with zipfile.ZipFile(zip_path) as zf: safe_extract_zip(zf, scratch)
         entries = [p for p in scratch.iterdir() if not p.name.startswith(".")]
-        if len(entries) == 1 and entries[0].is_dir():
-            content_root = entries[0]; wrapper_name = entries[0].name
-        else:
-            content_root = scratch; wrapper_name = None
+        wrapper_name = entries[0].name if len(entries) == 1 and entries[0].is_dir() else None
+
+        def core_contract(path: Path) -> bool:
+            children = {child.name.casefold(): child for child in path.iterdir()} if path.is_dir() else {}
+            return ("enabled.txt" in children and children["enabled.txt"].is_file()
+                    and "dlls" in children and children["dlls"].is_dir()
+                    and ("config" in children or "mods" in children))
+
+        # Release archives and manually packed builds commonly add repository
+        # and product wrappers (for example runeschema/RuneSchema/...). Locate
+        # the one actual runtime root instead of treating it as a child mod.
+        candidates = [path for path in [scratch, *scratch.rglob("*")] if path.is_dir() and core_contract(path)]
+        candidates.sort(key=lambda path: len(path.relative_to(scratch).parts))
+        content_root = candidates[0] if candidates else (entries[0] if len(entries) == 1 and entries[0].is_dir() else scratch)
         # Core releases normally contain ``mods/``, but empty directories are
         # not always preserved by ZIP tooling. Recognize the authoritative
         # RuneSchema runtime contract as config + dlls + enabled.txt too.
-        mods_dir = content_root / "mods"
+        children = {child.name.casefold(): child for child in content_root.iterdir()} if content_root.is_dir() else {}
+        mods_dir = children.get("mods", content_root / "mods")
         is_core = mods_dir.is_dir() or (
-            (content_root / "config").is_dir()
-            and (content_root / "dlls").is_dir()
-            and (content_root / "enabled.txt").is_file()
+            bool(children.get("config") and children["config"].is_dir())
+            and bool(children.get("dlls") and children["dlls"].is_dir())
+            and bool(children.get("enabled.txt") and children["enabled.txt"].is_file())
         )
         written = 0
         if is_core:
@@ -4056,7 +4146,11 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
                 rel_root = Path(root).relative_to(content_root)
                 for filename in files:
                     if filename.startswith("."): continue
-                    src = Path(root) / filename; rel = rel_root / filename
+                    src = Path(root) / filename
+                    rel_parts = list(rel_root.parts)
+                    if rel_parts and rel_parts[0].casefold() in {"config", "dlls"}:
+                        rel_parts[0] = rel_parts[0].casefold()
+                    rel = Path(*rel_parts) / filename
                     for base in (runtime_dir, live_rs):
                         dest = base / rel; dest.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(src, dest)
                     written += 1
@@ -4069,10 +4163,12 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
                 if not (base / "enabled.txt").exists():
                     (base / "enabled.txt").write_text("", encoding="utf-8")
                 (base / "mods").mkdir(parents=True, exist_ok=True)
+            writable = _set_runtime_configs_writable(runtime_dir, live_rs)
             ignored_mod_files = sum(1 for child in mods_dir.rglob("*") if child.is_file()) if mods_dir.is_dir() else 0
             return {"ok": True, "kind": "core", "role": normalized_role, "files_written": written,
                     "bundled_mod_files_ignored": ignored_mod_files,
-                    "mods_profile_owned": True, "destination": str(live_rs)}
+                    "mods_profile_owned": True, "destination": str(live_rs),
+                    "editable_configs_repaired": writable}
         name = wrapper_name or Path(zip_path).stem
         dest_root = live_rs / "mods" / name; dest_root.mkdir(parents=True, exist_ok=True)
         for src in content_root.rglob("*"):

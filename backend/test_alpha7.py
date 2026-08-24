@@ -56,6 +56,7 @@ def main():
             captured = ss.capture_authoritative_runtimes(str(game))
             assert captured["status"]["ue4ss"]["library_ready"] is True
             assert captured["status"]["runeschema"]["library_ready"] is True
+            assert (ss.RUNESCHEMA_RUNTIME_DIR / "mods").is_dir(), "AppData RuneSchema library must retain the canonical /mods slot"
             assert not (ss.RUNESCHEMA_RUNTIME_DIR / "mods" / "WorldRS").exists(), "World RuneSchema mods must never become base runtime"
 
             # If base files are removed, the cached runtime heals them without network.
@@ -99,7 +100,20 @@ def main():
                 zf.writestr("RuneSchema/config/schema.json", "{}")
                 zf.writestr("RuneSchema/dlls/RuneSchema.dll", "dll")
                 zf.writestr("RuneSchema/mods/Bundled/config.json", "{}")
-            # Peel wrapper + identify core by mods/.
+            # Peel repeated repository/product wrappers + identify the core.
+            wrapped_core = temp / "WrappedRuneSchemaCore.zip"
+            with zipfile.ZipFile(wrapped_core, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("runeschema/RuneSchema/enabled.txt", "")
+                zf.writestr("runeschema/RuneSchema/config/config.json", "{}")
+                zf.writestr("runeschema/RuneSchema/dlls/main.dll", "dll")
+                zf.writestr("runeschema/RuneSchema/mods/mods.txt", "")
+            result = ss.install_runeschema_zip(str(wrapped_core), str(game))
+            assert result["kind"] == "core"
+            assert (ss.RUNESCHEMA_RUNTIME_DIR / "config" / "config.json").is_file()
+            assert (ss.RUNESCHEMA_RUNTIME_DIR / "dlls" / "main.dll").is_file()
+            assert (ss.RUNESCHEMA_RUNTIME_DIR / "mods").is_dir()
+            assert not (ss.RUNESCHEMA_RUNTIME_DIR / "RuneSchema").exists()
+
             result = ss.install_runeschema_zip(str(core_zip), str(game))
             assert result["kind"] == "core"
             assert ss.RUNESCHEMA_CORE_CACHE_ZIP.is_file()

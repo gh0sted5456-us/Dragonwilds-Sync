@@ -204,12 +204,12 @@ def resolve_server_layout(selected: str | Path) -> ServerLayout:
     ue4ss_core = win64 / "ue4ss"
     ue4ss_mods = ue4ss_core / "Mods"
     runeschema = _child_case_insensitive(ue4ss_mods, "RuneSchema")
-    # RuneSchema packages seen in the wild use either RuneSchema/mods or the RuneSchema
-    # root itself as the visible mod container. Prefer /mods when it exists, otherwise
-    # keep the core root so discovery can handle both layouts without double-classifying.
-    rs_mods = runeschema / "mods"
-    if not rs_mods.exists():
-        rs_mods = runeschema
+    # RuneSchema's canonical contract always keeps child content under /mods.
+    # Readers still resolve legacy casing, while every new stage/install targets
+    # this dedicated directory instead of mixing child mods into the core root.
+    rs_config = _child_case_insensitive(runeschema, "config")
+    rs_dlls = _child_case_insensitive(runeschema, "dlls")
+    rs_mods = _child_case_insensitive(runeschema, "mods")
     paks_parent = game_root / "Content" / "Paks"
     paks = _child_case_insensitive(paks_parent, "~mods")
 
@@ -228,8 +228,8 @@ def resolve_server_layout(selected: str | Path) -> ServerLayout:
         ue4ss_mods_dir=ue4ss_mods,
         mods_txt=ue4ss_mods / "mods.txt",
         runeschema_root=runeschema,
-        runeschema_config_dir=runeschema / "config",
-        runeschema_dlls_dir=runeschema / "dlls",
+        runeschema_config_dir=rs_config,
+        runeschema_dlls_dir=rs_dlls,
         runeschema_enabled_file=runeschema / "enabled.txt",
         runeschema_mods_dir=rs_mods,
         paks_mods_dir=paks,

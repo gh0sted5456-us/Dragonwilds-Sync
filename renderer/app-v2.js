@@ -5041,33 +5041,34 @@
     }
   }
 
-  async function installSinglePlayerZip(zipPath, forcedKind='') {
+  async function installSinglePlayerZip(zipPath, forcedKind='', payload={}) {
     if (!zipPath) return;
     const detected=await api.invoke('singleplayer.mod.detect',{zip_path:zipPath});
     const kind=forcedKind||detected.kind;if(!kind) throw new Error('Could not identify this ZIP as UE4SS, PAK, or RuneSchema.');
-    const response=await api.invoke('singleplayer.mod.install',privateProfileParams({zip_path:zipPath,kind}));
+    const response=await api.invoke('singleplayer.mod.install',privateProfileParams({zip_path:zipPath,kind,payload_root:payload.payload_root||'',payload_name:payload.payload_name||''}));
     state.singleplayerInventory=response.units||[]; if(response.state)state.data=response.state; render();
     toast('SinglePlayer mod installed',`${kind.toUpperCase()} · launcher load rules applied`,'success');
   }
 
-  async function installServerZip(zipPath, forcedKind='') {
+  async function installServerZip(zipPath, forcedKind='', payload={}) {
     const world=activeServerWorld(); const rootPath=state.data?.application?.server_install?.install_dir||'';
     if(!world||!rootPath) throw new Error('Set the dedicated Server Directory first.');
     const detected=await api.invoke('server.maintenance.detect_mod_zip',{zip_path:zipPath});
     const kind=forcedKind||detected.kind;if(!kind) throw new Error('Could not identify this ZIP as UE4SS, PAK, or RuneSchema.');
-    await api.invoke('server.world.mod.install',{id:world.id,zip_path:zipPath,kind});
+    await api.invoke('server.world.mod.install',{id:world.id,zip_path:zipPath,kind,payload_root:payload.payload_root||'',payload_name:payload.payload_name||''});
     await refreshServerInventory(world,true); toast('World mod installed',`${kind.toUpperCase()} · launcher load rules applied`,'success');
   }
 
   async function openSmartModImport(zipPath, scope='server') {
     if(!zipPath)return;
     const detected=await api.invoke(scope==='server'?'server.maintenance.detect_mod_zip':'singleplayer.mod.detect',{zip_path:zipPath});
-    const automatic=String(detected.kind||'');
+    const automatic=String(detected.kind||detected.detected_kind||'');
+    const payloads=Array.isArray(detected.payloads)&&detected.payloads.length?detected.payloads:[{id:'single',kind:automatic,name:String(zipPath).split(/[\\/]/).pop().replace(/\.zip$/i,''),payload_root:'',payload_name:'',selected:true}];
     const filename=String(zipPath).split(/[\\/]/).pop();
-    showModal(`<div class="modal-header"><div><h2>Import Mod Package</h2><p>${escapeHtml(filename)} · inspect the automatic result and correct it if this archive uses an unusual wrapper.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>${automatic?`Detected: ${escapeHtml(automatic==='paks'?'PAK':automatic.toUpperCase())}`:'No confident automatic match'}</strong><p>The importer examines runtime roots, Scripts/main.lua, RuneSchema JSON/raw layouts, and .pak/.utoc/.ucas payloads.</p></div><label class="form-group"><span>Install as</span><select class="select" id="smart-mod-kind"><option value="" ${automatic?'':'selected'} disabled>Choose package type</option><option value="ue4ss" ${automatic==='ue4ss'?'selected':''}>UE4SS Mod</option><option value="runeschema" ${automatic==='runeschema'?'selected':''}>RuneSchema Mod</option><option value="paks" ${automatic==='paks'?'selected':''}>PAK / IoStore Mod</option></select></label><div class="warning-box"><strong>Destination preview</strong><br/><span id="smart-mod-destination">${automatic==='runeschema'?'RuneSchema/mods':automatic==='paks'?'Content/Paks/~mods':'ue4ss/Mods'}</span>. Runtime cores are configured separately and are never replaced by this mod importer.</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-smart-mod-import" ${automatic?'':'disabled'}>Import Mod</button></div>`);
-    const select=modalRoot.querySelector('#smart-mod-kind'),confirm=modalRoot.querySelector('#confirm-smart-mod-import'),destination=modalRoot.querySelector('#smart-mod-destination');
-    select?.addEventListener('change',()=>{const kind=select.value;destination.textContent=kind==='runeschema'?'RuneSchema/mods':kind==='paks'?'Content/Paks/~mods':'ue4ss/Mods';confirm.disabled=!kind;});
-    confirm?.addEventListener('click',async()=>{const kind=select?.value||'';if(!kind)return;confirm.disabled=true;confirm.textContent='Importing…';try{if(scope==='server')await installServerZip(zipPath,kind);else await installSinglePlayerZip(zipPath,kind);closeModal();}catch(error){confirm.disabled=false;confirm.textContent='Import Mod';toast('Mod import failed',error.message,'error');}});
+    const rows=payloads.map((item,index)=>`<div class="settings-row smart-payload-row" data-payload-index="${index}"><label class="check-row" style="min-width:0"><input type="checkbox" data-payload-selected ${item.selected===false?'':'checked'}/><span><strong>${escapeHtml(item.name||`Payload ${index+1}`)}</strong><small>${escapeHtml(item.payload_root||'Archive root')}${item.manifest?` · ${escapeHtml(item.manifest)}`:''}</small></span></label><select class="select" data-payload-kind><option value="ue4ss" ${item.kind==='ue4ss'?'selected':''}>UE4SS Mod</option><option value="runeschema" ${item.kind==='runeschema'?'selected':''}>RuneSchema Mod</option><option value="paks" ${item.kind==='paks'?'selected':''}>PAK / IoStore</option></select></div>`).join('');
+    showModal(`<div class="modal-header"><div><h2>Import Mod Package</h2><p>${escapeHtml(filename)} · ${payloads.length} assignable payload${payloads.length===1?'':'s'} found. Choose what belongs in this profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Structure-aware import review</strong><p>Only each selected parent folder is applied. Source, documentation, and build debris elsewhere in the ZIP are ignored. Adjust a detected family before importing when needed.</p></div><div class="smart-payload-list">${rows}</div><div class="warning-box">UE4SS → ue4ss/Mods · RuneSchema → RuneSchema/mods · PAK → Content/Paks/~mods. Runtime cores are configured separately.</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-smart-mod-import">Import Selected</button></div>`);
+    const confirm=modalRoot.querySelector('#confirm-smart-mod-import');
+    confirm?.addEventListener('click',async()=>{const selected=[...modalRoot.querySelectorAll('.smart-payload-row')].map((row)=>{const index=Number(row.dataset.payloadIndex);return {...payloads[index],kind:row.querySelector('[data-payload-kind]')?.value||payloads[index].kind,selected:!!row.querySelector('[data-payload-selected]')?.checked};}).filter((item)=>item.selected&&item.kind);if(!selected.length)return toast('Choose a payload','Select at least one detected mod to import.','error');confirm.disabled=true;confirm.textContent=`Importing 0 / ${selected.length}…`;try{for(let i=0;i<selected.length;i++){confirm.textContent=`Importing ${i+1} / ${selected.length}…`;if(scope==='server')await installServerZip(zipPath,selected[i].kind,selected[i]);else await installSinglePlayerZip(zipPath,selected[i].kind,selected[i]);}closeModal();toast('Mod package imported',`${selected.length} payload${selected.length===1?'':'s'} applied to the profile.`,'success');}catch(error){confirm.disabled=false;confirm.textContent='Import Selected';toast('Mod import failed',error.message,'error');}});
   }
 
   function bindModDropZone(element, installer) {

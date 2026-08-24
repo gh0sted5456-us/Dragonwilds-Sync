@@ -44,6 +44,7 @@ from active_world import write_active_world
 from local_world import (SINGLEPLAYER_ID, ensure_state as ensure_singleplayer_state, load_profile as load_singleplayer_profile, save_profile as save_singleplayer_profile,
                          create_profile as create_private_profile, list_profiles as list_private_profiles, delete_profile as delete_private_profile, set_default_profile as set_default_private_profile, profile_world_shape,
                          scan_inventory as scan_singleplayer_inventory, install_mod_zip as install_singleplayer_mod_zip,
+                         inspect_mod_zip as inspect_singleplayer_mod_zip,
                          update_mod as update_singleplayer_mod, move_mod as move_singleplayer_mod, remove_mod as remove_singleplayer_mod,
                          write_mods_txt as write_singleplayer_mods_txt, detect_mod_zip_kind as detect_local_mod_zip_kind,
                          list_editable_mod_files as list_singleplayer_mod_files, singleplayer_mod_root,
@@ -79,7 +80,7 @@ from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
     delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
-    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
+    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, inspect_world_mod_zip, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
     pop_scan_warnings as pop_server_scan_warnings,
 )
 from public_worlds import discover_public_worlds, augment_with_sync_directory, fetch_lobbysup_history
@@ -3193,14 +3194,17 @@ def handle(method: str, params: dict) -> object:
                 "state": public_state(state), "warnings": warnings}
 
     if method == "singleplayer.mod.detect":
-        return {"kind": detect_local_mod_zip_kind(str(params.get("zip_path") or ""))}
+        return inspect_singleplayer_mod_zip(str(params.get("zip_path") or ""))
 
     if method == "singleplayer.mod.install":
         profile_id = _private_profile_id(state, params)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         if not game_dir: raise ValueError("Link the Dragonwilds client directory before installing SinglePlayer mods.")
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
-        result = install_singleplayer_mod_zip(game_dir, str(params.get("zip_path") or ""), live=live, preferred_kind=params.get("kind"), profile_id=profile_id)
+        result = install_singleplayer_mod_zip(game_dir, str(params.get("zip_path") or ""), live=live,
+                                              preferred_kind=params.get("kind"), profile_id=profile_id,
+                                              payload_root=str(params.get("payload_root") or ""),
+                                              payload_name=str(params.get("payload_name") or ""))
         if live:
             snapshot_client_world(profile_id, Path(game_dir))
             result["mods_txt"] = write_singleplayer_mods_txt(game_dir, profile_id)
@@ -5004,7 +5008,10 @@ def handle(method: str, params: dict) -> object:
         active = state.setdefault("server", {}).get("active_world_id") == profile_id
         root = server_root_for_profile(profile) or str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "")
         if active and not root: raise ValueError("Set the machine-wide Server Directory before installing World mods.")
-        result = install_world_mod_zip(profile_id, root, str(params.get("zip_path") or ""), active=active, preferred_kind=params.get("kind"))
+        result = install_world_mod_zip(profile_id, root, str(params.get("zip_path") or ""), active=active,
+                                       preferred_kind=params.get("kind"),
+                                       payload_root=str(params.get("payload_root") or ""),
+                                       payload_name=str(params.get("payload_name") or ""))
         units = scan_mod_units(profile_id, root) if active else scan_profile_snapshot_units(profile_id)
         cached = _cache_server_inventory(profile_id, units, active=active, source="apply")
         return {"result": result, "units": cached["mods"], "state": public_state(state)}
@@ -5917,7 +5924,7 @@ def handle(method: str, params: dict) -> object:
         return result
 
     if method == "server.maintenance.detect_mod_zip":
-        return {"kind": detect_mod_zip_kind(str(params.get("zip_path") or ""))}
+        return inspect_world_mod_zip(str(params.get("zip_path") or ""))
 
     if method == "server.maintenance.install_runeschema_zip":
         profile_id = str(params.get("id") or "")

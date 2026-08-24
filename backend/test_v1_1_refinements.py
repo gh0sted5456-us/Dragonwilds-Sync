@@ -18,9 +18,9 @@ def test_client_layout_contract():
         assert layout.game_root == game
         assert layout.game_exe.name == "RSDragonwilds-Win64-Shipping.exe"
         assert layout.paks_mods_dir.name == "~mods"
-        assert layout.runeschema_config_dir.name == "Config"
-        assert layout.runeschema_dlls_dir.name == "DLLs"
-        assert layout.runeschema_mods_dir.name == "Mods"
+        assert layout.runeschema_config_dir.name == "config"
+        assert layout.runeschema_dlls_dir.name == "dlls"
+        assert layout.runeschema_mods_dir.name == "mods"
         assert layout.account_config_dir.name == "AccountConfig"
         assert layout.savegames_dir.name == "SaveGames"
 

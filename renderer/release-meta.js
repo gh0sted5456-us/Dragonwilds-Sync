@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.25',
-  name: 'V2.7.25 · Integrated Runtime Console',
+  version: '2.7.26',
+  name: 'V2.7.26 · Canonical Runtime Staging',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.26',
+    title: 'Canonical Runtime Staging & Smart Multi-Mod Import',
+    items: [
+      'RuneSchema archives may contain repeated repository/product wrappers and still stage into one canonical AppData root with config, dlls, enabled.txt, and mods.',
+      'New client and server RuneSchema layouts consistently use lowercase config, dlls, and mods paths while retaining case-insensitive compatibility with existing installs.',
+      'UE4SS settings, imgui.ini, and the complete RuneSchema config tree are repaired to writable state after capture, install, deployment, setup, and profile materialization.',
+      'Large mod ZIPs present each UE4SS, RuneSchema, and PAK payload as an independently selectable and assignable profile import.',
+      'Mod manifests stay with their selected payload, unrelated archive debris is ignored, and PAK/UTOC/UCAS siblings remain one package unit.',
+    ],
+  }, {
     version: '2.7.25',
     title: 'Integrated Console & Writable Runtime Configs',
     items: [

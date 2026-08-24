@@ -14,6 +14,7 @@ from pathlib import Path
 from client_layout import resolve_client_layout
 from profile_store import APP_DATA_DIR, read_json, write_json
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
+from mod_archive_layout import inspect_mod_payloads, locate_mod_payload
 from integrations import normalize_mod_source
 from security_policy import default_access_policy, normalize_access_policy
 from security_scanner import defender_scan
@@ -607,7 +608,27 @@ def _copy_tree_contents(source: Path, destination: Path) -> int:
     return count
 
 
-def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferred_kind: str | None = None, profile_id: str = SINGLEPLAYER_ID) -> dict:
+def inspect_mod_zip(zip_path: str) -> dict:
+    archive = Path(zip_path)
+    detected = detect_mod_zip_kind(zip_path)
+    with tempfile.TemporaryDirectory(prefix="dwsync_local_mod_inspect_") as temp_name:
+        scratch = Path(temp_name)
+        with zipfile.ZipFile(archive) as zf:
+            _safe_extract(zf, scratch)
+        payloads = inspect_mod_payloads(scratch)
+        if not payloads and detected:
+            located = locate_mod_payload(scratch, detected, archive.stem)
+            content = Path(located["content"])
+            payloads = [{"id": f"{detected}:{content.relative_to(scratch).as_posix()}", "kind": detected,
+                         "name": str(located.get("name") or archive.stem),
+                         "payload_root": content.relative_to(scratch).as_posix(), "payload_name": "", "selected": True}]
+    kinds = {str(item.get("kind") or "") for item in payloads}
+    return {"kind": next(iter(kinds)) if len(payloads) == 1 and len(kinds) == 1 else "",
+            "detected_kind": detected or "", "payloads": payloads, "count": len(payloads)}
+
+
+def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferred_kind: str | None = None,
+                    profile_id: str = SINGLEPLAYER_ID, payload_root: str = "", payload_name: str = "") -> dict:
     archive = Path(zip_path)
     if not archive.is_file():
         raise FileNotFoundError("Mod ZIP was not found.")
@@ -622,19 +643,15 @@ def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferr
         scratch = Path(temp_name)
         with zipfile.ZipFile(archive) as zf:
             _safe_extract(zf, scratch)
-        content, wrapper = _peel_wrapper(scratch)
+        located = locate_mod_payload(scratch, kind, archive.stem, payload_root=payload_root, payload_name=payload_name)
+        content = Path(located["content"])
+        payload_root = content.relative_to(scratch).as_posix() or "."
         metadata_root = content
         archive_metadata = {"tags": [], "hotload_capable": False, "tag_files": [], "hotload_files": []}
-        mod_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", wrapper or archive.stem).strip(" .") or "ImportedMod"
+        mod_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", str(located.get("name") or archive.stem)).strip(" .") or "ImportedMod"
         if kind == "ue4ss":
             if mod_name.casefold() in RESERVED_UE4SS:
                 raise ValueError(f"{mod_name} is launcher-managed infrastructure and cannot be imported as a normal UE4SS mod.")
-            # Peel common Mods/<Name> or ue4ss/Mods/<Name> wrappers.
-            candidates = []
-            for base in (content / "ue4ss" / "Mods", content / "Mods"):
-                if base.is_dir(): candidates = [p for p in base.iterdir() if p.is_dir()]
-            if len(candidates) == 1:
-                content = candidates[0]; mod_name = candidates[0].name
             if mod_name.casefold() in RESERVED_UE4SS:
                 raise ValueError(f"{mod_name} is launcher-managed infrastructure and cannot be imported as a normal UE4SS mod.")
             archive_metadata = discover_packaged_metadata(metadata_root, effective_root=content)
@@ -657,7 +674,7 @@ def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferr
         else:
             target = targets["paks"]
             target.mkdir(parents=True, exist_ok=True)
-            pak_files = [p for p in content.rglob("*") if p.is_file() and p.suffix.casefold() in PAK_EXTENSIONS]
+            pak_files = list(located.get("files") or [])
             if not pak_files:
                 raise ValueError("No .pak/.utoc/.ucas files were found in this archive.")
             archive_metadata = discover_packaged_metadata(metadata_root, effective_root=content, payload_files=pak_files)
@@ -672,6 +689,15 @@ def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferr
             order = [g["name"] for g in _pak_groups(target)]
             _rename_pak_groups(target, order)
             result = {"ok": True, "kind": kind, "name": _strip_prefix(pak_files[0].stem)[1], "destination": str(target), "files_written": len(pak_files), "enabled_markers_removed": 0, "rollback_archive": rollback_archive}
+        source_manifest = Path(str(located.get("manifest") or "")) if located.get("manifest") else None
+        installed_manifest = ""
+        if source_manifest and source_manifest.is_file():
+            if kind in {"ue4ss", "runeschema"}:
+                installed = dest / source_manifest.relative_to(content)
+            else:
+                installed = target / f"{result['name']}.{source_manifest.name}"
+                shutil.copy2(source_manifest, installed)
+            installed_manifest = str(installed)
     archive_tags = normalize_tags(archive_metadata.get("tags"))
     archive_hotload = bool(kind in {"ue4ss", "runeschema"} and archive_metadata.get("hotload_capable"))
     if archive_tags or archive_hotload:
@@ -685,6 +711,8 @@ def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferr
     result["tags"] = archive_tags
     result["hotload_capable"] = archive_hotload
     result["metadata_detected"] = {"tag_files": list(archive_metadata.get("tag_files") or []), "hotload_files": list(archive_metadata.get("hotload_files") or [])}
+    result["payload_root"] = payload_root
+    result["main_manifest"] = installed_manifest
     return result
 
 

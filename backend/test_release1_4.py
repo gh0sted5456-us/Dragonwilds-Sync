@@ -233,7 +233,7 @@ def test_ui_contract():
     assert "capture-webview" in main and "Capture Face Card" in renderer
     assert "scrollIntoView" in renderer and "rsdw-avatar-webview" in styles and "rsdw-tool-webview" in styles
     assert "height:calc(100vh" in styles and "min-width:0" in styles
-    assert "options.native!==true" in renderer and "function prepareDesktopWindow" in renderer
+    assert "options.native===false" in renderer and "function prepareDesktopWindow" in renderer
     for label in ("Character Editor", "Item Editor", "Spell Editor", "Recipe Unlocker", "Quest Editor"):
         assert label in renderer
 

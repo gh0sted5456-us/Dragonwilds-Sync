@@ -54,7 +54,8 @@ const ordered = [
   'process = probe(',
   'watchdog = manager._arm_watchdog(',
   'published = engine.publish(',
-  'if not probe(',
+  'final_probe = probe(',
+  'if not final_probe.get("running")',
   'if not manager.share.status().get("serving")',
 ];
 let cursor = -1;

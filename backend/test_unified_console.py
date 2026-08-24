@@ -98,6 +98,7 @@ def main():
             console.SERVER_PROFILES_DIR = Path(temp_name)
             console._SESSION_STARTED.clear()
             console._SEEN.clear()
+            console._RECENT.clear()
 
             first = console.begin_session("world-1")
             current = Path(first["current_log"])
@@ -136,7 +137,8 @@ def main():
                 limit=100,
             )
             assert payload["running"] is True
-            assert payload["counts"] == {"game": 2, "ue4ss": 3, "server": 1, "sync": 1, "runeschema": 0}
+            assert payload["counts"] == {"game": 2, "ue4ss": 3, "server": 2, "sync": 1, "runeschema": 0}
+            assert any(row["message"] == "Immediate source event" for row in payload["entries"])
             assert {row["source"] for row in payload["entries"]} == {"game", "ue4ss", "server", "sync"}
             assert payload["ue4ss_log"] == str(ue4ss_log)
             log_text = Path(payload["current_log"]).read_text(encoding="utf-8")
@@ -194,6 +196,7 @@ def main():
             # the raw UE4SS view.
             console._SESSION_STARTED.clear()
             console._SEEN.clear()
+            console._RECENT.clear()
             rs_started = console.begin_session("world-3")["started_at"]
             rs_root = Path(temp_name) / "runeschema-root"
             rs_log = rs_root / "Binaries" / "Win64" / "UE4SS.log"
@@ -266,6 +269,7 @@ def main():
         console.SERVER_PROFILES_DIR = original_root
         console._SESSION_STARTED.clear()
         console._SEEN.clear()
+        console._RECENT.clear()
 
     test_console_world_runtime_authority()
     test_runeschema_context_and_settings_round_trip()

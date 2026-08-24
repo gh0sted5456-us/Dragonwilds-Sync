@@ -1385,7 +1385,8 @@ class ServerEngine:
 
     def status(self) -> dict:
         exe = find_dedicated_server_exe(load_server_profile(self.active_profile_id)) if self.active_profile_id else ""
-        owned_pid = self.proc.pid if self.proc and self.proc.poll() is None else None; pid = owned_pid or _find_running_server_pid(exe)
+        exit_code = self.proc.poll() if self.proc else None
+        owned_pid = self.proc.pid if self.proc and exit_code is None else None; pid = owned_pid or _find_running_server_pid(exe)
         if pid and self.started_at is None: self.started_at = time.time()
         monitor = self.monitor.poll(pid, exe)
         PLAYER_SERVICE.update_log_players(monitor.get("players") or [])
@@ -1439,7 +1440,7 @@ class ServerEngine:
                 live_hw["ram_available_gb"] = round((metrics["ram_total_bytes"] - metrics["ram_used_bytes"]) / (1024 ** 3), 1)
             STATE.manifest["hw_stats"] = live_hw
         persistent_events = list((profile or {}).get("activity_log") or []) if profile else []
-        return {"running": pid is not None, "pid": pid, "uptime_seconds": monitor.get("uptime_seconds"),
+        return {"running": pid is not None, "pid": pid, "exit_code": exit_code, "uptime_seconds": monitor.get("uptime_seconds"),
                 "active_profile_id": self.active_profile_id, "players": [p.get("name") for p in merged_players.get("players", [])], "player_details": merged_players.get("players", []), "player_count": merged_players.get("player_count", monitor.get("player_count", 0)),
                 "player_tracker": {"connected": merged_players.get("tracker_connected", False), "last_update": merged_players.get("last_tracker_update")},
                 "share": SHARE.status(), "hw_stats": self.hw_stats, "lan_ip": local_ip_guess(), "public_ip": self.public_ip,

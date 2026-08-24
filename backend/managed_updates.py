@@ -174,6 +174,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
     metadata = application.setdefault("client_core_runtime", {})
     manual_zip = Path(str(params.get("zip_path") or "")).expanduser()
     channel = str(params.get("channel") or "official").strip().casefold()
+    reset = bool(params.get("reset"))
     if channel not in {"official", "experimental"}:
         raise ValueError("Runtime channel must be official or experimental.")
 
@@ -202,7 +203,16 @@ def install_client_core(component: str, game_root: str, application: dict, param
         update = server_systems.check_ue4ss_update(source) or {}
         if not update.get("download_url"):
             raise RuntimeError("No downloadable UE4SS release asset could be resolved from the configured source.")
-        result = server_systems.install_client_ue4ss_update(str(update["download_url"]), root)
+        if reset:
+            archive, resolved, temp = server_systems.download_runtime_zip(source, prefer_contains=("ue4ss",))
+            try:
+                delete_client_core("ue4ss", root, application)
+                result = server_systems.install_client_ue4ss_zip(str(archive), root)
+                update = {**update, **resolved}
+            finally:
+                temp.cleanup()
+        else:
+            result = server_systems.install_client_ue4ss_update(str(update["download_url"]), root)
         metadata.update({
             "ue4ss_source_url": source,
             "ue4ss_channel": channel,
@@ -222,7 +232,18 @@ def install_client_core(component: str, game_root: str, application: dict, param
         source = configured or RUNESCHEMA_RELEASES_URL
         server_install.setdefault("runeschema_source_url", source)
         resolver_source = _runeschema_resolver_source(source)
-        result = server_systems.install_authoritative_runeschema_update(resolver_source, root, role="client")
+        if reset:
+            archive, resolved, temp = server_systems.download_runtime_zip(resolver_source, prefer_contains=("runeschema",))
+            try:
+                if not _is_runeschema_core_zip(archive):
+                    raise ValueError("The resolved RuneSchema ZIP is not a complete RuneSchema core.")
+                delete_client_core("runeschema", root, application)
+                installed = server_systems.install_runeschema_zip(str(archive), root, role="client")
+                result = {**installed, "filename": resolved.get("filename"), "source": resolved.get("source"), "download_url": resolved.get("download_url")}
+            finally:
+                temp.cleanup()
+        else:
+            result = server_systems.install_authoritative_runeschema_update(resolver_source, root, role="client")
         metadata.update({
             "runeschema_source_url": source,
             "runeschema_channel": channel,
@@ -231,6 +252,46 @@ def install_client_core(component: str, game_root: str, application: dict, param
         })
         return {"component": "RuneSchema", "source_url": source, "result": result}
 
+    raise ValueError("Managed client core component must be UE4SS or RuneSchema.")
+
+
+def _remove_writable(path: Path) -> None:
+    if not path.exists():
+        return
+    server_systems._set_runtime_tree_writable(path, True)
+    server_systems._remove_generated_path(path)
+
+
+def delete_client_core(component: str, game_root: str, application: dict) -> dict:
+    """Explicitly remove one client core while retaining profile-owned mods."""
+    component = str(component or "").strip().casefold()
+    layout = server_systems.resolve_client_layout(game_root)
+    metadata = application.setdefault("client_core_runtime", {})
+    removed: list[str] = []
+    if component == "ue4ss":
+        core = layout.win64_dir / "ue4ss"
+        if core.is_dir():
+            for child in list(core.iterdir()):
+                if child.name.casefold() == "mods":
+                    continue
+                _remove_writable(child); removed.append(str(child))
+        bootstrap = layout.win64_dir / "dwmapi.dll"
+        if bootstrap.exists(): _remove_writable(bootstrap); removed.append(str(bootstrap))
+        _remove_writable(server_systems.CLIENT_UE4SS_OVERRIDE_ZIP)
+        for key in list(metadata):
+            if key.startswith("ue4ss_"): metadata.pop(key, None)
+        return {"ok": True, "component": "UE4SS", "removed": removed, "mods_preserved": str(layout.ue4ss_mods_dir)}
+    if component == "runeschema":
+        root = layout.runeschema_root
+        if root.is_dir():
+            for child in list(root.iterdir()):
+                if child.name.casefold() == "mods":
+                    continue
+                _remove_writable(child); removed.append(str(child))
+        _remove_writable(server_systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP)
+        for key in list(metadata):
+            if key.startswith("runeschema_"): metadata.pop(key, None)
+        return {"ok": True, "component": "RuneSchema", "removed": removed, "mods_preserved": str(layout.runeschema_mods_dir)}
     raise ValueError("Managed client core component must be UE4SS or RuneSchema.")
 
 

@@ -11,6 +11,20 @@ from typing import Callable
 from process_utils import popen_hidden
 
 
+def dedicated_exit_error(runtime: dict | None) -> RuntimeError:
+    runtime = runtime if isinstance(runtime, dict) else {}
+    raw_code = runtime.get("exit_code")
+    if isinstance(raw_code, int):
+        unsigned = raw_code & 0xFFFFFFFF
+        code_detail = f" exit code {raw_code} (0x{unsigned:08X})"
+    else:
+        code_detail = " an unavailable exit code"
+    output = [str(row.get("message") or "").strip() for row in (runtime.get("process_output") or [])[-3:]
+              if isinstance(row, dict) and str(row.get("message") or "").strip()]
+    output_detail = f" Last game output: {' | '.join(output)[:1200]}" if output else " No final game-console line was emitted."
+    return RuntimeError(f"The dedicated server exited with{code_detail} before Sync publication completed.{output_detail}")
+
+
 def _launch_orphan_watchdog(server_pid: int) -> dict:
     """Arm an OS-level helper that kills the dedicated tree if the backend dies."""
     server_pid = int(server_pid or 0)
@@ -248,7 +262,8 @@ class AuthoritativeRuntimeManager:
         if after_process["broadcast_active"]: raise RuntimeError("Sync became available before dedicated-process verification completed.")
         server_pid = int((after_process.get("runtime") or {}).get("pid") or started.get("pid") or 0); watchdog = self._arm_watchdog(server_pid)
         published = self.engine.publish(profile_id); actual = self._actual()
-        if not actual["running"]: raise RuntimeError("The dedicated server exited before Sync publication completed.")
+        if not actual["running"]:
+            raise dedicated_exit_error(actual.get("runtime"))
         if not actual["broadcast_active"]: raise RuntimeError("The server started, but its required Sync broadcast was not verified.")
         processes = self._process_topology(actual)
         if not processes["parallel"]:

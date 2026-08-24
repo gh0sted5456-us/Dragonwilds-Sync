@@ -393,8 +393,14 @@ def install_mod_taxonomy_adapters() -> None:
                 pass
         tmp = target.with_suffix(target.suffix + ".dragonwilds.tmp")
         try:
-            tmp.write_text(server_systems._mods_txt_lines(names, existing), encoding="utf-8")
-            os.replace(tmp, target)
+            content = server_systems._mods_txt_lines(names, existing)
+            tmp.write_text(content, encoding="utf-8")
+            try:
+                os.replace(tmp, target)
+            except PermissionError:
+                if target.exists():
+                    target.chmod(target.stat().st_mode | 0o222)
+                target.write_text(content, encoding="utf-8")
         finally:
             tmp.unlink(missing_ok=True)
             if target.exists():

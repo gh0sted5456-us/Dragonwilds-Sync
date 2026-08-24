@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.27',
-  name: 'V2.7.27 · Writable Runtime & Passive Console',
+  version: '2.7.28',
+  name: 'V2.7.28 · Working Console & Runtime Recovery',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.28',
+    title: 'Working Console Windows & Runtime Recovery',
+    items: [
+      'The missing native-dialog event bridge is restored, so console tabs, filters, commands, Reveal, close controls, and Export TXT work in detached windows.',
+      'Immediate lifecycle and failed-start events remain visible in the live Unified Console and its exported troubleshooting log.',
+      'Early dedicated-process exits report their decimal and hexadecimal exit code plus the final captured game-console lines.',
+      'Ordinary application dialogs now open in the lightweight themed native host by default while embedded workspaces remain embedded.',
+      'UE4SS and RuneSchema each expose explicit Delete and Reset controls that preserve profile-owned mods.',
+      'Server mods.txt generation falls back to direct writable-file updates when a Windows directory ACL denies atomic replacement.',
+    ],
+  }, {
     version: '2.7.27',
     title: 'Writable Runtime & Passive Server Console',
     items: [

@@ -17,7 +17,8 @@ const world=read('backend/world_maintenance.py');
 
 for(const token of ['__DWSYNC_SWAP_METRICS__','sync_p95_ms','settled_p95_ms','requestAnimationFrame(()=>requestAnimationFrame'])must(app.includes(token),`missing measured swap contract ${token}`);
 for(const token of ['popOutDesktopWindow','requestCloseDesktopWindow','disposeDesktopWindow','registerManagedDialogShadow'])must(app.includes(token),`missing internal window lifecycle ${token}`);
-for(const token of ['openManagedDialog','managedDialogContent','managedDialogEvent','updateManagedDialog','closeManagedDialog','onManagedDialogClosed'])must(preload.includes(token),`sandbox bridge missing ${token}`);
+for(const token of ['openManagedDialog','managedDialogContent','managedDialogEvent','updateManagedDialog','closeManagedDialog','onManagedDialogEvent','onManagedDialogClosed'])must(preload.includes(token),`sandbox bridge missing ${token}`);
+must(app.includes('if(options.native===false)'),'ordinary dialogs must use the lightweight themed native host unless explicitly embedded');
 must(main.includes("loadFile(path.join(projectRoot(), 'renderer', 'dialog-host.html')"),'ordinary pop-outs must use the lightweight dialog host');
 must(dialog.includes('window.dragonwilds.windowMinimize()')&&dialog.includes('window.dragonwilds.windowClose()'),'native host controls must minimize and close through Electron');
 must(dialog.includes("event.key!=='Escape'")&&dialog.includes('window.dragonwilds.windowClose()'),'native managed dialogs must close on Escape');

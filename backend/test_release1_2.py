@@ -191,7 +191,7 @@ def main():
     assert "node.dataset.itemUnknown==='1'" in renderer and "node.dataset.itemRecognized==='0'" in renderer
     assert "category:'Other'" in renderer and "event.key==='Enter'||event.key===' '" in renderer
     assert "Rename Custom Item" in renderer and "data-item-custom" in renderer and "custom-item-fingerprint" in renderer
-    assert "function prepareDesktopWindow(win, options={})" in renderer and "options.native!==true" in renderer
+    assert "function prepareDesktopWindow(win, options={})" in renderer and "options.native===false" in renderer
     assert "desktop-window-control minimize" in renderer and "desktop-window-control maximize" in renderer
     assert "if(!detachedMode&&!host)" in renderer and "if(!detachedMode)render();await openCustomItemRepository" in renderer
     assert "ResizeObserver" in renderer and "syncAvatarHostSize" in renderer

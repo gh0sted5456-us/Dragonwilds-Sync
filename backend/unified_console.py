@@ -34,6 +34,7 @@ _PREVIOUS_LOG_NAME = "DragonwildsSync.previous.log"
 _LOCK = threading.RLock()
 _SESSION_STARTED: dict[str, float] = {}
 _SEEN: dict[str, set[str]] = {}
+_RECENT: dict[str, list[dict]] = {}
 
 # Log lines a UE4SS mod DLL/Lua script self-tags with a bracketed module name
 # (e.g. "[RuneSchema] Loaded 6 schemas") are reclassified out of the generic
@@ -153,6 +154,7 @@ def begin_session(profile_id: object) -> dict:
         _write_header(current, key, now)
         _SESSION_STARTED[key] = now
         _SEEN[key] = set()
+        _RECENT[key] = []
     return {
         "profile_id": key,
         "started_at": now,
@@ -287,7 +289,8 @@ def _ue4ss_entries(runtime: dict, started: float, limit: int = 250) -> tuple[lis
         if not message:
             continue
         folded = message.casefold()
-        level = "error" if any(token in folded for token in ("error", "fatal", "exception", "failed")) else ("warning" if "warn" in folded else "info")
+        real_error = any(token in folded for token in ("fatal", "exception", "failed")) or ("error" in folded and not re.search(r"\b0 errors?\b", folded))
+        level = "error" if real_error else ("warning" if "warn" in folded else "info")
         source = "ue4ss"
         for mod_key, pattern in _MOD_LOG_TAGS.items():
             if pattern.match(message):
@@ -471,6 +474,10 @@ def record_entry(profile_id: object, entry: dict) -> bool:
         if signature in seen:
             return False
         seen.add(signature)
+        recent = _RECENT.setdefault(key, [])
+        recent.append(dict(normalized))
+        if len(recent) > 2000:
+            del recent[:-1000]
         with paths["current"].open("a", encoding="utf-8") as handle:
             handle.write(_line(normalized))
         if len(seen) > 6000:
@@ -491,7 +498,8 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
     started = _ensure_session(key)
 
     runtime_active = str(runtime.get("active_profile_id") or "").strip()
-    if runtime_active and runtime_active != key:
+    isolated_runtime = bool(runtime_active and runtime_active != key)
+    if isolated_runtime:
         # Never leak another active World's lifecycle or Sync traffic when an
         # operator opens the Console for a stopped/inactive profile.
         runtime = {**runtime, "running": False, "events": [], "process_output": [], "game_root": ""}
@@ -504,6 +512,14 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
 
     for row in rows:
         record_entry(key, row)
+
+    # Hooks also write events that are not recoverable from the latest runtime
+    # snapshot (most importantly a failed start). Keep those first-class in the
+    # live UI and diagnostic export instead of leaving them only on disk.
+    if not isolated_runtime:
+        with _LOCK:
+            rows = [dict(row) for row in _RECENT.get(key, []) if float(row.get("ts") or 0) >= started - 0.5]
+        rows.sort(key=lambda row: (float(row.get("ts") or 0), str(row.get("source") or "")))
 
     # Seed the base four so existing UI/tests keep a stable shape even when no
     # rows are present; any registered mod source (or an unforeseen future

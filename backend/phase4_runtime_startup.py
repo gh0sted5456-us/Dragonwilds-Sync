@@ -517,8 +517,10 @@ def _phase4_start_verified(manager, profile_id: str) -> dict:
         raise RuntimeError("Sync became available before dedicated-process verification completed.")
     watchdog = manager._arm_watchdog(int(process.get("pid") or started.get("pid") or 0))
     published = engine.publish(profile_id)
-    if not probe(profile_id).get("running"):
-        raise RuntimeError("The dedicated server exited before Sync publication completed.")
+    final_probe = probe(profile_id)
+    if not final_probe.get("running"):
+        from runtime_manager import dedicated_exit_error
+        raise dedicated_exit_error(engine.status())
     if not manager.share.status().get("serving"):
         raise RuntimeError("The server started, but its required Sync broadcast was not verified.")
     manager._managed_running = True

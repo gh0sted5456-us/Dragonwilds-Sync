@@ -773,6 +773,20 @@ def handle(method: str, params: dict) -> object:
         return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "runeschema"}},
                 "state": _legacy.public_state(state)}
 
+    if method == "application.core_mod.delete":
+        component = str(params.get("component") or "").strip().casefold().replace("_", "")
+        if component not in {"ue4ss", "runeschema"}:
+            raise ValueError("Managed core component must be UE4SS or RuneSchema.")
+        if _legacy._dragonwilds_client_running():
+            raise RuntimeError("Close RuneScape: Dragonwilds before deleting a managed client core runtime.")
+        game_dir = str(state.setdefault("application", {}).get("game_dir") or "").strip()
+        if not game_dir:
+            raise ValueError("Set the Dragonwilds game folder first.")
+        layout = _legacy.resolve_client_layout(game_dir)
+        result = _managed_updates.delete_client_core(component, str(layout.game_root), state.setdefault("application", {}))
+        _legacy.save_state(state)
+        return {"result": result, "state": _legacy.public_state(state)}
+
     if method == "application.core_mod.update":
         component = str(params.get("component") or "ue4ss").strip().casefold().replace("_", "")
         if component not in {"ue4ss", "runeschema"}:

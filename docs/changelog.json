@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.28",
+      "title": "Dragonwilds Sync V2.7.28",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "Detached console tabs, filters, commands, Reveal, close controls, and Export TXT work through the restored native-dialog event bridge.",
+        "Immediate lifecycle and failed-start events remain visible in the live Unified Console and exported troubleshooting log.",
+        "Early dedicated-process exits report their decimal and hexadecimal exit code plus final captured game-console lines.",
+        "Ordinary dialogs use the lightweight themed native host by default while embedded workspaces remain embedded.",
+        "UE4SS and RuneSchema each expose Delete and Reset controls that preserve profile-owned mods.",
+        "Server mods.txt generation tolerates Windows directory ACLs that deny atomic replacement but permit direct file updates."
+      ]
+    },
+    {
       "version": "2.7.27",
       "title": "Dragonwilds Sync V2.7.27",
       "date": "2026-08-23",

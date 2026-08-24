@@ -332,6 +332,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   managedDialogEvent: (payload = {}) => ipcRenderer.invoke('dragonwilds:managed-dialog-event', payload),
   updateManagedDialog: (payload = {}) => ipcRenderer.invoke('dragonwilds:managed-dialog-update', payload),
   closeManagedDialog: (id) => ipcRenderer.invoke('dragonwilds:managed-dialog-close', id),
+  onManagedDialogEvent: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-event',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-event',fn); },
   onManagedDialogUpdate: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-update',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-update',fn); },
   onManagedDialogClosed: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-closed',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-closed',fn); },
   onJoinRequest: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:join-request',fn); return ()=>ipcRenderer.removeListener('dragonwilds:join-request',fn); },

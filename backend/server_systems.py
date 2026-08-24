@@ -818,8 +818,17 @@ def generate_server_mods_txt(profile_id: str, game_root: str, units: list[ModUni
             pass
     tmp = target.with_suffix(target.suffix + ".dragonwilds.tmp")
     try:
-        tmp.write_text(_mods_txt_lines(names, existing), encoding="utf-8")
-        os.replace(tmp, target)
+        content = _mods_txt_lines(names, existing)
+        tmp.write_text(content, encoding="utf-8")
+        try:
+            os.replace(tmp, target)
+        except PermissionError:
+            # Some Windows installs permit editing an existing file but deny
+            # directory-level rename/replace. Starting the server must not be
+            # blocked by that narrower ACL.
+            if target.exists():
+                target.chmod(target.stat().st_mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+            target.write_text(content, encoding="utf-8")
     finally:
         tmp.unlink(missing_ok=True)
     # Launcher-owned control state remains editable by the runtime and operator.

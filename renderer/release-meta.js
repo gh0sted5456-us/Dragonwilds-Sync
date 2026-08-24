@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.31',
-  name: 'V2.7.31 · Launch Evidence & Free Windows',
+  version: '2.7.32',
+  name: 'V2.7.32 · Native Runtime Baseline',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.32',
+    title: 'Native Runtime Baseline',
+    items: [
+      'The dedicated game receives a valid hidden Win32 console instead of CREATE_NO_WINDOW, preserving UE4SS native initialization without stealing focus.',
+      'The bundled UE4SS baseline is the exact upstream v3.0.1-1088-ga1e7f571 archive, with RuneSchema remaining independently managed.',
+      'Trash, extension dialogs, confirmations, version managers, mod viewers, and standalone console surfaces use real themed taskbar windows.',
+      'Detached Profile, Characters, Worlds, private World, Settings, and Sync pages expose Return to Application instead of offering another redundant window.',
+    ],
+  }, {
     version: '2.7.31',
     title: 'Launch Evidence & Free Windows',
     items: [

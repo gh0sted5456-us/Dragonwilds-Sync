@@ -72,6 +72,33 @@ def popen_hidden(args, **kwargs):
     return subprocess.Popen(args, **_merge(kwargs))
 
 
+def server_process_kwargs() -> dict[str, Any]:
+    """Allocate a real Windows console for UE4SS without showing/focusing it.
+
+    UE4SS and native mods can depend on the Win32 console subsystem even when
+    Dragonwilds Sync captures stdout itself. ``CREATE_NO_WINDOW`` is correct
+    for short-lived helpers, but using it for the game server leaves those
+    runtimes with no console and can crash during native mod initialization.
+    """
+    if os.name != "nt":
+        return {}
+    startupinfo = subprocess.STARTUPINFO()
+    startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
+    startupinfo.wShowWindow = 0
+    return {
+        "creationflags": int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0)),
+        "startupinfo": startupinfo,
+    }
+
+
+def popen_game_server(args, **kwargs):
+    """Start the dedicated game with a hidden, valid console allocation."""
+    merged = dict(kwargs)
+    for key, value in server_process_kwargs().items():
+        merged.setdefault(key, value)
+    return subprocess.Popen(args, **merged)
+
+
 def run_hidden(args, **kwargs):
     return subprocess.run(args, **_merge(kwargs))
 

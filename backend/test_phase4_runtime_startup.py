@@ -158,7 +158,7 @@ def _fake_server_module(root: Path):
         restore_profile_server_config=lambda *_args: counts.__setitem__("restore_config", counts["restore_config"] + 1) or 0,
         restore_profile_savegame=lambda *_args: counts.__setitem__("restore_save", counts["restore_save"] + 1) or True,
         _live_savegames_dir=lambda _exe: root / "RSDragonwilds" / "Saved" / "SaveGames",
-        sys=sys, subprocess=__import__("subprocess"), popen_hidden=lambda *_a, **_k: None,
+        sys=sys, subprocess=__import__("subprocess"), popen_game_server=lambda *_a, **_k: None,
         linux_windows_server_command=lambda exe_path: ([exe_path, "-log"], None),
     )
     return fake, counts, share, profile, layout

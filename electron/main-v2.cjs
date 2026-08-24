@@ -397,7 +397,7 @@ function createDetachedWindow(payload = {}) {
     }
   }
   const id = `dw-${Date.now().toString(36)}-${(++detachedCounter).toString(36)}`;
-  const win = new BrowserWindow(windowOptions({ width: Number(payload.width || 1120), height: Number(payload.height || 760), minWidth: 720, minHeight: 520, title, skipTaskbar: true }));
+  const win = new BrowserWindow(windowOptions({ width: Number(payload.width || 1120), height: Number(payload.height || 760), minWidth: 720, minHeight: 520, title, skipTaskbar: false }));
   attachRendererDurability(win);
   detachedWindows.set(id, { id, window: win, title, route, context });
   win.webContents.on('will-attach-webview', (event, webPreferences, params) => {

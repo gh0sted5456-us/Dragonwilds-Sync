@@ -70,6 +70,22 @@ def main():
     assert "pip', 'install', '--upgrade'" in text
     assert "windowsHide: true" in ELECTRON_MAIN_V2.read_text(encoding="utf-8")
 
+    process_utils = PROCESS_UTILS.read_text(encoding="utf-8")
+    assert "def popen_game_server(" in process_utils
+    assert "CREATE_NEW_CONSOLE" in process_utils, "UE4SS requires a valid Win32 console allocation"
+    assert "CREATE_NO_WINDOW" in process_utils, "background helpers should remain windowless"
+    server_engine = (ROOT / "backend" / "server_engine.py").read_text(encoding="utf-8")
+    phase4_startup = (ROOT / "backend" / "phase4_runtime_startup.py").read_text(encoding="utf-8")
+    assert "popen_game_server(" in server_engine
+    assert "popen_game_server(" in phase4_startup
+
+    main_v2 = ELECTRON_MAIN_V2.read_text(encoding="utf-8")
+    renderer_v2 = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
+    trash_v2 = (ROOT / "renderer" / "release-v2-trash.js").read_text(encoding="utf-8")
+    assert "skipTaskbar: false" in main_v2, "detached application windows must be real taskbar windows"
+    assert "openNative(shellNode.innerHTML" in trash_v2, "Trash must open in a native application window"
+    assert "Return to Application" in renderer_v2
+
     package = json.loads(PACKAGE.read_text(encoding="utf-8"))
     build_bat = BUILD_BAT.read_text(encoding="utf-8")
     assert "backend\\dragonwilds_service.py" in build_bat

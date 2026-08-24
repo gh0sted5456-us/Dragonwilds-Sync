@@ -23,6 +23,8 @@ from server_systems import BUNDLED_UE4SS_RESOURCE, DEFAULT_UE4SS_RELEASES_URL, _
 # select_version()/profile["ue4ss_active_version_id"] and
 # server_engine._apply_profile_ue4ss, which actually materializes it.
 BASELINE_ID = "baseline"
+BASELINE_VERSION = "v3.0.1-1088-ga1e7f571"
+BASELINE_SHA256 = "7306a7799881344936ddead14b66030c402fce7d45d0f81a4de0b38055eebcd8"
 REPO_DIR_NAME = "UE4SSRepository"
 
 _VERSION_PATTERN = re.compile(r"\bv?\d+\.\d+\.\d+(?:-\d+-g[0-9a-f]{6,})?\b")
@@ -99,9 +101,9 @@ def list_versions(state: dict | None = None) -> dict:
     state = state if state is not None else load_state()
     bundled = _bundled_app_resource(*BUNDLED_UE4SS_RESOURCE)
     versions = [{
-        "id": BASELINE_ID, "label": "Baseline (bundled)", "kind": "baseline", "version": "",
+        "id": BASELINE_ID, "label": f"Official Baseline · {BASELINE_VERSION}", "kind": "baseline", "version": BASELINE_VERSION,
         "available": bundled.is_file(), "size": bundled.stat().st_size if bundled.is_file() else 0,
-        "source": "Bundled with Dragonwilds Sync", "sha256": "", "added_at": 0,
+        "source": "Bundled with Dragonwilds Sync", "sha256": BASELINE_SHA256, "added_at": 0,
     }]
     kept_rows = []
     changed = False

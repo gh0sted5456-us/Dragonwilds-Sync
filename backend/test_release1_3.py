@@ -39,7 +39,7 @@ def main():
     assert "rsdw-local://" not in renderer
 
     # Native detachable windows are deliberately restored through the app taskbar.
-    assert "createDetachedWindow" in main_js and "skipTaskbar: true" in main_js
+    assert "createDetachedWindow" in main_js and "skipTaskbar: false" in main_js
     assert "w.hide();" in main_js and "dragonwilds:detached-changed" in main_js
     assert "data-native-window-id" in renderer and "restoreDetachedWindow" in renderer
     assert "data-taskbar-action=\"open\"" in renderer and "data-taskbar-action=\"close\"" in renderer

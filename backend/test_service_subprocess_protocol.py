@@ -31,7 +31,10 @@ def main() -> None:
             capture_output=True,
             cwd=backend,
             env=env,
-            timeout=25,
+            # First launch can hydrate worker imports while Defender inspects
+            # the temporary executable/module tree. Keep this bounded without
+            # turning a healthy but cold Windows start into a flaky failure.
+            timeout=60,
             check=False,
         )
     assert completed.returncode == 0, completed.stderr

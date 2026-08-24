@@ -477,7 +477,7 @@ def _install_server_pipeline(server_engine_module) -> None:
         writable = server_engine_module.ensure_server_runtime_writable(self._profile_root(profile))
         if writable.get("writable_repaired"):
             self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
-        self.proc = server_engine_module.popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env,
+        self.proc = server_engine_module.popen_game_server(command, cwd=str(Path(exe).parent), env=launch_env,
                                                       stdout=server_engine_module.subprocess.PIPE,
                                                       stderr=server_engine_module.subprocess.STDOUT,
                                                       text=True, encoding="utf-8", errors="replace", bufsize=1)

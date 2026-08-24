@@ -225,7 +225,7 @@ def test_ui_contract():
     assert "openManagedDialog" in preload and "managedDialogContent" in preload
     assert "updateManagedDialog" in preload and "closeManagedDialog" in preload
     assert "openInAppBrowser" in preload
-    assert "skipTaskbar: true" in main and "restoreDetachedWindow" in renderer
+    assert "skipTaskbar: false" in main and "restoreDetachedWindow" in renderer
     live_renderer = renderer.replace("managedConfirm(", "").replace("managedPrompt(", "")
     assert "confirm(" not in live_renderer and "prompt(" not in live_renderer
 

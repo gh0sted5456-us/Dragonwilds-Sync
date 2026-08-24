@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import zipfile
+import hashlib
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -64,12 +65,15 @@ def test_baseline_always_present_and_resolves_the_shipped_bundled_resource():
     with _sandbox():
         status = repo.list_versions()
         assert status["versions"][0]["id"] == repo.BASELINE_ID
+        assert status["versions"][0]["version"] == "v3.0.1-1088-ga1e7f571"
+        assert status["versions"][0]["sha256"] == "7306a7799881344936ddead14b66030c402fce7d45d0f81a4de0b38055eebcd8"
         # resources/DragonwildsServerRuntime/UE4SS-core-latest.zip ships in
         # this checkout, so the baseline entry is real, not hypothetical.
         assert status["versions"][0]["available"] is True
         assert status["versions"][0]["size"] > 0
         archive = repo.resolve_archive(repo.BASELINE_ID)
         assert archive.is_file()
+        assert hashlib.sha256(archive.read_bytes()).hexdigest() == repo.BASELINE_SHA256
 
 
 def test_import_validates_and_dedups_by_content():

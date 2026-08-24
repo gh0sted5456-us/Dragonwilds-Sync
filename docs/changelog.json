@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.32",
+      "title": "Dragonwilds Sync V2.7.32",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "Dedicated game processes retain a valid hidden Win32 console for UE4SS native initialization without taking focus.",
+        "The bundled UE4SS baseline is the exact upstream v3.0.1-1088-ga1e7f571 archive; RuneSchema remains independently managed.",
+        "Trash and application popups use themed native taskbar windows.",
+        "Detached workspaces say Return to Application and return focus to the existing main window."
+      ]
+    },
+    {
       "version": "2.7.31",
       "title": "Dragonwilds Sync V2.7.31",
       "date": "2026-08-23",

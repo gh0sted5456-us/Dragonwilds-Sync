@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
-from process_utils import check_output_hidden, popen_hidden, run_hidden
+from process_utils import check_output_hidden, popen_game_server, popen_hidden, run_hidden
 from computer_profiles import apply_process_priority, resolve_computer_profile, begin_power_session, restore_power_session
 from health_model import apply_detected_hardware_references
 from server_layout import NATIVE_LINUX, resolve_server_layout, resolve_server_layout_from_exe
@@ -1837,7 +1837,7 @@ class ServerEngine:
         writable = ensure_server_runtime_writable(self._profile_root(profile))
         if writable.get("writable_repaired"):
             self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
-        self.proc = popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
+        self.proc = popen_game_server(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
         if self.proc.stdout is not None:
             threading.Thread(target=self._capture_process_output, args=(self.proc.stdout,), daemon=True, name="Dragonwilds-Dedicated-Console").start()
         self._apply_computer_profile(self.proc.pid, exe, profile_id)

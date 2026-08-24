@@ -30,7 +30,7 @@ def main():
     assert "navigationHistory" in renderer and "id=\"global-back\"" in renderer and "function goBack()" in renderer
     assert "detach-private-world" in renderer and "detach-server-world" in renderer
     assert "selectedServerWorldId" in renderer and "detachedContext.serverTab" in renderer
-    assert "skipTaskbar: true" in main_js and "restoreDetachedWindow" in renderer
+    assert "skipTaskbar: false" in main_js and "restoreDetachedWindow" in renderer
 
     # Local and dedicated Worlds use the same lean detailed shell language.
     # Map tracking is restored as an optional, demand-driven RSDW DevKit

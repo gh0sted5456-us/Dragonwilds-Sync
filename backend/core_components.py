@@ -397,9 +397,9 @@ def install_mod_taxonomy_adapters() -> None:
             os.replace(tmp, target)
         finally:
             tmp.unlink(missing_ok=True)
-            if previous_mode is not None:
+            if target.exists():
                 try:
-                    target.chmod(previous_mode)
+                    target.chmod(target.stat().st_mode | 0o222)
                 except OSError:
                     pass
         return {"ok": True, "path": str(target), "enabled": names, "count": len(names), "runtime_role": "server"}
@@ -489,7 +489,7 @@ def install_mod_taxonomy_adapters() -> None:
                 os.replace(tmp, target)
             finally:
                 tmp.unlink(missing_ok=True)
-            sync_engine._set_managed_readonly(target, True)
+            sync_engine._set_managed_readonly(target, False)
             return {"ok": True, "path": str(target), "writer": "client_generate", "enabled": enabled,
                     "count": len(enabled), "runtime_role": "client"}
 

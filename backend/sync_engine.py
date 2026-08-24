@@ -43,10 +43,11 @@ RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
 
 
 
-def _set_managed_readonly(path: Path, readonly: bool = True) -> None:
+def _set_managed_readonly(path: Path, readonly: bool = False) -> None:
+    """Retained compatibility name; launcher-managed files are always writable."""
     try:
         mode = path.stat().st_mode
-        path.chmod((mode & ~0o222) if readonly else (mode | 0o200))
+        path.chmod(mode | 0o222)
     except OSError:
         pass
 
@@ -414,7 +415,7 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
                 _set_managed_readonly(target, False)
             shutil.copy2(cached, target)
             if str(info.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
-                _set_managed_readonly(target, True)
+                _set_managed_readonly(target, False)
     live_state = game_root / LOCAL_STATE_DIR / STATE_FILE
     live_state.parent.mkdir(parents=True, exist_ok=True)
     if cached_state.exists():
@@ -777,7 +778,7 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
                 _set_managed_readonly(target, False)
             os.replace(staged, target)
             if str(entry.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
-                _set_managed_readonly(target, True)
+                _set_managed_readonly(target, False)
         downloaded_bytes += entry_size
         emit("applying", f"Applied {entry['path']} to the active profile", 22 + (50 * index / max(1, len(to_download))),
              current_file=entry["path"], current=index, changed_files=len(to_download), unchanged_files=len(up_to_date),
@@ -905,7 +906,7 @@ def write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
     if writer == "server_push":
         if not target.is_file():
             raise ConnectionError("The server selected Server Push for mods.txt, but the managed control file was not received.")
-        _set_managed_readonly(target, True)
+        _set_managed_readonly(target, False)
         return {"ok": True, "path": str(target), "writer": "server_push", "enabled": list(manifest.get("client_ue4ss_mods") or []), "count": len(manifest.get("client_ue4ss_mods") or [])}
     target.parent.mkdir(parents=True, exist_ok=True)
     existing = target.read_text(encoding="utf-8", errors="ignore") if target.is_file() else ""
@@ -939,7 +940,7 @@ def write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)
-    _set_managed_readonly(target, True)
+    _set_managed_readonly(target, False)
     return {"ok": True, "path": str(target), "writer": "client_generate", "enabled": selected, "count": len(selected)}
 
 

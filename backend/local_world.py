@@ -928,7 +928,7 @@ def write_mods_txt(game_dir: str, profile_id: str = SINGLEPLAYER_ID) -> dict:
     finally:
         tmp.unlink(missing_ok=True)
     try:
-        target.chmod(target.stat().st_mode & ~0o222)
+        target.chmod(target.stat().st_mode | 0o222)
     except OSError:
         pass
     return {"ok": True, "path": str(target), "enabled": names, "count": len(names)}
@@ -1066,7 +1066,7 @@ def save_mod_file(game_dir: str, key: str, relative_path: str, content: str, *, 
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
     try:
-        path.chmod(path.stat().st_mode & ~0o222)
+        path.chmod(path.stat().st_mode | 0o222)
     except OSError:
         pass
     content_hash = mod_content_hash(game_dir, key, live=live, profile_id=profile_id)
@@ -1108,7 +1108,7 @@ def create_mod_file(game_dir: str, key: str, relative_path: str, content: str = 
         if os.path.exists(tmp_name):
             os.unlink(tmp_name)
     try:
-        path.chmod(path.stat().st_mode & ~0o222)
+        path.chmod(path.stat().st_mode | 0o222)
     except OSError:
         pass
     language = {".lua": "lua", ".json": "json", ".jsonc": "jsonc", ".ini": "ini", ".cfg": "plaintext", ".txt": "plaintext"}.get(rel.suffix.casefold(), "plaintext")

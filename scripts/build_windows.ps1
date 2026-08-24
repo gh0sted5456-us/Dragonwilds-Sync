@@ -103,8 +103,21 @@ function Clear-ReleaseDirectory {
         Fail-Build "Refusing to clear an unsafe release path: $releaseRoot"
     }
     if (Test-Path -LiteralPath $releaseRoot) {
-        Write-BuildLine 'Removing the previous release directory so only this build remains ...'
-        Remove-Item -LiteralPath $releaseRoot -Recurse -Force
+        Write-BuildLine 'Removing previous release artifacts (locked running portables are preserved) ...'
+        foreach ($artifact in @(Get-ChildItem -LiteralPath $releaseRoot -Force -ErrorAction SilentlyContinue)) {
+            try {
+                Remove-Item -LiteralPath $artifact.FullName -Recurse -Force -ErrorAction Stop
+            }
+            catch [System.IO.IOException] {
+                # A portable executable may be the currently running launcher.
+                # Its versioned filename cannot collide with the new artifact,
+                # so preserving it is safer than killing the operator's app.
+                Write-BuildLine "[WARN] Preserving locked release artifact: $($artifact.Name)"
+            }
+            catch [System.UnauthorizedAccessException] {
+                Write-BuildLine "[WARN] Preserving inaccessible release artifact: $($artifact.Name)"
+            }
+        }
     }
 }
 
@@ -306,8 +319,8 @@ try {
     Write-BuildLine '[5/7] Cleaning old outputs'
     Remove-BuildDirectory 'dist-service'
     Remove-BuildDirectory 'build-service'
-    # Portable-only policy: remove every prior package so stale installers or
-    # artifacts from older versions cannot survive beside the new portable EXE.
+    # Portable-only policy: clean prior outputs without terminating a portable
+    # build that the operator is actively using to test the application.
     Clear-ReleaseDirectory
     Write-BuildLine ''
 

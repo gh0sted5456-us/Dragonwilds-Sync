@@ -162,9 +162,8 @@ def player_history_payload(profile_id: str, live_payload: dict) -> dict:
 
 def _remove_path(path: Path) -> None:
     def unlock_and_retry(function, blocked, _error) -> None:
-        # Launcher-owned runtime modules are intentionally read-only between
-        # updates. Older profile snapshots may still contain those files, so a
-        # normal profile refresh must be able to retire that legacy snapshot.
+        # Older profile snapshots may still contain legacy read-only files, so
+        # a normal profile refresh must be able to retire that snapshot.
         try:
             os.chmod(blocked, stat.S_IWRITE)
             function(blocked)

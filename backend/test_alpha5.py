@@ -76,11 +76,8 @@ def main():
             except ValueError:
                 pass
             assert '"count": 2' in config.read_text(encoding='utf-8')
-            try:
-                wm.release_world_config('world-a', str(server), opened['relative_path'], True)
-                raise AssertionError('managed config must not be released writable')
-            except PermissionError:
-                pass
+            released = wm.release_world_config('world-a', str(server), opened['relative_path'], True)
+            assert released['readonly'] is False
             assert not wm.is_readonly(config)
             try:
                 wm.open_world_config('world-a', str(server), '../escape.json', True)

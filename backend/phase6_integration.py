@@ -232,7 +232,7 @@ def _write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)
-    sync_engine._set_managed_readonly(target, True)
+    sync_engine._set_managed_readonly(target, False)
     return {
         "ok": True,
         "path": str(target),

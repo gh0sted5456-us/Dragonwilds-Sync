@@ -822,14 +822,9 @@ def generate_server_mods_txt(profile_id: str, game_root: str, units: list[ModUni
         os.replace(tmp, target)
     finally:
         tmp.unlink(missing_ok=True)
-        if previous_mode is not None:
-            try:
-                target.chmod(previous_mode)
-            except OSError:
-                pass
-    # mods.txt is launcher-owned control state just like managed configs.
+    # Launcher-owned control state remains editable by the runtime and operator.
     try:
-        target.chmod(target.stat().st_mode & ~0o222)
+        target.chmod(target.stat().st_mode | 0o222)
     except OSError:
         pass
     return {"ok": True, "path": str(target), "enabled": names, "count": len(names)}
@@ -3326,7 +3321,7 @@ def _set_runtime_tree_writable(root: Path, writable: bool) -> None:
     for path in [root, *root.rglob("*")]:
         try:
             mode = path.stat().st_mode
-            path.chmod((mode | stat.S_IWUSR) if writable else (mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH))
+            path.chmod(mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
         except OSError:
             continue
 
@@ -3536,6 +3531,13 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
     layout = resolve_server_layout(game_root)
     if not layout.game_root.exists():
         raise ValueError("The dedicated server game root does not exist yet. Run Settings → Server → Full Setup first.")
+    # Repair every path an older launcher release may have marked read-only
+    # before validation, profile restore, mods.txt generation, or process start.
+    for managed_root in (
+        layout.ue4ss_core_dir, layout.paks_mods_dir, layout.config_dir,
+        UE4SS_RUNTIME_DIR, RUNESCHEMA_RUNTIME_DIR, CLIENT_RUNTIME_OVERRIDE_DIR,
+    ):
+        _set_runtime_tree_writable(managed_root, True)
     if sys.platform.startswith("linux") and layout.server_exe.suffix.casefold() != ".exe":
         status = runtime_prerequisite_status(game_root)
         return {
@@ -3943,6 +3945,8 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
         stored = SERVER_PROFILES_DIR / profile_id / "mods"
         ue4ss_root, paks_root = stored / "ue4ss_mods", stored / "pak_mods"
         rs_mods_root = ue4ss_root / "RuneSchema" / "mods"
+    for managed_root in (ue4ss_root, paks_root, rs_mods_root):
+        _set_runtime_tree_writable(managed_root, True)
     with tempfile.TemporaryDirectory(prefix="dwsync_world_mod_") as temp:
         scratch = Path(temp)
         with zipfile.ZipFile(archive) as zf:

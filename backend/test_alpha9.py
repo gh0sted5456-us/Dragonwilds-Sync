@@ -87,7 +87,7 @@ def main():
         assert "ClientAuto" not in text and "RuneSchema" not in text and "OldMod" not in text
         assert "Keybinds : 1" in text
         assert result["writer"] == "client_generate"
-        assert Path(result["path"]).stat().st_mode & 0o222 == 0
+        assert Path(result["path"]).stat().st_mode & 0o222
 
         # Server Push is a distinct delivery setting. The sync stage has already
         # installed the client-safe file, and finalization must preserve it rather
@@ -97,7 +97,7 @@ def main():
         pushed = sy.write_client_mods_txt(client_outer, {"mods_txt_writer": "server_push", "client_ue4ss_mods": ["ClientExplicit"]})
         assert pushed["writer"] == "server_push"
         assert Path(pushed["path"]).read_text(encoding="utf-8").startswith("; server pushed")
-        assert Path(pushed["path"]).stat().st_mode & 0o222 == 0
+        assert Path(pushed["path"]).stat().st_mode & 0o222
 
     # Publish contract: a non-empty client UE4SS selection always stages the
     # client-safe managed control file using the special destination.

@@ -367,7 +367,7 @@ def _server_manifest_rows(world_maintenance, profile_id: str, active: bool) -> l
             "name": Path(str(rel)).name,
             "size": int(meta.get("size") or 0),
             "managed": True,
-            "readonly": True,
+            "readonly": False,
             "language": str(meta.get("language") or world_maintenance._language(Path(str(rel)))),
             "scope": str(meta.get("scope") or "managed"),
             "unit_key": unit_key,

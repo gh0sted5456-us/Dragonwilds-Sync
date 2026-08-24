@@ -22,6 +22,7 @@ must(main.includes("loadFile(path.join(projectRoot(), 'renderer', 'dialog-host.h
 must(dialog.includes('window.dragonwilds.windowMinimize()')&&dialog.includes('window.dragonwilds.windowClose()'),'native host controls must minimize and close through Electron');
 must(dialog.includes("event.key!=='Escape'")&&dialog.includes('window.dragonwilds.windowClose()'),'native managed dialogs must close on Escape');
 must(app.includes('let desktopZ = 11000'),'ordinary popup windows must stack above placard windows');
+must(app.includes('scheduleManagedDialogSync')&&app.includes('new MutationObserver(()=>scheduleManagedDialogSync(shadow))'),'native popup DOM synchronization must be batched');
 must(app.includes("win.setAttribute('role','dialog')")&&app.includes("win.setAttribute('aria-modal','false')"),'internal popup windows must expose non-blocking dialog semantics');
 must(app.includes("if(event.key!=='Escape'||event.defaultPrevented)return")&&app.includes('requestCloseDesktopWindow(win)'),'internal popups must route Escape through guarded close');
 must(app.includes('win._dwsReturnFocus')&&app.includes('returnFocus.focus'),'internal popups must restore launch focus after close');
@@ -32,6 +33,10 @@ must(main.includes('dragonwilds:detached-context')&&!main.includes("query: { det
 must(app.includes('editor?.dispose()')&&app.includes('referenceEditor?.dispose()'),'both Monaco editor models must be disposed');
 must(app.includes('Unsaved Mod File')&&app.includes('Unsaved World File'),'editor close must guard unsaved work');
 must(app.includes('Open Mod Folder')&&app.includes('open-current-mod-folder'),'mod file locations must be actionable in-app');
+const passiveConsoleLaunch=app.match(/function launchRuntimeConsoleForWorld\(world\) \{([\s\S]*?)\n  \}/)?.[1]||'';
+must(passiveConsoleLaunch.includes('state.selectedServerWorldId=world.id'),'server launch must associate background output with the selected World');
+for(const forbidden of ['state.route=', 'state.serverTab=', 'render()', 'openUnifiedLaunchConsole(', 'openDetachedWindow'])must(!passiveConsoleLaunch.includes(forbidden),`server launch must not navigate, repaint, or focus console via ${forbidden}`);
+must(app.includes("popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`")&&!app.includes("openDetachedWindow?.({route:'server-console'"),'Runtime Console must use the lightweight themed native host instead of booting another full app renderer');
 for(const source of [local,world])must(source.includes('"folder": str(')&&source.includes('"root": str('),'opened files must return validated folder/root paths');
 must(local.includes('base not in path.parents')&&local.includes('rel.is_absolute()')&&local.includes('".." in rel.parts'),'SinglePlayer mod paths must remain contained');
 must(world.includes('_resolve_inside(layout.game_root, relative_path)'),'server mod paths must remain contained');

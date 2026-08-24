@@ -54,7 +54,7 @@ def main() -> None:
         assert written["enabled"][:2] == ["Zulu", "Alpha"], written
         mods_text = (inner / "Binaries/Win64/ue4ss/Mods/mods.txt").read_text(encoding="utf-8")
         assert mods_text.index("Zulu : 1") < mods_text.index("Alpha : 1")
-        assert (inner / "Binaries/Win64/ue4ss/Mods/mods.txt").stat().st_mode & 0o222 == 0
+        assert (inner / "Binaries/Win64/ue4ss/Mods/mods.txt").stat().st_mode & 0o222
         # Every managed directory mod carries editable launcher metadata, even
         # when hotload is disabled and no tags have been assigned yet.
         alpha_root = inner / "Binaries/Win64/ue4ss/Mods/Alpha"

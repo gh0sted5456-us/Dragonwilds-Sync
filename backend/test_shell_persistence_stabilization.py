@@ -191,7 +191,7 @@ def _dedicated_manifest_first_paint() -> None:
         active = world_maintenance.list_world_configs(profile_id, "missing-server-root", True)
         assert {row["unit_key"] for row in active} == {"", "ue4ss_mod::ActualLua"}
         mod = next(row for row in active if row["unit_key"] == "ue4ss_mod::ActualLua")
-        assert mod["language"] == "lua" and mod["hotload_capable"] is True and mod["readonly"] is True
+        assert mod["language"] == "lua" and mod["hotload_capable"] is True and mod["readonly"] is False
 
         inactive = world_maintenance.list_world_configs(profile_id, "missing-server-root", False)
         assert len(inactive) == 1 and inactive[0]["unit_key"] == ""

@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.26',
-  name: 'V2.7.26 · Canonical Runtime Staging',
+  version: '2.7.27',
+  name: 'V2.7.27 · Writable Runtime & Passive Console',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.27',
+    title: 'Writable Runtime & Passive Server Console',
+    items: [
+      'Server startup repairs legacy read-only attributes across UE4SS, RuneSchema, game configuration, runtime caches, profile mod trees, and mods.txt before validation or launch.',
+      'Launcher-generated and copied configuration/mod control files remain writable for Dragonwilds, UE4SS, RuneSchema, operators, and external editors.',
+      'Starting, restarting, updating, or Quick Launching a server collects runtime output without navigating to, repainting, opening, maximizing, or focusing the console.',
+      'The embedded Unified Console detaches into a lightweight themed native host without booting a second full application renderer; DOM updates are batched to prevent repaint storms.',
+    ],
+  }, {
     version: '2.7.26',
     title: 'Canonical Runtime Staging & Smart Multi-Mod Import',
     items: [

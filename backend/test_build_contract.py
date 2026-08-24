@@ -161,7 +161,8 @@ def main():
     assert "DRAGONWILDS_SYNC_PYTHON" in text
     assert "win-unpacked.tmp" in text
     assert "Clear-ReleaseDirectory" in text
-    assert "Removing the previous release directory so only this build remains" in text
+    assert "Removing previous release artifacts (locked running portables are preserved)" in text
+    assert "Preserving locked release artifact" in text
     assert "Release contains portable EXE artifacts only" in text
 
     # Ubuntu is an additional release-candidate path; Windows portable remains

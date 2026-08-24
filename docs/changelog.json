@@ -3,6 +3,18 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.27",
+      "title": "Dragonwilds Sync V2.7.27",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "Server launch repairs legacy read-only attributes across UE4SS, RuneSchema, game configuration, runtime caches, profile mod trees, and mods.txt.",
+        "Launcher-generated and copied runtime configuration remains writable for the game, loaders, operators, and external editors.",
+        "Starting, restarting, updating, or Quick Launching a server no longer navigates to, repaints, opens, maximizes, or focuses the Runtime Console.",
+        "The embedded Unified Console detaches into a lightweight themed native host without booting another full application renderer, and DOM updates are batched to avoid repaint storms."
+      ]
+    },
+    {
       "version": "2.7.26",
       "title": "Dragonwilds Sync V2.7.26",
       "date": "2026-08-23",

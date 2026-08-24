@@ -59,13 +59,11 @@ def _resolve_inside(root: Path, relative: str) -> Path:
 
 
 def _set_readonly(path: Path, readonly: bool) -> None:
+    """Compatibility shim: Dragonwilds Sync no longer creates read-only files."""
     if not path.exists():
         return
     current = path.stat().st_mode
-    if readonly:
-        path.chmod(current & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)
-    else:
-        path.chmod(current | stat.S_IWUSR)
+    path.chmod(current | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
 
 
 def is_readonly(path: Path) -> bool:
@@ -460,7 +458,7 @@ def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[
                 continue
             results.append({
                 "relative_path": rel, "name": Path(rel).name, "size": int((meta or {}).get("size") or 0),
-                "managed": True, "readonly": True, "language": str(meta.get("language") or _language(Path(rel))),
+                "managed": True, "readonly": False, "language": str(meta.get("language") or _language(Path(rel))),
                 "scope": str(meta.get("scope") or "managed"), "unit_key": str(meta.get("unit_key") or ""),
                 "origin": str(meta.get("origin") or meta.get("scope") or "managed"),
                 "origin_label": str(meta.get("origin_label") or "Managed World Files"),
@@ -558,7 +556,7 @@ def copy_world_config(profile_id: str, server_root: str, relative_path: str, act
         if counter > 10_000:
             raise RuntimeError("Could not choose an available copy name.")
     shutil.copy2(source, destination)
-    _set_readonly(destination, True)
+    _set_readonly(destination, False)
     rel = destination.relative_to(layout.game_root).as_posix()
     manifest = _read_manifest(profile_id)
     meta = _file_metadata(profile_id, layout, destination, manifest)
@@ -607,13 +605,16 @@ def update_world_config_policy(profile_id: str, server_root: str, relative_path:
 
 
 def release_world_config(profile_id: str, server_root: str, relative_path: str, active: bool) -> dict:
-    """Legacy compatibility boundary: managed files cannot be released writable.
-
-    Alpha 11 makes Dragonwilds Sync the write authority for supported World
-    configuration. Edits use Monaco + atomic replace; the file remains read-only
-    to outside tools.
-    """
-    raise PermissionError("Launcher-managed World configuration remains read-only outside Dragonwilds Sync.")
+    """Legacy compatibility endpoint that now repairs writable access."""
+    if not active:
+        raise RuntimeError("Activate this World before releasing its live configuration/mod files.")
+    layout = resolve_server_layout(server_root)
+    target = _resolve_inside(layout.game_root, relative_path)
+    _require_core_config(layout, target)
+    if not target.is_file():
+        raise FileNotFoundError("World file was not found.")
+    _set_readonly(target, False)
+    return {"ok": True, "relative_path": relative_path, "readonly": False, "path": str(target)}
 
 
 def client_sync_server_configs(profile_id: str, server_root: str) -> list[dict]:

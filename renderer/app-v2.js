@@ -1329,7 +1329,12 @@
       catch(error){toast('Log export failed',error.message,'error');}
     });
     win.querySelectorAll('[data-runtime-console-tab]').forEach((button)=>button.addEventListener('click',()=>{const selected=button.dataset.runtimeConsoleTab||'console';win.querySelectorAll('[data-runtime-console-tab]').forEach((item)=>{item.classList.toggle('primary',item===button);item.classList.toggle('ghost',item!==button);});win.querySelectorAll('[data-runtime-console-panel]').forEach((panel)=>{panel.hidden=panel.dataset.runtimeConsolePanel!==selected;});if(selected==='runeschema'&&!runeschemaOverviewLoaded)loadRuneschemaOverview();}));
-    win.querySelector('#detach-runtime-console')?.addEventListener('click',async()=>{try{const result=await window.dragonwilds.openDetachedWindow?.({route:'server-console',title:`${world.name||'World'} Runtime Console`,width:1240,height:800,context:{selectedServerWorldId:world.id}});if(result?.id&&!inlineHost)closeDesktopWindow(win);}catch(error){toast('Runtime Console could not detach',error.message,'error');}});
+    win.querySelector('#detach-runtime-console')?.addEventListener('click',async()=>{
+      try{
+        const opened=await popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`,width:1240,height:800});
+        if(!opened)throw new Error('The lightweight native console host is unavailable.');
+      }catch(error){toast('Runtime Console could not detach',error.message,'error');}
+    });
     let runeschemaOverviewLoaded=false,runeschemaSettingsDraft=null,runeschemaLoadOrderEntries=null;
     const rsGet=(obj,path)=>path.split('.').reduce((node,key)=>(node&&typeof node==='object')?node[key]:undefined,obj);
     const rsSet=(obj,path,value)=>{const keys=path.split('.');let node=obj;for(let i=0;i<keys.length-1;i++){if(typeof node[keys[i]]!=='object'||node[keys[i]]===null)node[keys[i]]={};node=node[keys[i]];}node[keys[keys.length-1]]=value;};
@@ -1495,14 +1500,12 @@
 
   function launchRuntimeConsoleForWorld(world) {
     if (!world?.id) return null;
-    // Launch activity belongs to the selected World's management workspace.
-    // A native window is an explicit operator choice, never a launch side
-    // effect, which prevents duplicate renderers and polling loops.
+    // Runtime output is collected by the backend whether or not its view is
+    // mounted. Starting/restarting a World must never steal focus, navigate to
+    // Console, or create another renderer. Opening or detaching the console is
+    // an explicit operator action.
     state.selectedServerWorldId=world.id;
-    state.route='server-detail';
-    state.serverTab='console';
-    render();
-    return root.querySelector('[data-world-runtime-console]');
+    return null;
   }
 
   function startPlayerPolling(world = activeServerWorld()) {
@@ -6030,7 +6033,7 @@
     root.querySelector('#clear-world-selectors')?.addEventListener('click',async()=>{try{state.data=await api.invoke('world.browser.settings',{content_type:'all',game_mode:'all',host_type:'all',tag:'all',page:1});render();}catch(error){toast('Could not clear selectors',error.message,'error');}});
     root.querySelectorAll('[data-private-view]').forEach((button)=>button.addEventListener('click',()=>{state.privateWorldView=button.dataset.privateView==='list'?'list':'cards';render();}));
     root.querySelectorAll('[data-server-view]').forEach((button)=>button.addEventListener('click',()=>{state.serverWorldView=button.dataset.serverView==='list'?'list':'cards';render();}));
-    root.querySelectorAll('[data-server-launch]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverLaunch));if(!world||button.disabled)return;launchRuntimeConsoleForWorld(world);try{const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, launching and verifying the dedicated server, then publishing Sync…',()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);state.selectedServerWorldId=world.id;state.route='server-detail';state.serverTab='console';render();toast('World launched',response.result?.pid?`Dedicated process PID ${response.result.pid} · Sync endpoint active`:'Sync endpoint active.','success');}catch(error){toast('Launch failed',error.message,'error');}}));
+    root.querySelectorAll('[data-server-launch]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverLaunch));if(!world||button.disabled)return;launchRuntimeConsoleForWorld(world);try{const response=await runOperation(`Starting ${world.name||'hosted World'}`,'Preparing files, launching and verifying the dedicated server, then publishing Sync…',()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('World launched',response.result?.pid?`Dedicated process PID ${response.result.pid} · Sync endpoint active`:'Sync endpoint active.','success');}catch(error){toast('Launch failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-stop]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverStop));if(!world||button.disabled)return;if(!await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server'))return;const label=button.textContent;button.disabled=true;button.textContent='Stopping…';try{const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('World stopped',`PID ${response.result?.stopped_pid||'—'} · ${response.result?.stop_method||'verified'}`,'success');}catch(error){button.disabled=false;button.textContent=label;toast('Stop failed',error.message,'error');}}));
     root.querySelectorAll('[data-server-manage]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverManage));if(!world)return;stopPlayerPolling();pushNavigation();state.selectedServerWorldId=world.id;state.serverTab='overview';state.route='server-detail';render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{}));}));
     root.querySelectorAll('[data-world-launch]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=browserWorlds().find((w)=>String(w.id)===String(button.dataset.worldLaunch));if(world)playWorld(world);}));
@@ -7101,6 +7104,14 @@
     window.dragonwilds.updateManagedDialog({id,html:modal?.innerHTML||'',theme:document.body.dataset.theme||'dark',fields:dialogFields(win)}).catch(()=>{});
   }
 
+  function scheduleManagedDialogSync(win, delay=24) {
+    if(!win || win.dataset?.disposed==='1' || win._managedSyncTimer)return;
+    win._managedSyncTimer=setTimeout(()=>{
+      win._managedSyncTimer=null;
+      if(win.isConnected)syncManagedDialog(win);
+    },Math.max(0,Number(delay)||0));
+  }
+
   function findManagedDialogTarget(win, descriptor={}) {
     if(!win) return null;
     if(descriptor.id) return win.querySelector(`#${CSS.escape(String(descriptor.id))}`);
@@ -7133,7 +7144,7 @@
       }catch(error){console.error('Managed dialog event bridge failed',error);}
       // Action clicks receive the complete local field snapshot first. Avoid
       // replacing the popup DOM on every keystroke or checkbox change.
-      if(payload.type==='click'){setTimeout(()=>syncManagedDialog(win),0);setTimeout(()=>syncManagedDialog(win),80);}
+      if(payload.type==='click'){scheduleManagedDialogSync(win,0);setTimeout(()=>scheduleManagedDialogSync(win,0),80);}
     });
     window.dragonwilds?.onManagedDialogClosed?.((payload)=>{
       const id=String(payload.id||'');const win=managedDialogShadows.get(id);if(!win)return;
@@ -7144,6 +7155,7 @@
   function disposeDesktopWindow(win) {
     if(!win || win.dataset?.disposed==='1')return;
     win.dataset.disposed='1';
+    if(win._managedSyncTimer){clearTimeout(win._managedSyncTimer);win._managedSyncTimer=null;}
     try{win._managedObserver?.disconnect?.();}catch(_){}
     try{win._dwsDispose?.();}catch(error){console.warn('Window cleanup failed',error);}
   }
@@ -7154,7 +7166,7 @@
     shadow.dataset.nativeDialogId=id;
     shadow.className='managed-dialog-shadow';shadow.style.display='none';
     managedDialogShadows.set(id,shadow);
-    const observer=new MutationObserver(()=>syncManagedDialog(shadow));
+    const observer=new MutationObserver(()=>scheduleManagedDialogSync(shadow));
     observer.observe(shadow,{subtree:true,childList:true,attributes:true,characterData:true});
     shadow._managedObserver=observer;
     syncManagedDialog(shadow);syncInternalTaskbar();

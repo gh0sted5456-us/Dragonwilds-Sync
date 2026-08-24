@@ -340,7 +340,7 @@ def _file_metadata(profile_id: str, layout, file: Path, manifest: dict) -> dict:
     }
 
 
-def lock_world_configs(profile_id: str, server_root: str) -> dict:
+def hydrate_world_configs(profile_id: str, server_root: str) -> dict:
     """Adopt supported live game/loader core configs without locking them.
 
     UE4SS, RuneSchema, and Dragonwilds all update their own root configuration
@@ -412,12 +412,17 @@ def lock_world_configs(profile_id: str, server_root: str) -> dict:
     return {"ok": True, "locked": 0, "adopted": adopted}
 
 
+def lock_world_configs(profile_id: str, server_root: str) -> dict:
+    """Backward-compatible name for the writable configuration hydrator."""
+    return hydrate_world_configs(profile_id, server_root)
+
+
 def list_world_configs(profile_id: str, server_root: str, active: bool) -> list[dict]:
     layout = resolve_server_layout(server_root)
     manifest = _read_manifest(profile_id)
     results: list[dict] = []
     if active and layout.game_root.exists():
-        lock_world_configs(profile_id, server_root)
+        hydrate_world_configs(profile_id, server_root)
         manifest = _read_manifest(profile_id)
         roots = [
             (layout.config_dir, True),

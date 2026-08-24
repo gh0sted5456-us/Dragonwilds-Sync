@@ -7261,7 +7261,10 @@
   }
 
   window.__DWSYNC_DESKTOP_WINDOWS__={
-    open:(html,options={})=>showModal(html,{native:false,detachable:false,...options}),
+    // Extension surfaces (placard mod inventories, Trash, version managers,
+    // and future application popups) are native free windows by default.
+    open:(html,options={})=>showModal(html,{...options,native:true}),
+    openEmbedded:(html,options={})=>showModal(html,{...options,native:false,detachable:false}),
     openNative:(html,options={})=>showModal(html,{...options,native:true}),
     close:(win)=>requestCloseDesktopWindow(win),
     focus:(win)=>{if(!win)return;win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();},

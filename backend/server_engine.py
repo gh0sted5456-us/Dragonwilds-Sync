@@ -26,7 +26,8 @@ from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
 from secret_store import SecretStore, is_reference
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
-                            ensure_base_runtimes, runtime_prerequisite_status, gather_server_hardware_stats,
+                            ensure_base_runtimes, runtime_prerequisite_status, capture_authoritative_runtimes,
+                            ensure_server_runtime_writable, gather_server_hardware_stats, RUNTIME_MUTATION_LOCK,
                             install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
                             install_runeschema_zip, install_ue4ss_zip, local_ip_guess, detect_public_ip,
                             scan_mod_units, generate_server_mods_txt, _bundled_app_resource, BUNDLED_UE4SS_RESOURCE)
@@ -762,6 +763,38 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
     return {**result, "changed": True, "source": selected.get("name")}
 
 
+def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root: str) -> dict:
+    """Reassert the World's runtime choices after any generic self-heal.
+
+    UE4SS is applied first because a complete UE4SS deployment can carry a
+    RuneSchema baseline. RuneSchema is deliberately last, making the World's
+    named flavor authoritative. Once both live installs are proven, refresh
+    the app-owned repair libraries so a later self-heal cannot resurrect an
+    older machine-wide flavor.
+    """
+    with RUNTIME_MUTATION_LOCK:
+        ue4ss = _apply_profile_ue4ss(profile_id, profile, game_root)
+        current = load_server_profile(profile_id) or profile
+        runeschema = _apply_profile_runeschema(profile_id, current, game_root)
+        cache_warning = ""
+        try:
+            capture_authoritative_runtimes(
+                game_root,
+                # UE4SS is much larger than RuneSchema. Rebuild its repair
+                # copy only when this assertion actually changed the selected
+                # UE4SS build; RuneSchema is refreshed every time because the
+                # historical stale-flavor cache had no trustworthy identity.
+                refresh_ue4ss=bool(ue4ss.get("changed")),
+                refresh_runeschema=True,
+            )
+        except OSError as exc:
+            # The live selected runtimes are already verified at this point. A
+            # transient cache-write collision must not invalidate that safe live
+            # install; the next stopped-server assertion will retry the refresh.
+            cache_warning = f"Runtime repair-library refresh deferred: {type(exc).__name__}: {exc}"
+    return {"ue4ss": ue4ss, "runeschema": runeschema, "cache_warning": cache_warning}
+
+
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
     owner_id = str(cfg.get("owner_id", "")).strip(); server_name = str(cfg.get("server_name", "")).strip(); world_name = str(cfg.get("world_name", "")).strip()
     admin_pass = _runtime_secret(cfg.get("admin_pass", ""), "admin password")
@@ -1232,8 +1265,8 @@ class ServerEngine:
                 pass
 
     @staticmethod
-    def _runtime_log_tail(game_root: str, started_at: float | None, limit: int = 5) -> list[dict]:
-        """Recover useful final lines when a Windows UE process emits no stdout."""
+    def _runtime_log_tail(game_root: str, started_at: float | None, limit: int = 24) -> list[dict]:
+        """Recover diagnostic and final lines when a UE process emits no stdout."""
         if not game_root:
             return []
         try:
@@ -1251,14 +1284,29 @@ class ServerEngine:
                     continue
             if not recent:
                 return []
-            path = max(recent, key=lambda item: item.stat().st_mtime)
-            with path.open("rb") as stream:
-                stream.seek(0, 2); length = stream.tell(); stream.seek(max(0, length - 131072))
-                text = stream.read().decode("utf-8", errors="replace")
-            lines = [line.strip() for line in text.splitlines() if line.strip()][-max(1, int(limit)) :]
-            return [{"ts": path.stat().st_mtime, "source": f"log:{path.name}",
-                     "level": "error" if any(token in line.casefold() for token in ("error", "fatal", "exception", "failed")) else "info",
-                     "message": f"[{path.name}] {line[:3800]}"} for line in lines]
+            diagnostic_tokens = ("fatal", "error:", "exception", "failed", "ensure condition", "critical", "requestexitwithstatus")
+            tail_entries: list[dict] = []
+            diagnostic_entries: list[dict] = []
+            # UE4SS.log often contains the native fault while RSDragonwilds.log
+            # contains only the later generic RequestExit lines. Inspect both
+            # instead of trusting whichever file closed last.
+            for path in sorted(recent, key=lambda item: item.stat().st_mtime, reverse=True)[:4]:
+                with path.open("rb") as stream:
+                    stream.seek(0, 2); length = stream.tell(); stream.seek(max(0, length - 262144))
+                    log_text = stream.read().decode("utf-8", errors="replace")
+                lines = [line.strip() for line in log_text.splitlines() if line.strip()]
+                stamp = path.stat().st_mtime
+                def entry(line: str) -> dict:
+                    level = "error" if any(token in line.casefold() for token in ("error", "fatal", "exception", "failed")) else "info"
+                    return {"ts": stamp, "source": f"log:{path.name}", "level": level,
+                            "message": f"[{path.name}] {line[:3800]}"}
+                tail_entries.extend(entry(line) for line in lines[-3:])
+                hits = [line for line in lines if any(token in line.casefold() for token in diagnostic_tokens)]
+                diagnostic_entries.extend(entry(line) for line in hits[-max(1, int(limit)) :])
+            # Keep diagnostic rows last: dedicated_exit_error deliberately
+            # prefers them, while the full Runtime Console still receives the
+            # bounded shutdown tails for sequence context.
+            return (tail_entries + diagnostic_entries)[-max(12, int(limit) * 4) :]
         except (OSError, ValueError):
             return []
 
@@ -1351,6 +1399,18 @@ class ServerEngine:
                     self._event("Base runtime self-heal: " + "; ".join(repaired.get("repaired") or []), "ok")
                 if not repaired.get("ok"):
                     self._event("Base runtime attention required: " + "; ".join(repaired.get("errors") or []), "warn")
+                    return
+                try:
+                    selected = _assert_profile_runtime_selection(profile_id, profile, root)
+                except Exception as exc:
+                    self._event(f"Selected runtime re-apply after self-heal failed: {type(exc).__name__}: {exc}", "warn")
+                    return
+                if selected["ue4ss"].get("changed"):
+                    self._event(f"Re-applied the selected UE4SS build after self-heal ({selected['ue4ss'].get('source') or 'repository build'}).", "ok")
+                if selected["runeschema"].get("changed"):
+                    self._event(f"Re-applied the selected RuneSchema flavor after self-heal ({selected['runeschema'].get('source') or 'selected flavor'}).", "ok")
+                if selected.get("cache_warning"):
+                    self._event(selected["cache_warning"], "warn")
             info = check_ue4ss_update()
             if not info or not info.get("download_url"):
                 return
@@ -1516,6 +1576,9 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        selected = _assert_profile_runtime_selection(incoming_id, incoming, incoming_root)
+        if selected.get("cache_warning"):
+            self._event(selected["cache_warning"], "warn")
         save = restore_profile_savegame(incoming_id, incoming_exe) if incoming_exe else False
         self.active_profile_id = incoming_id; STATE.active_profile_id = incoming_id
         if marker_root:
@@ -1523,10 +1586,10 @@ class ServerEngine:
         locked = 0
         if incoming_root and Path(incoming_root).exists():
             try:
-                from world_maintenance import lock_world_configs
-                locked = int(lock_world_configs(incoming_id, incoming_root).get("locked") or 0)
+                from world_maintenance import hydrate_world_configs
+                locked = int(hydrate_world_configs(incoming_id, incoming_root).get("locked") or 0)
             except Exception as exc:
-                self._event(f"Managed config lock pass needs attention: {type(exc).__name__}: {exc}", "warn")
+                self._event(f"Writable config hydration needs attention: {type(exc).__name__}: {exc}", "warn")
         self._event(f"Activated hosted World {incoming.get('name') or incoming_id}; restored {mods} mod file(s), {configs} setting file(s); locked {locked} managed config file(s).", "ok")
         return {"mods_restored": mods, "configs_restored": configs, "save_restored": save, "managed_configs_locked": locked}
 
@@ -1572,7 +1635,10 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        save_server_profile(profile_id, profile)
+        selected = _assert_profile_runtime_selection(profile_id, profile, root)
+        if selected.get("cache_warning"):
+            self._event(selected["cache_warning"], "warn")
+        profile = load_server_profile(profile_id) or profile
         units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generate_server_mods_txt(profile_id, root, units=units)
@@ -1590,12 +1656,16 @@ class ServerEngine:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        ue4ss_applied = _apply_profile_ue4ss(profile_id, profile, root)
+        selected = _assert_profile_runtime_selection(profile_id, profile, root)
+        ue4ss_applied = selected["ue4ss"]
         if ue4ss_applied.get("changed"):
             self._event(f"Applied the selected UE4SS build ({ue4ss_applied.get('source') or 'repository build'}).", "ok")
-        official = _apply_profile_runeschema(profile_id, profile, root)
+        official = selected["runeschema"]
         if official.get("changed"):
             self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
+        if selected.get("cache_warning"):
+            self._event(selected["cache_warning"], "warn")
+        profile = load_server_profile(profile_id) or profile
         units = scan_mod_units(profile_id, root)
         if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generated = generate_server_mods_txt(profile_id, root, units=units)
@@ -1717,21 +1787,14 @@ class ServerEngine:
         exe = find_dedicated_server_exe(profile)
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
         cfg = profile.setdefault("dedicated_config", {})
-        try:
-            ue4ss_applied = _apply_profile_ue4ss(profile_id, profile, self._profile_root(profile))
-            if ue4ss_applied.get("changed"):
-                self._event(f"Applied the selected UE4SS build ({ue4ss_applied.get('source') or 'repository build'}).", "ok")
-            official = _apply_profile_runeschema(profile_id, profile, self._profile_root(profile))
-            if official.get("changed"):
-                self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
-        except PermissionError as exc:
-            # A custom/manual override is optional runtime policy. If an orphaned
-            # process still owns its DLL, retain the last complete runtime and do
-            # not turn that update collision into a launch blocker.
-            current = runtime_prerequisite_status(self._profile_root(profile))
-            if not current.get("ok"):
-                raise
-            self._event(f"RuneSchema flavor update deferred; launching with the last complete runtime. {exc}", "warn")
+        selected = _assert_profile_runtime_selection(profile_id, profile, self._profile_root(profile))
+        if selected["ue4ss"].get("changed"):
+            self._event(f"Applied the selected UE4SS build ({selected['ue4ss'].get('source') or 'repository build'}).", "ok")
+        if selected["runeschema"].get("changed"):
+            self._event(f"Applied the complete RuneSchema core ({selected['runeschema'].get('source') or selected['runeschema'].get('filename') or 'selected flavor'}).", "ok")
+        if selected.get("cache_warning"):
+            self._event(selected["cache_warning"], "warn")
+        profile = load_server_profile(profile_id) or profile
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;
@@ -1751,13 +1814,16 @@ class ServerEngine:
             raise RuntimeError("DedicatedServer.ini verification failed for the executable-resolved path: "
                                + str(verification.get("exact_path") or "unresolved") + detail)
         save_server_profile(profile_id, profile)
-        console_policy = apply_ue4ss_console_policy(profile_id)
-        self._event(console_policy.get("reason") or "Applied runtime console policy.", "ok")
+        # Console visibility is an explicit operator preference. Starting a
+        # World must never rewrite UE4SS-settings.ini or appear to close a
+        # native console; the server.console.policy action owns that mutation.
+        console_policy = ue4ss_console_policy_status(profile_id)
+        self._event("Preserved the installed UE4SS console settings for launch; use Runtime Console → Settings to change them.", "ok")
         try:
-            from world_maintenance import lock_world_configs
-            lock_world_configs(profile_id, self._profile_root(profile))
+            from world_maintenance import hydrate_world_configs
+            hydrate_world_configs(profile_id, self._profile_root(profile))
         except Exception as exc:
-            self._event(f"Managed config lock pass needs attention: {type(exc).__name__}: {exc}", "warn")
+            self._event(f"Writable config hydration needs attention: {type(exc).__name__}: {exc}", "warn")
         command = [exe, "-log"]
         launch_env = None
         if sys.platform.startswith("linux") and Path(exe).suffix.casefold() == ".exe":
@@ -1768,6 +1834,9 @@ class ServerEngine:
         PLAYER_SERVICE.reset_session()
         with self._event_lock:
             self.process_output = []
+        writable = ensure_server_runtime_writable(self._profile_root(profile))
+        if writable.get("writable_repaired"):
+            self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
         self.proc = popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
         if self.proc.stdout is not None:
             threading.Thread(target=self._capture_process_output, args=(self.proc.stdout,), daemon=True, name="Dragonwilds-Dedicated-Console").start()
@@ -1790,6 +1859,7 @@ class ServerEngine:
         if pid is None:
             PLAYER_BRIDGE.stop(); PLAYER_SERVICE.reset_session()
             self._restore_computer_profile(); result = self.status(); result["stop_verified"] = True; result["stop_method"] = "already-stopped"; return result
+        self._event(f"Explicit launcher stop requested for dedicated server PID {pid}.", "warn")
         method = _terminate_process_tree(int(pid), timeout=10.0)
         if self.proc and self.proc.pid == pid:
             try: self.proc.wait(timeout=1)

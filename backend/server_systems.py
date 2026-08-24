@@ -3319,7 +3319,7 @@ def _ensure_server_loader_library_from_bundle() -> dict:
     return {"ok": True, "installed": True, "source": str(source), "copied": True}
 
 
-def _set_runtime_tree_writable(root: Path, writable: bool) -> None:
+def _set_runtime_tree_writable(root: Path, writable: bool) -> int:
     """Toggle owner write permission for launcher-owned runtime files.
 
     Windows maps this to the file read-only attribute. This lets the launcher
@@ -3327,12 +3327,31 @@ def _set_runtime_tree_writable(root: Path, writable: bool) -> None:
     """
     if not root.exists():
         return
+    changed = 0
     for path in [root, *root.rglob("*")]:
         try:
             mode = path.stat().st_mode
             path.chmod(mode | stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH)
+            changed += int(path.stat().st_mode != mode)
         except OSError:
             continue
+    return changed
+
+
+def ensure_server_runtime_writable(game_root: str) -> dict:
+    """Clear inherited read-only attributes immediately before server launch.
+
+    Profile snapshots and ZIP sources may have been created by an older Sync
+    release that protected managed files. Materialization uses metadata-
+    preserving copies, so this final boundary deliberately repairs every live
+    loader, mod, and game-config surface after all copying has finished.
+    """
+    layout = resolve_server_layout(game_root)
+    changed = 0
+    for root in (layout.win64_dir, layout.paks_mods_dir, layout.config_dir):
+        changed += _set_runtime_tree_writable(root, True)
+    changed += _set_runtime_configs_writable(layout.ue4ss_core_dir, layout.runeschema_root)
+    return {"ok": True, "game_root": str(layout.game_root), "writable_repaired": changed}
 
 
 def _set_runtime_configs_writable(*roots: Path) -> int:
@@ -3450,7 +3469,12 @@ def runtime_prerequisite_status(game_root: str) -> dict:
     }
 
 
-def capture_authoritative_runtimes(game_root: str) -> dict:
+def capture_authoritative_runtimes(
+    game_root: str,
+    *,
+    refresh_ue4ss: bool = False,
+    refresh_runeschema: bool = False,
+) -> dict:
     """Seed the app-owned repair library from an already-good live install.
 
     This lets Dragonwilds Sync adopt an existing manually-installed UE4SS /
@@ -3464,7 +3488,7 @@ def capture_authoritative_runtimes(game_root: str) -> dict:
     # Capture UE4SS first. The Dragonwilds dedicated-server version.dll is not
     # an upstream UE4SS file and is captured *after* any UE4SS library rebuild
     # so a clean-cache adoption can never erase it.
-    if status["ue4ss"]["installed"] and not status["ue4ss"]["library_ready"]:
+    if status["ue4ss"]["installed"] and (refresh_ue4ss or not status["ue4ss"]["library_ready"]):
         shutil.rmtree(UE4SS_RUNTIME_DIR, ignore_errors=True)
         UE4SS_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         if layout.ue4ss_bootstrap.is_file():
@@ -3488,7 +3512,7 @@ def capture_authoritative_runtimes(game_root: str) -> dict:
         UE4SS_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         shutil.copy2(layout.server_loader, UE4SS_RUNTIME_DIR / SERVER_LOADER_FILENAME)
         captured["server_loader_files"] += 1
-    if status["runeschema"]["installed"] and not status["runeschema"]["library_ready"]:
+    if status["runeschema"]["installed"] and (refresh_runeschema or not status["runeschema"]["library_ready"]):
         shutil.rmtree(RUNESCHEMA_RUNTIME_DIR, ignore_errors=True)
         RUNESCHEMA_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         for src in layout.runeschema_root.rglob("*"):

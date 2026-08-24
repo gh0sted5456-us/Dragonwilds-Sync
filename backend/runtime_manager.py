@@ -19,8 +19,11 @@ def dedicated_exit_error(runtime: dict | None) -> RuntimeError:
         code_detail = f" exit code {raw_code} (0x{unsigned:08X})"
     else:
         code_detail = " an unavailable exit code"
-    output = [str(row.get("message") or "").strip() for row in (runtime.get("process_output") or [])[-3:]
-              if isinstance(row, dict) and str(row.get("message") or "").strip()]
+    rows = [row for row in (runtime.get("process_output") or [])
+            if isinstance(row, dict) and str(row.get("message") or "").strip()]
+    errors = [row for row in rows if str(row.get("level") or "").casefold() == "error"]
+    chosen = errors[-4:] if errors else rows[-4:]
+    output = [str(row.get("message") or "").strip() for row in chosen]
     output_detail = f" Last runtime output: {' | '.join(output)[:1200]}" if output else " No final game-console or current runtime-log line was emitted."
     return RuntimeError(f"The dedicated server exited with{code_detail} before Sync publication completed.{output_detail}")
 

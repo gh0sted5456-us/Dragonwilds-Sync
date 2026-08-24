@@ -89,7 +89,7 @@ def _fake_server_module(root: Path):
     share = SimpleNamespace(serving=False)
     share.status = lambda: {"serving": bool(share.serving)}
     share.stop = lambda: setattr(share, "serving", False)
-    counts = {"runtime": 0, "scan": 0, "generate": 0, "restore_save": 0,
+    counts = {"runtime": 0, "runtime_assert": 0, "scan": 0, "generate": 0, "restore_save": 0,
               "restore_mods": 0, "restore_config": 0, "snap_mods": 0, "snap_config": 0, "snap_save": 0}
     profile = {"id": "world-a", "name": "World A", "mods_txt_mode": "auto",
                "dedicated_config": {"owner_id": "owner", "port": 7777}}
@@ -142,6 +142,11 @@ def _fake_server_module(root: Path):
         ServerEngine=FakeEngine, SHARE=share, STATE=SimpleNamespace(active_profile_id="world-a"),
         SERVER_INFRASTRUCTURE_UE4SS={"runeschema", "mods.txt"},
         ensure_base_runtimes=runtime, scan_mod_units=scan, generate_server_mods_txt=generate,
+        _assert_profile_runtime_selection=lambda *_args: (
+            counts.__setitem__("runtime_assert", counts["runtime_assert"] + 1)
+            or {"ue4ss": {"changed": False}, "runeschema": {"changed": False}, "cache_warning": ""}
+        ),
+        ensure_server_runtime_writable=lambda *_args: {"ok": True, "writable_repaired": 0},
         resolve_server_layout=lambda _root: layout, _find_running_server_pid=lambda _exe="": None,
         load_server_profile=lambda profile_id: profile if profile_id == "world-a" else (prior if profile_id == "world-b" else {}),
         find_dedicated_server_exe=lambda _profile: str(exe), server_install_config=lambda: {"owner_id": "owner"},
@@ -165,7 +170,7 @@ def test_prepare_preserves_live_save_for_current_profile_and_publish_reuses_scan
         fake, counts, share, _profile, layout = _fake_server_module(root)
         write_active_world(layout.game_root, "world-a", "dedicated")
         old_maintenance = sys.modules.get("world_maintenance")
-        sys.modules["world_maintenance"] = SimpleNamespace(lock_world_configs=lambda *_a, **_k: {"locked": 1})
+        sys.modules["world_maintenance"] = SimpleNamespace(hydrate_world_configs=lambda *_a, **_k: {"locked": 0, "adopted": 1})
         try:
             phase4._install_server_pipeline(fake)
             engine = fake.ServerEngine()
@@ -173,6 +178,7 @@ def test_prepare_preserves_live_save_for_current_profile_and_publish_reuses_scan
             assert prepared["materialization_mode"] == "already_materialized"
             assert counts["restore_save"] == 0, "same-profile Start overwrote the live save"
             assert counts["runtime"] == counts["scan"] == counts["generate"] == 1
+            assert counts["runtime_assert"] == 1, "optimized Start skipped the selected runtime guard"
 
             published = engine.publish("world-a")
             assert published["prepared_scan_reused"] is True

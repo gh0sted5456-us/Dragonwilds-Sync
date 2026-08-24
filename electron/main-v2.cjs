@@ -465,7 +465,7 @@ function createManagedDialog(ownerContents, payload = {}) {
   const id = `dlg-${Date.now().toString(36)}-${(++detachedCounter).toString(36)}`;
   const width = Math.max(520, Math.min(1500, Number(payload.width || 900)));
   const height = Math.max(360, Math.min(1100, Number(payload.height || 720)));
-  const win = new BrowserWindow(windowOptions({ width, height, minWidth: 480, minHeight: 320, title, skipTaskbar: true }));
+  const win = new BrowserWindow(windowOptions({ width, height, minWidth: 480, minHeight: 320, title, skipTaskbar: false }));
   const entry = { id, window: win, title, route: 'dialog', context: {}, ownerId: owner.id, html: String(payload.html || ''), theme: String(payload.theme || 'dark') };
   managedDialogs.set(id, entry);
   detachedWindows.set(id, entry);

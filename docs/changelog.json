@@ -3,6 +3,31 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.31",
+      "title": "Dragonwilds Sync V2.7.31",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "World Start preserves UE4SS console switches; only the explicit Runtime Console setting can change native console visibility.",
+        "Failed launch notices prioritize the actual fatal/error lines instead of generic Unreal shutdown lines.",
+        "Placard mod inventories and extension popups open as independent themed Windows application windows.",
+        "Explicit launcher stop requests are recorded before process-tree termination to distinguish operator stops from game crashes.",
+        "A final pre-process writable sweep clears read-only attributes inherited from old profile snapshots or ZIP metadata."
+      ]
+    },
+    {
+      "version": "2.7.30",
+      "title": "Dragonwilds Sync V2.7.30",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "Runtime self-heal reasserts the active World's selected UE4SS build and RuneSchema flavor before scanning or launch.",
+        "Quick Launch and optimized server startup use the same strict profile-runtime guard as normal World management.",
+        "Verified selected runtimes refresh the repair library so a stale machine-wide RuneSchema cache cannot return later.",
+        "A failed selected-flavor restore blocks launch instead of silently starting against a different RuneSchema DLL."
+      ]
+    },
+    {
       "version": "2.7.29",
       "title": "Dragonwilds Sync V2.7.29",
       "date": "2026-08-23",

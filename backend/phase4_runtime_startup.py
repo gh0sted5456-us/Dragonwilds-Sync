@@ -99,6 +99,7 @@ def _sync_tree(source: str | Path, destination: str | Path, *, preserve_top=()) 
         if target.exists():
             _make_writable(target)
         shutil.copy2(src / Path(*PurePosixPath(rel).parts), target)
+        _make_writable(target)
         copied += 1
     for rel in set(dest_rows) - set(source_rows):
         pure = PurePosixPath(rel)
@@ -378,6 +379,14 @@ def _install_server_pipeline(server_engine_module) -> None:
             raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
         if runtime.get("repaired"):
             self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
+        selected = server_engine_module._assert_profile_runtime_selection(profile_id, profile, root)
+        if selected["ue4ss"].get("changed"):
+            self._event(f"Applied the selected UE4SS build ({selected['ue4ss'].get('source') or 'repository build'}).", "ok")
+        if selected["runeschema"].get("changed"):
+            self._event(f"Applied the selected RuneSchema flavor ({selected['runeschema'].get('source') or 'selected flavor'}).", "ok")
+        if selected.get("cache_warning"):
+            self._event(selected["cache_warning"], "warn")
+        profile = server_engine_module.load_server_profile(profile_id) or profile
 
         cfg = profile.setdefault("dedicated_config", {})
         launch_ready = False
@@ -393,18 +402,20 @@ def _install_server_pipeline(server_engine_module) -> None:
                 raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
             server_engine_module.write_dedicated_config(cfg, root)
             server_engine_module.save_server_profile(profile_id, profile)
-            apply_console_policy = getattr(server_engine_module, "apply_ue4ss_console_policy", None)
-            if callable(apply_console_policy):
-                policy = apply_console_policy(profile_id)
-                self._event(policy.get("reason") or "Applied runtime console policy.", "ok")
+            # The explicit Runtime Console setting owns UE4SS INI mutation.
+            # Preparing/starting a World preserves the installed switches.
+            console_status = getattr(server_engine_module, "ue4ss_console_policy_status", None)
+            if callable(console_status):
+                console_status(profile_id)
+                self._event("Preserved the installed UE4SS console settings for launch.", "ok")
             launch_ready = True
 
         locked = 0
         try:
-            from world_maintenance import lock_world_configs
-            locked = int(lock_world_configs(profile_id, root).get("locked") or 0)
+            from world_maintenance import hydrate_world_configs
+            locked = int(hydrate_world_configs(profile_id, root).get("locked") or 0)
         except Exception as exc:
-            self._event(f"Managed config lock pass needs attention: {type(exc).__name__}: {exc}", "warn")
+            self._event(f"Writable config hydration needs attention: {type(exc).__name__}: {exc}", "warn")
 
         units = original_scan(profile_id, root)
         mods_txt = {}
@@ -463,6 +474,9 @@ def _install_server_pipeline(server_engine_module) -> None:
             command, launch_env = server_engine_module.linux_windows_server_command(exe)
         elif server_engine_module.sys.platform.startswith("linux") and native_consoles:
             command.extend(["-NewConsole", f"-Port={int(cfg.get('port') or 7777)}"])
+        writable = server_engine_module.ensure_server_runtime_writable(self._profile_root(profile))
+        if writable.get("writable_repaired"):
+            self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
         self.proc = server_engine_module.popen_hidden(command, cwd=str(Path(exe).parent), env=launch_env,
                                                       stdout=server_engine_module.subprocess.PIPE,
                                                       stderr=server_engine_module.subprocess.STDOUT,

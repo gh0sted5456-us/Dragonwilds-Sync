@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.29',
-  name: 'V2.7.29 · Server Runtime Reset & Native Utilities',
+  version: '2.7.31',
+  name: 'V2.7.31 · Launch Evidence & Free Windows',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,25 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.31',
+    title: 'Launch Evidence & Free Windows',
+    items: [
+      'World Start preserves UE4SS console switches; only the explicit Runtime Console setting may change native console visibility.',
+      'Failed server launch notices prefer the actual fatal/error lines over generic Unreal shutdown lines.',
+      'Placard mod inventories and extension popups open as independent themed Windows application windows.',
+      'Explicit launcher stop requests are recorded before process-tree termination so operator stops can be distinguished from game crashes.',
+      'A final pre-process writable sweep clears read-only attributes inherited from old profile snapshots or ZIP metadata.',
+    ],
+  }, {
+    version: '2.7.30',
+    title: 'Profile Runtime Self-Heal',
+    items: [
+      'Runtime self-heal now reasserts the active World profile’s selected UE4SS build and RuneSchema flavor before scanning or launch.',
+      'Quick Launch and the optimized server-start pipeline use the same strict profile-runtime guard as normal World management.',
+      'A verified selected runtime refreshes the repair library, preventing a stale machine-wide RuneSchema cache from returning on a later repair.',
+      'A failed selected-flavor restore blocks launch instead of silently starting against a different RuneSchema DLL.',
+    ],
+  }, {
     version: '2.7.29',
     title: 'Server Runtime Reset & Native Utilities',
     items: [

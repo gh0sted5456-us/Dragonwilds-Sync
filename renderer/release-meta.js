@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.21',
-  name: 'V2.7.21 · Profile-Scoped Quick Launch',
+  version: '2.7.22',
+  name: 'V2.7.22 · Uniform Interface & Host Firewall',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '2.7.22',
+    title: 'Uniform Interface & Host Firewall',
+    items: [
+      'Shared panels, forms, buttons, tabs, headers, modals, and action groups use one consistent spacing and alignment rhythm.',
+      'Settings consolidates UE4SS, RuneSchema, and RSDW maintenance into one Runtime & Data workspace.',
+      'Navigation cleanup processes only newly inserted subtrees, reducing unnecessary repaint work.',
+      'One explicit firewall repair covers configured local/co-op gameplay, dedicated gameplay, Sync transfer, Direct Connect discovery, and enabled direct WebHost ports.',
+      'Loopback IPC, joining clients, and outbound-only WebHost tunnels never receive inbound firewall rules.',
+    ],
+  }, {
     version: '2.7.21',
     title: 'Profile-Scoped Quick Launch',
     items: [

@@ -2594,6 +2594,42 @@ def configure_server_firewall_ports(sync_ports, game_ports, *, mode: str = "manu
             "mode": mode, "rules": results}
 
 
+def configure_firewall_services(services) -> dict:
+    """Ensure one owned rule for every externally bound application service.
+
+    Callers supply already-authorized listener descriptions. Duplicate
+    service/port/program combinations are collapsed, preferring public scope
+    when any profile publishes that listener beyond the LAN.
+    """
+    precedence = {"none": 0, "tunnel": 0, "local": 1, "manual": 2, "upnp": 3}
+    selected = {}
+    for raw in services or []:
+        service = str((raw or {}).get("service") or "").strip().casefold()
+        if service not in {"pc_game", "dedicated_game", "world_sync", "sync_discovery", "webhost"}:
+            raise ValueError(f"Unsupported host firewall service: {service or 'blank'}")
+        port = int((raw or {}).get("port") or (DISCOVERY_QUERY_PORT if service == "sync_discovery" else 0))
+        if not 1 <= port <= 65535:
+            raise ValueError(f"Invalid {service} firewall port: {port}")
+        program = str((raw or {}).get("program") or "")
+        mode = str((raw or {}).get("mode") or "local").strip().casefold()
+        instance_id = str((raw or {}).get("instance_id") or "")
+        key = (service, port, program.casefold())
+        current = selected.get(key)
+        if current is None or precedence.get(mode, -1) > precedence.get(str(current.get("mode") or ""), -1):
+            selected[key] = {"service": service, "port": port, "program": program,
+                             "mode": mode, "instance_id": instance_id}
+    results = []
+    for row in sorted(selected.values(), key=lambda item: (item["service"], item["port"], item["program"].casefold())):
+        results.append(apply_firewall_spec(firewall_spec(
+            row["service"], row["port"], program=row["program"], mode=row["mode"],
+            instance_id=row["instance_id"],
+        )))
+    return {"ok": bool(results) and all(row.get("ok") for row in results),
+            "rule_count": len(results), "rules": results,
+            "ports": [{"service": row.get("service"), "protocol": row.get("protocol"),
+                       "port": row.get("port"), "mode": row.get("mode")} for row in results]}
+
+
 
 def download_steamcmd(steamcmd_dir: str, progress=None) -> dict:
     root = Path(steamcmd_dir); root.mkdir(parents=True, exist_ok=True)

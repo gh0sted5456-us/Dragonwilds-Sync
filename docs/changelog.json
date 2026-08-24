@@ -3,6 +3,19 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "2.7.22",
+      "title": "Dragonwilds Sync V2.7.22",
+      "date": "2026-08-23",
+      "status": "stable",
+      "highlights": [
+        "Shared panels, forms, buttons, tabs, headers, modals, and action groups now use one consistent spacing and alignment rhythm.",
+        "UE4SS, RuneSchema, and RSDW maintenance live together in the Runtime & Data workspace.",
+        "Incremental navigation cleanup avoids unnecessary whole-application rescans and repaint work.",
+        "Host-wide firewall repair covers every configured gameplay, Sync transfer, Direct Connect discovery, and enabled direct WebHost listener.",
+        "Loopback IPC, joining clients, and outbound-only tunnels never receive inbound firewall rules."
+      ]
+    },
+    {
       "version": "2.7.21",
       "title": "Dragonwilds Sync V2.7.21",
       "date": "2026-08-23",

@@ -144,7 +144,7 @@ def firewall_spec(service: str, port: int, *, program: str, mode: str,
     direction = "Outbound" if service == "client_outbound" else "Inbound"
     protocol = "UDP" if service in {"pc_game", "dedicated_game", "sync_discovery"} else "TCP"
     public = mode in {"manual", "upnp"}
-    suffix = f" - {instance_id}" if instance_id and service in {"dedicated_game", "world_sync"} else ""
+    suffix = f" - {instance_id}" if instance_id and service in {"pc_game", "dedicated_game", "world_sync"} else ""
     return {
         "required": True, "group": FIREWALL_GROUP,
         "display_name": RULE_NAMES[service] + suffix,

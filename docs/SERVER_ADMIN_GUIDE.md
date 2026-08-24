@@ -52,9 +52,12 @@ the router forward is unnecessary when both machines are on the local network.
 **Manual forwarding** must create separate entries for Sync TCP and discovery
 UDP; do not configure TCP+UDP on `27051`. **Automatic UPnP** creates and verifies
 both mappings when Sync publication uses UPnP. The application's Repair Firewall
-action likewise creates one scoped TCP rule per active Sync transfer port and one
-host-wide UDP `8422` discovery rule. Reserve the host's LAN address before relying
-on router mappings, and verify remote access from outside the LAN.
+action is host-wide: it creates a scoped rule for every configured local/co-op or
+dedicated gameplay UDP port, every Sync transfer TCP port, one shared UDP `8422`
+discovery rule, and the enabled direct WebHost TCP port. Loopback IPC, joining
+clients, and outbound-only tunnel traffic never receive inbound rules. Reserve the
+host's LAN address before relying on router mappings, and verify remote access from
+outside the LAN.
 
 ## WebHost and Remote Admin
 

@@ -12,6 +12,9 @@ class NetworkingPolicyTests(unittest.TestCase):
     def test_instance_game_ports_increment_without_changing_protocol(self):
         self.assertEqual([effective_game_port(i) for i in range(1, 5)], [7777, 7778, 7779, 7780])
         self.assertEqual(manual_router_rule("dedicated_game", effective_game_port(3), "192.168.1.50")["protocol"], "UDP")
+        first = firewall_spec("pc_game", 7777, program="C:/Game/client.exe", mode="local", instance_id="local-1")
+        second = firewall_spec("pc_game", 7778, program="C:/Game/client.exe", mode="local", instance_id="local-2")
+        self.assertNotEqual(first["display_name"], second["display_name"])
 
     def test_ports_are_bounded(self):
         self.assertEqual(valid_port(27051), 27051)
@@ -67,6 +70,29 @@ class NetworkingPolicyTests(unittest.TestCase):
         self.assertEqual(result["sync_discovery_port"], 8422)
         self.assertEqual([(row["protocol"], row["port"]) for row in discovery], [("UDP", 8422)])
         self.assertEqual([(row["protocol"], row["port"]) for row in transfers], [("TCP", 27051), ("TCP", 27052)])
+
+    def test_host_wide_firewall_covers_every_external_listener(self):
+        services = [
+            {"service": "pc_game", "port": 7777, "program": "C:/Game/client.exe", "mode": "local"},
+            {"service": "dedicated_game", "port": 7778, "program": "C:/Server/server.exe", "mode": "manual", "instance_id": "server-2"},
+            {"service": "world_sync", "port": 27051, "program": "C:/Runtime/backend.exe", "mode": "local", "instance_id": "local-1"},
+            {"service": "world_sync", "port": 27051, "program": "C:/Runtime/backend.exe", "mode": "manual", "instance_id": "server-1"},
+            {"service": "sync_discovery", "port": 8422, "program": "C:/Runtime/backend.exe", "mode": "manual"},
+            {"service": "webhost", "port": 27080, "program": "C:/Runtime/backend.exe", "mode": "manual"},
+        ]
+        def accepted(spec, **_kwargs):
+            return {**spec, "ok": True, "changed": True}
+        with patch.object(server_systems, "apply_firewall_spec", side_effect=accepted):
+            result = server_systems.configure_firewall_services(services)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["rule_count"], 5)
+        self.assertEqual({(row["service"], row["protocol"], row["port"]) for row in result["ports"]}, {
+            ("pc_game", "UDP", 7777), ("dedicated_game", "UDP", 7778),
+            ("world_sync", "TCP", 27051), ("sync_discovery", "UDP", 8422),
+            ("webhost", "TCP", 27080),
+        })
+        sync = next(row for row in result["rules"] if row["service"] == "world_sync")
+        self.assertEqual((sync["mode"], sync["profiles"], sync["remote_address"]), ("manual", "Any", "Any"))
 
     def test_cloudflare_requires_no_public_firewall_rule(self):
         spec = firewall_spec("webhost", 27080, program="C:/Runtime/backend.exe", mode="tunnel")

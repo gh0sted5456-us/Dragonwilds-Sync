@@ -46,3 +46,38 @@
 .runtime-build-manager{display:grid;gap:16px;min-height:0}.runtime-build-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}.runtime-build-list{display:grid;border:1px solid var(--border);border-radius:12px;overflow:auto;max-height:470px;background:rgba(4,8,10,.36)}
 .runtime-build-row{display:grid;grid-template-columns:34px minmax(135px,1fr) minmax(170px,1.25fr) minmax(145px,.9fr) 90px minmax(150px,auto);align-items:center;gap:12px;padding:11px 13px;border-bottom:1px solid var(--border);min-width:850px}.runtime-build-row:last-child{border-bottom:0}.runtime-build-row.active{background:rgba(84,190,143,.1);box-shadow:inset 3px 0 #62c99b}.runtime-build-row>span{min-width:0}.runtime-build-row>span:nth-child(2),.runtime-build-row>span:nth-child(3){display:grid;gap:3px}.runtime-build-row b,.runtime-build-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.runtime-build-head{position:sticky;top:0;z-index:2;background:var(--panel,#111718);font-size:11px;letter-spacing:.08em;text-transform:uppercase}.runtime-build-actions{display:flex;gap:7px;justify-content:flex-end}.runtime-build-active{color:#74d6aa!important}.runtime-build-lock{color:#d8b968}.runtime-build-toolbar .checkbox-row.compact{padding:0;border:0;background:none;min-height:auto}
 @media(max-width:900px){.runtime-build-summary{align-items:stretch;flex-direction:column}.runtime-build-toolbar{align-items:stretch;flex-direction:column}.runtime-build-toolbar>.header-actions{width:100%}}
+
+/* Final shared GUI rhythm. This file loads last so every application and
+   subapplication uses the same spacing, control height, alignment, and wrap. */
+:root{--dws-space-1:6px;--dws-space-2:10px;--dws-space-3:14px;--dws-space-4:18px;--dws-control-height:38px;--dws-radius:12px}
+.content{padding:var(--dws-space-4)!important}
+.page-header{align-items:flex-start!important;gap:var(--dws-space-3)!important;margin-bottom:var(--dws-space-4)!important}
+.page-header>div:first-child,.panel-header>div:first-child{min-width:0}
+.page-header h1,.panel-header h2,.settings-section h2{margin-top:0;margin-bottom:0}
+.page-subtitle,.panel-subtitle{display:block;margin-top:4px;line-height:1.45;overflow-wrap:anywhere}
+.panel-grid,.metric-grid,.module-status-grid,.network-port-matrix,.health-evidence-grid{gap:var(--dws-space-3)!important}
+.panel,.settings-section,.server-shell-card{border-radius:var(--dws-radius)!important}
+.panel-header{min-height:58px;padding:var(--dws-space-3) var(--dws-space-4)!important;gap:var(--dws-space-3)!important}
+.panel-body{padding:var(--dws-space-4)!important}
+.panel-body>*:first-child{margin-top:0}.panel-body>*:last-child{margin-bottom:0}
+.header-actions,.reference-links,.server-install-actions,.modal-footer,.footer-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.header-actions,.reference-links,.server-install-actions{justify-content:flex-end}
+.btn{display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;min-height:var(--dws-control-height);padding:8px 13px;border-radius:9px;line-height:1.2;text-align:center}
+.btn.compact-btn,.compact-btn{min-height:30px;padding:5px 9px}
+.field,.select,input.field,select.field,select.select{box-sizing:border-box;min-height:var(--dws-control-height);padding:8px 11px;border-radius:9px}
+.toggle{flex:0 0 auto}
+.status-pill{display:inline-flex;align-items:center;justify-content:center;min-height:24px;box-sizing:border-box;text-align:center}
+.settings-section>h2{min-height:58px;display:flex;align-items:center}
+.settings-section>.settings-row+.settings-row{border-top:1px solid color-mix(in srgb,var(--border) 72%,transparent)}
+.settings-row .field,.settings-row .select,.settings-row .btn{max-width:100%}
+.settings-control-cluster{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;width:100%}
+.form-group,.form-grid>label{display:grid;align-content:start;gap:6px;min-width:0}
+.form-grid>label>span,.form-group>span{min-height:14px;line-height:1.35}
+.modal-header,.modal-footer{padding:var(--dws-space-3) var(--dws-space-4)!important;gap:var(--dws-space-3)!important}
+.modal-body{padding:var(--dws-space-4)!important}
+.modal-footer{justify-content:space-between}
+.settings-nav button>span{flex:0 0 20px;text-align:center}
+.settings-nav button{justify-content:flex-start!important;gap:9px!important;text-align:left!important}
+.settings-subnav button,.server-tabs button,.world-source-tabs button,.rsdw-section-tabs button{min-height:var(--dws-control-height)!important}
+@media(max-width:1050px){.settings-nav button{justify-content:center!important;text-align:center!important}.header-actions,.reference-links,.server-install-actions{justify-content:flex-start}}
+@media(max-width:700px){.content{padding:12px!important}.panel-header,.modal-header,.modal-footer{padding:12px!important}.panel-body,.modal-body{padding:14px!important}.header-actions>.btn,.reference-links>.btn,.server-install-actions>.btn{flex:1 1 150px}.settings-control-cluster{justify-content:flex-start}}

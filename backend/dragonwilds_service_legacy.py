@@ -76,7 +76,7 @@ from server_engine import player_history_payload
 from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
 
 from server_systems import (
-    SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports,
+    SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
     delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
     ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
@@ -1203,6 +1203,47 @@ def _server_ports() -> tuple[list[int], list[int]]:
     sync_ports = [int((p.get("sync_config") or {}).get("port") or 27051) for p in profiles] or [27051]
     game_ports = [int((p.get("dedicated_config") or {}).get("port") or 7777) for p in profiles] or [7777]
     return sync_ports, game_ports
+
+
+def _application_firewall_services(state: dict) -> list[dict]:
+    """Describe every stable inbound port the configured host can open."""
+    application = state.setdefault("application", {})
+    _install_dir, _steamcmd_dir, dedicated_exe = _server_install_paths(state)
+    client_exe = str(application.get("game_exe") or "")
+    if not client_exe and str(application.get("game_dir") or "").strip():
+        client_exe = str(resolve_client_layout(application.get("game_dir")).game_exe)
+    services = []
+    has_sync_listener = False
+    for index, profile in enumerate(list_server_profiles(), 1):
+        dedicated = profile.get("dedicated_config") or {}
+        sync = profile.get("sync_config") or {}
+        game_mode = str((dedicated.get("networking") or {}).get("publication_mode") or "manual")
+        sync_mode = str((sync.get("networking") or {}).get("publication_mode") or "manual")
+        services.append({"service": "dedicated_game", "port": int(dedicated.get("port") or 7777),
+                         "program": dedicated_exe, "mode": game_mode, "instance_id": f"server-{index}"})
+        services.append({"service": "world_sync", "port": int(sync.get("port") or 27051),
+                         "program": backend_program(), "mode": sync_mode, "instance_id": f"server-{index}"})
+        has_sync_listener = True
+    for index, profile in enumerate(list_private_profiles(), 1):
+        broadcast = profile.get("broadcast_config") or {}
+        if broadcast.get("lan_broadcast") is False:
+            continue
+        mode = str((broadcast.get("networking") or {}).get("publication_mode") or broadcast.get("publication_mode") or "local")
+        services.append({"service": "pc_game", "port": int(broadcast.get("game_port") or 7777),
+                         "program": client_exe, "mode": mode, "instance_id": f"local-{index}"})
+        services.append({"service": "world_sync", "port": int(broadcast.get("sync_port") or 27051),
+                         "program": backend_program(), "mode": mode, "instance_id": f"local-{index}"})
+        has_sync_listener = True
+    if has_sync_listener:
+        sync_modes = [str(row.get("mode") or "local") for row in services if row.get("service") == "world_sync"]
+        discovery_mode = "manual" if any(mode in {"manual", "upnp"} for mode in sync_modes) else "local"
+        services.append({"service": "sync_discovery", "port": DEFAULT_SYNC_DISCOVERY_PORT,
+                         "program": backend_program(), "mode": discovery_mode})
+    webhost = application.get("world_directory_host") or {}
+    if webhost.get("enabled") and str(webhost.get("publication_mode") or "manual") not in {"none", "tunnel"}:
+        services.append({"service": "webhost", "port": int(webhost.get("port") or 27080),
+                         "program": backend_program(), "mode": str(webhost.get("publication_mode") or "manual")})
+    return services
 
 
 def _server_install_paths(state: dict) -> tuple[str, str, str]:
@@ -5523,6 +5564,16 @@ def handle(method: str, params: dict) -> object:
         return configure_server_firewall_ports(sync_ports, game_ports,
                                                mode=str(params.get("publication_mode") or "manual"),
                                                game_program=server_exe)
+
+    if method == "application.firewall.repair_all":
+        services = _application_firewall_services(state)
+        if not services:
+            return {"ok": True, "rule_count": 0, "rules": [], "ports": [],
+                    "message": "No inbound host listeners are configured."}
+        result = configure_firewall_services(services)
+        result["message"] = (f"Verified {result['rule_count']} application-owned firewall rule(s)."
+                             if result.get("ok") else "One or more host firewall rules need attention.")
+        return result
 
     if method in ("security.defender.status", "server.security.defender.status", "client.security.defender.status"):
         return defender_status()

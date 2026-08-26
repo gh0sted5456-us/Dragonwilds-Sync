@@ -2382,6 +2382,7 @@ class ShareServer:
                     "tls_password_fallback": bool(STATE.allow_tls_password_fallback),
                     "lan_trust": bool(STATE.lan_trust_enabled),
                     "password_required": bool(STATE.manifest.get("password_required")),
+                    "runtime_stack": STATE.manifest.get("runtime_stack") or {},
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
                     "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "classification", "client_required", "version", "author", "tags") if row.get(key) not in (None, "")}
                                     for row in (STATE.manifest.get("mod_summary") or []) if isinstance(row, dict)],

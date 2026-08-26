@@ -330,6 +330,20 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
     release_delta = abs(server_latest_ts - client_latest_ts) if server_latest_ts is not None and client_latest_ts is not None else None
     release_dates_align = (release_delta <= 72 * 3600) if release_delta is not None else None
 
+    def runtime_channel(kind: str, source: str) -> str:
+        explicit = str(install.get(f"{kind}_channel") or (profile or {}).get(f"{kind}_channel") or "").strip().casefold()
+        if explicit in {"baseline", "stable", "experimental"}:
+            return explicit
+        lowered = source.casefold()
+        if "experimental" in lowered or "prerelease" in lowered:
+            return "experimental"
+        if lowered.startswith("bundled://") or "baseline" in lowered:
+            return "baseline"
+        return "stable"
+
+    ue_source = str(install.get("ue4ss_source_url") or "")
+    rs_source = " ".join((str(install.get("runeschema_source_url") or ""), str(install.get("runeschema_source_name") or "")))
+
     return {
         "dragonwilds_sync": {
             "version": DRAGONWILDS_SYNC_VERSION,
@@ -358,6 +372,7 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
             "checked_at": max(float(server_latest.get("checked_at") or 0), float(client_latest.get("checked_at") or 0)) or None,
         },
         "ue4ss": {
+            "channel": runtime_channel("ue4ss", ue_source),
             "installed_version": ue_installed,
             "latest_version": ue_latest_version,
             "current": (ue_installed == ue_latest_version) if ue_installed and ue_latest_version else None,
@@ -365,6 +380,7 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
             "checked_at": ue_latest.get("checked_at"),
         },
         "runeschema": {
+            "channel": runtime_channel("runeschema", rs_source),
             "installed_at": rs_installed_at,
             "source_name": str(install.get("runeschema_source_name") or (profile or {}).get("runeschema_source_name") or ""),
             "version_basis": "installed-date",

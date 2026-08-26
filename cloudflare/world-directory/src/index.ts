@@ -19,6 +19,11 @@ type HeartbeatPayload = {
   rules?: string[];
   badges?: string[];
   public_connect?: { host?: string; port?: number };
+  host_os?: string;
+  host_os_label?: string;
+  password_required?: boolean;
+  mod_summary?: Array<Record<string, unknown>>;
+  runtime_stack?: Record<string, unknown>;
 };
 
 const encoder = new TextEncoder();
@@ -93,6 +98,45 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+function cleanChannel(value: unknown): string {
+  const channel = cleanText(value, 24).toLowerCase();
+  return ["baseline", "stable", "experimental", "release-candidate"].includes(channel) ? channel : "unknown";
+}
+
+function cleanModSummary(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
+    .slice(0, 128).map((row) => ({
+      key: cleanText(row.key, 100),
+      name: cleanText(row.name, 120),
+      loader: cleanText(row.loader ?? row.section ?? row.category, 40).toLowerCase(),
+      classification: cleanText(row.classification ?? row.distribution, 40).toLowerCase(),
+      client_required: row.client_required === true || row.distribution === "client_required" || row.classification === "player_required",
+      version: cleanText(row.version, 64),
+    })).filter((row) => row.name || row.key);
+}
+
+function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
+  const stack = input.runtime_stack && typeof input.runtime_stack === "object" ? input.runtime_stack : {};
+  const ue4ss = stack.ue4ss && typeof stack.ue4ss === "object" ? stack.ue4ss as Record<string, unknown> : {};
+  const runeschema = stack.runeschema && typeof stack.runeschema === "object" ? stack.runeschema as Record<string, unknown> : {};
+  const sync = stack.dragonwilds_sync && typeof stack.dragonwilds_sync === "object" ? stack.dragonwilds_sync as Record<string, unknown> : {};
+  const game = stack.dragonwilds && typeof stack.dragonwilds === "object" ? stack.dragonwilds as Record<string, unknown> : {};
+  return {
+    host_os: cleanText(input.host_os, 40).toLowerCase(),
+    host_os_label: cleanText(input.host_os_label, 100),
+    password_required: input.password_required === true,
+    mod_summary: cleanModSummary(input.mod_summary),
+    runtime_channels: {
+      ue4ss: cleanChannel(ue4ss.channel),
+      runeschema: cleanChannel(runeschema.channel),
+      sync: cleanChannel(sync.channel),
+    },
+    server_current: typeof game.server_current === "boolean" ? game.server_current : null,
+    server_cl_status: cleanText(game.server_cl_status, 24).toLowerCase(),
+  };
 }
 
 function registrationRetentionSeconds(env: Env): number {
@@ -260,6 +304,7 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   const status = payload.status || "online";
   const connectHost = payload.public_connect?.host || "";
   const connectPort = payload.public_connect?.port || null;
+  const metadataJson = JSON.stringify(filterMetadata(parsed));
 
   await env.DB.batch([
     env.DB.prepare(`
@@ -267,8 +312,8 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
         world_id, world_name, description, region, version, status,
         players_current, players_max, tags_json, mods_json, rules_json,
         badges_json, public_connect_host, public_connect_port,
-        is_listed, last_seen, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        is_listed, last_seen, updated_at, metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
       ON CONFLICT(world_id) DO UPDATE SET
         world_name = excluded.world_name,
         description = excluded.description,
@@ -283,6 +328,7 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
         badges_json = excluded.badges_json,
         public_connect_host = excluded.public_connect_host,
         public_connect_port = excluded.public_connect_port,
+        metadata_json = excluded.metadata_json,
         last_seen = excluded.last_seen,
         updated_at = excluded.updated_at
     `).bind(
@@ -302,6 +348,7 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
       connectPort,
       now,
       now,
+      metadataJson,
     ),
     env.DB.prepare(`
       INSERT OR IGNORE INTO heartbeat_history
@@ -364,11 +411,22 @@ function parseJsonArray(value: unknown): string[] {
   }
 }
 
+function parseJsonObject(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number): Record<string, unknown> {
   const lastSeen = Number(row.last_seen || 0);
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastSeen);
   const isOffline = !lastSeen || age > offlineAfterSeconds;
 
+  const metadata = parseJsonObject(row.metadata_json);
   return {
     world_id: row.world_id,
     world_name: row.world_name,
@@ -384,6 +442,13 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     mods: parseJsonArray(row.mods_json),
     rules: parseJsonArray(row.rules_json),
     badges: parseJsonArray(row.badges_json),
+    host_os: metadata.host_os || "",
+    host_os_label: metadata.host_os_label || "",
+    password_required: metadata.password_required === true,
+    mod_summary: Array.isArray(metadata.mod_summary) ? metadata.mod_summary : [],
+    runtime_channels: metadata.runtime_channels || {},
+    server_current: typeof metadata.server_current === "boolean" ? metadata.server_current : null,
+    server_cl_status: metadata.server_cl_status || "unknown",
     public_connect: row.public_connect_host
       ? {
           host: row.public_connect_host,

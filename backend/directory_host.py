@@ -92,10 +92,15 @@ def _platform_icon_bytes(name: str) -> bytes:
     """Serve the bundled colored platform/community marks used by the public catalog."""
     aliases = {"epic": "epicgames", "nexus": "nexusmods", "psn": "playstation"}
     allowed = {"steam", "epic", "epicgames", "nintendo", "playstation", "psn", "xbox", "discord", "nexus", "nexusmods", "windows", "linux", "github", "paypal", "remote-login", "ue4ss", "runeschema", "paks"}
-    key = str(name or "").casefold().removesuffix(".svg")
+    requested = Path(str(name or "")).name.casefold()
+    suffix = Path(requested).suffix
+    key = Path(requested).stem
     if key not in allowed:
         return b""
-    filename = aliases.get(key, key) + ".svg"
+    if suffix == ".webp" and key not in {"ue4ss", "runeschema"}:
+        return b""
+    extension = ".webp" if suffix == ".webp" else ".svg"
+    filename = aliases.get(key, key) + extension
     bundle_root = getattr(sys, "_MEIPASS", "")
     candidates = []
     if bundle_root:
@@ -105,7 +110,8 @@ def _platform_icon_bytes(name: str) -> bytes:
     for candidate in candidates:
         try:
             payload = candidate.read_bytes()
-            if payload.lstrip().startswith(b"<svg"):
+            if ((extension == ".svg" and payload.lstrip().startswith(b"<svg"))
+                    or (extension == ".webp" and payload.startswith(b"RIFF") and payload[8:12] == b"WEBP")):
                 return payload
         except OSError:
             continue
@@ -1184,9 +1190,11 @@ class DirectoryHost:
                     self._send(icon, "image/webp", cors=False,
                                extra_headers={"Cache-Control": "public, max-age=604800, immutable"}); return
                 if path.startswith("/assets/platforms/"):
-                    icon = _platform_icon_bytes(path.rsplit("/", 1)[-1])
+                    asset_name = path.rsplit("/", 1)[-1]
+                    icon = _platform_icon_bytes(asset_name)
                     if not icon: self._json({"error": "platform icon unavailable"}, 404, cors=False); return
-                    self._send(icon, "image/svg+xml; charset=utf-8", cors=False,
+                    content_type = "image/webp" if asset_name.casefold().endswith(".webp") else "image/svg+xml; charset=utf-8"
+                    self._send(icon, content_type, cors=False,
                                extra_headers={"Cache-Control": "public, max-age=604800, immutable"}); return
                 if path.startswith("/assets/distros/"):
                     icon = _distro_icon_bytes(path.rsplit("/", 1)[-1])

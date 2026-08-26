@@ -103,7 +103,7 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'data-tab="console"' in portal
             assert b'dws-remote-workspace-script' in portal
             assert b'Server retained' in portal and b'Pushed to clients' in portal
-            assert b'/assets/platforms/ue4ss.svg' in portal and b'/assets/platforms/runeschema.svg' in portal
+            assert b'/assets/platforms/ue4ss.webp' in portal and b'/assets/platforms/runeschema.webp' in portal
             assert b'mod_files' in portal and b'mod_file_open' in portal and b'mod_file_save' in portal
             assert b'Item Builder' in portal and b'dws-item-categories' in portal
             assert b'/api/v1/admin/item-icon/' in directory_host.Path(directory_host.__file__).with_name('dragonwilds_service_legacy.py').read_bytes()

@@ -1169,6 +1169,45 @@ def ensure_world_shape(payload: dict, existing: dict | None = None) -> dict:
     return base
 
 
+def _hydrate_verified_discovery_route(payload: dict) -> dict:
+    """Promote the endpoint already verified by LAN/direct discovery.
+
+    Persist its contacted endpoint before the Connected World is first
+    rendered so an immediate test cannot observe a half-hydrated profile and
+    report that no internal/external IP exists.
+    """
+    result = deepcopy(payload)
+    shared = result.get("shared") if isinstance(result.get("shared"), dict) else {}
+    if not bool(shared.get("fingerprint_verified")):
+        return result
+    connection = result.setdefault("connection", {})
+    candidates = (
+        connection.get("internal_ip"), connection.get("external_ip"),
+        connection.get("endpoint"), connection.get("address"), connection.get("host"),
+        result.get("queried_ip"), result.get("ip"), result.get("host"),
+        shared.get("internal_ip"), shared.get("external_ip"),
+    )
+    raw = next((str(value).strip() for value in candidates if str(value or "").strip()), "")
+    try:
+        sync_port = int(connection.get("sync_port") or 27051)
+    except (TypeError, ValueError):
+        sync_port = 27051
+    endpoint = normalize_endpoint(raw, default_port=sync_port) if raw else None
+    if endpoint is None:
+        return result
+    try:
+        address = ipaddress.ip_address(endpoint.host)
+        private = bool(address.is_private or address.is_loopback or address.is_link_local)
+    except ValueError:
+        private = str(connection.get("preference") or "").lower() == "internal"
+    route = "internal" if private else "external"
+    if not str(connection.get(f"{route}_ip") or "").strip():
+        connection[f"{route}_ip"] = endpoint.host
+    connection["last_successful_route"] = route
+    connection["last_successful_address"] = endpoint.authority
+    return result
+
+
 
 
 def _ensure_server_install_migrated(state: dict) -> None:
@@ -3966,6 +4005,8 @@ def handle(method: str, params: dict) -> object:
         payload.pop("_compact", None)
         if method == "world.discovery.add" and not bool((payload.get("shared") or {}).get("fingerprint_verified")):
             raise ValueError("A discovered World must have a verified identity fingerprint before it can be saved.")
+        if method == "world.discovery.add":
+            payload = _hydrate_verified_discovery_route(payload)
         payload.setdefault("credentials", {})
         payload["credentials"].setdefault("source", "manual")
         client = state.setdefault("client", {})

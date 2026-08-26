@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import socket
 from pathlib import Path
 
 import local_world
@@ -20,7 +21,40 @@ def _mkdir_mod(root: Path, name: str, *, enabled: bool = False) -> Path:
     return mod
 
 
+def _free_port() -> int:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+    finally:
+        sock.close()
+
+
 def main() -> None:
+    # Runtime Workers import server_systems directly, without the full desktop
+    # adapter graph. The retained publisher must therefore enforce host-only
+    # tooling on its own, even when a stale profile says player_required.
+    with tempfile.TemporaryDirectory() as native_td:
+        old_publish_dir = ss.PUBLISH_DIR
+        share = ss.ShareServer()
+        try:
+            ss.PUBLISH_DIR = Path(native_td) / "published"
+            tooling = ss.ModUnit("RSDWTools", "ue4ss_mod", classification="player_required")
+            share.publish(
+                "worker-world", [tooling], "secret", "", _free_port(), broadcast=False,
+                profile_override={"id": "worker-world", "name": "Worker World"},
+                persist_profile=False,
+            )
+            assert not any("rsdwtools" in str(row.get("path") or "").casefold()
+                           for row in ss.STATE.manifest.get("files") or [])
+            assert not any(str(row.get("name") or "").casefold() == "rsdwtools"
+                           for row in ss.STATE.manifest.get("mod_summary") or [])
+            assert "RSDWTools" not in (ss.STATE.manifest.get("client_ue4ss_mods") or [])
+            assert share.broadcast_payload()["password_required"] is True
+        finally:
+            share.stop()
+            ss.PUBLISH_DIR = old_publish_dir
+
     install_mod_taxonomy_adapters()
 
     # Registry installation extends every retained profile/runtime ownership set.
@@ -35,6 +69,12 @@ def main() -> None:
     assert is_parity_payload("PersistentDirectConnectIP", "ue4ss_mod") is False
     assert is_parity_payload("RSDWTools", "ue4ss_mod") is False
     assert is_parity_payload("ActualUserMod", "ue4ss_mod") is True
+    forced_tooling = ss.ModUnit("RSDWTools", "ue4ss_mod", classification="player_required")
+    forced_devkit = ss.ModUnit("RSDWDevKit", "ue4ss_mod", classification="player_required")
+    assert ss.client_distribution_allowed_unit(forced_tooling) is False
+    assert ss.client_distribution_allowed_unit(forced_devkit) is False
+    assert sync_engine.is_server_only_sync_path("Binaries/Win64/ue4ss/Mods/RSDWTools/scripts/main.lua") is True
+    assert sync_engine.is_server_only_sync_path("Binaries/Win64/ue4ss/Mods/ActualUserMod/main.lua") is False
 
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)

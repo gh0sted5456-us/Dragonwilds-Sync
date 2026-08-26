@@ -59,10 +59,20 @@ def main():
         assert 'IP = ""' in config and 'PASSWORD = ""' in config
         assert "24.9.154.151" not in config and "BELTS" not in config
         assert 'TAG = "[DragonLink-Connect]"' in main_lua
-        assert 'VERSION = "0.4.2"' in main_lua
+        assert 'VERSION = "0.4.3"' in main_lua
         assert "editable:SetText(FText(value))" in main_lua
         assert 'FindAllOf, class_name' in main_lua
         assert "restored_password_objects" in main_lua
+        assert 'save_from_live_field("OnTextChanged", context_object)' in main_lua
+        assert 'mainmenu_worlds' in main_lua
+
+    assert "assets/platforms/ue4ss.webp" in renderer
+    assert "assets/platforms/runeschema.webp" in renderer
+    assert "Stable Baseline" in renderer
+    assert "runtime-stability" in renderer
+    assert "World Broadcast" in renderer and "Publish / Repair Broadcast" in renderer
+    assert "DragonLink-Connect receives one profile-scoped address/password handoff" in renderer
+    assert "LAN trust authorizes file Sync without a password" in renderer
 
     assert "const world=worlds().find" in renderer
     details_handler = renderer[renderer.index("root.querySelectorAll('[data-world-details]'"):renderer.index("const worldSearch=root.querySelector('#world-search')")]

@@ -61,13 +61,13 @@ def main():
             })
             units = ss.scan_mod_units("world", str(install))
             enabled = ss.client_ue4ss_enablement(units)
-            assert enabled == ["ClientExplicit", "RSDWTools"], enabled
+            assert enabled == ["ClientExplicit"], enabled
             bridge_unit = next(u for u in units if u.name == "RSDWTools")
-            assert bridge_unit.classification == "player_required"
+            assert bridge_unit.classification == "server_only"
             assert ss.client_ue4ss_enablement(units, "ClientExplicit : 0\nServerOnly : 1\n", "manual") == []
             client_txt = ss.build_client_mods_txt(units)
             assert "ClientExplicit : 1" in client_txt
-            assert "RSDWTools : 1" in client_txt
+            assert "RSDWTools" not in client_txt
             assert "ClientAuto" not in client_txt and "RuneSchema" not in client_txt and "ServerOnly" not in client_txt
 
             server_result = ss.generate_server_mods_txt("world", str(install))

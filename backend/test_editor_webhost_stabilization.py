@@ -103,8 +103,8 @@ def main() -> None:
     assert b'data-tab="maintenance"' in portal
     assert b"function renderMaintenance()" in portal
     assert b"function workspaceSignature" in portal and b"load('changed')" in portal
-    assert b'/assets/platforms/ue4ss.svg' in portal
-    assert b'/assets/platforms/runeschema.svg' in portal
+    assert b'/assets/platforms/ue4ss.webp' in portal
+    assert b'/assets/platforms/runeschema.webp' in portal
     assert b"grid-template-rows:82px minmax(30px,auto) 16px" in portal
     assert b"grid-template-columns:repeat(auto-fill,minmax(126px,1fr))" in portal
     assert b"@media(max-width:1180px)" in portal
@@ -129,12 +129,13 @@ def main() -> None:
         with urllib.request.urlopen(status["local_url"] + "/health", timeout=3.0) as response:
             assert response.status == 200
             assert "https://raw.githubusercontent.com" in str(response.headers.get("Content-Security-Policy") or "")
-        for icon_name in ("ue4ss.svg", "runeschema.svg"):
+        for icon_name in ("ue4ss.webp", "runeschema.webp"):
             with urllib.request.urlopen(status["local_url"] + "/assets/platforms/" + icon_name, timeout=3.0) as response:
                 assert response.status == 200
-                assert response.headers.get_content_type() == "image/svg+xml"
+                assert response.headers.get_content_type() == "image/webp"
                 assert "max-age=604800" in str(response.headers.get("Cache-Control") or "")
-                assert response.read().lstrip().startswith(b"<svg")
+                payload = response.read()
+                assert payload.startswith(b"RIFF") and payload[8:12] == b"WEBP"
     finally:
         host.stop()
 

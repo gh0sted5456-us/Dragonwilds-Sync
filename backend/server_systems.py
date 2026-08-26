@@ -171,6 +171,15 @@ RSDW_DEVKIT_CACHE_ZIP = RSDW_DEVKIT_CACHE_DIR / "RSDWDevKit-latest.zip"
 RSDW_DEVKIT_CACHE_META = RSDW_DEVKIT_CACHE_DIR / "release.json"
 CLIENT_ONLY_ENABLE_MARKER = ".dragonwilds-sync-client-enabled"
 
+# These physical UE4SS directories are host tooling, not World parity content.
+# Keep this policy in the retained scanner/publisher itself: dedicated Worlds
+# publish from the lightweight runtime-worker process, which intentionally does
+# not initialize the full desktop adapter graph.
+SERVER_ONLY_UE4SS_MOD_NAMES = frozenset({
+    "rsdwtools", "rsdwtoolkit", "rsdw toolkit", "rsdw tool kit",
+    "rsdwdevkit", "rsdw-devkit", "rsdw devkit",
+})
+
 # Older mods predate the canonical RuntimeRole field.  Keep the compatibility
 # list deliberately narrow and sourced from our curated recommendations: these
 # mods provide player UI/input only and must never execute in a headless
@@ -183,7 +192,10 @@ _LEGACY_CLIENT_ONLY_UE4SS = {
 def user_visible_mod_unit(unit: "ModUnit") -> bool:
     """Hide shared upstream runtimes while exposing every World-owned mod."""
     return (unit.group not in {"ue4ss_core", "runeschema"}
-            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll", "rsdwtools", "dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"})
+            and unit.name.casefold() not in {
+                "mods.txt", "dwmapi.dll", *SERVER_ONLY_UE4SS_MOD_NAMES,
+                "dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip",
+            })
 RUNTIME_MUTATION_LOCK = threading.RLock()
 
 
@@ -603,6 +615,8 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
             override = overrides.get(key) or {}
             if override.get("classification") in ("player_required", "server_only"):
                 unit.classification = override["classification"]
+            if group == "ue4ss_mod" and name.casefold() in SERVER_ONLY_UE4SS_MOD_NAMES:
+                unit.classification = "server_only"
             if override.get("category") in ("permanent", "temporary"):
                 unit.category = override["category"]
             unit.source = normalize_mod_source(override.get("source"))
@@ -688,6 +702,8 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
             override = overrides.get(key) or {}
             if override.get("classification") in ("player_required", "server_only"):
                 unit.classification = override["classification"]
+            if group == "ue4ss_mod" and name.casefold() in SERVER_ONLY_UE4SS_MOD_NAMES:
+                unit.classification = "server_only"
             if override.get("category") in ("permanent", "temporary"):
                 unit.category = override["category"]
             unit.source = normalize_mod_source(override.get("source"))
@@ -765,6 +781,17 @@ def runtime_role_allows_unit(unit: ModUnit, target: str) -> bool:
     return False
 
 
+def client_distribution_allowed_unit(unit: ModUnit) -> bool:
+    """Return whether a scanned World unit may enter a client manifest.
+
+    Classification is operator-editable for ordinary mods, but it can never
+    convert host runtime infrastructure such as RSDW Tools into client payload.
+    """
+    if unit.group == "ue4ss_mod" and unit.name.casefold() in SERVER_ONLY_UE4SS_MOD_NAMES:
+        return False
+    return user_visible_mod_unit(unit) and runtime_role_allows_unit(unit, "client")
+
+
 def normalize_server_ue4ss_activation(units: list[ModUnit]) -> dict:
     """Prevent client-only self-enabled mods from bypassing server mods.txt.
 
@@ -807,7 +834,7 @@ def client_ue4ss_enablement(units: list[ModUnit], existing_text: str = "", mode:
     for unit in units:
         if unit.classification != "player_required" or unit.group != "ue4ss_mod" or not unit.is_dir:
             continue
-        if not runtime_role_allows_unit(unit, "client"):
+        if not client_distribution_allowed_unit(unit):
             continue
         if unit.name.casefold() in {"mods.txt", "dwmapi.dll", "runeschema"}:
             continue
@@ -2083,7 +2110,7 @@ def probe_server_address(address_value: str, timeout: float = 3.0) -> list[dict]
                 info["identity_error"] = "The live Sync fingerprint did not match this direct announcement."
                 continue
             for key in ("description", "classification", "audience", "platform_compatibility", "tags", "mod_badges", "mod_summary",
-                        "icon_b64", "banner_b64", "placard_background", "community", "community_rules"):
+                        "icon_b64", "banner_b64", "placard_background", "community", "community_rules", "password_required"):
                 if key in identity:
                     info[key] = identity[key]
             info["mod_count"] = len(info.get("mod_summary") or [])
@@ -2354,6 +2381,7 @@ class ShareServer:
                     "sync_tls": bool(self.tls_enabled), "tls_cert_fingerprint": str(self.tls_cert_fingerprint or ""),
                     "tls_password_fallback": bool(STATE.allow_tls_password_fallback),
                     "lan_trust": bool(STATE.lan_trust_enabled),
+                    "password_required": bool(STATE.manifest.get("password_required")),
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
                     "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "classification", "client_required", "version", "author", "tags") if row.get(key) not in (None, "")}
                                     for row in (STATE.manifest.get("mod_summary") or []) if isinstance(row, dict)],
@@ -2392,7 +2420,8 @@ class ShareServer:
         if tls_enabled:
             cert_path, key_path, tls_cert_fingerprint = _sync_tls_material(
                 profile_id, [local_ip_guess(), str(public_ip or profile.get("public_ip") or "")])
-        required = [u for u in units if u.classification == "player_required"]
+        required = [u for u in units
+                    if u.classification == "player_required" and client_distribution_allowed_unit(u)]
         security_reviews = []
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
         # Do not wipe the live transfer tree. Clients can legitimately still be
@@ -2473,8 +2502,7 @@ class ShareServer:
         # loader files (including dwmapi.dll), mods.txt, and the RuneSchema core
         # are implied prerequisites rather than user-facing "mods". Server-only
         # mod metadata remains available so clients can opt to reveal it.
-        visible_units = [u for u in units if u.group not in ("ue4ss_core", "runeschema")
-                         and u.name.lower() not in {"mods.txt", "dwmapi.dll"}]
+        visible_units = [u for u in units if user_visible_mod_unit(u)]
         summary = []
         for unit in visible_units:
             file_count, _, content_hash = unit.content_summary()

@@ -41,6 +41,10 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # the last time that particular profile was snapshotted.
 LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
 RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
+SERVER_ONLY_SYNC_UE4SS_MODS = frozenset({
+    "rsdwtools", "rsdwtoolkit", "rsdw toolkit", "rsdw tool kit",
+    "rsdwdevkit", "rsdw-devkit", "rsdw devkit",
+})
 
 
 
@@ -70,6 +74,15 @@ def safe_game_path(game_root: Path, relative: str) -> Path:
     if target != root and root not in target.parents:
         raise ConnectionError(f"Server manifest path escapes the game folder: {relative}")
     return target
+
+
+def is_server_only_sync_path(path: object) -> bool:
+    """Reject host tooling even when an older host advertises it as parity."""
+    parts = [part.casefold() for part in PurePosixPath(str(path or "").replace("\\", "/")).parts]
+    for index in range(len(parts) - 1):
+        if parts[index] == "mods" and parts[index + 1] in SERVER_ONLY_SYNC_UE4SS_MODS:
+            return True
+    return False
 
 
 def safe_path_under(root: Path, relative: str, label: str = "path") -> Path:
@@ -802,7 +815,14 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     # A new server filters before transmission. This client-side guard also
     # protects against an older/misconfigured host returning tagged entries.
     manifest["files"] = [entry for entry in (manifest.get("files") or [])
-                         if isinstance(entry, dict) and entry_allowed_for_platform(entry, client_platform)]
+                         if isinstance(entry, dict)
+                         and entry_allowed_for_platform(entry, client_platform)
+                         and not is_server_only_sync_path(entry.get("path") or entry.get("target_path"))]
+    manifest["client_ue4ss_mods"] = [name for name in (manifest.get("client_ue4ss_mods") or [])
+                                     if str(name or "").casefold() not in SERVER_ONLY_SYNC_UE4SS_MODS]
+    manifest["mod_summary"] = [row for row in (manifest.get("mod_summary") or [])
+                               if not (isinstance(row, dict)
+                                       and str(row.get("name") or "").casefold() in SERVER_ONLY_SYNC_UE4SS_MODS)]
 
     force_reset = None
     if force_complete:

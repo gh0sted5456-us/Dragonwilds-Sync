@@ -50,6 +50,22 @@ def main():
         legacy._write_world_direct_connect(game_dir, world("external", external="71.22.33.44:7900"))
         assert written["address"] == "71.22.33.44:7900", written
 
+        # A verified discovery response already contacted this exact endpoint.
+        # Persist it before the first renderer/test pass so adding a World can
+        # never transiently report that no route is configured.
+        hydrated = legacy._hydrate_verified_discovery_route({
+            "connection": {"external_ip": "24.9.154.151", "sync_port": 27051},
+            "shared": {"fingerprint_verified": True},
+        })
+        assert hydrated["connection"]["last_successful_route"] == "external", hydrated
+        assert hydrated["connection"]["last_successful_address"] == "24.9.154.151:27051", hydrated
+        hydrated_lan = legacy._hydrate_verified_discovery_route({
+            "connection": {"internal_ip": "192.168.1.164", "sync_port": 27051, "preference": "internal"},
+            "shared": {"fingerprint_verified": True},
+        })
+        assert hydrated_lan["connection"]["last_successful_route"] == "internal", hydrated_lan
+        assert hydrated_lan["connection"]["last_successful_address"] == "192.168.1.164:27051", hydrated_lan
+
         collision = {
             "client": {
                 "private_worlds": [{"id": "singleplayer"}],

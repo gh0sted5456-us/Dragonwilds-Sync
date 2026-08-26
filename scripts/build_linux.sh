@@ -27,7 +27,14 @@ if [[ "${CI:-}" == "true" ]]; then
 fi
 npm run verify
 if command -v xvfb-run >/dev/null 2>&1; then
-  xvfb-run -a npm run test:preload
+  # Hosted runners can inherit a synthetic DBUS_SESSION_BUS_ADDRESS that
+  # Chromium cannot parse. Give the sandboxed preload test a real private
+  # session bus when available; otherwise remove the invalid inherited value.
+  if command -v dbus-run-session >/dev/null 2>&1; then
+    dbus-run-session -- xvfb-run -a npm run test:preload
+  else
+    env -u DBUS_SESSION_BUS_ADDRESS xvfb-run -a npm run test:preload
+  fi
 else
   echo "[WARN] xvfb-run is unavailable; sandbox preload bridge smoke test was not run."
 fi

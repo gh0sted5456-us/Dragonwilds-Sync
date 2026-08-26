@@ -232,6 +232,71 @@ def publish_heartbeat_to_sources(payload: dict, sources: list[dict] | None) -> d
     }
 
 
+def deregister_world(world_id: str, *, directory_url: str = "", token: str = "") -> dict:
+    """Remove one launcher-owned World registration without blocking local deletion."""
+    world_id = str(world_id or "").strip().lower()
+    result = {"remote": False, "error": ""}
+    url = _directory_base_url(directory_url)
+    if not url or not world_id:
+        return result
+    raw_body = json.dumps(
+        {"world_id": world_id, "reason": "profile_deleted"},
+        separators=(",", ":"), ensure_ascii=False,
+    ).encode("utf-8")
+    timestamp = str(int(time.time()))
+    signed = sign_directory_request(raw_body, timestamp)
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "DragonwildsSync/3.0",
+        "X-DWS-Timestamp": timestamp,
+        "X-DWS-Signature": signed["signature"],
+        "X-DWS-Public-Key": signed["public_key"],
+        "X-DWS-Operator": signed["operator_fingerprint"],
+    }
+    if token:
+        headers["X-DWS-Legacy-Signature"] = hmac.new(
+            token.encode("utf-8"), timestamp.encode("ascii") + b"." + raw_body, hashlib.sha256,
+        ).hexdigest()
+    endpoint = f"{url}/api/v1/worlds/{urllib.parse.quote(world_id, safe='')}"
+    request = urllib.request.Request(endpoint, data=raw_body, method="DELETE", headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=2) as response:
+            result["remote"] = 200 <= int(response.status) < 300
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read(4096).decode("utf-8", "replace")).get("error") or exc.reason
+        except Exception:
+            detail = exc.reason
+        result["error"] = f"HTTP {exc.code}: {detail}"
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+def deregister_world_from_sources(world_id: str, sources: list[dict] | None) -> dict:
+    normalized = [row for row in normalize_directory_sources(sources) if row.get("enabled") and row.get("publish_enabled")]
+    outcomes: list[dict] = []
+    if normalized:
+        with ThreadPoolExecutor(max_workers=min(6, len(normalized))) as pool:
+            pending = {
+                pool.submit(deregister_world, world_id, directory_url=row["url"], token=row.get("publisher_token") or ""): row
+                for row in normalized
+            }
+            for future in as_completed(pending):
+                source = pending[future]
+                try:
+                    value = future.result()
+                except Exception as exc:
+                    value = {"remote": False, "error": str(exc)}
+                outcomes.append({"id": source["id"], "name": source["name"], "url": source["url"], **value})
+    return {
+        "remote": any(bool(row.get("remote")) for row in outcomes),
+        "sources": sorted(outcomes, key=lambda row: str(row.get("name") or "").casefold()),
+        "error": "; ".join(f"{row['name']}: {row.get('error')}" for row in outcomes if row.get("error")),
+    }
+
+
 def _fetch_remote(directory_url: str, timeout: float) -> list[dict]:
     original = str(directory_url or "").strip().rstrip("/")
     url = _directory_base_url(original)

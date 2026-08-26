@@ -130,4 +130,7 @@ export default {
 
     return core.fetch(request, env, ctx);
   },
+  async scheduled(controller: ScheduledController, env: any, ctx: ExecutionContext): Promise<void> {
+    if (typeof core.scheduled === 'function') await core.scheduled(controller, env, ctx);
+  },
 };

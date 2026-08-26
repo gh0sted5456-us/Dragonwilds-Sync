@@ -80,11 +80,11 @@ from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
     delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
-    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, inspect_world_mod_zip, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, RUNESCHEMA_RUNTIME_DIR,
+    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, inspect_world_mod_zip, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, world_sync_fingerprint, RUNESCHEMA_RUNTIME_DIR,
     pop_scan_warnings as pop_server_scan_warnings,
 )
 from public_worlds import discover_public_worlds, augment_with_sync_directory, fetch_lobbysup_history
-from world_directory import (discover_sync_worlds, remember_heartbeats, publish_heartbeat_to_sources,
+from world_directory import (discover_sync_worlds, remember_heartbeats, publish_heartbeat_to_sources, deregister_world_from_sources,
                              normalize_directory_sources, FINGERPRINT_RE, PROTOCOL as WORLD_SYNC_PROTOCOL)
 from directory_host import DIRECTORY_HOST, REMOTE_PERMISSION_DEFAULTS, normalize_host_config, try_upnp_mapping
 from world_classification import normalize_world_classification
@@ -6371,6 +6371,17 @@ def handle(method: str, params: dict) -> object:
         was_active = state.setdefault("server", {}).get("active_world_id") == profile_id
         if was_active and SHARE.status().get("serving"):
             SHARE.stop()
+        profile = load_server_profile(profile_id)
+        if profile:
+            try:
+                deregister_world_from_sources(
+                    world_sync_fingerprint(profile_id),
+                    _directory_sources(state["application"]["world_discovery"]),
+                )
+            except Exception:
+                # Cloud removal is best effort; an unreachable directory must
+                # never prevent the user from deleting a local Server profile.
+                pass
         delete_server_profile(profile_id)
         if was_active:
             remaining = list_server_profiles()

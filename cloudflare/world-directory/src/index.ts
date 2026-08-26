@@ -3,6 +3,7 @@ interface Env {
   WORLD_SECRETS_JSON?: string;
   OFFLINE_AFTER_SECONDS?: string;
   HISTORY_RETENTION_DAYS?: string;
+  REGISTRATION_RETENTION_DAYS?: string;
 }
 
 type HeartbeatPayload = {
@@ -92,6 +93,19 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   let diff = 0;
   for (let i = 0; i < a.length; i += 1) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+function registrationRetentionSeconds(env: Env): number {
+  return clampInt(env.REGISTRATION_RETENTION_DAYS, 30, 1, 365) * 86400;
+}
+
+async function purgeStaleRegistrations(env: Env, now = Math.floor(Date.now() / 1000)): Promise<void> {
+  const cutoff = now - registrationRetentionSeconds(env);
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM heartbeat_history WHERE world_id IN (SELECT world_id FROM worlds WHERE last_seen < ?)").bind(cutoff),
+    env.DB.prepare("DELETE FROM worlds WHERE last_seen < ?").bind(cutoff),
+    env.DB.prepare("DELETE FROM world_publishers WHERE last_seen < ?").bind(cutoff),
+  ]);
 }
 
 function decodeBase64(value: string): Uint8Array | null {
@@ -226,6 +240,9 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
     return json({ error: "world_id_and_world_name_required" }, 400);
   }
 
+  // Expired ownership must be removed before authentication so a World that has
+  // been offline for the full retention window can register cleanly again.
+  await purgeStaleRegistrations(env, nowSeconds);
   const publisher = await authenticatePublisher(request, env, timestamp, rawBody, payload.world_id);
   if (!publisher.ok) return publisher.response;
 
@@ -306,6 +323,37 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   });
 }
 
+async function handleDeregister(request: Request, env: Env, pathWorldId: string): Promise<Response> {
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (contentLength > 4096) return json({ error: "payload_too_large" }, 413);
+  const timestamp = request.headers.get("x-dws-timestamp") || "";
+  const timestampSeconds = Number(timestamp);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestampSeconds) || Math.abs(now - timestampSeconds) > 300) {
+    return json({ error: "stale_or_invalid_timestamp" }, 401);
+  }
+  const rawBody = await request.text();
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(rawBody) as Record<string, unknown>;
+  } catch {
+    return json({ error: "invalid_json" }, 400);
+  }
+  const worldId = cleanText(pathWorldId, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  const bodyWorldId = cleanText(parsed.world_id, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  if (!worldId || bodyWorldId !== worldId) return json({ error: "world_id_mismatch" }, 400);
+
+  await purgeStaleRegistrations(env, now);
+  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId);
+  if (!publisher.ok) return publisher.response;
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM heartbeat_history WHERE world_id = ?").bind(worldId),
+    env.DB.prepare("DELETE FROM worlds WHERE world_id = ?").bind(worldId),
+    env.DB.prepare("DELETE FROM world_publishers WHERE world_id = ?").bind(worldId),
+  ]);
+  return json({ ok: true, world_id: worldId, deregistered_at: now });
+}
+
 function parseJsonArray(value: unknown): string[] {
   if (typeof value !== "string") return [];
   try {
@@ -367,11 +415,12 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
 
 async function collectSyncWorlds(env: Env): Promise<Array<Record<string, unknown>>> {
   const offlineAfter = clampInt(env.OFFLINE_AFTER_SECONDS, 1800, 60, 86400);
+  const registrationCutoff = Math.floor(Date.now() / 1000) - registrationRetentionSeconds(env);
   const result = await env.DB.prepare(`
     SELECT * FROM worlds
-    WHERE is_listed = 1
+    WHERE is_listed = 1 AND last_seen >= ?
     ORDER BY last_seen DESC, world_name COLLATE NOCASE ASC
-  `).all<Record<string, unknown>>();
+  `).bind(registrationCutoff).all<Record<string, unknown>>();
 
   const worlds = (result.results || []).map((row) => publicWorld(row, offlineAfter));
   worlds.sort((a, b) => {
@@ -436,6 +485,11 @@ export default {
       return listWorlds(env);
     }
 
+    if (request.method === "DELETE" && url.pathname.startsWith("/api/v1/worlds/")) {
+      const worldId = decodeURIComponent(url.pathname.slice("/api/v1/worlds/".length));
+      return handleDeregister(request, env, worldId);
+    }
+
     if (request.method === "GET" && url.pathname.startsWith("/api/v1/worlds/")) {
       const worldId = decodeURIComponent(url.pathname.slice("/api/v1/worlds/".length));
       return getWorld(env, worldId);
@@ -446,5 +500,8 @@ export default {
     }
 
     return json({ error: "not_found" }, 404, request.method === "GET" ? publicCorsHeaders() : {});
+  },
+  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
+    await purgeStaleRegistrations(env);
   },
 };

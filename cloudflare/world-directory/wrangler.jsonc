@@ -6,7 +6,11 @@
   "workers_dev": true,
   "vars": {
     "OFFLINE_AFTER_SECONDS": "1800",
+    "REGISTRATION_RETENTION_DAYS": "30",
     "HISTORY_RETENTION_DAYS": "7"
+  },
+  "triggers": {
+    "crons": ["17 4 * * *"]
   },
   "d1_databases": [
     {

@@ -37,10 +37,9 @@ must(directoryHost.indexOf('if remote_enabled:') < directoryHost.indexOf('if sel
 must(!appV2.includes("navButton('worlds'") && appV2.includes("'worlds'].includes(state.route)") && appV2.includes("if (next === 'webhost' && state.route !== 'webhost') state.webhostTab = 'settings'") &&
   !appV2.includes('data-webhost-tab="home"') && !appV2.includes('SYNC_HOME_URL'),
   'Public World discovery must live under Dragonwilds while Sync retains its configuration workspace');
-must(appV2.includes("syncTab('settings','Website &amp; Directory')") &&
-  appV2.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
-  appV2.includes("syncTab('remote','Server Management')") &&
-  appV2.includes("syncTab('live','WebGUI Preview')"),
+must(appV2.includes("syncTabLabels={settings:'Website &amp; Directory',manifest:'Manifest &amp; Heartbeats',remote:'Server Management',live:'WebGUI Preview'}") &&
+  appV2.includes("syncTab('settings')") && appV2.includes("syncTab('manifest')") &&
+  appV2.includes("syncTab('remote')") && appV2.includes("syncTab('live')"),
   'Sync must expose configuration, heartbeat, Remote Server, and preview tabs');
 must(legacyService.includes('host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))') && !legacyService.includes('advanced["remote_server_enabled"] = True\n                advanced["remote_server_choice_made"] = True'), 'Webhost must not silently enable Remote Login');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');

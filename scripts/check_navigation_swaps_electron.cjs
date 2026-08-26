@@ -54,7 +54,11 @@ app.whenReady().then(async()=>{
     if(!selected)throw new Error(`Sync tab ${key} repainted or lost its selected state.`);
   };
   await win.webContents.executeJavaScript("document.querySelector('[data-route=\"webhost\"]')?.click()");
+  const previewLabelFirstFrame=await win.webContents.executeJavaScript(`document.querySelector('.webhost-tabs [data-webhost-tab="live"]')?.textContent?.trim()||''`);
+  if(previewLabelFirstFrame && previewLabelFirstFrame!=='WebGUI Preview')throw new Error(`Sync preview tab first rendered as "${previewLabelFirstFrame}" instead of "WebGUI Preview".`);
   await wait(260);
+  const previewLabelSettled=await win.webContents.executeJavaScript(`document.querySelector('.webhost-tabs [data-webhost-tab="live"]')?.textContent?.trim()||''`);
+  if(previewLabelSettled && previewLabelSettled!=='WebGUI Preview')throw new Error(`Sync preview tab settled as "${previewLabelSettled}" instead of "WebGUI Preview".`);
   await assertSyncTabSticks('manifest');
   await assertSyncTabSticks('remote');
   await assertSyncTabSticks('live');

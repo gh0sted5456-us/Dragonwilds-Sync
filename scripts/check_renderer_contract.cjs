@@ -72,10 +72,9 @@ assert(source.includes('recommended-mod-card recommended-mod-placard has-placard
   'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
 assert(source.includes("if (next === 'webhost' && state.route !== 'webhost') state.webhostTab = 'settings'") &&
-  source.includes("syncTab('settings','Website &amp; Directory')") &&
-  source.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
-  source.includes("syncTab('remote','Server Management')") &&
-  source.includes("syncTab('live','WebGUI Preview')") &&
+  source.includes("syncTabLabels={settings:'Website &amp; Directory',manifest:'Manifest &amp; Heartbeats',remote:'Server Management',live:'WebGUI Preview'}") &&
+  source.includes("syncTab('settings')") && source.includes("syncTab('manifest')") &&
+  source.includes("syncTab('remote')") && source.includes("syncTab('live')") &&
   source.includes("state.webhostTab==='live'&&!(webhostFeatureEnabled||remoteFeatureEnabled)"),
   'The V3 Sync entry must retain configuration, heartbeat, Server Management, and preview tabs.');
 assert(source.includes('Broadcast World') && source.includes('No World currently broadcast') &&

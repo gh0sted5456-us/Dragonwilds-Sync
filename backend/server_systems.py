@@ -3824,7 +3824,18 @@ def capture_authoritative_runtimes(
         UE4SS_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         shutil.copy2(layout.server_loader, UE4SS_RUNTIME_DIR / SERVER_LOADER_FILENAME)
         captured["server_loader_files"] += 1
-    if status["runeschema"]["installed"] and (refresh_runeschema or not status["runeschema"]["library_ready"]):
+    # Explicit capture is a filesystem operation and remains valid when Sync
+    # runs on Linux against a linked Proton/Win64 server tree. The general
+    # prerequisite report intentionally skips injection for a native Linux
+    # executable, so do not let that platform policy suppress a deliberately
+    # requested capture of a complete RuneSchema directory.
+    runeschema_source_ready = status["runeschema"]["installed"] or (
+        refresh_runeschema
+        and layout.runeschema_enabled_file.is_file()
+        and layout.runeschema_config_dir.is_dir()
+        and layout.runeschema_dlls_dir.is_dir()
+    )
+    if runeschema_source_ready and (refresh_runeschema or not status["runeschema"]["library_ready"]):
         shutil.rmtree(RUNESCHEMA_RUNTIME_DIR, ignore_errors=True)
         RUNESCHEMA_RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         for src in layout.runeschema_root.rglob("*"):

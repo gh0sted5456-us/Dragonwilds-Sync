@@ -608,6 +608,22 @@ def _copy_tree_contents(source: Path, destination: Path) -> int:
     return count
 
 
+def _archive_relative_path(content: Path, scratch: Path) -> str:
+    """Return a stable extracted-archive path across Windows path aliases.
+
+    GitHub's Windows runners can present the temporary root through an 8.3
+    alias while a selected payload has already been expanded to the long path.
+    Resolve both sides before the containment check so an in-tree payload does
+    not fail `relative_to` merely because the spellings differ.
+    """
+    resolved_root = scratch.resolve()
+    resolved_content = content.resolve()
+    try:
+        return resolved_content.relative_to(resolved_root).as_posix() or "."
+    except ValueError as exc:
+        raise ValueError("Mod payload selection escapes the archive.") from exc
+
+
 def inspect_mod_zip(zip_path: str) -> dict:
     archive = Path(zip_path)
     detected = detect_mod_zip_kind(zip_path)
@@ -619,9 +635,10 @@ def inspect_mod_zip(zip_path: str) -> dict:
         if not payloads and detected:
             located = locate_mod_payload(scratch, detected, archive.stem)
             content = Path(located["content"])
-            payloads = [{"id": f"{detected}:{content.relative_to(scratch).as_posix()}", "kind": detected,
+            relative = _archive_relative_path(content, scratch)
+            payloads = [{"id": f"{detected}:{relative}", "kind": detected,
                          "name": str(located.get("name") or archive.stem),
-                         "payload_root": content.relative_to(scratch).as_posix(), "payload_name": "", "selected": True}]
+                         "payload_root": relative, "payload_name": "", "selected": True}]
     kinds = {str(item.get("kind") or "") for item in payloads}
     return {"kind": next(iter(kinds)) if len(payloads) == 1 and len(kinds) == 1 else "",
             "detected_kind": detected or "", "payloads": payloads, "count": len(payloads)}
@@ -645,7 +662,7 @@ def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferr
             _safe_extract(zf, scratch)
         located = locate_mod_payload(scratch, kind, archive.stem, payload_root=payload_root, payload_name=payload_name)
         content = Path(located["content"])
-        payload_root = content.relative_to(scratch).as_posix() or "."
+        payload_root = _archive_relative_path(content, scratch)
         metadata_root = content
         archive_metadata = {"tags": [], "hotload_capable": False, "tag_files": [], "hotload_files": []}
         mod_name = re.sub(r"[^A-Za-z0-9_. -]+", "_", str(located.get("name") or archive.stem)).strip(" .") or "ImportedMod"

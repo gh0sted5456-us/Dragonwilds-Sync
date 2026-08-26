@@ -4,16 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - 'website/servers.html'
-      - 'website/public-directory-view.js'
-      - 'website/public-directory-view.css'
-      - 'website/directory-source.json'
+      - 'backend/world_directory.py'
+      - 'backend/test_cloudflare_directory_publication.py'
       - 'renderer/public-server-list.js'
       - 'renderer/public-server-list.css'
       - 'renderer/index.html'
       - 'cloudflare/world-directory/src/public-directory-entry.ts'
-      - 'cloudflare/world-directory/src/rotating-public-scan.ts'
-      - 'cloudflare/world-directory/migrations/0003_public_source_scan_state.sql'
+      - 'cloudflare/world-directory/src/index.ts'
       - 'cloudflare/world-directory/wrangler.jsonc'
       - '.github/workflows/verify-public-directory-surfaces.yml'
   workflow_dispatch:
@@ -28,30 +25,23 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Check browser JavaScript
-        run: |
-          node --check website/public-directory-view.js
-          node --check renderer/public-server-list.js
-      - name: Check public descriptor
-        run: |
-          node -e "const fs=require('fs');const x=JSON.parse(fs.readFileSync('website/directory-source.json','utf8'));if(x.format!=='dragonwilds-sync-public-directory-link'||x.version!==1||!x.worlds_url||x.collection?.mode!=='resumable-full-scan')process.exit(1)"
-      - name: Check website wiring
-        run: |
-          grep -q 'data-directory-view="placards"' website/servers.html
-          grep -q 'data-directory-view="horizontal"' website/servers.html
-          grep -q 'rel="dragonwilds-sync-directory"' website/servers.html
-          grep -q 'public-directory-view.js' website/servers.html
+        run: node --check renderer/public-server-list.js
       - name: Check desktop wiring
         run: |
           grep -q 'public-server-list.css' renderer/index.html
           grep -q 'public-server-list.js' renderer/index.html
           grep -q 'https://\*.workers.dev' renderer/index.html
           grep -q 'Public Server List' renderer/public-server-list.js
-      - name: Check resumable scan wiring
+      - name: Check signed launcher directory lifecycle
         run: |
-          grep -q "scanPublicSourcesIncrementally" cloudflare/world-directory/src/public-directory-entry.ts
-          grep -q "scan_cursor" cloudflare/world-directory/src/rotating-public-scan.ts
-          grep -q "scan_generation" cloudflare/world-directory/migrations/0003_public_source_scan_state.sql
-          grep -q '"PUBLIC_SOURCE_BATCH_PAGES": "35"' cloudflare/world-directory/wrangler.jsonc
+          grep -q 'REGISTRATION_RETENTION_DAYS' cloudflare/world-directory/src/index.ts
+          grep -q 'handleDeregister' cloudflare/world-directory/src/index.ts
+          grep -q 'world_publishers' cloudflare/world-directory/src/index.ts
+          grep -q '"REGISTRATION_RETENTION_DAYS": "30"' cloudflare/world-directory/wrangler.jsonc
+          ! grep -q 'scanPublicSourcesIncrementally' cloudflare/world-directory/src/public-directory-entry.ts
+      - name: Check launcher-signed publication client
+        working-directory: backend
+        run: python test_cloudflare_directory_publication.py
       - name: Type-check Cloudflare entry
         working-directory: cloudflare/world-directory
         run: |

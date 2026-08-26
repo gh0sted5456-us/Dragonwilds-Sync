@@ -16,9 +16,9 @@ rm -rf build-service dist-service release
 "$VENV/bin/pyinstaller" --noconfirm --clean --distpath dist-service --workpath build-service backend/DragonwildsSync.Service.spec
 test -x dist-service/DragonwildsSync.Service
 npm ci --include=dev
-# Electron's Linux sandbox must remain enabled during the preload smoke test.
-# npm may defer Electron's binary download until first launch; materialize it
-# before repairing the standard root-owned setuid helper permissions.
+# Materialize Electron before its CI preload smoke test. The smoke BrowserWindow
+# retains renderer sandboxing and context isolation; its script bypasses only
+# the hosted runner's outer SUID sandbox, which can stall before app readiness.
 if [[ "${CI:-}" == "true" ]]; then
   node node_modules/electron/install.js
   test -f node_modules/electron/dist/chrome-sandbox

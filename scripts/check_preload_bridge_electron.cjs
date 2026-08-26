@@ -11,6 +11,15 @@ function finish(code, message) {
 }
 
 app.commandLine.appendSwitch('disable-gpu');
+app.commandLine.appendSwitch('disable-dev-shm-usage');
+// GitHub's Ubuntu image can stall Electron before `ready` while negotiating
+// the host SUID sandbox. The BrowserWindow below remains sandboxed and context
+// isolated, which is the contract this smoke test verifies; bypass only the
+// runner's outer Chromium sandbox transport.
+if (process.platform === 'linux' && process.env.CI === 'true') {
+  app.commandLine.appendSwitch('no-sandbox');
+  app.commandLine.appendSwitch('disable-setuid-sandbox');
+}
 app.whenReady().then(async () => {
   const window = new BrowserWindow({
     show: false,

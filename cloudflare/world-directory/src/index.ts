@@ -43,7 +43,7 @@ function json(data: unknown, status = 200, extraHeaders: HeadersInit = {}): Resp
 function publicCorsHeaders(): HeadersInit {
   return {
     "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-allow-headers": "content-type",
   };
 }
@@ -170,6 +170,7 @@ function registrationRetentionSeconds(env: Env): number {
 async function purgeStaleRegistrations(env: Env, now = Math.floor(Date.now() / 1000)): Promise<void> {
   const cutoff = now - registrationRetentionSeconds(env);
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM world_invites WHERE expires_at <= ? OR world_id IN (SELECT world_id FROM worlds WHERE last_seen < ?)").bind(now, cutoff),
     env.DB.prepare("DELETE FROM heartbeat_history WHERE world_id IN (SELECT world_id FROM worlds WHERE last_seen < ?)").bind(cutoff),
     env.DB.prepare("DELETE FROM worlds WHERE last_seen < ?").bind(cutoff),
     env.DB.prepare("DELETE FROM world_publishers WHERE last_seen < ?").bind(cutoff),
@@ -190,6 +191,17 @@ function decodeBase64(value: string): Uint8Array | null {
 async function sha256Hex(value: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", value.buffer as ArrayBuffer);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function inviteToken(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+async function inviteTokenHash(token: string): Promise<string> {
+  return sha256Hex(encoder.encode(token));
 }
 
 async function authenticatePublisher(
@@ -418,6 +430,7 @@ async function handleDeregister(request: Request, env: Env, pathWorldId: string)
   const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId);
   if (!publisher.ok) return publisher.response;
   await env.DB.batch([
+    env.DB.prepare("DELETE FROM world_invites WHERE world_id = ?").bind(worldId),
     env.DB.prepare("DELETE FROM heartbeat_history WHERE world_id = ?").bind(worldId),
     env.DB.prepare("DELETE FROM worlds WHERE world_id = ?").bind(worldId),
     env.DB.prepare("DELETE FROM world_publishers WHERE world_id = ?").bind(worldId),
@@ -554,6 +567,63 @@ async function getWorld(env: Env, worldId: string): Promise<Response> {
   });
 }
 
+async function createWorldInvite(request: Request, env: Env): Promise<Response> {
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (contentLength > 2048) return json({ error: "payload_too_large" }, 413, publicCorsHeaders());
+  let input: Record<string, unknown>;
+  try { input = await request.json() as Record<string, unknown>; }
+  catch { return json({ error: "invalid_json" }, 400, publicCorsHeaders()); }
+  const worldId = cleanText(input.world_id, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  if (!worldId) return json({ error: "world_id_required" }, 400, publicCorsHeaders());
+  const now = Math.floor(Date.now() / 1000);
+  await purgeStaleRegistrations(env, now);
+  const row = await env.DB.prepare("SELECT * FROM worlds WHERE world_id = ? AND is_listed = 1").bind(worldId).first<Record<string, unknown>>();
+  if (!row) return json({ error: "world_not_found" }, 404, publicCorsHeaders());
+  const world = publicWorld(row, clampInt(env.OFFLINE_AFTER_SECONDS, 1800, 60, 86400));
+  if (!['online', 'starting', 'maintenance'].includes(String(world.status || ''))) {
+    return json({ error: "world_offline" }, 409, publicCorsHeaders());
+  }
+  const active = await env.DB.prepare("SELECT COUNT(*) AS count FROM world_invites WHERE world_id = ? AND expires_at > ?")
+    .bind(worldId, now).first<{ count: number }>();
+  if (Number(active?.count || 0) >= 50) return json({ error: "invite_limit_reached" }, 429, publicCorsHeaders());
+  const ttl = clampInt(input.expires_in_seconds, 86400, 900, 604800);
+  const token = inviteToken();
+  const tokenHash = await inviteTokenHash(token);
+  const expiresAt = now + ttl;
+  await env.DB.prepare("INSERT INTO world_invites (token_hash, world_id, created_at, expires_at) VALUES (?, ?, ?, ?)")
+    .bind(tokenHash, worldId, now, expiresAt).run();
+  return json({ token, world_id: worldId, created_at: now, expires_at: expiresAt }, 201, {
+    ...publicCorsHeaders(), "cache-control": "no-store",
+  });
+}
+
+async function resolveWorldInvite(env: Env, token: string): Promise<Response> {
+  if (!/^[A-Za-z0-9_-]{24,80}$/.test(token)) return json({ error: "invalid_invite" }, 400, publicCorsHeaders());
+  const now = Math.floor(Date.now() / 1000);
+  const tokenHash = await inviteTokenHash(token);
+  const invite = await env.DB.prepare("SELECT world_id, created_at, expires_at FROM world_invites WHERE token_hash = ?")
+    .bind(tokenHash).first<{ world_id: string; created_at: number; expires_at: number }>();
+  if (!invite) return json({ error: "invite_not_found" }, 404, publicCorsHeaders());
+  if (Number(invite.expires_at || 0) <= now) {
+    await env.DB.prepare("DELETE FROM world_invites WHERE token_hash = ?").bind(tokenHash).run();
+    return json({ error: "invite_expired" }, 410, publicCorsHeaders());
+  }
+  const row = await env.DB.prepare("SELECT * FROM worlds WHERE world_id = ? AND is_listed = 1").bind(invite.world_id).first<Record<string, unknown>>();
+  if (!row) return json({ error: "world_unavailable" }, 410, publicCorsHeaders());
+  await env.DB.prepare("UPDATE world_invites SET use_count = use_count + 1, last_used_at = ? WHERE token_hash = ?")
+    .bind(now, tokenHash).run();
+  const world = publicWorld(row, clampInt(env.OFFLINE_AFTER_SECONDS, 1800, 60, 86400));
+  return json({ invite: { created_at: invite.created_at, expires_at: invite.expires_at }, world }, 200, {
+    ...publicCorsHeaders(), "cache-control": "no-store",
+  });
+}
+
+async function revokeWorldInvite(env: Env, token: string): Promise<Response> {
+  if (!/^[A-Za-z0-9_-]{24,80}$/.test(token)) return json({ error: "invalid_invite" }, 400, publicCorsHeaders());
+  const result = await env.DB.prepare("DELETE FROM world_invites WHERE token_hash = ?").bind(await inviteTokenHash(token)).run();
+  return json({ ok: true, revoked: Number(result.meta.changes || 0) > 0 }, 200, { ...publicCorsHeaders(), "cache-control": "no-store" });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -574,6 +644,16 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/api/v1/worlds") {
       return listWorlds(env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/v1/invites") {
+      return createWorldInvite(request, env);
+    }
+
+    if (url.pathname.startsWith("/api/v1/invites/")) {
+      const token = decodeURIComponent(url.pathname.slice("/api/v1/invites/".length));
+      if (request.method === "GET") return resolveWorldInvite(env, token);
+      if (request.method === "DELETE") return revokeWorldInvite(env, token);
     }
 
     if (request.method === "DELETE" && url.pathname.startsWith("/api/v1/worlds/")) {

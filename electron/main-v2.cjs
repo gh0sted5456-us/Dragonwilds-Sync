@@ -947,7 +947,9 @@ app.whenReady().then(async () => {
         return { action:'deny' };
       }
       if (syncHome) {
-        if (allowedSyncHomeNavigation(url)) contents.loadURL(url).catch(()=>{});
+        const join=parseJoinArgs([url]);
+        if(join)deliverJoinRequest(join);
+        else if (allowedSyncHomeNavigation(url)) contents.loadURL(url).catch(()=>{});
         else if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
         return { action:'deny' };
       }
@@ -972,7 +974,9 @@ app.whenReady().then(async () => {
       if (syncHome) {
         if (allowedSyncHomeNavigation(url)) return;
         event.preventDefault();
-        if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
+        const join=parseJoinArgs([url]);
+        if(join)deliverJoinRequest(join);
+        else if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
         return;
       }
       if (allowedToolkitNavigation(url)) return;

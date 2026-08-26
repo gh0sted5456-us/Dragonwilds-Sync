@@ -24,6 +24,7 @@ type HeartbeatPayload = {
   password_required?: boolean;
   mod_summary?: Array<Record<string, unknown>>;
   runtime_stack?: Record<string, unknown>;
+  platform_compatibility?: Record<string, unknown>;
 };
 
 const encoder = new TextEncoder();
@@ -108,14 +109,34 @@ function cleanChannel(value: unknown): string {
 function cleanModSummary(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   return value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
-    .slice(0, 128).map((row) => ({
+    .slice(0, 512).map((row) => ({
       key: cleanText(row.key, 100),
       name: cleanText(row.name, 120),
+      kind: cleanText(row.kind, 40).toLowerCase(),
       loader: cleanText(row.loader ?? row.section ?? row.category, 40).toLowerCase(),
+      section: cleanText(row.section, 40).toLowerCase(),
+      subsection: cleanText(row.subsection, 60),
+      category: cleanText(row.category, 60),
+      distribution: cleanText(row.distribution, 40).toLowerCase(),
       classification: cleanText(row.classification ?? row.distribution, 40).toLowerCase(),
       client_required: row.client_required === true || row.distribution === "client_required" || row.classification === "player_required",
       version: cleanText(row.version, 64),
+      author: cleanText(row.author, 100),
+      tags: cleanList(row.tags, 16, 48),
+      platforms: cleanList(row.platforms, 12, 32).map((item) => item.toLowerCase()),
+      file_count: clampInt(row.file_count, 0, 0, 100000),
     })).filter((row) => row.name || row.key);
+}
+
+function cleanPlatformCompatibility(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { pc: true };
+  const result: Record<string, boolean> = {};
+  for (const [rawKey, enabled] of Object.entries(value)) {
+    const key = cleanText(rawKey, 32).toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (key && typeof enabled === "boolean") result[key] = enabled;
+  }
+  if (!("pc" in result)) result.pc = true;
+  return result;
 }
 
 function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
@@ -124,11 +145,14 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
   const runeschema = stack.runeschema && typeof stack.runeschema === "object" ? stack.runeschema as Record<string, unknown> : {};
   const sync = stack.dragonwilds_sync && typeof stack.dragonwilds_sync === "object" ? stack.dragonwilds_sync as Record<string, unknown> : {};
   const game = stack.dragonwilds && typeof stack.dragonwilds === "object" ? stack.dragonwilds as Record<string, unknown> : {};
+  const platformCompatibility = cleanPlatformCompatibility(input.platform_compatibility);
   return {
     host_os: cleanText(input.host_os, 40).toLowerCase(),
     host_os_label: cleanText(input.host_os_label, 100),
     password_required: input.password_required === true,
     mod_summary: cleanModSummary(input.mod_summary),
+    platform_compatibility: platformCompatibility,
+    declared_platforms: Object.entries(platformCompatibility).filter(([, enabled]) => enabled).map(([key]) => key),
     runtime_channels: {
       ue4ss: cleanChannel(ue4ss.channel),
       runeschema: cleanChannel(runeschema.channel),
@@ -259,7 +283,7 @@ function normalizeHeartbeat(input: HeartbeatPayload): HeartbeatPayload {
 
 async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   const contentLength = Number(request.headers.get("content-length") || "0");
-  if (contentLength > 32768) return json({ error: "payload_too_large" }, 413);
+  if (contentLength > 262144) return json({ error: "payload_too_large" }, 413);
 
   const timestamp = request.headers.get("x-dws-timestamp") || "";
   const timestampSeconds = Number(timestamp);
@@ -270,7 +294,7 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   }
 
   const rawBody = await request.text();
-  if (rawBody.length > 32768) return json({ error: "payload_too_large" }, 413);
+  if (rawBody.length > 262144) return json({ error: "payload_too_large" }, 413);
 
   let parsed: HeartbeatPayload;
   try {
@@ -446,6 +470,8 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     host_os_label: metadata.host_os_label || "",
     password_required: metadata.password_required === true,
     mod_summary: Array.isArray(metadata.mod_summary) ? metadata.mod_summary : [],
+    platform_compatibility: metadata.platform_compatibility || { pc: true },
+    declared_platforms: Array.isArray(metadata.declared_platforms) ? metadata.declared_platforms : ["pc"],
     runtime_channels: metadata.runtime_channels || {},
     server_current: typeof metadata.server_current === "boolean" ? metadata.server_current : null,
     server_cl_status: metadata.server_cl_status || "unknown",

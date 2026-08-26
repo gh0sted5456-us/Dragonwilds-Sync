@@ -24,6 +24,7 @@ This directory contains the current product documentation for Dragonwilds Sync.
 - `ADMIN_TOOLS_ITEM_SPAWNER.md`
 - `ASSET_PROVENANCE.md`
 - `GITHUB_RELEASES.md`
+- `FUTURE_DISCORD_WORLD_INVITES.md` and `FUTURE_NATIVE_ANNOUNCEMENTS.md`
 - `upstream-sources.json`, `recommended-mods.json`, and their rendered HTML companions
 
 Specialized references define bounded formats or workflows. If they conflict with `SYSTEMS.md`, `TESTING.md`, current source, or observed packaged behavior, the conflict is a defect and the narrower file must be corrected.

@@ -2384,7 +2384,7 @@ class ShareServer:
                     "password_required": bool(STATE.manifest.get("password_required")),
                     "runtime_stack": STATE.manifest.get("runtime_stack") or {},
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
-                    "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "classification", "client_required", "version", "author", "tags") if row.get(key) not in (None, "")}
+                    "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count") if row.get(key) not in (None, "")}
                                     for row in (STATE.manifest.get("mod_summary") or []) if isinstance(row, dict)],
                     "tags": STATE.manifest.get("tags") or [],
                     "description": str(STATE.manifest.get("description") or "")[:300],

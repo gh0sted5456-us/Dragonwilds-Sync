@@ -118,6 +118,7 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
     operator_verified = bool(signed_identity.get("verified") and
                              signed_payload.get("world_fingerprint") == fingerprint and
                              str(signed_payload.get("world_name") or "").strip() == name)
+    players = row.get("players") if isinstance(row.get("players"), dict) else {}
     return {
         "world_name": name, "server_name": str(row.get("server_name") or name).strip()[:120],
         "description": str(row.get("description") or "").strip()[:300],
@@ -131,9 +132,15 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "fingerprint_claimed": fingerprint, "host_type": host_type,
         **host_meta, "server_os_badge": server_os_badge(host_meta),
         "mod_badges": [str(value)[:32] for value in (row.get("mod_badges") or [])[:12]],
-        "mod_summary": [{key: value for key in ("key", "name", "kind", "loader", "section", "classification", "client_required", "version", "author", "tags")
+        "mod_summary": [{key: value for key in ("key", "name", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count")
                          if (value := item.get(key)) not in (None, "")}
                         for item in (row.get("mod_summary") or row.get("mods") or []) if isinstance(item, dict)],
+        "platform_compatibility": {"pc": True, **{key: bool((row.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"}))
+                                                        for key in ("steam", "epic", "nintendo", "playstation", "xbox")}},
+        "declared_platforms": [str(value).strip().lower()[:32] for value in (row.get("declared_platforms") or [])[:12] if str(value).strip()],
+        "player_count": max(0, min(int(players.get("current") or row.get("player_count") or 0), 10000)),
+        "max_players": max(0, min(int(players.get("max") or row.get("max_players") or 0), 10000)),
+        "public_status": str(row.get("status") or "online").strip().lower()[:24],
         "tags": [str(value).strip()[:40] for value in (row.get("tags") or [])[:24] if str(value).strip()],
         "game_tags": [str(value).strip()[:40] for value in (row.get("game_tags") or [])[:24] if str(value).strip()],
         "sync_tags": [str(value).strip()[:40] for value in (row.get("sync_tags") or row.get("tags") or [])[:24] if str(value).strip()],

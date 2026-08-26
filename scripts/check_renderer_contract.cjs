@@ -75,7 +75,8 @@ assert(source.includes("if (next === 'webhost' && state.route !== 'webhost') sta
   source.includes("syncTab('settings','Website &amp; Directory')") &&
   source.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
   source.includes("syncTab('remote','Server Management')") &&
-  source.includes("syncTab('live','WebGUI Preview')"),
+  source.includes("syncTab('live','WebGUI Preview')") &&
+  source.includes("state.webhostTab==='live'&&!(webhostFeatureEnabled||remoteFeatureEnabled)"),
   'The V3 Sync entry must retain configuration, heartbeat, Server Management, and preview tabs.');
 assert(source.includes('Broadcast World') && source.includes('No World currently broadcast') &&
   source.includes("state.data?.server?.runtime?.active_profile_id") &&

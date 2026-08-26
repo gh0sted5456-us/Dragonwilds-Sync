@@ -27,9 +27,9 @@ async function inspect(win) {
     const body=card.querySelector('.world-card-body');
     const footer=card.querySelector('.card-footer');
     const actions=card.querySelector('.placard-actions.integrated');
-    const buttons=[...actions.querySelectorAll('.btn')].map(rect);
+    const buttons=[...actions.querySelectorAll('.btn')].map((node)=>({...rect(node),textFits:node.scrollWidth<=node.clientWidth+1&&node.scrollHeight<=node.clientHeight+1}));
     const row=document.querySelector('#validation-row');
-    const rowButtons=[...row.querySelectorAll('.btn')].map(rect);
+    const rowButtons=[...row.querySelectorAll('.btn')].map((node)=>({...rect(node),textFits:node.scrollWidth<=node.clientWidth+1&&node.scrollHeight<=node.clientHeight+1}));
     return {card:rect(card),body:rect(body),footer:rect(footer),actions:rect(actions),buttons,row:rect(row),rowButtons};
   })()`);
 }
@@ -38,11 +38,13 @@ function validate(name, layout) {
   if (layout.actions.top + 0.5 < layout.body.bottom) fail(`${name}: action strip overlaps the card body`);
   if (layout.buttons.some((button) => button.top + 0.5 < layout.footer.bottom)) fail(`${name}: an action button overlaps the rating/footer`);
   if (layout.buttons.some((button) => button.left < layout.card.left - 0.5 || button.right > layout.card.right + 0.5)) fail(`${name}: an action button escapes the placard`);
+  if (layout.buttons.some((button) => !button.textFits)) fail(`${name}: placard action text is clipped`);
   for (let i=0;i<layout.buttons.length;i+=1) for (let j=i+1;j<layout.buttons.length;j+=1) {
     if (intersects(layout.buttons[i],layout.buttons[j])) fail(`${name}: placard buttons overlap`);
   }
   if (layout.row.height > 90.5) fail(`${name}: horizontal card is ${layout.row.height}px tall; expected no more than 90px`);
   if (layout.rowButtons.some((button) => button.top < layout.row.top - 0.5 || button.bottom > layout.row.bottom + 0.5)) fail(`${name}: a horizontal action escapes its row`);
+  if (layout.rowButtons.some((button) => !button.textFits)) fail(`${name}: horizontal action text is clipped`);
   for (let i=0;i<layout.rowButtons.length;i+=1) for (let j=i+1;j<layout.rowButtons.length;j+=1) {
     if (intersects(layout.rowButtons[i],layout.rowButtons[j])) fail(`${name}: horizontal buttons overlap`);
   }

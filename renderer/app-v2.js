@@ -4875,7 +4875,7 @@
       if(!routedWebhost&&!standaloneHostWorkspace&&externalTab==='live')state.webhostTab='live';
       else if(!routedWebhost&&!standaloneHostWorkspace)state.webhostTab='settings';
       if(routedWebhost&&state.webhostTab==='home')state.webhostTab='settings';
-      if(routedWebhost&&state.webhostTab==='live'&&!webhostFeatureEnabled)state.webhostTab='settings';
+      if(routedWebhost&&state.webhostTab==='live'&&!(webhostFeatureEnabled||remoteFeatureEnabled))state.webhostTab='settings';
       const syncTab=(key,label)=>`<button class="${state.webhostTab===key?'active':''}" role="tab" aria-selected="${state.webhostTab===key?'true':'false'}" tabindex="${state.webhostTab===key?'0':'-1'}" data-webhost-tab="${key}">${label}</button>`;
       const webhostTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" role="tablist" aria-label="Sync workspace">${syncTab('settings','Website &amp; Directory')}${syncTab('manifest','Manifest &amp; Heartbeats')}${syncTab('remote','Server Management')}${(webhostFeatureEnabled||remoteFeatureEnabled)?syncTab('live','WebGUI Preview'):''}</nav>`:(externalTabs||`<nav class="settings-subnav webhost-tabs"><button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Live View</button><button class="${state.webhostTab!=='live'?'active':''}" data-webhost-tab="settings">${standaloneRemote?'Permissions &amp; Authority':'Settings &amp; Sharing'}</button></nav>`);
       if(routedWebhost&&state.webhostTab==='manifest'){

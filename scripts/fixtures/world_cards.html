@@ -36,7 +36,7 @@
           <div class="card-footer"><div class="card-metrics"><span>SINGLEPLAYER</span></div><span class="world-rating"><span>☆☆☆☆☆</span><b>New</b><small>(0)</small></span></div>
         </div>
        </section></div>
-        <div class="placard-actions integrated" id="validation-actions"><button class="btn play">Launch</button><button class="btn ghost">Co-Op</button><button class="btn ghost">Manage</button></div>
+        <div class="placard-actions integrated" id="validation-actions"><button class="btn play">Launch World</button><button class="btn ghost">Start Co-Op</button><button class="btn ghost">Connection Settings</button><button class="btn ghost">Update &amp; Restart</button></div>
       </article>
     </section>
     <section>
@@ -45,7 +45,7 @@
         <div class="world-list-icon"><img src="../../renderer/assets/singleplayer-icon.webp" alt="" /></div>
         <div class="world-list-main"><div class="world-list-title"><h3>SinglePlayer</h3><span class="status-pill unknown">LOCAL</span></div><div class="world-list-meta"><span>Private World</span><span>Local</span></div><div class="badges"><span class="badge vanilla">VANILLA</span><span class="badge paks">NORMAL</span></div></div>
         <div class="world-list-banner"><img src="../../website/assets/demo-world-banner.svg" alt="" /></div>
-        <div class="world-row-actions"><button class="btn play compact-btn">Launch</button><button class="btn ghost compact-btn">Manage</button></div>
+        <div class="world-row-actions"><button class="btn play compact-btn">Start Server</button><button class="btn ghost compact-btn">World Management</button></div>
       </article>
     </section>
   </main>
@@ -68,6 +68,7 @@
       const rowNode=document.querySelector('#validation-row');
       const rowActions=rect(rowActionsNode);
       const rowButtons=[...document.querySelectorAll('#validation-row .btn')].map(rect);
+      const textFits=(node)=>node.scrollWidth<=node.clientWidth+1&&node.scrollHeight<=node.clientHeight+1;
       const pairOverlap=(values)=>values.some((value,index)=>values.slice(index+1).some((other)=>intersects(value,other)));
       const errors=[];
       const banner=card.querySelector('.world-card-banner');
@@ -80,6 +81,7 @@
       if(buttons.some((button)=>button.top+.5<footer.bottom))errors.push('buttons overlap rating/footer');
       if(buttons.some((button)=>button.left<rect(card).left-.5||button.right>rect(card).right+.5))errors.push('button escapes placard');
       if(pairOverlap(buttons))errors.push('placard buttons overlap');
+      if([...card.querySelectorAll('.placard-actions .btn')].some((button)=>!textFits(button)))errors.push('placard button text clipped');
       if(tagPlacardStyle.backgroundColor==='rgb(255, 255, 255)'||tagPlacardStyle.backgroundColor==='rgba(255, 255, 255, 1)')errors.push('Dragonwilds/Sync placard is white');
       if(!getComputedStyle(rowNode,'::before').backgroundImage.includes('placards/2.webp'))errors.push('horizontal placard background missing');
       const rowBanner=rowNode.querySelector('.world-list-banner img');
@@ -92,6 +94,7 @@
       if(row.height>(innerWidth<=520?120.5:90.5))errors.push(`horizontal height ${row.height}px`);
       if(rowButtons.some((button)=>button.left<row.left-.5||button.right>row.right+.5||button.top<row.top-.5||button.bottom>row.bottom+.5))errors.push(`horizontal button escapes row ${JSON.stringify({row,actions:rowActions,buttons:rowButtons,actionsStyle:{display:getComputedStyle(rowActionsNode).display,position:getComputedStyle(rowActionsNode).position,alignSelf:getComputedStyle(rowActionsNode).alignSelf,justifyContent:getComputedStyle(rowActionsNode).justifyContent,gridColumn:getComputedStyle(rowActionsNode).gridColumn,gridRow:getComputedStyle(rowActionsNode).gridRow}})}`);
       if(pairOverlap(rowButtons))errors.push('horizontal buttons overlap');
+      if([...rowNode.querySelectorAll('.world-row-actions .btn')].some((button)=>!textFits(button)))errors.push('horizontal button text clipped');
       document.documentElement.dataset.validation=errors.length?'fail':'pass';
       const detail=errors.length?`FAIL · ${errors.join(' · ')}`:`PASS · no overlap · horizontal ${row.height}px`;
       document.querySelector('#validation-result').textContent=detail;

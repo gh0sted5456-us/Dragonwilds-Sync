@@ -1,6 +1,6 @@
 interface Env {
   DB: D1Database;
-  WORLD_SECRETS_JSON: string;
+  WORLD_SECRETS_JSON?: string;
   OFFLINE_AFTER_SECONDS?: string;
   HISTORY_RETENTION_DAYS?: string;
 }
@@ -94,6 +94,78 @@ function timingSafeEqualHex(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function decodeBase64(value: string): Uint8Array | null {
+  try {
+    const raw = atob(value);
+    const result = new Uint8Array(raw.length);
+    for (let index = 0; index < raw.length; index += 1) result[index] = raw.charCodeAt(index);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+async function sha256Hex(value: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", value.buffer as ArrayBuffer);
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function authenticatePublisher(
+  request: Request,
+  env: Env,
+  timestamp: string,
+  rawBody: string,
+  worldId: string,
+): Promise<{ ok: true; mode: string; operatorFingerprint: string } | { ok: false; response: Response }> {
+  const suppliedSignature = request.headers.get("x-dws-signature") || "";
+  const publicKeyText = request.headers.get("x-dws-public-key") || "";
+  const operatorFingerprint = (request.headers.get("x-dws-operator") || "").toLowerCase();
+  const publicKey = decodeBase64(publicKeyText);
+  const signature = decodeBase64(suppliedSignature);
+
+  if (publicKey?.length === 32 && signature?.length === 64 && /^dwo1-[0-9a-f]{24}$/.test(operatorFingerprint)) {
+    const expectedFingerprint = `dwo1-${(await sha256Hex(publicKey)).slice(0, 24)}`;
+    if (expectedFingerprint !== operatorFingerprint) {
+      return { ok: false, response: json({ error: "operator_fingerprint_mismatch" }, 401) };
+    }
+    try {
+      const key = await crypto.subtle.importKey("raw", publicKey.buffer as ArrayBuffer, { name: "Ed25519" }, false, ["verify"]);
+      const verified = await crypto.subtle.verify(
+        { name: "Ed25519" }, key, signature.buffer as ArrayBuffer, encoder.encode(`${timestamp}.${rawBody}`),
+      );
+      if (!verified) return { ok: false, response: json({ error: "invalid_signature" }, 401) };
+    } catch {
+      return { ok: false, response: json({ error: "unsupported_or_invalid_operator_key" }, 401) };
+    }
+
+    const existing = await env.DB.prepare(
+      "SELECT operator_fingerprint, public_key FROM world_publishers WHERE world_id = ?",
+    ).bind(worldId).first<{ operator_fingerprint: string; public_key: string }>();
+    if (existing && (existing.operator_fingerprint !== operatorFingerprint || existing.public_key !== publicKeyText)) {
+      return { ok: false, response: json({ error: "world_ownership_conflict" }, 409) };
+    }
+    const now = Math.floor(Date.now() / 1000);
+    await env.DB.prepare(`
+      INSERT INTO world_publishers (world_id, operator_fingerprint, public_key, registered_at, last_seen)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(world_id) DO UPDATE SET last_seen = excluded.last_seen
+    `).bind(worldId, operatorFingerprint, publicKeyText, now, now).run();
+    return { ok: true, mode: "ed25519-self-registration", operatorFingerprint };
+  }
+
+  // Compatibility for explicitly provisioned pre-V3 publishers.
+  const secrets = parseWorldSecrets(env.WORLD_SECRETS_JSON || "{}");
+  const worldSecret = secrets[worldId];
+  const legacySignature = (request.headers.get("x-dws-legacy-signature") || suppliedSignature).toLowerCase();
+  if (worldSecret) {
+    const expected = await hmacHex(worldSecret, `${timestamp}.${rawBody}`);
+    if (timingSafeEqualHex(expected, legacySignature)) {
+      return { ok: true, mode: "legacy-hmac", operatorFingerprint: "" };
+    }
+  }
+  return { ok: false, response: json({ error: "publisher_identity_required" }, 401) };
+}
+
 function normalizeHeartbeat(input: HeartbeatPayload): HeartbeatPayload {
   const worldId = cleanText(input.world_id, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
   const worldName = cleanText(input.world_name, 100);
@@ -132,7 +204,6 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   if (contentLength > 32768) return json({ error: "payload_too_large" }, 413);
 
   const timestamp = request.headers.get("x-dws-timestamp") || "";
-  const suppliedSignature = (request.headers.get("x-dws-signature") || "").toLowerCase();
   const timestampSeconds = Number(timestamp);
   const nowSeconds = Math.floor(Date.now() / 1000);
 
@@ -155,14 +226,8 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
     return json({ error: "world_id_and_world_name_required" }, 400);
   }
 
-  const secrets = parseWorldSecrets(env.WORLD_SECRETS_JSON || "{}");
-  const worldSecret = secrets[payload.world_id];
-  if (!worldSecret) return json({ error: "unknown_world" }, 401);
-
-  const expectedSignature = await hmacHex(worldSecret, `${timestamp}.${rawBody}`);
-  if (!timingSafeEqualHex(expectedSignature, suppliedSignature)) {
-    return json({ error: "invalid_signature" }, 401);
-  }
+  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, payload.world_id);
+  if (!publisher.ok) return publisher.response;
 
   const now = Math.floor(Date.now() / 1000);
   const existing = await env.DB.prepare("SELECT last_seen FROM worlds WHERE world_id = ?")
@@ -232,7 +297,13 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   const cutoff = now - retentionDays * 86400;
   await env.DB.prepare("DELETE FROM heartbeat_history WHERE seen_at < ?").bind(cutoff).run();
 
-  return json({ ok: true, world_id: payload.world_id, accepted_at: now });
+  return json({
+    ok: true,
+    world_id: payload.world_id,
+    accepted_at: now,
+    registration: publisher.mode,
+    operator_fingerprint: publisher.operatorFingerprint,
+  });
 }
 
 function parseJsonArray(value: unknown): string[] {
@@ -271,6 +342,15 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
           port: row.public_connect_port ? Number(row.public_connect_port) : null,
         }
       : null,
+    external_ip: row.public_connect_host || "",
+    internal_ip: "",
+    sync_port: row.public_connect_port ? Number(row.public_connect_port) : 27051,
+    game_port: 7777,
+    fingerprint: row.world_id,
+    fingerprint_claimed: row.world_id,
+    protocol: "dragonwilds-world-sync",
+    sync_protocol: "dragonwilds-world-sync",
+    sync_ready: true,
     last_seen: lastSeen,
     heartbeat_age_seconds: age,
     source_name: "Dragonwilds Sync",

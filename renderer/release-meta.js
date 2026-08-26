@@ -1,5 +1,5 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.0.0',
+  version: '3.0.1',
   name: 'V3 · Connection & Hosting Baseline',
   rsdwlVersion: 3,
   attributions: [
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '3.0.1',
+    title: 'Cloud Directory Connection',
+    items: [
+      'Hosted Sync Worlds securely self-register with the built-in Cloudflare directory through the launcher operator identity; no manually provisioned publisher password is required.',
+      'The public browser searches by World name, IP address, or combined terms, then opens the existing verified password-and-sync connection dialog.',
+      'World Management distinguishes local/LAN broadcast from an accepted Cloudflare listing and never publishes a World password.',
+      'The official Cloudflare catalog is focused on authenticated Sync Worlds; unrelated public Dragonwilds servers remain outside the connectable Sync roster.',
+    ],
+  }, {
     version: '3.0.0',
     title: 'Connection & Hosting Baseline',
     items: [

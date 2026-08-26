@@ -91,10 +91,15 @@
     const results = root.querySelector('#dws-public-server-results');
     const summary = root.querySelector('#dws-public-server-summary');
     const search = text(root.querySelector('#dws-public-server-search')?.value).toLowerCase();
+    const searchTerms = search.split(/\s+/).filter(Boolean);
     if (!results || !summary) return;
 
     const filtered = rows
-      .filter((world) => !search || [world.name, world.region, world.version, world.source, ...world.tags, ...world.badges].join(' ').toLowerCase().includes(search))
+      .filter((world) => {
+        if (!searchTerms.length) return true;
+        const searchable = [world.name, world.host, world.port, world.region, world.version, world.source, ...world.tags, ...world.badges].join(' ').toLowerCase();
+        return searchTerms.every((term) => searchable.includes(term));
+      })
       .sort((a, b) => Number(isOnline(b)) - Number(isOnline(a)) || b.current - a.current || b.lastSeen - a.lastSeen || a.name.localeCompare(b.name));
     const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
     currentPage = Math.max(1, Math.min(currentPage, pageCount));
@@ -148,6 +153,19 @@
       detail.appendChild(make('div', 'dws-public-server-route', world.host
         ? `Public route: ${world.host}${world.port ? `:${world.port}` : ''}`
         : world.isSync ? 'Sync metadata published; public route not exposed.' : 'Public source does not expose a direct route.'));
+      if (world.isSync && world.host) {
+        const connect = make('button', 'btn primary', 'Connect');
+        connect.type = 'button';
+        connect.addEventListener('click', () => {
+          const openJoin = window.__DWSYNC_OPEN_DIRECTORY_JOIN__;
+          if (typeof openJoin !== 'function') {
+            setStatus('The verified connection dialog is not ready yet. Reopen this tab and try again.', 'error');
+            return;
+          }
+          openJoin({ directoryUrl: API_URL.replace(/\/api\/v1\/worlds$/, ''), worldId: world.id });
+        });
+        detail.appendChild(connect);
+      }
       card.append(identity, metrics, detail);
       fragment.appendChild(card);
     });
@@ -256,7 +274,7 @@
       <div class="dws-public-server-controls">
         <label><small>Public directory webpage or feed</small><input class="field" id="dws-public-server-link" type="url" spellcheck="false" /></label>
         <button class="btn primary" id="dws-public-server-load" type="button">Load Public Servers</button>
-        <label class="dws-public-search-wrap"><small>Search loaded servers</small><input class="field" id="dws-public-server-search" type="search" placeholder="World, region, build, source…" /></label>
+        <label class="dws-public-search-wrap"><small>Search loaded servers</small><input class="field" id="dws-public-server-search" type="search" placeholder="World name, IP address, region, build…" /></label>
         <div class="dws-public-view-toggle" role="group" aria-label="Public Server List view"><button type="button" data-dws-public-view="cards">▦ Placards</button><button type="button" data-dws-public-view="horizontal">☰ Horizontal</button></div>
       </div>
       <div class="dws-public-server-summary" id="dws-public-server-summary"></div>

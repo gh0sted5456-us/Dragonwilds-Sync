@@ -75,6 +75,23 @@ def sign_world_identity(payload: dict) -> dict:
             "signature": base64.b64encode(signature).decode("ascii")}
 
 
+def sign_directory_request(body: bytes, timestamp: str) -> dict:
+    """Sign one Cloudflare directory request without provisioning a shared secret.
+
+    The timestamp is part of the signed message, so a captured request expires
+    with the directory's replay window. Only public identity material leaves
+    this machine; the operator private key remains protected in AppData.
+    """
+    identity = operator_identity()
+    message = str(timestamp or "").encode("ascii") + b"." + bytes(body or b"")
+    signature = identity["private"].sign(message)
+    return {
+        "operator_fingerprint": identity["fingerprint"],
+        "public_key": identity["public_key"],
+        "signature": base64.b64encode(signature).decode("ascii"),
+    }
+
+
 def verify_world_identity(envelope: dict | None) -> dict:
     try:
         value = dict(envelope or {})

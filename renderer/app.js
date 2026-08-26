@@ -10,5 +10,5 @@
   }
   // Full mode executes the exact previously verified renderer synchronously so
   // the later release enhancement scripts retain their original ordering.
-  document.write('<script src="app-v2.js?v=3.0.0-stability-1"><\\/script>');
+  document.write('<script src="app-v2.js?v=3.0.1-directory-1"><\\/script>');
 })();

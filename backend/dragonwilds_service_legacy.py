@@ -333,15 +333,26 @@ def _directory_join_catalog_world(directory_url: str, world_id: str) -> dict:
     with urllib.request.urlopen(request, timeout=5) as response:
         payload = json.loads(response.read(1_000_000).decode("utf-8"))
     row = payload.get("world") if isinstance(payload, dict) else None
+    # The official Cloudflare directory returns the selected public record as
+    # the response body, while self-hosted WebHosts retain {"world": ...}.
+    if row is None and isinstance(payload, dict) and payload.get("world_id"):
+        row = dict(payload)
     if not isinstance(row, dict):
         raise ValueError("The directory did not return the selected World.")
-    fingerprint = str(row.get("fingerprint") or "").strip()
+    connect = row.get("public_connect") if isinstance(row.get("public_connect"), dict) else {}
+    fingerprint = str(row.get("fingerprint") or row.get("fingerprint_claimed") or
+                      (row.get("world_id") if row.get("is_sync_world") else "") or "").strip()
     protocol = str(row.get("sync_protocol") or row.get("protocol") or (WORLD_SYNC_PROTOCOL if row.get("sync_ready") else ""))
-    if not row.get("sync_ready") or protocol != WORLD_SYNC_PROTOCOL or not FINGERPRINT_RE.fullmatch(fingerprint):
+    sync_ready = bool(row.get("sync_ready") or row.get("is_sync_world"))
+    if not sync_ready or protocol != WORLD_SYNC_PROTOCOL or not FINGERPRINT_RE.fullmatch(fingerprint):
         raise ValueError("This listing is not a Dragonwilds Sync-ready World.")
-    if not str(row.get("external_ip") or row.get("internal_ip") or "").strip():
+    external_ip = str(row.get("external_ip") or connect.get("host") or "").strip()
+    internal_ip = str(row.get("internal_ip") or "").strip()
+    if not (external_ip or internal_ip):
         raise ValueError("This listing does not publish a usable server route.")
-    return {**row, "fingerprint": fingerprint, "protocol": protocol, "directory_url": base}
+    return {**row, "external_ip": external_ip, "internal_ip": internal_ip,
+            "sync_port": int(row.get("sync_port") or connect.get("port") or 27051),
+            "sync_ready": True, "fingerprint": fingerprint, "protocol": protocol, "directory_url": base}
 
 
 def _directory_join_world_shape(row: dict, *, local_id: str = "", credentials: dict | None = None) -> dict:

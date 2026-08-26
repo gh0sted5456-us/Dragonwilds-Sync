@@ -16,6 +16,7 @@ from operator_identity import verify_world_identity
 from world_classification import normalize_world_classification
 from runtime_platforms import normalize_server_os, server_os_badge
 from network_config import DRAGONWILDS_SYNC_NETWORK_URL
+from operator_identity import sign_directory_request
 
 
 DIRECTORY_PATH = APP_DATA_DIR / "world_heartbeat_directory.json"
@@ -175,12 +176,20 @@ def publish_heartbeat(payload: dict, *, directory_url: str = "", token: str = ""
     endpoint = url + "/heartbeats"
     if official:
         endpoint = url + "/api/v1/heartbeat"
-        if not token:
-            result["error"] = "Official Cloudflare heartbeat publishing needs this World's publisher token in its Manifest Host settings."
-            return result
         timestamp = str(int(time.time()))
-        signature = hmac.new(token.encode("utf-8"), timestamp.encode("ascii") + b"." + raw_body, hashlib.sha256).hexdigest()
-        headers.update({"X-DWS-Timestamp": timestamp, "X-DWS-Signature": signature})
+        signed = sign_directory_request(raw_body, timestamp)
+        headers.update({
+            "X-DWS-Timestamp": timestamp,
+            "X-DWS-Signature": signed["signature"],
+            "X-DWS-Public-Key": signed["public_key"],
+            "X-DWS-Operator": signed["operator_fingerprint"],
+        })
+        # Retain the manually provisioned HMAC path as a rollout fallback. New
+        # launchers authenticate with their existing Ed25519 operator identity.
+        if token:
+            headers["X-DWS-Legacy-Signature"] = hmac.new(
+                token.encode("utf-8"), timestamp.encode("ascii") + b"." + raw_body, hashlib.sha256
+            ).hexdigest()
     elif token:
         headers["Authorization"] = f"Bearer {token}"
     request = urllib.request.Request(endpoint, data=raw_body, method="POST", headers=headers)

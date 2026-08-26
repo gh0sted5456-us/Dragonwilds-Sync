@@ -1,7 +1,20 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-23T00:00:00Z",
+  "updated_at": "2026-08-26T00:00:00Z",
   "releases": [
+    {
+      "version": "3.0.1",
+      "title": "Cloud Directory Connection",
+      "date": "2026-08-26",
+      "status": "stable",
+      "highlights": [
+        "Hosted Sync Worlds self-register with the built-in Cloudflare directory using the launcher's protected Ed25519 operator identity.",
+        "The public server browser searches by World name, IP address, or combined search terms.",
+        "Connect opens the verified direct-to-host password and synchronization dialog; passwords are never published to Cloudflare.",
+        "World Management reports Cloudflare acceptance separately from LAN discovery and local file-transfer state.",
+        "The official directory is focused on authenticated Sync Worlds instead of unrelated public Dragonwilds servers."
+      ]
+    },
     {
       "version": "3.0.0",
       "title": "Dragonwilds Sync V3",

@@ -504,6 +504,13 @@ def _heartbeat(state: dict) -> dict:
     payload = _legacy.SHARE.broadcast_payload()
     payload["world_name"] = payload.get("name") or "World"
     payload["internal_ip"] = payload.get("ip") or ""
+    payload["world_id"] = payload.get("fingerprint") or active_profile_id
+    external_ip = str(payload.get("external_ip") or "").strip()
+    if external_ip:
+        payload["public_connect"] = {
+            "host": external_ip,
+            "port": int(payload.get("sync_port") or payload.get("port") or 27051),
+        }
     payload["last_seen"] = time.time()
     payload["ttl_seconds"] = 180
     payload.update(_remote_advertisement_for_state(state, payload))

@@ -71,7 +71,10 @@ def resolve_client_layout(selected: str | Path) -> ClientLayout:
         install_root = raw
         game_root = raw / "RSDragonwilds"
 
-    exe_candidates = [game_root / "Binaries" / "Win64" / "RSDragonwilds-Win64-Shipping.exe", install_root / "RSDragonwilds.exe", game_root / "RSDragonwilds.exe"]
+    # The retail bootstrap performs Steam/EOS setup before it hands control to
+    # the shipping binary. Launching the shipping EXE directly can briefly show
+    # a window and then leave Steam believing the game is still running.
+    exe_candidates = [install_root / "RSDragonwilds.exe", game_root / "RSDragonwilds.exe", game_root / "Binaries" / "Win64" / "RSDragonwilds-Win64-Shipping.exe"]
     game_exe = next((p for p in exe_candidates if p.is_file()), exe_candidates[0])
     paks_lower = game_root / "Content" / "Paks" / "~mods"
     paks_upper = game_root / "Content" / "Paks" / "~Mods"

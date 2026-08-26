@@ -37,8 +37,8 @@ _TAG_DEFAULTS = [
     {"id": "custom-rules", "displayName": "Custom Rules", "category": "Rules", "aliases": ["custom rules", "custom-rules", "custom"]},
     {"id": "modded", "displayName": "Modded", "category": "Content", "aliases": ["modded", "mods"]},
     {"id": "vanilla", "displayName": "Vanilla", "category": "Content", "aliases": ["vanilla", "unmodded"]},
-    {"id": "ue4ss", "displayName": "UE4SS", "category": "Mod Ecosystem", "iconPath": "assets/platforms/ue4ss.png", "aliases": ["ue4ss", "ue 4 ss"]},
-    {"id": "runeschema", "displayName": "RuneSchema", "category": "Mod Ecosystem", "iconPath": "assets/platforms/runeschema.png", "aliases": ["runeschema", "rune schema"]},
+    {"id": "ue4ss", "displayName": "UE4SS", "category": "Mod Ecosystem", "iconPath": "assets/platforms/ue4ss.webp", "aliases": ["ue4ss", "ue 4 ss"]},
+    {"id": "runeschema", "displayName": "RuneSchema", "category": "Mod Ecosystem", "iconPath": "assets/platforms/runeschema.webp", "aliases": ["runeschema", "rune schema"]},
     {"id": "paks", "displayName": "PAKs", "category": "Mod Ecosystem", "iconPath": "assets/platforms/paks.svg", "aliases": ["pak", "paks", "pak mods", "pak-mods", "utoc", "ucas"]},
 ]
 

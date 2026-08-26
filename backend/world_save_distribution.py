@@ -7,25 +7,14 @@ from pathlib import Path
 
 from profile_store import SERVER_PROFILES_DIR, load_server_profile, save_server_profile
 
-UNIT_SECONDS = {"minutes": 60, "hours": 3600, "days": 86400, "weeks": 604800}
+WINDOW_SECONDS = 24 * 60 * 60
+MAX_REQUESTS_PER_WINDOW = 2
 
 
 def normalize_policy(value: dict | None) -> dict:
     src = value if isinstance(value, dict) else {}
-    unit = str(src.get("cooldown_unit") or "hours").lower()
-    if unit not in UNIT_SECONDS:
-        unit = "hours"
-    try:
-        amount = int(src.get("cooldown_value") or 6)
-    except (TypeError, ValueError):
-        amount = 6
-    amount = max(1, min(amount, 10080 if unit == "minutes" else 365))
-    return {"enabled": bool(src.get("enabled", False)), "cooldown_value": amount, "cooldown_unit": unit}
-
-
-def cooldown_seconds(policy: dict | None) -> int:
-    p = normalize_policy(policy)
-    return int(p["cooldown_value"]) * UNIT_SECONDS[p["cooldown_unit"]]
+    return {"enabled": bool(src.get("enabled", False)), "max_requests": MAX_REQUESTS_PER_WINDOW,
+            "window_hours": 24, "scope": "source_ip"}
 
 
 def _rate_path(profile_id: str) -> Path:
@@ -53,20 +42,37 @@ def status_for_ip(profile_id: str, client_ip: str, now: float | None = None) -> 
     policy = normalize_policy(profile.get("world_save_download"))
     now = float(now or time.time())
     rates = _read_rates(profile_id)
-    last = float((rates.get(client_ip) or {}).get("last_download_at") or 0)
-    remaining = max(0, int((last + cooldown_seconds(policy)) - now)) if last else 0
-    return {"enabled": policy["enabled"], "cooldown": policy, "last_download_at": last or None,
-            "next_available_at": (last + cooldown_seconds(policy)) if last else now, "remaining_seconds": remaining,
-            "allowed": bool(policy["enabled"] and remaining <= 0)}
+    record = rates.get(client_ip) if isinstance(rates.get(client_ip), dict) else {}
+    timestamps = [float(item) for item in (record.get("requests") or []) if isinstance(item, (int, float))]
+    legacy_last = float(record.get("last_download_at") or 0)
+    if legacy_last and legacy_last not in timestamps:
+        timestamps.append(legacy_last)
+    cutoff = now - WINDOW_SECONDS
+    timestamps = sorted(item for item in timestamps if item > cutoff)
+    used = len(timestamps)
+    remaining_count = max(0, MAX_REQUESTS_PER_WINDOW - used)
+    next_available = timestamps[0] + WINDOW_SECONDS if used >= MAX_REQUESTS_PER_WINDOW else now
+    return {"enabled": policy["enabled"], "policy": policy, "requests_used": used,
+            "requests_remaining": remaining_count, "window_started_at": timestamps[0] if timestamps else now,
+            "last_download_at": timestamps[-1] if timestamps else None, "next_available_at": next_available,
+            "remaining_seconds": max(0, int(next_available - now)),
+            "allowed": bool(policy["enabled"] and remaining_count > 0)}
 
 
 def record_download(profile_id: str, client_ip: str, now: float | None = None) -> dict:
     now = float(now or time.time())
     rates = _read_rates(profile_id)
-    rates[client_ip] = {"last_download_at": now}
-    # Keep bounded. Drop records older than twice the largest useful policy horizon.
-    cutoff = now - (730 * 86400)
-    rates = {ip: item for ip, item in rates.items() if float((item or {}).get("last_download_at") or 0) >= cutoff}
+    record = rates.get(client_ip) if isinstance(rates.get(client_ip), dict) else {}
+    timestamps = [float(item) for item in (record.get("requests") or []) if isinstance(item, (int, float))]
+    legacy_last = float(record.get("last_download_at") or 0)
+    if legacy_last and legacy_last not in timestamps:
+        timestamps.append(legacy_last)
+    cutoff = now - WINDOW_SECONDS
+    timestamps = [item for item in timestamps if item > cutoff]
+    timestamps.append(now)
+    rates[client_ip] = {"requests": timestamps[-MAX_REQUESTS_PER_WINDOW:], "last_download_at": now}
+    rates = {ip: item for ip, item in rates.items()
+             if float((item or {}).get("last_download_at") or 0) >= cutoff}
     _write_rates(profile_id, rates)
     return status_for_ip(profile_id, client_ip, now)
 

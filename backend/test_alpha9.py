@@ -31,6 +31,15 @@ def main():
         (mods / "ClientAuto" / "Scripts").mkdir(parents=True)
         (mods / "ClientAuto" / "Scripts" / "main.lua").write_text("return true", encoding="utf-8")
         (mods / "ClientAuto" / "enabled.txt").write_text("", encoding="utf-8")
+        (mods / "ClientRole" / "Scripts").mkdir(parents=True)
+        (mods / "ClientRole" / "Scripts" / "main.lua").write_text("return true", encoding="utf-8")
+        (mods / "ClientRole" / "enabled.txt").write_text("", encoding="utf-8")
+        (mods / "ClientRole" / "ID.txt").write_text(
+            "ModId: client-role\nName: Client Role\nRuntimeRole: client\n", encoding="utf-8")
+        # MiniMap predates RuntimeRole but is a curated client-only UI mod.
+        (mods / "MiniMap" / "dlls").mkdir(parents=True)
+        (mods / "MiniMap" / "dlls" / "main.dll").write_bytes(b"ui")
+        (mods / "MiniMap" / "enabled.txt").write_text("", encoding="utf-8")
         (mods / "ServerOnly" / "Scripts").mkdir(parents=True)
         (mods / "ServerOnly" / "Scripts" / "main.lua").write_text("return true", encoding="utf-8")
         (mods / "RSDWTools" / "dlls").mkdir(parents=True)
@@ -65,6 +74,18 @@ def main():
             server_txt = Path(server_result["path"]).read_text(encoding="utf-8")
             assert "ClientExplicit : 1" in server_txt and "ServerOnly : 1" in server_txt
             assert "ClientAuto" not in server_txt and "RuneSchema" not in server_txt
+            assert "ClientRole" not in server_txt and "MiniMap" not in server_txt
+            assert set(server_result["activation"]["retired"]) == {"ClientRole", "MiniMap"}
+            assert not (mods / "ClientRole" / "enabled.txt").exists()
+            assert (mods / "ClientRole" / ss.CLIENT_ONLY_ENABLE_MARKER).is_file()
+            assert not (mods / "MiniMap" / "enabled.txt").exists()
+            assert (mods / "MiniMap" / ss.CLIENT_ONLY_ENABLE_MARKER).is_file()
+
+            # The same files remain distributable and clients explicitly enable
+            # them after the host-only self-enable marker has been retired.
+            client_after_server_normalize = ss.build_client_mods_txt(units)
+            assert "ClientRole : 1" in client_after_server_normalize
+            assert "MiniMap : 1" in client_after_server_normalize
 
             assert "DragonwildsSyncPlayerTracker" not in (ROOT / "backend" / "server_systems.py").read_text(encoding="utf-8")
         finally:

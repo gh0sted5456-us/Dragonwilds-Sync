@@ -40,7 +40,7 @@ requireText(frameActions, "target.dataset.action === 'open'", 'embedded Mod Mana
 rejectText(frameActions, 'openDetachedWindow', 'BrowserWindow creation from embedded actions');
 
 requireText(phase5, 'DRAGONWILDS SYNC EXPLORER', 'Explorer title');
-requireText(phase5, 'assets/application-icon.png', 'application icon in internal windows/Explorer');
+requireText(phase5, 'assets/application-icon.webp', 'application icon in internal windows/Explorer');
 for (const category of ['UE4SS', 'RuneSchema', 'Pak']) requireText(phase5, category, `logical ${category} category`);
 for (const hidden of ['dragonconnect', 'persistentdirectconnectip', 'rsdwtools', 'rsdwdevkit', 'mods.txt']) {
   requireText(phase5, hidden, `hidden infrastructure guard ${hidden}`);

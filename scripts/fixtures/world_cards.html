@@ -21,7 +21,7 @@
   <main class="validation-stage">
     <section>
       <p class="validation-label">Private World placard</p>
-      <article class="world-card app-world-placard has-placard validation-placard" id="validation-placard" style="--world-placard:url('../../renderer/assets/placards/2.png')">
+      <article class="world-card app-world-placard has-placard validation-placard" id="validation-placard" style="--world-placard:url('../../renderer/assets/placards/2.webp')">
        <div class="world-card-inner"><section class="world-card-face world-card-front">
         <div class="world-card-media"><img class="world-card-banner" src="../../website/assets/demo-world-banner.svg" alt=""/><div class="world-card-banner-blend"></div></div>
         <div class="world-card-body">
@@ -41,8 +41,8 @@
     </section>
     <section>
       <p class="validation-label">Horizontal World row</p>
-      <article class="world-list-row has-placard validation-row" id="validation-row" style="--world-placard:url('../../renderer/assets/placards/2.png')">
-        <div class="world-list-icon"><img src="../../renderer/assets/singleplayer-icon.png" alt="" /></div>
+      <article class="world-list-row has-placard validation-row" id="validation-row" style="--world-placard:url('../../renderer/assets/placards/2.webp')">
+        <div class="world-list-icon"><img src="../../renderer/assets/singleplayer-icon.webp" alt="" /></div>
         <div class="world-list-main"><div class="world-list-title"><h3>SinglePlayer</h3><span class="status-pill unknown">LOCAL</span></div><div class="world-list-meta"><span>Private World</span><span>Local</span></div><div class="badges"><span class="badge vanilla">VANILLA</span><span class="badge paks">NORMAL</span></div></div>
         <div class="world-list-banner"><img src="../../website/assets/demo-world-banner.svg" alt="" /></div>
         <div class="world-row-actions"><button class="btn play compact-btn">Launch</button><button class="btn ghost compact-btn">Manage</button></div>
@@ -72,7 +72,7 @@
       const errors=[];
       const banner=card.querySelector('.world-card-banner');
       const icon=card.querySelector('.world-icon');
-      if(!getComputedStyle(card.querySelector('.world-card-face'),'::before').backgroundImage.includes('placards/2.png'))errors.push('absolute placard face background missing');
+      if(!getComputedStyle(card.querySelector('.world-card-face'),'::before').backgroundImage.includes('placards/2.webp'))errors.push('absolute placard face background missing');
       if(!banner.complete||!banner.naturalWidth)errors.push('server banner did not load');
       if(!icon.complete||!icon.naturalWidth)errors.push('server icon did not load');
       if(!card.querySelector('.world-card-banner-blend'))errors.push('banner blend layer missing');
@@ -81,7 +81,7 @@
       if(buttons.some((button)=>button.left<rect(card).left-.5||button.right>rect(card).right+.5))errors.push('button escapes placard');
       if(pairOverlap(buttons))errors.push('placard buttons overlap');
       if(tagPlacardStyle.backgroundColor==='rgb(255, 255, 255)'||tagPlacardStyle.backgroundColor==='rgba(255, 255, 255, 1)')errors.push('Dragonwilds/Sync placard is white');
-      if(!getComputedStyle(rowNode,'::before').backgroundImage.includes('placards/2.png'))errors.push('horizontal placard background missing');
+      if(!getComputedStyle(rowNode,'::before').backgroundImage.includes('placards/2.webp'))errors.push('horizontal placard background missing');
       const rowBanner=rowNode.querySelector('.world-list-banner img');
       if(!rowBanner.complete||!rowBanner.naturalWidth)errors.push('horizontal server banner did not load');
       const rowTitleStyle=getComputedStyle(rowNode.querySelector('.world-list-title h3'));

@@ -17,6 +17,7 @@ from dragonwilds_service_legacy import *  # noqa: F401,F403
 import directory_host as _directory_host_module
 import local_world as _local_world
 import managed_updates as _managed_updates
+import server_systems as _server_systems
 from profile_store import SERVER_PROFILES_DIR
 from trash_store import empty as empty_trash
 from trash_store import list_entries as list_trash
@@ -539,7 +540,15 @@ def _unified_console(profile_id: str, limit: int = 350) -> dict:
     profile_id = str(profile_id or "").strip()
     if not profile_id or not _legacy.load_server_profile(profile_id):
         raise KeyError("Server World not found")
-    runtime = _legacy.ENGINE.status()
+    # The dedicated process and its stdout now live in the authenticated World
+    # Runtime Worker.  Reading the retained parent ENGINE produced a valid but
+    # permanently stale/empty console while the actual game was running.
+    # AuthoritativeRuntimeManager projects the worker-owned runtime (including
+    # process_output and events) without creating a second lifecycle owner.
+    lifecycle = RUNTIME.get_status()
+    runtime = dict(lifecycle.get("runtime") or {})
+    if not runtime:
+        runtime = _legacy.ENGINE.status()
     with _legacy.STATE.lock:
         activities = list(_legacy.STATE.activities)
     history = _legacy.rsdw_console_history(profile_id, max(200, min(int(limit or 350), 1000)))
@@ -557,7 +566,10 @@ def _console_world_runtime(profile_id: str) -> tuple[str, dict]:
     profile = _legacy.load_server_profile(profile_id) if profile_id else None
     if not profile:
         raise KeyError("Server World not found")
-    runtime = _legacy.ENGINE.status()
+    lifecycle = RUNTIME.get_status()
+    runtime = dict(lifecycle.get("runtime") or {})
+    if not runtime:
+        runtime = _legacy.ENGINE.status()
     if str(runtime.get("active_profile_id") or "") != profile_id:
         raise RuntimeError("Activate this Server World before editing its live RuneSchema configuration.")
     root = str(_legacy.server_root_for_profile(profile) or runtime.get("game_root") or "").strip()
@@ -571,11 +583,19 @@ def _default_runeschema_settings() -> dict:
     return {
         "languageOverride": "", "enableAutoReload": False, "enableDebugLogging": False,
         "enableExperimentalDropScaling": False,
+        "identityOverrides": {"enabled": True, "assets": True, "recipes": True, "journals": True,
+                              "dryRun": False, "logChanges": True},
+        "spawnSafety": {"maxScale": 10.0, "maxDropIncreasePercent": 500.0},
         "tooling": {
             "enabled": True,
             "modsTxt": {"enabled": True, "autoCreate": True, "reconcileFolders": True, "preserveComments": True, "strictValues": True},
             "compatibilityReports": {"enabled": True, "writeFile": True, "warnSameTarget": True, "warnSameProperty": True, "warnArrayReplacement": True},
             "enableSchemaGeneration": True, "enableFModelSnippetGenerator": False,
+            "schemaTypes": {
+                "utility": True, "assets": True, "blueprints": True, "buildings": True,
+                "courses": True, "enums": True, "journal": True, "raw": True,
+                "recipes": True, "spawns": True, "strings": True,
+            },
         },
     }
 
@@ -599,6 +619,15 @@ def _parse_runeschema_settings(raw: str) -> dict:
     for key in ("languageOverride", "enableAutoReload", "enableDebugLogging", "enableExperimentalDropScaling"):
         if key in data:
             settings[key] = data[key]
+    for group, keys in (
+        ("identityOverrides", ("enabled", "assets", "recipes", "journals", "dryRun", "logChanges")),
+        ("spawnSafety", ("maxScale", "maxDropIncreasePercent")),
+    ):
+        incoming = data.get(group)
+        if isinstance(incoming, dict):
+            for key in keys:
+                if key in incoming:
+                    settings[group][key] = incoming[key]
     tooling = data.get("tooling")
     if isinstance(tooling, dict):
         for key in ("enabled", "enableSchemaGeneration", "enableFModelSnippetGenerator"):
@@ -614,6 +643,12 @@ def _parse_runeschema_settings(raw: str) -> dict:
             for key in ("enabled", "writeFile", "warnSameTarget", "warnSameProperty", "warnArrayReplacement"):
                 if key in reports:
                     settings["tooling"]["compatibilityReports"][key] = reports[key]
+        schema_types = tooling.get("schemaTypes")
+        if isinstance(schema_types, dict):
+            for key in ("utility", "assets", "blueprints", "buildings", "courses", "enums",
+                        "journal", "raw", "recipes", "spawns", "strings"):
+                if key in schema_types:
+                    settings["tooling"]["schemaTypes"][key] = schema_types[key]
     return settings
 
 
@@ -625,11 +660,23 @@ def _serialize_runeschema_settings(settings: dict) -> str:
     tooling = settings.get("tooling", {})
     mods_txt = tooling.get("modsTxt", {})
     reports = tooling.get("compatibilityReports", {})
+    identity = settings.get("identityOverrides", {})
+    safety = settings.get("spawnSafety", {})
+    schema_types = tooling.get("schemaTypes", {})
     data = {
         "languageOverride": settings.get("languageOverride", ""),
         "enableAutoReload": bool(settings.get("enableAutoReload", False)),
         "enableDebugLogging": bool(settings.get("enableDebugLogging", False)),
         "enableExperimentalDropScaling": bool(settings.get("enableExperimentalDropScaling", False)),
+        "identityOverrides": {
+            key: bool(identity.get(key, default)) for key, default in (
+                ("enabled", True), ("assets", True), ("recipes", True), ("journals", True),
+                ("dryRun", False), ("logChanges", True))
+        },
+        "spawnSafety": {
+            "maxScale": max(0.0, float(safety.get("maxScale", 10.0))),
+            "maxDropIncreasePercent": max(0.0, float(safety.get("maxDropIncreasePercent", 500.0))),
+        },
         "tooling": {
             "enabled": bool(tooling.get("enabled", True)),
             "enableSchemaGeneration": bool(tooling.get("enableSchemaGeneration", True)),
@@ -644,6 +691,9 @@ def _serialize_runeschema_settings(settings: dict) -> str:
                 "warnSameTarget": bool(reports.get("warnSameTarget", True)), "warnSameProperty": bool(reports.get("warnSameProperty", True)),
                 "warnArrayReplacement": bool(reports.get("warnArrayReplacement", True)),
             },
+            "schemaTypes": {key: bool(schema_types.get(key, True)) for key in
+                            ("utility", "assets", "blueprints", "buildings", "courses", "enums",
+                             "journal", "raw", "recipes", "spawns", "strings")},
         },
     }
     return _json.dumps(data, indent=4) + "\n"
@@ -772,6 +822,36 @@ def handle(method: str, params: dict) -> object:
         updates = dict(state.setdefault("application", {}).get("update_status") or {})
         return {"updates": {key: value for key, value in updates.items() if key in {"core_mod", "runeschema"}},
                 "state": _legacy.public_state(state)}
+
+    if method == "server.install.rsdwdevkit_update":
+        profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "").strip()
+        profile = _legacy.load_server_profile(profile_id) if profile_id else {}
+        if not profile:
+            raise ValueError("Select the hosted World whose RSDW Dev Kit should be updated.")
+        if bool(_legacy.ENGINE.status().get("running")):
+            raise RuntimeError("Stop the dedicated server before updating RSDW Dev Kit.")
+        install_dir = str(state.setdefault("application", {}).setdefault("server_install", {}).get("install_dir") or "").strip()
+        if not install_dir:
+            raise ValueError("Set Settings → Server → Server Directory first.")
+        source = str(params.get("releases_url") or "https://github.com/RSDWArchive/RSDWDevKit/releases").strip()
+        layout = _legacy.resolve_server_layout(install_dir)
+        result = _server_systems.ensure_rsdwtools_baseline(
+            layout.ue4ss_mods_dir, allow_update=True, source_url=source, force=True)
+        if not result.get("ok"):
+            raise RuntimeError(str(result.get("error") or "RSDW Dev Kit could not be installed."))
+        profile = _legacy.load_server_profile(profile_id) or profile
+        profile["rsdw_devkit_runtime"] = {
+            "source": source, "filename": str(result.get("version") or "latest GitHub release"),
+            "installed_at": time.time(), "destination": str(result.get("path") or ""),
+        }
+        _legacy.save_server_profile(profile_id, profile)
+        refreshed = _legacy.load_state()
+        _legacy._record_notification(
+            refreshed, "RSDW Dev Kit updated",
+            f"{profile.get('name') or profile_id} now uses {profile['rsdw_devkit_runtime']['filename']}.",
+            "success", world_id=profile_id, key=f"rsdw-devkit:{profile_id}:{int(time.time())}")
+        _legacy.save_state(refreshed)
+        return {"result": result, "state": _legacy.public_state(refreshed)}
 
     if method == "application.core_mod.delete":
         component = str(params.get("component") or "").strip().casefold().replace("_", "")
@@ -959,6 +1039,14 @@ def handle(method: str, params: dict) -> object:
         for key in ("languageOverride", "enableAutoReload", "enableDebugLogging", "enableExperimentalDropScaling"):
             if key in patch:
                 settings[key] = patch[key]
+        for group, keys in (
+            ("identityOverrides", ("enabled", "assets", "recipes", "journals", "dryRun", "logChanges")),
+            ("spawnSafety", ("maxScale", "maxDropIncreasePercent")),
+        ):
+            group_patch = patch.get(group) if isinstance(patch.get(group), dict) else {}
+            for key in keys:
+                if key in group_patch:
+                    settings[group][key] = group_patch[key]
         tooling_patch = patch.get("tooling") if isinstance(patch.get("tooling"), dict) else {}
         for key in ("enabled", "enableSchemaGeneration", "enableFModelSnippetGenerator"):
             if key in tooling_patch:
@@ -971,6 +1059,11 @@ def handle(method: str, params: dict) -> object:
             for key in keys:
                 if key in group_patch:
                     settings["tooling"][group][key] = group_patch[key]
+        schema_patch = tooling_patch.get("schemaTypes") if isinstance(tooling_patch.get("schemaTypes"), dict) else {}
+        for key in ("utility", "assets", "blueprints", "buildings", "courses", "enums",
+                    "journal", "raw", "recipes", "spawns", "strings"):
+            if key in schema_patch:
+                settings["tooling"]["schemaTypes"][key] = schema_patch[key]
         written = unified_console_write_mod_config(runtime, "runeschema", _serialize_runeschema_settings(settings))
         return {"path": written.get("path"), "settings": settings}
 

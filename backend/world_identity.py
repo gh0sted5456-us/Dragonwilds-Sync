@@ -104,13 +104,28 @@ def _route_values(world: dict) -> dict[str, str]:
     shared = world.get("shared") if isinstance(world.get("shared"), dict) else {}
     def first(*values: object) -> str:
         return next((str(value).strip() for value in values if str(value or "").strip()), "")
-    return {
+    generic = first(
+        connection.get("endpoint"), connection.get("address"), connection.get("host"),
+        world.get("endpoint"), world.get("address"), world.get("host"), world.get("queried_ip"),
+        discovery.get("endpoint"), discovery.get("address"), discovery.get("host"), discovery.get("queried_ip"),
+        cached.get("endpoint"), cached.get("address"), cached.get("host"),
+    )
+    generic_endpoint = normalize_endpoint(generic) if generic else None
+    generic_kind = "internal" if generic_endpoint and endpoint_is_private(generic_endpoint) else "external"
+    values = {
         "internal": first(connection.get("internal_ip"), cached.get("internal_ip"), status_cached.get("internal_ip"),
                           world.get("internal_ip"), identity.get("internal_ip"), discovery.get("internal_ip"), shared.get("internal_ip")),
         "external": first(connection.get("external_ip"), cached.get("external_ip"), status_cached.get("external_ip"),
                           world.get("external_ip"), identity.get("external_ip"), discovery.get("external_ip"), shared.get("external_ip"),
                           world.get("queried_ip"), discovery.get("queried_ip")),
     }
+    # Older Direct Connect and directory payloads stored a single endpoint
+    # instead of splitting LAN/WAN aliases. Retain that exact user-selected
+    # route through profile hydration and retry rather than reporting that the
+    # World has no address.
+    if generic and not values[generic_kind]:
+        values[generic_kind] = generic
+    return values
 
 
 def saved_endpoint_kind(world: dict, contacted: str) -> str | None:

@@ -39,18 +39,19 @@ def main() -> None:
     assert by_id["runeschema"]["depends_on"] == ["ue4ss"]
     assert by_id["runeschema"]["physical_relationship"] == "UE4SS/Mods/RuneSchema"
     assert by_id["runeschema"]["update_available"] is True
-    assert by_id["dragonconnect"]["legacy_name"] == "PersistentDirectConnectIP"
+    assert by_id["dragonconnect"]["legacy_name"] == "DragonConnectHelper"
+    assert mod_visibility("DragonLink-Connect", "ue4ss_mod")["user_manageable"] is False
     assert by_id["dragonconnect"]["runtime_roles"] == ["server", "host", "client"]
     assert by_id["rsdw_toolkit"]["ui_group"] == "tooling"
     assert by_id["rsdw_toolkit"]["source_repository"] == "RSDWArchive/RSDWDevKit"
-    assert by_id["rsdw_toolkit"]["remote_update_supported"] is False
+    assert by_id["rsdw_toolkit"]["remote_update_supported"] is True
 
     # The currently deployed physical RSDWTools bridge name resolves to the
     # logical RSDW Toolkit UE4SS component. The separate RSDWTools data source
     # remains represented only by DATA_SOURCES and never receives a core action.
     toolkit = component_metadata_for_mod("RSDWTools", "ue4ss_mod")
     assert toolkit and toolkit["id"] == "rsdw_toolkit"
-    assert toolkit["name"] == "RSDW Toolkit"
+    assert toolkit["name"] == "RSDW Dev Kit"
 
     missing = server_core_components({"core_mod": {"status": "not_installed"}, "runeschema": {"status": "current"}})
     missing_by_id = {row["id"]: row for row in missing}
@@ -68,7 +69,9 @@ def main() -> None:
 
     assert component_for_remote_update("UE4SS") == "ue4ss"
     assert component_for_remote_update("RuneSchema") == "runeschema"
-    for unsupported in ("RSDW Toolkit", "RSDWTools", "DragonConnect", "DragonCore"):
+    assert component_for_remote_update("RSDW Toolkit") == "rsdw_toolkit"
+    assert component_for_remote_update("RSDWTools") == "rsdw_toolkit"
+    for unsupported in ("DragonConnect", "DragonCore"):
         try:
             component_for_remote_update(unsupported)
         except ValueError as exc:

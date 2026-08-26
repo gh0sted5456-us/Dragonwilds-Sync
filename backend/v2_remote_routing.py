@@ -311,15 +311,21 @@ def _core_action_handler(handler):
         dispatcher = getattr(handler, "__globals__", {}).get("handle")
         if not callable(dispatcher):
             raise RuntimeError("The authoritative managed-core update dispatcher is unavailable.")
-        result = dispatcher(
-            "application.core_mod.update",
-            {
-                "component": component,
-                "target": "server",
-                "id": str(profile_id or ""),
-                "restart": bool(values.get("restart", False)),
-            },
-        )
+        if component == "rsdw_toolkit":
+            result = dispatcher(
+                "server.install.rsdwdevkit_update",
+                {"id": str(profile_id or "")},
+            )
+        else:
+            result = dispatcher(
+                "application.core_mod.update",
+                {
+                    "component": component,
+                    "target": "server",
+                    "id": str(profile_id or ""),
+                    "restart": bool(values.get("restart", False)),
+                },
+            )
         if isinstance(result, dict):
             return result.get("result") if isinstance(result.get("result"), dict) else result
         return {"result": result}

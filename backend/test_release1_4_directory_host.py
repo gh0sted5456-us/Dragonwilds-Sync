@@ -100,8 +100,8 @@ def main():
             assert b'<body><img class="mark"' in proxied_page and b"Directory Control Room" not in proxied_page
             public_preview = urllib.request.urlopen(base + "/landing").read()
             assert b'<body><img class="mark"' in public_preview and b"Directory Control Room" not in public_preview
-            icon = urllib.request.urlopen(base + "/assets/icon.png").read()
-            assert icon.startswith(b"\x89PNG\r\n\x1a\n")
+            icon = urllib.request.urlopen(base + "/assets/icon.webp").read()
+            assert icon[:4] == b"RIFF" and icon[8:12] == b"WEBP"
             match = re.search(br'name="dws-admin-token" content="([^"]+)"', local_page)
             assert match
             admin_token = match.group(1).decode()

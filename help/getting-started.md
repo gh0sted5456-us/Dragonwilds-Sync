@@ -9,7 +9,7 @@ Dragonwilds Sync organizes local saves, connected Worlds, hosted servers, charac
 - Pick a character after discovery completes.
 - Use **Dragonwilds** for Singleplayer, Co-Op, Dedicated hosting, World profiles, and connected or declared Sync-capable Worlds.
 
-![Current Dragonwilds Appy](../renderer/assets/help/02-worlds.png) "The Dragonwilds game icon opens the combined World and hosting workspace."
+![Current Dragonwilds Appy](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/02-worlds.png) "The Dragonwilds game icon opens the combined World and hosting workspace."
 
 ## Recommended first run
 

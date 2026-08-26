@@ -3,7 +3,7 @@ from __future__ import annotations
 """Encrypted-at-rest secret references for Dragonwilds Sync managed state.
 
 The launcher still needs decrypted values in-process when it authenticates to a
-World or materializes DragonConnect, but durable profile/state JSON should not
+World or materializes DragonLink-Connect, but durable profile/state JSON should not
 contain raw passwords, access keys, or publisher tokens.  This module stores
 those values in a small local encrypted vault and leaves stable ``dws-secret``
 references in the ordinary JSON documents.

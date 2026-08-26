@@ -468,7 +468,12 @@ def _install_server_pipeline(server_engine_module) -> None:
         cfg = profile.get("dedicated_config") or {}
         read_state = getattr(server_engine_module, "load_state", lambda: {})
         native_consoles = bool(((read_state().get("application") or {}).get("advanced") or {}).get("native_runtime_consoles_enabled", False))
-        command = [exe, "-log"]
+        # Unreal only mirrors the native dedicated console categories to the
+        # owned pipe when -stdout is explicit. Keep the normal -log sink too:
+        # the unified console then receives LogPersistence, DominionLog,
+        # LogSpudData, EOS and every other vanilla source in real time while
+        # UE4SS/RuneSchema retain their independent file-backed streams.
+        command = [exe, "-log", "-stdout", "-LogFlushInterval=0.1"]
         launch_env = None
         if server_engine_module.sys.platform.startswith("linux") and Path(exe).suffix.casefold() == ".exe":
             command, launch_env = server_engine_module.linux_windows_server_command(exe)
@@ -477,7 +482,7 @@ def _install_server_pipeline(server_engine_module) -> None:
         writable = server_engine_module.ensure_server_runtime_writable(self._profile_root(profile))
         if writable.get("writable_repaired"):
             self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
-        self.proc = server_engine_module.popen_game_server(command, cwd=str(Path(exe).parent), env=launch_env,
+        self.proc = server_engine_module.popen_game_server(command, minimize_console=native_consoles, cwd=str(Path(exe).parent), env=launch_env,
                                                       stdout=server_engine_module.subprocess.PIPE,
                                                       stderr=server_engine_module.subprocess.STDOUT,
                                                       text=True, encoding="utf-8", errors="replace", bufsize=1)

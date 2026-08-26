@@ -17,7 +17,7 @@ def main():
     release_meta = (ROOT / "renderer/release-meta.js").read_text(encoding="utf-8")
     changelog = json.loads((ROOT / "docs/changelog.json").read_text(encoding="utf-8"))
     version = str(package["version"])
-    assert re.fullmatch(r"2\.7\.\d+", version)
+    assert re.fullmatch(r"3\.\d+\.\d+", version)
     assert package_lock["version"] == version
     assert package_lock["packages"][""]["version"] == version
     assert f"version: '{version}'" in release_meta
@@ -50,15 +50,15 @@ def main():
     assert "'worlds'].includes(state.route)" in renderer
     assert 'data-webhost-tab="home">Server Directory' not in renderer
 
-    baseline = ROOT / "resources/PersistentDirectConnectIP-baseline.zip"
+    baseline = ROOT / "resources/DragonLink-Connect-baseline.zip"
     with zipfile.ZipFile(baseline) as archive:
         names = set(archive.namelist())
-        assert "PersistentDirectConnectIP/Scripts/main.lua" in names
-        config = archive.read("PersistentDirectConnectIP/Scripts/config.lua").decode("utf-8")
-        main_lua = archive.read("PersistentDirectConnectIP/Scripts/main.lua").decode("utf-8")
+        assert "DragonLink-Connect/Scripts/main.lua" in names
+        config = archive.read("DragonLink-Connect/Scripts/config.lua").decode("utf-8")
+        main_lua = archive.read("DragonLink-Connect/Scripts/main.lua").decode("utf-8")
         assert 'IP = ""' in config and 'PASSWORD = ""' in config
         assert "24.9.154.151" not in config and "BELTS" not in config
-        assert 'TAG = "[DragonConnect]"' in main_lua
+        assert 'TAG = "[DragonLink-Connect]"' in main_lua
         assert 'VERSION = "0.4.2"' in main_lua
         assert "editable:SetText(FText(value))" in main_lua
         assert 'FindAllOf, class_name' in main_lua
@@ -81,7 +81,7 @@ def main():
     routed_overview = renderer.index("}else if(!standaloneHostWorkspace&&externalTab==='overview'){")
     assert routed_login < routed_overview
 
-    print("v2.7 updater, navigation, runtime, networking, and DragonConnect contracts passed")
+    print("v3 updater, navigation, runtime, networking, and DragonConnect contracts passed")
 
 
 if __name__ == "__main__":

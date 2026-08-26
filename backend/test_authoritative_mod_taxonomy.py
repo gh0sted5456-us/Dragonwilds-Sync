@@ -138,7 +138,7 @@ def main() -> None:
         client_layout = sync_engine.resolve_client_layout(client_install)
         client_layout.ue4ss_mods_dir.mkdir(parents=True, exist_ok=True)
         _mkdir_mod(client_layout.ue4ss_mods_dir, "ActualUserMod")
-        _mkdir_mod(client_layout.ue4ss_mods_dir, "PersistentDirectConnectIP", enabled=True)
+        _mkdir_mod(client_layout.ue4ss_mods_dir, "DragonLink-Connect", enabled=True)
         result = sync_engine.write_client_mods_txt(client_install, {
             "mods_txt_writer": "server_push",
             "client_ue4ss_mods": ["ActualUserMod", "DragonCore", "RSDWTools"],
@@ -146,7 +146,7 @@ def main() -> None:
         client_text = Path(result["path"]).read_text(encoding="utf-8")
         assert result["writer"] == "client_generate"
         assert "ActualUserMod : 1" in client_text
-        assert "PersistentDirectConnectIP : 1" in client_text
+        assert "DragonLink-Connect : 1" in client_text
         assert "DragonCore : 1" in client_text
         assert "RSDWTools" not in client_text
 

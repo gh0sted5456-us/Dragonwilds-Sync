@@ -63,13 +63,13 @@ def test_portable_item_manifest_replaces_runtime_companion():
 
 
 def test_animated_startup_splash_is_packaged():
-    splash = ROOT / "renderer" / "assets" / "theme" / "animated-splash.gif"
+    splash = ROOT / "renderer" / "assets" / "theme" / "animated-splash.webp"
     assert splash.is_file()
     data = splash.read_bytes()
-    assert data[:6] in {b"GIF87a", b"GIF89a"}
+    assert data[:4] == b"RIFF" and data[8:12] == b"WEBP"
     assert len(data) > 100_000
     css = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
-    assert "url('assets/theme/animated-splash.gif') center/cover no-repeat" in css
+    assert "url('assets/theme/animated-splash.webp') center/cover no-repeat" in css
 
 
 def test_local_appdata_migration_and_default_off_tips():

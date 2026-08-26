@@ -2,7 +2,7 @@
 
 Profile → Characters uses the selected character as the hydration source for the integrated RSDW tools and Avatar preview.
 
-![Character save workspace](../renderer/assets/help/29-character-studio.png) "Choose the exact save from Profile and open it directly in the RSDW-L Character Editor."
+![Character save workspace](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/29-character-studio.png) "Choose the exact save from Profile and open it directly in the RSDW-L Character Editor."
 
 ## Safe editing
 
@@ -11,7 +11,7 @@ Profile → Characters uses the selected character as the hydration source for t
 - Save through Sync so the current checksum is checked first.
 - Sync creates a backup and refuses stale writeback if the character changed on disk after loading.
 
-![Current Character Editor](../renderer/assets/help/04-character-editor.png) "The selected save stays visible while the Character, Item, Spell, Recipe, and Quest tools share one guarded draft."
+![Current Character Editor](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/04-character-editor.png) "The selected save stays visible while the Character, Item, Spell, Recipe, and Quest tools share one guarded draft."
 
 ## Character Editor preview
 

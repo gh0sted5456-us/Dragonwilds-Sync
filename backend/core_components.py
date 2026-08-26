@@ -58,8 +58,8 @@ CORE_COMPONENTS = {
         "aliases": ["runeschema"],
     },
     "dragonconnect": {
-        "name": "DragonConnect",
-        "legacy_name": "PersistentDirectConnectIP",
+        "name": "DragonLink-Connect",
+        "legacy_name": "DragonConnectHelper",
         "type": "Direct Connect Runtime Component",
         "ui_group": "core_components",
         "technology": "ue4ss",
@@ -70,35 +70,38 @@ CORE_COMPONENTS = {
         "depends_on": ["ue4ss"],
         "update_key": "",
         "remote_update_supported": False,
+        # Published by the baked-component provider, never as an ordinary
+        # World-owned mod (which could accidentally include host credentials).
         "parity_payload": False,
         "profile_membership": "derived",
         "generated_mods_txt_roles": ["server", "host", "client"],
-        "physical_name": "PersistentDirectConnectIP",
-        "physical_relationship": "UE4SS/Mods/PersistentDirectConnectIP (DragonConnect logical identity)",
-        "aliases": ["dragonconnect", "persistentdirectconnectip", "persistent direct connect ip"],
+        "physical_name": "DragonLink-Connect",
+        "physical_relationship": "UE4SS/Mods/DragonLink-Connect",
+        "aliases": ["dragonlink-connect", "dragonlink connect", "dragonconnecthelper", "dragon connect helper", "dragonconnect", "persistentdirectconnectip", "persistent direct connect ip"],
     },
 }
 
 TOOLING_COMPONENTS = {
     "rsdw_toolkit": {
-        "name": "RSDW Toolkit",
+        "name": "RSDW Dev Kit",
         "legacy_name": "RSDWTools",
         "type": "UE4SS Runtime Tooling / Game Bridge",
         "ui_group": "tooling",
         "technology": "ue4ss",
         "provider": "ue4ss_mod",
         "physical_type": "ue4ss_mod",
-        "runtime_roles": ["server", "host", "client"],
+        "runtime_roles": ["server", "host"],
+        "optional_runtime_roles": ["client"],
         "visibility": "hidden-tooling",
         "depends_on": ["ue4ss"],
-        "update_key": "",
-        "remote_update_supported": False,
+        "update_key": "rsdw_devkit",
+        "remote_update_supported": True,
         "parity_payload": False,
         "profile_membership": "derived",
         "physical_name": "RSDWTools",
         "source_repository": "RSDWArchive/RSDWDevKit",
         "source_releases": "https://github.com/RSDWArchive/RSDWDevKit/releases",
-        "physical_relationship": "UE4SS/Mods/RSDWTools (legacy bridge directory; logical RSDW Toolkit)",
+        "physical_relationship": "UE4SS/Mods/RSDWTools (server/host runtime; optional explicit client install)",
         "capabilities": ["spawning", "live_map", "player_tracking", "console_commands", "game_bridge"],
         "aliases": [
             "rsdwtools", "rsdw toolkit", "rsdwtoolkit", "rsdw tool kit",
@@ -367,6 +370,7 @@ def install_mod_taxonomy_adapters() -> None:
     def generate_server_mods_txt(profile_id: str, game_root: str, units=None) -> dict:
         layout = server_systems.resolve_server_layout(game_root)
         units = units if units is not None else server_systems.scan_mod_units(profile_id, str(layout.game_root))
+        activation = server_systems.normalize_server_ue4ss_activation(units)
         names: list[str] = []
         for unit in units:
             if getattr(unit, "group", "") != "ue4ss_mod" or not getattr(unit, "is_dir", False):
@@ -376,6 +380,8 @@ def install_mod_taxonomy_adapters() -> None:
             if component_id == "dragonconnect" or info.get("visibility") == "hidden-tooling":
                 continue
             if info.get("managed"):
+                continue
+            if not server_systems.runtime_role_allows_unit(unit, "server"):
                 continue
             if server_systems._unit_has_enabled_txt(unit):
                 continue
@@ -408,7 +414,8 @@ def install_mod_taxonomy_adapters() -> None:
                     target.chmod(target.stat().st_mode | 0o222)
                 except OSError:
                     pass
-        return {"ok": True, "path": str(target), "enabled": names, "count": len(names), "runtime_role": "server"}
+        return {"ok": True, "path": str(target), "enabled": names, "count": len(names),
+                "runtime_role": "server", "activation": activation}
 
     server_systems.generate_server_mods_txt = generate_server_mods_txt
     if server_engine is not None:
@@ -473,7 +480,7 @@ def install_mod_taxonomy_adapters() -> None:
             result = original_write_client(install_dir, local_manifest)
             layout = sync_engine.resolve_client_layout(install_dir)
             target = layout.mods_txt
-            dragonconnect = str(CORE_COMPONENTS["dragonconnect"].get("physical_name") or "PersistentDirectConnectIP")
+            dragonconnect = str(CORE_COMPONENTS["dragonconnect"].get("physical_name") or "DragonLink-Connect")
             connect_dir = layout.ue4ss_mods_dir / dragonconnect
             enabled = [name for name in (result.get("enabled") or []) if is_user_manageable_mod(name, "ue4ss_mod")]
             if connect_dir.is_dir() and dragonconnect.casefold() not in {name.casefold() for name in enabled}:

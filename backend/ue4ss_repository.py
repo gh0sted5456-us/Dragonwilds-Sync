@@ -23,8 +23,8 @@ from server_systems import BUNDLED_UE4SS_RESOURCE, DEFAULT_UE4SS_RELEASES_URL, _
 # select_version()/profile["ue4ss_active_version_id"] and
 # server_engine._apply_profile_ue4ss, which actually materializes it.
 BASELINE_ID = "baseline"
-BASELINE_VERSION = "v3.0.1-1088-ga1e7f571"
-BASELINE_SHA256 = "7306a7799881344936ddead14b66030c402fce7d45d0f81a4de0b38055eebcd8"
+BASELINE_VERSION = "v3.0.1-941-g0bfec09e-Dragonwilds-5.6"
+BASELINE_SHA256 = "10c8b7350177b28aad5e6371bece2347d501dd1b58f9949c512ae6aee0e0b3a8"
 REPO_DIR_NAME = "UE4SSRepository"
 
 _VERSION_PATTERN = re.compile(r"\bv?\d+\.\d+\.\d+(?:-\d+-g[0-9a-f]{6,})?\b")

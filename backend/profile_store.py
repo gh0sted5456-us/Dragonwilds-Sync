@@ -236,7 +236,7 @@ def default_state() -> dict:
             "application_updates": {"github_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync", "auto_check": True, "etag": "", "last_checked_at": None, "last_available_version": "", "dismissed_version": "", "last_error": ""},
             "nav_collapsed": False,
             "guided_setup": {"completed": False, "skipped": False, "last_mode": "player"},
-            "background_mode": {"close_to_tray": True, "start_minimized": False, "notifications_enabled": True, "announcement_overlay_enabled": True, "notify_high_latency": True, "notify_pending_restart": True, "notify_updates": True},
+            "background_mode": {"close_to_tray": True, "start_minimized": False, "open_sync_console_on_host_start": False, "notifications_enabled": True, "announcement_overlay_enabled": True, "notify_high_latency": True, "notify_pending_restart": True, "notify_updates": True},
             "notifications": [],
             "dismissed_notifications": {},
             "server_network_benchmark": {"enabled": True, "interval_hours": 24, "profile": "light", "last_run_at": None, "last_result": {}},
@@ -448,7 +448,7 @@ def load_state() -> dict:
     application.setdefault("nav_collapsed", False)
     application.setdefault("guided_setup", {"completed": False, "skipped": False, "last_mode": "player"})
     bg = application.setdefault("background_mode", {})
-    for key, default in {"close_to_tray": True, "start_minimized": False, "notifications_enabled": True, "announcement_overlay_enabled": True, "notify_high_latency": True, "notify_pending_restart": True, "notify_updates": True}.items(): bg.setdefault(key, default)
+    for key, default in {"close_to_tray": True, "start_minimized": False, "open_sync_console_on_host_start": False, "notifications_enabled": True, "announcement_overlay_enabled": True, "notify_high_latency": True, "notify_pending_restart": True, "notify_updates": True}.items(): bg.setdefault(key, default)
     notifications = application.setdefault("notifications", [])
     if not isinstance(notifications, list):
         application["notifications"] = []

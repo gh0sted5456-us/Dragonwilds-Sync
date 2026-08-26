@@ -2,7 +2,7 @@
 
 Dragonwilds Sync keeps mod placement and item metadata profile-aware so a hosted or private World can carry the correct client/server content without turning custom data into global vanilla data.
 
-![Cross-profile Mod Management](../renderer/assets/help/37-mod-management.png) "Mods lists linked profile copies and opens the selected copy in a scoped editor."
+![Cross-profile Mod Management](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/37-mod-management.png) "Mods lists linked profile copies and opens the selected copy in a scoped editor."
 
 ## Editing a mod
 
@@ -11,7 +11,7 @@ Dragonwilds Sync keeps mod placement and item metadata profile-aware so a hosted
 3. Edit JSON, JSONC, Lua, INI, CFG, TXT, TOML, YAML, or Markdown.
 4. Save. JSON is parsed first, and every write remains atomic and bounded to the selected mod root.
 
-![Managed text editor](../renderer/assets/help/08-monaco.png) "Binary and oversized files are view-only; supported text files expose the Save File action."
+![Managed text editor](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/08-monaco.png) "Binary and oversized files are view-only; supported text files expose the Save File action."
 
 ## Canonical items
 

@@ -72,7 +72,7 @@ def popen_hidden(args, **kwargs):
     return subprocess.Popen(args, **_merge(kwargs))
 
 
-def server_process_kwargs() -> dict[str, Any]:
+def server_process_kwargs(*, minimize_console: bool = False) -> dict[str, Any]:
     """Allocate a real Windows console for UE4SS without showing/focusing it.
 
     UE4SS and native mods can depend on the Win32 console subsystem even when
@@ -84,17 +84,19 @@ def server_process_kwargs() -> dict[str, Any]:
         return {}
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
-    startupinfo.wShowWindow = 0
+    # A minimized allocation remains available on the taskbar without taking
+    # focus. Hidden mode remains available to non-interactive callers.
+    startupinfo.wShowWindow = 7 if minimize_console else 0  # SW_SHOWMINNOACTIVE / SW_HIDE
     return {
         "creationflags": int(getattr(subprocess, "CREATE_NEW_CONSOLE", 0)),
         "startupinfo": startupinfo,
     }
 
 
-def popen_game_server(args, **kwargs):
-    """Start the dedicated game with a hidden, valid console allocation."""
+def popen_game_server(args, *, minimize_console: bool = False, **kwargs):
+    """Start the dedicated game with a valid hidden/minimized console allocation."""
     merged = dict(kwargs)
-    for key, value in server_process_kwargs().items():
+    for key, value in server_process_kwargs(minimize_console=minimize_console).items():
         merged.setdefault(key, value)
     return subprocess.Popen(args, **merged)
 

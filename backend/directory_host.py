@@ -74,14 +74,14 @@ def _directory_icon_bytes() -> bytes:
     candidates = []
     bundle_root = getattr(sys, "_MEIPASS", "")
     if bundle_root:
-        candidates.append(Path(bundle_root) / "application-icon-web.png")
-        candidates.append(Path(bundle_root) / "application-icon.png")
-    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "application-icon-web.png")
-    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "application-icon.png")
+        candidates.append(Path(bundle_root) / "application-icon-web.webp")
+        candidates.append(Path(bundle_root) / "application-icon.webp")
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "application-icon-web.webp")
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "application-icon.webp")
     for candidate in candidates:
         try:
             payload = candidate.read_bytes()
-            if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+            if payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
                 return payload
         except OSError:
             continue
@@ -91,7 +91,7 @@ def _directory_icon_bytes() -> bytes:
 def _platform_icon_bytes(name: str) -> bytes:
     """Serve the bundled colored platform/community marks used by the public catalog."""
     aliases = {"epic": "epicgames", "nexus": "nexusmods", "psn": "playstation"}
-    allowed = {"steam", "epic", "epicgames", "nintendo", "playstation", "psn", "xbox", "discord", "nexus", "nexusmods", "windows", "linux", "github", "paypal", "remote-login"}
+    allowed = {"steam", "epic", "epicgames", "nintendo", "playstation", "psn", "xbox", "discord", "nexus", "nexusmods", "windows", "linux", "github", "paypal", "remote-login", "ue4ss", "runeschema", "paks"}
     key = str(name or "").casefold().removesuffix(".svg")
     if key not in allowed:
         return b""
@@ -138,7 +138,7 @@ def _placard_background_bytes(name: str) -> bytes:
     key = Path(str(name or "")).stem
     if key not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
         return b""
-    filename = f"{key}.png"
+    filename = f"{key}.webp"
     bundle_root = getattr(sys, "_MEIPASS", "")
     candidates = []
     if bundle_root:
@@ -148,11 +148,26 @@ def _placard_background_bytes(name: str) -> bytes:
     for candidate in candidates:
         try:
             payload = candidate.read_bytes()
-            if payload.startswith(b"\x89PNG\r\n\x1a\n"):
+            if payload.startswith(b"RIFF") and payload[8:12] == b"WEBP":
                 return payload
         except OSError:
             continue
     return b""
+
+
+def _current_map_asset() -> tuple[bytes, str]:
+    """Serve the application map cache without serializing it into each poll."""
+    try:
+        from map_updater import status as map_cache_status
+        row = dict(map_cache_status() or {})
+        path = Path(str(row.get("image_path") or "")).resolve()
+        if not row.get("available") or not path.is_file() or path.stat().st_size > 16 * 1024 * 1024:
+            return b"", ""
+        suffix = path.suffix.casefold()
+        mime = "image/webp" if suffix == ".webp" else ("image/png" if suffix == ".png" else "image/jpeg")
+        return path.read_bytes(), mime
+    except (ImportError, OSError, ValueError):
+        return b"", ""
 
 
 def _private_client(value: str) -> bool:
@@ -205,7 +220,7 @@ def _world_endpoint_aliases(row: dict) -> set[str]:
 
 def _public_landing_html() -> bytes:
     return b'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dragonwilds Sync</title>
-<style>html,body{height:100%;margin:0;background:#030505}body{display:grid;place-items:center;overflow:hidden}.mark{width:min(30vw,190px);height:min(30vw,190px);object-fit:contain;filter:brightness(1.65) saturate(1.25) drop-shadow(0 0 30px rgba(206,151,45,.3));animation:arrive .7s ease-out both}@keyframes arrive{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}@media(prefers-reduced-motion:reduce){.mark{animation:none}}</style></head><body><img class="mark" src="/assets/icon.png" alt="Dragonwilds Sync"></body></html>'''
+<style>html,body{height:100%;margin:0;background:#030505}body{display:grid;place-items:center;overflow:hidden}.mark{width:min(30vw,190px);height:min(30vw,190px);object-fit:contain;filter:brightness(1.65) saturate(1.25) drop-shadow(0 0 30px rgba(206,151,45,.3));animation:arrive .7s ease-out both}@keyframes arrive{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:scale(1)}}@media(prefers-reduced-motion:reduce){.mark{animation:none}}</style></head><body><img class="mark" src="/assets/icon.webp" alt="Dragonwilds Sync"></body></html>'''
 
 
 def _blackout_html() -> bytes:
@@ -216,7 +231,7 @@ def _admin_console_html(token: str) -> bytes:
     safe_token = html.escape(token, quote=True)
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="dws-admin-token" content="{safe_token}"><title>Dragonwilds Sync · Directory Administration</title>
 <style>:root{{--bg:#070a0b;--panel:#111617;--panel2:#171d1e;--line:#393323;--gold:#d5a54a;--gold2:#f0c66e;--text:#eeeae0;--muted:#9ea6a3;--good:#72cf99;--warn:#e0b35d}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 80% 0,#17160f 0,transparent 34%),var(--bg);color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif}}header{{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px clamp(18px,4vw,56px);border-bottom:1px solid var(--line);background:rgba(7,10,11,.92);backdrop-filter:blur(16px)}}.brand{{display:flex;align-items:center;gap:12px}}.brand img{{width:42px;height:42px;object-fit:contain}}.brand strong{{display:block;font-family:Georgia,serif;font-size:18px}}.brand small,.muted{{color:var(--muted)}}.badges{{display:flex;gap:8px;flex-wrap:wrap}}.badge{{padding:6px 9px;border:1px solid #494128;border-radius:999px;color:var(--gold2);font-size:11px;font-weight:800}}main{{width:min(1180px,calc(100% - 32px));margin:34px auto 70px}}.hero{{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:24px}}.eyebrow{{color:var(--gold);font-size:11px;font-weight:850;letter-spacing:.16em}}h1{{margin:7px 0 5px;font:36px/1.05 Georgia,serif}}h2{{margin:0;font:22px Georgia,serif}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}button,a.button{{min-height:40px;padding:9px 14px;border:1px solid #484b48;border-radius:10px;background:#171b1c;color:var(--text);font:700 13px inherit;text-decoration:none;cursor:pointer}}button.primary{{border-color:#c18a2e;background:linear-gradient(180deg,#bd8b38,#936722);color:white}}button:hover,a.button:hover{{border-color:var(--gold)}}.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}}.stat,.panel{{border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,rgba(23,29,30,.96),rgba(14,18,19,.96));box-shadow:0 18px 44px rgba(0,0,0,.18)}}.stat{{padding:15px}}.stat span{{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}}.stat strong{{display:block;margin-top:5px;font-size:23px}}.grid{{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:16px}}.panel{{padding:18px}}.panel-head{{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:15px}}.panel-head p{{margin:4px 0 0;color:var(--muted);font-size:12px}}.form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}label{{display:grid;gap:6px;color:var(--muted);font-size:11px;font-weight:700}}label.wide{{grid-column:1/-1}}input{{width:100%;height:42px;padding:0 12px;border:1px solid #3d4342;border-radius:9px;outline:0;background:#0d1112;color:var(--text)}}input:focus{{border-color:var(--gold)}}.checks{{display:grid;gap:9px;margin:15px 0}}.check{{display:flex;align-items:start;gap:9px;padding:10px;border:1px solid #303534;border-radius:9px;color:var(--text);font-size:12px}}.check input{{width:17px;height:17px;margin:1px 0 0}}.note{{margin-top:12px;padding:11px 12px;border:1px solid #3c392b;border-radius:10px;background:#12140f;color:var(--muted);font-size:11px}}.worlds{{display:grid;gap:9px}}article{{padding:12px;border:1px solid #333a38;border-radius:11px;background:#0e1213}}article>div{{display:flex;justify-content:space-between;gap:10px}}article strong{{font-size:14px}}article small,article code{{display:block;margin-top:5px;color:var(--muted);overflow-wrap:anywhere}}.ok{{color:var(--good)}}.pending{{color:var(--warn)}}.routes{{display:grid;gap:7px;margin-top:13px}}.route{{display:flex;justify-content:space-between;gap:12px;padding:9px;border-bottom:1px solid #292e2d}}.route code{{color:var(--gold2)}}#message{{min-height:20px;margin-top:10px;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.stats{{grid-template-columns:1fr 1fr}}.hero{{align-items:start;flex-direction:column}}}}@media(max-width:520px){{main{{width:min(100% - 20px,1180px);margin-top:20px}}header{{padding:12px}}.badges{{display:none}}.stats,.form-grid{{grid-template-columns:1fr}}label.wide{{grid-column:auto}}h1{{font-size:29px}}}}</style></head>
-<body><header><div class="brand"><img src="/assets/icon.png" alt=""><div><strong>Dragonwilds Sync</strong><small>World Directory Administration</small></div></div><div class="badges"><span class="badge">PRIVATE NETWORK</span><span class="badge">LIVE APPLICATION SETTINGS</span></div></header><main><section class="hero"><div><div class="eyebrow">SELF-HOSTED FEDERATION</div><h1>Directory Control Room</h1><div class="muted">Manage the manifest service from this trusted network. Changes are written back to the desktop application.</div></div><div class="actions"><a class="button" href="/landing" target="_blank">Preview Public Landing</a><button id="refresh">Refresh</button><button class="primary" id="save">Save Settings</button></div></section><section class="stats"><div class="stat"><span>Service</span><strong id="service">—</strong></div><div class="stat"><span>Live Worlds</span><strong id="world-count">—</strong></div><div class="stat"><span>Verified</span><strong id="verified-count">—</strong></div><div class="stat"><span>Uptime</span><strong id="uptime">—</strong></div></section><div class="grid"><section class="panel"><div class="panel-head"><div><h2>Application-synchronized settings</h2><p>Saved here and in Settings → Application → Network.</p></div></div><div class="form-grid"><label class="wide">Public website / DNS URL<input id="public-url" placeholder="https://worlds.example.com"></label><label class="wide">Heartbeat ingestion key<input id="token" type="password" autocomplete="off" placeholder="Required unless anonymous publishing is enabled"></label><label>Heartbeat lifetime (seconds)<input id="ttl" type="number" min="60" max="1800"></label><label>Maximum directory entries<input id="max" type="number" min="10" max="5000"></label></div><div class="checks"><label class="check"><input id="upnp" type="checkbox"><span><b>Attempt UPnP mapping</b><br><span class="muted">Applied on the next listener start when changed here.</span></span></label><label class="check"><input id="anonymous" type="checkbox"><span><b>Allow anonymous heartbeats</b><br><span class="muted">Less secure. Signed World identity and live fingerprint probes still apply.</span></span></label></div><div class="note">The listener address, port, and start/stop control remain desktop-owned so this page cannot disconnect itself mid-save. Public visitors see only the centered Dragonwilds Sync mark; manifest clients use the documented JSON routes.</div><div id="message"></div></section><section class="panel"><div class="panel-head"><div><h2>Current Worlds</h2><p>Manifest candidates; launchers verify every endpoint again.</p></div></div><div class="worlds" id="worlds"></div></section></div><section class="panel" style="margin-top:16px"><div class="panel-head"><div><h2>Published endpoints</h2><p>Use the base address in Dragonwilds Sync. These routes remain available to manifest consumers.</p></div></div><div class="routes"><div class="route"><span>World manifest</span><code>/worlds</code></div><div class="route"><span>Compatibility alias</span><code>/manifest</code></div><div class="route"><span>Health</span><code>/health</code></div><div class="route"><span>Heartbeat publishing</span><code>POST /heartbeats</code></div><div class="route"><span>Revocations</span><code>/revocations</code></div></div></section></main>
+<body><header><div class="brand"><img src="/assets/icon.webp" alt=""><div><strong>Dragonwilds Sync</strong><small>World Directory Administration</small></div></div><div class="badges"><span class="badge">PRIVATE NETWORK</span><span class="badge">LIVE APPLICATION SETTINGS</span></div></header><main><section class="hero"><div><div class="eyebrow">SELF-HOSTED FEDERATION</div><h1>Directory Control Room</h1><div class="muted">Manage the manifest service from this trusted network. Changes are written back to the desktop application.</div></div><div class="actions"><a class="button" href="/landing" target="_blank">Preview Public Landing</a><button id="refresh">Refresh</button><button class="primary" id="save">Save Settings</button></div></section><section class="stats"><div class="stat"><span>Service</span><strong id="service">—</strong></div><div class="stat"><span>Live Worlds</span><strong id="world-count">—</strong></div><div class="stat"><span>Verified</span><strong id="verified-count">—</strong></div><div class="stat"><span>Uptime</span><strong id="uptime">—</strong></div></section><div class="grid"><section class="panel"><div class="panel-head"><div><h2>Application-synchronized settings</h2><p>Saved here and in Settings → Application → Network.</p></div></div><div class="form-grid"><label class="wide">Public website / DNS URL<input id="public-url" placeholder="https://worlds.example.com"></label><label class="wide">Heartbeat ingestion key<input id="token" type="password" autocomplete="off" placeholder="Required unless anonymous publishing is enabled"></label><label>Heartbeat lifetime (seconds)<input id="ttl" type="number" min="60" max="1800"></label><label>Maximum directory entries<input id="max" type="number" min="10" max="5000"></label></div><div class="checks"><label class="check"><input id="upnp" type="checkbox"><span><b>Attempt UPnP mapping</b><br><span class="muted">Applied on the next listener start when changed here.</span></span></label><label class="check"><input id="anonymous" type="checkbox"><span><b>Allow anonymous heartbeats</b><br><span class="muted">Less secure. Signed World identity and live fingerprint probes still apply.</span></span></label></div><div class="note">The listener address, port, and start/stop control remain desktop-owned so this page cannot disconnect itself mid-save. Public visitors see only the centered Dragonwilds Sync mark; manifest clients use the documented JSON routes.</div><div id="message"></div></section><section class="panel"><div class="panel-head"><div><h2>Current Worlds</h2><p>Manifest candidates; launchers verify every endpoint again.</p></div></div><div class="worlds" id="worlds"></div></section></div><section class="panel" style="margin-top:16px"><div class="panel-head"><div><h2>Published endpoints</h2><p>Use the base address in Dragonwilds Sync. These routes remain available to manifest consumers.</p></div></div><div class="routes"><div class="route"><span>World manifest</span><code>/worlds</code></div><div class="route"><span>Compatibility alias</span><code>/manifest</code></div><div class="route"><span>Health</span><code>/health</code></div><div class="route"><span>Heartbeat publishing</span><code>POST /heartbeats</code></div><div class="route"><span>Revocations</span><code>/revocations</code></div></div></section></main>
 <script>const adminToken=document.querySelector('meta[name="dws-admin-token"]').content;const headers={{'X-DWS-Admin-Token':adminToken}};const el=id=>document.getElementById(id);const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));function age(seconds){{seconds=Math.max(0,Number(seconds||0));if(seconds<60)return Math.round(seconds)+'s';if(seconds<3600)return Math.round(seconds/60)+'m';return Math.round(seconds/3600)+'h'}}async function load(){{const response=await fetch('/admin/api/state',{{headers,cache:'no-store'}});if(!response.ok)throw new Error('Administration session was rejected');const data=await response.json(),cfg=data.config||{{}},status=data.status||{{}},worlds=data.worlds||[];el('service').textContent=status.serving?'ONLINE':'OFFLINE';el('service').className=status.serving?'ok':'pending';el('world-count').textContent=status.world_count||0;el('verified-count').textContent=status.verified_count||0;el('uptime').textContent=age(status.uptime_seconds);el('public-url').value=cfg.public_base_url||'';el('token').value=cfg.ingestion_token||'';el('ttl').value=cfg.heartbeat_ttl_seconds||300;el('max').value=cfg.max_entries||500;el('upnp').checked=cfg.upnp_enabled!==false;el('anonymous').checked=!!cfg.allow_anonymous_heartbeats;el('worlds').innerHTML=worlds.length?worlds.map(w=>`<article><div><strong>${{esc(w.world_name||'World')}}</strong><span class="${{w.directory_verified?'ok':'pending'}}">${{w.directory_verified?'VERIFIED':'PENDING'}}</span></div><small>${{esc(w.external_ip||w.internal_ip||'No route')}}:${{Number(w.game_port||7777)}} · Sync ${{Number(w.sync_port||27051)}}</small><code>${{esc(w.fingerprint_claimed||'')}}</code></article>`).join(''):'<div class="note">No live World heartbeats yet.</div>';}}async function save(){{el('message').textContent='Saving…';const payload={{public_base_url:el('public-url').value.trim(),ingestion_token:el('token').value,heartbeat_ttl_seconds:Number(el('ttl').value),max_entries:Number(el('max').value),upnp_enabled:el('upnp').checked,allow_anonymous_heartbeats:el('anonymous').checked}};const response=await fetch('/admin/api/settings',{{method:'POST',headers:{{...headers,'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const data=await response.json();if(!response.ok)throw new Error(data.error||'Settings were not saved');el('message').textContent='Saved to the directory host and Dragonwilds Sync application.';await load();}}el('refresh').onclick=()=>load().catch(e=>el('message').textContent=e.message);el('save').onclick=()=>save().catch(e=>el('message').textContent=e.message);load().catch(e=>el('message').textContent=e.message);setInterval(()=>load().catch(()=>{{}}),10000);</script></body></html>'''.encode("utf-8")
 
 
@@ -823,9 +838,10 @@ class DirectoryHost:
             self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""), remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail=f"{session.get('username')} requested {permission}")
             return result
         permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "update_restart": "update", "refresh": "refresh",
-                          "mod_update": "write_mods", "config_open": "view_config", "config_save": "write_config",
+                          "mod_update": "write_mods", "mod_files": "view_mods", "mod_file_open": "view_mods",
+                          "mod_file_save": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
-                          "spawner_catalog": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",
+                          "spawner_catalog": "view_spawner", "spawner_icon": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",
                           }
         required = permission_for.get(action)
         if not required: raise ValueError("This remote command is not allowed")
@@ -836,8 +852,9 @@ class DirectoryHost:
         if not self.remote_action_handler: raise RuntimeError("Remote commands are unavailable")
         try:
             result = self.remote_action_handler(str(session.get("world_id") or ""), action, dict(payload or {})) or {}
-            self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
-                               remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")
+            if action != "spawner_icon":
+                self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
+                                   remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")
             return result
         except Exception as exc:
             self._remote_audit(action, ok=False, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
@@ -1073,14 +1090,15 @@ class DirectoryHost:
             server_version = "DragonwildsSyncDirectory/1"
 
             def _send(self, body: bytes, content_type: str, status: int = 200, *, cors: bool = False, extra_headers: dict | None = None):
-                self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Cache-Control", "no-store")
+                headers = dict(extra_headers or {})
+                self.send_response(status); self.send_header("Content-Type", content_type); self.send_header("Cache-Control", str(headers.pop("Cache-Control", "no-store")))
                 self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("Referrer-Policy", "no-referrer")
                 self.send_header("X-Frame-Options", "DENY")
                 self.send_header("Cross-Origin-Opener-Policy", "same-origin")
                 self.send_header("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), bluetooth=()")
-                self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; media-src 'none'; worker-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+                self.send_header("Content-Security-Policy", "default-src 'self'; img-src 'self' data: https://raw.githubusercontent.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; media-src 'none'; worker-src 'none'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
                 if cors: self.send_header("Access-Control-Allow-Origin", "*")
-                for key, value in (extra_headers or {}).items(): self.send_header(str(key), str(value))
+                for key, value in headers.items(): self.send_header(str(key), str(value))
                 self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
             def _json(self, value: dict, status: int = 200, *, cors: bool = True, extra_headers: dict | None = None):
@@ -1160,14 +1178,16 @@ class DirectoryHost:
                 if path in {"/api/v1", "/api"}: self._send(api_index_html(PUBLIC_OPENAPI), "text/html; charset=utf-8", cors=False); return
                 if path == "/revocations": self._json({"schema": "DragonwildsSync.DirectoryRevocations.v1", "revocations": controller.revocations()}); return
                 if path in {"/health", "/status"}: self._json({"ok": True, **controller.status()}); return
-                if path in {"/assets/icon.png", "/favicon.ico"}:
+                if path in {"/assets/icon.webp", "/assets/icon.png", "/favicon.ico"}:
                     icon = _directory_icon_bytes()
                     if not icon: self._json({"error": "icon unavailable"}, 404, cors=False); return
-                    self._send(icon, "image/png", cors=False); return
+                    self._send(icon, "image/webp", cors=False,
+                               extra_headers={"Cache-Control": "public, max-age=604800, immutable"}); return
                 if path.startswith("/assets/platforms/"):
                     icon = _platform_icon_bytes(path.rsplit("/", 1)[-1])
                     if not icon: self._json({"error": "platform icon unavailable"}, 404, cors=False); return
-                    self._send(icon, "image/svg+xml; charset=utf-8", cors=False); return
+                    self._send(icon, "image/svg+xml; charset=utf-8", cors=False,
+                               extra_headers={"Cache-Control": "public, max-age=604800, immutable"}); return
                 if path.startswith("/assets/distros/"):
                     icon = _distro_icon_bytes(path.rsplit("/", 1)[-1])
                     if not icon: icon = _platform_icon_bytes("linux")
@@ -1176,11 +1196,18 @@ class DirectoryHost:
                 if path.startswith("/assets/placards/"):
                     artwork = _placard_background_bytes(path.rsplit("/", 1)[-1])
                     if not artwork: self._json({"error": "placard background unavailable"}, 404, cors=False); return
-                    self._send(artwork, "image/png", cors=False); return
+                    self._send(artwork, "image/webp", cors=False); return
+                if path == "/assets/map/current":
+                    artwork, mime = _current_map_asset()
+                    if not artwork: self._json({"error": "current map unavailable"}, 404, cors=False); return
+                    self._send(artwork, mime, cors=False); return
                 if path == "/landing":
-                    if not directory_enabled and remote_enabled: self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
+                    if remote_enabled:
+                        self.send_response(302); self.send_header("Location", "/admin/login"); self.send_header("Content-Length", "0"); self.end_headers(); return
                     self._send(_blackout_html() if surface == "blackout" else _public_landing_html(), "text/html; charset=utf-8", cors=False); return
-                if path == "/servers": self._send(public_browser_html(remote_admin_enabled=remote_enabled), "text/html; charset=utf-8", cors=False); return
+                if path == "/servers" and remote_enabled:
+                    self.send_response(302); self.send_header("Location", "/admin/login"); self.send_header("Content-Length", "0"); self.end_headers(); return
+                if path == "/servers": self._send(public_browser_html(remote_admin_enabled=False), "text/html; charset=utf-8", cors=False); return
                 if path.startswith("/servers/"):
                     self._send(detail_html(urllib.parse.unquote(path.split("/servers/", 1)[1])), "text/html; charset=utf-8", cors=False); return
                 if path == "/admin/login": self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
@@ -1197,16 +1224,34 @@ class DirectoryHost:
                     try: self._json(controller.remote_payload(session), cors=False)
                     except Exception as exc: self._json({"error": str(exc)}, 400, cors=False)
                     return
+                if path.startswith("/api/v1/admin/item-icon/"):
+                    session = self._remote_session()
+                    if not session: self._json({"error": "Server Admin session required"}, 401, cors=False); return
+                    try:
+                        token = path.rsplit("/", 1)[-1]
+                        result = controller.remote_action(session, "spawner_icon", {"token": token})
+                        blob = __import__("base64").b64decode(str(result.get("data_b64") or ""), validate=True)
+                        etag = f'"{result.get("etag") or token}"'
+                        if str(self.headers.get("If-None-Match") or "").strip() == etag:
+                            self.send_response(304)
+                            self.send_header("Cache-Control", "private, max-age=86400, immutable")
+                            self.send_header("ETag", etag)
+                            self.end_headers()
+                            return
+                        self._send(blob, str(result.get("mime") or "application/octet-stream"), cors=False,
+                                   extra_headers={"Cache-Control": "private, max-age=86400, immutable", "ETag": etag})
+                    except FileNotFoundError as exc: self._json({"error": str(exc)}, 404, cors=False)
+                    except Exception as exc: self._json({"error": str(exc)}, 400, cors=False)
+                    return
                 if path == "/admin/api/state":
                     if not self._is_admin(): self._json({"error": "private-network administration token required"}, 403, cors=False); return
                     query = urllib.parse.parse_qs(parsed_url.query, keep_blank_values=True)
                     self._json(controller.admin_payload(page=_positive_page((query.get("page") or [1])[0])), cors=False); return
                 if path == "/":
-                    # Remote-only composition has exactly one human-facing
-                    # surface. This check must precede the localhost private
-                    # console allowance or opening the listener on its owner PC
-                    # briefly exposes the complete directory/admin site.
-                    if not directory_enabled and remote_enabled:
+                    # V3 WebGUI has exactly one human-facing entry point. Keep
+                    # the JSON heartbeat/catalog APIs available to Sync clients,
+                    # but never expose the retired website/control-room surface.
+                    if remote_enabled:
                         self.send_response(302); self.send_header("Location", "/admin/login"); self.send_header("Content-Length", "0"); self.end_headers(); return
                     if self._private_console_allowed(): page = _admin_console_html(controller.admin_token)
                     else: page = _blackout_html() if surface == "blackout" else _public_landing_html()

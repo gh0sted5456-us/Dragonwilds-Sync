@@ -42,25 +42,29 @@
       "description": "Canonical RSDW item JSON tree and item-editor association data used to build Dragonwilds Sync's offline manifest/index."
     },
     "rsdw-toolkit": {
-      "display_name": "RSDW Toolkit / DevKit",
+      "display_name": "RSDW Dev Kit",
       "enabled": true,
       "type": "github-release",
       "repository": "RSDWArchive/RSDWDevKit",
       "release_url": "https://github.com/RSDWArchive/RSDWDevKit/releases",
       "runtime_component": true,
-      "runtime_roles": ["server", "client"],
+      "runtime_roles": ["server", "host"],
+      "icon": "assets/navigation/rsdw-l.webp",
       "legacy_physical_names": ["RSDWTools"],
-      "description": "UE4SS runtime tooling for spawning, live/in-game map hooks, console commands and game-runtime integration. This is intentionally distinct from the RSDWTools data repository."
+      "description": "Server/host-only UE4SS runtime tooling for spawning, live map hooks, console commands and game-runtime integration. It is updated from RSDWArchive/RSDWDevKit and is never sent to joining clients."
     },
     "dragonconnect": {
-      "display_name": "DragonConnect",
+      "display_name": "DragonLink-Connect",
       "enabled": true,
-      "type": "bundled-resource",
-      "bundled_fallback": "resources/PersistentDirectConnectIP-baseline.zip",
+      "type": "github-release",
+      "repository": "gh0sted5456-us/Dragonwilds-Sync",
+      "release_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases",
+      "download_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/latest/download/DragonLink-Connect-baseline.zip",
+      "bundled_fallback": "resources/DragonLink-Connect-baseline.zip",
       "runtime_component": true,
       "runtime_roles": ["server", "host", "client"],
-      "legacy_physical_names": ["PersistentDirectConnectIP"],
-      "description": "Hidden client Direct Connect handoff component. The legacy physical directory remains for compatibility; launcher/UI identity is DragonConnect."
+      "legacy_physical_names": ["DragonConnectHelper", "PersistentDirectConnectIP"],
+      "description": "Hidden, required host/client Direct Connect handoff component. The former physical directory name is accepted only for migration."
     },
     "runeschema": {
       "display_name": "RuneSchema",

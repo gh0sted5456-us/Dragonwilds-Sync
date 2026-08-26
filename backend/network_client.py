@@ -142,14 +142,22 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
     try:
         return urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as exc:
+        error_body = b""
+        try:
+            error_body = exc.read(8192)
+        except Exception:
+            error_body = b""
+        try:
+            error_payload = json.loads(error_body.decode("utf-8", "replace")) if error_body else {}
+        except Exception:
+            error_payload = {}
+        detail = str(error_payload.get("error") or "").strip() if isinstance(error_payload, dict) else ""
+        request_path = urlsplit(url).path
         if exc.code == 403:
-            try:
-                body = json.loads(exc.read().decode("utf-8", "replace"))
-            except Exception:
-                body = {}
+            body = error_payload
             if isinstance(body, dict) and body.get("blocked"):
                 raise BlockedError(str(body.get("reason") or ""), str(body.get("reason_kind") or "ip")) from exc
-            raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
+            raise ConnectionError(f"Server returned HTTP {exc.code} for {request_path}: {detail or exc.reason}") from exc
         if exc.code == 401:
             raise PasswordRejectedError("The saved World Password did not authorize the Sync payload. Edit the World connection and retry.") from exc
         if exc.code == 429:
@@ -158,7 +166,7 @@ def request(url: str, *, method: str = "GET", data: bytes | None = None,
             except Exception:
                 retry_after = 2.0
             raise RateLimitedError(retry_after=retry_after) from exc
-        raise ConnectionError(f"Server returned HTTP {exc.code}: {exc.reason}") from exc
+        raise ConnectionError(f"Server returned HTTP {exc.code} for {request_path}: {detail or exc.reason}") from exc
     except urllib.error.URLError as exc:
         if isinstance(exc.reason, ConnectionRefusedError):
             target = urlsplit(url)
@@ -517,11 +525,15 @@ def fetch_world_reviews(world: dict, days: int = 30) -> dict:
     window = max(1, min(int(days or 30), 90))
     for kind, endpoint in candidate_endpoints(world):
         try:
-            manifest, token, base_url, _ping_ms = _auth_manifest_for_world(world, endpoint)
-            ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
+            _prepare_world_endpoint(world, endpoint)
+            normalized = normalize_endpoint(endpoint)
+            if normalized is None:
+                raise ConnectionError("Invalid World endpoint.")
+            identity = json.loads(request(f"{normalized.base_url}/identity", timeout=5.0).read(4 * 1024 * 1024))
+            ok, detail = positive_world_identity(world, endpoint, identity.get("profile_name"))
             if not ok:
                 attempts.append(f"{kind}: {detail}"); continue
-            response = request(f"{base_url}/reviews?days={window}", headers={"Authorization": f"Bearer {token}"})
+            response = request(f"{normalized.base_url}/reviews?days={window}")
             result = json.loads(response.read()); result.update({"route": kind, "endpoint": endpoint})
             return result
         except Exception as exc:

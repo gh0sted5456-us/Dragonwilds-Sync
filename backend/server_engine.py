@@ -30,7 +30,10 @@ from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, 
                             ensure_server_runtime_writable, gather_server_hardware_stats, RUNTIME_MUTATION_LOCK,
                             install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
                             install_runeschema_zip, install_ue4ss_zip, local_ip_guess, detect_public_ip,
-                            scan_mod_units, generate_server_mods_txt, _bundled_app_resource, BUNDLED_UE4SS_RESOURCE)
+                            scan_mod_units, generate_server_mods_txt, normalize_server_ue4ss_activation,
+                            refresh_live_profile_metadata,
+                            _bundled_app_resource, BUNDLED_UE4SS_RESOURCE,
+                            BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE)
 from runeschema_flavors import list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
 import ue4ss_repository
 
@@ -537,7 +540,7 @@ def _runtime_secret(value: object, label: str) -> str:
         return text
     resolved = str(RUNTIME_SECRET_STORE.resolve(text) or "").strip()
     if not resolved:
-        raise ValueError(f"The saved {label} is unavailable. Re-enter it in DragonConnect before launching.")
+        raise ValueError(f"The saved {label} is unavailable. Re-enter it in DragonLink-Connect before launching.")
     return resolved
 
 
@@ -579,6 +582,32 @@ def _restore_managed_runeschema_once(game_root: str, variant: str) -> dict:
     if not str(game_root or "").strip():
         raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
     root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
+    # Experimental is a versioned launcher payload, not a sticky channel name.
+    # Verify the exact archive and live DLL hashes on every preflight so an old
+    # cached experimental build cannot be mistaken for the selected one.
+    bundled = _bundled_app_resource(*BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE)
+    if bundled.is_file():
+        digest = hashlib.sha256(bundled.read_bytes()).hexdigest()
+        if _installed_flavor_matches(game_root, "experimental", digest):
+            return {"ok": True, "changed": False, "source": bundled.name,
+                    "variant": selected, "verified": True, "archive_sha256": digest}
+        result = install_runeschema_zip(str(bundled), game_root)
+        if str(result.get("kind") or "") != "core":
+            raise RuntimeError("The bundled Experimental RuneSchema is not a complete core runtime.")
+        _write_installed_flavor_marker(game_root, "experimental", digest)
+        state = load_state()
+        install = state.setdefault("application", {}).setdefault("server_install", {})
+        managed = dict(install.get("runeschema_managed_variant_roots") or {})
+        managed[root_key] = selected
+        install["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
+        install["runeschema_source_url"] = EXPERIMENTAL_RUNESCHEMA_REPOSITORY + "/releases"
+        install["runeschema_source_name"] = "Experimental · Built-in 0.6.3 V3 baseline"
+        install["runeschema_installed_at"] = time.time()
+        install["official_runeschema_restored_roots"] = [
+            item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
+        save_state(state)
+        return {**result, "ok": True, "changed": True, "source": bundled.name,
+                "variant": selected, "archive_sha256": digest}
     state = load_state()
     install = state.setdefault("application", {}).setdefault("server_install", {})
     managed = dict(install.get("runeschema_managed_variant_roots") or {})
@@ -1511,7 +1540,9 @@ class ServerEngine:
                 server_install["expected_cl_buildid"] = installed_buildid
                 server_install["expected_cl_observed_at"] = time.time()
                 save_state(launcher_state)
-        cl_version = cl_version_status(reported_cl, server_install.get("expected_cl"))
+        learned_buildid = str(server_install.get("expected_cl_buildid") or "")
+        expected_cl = server_install.get("expected_cl") if not learned_buildid or learned_buildid == installed_buildid else ""
+        cl_version = cl_version_status(reported_cl, expected_cl)
         root = self._profile_root(profile) if profile else ""
         prereq = runtime_prerequisite_status(root) if root and Path(root).exists() else {}
         merged_players = PLAYER_SERVICE.status()
@@ -1674,7 +1705,9 @@ class ServerEngine:
             snapshot_profile_mods(profile_id, Path(root))
         sync = profile.setdefault("sync_config", {})
         password = str(sync.get("password") or ""); key = str(sync.get("server_key") or "")
-        port = int(sync.get("port") or 7777); broadcast = bool(sync.get("lan_broadcast", True))
+        # Sync transfer is a separate TCP service. Falling back to the gameplay
+        # UDP port can make the listener fail or advertise an unusable endpoint.
+        port = int(sync.get("port") or 27051); broadcast = bool(sync.get("lan_broadcast", True))
         app_policy = (load_state().get("application") or {}).get("server_access_policy") or {}
         world_policy = sync.get("access_policy") or {"blocked_ips": sync.get("blocked_ips") or [], "blocked_countries": sync.get("blocked_countries") or []}
         STATE.configure_access_policy(app_policy, world_policy)
@@ -1724,6 +1757,11 @@ class ServerEngine:
                 if current and detected:
                     current["public_ip"] = detected
                     save_server_profile(profile_id, current)
+                    # Publication begins before WAN discovery so Start remains
+                    # responsive. Promote the resolved public route into the
+                    # already-live identity immediately; otherwise external
+                    # clients see an empty route until a manual republish.
+                    refresh_live_profile_metadata(profile_id, current)
                 # Router mutation is owned by the explicit profile-scoped UPnP
                 # controller in dragonwilds_service.  In particular, Manual
                 # forwarding must never emit an SSDP or AddPortMapping request.
@@ -1796,6 +1834,17 @@ class ServerEngine:
             self._event(selected["cache_warning"], "warn")
         profile = load_server_profile(profile_id) or profile
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
+        # Direct Start Dedicated must enforce the same runtime-role boundary as
+        # unified Start World/Publish.  Client-only enabled.txt markers otherwise
+        # bypass mods.txt and can initialize ImGui inside the headless server.
+        runtime_units = scan_mod_units(profile_id, self._profile_root(profile))
+        activation = normalize_server_ue4ss_activation(runtime_units)
+        if activation.get("retired"):
+            self._event("Kept client-only UE4SS mod(s) out of the dedicated runtime: "
+                        + ", ".join(activation["retired"]), "ok")
+        if activation.get("warnings"):
+            self._event("Could not fully normalize dedicated mod activation: "
+                        + "; ".join(activation["warnings"]), "warn")
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;
         # SteamCMD still downloads the dedicated-server app anonymously.
@@ -1824,7 +1873,11 @@ class ServerEngine:
             hydrate_world_configs(profile_id, self._profile_root(profile))
         except Exception as exc:
             self._event(f"Writable config hydration needs attention: {type(exc).__name__}: {exc}", "warn")
-        command = [exe, "-log"]
+        # Unreal's documented -stdout route gives the launcher an owned pipe
+        # that can be hydrated immediately without scraping or focusing the
+        # native console window.  The file-tail path remains active for UE4SS
+        # and for categories the Shipping build writes only to disk.
+        command = [exe, "-log", "-stdout", "-LogFlushInterval=0.1"]
         launch_env = None
         if sys.platform.startswith("linux") and Path(exe).suffix.casefold() == ".exe":
             command, launch_env = linux_windows_server_command(exe)
@@ -1837,7 +1890,11 @@ class ServerEngine:
         writable = ensure_server_runtime_writable(self._profile_root(profile))
         if writable.get("writable_repaired"):
             self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
-        self.proc = popen_game_server(command, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
+        # Keep the original dedicated executable available on the Windows
+        # taskbar without letting its console steal focus. Sync captures the
+        # same stdout continuously; its own console window is an independent
+        # user preference in Application settings.
+        self.proc = popen_game_server(command, minimize_console=True, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
         if self.proc.stdout is not None:
             threading.Thread(target=self._capture_process_output, args=(self.proc.stdout,), daemon=True, name="Dragonwilds-Dedicated-Console").start()
         self._apply_computer_profile(self.proc.pid, exe, profile_id)

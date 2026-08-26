@@ -89,6 +89,7 @@
     const shellNode=shell(lastPayload);const desktop=window.__DWSYNC_DESKTOP_WINDOWS__;
     const overlay=desktop?.openNative?desktop.openNative(shellNode.innerHTML,{title:'Trash',width:980,height:820}):shellNode;
     if(!desktop?.openNative)document.body.appendChild(overlay);
+    if(desktop?.openNative)overlay.classList.add('dws-trash-native-window');
     overlay.id='dws-trash-overlay';overlay._dwsOnNativeClosed=()=>{opening=false;void refresh(false);};
     const close=()=>{opening=false;if(desktop?.close)desktop.close(overlay);else overlay.remove();void refresh(false);};
     overlay.querySelectorAll('[data-trash-close]').forEach(button=>button.onclick=close);
@@ -103,6 +104,10 @@
     opening=false;
     void paintBody(overlay);
   }
+
+  // The persistent System navigation invokes the same authoritative Trash
+  // surface as the dismissible corner icon; there is no duplicate Trash UI.
+  window.__DWSYNC_OPEN_TRASH__=()=>openTrash();
 
   const boot=()=>{void refresh(true);setInterval(()=>void refresh(false),30000);};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

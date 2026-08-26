@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"].startswith("2.7.")
+    assert package["version"].startswith("3.")
     assert package.get("dependencies", {}).get("ws")
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")

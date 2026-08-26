@@ -40,8 +40,8 @@ and should normalize to `switch2` in new application/WebGUI/world-builder work.
 The exact project-provided logos are authoritative and MUST be used project-wide:
 
 ```text
-renderer/assets/platforms/ue4ss.png
-renderer/assets/platforms/runeschema.png
+renderer/assets/platforms/ue4ss.webp
+renderer/assets/platforms/runeschema.webp
 ```
 
 These files are the exact PNG artwork supplied to the project and retained on the

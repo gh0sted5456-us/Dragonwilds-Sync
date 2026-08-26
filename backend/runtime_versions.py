@@ -9,7 +9,7 @@ from pathlib import Path
 
 CLIENT_STEAM_APP_ID = "1374490"
 SERVER_STEAM_APP_ID = "4019830"
-DRAGONWILDS_SYNC_VERSION = "2.7.4"
+DRAGONWILDS_SYNC_VERSION = "3.0.0"
 STEAMCMD_INFO_URL = "https://api.steamcmd.net/v1/info/{appid}"
 UE4SS_RELEASE_TAG_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
@@ -313,7 +313,9 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
     server_latest = steam_public_build(SERVER_STEAM_APP_ID) if remote else {}
     client_latest = steam_public_build(CLIENT_STEAM_APP_ID) if remote else {}
     latest_server_id = str(server_latest.get("buildid") or "")
-    cl_status = cl_version_status((profile or {}).get("last_reported_cl"), install.get("expected_cl"))
+    learned_buildid = str(install.get("expected_cl_buildid") or "")
+    expected_cl = install.get("expected_cl") if not learned_buildid or learned_buildid == installed_buildid else ""
+    cl_status = cl_version_status((profile or {}).get("last_reported_cl"), expected_cl)
 
     ue_latest = latest_ue4ss_release() if remote else {}
     ue_installed = str(install.get("ue4ss_installed_version") or (profile or {}).get("ue4ss_installed_version") or "")

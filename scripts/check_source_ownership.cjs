@@ -1,8 +1,8 @@
 'use strict';
 
 // Whole-tree entrypoint and ownership contract. This deliberately checks build
-// assembly as well as direct imports so Pages fragments and PyInstaller hooks
-// are not falsely reported as dead code.
+// assembly as well as direct imports so PyInstaller hooks are not falsely
+// reported as dead code. Website deployment now belongs to its separate repo.
 const fs = require('fs');
 const path = require('path');
 
@@ -19,7 +19,6 @@ const main = read('electron/main.cjs');
 const electronMain = read('electron/main-v2.cjs');
 const rendererHtml = list('renderer', '.html').map((file) => read(`renderer/${file}`)).join('\n');
 const websiteHtml = list('website', '.html').map((file) => read(`website/${file}`)).join('\n');
-const pagesWorkflow = read('.github/workflows/pages.yml');
 
 if (packageJson.main !== 'electron/bootstrap.cjs') fail(`package main is unclassified: ${packageJson.main}`);
 need(bootstrap, "require('./main.cjs')", 'Electron bootstrap parent');
@@ -50,10 +49,14 @@ for (const file of rendererStyles) if (!liveRendererStyles.has(file)) fail(`unow
 
 const websiteScripts = list('website', '.js');
 const websiteStyles = list('website', '.css');
+const websiteMigrationFragments = new Set([
+  'download-flip.css', 'download-flip.js', 'home-demo.css', 'placard-detail-popovers.css',
+  'placard-enhancements.css', 'placard-enhancements.js', 'placards.css', 'placards.js',
+  'platform-assets.js', 'server-build.js', 'top-flow.css', 'top-flow.js',
+]);
 for (const file of [...websiteScripts, ...websiteStyles]) {
   const directlyLoaded = websiteHtml.includes(file);
-  const buildAssembled = pagesWorkflow.includes(`website/${file}`);
-  if (!directlyLoaded && !buildAssembled) fail(`unowned website source: website/${file}`);
+  if (!directlyLoaded && !websiteMigrationFragments.has(file)) fail(`unowned website source: website/${file}`);
 }
 
 // Python runtime hooks are referenced by the PyInstaller spec rather than by a

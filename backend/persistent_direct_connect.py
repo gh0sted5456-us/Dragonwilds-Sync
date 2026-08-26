@@ -13,19 +13,24 @@ from pathlib import Path, PurePosixPath
 from client_layout import resolve_client_layout
 
 
-# Keep the physical directory identity for compatibility with the released Lua
-# mod while exposing the logical product name everywhere launcher-facing.
-MOD_NAME = "PersistentDirectConnectIP"
-LOGICAL_NAME = "DragonConnect"
+# DragonLink-Connect is the canonical physical and launcher-facing identity.
+# Both former names remain accepted strictly as on-disk migration inputs.
+MOD_NAME = "DragonLink-Connect"
+LOGICAL_NAME = "DragonLink-Connect"
+LEGACY_MOD_NAMES = ("DragonConnectHelper", "PersistentDirectConnectIP")
 MARKER_NAME = ".dragonwilds-sync-baseline.json"
 
 
 def _bundle_path() -> Path:
+    names = ("DragonLink-Connect-baseline.zip", "DragonConnectHelper-baseline.zip", "PersistentDirectConnectIP-baseline.zip")
     if getattr(sys, "frozen", False):
-        frozen = Path(sys.executable).resolve().parent.parent / "resources" / "PersistentDirectConnectIP-baseline.zip"
-        if frozen.is_file():
-            return frozen
-    return Path(__file__).resolve().parent.parent / "resources" / "PersistentDirectConnectIP-baseline.zip"
+        root = Path(sys.executable).resolve().parent.parent / "resources"
+        for name in names:
+            frozen = root / name
+            if frozen.is_file():
+                return frozen
+    root = Path(__file__).resolve().parent.parent / "resources"
+    return next((root / name for name in names if (root / name).is_file()), root / names[0])
 
 
 def _sha256(path: Path) -> str:
@@ -76,15 +81,15 @@ def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> None:
     for member in archive.infolist():
         pure = PurePosixPath(member.filename.replace("\\", "/"))
         if pure.is_absolute() or ".." in pure.parts or not pure.parts:
-            raise zipfile.BadZipFile(f"Unsafe PersistentDirectConnectIP path: {member.filename}")
+            raise zipfile.BadZipFile(f"Unsafe DragonLink-Connect path: {member.filename}")
         target = (destination / Path(*pure.parts)).resolve()
         if target != root and root not in target.parents:
-            raise zipfile.BadZipFile(f"PersistentDirectConnectIP path escapes staging: {member.filename}")
+            raise zipfile.BadZipFile(f"DragonLink-Connect path escapes staging: {member.filename}")
     archive.extractall(destination)
 
 
 def status(selected_root: str | Path) -> dict:
-    """Return launcher-authoritative DragonConnect install/repair evidence."""
+    """Return launcher-authoritative DragonLink-Connect install/repair evidence."""
     layout = resolve_client_layout(selected_root)
     target = layout.ue4ss_mods_dir / MOD_NAME
     bundle = _bundle_path()
@@ -100,7 +105,7 @@ def status(selected_root: str | Path) -> dict:
             "current": None, "update_available": False, "status": "source_missing",
             "installed_version": f"bundle-{installed_hash[:12]}" if installed_hash else ("legacy" if installed else ""),
             "available_version": "", "restart_required": True, "path": str(target),
-            "source": "bundled-baseline", "error": "DragonConnect baseline is missing from launcher resources.",
+            "source": "bundled-baseline", "error": "DragonLink-Connect baseline is missing from launcher resources.",
         }
     return {
         "component": LOGICAL_NAME,
@@ -125,7 +130,7 @@ def ensure_installed(selected_root: str | Path) -> dict:
     main = target / "Scripts" / "main.lua"
     bundle = _bundle_path()
     if not bundle.is_file():
-        raise FileNotFoundError("DragonConnect baseline is missing from launcher resources.")
+        raise FileNotFoundError("DragonLink-Connect baseline is missing from launcher resources.")
     signature = _bundle_signature(bundle)
     marker = _read_marker(target) if target.is_dir() else {}
     if main.is_file() and (target / "enabled.txt").is_file() and str(marker.get("sha256") or "") == signature["sha256"]:
@@ -133,22 +138,29 @@ def ensure_installed(selected_root: str | Path) -> dict:
                 "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME,
                 "version": f"bundle-{signature['sha256'][:12]}"}
 
-    # Preserve the generated active-profile config across a component repair.
+    # Preserve the generated active-profile config across a component repair or
+    # migration from the former physical folder name.
     config_path = target / "Scripts" / "config.lua"
     retained_config = b""
-    try:
-        if config_path.is_file() and config_path.stat().st_size <= 64 * 1024:
-            retained_config = config_path.read_bytes()
-    except OSError:
-        retained_config = b""
+    legacy_targets = [layout.ue4ss_mods_dir / name for name in LEGACY_MOD_NAMES]
+    for candidate in [target, *legacy_targets]:
+        candidate_config = candidate / "Scripts" / "config.lua"
+        try:
+            if candidate_config.is_file() and candidate_config.stat().st_size <= 64 * 1024:
+                retained_config = candidate_config.read_bytes()
+                break
+        except OSError:
+            continue
 
     with tempfile.TemporaryDirectory(prefix="dws-direct-connect-") as temp_name:
         staged = Path(temp_name)
         with zipfile.ZipFile(bundle) as archive:
             _safe_extract(archive, staged)
         source = staged / MOD_NAME
+        if not source.is_dir():
+            source = next((staged / name for name in LEGACY_MOD_NAMES if (staged / name).is_dir()), source)
         if not (source / "Scripts" / "main.lua").is_file():
-            raise RuntimeError("DragonConnect baseline failed validation.")
+            raise RuntimeError("DragonLink-Connect baseline failed validation.")
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(source, target, dirs_exist_ok=True)
     (target / "enabled.txt").write_text("", encoding="utf-8")
@@ -156,6 +168,9 @@ def ensure_installed(selected_root: str | Path) -> dict:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         config_path.write_bytes(retained_config)
     _write_marker(target, signature)
+    for legacy_target in legacy_targets:
+        if legacy_target.is_dir() and legacy_target != target:
+            shutil.rmtree(legacy_target, ignore_errors=True)
     return {"ok": True, "installed": True, "changed": True, "path": str(target),
             "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME,
             "version": f"bundle-{signature['sha256'][:12]}"}

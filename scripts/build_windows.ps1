@@ -168,7 +168,8 @@ try {
     Test-RequiredFile 'resources\recommended-mods.json' 'GitHub-ready creator recommendation feed'
     Test-RequiredFile 'scripts\check_ue4ss_lua.cjs' 'UE4SS Lua syntax verifier'
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
-    Test-RequiredFile 'resources\RSDWTools-baseline.zip' 'Bundled RSDWTools bridge baseline'
+    Test-RequiredFile 'resources\RuneSchema-experimental-latest.zip' 'Bundled RuneSchema experimental core'
+    Test-RequiredFile 'resources\DragonLink-Connect-baseline.zip' 'Bundled DragonLink-Connect baseline'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\version.dll' 'Bundled Dragonwilds server-only version.dll'
     Test-RequiredFile 'scripts\prepare_monaco.cjs' 'Monaco bundling helper'
@@ -189,10 +190,10 @@ try {
     Test-RequiredFile 'backend\world_sharing.py' 'Legacy RSDWL v2 compatibility engine'
     Test-RequiredFile 'backend\profile_bundle.py' 'Unified RSDWL v3 profile bundle engine'
     Test-RequiredFile 'resources\ID.example.txt' 'Example canonical mod ID.txt'
-    Test-RequiredFile 'renderer\assets\guided\connect-world.png' 'Client guided-setup artwork'
-    Test-RequiredFile 'renderer\assets\guided\settings-reference.png' 'Server guided-setup artwork'
-    Test-RequiredFile 'renderer\assets\singleplayer-banner.png' 'SinglePlayer default banner'
-    Test-RequiredFile 'renderer\assets\singleplayer-icon.png' 'SinglePlayer default icon'
+    Test-RequiredFile 'renderer\assets\guided\connect-world.webp' 'Client guided-setup artwork'
+    Test-RequiredFile 'renderer\assets\guided\settings-reference.webp' 'Server guided-setup artwork'
+    Test-RequiredFile 'renderer\assets\singleplayer-banner.webp' 'SinglePlayer default banner'
+    Test-RequiredFile 'renderer\assets\singleplayer-icon.webp' 'SinglePlayer default icon'
     Test-RequiredFile 'electron\discord_rpc.cjs' 'Discord desktop Rich Presence transport'
     Test-RequiredFile 'electron\app_updater.cjs' 'Smart GitHub application updater'
     Test-RequiredFile 'resources\community-templates\ID.txt' 'Community ID.txt template'
@@ -452,6 +453,31 @@ try {
     if (-not ($asarListing | Where-Object { $_.TrimStart('/') -eq 'renderer/vendor/monaco/vs/base/worker/workerMain.js' })) { Fail-Build 'Packaged Monaco worker runtime is missing from app.asar.' }
     Write-BuildLine '[OK] Packaged Monaco Editor runtime is present.'
 
+    $threeRoot = Join-Path $unpacked 'resources\rsdw-viewer\three'
+    $requiredThreeFiles = @(
+        'build\three.module.js',
+        'examples\jsm\loaders\GLTFLoader.js',
+        'examples\jsm\loaders\DRACOLoader.js',
+        'examples\jsm\controls\OrbitControls.js',
+        'examples\jsm\environments\RoomEnvironment.js',
+        'examples\jsm\exporters\GLTFExporter.js',
+        'examples\jsm\exporters\STLExporter.js',
+        'examples\jsm\utils\SkeletonUtils.js',
+        'examples\jsm\utils\BufferGeometryUtils.js',
+        'examples\jsm\libs\draco\draco_decoder.js',
+        'examples\jsm\libs\draco\draco_wasm_wrapper.js',
+        'examples\jsm\libs\draco\draco_decoder.wasm'
+    )
+    foreach ($relativeThreeFile in $requiredThreeFiles) {
+        $packedThreeFile = Join-Path $threeRoot $relativeThreeFile
+        if (-not (Test-Path -LiteralPath $packedThreeFile -PathType Leaf)) { Fail-Build "Packaged Character Preview dependency missing: $relativeThreeFile" }
+    }
+    $unexpectedThreeFiles = @(Get-ChildItem -LiteralPath $threeRoot -Recurse -File | Where-Object {
+        $_.Name -match 'three\.(cjs|core|webgpu)' -or $_.Name -match 'draco_encoder'
+    })
+    if ($unexpectedThreeFiles.Count -gt 0) { Fail-Build 'The packaged Character Preview contains unused Three.js/WebGPU/Draco encoder payloads.' }
+    Write-BuildLine '[OK] Character Preview carries only its explicit Three.js + Draco dependency closure.'
+
     $packedRecommendations = Join-Path $unpacked 'resources\resources\recommended-mods.json'
     if (-not (Test-Path -LiteralPath $packedRecommendations -PathType Leaf)) { Fail-Build "Packaged launcher resource missing: $packedRecommendations" }
     Write-BuildLine '[OK] Packaged creator recommendation fallback is present; no third-party mod archive is bundled.'
@@ -461,6 +487,11 @@ try {
         if (-not (Test-Path -LiteralPath $packedRuneSchema -PathType Leaf)) { Fail-Build 'Bundled RuneSchema core was present in source but missing from packaged resources.' }
         Write-BuildLine '[OK] Packaged RuneSchema core resource is present.'
     }
+    $packedRuneSchemaExperimental = Join-Path $unpacked 'resources\resources\RuneSchema-experimental-latest.zip'
+    if (-not (Test-Path -LiteralPath $packedRuneSchemaExperimental -PathType Leaf)) { Fail-Build 'Bundled RuneSchema experimental core was missing from packaged resources.' }
+    $packedDragonLinkConnect = Join-Path $unpacked 'resources\resources\DragonLink-Connect-baseline.zip'
+    if (-not (Test-Path -LiteralPath $packedDragonLinkConnect -PathType Leaf)) { Fail-Build 'Bundled DragonLink-Connect baseline was missing from packaged resources.' }
+    Write-BuildLine '[OK] Packaged RuneSchema experimental core resource is present.'
     $packedUe4ss = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\UE4SS-core-latest.zip'
     $packedServerLoader = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\version.dll'
     foreach ($requiredRuntime in @($packedUe4ss, $packedServerLoader)) {

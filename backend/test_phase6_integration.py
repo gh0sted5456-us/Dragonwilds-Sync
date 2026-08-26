@@ -113,7 +113,7 @@ def test_client_mods_txt_is_locally_generated_from_role_filtered_state():
         assert "Keybinds : 1" in text
 
 
-def test_dragonconnect_has_managed_bundle_version_and_legacy_physical_identity():
+def test_dragonconnect_has_managed_bundle_version_and_canonical_helper_identity():
     with tempfile.TemporaryDirectory(prefix="dws-phase6-dc-") as td:
         root = Path(td)
         mods = root / "ue4ss" / "Mods"
@@ -126,8 +126,8 @@ def test_dragonconnect_has_managed_bundle_version_and_legacy_physical_identity()
             status = direct_connect.status(root)
         finally:
             direct_connect.resolve_client_layout = old_layout
-        assert installed["logical_name"] == "DragonConnect"
-        assert installed["physical_name"] == "PersistentDirectConnectIP"
+        assert installed["logical_name"] == "DragonLink-Connect"
+        assert installed["physical_name"] == "DragonLink-Connect"
         assert status["installed"] and status["current"]
         assert status["installed_version"].startswith("bundle-")
         assert status["available_version"] == status["installed_version"]
@@ -174,7 +174,7 @@ def test_short_lived_verified_sync_can_be_reused_but_not_stale():
         "active": None,
         "last_completed": {
             "world_id": "remote-a", "operation": "world.sync", "launch_ready": True,
-            "manifest_fingerprint": "fp", "completed_at": now,
+            "transfer_gate": "verified", "manifest_fingerprint": "fp", "completed_at": now,
         },
         "history": [],
     }
@@ -190,22 +190,147 @@ def test_short_lived_verified_sync_can_be_reused_but_not_stale():
         phase6._current_local_manifest_fingerprint = old
 
 
+def test_verified_launch_uses_verified_endpoint_and_receipts_actual_handoff():
+    with tempfile.TemporaryDirectory(prefix="dws-phase6-launch-") as td:
+        captured = {}
+        world = {
+            "id": "remote-a",
+            "connection": {"direct_connect_route": "auto"},
+            "credentials": {"password": "BELTS"},
+        }
+        state = {
+            "application": {"game_dir": td, "game_exe": str(Path(td) / "RSDragonwilds.exe")},
+            "client": {"worlds": [world], "world_character_selection": {}},
+            "player_profile": {"character_worlds": {}, "character_profiles": {}},
+        }
+
+        def write_direct(_game_dir, selected, manifest=None):
+            captured["manifest"] = manifest
+            captured["password"] = selected["credentials"]["password"]
+            connection = (manifest or {}).get("connection") or {}
+            return {"configured": True, "address": f"{connection['external_ip']}:{connection['game_port']}",
+                    "path": str(Path(td) / "config.lua")}
+
+        legacy = SimpleNamespace(
+            find_world=lambda _state, _id: world,
+            smart_character_switch=lambda *_a, **_k: None,
+            _write_world_direct_connect=write_direct,
+            now_iso=lambda: "now",
+            _remember_shared_connection=lambda *_a, **_k: None,
+            _remember_client_connection=lambda *_a, **_k: None,
+            save_state=lambda *_a, **_k: None,
+            public_state=lambda value: value,
+        )
+        original_launch = sync_engine.launch_game
+        try:
+            sync_engine.launch_game = lambda _path: 4242
+            response = phase6._launch_verified_world(legacy, state, "remote-a", {
+                "manifest_fingerprint": "fp", "game_endpoint": "203.0.113.9:7777",
+                "sync_endpoint": "203.0.113.9:27051", "route": "external",
+            })
+        finally:
+            sync_engine.launch_game = original_launch
+        assert captured["manifest"]["connection"] == {"external_ip": "203.0.113.9", "game_port": 7777}
+        assert captured["password"] == "BELTS"
+        assert response["result"]["direct_connect"]["address"] == "203.0.113.9:7777"
+
+    reusable = {
+        "world_id": "remote-a", "operation": "world.sync", "launch_ready": True,
+        "manifest_fingerprint": "fp", "game_endpoint": "", "completed_at": time.time(),
+        "direct_connect": {"configured": False, "address": ""},
+    }
+    old_diagnostic = phase6._verified_sync_diagnostic
+    old_launch_verified = phase6._launch_verified_world
+    try:
+        phase6._verified_sync_diagnostic = lambda *_a, **_k: (reusable, {"code": "verified", "reason": "test"})
+        phase6._launch_verified_world = lambda *_a, **_k: {
+            "result": {"launched": True, "direct_connect": {
+                "configured": True, "address": "203.0.113.9:7777", "path": "/DragonLink-Connect/config.lua"
+            }}
+        }
+        response = phase6._run_world_operation(SimpleNamespace(load_state=lambda: {}), lambda *_a: None,
+                                               "world.launch_verified", {"id": "remote-a"})
+    finally:
+        phase6._verified_sync_diagnostic = old_diagnostic
+        phase6._launch_verified_world = old_launch_verified
+    handoff = response["phase6"]["handoff"]
+    assert handoff["game_endpoint"] == "203.0.113.9:7777"
+    assert handoff["dragonconnect"]["configured"] is True
+
+
+def test_incomplete_sync_override_is_explicit_recent_and_parity_only():
+    phase6._begin_sync("remote-override", "world.sync")
+    phase6._fail_sync(
+        "remote-override", "world.sync",
+        RuntimeError("Host rejected the final file manifest: missing on client: Mods/Example/main.lua"),
+    )
+    assert phase6._recent_parity_failure("remote-override") is not None
+
+    legacy = SimpleNamespace(load_state=lambda: {})
+    try:
+        phase6._run_world_operation(
+            legacy, lambda *_a: None, "world.launch_mismatch_override",
+            {"id": "remote-override", "acknowledgement": "wrong"},
+        )
+    except PermissionError as exc:
+        assert "acknowledgement" in str(exc)
+    else:
+        raise AssertionError("Incomplete Sync launched without explicit acknowledgement")
+
+    old_launch = phase6._launch_incomplete_world
+    try:
+        phase6._launch_incomplete_world = lambda *_a, **_k: {"result": {"parity_override": True}}
+        response = phase6._run_world_operation(
+            legacy, lambda *_a: None, "world.launch_mismatch_override",
+            {"id": "remote-override", "acknowledgement": phase6._PARITY_OVERRIDE_ACK},
+        )
+    finally:
+        phase6._launch_incomplete_world = old_launch
+    assert response["result"]["parity_override"] is True
+
+    phase6._begin_sync("remote-auth", "world.sync")
+    phase6._fail_sync("remote-auth", "world.sync", RuntimeError("World Password did not authorize the Sync payload"))
+    assert phase6._recent_parity_failure("remote-auth") is None
+
+
 def test_source_registry_keeps_rsdwtools_and_toolkit_separate():
     registry = phase6._source_registry_snapshot()
     assert registry["data"]["rsdwtools"]["repository"] == "RSDWArchive/RSDWTools"
     assert registry["data"]["rsdwtools"]["runtime_component"] is False
     assert registry["tooling"]["rsdw_toolkit"]["repository"] == "RSDWArchive/RSDWDevKit"
     assert registry["core"]["dragonconnect"]["runtime_roles"] == ["server", "host", "client"]
-    assert registry["core"]["dragonconnect"]["physical_name"] == "PersistentDirectConnectIP"
+    assert registry["core"]["dragonconnect"]["physical_name"] == "DragonLink-Connect"
+
+
+def test_background_sync_job_uses_verified_dispatcher():
+    import dragonwilds_service_legacy as legacy
+    called = []
+    previous = getattr(legacy, "_WORLD_SYNC_DISPATCH", None)
+    try:
+        legacy._WORLD_SYNC_DISPATCH = lambda method, params: (
+            called.append((method, dict(params))) or
+            {"result": {"launch_ready": True, "downloaded": 2, "up_to_date": 3}, "state": {}}
+        )
+        legacy._run_world_sync_job("phase6-job", "remote-a", "sync", False)
+        assert called and called[0][0] == "world.sync"
+        assert legacy._WORLD_SYNC_JOBS["phase6-job"]["status"] == "complete"
+    finally:
+        if previous is None:
+            delattr(legacy, "_WORLD_SYNC_DISPATCH")
+        else:
+            legacy._WORLD_SYNC_DISPATCH = previous
 
 
 if __name__ == "__main__":
     test_secret_references_are_encrypted_on_disk_and_hydrated_in_memory()
     test_server_literal_mods_txt_is_rejected_before_transfer()
     test_client_mods_txt_is_locally_generated_from_role_filtered_state()
-    test_dragonconnect_has_managed_bundle_version_and_legacy_physical_identity()
+    test_dragonconnect_has_managed_bundle_version_and_canonical_helper_identity()
     test_sync_journal_is_resumable_and_handoff_receipt_never_contains_credentials()
     test_short_lived_verified_sync_can_be_reused_but_not_stale()
+    test_verified_launch_uses_verified_endpoint_and_receipts_actual_handoff()
+    test_incomplete_sync_override_is_explicit_recent_and_parity_only()
     test_source_registry_keeps_rsdwtools_and_toolkit_separate()
+    test_background_sync_job_uses_verified_dispatcher()
     print("Phase 6 sync/profile reconciliation + DragonConnect/source/secret contract: PASS")
     _TEST_ROOT.cleanup()

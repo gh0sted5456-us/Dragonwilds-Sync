@@ -11,7 +11,7 @@ contracts around that engine:
 * encrypted durable secret references while keeping decrypted values available
   only in-process;
 * explicit resumable Sync journal / verified handoff receipts;
-* client-role materialization (DragonConnect enabled);
+* client-role materialization (DragonLink-Connect enabled);
 * client-generated ``mods.txt`` only -- a server literal control file is never
   accepted as a transfer payload;
 * a short-lived verified-sync reuse path so Quick Launch does not sync twice;
@@ -268,8 +268,28 @@ def _prepare_remote_client_role(install_dir: Path) -> dict:
 
 def _sync_world(*args, **kwargs):
     install_dir = Path(args[1] if len(args) > 1 else kwargs.get("install_dir"))
-    role = _prepare_remote_client_role(install_dir)
     result = _ORIGINAL_SYNC_WORLD(*args, **kwargs)
+    manifest = result.get("manifest") if isinstance(result, dict) and isinstance(result.get("manifest"), dict) else {}
+    has_server_dragonconnect = any(
+        str((entry or {}).get("baked_component") or "").casefold()
+        in {"dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"}
+        for entry in (manifest.get("files") or []) if isinstance(entry, dict)
+    )
+    if has_server_dragonconnect:
+        layout = sync_engine.resolve_client_layout(install_dir)
+        target = layout.ue4ss_mods_dir / persistent_direct_connect.MOD_NAME
+        installed = (target / "Scripts" / "main.lua").is_file() and (target / "enabled.txt").is_file()
+        if not installed:
+            raise sync_engine.ConnectionError("The host manifest included DragonLink-Connect, but its required files were not materialized.")
+        role = {"role": "CLIENT", "dragonconnect": {
+            "logical_name": persistent_direct_connect.LOGICAL_NAME,
+            "physical_name": persistent_direct_connect.MOD_NAME,
+            "installed": True, "version": "server-manifest",
+        }}
+        _write_role_state(role)
+    else:
+        # Compatibility for older hosts that do not yet publish baked components.
+        role = _prepare_remote_client_role(install_dir)
     if isinstance(result, dict):
         result["runtime_role"] = role
     return result
@@ -386,20 +406,42 @@ def _current_local_manifest_fingerprint(game_dir: str) -> str:
         return ""
 
 
-def _verified_sync_reusable(legacy, state: dict, world_id: str) -> dict | None:
+def _verified_sync_diagnostic(legacy, state: dict, world_id: str) -> tuple[dict | None, dict]:
     doc = _journal_doc()
     last = doc.get("last_completed") if isinstance(doc.get("last_completed"), dict) else None
-    if not last or last.get("world_id") != world_id or last.get("operation") != "world.sync" or not last.get("launch_ready"):
-        return None
-    if _now() - float(last.get("completed_at") or 0) > SYNC_REUSE_SECONDS:
-        return None
-    if str(state.setdefault("client", {}).get("live_world_id") or "") != world_id:
-        return None
+    if not last:
+        return None, {"code": "no_verified_receipt", "reason": "No completed file-verification receipt exists for this client."}
+    if str(last.get("world_id") or "") != world_id:
+        return None, {"code": "different_world_receipt", "reason": "The newest verification receipt belongs to a different World.",
+                      "receipt_world_id": str(last.get("world_id") or "")}
+    if last.get("operation") != "world.sync":
+        return None, {"code": "receipt_not_sync", "reason": f"The newest receipt records {last.get('operation') or 'an unknown operation'}, not a completed World Sync."}
+    if not last.get("launch_ready") or str(last.get("transfer_gate") or "") != "verified":
+        return None, {"code": "host_match_unconfirmed", "reason": "The host did not acknowledge an exact final manifest match."}
+    age = _now() - float(last.get("completed_at") or 0)
+    if age > SYNC_REUSE_SECONDS:
+        return None, {"code": "receipt_expired", "reason": f"The verified receipt is {int(age)} seconds old and must be refreshed."}
+    live_world_id = str(state.setdefault("client", {}).get("live_world_id") or "")
+    if live_world_id != world_id:
+        return None, {"code": "profile_not_active", "reason": "The verified World is no longer the active client profile.",
+                      "active_world_id": live_world_id}
     game_dir = str(state.setdefault("application", {}).get("game_dir") or "").strip()
     fingerprint = str(last.get("manifest_fingerprint") or "")
-    if not game_dir or not fingerprint or _current_local_manifest_fingerprint(game_dir) != fingerprint:
-        return None
-    return last
+    if not game_dir:
+        return None, {"code": "game_directory_missing", "reason": "The Dragonwilds client directory is not configured."}
+    if not fingerprint:
+        return None, {"code": "receipt_fingerprint_missing", "reason": "The completed receipt has no manifest fingerprint."}
+    local_fingerprint = _current_local_manifest_fingerprint(game_dir)
+    if not local_fingerprint:
+        return None, {"code": "local_manifest_missing", "reason": "The local managed-file ledger is missing. Files must be verified again."}
+    if local_fingerprint != fingerprint:
+        return None, {"code": "manifest_fingerprint_changed", "reason": "The local managed-file ledger no longer matches the verified host manifest.",
+                      "expected": fingerprint, "observed": local_fingerprint}
+    return last, {"code": "verified", "reason": "The client ledger and host receipt match."}
+
+
+def _verified_sync_reusable(legacy, state: dict, world_id: str) -> dict | None:
+    return _verified_sync_diagnostic(legacy, state, world_id)[0]
 
 
 def _launch_verified_world(legacy, state: dict, world_id: str, verified: dict) -> dict:
@@ -426,7 +468,28 @@ def _launch_verified_world(legacy, state: dict, world_id: str, verified: dict) -
         exe = str(candidates[0]) if candidates else ""
     if not exe:
         raise ValueError("Dragonwilds executable is not configured and could not be auto-detected.")
-    direct_connect = legacy._write_world_direct_connect(game_dir, world)
+    # The verified journal records the exact game endpoint selected during the
+    # successful match. Use it as a last-mile route fallback so a discovery
+    # repaint/profile-ID repair cannot blank DragonLink-Connect between Sync
+    # and Play. Saved World routes remain authoritative when present.
+    endpoint = str(verified.get("game_endpoint") or "").strip()
+    fallback_connection: dict[str, object] = {}
+    if endpoint:
+        host, separator, raw_port = endpoint.rpartition(":")
+        if not separator or not raw_port.isdigit():
+            host, raw_port = endpoint, "7777"
+        if host and ":" not in host:
+            route = str((world.get("connection") or {}).get("direct_connect_route") or "auto").strip().lower()
+            fallback_connection["internal_ip" if route == "internal" else "external_ip"] = host
+            fallback_connection["game_port"] = int(raw_port)
+    direct_connect = legacy._write_world_direct_connect(
+        game_dir, world, {"connection": fallback_connection} if fallback_connection else None
+    )
+    if not direct_connect.get("configured"):
+        raise RuntimeError(
+            "DragonLink-Connect could not resolve a game address from the verified World. "
+            "Refresh the World route and sync again."
+        )
     pid = sync_engine.launch_game(Path(exe))
     world["last_played_at"] = legacy.now_iso()
     if (world.get("shared") or {}).get("source"):
@@ -450,6 +513,93 @@ def _launch_verified_world(legacy, state: dict, world_id: str, verified: dict) -
         },
         "state": legacy.public_state(state),
     }
+
+
+_PARITY_OVERRIDE_ACK = "ENTER_WITH_INCOMPLETE_SYNC"
+_PARITY_FAILURE_TERMS = (
+    "host rejected the final file manifest",
+    "hash mismatch for",
+    "manifest_fingerprint_changed",
+    "local managed-file ledger",
+    "missing on client",
+    "wrong sha-256",
+    "unexpected managed files",
+    "verified file match is missing or stale",
+    "fresh host response still did not confirm exact file parity",
+)
+_NON_OVERRIDABLE_FAILURE_TERMS = (
+    "password",
+    "authentication",
+    "authorize",
+    "fingerprint mismatch",
+    "world name mismatch",
+    "no internal or external ip",
+    "could not resolve a game address",
+)
+
+
+def _recent_parity_failure(world_id: str) -> dict | None:
+    """Return only a fresh, file-parity failure that is safe to acknowledge.
+
+    This gate deliberately excludes identity, authentication, credential, and
+    route failures.  The override is a user acknowledgement of incomplete file
+    parity; it is never an alternate way around World authorization.
+    """
+    doc = _journal_doc()
+    active = doc.get("active") if isinstance(doc.get("active"), dict) else None
+    if not active or active.get("status") != "interrupted" or str(active.get("world_id") or "") != world_id:
+        return None
+    updated_at = float(active.get("updated_at") or 0)
+    if updated_at <= 0 or (_now() - updated_at) > 15 * 60:
+        return None
+    error = str(active.get("error") or "").strip()
+    lowered = error.lower()
+    if any(term in lowered for term in _NON_OVERRIDABLE_FAILURE_TERMS):
+        return None
+    if not any(term in lowered for term in _PARITY_FAILURE_TERMS):
+        return None
+    return active
+
+
+def _launch_incomplete_world(legacy, state: dict, world_id: str, failure: dict) -> dict:
+    # Reuse the normal route/DragonLink/game-launch path, but replace every
+    # verified marker in the response.  No password, identity, or fingerprint
+    # check is altered here; only the final managed-file parity gate is waived.
+    response = _launch_verified_world(legacy, state, world_id, {})
+    result = response.get("result") if isinstance(response.get("result"), dict) else {}
+    warning = "Stability may be compromised because this World was entered with incomplete file synchronization."
+    result.update({
+        "launch_ready": True,
+        "transfer_gate": "parity_override",
+        "reused_verified_sync": False,
+        "manifest_fingerprint": "",
+        "parity_verified": False,
+        "parity_override": True,
+        "stability_warning": warning,
+        "sync_failure": str(failure.get("error") or "")[:500],
+    })
+    refreshed = legacy.load_state()
+    legacy._record_notification(
+        refreshed,
+        "Entered World with incomplete Sync",
+        warning,
+        "warning",
+        world_id=world_id,
+        key=f"parity-override:{world_id}:{int(_now())}",
+        details={
+            "type": "sync_override_receipt",
+            "world_id": world_id,
+            "entered_at": _now(),
+            "parity_verified": False,
+            "failure": str(failure.get("error") or "")[:500],
+            "direct_connect": _safe_direct_connect(result.get("direct_connect")),
+            "contains_credentials": False,
+        },
+    )
+    legacy.save_state(refreshed)
+    response["state"] = legacy.public_state(refreshed)
+    response["phase6"] = {"verified_sync_reused": False, "parity_override": True}
+    return response
 
 
 def _handoff_receipt(world_id: str, journal: dict, *, launched: bool) -> dict:
@@ -485,12 +635,56 @@ def _run_world_operation(legacy, original_handle, method: str, params: dict):
         return original_handle(method, params)
     state = legacy.load_state()
 
+    if method == "world.launch_mismatch_override":
+        if str(params.get("acknowledgement") or "") != _PARITY_OVERRIDE_ACK:
+            raise PermissionError("Explicit incomplete-Sync acknowledgement is required.")
+        failure = _recent_parity_failure(world_id)
+        if not failure:
+            raise PermissionError(
+                "No recent file-parity mismatch is eligible for override. "
+                "World authentication, identity, fingerprint, password, and route failures cannot be bypassed."
+            )
+        return _launch_incomplete_world(legacy, state, world_id, failure)
+
+    if method == "world.launch_verified":
+        reusable, rejection = _verified_sync_diagnostic(legacy, state, world_id)
+        if not reusable:
+            # Play is a fresh trust boundary. Repair a missing/stale receipt by
+            # asking the host for its current manifest and requiring one more
+            # exact acknowledgement instead of rejecting with an opaque error.
+            _begin_sync(world_id, "world.sync")
+            try:
+                synced = original_handle("world.sync", {"id": world_id})
+                reusable = _complete_sync(world_id, "world.sync", synced)
+            except Exception as exc:
+                _fail_sync(world_id, "world.sync", exc)
+                raise RuntimeError(
+                    f"Play verification failed ({rejection.get('code')}): {rejection.get('reason')} "
+                    f"Automatic revalidation also failed: {exc}") from exc
+            if not reusable.get("launch_ready") or reusable.get("transfer_gate") != "verified":
+                raise RuntimeError(
+                    f"Play verification failed ({rejection.get('code')}): {rejection.get('reason')} "
+                    "The fresh host response still did not confirm exact file parity.")
+        response = _launch_verified_world(legacy, state, world_id, reusable)
+        launch_result = response.get("result") if isinstance(response.get("result"), dict) else {}
+        completed = {**reusable, "operation": "world.launch_verified", "launched": bool(launch_result.get("launched")),
+                     "direct_connect": dict(launch_result.get("direct_connect") or {}),
+                     "game_endpoint": str((launch_result.get("direct_connect") or {}).get("address") or reusable.get("game_endpoint") or ""),
+                     "completed_at": _now(), "updated_at": _now()}
+        receipt = _handoff_receipt(world_id, completed, launched=bool(launch_result.get("launched")))
+        response["phase6"] = {"verified_sync_reused": True, "handoff": receipt}
+        return response
+
     if method == "world.play":
         reusable = _verified_sync_reusable(legacy, state, world_id)
         if reusable:
             response = _launch_verified_world(legacy, state, world_id, reusable)
-            completed = {**reusable, "operation": "world.play", "launched": True, "completed_at": _now(), "updated_at": _now()}
-            receipt = _handoff_receipt(world_id, completed, launched=True)
+            launch_result = response.get("result") if isinstance(response.get("result"), dict) else {}
+            completed = {**reusable, "operation": "world.play", "launched": bool(launch_result.get("launched")),
+                         "direct_connect": dict(launch_result.get("direct_connect") or {}),
+                         "game_endpoint": str((launch_result.get("direct_connect") or {}).get("address") or reusable.get("game_endpoint") or ""),
+                         "completed_at": _now(), "updated_at": _now()}
+            receipt = _handoff_receipt(world_id, completed, launched=bool(launch_result.get("launched")))
             response["phase6"] = {"verified_sync_reused": True, "handoff": receipt}
             return response
 
@@ -508,7 +702,7 @@ def _run_world_operation(legacy, original_handle, method: str, params: dict):
         refreshed = legacy.load_state()
         legacy._record_notification(
             refreshed,
-            "World parity verified and DragonConnect ready",
+            "World parity verified and DragonLink-Connect ready",
             f"Client files matched the host and gameplay handoff is {receipt.get('game_endpoint') or 'configured'}.",
             "success", world_id=world_id, key=f"phase6-handoff:{world_id}:{receipt.get('manifest_fingerprint')}",
         )
@@ -516,7 +710,29 @@ def _run_world_operation(legacy, original_handle, method: str, params: dict):
         response["state"] = legacy.public_state(refreshed)
         response["phase6"] = {"verified_sync_reused": False, "handoff": receipt}
     else:
-        response["phase6"] = {"journal": completed}
+        result = response.get("result") if isinstance(response.get("result"), dict) else {}
+        receipt = {
+            "type": "sync_receipt", "schema": "DragonwildsSync.TransferReceipt.v1",
+            "world_id": world_id, "verified_at": completed.get("completed_at"),
+            "manifest_fingerprint": completed.get("manifest_fingerprint"),
+            "downloaded": int(result.get("downloaded") or 0),
+            "downloaded_bytes": int(result.get("downloaded_bytes") or 0),
+            "removed": int(result.get("removed") or 0),
+            "unchanged": int(result.get("up_to_date") or 0),
+            "force_reset": dict(result.get("force_reset") or {}),
+            "files": list(result.get("downloaded_files") or [])[:2500],
+            "acknowledgements": dict(result.get("acknowledgements") or {}),
+        }
+        refreshed = legacy.load_state()
+        legacy._record_notification(
+            refreshed, "World files synchronized and verified",
+            f"{receipt['downloaded']} downloaded · {receipt['removed']} removed · {receipt['unchanged']} already current. Open for the transfer receipt.",
+            "success", world_id=world_id,
+            key=f"world-sync-receipt:{world_id}:{receipt.get('manifest_fingerprint')}", details=receipt,
+        )
+        legacy.save_state(refreshed)
+        response["state"] = legacy.public_state(refreshed)
+        response["phase6"] = {"journal": completed, "receipt": receipt}
     return response
 
 
@@ -654,7 +870,7 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
         server_root = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
         if server_root and Path(server_root).exists():
             persistent_direct_connect.ensure_installed(server_root)
-    if method in {"world.sync", "world.play"}:
+    if method in {"world.sync", "world.play", "world.launch_verified", "world.launch_mismatch_override"}:
         return _run_world_operation(legacy, original_handle, method, params)
     if method == "application.phase6.status":
         state = legacy.load_state()
@@ -665,7 +881,7 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
     if method == "application.dragonconnect.repair":
         state = legacy.load_state()
         if legacy._dragonwilds_client_running():
-            raise RuntimeError("Close RuneScape: Dragonwilds before repairing DragonConnect.")
+            raise RuntimeError("Close RuneScape: Dragonwilds before repairing DragonLink-Connect.")
         game_dir = str(state.setdefault("application", {}).get("game_dir") or "").strip()
         if not game_dir:
             raise ValueError("Set the Dragonwilds game folder first.")
@@ -673,7 +889,7 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
         server_root = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
         server_result = persistent_direct_connect.ensure_installed(server_root) if server_root and Path(server_root).exists() else None
         legacy._record_notification(
-            state, "DragonConnect repaired",
+            state, "DragonLink-Connect repaired",
             f"The hidden host/client connection baseline is current ({result.get('version') or 'bundled baseline'}).",
             "success", key=f"dragonconnect-repair:{result.get('version') or 'baseline'}",
         )
@@ -699,7 +915,7 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
                 "update_available": bool(dc.get("update_available")),
                 "restart_required": True,
                 "status": str(dc.get("status") or "unknown"),
-                "action": "Repair managed DragonConnect",
+                "action": "Repair managed DragonLink-Connect",
                 "source": "bundled-baseline",
                 "physical_name": persistent_direct_connect.MOD_NAME,
             }
@@ -741,6 +957,7 @@ def install_phase6_integrations() -> dict:
                 return _phase6_legacy_handler(legacy, _ORIGINAL_LEGACY_HANDLE, method, params)
 
             legacy.handle = phase6_handle
+            legacy._WORLD_SYNC_DISPATCH = phase6_handle
 
     _INSTALLED = True
     return {"installed": True, "secret_store": secrets}

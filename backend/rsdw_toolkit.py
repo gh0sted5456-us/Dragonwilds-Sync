@@ -171,6 +171,14 @@ def validate_command(game_root: str | Path, line: str) -> dict:
     verb = command.split(None, 1)[0].casefold()
     catalog = command_catalog(game_root)
     row = next((item for item in catalog["commands"] if item["verb"] == verb), None)
+    if row is None and verb in {"ue4ss.exec", "runeschema.exec"}:
+        row = {
+            "verb": verb,
+            "usage": f"{verb} <runtime command>",
+            "category": verb.split(".", 1)[0],
+            "safety": "admin_write",
+            "relay": True,
+        }
     if row is None:
         raise ValueError("That command is not declared by the installed RSDWToolkit router")
     return {"line": command, "verb": verb, "definition": row}

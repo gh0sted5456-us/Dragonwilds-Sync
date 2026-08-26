@@ -45,7 +45,7 @@ def _save_tombstone_key(path: Path) -> str:
         return str(path).replace("\\", "/").casefold()
 PAK_EXTENSIONS = {".pak", ".utoc", ".ucas"}
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
-RESERVED_UE4SS = {"runeschema", "rsdwtools", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
+RESERVED_UE4SS = {"runeschema", "rsdwtools", "dragonconnecthelper", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
 _LOAD_PREFIX_RE = re.compile(r"^(\d{2,3})_(.+)$")
 
 

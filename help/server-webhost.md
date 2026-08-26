@@ -4,7 +4,7 @@ Hosted Worlds use profile-owned presentation, save/config snapshots, mod state, 
 
 Open **Dragonwilds → Hosting** for dedicated paths, validation, setup, and hosted World creation. Hosting is no longer a separate RSDragonwilds navigation item.
 
-![Dragonwilds Hosting setup](../renderer/assets/help/05-server-setup.png) "Dedicated setup remains inside the game-icon Dragonwilds Appy."
+![Dragonwilds Hosting setup](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/05-server-setup.png) "Dedicated setup remains inside the game-icon Dragonwilds Appy."
 
 ## Fluid startup sequence
 

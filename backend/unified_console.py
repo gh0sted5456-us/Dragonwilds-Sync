@@ -238,6 +238,65 @@ def _process_entries(runtime: dict) -> list[dict]:
     return rows
 
 
+def _game_log_entries(runtime: dict, started: float, process_rows: list[dict], limit: int = 800) -> tuple[list[dict], str]:
+    """Tail Unreal's Saved/Logs output when stdout does not carry every line."""
+    root_value = str(runtime.get("game_root") or "").strip()
+    if not root_value:
+        return [], ""
+    try:
+        logs_dir = resolve_server_layout(Path(root_value)).logs_dir
+    except Exception:
+        return [], ""
+    candidates: list[tuple[float, Path]] = []
+    try:
+        for path in logs_dir.glob("*.log") if logs_dir.is_dir() else ():
+            if path.name.casefold() in {_LOG_NAME.casefold(), _PREVIOUS_LOG_NAME.casefold(), "ue4ss.log"}:
+                continue
+            stat = path.stat()
+            if stat.st_mtime >= started - 2:
+                candidates.append((float(stat.st_mtime), path))
+    except OSError:
+        return [], ""
+    if not candidates:
+        return [], ""
+    mtime, path = max(candidates, key=lambda item: item[0])
+    try:
+        size = int(path.stat().st_size)
+        start = max(0, size - 1048576)
+        with path.open("rb") as handle:
+            handle.seek(start)
+            data = handle.read(1048576)
+        base = start
+        if start:
+            marker = data.find(b"\n")
+            if marker < 0:
+                return [], str(path)
+            base += marker + 1
+            data = data[marker + 1:]
+        chunks = data.splitlines(keepends=True)[-max(50, min(int(limit), 1200)):]
+    except OSError:
+        return [], str(path)
+    stdout_messages = {str(row.get("message") or "").strip() for row in process_rows}
+    rows: list[dict] = []
+    cursor = base
+    for index, chunk in enumerate(chunks):
+        offset = cursor
+        cursor += len(chunk)
+        message = chunk.decode("utf-8", errors="replace").strip()
+        if not message or message in stdout_messages:
+            continue
+        folded = message.casefold()
+        level = "error" if any(token in folded for token in ("fatal", "exception", " error:")) else ("warning" if "warning" in folded else "info")
+        rows.append({
+            "ts": mtime - ((len(chunks) - index) * 0.0001),
+            "source": "game",
+            "level": level,
+            "message": message[:4000],
+            "_identity": f"gamelog:{path}:{offset}",
+        })
+    return rows, str(path)
+
+
 def _ue4ss_entries(runtime: dict, started: float, limit: int = 250) -> tuple[list[dict], str]:
     root_value = str(runtime.get("game_root") or "").strip()
     if not root_value:
@@ -505,8 +564,10 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
         runtime = {**runtime, "running": False, "events": [], "process_output": [], "game_root": ""}
         activities = []
 
+    process_rows = _process_entries(runtime)
+    game_log_rows, game_log = _game_log_entries(runtime, started, process_rows)
     ue4ss_rows, ue4ss_log = _ue4ss_entries(runtime, started)
-    rows = _server_entries(runtime) + _process_entries(runtime) + ue4ss_rows + _sync_entries(activities) + _command_entries(commands)
+    rows = _server_entries(runtime) + process_rows + game_log_rows + ue4ss_rows + _sync_entries(activities) + _command_entries(commands)
     rows = [row for row in rows if float(row.get("ts") or 0) >= started - 0.5]
     rows.sort(key=lambda row: (float(row.get("ts") or 0), str(row.get("source") or "")))
 
@@ -539,6 +600,7 @@ def snapshot(profile_id: object, *, runtime: dict | None = None, sync_activities
         "current_log": str(paths["current"]),
         "previous_log": str(paths["previous"]) if paths["previous"].is_file() else "",
         "ue4ss_log": ue4ss_log,
+        "game_log": game_log,
     }
 
 

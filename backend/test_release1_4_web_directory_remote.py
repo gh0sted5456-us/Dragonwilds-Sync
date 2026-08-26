@@ -101,6 +101,14 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'data-tab="announcements"' in portal and b"Broadcast Messages" in portal
             assert b"spawner_catalog" in portal and b"spawner_item" in portal and b"announcement_send" in portal
             assert b'data-tab="console"' in portal
+            assert b'dws-remote-workspace-script' in portal
+            assert b'Server retained' in portal and b'Pushed to clients' in portal
+            assert b'/assets/platforms/ue4ss.svg' in portal and b'/assets/platforms/runeschema.svg' in portal
+            assert b'mod_files' in portal and b'mod_file_open' in portal and b'mod_file_save' in portal
+            assert b'Item Builder' in portal and b'dws-item-categories' in portal
+            assert b'/api/v1/admin/item-icon/' in directory_host.Path(directory_host.__file__).with_name('dragonwilds_service_legacy.py').read_bytes()
+            assert b'dws-current-map' in portal and b'background-size:contain' in portal
+            assert b"action==='start'&&running" in portal and b"['stop','restart','update_restart'].includes(action)&&!running" in portal
             assert b'id="web-language"' in portal and b"Browser language" in portal
             assert b'id="dws-project-info"' in portal and b'installWorldCommunity' in portal
             assert b'background-size:100% 100%' not in portal
@@ -175,11 +183,11 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             controller.config = directory_host.normalize_host_config({**controller.config, "public_surface_mode": "manifest"})
             with urllib.request.urlopen(base + "/servers") as response:
                 manifest_page = response.read()
-            assert b"/assets/icon.png" in manifest_page and b"World filters" not in manifest_page
+            assert b"/assets/icon.webp" in manifest_page and b"World filters" not in manifest_page
             controller.config = directory_host.normalize_host_config({**controller.config, "public_surface_mode": "blackout"})
             with urllib.request.urlopen(base + "/servers") as response:
                 blackout_page = response.read()
-            assert b"background:#000" in blackout_page and b"/assets/icon.png" not in blackout_page
+            assert b"background:#000" in blackout_page and b"/assets/icon.webp" not in blackout_page
             with urllib.request.urlopen(base + "/api/v1/worlds") as response:
                 assert json.load(response)["world_count"] == 1
         finally:

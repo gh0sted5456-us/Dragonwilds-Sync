@@ -155,8 +155,13 @@ def test_lifecycle():
 
     engine.running = False
     status = manager.get_status()
-    assert status["state"] == "Error" and not share.serving
-    assert "exited unexpectedly" in status["last_error"]
+    assert status["state"] == "Error" and share.serving
+    assert "exited unexpectedly" in status["last_error"] and "recovery" in status["last_error"]
+
+    # An explicit Stop is authoritative and withdraws the recovery broadcast.
+    stopped_after_crash = manager.stop()
+    assert stopped_after_crash["verified_stopped"] and stopped_after_crash["broadcast_verified"]
+    assert not share.serving
 
     failed = AuthoritativeRuntimeManager(engine, share)
     failed.start("world-a")

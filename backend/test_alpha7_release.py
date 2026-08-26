@@ -93,19 +93,22 @@ def main():
             cl.LOCAL_APPDATA = old_local
             cp.CHAR_CACHE, cp.CHAR_IMPORT_BACKUPS = old_cache, old_import
 
-        # Server-governed World save cooldown is enforced per source IP.
+        # World saves allow two requests per rolling 24 hours per source IP.
         old_profiles = profile_store.SERVER_PROFILES_DIR
         old_wsd_profiles = wsd.SERVER_PROFILES_DIR
         profile_store.SERVER_PROFILES_DIR = temp / "profiles"
         wsd.SERVER_PROFILES_DIR = profile_store.SERVER_PROFILES_DIR
         try:
-            profile_store.save_server_profile("world-a", {"id": "world-a", "name": "A", "world_save_download": {"enabled": True, "cooldown_value": 2, "cooldown_unit": "hours"}})
+            profile_store.save_server_profile("world-a", {"id": "world-a", "name": "A", "world_save_download": {"enabled": True}})
             first = wsd.status_for_ip("world-a", "203.0.113.7", now=1000)
             assert first["allowed"] is True
             wsd.record_download("world-a", "203.0.113.7", now=1000)
-            blocked = wsd.status_for_ip("world-a", "203.0.113.7", now=1001)
-            other = wsd.status_for_ip("world-a", "203.0.113.8", now=1001)
-            assert blocked["allowed"] is False and blocked["remaining_seconds"] > 7000
+            second = wsd.status_for_ip("world-a", "203.0.113.7", now=1001)
+            assert second["allowed"] is True and second["requests_remaining"] == 1
+            wsd.record_download("world-a", "203.0.113.7", now=1001)
+            blocked = wsd.status_for_ip("world-a", "203.0.113.7", now=1002)
+            other = wsd.status_for_ip("world-a", "203.0.113.8", now=1002)
+            assert blocked["allowed"] is False and blocked["remaining_seconds"] > 86000
             assert other["allowed"] is True
         finally:
             profile_store.SERVER_PROFILES_DIR = old_profiles

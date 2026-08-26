@@ -1,5 +1,6 @@
 (() => {
   const params=new URLSearchParams(location.search); const dialogId=params.get('dialogId')||'';
+  if(params.get('nativeFrame')==='1')document.body.classList.add('native-frame-host');
   const content=document.getElementById('dialog-content'); const title=document.getElementById('dialog-title');
   let lastHtml=''; let wired=false;
   const fieldSnapshot=()=>{const out={}; content.querySelectorAll('input[id],textarea[id],select[id]').forEach((el)=>{out[el.id]={value:el.value,checked:!!el.checked,type:el.type||el.tagName.toLowerCase()};}); return out;};
@@ -11,10 +12,14 @@
     content.addEventListener('click',(event)=>{const el=event.target.closest('button,a,[data-close-modal]');if(!el)return;event.preventDefault();window.dragonwilds.managedDialogEvent({id:dialogId,type:'click',target:descriptor(el),fields:fieldSnapshot()});});
   };
   const setContent=(payload={})=>{if(payload.theme)document.body.dataset.theme=payload.theme;if(payload.title)title.textContent=payload.title;if(payload.html!=null&&String(payload.html)!==lastHtml){lastHtml=String(payload.html);content.innerHTML=`<div class="modal">${lastHtml}</div>`;}wire();applyFields(payload.fields||{});};
-  window.dragonwilds.managedDialogContent(dialogId).then(setContent).catch((error)=>{content.innerHTML=`<div class="empty-state">${String(error.message||error)}</div>`;});
+  if(!window.dragonwilds?.managedDialogContent){
+    content.innerHTML='<div class="empty-state"><strong>Window bridge unavailable</strong><br/>Close this window and reopen the tool from Dragonwilds Sync.</div>';
+    return;
+  }
+  window.dragonwilds.managedDialogContent(dialogId).then(setContent).catch((error)=>{content.innerHTML=`<div class="empty-state"><strong>Window could not hydrate</strong><br/>${String(error.message||error)}</div>`;});
   window.dragonwilds.onManagedDialogUpdate?.((payload)=>{if(payload.id===dialogId)setContent(payload);});
   document.getElementById('dlg-min').addEventListener('click',()=>window.dragonwilds.windowMinimize());
   document.getElementById('dlg-max').addEventListener('click',()=>window.dragonwilds.windowToggleMaximize());
-  document.getElementById('dlg-close').addEventListener('click',()=>window.dragonwilds.windowClose());
+  document.getElementById('dlg-close').addEventListener('click',()=>window.dragonwilds?.windowClose?.()||window.close());
   document.addEventListener('keydown',(event)=>{if(event.key!=='Escape')return;event.preventDefault();event.stopImmediatePropagation();window.dragonwilds.windowClose();},true);
 })();

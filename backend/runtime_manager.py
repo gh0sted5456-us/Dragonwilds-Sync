@@ -203,11 +203,16 @@ class AuthoritativeRuntimeManager:
                 self._broadcast_repair_lock.release()
         with self._state_lock:
             if self._managed_running and not actual["running"] and not transitional:
-                try:
-                    self.share.stop(); actual["broadcast"] = self.share.status(); actual["broadcast_active"] = bool(actual["broadcast"].get("serving"))
-                finally:
-                    self._managed_running = False; self._orphan_watchdog = {}
-                self._phase = "Error"; self._last_error = "The dedicated server exited unexpectedly; its Sync broadcast was withdrawn."; self._completed_at = time.time()
+                # Preserve the independent Sync/file-transfer lane after an
+                # unexpected game-process exit.  This keeps recovery metadata,
+                # diagnostics, and host files reachable while the operator
+                # diagnoses or restarts the dedicated server.  Only an explicit
+                # Stop/Shutdown/Update lifecycle action withdraws publication.
+                self._managed_running = False; self._orphan_watchdog = {}
+                self._phase = "Error"
+                self._last_error = ("The dedicated server exited unexpectedly; its Sync broadcast remains active "
+                                    "for recovery until Stop or Shutdown is requested.")
+                self._completed_at = time.time()
             phase = self._phase if transitional or self._last_error else ("Running" if actual["running"] else "Stopped")
             processes = self._process_topology(actual)
             return {**actual, "processes": processes, "state": phase, "operation": self._operation, "busy": transitional, "accepting_requests": self._accepting_requests,
@@ -260,7 +265,18 @@ class AuthoritativeRuntimeManager:
         finally: self._clear_watchdog()
 
     def _start_verified(self, profile_id: str) -> dict:
-        self._withdraw_share(); prepared = self.engine.scan_mods(profile_id); started = self.engine.start_dedicated(profile_id); after_process = self._actual()
+        self._withdraw_share()
+        # Rotate/create the unified log before the worker starts emitting.  The
+        # previous hook wrapped ServerEngine.start_world(), but the authoritative
+        # manager intentionally invokes start_dedicated() and publish() as two
+        # verified phases, so worker-owned startup lines otherwise predated the
+        # first Console snapshot and were filtered out of the session.
+        try:
+            from unified_console import begin_session
+            begin_session(profile_id)
+        except Exception as exc:
+            self.engine.record_event(f"Unified console session could not be initialized: {type(exc).__name__}: {exc}", "warn")
+        prepared = self.engine.scan_mods(profile_id); started = self.engine.start_dedicated(profile_id); after_process = self._actual()
         if not after_process["running"]: raise RuntimeError("The dedicated server process was not verified after Start.")
         if after_process["broadcast_active"]: raise RuntimeError("Sync became available before dedicated-process verification completed.")
         server_pid = int((after_process.get("runtime") or {}).get("pid") or started.get("pid") or 0); watchdog = self._arm_watchdog(server_pid)

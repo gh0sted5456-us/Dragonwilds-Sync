@@ -288,9 +288,37 @@ class WorkerBackedServerEngine:
 
     def stop_world(self) -> dict:
         profile_id = str(self.active_profile_id or self._last_profile_id or "")
-        share_result = self.share.stop()
-        dedicated = self.stop_dedicated()
-        worker_exit = self.supervisor.stop(profile_id) if profile_id else {"state": "stopped", "live": False}
+        # STOP is the worker's atomic graceful-shutdown command: it withdraws
+        # the worker-owned Sync share, stops the dedicated process, writes the
+        # final runtime state, and then exits the worker.  The former path sent
+        # STOP_SHARE, STOP_RUNTIME, and STOP in succession (with status probes
+        # between them); STOP itself repeated the runtime shutdown and could
+        # overload the single-threaded worker IPC listener during an ordinary
+        # UI Stop request.
+        worker = self._worker_status(profile_id) if profile_id else {}
+        if worker.get("live"):
+            worker_exit = self.supervisor.stop(profile_id)
+            stopped_runtime = worker_exit.get("runtime") if isinstance(worker_exit.get("runtime"), dict) else {}
+            dedicated = {
+                **dict(stopped_runtime or {}),
+                "running": False,
+                "stop_verified": not bool(worker_exit.get("live")),
+                "worker_owned": True,
+                "stop_method": str(stopped_runtime.get("stop_method") or "worker-graceful-stop"),
+            }
+        else:
+            # Compatibility containment for a server started before the worker
+            # bridge was enabled.  Never leave that parent-owned runtime alive.
+            dedicated = self.original.stop_world()
+            worker_exit = {"profileId": profile_id, "state": "stopped", "live": False,
+                           "graceful": True, "stop_method": "worker-absent"}
+
+        # A rollback/interrupted migration may still have a parent-owned share.
+        # Clean it locally without issuing another worker IPC command.
+        try:
+            share_result = self.share.original.stop() if isinstance(self.share, WorkerBackedShare) else self.share.stop()
+        except Exception:
+            share_result = {"serving": False}
         self.active_profile_id = None
         self._last_profile_id = ""
         try:
@@ -301,6 +329,7 @@ class WorkerBackedServerEngine:
         return {
             **dedicated, "share": {**dict(share_result or {}), "serving": False}, "worker_exit": worker_exit,
             "stop_verified": bool(dedicated.get("stop_verified", True)) and not bool(worker_exit.get("live")),
+            "graceful": bool(worker_exit.get("graceful", True)),
         }
 
     def restart_world(self, profile_id: str) -> dict:

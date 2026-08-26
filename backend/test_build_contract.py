@@ -1,6 +1,5 @@
 import json
 import re
-import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -125,7 +124,7 @@ def main():
     assert '"--runtime-worker"' in worker_supervisor, "worker spawn must use the same packaged application worker mode"
     assert "DWSYNC_DISABLE_RUNTIME_WORKERS" not in worker_supervisor, "rollback policy belongs above WorkerSupervisor"
 
-    assert package["version"].startswith("2.7.")
+    assert package["version"] == "3.0.0"
     assert package["devDependencies"]["luaparse"] == "0.3.1"
     assert "scripts/check_ue4ss_lua.cjs" in package["scripts"]["check:renderer"]
     assert package["devDependencies"]["electron"] != "latest"
@@ -145,8 +144,8 @@ def main():
     assert "@('run', 'test:preload')" in text
     assert "DragonwildsSyncPlayerTracker" not in text
     assert "PersistentDirectConnectProfile-v0.4.0.zip" not in text
-    assert "singleplayer-banner.png" in text
-    assert "singleplayer-icon.png" in text
+    assert "singleplayer-banner.webp" in text
+    assert "singleplayer-icon.webp" in text
     assert "backend\\local_world.py" in text
     assert "electron/discord_rpc.cjs" in package["scripts"]["check:renderer"]
     assert "electron/app_updater.cjs" in package["scripts"]["check:renderer"]
@@ -165,15 +164,16 @@ def main():
     assert "RAW_SOURCE_CONTENTS.md" in raw_packager
     assert "node_modules" in raw_packager and "Codex Outputs" in raw_packager
     assert "Staging reproducible raw-source folder" not in text
-    assert "resources\\RSDWTools-baseline.zip" in text
-    assert "Bundled RSDWTools bridge baseline" in text
-    with zipfile.ZipFile(ROOT / "resources" / "RSDWTools-baseline.zip") as archive:
-        router = archive.read("scripts/router_cvars.lua").decode("utf-8-sig")
-        feature = archive.read("scripts/feature_cvars.lua").decode("utf-8-sig")
-        catalog_source = archive.read("scripts/command_line_router.lua").decode("utf-8-sig")
-    assert 'line == "ue4ss.exec"' in router and "feature_cvars.execute(command)" in router
-    assert "function M.execute(command)" in feature and "ExecuteConsoleCommand(world)" in feature
-    assert "ue4ss.exec <command>" in catalog_source
+    assert "resources\\RSDWTools-baseline.zip" not in text
+    resource_bundle = next(x for x in extra if x.get("from") == "resources")
+    assert "!RSDWTools-baseline.zip" in resource_bundle.get("filter", [])
+    assert "!renderer/assets/help/**/*" in package["build"]["files"]
+    systems = (ROOT / "backend" / "server_systems.py").read_text(encoding="utf-8")
+    assert 'RSDW_DEVKIT_RELEASES_URL = "https://github.com/RSDWArchive/RSDWDevKit/releases"' in systems
+    assert 'APP_DATA_DIR / "runtime_downloads" / "rsdw_devkit"' in systems
+    assert "download_runtime_zip(" in systems
+    client_runtime = systems[systems.index("def ensure_client_base_runtimes"):systems.index("def install_ue4ss_zip")]
+    assert "ensure_rsdwtools_baseline" not in client_runtime
     assert "DRAGONWILDS_SYNC_PYTHON" in text
     assert "win-unpacked.tmp" in text
     assert "Clear-ReleaseDirectory" in text

@@ -31,11 +31,12 @@ function assert(condition, message) {
 const websiteBase = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/';
 const websiteRepository = 'https://github.com/gh0sted5456-us/Dragonwilds-Sync-Web';
 const websiteRaw = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/help/';
+const websiteMediaRaw = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/';
 const applicationRepository = 'https://github.com/gh0sted5456-us/Dragonwilds-Sync';
 assert(source.includes(websiteBase) && source.includes(`${websiteBase}helpy.html`) &&
   electronMain.includes('/Dragonwilds-Sync-Web/helpy.html') && publicServers.includes(websiteBase),
   'Public website, Helpy, and directory-page links must use the standalone website deployment.');
-assert(liveHelp.includes(`${websiteRaw}manifest.json`) && liveHelpMedia.includes(websiteRaw) &&
+assert(liveHelp.includes(`${websiteRaw}manifest.json`) && liveHelpMedia.includes(websiteMediaRaw) &&
   websiteRepository.endsWith('/Dragonwilds-Sync-Web'),
   'Live Help content must come from the standalone website repository.');
 assert(source.includes(`const repositoryUrl = '${applicationRepository}'`) &&
@@ -70,19 +71,16 @@ assert(source.includes('recommended-mod-card recommended-mod-placard has-placard
   recommendedPlacardsCss.includes('opacity:.11'),
   'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
-assert(source.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
-  source.includes('data-webhost-tab="remote">Server Management'),
-  'The normal Sync workspace must expose directory and Server Management configuration.');
-assert(source.includes("syncTab('live','WebGUI Preview')") &&
+assert(source.includes("if (next === 'webhost' && state.route !== 'webhost') state.webhostTab = 'settings'") &&
   source.includes("syncTab('settings','Website &amp; Directory')") &&
-  !source.includes('data-webhost-tab="home">Server Directory') &&
-  !source.includes('SYNC_HOME_URL'),
-  'Sync settings, WebGUI preview, and the public directory must remain distinct tabs.');
-assert(source.includes("if(!routedWebhost&&!standaloneHostWorkspace&&externalTab==='live')") &&
-  source.includes("if(state.route==='webhost'&&state.webhostTab==='live')return null") &&
-  source.includes("event.key==='ArrowRight'") && source.includes("event.key==='ArrowLeft'") &&
-  source.includes('view.reloadIgnoringCache()') && source.includes("classList.toggle('mobile',mode==='mobile')"),
-  'Sync tabs must preserve routed selection, support keyboard navigation, and keep the WebGUI preview mounted between refreshes.');
+  source.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
+  source.includes("syncTab('remote','Server Management')") &&
+  source.includes("syncTab('live','WebGUI Preview')"),
+  'The V3 Sync entry must retain configuration, heartbeat, Server Management, and preview tabs.');
+assert(source.includes('Broadcast World') && source.includes('No World currently broadcast') &&
+  source.includes("state.data?.server?.runtime?.active_profile_id") &&
+  !source.includes('data-webhost-tab="home">Server Directory') && !source.includes('SYNC_HOME_URL'),
+  'The V3 WebGUI must select the active hosted broadcast rather than a website or cached client World.');
 assert(source.includes("navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync'"),
   'Website and Remote Server capabilities must roll up under one Sync navigation item.');
 assert(source.includes("navButton('characters-app'") && source.includes("navButton('mods-app'") &&
@@ -92,9 +90,9 @@ assert(source.includes('TCP 27051 + instance offset') && source.includes('UDP 84
   'Sync must identify TCP transfer separately from host-wide Direct Connect discovery UDP 8422.');
 assert(!source.includes('passwordFailure=!local') && !source.includes('The host rejected the saved World Password'),
   'Sync Play must not add a launcher password retry gateway before Dragonwilds validates the World Password.');
-assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')") &&
-  source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds'") &&
-  source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.png'),'Mods'") &&
+assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.webp')") &&
+  source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.webp'),'Dragonwilds'") &&
+  source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.webp'),'Mods'") &&
   !source.includes("navButton('rsdragonwilds-app'") &&
   baseCss.includes('.nav-icon-image{display:block;width:22px;height:22px'),
   'Dragonwilds and Mods must retain their dedicated artwork, with Hosting owned by the single Dragonwilds entry.');
@@ -159,6 +157,13 @@ assert(source.includes("api.invoke('world.sync.job.start'") && source.includes("
   source.includes("['connecting','comparing','downloading','unpacking','applying','verifying','profile','ready']") &&
   baseCss.includes('.operation-progress-track') && baseCss.includes('.operation-phases'),
   'World connection must show pollable download, unpack, profile apply, verification, and ready progress.');
+assert(source.includes('CLIENT SYNC · ${clientRequiredCount}') &&
+  source.includes("placardBackSection('Client-Required Mods'") &&
+  source.includes("placardBackSection('Server-Retained Mods'"),
+  'World placards must distinguish files pushed to clients from server-retained mods.');
+assert(source.includes('Reset & Resync World') && source.includes("runWorldSyncJob(world,'sync',true)") && source.includes('force_complete:!!forceComplete') &&
+  source.includes('Reset & Reload Profile') && source.includes("singleplayer.profile.reset_reload"),
+  'Every saved Connected World and Private World placard must expose the correct protected reset workflow.');
 assert(source.includes('function hostingFocusActive()') &&
   source.includes('document.body.dataset.hostingFocus') &&
   source.includes("['characters','mods','rsdw-l'].includes(value)") &&
@@ -191,10 +196,11 @@ function sha256(relativePath) {
     .digest('hex');
 }
 
-function assertPng(relativePath) {
+function assertWebp(relativePath) {
   const file = fs.readFileSync(path.join(root, relativePath));
-  assert(file.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
-    `${relativePath} must be a valid PNG asset.`);
+  assert(file.length >= 12 && file.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    file.subarray(8, 12).toString('ascii') === 'WEBP',
+  `${relativePath} must be a valid WebP asset.`);
 }
 
 function assertIco(relativePath) {
@@ -203,29 +209,29 @@ function assertIco(relativePath) {
     `${relativePath} must be a valid ICO asset.`);
 }
 
-assertPng('renderer/assets/navigation/rsdw-l.png');
-assert(sha256('renderer/assets/navigation/rsdw-l.png') === '2275ed1b2d08f8025a35812ec5293dfb6485acd3184a91b1519c05309d1c4695',
+assertWebp('renderer/assets/navigation/rsdw-l.webp');
+assert(sha256('renderer/assets/navigation/rsdw-l.webp') === '6b1ef09a779d61cd7b86939264d217be7c350241debb5d6f769653fc3b9a6cb2',
   'The RSDW-L navbar icon must match the supplied approved artwork.');
 assertIco('renderer/assets/dragonwilds_icon.ico');
-assert(sha256('renderer/assets/dragonwilds_icon.ico') === '3ccd660ed77e252940fce0a53e0938d897b4f0ff0bcb71fee4bba41469fe5e8e',
-  'The Dragonwilds navbar icon must remain the canonical game executable icon.');
+assert(sha256('renderer/assets/dragonwilds_icon.ico') === 'c629fbe41934bb36069bad355e5714374185f6665b94cf2e86165f3dd5eb79b5',
+  'The application icon must remain the approved RSDW Sync brand artwork.');
 
 const platformAssets = {
-  'renderer/assets/platforms/runeschema.png': '379a7b239490eb8fcc01ff6bafdaf291f09393ab30106658af02bf96c716b105',
-  'renderer/assets/platforms/ue4ss.png': '5d85d20b008b32516ee3115318b4aeaba54631f6d254477e60af55101823d98a',
+  'renderer/assets/platforms/runeschema.webp': '21688f323fd6b032f78add727917d92846c1061c20962e54b0a70ac5fb88c2d2',
+  'renderer/assets/platforms/ue4ss.webp': 'b8cf83fb09cfe58d08dd8dc424ff146f73f367a7fb301f3684512f0f965155a3',
 };
 
 for (const [relativePath, expectedHash] of Object.entries(platformAssets)) {
-  assertPng(relativePath);
+  assertWebp(relativePath);
   assert(sha256(relativePath) === expectedHash,
     `${relativePath} does not match its approved canonical artwork.`);
 }
 
 for (const placard of [1, 2, 3, 4]) {
-  assertPng(`renderer/assets/placards/${placard}.png`);
+  assertWebp(`renderer/assets/placards/${placard}.webp`);
 }
 
-assert(source.includes("--world-placard:url('assets/placards/${placardId}.png')"),
+assert(source.includes("--world-placard:url('assets/placards/${placardId}.webp')"),
   'Desktop world cards must use the selected placard as their full background.');
 assert(source.includes('world-card-media') && source.includes('world-card-banner-blend'),
   'Desktop world cards must keep the banner and its blend layer at the top.');

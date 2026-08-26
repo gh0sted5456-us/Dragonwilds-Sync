@@ -162,11 +162,28 @@ CLIENT_UE4SS_OVERRIDE_ZIP = CLIENT_RUNTIME_OVERRIDE_DIR / "UE4SS-client-custom.z
 CLIENT_RUNESCHEMA_CORE_CACHE_ZIP = CLIENT_RUNTIME_OVERRIDE_DIR / "RuneSchema-client-custom.zip"
 CLIENT_RUNESCHEMA_RUNTIME_DIR = CLIENT_RUNTIME_OVERRIDE_DIR / "runeschema"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
-BUNDLED_RSDWTOOLS_RESOURCE = ("RSDWTools-baseline.zip",)
+BUNDLED_UE4SS_SETTINGS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-settings.ini")
+BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE = ("RuneSchema-experimental-latest.zip",)
+BUNDLED_DRAGONCONNECT_RESOURCE = ("DragonLink-Connect-baseline.zip",)
+RSDW_DEVKIT_RELEASES_URL = "https://github.com/RSDWArchive/RSDWDevKit/releases"
+RSDW_DEVKIT_CACHE_DIR = APP_DATA_DIR / "runtime_downloads" / "rsdw_devkit"
+RSDW_DEVKIT_CACHE_ZIP = RSDW_DEVKIT_CACHE_DIR / "RSDWDevKit-latest.zip"
+RSDW_DEVKIT_CACHE_META = RSDW_DEVKIT_CACHE_DIR / "release.json"
+CLIENT_ONLY_ENABLE_MARKER = ".dragonwilds-sync-client-enabled"
+
+# Older mods predate the canonical RuntimeRole field.  Keep the compatibility
+# list deliberately narrow and sourced from our curated recommendations: these
+# mods provide player UI/input only and must never execute in a headless
+# dedicated-server process.  New/modded packages should declare RuntimeRole in
+# ID.txt instead of growing this list.
+_LEGACY_CLIENT_ONLY_UE4SS = {
+    "minimap", "hotbarscroll", "journalsearch", "wkdjournalsearch",
+    "splitstackinputbox", "wkdsplitstackinputbox",
+}
 def user_visible_mod_unit(unit: "ModUnit") -> bool:
     """Hide shared upstream runtimes while exposing every World-owned mod."""
     return (unit.group not in {"ue4ss_core", "runeschema"}
-            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll", "rsdwtools", "persistentdirectconnectip"})
+            and unit.name.casefold() not in {"mods.txt", "dwmapi.dll", "rsdwtools", "dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"})
 RUNTIME_MUTATION_LOCK = threading.RLock()
 
 
@@ -723,6 +740,61 @@ def _unit_has_enabled_txt(unit: ModUnit) -> bool:
     return bool(unit.source_dir is not None and (unit.source_dir / "enabled.txt").is_file())
 
 
+def _normalized_mod_name(value: object) -> str:
+    return "".join(ch for ch in str(value or "").casefold() if ch.isalnum())
+
+
+def unit_runtime_role(unit: ModUnit) -> str:
+    """Return the execution role independently of client distribution policy."""
+    identity = unit.identity if isinstance(unit.identity, dict) else {}
+    role = str(identity.get("runtime_role") or "both").strip().casefold().replace("-", "_")
+    role = {"host": "server", "dedicated": "server", "clientonly": "client",
+            "serveronly": "server"}.get(role, role)
+    if unit.group == "ue4ss_mod" and _normalized_mod_name(unit.name) in _LEGACY_CLIENT_ONLY_UE4SS:
+        return "client"
+    return role if role in {"client", "server", "both", "tooling"} else "both"
+
+
+def runtime_role_allows_unit(unit: ModUnit, target: str) -> bool:
+    role = unit_runtime_role(unit)
+    target = str(target or "").strip().casefold()
+    if target == "server":
+        return role in {"server", "both", "tooling"}
+    if target == "client":
+        return role in {"client", "both"}
+    return False
+
+
+def normalize_server_ue4ss_activation(units: list[ModUnit]) -> dict:
+    """Prevent client-only self-enabled mods from bypassing server mods.txt.
+
+    The original marker is moved, not deleted.  The hidden replacement is not
+    packaged by ``ModUnit.iter_files`` and is restored automatically if the
+    mod's RuntimeRole later permits server execution.
+    """
+    retired: list[str] = []
+    restored: list[str] = []
+    warnings: list[str] = []
+    for unit in units:
+        if unit.group != "ue4ss_mod" or not unit.is_dir or unit.source_dir is None:
+            continue
+        enabled = unit.source_dir / "enabled.txt"
+        retained = unit.source_dir / CLIENT_ONLY_ENABLE_MARKER
+        try:
+            if not runtime_role_allows_unit(unit, "server"):
+                if enabled.is_file():
+                    if retained.exists():
+                        retained.unlink()
+                    os.replace(enabled, retained)
+                    retired.append(unit.name)
+            elif retained.is_file() and not enabled.exists():
+                os.replace(retained, enabled)
+                restored.append(unit.name)
+        except OSError as exc:
+            warnings.append(f'{unit.name}: {exc}')
+    return {"retired": retired, "restored": restored, "warnings": warnings}
+
+
 def client_ue4ss_enablement(units: list[ModUnit], existing_text: str = "", mode: str = "auto") -> list[str]:
     """Return client-required UE4SS names that actually need mods.txt entries.
 
@@ -734,6 +806,8 @@ def client_ue4ss_enablement(units: list[ModUnit], existing_text: str = "", mode:
     seen: set[str] = set()
     for unit in units:
         if unit.classification != "player_required" or unit.group != "ue4ss_mod" or not unit.is_dir:
+            continue
+        if not runtime_role_allows_unit(unit, "client"):
             continue
         if unit.name.casefold() in {"mods.txt", "dwmapi.dll", "runeschema"}:
             continue
@@ -798,9 +872,12 @@ def generate_server_mods_txt(profile_id: str, game_root: str, units: list[ModUni
     # Callers that are already publishing/scanning may pass the authoritative
     # inventory.  This avoids a second full walk of every mod file on Start.
     units = units if units is not None else scan_mod_units(profile_id, str(layout.game_root))
+    activation = normalize_server_ue4ss_activation(units)
     names = []
     for unit in units:
         if unit.group != "ue4ss_mod" or not unit.is_dir or unit.name.casefold() in {"mods.txt", "dwmapi.dll"}:
+            continue
+        if not runtime_role_allows_unit(unit, "server"):
             continue
         # UE4SS automatically starts a mod directory that carries enabled.txt.
         # Keep those launcher/runtime-managed mods out of the generated control file.
@@ -836,7 +913,8 @@ def generate_server_mods_txt(profile_id: str, game_root: str, units: list[ModUni
         target.chmod(target.stat().st_mode | 0o222)
     except OSError:
         pass
-    return {"ok": True, "path": str(target), "enabled": names, "count": len(names)}
+    return {"ok": True, "path": str(target), "enabled": names, "count": len(names),
+            "runtime_role": "server", "activation": activation}
 
 
 def build_client_mods_txt(units: list[ModUnit], existing_text: str = "", mode: str = "auto") -> str:
@@ -1649,6 +1727,17 @@ class SyncHandler(BaseHTTPRequestHandler):
                     payload["shared_characters"] = []
             STATE.activity(self.client_address[0], "downloaded public World identity metadata")
             self._send_json(payload); return
+        if path == "/reviews":
+            # Reviews are presentation metadata, not part of the protected file
+            # payload.  A player can inspect a World before accepting rules,
+            # entering a password, or downloading a single mod.
+            with STATE.lock: profile_id = STATE.active_profile_id
+            if not profile_id: self._send_json({"reviews": [], "days": 30}); return
+            query = urlparse(self.path).query
+            try: days = int(next((part.split("=", 1)[1] for part in query.split("&") if part.startswith("days=")), "30"))
+            except ValueError: days = 30
+            profile = load_server_profile(profile_id); avg, count = profile_rating_summary(profile)
+            self._send_json({"reviews": public_reviews(profile, days), "days": max(1, min(days, 90)), "rating_average": avg, "rating_count": count}); return
         if path == "/lan-auth":
             token = STATE.issue_lan_token(self.client_address[0], str(self.headers.get("X-DWS-Client-Profile") or ""))
             if not token:
@@ -1673,14 +1762,6 @@ class SyncHandler(BaseHTTPRequestHandler):
             payload["network_health"] = STATE.network_summary(uptime)
             payload["server_health"] = STATE.server_health_summary(uptime)
             STATE.activity(self.client_address[0], f"refreshed World metadata v{payload.get('version', 0)}"); self._send_json(payload); return
-        if path == "/reviews":
-            with STATE.lock: profile_id = STATE.active_profile_id
-            if not profile_id: self._send_json({"reviews": [], "days": 30}); return
-            query = urlparse(self.path).query
-            try: days = int(next((part.split("=", 1)[1] for part in query.split("&") if part.startswith("days=")), "30"))
-            except ValueError: days = 30
-            profile = load_server_profile(profile_id); avg, count = profile_rating_summary(profile)
-            self._send_json({"reviews": public_reviews(profile, days), "days": max(1, min(days, 90)), "rating_average": avg, "rating_count": count}); return
         if path == "/manifest":
             client_platform = normalize_client_platform(self.headers.get("X-DWS-Client-Platform"))
             with STATE.lock: payload = filtered_manifest(STATE.manifest, client_platform)
@@ -1724,14 +1805,16 @@ class SyncHandler(BaseHTTPRequestHandler):
             if not profile_id: self._send_json({"error": "no active World"}, 404); return
             access = status_for_ip(profile_id, self.client_address[0])
             if not access.get("enabled"):
+                STATE.activity(self.client_address[0], "World save request refused (host policy disabled)")
                 self._send_json({"error": "World save downloads are disabled by the server maintainer", **access}, 403); return
             if not access.get("allowed"):
-                self._send_json({"error": "World save download cooldown is active", **access}, 429); return
+                STATE.activity(self.client_address[0], "World save request rate-limited (2 requests per 24 hours)")
+                self._send_json({"error": "World save request limit reached (2 per 24 hours)", **access}, 429); return
             try:
                 target = build_worldsave_zip(profile_id, source_dir)
                 data = target.read_bytes()
                 record_download(profile_id, self.client_address[0])
-                STATE.activity(self.client_address[0], f"downloaded World save ({len(data)} bytes)")
+                STATE.activity(self.client_address[0], f"downloaded World save ({len(data)} bytes; request {int(access.get('requests_used') or 0) + 1}/2 in 24 hours)")
                 self.send_response(200); self.send_header("Content-Type", "application/zip")
                 self.send_header("Content-Disposition", f'attachment; filename="{profile_id}-world-save.zip"')
                 self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
@@ -1759,7 +1842,9 @@ class SyncHandler(BaseHTTPRequestHandler):
             if not profile_id or "/" in name or "\\" in name: self._send_json({"error": "not found"}, 404); return
             access = status_for_ip(profile_id, self.client_address[0])
             if not access.get("enabled"): self._send_json({"error": "World save downloads are disabled"}, 403); return
-            if not access.get("allowed"): self._send_json({"error": "World save download cooldown is active", **access}, 429); return
+            if not access.get("allowed"):
+                STATE.activity(self.client_address[0], "World backup request rate-limited (2 requests per 24 hours)")
+                self._send_json({"error": "World save request limit reached (2 per 24 hours)", **access}, 429); return
             root = _profile_backups_dir(profile_id).resolve(); target = (root / name).resolve()
             if root not in target.parents or not target.is_file(): self._send_json({"error": "not found"}, 404); return
             data = target.read_bytes(); record_download(profile_id, self.client_address[0])
@@ -1783,11 +1868,25 @@ class SyncHandler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send_json({"error": "not found"}, 404); return
         if path.startswith("/files/"):
-            rel = unquote(path[len("/files/"):]); root = PUBLISH_DIR.resolve(); target = (root / rel).resolve()
-            if root not in target.parents or not target.is_file(): self._send_json({"error": "not found"}, 404); return
+            raw_rel = unquote(path[len("/files/"):])
+            rel = PurePosixPath(raw_rel.replace("\\", "/")).as_posix().lstrip("/")
             client_platform = normalize_client_platform(self.headers.get("X-DWS-Client-Platform"))
             with STATE.lock:
-                entry = next((item for item in STATE.manifest.get("files", []) if item.get("path") == rel), None)
+                manifest_version = int(STATE.manifest.get("version") or 0)
+                entry = next((item for item in STATE.manifest.get("files", [])
+                              if PurePosixPath(str(item.get("path") or "").replace("\\", "/")).as_posix().lstrip("/") == rel), None)
+            if not entry:
+                # Never serve stale files left by an earlier publication.
+                self._send_json({"error": "file is not in the active manifest", "path": rel,
+                                 "manifest_version": manifest_version, "retryable": True}, 404); return
+            # Resolve from the canonical manifest entry, not from the raw URL.
+            # This makes Windows-authored backslash paths and Linux/Proton URL
+            # paths converge on one safe wire representation.
+            canonical = PurePosixPath(str(entry.get("path") or "").replace("\\", "/")).as_posix().lstrip("/")
+            root = PUBLISH_DIR.resolve(); target = (root / Path(*PurePosixPath(canonical).parts)).resolve()
+            if root not in target.parents or not target.is_file():
+                self._send_json({"error": "active manifest payload is unavailable", "path": canonical,
+                                 "manifest_version": manifest_version, "retryable": True}, 404); return
             if entry and not entry_allowed_for_platform(entry, client_platform):
                 self._send_json({"error": "runtime is not compatible with the selected client platform"}, 409); return
             size = target.stat().st_size
@@ -1803,7 +1902,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                 end = min(end, size - 1); status = 206
             length = max(0, end - start + 1) if size else 0
             expected = str((entry or {}).get("sha256") or "") or sha256_of(target)
-            STATE.activity(self.client_address[0], f"downloading {rel} ({start}-{end} of {size} bytes)")
+            STATE.activity(self.client_address[0], f"downloading {canonical} ({start}-{end} of {size} bytes)")
             self.send_response(status); self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Accept-Ranges", "bytes"); self.send_header("Content-Length", str(length)); self.send_header("X-SHA256", expected)
             if status == 206: self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
@@ -1842,7 +1941,13 @@ class Broadcaster:
         try: sock6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
         except OSError: sock6 = None
         while not self.stop_event.is_set():
-            full_info = self.get_info()
+            try:
+                full_info = self.get_info()
+            except Exception:
+                # A transient metadata/profile read must never kill discovery.
+                # The next two-second heartbeat retries with fresh state.
+                self.stop_event.wait(2)
+                continue
             wire_info = dict(full_info)
             wire_info["mod_count"] = len(full_info.get("mod_summary") or [])
             wire_info["mod_inventory_endpoint"] = "/identity"
@@ -1990,6 +2095,17 @@ def probe_server_address(address_value: str, timeout: float = 3.0) -> list[dict]
     return original_scan
 
 
+def _atomic_publish_copy(source: Path, destination: Path) -> None:
+    """Promote a complete publish payload without exposing a truncated file."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + f".{secrets.token_hex(4)}.publishing")
+    try:
+        shutil.copy2(source, temporary)
+        os.replace(temporary, destination)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]) -> dict:
     """Publish the machine-level client runtime baseline for a World.
 
@@ -2000,8 +2116,20 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     handled by the normal mod-unit publisher.
     """
     layout = resolve_server_layout(game_root)
-    stats = {"ue4ss_files": 0, "runeschema_files": 0, "version_dll_excluded": True,
+    stats = {"ue4ss_files": 0, "ue4ss_baked_mod_files": 0, "runeschema_files": 0,
+             "dragonconnecthelper_files": 0, "server_only_components_excluded": ["RSDW Dev Kit"],
+             "version_dll_excluded": True,
              "platforms": list(WIN64_RUNTIME_PLATFORMS), "native_linux_injection": False}
+
+    baked_ue4ss_names = {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS}
+
+    def ue4ss_mod_is_client_baked(parts: list[str]) -> bool:
+        lowered = [part.casefold() for part in parts]
+        try:
+            index = lowered.index("mods")
+        except ValueError:
+            return False
+        return index + 1 < len(parts) and lowered[index + 1] in baked_ue4ss_names
 
     def stage_file(source: Path, wire: str, generated: str) -> None:
         if not source.is_file():
@@ -2011,7 +2139,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             return
         dest = PUBLISH_DIR / Path(*pure.parts)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, dest)
+        _atomic_publish_copy(source, dest)
         manifest_files.append({
             "path": pure.as_posix(), "sha256": sha256_of(dest), "size": dest.stat().st_size,
             "category": "permanent", "kind": "file", "extract_to": "",
@@ -2033,12 +2161,17 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 if not parts or ".." in parts or Path(parts[-1]).name.casefold() == SERVER_LOADER_FILENAME.casefold():
                     continue
                 if "mods" in lowered:
-                    continue
+                    if not ue4ss_mod_is_client_baked(parts):
+                        continue
+                    if PurePosixPath(*parts).name.casefold() == "mods.txt":
+                        continue
                 wire = PurePosixPath("Binaries/Win64", *parts).as_posix()
                 dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(info) as src, dest.open("wb") as out:
+                temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+                with zf.open(info) as src, temporary.open("wb") as out:
                     shutil.copyfileobj(src, out)
+                os.replace(temporary, dest)
                 manifest_files.append({
                     "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                     "category": "permanent", "kind": "file", "extract_to": "",
@@ -2046,6 +2179,8 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                 })
                 stats["ue4ss_files"] += 1
+                if "mods" in lowered:
+                    stats["ue4ss_baked_mod_files"] += 1
 
     # Prefer the live, validated server runtime so clients receive the exact
     # baseline the server is running. Fall back to the launcher repair library.
@@ -2060,11 +2195,16 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 continue
             rel = source.relative_to(live_core)
             if rel.parts and rel.parts[0].casefold() == "mods":
-                continue
+                if len(rel.parts) < 2 or rel.parts[1].casefold() not in baked_ue4ss_names:
+                    continue
+                if rel.name.casefold() == "mods.txt":
+                    continue
             if source.name.casefold() == SERVER_LOADER_FILENAME.casefold():
                 continue
             stage_file(source, f"Binaries/Win64/ue4ss/{rel.as_posix()}", "ue4ss_baseline")
             stats["ue4ss_files"] += 1
+            if rel.parts and rel.parts[0].casefold() == "mods":
+                stats["ue4ss_baked_mod_files"] += 1
     if not stats["ue4ss_files"]:
         stage_ue4ss_bundle(_bundled_app_resource(*BUNDLED_UE4SS_RESOURCE))
 
@@ -2074,7 +2214,8 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         wire = "_baseline/RuneSchema-core.zip"
         dest = PUBLISH_DIR / "_baseline" / "RuneSchema-core.zip"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+        temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+        with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as zf:
             wrote_enabled = False
             for source in rs_root.rglob("*"):
                 if not source.is_file():
@@ -2089,6 +2230,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             if not wrote_enabled:
                 zf.writestr("enabled.txt", b"")
                 stats["runeschema_files"] += 1
+        os.replace(temporary, dest)
         manifest_files.append({
             "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
             "category": "permanent", "kind": "zip_bundle",
@@ -2102,7 +2244,8 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             wire = "_baseline/RuneSchema-core.zip"
             dest = PUBLISH_DIR / "_baseline" / "RuneSchema-core.zip"
             dest.parent.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(rs_bundle) as source_zip, zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as target_zip:
+            temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+            with zipfile.ZipFile(rs_bundle) as source_zip, zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as target_zip:
                 for info in source_zip.infolist():
                     if info.is_dir():
                         continue
@@ -2113,6 +2256,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                         continue
                     target_zip.writestr(PurePosixPath(*parts).as_posix(), source_zip.read(info))
                     stats["runeschema_files"] += 1
+            os.replace(temporary, dest)
             manifest_files.append({
                 "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                 "category": "permanent", "kind": "zip_bundle",
@@ -2120,6 +2264,45 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 "generated": "runeschema_bundled_baseline", "baseline_runtime": True,
                 "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
             })
+    # DragonLink-Connect is launcher infrastructure required by both host and
+    # client. Publish only its immutable baseline files; config.lua is generated
+    # locally from the selected Connected World and must never leak host values.
+    dragon_bundle = _bundled_app_resource(*BUNDLED_DRAGONCONNECT_RESOURCE)
+    if not dragon_bundle.is_file():
+        for legacy_name in ("DragonConnectHelper-baseline.zip", "PersistentDirectConnectIP-baseline.zip"):
+            legacy_bundle = _bundled_app_resource(legacy_name)
+            if legacy_bundle.is_file():
+                dragon_bundle = legacy_bundle
+                break
+    if dragon_bundle.is_file():
+        with zipfile.ZipFile(dragon_bundle) as source_zip:
+            for info in source_zip.infolist():
+                if info.is_dir():
+                    continue
+                parts = list(PurePosixPath(info.filename.replace("\\", "/")).parts)
+                if parts and parts[0].casefold() in {"dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"}:
+                    parts = parts[1:]
+                if not parts or ".." in parts:
+                    continue
+                relative = PurePosixPath(*parts).as_posix()
+                if relative.casefold() in {"scripts/config.lua", ".dragonwilds-sync-baseline.json"}:
+                    continue
+                wire = PurePosixPath("Binaries/Win64/ue4ss/Mods/DragonLink-Connect", *parts).as_posix()
+                dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+                with source_zip.open(info) as src, temporary.open("wb") as out:
+                    shutil.copyfileobj(src, out)
+                os.replace(temporary, dest)
+                manifest_files.append({
+                    "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
+                    "category": "permanent", "kind": "file", "extract_to": "",
+                    "generated": "dragonlink-connect", "baseline_runtime": True,
+                    "baked_component": "dragonlink-connect", "visibility": "hidden-core",
+                    "required": True, "runtime_roles": ["client", "host", "server"],
+                    "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
+                })
+                stats["dragonconnecthelper_files"] += 1
     return stats
 
 
@@ -2127,6 +2310,7 @@ class ShareServer:
     def __init__(self):
         self.httpd: ThreadingHTTPServer | None = None; self.thread: threading.Thread | None = None; self.port = None
         self.tls_enabled = False; self.tls_cert_fingerprint = ""
+        self.broadcast_enabled = False
         self.listener_evidence: dict = {}
         self.broadcaster = Broadcaster(self.broadcast_payload); self.live_keys: set[str] = set()
 
@@ -2211,9 +2395,10 @@ class ShareServer:
         required = [u for u in units if u.classification == "player_required"]
         security_reviews = []
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
-        # Wipe only app-owned published staging. It is regenerated atomically enough for current protocol.
-        for child in list(PUBLISH_DIR.iterdir()):
-            _remove_generated_path(child)
+        # Do not wipe the live transfer tree. Clients can legitimately still be
+        # downloading the prior manifest while a heartbeat/manual republish is
+        # prepared. Every current file is atomically promoted below, and the
+        # HTTP handler serves only paths present in the active manifest.
         manifest_files = []
         baseline_runtime = _publish_baseline_client_runtimes(game_root, manifest_files) if str(game_root or "").strip() else {"ue4ss_files": 0, "runeschema_files": 0, "version_dll_excluded": True}
         source_mods_txt = ""
@@ -2227,9 +2412,10 @@ class ShareServer:
         for unit in [u for u in required if u.group not in ("runeschema", "runeschema_mod")]:
             unit_platforms = list(ALL_CLIENT_PLATFORMS if unit.group == "pak_mod" else WIN64_RUNTIME_PLATFORMS)
             for manifest_path, source in unit.iter_files():
+                manifest_path = PurePosixPath(str(manifest_path).replace("\\", "/")).as_posix().lstrip("/")
                 if PurePosixPath(manifest_path).name.lower() == "mods.txt":
                     continue
-                dest = PUBLISH_DIR / Path(*PurePosixPath(manifest_path).parts); dest.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(source, dest)
+                dest = PUBLISH_DIR / Path(*PurePosixPath(manifest_path).parts); _atomic_publish_copy(source, dest)
                 manifest_files.append({"path": manifest_path, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                        "category": unit.category, "kind": "file", "extract_to": "",
                                        "platforms": unit_platforms})
@@ -2243,7 +2429,9 @@ class ShareServer:
             wire = "_client_control/mods.txt"
             dest = PUBLISH_DIR / "_client_control" / "mods.txt"
             dest.parent.mkdir(parents=True, exist_ok=True)
-            dest.write_text(_client_mods_txt_lines(client_ue4ss_mods, source_mods_txt), encoding="utf-8")
+            temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+            temporary.write_text(_client_mods_txt_lines(client_ue4ss_mods, source_mods_txt), encoding="utf-8")
+            os.replace(temporary, dest)
             manifest_files.append({"path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                    "category": "permanent", "kind": "file", "extract_to": "",
                                    "target_scope": "client_mods_txt", "target_path": "mods.txt",
@@ -2264,7 +2452,7 @@ class ShareServer:
             rel = str(item.get("target_path") or source.name).replace("\\", "/")
             wire = f"_client_config/{rel}"
             dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
-            dest.parent.mkdir(parents=True, exist_ok=True); shutil.copy2(source, dest)
+            _atomic_publish_copy(source, dest)
             manifest_files.append({"path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                    "category": "permanent", "kind": "file", "extract_to": "",
                                    "target_scope": "client_config", "target_path": rel, "generated": "server_compat_config",
@@ -2273,9 +2461,11 @@ class ShareServer:
         for unit in [u for u in required if u.group == "runeschema_mod"]:
             base = GROUP_DEST_BASE[unit.group]; unit_root = f"{base}/{unit.name}" if unit.is_dir else base
             rel = f"{base}/{unit.name}.zip"; dest = PUBLISH_DIR / Path(*PurePosixPath(rel).parts); dest.parent.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as zf:
+            temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+            with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as zf:
                 for manifest_path, source in unit.iter_files():
                     arc = PurePosixPath(manifest_path).relative_to(PurePosixPath(unit_root)).as_posix(); zf.write(source, arc)
+            os.replace(temporary, dest)
             manifest_files.append({"path": rel, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                    "category": unit.category, "kind": "zip_bundle", "extract_to": unit_root,
                                    "platforms": list(WIN64_RUNTIME_PLATFORMS)})
@@ -2397,7 +2587,8 @@ class ShareServer:
         with STATE.lock:
             STATE.tls_active = tls_enabled; STATE.tls_cert_fingerprint = tls_cert_fingerprint
             STATE.allow_tls_password_fallback = allow_tls_password_fallback
-        if broadcast: self.broadcaster.start()
+        self.broadcast_enabled = bool(broadcast)
+        if self.broadcast_enabled: self.broadcaster.start()
         else: self.broadcaster.stop()
         return self.status()
 
@@ -2405,7 +2596,7 @@ class ShareServer:
         self.broadcaster.stop()
         if self.httpd:
             self.httpd.shutdown(); self.httpd.server_close()
-        self.httpd = None; self.thread = None; self.port = None; self.tls_enabled = False; self.tls_cert_fingerprint = ""; self.listener_evidence = {}; self.live_keys.clear()
+        self.httpd = None; self.thread = None; self.port = None; self.tls_enabled = False; self.tls_cert_fingerprint = ""; self.broadcast_enabled = False; self.listener_evidence = {}; self.live_keys.clear()
         with STATE.lock:
             STATE.tokens.clear()
             STATE.token_sources.clear()
@@ -2417,6 +2608,8 @@ class ShareServer:
     def status(self):
         with STATE.lock:
             uptime = max(0, time.time() - STATE.server_start_ts) if STATE.server_online and STATE.server_start_ts else None
+            if self.broadcast_enabled and self.httpd is not None and not self.broadcaster.running:
+                self.broadcaster.start()
             return {"serving": self.httpd is not None, "port": self.port, "broadcasting": self.broadcaster.running,
                     "tls_enabled": bool(self.tls_enabled), "tls_cert_fingerprint": str(self.tls_cert_fingerprint or ""),
                     "tls_password_fallback": bool(STATE.allow_tls_password_fallback),
@@ -2428,6 +2621,13 @@ class ShareServer:
                     "network_health": STATE.network_summary(uptime), "server_health": STATE.server_health_summary(uptime),
                     "runtime_stack": dict(STATE.manifest.get("runtime_stack") or {}),
                     "activities": list(STATE.activities[-150:])}
+
+    def clear_activity(self) -> int:
+        """Clear the live Sync/network activity source used by History."""
+        with STATE.lock:
+            removed = len(STATE.activities)
+            STATE.activities = []
+            return removed
 
 
 def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) -> dict:
@@ -3057,12 +3257,16 @@ def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
             if Path(parts[-1]).name.casefold() == SERVER_LOADER_FILENAME.casefold():
                 continue
             lower = [part.casefold() for part in parts]
-            # The launcher baseline intentionally includes UE4SS's standard
-            # modules plus RuneSchema core and RSDWTools. RuneSchema child
-            # mods are World-profile material and must never be seeded by the
-            # machine baseline.
+            # RuneSchema child mods are World-profile material and must never
+            # be seeded by the machine baseline. RSDW Dev Kit/RSDWTools is an
+            # explicit managed runtime and must never arrive incidentally in a
+            # generic UE4SS client archive.
             if "runeschema" in lower and "mods" in lower[lower.index("runeschema") + 1:]:
                 continue
+            if "mods" in lower:
+                mods_index = lower.index("mods")
+                if any(part in {"rsdwtools", "rsdwdevkit"} for part in lower[mods_index + 1:]):
+                    continue
             dest = (target_root / Path(*parts)).resolve()
             root = target_root.resolve()
             if dest != root and root not in dest.parents:
@@ -3072,8 +3276,10 @@ def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
                 shutil.copyfileobj(src, out)
             written.append(PurePosixPath(*parts).as_posix())
     normalized = _normalize_bundled_integration_contract(target_root)
+    canonical_settings = _apply_canonical_ue4ss_settings(target_root)
     return {"ok": True, "files_written": len(written), "files": written,
-            "server_loader_excluded": True, "integrations": normalized}
+            "server_loader_excluded": True, "integrations": normalized,
+            "canonical_settings": canonical_settings}
 
 
 def client_runtime_status(game_root: str) -> dict:
@@ -3149,14 +3355,9 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
             repaired.append("Persistent Direct Connect functional baseline installed")
     except Exception as exc:
         errors.append(f"Persistent Direct Connect baseline repair failed: {exc}")
-    try:
-        rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir)
-        if rsdwtools.get("changed"):
-            repaired.append("RSDWTools bridge baseline installed/updated (DEBUG_BRIDGE=false)")
-        if not rsdwtools.get("ok"):
-            errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
-    except Exception as exc:
-        errors.append(f"RSDWTools client baseline repair failed: {exc}")
+    # RSDW Dev Kit is not a client prerequisite. Character/model data used by
+    # the desktop app lives in its APPDATA cache; an optional client copy is
+    # installed only by the explicit Settings target control.
     writable = _set_runtime_configs_writable(layout.win64_dir / "ue4ss", layout.runeschema_root)
     after = client_runtime_status(game_root)
     # Defensive cleanup: Player Setup never owns the dedicated-server loader.
@@ -3191,8 +3392,34 @@ def install_ue4ss_zip(zip_path: str, binaries_dir: str) -> dict:
             with zf.open(info) as src, target.open("wb") as dst: shutil.copyfileobj(src, dst)
             updated.append(PurePosixPath(*parts).as_posix())
     normalized = _normalize_bundled_integration_contract(root)
+    canonical_settings = _apply_canonical_ue4ss_settings(root)
     return {"ok": True, "files_written": len(updated), "files": updated,
-            "server_loader_excluded": True, "integrations": normalized}
+            "server_loader_excluded": True, "integrations": normalized,
+            "canonical_settings": canonical_settings}
+
+
+def _apply_canonical_ue4ss_settings(target_root: Path) -> dict:
+    """Apply the Dragonwilds-tested UE4SS settings to every runtime channel.
+
+    Stable, Experimental, imported, client, and server UE4SS archives may ship
+    different defaults. Dragonwilds Sync deliberately keeps the settings from
+    its known-good baseline constant while allowing the file to remain editable
+    at runtime. The next runtime install/reset re-establishes this baseline.
+    """
+    source = _bundled_app_resource(*BUNDLED_UE4SS_SETTINGS_RESOURCE)
+    target = Path(target_root) / "ue4ss" / "UE4SS-settings.ini"
+    if not source.is_file():
+        return {"applied": False, "path": str(target), "error": "Bundled UE4SS settings are unavailable."}
+    target.parent.mkdir(parents=True, exist_ok=True)
+    _set_runtime_tree_writable(target, True)
+    temporary = target.with_name(target.name + f".{secrets.token_hex(4)}.settings")
+    try:
+        shutil.copyfile(source, temporary)
+        os.replace(temporary, target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    _set_runtime_tree_writable(target, True)
+    return {"applied": True, "path": str(target), "sha256": sha256_of(target)}
 
 
 def _normalize_bundled_integration_contract(target_root: Path) -> dict:
@@ -3212,10 +3439,16 @@ def _normalize_bundled_integration_contract(target_root: Path) -> dict:
     return result
 
 
-def ensure_rsdwtools_baseline(mods_dir: Path, *, allow_update: bool = True) -> dict:
-    """Install or optionally update the self-enabled RSDWTools base mod."""
+def ensure_rsdwtools_baseline(mods_dir: Path, *, allow_update: bool = True,
+                              source_url: str = RSDW_DEVKIT_RELEASES_URL,
+                              force: bool = False) -> dict:
+    """Install the server/host RSDW Dev Kit from its managed GitHub release.
+
+    The portable application intentionally carries no 90+ MB bridge archive.
+    A validated release is cached under APPDATA after the first server setup so
+    later repairs and offline starts do not redownload it.
+    """
     target = Path(mods_dir) / "RSDWTools"
-    bundle = _bundled_app_resource(*BUNDLED_RSDWTOOLS_RESOURCE)
     live_main = target / "scripts" / "main.lua"
     live_dll = target / "dlls" / "main.dll"
     if target.is_dir() and live_main.is_file() and live_dll.is_file() and not allow_update:
@@ -3223,40 +3456,91 @@ def ensure_rsdwtools_baseline(mods_dir: Path, *, allow_update: bool = True) -> d
             _write_launcher_control_file(target / "enabled.txt")
         return {"ok": True, "installed": True, "changed": False, "update_skipped": True,
                 "path": str(target), "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
-    if not bundle.is_file():
-        return {"ok": target.is_dir(), "installed": target.is_dir(), "changed": False,
-                "path": str(target), "error": "Bundled RSDWTools baseline is unavailable."}
     marker = target / ".dragonwilds-sync-baseline.json"
-    signature = {"bundle_bytes": int(bundle.stat().st_size), "bundle_mtime_ns": int(bundle.stat().st_mtime_ns)}
     try:
         current = json.loads(marker.read_text(encoding="utf-8"))
     except Exception:
         current = {}
-    if current == signature and live_main.is_file() and (target / "dlls" / "main.dll").is_file() and (target / "enabled.txt").is_file():
+    try:
+        cached_release = json.loads(RSDW_DEVKIT_CACHE_META.read_text(encoding="utf-8"))
+    except Exception:
+        cached_release = {}
+    live_ready = live_main.is_file() and live_dll.is_file() and (target / "enabled.txt").is_file()
+    recently_checked = time.time() - float(cached_release.get("checked_at") or 0) < 24 * 60 * 60
+    if live_ready and allow_update and not force and recently_checked:
         text = live_main.read_text(encoding="utf-8-sig", errors="replace")
         if re.search(r"(?m)^\s*DEBUG_BRIDGE\s*=\s*false\s*$", text):
             return {"ok": True, "installed": True, "changed": False, "path": str(target),
-                    "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
+                    "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False,
+                    "source": "github-cache", "version": str(current.get("filename") or "cached")}
+
+    bundle = RSDW_DEVKIT_CACHE_ZIP
+    resolved = {"filename": str(cached_release.get("filename") or current.get("filename") or bundle.name),
+                "source": str(cached_release.get("source") or source_url)}
+    temporary = None
+    if allow_update and (force or not recently_checked or not bundle.is_file()):
+        try:
+            downloaded, resolved, temporary = download_runtime_zip(
+                str(source_url or RSDW_DEVKIT_RELEASES_URL), prefer_contains=("rsdw", "devkit", "toolkit"))
+            RSDW_DEVKIT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(downloaded, bundle)
+        except Exception as exc:
+            if live_ready:
+                return {"ok": True, "installed": True, "changed": False, "path": str(target),
+                        "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False,
+                        "source": "installed-fallback", "warning": f"RSDW Dev Kit update check failed: {exc}"}
+            if not bundle.is_file():
+                return {"ok": False, "installed": False, "changed": False, "path": str(target),
+                        "source": str(source_url), "error": f"RSDW Dev Kit could not be downloaded: {exc}"}
+        finally:
+            if temporary is not None:
+                temporary.cleanup()
+    if not bundle.is_file():
+        return {"ok": live_ready, "installed": live_ready, "changed": False, "path": str(target),
+                "error": "No cached RSDW Dev Kit release is available."}
+
+    signature = {"sha256": sha256_of(bundle), "bytes": int(bundle.stat().st_size),
+                 "filename": str(resolved.get("filename") or bundle.name), "source": str(source_url),
+                 "checked_at": time.time()}
+    RSDW_DEVKIT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    RSDW_DEVKIT_CACHE_META.write_text(json.dumps(signature, indent=2), encoding="utf-8")
+    if live_ready and str(current.get("sha256") or "") == signature["sha256"]:
+        signature["checked_at"] = time.time()
+        marker.write_text(json.dumps(signature, indent=2), encoding="utf-8")
+        return {"ok": True, "installed": True, "changed": False, "path": str(target),
+                "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False,
+                "source": "github-cache", "version": signature["filename"]}
     with tempfile.TemporaryDirectory(prefix="dws-rsdwtools-") as temp_name:
-        staged = Path(temp_name) / "payload"
+        extracted = Path(temp_name) / "archive"
         with zipfile.ZipFile(bundle) as archive:
-            safe_extract_zip(archive, staged)
-        main_lua = staged / "scripts" / "main.lua"
-        if not main_lua.is_file() or not (staged / "dlls" / "main.dll").is_file():
-            raise RuntimeError("Bundled RSDWTools baseline failed validation.")
+            safe_extract_zip(archive, extracted)
+        candidates = []
+        for candidate in extracted.rglob("*"):
+            if candidate.is_file() and candidate.name.casefold() == "main.lua" and candidate.parent.name.casefold() == "scripts":
+                root = candidate.parent.parent
+                dll = next((item for item in (root / "dlls").glob("*")
+                            if item.is_file() and item.name.casefold() == "main.dll"), None) if (root / "dlls").is_dir() else None
+                if dll:
+                    candidates.append((root, candidate))
+        if not candidates:
+            raise RuntimeError("The downloaded RSDW Dev Kit release is missing scripts/main.lua or dlls/main.dll.")
+        source, main_lua = sorted(candidates, key=lambda row: len(row[0].parts))[0]
         text = main_lua.read_text(encoding="utf-8-sig", errors="replace")
         if re.search(r"(?m)^\s*DEBUG_BRIDGE\s*=", text):
             text = re.sub(r"(?m)^\s*DEBUG_BRIDGE\s*=\s*(?:true|false)\s*$", "DEBUG_BRIDGE = false", text)
         else:
             text = "-- Disable all bridge_shm console output when set to false.\nDEBUG_BRIDGE = false\n" + text
         main_lua.write_text(text, encoding="utf-8")
-        (staged / "enabled.txt").write_text("", encoding="utf-8")
+        (source / "enabled.txt").write_text("", encoding="utf-8")
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(staged, target, dirs_exist_ok=True)
+        _set_runtime_tree_writable(target, True)
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.copytree(source, target)
     (target / "enabled.txt").write_text("", encoding="utf-8")
     marker.write_text(json.dumps(signature, indent=2), encoding="utf-8")
     return {"ok": True, "installed": True, "changed": True, "path": str(target),
-            "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False}
+            "debug_bridge": False, "activation": "enabled.txt", "mods_txt_managed": False,
+            "source": "github-cache", "version": signature["filename"]}
 
 
 def _ue4ss_settings_present(core_dir: Path) -> bool:
@@ -3532,11 +3816,16 @@ def capture_authoritative_runtimes(
         (RUNESCHEMA_RUNTIME_DIR / "mods").mkdir(parents=True, exist_ok=True)
         (RUNESCHEMA_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
         layout.runeschema_enabled_file.write_text("", encoding="utf-8")
+    # Capturing a manually proven runtime must not let one machine-specific
+    # settings file silently become the default for every future channel.
+    canonical_live = _apply_canonical_ue4ss_settings(layout.win64_dir)
+    canonical_library = _apply_canonical_ue4ss_settings(UE4SS_RUNTIME_DIR)
     _set_runtime_configs_writable(
         layout.ue4ss_core_dir, layout.runeschema_root,
         UE4SS_RUNTIME_DIR / "ue4ss", RUNESCHEMA_RUNTIME_DIR,
     )
-    return {**captured, "status": runtime_prerequisite_status(game_root)}
+    return {**captured, "status": runtime_prerequisite_status(game_root),
+            "canonical_settings": {"live": canonical_live, "library": canonical_library}}
 
 
 def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
@@ -3641,9 +3930,9 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
         from persistent_direct_connect import ensure_installed as ensure_dragonconnect
         dragonconnect = ensure_dragonconnect(layout.game_root)
         if dragonconnect.get("changed"):
-            repaired.append("DragonConnect host baseline installed/repaired")
+            repaired.append("DragonLink-Connect host baseline installed/repaired")
     except Exception as exc:
-        errors.append(f"DragonConnect host baseline repair failed: {exc}")
+        errors.append(f"DragonLink-Connect host baseline repair failed: {exc}")
 
     try:
         rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir, allow_update=auto_rsdwtools)
@@ -3707,12 +3996,13 @@ def deploy_authoritative_runtimes(game_root: str, include_ue4ss: bool = True, in
         (RUNESCHEMA_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
         (target / "mods").mkdir(parents=True, exist_ok=True)
         (RUNESCHEMA_RUNTIME_DIR / "mods").mkdir(parents=True, exist_ok=True)
+    canonical_settings = _apply_canonical_ue4ss_settings(win64) if include_ue4ss else {"applied": False}
     writable = _set_runtime_configs_writable(
         layout.ue4ss_core_dir, layout.runeschema_root,
         UE4SS_RUNTIME_DIR / "ue4ss", RUNESCHEMA_RUNTIME_DIR,
     )
     return {"ok": True, "ue4ss_files": copied_ue4ss, "runeschema_files": copied_runeschema,
-            "editable_configs_repaired": writable}
+            "editable_configs_repaired": writable, "canonical_settings": canonical_settings}
 
 
 def _preserved_server_loader_bytes(game_root: str) -> tuple[bytes | None, str]:

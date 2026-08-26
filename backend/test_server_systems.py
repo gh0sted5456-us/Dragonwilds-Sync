@@ -162,6 +162,11 @@ def main():
             assert saved_profile["rating_average"] == 4.0
             assert saved_profile["feedback"][-1]["report"] == "Good world"
 
+            ss.STATE.activity("127.0.0.1", "history-clear-regression")
+            assert any(row.get("message") == "history-clear-regression" for row in ss.SHARE.status()["activities"])
+            assert ss.SHARE.clear_activity() >= 1
+            assert ss.SHARE.status()["activities"] == []
+
             print("server systems tests passed")
         finally:
             ss.SHARE.stop()

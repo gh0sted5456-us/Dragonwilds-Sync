@@ -4,7 +4,11 @@
   const api = window.dragonwilds;
   if (!api?.invoke) return;
 
-  const sides = new Map();
+  // A World may be rendered in more than one collection at once (for example
+  // Favorites plus Connected Worlds). Card face is presentation state, not
+  // World state, so key it by the actual card element. Keying by World id made
+  // every visible copy flip together on the next decoration pass.
+  const cardSides = new WeakMap();
   const network = new Map();
   const openRows = new Map();
   const windows = new Map();
@@ -17,7 +21,7 @@
   const text = (value) => String(value ?? '').trim();
   const asArray = (value) => Array.isArray(value) ? value : [];
   const state = () => (window.__DWSYNC_STATE__ && typeof window.__DWSYNC_STATE__ === 'object') ? window.__DWSYNC_STATE__ : {};
-  const ecosystemAssets = {UE4SS:'assets/platforms/ue4ss.png',RuneSchema:'assets/platforms/runeschema.png',Pak:'assets/platforms/paks.svg'};
+  const ecosystemAssets = {UE4SS:'assets/platforms/ue4ss.webp',RuneSchema:'assets/platforms/runeschema.webp',Pak:'assets/platforms/paks.svg'};
   const animationMode = () => {
     const value = text(state()?.application?.v3_phase4?.animation_mode || state()?.application?.performance?.animations || 'full').toLowerCase();
     return ['full','reduced','off'].includes(value) ? value : 'full';
@@ -96,7 +100,7 @@
   }
 
   function applyPlacardArtwork(card, world) {
-    const id=placardId(world,card); const asset=`assets/placards/${id}.png`;
+    const id=placardId(world,card); const asset=`assets/placards/${id}.webp`;
     card.classList.add('has-placard'); card.dataset.placardBackground=id;
     card.style.setProperty('--world-placard',`url("${asset}")`);
     let preload=card.querySelector(':scope>.v3p4-placard-preload');
@@ -253,7 +257,7 @@
   }
 
   function applySide(card, id) {
-    const side = sides.get(id) || 'front';
+    const side = cardSides.get(card) || 'front';
     card.dataset.v3p4Side = side;
     card.classList.toggle('v3p4-back-visible', side === 'back');
     card.classList.toggle('flipped', card.classList.contains('app-world-placard') && side === 'back');
@@ -323,7 +327,9 @@
 
   function toggle(card, side=null) {
     const id=text(card?.dataset?.worldId); if(!id)return;
-    const next=side || ((sides.get(id)||'front')==='front'?'back':'front'); sides.set(id,next); applySide(card,id);
+    const next=side || ((cardSides.get(card)||'front')==='front'?'back':'front');
+    cardSides.set(card,next);
+    applySide(card,id);
   }
 
   function openRow(row) {

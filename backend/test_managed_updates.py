@@ -260,6 +260,39 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
         managed_updates.server_systems.install_authoritative_runeschema_update = old_rs
 
 
+def test_bundled_baseline_channels_are_offline_and_explicit() -> None:
+    systems = managed_updates.server_systems
+    old_resource = systems._bundled_app_resource
+    old_ue = systems.install_client_ue4ss_zip
+    old_rs = systems.install_runeschema_zip
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td); game = root / "game"; game.mkdir()
+            ue = root / "ue4ss.zip"
+            rs = root / "runeschema.zip"
+            with zipfile.ZipFile(ue, "w") as archive:
+                archive.writestr("ue4ss/UE4SS.dll", b"ue")
+            with zipfile.ZipFile(rs, "w") as archive:
+                archive.writestr("RuneSchema/enabled.txt", "")
+                archive.writestr("RuneSchema/config/config.json", "{}")
+                archive.writestr("RuneSchema/dlls/main.dll", b"rs")
+            systems._bundled_app_resource = lambda *parts: ue if "DragonwildsServerRuntime" in parts else rs
+            calls = []
+            systems.install_client_ue4ss_zip = lambda source, target: calls.append(("ue4ss", source, target)) or {"ok": True}
+            systems.install_runeschema_zip = lambda source, target, **kwargs: calls.append(("runeschema", source, target, kwargs)) or {"ok": True}
+            application = {}
+            ue_result = managed_updates.install_client_core("ue4ss", str(game), application, {"channel": "baseline"})
+            rs_result = managed_updates.install_client_core("runeschema", str(game), application, {"channel": "baseline"})
+            assert ue_result["baseline"] and rs_result["baseline"]
+            assert [row[0] for row in calls] == ["ue4ss", "runeschema"]
+            assert application["client_core_runtime"]["ue4ss_channel"] == "baseline"
+            assert application["client_core_runtime"]["runeschema_channel"] == "baseline"
+    finally:
+        systems._bundled_app_resource = old_resource
+        systems.install_client_ue4ss_zip = old_ue
+        systems.install_runeschema_zip = old_rs
+
+
 def test_manual_client_cores_are_cached_separately_from_server_runtime() -> None:
     systems = managed_updates.server_systems
     old = (systems.CLIENT_RUNTIME_OVERRIDE_DIR, systems.CLIENT_UE4SS_OVERRIDE_ZIP,
@@ -349,6 +382,7 @@ def main() -> None:
     test_runeschema_missing_release_asset_fails_cleanly()
     test_runtime_cache_refresh_defaults_to_local_only()
     test_client_ue4ss_and_runeschema_never_use_steamcmd()
+    test_bundled_baseline_channels_are_offline_and_explicit()
     test_manual_client_cores_are_cached_separately_from_server_runtime()
     test_server_core_delete_preserves_mods_and_dedicated_loaders()
     print("managed UE4SS/RuneSchema update helper contract: PASS")

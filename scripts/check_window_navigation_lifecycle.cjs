@@ -30,13 +30,17 @@ must(app.includes('win._dwsReturnFocus')&&app.includes('returnFocus.focus'),'int
 for(const token of ['data-phase5-placard-min','data-phase5-placard-close',"event.key !== 'Escape'",'closeWindow(visible[0])'])must(placards.includes(token),`placard popup lifecycle missing ${token}`);
 must(phase4.includes('window.__DWSYNC_DESKTOP_WINDOWS__')&&phase4.includes('v3p4-mod-window')&&phase4.includes('closeModsPopup'),'placard mod previews must use the shared desktop-window lifecycle');
 must(app.includes('modDraftContent')&&app.includes('modInitialPath')&&app.includes("route:'mod-explorer'"),'Mod Explorer pop-out must preserve open file and draft');
+must(app.includes("state.route='mod-explorer'")&&app.includes('mod-explorer-workspace')&&app.includes('Return to Mods'),'Mod Editor must own a stable in-application workspace rather than recursively opening a window');
+must(app.includes("navButton('trash'")&&app.includes('__DWSYNC_OPEN_TRASH__'),'System navigation must open the standalone Trash app');
+must(app.includes('notificationIdentity')&&app.includes('notification-row-banner')&&app.includes('notification-profile-icon'),'Notifications must blend profile/world presentation into horizontal status rows');
 must(main.includes('dragonwilds:detached-context')&&!main.includes("query: { detached: '1', route, windowId: id, ctx }"),'detached drafts must use ownership-checked IPC');
 must(app.includes('editor?.dispose()')&&app.includes('referenceEditor?.dispose()'),'both Monaco editor models must be disposed');
 must(app.includes('Unsaved Mod File')&&app.includes('Unsaved World File'),'editor close must guard unsaved work');
 must(app.includes('Open Mod Folder')&&app.includes('open-current-mod-folder'),'mod file locations must be actionable in-app');
 const passiveConsoleLaunch=app.match(/function launchRuntimeConsoleForWorld\(world\) \{([\s\S]*?)\n  \}/)?.[1]||'';
 must(passiveConsoleLaunch.includes('state.selectedServerWorldId=world.id'),'server launch must associate background output with the selected World');
-for(const forbidden of ['state.route=', 'state.serverTab=', 'render()', 'openUnifiedLaunchConsole(', 'openDetachedWindow'])must(!passiveConsoleLaunch.includes(forbidden),`server launch must not navigate, repaint, or focus console via ${forbidden}`);
+must(passiveConsoleLaunch.includes('open_sync_console_on_host_start===true')&&passiveConsoleLaunch.includes('return openUnifiedLaunchConsole(world)'),'server launch may open Sync console only behind the explicit Application preference');
+for(const forbidden of ['state.route=', 'state.serverTab=', 'render()', 'openDetachedWindow'])must(!passiveConsoleLaunch.includes(forbidden),`server launch must not navigate, repaint, or directly create a renderer via ${forbidden}`);
 must(app.includes("popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`")&&!app.includes("openDetachedWindow?.({route:'server-console'"),'Runtime Console must use the lightweight themed native host instead of booting another full app renderer');
 for(const source of [local,world])must(source.includes('"folder": str(')&&source.includes('"root": str('),'opened files must return validated folder/root paths');
 must(local.includes('base not in path.parents')&&local.includes('rel.is_absolute()')&&local.includes('".." in rel.parts'),'SinglePlayer mod paths must remain contained');

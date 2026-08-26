@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import tempfile
+import zipfile
 from pathlib import Path
 
 import server_engine
@@ -10,6 +12,11 @@ from server_layout import resolve_server_layout
 
 
 def main() -> None:
+    shipped = Path(__file__).parent.parent / "resources" / "RuneSchema-experimental-latest.zip"
+    assert hashlib.sha256(shipped.read_bytes()).hexdigest() == "fa4e8062d7aff4d9a8c61baf6e87219302a24aea7c3389464bd7ad21d93f391d"
+    with zipfile.ZipFile(shipped) as archive:
+        assert hashlib.sha256(archive.read("RuneSchema/dlls/main.dll")).hexdigest() == "6820e79e282a757ec5587fa39f1fd98a87afcfa57c525ff6498f81544ffd9142"
+
     with tempfile.TemporaryDirectory() as td:
         game_root = Path(td) / "server"
         layout = resolve_server_layout(str(game_root))
@@ -25,6 +32,52 @@ def main() -> None:
         # safe stopped-server reapply instead of trusting stale profile metadata.
         main_dll.write_bytes(b"official-or-damaged-runtime")
         assert not server_engine._installed_flavor_matches(str(game_root), "custom-1", "archive-digest")
+
+    # Managed Experimental is pinned to the exact bundled archive and live DLL,
+    # rather than accepting any stale install merely labeled "experimental".
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        game_root = root / "server"
+        bundle = root / "RuneSchema-experimental-latest.zip"
+        with zipfile.ZipFile(bundle, "w") as archive:
+            archive.writestr("RuneSchema/enabled.txt", "")
+            archive.writestr("RuneSchema/config/config.json", "{}")
+            archive.writestr("RuneSchema/dlls/main.dll", b"exact-experimental-build")
+        layout = resolve_server_layout(str(game_root))
+        state = {"application": {"server_install": {}}}
+        installs = []
+        old_resource = server_engine._bundled_app_resource
+        old_installer = server_engine.install_runeschema_zip
+        old_load_state = server_engine.load_state
+        old_save_state = server_engine.save_state
+        try:
+            server_engine._bundled_app_resource = lambda *_parts: bundle
+            server_engine.load_state = lambda: state
+            server_engine.save_state = lambda value: state.update(value)
+
+            def install_exact(source, target):
+                installs.append(source)
+                layout.runeschema_root.joinpath("dlls").mkdir(parents=True, exist_ok=True)
+                layout.runeschema_root.joinpath("config").mkdir(parents=True, exist_ok=True)
+                layout.runeschema_root.joinpath("enabled.txt").write_text("", encoding="utf-8")
+                layout.runeschema_root.joinpath("dlls", "main.dll").write_bytes(b"exact-experimental-build")
+                return {"ok": True, "kind": "core"}
+
+            server_engine.install_runeschema_zip = install_exact
+            first = server_engine._restore_managed_runeschema_once(str(game_root), "experimental")
+            assert first["changed"] is True and installs == [str(bundle)]
+            assert first["archive_sha256"] == hashlib.sha256(bundle.read_bytes()).hexdigest()
+            second = server_engine._restore_managed_runeschema_once(str(game_root), "experimental")
+            assert second["changed"] is False and second["verified"] is True
+            assert installs == [str(bundle)]
+            layout.runeschema_root.joinpath("dlls", "main.dll").write_bytes(b"stale-dll")
+            third = server_engine._restore_managed_runeschema_once(str(game_root), "experimental")
+            assert third["changed"] is True and len(installs) == 2
+        finally:
+            server_engine._bundled_app_resource = old_resource
+            server_engine.install_runeschema_zip = old_installer
+            server_engine.load_state = old_load_state
+            server_engine.save_state = old_save_state
 
     # A selected live flavor must replace the stale machine-wide repair copy.
     # Otherwise a later structural self-heal silently resurrects an old DLL.

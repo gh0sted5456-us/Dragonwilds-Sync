@@ -49,6 +49,25 @@ def main():
         assert written["address"] == "71.22.33.44:7777", written
         legacy._write_world_direct_connect(game_dir, world("external", external="71.22.33.44:7900"))
         assert written["address"] == "71.22.33.44:7900", written
+
+        collision = {
+            "client": {
+                "private_worlds": [{"id": "singleplayer"}],
+                "worlds": [{"id": "singleplayer", "identity": {"world_name": "Remote World"},
+                            "connection": {"external_ip": "71.22.33.44", "sync_port": 27051}}],
+                "active_world_id": "singleplayer",
+                "live_world_id": "singleplayer",
+                "favorites": ["singleplayer"],
+                "world_character_selection": {"singleplayer": "character-a"},
+            }
+        }
+        assert legacy._repair_connected_world_id_collisions(collision)
+        repaired_id = collision["client"]["worlds"][0]["id"]
+        assert repaired_id.startswith("connected-")
+        assert collision["client"]["active_world_id"] == repaired_id
+        assert collision["client"]["live_world_id"] == repaired_id
+        assert collision["client"]["favorites"] == [repaired_id]
+        assert collision["client"]["world_character_selection"] == {repaired_id: "character-a"}
         print("direct connect route tests passed")
     finally:
         legacy.write_direct_connect_config = original_write

@@ -97,7 +97,7 @@ if (!bridge.includes('return self.original.publish(profile_id)')) failures.push(
 if (!bridge.includes('config.setdefault("heartbeat_owner", "application")')) failures.push('Heartbeat ownership must remain application-owned in the first Phase 5D Sync-share slice');
 if (!bridge.includes('config.setdefault("webgui_owner", "application")')) failures.push('WebGUI ownership must remain application-owned in the first Phase 5D Sync-share slice');
 if (!bridge.includes('legacy.SHARE = share_adapter')) failures.push('Retained V3 heartbeat readers must be rewired to the worker-backed SHARE proxy');
-if (!bridgeTests.includes('assert stop_share < stop_runtime < stop_worker')) failures.push('Phase 5D test must prove Share -> Runtime -> Worker stop ordering');
+if (!bridgeTests.includes('assert supervisor.calls.count(("stop_worker", "world-a")) == 1')) failures.push('Phase 5D test must prove one atomic graceful worker stop without an IPC shutdown cascade');
 if (!phase4.includes('result.pop("connection", None)')) failures.push('Phase 4 public connection must remain opt-in');
 if (/"password"\s*:|"server_key"\s*:|"admin_pass"\s*:/i.test(desired)) failures.push('Desired runtime snapshot module must not construct plaintext credential fields');
 if (!desired.includes('profile_store.read_json(profile_store.SERVER_PROFILES_DIR / profile_id / "profile.json", {})')) failures.push('Worker persistence overlay must refresh from main-owned durable profile state before each verified revision');

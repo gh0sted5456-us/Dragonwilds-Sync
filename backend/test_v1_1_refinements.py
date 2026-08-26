@@ -16,7 +16,7 @@ def test_client_layout_contract():
         (game / "Content" / "Paks").mkdir(parents=True)
         layout = resolve_client_layout(install)
         assert layout.game_root == game
-        assert layout.game_exe.name == "RSDragonwilds-Win64-Shipping.exe"
+        assert layout.game_exe.name == "RSDragonwilds.exe"
         assert layout.paks_mods_dir.name == "~mods"
         assert layout.runeschema_config_dir.name == "config"
         assert layout.runeschema_dlls_dir.name == "dlls"
@@ -34,7 +34,7 @@ def test_release_contract():
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
                + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
     host = (ROOT / "backend" / "directory_host.py").read_text(encoding="utf-8")
-    assert "runOperation('Starting hosted World'" in renderer
+    assert "runServerStartOperation(world" in renderer
     assert "Preview paused" in renderer and "refresh-webhost-preview" in renderer
     assert "Suggestions for Improvement?" in renderer and "https://discord.gg/gQ7uY2cQ3q" in renderer
     assert "worldAudienceMarkup" in renderer and "kid_friendly" in renderer and "adults_only" in renderer

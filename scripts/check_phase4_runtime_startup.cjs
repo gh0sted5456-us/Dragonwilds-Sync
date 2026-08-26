@@ -71,6 +71,7 @@ if (fastStartStart < 0 || fastStartEnd < 0) throw new Error('Phase 4 fast dedica
 const fastStart = phase.slice(fastStartStart, fastStartEnd);
 forbid(fastStart, '.status(', 'dedicated launch must not collect full telemetry merely to verify the process');
 need(fastStart, 'popen_game_server(', 'dedicated game launcher with a valid hidden Windows console');
+need(fastStart, '"-log", "-stdout", "-LogFlushInterval=0.1"', 'live Unreal stdout categories must feed the unified console');
 need(fastStart, 'process_probe(', 'lightweight process verification');
 
 need(cl, 'from phase4_runtime_startup import install_phase4_runtime_patches');

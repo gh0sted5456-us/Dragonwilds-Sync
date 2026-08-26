@@ -200,7 +200,7 @@ def main():
     assert "if(event.channel==='rsdw-content-size')return" in renderer
     assert "feedback-rating-label" in renderer and "250 characters" in renderer and "updateFeedbackCount" in renderer
     assert "openCharacterEditor" not in renderer
-    assert all((ROOT / "renderer/assets/rsdw-toolkit" / name).is_file() for name in ("character-editor.png","item-editor.png","spell-editor.png","recipe-unlocker.png","quest-editor.png"))
+    assert all((ROOT / "renderer/assets/rsdw-toolkit" / name).is_file() for name in ("character-editor.webp","item-editor.webp","spell-editor.webp","recipe-unlocker.webp","quest-editor.webp"))
 
     preload = (ROOT / "electron/rsdw_webview_preload.cjs").read_text(encoding="utf-8")
     assert "hydrate-rsdw-character" in preload and "rsdw-save" in preload and "rsdw-preview" in preload

@@ -11,9 +11,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_packaged_three_examples_are_explicit_resources():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"].startswith("2.7.")
+    assert package["version"].startswith("3.")
     resources = package["build"]["extraResources"]
-    assert {"from": "node_modules/three/examples/jsm", "to": "rsdw-viewer/three/examples/jsm"} in resources
+    three = next(row for row in resources if row.get("to") == "rsdw-viewer/three")
+    assert three["from"] == "node_modules/three"
+    required = {
+        "build/three.module.js",
+        "examples/jsm/loaders/GLTFLoader.js",
+        "examples/jsm/loaders/DRACOLoader.js",
+        "examples/jsm/controls/OrbitControls.js",
+        "examples/jsm/environments/RoomEnvironment.js",
+        "examples/jsm/exporters/GLTFExporter.js",
+        "examples/jsm/exporters/STLExporter.js",
+        "examples/jsm/utils/SkeletonUtils.js",
+        "examples/jsm/utils/BufferGeometryUtils.js",
+        "examples/jsm/libs/draco/draco_decoder.js",
+        "examples/jsm/libs/draco/draco_wasm_wrapper.js",
+        "examples/jsm/libs/draco/draco_decoder.wasm",
+    }
+    assert set(three["filter"]) == required
+    assert not any("three.webgpu" in path or "draco_encoder" in path for path in three["filter"])
     main = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
     assert "rsdw-viewer" in main and "vendor/three" in main
 

@@ -268,7 +268,7 @@ function serviceInvoke(method, params = {}, options = {}) {
   });
 }
 
-function iconPath() { return path.join(projectRoot(), 'renderer', 'assets', process.platform === 'win32' ? 'dragonwilds_icon.ico' : 'application-icon.png'); }
+function iconPath() { return path.join(projectRoot(), 'renderer', 'assets', process.platform === 'win32' ? 'dragonwilds_icon.ico' : 'application-icon.webp'); }
 function windowOptions(extra = {}) {
   return { backgroundColor: '#0b0e10', icon: iconPath(), show: false, frame: false, autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload-v2.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true }, ...extra };
@@ -465,12 +465,30 @@ function createManagedDialog(ownerContents, payload = {}) {
   const id = `dlg-${Date.now().toString(36)}-${(++detachedCounter).toString(36)}`;
   const width = Math.max(520, Math.min(1500, Number(payload.width || 900)));
   const height = Math.max(360, Math.min(1100, Number(payload.height || 720)));
-  const win = new BrowserWindow(windowOptions({ width, height, minWidth: 480, minHeight: 320, title, skipTaskbar: false }));
+  // Managed tools are real application windows. Keep the native Windows frame
+  // as the final close/minimize escape hatch even if Chromium/GPU content fails
+  // before the themed document hydrates.
+  const win = new BrowserWindow(windowOptions({ width, height, minWidth: 480, minHeight: 320, title, skipTaskbar: false, frame: true }));
+  attachRendererDurability(win);
   const entry = { id, window: win, title, route: 'dialog', context: {}, ownerId: owner.id, html: String(payload.html || ''), theme: String(payload.theme || 'dark') };
   managedDialogs.set(id, entry);
   detachedWindows.set(id, entry);
-  win.loadFile(path.join(projectRoot(), 'renderer', 'dialog-host.html'), { query: { dialogId: id } });
-  win.once('ready-to-show', () => { win.show(); win.focus(); notifyDetachedWindows(); });
+  let presented = false;
+  const present = () => {
+    if (presented || win.isDestroyed()) return;
+    presented = true; win.show(); win.focus(); notifyDetachedWindows();
+  };
+  win.webContents.on('console-message', (event, level, legacyMessage) => {
+    const message = (event && typeof event === 'object' && event.message) || legacyMessage || (typeof level === 'string' ? level : '');
+    if (message) console.error(`[managed-dialog:${id}] ${message}`);
+  });
+  win.webContents.on('did-fail-load', (_event, code, description) => {
+    console.error(`[managed-dialog:${id}] load failed ${code}: ${description}`); present();
+  });
+  win.loadFile(path.join(projectRoot(), 'renderer', 'dialog-host.html'), { query: { dialogId: id, nativeFrame: '1' } })
+    .then(present)
+    .catch((error) => { console.error(`[managed-dialog:${id}] ${error?.stack || error}`); present(); });
+  win.once('ready-to-show', present);
   win.on('show', notifyDetachedWindows); win.on('hide', notifyDetachedWindows);
   win.on('closed', () => {
     managedDialogs.delete(id); detachedWindows.delete(id); notifyDetachedWindows();

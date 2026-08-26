@@ -3,6 +3,20 @@
   "updated_at": "2026-08-23T00:00:00Z",
   "releases": [
     {
+      "version": "3.0.0",
+      "title": "Dragonwilds Sync V3",
+      "date": "2026-08-23",
+      "status": "testing",
+      "highlights": [
+        "LAN discovery and directory publishing continuously renew a running Sync World and self-heal after transient failures.",
+        "The WebGUI is a login-only Server Management surface for the active broadcast World.",
+        "Sync retries stale transfer routes and replaces mismatched server-owned payloads through rollback staging.",
+        "World metadata and reviews are readable before authentication or file transfer.",
+        "Character preview resolves local armor and hair models before its first render.",
+        "UE4SS and RuneSchema expose separate Baseline, Stable, and Experimental choices; RuneSchema 0.6.2 is retained as the built-in Experimental baseline."
+      ]
+    },
+    {
       "version": "2.7.32",
       "title": "Dragonwilds Sync V2.7.32",
       "date": "2026-08-23",

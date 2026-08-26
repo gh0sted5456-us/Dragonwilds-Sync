@@ -52,7 +52,8 @@ requireText(consoleModule, 'def _process_entries(runtime: dict)', 'dedicated pro
 requireText(consoleModule, 'def _ue4ss_entries(runtime: dict, started: float', 'UE4SS log stream');
 requireText(desktop, 'function openUnifiedLaunchConsole(', 'movable desktop launch console');
 requireText(desktop, 'open-unified-server-console', 'manual desktop console action');
-requireText(desktop, "commandTarget==='ue4ss'?`ue4ss.exec ${command}`:command", 'targeted UE4SS command dispatch');
+requireText(desktop, "target:commandTarget", 'explicit runtime command target dispatch');
+requireText(desktop, "['runeschema','RuneSchema']", 'RuneSchema console command target');
 requireText(directoryWeb, 'dws-remote-unified-console-script', 'authenticated WebHost unified console UI');
 requireText(directoryWeb, 'data-dws-web-console-filter="sync"', 'WebHost Sync console filter');
 requireText(directoryWeb, 'data-dws-web-console-filter="runeschema"', 'WebHost RuneSchema console filter');
@@ -69,7 +70,9 @@ requireText(rsdwCache, 'data/items/json/RSDragonwilds', 'canonical RSDW item JSO
 requireText(rsdwCache, '/shared/icons/', 'canonical RSDW shared icon source');
 requireText(rsdwCache, 'persistence_id', 'canonical persistence identity');
 requireText(legacyService, 'custom_items=list((state.get("application") or {}).get("custom_items") or [])', 'custom items merged into server catalog');
-requireText(legacyService, 'item["icon_url"] = icon_path', 'embedded server custom item icons');
+requireText(legacyService, '"custom-broadcast"', 'server-broadcast custom item icons');
+requireText(legacyService, '/api/v1/admin/item-icon/', 'authenticated item image endpoint');
+requireText(directoryHost, 'action != "spawner_icon"', 'thumbnail requests excluded from audit flood');
 requireText(legacyService, 'if action == "spawner_catalog":', 'lazy authenticated WebGUI item catalog');
 requireText(legacyService, '"spawner": {"items": [], "categories": []', 'lightweight remote viewer bootstrap');
 

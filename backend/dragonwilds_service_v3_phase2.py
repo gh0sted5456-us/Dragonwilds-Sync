@@ -136,9 +136,9 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         "active": False,
         "profile_scope": "Hosted Server" if kind == "dedicated" else ("Connected World" if kind == "linked" else "Local World"),
         "launch_sequence": (
-            ["Load server profile", "Materialize World files", "Start dedicated process", "Verify process", "Publish Sync"]
+            ["Apply profile mods and settings", "Start dedicated game process", "Connect DragonLink game bridge", "Start multiplayer broadcast", "Start and maintain Sync broadcast"]
             if kind == "dedicated" else
-            ["Match host manifest", "Transfer changed files", "Verify file parity", "Prepare DragonConnect", "Launch Dragonwilds"]
+            ["Match host manifest", "Transfer changed files", "Verify file parity", "Prepare DragonLink-Connect", "Wait for Play"]
             if kind == "linked" else
             ["Load local profile", "Materialize profile files", "Verify runtime files", "Launch Dragonwilds"]
         ),
@@ -194,12 +194,26 @@ def _quick_start(state: dict, params: dict) -> dict:
         if live_id and live_id != profile_id:
             raise RuntimeError("A different World profile is already active. Exit Dragonwilds before Quick Launch swaps profiles.")
         return {"already_running": True, "quick": _quick_status(state, profile_id, mode)}
-    method = "world.play" if kind == "linked" else "singleplayer.play"
+    # A connected profile prepares and verifies first. The visible Play gate is
+    # a separate request so a refresh/retry can never launch the game by itself.
+    method = "world.sync" if kind == "linked" else "singleplayer.play"
     response = _base_handle(method, {"id": profile_id, "profile_id": profile_id})
     try:
         NETWORK.send_presence("client")
     except Exception:
         pass
+    return {"result": response, "awaiting_play": kind == "linked",
+            "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
+
+
+def _quick_play(state: dict, params: dict) -> dict:
+    mode = _quick_mode(params.get("mode"))
+    if mode != "player":
+        raise ValueError("The verified Play gate is available only in Player Quick mode")
+    profile_id, _profile, kind = _quick_profile(
+        state, str(params.get("profile_id") or params.get("id") or ""), mode)
+    method = "world.launch_verified" if kind == "linked" else "singleplayer.play"
+    response = _base_handle(method, {"id": profile_id, "profile_id": profile_id})
     return {"result": response, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
 
 
@@ -258,11 +272,14 @@ def _quick_console_execute(state: dict, params: dict) -> dict:
     profile_id, _profile, kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
     command = str(params.get("command") or "").strip()
     target = str(params.get("target") or "game").strip().casefold()
-    dispatched = f"ue4ss.exec {command}" if target == "ue4ss" and not command.casefold().startswith("ue4ss.exec ") else command
+    if target not in {"game", "ue4ss", "runeschema"}:
+        raise ValueError("Unknown runtime console target")
+    prefix = {"ue4ss": "ue4ss.exec", "runeschema": "runeschema.exec"}.get(target, "")
+    dispatched = f"{prefix} {command}" if prefix and not command.casefold().startswith(prefix + " ") else command
     if kind == "dedicated":
         return _base_handle("server.console.execute", {
-            "id": profile_id, "command": dispatched, "confirmed": True,
-            "source": "quick-ue4ss" if target == "ue4ss" else "quick", "actor": "owner",
+            "id": profile_id, "command": command, "target": target, "confirmed": True,
+            "source": f"quick-{target}", "actor": "owner",
         })
     live_id = str(state.setdefault("client", {}).get("live_world_id") or "")
     if not _legacy._dragonwilds_client_running() or live_id != profile_id:
@@ -272,7 +289,7 @@ def _quick_console_execute(state: dict, params: dict) -> dict:
         raise ValueError("Set the Dragonwilds game folder before using the client console")
     checked = _legacy.validate_rsdw_command(Path(game_root), dispatched)
     if not _legacy.PLAYER_BRIDGE.status().get("available"):
-        raise RuntimeError("The active DragonConnect/RSDWToolkit command bridge is unavailable")
+        raise RuntimeError("The active DragonLink-Connect/RSDWToolkit command bridge is unavailable")
     try:
         ack = _legacy.PLAYER_BRIDGE.command(checked["line"], timeout=8.0)
         if str(ack).casefold().startswith("err") or " failed:" in str(ack).casefold():
@@ -363,6 +380,8 @@ def handle(method: str, params: dict) -> object:
         return _quick_status(state, str(params.get("profile_id") or params.get("id") or ""), _quick_mode(params.get("mode")))
     if method == "quick.start":
         return _quick_start(state, params)
+    if method == "quick.play":
+        return _quick_play(state, params)
     if method == "quick.stop":
         mode = _quick_mode(params.get("mode"))
         if mode == "server":

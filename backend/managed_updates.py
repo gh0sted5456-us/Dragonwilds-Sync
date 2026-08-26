@@ -175,8 +175,8 @@ def install_client_core(component: str, game_root: str, application: dict, param
     manual_zip = Path(str(params.get("zip_path") or "")).expanduser()
     channel = str(params.get("channel") or "official").strip().casefold()
     reset = bool(params.get("reset"))
-    if channel not in {"official", "experimental"}:
-        raise ValueError("Runtime channel must be official or experimental.")
+    if channel not in {"baseline", "official", "experimental"}:
+        raise ValueError("Runtime channel must be baseline, stable, or experimental.")
 
     if str(params.get("zip_path") or "").strip():
         if not manual_zip.is_file() or manual_zip.suffix.casefold() != ".zip":
@@ -197,6 +197,31 @@ def install_client_core(component: str, game_root: str, application: dict, param
                          "runeschema_installed_at": time.time(), "runeschema_manual_override": True,
                          "runeschema_override_zip": str(server_systems.CLIENT_RUNESCHEMA_CORE_CACHE_ZIP)})
         return {"component": "RuneSchema", "manual_override": True, "result": result}
+
+    if channel == "baseline":
+        if component == "ue4ss":
+            archive = server_systems._bundled_app_resource(*server_systems.BUNDLED_UE4SS_RESOURCE)
+            if not archive.is_file():
+                raise FileNotFoundError("The bundled UE4SS recovery baseline is missing.")
+            result = server_systems.install_client_ue4ss_zip(str(archive), root)
+            metadata.update({
+                "ue4ss_source_url": "bundled://UE4SS-core-latest.zip",
+                "ue4ss_channel": "baseline",
+                "ue4ss_installed_version": "Baseline · v3.0.1-941-g0bfec09e · Dragonwilds 5.6",
+                "ue4ss_installed_at": time.time(), "ue4ss_manual_override": False,
+            })
+            return {"component": "UE4SS", "baseline": True, "archive": str(archive), "result": result}
+        archive = server_systems._bundled_app_resource("RuneSchema-core-latest.zip")
+        if not archive.is_file() or not _is_runeschema_core_zip(archive):
+            raise FileNotFoundError("The bundled RuneSchema recovery baseline is missing or invalid.")
+        result = server_systems.install_runeschema_zip(str(archive), root, role="client")
+        metadata.update({
+            "runeschema_source_url": "bundled://RuneSchema-core-latest.zip",
+            "runeschema_channel": "baseline",
+            "runeschema_installed_version": "Baseline · RuneSchema 0.6.3 Launcher Base",
+            "runeschema_installed_at": time.time(), "runeschema_manual_override": False,
+        })
+        return {"component": "RuneSchema", "baseline": True, "archive": str(archive), "result": result}
 
     if component == "ue4ss":
         source = str(params.get("releases_url") or metadata.get("ue4ss_source_url") or DEFAULT_UE4SS_SOURCE).strip()

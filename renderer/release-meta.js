@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '2.7.32',
-  name: 'V2.7.32 · Native Runtime Baseline',
+  version: '3.0.0',
+  name: 'V3 · Connection & Hosting Baseline',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '3.0.0',
+    title: 'Connection & Hosting Baseline',
+    items: [
+      'Continuous LAN and directory heartbeats keep a running Sync World discoverable and recover automatically after transient metadata failures.',
+      'The WebGUI is a focused Server Management login for the currently broadcast hosted World: World Name, username, and password.',
+      'Client synchronization retries a stale 404 once and replaces mismatched server-owned bundles through recoverable rollback staging.',
+      'World identity, rules, mod summary, and reviews remain available before credentials or file synchronization.',
+      'Character preview waits for its local model indexes so equipped armor and selected hair resolve on the first render.',
+      'UE4SS and RuneSchema expose separate Baseline, Stable, and Experimental controls; the supplied RuneSchema 0.6.2 archive is the built-in Experimental V3 baseline.',
+    ],
+  }, {
     version: '2.7.32',
     title: 'Native Runtime Baseline',
     items: [

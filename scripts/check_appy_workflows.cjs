@@ -18,18 +18,18 @@ const navRoutes = ['world-management', 'characters-app', 'mods-app', 'rsdw-launc
 for (const route of navRoutes) need(app.includes(`navButton('${route}'`), `${route} must remain a first-class navigation entry`);
 need(app.includes("event.target?.closest?.('[data-route]')") && app.includes('handleRouteNavigation(el.dataset.route)'), 'all Appy buttons must use the persistent delegated route handler');
 need(!app.includes("navButton('rsdragonwilds-app'"), 'Dragonwilds/Hosting must not reappear as a duplicate navigation item');
-need(app.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.png'),'Dragonwilds'"), 'Dragonwilds must retain the official game icon');
+need(app.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.webp'),'Dragonwilds'"), 'Dragonwilds must retain the official game icon');
 for (const token of [
-  "navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.png')",
-  "navButton('mods-app',navIconAsset('assets/navigation/mods.png')",
-  "navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.png')",
+  "navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.webp')",
+  "navButton('mods-app',navIconAsset('assets/navigation/mods.webp')",
+  "navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.webp')",
   "navButton('webhost',navIconAsset('assets/navigation/sync.svg')",
   "navButton('help',navIconAsset('assets/navigation/help.svg')",
   "navButton('settings',navIconAsset('assets/navigation/settings.svg')",
 ]) need(app.includes(token), `navigation icon contract missing ${token}`);
 for (const relative of [
-  'renderer/assets/dragonwilds_icon.ico', 'renderer/assets/rsdw-toolkit/character-editor.png',
-  'renderer/assets/rsdw-toolkit/modded-items.svg', 'renderer/assets/navigation/rsdw-l.png',
+  'renderer/assets/dragonwilds_icon.ico', 'renderer/assets/rsdw-toolkit/character-editor.webp',
+  'renderer/assets/rsdw-toolkit/modded-items.svg', 'renderer/assets/navigation/rsdw-l.webp',
   'renderer/assets/navigation/sync.svg', 'renderer/assets/navigation/help.svg',
   'renderer/assets/navigation/settings.svg',
 ]) need(fs.existsSync(path.join(root, relative)) && fs.statSync(path.join(root, relative)).size > 0, `${relative} must be a packaged non-empty navigation icon`);
@@ -53,8 +53,8 @@ for (const token of [
   'data-character-undo', 'data-character-redo', 'data-avatar-upstream-select="avatar-animation-select"',
   'data-character-tab-popover="pose"', 'data-character-tab-popover="background"',
   'data-character-pose-filter', 'data-character-background-choice',
-  "file:'placards/6.png'", "file:'placards/8.png'", "file:'placards/5.png'",
-  "file:'placards/9.png'", "file:'placards/7.png'",
+  "file:'placards/6.webp'", "file:'placards/8.webp'", "file:'placards/5.webp'",
+  "file:'placards/9.webp'", "file:'placards/7.webp'",
   'characterEquipmentCompatible(row, slot)', 'character-equipment-context-menu',
   'openStudioEquipmentMenu(socket,event)', 'data-character-equip-item',
   "action:'remove',section:'loadout'", "slot==='Hotbar'", "section:'inventory'",
@@ -74,15 +74,16 @@ need(styles.includes('.character-action-bar{') && styles.includes('grid-template
 need(styles.includes('.character-equipment-context-menu{') && styles.includes('.character-equipment-menu-items{'), 'right-click equipment selection must retain a bounded searchable context-menu layout');
 
 for (const token of [
-  "runOperation('Starting hosted World'",
   "runOperation('Stopping hosted World'",
   "runOperation('Restarting hosted World'",
   "runOperation('Starting Co-Op Sync'",
   "runOperation('Stopping Co-Op Sync'",
   "local?runOperation('Launching Singleplayer'",
 ]) need(app.includes(token), `${token} must use the shared non-overlapping operation guard`);
-need(app.includes("runWorldSyncJob(world,'play')") && app.includes("api.invoke('world.sync.job.status'"),
-  'remote World launch must use the guarded pollable delta-Sync progress job');
+need(app.includes('runServerStartOperation(world') && app.includes("phase:'ready'"),
+  'server launch must use its dedicated staged non-overlapping progress path');
+need(app.includes("runWorldSyncJob(world,'sync')") && app.includes("api.invoke('world.sync.job.status'") && app.includes("api.invoke('world.launch_verified'"),
+  'remote World launch must sync/verify through the pollable job before the explicit Play gate');
 need(app.includes("if (state.operation) throw new Error"), 'overlapping lifecycle/Sync actions must be rejected');
 need(quick.includes("api.invoke('quick.status'") && quick.includes("invoke('quick.start'") && quick.includes('refreshInFlight'), 'Quick Launch must expose a guarded status/startup flow');
 
@@ -103,7 +104,12 @@ for (const relative of [
   const absolute = path.join(root, relative);
   need(fs.existsSync(absolute), `${relative} is missing`);
   for (const match of read(relative).matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)) {
-    need(fs.existsSync(path.resolve(path.dirname(absolute), match[1])), `${relative} references missing image ${match[1]}`);
+    const image = match[1];
+    if (/^https:\/\//i.test(image)) {
+      need(image.startsWith('https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/'), `${relative} references an unapproved remote image ${image}`);
+    } else {
+      need(fs.existsSync(path.resolve(path.dirname(absolute), image)), `${relative} references missing image ${image}`);
+    }
   }
 }
 

@@ -3,7 +3,8 @@ from __future__ import annotations
 """Python ports of RuneSchema's own tooling logic (mods.txt load order,
 compatibility report, FModel snippet generator), plus variant detection.
 
-These are line-for-line ports of the C++ in RuneSchema 0.6.1 Experimental's
+These are line-for-line ports of the C++ tooling originally introduced in
+RuneSchema 0.6.1 Experimental's
 source (``ModLoadOrder.cpp``, ``CompatibilityReporter.cpp``,
 ``FModelSnippetGenerator.cpp``, ``Utility/ObjectPath.cpp``), reviewed
 directly from that source rather than inferred from strings or behavior --
@@ -30,8 +31,8 @@ _HEADER_LINES = (
     "; Set the value to 0 to disable a mod without removing its folder.\n",
 )
 
-# RuneSchema's own mod-load line ("RuneSchema v0.6.1 Experimental by Okaetsu
-# loaded." vs "RuneSchema v0.6.0 by Okaetsu loaded.") is the one signal that
+# RuneSchema's own mod-load line (for example "RuneSchema v0.6.3 Experimental
+# by Okaetsu loaded.") is the one signal that
 # comes directly from whichever DLL is actually running, so it takes
 # priority over config.json shape -- a leftover Experimental config.json
 # sitting next to an official 0.6.0 DLL should not be misreported.
@@ -142,7 +143,19 @@ def detect_variant(runtime: dict, config_raw: str = "") -> dict:
         try:
             data = _parse_jsonc(config_raw)
             if isinstance(data, dict) and isinstance(data.get("tooling"), dict):
-                return {"variant": "experimental", "version": "", "source": "config_shape"}
+                # The 0.6.3 launcher build adds identity override, spawn-safety,
+                # and per-schema generator menus. Retaining the older tooling
+                # check keeps 0.6.1/0.6.2 custom builds recognizable too.
+                modern = (
+                    isinstance(data.get("identityOverrides"), dict)
+                    or isinstance(data.get("spawnSafety"), dict)
+                    or isinstance(data.get("tooling", {}).get("schemaTypes"), dict)
+                )
+                return {
+                    "variant": "experimental",
+                    "version": "0.6.3 Experimental" if modern else "",
+                    "source": "config_shape",
+                }
             if isinstance(data, dict):
                 return {"variant": "github", "version": "0.6.0", "source": "config_shape"}
         except (json.JSONDecodeError, ValueError):

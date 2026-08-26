@@ -19,9 +19,10 @@ assert(registry.sources['rsdw-icons'].path, 'RSDW icon source must declare its c
 assert(registry.sources['rsdw-item-manifest'].path, 'RSDW item manifest source must declare its canonical path.');
 assert(registry.sources.rsdwtools.runtime_component === false, 'RSDWTools must remain a data/content source, not the UE4SS runtime Toolkit.');
 assert(registry.sources['rsdw-toolkit'].repository === 'RSDWArchive/RSDWDevKit', 'RSDW Toolkit / DevKit must use the authoritative RSDWDevKit repository.');
-assert((registry.sources['rsdw-toolkit'].runtime_roles || []).includes('client'), 'RSDW Toolkit must declare runtime role metadata.');
+assert(['server','host'].every((role)=>(registry.sources['rsdw-toolkit'].runtime_roles || []).includes(role)), 'RSDW Dev Kit must declare server/host runtime roles.');
+assert(!(registry.sources['rsdw-toolkit'].runtime_roles || []).includes('client'), 'RSDW Dev Kit is server-only and must not be synchronized to clients.');
 assert(['client','server','host'].every((role)=>(registry.sources.dragonconnect.runtime_roles || []).includes(role)), 'DragonConnect must be baseline infrastructure for hosts and clients.');
-assert((registry.sources.dragonconnect.legacy_physical_names || []).includes('PersistentDirectConnectIP'), 'DragonConnect must retain the legacy physical identity during compatibility migration.');
+assert(['DragonConnectHelper','PersistentDirectConnectIP'].every((name)=>(registry.sources.dragonconnect.legacy_physical_names || []).includes(name)), 'DragonLink-Connect must retain both legacy physical identities during compatibility migration.');
 assert(registry.sources.runeschema.download_url || registry.sources.runeschema.bundled_fallback, 'RuneSchema needs a remote or bundled source.');
 assert(registry.sources.ue4ss.release_url || registry.sources.ue4ss.download_url, 'UE4SS needs an update source.');
 

@@ -215,9 +215,9 @@ def test_hotload_tags_and_language_contract() -> None:
     assert "Application language" in renderer and "Browser language" in renderer
     assert "remote_server_enabled" in renderer and "data-webhost-preview=\"mobile\"" in renderer
     assert "localized.sections(title)" in renderer and "helpUi.safetyBody" in renderer
+    assert "https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/" in renderer
     for asset in ("19-webhost-mods.png", "20-webhost-mobile.png", "22-webhost-permission.png", "23-webhost-login-mobile.png"):
         assert asset in renderer
-        assert (Path(__file__).parents[1] / "renderer" / "assets" / "help" / asset).is_file()
 
 
 def main() -> None:

@@ -208,7 +208,7 @@ def main() -> None:
     components = {row["id"]: row for row in payload["core_components"]}
     assert set(components) == {"ue4ss", "runeschema", "dragonconnect", "rsdw_toolkit"}
     assert components["runeschema"]["update_available"] is True
-    assert components["dragonconnect"]["legacy_name"] == "PersistentDirectConnectIP"
+    assert components["dragonconnect"]["legacy_name"] == "DragonConnectHelper"
     assert components["rsdw_toolkit"]["ui_group"] == "tooling"
 
     session = {
@@ -226,13 +226,11 @@ def main() -> None:
     result = host.remote_action(session, "start", {})
     assert result["legacy_remote"] is True and result["action"] == "start"
 
-    try:
-        host.remote_action(session, "core_update", {"component": "RSDW Toolkit"})
-    except ValueError as exc:
-        assert "authoritative remote update source" in str(exc)
-    else:
-        raise AssertionError("Unsupported tooling update must be rejected")
-    assert host.audit[-1]["ok"] is False
+    result = host.remote_action(session, "core_update", {"component": "RSDW Toolkit"})
+    assert result["verified"] is True
+    assert DISPATCHES[-1][0] == "server.install.rsdwdevkit_update"
+    assert DISPATCHES[-1][1] == {"id": "world-a"}
+    assert host.audit[-1]["ok"] is True
 
     denied = {**session, "permissions": {"update": False}}
     try:

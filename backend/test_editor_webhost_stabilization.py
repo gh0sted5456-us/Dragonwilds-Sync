@@ -99,6 +99,15 @@ def main() -> None:
     assert isinstance(page, bytes) and b"dws-fan-footer" in page
     assert b"Remote Server management is enabled, but this heartbeat does not yet advertise a usable public WebHost endpoint" in page
     assert b"Remote Server management is disabled on that World" in page
+    portal = directory_host.remote_admin_html()
+    assert b'data-tab="maintenance"' in portal
+    assert b"function renderMaintenance()" in portal
+    assert b"function workspaceSignature" in portal and b"load('changed')" in portal
+    assert b'/assets/platforms/ue4ss.svg' in portal
+    assert b'/assets/platforms/runeschema.svg' in portal
+    assert b"grid-template-rows:82px minmax(30px,auto) 16px" in portal
+    assert b"grid-template-columns:repeat(auto-fill,minmax(126px,1fr))" in portal
+    assert b"@media(max-width:1180px)" in portal
 
     host = directory_host.DirectoryHost()
     cfg = directory_host.default_host_config()
@@ -119,6 +128,13 @@ def main() -> None:
             assert b"dws-fan-footer" in body
         with urllib.request.urlopen(status["local_url"] + "/health", timeout=3.0) as response:
             assert response.status == 200
+            assert "https://raw.githubusercontent.com" in str(response.headers.get("Content-Security-Policy") or "")
+        for icon_name in ("ue4ss.svg", "runeschema.svg"):
+            with urllib.request.urlopen(status["local_url"] + "/assets/platforms/" + icon_name, timeout=3.0) as response:
+                assert response.status == 200
+                assert response.headers.get_content_type() == "image/svg+xml"
+                assert "max-age=604800" in str(response.headers.get("Cache-Control") or "")
+                assert response.read().lstrip().startswith(b"<svg")
     finally:
         host.stop()
 

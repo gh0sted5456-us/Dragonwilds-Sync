@@ -2,7 +2,7 @@
 
 A **World profile** is the presentation and runtime identity Dragonwilds Sync uses to keep the correct save, mods, configuration, connection information, artwork, and character association together.
 
-![Dragonwilds World Management](../renderer/assets/help/02-worlds.png) "Singleplayer, Co-Op, Dedicated, and connection roles share one Dragonwilds Appy."
+![Dragonwilds World Management](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/02-worlds.png) "Singleplayer, Co-Op, Dedicated, and connection roles share one Dragonwilds Appy."
 
 ## World views
 

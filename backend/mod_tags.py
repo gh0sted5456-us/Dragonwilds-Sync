@@ -446,6 +446,7 @@ def identity_from_mod_root(root: str | Path) -> dict | None:
               "links": list(canonical.get("links") or []), "mod_id": str(canonical.get("mod_id") or ""),
               "name": str(canonical.get("name") or ""), "version": str(canonical.get("version") or ""),
               "runtime_role": str(canonical.get("runtime_role") or "both")}
-    if not parsed["author"] and not parsed["description"] and not parsed["links"]:
+    if not any((parsed["author"], parsed["description"], parsed["links"], parsed["mod_id"],
+                parsed["name"], parsed["version"])) and parsed["runtime_role"] == "both":
         return None
     return parsed

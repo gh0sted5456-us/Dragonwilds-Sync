@@ -33,11 +33,15 @@ must(appV2.includes("api.invoke('world.discovery.add'") && appV2.includes("api.i
 must(legacyService.includes('Discovery is a read-only client operation') && !legacyService.includes('apply_firewall_spec(discovery_spec, action="Query")'), 'LAN scan must not elevate or mutate the Linux firewall');
 must(js.includes('Users & Permissions') && js.includes('application.world_directory_host.user.create'), 'Remote Server user/permission manifest is not surfaced in WebHost');
 must(appV2.includes("#toggle-webhost-remote-admin") && appV2.includes("application.advanced.settings',{remote_server_enabled:!enabled}"), 'Remote Server lifecycle is not owned by the primary renderer');
-must(directoryHost.indexOf('if not directory_enabled and remote_enabled:') < directoryHost.indexOf('if self._private_console_allowed(): page = _admin_console_html'), 'Remote-only root must resolve to login before local private-console authority');
-must(!appV2.includes("navButton('worlds'") && appV2.includes("'worlds'].includes(state.route)") && appV2.includes('data-webhost-tab="manifest"') &&
+must(directoryHost.indexOf('if remote_enabled:') < directoryHost.indexOf('if self._private_console_allowed(): page = _admin_console_html'), 'V3 WebGUI root must resolve to login before local private-console authority');
+must(!appV2.includes("navButton('worlds'") && appV2.includes("'worlds'].includes(state.route)") && appV2.includes("if (next === 'webhost' && state.route !== 'webhost') state.webhostTab = 'settings'") &&
   !appV2.includes('data-webhost-tab="home"') && !appV2.includes('SYNC_HOME_URL'),
-  'Public World discovery must live under Dragonwilds while Sync remains configuration-only');
-must(appV2.includes('Server Management') && appV2.includes("syncTab('settings','Website &amp; Directory')"), 'Server Management login and local Sync configuration are not separated');
+  'Public World discovery must live under Dragonwilds while Sync retains its configuration workspace');
+must(appV2.includes("syncTab('settings','Website &amp; Directory')") &&
+  appV2.includes("syncTab('manifest','Manifest &amp; Heartbeats')") &&
+  appV2.includes("syncTab('remote','Server Management')") &&
+  appV2.includes("syncTab('live','WebGUI Preview')"),
+  'Sync must expose configuration, heartbeat, Remote Server, and preview tabs');
 must(legacyService.includes('host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))') && !legacyService.includes('advanced["remote_server_enabled"] = True\n                advanced["remote_server_choice_made"] = True'), 'Webhost must not silently enable Remote Login');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');
 must(!web.includes('dws-router-password'), 'The routing hub must never collect a target server password');
@@ -52,6 +56,7 @@ must(spawner.includes('custom_items') && spawner.includes('"source": "dragonwild
 must(trash.includes('copy one logical launcher object into Trash') || trash.includes('Copy one logical launcher object into Trash'), 'Verified Trash move contract is missing');
 must(trashUi.includes('application.trash.restore') && trashUi.includes('application.trash.settings') && trashUi.includes('Empty Trash'), 'Trash restore/retention/empty controls are incomplete');
 must(trashUi.includes('dws-trash-dismissed') && trashUi.includes('lastRead') && trashUi.includes('setInterval'), 'Trash sticker must be dismissible and use throttled polling rather than mutation-driven repainting');
+must(trashUi.includes('__DWSYNC_OPEN_TRASH__') && appV2.includes("navButton('trash'"), 'Trash must be reachable from System navigation as its standalone native window');
 
 // The V2 shell relies on GitHub-managed content so docs/help/catalog changes do
 // not require another executable release.

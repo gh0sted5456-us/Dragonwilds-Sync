@@ -163,11 +163,16 @@ class FakeSupervisor:
 
     def stop(self, profile_id):
         self.calls.append(("stop_worker", profile_id))
+        old = self.game_pid
+        old_revision = self.applied_revision
         self.share_serving = False
         self.game_pid = None
         self.live = False
         self.applied_revision = None
-        return {"profileId": profile_id, "runtimeId": self.runtime_id, "state": "stopped", "live": False, "graceful": True}
+        return {"profileId": profile_id, "runtimeId": self.runtime_id, "state": "stopped", "live": False, "graceful": True,
+                "runtime": {"running": False, "stop_verified": True, "stopped_pid": old,
+                            "stop_method": "test-worker-graceful", "previousAppliedConfigRevision": old_revision,
+                            "share": {"serving": False}}}
 
 
 def install_enabled(manager, engine, share, supervisor, state=None):
@@ -229,10 +234,9 @@ def test_start_stop_through_authoritative_manager():
     stopped = manager.stop()
     assert stopped["verified_stopped"] is True
     assert stopped["broadcast_verified"] is True
-    stop_share = supervisor.calls.index(("stop_share", "world-a"))
-    stop_runtime = supervisor.calls.index(("stop_runtime", "world-a"))
-    stop_worker = supervisor.calls.index(("stop_worker", "world-a"))
-    assert stop_share < stop_runtime < stop_worker
+    assert supervisor.calls.count(("stop_worker", "world-a")) == 1
+    assert ("stop_share", "world-a") not in supervisor.calls
+    assert ("stop_runtime", "world-a") not in supervisor.calls
     assert share.serving is False
     assert supervisor.share_serving is False
     assert manager.get_status()["running"] is False
@@ -252,7 +256,8 @@ def test_restart_update_and_update_restart_keep_game_and_sync_lanes_coherent():
     restarted = manager.restart("world-cycle")
     assert restarted["pid"] == 4243
     names = [name for name, _profile in supervisor.calls]
-    assert names.index("stop_share") < names.index("stop_runtime") < names.index("stop_worker")
+    assert names.count("stop_worker") == 1
+    assert "stop_runtime" not in names
     assert names.index("stop_worker") < names.index("start_runtime") < names.index("start_share")
     assert manager.get_status()["processes"]["distinct_processes"] is True
 
@@ -356,7 +361,6 @@ def test_failed_start_cleans_worker_without_direct_fallback():
         pass
     else:
         raise AssertionError("synthetic post-launch IPC failure unexpectedly succeeded")
-    assert ("stop_runtime", "world-fail-after") in supervisor.calls
     assert ("stop_worker", "world-fail-after") in supervisor.calls
     assert supervisor.game_pid is None and supervisor.live is False and supervisor.share_serving is False
     assert engine.direct_start_calls == 0 and engine.direct_stop_calls == 0

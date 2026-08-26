@@ -81,6 +81,47 @@ def main():
         finally:
             sync_engine.CLIENT_WORLDS_DIR = old_worlds
             client_layout.LOCAL_APPDATA = old_local_appdata
+
+    # Force Complete Resync clears both tracked and orphaned World payloads,
+    # while preserving the client's loader/core and baked connector files.
+    with TemporaryDirectory() as tmp:
+        game = Path(tmp) / "RSDragonwilds"
+        (game / "Content" / "Paks").mkdir(parents=True)
+        (game / "Binaries" / "Win64").mkdir(parents=True)
+        layout = sync_engine.resolve_client_layout(game)
+        layout.win64_dir.joinpath("dwmapi.dll").write_bytes(b"loader")
+        layout.win64_dir.joinpath("ue4ss", "UE4SS.dll").parent.mkdir(parents=True)
+        layout.win64_dir.joinpath("ue4ss", "UE4SS.dll").write_bytes(b"ue4ss")
+        connector = layout.ue4ss_mods_dir / "DragonLink-Connect"
+        connector.mkdir(parents=True)
+        (connector / "enabled.txt").write_text("", encoding="utf-8")
+        rune_core = layout.runeschema_root / "dlls"
+        rune_core.mkdir(parents=True)
+        (rune_core / "main.dll").write_bytes(b"runeschema")
+        rune_child = layout.runeschema_mods_dir / "StaleRuneMod"
+        rune_child.mkdir(parents=True)
+        (rune_child / "content.json").write_text("{}", encoding="utf-8")
+        orphan = layout.ue4ss_mods_dir / "OrphanedMod"
+        orphan.mkdir(parents=True)
+        (orphan / "main.lua").write_text("stale", encoding="utf-8")
+        layout.paks_mods_dir.mkdir(parents=True)
+        (layout.paks_mods_dir / "stale.pak").write_bytes(b"pak")
+        tracked_config = game / "Managed" / "WorldSettings.ini"
+        tracked_config.parent.mkdir(parents=True)
+        tracked_config.write_text("stale=true", encoding="utf-8")
+        sync_engine.save_local_state(game, {"profile_id": "remote", "files": {
+            "Managed/WorldSettings.ini": {"kind": "file"},
+            "Binaries/Win64/dwmapi.dll": {"kind": "file"},
+        }})
+        reset = sync_engine.reset_client_managed_payload_for_resync(game)
+        assert reset["core_preserved"] and reset["removed_files"] >= 4
+        assert layout.win64_dir.joinpath("dwmapi.dll").is_file()
+        assert layout.win64_dir.joinpath("ue4ss", "UE4SS.dll").is_file()
+        assert (connector / "enabled.txt").is_file()
+        assert (rune_core / "main.dll").is_file()
+        assert not rune_child.exists() and not orphan.exists()
+        assert not layout.paks_mods_dir.exists() and not tracked_config.exists()
+        assert not (game / sync_engine.LOCAL_STATE_DIR / sync_engine.STATE_FILE).exists()
     print("sync safety tests passed")
 
 

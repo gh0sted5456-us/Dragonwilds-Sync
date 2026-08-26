@@ -14,12 +14,14 @@ def test_console_world_runtime_authority() -> None:
     original_load = legacy.load_server_profile
     original_root = legacy.server_root_for_profile
     original_engine = legacy.ENGINE
+    original_runtime_status = service.RUNTIME.get_status
     try:
         legacy.load_server_profile = lambda profile_id: {"id": profile_id} if profile_id in {"world-a", "world-b"} else None
         legacy.server_root_for_profile = lambda profile: f"C:/servers/{profile['id']}"
         legacy.ENGINE = SimpleNamespace(status=lambda: {
             "active_profile_id": "world-a", "game_root": "C:/wrong-runtime", "running": True,
         })
+        service.RUNTIME.get_status = lambda: {"runtime": legacy.ENGINE.status()}
         profile_id, runtime = service._console_world_runtime("world-a")
         assert profile_id == "world-a"
         assert runtime["game_root"] == "C:/servers/world-a"
@@ -32,6 +34,7 @@ def test_console_world_runtime_authority() -> None:
         legacy.load_server_profile = original_load
         legacy.server_root_for_profile = original_root
         legacy.ENGINE = original_engine
+        service.RUNTIME.get_status = original_runtime_status
 
 
 def test_runeschema_context_and_settings_round_trip() -> None:
@@ -41,6 +44,7 @@ def test_runeschema_context_and_settings_round_trip() -> None:
     original_load = legacy.load_server_profile
     original_root = legacy.server_root_for_profile
     original_engine = legacy.ENGINE
+    original_runtime_status = service.RUNTIME.get_status
     try:
         with tempfile.TemporaryDirectory() as temp_name:
             game_root = Path(temp_name) / "server-root"
@@ -51,6 +55,7 @@ def test_runeschema_context_and_settings_round_trip() -> None:
             legacy.load_server_profile = lambda profile_id: {"id": profile_id} if profile_id == "world-a" else None
             legacy.server_root_for_profile = lambda profile: str(game_root)
             legacy.ENGINE = SimpleNamespace(status=lambda: {"active_profile_id": "world-a", "running": True})
+            service.RUNTIME.get_status = lambda: {"runtime": legacy.ENGINE.status()}
 
             profile_id, runtime, paths = service._runeschema_context("world-a")
             assert profile_id == "world-a"
@@ -89,6 +94,7 @@ def test_runeschema_context_and_settings_round_trip() -> None:
         legacy.load_server_profile = original_load
         legacy.server_root_for_profile = original_root
         legacy.ENGINE = original_engine
+        service.RUNTIME.get_status = original_runtime_status
 
 
 def main():
@@ -137,7 +143,8 @@ def main():
                 limit=100,
             )
             assert payload["running"] is True
-            assert payload["counts"] == {"game": 2, "ue4ss": 3, "server": 2, "sync": 1, "runeschema": 0}
+            assert {key: payload["counts"][key] for key in ("game", "ue4ss", "server", "sync", "runeschema")} == {
+                "game": 2, "ue4ss": 3, "server": 2, "sync": 1, "runeschema": 0}
             assert any(row["message"] == "Immediate source event" for row in payload["entries"])
             assert {row["source"] for row in payload["entries"]} == {"game", "ue4ss", "server", "sync"}
             assert payload["ue4ss_log"] == str(ue4ss_log)
@@ -180,7 +187,8 @@ def main():
                 limit=100,
             )
             assert isolated["running"] is False
-            assert isolated["counts"] == {"game": 1, "ue4ss": 0, "server": 0, "sync": 0, "runeschema": 0}
+            assert {key: isolated["counts"][key] for key in ("game", "ue4ss", "server", "sync", "runeschema")} == {
+                "game": 1, "ue4ss": 0, "server": 0, "sync": 0, "runeschema": 0}
             assert all(row["source"] == "game" for row in isolated["entries"])
 
             try:

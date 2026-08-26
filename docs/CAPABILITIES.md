@@ -30,7 +30,7 @@ This is the current source-level capability contract for `testing-ground`. A cap
 ## Mods and runtime components
 
 - User mod families are UE4SS, RuneSchema, and PAK.
-- Core frameworks, DragonCore, DragonConnect, RSDW data, and runtime tooling are separately classified and cannot masquerade as ordinary user mods.
+- Core frameworks, DragonCore, DragonLink-Connect, RSDW data, and runtime tooling are separately classified and cannot masquerade as ordinary user mods.
 - Discovery, role classification, load order, `mods.txt`, tags, hotload declarations, `ID.txt`, install/update/move/remove, Explorer/editing, shared repository, and Nexus provenance/staging are supported.
 - Managed text mod files are editable within their selected root with JSON validation where applicable and atomic save behavior; unsupported binary payloads remain read-only.
 - Every user mod exposes a deterministic SHA-256 content hash. A real-time Monaco create/save/copy/delete refreshes only that mod's profile snapshot; sibling mods, World configuration, Character saves, and profile metadata are not rewritten.
@@ -41,7 +41,7 @@ This is the current source-level capability contract for `testing-ground`. A cap
 ## Sync, Direct Connect, and exchange
 
 - Hosted Worlds can publish authenticated manifests with aggregate, per-component, and per-mod fingerprints. A content-only edit changes the selected mod component while unchanged components remain transfer-free.
-- Clients authenticate, obtain a fresh manifest, stage downloads, verify hashes, materialize role-correct content, generate local control files, prove final parity, configure DragonConnect, and then become launch-ready.
+- Clients authenticate, obtain a fresh manifest, stage downloads, verify hashes, materialize role-correct content, generate local control files, prove final parity, configure DragonLink-Connect, and then become launch-ready.
 - Sync journals and verified handoff records support recovery without persisting credentials.
 - `.rsdwl` exchange supports bounded World, Character, identity, item-registry, and manifest data with path and checksum validation.
 
@@ -62,7 +62,7 @@ This is the current source-level capability contract for `testing-ground`. A cap
 ## Maintenance, security, and updates
 
 - Atomic JSON/profile writes, Windows replace retry, durable secret references, signing/verification, path-bounded imports, archive validation, SHA-256 integrity checks, access policies, and audit/notification paths are present.
-- Launcher, dedicated server, UE4SS, RuneSchema, DragonConnect, RSDW, and Community sources have explicit ownership and update status.
+- Launcher, dedicated server, UE4SS, RuneSchema, DragonLink-Connect, RSDW, and Community sources have explicit ownership and update status.
 - Backups and scheduled maintenance use conservative stop-first behavior unless a real live-save quiesce contract is proven.
 
 ## Package and platform boundaries

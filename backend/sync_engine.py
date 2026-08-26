@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
@@ -38,7 +39,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # with whatever was cached in that profile's snapshot -- silently
 # downgrading UE4SS's own runtime files back to whatever version existed
 # the last time that particular profile was snapshotted.
-LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
+LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"} | UE4SS_BAKED_IN_DEFAULT_MODS
 RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
 
 
@@ -170,6 +171,37 @@ def save_local_state(install_dir: Path, state: dict) -> None:
 
 def client_world_dir(world_id: str) -> Path:
     return CLIENT_WORLDS_DIR / world_id / "snapshot"
+
+
+def delete_client_world_profile(world_id: str) -> dict:
+    """Remove one connected-World cache without ever broadening the target.
+
+    The linked World record lives in launcher state, while its synchronized
+    payload and retained World-save copy live in APPDATA.  Deleting the
+    profile must retire both or a later link can accidentally resurrect stale
+    files from the old cache.
+    """
+    profile_id = str(world_id or "").strip()
+    if not profile_id or profile_id in {".", ".."} or any(sep in profile_id for sep in ("/", "\\")):
+        raise ValueError("A valid connected World profile ID is required")
+    removed: list[str] = []
+    roots = [CLIENT_WORLDS_DIR, APP_DATA_DIR / "connected_world_snapshots"]
+    for root in roots:
+        resolved_root = root.resolve()
+        target = (root / profile_id).resolve()
+        if resolved_root not in target.parents:
+            raise ValueError("Connected World cache path escaped APPDATA")
+        if target.exists():
+            _remove_launcher_managed_tree(target)
+            removed.append(str(target))
+    outgoing = APP_DATA_DIR / "outgoing_player_backups"
+    if outgoing.is_dir():
+        for candidate in outgoing.glob(f"{profile_id}-*.rsdwl"):
+            target = candidate.resolve()
+            if outgoing.resolve() in target.parents and target.is_file():
+                target.unlink(missing_ok=True)
+                removed.append(str(target))
+    return {"profile_id": profile_id, "removed": removed}
 
 
 def client_world_has_snapshot(world_id: str) -> bool:
@@ -554,6 +586,92 @@ def is_core_persistent_path(path: str) -> bool:
     return rest == "runeschema.zip" or (rest.startswith("runeschema/") and not rest.startswith("runeschema/mods/"))
 
 
+def is_baked_client_path(path: str) -> bool:
+    """Return whether a managed path belongs to machine-level client runtime.
+
+    Force Complete Resync is intentionally destructive to World-owned payloads,
+    but it must never remove UE4SS's loader files, RuneSchema core, or launcher
+    baseline connectors such as DragonLink-Connect.
+    """
+    lower = str(path or "").lower().replace("\\", "/").lstrip("/")
+    if is_core_persistent_path(lower):
+        return True
+    marker = "binaries/win64/ue4ss/mods/"
+    if marker not in lower:
+        return False
+    rest = lower.split(marker, 1)[1]
+    top = rest.split("/", 1)[0]
+    return top in LAUNCHER_LOCAL_UE4SS_MODS
+
+
+def reset_client_managed_payload_for_resync(selected_root: Path) -> dict:
+    """Clear World-owned client payloads while preserving baked runtimes.
+
+    This is the explicit repair path for orphaned/stale files. It clears both
+    the prior manifest ledger and discoverable profile mod locations so files
+    omitted by a broken/old ledger cannot survive the resync.
+    """
+    layout = resolve_client_layout(selected_root)
+    game_root = layout.game_root
+    local_state = load_local_state(game_root)
+    removed_files = 0
+
+    # First remove every previously managed non-baked file, including managed
+    # configuration targets outside the conventional mod directories.
+    for relative, info in list((local_state.get("files") or {}).items()):
+        if bool((info or {}).get("baked_component")) or is_baked_client_path(relative):
+            continue
+        if (info or {}).get("kind") == "zip_bundle":
+            extract_to = str((info or {}).get("extract_to") or "")
+            if not extract_to or is_baked_client_path(extract_to):
+                continue
+            target = safe_game_path(game_root, extract_to)
+            if target.is_dir():
+                removed_files += sum(1 for item in target.rglob("*") if item.is_file())
+                _remove_launcher_managed_tree(target)
+            elif target.is_file():
+                _set_managed_readonly(target, False)
+                target.unlink(missing_ok=True)
+                removed_files += 1
+            continue
+        target = target_for_state(selected_root, relative, info or {})
+        if target.is_file():
+            _set_managed_readonly(target, False)
+            target.unlink(missing_ok=True)
+            removed_files += 1
+
+    # Clear orphaned UE4SS mods, but retain machine-level baseline components.
+    if layout.ue4ss_mods_dir.is_dir():
+        for child in list(layout.ue4ss_mods_dir.iterdir()):
+            name = child.name.casefold()
+            if name == "runeschema":
+                for rune_mods in (child / "Mods", child / "mods"):
+                    if rune_mods.exists():
+                        removed_files += sum(1 for item in rune_mods.rglob("*") if item.is_file())
+                        _remove_launcher_managed_tree(rune_mods)
+                continue
+            if name in LAUNCHER_LOCAL_UE4SS_MODS:
+                continue
+            removed_files += sum(1 for item in child.rglob("*") if item.is_file()) if child.is_dir() else 1
+            if child.is_dir():
+                _remove_launcher_managed_tree(child)
+            else:
+                _set_managed_readonly(child, False)
+                child.unlink(missing_ok=True)
+
+    if layout.paks_mods_dir.exists():
+        removed_files += sum(1 for item in layout.paks_mods_dir.rglob("*") if item.is_file())
+        _remove_launcher_managed_tree(layout.paks_mods_dir)
+
+    state_root = game_root / LOCAL_STATE_DIR
+    (state_root / STATE_FILE).unlink(missing_ok=True)
+    (state_root / META_FILE).unlink(missing_ok=True)
+    downloads = state_root / "downloads"
+    if downloads.exists():
+        _remove_launcher_managed_tree(downloads)
+    return {"removed_files": removed_files, "core_preserved": True}
+
+
 def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "") -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".partial")
@@ -575,6 +693,7 @@ def download_entry(base_url: str, token: str, entry: dict, destination: Path, cl
                     digest.update(chunk)
         headers = {"Authorization": f"Bearer {token}"}
         if client_platform: headers["X-DWS-Client-Platform"] = client_platform
+        headers["X-DWS-File-SHA256"] = expected_hash
         if offset: headers["Range"] = f"bytes={offset}-"
         if not (expected_size and offset == expected_size):
             response = request(f"{base_url}/files/{quote(entry['path'], safe='/')}", headers=headers, timeout=60.0)
@@ -653,8 +772,8 @@ def _entry_materialized(install_dir: Path, game_root: Path, entry: dict) -> bool
         return False
 
 
-def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persistent: bool = False,
-               client_runtime: dict | None = None, progress=None) -> dict:
+def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_persistent: bool = False,
+                     client_runtime: dict | None = None, progress=None, force_complete: bool = False) -> dict:
     """Authenticate, exchange manifests, delta-sync, verify, then return launch-ready.
 
     Every invocation deliberately fetches a fresh authenticated server manifest.
@@ -684,6 +803,12 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
     # protects against an older/misconfigured host returning tagged entries.
     manifest["files"] = [entry for entry in (manifest.get("files") or [])
                          if isinstance(entry, dict) and entry_allowed_for_platform(entry, client_platform)]
+
+    force_reset = None
+    if force_complete:
+        emit("resetting", "Removing stale World-owned files while preserving baked runtimes", 15,
+             total_files=len(manifest.get("files") or []))
+        force_reset = reset_client_managed_payload_for_resync(install_dir)
 
     remote_fingerprint = manifest_fingerprint(manifest)
     remote_components = component_fingerprints(manifest)
@@ -766,6 +891,20 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
             destination = safe_game_path(game_root, extract_to) if extract_to else game_root
             emit("unpacking", f"Unpacking {entry['path']}", min(72, transfer_percent + 2), current_file=entry["path"],
                  current=index, changed_files=len(to_download), unchanged_files=len(up_to_date))
+            # A changed bundle is authoritative.  Extracting over the old tree
+            # leaves removed DLL/config payloads behind and can make the client
+            # differ even after every newly advertised file was downloaded.
+            # Move the old tree into the launcher's recoverable rollback area,
+            # then materialize the verified server bundle into a clean folder.
+            if destination.exists() and destination != game_root:
+                rollback = game_root / LOCAL_STATE_DIR / "rollback" / str(int(time.time() * 1000)) / Path(extract_to)
+                rollback.parent.mkdir(parents=True, exist_ok=True)
+                try:
+                    os.replace(destination, rollback)
+                except OSError:
+                    shutil.copytree(destination, rollback, dirs_exist_ok=True)
+                    shutil.rmtree(destination, ignore_errors=True)
+            destination.mkdir(parents=True, exist_ok=True)
             safe_extract_zip(temp, destination)
             temp.unlink(missing_ok=True)
         else:
@@ -812,7 +951,8 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
     for entry in manifest.get("files", []):
         info = {"sha256": entry.get("sha256"), "category": entry.get("category"),
                 "target_scope": entry.get("target_scope") or "game", "target_path": entry.get("target_path") or "",
-                "component": component_key(entry)}
+                "component": component_key(entry), "baked_component": bool(entry.get("baked_component")),
+                "baseline_runtime": bool(entry.get("baseline_runtime")), "visibility": entry.get("visibility") or ""}
         if entry.get("kind") == "zip_bundle":
             info.update({"kind": "zip_bundle", "extract_to": entry.get("extract_to", "")})
         new_files[entry["path"]] = info
@@ -827,7 +967,17 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
         client_id, {"ping_ms": round(ping_ms, 1)}, client_runtime=client_runtime,
         client_platform=client_platform)
     if report.get("status") != "match":
-        raise ConnectionError("Sync completed locally, but the server did not confirm a manifest match. Launch is blocked.")
+        missing = [str(path) for path in (report.get("missing") or [])]
+        mismatched = [str(path) for path in (report.get("mismatched") or [])]
+        extra = [str(path) for path in (report.get("extra") or [])]
+        reasons = []
+        if missing: reasons.append(f"missing on client: {', '.join(missing[:8])}")
+        if mismatched: reasons.append(f"wrong SHA-256: {', '.join(mismatched[:8])}")
+        if extra: reasons.append(f"unexpected managed files: {', '.join(extra[:8])}")
+        detail = "; ".join(reasons) or str(report.get("reason") or report.get("error") or "the host returned an unspecified mismatch")
+        raise ConnectionError(
+            f"The host rejected the final file manifest: {detail}. "
+            "No game launch occurred; Reset & Resync will remove World-owned stale files and retry.")
 
     meta = build_client_meta(manifest)
     save_local_state(game_root, {
@@ -868,6 +1018,15 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
         "downloaded": len(to_download),
         "downloaded_bytes": total_download_bytes,
         "changed_files": [entry.get("path") for entry in to_download],
+        "downloaded_files": [{
+            "path": str(entry.get("path") or ""),
+            "size": max(0, int(entry.get("size") or 0)),
+            "sha256": str(entry.get("sha256") or ""),
+            "runtime_type": component_key(entry),
+            "category": str(entry.get("category") or ""),
+            "target_scope": str(entry.get("target_scope") or "game"),
+            "baked_component": bool(entry.get("baked_component")),
+        } for entry in to_download],
         "unchanged_files": list(up_to_date),
         "removed": len(to_remove),
         "up_to_date": len(up_to_date),
@@ -876,7 +1035,44 @@ def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persist
             "reviews": security_reviews,
             "skipped_count": sum(1 for r in security_reviews if r.get("skipped")),
         },
+        "force_complete": bool(force_complete),
+        "force_reset": force_reset or {},
     }
+
+
+def sync_world(world: dict, install_dir: Path, client_id: str, keep_core_persistent: bool = False,
+               client_runtime: dict | None = None, progress=None, force_complete: bool = False) -> dict:
+    """Run a resilient sync against a moving host publication.
+
+    A host may republish while a client is transferring.  Older hosts rebuild
+    their live staging tree in place, which can briefly return HTTP 404 for a
+    file from the manifest the client just received.  Re-authenticate and run
+    the comparison once more; already verified files become the fast path and
+    only the missing/new generation is transferred.
+    """
+    last_error: Exception | None = None
+    for attempt in range(4):
+        try:
+            return _sync_world_once(
+                world, install_dir, client_id,
+                keep_core_persistent=keep_core_persistent,
+                client_runtime=client_runtime,
+                progress=progress,
+                force_complete=force_complete,
+            )
+        except ConnectionError as exc:
+            last_error = exc
+            if "HTTP 404" not in str(exc) or attempt >= 3:
+                raise
+            if progress:
+                progress({
+                    "phase": "reconnecting",
+                    "message": "The host republished during transfer; refreshing its manifest and resuming",
+                    "percent": 18,
+                    "retry": attempt + 1,
+                })
+            time.sleep(0.2 * (2 ** attempt))
+    raise last_error or ConnectionError("World Sync transfer failed.")
 
 
 
@@ -944,17 +1140,59 @@ def write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
     return {"ok": True, "path": str(target), "writer": "client_generate", "enabled": selected, "count": len(selected)}
 
 
+_GAME_LAUNCH_LOCK = threading.Lock()
+_LAST_GAME_LAUNCH = {"at": 0.0, "pid": 0}
+
+
+def _retail_game_executable(exe_path: Path) -> Path:
+    """Prefer the retail Steam/EOS bootstrap; keep shipping as a last fallback."""
+    layout = resolve_client_layout(exe_path)
+    candidates = (
+        layout.install_root / "RSDragonwilds.exe",
+        layout.game_root / "RSDragonwilds.exe",
+        exe_path,
+        layout.win64_dir / "RSDragonwilds-Win64-Shipping.exe",
+    )
+    return next((candidate for candidate in candidates if candidate.is_file()), exe_path)
+
+
+def _running_game_pid() -> int:
+    try:
+        import psutil  # type: ignore
+        wanted = {"rsdragonwilds-win64-shipping.exe", "rsdragonwilds.exe"}
+        for process in psutil.process_iter(["pid", "name"]):
+            if str((process.info or {}).get("name") or "").casefold() in wanted:
+                return int((process.info or {}).get("pid") or 0)
+    except Exception:
+        pass
+    return 0
+
+
 def launch_game(exe_path: Path) -> int:
+    exe_path = _retail_game_executable(exe_path)
     if not exe_path.exists():
         raise ConnectionError(f"Dragonwilds executable not found: {exe_path}")
-    if sys.platform.startswith("linux"):
-        # Dragonwilds is currently delivered as a Windows Steam title. Linux
-        # launchers prepare the selected Proton prefix, then ask the desktop's
-        # Steam client to launch the authoritative app instead of trying to
-        # execute the PE file directly.
-        app_id = str(os.environ.get("DRAGONWILDS_STEAM_APP_ID") or "1374490").strip()
-        opener = str(os.environ.get("DRAGONWILDS_SYNC_URI_OPENER") or "xdg-open").strip()
-        proc = popen_hidden([opener, f"steam://rungameid/{app_id}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return int(proc.pid)
-    proc = popen_hidden([str(exe_path)], cwd=str(exe_path.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    return int(proc.pid)
+    with _GAME_LAUNCH_LOCK:
+        now = time.monotonic()
+        # Renderer retries and double-clicks must converge on one handoff. Keep
+        # the cooldown even when Steam's short-lived bootstrap PID exits before
+        # the shipping process becomes visible.
+        if now - float(_LAST_GAME_LAUNCH.get("at") or 0) < 30:
+            return int(_LAST_GAME_LAUNCH.get("pid") or 0)
+        running = _running_game_pid()
+        if running:
+            _LAST_GAME_LAUNCH.update({"at": now, "pid": running})
+            return running
+        if sys.platform.startswith("linux"):
+            # Dragonwilds is currently delivered as a Windows Steam title. Linux
+            # launchers prepare the selected Proton prefix, then ask the desktop's
+            # Steam client to launch the authoritative app instead of trying to
+            # execute the PE file directly.
+            app_id = str(os.environ.get("DRAGONWILDS_STEAM_APP_ID") or "1374490").strip()
+            opener = str(os.environ.get("DRAGONWILDS_SYNC_URI_OPENER") or "xdg-open").strip()
+            proc = popen_hidden([opener, f"steam://rungameid/{app_id}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            proc = popen_hidden([str(exe_path)], cwd=str(exe_path.parent), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        pid = int(proc.pid)
+        _LAST_GAME_LAUNCH.update({"at": now, "pid": pid})
+        return pid

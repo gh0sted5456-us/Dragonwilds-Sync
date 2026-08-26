@@ -238,20 +238,36 @@ def _rsdw_worker_params(state: dict, *, force: bool = False) -> dict:
     }
 
 
-def _finish_rsdw_refresh(state: dict, result: dict, *, notification_key: str = "rsdw-cache") -> dict:
+def _finish_rsdw_refresh(state: dict, result: dict, *, notification_key: str = "rsdw-cache",
+                         runtime_target: str = "data") -> dict:
+    target = str(runtime_target or "data").strip().lower()
+    if target not in {"data", "client", "server", "both"}:
+        raise ValueError("RSDW runtime target must be data, client, server, or both.")
     deployments = []
-    game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
-    if game_dir and Path(game_dir).exists():
-        deployments.append(_legacy.ensure_rsdwtools_baseline(resolve_client_layout(game_dir).ue4ss_mods_dir))
-    for profile in _legacy.list_server_profiles():
-        root = _legacy.server_root_for_profile(profile)
-        if root and Path(root).exists():
-            deployments.append(_legacy.ensure_rsdwtools_baseline(_legacy.resolve_server_layout(root).ue4ss_mods_dir))
+    if target in {"client", "both"}:
+        game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+        if not game_dir:
+            raise ValueError("Set Settings → Application → Dragonwilds game folder before installing RSDW for Client.")
+        deployments.append({**_legacy.ensure_rsdwtools_baseline(
+            resolve_client_layout(game_dir).ue4ss_mods_dir, force=True), "target": "client"})
+    if target in {"server", "both"}:
+        roots = []
+        configured = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
+        if configured:
+            roots.append(configured)
+        roots.extend(str(_legacy.server_root_for_profile(profile) or "").strip()
+                     for profile in _legacy.list_server_profiles())
+        roots = list(dict.fromkeys(root for root in roots if root and Path(root).exists()))
+        if not roots:
+            raise ValueError("Set Settings → Server → Server Directory before installing RSDW for Server.")
+        for root in roots:
+            deployments.append({**_legacy.ensure_rsdwtools_baseline(
+                _legacy.resolve_server_layout(root).ue4ss_mods_dir, force=True), "target": "server"})
     result["runtime_deployments"] = deployments
     _legacy._record_notification(
         state,
-        "RSDWTools and icon cache refreshed",
-        f"{result.get('data_file_count', 0)} data files · {result.get('icon_count', 0)} icons · {sum(1 for row in deployments if row.get('ok'))} runtime target(s)",
+        "RSDW data and server Dev Kit refreshed",
+        f"{result.get('data_file_count', 0)} data files · {result.get('icon_count', 0)} icons · {sum(1 for row in deployments if row.get('ok'))} selected runtime target(s)",
         "success",
         key=notification_key,
     )
@@ -378,7 +394,7 @@ def handle(method: str, params: dict) -> object:
         }, owner=method)
     if method == "application.rsdw.refresh":
         result = _feature_workers().execute("mod-library", "rsdw.refresh", _rsdw_worker_params(state, force=bool(params.get("force", False))), owner=method)
-        return _finish_rsdw_refresh(state, result)
+        return _finish_rsdw_refresh(state, result, runtime_target=str(params.get("runtime_target") or "data"))
     if method == "application.rsdw.maybe":
         cfg = (state.get("application") or {}).get("rsdw_cache") or {}
         if cfg.get("auto_refresh") is False:

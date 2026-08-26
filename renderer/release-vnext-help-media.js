@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const HELP_BASE = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/help/';
+  const HELP_BASE = 'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/';
 
   const safeHelpImage = (value) => {
     try {

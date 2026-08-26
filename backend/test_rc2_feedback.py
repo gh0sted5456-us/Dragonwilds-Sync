@@ -16,7 +16,8 @@ def main():
     assert '"remote_admin": {"enabled": False' in profile
     assert '"communities": []' in profile
     assert 'DELETED_SAVES_PATH' in local and '_write_deleted_save_tombstones' in local
-    assert 'ensure_rsdwtools_baseline(layout.ue4ss_mods_dir)' in systems
+    assert 'ensure_rsdwtools_baseline(layout.ue4ss_mods_dir, allow_update=auto_rsdwtools)' in systems
+    assert 'RSDW_DEVKIT_RELEASES_URL = "https://github.com/RSDWArchive/RSDWDevKit/releases"' in systems
     assert 'lower in {"mods.txt", "rsdwtools"}' in systems
     assert 'Defender integration retired in RC2' in systems
     for name in ('discord','nexus','windows','linux'):

@@ -87,7 +87,7 @@ if (fs.existsSync(migrationPath)) {
   const text = fs.readFileSync(migrationPath, 'utf8');
   for (const track of [
     'World Management', 'Single-Player', 'Co-Op', 'Dedicated Servers', 'Profiles', 'World Saves', 'Characters',
-    'UE4SS', 'RuneSchema', 'Pak Mods', 'DragonConnect', 'RSDWTools', 'RSDW DevKit',
+    'UE4SS', 'RuneSchema', 'Pak Mods', 'DragonLink-Connect', 'RSDWTools', 'RSDW DevKit',
     'Mod Manager', 'Explorer', 'Mod Editing', 'Item Editor', 'Spawner', 'Console', 'Console Commands',
     'Broadcast Messages', 'Heartbeat', 'Direct Connect', 'WebGUI', 'Community', 'Notifications', 'Updates',
     'Settings', 'Online Settings', 'Performance Settings', 'World Export', 'Character Export', 'Import', '.rsdwl',

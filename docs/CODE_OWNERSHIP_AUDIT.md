@@ -14,7 +14,7 @@ The stale part was the ownership model: shared feature workers were assigned to 
 | Classification | Current examples | Rule |
 |---|---|---|
 | Live runtime | `electron/bootstrap.cjs` → `electron/main.cjs` → `electron/main-v2.cjs`; `electron/preload-v2.cjs`; `renderer/index.html`/`app.js`/`app-v2.js`; `backend/dragonwilds_service.py` | Must be reachable from a packaged or source entrypoint. |
-| Build-assembled | `website/placards.*`, `placard-enhancements.*`, `home-demo.css`, `download-flip.*`, `top-flow.*`, `server-build.js`; `packaged_stdio_guard.py`; `web_release_polish_hook.py` | Must be referenced by Pages or PyInstaller assembly even when no runtime import exists in source form. |
+| Migration snapshots / build hooks | Website-only fragments remain temporarily for parity with the separate `Dragonwilds-Sync-Web` repository but are neither deployed nor packaged here; `packaged_stdio_guard.py` and `web_release_polish_hook.py` remain PyInstaller-owned. | Website deployment authority now belongs exclusively to the separate website repository. |
 | Compatibility-retained | `electron/preload.cjs`, `backend/dragonwilds_service_v2_wrapper.py`, `backend/dragonwilds_service_legacy.py`, `backend/directory_web_legacy.py` | Not presented as a second live implementation; retained only where a current wrapper or historical regression lane names it. |
 | Diagnostic/operator-only | `feature.worker.list/prepare/status/acquire/release/stop/execute` | Not called by ordinary renderer navigation; remains an allowlisted Core supervision surface and must stay explicit. |
 

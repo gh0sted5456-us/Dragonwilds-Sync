@@ -173,6 +173,8 @@ def test_detect_variant_prefers_log_line_over_config_shape():
     # No log at all -> falls back to config shape.
     experimental_shape = rt.detect_variant({}, config_raw='{"tooling": {"enabled": true}}')
     assert experimental_shape == {"variant": "experimental", "version": "", "source": "config_shape"}
+    modern_shape = rt.detect_variant({}, config_raw='{"identityOverrides":{"enabled":true},"spawnSafety":{"maxScale":10},"tooling":{"schemaTypes":{"assets":true}}}')
+    assert modern_shape == {"variant": "experimental", "version": "0.6.3 Experimental", "source": "config_shape"}
     github_shape = rt.detect_variant({}, config_raw='{"enableAutoReload": true}')
     assert github_shape == {"variant": "github", "version": "0.6.0", "source": "config_shape"}
     unknown = rt.detect_variant({}, config_raw="")

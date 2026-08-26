@@ -46,12 +46,14 @@ const renderer = need('renderer/release-v3-phase4.js', [
   'heartbeatMarkup', 'Partial', 'data-v3p4-animation-settings', '__DWSYNC_V3_PHASE4__',
   "closest('[data-v3p4-toggle]')", 'applyPlacardArtwork', '--world-placard',
   "card?.dataset?.placardBackground || currentMatch?.[1] || '1'",
-  "assets/platforms/ue4ss.png", "assets/platforms/runeschema.png", 'data-v3p4-mod-family',
+  "assets/platforms/ue4ss.webp", "assets/platforms/runeschema.webp", 'data-v3p4-mod-family',
   'openModsPopup', 'closeModPopup:closeModsPopup', 'No loaded ${esc(family)} mods are recorded for this profile.', "event.key==='Escape'"
   , 'requestProfileModInventory', "'server.world.inventory'", "'singleplayer.inventory'", 'rescan:false',
-  "row.section || ''", "['Pak','UE4SS','RuneSchema']", 'refreshModIndicators', 'Date.now()-current.at<120000'
+  "row.section || ''", "['Pak','UE4SS','RuneSchema']", 'refreshModIndicators', 'Date.now()-current.at<120000',
+  'const cardSides = new WeakMap()', 'cardSides.get(card)', 'cardSides.set(card,next)'
 ]);
 if (/const card=event\.target\.closest\('\.v3p4-placard,\.app-world-placard'\)/.test(renderer)) failures.push('Placards must flip only from explicit front/back controls');
+if (/sides\.(?:get|set)\(id/.test(renderer)) failures.push('Placard face state must be card-local, not shared by World id');
 const rendererFolded = renderer.toLowerCase();
 for (const coreMod of ['dragonconnect']) {
   if (!rendererFolded.includes(coreMod)) failures.push(`renderer/release-v3-phase4.js: missing hidden-core-mod guard for ${coreMod}`);

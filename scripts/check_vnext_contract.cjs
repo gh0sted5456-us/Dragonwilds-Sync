@@ -13,7 +13,7 @@ const helpMedia = read('renderer/release-vnext-help-media.js');
 const helpMediaCss = read('renderer/release-vnext-help-media.css');
 const helpyPage = read('website/helpy.html');
 const helpyScript = read('website/helpy.js');
-const pagesWorkflow = read('.github/workflows/pages.yml');
+const packageConfig = JSON.parse(read('package.json'));
 const web = read('backend/directory_web.py');
 const legacy = read('backend/directory_web_legacy.py');
 const manifest = JSON.parse(read('help/manifest.json'));
@@ -28,7 +28,7 @@ must(helpMedia.includes('raw.githubusercontent.com') && helpMedia.includes('dws-
 must(helpMediaCss.includes('.dws-help-figure') && helpMediaCss.includes('object-fit:contain'), 'Live Help image layout contract is missing');
 must(helpyPage.includes('helpy.js') && helpyPage.includes('help/manifest.json'), 'Website Helpy route must identify the shared JSON source');
 must(helpyScript.includes('manifest.json') && helpyScript.includes('page.sections'), 'Website Helpy must render structured manifest content');
-must(pagesWorkflow.includes('cp -R help _site/help') && pagesWorkflow.includes('renderer/assets/help _site/assets/help'), 'GitHub Pages must publish Helpy JSON and screenshots');
+must(packageConfig.build.files.includes('!renderer/assets/help/**/*'), 'Application packages must leave website-owned Helpy screenshots out of the desktop bundle');
 must(vnext.includes('helpy-website-shell') && index.includes('gh0sted5456-us.github.io'), 'Desktop Helpy must prefer the published website route');
 must(manifest.schema === 'DragonwildsSync.Help.v1' && Array.isArray(manifest.pages) && manifest.pages.length >= 5, 'Help manifest schema/pages invalid');
 for (const page of manifest.pages) {

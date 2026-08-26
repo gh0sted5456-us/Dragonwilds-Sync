@@ -196,13 +196,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp resources/DragonConnectHelper-baseline.zip release-assets/DragonConnectHelper-baseline.zip
+          cp resources/DragonLink-Connect-baseline.zip release-assets/DragonLink-Connect-baseline.zip
           cp resources/RuneSchema-core-latest.zip release-assets/RuneSchema-core-latest.zip
           cp resources/RuneSchema-experimental-latest.zip release-assets/RuneSchema-experimental-latest.zip
           cp resources/DragonwildsServerRuntime/UE4SS-core-latest.zip release-assets/UE4SS-core-latest.zip
           cp resources/DragonwildsServerRuntime/UE4SS-settings.ini release-assets/UE4SS-settings.ini
           sha256sum \
-            release-assets/DragonConnectHelper-baseline.zip \
+            release-assets/DragonLink-Connect-baseline.zip \
             release-assets/RuneSchema-core-latest.zip \
             release-assets/RuneSchema-experimental-latest.zip \
             release-assets/UE4SS-core-latest.zip \
@@ -233,7 +233,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             release-assets/*.exe \
             release-assets/*.AppImage \
-            release-assets/DragonConnectHelper-baseline.zip \
+            release-assets/DragonLink-Connect-baseline.zip \
             release-assets/RuneSchema-core-latest.zip \
             release-assets/RuneSchema-experimental-latest.zip \
             release-assets/UE4SS-core-latest.zip \

@@ -7,17 +7,22 @@ const css = fs.readFileSync(path.join(root, 'renderer/public-server-list.css'), 
 const failures = [];
 
 for (const token of [
-  "https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/",
+  "https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/servers.html",
   'const PAGE_SIZE = 50',
   'filtered.slice(pageStart, pageStart + PAGE_SIZE)',
   'renderPagination(filtered.length)',
   'currentPage = 1',
   'dws-public-server-pagination',
+  "document.querySelector('#dws-public-server-list-mount')",
+  'if (world.isSync)',
 ]) {
   if (!js.includes(token)) failures.push(`renderer/public-server-list.js: missing ${token}`);
 }
 if (js.includes('public-worlds-fallback.json')) {
   failures.push('renderer/public-server-list.js: retired website snapshot fallback must not return');
+}
+for (const retired of ['dws-public-server-tab', 'dws-public-server-link', "closest('[data-world-tab]')"]) {
+  if (js.includes(retired)) failures.push(`renderer/public-server-list.js: retired Connected Worlds integration remains: ${retired}`);
 }
 if (!css.includes('.dws-public-server-pagination[hidden]{display:none}')) {
   failures.push('renderer/public-server-list.css: pagination hidden-state contract is missing');

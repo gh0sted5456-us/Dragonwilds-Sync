@@ -33,7 +33,7 @@ requireText('renderer/app.js', ['v3Quick', 'app-v2.js']);
 requireText('renderer/release-v3-phase2.js', [
   'Create Quick Shortcut', 'Open Quick + Start', 'Open Full Dragonwilds Sync', 'View Mods',
   'Broadcast Message', 'quick.console.execute', 'Participate in Dragonwilds Sync Network',
-  'Broadcast this World publicly',
+  'Broadcast this World publicly', '[data-application-settings-tab="network"].active',
 ]);
 requireText('renderer/quick.html', ['release-v3-phase2.css', 'release-v3-phase2.js', 'v3-quick-body']);
 

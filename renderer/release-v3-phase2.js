@@ -261,7 +261,10 @@
   async function enhanceNetworkSettings() {
     if (quickEnabled) return;
     const content=[...document.querySelectorAll('.content')].find((node)=>/settings/i.test(node.querySelector('h1')?.textContent||''));
-    if(!content || content.querySelector('[data-v3-network-settings]'))return;
+    if(!content)return;
+    const networkActive=!!content.querySelector('[data-application-settings-tab="network"].active');
+    if(!networkActive){content.querySelector('[data-v3-network-settings]')?.remove();return;}
+    if(content.querySelector('[data-v3-network-settings]'))return;
     const header=content.querySelector('.page-header'); if(!header)return;
     const panel=document.createElement('section'); panel.className='v3q-full-network-card'; panel.dataset.v3NetworkSettings='1';
     panel.innerHTML='<div><small>DRAGONWILDS SYNC NETWORK</small><b>Network participation</b><span>Anonymous application presence is separate from each World\'s public broadcast setting.</span></div><label><input type="checkbox" disabled/><span>Participate in Dragonwilds Sync Network</span></label><em>Loading…</em>';

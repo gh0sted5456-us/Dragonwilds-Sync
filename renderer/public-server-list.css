@@ -1,21 +1,12 @@
-/* Website-backed Public Server List for the desktop application. */
-.dws-public-server-tab{position:relative}
-.dws-public-server-panel{display:none;margin:14px 0 0;padding:14px;border:1px solid var(--border,#2b3134);border-radius:14px;background:var(--panel,#111516)}
-.dws-public-server-mode .dws-public-server-panel{display:block}
-.dws-public-server-mode>.world-browser-toolbar,
-.dws-public-server-mode>.world-selector-filters,
-.dws-public-server-mode>.manifest-workspace,
-.dws-public-server-mode>.advanced-strip,
-.dws-public-server-mode>section.world-grid,
-.dws-public-server-mode>section.world-list,
-.dws-public-server-mode>nav.world-pagination{display:none!important}
+/* Official Public Server List workspace for the desktop application. */
+.dws-public-server-panel{display:block;margin:14px 0 0;padding:14px;border:1px solid var(--border,#2b3134);border-radius:14px;background:var(--panel,#111516)}
 .dws-public-server-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:12px}
 .dws-public-server-head h2{margin:2px 0 4px;font-size:18px}
 .dws-public-server-head p{margin:0;color:var(--muted,#88918f);font-size:10px;line-height:1.5;max-width:760px}
 .dws-public-server-status{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid var(--border,#303638);border-radius:999px;color:var(--muted,#9aa19e);font-size:9px;font-weight:800;white-space:nowrap}
 .dws-public-server-status.ok{color:#85d6a6;border-color:rgba(78,180,116,.35);background:rgba(78,180,116,.08)}
 .dws-public-server-status.error{color:#e79a95;border-color:rgba(215,98,89,.35);background:rgba(215,98,89,.08)}
-.dws-public-server-controls{display:grid;grid-template-columns:minmax(260px,1.4fr) auto minmax(180px,.8fr) auto;gap:8px;align-items:end;margin-bottom:10px}
+.dws-public-server-controls{display:grid;grid-template-columns:auto minmax(260px,1fr) auto;gap:8px;align-items:end;margin-bottom:10px}
 .dws-public-server-controls label{display:grid;gap:4px}
 .dws-public-server-controls label>small{color:var(--muted,#8b9491);font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .dws-public-server-controls input{min-height:38px}

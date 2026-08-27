@@ -1,10 +1,9 @@
-/* Website-backed Public Server List tab for Dragonwilds Sync desktop.
+/* Official Public Server List workspace for Dragonwilds Sync desktop.
    Discovery-only: this consumes the same merged Cloudflare response as the
    website and never imports admin credentials, World passwords, or authority. */
 (() => {
-  const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/';
+  const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/servers.html';
   const API_URL = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds';
-  const LINK_KEY = 'dragonwilds-sync-public-server-list-link';
   const VIEW_KEY = 'dragonwilds-sync-public-server-list-view';
   const REFRESH_MS = 30000;
   const PAGE_SIZE = 50;
@@ -13,7 +12,6 @@
   let rows = [];
   let lastLoadedAt = 0;
   let refreshTimer = null;
-  let activeContent = null;
   let currentPage = 1;
 
   const text = (value, fallback = '') => {
@@ -33,7 +31,7 @@
 
   function resolveFeed(raw) {
     const value = text(raw);
-    if (!value) throw new Error('Paste the Public Server Directory webpage link first.');
+    if (!value) throw new Error('The official Public Server Directory link is unavailable.');
     let url;
     try { url = new URL(value); } catch (_) { throw new Error('The Public Server List link is not a valid URL.'); }
     if (url.protocol !== 'https:') throw new Error('Public Server List links must use HTTPS.');
@@ -153,7 +151,7 @@
       detail.appendChild(make('div', 'dws-public-server-route', world.host
         ? `Public route: ${world.host}${world.port ? `:${world.port}` : ''}`
         : world.isSync ? 'Sync metadata published; public route not exposed.' : 'Public source does not expose a direct route.'));
-      if (world.isSync && world.host) {
+      if (world.isSync) {
         const connect = make('button', 'btn primary', 'Connect');
         connect.type = 'button';
         connect.addEventListener('click', () => {
@@ -204,14 +202,11 @@
 
   async function loadDirectory({ force = false } = {}) {
     const root = panel();
-    const input = root?.querySelector('#dws-public-server-link');
-    if (!root || !input) return;
+    if (!root) return;
 
-    const pageLink = text(input.value, PAGE_LINK);
     let endpoint;
-    try { endpoint = resolveFeed(pageLink); }
+    try { endpoint = resolveFeed(PAGE_LINK); }
     catch (error) { setStatus(error.message || String(error), 'error'); return; }
-    localStorage.setItem(LINK_KEY, pageLink);
 
     if (!force && rows.length && Date.now() - lastLoadedAt < 5000) { renderRows(); return; }
     setStatus('Loading public servers…');
@@ -241,53 +236,25 @@
     refreshTimer = null;
   }
 
-  function deactivate() {
-    active = false;
-    activeContent?.classList.remove('dws-public-server-mode');
-    activeContent = null;
-    document.querySelector('.dws-public-server-tab')?.classList.remove('active');
-    stopRefreshTimer();
-  }
-
-  function applyActiveState({ load = true } = {}) {
-    const tabs = document.querySelector('.world-source-tabs');
-    const root = panel();
-    const content = tabs?.closest('.content');
-    if (!tabs || !root || !content) return;
-    active = true;
-    activeContent = content;
-    tabs.querySelectorAll('button').forEach((button) => button.classList.remove('active'));
-    tabs.querySelector('.dws-public-server-tab')?.classList.add('active');
-    content.classList.add('dws-public-server-mode');
-    if (load) loadDirectory({ force: !rows.length });
-    renderRows();
-    if (!refreshTimer) refreshTimer = setInterval(() => { if (active) loadDirectory({ force: true }); }, REFRESH_MS);
-  }
-
   function buildPanel() {
     const root = make('section', 'dws-public-server-panel');
     root.innerHTML = `
       <div class="dws-public-server-head">
-        <div><div class="eyebrow">Website-backed discovery</div><h2>Public Server List</h2><p>Paste the Dragonwilds Sync Public Server Directory webpage link. The application resolves it to the same read-only, deduplicated Cloudflare feed used by the website. Sync Worlds win strong duplicate matches; ordinary public servers remain limited discovery records.</p></div>
+        <div><div class="eyebrow">Official signed directory</div><h2>Public Server List</h2><p>This read-only list uses the same deduplicated Cloudflare directory as the website. Connect hands a World identifier to Dragonwilds Sync's verified login and synchronization dialog; passwords are never carried in the link.</p></div>
         <span class="dws-public-server-status" id="dws-public-server-status">Not loaded</span>
       </div>
       <div class="dws-public-server-controls">
-        <label><small>Public directory webpage or feed</small><input class="field" id="dws-public-server-link" type="url" spellcheck="false" /></label>
-        <button class="btn primary" id="dws-public-server-load" type="button">Load Public Servers</button>
+        <button class="btn primary" id="dws-public-server-load" type="button">Refresh Public Servers</button>
         <label class="dws-public-search-wrap"><small>Search loaded servers</small><input class="field" id="dws-public-server-search" type="search" placeholder="World name, IP address, region, build…" /></label>
         <div class="dws-public-view-toggle" role="group" aria-label="Public Server List view"><button type="button" data-dws-public-view="cards">▦ Placards</button><button type="button" data-dws-public-view="horizontal">☰ Horizontal</button></div>
       </div>
       <div class="dws-public-server-summary" id="dws-public-server-summary"></div>
-      <div class="dws-public-server-results" id="dws-public-server-results"><div class="dws-public-empty">Paste or keep the default website link, then load the Public Server List.</div></div>
+      <div class="dws-public-server-results" id="dws-public-server-results"><div class="dws-public-empty">Loading the official Public Server List…</div></div>
       <nav class="dws-public-server-pagination" id="dws-public-server-pagination" aria-label="Public server result pages" hidden></nav>
       <div class="muted-small" style="margin-top:9px">Resolved read-only endpoint: <span id="dws-public-server-endpoint">—</span> · refreshes every 30 seconds while this tab is open.</div>`;
 
-    const input = root.querySelector('#dws-public-server-link');
-    input.value = localStorage.getItem(LINK_KEY) || PAGE_LINK;
     root.querySelector('#dws-public-server-load')?.addEventListener('click', () => loadDirectory({ force: true }));
     root.querySelector('#dws-public-server-search')?.addEventListener('input', () => { currentPage = 1; renderRows(); });
-    input.addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); loadDirectory({ force: true }); } });
-    input.addEventListener('paste', () => setTimeout(() => loadDirectory({ force: true }), 60));
     root.querySelectorAll('[data-dws-public-view]').forEach((button) => button.addEventListener('click', () => {
       localStorage.setItem(VIEW_KEY, button.dataset.dwsPublicView === 'cards' ? 'cards' : 'horizontal');
       renderRows();
@@ -296,24 +263,14 @@
   }
 
   function ensure() {
-    const tabs = document.querySelector('.world-source-tabs');
-    if (!tabs) { if (active) deactivate(); return; }
-
-    if (!tabs.querySelector('.dws-public-server-tab')) {
-      const button = make('button', 'dws-public-server-tab');
-      button.type = 'button';
-      button.append(make('strong', '', 'Public Server List'), make('span', '', 'Website-backed combined public directory'));
-      button.addEventListener('click', () => applyActiveState({ load: true }));
-      tabs.appendChild(button);
-    }
-    if (!document.querySelector('.dws-public-server-panel')) tabs.insertAdjacentElement('afterend', buildPanel());
-
-    if (active && tabs.closest('.content') !== activeContent) applyActiveState({ load: false });
+    const mount = document.querySelector('#dws-public-server-list-mount');
+    if (!mount) { active = false; stopRefreshTimer(); return; }
+    if (!mount.querySelector('.dws-public-server-panel')) mount.appendChild(buildPanel());
+    active = true;
+    if (!rows.length) loadDirectory({ force: true });
+    else renderRows();
+    if (!refreshTimer) refreshTimer = setInterval(() => { if (active) loadDirectory({ force: true }); }, REFRESH_MS);
   }
-
-  document.addEventListener('click', (event) => {
-    if (event.target.closest('[data-world-tab]')) deactivate();
-  }, true);
 
   const observer = new MutationObserver((mutations) => {
     const relevant = mutations.some((mutation) => {

@@ -6,6 +6,7 @@ on:
     paths:
       - 'backend/world_directory.py'
       - 'backend/test_cloudflare_directory_publication.py'
+      - 'backend/test_world_directory_v3_heartbeat.py'
       - 'renderer/public-server-list.js'
       - 'renderer/public-server-list.css'
       - 'renderer/index.html'
@@ -42,6 +43,9 @@ jobs:
       - name: Check launcher-signed publication client
         working-directory: backend
         run: python test_cloudflare_directory_publication.py
+      - name: Check V3 directory authorization regressions
+        working-directory: backend
+        run: python test_world_directory_v3_heartbeat.py
       - name: Type-check Cloudflare entry
         working-directory: cloudflare/world-directory
         run: |

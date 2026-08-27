@@ -33,6 +33,7 @@ import persistent_direct_connect
 import profile_store
 import sync_engine
 from secret_store import REFERENCE_PREFIX, SecretStore
+from world_identity import normalize_endpoint
 
 
 SYNC_SCHEMA = "DragonwildsSync.SyncJournal.v1"
@@ -337,6 +338,28 @@ def _safe_direct_connect(value: object) -> dict:
     }
 
 
+def _manifest_game_endpoint(manifest: dict, route: str = "") -> str:
+    """Resolve the advertised game endpoint without depending on config write success.
+
+    Sync authentication already validated this manifest.  Retaining its game
+    route in the verification journal prevents the Play gate from requiring a
+    second discovery/profile hydration pass merely because DragonLink's first
+    config write did not yet have a saved client route.
+    """
+    connection = manifest.get("connection") if isinstance(manifest.get("connection"), dict) else {}
+    preferred = str(route or "").strip().casefold()
+    keys = ("internal_ip", "external_ip") if preferred == "internal" else ("external_ip", "internal_ip")
+    advertised = next((str(connection.get(key) or "").strip() for key in keys if str(connection.get(key) or "").strip()), "")
+    if not advertised:
+        return ""
+    try:
+        port = max(1, min(int(connection.get("game_port") or 7777), 65535))
+    except (TypeError, ValueError):
+        port = 7777
+    endpoint = normalize_endpoint(advertised, port)
+    return endpoint.authority if endpoint else ""
+
+
 def _complete_sync(world_id: str, operation: str, response: dict) -> dict:
     doc = _journal_doc()
     active = doc.get("active") if isinstance(doc.get("active"), dict) else {}
@@ -357,7 +380,7 @@ def _complete_sync(world_id: str, operation: str, response: dict) -> dict:
         "manifest_fingerprint": str(result.get("manifest_fingerprint") or ""),
         "remote_profile_id": str(manifest.get("profile_id") or ""),
         "sync_endpoint": str(result.get("endpoint") or ""),
-        "game_endpoint": direct.get("address") or "",
+        "game_endpoint": direct.get("address") or _manifest_game_endpoint(manifest, str(result.get("route") or "")),
         "route": str(result.get("route") or ""),
         "downloaded": int(result.get("downloaded") or 0),
         "removed": int(result.get("removed") or 0),

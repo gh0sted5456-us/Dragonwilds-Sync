@@ -29,6 +29,14 @@ type HeartbeatPayload = {
   banner_b64?: string;
   icon_url?: string;
   banner_url?: string;
+  classification?: Record<string, unknown>;
+  pvp_enabled?: boolean;
+  fingerprint?: string;
+  protocol?: string;
+  protocol_version?: number;
+  sync_tls?: boolean;
+  tls_cert_fingerprint?: string;
+  game_port?: number;
 };
 
 const encoder = new TextEncoder();
@@ -176,6 +184,19 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
     server_cl_status: cleanText(game.server_cl_status, 24).toLowerCase(),
     icon_url: iconUrl,
     banner_url: bannerUrl,
+    classification: input.classification && typeof input.classification === "object" ? {
+      content_type: cleanText(input.classification.content_type, 32).toLowerCase(),
+      game_mode: cleanText(input.classification.game_mode, 32).toLowerCase(),
+      host_type: cleanText(input.classification.host_type, 32).toLowerCase(),
+      visibility: cleanText(input.classification.visibility, 32).toLowerCase(),
+      pvp_enabled: input.classification.pvp_enabled === true || input.pvp_enabled === true,
+    } : { pvp_enabled: input.pvp_enabled === true },
+    sync_fingerprint: cleanText(input.fingerprint, 100),
+    protocol: cleanText(input.protocol, 64) || "dragonwilds-world-sync",
+    protocol_version: clampInt(input.protocol_version, 1, 1, 1000),
+    sync_tls: input.sync_tls === true,
+    tls_cert_fingerprint: cleanText(input.tls_cert_fingerprint, 64).toLowerCase(),
+    game_port: clampInt(input.game_port, 7777, 1, 65535),
   };
 }
 
@@ -506,6 +527,8 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     server_cl_status: metadata.server_cl_status || "unknown",
     icon_url: metadata.icon_url || "",
     banner_url: metadata.banner_url || "",
+    classification: metadata.classification || { host_type: "dedicated", visibility: "public" },
+    pvp_enabled: (metadata.classification as Record<string, unknown> | undefined)?.pvp_enabled === true,
     public_connect: row.public_connect_host
       ? {
           host: row.public_connect_host,
@@ -515,10 +538,13 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     external_ip: row.public_connect_host || "",
     internal_ip: "",
     sync_port: row.public_connect_port ? Number(row.public_connect_port) : 27051,
-    game_port: 7777,
-    fingerprint: row.world_id,
-    fingerprint_claimed: row.world_id,
-    protocol: "dragonwilds-world-sync",
+    game_port: Number(metadata.game_port || 7777),
+    fingerprint: metadata.sync_fingerprint || row.world_id,
+    fingerprint_claimed: metadata.sync_fingerprint || row.world_id,
+    protocol: metadata.protocol || "dragonwilds-world-sync",
+    protocol_version: Number(metadata.protocol_version || 1),
+    sync_tls: metadata.sync_tls === true,
+    tls_cert_fingerprint: metadata.tls_cert_fingerprint || "",
     sync_protocol: "dragonwilds-world-sync",
     sync_ready: true,
     last_seen: lastSeen,
@@ -527,10 +553,9 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     directory_source: "dragonwilds-sync",
     is_sync_world: true,
     host_type: "dedicated",
-    classification: {
-      host_type: "dedicated",
-      visibility: "public",
-    },
+    directory_verified: true,
+    heartbeat_authenticated: true,
+    directory_verified_at: lastSeen,
     sources: [{ id: "dragonwilds-sync", label: "Dragonwilds Sync signed heartbeat" }],
   };
 }

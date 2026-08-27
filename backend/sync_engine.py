@@ -685,7 +685,7 @@ def reset_client_managed_payload_for_resync(selected_root: Path) -> dict:
     return {"removed_files": removed_files, "core_preserved": True}
 
 
-def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "") -> None:
+def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "", progress=None) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     partial = destination.with_name(destination.name + ".partial")
     expected_size = max(0, int(entry.get("size") or 0))
@@ -697,6 +697,7 @@ def download_entry(base_url: str, token: str, entry: dict, destination: Path, cl
     # the completed payload still needs the manifest SHA-256 before promotion.
     for attempt in range(2):
         offset = partial.stat().st_size if partial.exists() else 0
+        last_progress_at = 0.0
         digest = hashlib.sha256()
         if offset:
             with partial.open("rb") as existing:
@@ -718,6 +719,12 @@ def download_entry(base_url: str, token: str, entry: dict, destination: Path, cl
                     chunk = response.read(1024 * 1024)
                     if not chunk: break
                     digest.update(chunk); out.write(chunk)
+                    if progress:
+                        now = time.monotonic()
+                        current_size = out.tell()
+                        if now - last_progress_at >= 0.25 or (expected_size and current_size >= expected_size):
+                            progress(current_size, expected_size)
+                            last_progress_at = now
         actual = digest.hexdigest()
         size_ok = not expected_size or partial.stat().st_size == expected_size
         if size_ok and actual == expected_hash:
@@ -903,9 +910,21 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         transfer_percent = 22 + (44 * (index - 1) / max(1, len(to_download)))
         emit("downloading", f"Downloading {entry['path']}", transfer_percent, current_file=entry["path"],
              current=index, changed_files=len(to_download), unchanged_files=len(up_to_date), downloaded_bytes=downloaded_bytes, total_bytes=total_download_bytes)
+        def transfer_progress(current_file_bytes: int, expected_file_bytes: int) -> None:
+            if total_download_bytes:
+                fraction = min(1.0, (downloaded_bytes + max(0, current_file_bytes)) / total_download_bytes)
+                percent = 22 + 50 * fraction
+            else:
+                fraction = min(1.0, max(0, current_file_bytes) / max(1, expected_file_bytes))
+                percent = transfer_percent + (50 / max(1, len(to_download))) * fraction
+            emit("downloading", f"Downloading {entry['path']}", percent,
+                 current_file=entry["path"], current=index, changed_files=len(to_download),
+                 unchanged_files=len(up_to_date), downloaded_bytes=downloaded_bytes + max(0, current_file_bytes),
+                 current_file_bytes=max(0, current_file_bytes), current_file_total=max(0, expected_file_bytes),
+                 total_bytes=total_download_bytes)
         if entry.get("kind", "file") == "zip_bundle":
             temp = game_root / LOCAL_STATE_DIR / "downloads" / (Path(entry["path"]).name + ".download")
-            download_entry(base_url, token, entry, temp, client_platform)
+            download_entry(base_url, token, entry, temp, client_platform, transfer_progress)
             review_download(temp, entry["path"])
             extract_to = str(entry.get("extract_to") or "")
             destination = safe_game_path(game_root, extract_to) if extract_to else game_root
@@ -930,7 +949,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         else:
             target = target_for_entry(install_dir, entry)
             staged = target.with_name(target.name + ".download")
-            download_entry(base_url, token, entry, staged, client_platform)
+            download_entry(base_url, token, entry, staged, client_platform, transfer_progress)
             review_download(staged, entry["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():

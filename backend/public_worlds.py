@@ -382,7 +382,9 @@ def _sync_directory_world(entry: dict) -> dict:
     fingerprint = str(entry.get("fingerprint") or "")
     claimed = str(entry.get("fingerprint_claimed") or "")
     world_id = "sync-" + hashlib.sha256((fingerprint or claimed).encode("utf-8")).hexdigest()[:20]
-    verified = bool(entry.get("verified") and fingerprint)
+    route_verified = bool(entry.get("verified") and fingerprint)
+    directory_verified = bool(entry.get("directory_verified"))
+    verified = bool(route_verified or directory_verified)
     remote = entry.get("status") if isinstance(entry.get("status"), dict) else {}
     host_type = str(entry.get("host_type") or "dedicated")
     classification = normalize_world_classification(entry.get("classification"), tags=entry.get("tags") or remote.get("tags") or [],
@@ -396,23 +398,24 @@ def _sync_directory_world(entry: dict) -> dict:
         "identity": {"world_name": name, "external_ip": str(entry.get("external_ip") or ""), "server_profile_id_hint": str(remote.get("profile_id") or "")},
         "connection": {"external_ip": str(entry.get("external_ip") or ""), "internal_ip": str(entry.get("internal_ip") or ""), "sync_port": int(entry.get("sync_port") or 27051), "game_port": int(entry.get("game_port") or 7777), "preference": "automatic"},
         "credentials": {"password": "", "server_key": "", "share_access_key": "", "source": "sync-heartbeat-directory", "remember": False},
-        "presentation": {"description": str(entry.get("description") or "Dragonwilds Sync heartbeat World"), "tags": tags, "game_tags": [], "sync_tags": tags, "mod_badges": list(entry.get("mod_badges") or ["VANILLA"]), "icon_b64": "", "banner_b64": "",
+        "presentation": {"description": str(entry.get("description") or "Dragonwilds Sync heartbeat World"), "tags": tags, "game_tags": [], "sync_tags": tags, "mod_badges": list(entry.get("mod_badges") or ["VANILLA"]), "icon_b64": str(entry.get("icon_b64") or ""), "banner_b64": str(entry.get("banner_b64") or ""),
                          "platform_compatibility": dict(entry.get("platform_compatibility") or {"pc": True}),
                          "rating_average": float(remote.get("rating_average") or entry.get("rating_average") or 0), "rating_count": int(remote.get("rating_count") or entry.get("rating_count") or 0)},
         "mod_metadata": list(entry.get("mod_summary") or entry.get("mods") or remote.get("mod_summary") or remote.get("mods") or []),
         "classification": classification,
         "platform_compatibility": dict(entry.get("platform_compatibility") or {"pc": True}),
         "audience": str(entry.get("audience") or remote.get("audience") or "general"),
-        "status": {"online": (str(entry.get("public_status") or "online") != "offline") if verified else None, "player_count": entry.get("player_count") or remote.get("player_count"), "max_players": entry.get("max_players") or remote.get("max_players"), "ping_ms": entry.get("ping_ms"), "last_checked_at": time.time(), "last_error": "" if verified else "Heartbeat cached; fingerprint probe did not respond."},
+        "status": {"online": (str(entry.get("public_status") or "online") != "offline") if directory_verified else (True if route_verified else None), "player_count": entry.get("player_count") or remote.get("player_count"), "max_players": entry.get("max_players") or remote.get("max_players"), "ping_ms": entry.get("ping_ms"), "last_checked_at": time.time(), "last_error": "" if route_verified else ("Online heartbeat received; this client's direct Sync route did not respond." if directory_verified else "Heartbeat cached; fingerprint probe did not respond.")},
         "community": remote.get("community") if isinstance(remote.get("community"), dict) else {},
         "manifest_cache": {"mod_badges": list(entry.get("mod_badges") or remote.get("mod_badges") or ["VANILLA"]),
                            "mod_summary": list(entry.get("mod_summary") or entry.get("mods") or remote.get("mod_summary") or remote.get("mods") or [])},
-        "shared": {"source": "sync-heartbeat-directory", "curated": False, "fingerprint": fingerprint, "fingerprint_claimed": claimed, "fingerprint_verified": verified,
+        "shared": {"source": "sync-heartbeat-directory", "curated": False, "fingerprint": fingerprint or claimed, "fingerprint_claimed": claimed, "fingerprint_verified": route_verified,
+                   "directory_verified": directory_verified, "route_verified": route_verified,
                    "operator_verified": bool(entry.get("operator_verified")), "operator_fingerprint": str(entry.get("operator_fingerprint") or ""),
                    "operator_identity": entry.get("operator_identity") if isinstance(entry.get("operator_identity"), dict) else {},
                    "operator_identity_error": str(entry.get("operator_identity_error") or ""),
                    "shared_character_count": int(entry.get("shared_character_count") or 0)},
-        "public_discovery": {"provider": "dragonwilds-sync-heartbeat", "official": False, "session_api": "sync-directory", "fingerprint_probe": "verified" if verified else "unavailable", "host_type": host_type,
+        "public_discovery": {"provider": "dragonwilds-sync-heartbeat", "official": directory_verified, "session_api": "sync-directory", "fingerprint_probe": "verified" if route_verified else "unavailable", "host_type": host_type,
                              "directory_sources": list(entry.get("directory_sources") or [])},
     }
 

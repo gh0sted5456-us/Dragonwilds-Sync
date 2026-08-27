@@ -9,11 +9,13 @@ available while V3 adds new presentation and publication contracts.
 """
 
 import time
+import urllib.parse
 from pathlib import Path
 
 import dragonwilds_service_v2_wrapper as _base
 from dragonwilds_service_v2_wrapper import *  # noqa: F401,F403
 from network_service import DirectoryNetworkService
+from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 from profile_store import APP_DATA_DIR
 import profile_settings as _profile_settings
 from server_scheduler import normalize_notice
@@ -40,7 +42,9 @@ def _custom_sources() -> list[dict]:
     state = _legacy.load_state()
     cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
     try:
-        return _legacy._directory_sources(cfg)
+        official_host = (urllib.parse.urlparse(DRAGONWILDS_SYNC_NETWORK_URL).hostname or "").casefold()
+        return [row for row in _legacy._directory_sources(cfg)
+                if (urllib.parse.urlparse(str(row.get("url") or "")).hostname or "").casefold() != official_host]
     except Exception:
         return []
 
@@ -332,7 +336,7 @@ def handle(method: str, params: dict) -> object:
         # Keep the established local/custom-directory heartbeat and add the
         # official network from the same active SHARE payload. Failure in either
         # destination family is isolated and never becomes a server-stop cause.
-        legacy_result = _base_handle(method, params)
+        legacy_result = _base._heartbeat(_legacy.load_state(), exclude_official=True)
         profile_id = str(_legacy.STATE.active_profile_id or "")
         if not profile_id or not _legacy.SHARE.status().get("serving"):
             NETWORK.world_stopped(reason="share_not_serving")

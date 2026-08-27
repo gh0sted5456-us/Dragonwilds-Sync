@@ -3,6 +3,19 @@
   "updated_at": "2026-08-26T00:00:00Z",
   "releases": [
     {
+      "version": "3.0.3",
+      "title": "World Presence & Review Reliability",
+      "date": "2026-08-26",
+      "status": "testing",
+      "highlights": [
+        "Signed Cloudflare heartbeats report World liveness separately from the connecting client's direct Sync-route test.",
+        "World profiles support Normal, Hard, and Creative modes plus PVP, with best-effort World-save detection.",
+        "Complete runtime, mod, platform, route, and classification metadata hydrates World previews.",
+        "Firewall setup verifies every installed game, Sync, discovery, WebGUI, and remote-management rule.",
+        "Native review windows accept continuous typing and submit the complete review to the correct Connected World."
+      ]
+    },
+    {
       "version": "3.0.2",
       "title": "Quick Start & Preview Reliability",
       "date": "2026-08-26",

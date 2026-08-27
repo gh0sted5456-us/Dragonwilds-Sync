@@ -5,7 +5,7 @@
   "compatibility_date": "2026-08-18",
   "workers_dev": true,
   "vars": {
-    "OFFLINE_AFTER_SECONDS": "1800",
+    "OFFLINE_AFTER_SECONDS": "180",
     "REGISTRATION_RETENTION_DAYS": "30",
     "HISTORY_RETENTION_DAYS": "7"
   },

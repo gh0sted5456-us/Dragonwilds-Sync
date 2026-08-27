@@ -25,7 +25,7 @@ _PROBE_CURSOR = 0
 PROBE_CACHE_TTL_SECONDS = 75.0
 PROBE_BUDGET_PER_REFRESH = 8
 PROTOCOL = "dragonwilds-world-sync"
-FINGERPRINT_RE = re.compile(r"^dws1-[0-9a-f]{24}$", re.I)
+FINGERPRINT_RE = re.compile(r"^(?:dws1-[0-9a-f]{24}|dws-world-[0-9a-f]{16,64})$", re.I)
 DEFAULT_TTL_SECONDS = 300
 OFFICIAL_DIRECTORY_HOST = urllib.parse.urlparse(DRAGONWILDS_SYNC_NETWORK_URL).hostname or ""
 
@@ -88,10 +88,11 @@ def _write_local(entries: list[dict]) -> None:
 def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
     if not isinstance(row, dict):
         return None
-    protocol = str(row.get("protocol") or row.get("sync_protocol") or ((row.get("world_sync") or {}).get("protocol") if isinstance(row.get("world_sync"), dict) else "") or "")
-    fingerprint = str(row.get("fingerprint") or row.get("fingerprint_claimed") or ((row.get("world_sync") or {}).get("fingerprint") if isinstance(row.get("world_sync"), dict) else "") or "")
+    protocol = str(row.get("protocol") or row.get("sync_protocol") or ((row.get("world_sync") or {}).get("protocol") if isinstance(row.get("world_sync"), dict) else "") or (PROTOCOL if row.get("is_sync_world") else ""))
+    fingerprint = str(row.get("fingerprint") or row.get("fingerprint_claimed") or row.get("world_id") or ((row.get("world_sync") or {}).get("fingerprint") if isinstance(row.get("world_sync"), dict) else "") or "")
     name = str(row.get("world_name") or row.get("name") or row.get("profile_name") or "").strip()[:120]
-    external_ip = str(row.get("external_ip") or "").strip()
+    public_connect = row.get("public_connect") if isinstance(row.get("public_connect"), dict) else {}
+    external_ip = str(row.get("external_ip") or public_connect.get("host") or "").strip()
     internal_ip = str(row.get("internal_ip") or row.get("ip") or "").strip()
     if protocol != PROTOCOL or not FINGERPRINT_RE.fullmatch(fingerprint) or not name or not (external_ip or internal_ip):
         return None
@@ -123,7 +124,7 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "world_name": name, "server_name": str(row.get("server_name") or name).strip()[:120],
         "description": str(row.get("description") or "").strip()[:300],
         "external_ip": external_ip, "internal_ip": internal_ip,
-        "sync_port": max(1, min(int(row.get("sync_port") or row.get("port") or 27051), 65535)),
+        "sync_port": max(1, min(int(row.get("sync_port") or public_connect.get("port") or row.get("port") or 27051), 65535)),
         "game_port": max(1, min(int(row.get("game_port") or 7777), 65535)),
         "sync_tls": bool(row.get("sync_tls")),
         "tls_cert_fingerprint": re.sub(r"[^0-9a-f]", "", str(row.get("tls_cert_fingerprint") or "").lower())[:64],
@@ -131,7 +132,7 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "protocol": protocol, "protocol_version": int(row.get("protocol_version") or 1),
         "fingerprint_claimed": fingerprint, "host_type": host_type,
         **host_meta, "server_os_badge": server_os_badge(host_meta),
-        "mod_badges": [str(value)[:32] for value in (row.get("mod_badges") or [])[:12]],
+        "mod_badges": [str(value)[:32] for value in (row.get("mod_badges") or row.get("mods") or [])[:12] if not isinstance(value, dict)],
         "mod_summary": [{key: value for key in ("key", "name", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count")
                          if (value := item.get(key)) not in (None, "")}
                         for item in (row.get("mod_summary") or row.get("mods") or []) if isinstance(item, dict)],
@@ -146,9 +147,12 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "sync_tags": [str(value).strip()[:40] for value in (row.get("sync_tags") or row.get("tags") or [])[:24] if str(value).strip()],
         "classification": normalize_world_classification(row.get("classification"), tags=row.get("tags") or [],
                                                             mod_badges=row.get("mod_badges") or [], host_type=host_type),
+        "icon_b64": str(row.get("icon_b64") or row.get("icon_url") or "")[:65536],
+        "banner_b64": str(row.get("banner_b64") or row.get("banner_url") or "")[:131072],
         "shared_character_count": max(0, min(int(row.get("shared_character_count") or 0), 100)),
         "last_seen": seen, "expires_at": seen + ttl, "source": source,
-        "directory_verified": bool(row.get("directory_verified")),
+        "directory_verified": bool(row.get("directory_verified") or row.get("heartbeat_authenticated")),
+        "heartbeat_authenticated": bool(row.get("heartbeat_authenticated")),
         "directory_verified_at": row.get("directory_verified_at"),
         "operator_identity": row.get("operator_identity") if isinstance(row.get("operator_identity"), dict) else {},
         "operator_fingerprint": signed_identity.get("operator_fingerprint") if operator_verified else "",
@@ -309,7 +313,11 @@ def _fetch_remote(directory_url: str, timeout: float) -> list[dict]:
     url = _directory_base_url(original)
     if not url:
         return []
-    endpoint = original if urllib.parse.urlparse(original).path.rstrip("/").casefold().endswith(("/worlds", "/manifest", "/api/worlds")) else url + "/worlds"
+    parsed = urllib.parse.urlparse(url)
+    is_official = bool(parsed.hostname and parsed.hostname.casefold() == OFFICIAL_DIRECTORY_HOST.casefold())
+    endpoint = (url + "/api/v1/worlds") if is_official else (
+        original if urllib.parse.urlparse(original).path.rstrip("/").casefold().endswith(("/worlds", "/manifest", "/api/worlds", "/api/v1/worlds")) else url + "/worlds"
+    )
     request = urllib.request.Request(endpoint, headers={"Accept": "application/json", "User-Agent": "DragonwildsSync/1.0"})
     with urllib.request.urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read(1_000_000).decode("utf-8"))
@@ -366,8 +374,15 @@ def discover_sync_worlds(*, directory_url: str = "", directory_sources: list[dic
                 try:
                     values = [normalize_heartbeat(row, source=f"directory:{source_cfg['id']}") for row in future.result()]
                     values = [row for row in values if row]
+                    source_host = (urllib.parse.urlparse(source_cfg["url"]).hostname or "").casefold()
+                    official_source = bool(source_host and source_host == OFFICIAL_DIRECTORY_HOST.casefold())
                     for row in values:
                         row["directory_source"] = {"id": source_cfg["id"], "name": source_cfg["name"], "url": source_cfg["url"]}
+                        # Only the official signed directory may elevate its
+                        # accepted publisher heartbeat into an authenticated
+                        # liveness signal. Direct route verification remains a
+                        # separate client-side probe.
+                        row["directory_verified"] = bool(official_source and row.get("heartbeat_authenticated"))
                     remote.extend(values)
                     source_results.append({"id": source_cfg["id"], "name": source_cfg["name"], "url": source_cfg["url"], "ok": True, "count": len(values), "error": ""})
                 except Exception as exc:

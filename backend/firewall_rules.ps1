@@ -33,6 +33,10 @@ if ($Action -ne 'Query' -and -not (Test-Administrator)) {
 
 $existing = @(Get-NetFirewallRule -Group $Group -DisplayName $DisplayName -ErrorAction SilentlyContinue)
 if ($Action -eq 'Query') {
+    if ($existing.Count -eq 0) {
+        Write-Error 'Owned firewall rule was not found.'
+        exit 4
+    }
     $existing | ForEach-Object {
         $port = $_ | Get-NetFirewallPortFilter
         $address = $_ | Get-NetFirewallAddressFilter
@@ -80,8 +84,24 @@ $existing | Remove-NetFirewallRule
 $parameters = @{
     DisplayName=$DisplayName; Group=$Group; Direction=$Direction; Action='Allow'; Enabled='True';
     Profile=$profileValue; Protocol=$Protocol; LocalPort=$LocalPort;
-    LocalAddress='Any'; RemoteAddress=$RemoteAddress
+    LocalAddress='Any'; RemoteAddress=$RemoteAddress; EdgeTraversalPolicy='Block'; InterfaceType='Any'
 }
 if ($programValue -ne 'Any') { $parameters.Program = $programValue }
 New-NetFirewallRule @parameters | Out-Null
-Write-Output 'Owned firewall rule created or repaired.'
+$installed = @(Get-NetFirewallRule -Group $Group -DisplayName $DisplayName -ErrorAction Stop)
+if ($installed.Count -ne 1) { throw 'Firewall rule repair did not produce exactly one owned rule.' }
+$installedPort = $installed[0] | Get-NetFirewallPortFilter
+$installedAddress = $installed[0] | Get-NetFirewallAddressFilter
+$installedApp = $installed[0] | Get-NetFirewallApplicationFilter
+$installedProfiles = [string]$installed[0].Profile
+$installedProfileCorrect = if ($Profiles -eq 'Any') { $installedProfiles -eq 'Any' } else {
+    $installedProfiles -match 'Domain' -and $installedProfiles -match 'Private' -and $installedProfiles -notmatch 'Public'
+}
+$verified = ([string]$installed[0].Direction -eq $Direction) -and
+    ([string]$installedPort.Protocol -eq $Protocol) -and
+    ([string]$installedPort.LocalPort -eq [string]$LocalPort) -and
+    $installedProfileCorrect -and
+    ([string]$installedAddress.RemoteAddress -eq $RemoteAddress) -and
+    (($programValue -eq 'Any' -and [string]$installedApp.Program -eq 'Any') -or ([string]$installedApp.Program -eq $programValue))
+if (-not $verified) { throw 'Firewall rule was created but failed read-back verification.' }
+Write-Output 'Owned firewall rule created or repaired and verified.'

@@ -20,6 +20,34 @@ import sync_engine  # noqa: E402
 from secret_store import REFERENCE_PREFIX  # noqa: E402
 
 
+def test_verified_receipt_retains_game_route_from_authenticated_manifest():
+    response = {
+        "result": {
+            "launch_ready": True,
+            "transfer_gate": "verified",
+            "manifest_fingerprint": "host-fingerprint",
+            "endpoint": "203.0.113.24:27051",
+            "route": "external",
+            "direct_connect": {"configured": False, "address": ""},
+            "manifest": {
+                "profile_id": "remote-a",
+                "connection": {
+                    "internal_ip": "192.168.1.24",
+                    "external_ip": "203.0.113.24",
+                    "game_port": 7782,
+                },
+            },
+        },
+    }
+    phase6._begin_sync("remote-a", "world.sync")
+    completed = phase6._complete_sync("remote-a", "world.sync", response)
+    assert completed["game_endpoint"] == "203.0.113.24:7782"
+    assert completed["direct_connect"]["configured"] is False
+    assert phase6._manifest_game_endpoint({"connection": {
+        "external_ip": "203.0.113.24:7782", "game_port": 7782,
+    }}, "external") == "203.0.113.24:7782"
+
+
 def test_secret_references_are_encrypted_on_disk_and_hydrated_in_memory():
     phase6.install_phase6_integrations()
     state = profile_store.default_state()

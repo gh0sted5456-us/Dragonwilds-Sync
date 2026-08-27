@@ -12,7 +12,7 @@ const requireText = (rel, values) => {
 requireText('backend/network_service.py', [
   'DirectoryNetworkService', 'dws-install-', 'dws-world-', '/api/v1/register', '/api/v1/presence',
   '/api/v1/worlds/register', '/api/v1/heartbeat', 'x-dws-timestamp', 'x-dws-signature',
-  'PRESENCE_INTERVAL_SECONDS = 10 * 60', 'HEARTBEAT_INTERVAL_SECONDS = 10 * 60',
+  'PRESENCE_INTERVAL_SECONDS = 5 * 60', 'HEARTBEAT_INTERVAL_SECONDS = 60',
   'public_directory_enabled', 'broadcast_destinations', 'public_card', 'world_started', 'world_stopping',
 ]);
 const phase2Service = fs.existsSync(path.join(root, 'backend', 'dragonwilds_service_v3_phase2.py'))

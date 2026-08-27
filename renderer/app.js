@@ -10,5 +10,5 @@
   }
   // Full mode executes the exact previously verified renderer synchronously so
   // the later release enhancement scripts retain their original ordering.
-  document.write('<script src="app-v2.js?v=3.0.2-sync-tabs-avatar-2"><\\/script>');
+  document.write('<script src="app-v2.js?v=3.0.3-world-presence-reviews"><\\/script>');
 })();

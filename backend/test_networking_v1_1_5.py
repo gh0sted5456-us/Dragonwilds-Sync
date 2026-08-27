@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
+import networking
 import server_systems
 from networking import (DEFAULT_SYNC_DISCOVERY_PORT, FIREWALL_GROUP, RULE_NAMES, effective_game_port,
                         firewall_spec, layer_status, manual_router_rule,
@@ -9,6 +11,22 @@ from networking import (DEFAULT_SYNC_DISCOVERY_PORT, FIREWALL_GROUP, RULE_NAMES,
 
 
 class NetworkingPolicyTests(unittest.TestCase):
+    def test_windows_repair_is_read_back_before_success_is_reported(self):
+        spec = firewall_spec("world_sync", 27051, program="C:/Runtime/backend.exe", mode="manual")
+        calls = []
+
+        def completed(command, **_kwargs):
+            calls.append(command)
+            is_query = command[command.index("-Action") + 1] == "Query"
+            return SimpleNamespace(returncode=0, stdout='{"DisplayName":"Dragonwilds Sync - World Sync Transfer"}' if is_query else "repaired", stderr="")
+
+        with patch.object(networking, "run_hidden", side_effect=completed):
+            result = networking.apply_firewall_spec(spec)
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["verified"])
+        self.assertTrue(result["requires_administrator"])
+        self.assertEqual([call[call.index("-Action") + 1] for call in calls], ["Ensure", "Query"])
+
     def test_instance_game_ports_increment_without_changing_protocol(self):
         self.assertEqual([effective_game_port(i) for i in range(1, 5)], [7777, 7778, 7779, 7780])
         self.assertEqual(manual_router_rule("dedicated_game", effective_game_port(3), "192.168.1.50")["protocol"], "UDP")

@@ -23,7 +23,8 @@ must(main.includes("loadFile(path.join(projectRoot(), 'renderer', 'dialog-host.h
 must(dialog.includes('window.dragonwilds.windowMinimize()')&&dialog.includes('window.dragonwilds.windowClose()'),'native host controls must minimize and close through Electron');
 must(dialog.includes("event.key!=='Escape'")&&dialog.includes('window.dragonwilds.windowClose()'),'native managed dialogs must close on Escape');
 must(app.includes('let desktopZ = 11000'),'ordinary popup windows must stack above placard windows');
-must(app.includes('scheduleManagedDialogSync')&&app.includes('new MutationObserver(()=>scheduleManagedDialogSync(shadow))'),'native popup DOM synchronization must be batched');
+must(app.includes('scheduleManagedDialogSync')&&app.includes('new MutationObserver(()=>{if(!shadow._managedApplyingNativeInput)scheduleManagedDialogSync(shadow);})'),'native popup DOM synchronization must be batched without repainting active text input');
+must(dialog.includes("type==='input'&&el.maxLength>0")&&dialog.includes('counter.textContent=`${count} / ${el.maxLength} characters`'),'native review fields must update their character count locally without a full-window repaint');
 must(app.includes("win.setAttribute('role','dialog')")&&app.includes("win.setAttribute('aria-modal','false')"),'internal popup windows must expose non-blocking dialog semantics');
 must(app.includes("if(event.key!=='Escape'||event.defaultPrevented)return")&&app.includes('requestCloseDesktopWindow(win)'),'internal popups must route Escape through guarded close');
 must(app.includes('win._dwsReturnFocus')&&app.includes('returnFocus.focus'),'internal popups must restore launch focus after close');

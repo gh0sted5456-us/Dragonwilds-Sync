@@ -9,6 +9,7 @@ console/log surface.
 """
 
 import time
+import urllib.parse
 from copy import deepcopy
 from pathlib import Path
 
@@ -37,6 +38,7 @@ from server_engine import _apply_profile_ue4ss
 from v2_remote_routing import install_directory_patches, remote_advertisement
 from runtime_versions import CLIENT_STEAM_APP_ID, detect_steam_cloud_status
 from runtime_manager import AuthoritativeRuntimeManager
+from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 
 # Preserve the actual V2 handler before redirecting legacy recursive calls back
 # through this wrapper. Without this saved reference, ordinary RPC delegation
@@ -480,7 +482,7 @@ def _remote_advertisement_for_state(state: dict, payload: dict | None = None) ->
     return remote_advertisement(advertised_cfg, external_ip=external)
 
 
-def _heartbeat(state: dict) -> dict:
+def _heartbeat(state: dict, *, exclude_official: bool = False) -> dict:
     discovery_cfg = state.setdefault("application", {}).setdefault("world_discovery", {})
     if discovery_cfg.get("heartbeat_enabled", True) is False:
         return {"published": False, "reason": "World heartbeat is disabled in application settings."}
@@ -521,7 +523,12 @@ def _heartbeat(state: dict) -> dict:
             local_host = _legacy.DIRECTORY_HOST.ingest(payload, "127.0.0.1")
         except Exception as exc:
             local_host = {"error": str(exc)}
-    remote = _legacy.publish_heartbeat_to_sources(payload, _legacy._directory_sources(cfg))
+    sources = _legacy._directory_sources(cfg)
+    if exclude_official:
+        official_host = (urllib.parse.urlparse(DRAGONWILDS_SYNC_NETWORK_URL).hostname or "").casefold()
+        sources = [row for row in sources
+                   if (urllib.parse.urlparse(str(row.get("url") or "")).hostname or "").casefold() != official_host]
+    remote = _legacy.publish_heartbeat_to_sources(payload, sources)
     cfg["last_publish_at"] = _legacy.now_iso()
     cfg["last_publish_results"] = remote.get("sources") or []
     _legacy.save_state(state)

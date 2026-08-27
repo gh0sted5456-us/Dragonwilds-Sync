@@ -54,10 +54,28 @@ from world_classification import normalize_world_classification
 from operator_identity import sign_world_identity
 from networking import (DEFAULT_SYNC_PORT, DEFAULT_SYNC_DISCOVERY_PORT, apply_firewall_spec, backend_program,
                         firewall_spec)
+from secret_store import SecretStore, is_reference
 
 SYNC_PORT_DEFAULT = DEFAULT_SYNC_PORT
 DISCOVERY_PORT = 8421
 DISCOVERY_QUERY_PORT = DEFAULT_SYNC_DISCOVERY_PORT
+
+# Runtime workers intentionally start before the full desktop service graph.
+# Their profile reads therefore see encrypted-at-rest references rather than
+# the hydrated strings used by the normal application process. Resolve the
+# player-facing World credential at the final network boundary, just as
+# server_engine does before writing DedicatedServer.ini.
+_RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
+
+
+def _runtime_world_password(value: object) -> str:
+    text = str(value or "").strip()
+    if not is_reference(text):
+        return text
+    resolved = str(_RUNTIME_SECRET_STORE.resolve(text) or "").strip()
+    if not resolved:
+        raise ValueError("The saved World Password is unavailable. Re-enter it before publishing Sync.")
+    return resolved
 
 
 def _sync_tls_material(profile_id: str, host_values: list[str] | None = None) -> tuple[Path, Path, str]:
@@ -2410,9 +2428,9 @@ class ShareServer:
         # still carries a stale hidden Sync password. Private/co-op publishing
         # has no world_pass field and continues to use its explicit password.
         if "world_pass" in dedicated:
-            password = str(dedicated.get("world_pass") or "").strip()
+            password = _runtime_world_password(dedicated.get("world_pass"))
         else:
-            password = str(password or "").strip()
+            password = _runtime_world_password(password)
         sync_options = profile.get("sync_config") if isinstance(profile.get("sync_config"), dict) else {}
         tls_enabled = bool(sync_options.get("tls_enabled"))
         allow_tls_password_fallback = bool(sync_options.get("allow_tls_password_fallback")) and tls_enabled
@@ -2677,7 +2695,7 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             return {"updated": False, "reason": "World is not the live published profile"}
         dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
         if "world_pass" in dedicated:
-            next_password = str(dedicated.get("world_pass") or "").strip()
+            next_password = _runtime_world_password(dedicated.get("world_pass"))
             if next_password != STATE.password:
                 # A saved World Password is immediately authoritative for the
                 # live endpoint. Old sessions must negotiate again.
@@ -2705,7 +2723,7 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "community": {"discord_invite": str((profile.get("community") or {}).get("discord_invite") or "")[:300],
                           "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]},
             "community_rules": str(profile.get("community_rules") or "")[:4000],
-            "password_required": bool(str(dedicated.get("world_pass") or "").strip()),
+            "password_required": bool(_runtime_world_password(dedicated.get("world_pass"))) if "world_pass" in dedicated else bool(STATE.password),
             "authentication": {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
             "icon_b64": str(profile.get("icon_b64") or ""),
             "banner_b64": str(profile.get("banner_b64") or ""),

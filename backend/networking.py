@@ -222,8 +222,23 @@ def apply_firewall_spec(spec: dict, *, action: str = "Ensure") -> dict:
     ]
     result = run_hidden(command, capture_output=True, text=True)
     output = (result.stdout or result.stderr or "").strip()
-    return {**spec, "ok": result.returncode == 0, "changed": action.casefold() != "query" and result.returncode == 0,
-            "message": output[-3000:] or ("Firewall rule is ready." if result.returncode == 0 else "Firewall command failed.")}
+    requested = action.casefold()
+    verified = result.returncode == 0
+    verification_output = ""
+    # Do not trust only the elevated child exit code. Read the owned rule back
+    # without elevation after every repair and require the helper's structured
+    # Query to succeed before reporting the port as protected.
+    if verified and requested == "ensure":
+        query_command = list(command)
+        query_command[query_command.index("-Action") + 1] = "Query"
+        query = run_hidden(query_command, capture_output=True, text=True)
+        verification_output = (query.stdout or query.stderr or "").strip()
+        verified = query.returncode == 0 and bool(verification_output)
+    message = verification_output if verified and verification_output else output
+    return {**spec, "ok": verified, "verified": verified,
+            "changed": requested != "query" and result.returncode == 0,
+            "requires_administrator": requested in {"ensure", "remove"},
+            "message": message[-3000:] or ("Firewall rule is ready and verified." if verified else "Firewall command failed or its rule could not be verified.")}
 
 
 def backend_program() -> str:

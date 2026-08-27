@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.0.2',
-  name: 'V3 · Quick Start & Preview Reliability',
+  version: '3.0.3',
+  name: 'V3 · World Presence & Review Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '3.0.3',
+    title: 'World Presence & Review Reliability',
+    items: [
+      'Connected Worlds use signed directory heartbeats independently from direct-route reachability, while complete connection and mod metadata remains available for previews.',
+      'World profiles support Normal, Hard, and Creative modes plus PVP, including best-effort detection from World saves.',
+      'Windows firewall setup verifies the installed rules for every required game, Sync transfer, discovery, WebGUI, and remote-management port.',
+      'Native review windows accept continuous text input and submit the complete rating and review to the correct Connected World.',
+    ],
+  }, {
     version: '3.0.2',
     title: 'Quick Start & Preview Reliability',
     items: [

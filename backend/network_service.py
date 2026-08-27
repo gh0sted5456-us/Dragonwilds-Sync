@@ -29,8 +29,11 @@ from v3_migration import prepare_for_v3_migration, update_stage
 NETWORK_SCHEMA = "DragonwildsSync.DirectoryNetworkService.v1"
 WORLD_NETWORK_SCHEMA = "DragonwildsSync.WorldDirectoryNetwork.v1"
 DELIVERY_SCHEMA = "DragonwildsSync.DirectoryDeliveryState.v1"
-PRESENCE_INTERVAL_SECONDS = 10 * 60
-HEARTBEAT_INTERVAL_SECONDS = 10 * 60
+PRESENCE_INTERVAL_SECONDS = 5 * 60
+# The directory pulse is intentionally much faster than registration/presence.
+# A World remains listed during brief packet loss, but a stopped host no longer
+# appears healthy for ten minutes between publications.
+HEARTBEAT_INTERVAL_SECONDS = 60
 MAX_BODY_BYTES = 64 * 1024
 
 
@@ -286,19 +289,46 @@ class DirectoryNetworkService:
         identity = self.ensure_world_identity(profile_id, kind); card = identity.get("public_card") or {}
         metadata = raw.get("metadata") if isinstance(raw.get("metadata"),dict) else {}
         classification = raw.get("classification") if isinstance(raw.get("classification"),dict) else {}
-        snapshot = {"world_id":identity["world_id"], "name":str(raw.get("world_name") or raw.get("name") or raw.get("server_name") or metadata.get("name") or "World")[:160],
+        world_name = str(raw.get("world_name") or raw.get("name") or raw.get("server_name") or metadata.get("name") or "World")[:160]
+        public_status = {"active": "online", "disabled": "stopping"}.get(str(status or "active").casefold(), str(status or "online").casefold())
+        public_status = public_status if public_status in {"online", "starting", "stopping", "maintenance"} else "online"
+        mod_summary = [dict(row) for row in (raw.get("mod_summary") or []) if isinstance(row, dict)] if card.get("show_mods", True) else []
+        mod_badges = _bounded(raw.get("mod_badges") if card.get("show_mods", True) else [], 64, 80)
+        rule_text = str(card.get("rules") or raw.get("community_rules") or "")[:4000]
+        public_tags = _bounded(raw.get("tags") if card.get("show_tags",True) else [],24,40)
+        for gameplay_tag in (classification.get("game_mode"), "pvp" if classification.get("pvp_enabled") else ""):
+            if gameplay_tag and gameplay_tag not in public_tags:
+                public_tags.append(str(gameplay_tag))
+        snapshot = {"world_id":identity["world_id"], "world_name":world_name, "name":world_name,
             "description":str(card.get("description") or raw.get("description") or metadata.get("description") or "")[:600],
             "region":str(card.get("region") or raw.get("region") or classification.get("region") or "")[:80],
-            "cl":str(raw.get("reported_cl") or raw.get("cl") or raw.get("game_version") or "")[:80], "status":str(status or "active")[:32],
+            "version":str(raw.get("reported_cl") or raw.get("cl") or raw.get("game_version") or "")[:80],
+            "cl":str(raw.get("reported_cl") or raw.get("cl") or raw.get("game_version") or "")[:80], "status":public_status,
             "host_type":"dedicated" if str(kind).casefold() in {"server","dedicated"} else "coop",
+            "players":{"current":max(0,min(int(raw.get("player_count") or 0),10000)), "max":max(0,min(int(raw.get("max_players") or 0),10000))},
             "player_count":max(0,min(int(raw.get("player_count") or 0),10000)), "max_players":max(0,min(int(raw.get("max_players") or 0),10000)),
-            "tags":_bounded(raw.get("tags") if card.get("show_tags",True) else [],24,40),
-            "mods":_bounded(raw.get("mod_badges") if card.get("show_mods",True) else [],64,80),
+            "tags":public_tags[:24],
+            "mods":mod_badges, "mod_badges":mod_badges, "mod_summary":mod_summary,
             "badges":_bounded(raw.get("badges") if card.get("show_badges",True) else [],32,80),
-            "rules":str(card.get("rules") or raw.get("community_rules") or "")[:4000], "updated_at":int(_now())}
-        if card.get("publish_connection"):
+            "rules":[rule_text] if rule_text else [], "community_rules":rule_text,
+            "classification":classification, "pvp_enabled":bool(classification.get("pvp_enabled")),
+            "password_required":bool(raw.get("password_required")),
+            "runtime_stack":dict(raw.get("runtime_stack") or {}),
+            "platform_compatibility":dict(raw.get("platform_compatibility") or {"pc":True}),
+            "host_os":str(raw.get("host_os") or "")[:40], "host_os_label":str(raw.get("host_os_label") or "")[:100],
+            "protocol":str(raw.get("protocol") or "dragonwilds-world-sync"),
+            "protocol_version":int(raw.get("protocol_version") or 1),
+            "fingerprint":str(raw.get("fingerprint") or identity["world_id"]),
+            "sync_tls":bool(raw.get("sync_tls")), "tls_cert_fingerprint":str(raw.get("tls_cert_fingerprint") or "")[:64],
+            "game_port":max(1,min(int(raw.get("game_port") or 7777),65535)), "updated_at":int(_now())}
+        if card.get("publish_connection", bool(raw.get("external_ip"))):
             address = _safe_public_ip(card.get("public_address") or raw.get("external_ip") or "")
-            if address: snapshot["connection"] = {"address":address,"game_port":max(1,min(int(raw.get("game_port") or 7777),65535))}
+            if address:
+                sync_port = max(1,min(int(raw.get("sync_port") or raw.get("port") or 27051),65535))
+                snapshot["public_connect"] = {"host":address,"port":sync_port}
+                snapshot["external_ip"] = address
+                snapshot["sync_port"] = sync_port
+                snapshot["connection"] = {"address":address,"sync_port":sync_port,"game_port":snapshot["game_port"]}
         return snapshot
 
     def _delivery_state(self) -> dict:
@@ -346,7 +376,7 @@ class DirectoryNetworkService:
         if share_payload:
             try: raw = dict(share_payload() or raw)
             except Exception: pass
-        raw.setdefault("world_name",raw.get("name") or "World"); raw.setdefault("last_seen",_now()); raw.setdefault("ttl_seconds",HEARTBEAT_INTERVAL_SECONDS+180)
+        raw.setdefault("world_name",raw.get("name") or "World"); raw.setdefault("last_seen",_now()); raw.setdefault("ttl_seconds",HEARTBEAT_INTERVAL_SECONDS+120)
         outcomes = []
         try: outcomes.append(self.publish_official(active["profile_id"],active["kind"],raw,status=status))
         except Exception as exc:

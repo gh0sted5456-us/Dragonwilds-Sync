@@ -54,10 +54,15 @@ def normalize_world_classification(value: dict | None = None, *, tags=None,
         "game_mode": _choice(raw.get("game_mode") or raw.get("mode"), GAME_MODES, "normal"),
         "host_type": _choice(raw.get("host_type") or host_type, HOST_TYPES, host_default, _HOST_ALIASES),
         "visibility": _choice(raw.get("visibility") or visibility, VISIBILITIES, visibility_default),
+        "pvp_enabled": bool(raw.get("pvp_enabled", raw.get("pvp", False))),
+        "detected_from_save": bool(raw.get("detected_from_save", False)),
         "declared": bool(raw.get("declared", bool(value))),
     }
 
 
 def classification_labels(value: dict | None) -> list[str]:
     normalized = normalize_world_classification(value)
-    return [normalized["content_type"], normalized["game_mode"], normalized["host_type"]]
+    labels = [normalized["content_type"], normalized["game_mode"], normalized["host_type"]]
+    if normalized["pvp_enabled"]:
+        labels.append("pvp")
+    return labels

@@ -9,7 +9,7 @@ from pathlib import Path
 
 CLIENT_STEAM_APP_ID = "1374490"
 SERVER_STEAM_APP_ID = "4019830"
-DRAGONWILDS_SYNC_VERSION = "3.0.2"
+DRAGONWILDS_SYNC_VERSION = "3.0.3"
 STEAMCMD_INFO_URL = "https://api.steamcmd.net/v1/info/{appid}"
 UE4SS_RELEASE_TAG_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')

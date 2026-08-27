@@ -95,11 +95,42 @@ def parse_world_save(path: str | Path) -> dict:
             "toggle": name in TOGGLE_FIELDS, "byte_offset": absolute,
         })
     stat = target.stat()
+    field_values = {row["name"]: float(row["value"]) for row in fields}
+    friendly_fire = field_values.get("Difficulty.Environment.FriendlyFire")
+    creative_markers = (
+        field_values.get("Difficulty.Player.Invulnerable", 0.0) >= 0.5,
+        field_values.get("Difficulty.Progression.AllCraftingRecipesUnlocked", 0.0) >= 0.5,
+        field_values.get("Difficulty.Progression.AllBuildingPiecesUnlocked", 0.0) >= 0.5,
+        field_values.get("Difficulty.Player.NoBuildingStability", 0.0) >= 0.5,
+    )
+    hard_markers = [
+        value for name, value in field_values.items()
+        if ("damage" in name.casefold() or "enemy" in name.casefold() or "hostile" in name.casefold())
+        and value > 1.25
+    ]
+    if sum(creative_markers) >= 2:
+        detected_mode, confidence = "creative", "high"
+    elif len(hard_markers) >= 2:
+        detected_mode, confidence = "hardcore", "medium"
+    else:
+        detected_mode, confidence = "normal", "medium"
+    gameplay_detection = {
+        "game_mode": detected_mode,
+        "pvp_enabled": bool(friendly_fire is not None and friendly_fire >= 0.5),
+        "confidence": confidence,
+        "source": "world_save",
+        "evidence": {
+            "friendly_fire": friendly_fire,
+            "creative_markers": sum(creative_markers),
+            "hard_markers": len(hard_markers),
+        },
+    }
     return {
         "ok": True, "path": str(target), "file_name": target.name,
         "sha256": _sha(target), "size": stat.st_size, "modified_at": stat.st_mtime,
         "format": "Dragonwilds SAVE/CINF", "field_count": field_count,
         "difficulty_fields": fields, "editable_count": len(fields),
+        "gameplay_detection": gameplay_detection,
         "unknown_fields_preserved": max(0, field_count - len(fields)),
     }
 

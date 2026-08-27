@@ -3,6 +3,18 @@
   "updated_at": "2026-08-26T00:00:00Z",
   "releases": [
     {
+      "version": "3.0.2",
+      "title": "Quick Start & Preview Reliability",
+      "date": "2026-08-26",
+      "status": "stable",
+      "highlights": [
+        "Graphical Quick shortcuts target the exact normal application executable; Headless Start targets the matching standalone server executable.",
+        "Sync uses the same four final tab names from first render through every navigation change.",
+        "Character Preview waits for RSDWModel readiness, reapplies saved appearance and armour, and surfaces renderer errors.",
+        "Windows and Linux package workflows produce graphical and standalone headless artifacts."
+      ]
+    },
+    {
       "version": "3.0.1",
       "title": "Cloud Directory Connection",
       "date": "2026-08-26",

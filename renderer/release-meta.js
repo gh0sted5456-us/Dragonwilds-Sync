@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.0.1',
-  name: 'V3 · Connection & Hosting Baseline',
+  version: '3.0.2',
+  name: 'V3 · Quick Start & Preview Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '3.0.2',
+    title: 'Quick Start & Preview Reliability',
+    items: [
+      'Server profiles can create a standalone Headless Start shortcut while graphical Quick shortcuts continue to target the exact normal application executable.',
+      'Sync consistently hydrates Website & Directory, Manifest & Heartbeats, Server Management, and WebGUI Preview without first-render legacy labels.',
+      'Character Preview waits for the RSDWModel bridge, reapplies save-backed appearance and armour, and reports renderer failures instead of timing out silently.',
+      'Windows and Linux package workflows publish both graphical and standalone headless artifacts.',
+    ],
+  }, {
     version: '3.0.1',
     title: 'Cloud Directory Connection',
     items: [

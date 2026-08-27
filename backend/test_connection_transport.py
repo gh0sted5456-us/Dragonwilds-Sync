@@ -20,6 +20,13 @@ import world_identity
 
 
 class ConnectionTransportTests(unittest.TestCase):
+    def test_local_ip_guess_closes_socket_when_connect_fails(self):
+        fake_socket = unittest.mock.MagicMock()
+        fake_socket.__enter__.return_value.connect.side_effect = OSError("offline")
+        with patch.object(server_systems.socket, "socket", return_value=fake_socket):
+            self.assertEqual(server_systems.local_ip_guess(), "127.0.0.1")
+        fake_socket.__exit__.assert_called_once()
+
     def test_raw_password_fallback_is_never_attempted_over_http(self):
         endpoint = network_client.normalize_endpoint("http://127.0.0.1:27051")
         with patch.object(network_client, "request") as request:

@@ -239,15 +239,21 @@ def delete_client_world_profile(world_id: str) -> dict:
         if target.exists():
             _remove_launcher_managed_tree(target)
             removed.append(str(target))
-    # Remove the old misplaced cache only when it is provably not a real local
-    # profile. A profile.json is an ownership boundary and is never crossed.
+    # Remove only the old launcher-owned snapshot. A profile.json is an
+    # ownership boundary, and unknown sibling files are preserved even when no
+    # profile document exists.
     legacy = LEGACY_CLIENT_WORLDS_DIR / profile_id
     if legacy.is_dir() and not (legacy / "profile.json").is_file():
         resolved_root = LEGACY_CLIENT_WORLDS_DIR.resolve()
-        target = legacy.resolve()
+        target = (legacy / "snapshot").resolve()
         if resolved_root in target.parents:
-            _remove_launcher_managed_tree(target)
-            removed.append(str(target))
+            if target.is_dir():
+                _remove_launcher_managed_tree(target)
+                removed.append(str(target))
+            try:
+                legacy.rmdir()
+            except OSError:
+                pass
     outgoing = APP_DATA_DIR / "outgoing_player_backups"
     if outgoing.is_dir():
         for candidate in outgoing.glob(f"{profile_id}-*.rsdwl"):

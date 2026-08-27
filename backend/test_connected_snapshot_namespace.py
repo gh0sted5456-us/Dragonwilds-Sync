@@ -44,6 +44,41 @@ def main() -> None:
             assert migrated == connected_root / "connected-old-id" / "snapshot"
             assert (migrated / "payload.bin").read_bytes() == b"connected-cache"
 
+            # Merging a legacy cache into an existing destination must remove
+            # only snapshot/. Unknown sibling files may belong to the user.
+            merge_root = local_root / "connected-merge-id"
+            merge_snapshot = merge_root / "snapshot"
+            merge_snapshot.mkdir(parents=True)
+            (merge_snapshot / "migrated.bin").write_bytes(b"migrated")
+            unknown_file = merge_root / "unknown-user-file.txt"
+            unknown_file.write_text("preserve me", encoding="utf-8")
+            merge_destination = connected_root / "connected-merge-id" / "snapshot"
+            merge_destination.mkdir(parents=True)
+            (merge_destination / "existing.bin").write_bytes(b"existing")
+
+            local_world.list_profiles()
+            assert (merge_destination / "migrated.bin").read_bytes() == b"migrated"
+            assert (merge_destination / "existing.bin").read_bytes() == b"existing"
+            assert not merge_snapshot.exists()
+            assert unknown_file.read_text(encoding="utf-8") == "preserve me"
+
+            # Deleting a connected profile follows the same ownership rule for
+            # the old misplaced cache path.
+            delete_root = local_root / "connected-delete-id"
+            delete_snapshot = delete_root / "snapshot"
+            delete_snapshot.mkdir(parents=True)
+            (delete_snapshot / "cache.bin").write_bytes(b"cache")
+            delete_unknown = delete_root / "notes.txt"
+            delete_unknown.write_text("keep", encoding="utf-8")
+            active_cache = connected_root / "connected-delete-id" / "snapshot"
+            active_cache.mkdir(parents=True)
+            (active_cache / "active.bin").write_bytes(b"active")
+
+            sync_engine.delete_client_world_profile("connected-delete-id")
+            assert not (connected_root / "connected-delete-id").exists()
+            assert not delete_snapshot.exists()
+            assert delete_unknown.read_text(encoding="utf-8") == "keep"
+
             # A same-named real private profile is an ownership boundary; its
             # snapshot must never be moved or deleted by connected migration.
             private_snapshot = local_root / "private-real" / "snapshot"

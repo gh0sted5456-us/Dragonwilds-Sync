@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - testing-branch
       - testing-ground
       - main
     tags:

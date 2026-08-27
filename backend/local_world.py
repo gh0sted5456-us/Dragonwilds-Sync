@@ -333,10 +333,15 @@ def _migrate_misplaced_connected_caches() -> int:
             destination.parent.mkdir(parents=True, exist_ok=True)
             if destination.exists():
                 shutil.copytree(snapshot, destination, dirs_exist_ok=True)
-                shutil.rmtree(folder)
+                shutil.rmtree(snapshot)
             else:
                 shutil.move(str(snapshot), str(destination))
+            try:
                 folder.rmdir()
+            except OSError:
+                # Preserve any unknown sibling files. Only the historical
+                # launcher-owned snapshot is safe to migrate or remove.
+                pass
             moved += 1
         except OSError:
             # A locked cache can retry on the next state hydration; it remains

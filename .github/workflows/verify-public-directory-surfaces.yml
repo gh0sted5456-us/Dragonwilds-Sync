@@ -2,7 +2,7 @@ name: Verify Public Directory Surfaces
 
 on:
   push:
-    branches: [main]
+    branches: [main, testing-branch]
     paths:
       - 'backend/world_directory.py'
       - 'backend/test_cloudflare_directory_publication.py'

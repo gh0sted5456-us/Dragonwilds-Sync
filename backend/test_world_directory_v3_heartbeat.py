@@ -9,9 +9,22 @@ from world_classification import classification_labels, normalize_world_classifi
 from world_directory import normalize_heartbeat
 from unittest.mock import patch
 import json
+from pathlib import Path
 
 
 class WorldDirectoryV3HeartbeatTests(unittest.TestCase):
+    def test_invite_creation_requires_exact_body_publisher_authentication(self):
+        worker = (Path(__file__).resolve().parents[1] / "cloudflare" / "world-directory" / "src" / "index.ts")
+        source = worker.read_text(encoding="utf-8")
+        handler = source.split("async function createWorldInvite", 1)[1].split(
+            "async function resolveWorldInvite", 1
+        )[0]
+        self.assertIn('request.headers.get("x-dws-timestamp")', handler)
+        self.assertIn("const rawBody = await request.text()", handler)
+        self.assertIn("authenticatePublisher(request, env, timestamp, rawBody, worldId, false)", handler)
+        self.assertNotIn("await request.json()", handler)
+        self.assertLess(handler.index("authenticatePublisher("), handler.index("INSERT INTO world_invites"))
+
     def test_official_fetch_uses_v1_worlds_route(self):
         import world_directory
         observed = {}

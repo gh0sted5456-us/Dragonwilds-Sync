@@ -56,7 +56,14 @@ function publicCorsHeaders(): HeadersInit {
   return {
     "access-control-allow-origin": "*",
     "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
-    "access-control-allow-headers": "content-type",
+    "access-control-allow-headers": [
+      "content-type",
+      "x-dws-timestamp",
+      "x-dws-signature",
+      "x-dws-public-key",
+      "x-dws-operator",
+      "x-dws-legacy-signature",
+    ].join(", "),
   };
 }
 
@@ -247,6 +254,7 @@ async function authenticatePublisher(
   timestamp: string,
   rawBody: string,
   worldId: string,
+  allowSelfRegistration: boolean,
 ): Promise<{ ok: true; mode: string; operatorFingerprint: string } | { ok: false; response: Response }> {
   const suppliedSignature = request.headers.get("x-dws-signature") || "";
   const publicKeyText = request.headers.get("x-dws-public-key") || "";
@@ -274,6 +282,9 @@ async function authenticatePublisher(
     ).bind(worldId).first<{ operator_fingerprint: string; public_key: string }>();
     if (existing && (existing.operator_fingerprint !== operatorFingerprint || existing.public_key !== publicKeyText)) {
       return { ok: false, response: json({ error: "world_ownership_conflict" }, 409) };
+    }
+    if (!existing && !allowSelfRegistration) {
+      return { ok: false, response: json({ error: "publisher_not_registered" }, 401) };
     }
     const now = Math.floor(Date.now() / 1000);
     await env.DB.prepare(`
@@ -360,7 +371,7 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
   // Expired ownership must be removed before authentication so a World that has
   // been offline for the full retention window can register cleanly again.
   await purgeStaleRegistrations(env, nowSeconds);
-  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, payload.world_id);
+  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, payload.world_id, true);
   if (!publisher.ok) return publisher.response;
 
   const now = Math.floor(Date.now() / 1000);
@@ -464,7 +475,7 @@ async function handleDeregister(request: Request, env: Env, pathWorldId: string)
   if (!worldId || bodyWorldId !== worldId) return json({ error: "world_id_mismatch" }, 400);
 
   await purgeStaleRegistrations(env, now);
-  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId);
+  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId, false);
   if (!publisher.ok) return publisher.response;
   await env.DB.batch([
     env.DB.prepare("DELETE FROM world_invites WHERE world_id = ?").bind(worldId),
@@ -613,13 +624,22 @@ async function getWorld(env: Env, worldId: string): Promise<Response> {
 async function createWorldInvite(request: Request, env: Env): Promise<Response> {
   const contentLength = Number(request.headers.get("content-length") || "0");
   if (contentLength > 2048) return json({ error: "payload_too_large" }, 413, publicCorsHeaders());
+  const timestamp = request.headers.get("x-dws-timestamp") || "";
+  const timestampSeconds = Number(timestamp);
+  const now = Math.floor(Date.now() / 1000);
+  if (!Number.isFinite(timestampSeconds) || Math.abs(now - timestampSeconds) > 300) {
+    return json({ error: "stale_or_invalid_timestamp" }, 401, publicCorsHeaders());
+  }
+  const rawBody = await request.text();
+  if (rawBody.length > 2048) return json({ error: "payload_too_large" }, 413, publicCorsHeaders());
   let input: Record<string, unknown>;
-  try { input = await request.json() as Record<string, unknown>; }
+  try { input = JSON.parse(rawBody) as Record<string, unknown>; }
   catch { return json({ error: "invalid_json" }, 400, publicCorsHeaders()); }
   const worldId = cleanText(input.world_id, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
   if (!worldId) return json({ error: "world_id_required" }, 400, publicCorsHeaders());
-  const now = Math.floor(Date.now() / 1000);
   await purgeStaleRegistrations(env, now);
+  const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId, false);
+  if (!publisher.ok) return publisher.response;
   const row = await env.DB.prepare("SELECT * FROM worlds WHERE world_id = ? AND is_listed = 1").bind(worldId).first<Record<string, unknown>>();
   if (!row) return json({ error: "world_not_found" }, 404, publicCorsHeaders());
   const world = publicWorld(row, clampInt(env.OFFLINE_AFTER_SECONDS, 1800, 60, 86400));

@@ -25,6 +25,10 @@ type HeartbeatPayload = {
   mod_summary?: Array<Record<string, unknown>>;
   runtime_stack?: Record<string, unknown>;
   platform_compatibility?: Record<string, unknown>;
+  icon_b64?: string;
+  banner_b64?: string;
+  icon_url?: string;
+  banner_url?: string;
 };
 
 const encoder = new TextEncoder();
@@ -106,6 +110,14 @@ function cleanChannel(value: unknown): string {
   return ["baseline", "stable", "experimental", "release-candidate"].includes(channel) ? channel : "unknown";
 }
 
+function cleanImageReference(value: unknown, maxDataLength: number): string {
+  const image = typeof value === "string" ? value.trim() : "";
+  if (!image) return "";
+  if (/^https:\/\//i.test(image)) return image.slice(0, 2048);
+  if (/^data:image\/(?:png|jpe?g|webp|gif|svg\+xml);base64,/i.test(image) && image.length <= maxDataLength) return image;
+  return "";
+}
+
 function cleanModSummary(value: unknown): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   return value.filter((row): row is Record<string, unknown> => Boolean(row) && typeof row === "object" && !Array.isArray(row))
@@ -146,6 +158,8 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
   const sync = stack.dragonwilds_sync && typeof stack.dragonwilds_sync === "object" ? stack.dragonwilds_sync as Record<string, unknown> : {};
   const game = stack.dragonwilds && typeof stack.dragonwilds === "object" ? stack.dragonwilds as Record<string, unknown> : {};
   const platformCompatibility = cleanPlatformCompatibility(input.platform_compatibility);
+  const iconUrl = cleanImageReference(input.icon_url || input.icon_b64, 65536);
+  const bannerUrl = cleanImageReference(input.banner_url || input.banner_b64, 131072);
   return {
     host_os: cleanText(input.host_os, 40).toLowerCase(),
     host_os_label: cleanText(input.host_os_label, 100),
@@ -160,6 +174,8 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
     },
     server_current: typeof game.server_current === "boolean" ? game.server_current : null,
     server_cl_status: cleanText(game.server_cl_status, 24).toLowerCase(),
+    icon_url: iconUrl,
+    banner_url: bannerUrl,
   };
 }
 
@@ -488,6 +504,8 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     runtime_channels: metadata.runtime_channels || {},
     server_current: typeof metadata.server_current === "boolean" ? metadata.server_current : null,
     server_cl_status: metadata.server_cl_status || "unknown",
+    icon_url: metadata.icon_url || "",
+    banner_url: metadata.banner_url || "",
     public_connect: row.public_connect_host
       ? {
           host: row.public_connect_host,

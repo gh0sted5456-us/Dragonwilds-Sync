@@ -25,6 +25,7 @@ WORLD_PROFILE_ROOT = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_PROFILE_DIR = WORLD_PROFILE_ROOT / SINGLEPLAYER_ID
 LOCAL_PROFILE_FILE = LOCAL_PROFILE_DIR / "profile.json"
 PRIVATE_PROFILES_DIR = WORLD_PROFILE_ROOT
+CONNECTED_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world" / "connected"
 DELETED_SAVES_PATH = WORLD_PROFILE_ROOT / ".deleted-saves.json"
 
 
@@ -307,11 +308,55 @@ def discover_save_profiles(state: dict) -> list[dict]:
     return discovered
 
 
+def _migrate_misplaced_connected_caches() -> int:
+    """Move legacy snapshot-only folders out of the private World namespace.
+
+    This is intentionally conservative: a profile.json makes the directory a
+    real local profile and blocks migration. Snapshot-only folders are
+    reconstructable connected caches created by the historical path collision.
+    """
+    if not PRIVATE_PROFILES_DIR.is_dir():
+        return 0
+    moved = 0
+    for folder in list(PRIVATE_PROFILES_DIR.iterdir()):
+        if not folder.is_dir() or folder.name == SINGLEPLAYER_ID or (folder / "profile.json").is_file():
+            continue
+        snapshot = folder / "snapshot"
+        if not snapshot.is_dir():
+            try:
+                folder.rmdir()
+            except OSError:
+                pass
+            continue
+        destination = CONNECTED_PROFILES_DIR / folder.name / "snapshot"
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            if destination.exists():
+                shutil.copytree(snapshot, destination, dirs_exist_ok=True)
+                shutil.rmtree(folder)
+            else:
+                shutil.move(str(snapshot), str(destination))
+                folder.rmdir()
+            moved += 1
+        except OSError:
+            # A locked cache can retry on the next state hydration; it remains
+            # excluded from list_profiles even when migration is deferred.
+            continue
+    return moved
+
+
 def list_profiles() -> list[dict]:
+    _migrate_misplaced_connected_caches()
     profiles = [load_profile(SINGLEPLAYER_ID)]
     if PRIVATE_PROFILES_DIR.exists():
         for folder in sorted(PRIVATE_PROFILES_DIR.iterdir(), key=lambda x: x.name.casefold()):
             if not folder.is_dir():
+                continue
+            # A directory alone is not a private World. Historical connected
+            # snapshots lived here as ``<id>/snapshot`` and have no profile
+            # document; loading them with a fallback manufactured a phantom
+            # SinglePlayer card and made the connected ID collision repair loop.
+            if folder.name != SINGLEPLAYER_ID and not (folder / "profile.json").is_file():
                 continue
             profile = load_profile(folder.name)
             if profile.get("id") != SINGLEPLAYER_ID:

@@ -23,7 +23,11 @@ from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 from sync_manifest import build_client_meta, component_fingerprints, component_key, manifest_fingerprint
 
-CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
+# Private/local profiles and connected-World sync caches are separate domains.
+# Keeping both below ``profiles/world/local`` made the private profile scanner
+# interpret every connected snapshot directory as a new SinglePlayer profile.
+CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "connected"
+LEGACY_CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_STATE_DIR = ".dwsync"
 STATE_FILE = "state.json"
 META_FILE = "manifest-meta.json"
@@ -182,8 +186,38 @@ def save_local_state(install_dir: Path, state: dict) -> None:
     os.replace(meta_pending, meta_path)
 
 
+def _safe_client_world_id(world_id: object) -> str:
+    profile_id = str(world_id or "").strip()
+    if not profile_id or profile_id in {".", ".."} or any(sep in profile_id for sep in ("/", "\\")):
+        raise ValueError("A valid connected World profile ID is required")
+    return profile_id
+
+
+def _migrate_legacy_client_world_dir(world_id: str) -> None:
+    """Move a misplaced connected snapshot out of the private-profile tree.
+
+    Old builds stored only ``snapshot/`` below the local profile namespace. A
+    real private profile always owns ``profile.json``; when that file exists we
+    copy nothing and preserve the user's profile verbatim.
+    """
+    profile_id = _safe_client_world_id(world_id)
+    legacy_root = LEGACY_CLIENT_WORLDS_DIR / profile_id
+    legacy_snapshot = legacy_root / "snapshot"
+    destination = CLIENT_WORLDS_DIR / profile_id / "snapshot"
+    if destination.exists() or not legacy_snapshot.is_dir() or (legacy_root / "profile.json").is_file():
+        return
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(legacy_snapshot), str(destination))
+    try:
+        legacy_root.rmdir()
+    except OSError:
+        pass
+
+
 def client_world_dir(world_id: str) -> Path:
-    return CLIENT_WORLDS_DIR / world_id / "snapshot"
+    profile_id = _safe_client_world_id(world_id)
+    _migrate_legacy_client_world_dir(profile_id)
+    return CLIENT_WORLDS_DIR / profile_id / "snapshot"
 
 
 def delete_client_world_profile(world_id: str) -> dict:
@@ -194,9 +228,7 @@ def delete_client_world_profile(world_id: str) -> dict:
     profile must retire both or a later link can accidentally resurrect stale
     files from the old cache.
     """
-    profile_id = str(world_id or "").strip()
-    if not profile_id or profile_id in {".", ".."} or any(sep in profile_id for sep in ("/", "\\")):
-        raise ValueError("A valid connected World profile ID is required")
+    profile_id = _safe_client_world_id(world_id)
     removed: list[str] = []
     roots = [CLIENT_WORLDS_DIR, APP_DATA_DIR / "connected_world_snapshots"]
     for root in roots:
@@ -205,6 +237,15 @@ def delete_client_world_profile(world_id: str) -> dict:
         if resolved_root not in target.parents:
             raise ValueError("Connected World cache path escaped APPDATA")
         if target.exists():
+            _remove_launcher_managed_tree(target)
+            removed.append(str(target))
+    # Remove the old misplaced cache only when it is provably not a real local
+    # profile. A profile.json is an ownership boundary and is never crossed.
+    legacy = LEGACY_CLIENT_WORLDS_DIR / profile_id
+    if legacy.is_dir() and not (legacy / "profile.json").is_file():
+        resolved_root = LEGACY_CLIENT_WORLDS_DIR.resolve()
+        target = legacy.resolve()
+        if resolved_root in target.parents:
             _remove_launcher_managed_tree(target)
             removed.append(str(target))
     outgoing = APP_DATA_DIR / "outgoing_player_backups"

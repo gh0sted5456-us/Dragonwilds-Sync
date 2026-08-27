@@ -27,6 +27,7 @@ const crossPlatformTests = [
   'backend/test_runtime_worker_sync_password.py',
   'backend/test_client_launch_once.py',
   'backend/test_direct_connect_route.py',
+  'backend/test_connected_snapshot_namespace.py',
   'backend/test_connection_diagnostics.py',
   'backend/test_discovery_profile_lifecycle.py',
   'backend/test_cloudflare_directory_publication.py',

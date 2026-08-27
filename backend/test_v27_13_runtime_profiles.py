@@ -94,6 +94,8 @@ def main() -> None:
     assert legacy_service._repair_connected_world_id_collisions(collision_state) is True
     repaired = collision_state["client"]["worlds"][0]
     assert repaired["id"].startswith("connected-") and collision_state["client"]["active_world_id"] == repaired["id"]
+    assert legacy_service._repair_connected_world_id_collisions(collision_state) is False
+    assert collision_state["client"]["worlds"][0]["id"] == repaired["id"]
 
     legacy = (ROOT / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8")
     assert "dws.admin.item.v1" not in legacy

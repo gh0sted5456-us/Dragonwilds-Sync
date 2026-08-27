@@ -26,6 +26,15 @@ From a source checkout:
 python backend/dragonwilds_service.py --headless profiles
 ```
 
+On Linux, download `Dragonwilds-Sync-Headless-Ubuntu-<version>.tar.gz`. The
+archive preserves the executable permission that direct GitHub file downloads
+cannot retain:
+
+```bash
+tar -xzf Dragonwilds-Sync-Headless-Ubuntu-3.0.2.tar.gz
+./Dragonwilds-Sync-Headless-Ubuntu-3.0.2 --headless profiles
+```
+
 An exact profile ID is safest. An exact, case-insensitive World name also works. If `--profile` is omitted, the currently active profile is used.
 
 ## Desktop shortcut targets

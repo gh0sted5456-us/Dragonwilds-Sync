@@ -42,8 +42,12 @@ fi
 # actual GitHub release. RC packaging is artifact-only and requires no token.
 npx electron-builder --linux AppImage --publish never
 VERSION="$(node -p "require('./package.json').version")"
-HEADLESS_RELEASE="release/Dragonwilds-Sync-Headless-Ubuntu-${VERSION}"
+HEADLESS_NAME="Dragonwilds-Sync-Headless-Ubuntu-${VERSION}"
+HEADLESS_RELEASE="release/${HEADLESS_NAME}"
+HEADLESS_ARCHIVE="release/${HEADLESS_NAME}.tar.gz"
 cp dist-service/DragonwildsSync.Service "$HEADLESS_RELEASE"
-chmod +x "$HEADLESS_RELEASE"
+chmod 755 "$HEADLESS_RELEASE"
+tar -C release -czf "$HEADLESS_ARCHIVE" "$HEADLESS_NAME"
+rm -f "$HEADLESS_RELEASE"
 bash scripts/test_packaged_linux.sh
-echo "Ubuntu release-candidate build complete. See release/ for the AppImage, headless CLI, checksums, and package-test report."
+echo "Ubuntu release-candidate build complete. See release/ for the AppImage, headless CLI tarball, checksums, and package-test report."

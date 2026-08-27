@@ -201,6 +201,13 @@ def main():
     assert "chmod 4755 node_modules/electron/dist/chrome-sandbox" in linux_text
     assert "--no-sandbox" not in linux_text, "Linux preload verification must not weaken Chromium sandboxing"
     assert "electron-builder --linux AppImage" in linux_text
+    assert 'HEADLESS_ARCHIVE="release/${HEADLESS_NAME}.tar.gz"' in linux_text
+    assert 'tar -C release -czf "$HEADLESS_ARCHIVE" "$HEADLESS_NAME"' in linux_text
+    linux_package_test = (ROOT / "scripts" / "test_packaged_linux.sh").read_text(encoding="utf-8")
+    assert "archive preserves executable permissions" in linux_package_test
+    release_workflow = (ROOT / ".github" / "workflows" / "release-candidate.yml").read_text(encoding="utf-8")
+    assert "Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz" in release_workflow
+    assert "Linux headless archive did not preserve executable permissions" in release_workflow
     assert "process.platform === 'win32' ? 'DragonwildsSync.Service.exe' : 'DragonwildsSync.Service'" in electron_main
     assert (ROOT / "docs" / "CAPABILITIES.md").is_file()
     print("build contract tests passed")

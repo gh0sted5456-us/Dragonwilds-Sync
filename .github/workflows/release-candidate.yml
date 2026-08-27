@@ -57,7 +57,7 @@ jobs:
           if-no-files-found: error
           path: |
             release/*Ubuntu*.AppImage
-            release/Dragonwilds-Sync-Headless-Ubuntu-*
+            release/Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz
             release/checksums-linux.sha256
             release/package-test-report-linux.txt
             dist-service/DragonwildsSync.Service
@@ -219,13 +219,20 @@ jobs:
           shopt -s nullglob
           executables=(release-assets/*.exe)
           appimages=(release-assets/*.AppImage)
+          headless_archives=(release-assets/Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz)
           windows_checksums=(release-assets/checksums-windows.sha256)
           linux_checksums=(release-assets/checksums-linux.sha256)
           [[ ${#executables[@]} -eq 2 ]] || { echo "Expected Windows Portable and Headless EXEs; found ${#executables[@]}" >&2; exit 1; }
           [[ ${#appimages[@]} -eq 1 ]] || { echo "Expected exactly one Linux AppImage; found ${#appimages[@]}" >&2; exit 1; }
+          [[ ${#headless_archives[@]} -eq 1 ]] || { echo "Expected exactly one Linux headless tar.gz; found ${#headless_archives[@]}" >&2; exit 1; }
           [[ ${#windows_checksums[@]} -eq 1 ]] || { echo 'Windows checksum is missing.' >&2; exit 1; }
           [[ ${#linux_checksums[@]} -eq 1 ]] || { echo 'Linux checksum is missing.' >&2; exit 1; }
           chmod +x "${appimages[0]}"
+          headless_test_dir="$(mktemp -d)"
+          trap 'rm -rf -- "${headless_test_dir}"' EXIT
+          tar -xzf "${headless_archives[0]}" -C "${headless_test_dir}"
+          headless_binary="$(find "${headless_test_dir}" -maxdepth 1 -type f -name 'Dragonwilds-Sync-Headless-Ubuntu-*' -print -quit)"
+          [[ -n "${headless_binary}" && -x "${headless_binary}" ]] || { echo 'Linux headless archive did not preserve executable permissions.' >&2; exit 1; }
           ls -lh release-assets
 
       - name: Publish EXE and AppImage to GitHub Releases
@@ -234,18 +241,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh release create "${GITHUB_REF_NAME}" \
-            release-assets/*.exe \
-            release-assets/*.AppImage \
-            release-assets/Dragonwilds-Sync-Headless-Ubuntu-* \
-            release-assets/DragonLink-Connect-baseline.zip \
-            release-assets/RuneSchema-core-latest.zip \
-            release-assets/RuneSchema-experimental-latest.zip \
-            release-assets/UE4SS-core-latest.zip \
-            release-assets/UE4SS-settings.ini \
-            release-assets/checksums-*.sha256 \
-            release-assets/package-test-report-*.txt \
-            --repo "${GITHUB_REPOSITORY}" \
-            --verify-tag \
-            --generate-notes \
-            --title "Dragonwilds Sync ${GITHUB_REF_NAME}"
+          release_assets=(
+            release-assets/*.exe
+            release-assets/*.AppImage
+            release-assets/Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz
+            release-assets/DragonLink-Connect-baseline.zip
+            release-assets/RuneSchema-core-latest.zip
+            release-assets/RuneSchema-experimental-latest.zip
+            release-assets/UE4SS-core-latest.zip
+            release-assets/UE4SS-settings.ini
+            release-assets/checksums-*.sha256
+            release-assets/package-test-report-*.txt
+          )
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${release_assets[@]}" --clobber --repo "${GITHUB_REPOSITORY}"
+          else
+            gh release create "${GITHUB_REF_NAME}" "${release_assets[@]}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --verify-tag \
+              --generate-notes \
+              --title "Dragonwilds Sync ${GITHUB_REF_NAME}"
+          fi

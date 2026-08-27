@@ -1,4 +1,5 @@
 import json
+import importlib
 import os
 import sys
 import tempfile
@@ -40,6 +41,7 @@ def main():
         (win64 / "dwmapi.dll").write_bytes(b"loader")
         (win64 / "ue4ss" / "UE4SS.dll").write_bytes(b"core")
         (win64 / "ue4ss" / "UE4SS-Settings.ini").write_text("[UE4SS]", encoding="utf-8")
+        (rs / "dlls" / "main.dll").write_bytes(b"runeschema-core")
         (rs / "enabled.txt").write_text("1", encoding="utf-8")
 
         env = dict(os.environ)
@@ -54,7 +56,10 @@ def main():
         # this test focuses on deterministic World isolation and avoids a Python
         # 3.14 redirected-pipe shutdown stall observed on some Windows hosts.
         os.environ.update(env)
-        import dragonwilds_service as proc
+        # Import only after the isolated AppData override is active. The V3
+        # compatibility runner otherwise has to preload the historical service
+        # before this test can establish its temporary filesystem.
+        proc = importlib.import_module("dragonwilds_service_v2_wrapper")
         try:
             boot = rpc(proc, "bootstrap", request_id=1)
             assert boot["server_profiles"] == []
@@ -67,6 +72,16 @@ def main():
             first = rpc(proc, "server.world.create", {"name": "World One"}, 2)
             first_id = first["id"]
             rpc(proc, "application.update", {"server_install": {"install_dir": str(game), "server_exe": "", "steamcmd_dir": str(root / "steamcmd")}}, 3)
+            # This contract exercises profile isolation, not GitHub release
+            # availability. Treat the complete temporary RuneSchema core above
+            # as an explicit manual runtime so CI never reaches the network.
+            import server_engine
+            state = server_engine.load_state()
+            install = state.setdefault("application", {}).setdefault("server_install", {})
+            install["runeschema_manual_override_roots"] = [
+                os.path.normcase(str(server_engine.resolve_server_layout(str(game)).game_root.resolve(strict=False)))
+            ]
+            server_engine.save_state(state)
             rpc(proc, "server.world.update", {
                 "id": first_id,
                 "dedicated_config": {"port": 7777},

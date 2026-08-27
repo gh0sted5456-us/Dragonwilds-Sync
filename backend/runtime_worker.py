@@ -359,8 +359,12 @@ class RuntimeWorker:
         payload = payload if isinstance(payload, dict) else {}
         if "worldPassword" not in payload:
             return False
-        from server_systems import STATE
-        next_password = str(payload.get("worldPassword") or "")
+        from server_systems import STATE, _runtime_world_password
+        # The control plane deliberately passes the profile's protected secret
+        # reference across authenticated local IPC. Resolve it inside the World
+        # worker before replacing the listener credential; using the literal
+        # dws-secret:// value makes the game password and Sync proof diverge.
+        next_password = _runtime_world_password(payload.get("worldPassword"))
         with STATE.lock:
             changed = next_password != STATE.password
             STATE.password = next_password

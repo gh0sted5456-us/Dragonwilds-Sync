@@ -332,6 +332,32 @@ def handle(method: str, params: dict) -> object:
     if method == "runtime.worker.runtime.logs":
         return _workers().log_tail(_worker_profile_id(params))
 
+    if method == "world.discovery.heartbeat":
+        # A retained worker can remain healthy while its in-memory credential
+        # predates the latest protected profile value. Reconcile that value on
+        # the same 30-second control-plane tick that renews public presence so
+        # external status and external authentication cannot drift apart.
+        profile_id = str(getattr(_legacy.ENGINE, "active_profile_id", "") or
+                         state.setdefault("server", {}).get("active_world_id") or "")
+        credential_reconciliation = {"attempted": False}
+        if profile_id:
+            try:
+                worker = _workers().status(profile_id)
+                runtime = worker.get("runtime") if isinstance(worker.get("runtime"), dict) else {}
+                share = runtime.get("share") if isinstance(runtime.get("share"), dict) else {}
+                if worker.get("live") and worker.get("attached") and share.get("serving"):
+                    profile = _legacy.load_server_profile(profile_id) or {}
+                    dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
+                    refreshed = _workers().start_share(profile_id, str(dedicated.get("world_pass") or ""))
+                    credential_reconciliation = {"attempted": True, "ok": True,
+                                                 "refreshed": bool((refreshed.get("result") or {}).get("credentials_refreshed"))}
+            except Exception as exc:
+                credential_reconciliation = {"attempted": True, "ok": False, "error": str(exc)[:500]}
+        result = _base_handle(method, params)
+        if isinstance(result, dict):
+            result["credential_reconciliation"] = credential_reconciliation
+        return result
+
     # Disposable feature workers use explicit leases and never become lifecycle
     # or durable-settings authorities. These RPCs are intentionally diagnostic
     # and orchestration surfaces; feature actions remain an allowlisted worker API.

@@ -1408,6 +1408,83 @@ def _set_world_sync_job(job_id: str, **patch) -> None:
             job["events"] = job["events"][-250:]
 
 
+def _diagnostic_int(value, fallback: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(fallback)
+
+
+def _world_sync_diagnostic_snapshot(world: dict, state: dict) -> dict:
+    """Capture public/saved routing evidence without copying credential values."""
+    world = world if isinstance(world, dict) else {}
+    state = state if isinstance(state, dict) else {}
+    identity = world.get("identity") if isinstance(world.get("identity"), dict) else {}
+    connection = world.get("connection") if isinstance(world.get("connection"), dict) else {}
+    credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
+    shared = world.get("shared") if isinstance(world.get("shared"), dict) else {}
+    status = world.get("status") if isinstance(world.get("status"), dict) else {}
+    presentation = world.get("presentation") if isinstance(world.get("presentation"), dict) else {}
+    manifest = world.get("manifest_cache") if isinstance(world.get("manifest_cache"), dict) else {}
+    classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
+    discovery = (state.get("application") or {}).get("world_discovery") or {}
+    mods = manifest.get("mod_summary") or world.get("mod_metadata") or []
+    mod_names = []
+    for row in mods if isinstance(mods, list) else []:
+        value = str((row.get("name") or row.get("display_name") or row.get("key") or "") if isinstance(row, dict) else row).strip()
+        if value and value not in mod_names:
+            mod_names.append(value[:120])
+    return {
+        "authoritative_name": str(identity.get("world_name") or world.get("name") or ""),
+        "nickname": str(world.get("nickname") or ""),
+        "kind": str(world.get("kind") or ""),
+        "description": str(presentation.get("description") or manifest.get("description") or "")[:300],
+        "region": str(status.get("region") or status.get("country_name") or world.get("region") or ""),
+        "version": str(status.get("version") or manifest.get("version") or world.get("version") or ""),
+        "classification": deepcopy(classification or manifest.get("classification") or {}),
+        "platforms": list(status.get("declared_platforms") or manifest.get("declared_platforms") or []),
+        "fingerprint": str(shared.get("fingerprint") or shared.get("fingerprint_claimed") or ""),
+        "operator_fingerprint": str(shared.get("operator_fingerprint") or ""),
+        "source": str(shared.get("source_name") or shared.get("source") or shared.get("source_id") or world.get("source") or "saved-world"),
+        "directory_verified": bool(shared.get("directory_verified") or shared.get("fingerprint_verified") or status.get("heartbeat_authenticated")),
+        "directory_url": str(shared.get("directory_url") or world.get("directory_url") or ""),
+        "online": bool(status.get("online") or status.get("public_online") or str(status.get("status") or "").casefold() in {"online", "active", "starting", "maintenance"}),
+        "status": str(status.get("status") or ("online" if status.get("online") or status.get("public_online") else "unknown")),
+        "last_seen": status.get("last_seen") or shared.get("last_seen") or world.get("last_seen"),
+        "heartbeat_age_seconds": status.get("heartbeat_age_seconds") or world.get("heartbeat_age_seconds"),
+        "expires_at": status.get("expires_at") or shared.get("expires_at") or world.get("expires_at"),
+        "internal_ip": str(connection.get("internal_ip") or ""),
+        "external_ip": str(connection.get("external_ip") or ""),
+        "sync_port": _diagnostic_int(connection.get("sync_port"), 27051),
+        "game_port": _diagnostic_int(connection.get("game_port"), 7777),
+        "preference": str(connection.get("preference") or "auto"),
+        "sync_tls": bool(connection.get("sync_tls")),
+        "password_saved": bool(str(credentials.get("password") or "").strip()),
+        "password_required": bool(status.get("password_required") or manifest.get("password_required") or world.get("password_required")),
+        "credential_source": str(credentials.get("source") or "unknown"),
+        "mod_count": len(mod_names), "mod_names": mod_names[:40],
+        "last_directory_publish_at": str(discovery.get("last_publish_at") or ""),
+        "last_directory_publish_results": deepcopy(discovery.get("last_publish_results") or []),
+    }
+
+
+def _diagnostic_time(value) -> str:
+    try:
+        numeric = float(value or 0)
+    except (TypeError, ValueError):
+        return "unknown"
+    if numeric <= 0:
+        return "unknown"
+    return time.strftime("%Y-%m-%d %H:%M:%S %z", time.localtime(numeric))
+
+
+def _record_reachable_sync_status(status: dict, remote: dict) -> dict:
+    """Keep Sync reachability independent from the dedicated game process."""
+    status["online"] = True
+    status["game_server_online"] = remote.get("server_online")
+    return status
+
+
 def _write_world_sync_diagnostic(job_id: str, terminal_status: str) -> str:
     with _WORLD_SYNC_LOCK:
         job = deepcopy(_WORLD_SYNC_JOBS.get(job_id) or {})
@@ -1418,6 +1495,7 @@ def _write_world_sync_diagnostic(job_id: str, terminal_status: str) -> str:
     target = target_root / f"Dragonwilds-Sync-{safe_world}-{stamp}-{job_id[:8]}.txt"
     result = job.get("result") if isinstance(job.get("result"), dict) else {}
     acknowledgements = result.get("acknowledgements") if isinstance(result.get("acknowledgements"), dict) else {}
+    snapshot = job.get("world_snapshot") if isinstance(job.get("world_snapshot"), dict) else {}
     lines = [
         "Dragonwilds Sync connection diagnostic", "=" * 40,
         f"Result: {str(terminal_status or job.get('status') or 'unknown').upper()}",
@@ -1434,12 +1512,46 @@ def _write_world_sync_diagnostic(job_id: str, terminal_status: str) -> str:
         f"Host confirmed final match: {'yes' if acknowledgements.get('host_match_confirmed') else 'no'}",
         f"Manifest version: {acknowledgements.get('host_manifest_version') or 'unknown'}",
         f"Manifest fingerprint: {acknowledgements.get('host_manifest_fingerprint') or 'unknown'}", "",
+        "Known World metadata", "--------------------",
+        f"Authoritative World name: {snapshot.get('authoritative_name') or 'unknown'}",
+        f"Saved nickname: {snapshot.get('nickname') or 'none'}",
+        f"Saved World kind: {snapshot.get('kind') or 'unknown'}",
+        f"Directory/source: {snapshot.get('source') or 'unknown'}",
+        f"Directory verified: {'yes' if snapshot.get('directory_verified') else 'no'}",
+        f"Directory URL: {snapshot.get('directory_url') or 'not retained'}",
+        f"Advertised status: {snapshot.get('status') or 'unknown'}",
+        f"Advertised online: {'yes' if snapshot.get('online') else 'no'}",
+        f"Last seen: {_diagnostic_time(snapshot.get('last_seen'))}",
+        f"Heartbeat age: {snapshot.get('heartbeat_age_seconds') if snapshot.get('heartbeat_age_seconds') not in (None, '') else 'unknown'} seconds",
+        f"Entry expires: {_diagnostic_time(snapshot.get('expires_at'))}",
+        f"Last local directory publish: {snapshot.get('last_directory_publish_at') or 'unknown'}",
+        f"Fingerprint: {snapshot.get('fingerprint') or 'not advertised'}",
+        f"Operator fingerprint: {snapshot.get('operator_fingerprint') or 'not advertised'}",
+        f"Region: {snapshot.get('region') or 'unknown'}",
+        f"Build/version: {snapshot.get('version') or 'unknown'}",
+        f"Classification: {json.dumps(snapshot.get('classification') or {}, ensure_ascii=False, sort_keys=True)}",
+        f"Declared platforms: {', '.join(str(item) for item in snapshot.get('platforms') or []) or 'none advertised'}",
+        f"Description: {snapshot.get('description') or 'none advertised'}",
+        f"Published mods ({int(snapshot.get('mod_count') or 0)}): {', '.join(snapshot.get('mod_names') or []) or 'none advertised'}", "",
+        "Saved connection evidence", "-------------------------",
+        f"External Sync route: {(snapshot.get('external_ip') or 'not saved')}:{int(snapshot.get('sync_port') or 27051)}",
+        f"Internal Sync route: {(snapshot.get('internal_ip') or 'not saved')}:{int(snapshot.get('sync_port') or 27051)}",
+        f"Dragonwilds gameplay route: {(snapshot.get('external_ip') or snapshot.get('internal_ip') or 'not saved')}:{int(snapshot.get('game_port') or 7777)} UDP",
+        f"Route preference: {snapshot.get('preference') or 'auto'}",
+        f"Sync TLS advertised: {'yes' if snapshot.get('sync_tls') else 'no'}",
+        f"World Password required by metadata: {'yes' if snapshot.get('password_required') else 'no'}",
+        f"World Password saved locally: {'yes' if snapshot.get('password_saved') else 'no'}",
+        f"Credential source: {snapshot.get('credential_source') or 'unknown'}",
+        "Interpretation: a password rejection means the external Sync listener was reachable and answered; it does not mean the World was offline.", "",
         "Transfer summary", "----------------",
         f"Files transferred: {int(result.get('downloaded') or job.get('changed_files') or 0)}",
         f"Bytes transferred: {int(result.get('downloaded_bytes') or job.get('downloaded_bytes') or 0)}",
         f"Files unchanged: {int(result.get('up_to_date') or job.get('unchanged_files') or 0)}",
         f"Files removed: {int(result.get('removed') or 0)}",
     ]
+    route_errors = [part.strip() for part in str(job.get("error") or "").split(";") if ":" in part]
+    if route_errors:
+        lines.extend(["", "Route attempt outcomes", "----------------------", *route_errors])
     changed = [str(item) for item in (result.get("changed_files") or [])]
     if changed:
         lines.extend(["", "Transferred files", "----------------", *changed])
@@ -1544,7 +1656,8 @@ def handle(method: str, params: dict) -> object:
                             started_at=time.time(), world_id=world_id,
                             world_name=str(world.get("nickname") or (world.get("identity") or {}).get("world_name") or "World"),
                             client_profile_id=str((state.get("client") or {}).get("client_id") or "client"),
-                            action=action, diagnostics=diagnostics, force_complete=force_complete)
+                            action=action, diagnostics=diagnostics, force_complete=force_complete,
+                            world_snapshot=_world_sync_diagnostic_snapshot(world, state))
         threading.Thread(target=_run_world_sync_job, args=(job_id, world_id, action, diagnostics, force_complete), daemon=True).start()
         return {"job_id": job_id, "status": "queued"}
 
@@ -4258,7 +4371,11 @@ def handle(method: str, params: dict) -> object:
                 status["runtime_stack"] = manifest.get("runtime_stack") or {}
             else:
                 remote = result.get("status") or {}
-                status["online"] = remote.get("server_online")
+                # A successful /status response proves the Sync endpoint is
+                # online. The dedicated game process is a separate fact and
+                # must not erase external reachability when its value is null
+                # or briefly stale in a retained worker.
+                _record_reachable_sync_status(status, remote)
                 _apply_verified_world_sync(world, remote)
                 status["player_count"] = remote.get("player_count")
                 status["uptime_seconds"] = remote.get("uptime_seconds")

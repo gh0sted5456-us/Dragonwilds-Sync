@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from network_service import DirectoryNetworkService, HEARTBEAT_INTERVAL_SECONDS
+from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 from public_worlds import _sync_directory_world
 from world_classification import classification_labels, normalize_world_classification
 from world_directory import normalize_heartbeat
@@ -23,8 +24,8 @@ class WorldDirectoryV3HeartbeatTests(unittest.TestCase):
             observed["timeout"] = timeout
             return Response()
         with patch.object(world_directory.urllib.request, "urlopen", side_effect=open_request):
-            self.assertEqual(world_directory._fetch_remote("https://dragonwilds-sync-directory.dragonwilds.workers.dev", 2.0), [])
-        self.assertEqual(observed["url"], "https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds")
+            self.assertEqual(world_directory._fetch_remote(DRAGONWILDS_SYNC_NETWORK_URL, 2.0), [])
+        self.assertEqual(observed["url"], f"{DRAGONWILDS_SYNC_NETWORK_URL}/api/v1/worlds")
 
     def test_profile_classification_retains_pvp(self):
         value = normalize_world_classification({"game_mode": "creative", "pvp_enabled": True})

@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.SystemMap.v2",
-  "branch": "testing-ground",
+  "branch": "main",
   "version_authority": ["package.json", "package-lock.json", "renderer/release-meta.js", "RELEASE.txt"],
   "inventory": "docs/SYSTEMS.md",
   "test_matrix": "docs/test-matrix.json",

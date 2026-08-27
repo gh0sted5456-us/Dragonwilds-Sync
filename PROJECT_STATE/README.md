@@ -1,7 +1,7 @@
 # Engineering State
 
-This folder contains durable engineering authority for the current
-`testing-ground` branch. Test evidence must identify its exact commit; do not place
+This folder contains durable engineering authority for the current stable
+`main` branch. Candidate work is verified on `testing-branch`. Test evidence must identify its exact commit; do not place
 ever-changing run IDs or a supposedly current SHA in these standing documents.
 
 ## Authority order
@@ -19,9 +19,8 @@ above.
 
 ## Version state
 
-`package.json`, its lockfile, release metadata, and packaged release notes remain
-the authority for the shipped version. At this documentation cleanup, that version
-is `2.0.0`; `2.1.0-rc` in the changelog describes unreleased staged work.
+`package.json`, its lockfile, release metadata, and canonical changelog remain
+the authority for the shipped version. The current stable version is `3.0.4`.
 
 ## Core invariants
 

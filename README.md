@@ -5,12 +5,12 @@ Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape:
 ## Current build authority
 
 - `main` is the stable/default branch.
-- `testing-ground` is the active staged implementation and verification branch.
-- Packaged application metadata remains `2.0.0` until a release cut changes `package.json`, `package-lock.json`, `renderer/release-meta.js`, and release notes together.
-- The `2.1.0-rc` changelog entry describes unreleased `testing-ground` work. It is not a stable-release claim.
+- `testing-branch` is the staged implementation, verification, and package-candidate branch.
+- The current stable source and packaged application metadata are `3.0.4`.
+- [`docs/changelog.json`](docs/changelog.json) is the canonical release history; the launcher mirrors its current entry in `renderer/release-meta.js` for offline display.
 - A historical green result applies only to the exact commit and artifact recorded with it.
 
-The current branch is a release candidate only after its automated matrix passes. Real Dragonwilds, Steam/SteamCMD, cross-machine Sync, Windows packaging, Linux/Proton, router, and production Cloudflare behavior require the physical gates in [Testing](docs/TESTING.md).
+A `testing-branch` candidate is promoted to `main` only after its applicable automated and package workflows pass. Real Dragonwilds, Steam/SteamCMD, cross-machine Sync, Windows packaging, Linux/Proton, router, and production Cloudflare behavior remain governed by the physical gates in [Testing](docs/TESTING.md).
 
 ## Architecture
 

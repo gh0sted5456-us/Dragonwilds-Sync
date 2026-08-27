@@ -1,6 +1,6 @@
 # Current Capabilities
 
-This is the current source-level capability contract for `testing-ground`. A capability is release-certified only when its row in the test matrix passes on the exact release commit and applicable packaged/physical environments.
+This is the current source-level capability contract for `main`. A capability is release-certified only when its row in the test matrix passes on the exact release commit and applicable packaged/physical environments. Candidate changes are verified on `testing-branch` before promotion.
 
 ## Application and presentation
 

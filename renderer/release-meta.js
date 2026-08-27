@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
   version: '3.0.4',
-  name: 'V3 · Connected Profile Stability',
+  name: 'V3 · Connected Profile & Network Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -10,12 +10,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
   ],
   changelog: [{
     version: '3.0.4',
-    title: 'Connected Profile Stability',
+    title: 'Connected Profile & Network Reliability',
     items: [
-      'Connected World snapshots now live in a dedicated profile namespace and can no longer hydrate as phantom SinglePlayer Worlds.',
-      'Legacy snapshot-only folders migrate automatically while every real local profile.json remains an untouchable ownership boundary.',
-      'Connected World IDs remain stable across repeated hydration, Sync, verification, and Play cycles.',
-      'Direct Connect routing and profile activation retain the verified World after synchronization instead of falling back to an empty IP route.',
+      'Connected World snapshots use a dedicated profile namespace and never hydrate as phantom SinglePlayer Worlds.',
+      'Legacy migration and connected-profile deletion remove only launcher-managed snapshots; real profiles, saves, and unknown sibling files remain untouched.',
+      'Connected IDs and verified Direct Connect routes remain stable through discovery, synchronization, activation, reconnect, and Play, including external/VPN paths.',
+      'Public World presence remains separate from direct-route reachability while complete sanitized connection, mod, platform, and classification metadata stays available for previews.',
+      'World invite creation and deregistration require an existing signed publisher identity; only an authenticated heartbeat may establish ownership.',
+      'Failed local-address probes close their UDP socket cleanly and fall back to loopback without leaking resources.',
+      'Cloudflare route, retention, CORS, invite, and housekeeping documentation now matches the deployed Worker configuration.',
+      'Windows Portable and Ubuntu AppImage packages passed the testing-branch build, contract, authorization, and packaged smoke-test workflows before promotion to main.',
     ],
   }, {
     version: '3.0.3',

@@ -1,8 +1,9 @@
 Dragonwilds Sync — Current Build Authority
 
-Packaged version: 2.0.0
-Active development branch: testing-ground
-Staged changelog channel: 2.1.0-rc (unreleased)
+Packaged version: 3.0.4
+Stable/default branch: main
+Staged verification branch: testing-branch
+Canonical changelog: docs/changelog.json (3.0.4 stable)
 Package shapes: Windows Portable and Ubuntu AppImage
 
 The current source combines World management, Character/RSDW-L tools, mod profiles, authenticated Sync, Direct Connect/DragonConnect, WebHost/Remote Admin, public-directory integration, supervised World Runtime Workers, and disposable feature workers.

@@ -237,6 +237,11 @@ def test_reset_is_backup_first_and_path_guarded():
             assert (win64 / "dwmapi.dll").read_bytes() == b"client-loader"
             assert (win64 / "version.dll").read_bytes() == b"dedicated-server-loader"
             assert len(removed["protected_runtime_loaders"]) == 2
+            restored_reset = server_systems.wipe_install_after_backup(
+                str(install), reset_client_runtime_loaders=True)
+            assert not (win64 / "dwmapi.dll").exists()
+            assert (win64 / "version.dll").read_bytes() == b"dedicated-server-loader"
+            assert len(restored_reset["removed_runtime_loaders"]) == 1
             try:
                 server_systems.wipe_install_after_backup(str(root))
                 raise AssertionError("Non-Dragonwilds directory should be rejected")

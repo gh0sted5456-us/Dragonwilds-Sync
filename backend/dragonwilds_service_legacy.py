@@ -4022,11 +4022,15 @@ def handle(method: str, params: dict) -> object:
             if processes and "RSDragonwilds-Win64-Shipping.exe" in (processes.stdout or ""):
                 raise RuntimeError("Close Dragonwilds before resetting its installation.")
             backup = backup_install_for_reset(canonical_install, label="client")
-            removed = wipe_install_after_backup(canonical_install)
-            runtime = ensure_client_base_runtimes(resolved["layout"]["game_root"])
+            ownership_reset = reset_client_managed_payload_for_resync(Path(game_dir))
+            removed = wipe_install_after_backup(canonical_install, reset_client_runtime_loaders=True)
+            from managed_updates import restore_identified_client_cores
+            runtime = restore_identified_client_cores(
+                resolved["layout"]["game_root"], application)
             _record_notification(state, "Dragonwilds managed reset complete", f"Mods were backed up to {backup['path']}; Steam and EOS-owned files were preserved.", "success" if runtime.get("ok") else "warning", key=f"client-reset:{time.time()}")
             save_state(state)
-            return {"ok": True, "target": target, "backup": backup, "removed": removed,
+            return {"ok": bool(runtime.get("status", {}).get("ok")), "target": target, "backup": backup,
+                    "ownership_reset": ownership_reset, "removed": removed,
                     "runtime": runtime, "steam_uri": "", "next": "Managed runtimes were repaired without deleting Steam/EOS files."}
 
         ENGINE.assert_stopped()

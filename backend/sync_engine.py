@@ -21,7 +21,9 @@ from client_layout import resolve_client_layout
 from runtime_platforms import detect_client_platform, entry_allowed_for_platform
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
-from sync_manifest import build_client_meta, component_fingerprints, component_key, manifest_fingerprint
+from sync_manifest import (build_client_meta, component_fingerprints, component_key,
+                           has_valid_delivery_metadata, manifest_fingerprint,
+                           tag_client_deliveries)
 
 # Private/local profiles and connected-World sync caches are separate domains.
 # Keeping both below ``profiles/world/local`` made the private profile scanner
@@ -664,41 +666,59 @@ def is_baked_client_path(path: str) -> bool:
     return top in LAUNCHER_LOCAL_UE4SS_MODS
 
 
-def reset_client_managed_payload_for_resync(selected_root: Path) -> dict:
-    """Clear World-owned client payloads while preserving baked runtimes.
+def reset_client_managed_payload_for_resync(selected_root: Path, replacement_manifest: dict | None = None) -> dict:
+    """Clear all Sync-owned payloads before an authenticated reinstall.
 
-    This is the explicit repair path for orphaned/stale files. It clears both
-    the prior manifest ledger and discoverable profile mod locations so files
-    omitted by a broken/old ledger cannot survive the resync.
+    The current ledger and the newly authenticated manifest are both cleanup
+    authorities.  New manifests carry explicit delivery metadata, allowing a
+    full reset to remove UE4SS/RuneSchema baselines as well as World content;
+    the caller then rematerializes those launcher-identified baselines from the
+    same authenticated manifest. Old untagged ledgers retain the conservative
+    baked-runtime behavior for backwards compatibility.
     """
     layout = resolve_client_layout(selected_root)
     game_root = layout.game_root
     local_state = load_local_state(game_root)
     removed_files = 0
+    removed_targets: set[str] = set()
 
-    # First remove every previously managed non-baked file, including managed
-    # configuration targets outside the conventional mod directories.
-    for relative, info in list((local_state.get("files") or {}).items()):
-        if bool((info or {}).get("baked_component")) or is_baked_client_path(relative):
-            continue
-        if (info or {}).get("kind") == "zip_bundle":
-            extract_to = str((info or {}).get("extract_to") or "")
-            if not extract_to or is_baked_client_path(extract_to):
-                continue
+    incoming = replacement_manifest if isinstance(replacement_manifest, dict) else {}
+    tagged_replacement = [row for row in (incoming.get("files") or [])
+                          if isinstance(row, dict) and has_valid_delivery_metadata(row)]
+
+    def remove_entry(relative: str, info: dict, *, tagged: bool) -> None:
+        nonlocal removed_files
+        if not tagged and (bool(info.get("baked_component")) or is_baked_client_path(relative)):
+            return
+        if info.get("kind") == "zip_bundle":
+            extract_to = str(info.get("extract_to") or "")
+            if not extract_to or (not tagged and is_baked_client_path(extract_to)):
+                return
             target = safe_game_path(game_root, extract_to)
-            if target.is_dir():
-                removed_files += sum(1 for item in target.rglob("*") if item.is_file())
-                _remove_launcher_managed_tree(target)
-            elif target.is_file():
-                _set_managed_readonly(target, False)
-                target.unlink(missing_ok=True)
-                removed_files += 1
-            continue
-        target = target_for_state(selected_root, relative, info or {})
-        if target.is_file():
+        else:
+            target = target_for_state(selected_root, relative, info)
+        identity = os.path.normcase(str(target.resolve(strict=False)))
+        if identity in removed_targets:
+            return
+        removed_targets.add(identity)
+        if target.is_dir():
+            removed_files += sum(1 for item in target.rglob("*") if item.is_file())
+            _remove_launcher_managed_tree(target)
+        elif target.is_file():
             _set_managed_readonly(target, False)
             target.unlink(missing_ok=True)
             removed_files += 1
+
+    # Remove every previously managed target. Explicitly tagged runtime entries
+    # may be deleted; legacy untagged runtime entries remain conservative.
+    for relative, info in list((local_state.get("files") or {}).items()):
+        details = info if isinstance(info, dict) else {}
+        remove_entry(relative, details, tagged=has_valid_delivery_metadata(details))
+
+    # The fresh authenticated manifest fills holes left by an old/corrupt local
+    # ledger and identifies the exact UE4SS/RuneSchema baseline to rebuild.
+    for entry in tagged_replacement:
+        remove_entry(str(entry.get("path") or ""), entry, tagged=True)
 
     # Clear orphaned UE4SS mods, but retain machine-level baseline components.
     if layout.ue4ss_mods_dir.is_dir():
@@ -729,7 +749,11 @@ def reset_client_managed_payload_for_resync(selected_root: Path) -> dict:
     downloads = state_root / "downloads"
     if downloads.exists():
         _remove_launcher_managed_tree(downloads)
-    return {"removed_files": removed_files, "core_preserved": True}
+    runtime_components = sorted({component_key(row) for row in tagged_replacement
+                                 if bool(row.get("baseline_runtime") or row.get("baked_component"))})
+    return {"removed_files": removed_files, "core_preserved": not bool(runtime_components),
+            "runtime_reset": bool(runtime_components), "runtime_components_to_restore": runtime_components,
+            "tagged_targets": len(tagged_replacement)}
 
 
 def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "", progress=None) -> None:
@@ -877,12 +901,19 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     manifest["mod_summary"] = [row for row in (manifest.get("mod_summary") or [])
                                if not (isinstance(row, dict)
                                        and str(row.get("name") or "").casefold() in SERVER_ONLY_SYNC_UE4SS_MODS)]
+    # New hosts already tag every delivery. Synthesize the same contract for an
+    # older host so the local ledger is complete, but only host-supplied tags
+    # authorize destructive runtime deletion during this reset attempt.
+    host_tagged_files = list(manifest.get("files") or [])
 
     force_reset = None
     if force_complete:
-        emit("resetting", "Removing stale World-owned files while preserving baked runtimes", 15,
+        emit("resetting", "Removing Sync-managed files before restoring UE4SS, RuneSchema, and World payloads", 15,
              total_files=len(manifest.get("files") or []))
-        force_reset = reset_client_managed_payload_for_resync(install_dir)
+        force_reset = reset_client_managed_payload_for_resync(
+            install_dir, {**manifest, "files": host_tagged_files})
+
+    manifest["files"] = tag_client_deliveries(manifest.get("files") or [], manifest.get("profile_id"))
 
     remote_fingerprint = manifest_fingerprint(manifest)
     remote_components = component_fingerprints(manifest)
@@ -1039,6 +1070,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
                 "target_scope": entry.get("target_scope") or "game", "target_path": entry.get("target_path") or "",
                 "component": component_key(entry), "baked_component": bool(entry.get("baked_component")),
                 "baseline_runtime": bool(entry.get("baseline_runtime")), "visibility": entry.get("visibility") or ""}
+        info["delivery_metadata"] = dict(entry.get("delivery_metadata") or {})
         if entry.get("kind") == "zip_bundle":
             info.update({"kind": "zip_bundle", "extract_to": entry.get("extract_to", "")})
         new_files[entry["path"]] = info

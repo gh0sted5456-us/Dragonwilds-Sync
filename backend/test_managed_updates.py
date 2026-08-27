@@ -260,6 +260,31 @@ def test_client_ue4ss_and_runeschema_never_use_steamcmd() -> None:
         managed_updates.server_systems.install_authoritative_runeschema_update = old_rs
 
 
+def test_game_restore_reapplies_launcher_identified_runtime_sources() -> None:
+    old_ensure = managed_updates.server_systems.ensure_client_base_runtimes
+    old_status = managed_updates.server_systems.client_runtime_status
+    old_install = managed_updates.install_client_core
+    calls = []
+    try:
+        managed_updates.server_systems.ensure_client_base_runtimes = lambda root: {"ok": True, "errors": [], "root": root}
+        managed_updates.server_systems.client_runtime_status = lambda root: {"ok": True, "root": root}
+        managed_updates.install_client_core = lambda component, root, app, params: calls.append((component, root, dict(params))) or {"component": component}
+        application = {"client_core_runtime": {
+            "ue4ss_channel": "experimental", "ue4ss_source_url": "https://example.invalid/ue4ss",
+            "runeschema_channel": "official", "runeschema_source_url": "https://example.invalid/runeschema",
+        }}
+        result = managed_updates.restore_identified_client_cores("C:/Dragonwilds", application)
+        assert result["ok"] is True and result["exact_selection_restored"] is True
+        assert [row[0] for row in calls] == ["ue4ss", "runeschema"]
+        assert all(row[2]["reset"] is True for row in calls)
+        assert calls[0][2]["releases_url"] == "https://example.invalid/ue4ss"
+        assert calls[1][2]["releases_url"] == "https://example.invalid/runeschema"
+    finally:
+        managed_updates.server_systems.ensure_client_base_runtimes = old_ensure
+        managed_updates.server_systems.client_runtime_status = old_status
+        managed_updates.install_client_core = old_install
+
+
 def test_bundled_baseline_channels_are_offline_and_explicit() -> None:
     systems = managed_updates.server_systems
     old_resource = systems._bundled_app_resource
@@ -382,6 +407,7 @@ def main() -> None:
     test_runeschema_missing_release_asset_fails_cleanly()
     test_runtime_cache_refresh_defaults_to_local_only()
     test_client_ue4ss_and_runeschema_never_use_steamcmd()
+    test_game_restore_reapplies_launcher_identified_runtime_sources()
     test_bundled_baseline_channels_are_offline_and_explicit()
     test_manual_client_cores_are_cached_separately_from_server_runtime()
     test_server_core_delete_preserves_mods_and_dedicated_loaders()

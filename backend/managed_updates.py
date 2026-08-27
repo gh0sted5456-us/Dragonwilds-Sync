@@ -280,6 +280,44 @@ def install_client_core(component: str, game_root: str, application: dict, param
     raise ValueError("Managed client core component must be UE4SS or RuneSchema.")
 
 
+def restore_identified_client_cores(game_root: str, application: dict) -> dict:
+    """Rebuild Game Restore runtimes from the launcher's recorded choices.
+
+    Cached manual archives are consumed by the baseline repair path. Official
+    and experimental channels are then refreshed from their recorded sources;
+    if a source is temporarily unavailable the bundled/cached safe baseline
+    remains installed and the result reports that the exact selection needs
+    attention instead of leaving the game without a runtime.
+    """
+    evidence = dict(application.get("client_core_runtime") or {})
+    baseline = server_systems.ensure_client_base_runtimes(game_root)
+    restored: dict[str, dict] = {}
+    errors: list[str] = list(baseline.get("errors") or [])
+    for component in ("ue4ss", "runeschema"):
+        manual = bool(evidence.get(f"{component}_manual_override"))
+        channel = str(evidence.get(f"{component}_channel") or "baseline").strip().casefold()
+        source = str(evidence.get(f"{component}_source_url") or "").strip()
+        if manual:
+            restored[component] = {"source": "launcher-cache", "manual_override": True}
+            continue
+        if channel not in {"official", "experimental"} or not source or source.startswith("bundled://"):
+            restored[component] = {"source": "launcher-baseline", "channel": "baseline"}
+            continue
+        try:
+            restored[component] = install_client_core(component, game_root, application, {
+                "channel": channel, "releases_url": source, "reset": True,
+            })
+        except Exception as exc:
+            errors.append(f"{component.upper()} recorded source restore failed: {exc}")
+            restored[component] = {"source": source, "channel": channel, "fallback_installed": True,
+                                   "error": str(exc)}
+    status = server_systems.client_runtime_status(game_root)
+    exact = not errors
+    return {"ok": bool(status.get("ok")) and exact, "baseline": baseline,
+            "restored": restored, "recorded": evidence, "status": status,
+            "exact_selection_restored": exact, "errors": errors}
+
+
 def _remove_writable(path: Path) -> None:
     if not path.exists():
         return

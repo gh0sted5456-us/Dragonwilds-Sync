@@ -104,6 +104,13 @@ def main():
             assert manifest["profile_name"] == "World A"
             assert manifest["hw_stats"]["os"] == "test"
             assert any(f["kind"] == "zip_bundle" for f in manifest["files"])
+            assert manifest["files"] and all(
+                (f.get("delivery_metadata") or {}).get("schema") == "DragonwildsSync.ManagedDelivery.v1"
+                and (f.get("delivery_metadata") or {}).get("managed_by") == "dragonwilds-sync"
+                and (f.get("delivery_metadata") or {}).get("profile_id") == profile_id
+                and (f.get("delivery_metadata") or {}).get("cleanup") in {"remove-file", "remove-extract-root"}
+                for f in manifest["files"]
+            ), "every client-delivered payload must carry cleanup ownership metadata"
             assert any(m["name"] == "ServerOnly" and m["classification"] == "server_only" for m in manifest["mod_summary"])
             # Client presentation hides implementation plumbing. RuneSchema core
             # and UE4SS master files are implied prerequisites, not "mods".

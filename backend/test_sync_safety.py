@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 import sync_engine
 import client_layout
 from sync_engine import safe_game_path
+from sync_manifest import tag_client_deliveries
 
 
 def main():
@@ -122,6 +123,29 @@ def main():
         assert not rune_child.exists() and not orphan.exists()
         assert not layout.paks_mods_dir.exists() and not tracked_config.exists()
         assert not (game / sync_engine.LOCAL_STATE_DIR / sync_engine.STATE_FILE).exists()
+
+    # A tagged replacement manifest makes Reset & Resync delete the identified
+    # runtime cores too; the subsequent sync must therefore restore them.
+    with TemporaryDirectory() as tmp:
+        game = Path(tmp) / "RSDragonwilds"
+        layout = sync_engine.resolve_client_layout(game)
+        ue4ss = layout.win64_dir / "ue4ss" / "UE4SS.dll"
+        ue4ss.parent.mkdir(parents=True)
+        ue4ss.write_bytes(b"old-ue4ss")
+        rune = layout.runeschema_root / "dlls" / "main.dll"
+        rune.parent.mkdir(parents=True)
+        rune.write_bytes(b"old-runeschema")
+        raw = [
+            {"path": "Binaries/Win64/ue4ss/UE4SS.dll", "kind": "file", "baseline_runtime": True},
+            {"path": "_baseline/RuneSchema-core.zip", "kind": "zip_bundle",
+             "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema", "baseline_runtime": True},
+        ]
+        tagged = tag_client_deliveries(raw, "remote")
+        reset = sync_engine.reset_client_managed_payload_for_resync(game, {"profile_id": "remote", "files": tagged})
+        assert reset["runtime_reset"] is True and reset["core_preserved"] is False
+        assert reset["tagged_targets"] == 2
+        assert not ue4ss.exists() and not layout.runeschema_root.exists()
+        assert "runtime:baseline" in reset["runtime_components_to_restore"]
     print("sync safety tests passed")
 
 

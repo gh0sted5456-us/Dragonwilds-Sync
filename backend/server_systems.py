@@ -2557,6 +2557,10 @@ class ShareServer:
         # Do not leak operator-disabled reference URLs/notes through the nested health result.
         if isinstance(initial_health.get("hardware"), dict):
             initial_health["hardware"]["references"] = broadcast_health_config.get("hardware_reference") or {}
+        # Every client-facing payload carries an explicit lifecycle tag before
+        # the manifest is fingerprinted or exposed by the Sync listener.
+        from sync_manifest import tag_client_deliveries
+        manifest_files = tag_client_deliveries(manifest_files, profile_id)
         with STATE.lock:
             version = max(int(profile.get("manifest_version") or 0), int(STATE.manifest.get("version") or 0)) + 1
             metadata_revision = max(int(profile.get("metadata_revision") or 0), int(STATE.metadata_revision or 0), int(STATE.manifest.get("metadata_revision") or 0)) + 1
@@ -3016,14 +3020,17 @@ def backup_install_for_reset(install_dir: str, *, label: str) -> dict:
     return {"ok": True, "path": str(backup_root), "copied": copied}
 
 
-def wipe_install_after_backup(install_dir: str) -> dict:
+def wipe_install_after_backup(install_dir: str, *, reset_client_runtime_loaders: bool = False) -> dict:
     """Reset launcher-managed mod surfaces without deleting the game install.
 
     Steam/EOS-owned binaries, saves, account data, and configuration remain in
     place. ``backup_install_for_reset`` must run first; this function then
     removes only the reconstructable UE4SS child tree and PAK-mod locations.
     The colocated machine-level loaders (client ``dwmapi.dll`` and dedicated
-    server ``version.dll``) are protected in place. The historical function
+    server ``version.dll``) are protected in place by default. Game Restore may
+    explicitly remove the client ``dwmapi.dll`` after backup so UE4SS is proven
+    to have been reconstructed; the dedicated ``version.dll`` remains outside
+    that client reset boundary. The historical function
     name is retained for RPC/backward compatibility, but a reset is no longer
     a recursive install wipe.
     """
@@ -3056,11 +3063,24 @@ def wipe_install_after_backup(install_dir: str) -> dict:
         else:
             candidate.unlink()
         removed.append(relative)
+    removed_runtime_loaders = []
+    if reset_client_runtime_loaders:
+        for loader in (
+            target / "Binaries/Win64/dwmapi.dll",
+            target / "RSDragonwilds/Binaries/Win64/dwmapi.dll",
+        ):
+            resolved_loader = loader.resolve(strict=False)
+            if resolved_loader == resolved_target or resolved_target not in resolved_loader.parents or not resolved_loader.is_file():
+                continue
+            _set_runtime_tree_writable(resolved_loader, True)
+            resolved_loader.unlink()
+            removed_runtime_loaders.append(str(resolved_loader))
     protected = [str(path) for path in (
         target / "Binaries/Win64/dwmapi.dll", target / "Binaries/Win64/version.dll",
         target / "RSDragonwilds/Binaries/Win64/dwmapi.dll", target / "RSDragonwilds/Binaries/Win64/version.dll",
     ) if path.is_file()]
     return {"ok": True, "deleted": False, "path": str(target), "removed": removed,
+            "removed_runtime_loaders": removed_runtime_loaders,
             "protected_runtime_loaders": protected, "scope": "managed_mods_only",
             "steam_files_preserved": True, "eos_data_preserved": True}
 

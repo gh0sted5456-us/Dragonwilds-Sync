@@ -5,6 +5,8 @@ import json
 from pathlib import PurePosixPath
 
 SYNC_META_SCHEMA = "DragonwildsSync.ClientManifestMeta.v1"
+DELIVERY_META_SCHEMA = "DragonwildsSync.ManagedDelivery.v1"
+DELIVERY_OWNER = "dragonwilds-sync"
 
 
 def _clean_path(value: object) -> str:
@@ -63,7 +65,45 @@ def component_key(entry: dict) -> str:
     return f"file:{path.casefold()}"
 
 
+def delivery_metadata(entry: dict, profile_id: object = "") -> dict:
+    """Build the cleanup identity carried by every client-delivered payload.
+
+    The SHA manifest proves content.  This separate tag proves lifecycle
+    ownership, including non-game targets and bundles whose wire name differs
+    from their materialized destination.
+    """
+    kind = str(entry.get("kind") or "file").casefold()
+    scope = str(entry.get("target_scope") or "game").casefold()
+    return {
+        "schema": DELIVERY_META_SCHEMA,
+        "managed_by": DELIVERY_OWNER,
+        "owner_scope": "launcher-runtime" if bool(entry.get("baseline_runtime") or entry.get("baked_component")) else "world-profile",
+        "profile_id": str(profile_id or ""),
+        "component": component_key(entry),
+        "cleanup": "remove-extract-root" if kind == "zip_bundle" else "remove-file",
+        "target_scope": scope,
+        "target_path": _clean_path(entry.get("target_path")),
+        "extract_to": _clean_path(entry.get("extract_to")),
+    }
+
+
+def tag_client_delivery(entry: dict, profile_id: object = "") -> dict:
+    tagged = dict(entry)
+    tagged["delivery_metadata"] = delivery_metadata(tagged, profile_id)
+    return tagged
+
+
+def tag_client_deliveries(entries: object, profile_id: object = "") -> list[dict]:
+    return [tag_client_delivery(row, profile_id) for row in (entries or []) if isinstance(row, dict)]
+
+
+def has_valid_delivery_metadata(entry: dict) -> bool:
+    metadata = entry.get("delivery_metadata") if isinstance(entry.get("delivery_metadata"), dict) else {}
+    return metadata.get("schema") == DELIVERY_META_SCHEMA and metadata.get("managed_by") == DELIVERY_OWNER
+
+
 def canonical_entry(entry: dict) -> dict:
+    existing_metadata = entry.get("delivery_metadata") if isinstance(entry.get("delivery_metadata"), dict) else {}
     return {
         "path": _clean_path(entry.get("path")),
         "sha256": str(entry.get("sha256") or "").casefold(),
@@ -74,6 +114,7 @@ def canonical_entry(entry: dict) -> dict:
         "target_scope": str(entry.get("target_scope") or "game").casefold(),
         "target_path": _clean_path(entry.get("target_path")),
         "platforms": sorted(str(value).casefold() for value in (entry.get("platforms") or []) if str(value).strip()),
+        "delivery_metadata": delivery_metadata(entry, existing_metadata.get("profile_id")),
     }
 
 

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from sync_manifest import build_client_meta, component_fingerprints, component_key, manifest_fingerprint
+from sync_manifest import (DELIVERY_META_SCHEMA, build_client_meta, component_fingerprints,
+                           component_key, has_valid_delivery_metadata,
+                           manifest_fingerprint, tag_client_deliveries)
 
 
 def main():
@@ -44,6 +46,12 @@ def main():
     assert meta["manifest_version"] == 4
     assert meta["manifest_fingerprint"] == first
     assert meta["file_count"] == 5
+    tagged = tag_client_deliveries(manifest["files"], manifest["profile_id"])
+    assert len(tagged) == len(manifest["files"])
+    assert all(has_valid_delivery_metadata(row) for row in tagged)
+    assert all(row["delivery_metadata"]["schema"] == DELIVERY_META_SCHEMA for row in tagged)
+    assert tagged[4]["delivery_metadata"]["cleanup"] == "remove-file"
+    assert tagged[4]["delivery_metadata"]["target_scope"] == "client_config"
     print("sync manifest fingerprint tests passed")
 
 

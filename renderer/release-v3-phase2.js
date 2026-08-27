@@ -238,11 +238,11 @@
     closePicker();
     const modes = server ? ['server'] : ['player','coop'];
     picker=document.createElement('div'); picker.className='v3q-picker-backdrop';
-    picker.innerHTML=`<div class="v3q-picker"><button class="v3q-picker-x" aria-label="Close">×</button><small>CREATE QUICK SHORTCUT</small><h3>${esc(name||'World')}</h3><p>Shortcuts use the stable profile ID. Renaming the World will not break them.</p>${modes.map((m)=>`<div class="v3q-picker-role"><b>${m==='server'?'Server':m==='coop'?'Co-Op':'Player'}</b><button data-v3q-shortcut="${m}:open">Open Quick</button><button data-v3q-shortcut="${m}:start">Open Quick + Start</button></div>`).join('')}</div>`;
+    picker.innerHTML=`<div class="v3q-picker"><button class="v3q-picker-x" aria-label="Close">×</button><small>CREATE QUICK SHORTCUT</small><h3>${esc(name||'World')}</h3><p>Shortcuts use the stable profile ID. Renaming the World will not break them. Headless Server targets the standalone Headless EXE beside this application.</p>${modes.map((m)=>`<div class="v3q-picker-role"><b>${m==='server'?'Server':m==='coop'?'Co-Op':'Player'}</b><button data-v3q-shortcut="${m}:open">Open Quick</button><button data-v3q-shortcut="${m}:start">Open Quick + Start</button>${m==='server'?`<button data-v3q-shortcut="${m}:headless">Headless Start</button>`:''}</div>`).join('')}</div>`;
     document.body.appendChild(picker); picker.querySelector('.v3q-picker-x')?.addEventListener('click',closePicker); picker.addEventListener('click',(e)=>{if(e.target===picker)closePicker();});
     picker.querySelectorAll('[data-v3q-shortcut]').forEach((button)=>button.addEventListener('click',async()=>{
       const [selected,behavior]=button.dataset.v3qShortcut.split(':');
-      try { await window.dragonwildsV3?.createQuickShortcut?.({profileId:id,name,mode:selected,autoStart:behavior==='start'}); toast('Quick shortcut created','success'); closePicker(); }
+      try { await window.dragonwildsV3?.createQuickShortcut?.({profileId:id,name,mode:selected,runtime:behavior==='headless'?'headless':'gui',autoStart:behavior==='start'}); toast('Quick shortcut created','success'); closePicker(); }
       catch(error){toast(error?.message||String(error),'error');}
     }));
   }

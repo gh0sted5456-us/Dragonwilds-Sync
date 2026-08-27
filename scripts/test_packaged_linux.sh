@@ -6,6 +6,7 @@ REPORT="${1:-release/package-test-report-linux.txt}"
 mkdir -p "$(dirname "$REPORT")"
 SERVICE="$ROOT/dist-service/DragonwildsSync.Service"
 APPIMAGE="$(find "$ROOT/release" -maxdepth 1 -type f -name '*Ubuntu*.AppImage' -print -quit)"
+HEADLESS="$(find "$ROOT/release" -maxdepth 1 -type f -name 'Dragonwilds-Sync-Headless-Ubuntu-*' -print -quit)"
 
 pass() { printf 'PASS  %s\n' "$1" | tee -a "$REPORT"; }
 fail() { printf 'FAIL  %s\n' "$1" | tee -a "$REPORT" >&2; exit 1; }
@@ -22,6 +23,12 @@ output="$(printf '%s\n' "$probe" | "$SERVICE" 2>&1)" || fail 'Packaged service J
 printf '%s' "$output" | grep -Eq '"id"[[:space:]]*:[[:space:]]*1' || fail 'Packaged service returned request id'
 printf '%s' "$output" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true' || fail 'Packaged service returned ok=true'
 pass 'Packaged service JSON-RPC stdio'
+[[ -n "$HEADLESS" && -x "$HEADLESS" ]] || fail 'Standalone headless CLI exists and is executable'
+HEADLESS_APPDATA="$(mktemp -d)"
+headless_output="$(DRAGONWILDS_SYNC_APPDATA="$HEADLESS_APPDATA" "$HEADLESS" --headless profiles --json 2>&1)" || fail 'Standalone headless CLI profile probe'
+rm -rf -- "$HEADLESS_APPDATA"
+printf '%s' "$headless_output" | grep -Eq '^\[' || fail 'Standalone headless CLI returned profile JSON'
+pass 'Standalone headless CLI profile probe'
 crypto='{"id":2,"method":"application.cryptography.status","params":{}}'
 crypto_output="$(printf '%s\n' "$crypto" | "$SERVICE" 2>&1)" || fail 'Packaged cryptography self-test RPC'
 printf '%s' "$crypto_output" | grep -Eq '"id"[[:space:]]*:[[:space:]]*2' || fail 'Packaged cryptography self-test response'
@@ -51,4 +58,4 @@ notrun 'Windows client discovery of Ubuntu-hosted World'
 notrun 'Windows client manifest/mod synchronization from Ubuntu host'
 notrun 'RSDW live bridge on Linux/Proton'
 printf '\nAutomated package result: READY FOR CLEAN-VM / GAME INTEGRATION TESTING\n' | tee -a "$REPORT"
-sha256sum "$APPIMAGE" "$SERVICE" > "$ROOT/release/checksums-linux.sha256"
+sha256sum "$APPIMAGE" "$HEADLESS" "$SERVICE" > "$ROOT/release/checksums-linux.sha256"

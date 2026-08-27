@@ -57,6 +57,7 @@ jobs:
           if-no-files-found: error
           path: |
             release/*Ubuntu*.AppImage
+            release/Dragonwilds-Sync-Headless-Ubuntu-*
             release/checksums-linux.sha256
             release/package-test-report-linux.txt
             dist-service/DragonwildsSync.Service
@@ -120,7 +121,7 @@ jobs:
       - name: Create Windows package report and checksums
         shell: powershell
         run: |
-          $portable = Get-ChildItem .\release\*.exe | Select-Object -First 1
+          $portable = Get-ChildItem .\release\*Portable*.exe | Select-Object -First 1
           if (-not $portable) { throw 'Portable EXE was not produced.' }
           @(
             'Dragonwilds Sync Windows Release Candidate',
@@ -134,6 +135,7 @@ jobs:
             'PASS  npm run verify (build gate)',
             'PASS  sandboxed Electron preload bridge (build gate)',
             'PASS  Packaged service JSON-RPC stdio (build gate)',
+            'PASS  Standalone Headless CLI profile/terminal probe (build gate)',
             'PASS  Packaged Ed25519 self-test (build gate)',
             'PASS  Packaged launcher/resource validation (build gate)',
             'NOT RUN  Real Dragonwilds game launch',
@@ -142,8 +144,10 @@ jobs:
             '',
             'Automated package result: READY FOR CLEAN-VM / GAME INTEGRATION TESTING'
           ) | Set-Content .\release\package-test-report-windows.txt -Encoding UTF8
-          $hash = Get-FileHash $portable.FullName -Algorithm SHA256
-          "$($hash.Hash.ToLower())  $($portable.Name)" | Set-Content .\release\checksums-windows.sha256 -Encoding ASCII
+          Get-ChildItem .\release\*.exe | ForEach-Object {
+            $hash = Get-FileHash $_.FullName -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $($_.Name)"
+          } | Set-Content .\release\checksums-windows.sha256 -Encoding ASCII
       - name: Upload Windows Portable EXE
         uses: actions/upload-artifact@v6
         with:
@@ -217,7 +221,7 @@ jobs:
           appimages=(release-assets/*.AppImage)
           windows_checksums=(release-assets/checksums-windows.sha256)
           linux_checksums=(release-assets/checksums-linux.sha256)
-          [[ ${#executables[@]} -eq 1 ]] || { echo "Expected exactly one Windows Portable EXE; found ${#executables[@]}" >&2; exit 1; }
+          [[ ${#executables[@]} -eq 2 ]] || { echo "Expected Windows Portable and Headless EXEs; found ${#executables[@]}" >&2; exit 1; }
           [[ ${#appimages[@]} -eq 1 ]] || { echo "Expected exactly one Linux AppImage; found ${#appimages[@]}" >&2; exit 1; }
           [[ ${#windows_checksums[@]} -eq 1 ]] || { echo 'Windows checksum is missing.' >&2; exit 1; }
           [[ ${#linux_checksums[@]} -eq 1 ]] || { echo 'Linux checksum is missing.' >&2; exit 1; }
@@ -233,6 +237,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             release-assets/*.exe \
             release-assets/*.AppImage \
+            release-assets/Dragonwilds-Sync-Headless-Ubuntu-* \
             release-assets/DragonLink-Connect-baseline.zip \
             release-assets/RuneSchema-core-latest.zip \
             release-assets/RuneSchema-experimental-latest.zip \

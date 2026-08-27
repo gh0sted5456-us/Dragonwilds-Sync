@@ -644,7 +644,7 @@ def handle(method: str, params: dict) -> object:
 _legacy.handle = handle
 
 
-def main() -> int:
+def _initialize_control_plane() -> None:
     prepare_for_v3_migration(source_version=str(profile_store.SCHEMA_VERSION), target_version="phase5-runtime-worker")
     update_stage("metadataMigrated", True, note="Phase 4 presentation/publication authorities preserved")
     update_stage("exportsMigrated", True, note="V3 canonical exchange authority preserved")
@@ -656,6 +656,14 @@ def main() -> int:
     NETWORK.ensure_installation_identity()
     update_stage("quickLaunchMigrated", True)
     NETWORK.start_background()
+
+
+def main() -> int:
+    _initialize_control_plane()
+    if "--headless" in sys.argv:
+        from headless_cli import run as _headless_run
+        index = sys.argv.index("--headless")
+        return _headless_run(handle, _legacy, sys.argv[index + 1:])
     return _legacy.main()
 
 

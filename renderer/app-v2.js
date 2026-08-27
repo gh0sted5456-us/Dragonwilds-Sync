@@ -4837,7 +4837,7 @@
       const webhostFeatureEnabled=!!(a.advanced||{}).webhost_enabled;
       const remoteFeatureEnabled=!!(a.advanced||{}).remote_server_enabled;
       const externalTab=externalSettingsTab;
-      const externalTabs=!standaloneHostWorkspace?`<nav class="settings-subnav webhost-tabs"><button class="${externalTab==='overview'?'active':''}" data-external-tab="overview">Overview</button>${webhostFeatureEnabled?`<button class="${externalTab==='website'?'active':''}" data-external-tab="website">Website Management</button>`:''}${remoteFeatureEnabled?`<button class="${externalTab==='remote'?'active':''}" data-external-tab="remote">Remote Management</button>`:''}${(webhostFeatureEnabled||remoteFeatureEnabled)?`<button class="${externalTab==='live'?'active':''}" data-external-tab="live">Live Preview</button>`:''}</nav>`:'';
+      const externalTabs=!standaloneHostWorkspace?`<nav class="settings-subnav webhost-tabs"><button class="${externalTab==='overview'?'active':''}" data-external-tab="overview">Overview</button>${webhostFeatureEnabled?`<button class="${externalTab==='website'?'active':''}" data-external-tab="website">Website &amp; Directory</button>`:''}${remoteFeatureEnabled?`<button class="${externalTab==='remote'?'active':''}" data-external-tab="remote">Server Management</button>`:''}${(webhostFeatureEnabled||remoteFeatureEnabled)?`<button class="${externalTab==='live'?'active':''}" data-external-tab="live">WebGUI Preview</button>`:''}</nav>`:'';
       if(standaloneHostWorkspace){
         const runningServerId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');
         const selectedManagementWorld=serverWorlds().find((world)=>String(world.id||'')===runningServerId)||activeServerWorld()||serverWorlds()[0]||null;
@@ -5781,13 +5781,21 @@
             await avatarWebview.insertCSS(embeddedScrollbarCss(embeddedAvatarCss()));
             avatarCssInserted=true;
           }
-          const result=await avatarWebview.executeJavaScript(`(()=>{document.body?.classList.add('dws-embedded');const stage=document.querySelector('#avatar-stage');const c=document.querySelector('canvas');if(!c)return {ok:false,ready:document.readyState};if(stage)Object.assign(stage.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',minHeight:'100vh',margin:'0'});Object.assign(c.style,{display:'block',width:'100vw',height:'100vh',minHeight:'100vh'});const models=(document.querySelector('#avatar-status')?.textContent.match(/(\\d+) layered models?\\./)||[])[1]||'';if(!Number(models))return {ok:false,ready:'models-pending'};return new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(()=>{window.dispatchEvent(new Event('resize'));const reset=document.querySelector('#reset-view');if(reset&&!reset.disabled)reset.click();resolve({ok:true,w:c.clientWidth,h:c.clientHeight,models});})));})()`,true);
-          if(!result?.ok){if(result?.ready==='models-pending')setAvatarStatus('Canvas ready · streaming model layers…','streaming');return;}
+          const shell=await avatarWebview.executeJavaScript(`(()=>{document.body?.classList.add('dws-embedded');const stage=document.querySelector('#avatar-stage');const c=document.querySelector('canvas');if(!c)return {ok:false,ready:document.readyState};if(stage)Object.assign(stage.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',minHeight:'100vh',margin:'0'});Object.assign(c.style,{display:'block',width:'100vw',height:'100vh',minHeight:'100vh'});return {ok:true,api:typeof window.dwsApplyAvatarParams==='function',loading:document.querySelector('#avatar-loading')?.hidden===false,status:document.querySelector('#avatar-status')?.textContent||''};})()`,true);
+          if(!shell?.ok){return;}
+          if(!shell.api){setAvatarStatus('Canvas ready · preparing character controls…','streaming');return;}
           // The URL hash seeds RSDWModel, but some upstream builds populate
           // their slot selects after the first render. Reapply the complete
           // save-backed payload now that the layered model catalog is ready so
           // equipped armour and weapons cannot be dropped during startup.
           await syncRsdwAvatarPreview(state.rsdwPreviewAvatar||state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar||{});
+          const result=await avatarWebview.executeJavaScript(`(()=>{const c=document.querySelector('canvas');const status=document.querySelector('#avatar-status')?.textContent||'';const warning=document.querySelector('#avatar-warning');const warningText=warning&&!warning.hidden?(warning.textContent||'').trim():'';const loading=document.querySelector('#avatar-loading')?.hidden===false;const models=(status.match(/(\\d+)\\s+layered models?/i)||[])[1]||'';return {ok:!!c&&!loading&&!warningText,w:c?.clientWidth||0,h:c?.clientHeight||0,models,status,warning:warningText,loading};})()`,true);
+          if(!result?.ok){
+            if(result?.warning) setAvatarStatus(`3D assets need attention · ${result.warning}`,'error');
+            else setAvatarStatus('Canvas ready · streaming model layers…','streaming');
+            return;
+          }
+          await avatarWebview.executeJavaScript(`(()=>new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(()=>{window.dispatchEvent(new Event('resize'));const reset=document.querySelector('#reset-view');if(reset&&!reset.disabled)reset.click();resolve(true);}))))()`,true);
           const upstream=await avatarWebview.executeJavaScript(`(()=>Object.fromEntries(['slot-hair','slot-beard','slot-rightHand','slot-leftHand','avatar-animation-select'].map(id=>{const select=document.getElementById(id);return [id,select?{value:select.value,options:[...select.options].map(option=>({value:option.value,label:option.textContent||option.label||option.value}))}:null]})))()`,true);
           root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>{const source=upstream?.[select.dataset.avatarUpstreamSelect];if(!source)return;const filter=String(select.dataset.avatarFilter||'').toLowerCase().replace(/[_-]/g,' ');const options=(source.options||[]).filter((option)=>!filter||String(option.label||'').toLowerCase().replace(/[_-]/g,' ').includes(filter));let selectedValue=source.value;if(select.dataset.avatarDefault==='idle'){const idle=options.find((option)=>/(^|[\s_/-])idle([\s_/-]|$)/i.test(String(option.label||'')))||options.find((option)=>/idle/i.test(String(option.label||'')));if(idle)selectedValue=idle.value;}select.innerHTML=options.map((option)=>`<option value="${escapeHtml(option.value)}" ${String(option.value)===String(selectedValue)?'selected':''}>${escapeHtml(option.label)}</option>`).join('')||'<option value="">No matching RSDWModel entries</option>';select.disabled=!options.length;select.dispatchEvent(new Event('avatar-options-ready'));if(select.dataset.avatarDefault==='idle'&&selectedValue&&String(selectedValue)!==String(source.value)){avatarWebview.executeJavaScript(`(()=>{const s=document.getElementById('avatar-animation-select');if(!s)return false;s.value=${JSON.stringify(selectedValue)};s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('avatar-animation-play')?.click();return true;})()`,true).catch(()=>{});}});
           const background=String(state.rsdwAvatarBackground||'theme');
@@ -5798,7 +5806,11 @@
           const modelCopy=result.models?` · ${result.models} live model layers`:'';
           setAvatarStatus(`Avatar loaded${modelCopy} · ${fields} save-backed appearance fields`,'ready');
           return true;
-         }catch(_){return false; /* The next lifecycle or retry callback handles pages still navigating. */}
+         }catch(error){
+          console.warn('Character preview preparation deferred:',error);
+          setAvatarStatus('3D renderer is still starting…','streaming');
+          return false; /* The next lifecycle or retry callback handles pages still navigating. */
+         }
         })().finally(()=>{avatarPreparePromise=null;});
         return avatarPreparePromise;
       };

@@ -3,7 +3,8 @@
 // stable-profile-id window launch contract before main-v2.cjs initializes.
 const { app, ipcMain, shell } = require('electron');
 const path = require('path');
-const { buildQuickShortcutArgs, normalizeProfileId, normalizeQuickMode } = require('./quick_shortcut.cjs');
+const { buildHeadlessShortcutArgs, buildQuickShortcutArgs, normalizeProfileId, normalizeQuickMode } = require('./quick_shortcut.cjs');
+const { resolveGuiShortcutTarget, resolveHeadlessShortcutTarget } = require('./shortcut_targets.cjs');
 
 // The save-backed RSDWModel preview is a WebContents guest. Keep its WebGL
 // renderer at full priority even when a popover or another launcher window has
@@ -19,24 +20,31 @@ function createV3QuickShortcut(data = {}) {
   const id = normalizeProfileId(data.profileId || data.worldId);
   const shortcutMode = normalizeQuickMode(data.mode);
   const auto = data.autoStart === true;
+  const runtime = String(data.runtime || 'gui').trim().toLowerCase() === 'headless' ? 'headless' : 'gui';
+  if (runtime === 'headless' && shortcutMode !== 'server') throw new Error('Standalone headless shortcuts are currently server-only.');
   const baseName = String(data.name || 'Dragonwilds World').replace(/[<>:"/\\|?*]/g, '').trim() || 'Dragonwilds World';
   const role = shortcutMode === 'server' ? 'Server' : (shortcutMode === 'coop' ? 'Co-Op' : 'Player');
-  const safeName = `${baseName} · ${role}`;
+  const safeName = `${baseName} · ${runtime === 'headless' ? 'Headless ' : ''}${role}`;
   const shortcutPath = path.join(app.getPath('desktop'), `${safeName}.lnk`);
-  const quickArgs = buildQuickShortcutArgs({ profileId: id, mode: shortcutMode, autoStart: auto });
   const projectRoot = path.resolve(__dirname, '..');
-  const target = process.execPath;
-  const shortcutArgs = app.isPackaged ? quickArgs : `"${projectRoot}" ${quickArgs}`;
+  const guiTarget = resolveGuiShortcutTarget(process.execPath);
+  const target = runtime === 'headless' && app.isPackaged
+    ? resolveHeadlessShortcutTarget({ executablePath: guiTarget, version: app.getVersion(), requestedPath: data.executablePath })
+    : guiTarget;
+  const launchArgs = runtime === 'headless'
+    ? buildHeadlessShortcutArgs({ profileId: id, mode: shortcutMode, command: 'run' })
+    : buildQuickShortcutArgs({ profileId: id, mode: shortcutMode, autoStart: auto });
+  const shortcutArgs = app.isPackaged ? launchArgs : `"${projectRoot}" ${launchArgs}`;
   const ok = shell.writeShortcutLink(shortcutPath, 'create', {
     target,
     args: shortcutArgs,
-    description: `${auto ? 'Open Quick + Start' : 'Open Quick'} · ${baseName} · ${role}`,
-    cwd: app.isPackaged ? path.dirname(process.execPath) : projectRoot,
-    icon: process.execPath,
+    description: runtime === 'headless' ? `Run ${baseName} headlessly` : `${auto ? 'Open Quick + Start' : 'Open Quick'} · ${baseName} · ${role}`,
+    cwd: app.isPackaged ? path.dirname(target) : projectRoot,
+    icon: target,
     iconIndex: 0,
   });
   if (!ok) throw new Error('Windows did not create the Quick desktop shortcut.');
-  return { ok: true, path: shortcutPath, profileId: id, mode: shortcutMode, autoStart: auto };
+  return { ok: true, path: shortcutPath, target, profileId: id, mode: shortcutMode, runtime, autoStart: auto };
 }
 ipcMain.handle('dragonwilds:create-v3-quick-shortcut', (_event, data) => createV3QuickShortcut(data));
 

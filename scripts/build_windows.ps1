@@ -371,6 +371,21 @@ try {
         }
         Write-BuildLine '[OK] Packaged service JSON-RPC stdio is working.'
 
+        # The independently shipped console binary must exercise the terminal
+        # entry path too. This catches dynamic-import/PyInstaller omissions and
+        # prevents a GUI-only portable stub from being mistaken for an SSH CLI.
+        Write-BuildLine 'Testing packaged headless CLI output and exit code...'
+        $headlessProbeOutput = @(& $serviceExe --headless profiles --json 2>&1)
+        $headlessProbeRc = $LASTEXITCODE
+        $headlessProbeText = ($headlessProbeOutput | ForEach-Object { $_.ToString() }) -join "`n"
+        if ($headlessProbeRc -ne 0) {
+            Fail-Build "Packaged headless CLI exited with code $headlessProbeRc. Output: $headlessProbeText" $headlessProbeRc
+        }
+        if ($headlessProbeText.Trim() -notmatch '^\[') {
+            Fail-Build "Packaged headless CLI did not return the profile JSON array. Output: $headlessProbeText"
+        }
+        Write-BuildLine '[OK] Packaged headless CLI is working.'
+
         Write-BuildLine 'Testing packaged Ed25519 generation, signing, serialization, reload, and rejection...'
         $cryptoProbeInput = '{"id":2,"method":"application.cryptography.status","params":{}}'
         $cryptoProbeOutput = @($cryptoProbeInput | & $serviceExe 2>&1)
@@ -435,6 +450,17 @@ try {
     if (-not (Test-Path -LiteralPath $releaseDir -PathType Container)) {
         Fail-Build 'electron-builder completed without producing the release directory.'
     }
+
+    # Ship the console-subsystem service as a first-class release artifact.
+    # Copying it beside (not inside) the GUI portable adds no bloat to the GUI
+    # binary and gives PowerShell/SSH real stdout, signals, and exit codes.
+    $packageVersion = [string]((Get-Content -LiteralPath (Join-Path $ProjectRoot 'package.json') -Raw | ConvertFrom-Json).version)
+    $headlessReleaseExe = Join-Path $releaseDir "Dragonwilds Sync Headless-$packageVersion.exe"
+    Copy-Item -LiteralPath $serviceExe -Destination $headlessReleaseExe -Force
+    if (-not (Test-Path -LiteralPath $headlessReleaseExe -PathType Leaf)) {
+        Fail-Build 'The standalone headless Windows artifact was not produced.'
+    }
+    Write-BuildLine "[OK] Headless CLI artifact: $headlessReleaseExe"
 
     $releaseExes = @(Get-ChildItem -LiteralPath $releaseDir -Filter '*.exe' -File -ErrorAction SilentlyContinue)
     if ($releaseExes.Count -lt 1) {

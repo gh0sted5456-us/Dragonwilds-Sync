@@ -9,6 +9,7 @@ const { DiscordRichPresence } = require('./discord_rpc.cjs');
 const { checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate } = require('./app_updater.cjs');
 const { NexusAdapter } = require('./nexus_adapter.cjs');
 const { buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId } = require('./quick_shortcut.cjs');
+const { resolveGuiShortcutTarget } = require('./shortcut_targets.cjs');
 
 function startupPerformanceSettings() {
   const defaults={hardware_acceleration:true,renderer_memory_mb:0};
@@ -751,10 +752,10 @@ function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind }) 
   const shortcutPath = path.join(app.getPath('desktop'), `${safeName}.lnk`); const icon = writeWorldIcon(id, resolvedIconData);
   const mode = modeForWorldKind(kind);
   const quickArgs = buildQuickShortcutArgs({ profileId: id, mode, autoStart: true });
-  const target = process.execPath; const args = app.isPackaged ? quickArgs : `"${projectRoot()}" ${quickArgs}`;
+  const target = resolveGuiShortcutTarget(process.execPath); const args = app.isPackaged ? quickArgs : `"${projectRoot()}" ${quickArgs}`;
   const ok = shell.writeShortcutLink(shortcutPath, 'create', { target, args, description: `Quick launch ${safeName} with Dragonwilds Sync`, cwd: app.isPackaged ? path.dirname(process.execPath) : projectRoot(), icon, iconIndex: 0 });
   if (!ok) throw new Error('Windows did not create the desktop shortcut.');
-  return { ok: true, path: shortcutPath, icon, profileId: id, mode, arguments: quickArgs };
+  return { ok: true, path: shortcutPath, target, icon, profileId: id, mode, arguments: quickArgs };
 }
 
 ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {

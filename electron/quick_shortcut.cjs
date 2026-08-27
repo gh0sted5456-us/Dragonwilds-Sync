@@ -23,4 +23,12 @@ function buildQuickShortcutArgs({ profileId, mode = 'player', autoStart = true }
   return `--quick --profile=${id} --mode=${normalizedMode}${autoStart ? ' --auto-start' : ''}`;
 }
 
-module.exports = { buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId, normalizeQuickMode };
+function buildHeadlessShortcutArgs({ profileId, mode = 'server', command = 'run' } = {}) {
+  const id = normalizeProfileId(profileId);
+  const normalizedMode = normalizeQuickMode(mode, 'server');
+  const normalizedCommand = String(command || 'run').trim().toLowerCase();
+  if (!['run', 'start', 'status'].includes(normalizedCommand)) throw new Error('Unsupported headless shortcut command.');
+  return `--headless ${normalizedCommand} --profile=${id} --mode=${normalizedMode}`;
+}
+
+module.exports = { buildHeadlessShortcutArgs, buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId, normalizeQuickMode };

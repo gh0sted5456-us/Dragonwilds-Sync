@@ -29,6 +29,8 @@ def main():
     assert "$ErrorActionPreference = $previousErrorActionPreference" in text
     assert 'if ($rc -ne 0)' in text
     assert 'Testing packaged service JSON-RPC stdio' in text
+    assert 'Testing packaged headless CLI output and exit code' in text
+    assert 'Dragonwilds Sync Headless-$packageVersion.exe' in text
     assert '$probeInput' in text and '$probeOutput' in text
     assert 'Testing packaged Ed25519 generation' in text
     assert 'application.cryptography.status' in text and 'invalid_signature_rejected' in text

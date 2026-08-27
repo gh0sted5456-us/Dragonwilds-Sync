@@ -41,5 +41,9 @@ fi
 # GitHub Actions sets CI, which otherwise makes electron-builder attempt an
 # actual GitHub release. RC packaging is artifact-only and requires no token.
 npx electron-builder --linux AppImage --publish never
+VERSION="$(node -p "require('./package.json').version")"
+HEADLESS_RELEASE="release/Dragonwilds-Sync-Headless-Ubuntu-${VERSION}"
+cp dist-service/DragonwildsSync.Service "$HEADLESS_RELEASE"
+chmod +x "$HEADLESS_RELEASE"
 bash scripts/test_packaged_linux.sh
-echo "Ubuntu release-candidate build complete. See release/ for the AppImage, checksums, and package-test report."
+echo "Ubuntu release-candidate build complete. See release/ for the AppImage, headless CLI, checksums, and package-test report."

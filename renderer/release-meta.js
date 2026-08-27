@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.0.3',
-  name: 'V3 · World Presence & Review Reliability',
+  version: '3.0.4',
+  name: 'V3 · Connected Profile Stability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,6 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
+    version: '3.0.4',
+    title: 'Connected Profile Stability',
+    items: [
+      'Connected World snapshots now live in a dedicated profile namespace and can no longer hydrate as phantom SinglePlayer Worlds.',
+      'Legacy snapshot-only folders migrate automatically while every real local profile.json remains an untouchable ownership boundary.',
+      'Connected World IDs remain stable across repeated hydration, Sync, verification, and Play cycles.',
+      'Direct Connect routing and profile activation retain the verified World after synchronization instead of falling back to an empty IP route.',
+    ],
+  }, {
     version: '3.0.3',
     title: 'World Presence & Review Reliability',
     items: [

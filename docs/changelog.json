@@ -1,7 +1,19 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-26T00:00:00Z",
+  "updated_at": "2026-08-27T00:00:00Z",
   "releases": [
+    {
+      "version": "3.0.4",
+      "title": "Connected Profile Stability",
+      "date": "2026-08-27",
+      "status": "testing",
+      "highlights": [
+        "Connected World snapshots use a dedicated profile namespace and never hydrate as phantom SinglePlayer Worlds.",
+        "Legacy snapshot-only folders migrate automatically without touching real local profiles or their saves.",
+        "Connected IDs remain stable through repeated discovery, synchronization, verification, and Play cycles.",
+        "Verified Direct Connect routes survive synchronization and profile activation without an empty-IP fallback."
+      ]
+    },
     {
       "version": "3.0.3",
       "title": "World Presence & Review Reliability",

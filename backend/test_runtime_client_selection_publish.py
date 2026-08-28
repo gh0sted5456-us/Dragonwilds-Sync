@@ -9,7 +9,11 @@ def test_operator_runtime_file_selection_filters_published_client_baseline():
     previous_publish = server_systems.PUBLISH_DIR
     with TemporaryDirectory() as temp:
         root = Path(temp)
-        game = root / "server" / "RSDragonwilds"
+        selected = root / "server"
+        if server_systems.NATIVE_LINUX:
+            game = selected / "RSDragonwilds"
+        else:
+            game = selected / "steamcmd" / "steamapps" / "common" / "RuneScape Dragonwilds Dedicated Server" / "RSDragonwilds"
         win64 = game / "Binaries" / "Win64"
         ue4ss = win64 / "ue4ss"
         rune = ue4ss / "Mods" / "RuneSchema"
@@ -32,7 +36,7 @@ def test_operator_runtime_file_selection_filters_published_client_baseline():
             },
         }
         try:
-            server_systems._publish_baseline_client_runtimes(str(root / "server"), manifest, profile)
+            server_systems._publish_baseline_client_runtimes(str(selected), manifest, profile)
         finally:
             server_systems.PUBLISH_DIR = previous_publish
         paths = {row["path"]: row for row in manifest}

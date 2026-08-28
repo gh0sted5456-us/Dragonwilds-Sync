@@ -3,6 +3,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import server_systems
+from server_layout import NATIVE_LINUX
 
 
 def test_operator_runtime_file_selection_filters_published_client_baseline():
@@ -10,7 +11,7 @@ def test_operator_runtime_file_selection_filters_published_client_baseline():
     with TemporaryDirectory() as temp:
         root = Path(temp)
         selected = root / "server"
-        if server_systems.NATIVE_LINUX:
+        if NATIVE_LINUX:
             game = selected / "RSDragonwilds"
         else:
             game = selected / "steamcmd" / "steamapps" / "common" / "RuneScape Dragonwilds Dedicated Server" / "RSDragonwilds"

@@ -1,5 +1,5 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  "version": "3.0.5",
+  version: '3.0.5',
   "name": "V3",
   "rsdwlVersion": 3,
   "attributions": [

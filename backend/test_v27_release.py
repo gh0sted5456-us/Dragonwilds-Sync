@@ -20,7 +20,7 @@ def main():
     assert re.fullmatch(r"3\.\d+\.\d+", version)
     assert package_lock["version"] == version
     assert package_lock["packages"][""]["version"] == version
-    assert f"version: '{version}'" in release_meta
+    assert f"version: '{version}'" in release_meta or f'"version": "{version}"' in release_meta
     releases = changelog["releases"]
     assert len(releases) == 1
     assert changelog.get("name") == "V3"

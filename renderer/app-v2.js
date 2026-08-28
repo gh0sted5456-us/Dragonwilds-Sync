@@ -3113,4 +3113,5306 @@
   }
 
   function advertisedModFamily(value) {
-    const text=typeof value==='string'?value:[value?.section,value?.group,value?.kind,value?.type,value?.loader,value?.classification,value?.path,value?.name].filter(B
+    const text=typeof value==='string'?value:[value?.section,value?.group,value?.kind,value?.type,value?.loader,value?.classification,value?.path,value?.name].filter(Boolean).join(' ');
+    const key=String(text||'').toLowerCase();
+    if(key.includes('rune'))return 'runeschema';
+    if(key.includes('pak'))return 'paks';
+    if(key.includes('ue4'))return 'ue4ss';
+    return 'other';
+  }
+
+  function showAdvertisedMods(item, family='', sourceLabel='Verified World Metadata') {
+    const all=Array.isArray(item?.mod_summary)?item.mod_summary:[];
+    const familyKey=advertisedModFamily(family);
+    const filtered=family&&familyKey!=='other'?all.filter((mod)=>advertisedModFamily(mod)===familyKey):all;
+    const familyLabel=familyKey==='paks'?'PAK':familyKey==='ue4ss'?'UE4SS':familyKey==='runeschema'?'RuneSchema':'';
+    const title=`${String(item?.name||'World')} ${familyLabel?`${familyLabel} `:''}Mods`;
+    showModal(`<div class="modal-header"><div><div class="eyebrow">${escapeHtml(sourceLabel)}</div><h2>${escapeHtml(title)}</h2><p>${filtered.length} advertised ${familyLabel||'total'} mod${filtered.length===1?'':'s'} · fingerprint ${escapeHtml(String(item?.fingerprint||'unknown'))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${filtered.length?filtered.map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||advertisedModFamily(mod)||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):`<div class="empty-state">This verified World advertises no ${escapeHtml(familyLabel||'')} mods in this category.</div>`}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title,width:760,height:650});
+  }
+
+  function filterDisplayedAdvertisedMods(family) {
+    const familyKey=advertisedModFamily(family);
+    if(familyKey==='other')return;
+    const lists=[...document.querySelectorAll('.activity-list')];
+    const list=lists.at(-1);if(!list)return;
+    let visible=0;
+    list.querySelectorAll('.activity-row').forEach((row)=>{const matches=advertisedModFamily(row.textContent)===familyKey;row.hidden=!matches;if(matches)visible+=1;});
+    if(!visible)list.insertAdjacentHTML('beforeend',`<div class="empty-state category-empty">No ${escapeHtml(String(family||''))} mods were advertised.</div>`);
+  }
+
+  function worldClassification(world, server = false) {
+    const raw = world?.classification || {};
+    const badges = server ? [world?.auto_ue4ss && 'ue4ss', world?.auto_runeschema && 'runeschema'].filter(Boolean) : (world?.presentation?.mod_badges || []);
+    const hasMods = badges.some((badge)=>!['vanilla','local','singleplayer','coop','co-op'].includes(String(badge||'').toLowerCase()));
+    return {
+      content_type: ['vanilla','modded','handmade','hybrid'].includes(String(raw.content_type||'')) ? raw.content_type : (hasMods ? 'modded' : 'vanilla'),
+      game_mode: ['normal','hardcore','creative','custom'].includes(String(raw.game_mode||'')) ? raw.game_mode : 'normal',
+      pvp_enabled: !!(raw.pvp_enabled ?? raw.pvp),
+      host_type: ['singleplayer','coop','dedicated','public'].includes(String(raw.host_type||'')) ? raw.host_type : (server ? 'dedicated' : world?.kind==='singleplayer' ? (world?.status?.broadcasting?'coop':'singleplayer') : 'public'),
+      visibility: String(raw.visibility || (server ? 'public' : 'private')),
+    };
+  }
+
+  function classificationMarkup(world, server = false) {
+    const c=worldClassification(world,server);
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode==='hardcore'?'HARD MODE':c.game_mode.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.host_type.toUpperCase())}</span>${c.pvp_enabled?'<span class="world-class-pill">PVP</span>':''}`;
+  }
+
+  function placardFrontClassificationMarkup(world, server = false) {
+    const c=worldClassification(world,server);
+    // Host type already owns the full-width banner. Keep the front to two
+    // useful facts and leave the complete taxonomy on the details face.
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode==='hardcore'?'HARD MODE':c.game_mode.toUpperCase())}</span>${c.pvp_enabled?'<span class="world-class-pill">PVP</span>':''}`;
+  }
+
+  function worldMenuButton(worldId, server = false) {
+    return '';
+  }
+
+  function worldRatingMarkup(world, compact = false) {
+    if(world?.kind==='singleplayer'||world?.status?.local)return '';
+    const presentation=world?.presentation||{};
+    const average=Number(world?.rating_average ?? presentation.rating_average ?? world?.manifest_cache?.rating_average ?? 0);
+    const count=Math.max(0,Number(world?.rating_count ?? presentation.rating_count ?? world?.manifest_cache?.rating_count ?? 0));
+    const rounded=Math.max(0,Math.min(5,Math.round(average)));
+    return `<button type="button" class="world-rating" data-world-review-id="${escapeHtml(world?.id||'')}" title="${count?`${average.toFixed(1)} from ${count} verified review${count===1?'':'s'}`:'Open verified reviews'}" aria-label="Open reviews for ${escapeHtml(world?.nickname||world?.identity?.world_name||'this World')}"><span aria-hidden="true">${'★'.repeat(rounded)}${'☆'.repeat(5-rounded)}</span>${compact?'':`<b>${count?average.toFixed(1):'New'}</b><small>(${count})</small>`}</button>`;
+  }
+
+  function worldCommunityMarkup(world, compact = false) {
+    const community=world?.community||world?.manifest_cache?.community||{};
+    if(!community.discord_invite && !community.discord_guild_id)return '';
+    return `<span class="world-community-badge" title="This World has a Discord community" aria-label="Discord community">${platformLogo('discord','Discord')}${compact?'':'<b>DISCORD</b>'}</span>`;
+  }
+
+  function worldAudienceMarkup(world, compact = false) {
+    const audience=String(world?.audience||world?.presentation?.audience||world?.manifest_cache?.audience||'general');
+    if(audience==='kid_friendly')return `<span class="world-audience-badge kid" title="Kid-Friendly World" aria-label="Kid-Friendly World"><img src="assets/platforms/kid-friendly.svg" alt=""/>${compact?'':' KID-FRIENDLY'}</span>`;
+    if(audience==='adults_only')return `<span class="world-audience-badge adult" title="Adults Only World" aria-label="Adults Only World"><img src="assets/platforms/adults-only.svg" alt=""/>${compact?'':' ADULTS ONLY'}</span>`;
+    return '';
+  }
+
+  function worldPlatformMarkup(world, compact = false) {
+    const compat=world?.platform_compatibility||world?.compatibility?.platform_compatibility||world?.manifest_cache?.platform_compatibility||world?.manifest_cache?.compatibility?.platform_compatibility||{};
+    const definitions=[['steam','Steam'],['epic','Epic Games'],['nintendo','Nintendo'],['playstation','PlayStation'],['xbox','Xbox']];
+    return definitions.filter(([key])=>compat[key]===true).map(([key,label])=>`<span class="world-platform-badge ${key}" title="Host declares ${escapeHtml(label)} compatibility; connection remains user-selectable" aria-label="${escapeHtml(label)} compatible">${platformLogo(key,label)}${compact?'':`<span>${escapeHtml(label)}</span>`}</span>`).join('');
+  }
+
+  function worldTagGroupsMarkup(world, presentation, server = false, limit = 6) {
+    const verified = server || world?.kind === 'singleplayer' || worldSyncIdentity(world).verified;
+    const legacy = Array.isArray(presentation?.tags) ? presentation.tags : [];
+    const gameTags = Array.isArray(presentation?.game_tags) ? presentation.game_tags : (verified ? [] : legacy);
+    const syncTags = Array.isArray(presentation?.sync_tags) ? presentation.sync_tags : (verified ? legacy : []);
+    const group = (label, kind, values) => values.length ? `<div class="world-tag-group ${kind}"><b>${label}</b>${[...new Set(values.map(String))].slice(0,limit).map((tag)=>`<span class="tag ${tagTone(tag)}">#${escapeHtml(tag)}</span>`).join('')}</div>` : '';
+    return `<div class="world-tag-groups">${group('DRAGONWILDS','game',gameTags)}${group('SYNC','sync',syncTags)}</div>`;
+  }
+
+  function worldClMarkup(world, server=false) {
+    if(!server&&!world?.cl_version)return '';
+    const expected=String(state.data?.application?.server_install?.expected_cl||'');
+    const reported=String(world?.cl_version?.reported_cl||world?.last_reported_cl||'');
+    const number=(value)=>{const match=String(value||'').match(/CL[-_ ]?(\d{3,12})/i);return match?Number(match[1]):null;};
+    const reportedNumber=number(reported),expectedNumber=number(world?.cl_version?.expected_cl||expected);
+    const status=String(world?.cl_version?.status||(reportedNumber==null?'unavailable':expectedNumber==null?'unknown':reportedNumber===expectedNumber?'current':reportedNumber<expectedNumber?'outdated':'newer')).toLowerCase();
+    const tone=status==='current'||status==='newer'?'online':status==='outdated'?'warning':'unknown';
+    const label=status==='current'?'Current':status==='outdated'?'Outdated':status==='newer'?'Newer':status==='unavailable'?'Unavailable':'Unknown';
+    return `<span class="status-pill ${tone}" title="Dragonwilds dedicated-server changelist">${escapeHtml(reported||'CL unavailable')} · ${label}</span>`;
+  }
+
+  function placardBackSection(title, values, empty='None published') {
+    const rows=[...new Set((values||[]).map((value)=>typeof value==='object'?(value.name||value.label||value.id||''):String(value)).map((value)=>String(value||'').trim()).filter(Boolean))].slice(0,16);
+    return `<section class="world-back-section"><h4>${escapeHtml(title)}</h4><div class="world-back-list">${rows.length?rows.map((value)=>`<span>${escapeHtml(value)}</span>`).join(''):`<span>${escapeHtml(empty)}</span>`}</div></section>`;
+  }
+
+  function mergedModSummary(...sources) {
+    const merged=new Map();
+    for(const source of sources){
+      for(const raw of (Array.isArray(source)?source:[])){
+        const item=typeof raw==='object'&&raw?raw:{name:String(raw||'')};
+        const name=String(item.name||item.label||item.id||'').trim();
+        if(!name)continue;
+        const family=String(item.section||item.group||'other').toLowerCase();
+        const key=`${family}:${name.toLowerCase()}`;
+        merged.set(key,{...(merged.get(key)||{}),...item,name});
+      }
+    }
+    return [...merged.values()];
+  }
+
+  function placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel='') {
+    const manifest=world?.manifest_cache||{};
+    const connected=!server&&world?.kind!=='singleplayer'&&(world?.kind==='connected'||world?.credentials?.source==='manual');
+    const categoryTags=new Set(['paks','pak','ue4ss','runeschema','runescheme']);
+    const tags=[...(presentation?.game_tags||[]),...(presentation?.sync_tags||[]),...(presentation?.tags||[])].filter((tag)=>!categoryTags.has(String(tag||'').trim().toLowerCase()));
+    const rules=String(world?.community_rules||presentation?.community_rules||manifest.community_rules||'').trim();
+    const endpoint=!server?String(world?.connection?.external_ip||world?.connection?.internal_ip||'').trim():'';
+    // A connected placard is a view of the authenticated host manifest. Never
+    // blend the joining machine's installed inventory into its advertised mods.
+    const modSummary=(connected
+      ? mergedModSummary(presentation?.mod_summary,manifest.mod_summary)
+      : mergedModSummary(presentation?.mod_summary,world?.mod_metadata,manifest.mod_summary)
+    ).filter(isClientPresentationMod);
+    const requiredMods=modSummary.filter(isClientRequiredMod).map((mod)=>mod.name||mod.label||mod.key);
+    const retainedMods=modSummary.filter((mod)=>!isClientRequiredMod(mod)).map((mod)=>mod.name||mod.label||mod.key);
+    return `<section class="world-card-face world-card-back"><div class="world-mode-banner ${modeTone}">WORLD DETAILS</div>${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}<div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div><div class="world-card-body"><p class="world-back-summary">${escapeHtml(desc)}</p><div class="world-back-grid">${placardBackSection('Client-Required Mods',requiredMods,modSummary.length?'None pushed to clients':'Not published yet')}${placardBackSection('Server-Retained Mods',retainedMods,modSummary.length?'None':'Not published yet')}${placardBackSection('Community Rules',rules?[rules]:[])}${placardBackSection('Badges',badges)}${placardBackSection('Tags',tags)}</div>${endpoint?`<div class="world-connect">Public connect: ${escapeHtml(endpoint)}:${Number(world?.connection?.game_port||7777)}</div>`:''}<div class="card-footer placard-presentation-footer"><div class="card-metrics"><span data-v3p4-page-status>Page 2 / 2</span></div><button type="button" class="btn ghost compact-btn card-flip-hint" data-v3p4-toggle="${escapeHtml(world.id)}">FRONT ↻</button></div></div></section>`;
+  }
+
+  function worldCard(world, server = false) {
+    const presentation = server ? world : (world.presentation || {});
+    const single = !server && world.kind === 'singleplayer';
+    const connected = !server && !single && (world.kind === 'connected' || world.credentials?.source === 'manual');
+    const banner = b64Image(presentation.banner_b64) || 'assets/singleplayer-banner.webp';
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.webp';
+    const title = server ? (world.name || 'Hosted World') : (single ? (world.name || world.identity?.world_name || 'Private World') : (world.nickname || world.identity?.world_name || 'World'));
+    const authoritative = server ? world.name : world.identity?.world_name;
+    const desc = presentation.description || (single ? 'Save-backed local Dragonwilds World.' : 'No World description has been provided yet.');
+    // Connected World badges and counts are immutable host-advertised data.
+    // world.mod_metadata is client-local and is valid only for owned profiles.
+    const modSummary=connected
+      ? mergedModSummary(presentation.mod_summary,world.manifest_cache?.mod_summary)
+      : mergedModSummary(presentation.mod_summary,world.mod_metadata,world.manifest_cache?.mod_summary);
+    const clientRequiredCount=modSummary.filter(isClientPresentationMod).filter(isClientRequiredMod).length;
+    const modFamily=(mod)=>String(mod.section||mod.group||mod.kind||mod.type||mod.loader||'').toLowerCase();
+    const modBadges=[modSummary.some((mod)=>modFamily(mod).includes('pak'))&&'PAKS',modSummary.some((mod)=>modFamily(mod).includes('ue4ss'))&&'UE4SS',modSummary.some((mod)=>modFamily(mod).includes('rune'))&&'RUNESCHEMA'].filter(Boolean);
+    const advertised=[...(presentation.mod_badges||[]),...(connected?(world.manifest_cache?.mod_badges||[]):[])].map((badge)=>String(badge).replace(/^runescheme$/i,'RUNESCHEMA'));
+    const backupOffered=!!(world?.character_sharing?.request_backups||world?.manifest_cache?.character_sharing?.request_backups||world?.manifest_cache?.character_backup_requested);
+    const badges = [...new Set(single?['LOCAL']:[...modBadges,...advertised,...(backupOffered?['PLAYER SAVE BACKUP']:[])])];
+    if(!single&&!badges.length)badges.push('VANILLA');
+    const ping = !server && world.status?.ping_ms != null ? `${Math.round(world.status.ping_ms)} ms` : '';
+    const players = !server && world.status?.player_count != null ? `${world.status.player_count} players` : '';
+    const observed = !server && world.public_history?.provider === 'lobbysup' ? (world.public_history.last_seen ? `Observed ${new Date(world.public_history.last_seen).toLocaleDateString()}` : 'Public history') : '';
+    const studio = !server && !single && worldSyncIdentity(world).verified;
+    const livePrivate = single && String(state.data?.client?.live_world_id || '') === String(world.id || '');
+    const serverRuntime = state.data?.server?.runtime || {};
+    const liveServer = server && !!serverRuntime.running && String(serverRuntime.active_profile_id || '') === String(world.id || '');
+    const instance = Math.max(1, Number(world.instance_number || 1));
+    const activeClass = livePrivate ? ' active-private-world' : (liveServer ? ` active-server-world instance-${((instance-1)%6)+1}` : '');
+    const modeLabel = server ? 'DEDICATED SERVER' : (single ? (world.status?.broadcasting ? 'CO-OP' : 'SINGLEPLAYER') : 'SYNC WORLD');
+    const modeTone=server?'dedicated':(world.status?.broadcasting?'coop':'single');
+    const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
+    const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
+    const originLabel=!server&&!single&&(world.shared?.curated||world.shared?.source_id)?String(world.shared?.profile_name||world.shared?.source_name||world.shared?.source_id||'Imported Manifest'):'';
+    const runtimeStatus=server
+      ? `<span class="status-pill ${liveServer?'online':'unknown'}">${liveServer?`#${instance} RUNNING`:`#${instance} STOPPED`}</span>`
+      : (single?`<span class="status-pill ${world.status?.broadcasting?'online':'unknown'}">${world.status?.broadcasting?'CO-OP LIVE':'LOCAL'}</span>`:statusPill(world));
+    const runtimeHistory=Array.isArray(serverRuntime.metric_history)?serverRuntime.metric_history:[];
+    const latestRuntime=liveServer&&runtimeHistory.length?runtimeHistory[runtimeHistory.length-1]:null;
+    const loadStats=server
+      ? (latestRuntime?`<span><b>CPU</b> ${Number(latestRuntime.process_cpu_percent??0).toFixed(1)}%</span><span><b>RAM</b> ${formatBytes(latestRuntime.process_ram_bytes||0)}</span>`:'<span><b>LOAD</b> —</span>')
+      : `${ping?`<span><b>PING</b> ${escapeHtml(ping)}</span>`:''}${players?`<span><b>PLAYERS</b> ${escapeHtml(players)}</span>`:''}${observed?`<span title="LobbySup public player history"><b>SEEN</b> ${escapeHtml(observed.replace(/^Observed\s*/,''))}</span>`:''}`;
+    return `
+      <article class="world-card app-world-placard has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.webp')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server ? '1' : '0'}" data-instance="${instance}" aria-label="${escapeHtml(title)} placard" aria-pressed="false">
+       <div class="world-card-inner"><section class="world-card-face world-card-front">
+        <div class="world-mode-banner ${modeTone}">${escapeHtml(connected ? 'CONNECTED WORLD' : modeLabel)}</div>
+        ${originLabel?`<div class="world-origin-banner">MANIFEST · ${escapeHtml(originLabel)}</div>`:''}
+        <div class="world-card-media">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-banner-blend"></div></div>
+        <div class="world-card-body">
+          <div class="placard-identity">
+           ${icon ? `<img class="world-icon" src="${icon}" alt="" />` : `<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}
+           <div class="card-topline">
+            <div class="card-title"><h3>${escapeHtml(title)}</h3>${!server && world.nickname ? `<small>World: ${escapeHtml(authoritative)}</small>` : `<small>${server ? `Server #${instance}` : (single ? `${world.is_default?'DEFAULT · ':''}${world.status?.broadcasting ? 'CO-OP' : 'SINGLEPLAYER'}` : '&nbsp;')}</small>`}</div>
+           </div>
+          </div>
+          <div class="card-description">${escapeHtml(desc)}</div>
+          <div class="badges placard-front-summary">${placardFrontClassificationMarkup(world,server)}${worldClMarkup(world,server)}${clientRequiredCount?`<span class="distribution-pill client" title="${clientRequiredCount} mod${clientRequiredCount===1?'':'s'} will be synchronized to joining clients">CLIENT SYNC · ${clientRequiredCount}</span>`:''}${studio?syncBadgeMarkup(world):''}</div>
+          <div class="card-footer placard-presentation-footer"><div class="card-metrics">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world)}${worldCommunityMarkup(world)}${worldPlatformMarkup(world)}<span data-v3p4-page-status>Page 1 / 2</span></div>${worldRatingMarkup(world)}<button type="button" class="btn ghost compact-btn card-flip-hint" data-v3p4-toggle="${escapeHtml(world.id)}">CARD INFO ↻</button></div>
+        </div>
+       </section>${placardBackMarkup(world,presentation,server,badges,title,desc,modeTone,banner,icon,originLabel)}</div>
+       <div class="placard-runtime-strip" aria-label="World synchronization and load status"><div class="placard-runtime-status"><span class="placard-sync-status"></span>${runtimeStatus}</div><div class="placard-runtime-metrics">${loadStats||'<span><b>LOAD</b> —</span>'}</div></div>
+       ${!server&&!single?`<div class="placard-actions integrated"><button class="btn play" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost" data-world-details="${escapeHtml(world.id)}">Details</button></div>`:''}
+      </article>`;
+  }
+
+  function renderWorldListRow(world) {
+    const presentation = world.presentation || {};
+    const title = world.nickname || world.identity?.world_name || 'World';
+    const icon = b64Image(presentation.icon_b64);
+    const banner = b64Image(presentation.banner_b64) || 'assets/singleplayer-banner.webp';
+    const studio = worldSyncIdentity(world).verified;
+    const tags = worldTagGroupsMarkup(world,presentation,false,6);
+    const players = world.status?.player_count != null ? `${world.status.player_count} players` : 'Players —';
+    const ping = world.status?.ping_ms != null ? `${Math.round(world.status.ping_ms)} ms` : 'Ping —';
+    const originLabel=(world.shared?.curated||world.shared?.source_id)?String(world.shared?.profile_name||world.shared?.source_name||world.shared?.source_id||'Imported Manifest'):'';
+    const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
+    const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
+    return `<article class="world-list-row has-placard" style="--world-placard:url('assets/placards/${placardId}.webp')" data-world-id="${escapeHtml(world.id)}" data-server-card="0">
+      <div class="world-list-icon">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(title))}</span>`}</div>
+      <div class="world-list-main"><div class="world-list-title"><h3>${escapeHtml(title)}</h3>${classificationMarkup(world)}${studio?syncBadgeMarkup(world):''}${originLabel?`<span class="status-pill manifest-source">MANIFEST · ${escapeHtml(originLabel)}</span>`:''}${statusPill(world)}</div><div class="world-list-meta">${worldCountryMarkup(world)}${worldHostingMarkup(world)}${worldAudienceMarkup(world,true)}${worldCommunityMarkup(world,true)}${worldPlatformMarkup(world,true)}${worldRatingMarkup(world,true)}<span>${players}</span><span>${ping}</span><span>${escapeHtml(world.connection?.external_ip || world.connection?.internal_ip || 'Endpoint pending')}</span></div>${tags}</div>
+      <div class="world-list-banner">${banner?`<img src="${banner}" alt=""/>`:''}</div>
+      <div class="world-row-actions"><button class="btn play compact-btn" data-world-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ghost compact-btn" data-world-details="${escapeHtml(world.id)}">Details</button></div>
+    </article>`;
+  }
+
+
+  function renderHostedWorldListRow(world, server = false) {
+    const presentation = server ? world : (world.presentation || {});
+    const title = server ? (world.name || 'Hosted World') : (world.name || world.identity?.world_name || 'Private World');
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.webp';
+    const banner = b64Image(presentation.banner_b64) || 'assets/singleplayer-banner.webp';
+    const runtime = state.data?.server?.runtime || {};
+    const livePrivate = !server && String(state.data?.client?.live_world_id || '') === String(world.id || '');
+    const liveServer = server && !!runtime.running && String(runtime.active_profile_id || '') === String(world.id || '');
+    const instance = Math.max(1, Number(world.instance_number || 1));
+    const activeClass = livePrivate ? ' active-private-world' : (liveServer ? ` active-server-world instance-${((instance-1)%6)+1}` : '');
+    const status = server
+      ? `<span class="status-pill ${liveServer?'online':'unknown'}">${liveServer?`#${instance} RUNNING`:`#${instance} HOST`}</span>`
+      : `<span class="status-pill ${world.status?.broadcasting?'online':'unknown'}">${world.status?.broadcasting?'CO-OP':'LOCAL'}</span>`;
+    const tags = worldTagGroupsMarkup(world,presentation,server,5);
+    const placard=String(presentation.placard_background||world?.manifest_cache?.placard_background||world?.placard_background||'1');
+    const placardId=PLACARD_BACKGROUNDS.includes(placard)?placard:'1';
+    return `<article class="world-list-row hosted-list-row has-placard${activeClass}" style="--world-placard:url('assets/placards/${placardId}.webp')" data-world-id="${escapeHtml(world.id)}" data-server-card="${server?'1':'0'}" data-instance="${instance}">
+      <div class="world-list-icon">${icon?`<img src="${icon}" alt=""/>`:`<span>${escapeHtml(initials(title))}</span>`}</div>
+      <div class="world-list-main"><div class="world-list-title"><h3>${escapeHtml(title)}</h3>${classificationMarkup(world,server)}${worldClMarkup(world,server)}${worldAudienceMarkup(world,true)}${worldCommunityMarkup(world,true)}${status}</div><div class="world-list-meta"><span>${server?`Dedicated · Server #${instance}`:(world.status?.broadcasting?'Private · Co-Op broadcasting':'Private · Singleplayer')}</span><span>${escapeHtml(presentation.description || (server?'Dedicated World profile':'Local Dragonwilds World profile'))}</span></div>${tags}</div>
+      <div class="world-list-banner">${banner?`<img src="${banner}" alt=""/>`:''}</div>
+      <div class="world-row-actions">${server?`<button class="btn ${liveServer?'danger':'play'} compact-btn" ${liveServer?`data-server-stop="${escapeHtml(world.id)}"`:`data-server-launch="${escapeHtml(world.id)}"`}>${liveServer?'Stop Server':'Start Server'}</button><button class="btn ghost compact-btn" data-server-manage="${escapeHtml(world.id)}">Manage</button><button class="btn ghost compact-btn" data-server-convert="${escapeHtml(world.id)}">Convert</button>`:`<button class="btn play compact-btn" data-private-launch="${escapeHtml(world.id)}">Enter</button><button class="btn ${world.status?.broadcasting?'danger':'primary'} compact-btn" data-private-coop="${escapeHtml(world.id)}">${world.status?.broadcasting?'Stop Co-Op':'Co-Op'}</button><button class="btn ghost compact-btn" data-private-manage="${escapeHtml(world.id)}">Manage</button><button class="btn ghost compact-btn" data-private-convert="${escapeHtml(world.id)}">Convert</button>`}</div>
+    </article>`;
+  }
+
+  function renderWorldGallery(managementTabs='') {
+    const browser = state.data?.client?.world_browser || {};
+    const filter = String(browser.filter || 'all');
+    const category = filter === 'favorites' ? 'favorites' : 'connected';
+    const view = String(browser.view || 'cards');
+    const sort = String(browser.sort || 'recommended');
+    const requestedPage = Math.max(1, Number(browser.page || 1));
+    const query = String(browser.search || '').trim().toLowerCase();
+    const favorites = new Set((state.data?.client?.favorites || []).map(String));
+    const recentOrder = new Map((state.data?.client?.recent_connections || []).map((item,index)=>[String(item.world_id||''), index]));
+    const directRows = [...worlds(), ...curatedWorlds()];
+    const rosterKey=(world)=>String(world?.id||world?.shared?.fingerprint||world?.shared?.fingerprint_claimed||`${world?.connection?.internal_ip||world?.connection?.external_ip||'local'}:${world?.connection?.sync_port||''}:${world?.identity?.world_name||world?.name||''}`).trim().toLowerCase();
+    let rows = directRows.filter((world,index,all)=>all.findIndex((candidate)=>rosterKey(candidate)===rosterKey(world))===index);
+    const contentFilter=String(browser.content_type||'all');
+    const modeFilter=String(browser.game_mode||'all');
+    const hostFilter=String(browser.host_type||'all');
+    const tagFilter=String(browser.tag||'all');
+    const availableTags=[...new Set(rows.flatMap((w)=>(w.presentation?.tags||[]).map((tag)=>String(tag||'').trim()).filter(Boolean)))].sort((a,b)=>a.localeCompare(b)).slice(0,80);
+    if(contentFilter!=='all')rows=rows.filter((w)=>worldClassification(w).content_type===contentFilter);
+    if(modeFilter!=='all')rows=rows.filter((w)=>worldClassification(w).game_mode===modeFilter);
+    if(hostFilter!=='all')rows=rows.filter((w)=>worldClassification(w).host_type===hostFilter);
+    if(tagFilter!=='all')rows=rows.filter((w)=>(w.presentation?.tags||[]).some((tag)=>String(tag).toLowerCase()===tagFilter.toLowerCase()));
+    if (filter === 'favorites') rows = rows.filter((w)=>favorites.has(String(w.id)));
+    if (filter === 'curated') rows = rows.filter((w)=>!!w.shared?.curated);
+    if (filter === 'recent') rows = rows.filter((w)=>recentOrder.has(String(w.id))).sort((a,b)=>(recentOrder.get(String(b.id))||0)-(recentOrder.get(String(a.id))||0));
+    if (query) rows = rows.filter((w)=>{
+      const p=w.presentation||{}, m=w.manifest_cache||{};
+      return [w.nickname,w.identity?.world_name,p.description,w.connection?.external_ip,w.connection?.internal_ip,...(p.tags||[]),...(p.mod_badges||[]),...(m.mods||[])].flat().filter(Boolean).join(' ').toLowerCase().includes(query);
+    });
+    const worldTitle=(w)=>String(w.nickname||w.identity?.world_name||w.name||'World');
+    const score=(w)=>Number(w.status?.server_health?.score ?? w.manifest_cache?.server_health?.score ?? -1);
+    const ping=(w)=>Number.isFinite(Number(w.status?.ping_ms))?Number(w.status.ping_ms):Number.MAX_SAFE_INTEGER;
+    const players=(w)=>Number(w.status?.player_count ?? -1);
+    const recentAt=(w)=>{const row=(state.data?.client?.recent_connections||[]).find((x)=>String(x.world_id||'')===String(w.id||''));return Date.parse(row?.connected_at||row?.created_at||w.last_played_at||0)||0;};
+    if (!(filter==='recent' && sort==='recommended')) rows.sort((a,b)=>{
+      if(sort==='name')return worldTitle(a).localeCompare(worldTitle(b));
+      if(sort==='ping')return ping(a)-ping(b)||worldTitle(a).localeCompare(worldTitle(b));
+      if(sort==='players')return players(b)-players(a)||ping(a)-ping(b);
+      if(sort==='health')return score(b)-score(a)||ping(a)-ping(b);
+      if(sort==='recent')return recentAt(b)-recentAt(a)||worldTitle(a).localeCompare(worldTitle(b));
+      const rank=(w)=>(favorites.has(String(w.id))?1000:0)+(w.shared?.verified||w.status?.sync_verified?400:0)+(w.status?.online||w.status?.public_online?200:0)+Math.max(0,score(w));
+      return rank(b)-rank(a)||ping(a)-ping(b)||worldTitle(a).localeCompare(worldTitle(b));
+    });
+    const totalRows=rows.length;
+    const pageSize=10;
+    const pageCount=Math.max(1,Math.ceil(totalRows/pageSize));
+    const page=Math.min(requestedPage,pageCount);
+    const pageStart=(page-1)*pageSize;
+    const visibleRows=rows.slice(pageStart,pageStart+pageSize);
+    const pagination=totalRows?`<nav class="world-pagination" aria-label="World pages"><span>${wt('showing')} ${pageStart+1}–${Math.min(totalRows,pageStart+pageSize)} ${wt('of')} ${totalRows} · 10 per page</span><div><button class="btn ghost compact-btn" data-world-page="${Math.max(1,page-1)}" ${page<=1?'disabled':''}>← ${wt('previous')}</button><b>${wt('page')} ${page} ${wt('of')} ${pageCount}</b><button class="btn ghost compact-btn" data-world-page="${Math.min(pageCount,page+1)}" ${page>=pageCount?'disabled':''}>${wt('next')} →</button></div></nav>`:'';
+    const addWorldMarkup = view==='list' ? '<button class="world-list-row add-world-list-row" id="add-world-card"><div class="world-list-icon"><span>＋</span></div><div class="world-list-main"><div class="world-list-title"><h3>Connect to World</h3></div><div class="world-list-meta"><span>Address and credentials</span><span>Game port</span><span>World Sync endpoint</span></div></div><div></div><strong>CONNECT</strong></button>' : '<button class="add-world-card" id="add-world-card"><div><div class="plus">+</div><strong>Connect to World</strong><div style="font-size:10px;margin-top:5px;color:#7f8783">Enter its address, credentials, game port, and Sync endpoint</div></div></button>';
+    return `
+      <div class="content">
+        <div class="page-header">
+          <div><div class="eyebrow">${wt('eyebrow')}</div><h1>${t('worlds')}</h1><div class="page-subtitle">${wt('subtitle')}</div></div>
+          <div class="header-actions"><button class="btn ghost" id="detach-worlds">${detachedMode?'↙ Return to Application':`↗ ${wt('open')}`}</button><button class="btn ghost" id="scan-lan-worlds">${wt('lan')}</button><button class="btn ghost" id="refresh-worlds">↻ ${wt('refresh')}</button><button class="btn ghost" id="import-world-identity-card">${wt('importWorld')}</button><button class="btn ghost" id="import-profile-rsdwl">${wt('importProfile')}</button><button class="btn primary" id="export-profile-rsdwl">${wt('exportProfile')}</button></div>
+        </div>
+        ${managementTabs}
+        <nav class="world-source-tabs" aria-label="Connected World categories">
+          <button class="${category==='favorites'?'active':''}" data-connected-world-category="favorites"><strong>Favorites</strong><span>Worlds marked for fast relaunch</span></button>
+          <button class="${category==='connected'?'active':''}" data-connected-world-category="connected"><strong>Connected</strong><span>Saved and previously connected Worlds</span></button>
+        </nav>
+        <section class="world-browser-toolbar">
+          <label class="world-search"><span>⌕</span><input class="field" id="world-search" placeholder="${wt('search')}" value="${escapeHtml(browser.search||'')}"/></label>
+          <div class="world-browser-filters">
+            ${[['all',wt('all')],['recent',wt('recent')],['curated','Curated / Profiles']].map(([key,label])=>`<button class="btn ${filter===key?'primary':'ghost'} compact-btn" data-world-filter="${key}">${label}</button>`).join('')}
+          </div>
+          <label class="world-sort"><span>${wt('sort')}</span><select class="select" id="world-sort">${[['recommended',wt('recommended')],['ping',wt('lowPing')],['players',wt('mostPlayers')],['health',wt('bestHealth')],['recent',wt('recentlyUsed')],['name',wt('name')]].map(([key,label])=>`<option value="${key}" ${sort===key?'selected':''}>${label}</option>`).join('')}</select></label>
+          <div class="world-view-toggle"><button class="btn ${view==='cards'?'primary':'ghost'} compact-btn" data-world-view="cards" title="${wt('cards')}">▦</button><button class="btn ${view==='list'?'primary':'ghost'} compact-btn" data-world-view="list" title="${wt('horizontal')}">☰</button></div>
+        </section>
+        <section class="world-selector-filters" aria-label="World classification filters">
+          <label><span>${wt('worldType')}</span><select class="select" data-world-selector="content_type">${[['all',wt('allTypes')],['vanilla','Vanilla'],['modded','Modded'],['handmade','Handmade'],['hybrid','Hybrid']].map(([key,label])=>`<option value="${key}" ${contentFilter===key?'selected':''}>${label}</option>`).join('')}</select></label>
+          <label><span>${wt('gameMode')}</span><select class="select" data-world-selector="game_mode">${[['all',wt('allModes')],['normal','Normal'],['hardcore','Hard Mode'],['creative','Creative'],['custom','Custom']].map(([key,label])=>`<option value="${key}" ${modeFilter===key?'selected':''}>${label}</option>`).join('')}</select></label>
+          <label><span>${wt('host')}</span><select class="select" data-world-selector="host_type">${[['all',wt('allHosts')],['public','Public'],['dedicated','Dedicated'],['coop','Co-Op'],['singleplayer','Singleplayer']].map(([key,label])=>`<option value="${key}" ${hostFilter===key?'selected':''}>${label}</option>`).join('')}</select></label>
+          <label><span>${wt('tag')}</span><select class="select" data-world-selector="tag"><option value="all">${wt('allTags')}</option>${availableTags.map((tag)=>`<option value="${escapeHtml(tag)}" ${tagFilter===tag?'selected':''}>${escapeHtml(tag)}</option>`).join('')}</select></label>
+          ${(contentFilter!=='all'||modeFilter!=='all'||hostFilter!=='all'||tagFilter!=='all')?`<button class="btn ghost compact-btn" id="clear-world-selectors">${wt('clear')}</button>`:''}
+        </section>
+        <section class="advanced-strip"><div><strong>Connected Worlds</strong><span>Saved addresses, imported profiles, credentials, and Quick Launch targets</span></div><div class="advanced-note">Favorites remain a category for fast relaunch. Dragonwilds Sync validates the World fingerprint before synchronization whenever a Sync endpoint is available.</div></section>
+        <section class="${view==='list'?'world-list':'world-grid'}">
+          ${addWorldMarkup}
+          ${visibleRows.length ? visibleRows.map((w)=>view==='list'?renderWorldListRow(w):worldCard(w)).join('') : `<div class="empty-state">${wt('noWorlds')}</div>`}
+        </section>
+        ${pagination}
+      </div>`;
+  }
+
+
+  function renderSingleplayerGallery() {
+    const rows = privateWorlds();
+    const view = state.privateWorldView === 'list' ? 'list' : 'cards';
+    const pageCount=Math.max(1,Math.ceil(rows.length/7));
+    const page=Math.min(pageCount,Math.max(1,Number(state.privateWorldPage||1)));
+    const pageRows=rows.slice((page-1)*7,page*7);
+    const content = view === 'list'
+      ? pageRows.map((world)=>renderHostedWorldListRow(world,false)).join('')
+      : pageRows.map((world)=>worldCard(world).replace('</article>',`<div class="placard-actions integrated"><button class="btn play" data-private-launch="${escapeHtml(world.id)}">Launch</button><button class="btn ${world.status?.broadcasting?'danger':'primary'}" data-private-coop="${escapeHtml(world.id)}">${world.status?.broadcasting?'Stop Co-Op':'Co-Op'}</button><button class="btn ghost" data-private-manage="${escapeHtml(world.id)}">Manage</button></div></article>`)).join('');
+    const clientVersion=state.data?.client?.runtime||{};
+    const clientUpdate=clientVersion.current===false?`<div class="server-update-banner"><div><strong>Dragonwilds game update available</strong><span>Your Private World profiles are preserved. Installed build ${escapeHtml(clientVersion.installed_buildid||'unknown')} · Steam public build ${escapeHtml(clientVersion.latest_buildid||'unknown')}.</span></div><button class="btn ghost" data-open-external="steam://run/1374490">Open Steam</button></div>`:'';
+    return `<div class="content">
+      <div class="page-header"><div><div class="eyebrow">Save-backed profiles</div><h1>Worlds</h1><div class="page-subtitle">Launch local, co-op, and dedicated Worlds from one profile system. The active profile supplies its save, settings, characters, and selected mods.</div></div><div class="header-actions"><div class="world-view-toggle"><button class="btn ${view==='cards'?'primary':'ghost'} compact-btn" data-private-view="cards" title="Placards">▦</button><button class="btn ${view==='list'?'primary':'ghost'} compact-btn" data-private-view="list" title="Horizontal">☰</button></div><button class="btn primary" id="create-private-world">+ New World</button></div></div>
+      ${clientUpdate}
+      <section class="${view==='list'?'world-list':'world-grid private-world-grid'}">${content || '<div class="empty-state">No save-backed Worlds found yet.</div>'}</section>${rows.length?`<nav class="world-pagination"><span>Showing ${(page-1)*7+1}–${Math.min(rows.length,page*7)} of ${rows.length}</span><div><button class="btn ghost compact-btn" data-private-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><b>Page ${page} of ${pageCount}</b><button class="btn ghost compact-btn" data-private-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button></div></nav>`:''}
+      <section class="advanced-strip optional-tip"><div><strong>Profile-backed local Worlds</strong><span>Each Private World keeps its own save snapshot, mods/configs, character association, artwork, archive history, and Quick Launch target.</span></div><div class="advanced-note">Only the World you Launch becomes active in Dragonwilds. Co-Op can be toggled independently and never creates the in-game lobby for you. Right-click a World for Launch, Co-Op, Backup, Manage, conversion, archive, and desktop actions.</div></section>
+    </div>`;
+  }
+
+  function recommendationInstallStatus(mod, target='all') {
+    const inventories=target==='client'?[state.singleplayerInventory||[]]
+      :target==='server'?[state.serverInventory[state.selectedServerWorldId]||[]]
+      :[state.singleplayerInventory||[],...Object.values(state.serverInventory||{})];
+    const wantedName=String(mod.name||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+    const wantedId=String(mod.mod_id||'');
+    const installed=inventories.flat().find((unit)=>{
+      const source=unit?.source||{};
+      if(wantedId&&String(source.mod_id||'')===wantedId)return true;
+      const unitName=String(unit?.name||unit?.display_name||'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+      return wantedName&&unitName&&(unitName===wantedName||unitName.includes(wantedName)||wantedName.includes(unitName));
+    });
+    if(!installed)return {label:'Not installed',className:'unknown',version:String(mod.version||'Latest')};
+    const source=installed.source||{};
+    const update=!!(source.update_available||installed.update_available);
+    return {label:update?'Update available':'Installed',className:update?'warning':'online',version:String(source.version||source.installed_version||installed.version||mod.version||'Detected')};
+  }
+
+  function recommendedModCardMarkup(mod, target='all') {
+    const providerKey=/steam/i.test(String(mod.source_name||mod.provider||mod.page_url||''))?'steam':'nexus';
+    const provider=providerKey==='steam'?'Steam Workshop':'Nexus Mods';
+    const placard=String(mod.placard_background||((Number(mod.mod_id)||mod.name?.length||1)%10)+1);
+    return `<article class="recommended-mod-card recommended-mod-placard has-placard ${providerKey}" style="--world-placard:url('assets/placards/${escapeHtml(placard)}.webp')" data-recommended-url="${escapeHtml(mod.page_url||'')}"><div class="recommended-mod-watermark" aria-hidden="true">${platformLogo(providerKey,provider)}</div><div class="recommended-mod-copy"><strong>${escapeHtml(mod.name||'Mod')}</strong></div><div class="recommended-mod-actions"><button type="button" class="btn ghost compact-btn" data-recommended-open="${escapeHtml(mod.page_url||'')}" aria-label="Open ${escapeHtml(mod.name||'mod')} on Nexus Mods">Open Nexus</button></div></article>`;
+  }
+  function queueRsdwAvatarPreview(avatarState){if(avatarState)state.rsdwPendingAvatar=avatarState;state.rsdwPreviewPending=true;const button=root?.querySelector?.('#rsdw-see-changes');if(button)button.disabled=false;}
+
+  function hydrateRecommendationMedia() {
+    // Recommendation placards intentionally use local artwork. Remote Nexus
+    // media caused late layout shifts and repainted the current workspace.
+  }
+
+  function placardBackgroundPicker(value='1', name='placard-background') {
+    const selected=PLACARD_BACKGROUNDS.includes(String(value))?String(value):'1';
+    return `<div class="placard-background-picker">${PLACARD_BACKGROUNDS.map((id)=>`<label class="${id===selected?'selected':''}"><input type="radio" name="${escapeHtml(name)}" value="${id}" ${id===selected?'checked':''}/><img src="assets/placards/${id}.webp" alt="${escapeHtml(PLACARD_BACKGROUND_LABELS[id])} placard background"/><span>${escapeHtml(PLACARD_BACKGROUND_LABELS[id])}</span></label>`).join('')}</div>`;
+  }
+
+  function recommendedModsMarkup(target='client') {
+    const cfg=state.data?.application?.recommended_mods||{};
+    const rows=(cfg.mods||[]).filter((mod)=>!(mod.targets||[]).length||(mod.targets||[]).includes(target)).slice(0,8);
+    return `<section class="recommended-mods-panel"><div class="panel-header"><div><h3>Creator Recommended Mods</h3><span class="panel-subtitle">Compact install and update status from the creator/community feeds. Downloads remain with the original host.</span></div><button class="btn ghost compact-btn" data-recommended-refresh>Refresh List</button></div>${rows.length?`<div class="recommended-mod-grid">${rows.map((mod)=>recommendedModCardMarkup(mod,target)).join('')}</div>`:'<div class="empty-state">No recommendations are available for this target yet.</div>'}</section>`;
+  }
+
+  function renderWorldManagement() {
+    const tab = ['worlds','connected','manifest','game-setup','server-setup'].includes(state.worldManagementTab) ? state.worldManagementTab : 'worlds';
+    const tabs = `<nav class="settings-subnav server-workspace-tabs" aria-label="World Management applications"><button class="${tab==='worlds'?'active':''}" data-world-management-tab="worlds">World Profiles</button><button class="${tab==='connected'?'active':''}" data-world-management-tab="connected">Connected Worlds${worlds().length?` · ${worlds().length}`:''}</button><button class="${tab==='manifest'?'active':''}" data-world-management-tab="manifest">Public Server List</button><button class="${tab==='game-setup'?'active':''}" data-world-management-tab="game-setup">Game Connection</button><button class="${tab==='server-setup'?'active':''}" data-world-management-tab="server-setup">Sync Hosting</button></nav>`;
+    if(tab==='connected'){
+      state.data.client=state.data.client||{};state.data.client.world_browser=state.data.client.world_browser||{};state.data.client.world_browser.tab='direct';
+      return renderWorldGallery(tabs);
+    }
+    if(tab==='manifest'){
+      return `<div class="content dws-public-server-workspace"><div class="page-header"><div><div class="eyebrow">Discover · Signed Sync broadcasts</div><h1>Public Server List</h1><div class="page-subtitle">Browse the official read-only Sync directory. Connect opens the application's verified World login and synchronization dialog.</div></div></div>${tabs}<div id="dws-public-server-list-mount"></div></div>`;
+    }
+    if (tab === 'game-setup') {
+      const cfg=state.data?.application||{}, layout=state.data?.singleplayer?.layout||{};
+      return `<div class="content"><div class="page-header"><div><div class="eyebrow">World Management · /Game</div><h1>Game Setup</h1><div class="page-subtitle">Update the live Dragonwilds client association here. The selected root resolves UE4SS, RuneSchema, PAK, configuration, and save locations.</div></div></div>${tabs}<section class="panel"><div class="panel-header"><div><h2>Dragonwilds Client Paths</h2><span class="panel-subtitle">Choose a Steam library, game folder, inner RSDragonwilds folder, or exact executable.</span></div></div><div class="panel-body"><div class="form-grid"><label class="form-group full"><span>Game directory</span><div class="path-field"><input class="field" id="wm-game-dir" value="${escapeHtml(cfg.game_dir||'')}" placeholder="C:\\Program Files (x86)\\Steam\\steamapps\\common\\RuneScape Dragonwilds"/><button class="btn ghost" id="wm-pick-game-dir">Browse</button></div></label><label class="form-group full"><span>Game executable</span><div class="path-field"><input class="field" id="wm-game-exe" value="${escapeHtml(cfg.game_exe||layout.game_exe||'')}" placeholder="RSDragonwilds.exe"/><button class="btn ghost" id="wm-pick-game-exe">Browse</button></div></label></div><div class="header-actions"><button class="btn primary" id="wm-save-game-paths">Save &amp; Validate /Game</button><button class="btn ghost" id="rescan-game-worlds">Rescan Worlds &amp; Mods</button></div><div class="identity-box"><strong>Path changes are explicit</strong><p>Saving validates the selected client tree before replacing the application’s current /Game association. Existing World Profiles remain in application storage.</p></div>${recommendedModsMarkup('client')}</div></section></div>`;
+    }
+    if (tab === 'server-setup') {
+      const install=state.data?.application?.server_install||{}, layout=state.data?.server?.layout||{};
+      return `<div class="content"><div class="page-header"><div><div class="eyebrow">World Management · Hosting</div><h1>Hosting</h1><div class="page-subtitle">Dedicated server setup, installation, validation, runtime paths, and new hosted Worlds remain one explicit tab inside Worlds.</div></div></div>${tabs}<section class="panel"><div class="panel-header"><div><h2>Dedicated Server Paths</h2><span class="panel-subtitle">Each running instance receives its own gameplay port: 7777, 7778, 7779, and onward.</span></div><span class="status-pill ${layout.valid?'online':'unknown'}">${layout.valid?'READY':'SETUP REQUIRED'}</span></div><div class="panel-body"><div class="form-grid"><label class="form-group full"><span>Designated server folder or existing game root</span><div class="path-field"><input class="field" id="wm-server-dir" value="${escapeHtml(install.install_dir||'')}" placeholder="C:\\Dragonwilds Server"/><button class="btn ghost" id="wm-pick-server-dir">Browse</button></div></label><label class="form-group full"><span>Server executable</span><div class="path-field"><input class="field" id="wm-server-exe" value="${escapeHtml(install.server_exe||layout.server_exe||'')}" placeholder="RSDragonwilds.exe"/><button class="btn ghost" id="wm-pick-server-exe">Browse</button></div></label></div><div class="header-actions"><button class="btn primary" id="wm-save-server-paths">Save &amp; Validate /Server</button><button class="btn ghost" id="wm-full-server-setup">Run Full Setup</button><button class="btn ghost" id="add-server-world">+ Create Dedicated World</button></div><div class="identity-box"><strong>Existing mods are never ignored</strong><p>When the selected directory already contains UE4SS, RuneSchema, or PAK mods, Dragonwilds Sync asks whether to copy them into the selected World Profile before continuing.</p></div>${recommendedModsMarkup('server')}</div></section></div>`;
+    }
+    const localRows=privateWorlds().map((world)=>({world,server:false}));
+    const dedicatedRows=serverWorlds().map((world)=>({world,server:true}));
+    const rows=[...localRows,...dedicatedRows];
+    const view=state.worldManagementView==='list'?'list':'cards';
+    const pageCount=Math.max(1,Math.ceil(rows.length/10));
+    const page=Math.min(pageCount,Math.max(1,Number(state.worldManagementPage||1)));
+    const pageRows=rows.slice((page-1)*10,page*10);
+    const cards=pageRows.map(({world,server})=>{
+      if(view==='list')return renderHostedWorldListRow(world,server);
+      const runtime=state.data?.server?.runtime||{};
+      const running=server&&!!runtime.running&&String(runtime.active_profile_id||'')===String(world.id||'');
+      const actions=server
+        ? `<button class="btn ${running?'danger':'play'} action-primary" ${running?`data-server-stop="${escapeHtml(world.id)}"`:`data-server-launch="${escapeHtml(world.id)}"`}>${running?'Stop Server':'Start Server'}</button><button class="btn ghost" data-server-manage="${escapeHtml(world.id)}">Manage</button><button class="btn ghost" data-server-convert="${escapeHtml(world.id)}">Convert</button>`
+        : `<button class="btn play action-primary" data-private-launch="${escapeHtml(world.id)}">Enter</button><button class="btn ${world.status?.broadcasting?'danger':'primary'}" data-private-coop="${escapeHtml(world.id)}">${world.status?.broadcasting?'Stop Co-Op':'Co-Op'}</button><button class="btn ghost" data-private-manage="${escapeHtml(world.id)}">Manage</button><button class="btn ghost" data-private-convert="${escapeHtml(world.id)}">Convert</button>`;
+      return worldCard(world,server).replace('</article>',`<div class="placard-actions integrated">${actions}</div></article>`);
+    }).join('');
+    const directConnectPlacard=view==='list'
+      ? '<button class="world-list-row add-world-list-row" id="add-world-card"><div class="world-list-icon"><span>＋</span></div><div class="world-list-main"><div class="world-list-title"><h3>Connect to World</h3><span class="status-pill unknown">DIRECT</span></div><div class="world-list-meta"><span>New or saved remote server</span><span>Address and credentials</span><span>Game port and World Sync endpoint</span></div></div><div></div><strong>CONNECT</strong></button>'
+      : '<button class="add-world-card direct-connect-placard" id="add-world-card"><div><div class="plus">+</div><strong>Connect to World</strong><div style="font-size:10px;margin-top:5px;color:#7f8783">Enter a new server address, credentials, game port, and World Sync endpoint</div></div></button>';
+    return `<div class="content"><div class="page-header"><div><div class="eyebrow">Save-driven profiles</div><h1>World Management</h1><div class="page-subtitle">Singleplayer, Co-Op, and Dedicated Server are operating modes of the same World profile. Save filenames remain the authoritative default names.</div></div><div class="header-actions"><div class="world-view-toggle"><button class="btn ${view==='cards'?'primary':'ghost'} compact-btn" data-world-management-view="cards">▦</button><button class="btn ${view==='list'?'primary':'ghost'} compact-btn" data-world-management-view="list">☰</button></div><button class="btn ghost" id="create-private-world">+ Local World</button><button class="btn ghost" id="scan-lan-worlds">+ LAN</button><button class="btn primary" id="add-server-world">+ Dedicated World</button></div></div>${tabs}<section class="${view==='list'?'world-list':'world-grid'}">${directConnectPlacard}${cards}${!rows.length?'<div class="empty-state">No local or dedicated World profiles were found. Direct Connect remains available above, or open Game Setup to select a root folder and rescan.</div>':''}</section>${rows.length?`<nav class="world-pagination"><span>Showing ${(page-1)*10+1}–${Math.min(rows.length,page*10)} of ${rows.length} · 10 per page</span><div><button class="btn ghost compact-btn" data-world-management-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><b>Page ${page} of ${pageCount}</b><button class="btn ghost compact-btn" data-world-management-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button></div></nav>`:''}</div>`;
+  }
+
+  function sharedPackageCard(record) {
+    const provenance = record.provenance || {};
+    const direction = record.direction === 'exported' ? 'EXPORTED' : 'IMPORTED';
+    return `<article class="shared-record-card"><div><div class="eyebrow">${direction}</div><h3>${escapeHtml(record.world_name || 'World')}</h3><p>${escapeHtml(record.path || '')}</p></div><div class="shared-record-meta"><span>${escapeHtml(provenance.exporter_fingerprint || 'No fingerprint')}</span><span>${escapeHtml(provenance.exported_at_utc || record.created_at_utc || '')}</span><code>${escapeHtml(String(provenance.profile_sha256 || '').slice(0,16))}${provenance.profile_sha256 ? '…' : ''}</code></div></article>`;
+  }
+
+  function sharedConnected(sourceId, profile = null) {
+    if (profile?.shared?.last_connected_at_utc) return true;
+    const recent = state.data?.client?.shared_worlds?.recent_connections || [];
+    return recent.some((item)=>String(item.source_id || '') === String(sourceId || ''));
+  }
+
+  function renderSharedProfileCard(world) {
+    const presentation = world.presentation || {};
+    const banner = b64Image(presentation.banner_b64) || 'assets/singleplayer-banner.webp';
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.webp';
+    const title = world.nickname || world.identity?.world_name || 'Shared World';
+    const connected = sharedConnected(world.shared?.source_id || world.id, world);
+    const tags = (presentation.tags || []).slice(0,5).map((t)=>`<span class="tag ${tagTone(t)}">#${escapeHtml(t)}</span>`).join('');
+    return `<article class="world-card shared-online-card" data-shared-profile-id="${escapeHtml(world.id)}">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-body">${icon?`<img class="world-icon" src="${icon}" alt=""/>`:`<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}<div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.connection?.external_ip || '')}:${escapeHtml(String(world.connection?.sync_port || 27051))}</small></div><span class="status-pill ${connected?'online':'unknown'}">${connected?'CONNECTED':'IMPORTED'}</span></div><div class="card-description">${escapeHtml(presentation.description || 'Imported World profile')}</div><div class="tags">${tags}</div><div class="card-footer"><div class="card-metrics"><span>World password connection</span></div><div class="header-actions"><button class="btn play compact-btn" data-quick-shared-world="${escapeHtml(world.id)}">⚔ Quick Launch</button><button class="btn ghost compact-btn" data-desktop-shared-world="${escapeHtml(world.id)}">Desktop</button><button class="btn ghost compact-btn" data-link-shared-profile="${escapeHtml(world.id)}">Add to My Worlds</button></div></div></div></article>`;
+  }
+
+  function renderOnlineWorldCard(world) {
+    const presentation = world.presentation || {};
+    const banner = b64Image(presentation.banner_b64) || 'assets/singleplayer-banner.webp';
+    const icon = b64Image(presentation.icon_b64) || 'assets/application-icon.webp';
+    const title = world.nickname || world.identity?.world_name || 'Shared World';
+    const connected = sharedConnected(world.shared?.source_id || world.id);
+    const tags = (presentation.tags || []).slice(0,5).map((t)=>`<span class="tag ${tagTone(t)}">#${escapeHtml(t)}</span>`).join('');
+    return `<article class="world-card shared-online-card" data-shared-online-id="${escapeHtml(world.id)}">${banner?`<img class="world-card-banner" src="${banner}" alt=""/>`:'<div class="world-card-banner-fallback"></div>'}<div class="world-card-body">${icon?`<img class="world-icon" src="${icon}" alt=""/>`:`<div class="world-icon fallback">${escapeHtml(initials(title))}</div>`}<div class="card-topline"><div class="card-title"><h3>${escapeHtml(title)}</h3><small>${escapeHtml(world.connection?.external_ip || '')}:${escapeHtml(String(world.connection?.sync_port || 27051))}</small></div><span class="status-pill ${connected?'online':'unknown'}">${connected?'CONNECTED':'ONLINE INDEX'}</span></div><div class="card-description">${escapeHtml(presentation.description || 'Published Shared World')}</div><div class="tags">${tags}</div><div class="card-footer"><div class="card-metrics"><span>Connection code protected</span></div><div class="header-actions"><button class="btn play compact-btn" data-quick-online-world="${escapeHtml(world.id)}">⚔ Quick Connect</button><button class="btn ghost compact-btn" data-desktop-online-world="${escapeHtml(world.id)}">Desktop</button><button class="btn ghost compact-btn" data-link-online-world="${escapeHtml(world.id)}">Add to My Worlds</button></div></div></div></article>`;
+  }
+
+  function renderSharedWorlds() {
+    const shared = state.data?.client?.shared_worlds || {};
+    const cfg = state.data?.application?.shared_worlds || {};
+    const tab = state.sharedWorldsTab || 'packages';
+    const history = shared.imported || [];
+    const historyPageSize=25,historyPageCount=Math.max(1,Math.ceil(history.length/historyPageSize));
+    const historyPage=Math.max(1,Math.min(Number(state.sharedPackageHistoryPage||1),historyPageCount));
+    const visibleHistory=[...history].reverse().slice((historyPage-1)*historyPageSize,historyPage*historyPageSize);
+    const profiles = shared.profiles || [];
+    const online = shared.online_cache || [];
+    const connectedOnly = !!state.sharedConnectedOnly;
+    const shownProfiles = connectedOnly ? profiles.filter((w)=>sharedConnected(w.shared?.source_id || w.id, w)) : profiles;
+    const shownOnline = connectedOnly ? online.filter((w)=>sharedConnected(w.shared?.source_id || w.id)) : online;
+    const filter = `<label class="inline-check shared-connected-filter"><input type="checkbox" id="shared-connected-only" ${connectedOnly?'checked':''}/> Player connected</label>`;
+    const importedEmpty = connectedOnly ? 'No imported Worlds have been connected yet.' : 'No imported World profiles yet.';
+    const onlineEmpty = connectedOnly ? 'No Online Worlds in this feed have been connected yet.' : 'No Online Worlds are cached yet. Configure the feed address and press Refresh Online Worlds.';
+    const packageBody = `<section class="panel"><div class="panel-header"><div><h2>Imported Worlds</h2><span class="panel-subtitle">Importing does not force a World into My Worlds. Quick Launch works directly from here; Add to My Worlds is optional.</span></div></div><div class="panel-body">${shownProfiles.length ? `<div class="world-grid">${shownProfiles.map(renderSharedProfileCard).join('')}</div>` : `<div class="empty-state">${importedEmpty}</div>`}</div></section>
+      <section class="panel"><div class="panel-header"><div><h2>Package History</h2><span class="panel-subtitle">${history.length} retained · 25 entries per page · private host credentials are never exported.</span></div></div><div class="panel-body">${history.length ? `<div class="shared-record-list">${visibleHistory.map(sharedPackageCard).join('')}</div>${historyPageCount>1?`<div class="pager-row"><button class="btn ghost" data-package-history-page="${historyPage-1}" ${historyPage<=1?'disabled':''}>← Previous</button><span>Page ${historyPage} of ${historyPageCount}</span><button class="btn ghost" data-package-history-page="${historyPage+1}" ${historyPage>=historyPageCount?'disabled':''}>Next →</button></div>`:''}` : '<div class="empty-state">No World .rsdwl packages imported or exported yet.</div>'}</div></section>`;
+    const feedLabel = cfg.feed_url ? `Feed: ${escapeHtml(cfg.feed_url)}` : 'Configure a Shared Worlds feed URL in Settings → Application → Network.';
+    const onlineBody = `<section class="panel"><div class="panel-header"><div><h2>Online Worlds</h2><span class="panel-subtitle">${feedLabel}</span></div></div><div class="panel-body">${shownOnline.length ? `<div class="world-grid">${shownOnline.map(renderOnlineWorldCard).join('')}</div>` : `<div class="empty-state">${onlineEmpty}</div>`}</div></section>`;
+    return `<div class="content">
+      <div class="page-header"><div><div class="eyebrow">Discovery</div><h1>Shared Worlds</h1><div class="page-subtitle">Use a shared World immediately or move it into My Worlds when you want it permanently linked. RSDWL v2 keeps package type, provenance, checksums, and credential source explicit.</div></div><div class="header-actions">${filter}${tab==='packages'?'<button class="btn primary" id="import-world-rsdwl">Import World .rsdwl</button>':'<button class="btn primary" id="refresh-shared-worlds-feed">Refresh Online Worlds</button>'}</div></div>
+      <div class="settings-subnav shared-world-tabs"><button class="${tab==='packages'?'active':''}" data-shared-world-tab="packages">Imported / Exported</button><button class="${tab==='online'?'active':''}" data-shared-world-tab="online">Online Worlds</button></div>
+      ${tab === 'packages' ? packageBody : onlineBody}
+    </div>`;
+  }
+
+
+  function metric(label, value) {
+    if(label==='RuneSchema Core'&&value==='Official GitHub Release'){
+      const profile=activeServerWorld?.();
+      const flavors=Array.isArray(profile?.runeschema_flavors)?profile.runeschema_flavors:[];
+      const selected=flavors.find((row)=>String(row?.id)===String(profile?.runeschema_flavor_id||'official'));
+      value=String(profile?.runeschema_flavor_id||'official')!=='official'?(selected?.name||profile?.runeschema_source_name||'Custom RuneSchema'):(profile?.runeschema_source_name||selected?.name||'Official GitHub');
+    }
+    return `<div class="metric"><span>${escapeHtml(label)}</span><strong title="${escapeHtml(value || '—')}">${escapeHtml(value || '—')}</strong></div>`;
+  }
+
+  function formatUptime(seconds) {
+    if (seconds == null) return '—';
+    const total = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60);
+    return h ? `${h}h ${m}m` : `${m}m`;
+  }
+
+  function formatBytes(n) {
+    const value = Number(n || 0);
+    if (value >= 1024 * 1024 * 1024) return `${(value / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+    if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+    if (value >= 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${value} B`;
+  }
+
+  function scoreValue(value) {
+    return value == null ? '—' : `${Math.round(Number(value))}`;
+  }
+
+  function healthMarkup(health, compact = false) {
+    const h = health || {};
+    const components = h.components || {};
+    const reasons = (h.reasons || []).slice(0, compact ? 2 : 4);
+    return `<div class="health-score">
+      <div class="health-number"><div><strong>${scoreValue(h.score)}</strong><span>HEALTH</span></div></div>
+      <div><div class="health-grade">${escapeHtml(h.grade || 'AWAITING DATA')}</div><div class="health-coverage">${h.coverage != null ? `${Math.round(h.coverage)}% evidence coverage` : 'Waiting for measurements'}</div>
+        <div class="health-components">
+          <div class="health-component"><span>Client ↔ Host</span><strong>${scoreValue(components.link)}</strong></div>
+          <div class="health-component"><span>Hardware</span><strong>${scoreValue(components.hardware)}</strong></div>
+          <div class="health-component"><span>Runtime</span><strong>${scoreValue(components.runtime)}</strong></div>
+          <div class="health-component"><span>Host Internet</span><strong>${scoreValue(components.host_internet)}</strong></div>
+          <div class="health-component"><span>Game Version</span><strong>${scoreValue(components.version)}</strong></div>
+          <div class="health-component"><span>Hierarchy / Reports</span><strong>${scoreValue(components.ecosystem)}</strong></div>
+        </div>
+        ${reasons.length ? `<div class="health-reasons">${reasons.map(escapeHtml).join(' · ')}</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  function externalLinksMarkup(refs) {
+    const r = refs || {};
+    const buttons = [];
+    if (r.provider_url) buttons.push(`<button class="btn ghost" data-open-external="${escapeHtml(r.provider_url)}">${escapeHtml(r.provider || 'Hardware source')} ↗</button>`);
+    if (r.cpu_url) buttons.push(`<button class="btn ghost" data-open-external="${escapeHtml(r.cpu_url)}">CPU reference ↗</button>`);
+    if (r.gpu_url) buttons.push(`<button class="btn ghost" data-open-external="${escapeHtml(r.gpu_url)}">GPU reference ↗</button>`);
+    const models = [r.cpu_model ? `CPU: ${r.cpu_model}` : '', r.gpu_model ? `GPU: ${r.gpu_model}` : ''].filter(Boolean).join(' · ');
+    return buttons.length ? `<div class="reference-links">${buttons.join('')}${models ? `<span class="reference-models">${escapeHtml(models)}</span>` : ''}</div>` : '';
+  }
+
+  function sectionLabel(section) {
+    return ({ paks: 'PAK Mods', ue4ss: 'UE4SS', runeschema: 'RuneSchema' })[section] || 'Other';
+  }
+
+  function isClientPresentationMod(mod) {
+    const name = String(mod?.name || '').trim().toLowerCase();
+    const section = String(mod?.section || '').toLowerCase();
+    const subsection = String(mod?.subsection || '').toLowerCase();
+    if (name === 'dwmapi.dll' || name === 'mods.txt') return false;
+    if (section === 'runeschema' && (subsection === 'master' || subsection === 'core' || name === 'runeschema')) return false;
+    return true;
+  }
+
+  function isClientRequiredMod(mod) {
+    return mod?.client_required === true || String(mod?.distribution || '').toLowerCase() === 'client_required' || String(mod?.classification || '').toLowerCase() === 'player_required';
+  }
+
+  function groupedClientMods(mods, filter = state.clientModFilter) {
+    const sanitized = (mods || []).filter(isClientPresentationMod);
+    const filtered = filter === 'all' ? sanitized : sanitized.filter(isClientRequiredMod);
+    const groups = new Map();
+    for (const mod of filtered) {
+      const key = String(mod.section || 'other').toLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(mod);
+    }
+    const order = ['paks', 'ue4ss', 'runeschema', 'other'];
+    const categoryIcon = (key, compact=false) => {
+      const source={paks:'assets/platforms/paks.svg',ue4ss:'assets/platforms/ue4ss.webp',runeschema:'assets/platforms/runeschema.webp'}[key];
+      return source?`<img class="mod-category-icon ${compact?'compact':''}" src="${source}" alt=""/>`:'';
+    };
+    return order.filter((key) => groups.has(key)).map((key) => {
+      const items = groups.get(key);
+      const clientCount = items.filter((m) => (m.distribution || (m.classification === 'player_required' ? 'client_required' : 'server_retained')) === 'client_required').length;
+      const serverCount = items.length - clientCount;
+      return `<details class="mod-group" open><summary><div class="mod-group-title">${modCategoryIcon(key)}<strong>${escapeHtml(sectionLabel(key))}</strong><span class="badge ${key === 'paks' ? 'paks' : key === 'ue4ss' ? 'ue4ss' : key === 'runeschema' ? 'runeschema' : 'vanilla'}">${items.length}</span></div><div class="mod-group-counts"><span class="distribution-pill client">${clientCount} CLIENT REQUIRED</span>${serverCount ? `<span class="distribution-pill server">${serverCount} SERVER RETAINED</span>` : ''}</div></summary><div class="mod-group-body">${items.map((m) => {
+        const dist = m.distribution || (m.classification === 'player_required' ? 'client_required' : 'server_retained');
+        const source = m.source || {};
+        return `<div class="mod-clean-row"><div><div class="mod-name-line"><strong>${escapeHtml(m.name || 'Mod')}</strong><span class="distribution-pill ${dist === 'client_required' ? 'client' : 'server'}">${dist === 'client_required' ? 'CLIENT REQUIRED' : 'SERVER RETAINED'}</span>${source.provider === 'nexus' ? `<span class="source-pill nexus">NEXUS #${escapeHtml(source.mod_id || '—')}</span>` : `<span class="source-pill manual">MANUAL</span>`}</div><div class="mod-meta">${escapeHtml(m.subsection || sectionLabel(key))} · ${escapeHtml(m.category || 'permanent')}</div></div><span></span><span></span></div>`;
+      }).join('')}</div></details>`;
+    }).join('');
+  }
+
+  function formatRuntimeDate(value) {
+    if (!value) return 'Not recorded';
+    const date = new Date(Number(value) * 1000);
+    return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+  }
+
+  function formatDate(value) {
+    if(!value)return 'Not recorded';
+    const numeric=Number(value);
+    const date=Number.isFinite(numeric)&&String(value).trim()!==''
+      ? new Date(numeric > 1e12 ? numeric : numeric * 1000)
+      : new Date(String(value));
+    return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+  }
+
+  function worldSaveEditorMarkup(world, kind, running = false) {
+    const parsed = state.worldSaveEditors[`${kind}:${world.id}`];
+    if (!parsed) return `<div class="server-tab-body"><div class="empty-state">Parsing this World’s latest SAVE/CINF file…</div></div>`;
+    if (parsed.error) return `<div class="server-tab-body"><div class="warning-box"><strong>World save unavailable</strong><br/>${escapeHtml(parsed.error)}</div><button class="btn ghost" data-refresh-world-save="${escapeHtml(kind)}">Try Again</button></div>`;
+    const groups = new Map();
+    for (const field of (parsed.difficulty_fields || [])) {
+      const category = field.category || 'Other';
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push(field);
+    }
+    const rows = [...groups.entries()].map(([category, fields]) => `<details class="panel collapsible-panel world-save-group" open><summary class="panel-header"><div><h2>${escapeHtml(category)}</h2><span class="panel-subtitle">${fields.length} parsed setting${fields.length===1?'':'s'}</span></div></summary><div class="panel-body world-save-fields">${fields.map((field) => {
+      const label=String(field.name||'').split('.').pop().replace(/([a-z])([A-Z])/g,'$1 $2');
+      return `<label class="world-save-field"><span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(field.name)}</small></span>${field.toggle?`<input type="checkbox" data-world-save-field="${escapeHtml(field.name)}" ${Number(field.value)!==0?'checked':''}/>`:`<input class="field" type="number" min="0" step="0.01" data-world-save-field="${escapeHtml(field.name)}" value="${escapeHtml(Number(field.value).toFixed(2))}"/>`}</label>`;
+    }).join('')}</div></details>`).join('');
+    return `<div class="server-tab-body world-save-editor"><section class="advanced-strip"><div><strong>${escapeHtml(parsed.file_name || 'World.sav')}</strong><span>${escapeHtml(parsed.format || 'Dragonwilds SAVE/CINF')} · ${parsed.field_count || 0} fields · ${parsed.unknown_fields_preserved || 0} unknown fields preserved byte-for-byte</span></div><div class="header-actions"><button class="btn ghost" data-refresh-world-save="${escapeHtml(kind)}">Reparse</button><button class="btn primary" id="save-world-save-settings" data-world-save-kind="${escapeHtml(kind)}" ${running?'disabled':''}>Save Verified Changes</button></div></section>${running?'<div class="warning-box">Stop this World before changing its binary save settings.</div>':''}<div class="world-save-grid">${rows || '<div class="empty-state">No editable Difficulty fields were found in this save version.</div>'}</div><div class="identity-box"><strong>Backup-first structural editing</strong><p>Only existing four-byte Difficulty value slots are changed. Dragonwilds Sync preserves every unknown byte, reparses the staged file, verifies each requested value, and only then replaces the original.</p></div></div>`;
+  }
+
+  function runtimeStackMarkup(stack, clientRuntime = null) {
+    const r = stack || {};
+    const game = r.dragonwilds || {};
+    const ue = r.ue4ss || {};
+    const rs = r.runeschema || {};
+    const client = clientRuntime || {};
+    const latestClient = String(game.client_latest_buildid || client.latest_buildid || '');
+    const installedClient = String(client.installed_buildid || '');
+    const clientCurrent = installedClient && latestClient ? installedClient === latestClient : client.current;
+    const status = (value) => value === true ? '<span class="status-pill online">CURRENT</span>' : value === false ? '<span class="status-pill offline">UPDATE NEEDED</span>' : '<span class="status-pill unknown">UNKNOWN</span>';
+    const clState=String(game.server_cl_status||'unknown').toLowerCase();
+    const clClass=clState==='current'||clState==='newer'?'online':clState==='outdated'?'offline':'unknown';
+    const clLabel=clState==='current'?'CURRENT':clState==='outdated'?'OUTDATED':clState==='newer'?'NEWER':'UNKNOWN';
+    return `<div class="runtime-stack">
+      <div class="runtime-stack-head"><strong>Runtime Compatibility</strong><span>Version evidence advertised by this server</span></div>
+      <div class="runtime-stack-grid">
+        <div class="runtime-row"><span>Dedicated Server</span><strong>Build ${escapeHtml(game.server_installed_buildid || '—')}</strong><small>Latest ${escapeHtml(game.server_latest_buildid || 'unknown')}</small>${status(game.server_current)}</div>
+        <div class="runtime-row"><span>Dragonwilds CL</span><strong>${escapeHtml(game.reported_server_cl || 'Not reported yet')}</strong><small>Expected ${escapeHtml(game.current_expected_cl || 'learned from a current Steam build')}</small><span class="status-pill ${clClass}">${clLabel}</span></div>
+        ${clientRuntime ? `<div class="runtime-row"><span>Your Dragonwilds</span><strong>Build ${escapeHtml(installedClient || '—')}</strong><small>Latest ${escapeHtml(latestClient || 'unknown')}</small>${status(clientCurrent)}</div>` : ''}
+        <div class="runtime-row"><span>UE4SS</span><strong>${escapeHtml(ue.installed_version || 'Not recorded')}</strong><small>Latest ${escapeHtml(ue.latest_version || 'unknown')}</small>${status(ue.current)}${ue.latest_url ? `<button class="runtime-link" data-open-external="${escapeHtml(ue.latest_url)}">GitHub ↗</button>` : ''}</div>
+        <div class="runtime-row"><span>RuneSchema</span><strong>${escapeHtml(rs.source_name || 'Installed core')}</strong><small>Installed snapshot: ${escapeHtml(formatRuntimeDate(rs.installed_at))}</small><span class="status-pill unknown">DATE-BASED</span></div>
+      </div>
+    </div>`;
+  }
+
+
+  function modIdentityBadge(unit, attr) {
+    const identity = unit && unit.identity;
+    if (!identity || (!identity.author && !identity.description && !(identity.links || []).length)) return '';
+    const label = identity.author ? `By ${identity.author}` : 'Mod Info';
+    return `<button class="btn ghost compact-btn mod-identity-btn" data-${attr}="${escapeHtml(unit.key)}" title="Read the IDENTITY.txt this mod ships with">ⓘ ${escapeHtml(label)}</button>`;
+  }
+
+  function openModIdentityDetails(unit) {
+    const identity = unit && unit.identity;
+    if (!identity) return;
+    const links = identity.links || [];
+    showModal(`<div class="modal-header"><div><div class="eyebrow">Mod Info · IDENTITY.txt</div><h2>${escapeHtml(unit.name || 'Mod')}</h2>${identity.author ? `<p>By ${escapeHtml(identity.author)}</p>` : ''}</div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body mod-identity-body">${identity.description ? `<p class="mod-identity-description">${escapeHtml(identity.description)}</p>` : ''}${links.length ? `<div class="mod-identity-links">${links.map((link)=>`<div class="mod-identity-link-row"><span>${escapeHtml(link.label||'Link')}</span><code>${escapeHtml(link.url||'')}</code><div class="mod-identity-link-actions"><button class="btn ghost compact-btn" data-identity-open-app="${escapeHtml(link.url||'')}">Open in App</button><button class="btn ghost compact-btn" data-open-external="${escapeHtml(link.url||'')}">Open in Browser ↗</button></div></div>`).join('')}</div>` : '<div class="empty-state compact">No links were declared in this mod\'s IDENTITY.txt.</div>'}</div><div class="modal-footer"><span>Read directly from this mod\'s own IDENTITY.txt · never edited by Dragonwilds Sync</span><div class="footer-right"><button class="btn primary" data-close-modal>Close</button></div></div>`,{title:'Mod Info'});
+    modalRoot.querySelectorAll('[data-identity-open-app]').forEach((button)=>button.addEventListener('click',async()=>{try{await window.dragonwilds.openInAppBrowser(button.dataset.identityOpenApp);}catch(error){toast('Could not open link',error.message,'error');}}));
+  }
+
+  function modCategoryIcon(key, compact=false) {
+    const source={paks:'assets/platforms/paks.svg',ue4ss:'assets/platforms/ue4ss.webp',runeschema:'assets/platforms/runeschema.webp'}[key];
+    return source?`<img class="mod-category-icon ${compact?'compact':''}" src="${source}" alt=""/>`:'';
+  }
+
+  function groupedServerMods(inv, isActive) {
+    const groups = new Map();
+    for (const unit of (inv || [])) {
+      if (isBakedInUe4ssMod(unit)) continue;
+      const key = String(unit.section || 'other').toLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(unit);
+    }
+    const order = ['paks', 'ue4ss', 'runeschema', 'other'];
+    return `<div class="mod-groups">${order.filter((key) => groups.has(key)).map((key) => {
+      const items = groups.get(key);
+      const clientCount = items.filter((u) => u.classification === 'player_required').length;
+      const serverCount = items.length - clientCount;
+      return `<details class="mod-group" open><summary><div class="mod-group-title">${modCategoryIcon(key)}<strong>${escapeHtml(sectionLabel(key))}</strong><span class="badge ${key === 'paks' ? 'paks' : key === 'ue4ss' ? 'ue4ss' : key === 'runeschema' ? 'runeschema' : 'vanilla'}">${items.length}</span></div><div class="mod-group-counts"><span class="distribution-pill client">${clientCount} CLIENT REQUIRED</span><span class="distribution-pill server">${serverCount} SERVER RETAINED</span></div><div class="mod-group-actions">${key !== 'other' ? `<button class="btn ghost mod-action-btn" data-section-push="${key}" ${isActive ? '' : 'disabled'}>Push category</button>` : ''}</div></summary><div class="mod-group-body">${items.map((u) => {
+        const source = u.source || {};
+        const clientRequired = u.classification === 'player_required';
+        const updateBadge = source.provider === 'nexus' && source.update_available ? '<span class="status-pill unknown">UPDATE AVAILABLE</span>' : '';
+        const fileId = source.provider === 'nexus' && source.file_id ? ` · File ${source.file_id}` : '';
+        const hotloadEligible = u.group === 'ue4ss_mod' || u.group === 'runeschema_mod';
+        const hotload = hotloadEligible ? `<span class="status-pill ${u.hotload_capable ? 'online' : 'unknown'}">${u.hotload_capable ? 'HOTLOAD' : 'RESTART'}</span>` : '';
+        return `<div class="mod-clean-row"><div><div class="mod-name-line">${modCategoryIcon(key,true)}<strong title="${escapeHtml(u.name)}">${escapeHtml(u.name)}</strong><span class="distribution-pill ${clientRequired ? 'client' : 'server'}">${clientRequired ? 'CLIENT REQUIRED' : 'SERVER RETAINED'}</span><span class="source-pill ${source.provider === 'nexus' ? 'nexus' : 'manual'}">${source.provider === 'nexus' ? `NEXUS #${escapeHtml(source.mod_id || '—')}${escapeHtml(fileId)}` : 'MANUAL'}</span>${hotload}${updateBadge}</div><div class="mod-meta">${escapeHtml(u.subsection || sectionLabel(key))} · ${u.file_count} files · ${formatBytes(u.size)} · Lifecycle: ${escapeHtml(u.category || 'permanent')}</div>${(u.tags||[]).length?`<div class="mod-tag-row">${u.tags.map((tag)=>`<span class="mod-tag">${escapeHtml(tag)}</span>`).join('')}</div>`:''}</div><div class="mod-row-actions"><label class="mod-mode-control"><span>MOD MODE</span><select class="select compact-select" data-mod-mode="${escapeHtml(u.key)}" aria-label="Mod mode for ${escapeHtml(u.name)}"><option value="player_required" ${clientRequired?'selected':''}>Client Required</option><option value="server_only" ${clientRequired?'':'selected'}>Server Retained</option></select></label><button class="btn ghost mod-action-btn" data-mod-category="${escapeHtml(u.key)}" data-category-current="${escapeHtml(u.category || 'permanent')}">${String(u.category || 'permanent').toUpperCase()}</button>${hotloadEligible ? `<button class="btn ${u.hotload_capable ? 'primary' : 'ghost'} mod-action-btn" data-mod-hotload="${escapeHtml(u.key)}" data-hotload-current="${u.hotload_capable ? '1' : '0'}">${u.hotload_capable ? 'Hotload ✓' : 'Hotload'}</button>` : ''}<button class="btn ghost mod-action-btn" data-mod-tags="${escapeHtml(u.key)}">${t('editTags')}</button><button class="btn ghost mod-action-btn" data-mod-source="${escapeHtml(u.key)}">Source</button>${modIdentityBadge(u,'mod-identity')}</div><div class="mod-row-actions">${u.group !== 'runeschema_mod' ? `<button class="btn ghost mod-action-btn" data-mod-move="${escapeHtml(u.key)}" data-direction="-1" title="Move up">↑</button><button class="btn ghost mod-action-btn" data-mod-move="${escapeHtml(u.key)}" data-direction="1" title="Move down">↓</button>` : '<span class="status-pill unknown">NO LOAD ORDER</span>'}${hotloadEligible && u.hotload_capable && isActive ? `<button class="btn ghost mod-action-btn" data-edit-hotload-mod="${escapeHtml(u.key)}">Edit in Monaco</button>` : ''}${source.provider==='nexus'?`<button class="btn ${source.update_available?'primary':'ghost'} mod-action-btn" data-server-nexus-manage="${escapeHtml(u.key)}">${source.update_available?'Update':'Reinstall'}</button>`:''}${source.previous?.rollback_archive?`<button class="btn ghost mod-action-btn" data-server-rollback="${escapeHtml(u.key)}">Rollback</button>`:''}${source.web_url ? `<button class="btn ghost mod-action-btn" data-open-external="${escapeHtml(source.web_url)}">Nexus ↗</button>` : ''}<span class="status-pill ${u.live ? 'online' : (clientRequired ? 'unknown' : 'offline')}">${u.live ? 'LIVE' : (clientRequired ? 'PENDING' : 'LOCAL')}</span></div></div>`;
+      }).join('')}</div></details>`;
+    }).join('')}</div>`;
+  }
+
+  function singleplayerModRows(units) {
+    if (!units?.length) return '<div class="empty-state compact">No SinglePlayer mods are installed yet. Drop a ZIP and Dragonwilds Sync will classify it automatically.</div>';
+    const labels={paks:'PAK Load Order',ue4ss:'UE4SS Load Order',runeschema:'RuneSchema Mods'};
+    return ['paks','ue4ss','runeschema'].map((section)=>{
+      const items=units.filter((u)=>u.section===section && !isBakedInUe4ssMod(u)); if(!items.length)return '';
+      return `<details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>${modCategoryIcon(section)}${labels[section]}</h2><span class="panel-subtitle">${section==='paks'?'Order is materialized as 01_, 02_, … prefixes.':section==='ue4ss'?'Order is written directly to mods.txt.':'Membership only — RuneSchema has no launcher-managed load order.'}</span></div><span class="collapse-hint">Minimize ▾</span></summary><div class="panel-body"><div class="mod-clean-list">${items.map((u)=>{
+        const hotload=['ue4ss_mod','runeschema_mod'].includes(u.group);
+        const reorder=u.group!=='runeschema_mod';
+        const source=u.source||{};
+        const managed=source.provider==='nexus';
+        const sourcePill=`<span class="source-pill ${managed?'nexus':'manual'}">${managed?`NEXUS #${escapeHtml(source.mod_id||'—')}`:'LOCAL / UNMANAGED'}</span>`;
+        const profileDistribution=u.classification==='server_only'?'PROFILE RETAINED':'PROFILE ACTIVE';
+        const fingerprint=String(u.content_hash||'').slice(0,12);
+        const updateBadge=managed ? (source.update_status==='unable_to_check'?'<span class="status-pill offline">UNABLE TO CHECK</span>':source.update_available?'<span class="status-pill unknown">UPDATE AVAILABLE</span>':'<span class="status-pill online">CURRENT</span>') : '';
+        return `<div class="mod-clean-row"><div><div class="mod-name-line">${modCategoryIcon(section,true)}<strong title="${escapeHtml(u.name)}">${escapeHtml(u.name)}</strong><span class="distribution-pill client">${profileDistribution}</span>${sourcePill}${hotload?`<span class="status-pill ${u.hotload_capable?'online':'unknown'}">${u.hotload_capable?'HOTLOAD':'RESTART'}</span>`:''}${updateBadge}</div><div class="mod-meta">${escapeHtml(u.subsection||sectionLabel(section))} · ${u.file_count} files · ${formatBytes(u.size)} · Lifecycle: ${escapeHtml(u.category||'permanent')}${reorder?` · Load ${Number(u.order||0)+1}`:' · No load order'}${fingerprint?` · SHA-256 ${escapeHtml(fingerprint)}`:''}${managed&&source.installed_version?` · Nexus ${escapeHtml(source.installed_version)}`:''}</div>${(u.tags||[]).length?`<div class="mod-tag-row">${u.tags.map((tag)=>`<span class="mod-tag">${escapeHtml(tag)}</span>`).join('')}</div>`:''}</div><div class="mod-row-actions">${reorder?`<button class="btn ghost mod-action-btn" data-sp-move="${escapeHtml(u.key)}" data-direction="-1">↑</button><button class="btn ghost mod-action-btn" data-sp-move="${escapeHtml(u.key)}" data-direction="1">↓</button>`:''}${hotload?`<button class="btn ${u.hotload_capable?'primary':'ghost'} mod-action-btn" data-sp-hotload="${escapeHtml(u.key)}" data-current="${u.hotload_capable?'1':'0'}">${u.hotload_capable?'Hotload ✓':'Hotload'}</button>`:''}${hotload&&u.hotload_capable?`<button class="btn ghost mod-action-btn" data-sp-edit="${escapeHtml(u.key)}">Edit in Monaco</button>`:''}<button class="btn ghost mod-action-btn" data-sp-tags="${escapeHtml(u.key)}">${t('editTags')}</button><button class="btn ghost mod-action-btn" data-sp-source="${escapeHtml(u.key)}">${managed?'Nexus Source':'Link to Nexus Mod…'}</button>${modIdentityBadge(u,'sp-identity')}${managed?`<button class="btn ${source.update_available?'primary':'ghost'} mod-action-btn" data-sp-nexus-manage="${escapeHtml(u.key)}">${source.update_available?'Update':'Reinstall'}</button>`:''}${source.previous?.rollback_archive?`<button class="btn ghost mod-action-btn" data-sp-rollback="${escapeHtml(u.key)}">Rollback</button>`:''}${managed&&source.web_url?`<button class="btn ghost mod-action-btn" data-open-external="${escapeHtml(source.web_url)}">Nexus ↗</button>`:''}<button class="btn danger mod-action-btn" data-sp-remove="${escapeHtml(u.key)}">Remove</button></div></div>`;
+      }).join('')}</div></div></details>`;
+    }).join('');
+  }
+
+  function renderSinglePlayerDetail(world) {
+    const worldId=String(world?.id||state.data?.client?.active_private_world_id||'singleplayer');
+    const units=state.singleplayerInventory||[];
+    const runtime=state.data?.server?.runtime||{};
+    const live=String(state.data?.client?.live_world_id||'')===worldId;
+    const broadcasting=!!world?.status?.broadcasting;
+    const selectionMap=state.data?.client?.world_character_selection||{};
+    const selectedCharacter=selectionMap[worldId] || (worldId==='singleplayer'?selectionMap.singleplayer:'') || '';
+    const selected=state.characters?.find((c)=>c.id===selectedCharacter);
+    if(state.privateTab==='items')state.privateTab='overview';
+    const requestedPrivateTab=state.privateTab||'overview';
+    const tab=requestedPrivateTab;
+    if(tab!==requestedPrivateTab)state.privateTab=tab;
+    const mapCfg=state.serverMapConfig[worldId] || {};
+    const tracker=state.serverPlayers[worldId] || {players:[],recent_players:[],player_count:0,tracker_connected:false};
+    const configs=(state.singleplayerConfigs[worldId]||[]).filter((file)=>file.special!=='mods_txt'&&String(file.name||'').toLowerCase()!=='mods.txt');
+    const tabButton=(id,label)=>`<button class="${tab===id?'active':''}" data-private-tab="${id}">${label}</button>`;
+    let body='';
+    if(tab==='overview'){
+      body=`<div class="server-tab-body"><div class="panel-grid">
+        <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Private World</h2><span class="panel-subtitle">Local Dragonwilds save · normal game installation</span></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'BROADCASTING':'LOCAL'}</span></summary><div class="panel-body"><div class="metric-grid">${metric('World',world?.name||'Private World')}${metric('Gameplay Host','Dragonwilds game')}${metric('Broadcast',broadcasting?'Sync fingerprint live':'Off')}${metric('Sync Port',world?.status?.sync_port||27051)}${metric('Character',selected?.profile?.label||selected?.player_name||'Not assigned')}${metric('Mods',String(units.length))}${metric('Players',tracker.player_count??0)}${metric('RSDW Tracking',tracker.tracker_connected?'Live':'Idle')}</div><div class="identity-box"><strong>Singleplayer and co-op use the same World profile shell</strong><p>Broadcast exposes launcher identity, manifests, and sync files only. Dragonwilds itself still creates and owns the co-op gameplay session.</p></div></div></details>
+        <details class="panel collapsible-panel" open><summary class="panel-header"><h2>Character</h2><span class="panel-subtitle">Profile-aware save hydration</span></summary><div class="panel-body">${selected?`<div class="identity-box"><strong>${escapeHtml(selected.profile?.label||selected.player_name||selected.file_name)}</strong><p>This character is selected for this Private World.</p></div>`:'<div class="empty-state compact">No character selected yet.</div>'}<button class="btn ghost" id="sp-characters">Assign / Manage Characters</button></div></details>
+      </div><details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Host Performance</h2><span class="panel-subtitle">Task-Manager-style host history · useful while testing or hosting co-op</span></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'LIVE':'LOCAL'}</span></summary><div class="panel-body">${runtimeGraphs(runtime)}</div></details></div>`;
+    } else if(tab==='players'){
+      body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Players</h2><span class="panel-subtitle">RSDW live tracking when the local game exposes telemetry</span></div><span class="status-pill ${tracker.tracker_connected?'online':'unknown'}">${tracker.tracker_connected?'LIVE':'WAITING'}</span></summary><div class="panel-body">${(tracker.players||[]).length?`<div class="mod-list">${tracker.players.map(pl=>`<div class="mod-row"><div><strong>${escapeHtml(pl.name||'Player')}</strong><br><small>${pl.position?`${Number(pl.position.x||0).toFixed(0)}, ${Number(pl.position.y||0).toFixed(0)}, ${Number(pl.position.z||0).toFixed(0)}`:'Position unavailable'}</small></div><span>${escapeHtml(String(pl.id||''))}</span><span></span></div>`).join('')}</div>`:'<div class="empty-state">No tracked players yet. Start Dragonwilds and host co-op normally; Broadcast does not replace the in-game host flow.</div>'}</div></details></div>`;
+    } else if(tab==='map'){
+      body=`<div class="server-tab-body">${playerMapPanelMarkup(world,{includeSetup:true})}</div>`;
+    } else if(tab==='mods'){
+      body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Private World Mod Manager</h2><span class="panel-subtitle">Same staging, Nexus provenance, validation, rollback, and profile rules as hosted Worlds.</span></div></summary><div class="panel-body"><div class="header-actions mod-manager-actions"><button class="btn ghost" id="sp-refresh">Rescan</button><button class="btn ghost" id="sp-browse-nexus">Browse Nexus Mods</button><button class="btn ghost" id="sp-check-nexus-updates">Check Nexus Updates</button>${units.some((u)=>u?.source?.provider==='nexus'&&u.source.update_available)?'<button class="btn primary" id="sp-update-all-nexus">Update All</button>':''}<button class="btn primary" id="sp-install-mod">Install Manual ZIP</button></div><div class="mod-drop-zone" id="sp-mod-dropzone">Drop a mod ZIP here</div>${singleplayerModRows(units)}</div></details></div>`;
+    } else if(tab==='configuration'){
+      const configGroups=[...new Set(configs.map((c)=>c.category||'Configuration'))];
+      const configIcon=(category)=>String(category).toLowerCase().includes('rune')?'assets/platforms/runeschema.webp':String(category).toLowerCase().includes('ue4')?'assets/platforms/ue4ss.webp':'assets/application-icon.webp';
+      body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World &amp; Runtime Config</h2><span class="panel-subtitle">Overarching Dragonwilds, UE4SS, and RuneSchema settings only. Per-mod files remain in the Mod Editor.</span></div><button class="btn ghost" id="refresh-private-config">Refresh</button></summary><div class="panel-body">${configs.length?`<div class="config-category-list">${configGroups.map((category)=>`<details class="config-category collapsible-panel" open><summary><img src="${configIcon(category)}" alt=""/><h3>${escapeHtml(category)}</h3><span>${configs.filter((c)=>(c.category||'Configuration')===category).length} file(s)</span></summary><div class="config-file-list">${configs.filter((c)=>(c.category||'Configuration')===category).map((c)=>`<div class="config-file-row"><div><div class="config-name-line"><strong>${escapeHtml(c.name||'Configuration')}</strong><span class="status-pill unknown">${escapeHtml(String(c.scope||'core').toUpperCase())}</span></div><small>${escapeHtml(c.display_path||c.relative_path)} · ${formatBytes(c.size||0)}</small></div><button class="btn ghost" data-sp-config-file="${escapeHtml(c.relative_path)}" data-sp-config-key="__core__">Edit</button></div>`).join('')}</div></details>`).join('')}</div>`:'<div class="empty-state">No supported game, UE4SS, or RuneSchema core configuration files were found.</div>'}<div class="identity-box"><strong>Clear configuration boundary</strong><p>World/Game settings come from LocalAppData for Singleplayer and Co-Op. UE4SS and RuneSchema core settings come from their runtime roots. Right-click a mod to edit or add its individual Lua, JSON, JSONC, INI, CFG, TXT, or recipe files.</p></div></div></details></div>`;
+    } else if(tab==='broadcast'){
+      body=`<div class="server-tab-body"><div class="panel-grid"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Launcher Broadcast</h2><span class="panel-subtitle">Sync/Studio fingerprint and World files · separate from gameplay</span></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'LIVE':'OFF'}</span></summary><div class="panel-body"><div class="metric-grid">${metric('Host Type','Private / Co-op')}${metric('Gameplay','Managed in Dragonwilds')}${metric('Sync Port',world?.status?.sync_port||27051)}${metric('Fingerprint',broadcasting?'Advertised':'Not advertised')}</div><div class="identity-box"><strong>Broadcast does not start co-op for you</strong><p>It exposes this World to compatible launchers and serves the launcher-managed manifests/files. Start or stop the actual co-op host from inside Dragonwilds.</p></div><div class="header-actions"><button class="btn ${broadcasting?'danger':'primary'}" id="sp-broadcast-detail">${broadcasting?'Stop Broadcast':'Broadcast'}</button></div></div></details><details class="panel collapsible-panel" open><summary class="panel-header"><h2>Connection Safety</h2></summary><div class="panel-body"><p class="muted-small">Launcher traffic uses its own Sync port so file reconciliation, metadata, health, and fingerprint traffic do not compete with Dragonwilds gameplay networking.</p><div class="warning-box"><strong>Router behavior</strong><br/>Joining players do not configure their router. Hosts may need the Sync endpoint reachable if automatic mapping is unavailable; Dragonwilds gameplay connectivity remains handled by the game.</div></div></details></div></div>`;
+    } else if(tab==='networking'){
+      const profile=(state.privateProfileDetails||{})[worldId]||{}; const policy=(profile.broadcast_config||{}).access_policy||{};
+      body=`<div class="server-tab-body"><section class="panel"><div class="panel-header"><div><h2>Networking</h2><span class="panel-subtitle">World-specific Sync handshake, polling and file-transfer blocking</span></div><button class="btn primary" id="save-private-networking">Apply Rules</button></div><div class="panel-body">${accessPolicyMarkup(policy,'private-access')}<div class="identity-box"><strong>Launcher-only blocking</strong><p>These rules block Dragonwilds Sync traffic for this Private World. They do not prevent a player from connecting through Dragonwilds itself.</p></div></div></section></div>`;
+    } else if(tab==='save-editor'){
+      body=worldSaveEditorMarkup(world,'private',live);
+    } else {
+      const serverOptions=serverWorlds().map(w=>`<option value="${escapeHtml(w.id)}">${escapeHtml(w.name||w.id)}</option>`).join('');
+      body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World Maintenance</h2><span class="panel-subtitle">Archive, convert, or safely reconcile a test copy</span></div></summary><div class="panel-body"><div class="world-maintenance-actions"><button class="btn ghost" id="sp-archive">Archive World</button><button class="btn primary" id="sp-convert-server">Convert to Server</button></div><div class="identity-box"><strong>Conversion always clones first</strong><p>Convert to Server creates a dedicated Server Profile, generates its normal configuration, and copies the local save tree into the profile World snapshot. The Private World remains available.</p></div>${serverWorlds().length?`<div class="merge-workflow"><h3>Merge Changes</h3><p class="muted-small">Use after temporarily testing a Server World in singleplayer. Both copies are archived first; Dragonwilds Sync chooses one complete save tree rather than attempting unsafe record-level .sav merging.</p><div class="form-grid"><label><small>Server copy</small><select class="select" id="sp-merge-server">${serverOptions}</select></label><label><small>Result</small><select class="select" id="sp-merge-result"><option value="server">Server</option><option value="singleplayer">Singleplayer</option></select></label><label><small>Source strategy</small><select class="select" id="sp-merge-prefer"><option value="newest">Newest complete save</option><option value="singleplayer">Force Singleplayer copy</option><option value="server">Force Server copy</option></select></label></div><button class="btn ghost" id="sp-merge">Merge Changes</button></div>`:''}</div></details><details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Host Performance</h2><span class="panel-subtitle">Live CPU, RAM and network evidence</span></div></summary><div class="panel-body">${runtimeGraphs(runtime)}</div></details></div>`;
+    }
+    const heroBanner=b64Image(world?.presentation?.banner_b64)||'assets/singleplayer-banner.webp';
+    const heroIcon=b64Image(world?.presentation?.icon_b64)||'assets/singleplayer-icon.webp';
+    return `<div class="content"><div class="page-header"><button class="btn ghost" id="back-worlds">← Worlds</button><div class="header-actions"><button class="btn ghost" id="detach-private-world">${detachedMode?'↙ Return to Application':'↗ Open in Window'}</button><button class="btn ghost" id="edit-private-world">Edit World</button><button class="btn ghost" id="sp-characters">Characters</button><button class="btn ghost" id="sp-desktop">Send to Desktop</button><button class="btn play" id="play-world">Launch</button><button class="btn ${broadcasting?'danger':'primary'}" id="sp-broadcast">${broadcasting?'Stop Co-Op':'Co-Op'}</button></div></div>
+      <section class="detail-hero" style="margin-bottom:0;border-radius:18px 18px 0 0"><img class="detail-banner" src="${heroBanner}" alt=""/><div class="hero-overlay"></div><div class="hero-content"><img class="hero-icon" src="${heroIcon}" alt=""/><div class="hero-main"><div class="eyebrow">Private World</div><h1>${escapeHtml(world?.name||'Private World')}</h1><p>${escapeHtml(world?.presentation?.description||world?.description||'Your local Dragonwilds World. Enable Co-Op when compatible launchers should synchronize before joining.')}</p><div class="badges">${badgeMarkup('LOCAL')}${badgeMarkup('PRIVATE')}${broadcasting?'<span class="studio-compat">CO-OP · SYNC LIVE</span>':''}</div></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'CO-OP':'READY'}</span></div></section>
+      ${/* Compatibility contract: tabButton('broadcast','Broadcast') remains the canonical English navigation label. */''}<section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px"><div class="server-tabs"><span class="server-tab-group tab-group-profile">Profile</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration','Live Config')}<span class="server-tab-group tab-group-hosting">Hosting</span>${tabButton('broadcast',t('broadcast'))}${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group tab-group-roster">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}</div>${body}</section></div>`;
+  }
+
+  function renderWorldDetail(world) {
+    const p = world.presentation || {};
+    const advanced = true; // Unified client surface: former Simple/Advanced actions coexist.
+    const banner = b64Image(p.banner_b64);
+    const icon = b64Image(p.icon_b64);
+    const title = world.nickname || world.identity?.world_name || 'World';
+    const syncIdentity = worldSyncIdentity(world);
+    const manifest = world.manifest_cache || {};
+    const community = manifest.community || world.community || {};
+    const publicHistory = world.public_history || {};
+    const publicSamples = Array.isArray(publicHistory.history) ? publicHistory.history.slice(-168) : [];
+    const historyPeak = Math.max(1,...publicSamples.map((row)=>Number(row.players||0)));
+    const historyMarkup = publicHistory.provider === 'lobbysup' ? `<details class="panel collapsible-panel" style="margin-top:18px" open><summary class="panel-header"><div><h2>Public Player History</h2><span class="panel-subtitle">LobbySup public observation · seven-day hourly population</span></div><span class="collapse-hint">Minimize ▾</span></summary><div class="panel-body"><div class="metric-grid">${metric('First Observed',publicHistory.first_seen?new Date(publicHistory.first_seen).toLocaleString():'—')}${metric('Last Observed',publicHistory.last_seen?new Date(publicHistory.last_seen).toLocaleString():'—')}${metric('Public Endpoint',publicHistory.address||'—')}${metric('Samples',String(publicSamples.length))}</div>${publicSamples.length?`<div class="public-player-history" title="Hourly observed players">${publicSamples.map((row)=>`<span style="--population:${Math.max(2,Math.round(Number(row.players||0)/historyPeak*100))}%" title="${escapeHtml(new Date(row.timestamp).toLocaleString())} · ${Number(row.players||0)} / ${Number(row.max_players||0)||'—'} players"></span>`).join('')}</div>`:'<div class="identity-box"><strong>History available on demand</strong><p>Open Details again while online to load LobbySup’s public seven-day observation. This is independent public metadata, not host-certified Sync telemetry.</p></div>'}<div class="reference-links"><button class="btn ghost" data-open-external="${escapeHtml(publicHistory.source_url||'https://www.lobbysup.com/dragonwilds')}">View LobbySup Source ↗</button></div></div></details>` : '';
+    const mods = manifest.mod_summary || [];
+    const health = world.status?.server_health || manifest.server_health || {};
+    const networkHealth = world.status?.network_health || manifest.network_health || health.network || {};
+    const hardwareRefs = manifest.health_config?.hardware_reference || health.hardware?.references || {};
+    const hostNetwork = manifest.health_config?.host_network || {};
+    const latencyContext = health.client_context || {};
+    const serverSecurity = manifest.security_posture || {};
+    const runtimeStack = manifest.runtime_stack || world.status?.runtime_stack || {};
+    const clientRuntime = state.data?.client?.runtime || {};
+    const route = world.connection?.last_successful_route;
+    const routeLabel = route ? `${route[0].toUpperCase()}${route.slice(1)} · ${world.connection?.last_successful_address || ''}` : 'Not connected yet';
+    const advertisedConnection = manifest.connection || world.status?.connection || {};
+    const internalIp = advertisedConnection.internal_ip || world.connection?.internal_ip || 'Not set';
+    const externalIp = advertisedConnection.external_ip || world.connection?.external_ip || 'Not set';
+    const hierarchy = manifest.external_hierarchy || world.status?.external_hierarchy || {};
+    const hw = manifest.hw_stats || {};
+    const ramSummary = hw.ram_total_gb ? `${hw.ram_total_gb} GB total${hw.ram_available_gb != null ? ` · ${hw.ram_available_gb} GB available` : ''}${hw.ram_used_gb != null ? ` · ${hw.ram_used_gb} GB used` : ''}` : '—';
+    return `
+      <div class="content">
+        <div class="page-header" style="align-items:center;margin-bottom:15px">
+          <div><button class="btn ghost" id="back-worlds">← Worlds</button></div>
+          <div class="header-actions">${world.last_played_at ? '<button class="btn ghost" id="confirm-world-compatible">✓ Confirm Join Worked</button>' : ''}<button class="btn ghost" id="copy-world-connection">Copy Connection Info</button>${advanced ? `<button class="btn ghost" id="view-world-reviews">Reviews</button><button class="btn ghost" id="rate-world">Rate World</button><button class="btn ghost" id="download-world-save" ${worldSaveDownloadPolicy(world).disabled?'disabled title="Disabled by this World host"':''}>${worldSaveDownloadPolicy(world).disabled?'World Save Disabled':'Download World Save'}</button><button class="btn ghost" id="locate-world">Locate Server</button><button class="btn ghost" id="edit-world">Edit Connection</button><button class="btn ghost" id="test-world">Check Status</button>` : ''}<button class="btn play" id="play-world">⚔ PLAY</button></div>
+        </div>
+        <section class="detail-hero">
+          ${banner ? `<img class="detail-banner" src="${banner}" alt="" />` : `<div class="detail-banner-fallback"></div>`}
+          <div class="hero-overlay"></div>
+          <div class="hero-content">
+            ${icon ? `<img class="hero-icon" src="${icon}" alt="" />` : `<div class="hero-icon fallback">${escapeHtml(initials(title))}</div>`}
+            <div class="hero-main"><div class="eyebrow">World</div><h1 title="${escapeHtml(title)}">${escapeHtml(title)}</h1><p>${escapeHtml(p.description || 'No description provided by the server.')}</p><div class="badges" style="margin-top:9px">${syncBadgeMarkup(world)}${worldCountryMarkup(world)}${(p.mod_badges?.length ? p.mod_badges : ['VANILLA']).map(badgeMarkup).join('')}</div></div>
+            ${statusPill(world)}
+          </div>
+        </section>
+        <div class="panel-grid">
+          <section class="panel"><div class="panel-header"><h2>Connection Summary</h2><div class="header-actions"><span class="route-label">${escapeHtml(routeLabel)}</span><button class="btn ghost" id="run-network-health">Run Link Test</button></div></div><div class="panel-body">
+            <div class="metric-grid">
+              ${metric('World Name', world.identity?.world_name)}
+              ${metric('Ping', world.status?.ping_ms != null ? `${Math.round(world.status.ping_ms)} ms` : '—')}
+              ${metric('Players', world.status?.player_count != null ? String(world.status.player_count) : '—')}
+              ${metric('Uptime', formatUptime(world.status?.uptime_seconds))}
+              ${metric('Server Location', world.status?.server_location || '—')}
+              ${metric('Sync Fingerprint', syncIdentity.fingerprint || syncIdentity.claimed || 'Not advertised')}
+              ${metric('Launcher Identity', syncIdentity.verified ? 'Verified Dragonwilds Sync host' : (syncIdentity.claimed ? 'Claimed · probe not verified' : 'Vanilla / not detected'))}
+              ${metric('Internal / LAN IP', internalIp)}
+              ${metric('External / Public IP', externalIp)}
+              ${metric('World Password', world.credentials?.password ? 'Saved on this device' : 'Not saved')}
+
+              ${metric('Route Mode', String(world.connection?.preference||'auto').replace(/^./,(value)=>value.toUpperCase()))}
+            </div>
+            <div class="identity-box"><strong>Positive World Identity</strong><p>A response is trusted only when it comes from this World’s saved Internal or External route and the server reports the exact World Name <b>${escapeHtml(world.identity?.world_name || '—')}</b>. Local clients can use the LAN route while remote friends use the public route.</p></div>
+          </div></section>
+          <section class="panel"><div class="panel-header"><h2>World / Host Details</h2></div><div class="panel-body">
+            <div class="tags">${(p.tags || []).map((t) => `<span class="tag ${tagTone(t)}">#${escapeHtml(t)}</span>`).join('') || '<span class="muted-small">No tags</span>'}</div>
+            <div style="height:12px"></div>
+            ${metric('Manifest Version', world.status?.manifest_version != null ? String(world.status.manifest_version) : '—')}
+            ${metric('Rating', p.rating_count ? `${Number(p.rating_average || 0).toFixed(1)} / 5 · ${p.rating_count}` : 'No ratings')}
+            ${metric('Server OS', hw.os || '—')}
+            ${metric('Server CPU', hw.cpu || '—')}
+            ${gpuListMarkup(hw)}
+            ${metric('Server Memory', ramSummary)}
+            <div style="height:10px"></div>
+            ${metric('Last Sync', world.last_sync?.timestamp || 'Never')}
+            ${community.discord_invite ? `<div class="world-community-inline"><button class="btn primary" data-open-external="${escapeHtml(community.discord_invite)}">Open World Discord ↗</button><small>This operator-provided invite became available only after the World was successfully linked.</small>${community.discord_guild_id?`<iframe class="discord-world-widget" title="Live Discord community" src="https://discord.com/widget?id=${escapeHtml(community.discord_guild_id)}&theme=dark" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin allow-scripts" referrerpolicy="no-referrer"></iframe><small>Live occupants appear only when the Discord community enables its public Server Widget.</small>`:''}</div>`:''}
+          </div></section>
+        </div>
+        ${historyMarkup}
+        <details class="panel collapsible-panel" style="margin-top:18px" open><summary class="panel-header"><div><h2>Server Health</h2><span class="panel-subtitle">Observed evidence, runtime currency, and validation</span></div><span class="collapse-hint">Minimize ▾</span></summary><div class="panel-body">${healthMarkup(health)}${runtimeStackMarkup(runtimeStack, clientRuntime)}<div class="metric-grid" style="margin-top:12px">${metric('Average Client Ping', networkHealth.avg_client_ping_ms != null ? `${networkHealth.avg_client_ping_ms} ms` : '—')}${metric('P95 Client Ping', networkHealth.p95_client_ping_ms != null ? `${networkHealth.p95_client_ping_ms} ms` : '—')}${metric('Host → Client', networkHealth.avg_host_to_client_mbps != null ? `${networkHealth.avg_host_to_client_mbps} Mbps` : '—')}${metric('Client → Host', networkHealth.avg_client_to_host_mbps != null ? `${networkHealth.avg_client_to_host_mbps} Mbps` : '—')}${metric('Host Internet Down', hostNetwork.download_mbps != null ? `${hostNetwork.download_mbps} Mbps` : 'Not shared')}${metric('Host Internet Up', hostNetwork.upload_mbps != null ? `${hostNetwork.upload_mbps} Mbps` : 'Not shared')}${metric('Host WAN Baseline', hostNetwork.latency_ms != null ? `${hostNetwork.latency_ms} ms` : 'Not shared')}${metric('Host WAN Jitter', hostNetwork.jitter_ms != null ? `${hostNetwork.jitter_ms} ms` : 'Not shared')}${metric('Client vs Host Delta', latencyContext.latency_delta_ms != null ? `${latencyContext.latency_delta_ms >= 0 ? '+' : ''}${latencyContext.latency_delta_ms} ms` : '—')}${metric('Client Internet Down', networkHealth.avg_client_internet_down_mbps != null ? `${networkHealth.avg_client_internet_down_mbps} Mbps` : 'Optional')}${metric('Client Internet Up', networkHealth.avg_client_internet_up_mbps != null ? `${networkHealth.avg_client_internet_up_mbps} Mbps` : 'Optional')}</div>${externalLinksMarkup(hardwareRefs)}${hierarchy.search_url ? `<div class="hierarchy-box"><div><strong>${hierarchy.confirmed ? 'Public listing confirmed' : 'Public hierarchy reference'}</strong><span>${escapeHtml(hierarchy.label || 'Unofficial RuneScape Dragonwilds server browser reference')}</span></div><button class="btn ghost" data-open-external="${escapeHtml(hierarchy.search_url)}">View Listing Search ↗</button></div>` : ''}<div class="identity-box"><strong>File security evidence</strong><p>Server publish review: ${escapeHtml(String(serverSecurity.reviewed_units ?? '—'))} mod unit(s) · ${escapeHtml(String(serverSecurity.skipped_reviews ?? '—'))} review(s) skipped. Defender being unavailable is shown as missing evidence rather than pretending the files were scanned.</p></div><div class="identity-box"><strong>How this score works</strong><p>Health combines the observed client↔host route, server hardware and available memory, uptime, host WAN evidence, dedicated-server version currency, and optional ecosystem validation such as public listing evidence and successful client compatibility reports. Your own Internet quality and local game state remain diagnostic context rather than a penalty against the host.</p></div></div></details>
+        <details class="panel collapsible-panel" style="margin-top:18px" open><summary class="panel-header"><div><h2>Server Mod Inventory</h2><span class="panel-subtitle">Core runtime plumbing is intentionally hidden; only meaningful mods are presented.</span></div><span class="collapse-hint">Minimize ▾</span></summary><div class="panel-body"><div class="header-actions mod-filter-row"><button class="btn ${state.clientModFilter === 'required' ? 'primary' : 'ghost'}" data-client-mod-filter="required">Client Required</button><button class="btn ${state.clientModFilter === 'all' ? 'primary' : 'ghost'}" data-client-mod-filter="all">Show Server-Retained</button></div>
+          ${mods.filter(isClientPresentationMod).length ? groupedClientMods(mods) || `<div class="empty-state">No mods match this filter.</div>` : `<div class="empty-state">Connect once to cache this World’s mod inventory.</div>`}
+        </div></details>
+        ${(manifest.starter_characters||[]).length || manifest.character_sharing?.allow_submissions || manifest.character_sharing?.request_backups ? `<details class="panel collapsible-panel" style="margin-top:18px" open><summary class="panel-header"><div><h2>Shared Characters & Recovery</h2><span class="panel-subtitle">Approved characters, submissions, and profile-bound save recovery.</span></div><div class="header-actions">${manifest.character_sharing?.request_backups?'<button class="btn primary" id="approve-character-backup">Enable My Save Backup</button><button class="btn ghost" id="restore-character-backup">Restore Latest Backup</button>':''}${manifest.character_sharing?.allow_submissions?'<button class="btn ghost" id="submit-character-to-world">Submit .rsdwl for Review</button>':''}</div></summary><div class="panel-body">${manifest.character_sharing?.request_backups?`<div class="warning-box"><strong>This World offers player save recovery.</strong><br/>Enable it once for the assigned character. The server then retains that profile’s latest changed save after successful Sync connections. Only the same authenticated player profile can request it; recovery backups never enter the administrator submission queue.${world.player_backup?.last_uploaded_at?`<br/><small>Last retained: ${escapeHtml(world.player_backup.last_uploaded_at)}</small>`:''}</div>`:''}${(manifest.starter_characters||[]).length?`<div class="config-file-list">${(manifest.starter_characters||[]).map((c)=>`<div class="config-file-row"><div><strong>${escapeHtml(c.player_name||c.label||'Shared Character')}</strong><small>${escapeHtml(c.id||'')} · ${formatBytes(c.size||0)}</small></div><button class="btn primary" data-import-starter-character="${escapeHtml(c.id||'')}">Download & Import</button></div>`).join('')}</div>`:'<div class="empty-state compact">No approved shared characters yet.</div>'}<div class="identity-box"><strong>Separate protected channels</strong><p>General submissions remain package-inspected in administrator quarantine. Player recovery backups are retained separately under the authenticated player profile and cannot be browsed or restored by another player profile.</p></div></div></details>` : ''}
+      </div>`;
+  }
+
+  function taskGraph(label, values, formatter = (v)=>String(Math.round(v || 0)), ceiling = null) {
+    const nums=(values||[]).map((v)=>Number(v||0));
+    const latest=nums.length?nums[nums.length-1]:0;
+    const max=Math.max(1, Number(ceiling||0), ...nums);
+    const width=320, height=78;
+    const points=nums.length<2?'':nums.map((v,i)=>`${(i/(nums.length-1))*width},${height-(Math.min(max,Math.max(0,v))/max)*height}`).join(' ');
+    return `<div class="task-graph"><div class="task-graph-head"><strong>${escapeHtml(label)}</strong><span>${escapeHtml(formatter(latest))}</span></div><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escapeHtml(label)} recent history"><path d="M0 ${height*.25}H${width} M0 ${height*.5}H${width} M0 ${height*.75}H${width}" class="task-grid-lines"/>${points?`<polyline points="${points}" class="task-graph-line"/>`:''}</svg></div>`;
+  }
+
+  function runtimeGraphs(runtime) {
+    const history=runtime?.metric_history||[];
+    const hostCpu=history.map((x)=>x.cpu_percent ?? 0);
+    const processCpu=history.map((x)=>x.process_cpu_percent ?? 0);
+    const ram=history.map((x)=>x.ram_percent ?? 0);
+    const ramUsed=history.map((x)=>x.ram_used_bytes ?? 0);
+    const procRam=history.map((x)=>x.process_ram_bytes ?? 0);
+    const down=history.map((x)=>x.net_down_bps ?? 0);
+    const up=history.map((x)=>x.net_up_bps ?? 0);
+    return `<div class="task-graph-grid">${taskGraph('Host CPU',hostCpu,(v)=>`${Number(v||0).toFixed(1)}%`,100)}${taskGraph('Server CPU',processCpu,(v)=>`${Number(v||0).toFixed(1)}%`,100)}${taskGraph('System RAM',ram,(v)=>`${Number(v||0).toFixed(1)}%`,100)}${taskGraph('Memory Used',ramUsed,(v)=>formatBytes(v))}${taskGraph('Server RAM',procRam,(v)=>formatBytes(v))}${taskGraph('Internet ↓',down,(v)=>`${formatBytes(v)}/s`)}${taskGraph('Internet ↑',up,(v)=>`${formatBytes(v)}/s`)}</div>`;
+  }
+
+  function renderServers() {
+    const workspaceTab = state.serversTab === 'settings' ? 'settings' : 'worlds';
+    if (workspaceTab === 'settings') return renderSettings();
+    const rows = serverWorlds();
+    const view = state.serverWorldView === 'list' ? 'list' : 'cards';
+    const pageCount=Math.max(1,Math.ceil(rows.length/7));
+    const page=Math.min(pageCount,Math.max(1,Number(state.serverWorldPage||1)));
+    const pageRows=rows.slice((page-1)*7,page*7);
+    return `
+      <div class="content">
+        <div class="page-header"><div><div class="eyebrow">Server</div><h1>Hosted Worlds</h1><div class="page-subtitle">Each World is its own dedicated-server profile: presentation, credentials, mods, save game, runtime, and Sync endpoint. Server Number derives the gameplay/Sync port plan when Advanced Multiple Servers is enabled.</div></div><div class="header-actions"><div class="world-view-toggle"><button class="btn ${view==='cards'?'primary':'ghost'} compact-btn" data-server-view="cards" title="Placards">▦</button><button class="btn ${view==='list'?'primary':'ghost'} compact-btn" data-server-view="list" title="Horizontal">☰</button></div><button class="btn primary" id="add-server-world">+ Create World</button></div></div>
+        <nav class="settings-subnav server-workspace-tabs"><button class="active" data-servers-tab="worlds">Worlds</button><button data-servers-tab="settings">Server Setup</button></nav>
+        <section class="${view==='list'?'world-list':'world-grid'}">${rows.length ? pageRows.map((w)=>{const runtime=state.data?.server?.runtime||{};const running=!!runtime.running&&String(runtime.active_profile_id||'')===String(w.id||'');return view==='list'?renderHostedWorldListRow(w,true):worldCard(w,true).replace('</article>',`<div class="placard-actions integrated"><button class="btn ${running?'danger':'play'}" ${running?`data-server-stop="${escapeHtml(w.id)}"`:`data-server-launch="${escapeHtml(w.id)}"`}>${running?'Stop':'Launch'}</button><button class="btn ghost" data-server-manage="${escapeHtml(w.id)}">Manage</button></div></article>`)}).join('') : (view==='cards'?`<button class="add-world-card" id="add-server-world-card"><div><div class="plus">+</div><strong>Create your first hosted World</strong></div></button>`:'<div class="empty-state">No hosted Worlds yet.</div>')}</section>${rows.length?`<nav class="world-pagination"><span>Showing ${(page-1)*7+1}–${Math.min(rows.length,page*7)} of ${rows.length}</span><div><button class="btn ghost compact-btn" data-server-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><b>Page ${page} of ${pageCount}</b><button class="btn ghost compact-btn" data-server-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button></div></nav>`:''}
+      </div>`;
+  }
+
+  function managedWorldConfigMarkup(configs, isActive) {
+    const groups=new Map();(configs||[]).forEach((c)=>{const key=c.origin_label||c.origin||'Managed World Files';if(!groups.has(key))groups.set(key,[]);groups.get(key).push(c);});
+    const row=(c)=>`<div class="config-file-row"><div><div class="config-name-line"><strong title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</strong>${c.special === 'mods_txt' ? '<span class="status-pill unknown">UE4SS ENABLEMENT</span>' : ''}${c.hotload_capable ? '<span class="status-pill online">HOTLOAD</span>' : '<span class="status-pill unknown">RESTART</span>'}${c.client_sync ? '<span class="distribution-pill client">SYNC CLIENT</span>' : '<span class="distribution-pill server">SERVER ONLY</span>'}${c.managed ? '<span class="status-pill online">MANAGED</span>' : ''}</div><small title="${escapeHtml(c.relative_path)}">${escapeHtml(c.relative_path)} · ${formatBytes(c.size)}${c.readonly ? ' · READ-ONLY ON DISK' : ''}</small></div><button class="btn ghost" data-open-world-config="${escapeHtml(c.relative_path)}" ${c.inactive ? 'disabled' : ''}>Edit</button></div>`;
+    const rows=[...groups.entries()].map(([label,files])=>`<section class="config-origin-group"><div class="config-origin-heading"><strong>${escapeHtml(label)}</strong><span>${files.length} file${files.length===1?'':'s'}</span></div>${files.map(row).join('')}</section>`).join('');
+    return `<details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Core Configuration</h2><span class="panel-subtitle">Game/server, UE4SS root, and RuneSchema root configuration only.</span></div><div class="header-actions"><button class="btn ghost" id="refresh-world-maintenance">Refresh</button></div></summary><div class="panel-body">${rows ? `<div class="config-file-list">${rows}</div>` : `<div class="empty-state">${isActive ? 'No game/server, UE4SS root, or RuneSchema root configuration was found.' : 'Activate this World to inspect its core configuration.'}</div>`}<div class="identity-box"><strong>One clear boundary</strong><p>Mod recipes and mod-owned JSON/Lua/TXT stay in Mod Management. Dragonwilds Sync unlocks only these core files for validated atomic writes, then returns them to read-only.</p></div></div></details>`;
+  }
+
+  function openVerifiedPlayGate(world, syncResponse) {
+    const result=syncResponse?.result||{};
+    const changed=Number(result.downloaded||result.changed_files||0),current=Number(result.up_to_date||result.unchanged_files||0);
+    showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Verified</div><h2>${escapeHtml(world.name||world.nickname||'World')} is ready</h2><p>File matching is complete. Dragonwilds will not start until you press Play.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Parity verified</strong><p>${changed} updated · ${current} already current. DragonLink-Connect is prepared for this World.</p></div><div class="operation-steps"><span class="complete">Match</span><span class="complete">Transfer</span><span class="complete">Verify</span><span class="active">Play</span></div></div><div class="modal-footer"><span>You can close this window without launching.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Not now</button><button class="btn primary" id="launch-verified-world">Play Dragonwilds</button></div></div>`,{title:`Play · ${world.name||'Connected World'}`,width:680,height:430});
+    modalRoot.querySelector('#launch-verified-world')?.addEventListener('click',async(event)=>{
+      const button=event.currentTarget;button.disabled=true;button.textContent='Launching…';
+      try{
+        const launched=await api.invoke('world.launch_verified',{id:world.id});
+        if(launched.state)setData(launched.state);
+        closeModal();
+        setDiscordPresence('Joined World',world,{resetTimer:true,playerCount:world.status?.player_count,health:world.status?.server_health||world.manifest_cache?.server_health});
+        toast('Dragonwilds launched',`The verified ${world.name||'World'} profile was handed to the retail game launcher.`,'success');
+      }catch(error){
+        button.disabled=false;button.textContent='Play Dragonwilds';
+        if(isFileParityMismatch(error?.message||'')){closeModal();openSyncMismatchConfirmation(world,error.message);}
+        else toast('Launch blocked',error.message,'error');
+      }
+    });
+  }
+
+  function isFileParityMismatch(message) {
+    const value=String(message||'').toLowerCase();
+    const protectedFailures=['password','authentication','authorize','fingerprint mismatch','world name mismatch','no internal or external ip','could not resolve a game address'];
+    if(protectedFailures.some((term)=>value.includes(term)))return false;
+    return ['host rejected the final file manifest','hash mismatch for','manifest_fingerprint_changed','local managed-file ledger','missing on client','wrong sha-256','unexpected managed files','verified file match is missing or stale','fresh host response still did not confirm exact file parity'].some((term)=>value.includes(term));
+  }
+
+  function openSyncMismatchConfirmation(world, message) {
+    const panel=showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Incomplete Sync</div><h2>File mismatch detected</h2><p>${escapeHtml(world.name||world.nickname||'This World')} did not reach exact managed-file parity.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box sync-mismatch-warning"><strong>Stability may be compromised</strong><p>You can enter despite the incomplete Sync, but missing, stale, or changed files may cause crashes, missing content, or inconsistent play.</p></div><div class="sync-mismatch-reason"><strong>Why Sync stopped</strong><p>${escapeHtml(message||'The client and host file manifests do not match.')}</p></div><p class="muted">Enter only waives managed-file parity for this launch. World authentication, identity, fingerprint checks, credentials, and DragonLink routing remain enforced.</p></div><div class="modal-footer"><span>No launch occurs if you back out.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Backout</button><button class="btn danger" id="enter-incomplete-sync">Enter</button></div></div>`,{title:`Incomplete Sync · ${world.name||world.nickname||'Connected World'}`,width:720,height:520});
+    panel.querySelector('#enter-incomplete-sync')?.addEventListener('click',async(event)=>{
+      const button=event.currentTarget;button.disabled=true;button.textContent='Entering…';
+      try{
+        const launched=await api.invoke('world.launch_mismatch_override',{id:world.id,acknowledgement:'ENTER_WITH_INCOMPLETE_SYNC'});
+        if(launched.state)setData(launched.state);
+        closeModal();
+        setDiscordPresence('Joined World · Incomplete Sync',world,{resetTimer:true,playerCount:world.status?.player_count,health:world.status?.server_health||world.manifest_cache?.server_health});
+        toast('Entered with incomplete Sync','Dragonwilds launched. Stability may be compromised until exact file parity is restored.','warning');
+      }catch(error){button.disabled=false;button.textContent='Enter';toast('Entry blocked',error.message,'error');}
+    });
+  }
+
+  function openRuntimeBuildManager(kind) {
+    const world=activeServerWorld()||serverWorlds()[0];
+    if(!world){toast('No hosted World profile','Create a Server World before applying a server runtime build.','warning');return;}
+    const isRune=kind==='runeschema';
+    const running=!!state.data?.server?.runtime?.running;
+    const selectedId=String(isRune?(world.runeschema_flavor_id||'official'):(world.ue4ss_active_version_id||'baseline'));
+    const applicationRows=isRune?(state.data?.application?.runeschema_repository||[]):(state.data?.application?.ue4ss_repository||[]);
+    const customRows=isRune?(world.runeschema_flavors||[]).filter((row)=>row&&!['official','experimental'].includes(String(row.id))):[];
+    const protectedRow=isRune
+      ? {id:'official',label:'Official · UnskippableCutscene',version:'Official',kind:'official',available:true,size:0,published_at:'',added_at:0}
+      : {id:'baseline',label:'Baseline (bundled)',version:'Bundled',kind:'baseline',available:true,size:0,published_at:'',added_at:0};
+    const rows=[protectedRow,...applicationRows,...customRows.map((row)=>({...row,label:row.name||row.label||'Custom RuneSchema',version:row.version||'Custom',kind:'custom',available:true}))]
+      .filter((row,index,all)=>row&&all.findIndex((candidate)=>String(candidate.id)===String(row.id))===index);
+    const title=isRune?'RuneSchema Version Manager':'UE4SS Version Manager';
+    const formatDate=(row)=>{const raw=row.published_at||row.added_at;if(!raw)return row.kind==='baseline'||row.kind==='official'?'Protected application build':'Unknown';const date=new Date(typeof raw==='number'?raw*1000:raw);return Number.isNaN(date.getTime())?'Unknown':date.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
+    const deletable=(row)=>!['baseline','official'].includes(String(row.id));
+    const renameable=(row)=>!isRune?deletable(row):String(row.id).startsWith('experimental-');
+    const manager=showModal(`<div class="modal-header"><div><div class="eyebrow">${isRune?'RuneSchema':'UE4SS'} · Local Build Repository</div><h2>${title}</h2><p>Choose the exact server build and inspect which archive entries its clients receive.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body runtime-build-manager" data-runtime-build-manager="${kind}"><div class="runtime-build-toolbar"><div class="header-actions">${isRune?`<button class="btn ghost" data-runtime-build-update-official ${running?'disabled':''}>Update Official</button>`:''}<button class="btn primary" data-runtime-build-fetch ${running?'disabled':''}>Fetch Latest Experimental</button><button class="btn ghost" data-runtime-build-import ${running?'disabled':''}>Import ZIP</button></div><div class="header-actions"><label class="checkbox-row compact"><input id="runtime-build-select-all-${kind}" type="checkbox" data-runtime-build-select-all/> Select local copies</label><button class="btn danger" data-runtime-build-delete-selected disabled>Delete Selected</button></div></div><div class="runtime-build-list" role="table" aria-label="${title}"><div class="runtime-build-row runtime-build-head" role="row"><span></span><strong>Version</strong><strong>Nickname</strong><strong>Publish / stored date</strong><strong>Size</strong><strong>Actions</strong></div>${rows.map((row,rowIndex)=>{const id=String(row.id||'');const active=id===selectedId;return `<div class="runtime-build-row ${active?'active':''}" role="row" data-runtime-build-row="${escapeHtml(id)}"><span>${deletable(row)?`<input id="runtime-build-check-${kind}-${rowIndex}" type="checkbox" data-runtime-build-check="${escapeHtml(id)}" aria-label="Select ${escapeHtml(row.label||id)}"/>`:'<span class="runtime-build-lock" title="Protected build">◆</span>'}</span><span><strong>${escapeHtml(row.version||row.label||id)}</strong><small>${escapeHtml(String(row.kind||'stored').toUpperCase())}</small></span><span><b>${escapeHtml(row.label||row.name||id)}</b>${active?'<small class="runtime-build-active">ACTIVE FOR THIS WORLD</small>':''}</span><span>${escapeHtml(formatDate(row))}</span><span>${row.size?escapeHtml(formatBytes(row.size)):'—'}</span><span class="runtime-build-actions"><button class="btn ${active?'ghost':'primary'} compact-btn" data-runtime-build-apply="${escapeHtml(id)}" ${running?'disabled':''}>${active?'Reapply':'Apply'}</button><button class="btn ghost compact-btn" data-runtime-client-files="${escapeHtml(id)}">Client Files</button>${renameable(row)?`<button class="btn ghost compact-btn" data-runtime-build-rename="${escapeHtml(id)}">Rename</button>`:''}</span></div>`;}).join('')}</div><div class="identity-box"><strong>Archive-aware client runtime</strong><p>Every ZIP entry is inventoried by path, size, SHA-256, ABI, platform and scope. Native Linux files and the dedicated-server <code>version.dll</code> loader are locked to server-only; eligible Win64 entries can be selected per World.</p></div></div><div class="modal-footer"><span>${rows.length} build${rows.length===1?'':'s'} · ${rows.filter(deletable).length} local ${rows.filter(deletable).length===1?'copy':'copies'}</span><button class="btn ghost" data-close-modal>Close</button></div>`,{title,width:1180,height:780});
+    const checked=()=>[...manager.querySelectorAll('[data-runtime-build-check]:checked')].map((node)=>node.dataset.runtimeBuildCheck);
+    // Stored archives are independent from the running server process.  The
+    // backend already blocks the exact build selected by any World, so do not
+    // disable deletion of unrelated local copies merely because a server runs.
+    const updateDelete=()=>{const button=manager.querySelector('[data-runtime-build-delete-selected]');if(button)button.disabled=checked().length===0;};
+    manager.querySelectorAll('[data-runtime-build-check]').forEach((input)=>input.addEventListener('change',updateDelete));
+    manager.querySelector('[data-runtime-build-select-all]')?.addEventListener('change',(event)=>{manager.querySelectorAll('[data-runtime-build-check]').forEach((input)=>{input.checked=event.currentTarget.checked;});updateDelete();});
+    const reopen=()=>{closeModal();render();setTimeout(()=>openRuntimeBuildManager(kind),0);};
+    manager.querySelectorAll('[data-runtime-client-files]').forEach((button)=>button.addEventListener('click',async()=>{
+      const buildId=button.dataset.runtimeClientFiles;button.disabled=true;
+      try{
+        const response=await api.invoke('server.world.runtime_client_selection.get',{id:world.id,kind,build_id:buildId});
+        const inventory=response.inventory||{},files=inventory.files||[];closeModal();
+        const selector=showModal(`<div class="modal-header"><div><div class="eyebrow">${isRune?'RuneSchema':'UE4SS'} · Client Push Selection</div><h2>${escapeHtml(rows.find(row=>String(row.id)===buildId)?.label||buildId)}</h2><p>Choose the Win64 archive entries this World pushes to Windows and Proton clients.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body runtime-file-selector"><div class="runtime-file-selector-toolbar"><label class="checkbox-row compact"><input type="checkbox" data-runtime-files-all/> Select every eligible entry</label><span>${files.length} identified · SHA-256 ${escapeHtml(String(inventory.sha256||'').slice(0,16))}</span></div><div class="runtime-file-selector-list">${files.map((file,index)=>`<label class="runtime-file-selector-row ${file.eligible?'':'locked'}"><input type="checkbox" data-runtime-file-target="${escapeHtml(file.client_path||'')}" ${file.selected?'checked':''} ${file.eligible?'':'disabled'}/><span><strong>${escapeHtml(file.archive_path||'Archive entry')}</strong><small>${escapeHtml(file.client_path||file.locked_reason||'Server only')} · ${formatBytes(file.size||0)} · SHA-256 ${escapeHtml(String(file.sha256||'').slice(0,12))}</small></span><span><b>${escapeHtml(String(file.platform||'').toUpperCase())}</b><small>${escapeHtml(file.scope||'')}</small></span></label>`).join('')}</div><div class="identity-box"><strong>Selection is profile-scoped</strong><p>Changing this list does not alter the server archive. The next publication rebuilds the client payload and cleanup ledger from only these entries.</p></div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" data-save-runtime-client-files>Save Client Selection</button></div>`,{title:'Client Runtime Files',width:1080,height:800});
+        const eligible=()=>[...selector.querySelectorAll('[data-runtime-file-target]:not(:disabled)')];
+        selector.querySelector('[data-runtime-files-all]')?.addEventListener('change',(event)=>eligible().forEach(input=>{input.checked=event.currentTarget.checked;}));
+        selector.querySelector('[data-save-runtime-client-files]')?.addEventListener('click',async(event)=>{event.currentTarget.disabled=true;try{const targets=eligible().filter(input=>input.checked).map(input=>input.dataset.runtimeFileTarget);await api.invoke('server.world.runtime_client_selection.set',{id:world.id,kind,build_id:buildId,targets});toast('Client runtime selection saved',`${targets.length} Win64 archive entr${targets.length===1?'y':'ies'} will be published for this World.`,'success');closeModal();render();}catch(error){event.currentTarget.disabled=false;toast('Client selection failed',error.message,'error');}});
+      }catch(error){button.disabled=false;toast('Archive inventory unavailable',error.message,'error');}
+    }));
+    manager.querySelectorAll('[data-runtime-build-apply]').forEach((button)=>button.addEventListener('click',async()=>{button.disabled=true;try{const method=isRune?'server.world.runeschema_flavors.select':'server.world.ue4ss_version.select';const key=isRune?'flavor_id':'version_id';const response=await api.invoke(method,{id:world.id,[key]:button.dataset.runtimeBuildApply});if(response.state)setData(response.state);toast(`${isRune?'RuneSchema':'UE4SS'} build applied`,response.applied?.message||'The selected build is ready.','success');closeModal();render();}catch(error){button.disabled=false;toast('Build could not be applied',error.message,'error');}}));
+    manager.querySelector('[data-runtime-build-fetch]')?.addEventListener('click',async(event)=>{const button=event.currentTarget;button.disabled=true;button.textContent='Fetching…';try{const method=isRune?'application.runeschema_repository.fetch_experimental':'application.ue4ss_repository.fetch_experimental';const response=await api.invoke(method,{});if(response.state)setData(response.state);toast('Experimental build stored','The local repository now retains this exact release.','success');reopen();}catch(error){button.disabled=false;button.textContent='Fetch Latest Experimental';toast('Experimental fetch failed',error.message,'error');}});
+    manager.querySelector('[data-runtime-build-update-official]')?.addEventListener('click',async(event)=>{const button=event.currentTarget;button.disabled=true;button.textContent='Updating…';try{const updated=await api.invoke('server.install.runeschema_update',{variant:'official'});if(updated.state)setData(updated.state);const selected=await api.invoke('server.world.runeschema_flavors.select',{id:world.id,flavor_id:'official'});if(selected.state)setData(selected.state);toast('Official RuneSchema updated','The active World now targets the refreshed Official build.','success');reopen();}catch(error){button.disabled=false;button.textContent='Update Official';toast('Official update failed',error.message,'error');}});
+    manager.querySelector('[data-runtime-build-import]')?.addEventListener('click',async()=>{const zipPath=await window.dragonwilds.pickFile('zip');if(!zipPath)return;const suggested=String(zipPath).split(/[\\/]/).pop().replace(/\.zip$/i,'');const nickname=await managedPrompt(`Nickname this ${isRune?'RuneSchema':'UE4SS'} build:`,suggested,`Import ${isRune?'RuneSchema':'UE4SS'} Build`);if(nickname===null)return;try{const method=isRune?'server.world.runeschema_flavors.import':'application.ue4ss_repository.import';const params=isRune?{id:world.id,zip_path:zipPath,name:nickname.trim()}:{zip_path:zipPath,label:nickname.trim()};const response=await api.invoke(method,params);if(response.state)setData(response.state);toast('Build imported',nickname.trim()||suggested,'success');reopen();}catch(error){toast('Build import failed',error.message,'error');}});
+    manager.querySelectorAll('[data-runtime-build-rename]').forEach((button)=>button.addEventListener('click',async()=>{const row=rows.find((item)=>String(item.id)===button.dataset.runtimeBuildRename);const nickname=await managedPrompt('Build nickname:',row?.label||row?.name||'','Rename Runtime Build');if(!nickname?.trim())return;try{const method=isRune?'application.runeschema_repository.rename':'application.ue4ss_repository.rename';const response=await api.invoke(method,{version_id:button.dataset.runtimeBuildRename,nickname:nickname.trim()});if(response.state)setData(response.state);reopen();}catch(error){toast('Nickname could not be saved',error.message,'error');}}));
+    manager.querySelector('[data-runtime-build-delete-selected]')?.addEventListener('click',async()=>{const ids=checked();if(!ids.length||!await managedConfirm(`Delete ${ids.length} selected local build${ids.length===1?'':'s'}?\n\nBuilds active for any World are protected.`,'Delete Runtime Builds'))return;try{if(isRune){const repositoryIds=ids.filter((id)=>id.startsWith('experimental-'));const customIds=ids.filter((id)=>!id.startsWith('experimental-'));if(repositoryIds.length)await api.invoke('application.runeschema_repository.delete_many',{version_ids:repositoryIds});for(const flavorId of customIds)await api.invoke('server.world.runeschema_flavors.delete',{id:world.id,flavor_id:flavorId});}else await api.invoke('application.ue4ss_repository.delete_many',{version_ids:ids});state.data=await api.invoke('state.get',{});toast('Local builds deleted',`${ids.length} stored ${ids.length===1?'copy':'copies'} removed.`,'success');reopen();}catch(error){toast('Build deletion blocked',error.message,'error');}});
+  }
+
+  function renderServerDetail(world) {
+    const p = world || {};
+    const banner = b64Image(p.banner_b64);
+    const icon = b64Image(p.icon_b64);
+    const runtime = state.data?.server?.runtime || {};
+    const share = runtime.share || {};
+    const isActive = state.data?.server?.active_world_id === p.id;
+    const isRunning = !!runtime.running && runtime.active_profile_id === p.id;
+    const isServing = !!share.serving && runtime.active_profile_id === p.id;
+    const requestedServerTab=state.serverTab||'overview';
+    const tab=requestedServerTab;
+    const inv = state.serverInventory[p.id] || [];
+    const backups = state.serverBackups[p.id] || [];
+    const feedback = state.serverFeedback[p.id] || [];
+    const d = p.dedicated_config || {};
+    const sync = p.sync_config || {};
+    const externalIp = runtime.public_ip || p.public_ip || sync.external_ip || 'Not detected';
+    const health = share.server_health || runtime.server_health || {};
+    const networkHealth = share.network_health || health.network || {};
+    const hardwareRefs = p.health_config?.hardware_reference || health.hardware?.references || {};
+    const hostNetwork = p.health_config?.host_network || {};
+    const serverHw = runtime.hw_stats && Object.keys(runtime.hw_stats).length ? runtime.hw_stats : (p.hw_stats || {});
+    const cachedRuntimeStack=state.data?.application?.runtime_version_cache?.server||{};
+    const runtimeStack = JSON.parse(JSON.stringify(share.runtime_stack || runtime.runtime_stack || cachedRuntimeStack || {}));
+    const runtimeMatchesProfile=String(runtime.active_profile_id||'')===String(p.id||'');
+    const runtimeCl=(runtimeMatchesProfile?runtime.cl_version:p.cl_version)||{};
+    runtimeStack.dragonwilds={...(runtimeStack.dragonwilds||{}),reported_server_cl:runtimeCl.reported_cl||(runtimeStack.dragonwilds||{}).reported_server_cl||'',current_expected_cl:runtimeCl.expected_cl||(runtimeStack.dragonwilds||{}).current_expected_cl||'',server_cl_status:runtimeCl.status||(runtimeStack.dragonwilds||{}).server_cl_status||'unknown',server_cl_current:runtimeCl.current??(runtimeStack.dragonwilds||{}).server_cl_current};
+    const gameVersion = runtimeStack.dragonwilds || {};
+    const serverInstall = state.data?.application?.server_install || {};
+    const serverLayout = state.data?.server?.layout || {};
+    const configs = (state.serverConfigs[p.id] || []).filter((file)=>file.special!=='mods_txt'&&String(file.name||'').toLowerCase()!=='mods.txt');
+    const spawner = state.serverSpawner[p.id] || { kind:'enemy', items:[], categories:[], query:'', category:'', selectedPath:'', selectedName:'', lastAck:'' };
+    const gameConsole = state.serverConsole[p.id] || { catalog:{commands:[]}, history:[] };
+    const saveStatus = state.serverSaveStatus[p.id] || {};
+    const hierarchy = p.hierarchy || {};
+    const hierarchyCfg = state.data?.application?.external_server_hierarchy || {};
+    const hierarchyUrl = `${hierarchyCfg.base_url || 'https://shrug.games/games/runescape-dragonwilds/servers/'}?q=${encodeURIComponent(p.name || '')}`;
+    const benchmarkCfg = state.data?.application?.server_network_benchmark || {};
+    const benchmark = benchmarkCfg.last_result || {};
+    const worldSavePolicy = p.world_save_download || { enabled:false, cooldown_value:6, cooldown_unit:'hours' };
+    const operationsSchedule = p.operations_schedule || { enabled:false, action:'restart', interval_minutes:1440, warning_minutes:[30,10,5,1] };
+    const serviceNotice = p.service_notice || { level:'info', message:'' };
+    const scheduleWeekdays = new Set((operationsSchedule.weekdays || [0,1,2,3,4,5,6]).map(Number));
+    const blackoutWindow = (operationsSchedule.blackout_windows || [])[0] || {};
+    const blackoutWeekdays = new Set((blackoutWindow.weekdays || [0,1,2,3,4,5,6]).map(Number));
+    const weekdayLabels = [['Mon',0],['Tue',1],['Wed',2],['Thu',3],['Fri',4],['Sat',5],['Sun',6]];
+    const tabButton = (id, label) => `<button class="${tab === id ? 'active' : ''}" data-server-tab="${id}">${label}</button>`;
+    const runeFlavors = ([
+      {id:'official',name:'Official · UnskippableCutscene',kind:'official'},
+      ...(state.data?.application?.runeschema_repository || []).map((row)=>({...row,name:row.label||row.name||row.version||'Experimental'})),
+      ...(p.runeschema_flavors || []),
+    ]).filter((row,index,all)=>row&&all.findIndex(x=>String(x.id)===String(row.id))===index);
+    if(!runeFlavors.some(row=>String(row.id)==='official'))runeFlavors.unshift({id:'official',name:'Official GitHub',kind:'official'});
+    const selectedRuneFlavor=String(p.runeschema_flavor_id||'official');
+    const selectedRuneFlavorRow=runeFlavors.find((row)=>String(row.id)===selectedRuneFlavor)||runeFlavors[0]||{name:'Official GitHub'};
+    const selectedRuneFlavorName=String(selectedRuneFlavor!=='official'?(selectedRuneFlavorRow.name||p.runeschema_source_name||'Custom RuneSchema'):(p.runeschema_source_name||selectedRuneFlavorRow.name||'Official GitHub')).trim();
+    const ue4ssVersions = state.data?.application?.ue4ss_repository || [{id:'baseline',label:'Baseline (bundled)',kind:'baseline',available:true}];
+    const selectedUe4ssVersion = String(p.ue4ss_active_version_id || 'baseline');
+    const selectedUe4ssRow = ue4ssVersions.find((row)=>String(row.id)===selectedUe4ssVersion) || ue4ssVersions[0] || {label:'Baseline (bundled)'};
+    const fmtSize = (n) => n >= 1024 * 1024 ? `${(n / (1024 * 1024)).toFixed(1)} MB` : `${Math.max(0, n || 0) / 1024 < 1 ? (n || 0) + ' B' : ((n || 0) / 1024).toFixed(1) + ' KB'}`;
+    const ramSummary = serverHw.ram_total_gb ? `${serverHw.ram_total_gb} GB total${serverHw.ram_available_gb != null ? ` · ${serverHw.ram_available_gb} GB available` : ''}${serverHw.ram_used_gb != null ? ` · ${serverHw.ram_used_gb} GB used` : ''}` : '—';
+    const updateBanner = gameVersion.server_current === false ? `<div class="server-update-banner"><div><strong>Dragonwilds dedicated server update available</strong><span>Installed build ${escapeHtml(gameVersion.server_installed_buildid || 'unknown')} · latest ${escapeHtml(gameVersion.server_latest_buildid || 'unknown')}${gameVersion.release_dates_align ? ' · client/server release dates align' : ''}</span></div><button class="btn primary" id="banner-update-server">Update in Settings</button></div>` : '';
+    let body = '';
+    if (tab === 'overview') {
+      body = `<div style="padding:18px">${updateBanner}
+        <div class="panel-grid">
+          <details class="panel collapsible-panel" open><summary class="panel-header"><h2>Run Active World</h2><span class="status-pill ${isRunning ? 'online' : (isActive ? 'unknown' : 'offline')}">${isRunning ? 'RUNNING' : (isActive ? 'ACTIVE · STOPPED' : 'INACTIVE')}</span></summary><div class="panel-body"><div class="metric-grid">${metric('World Name', p.name)}${metric('Dedicated Process', isRunning ? `PID ${runtime.pid || '—'}` : 'Stopped')}${metric('Mod Sync', isServing ? `Serving :${share.port}` : 'Stopped')}${metric('Internal / LAN IP', runtime.lan_ip || 'Not detected')}${metric('External / Public IP', externalIp)}${metric('LAN Broadcast', share.broadcasting ? 'Advertising' : 'Off')}${metric('Players', runtime.player_count != null ? runtime.player_count : '—')}${metric('Uptime', formatUptime(runtime.uptime_seconds))}${metric('Manifest', share.manifest_version ? `v${share.manifest_version} · ${share.manifest_file_count || 0} files` : 'Not published')}${metric('Ratings', p.rating_count ? `${Number(p.rating_average || 0).toFixed(1)} / 5 · ${p.rating_count}` : 'No ratings')}</div><div class="identity-box"><strong>Start and discover</strong><p><b>Launch</b> prepares this World, starts its dedicated process, publishes the Sync manifest, and begins discovery advertising. Viewing this page never starts or swaps files.</p></div></div></details>
+          <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Server Health</h2><span class="panel-subtitle">${networkHealth.clients_sampled || 0} recent client sample(s)</span></div><span class="collapse-hint">Minimize ▾</span></summary><div class="panel-body">${healthMarkup(health)}${runtimeStackMarkup(runtimeStack)}<div class="reference-links"><button class="btn ghost" id="refresh-server-hardware">Refresh Specs</button><button class="btn ghost" id="refresh-runtime-versions">Refresh Versions</button></div>${hierarchyCfg.enabled !== false ? `<div class="hierarchy-box"><div><strong>${hierarchy.confirmed ? 'Public hierarchy listing confirmed' : 'External hierarchy evidence not confirmed'}</strong><span>Optional corroborating evidence; never a hard dependency.</span></div><div class="header-actions"><button class="btn ghost" data-open-external="${escapeHtml(hierarchyUrl)}">Search Listing ↗</button><button class="btn ${hierarchy.confirmed ? 'ghost' : 'primary'}" id="confirm-server-hierarchy">${hierarchy.confirmed ? 'Mark Unconfirmed' : 'Mark Confirmed'}</button></div></div>` : ''}</div></details>
+        </div>
+        <details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Live Performance</h2><span class="panel-subtitle">Task-Manager-style · rolling runtime history</span></div><span class="status-pill ${isRunning ? 'online' : 'unknown'}">${isRunning ? 'LIVE' : 'IDLE'}</span></summary><div class="panel-body">${runtimeGraphs(runtime)}<div class="identity-box"><strong>Health inputs stay explainable</strong><p>CPU and memory pressure feed Server Health. Upload/download remain visible activity telemetry while measured reachability, latency, and WAN evidence supply the network-health score.</p></div></div></details>
+        <div class="panel-grid" style="margin-top:18px">
+          <details class="panel collapsible-panel" open><summary class="panel-header"><h2>Server Hardware</h2><span class="panel-subtitle">Broadcast with authenticated manifest</span></summary><div class="panel-body"><div class="metric-grid">${metric('OS', serverHw.os || 'Not probed')}${metric('CPU', serverHw.cpu || '—')}${metric('CPU Cores / Threads', serverHw.cpu_cores ? `${serverHw.cpu_cores} / ${serverHw.cpu_threads || '—'}` : '—')}${gpuListMarkup(serverHw)}${metric('Memory', ramSummary)}${metric('Memory Usage', serverHw.ram_used_percent != null ? `${serverHw.ram_used_percent}%` : '—')}</div>${externalLinksMarkup(hardwareRefs)}<div class="identity-box"><strong>Adapter inventory</strong><p>Every detected GPU is retained and broadcast. Dragonwilds Sync separately marks the likely high-performance adapter so hybrid-laptop hosts do not lose their discrete GPU in the health evidence.</p></div></div></details>
+          <details class="panel collapsible-panel" open><summary class="panel-header"><h2>Network Health</h2><span class="panel-subtitle">Measured path + daily host benchmark</span></summary><div class="panel-body"><div class="metric-grid">${metric('Average Client Ping', networkHealth.avg_client_ping_ms != null ? `${networkHealth.avg_client_ping_ms} ms` : '—')}${metric('P95 Client Ping', networkHealth.p95_client_ping_ms != null ? `${networkHealth.p95_client_ping_ms} ms` : '—')}${metric('Host → Client', networkHealth.avg_host_to_client_mbps != null ? `${networkHealth.avg_host_to_client_mbps} Mbps` : '—')}${metric('Client → Host', networkHealth.avg_client_to_host_mbps != null ? `${networkHealth.avg_client_to_host_mbps} Mbps` : '—')}${metric('Daily Download', benchmark.download_mbps != null ? `${benchmark.download_mbps} Mbps` : (hostNetwork.download_mbps != null ? `${hostNetwork.download_mbps} Mbps` : 'Not measured'))}${metric('Daily Upload', benchmark.upload_mbps != null ? `${benchmark.upload_mbps} Mbps` : (hostNetwork.upload_mbps != null ? `${hostNetwork.upload_mbps} Mbps` : 'Not measured'))}${metric('WAN Latency', benchmark.latency_ms != null ? `${benchmark.latency_ms} ms` : (hostNetwork.latency_ms != null ? `${hostNetwork.latency_ms} ms` : '—'))}${metric('WAN Jitter', benchmark.jitter_ms != null ? `${benchmark.jitter_ms} ms` : '—')}${metric('Benchmark Age', benchmark.measured_at ? new Date(Number(benchmark.measured_at) * 1000).toLocaleString() : 'Never')}</div><div class="reference-links"><button class="btn ghost" id="run-host-benchmark-now">Run Host Benchmark Now</button></div><div class="identity-box"><strong>Bandwidth-aware monitoring</strong><p>The 24-hour benchmark is configurable under Settings → Server. Lightweight reachability can run more often, while full upload/download evidence is deliberately infrequent.</p></div></div></details>
+        </div>
+      </div>`;
+    } else if (tab === 'spawner') {
+      const spawnKind = spawner.kind === 'item' ? 'item' : 'enemy';
+      const spawnRows = spawner.items || [];
+      const spawnPageSize=32;const spawnPageCount=Math.max(1,Math.ceil(spawnRows.length/spawnPageSize));const spawnPage=Math.max(0,Math.min(Number(spawner.page||0),spawnPageCount-1));const visibleSpawnRows=spawnRows.slice(spawnPage*spawnPageSize,(spawnPage+1)*spawnPageSize);
+      const spawnPageIndexes=[...new Set([0,1,spawnPage-2,spawnPage-1,spawnPage,spawnPage+1,spawnPage+2,spawnPageCount-2,spawnPageCount-1])].filter(index=>index>=0&&index<spawnPageCount).sort((a,b)=>a-b);
+      let previousSpawnPage=-1;const spawnPageNavigation=spawnPageIndexes.map(index=>{const gap=previousSpawnPage>=0&&index>previousSpawnPage+1?'<span class="page-ellipsis">…</span>':'';previousSpawnPage=index;return `${gap}<button class="${index===spawnPage?'active':''}" data-spawner-page="${index}" title="Page ${index+1}">${index+1}</button>`;}).join('');
+      const allPlayers = state.serverPlayers[p.id]?.players || [];
+      const livePlayers = allPlayers.filter((pl)=>pl?.tracker_available && pl?.position && !pl?.position_2d);
+      const itemPlayers = allPlayers.filter((pl)=>pl?.connected!==false);
+      const targetValue = spawner.targetValue || (spawnKind === 'item' && itemPlayers.length ? `player:${itemPlayers[0].id||itemPlayers[0].tracker_id||''}` : (spawnKind === 'item' ? 'local' : 'coordinates'));
+      const bridgeReady = !!spawner.bridge?.available;
+      const runtimeReady = !!spawner.runtime?.running && !!spawner.runtime?.active;
+      const localReady = !!spawner.local_player_available;
+      const selectedItemPlayer = targetValue.startsWith('player:') ? itemPlayers.find((pl)=>String(pl.id||pl.tracker_id||'')===targetValue.slice(7)) : null;
+      const itemTargetReady = targetValue === 'local' ? localReady : !!selectedItemPlayer;
+      const spawnReady = !!spawner.selectedPath && bridgeReady && runtimeReady && (spawnKind !== 'item' || itemTargetReady);
+      const sourceLabel = spawnKind === 'enemy' ? (spawner.source?.installed ? 'Installed RSDWTools catalog' : (spawner.source?.available ? 'Saved RSDW catalog' : 'Catalog unavailable')) : `RSDW + modded item repository${Number(spawner.custom_count||0)?` · ${Number(spawner.custom_count)} custom`:''}`;
+      const targetOptions = `<option value="coordinates" ${targetValue==='coordinates'?'selected':''}>World coordinates</option>${localReady?`<option value="local" ${targetValue==='local'?'selected':''}>Server local player / aim</option>`:''}${livePlayers.map((pl)=>`<option value="player:${escapeHtml(pl.id||pl.tracker_id||'')}" ${targetValue===`player:${pl.id||pl.tracker_id||''}`?'selected':''}>${escapeHtml(pl.name||'Player')} coordinates</option>`).join('')}`;
+      body = `<div class="spawner-page">
+        <section class="spawner-intro"><div><div class="eyebrow">RSDW Dev Kit · Operator Only</div><h2>World Spawner</h2><p>Use the same item service from the in-game F1 panel, desktop application, or authorized Remote Server workspace. No arbitrary console input is exposed.</p></div><div class="spawner-status-row"><span class="status-pill ${runtimeReady?'online':'offline'}">${runtimeReady?'WORLD RUNNING':'WORLD STOPPED'}</span><span class="status-pill ${bridgeReady?'online':'offline'}">${bridgeReady?'BRIDGE LIVE':'BRIDGE OFFLINE'}</span></div></section>
+        <div class="spawner-kind-tabs"><button class="${spawnKind==='enemy'?'active':''}" data-spawner-kind="enemy">AI & World Actors</button><button class="${spawnKind==='item'?'active':''}" data-spawner-kind="item">Items</button></div>
+        <div class="spawner-grid">
+          <details class="panel collapsible-panel spawner-catalog-panel" open><summary class="panel-header"><div><h2>${spawnKind==='enemy'?'Spawn Catalog':'Item Service'}</h2><span class="panel-subtitle">${escapeHtml(sourceLabel)} · ${spawnRows.length} shown</span></div><button class="btn ghost" id="refresh-spawner-catalog">${spawnKind==='enemy'?'Update from GitHub':'Refresh Items'}</button></summary><div class="panel-body">
+            <div class="spawner-filters"><input class="field" id="spawner-search" value="${escapeHtml(spawner.query||'')}" placeholder="Search ${spawnKind==='enemy'?'enemies, bosses, NPCs…':'items…'}"/><select class="select" id="spawner-category"><option value="">All categories</option>${(spawner.categories||[]).map((cat)=>`<option value="${escapeHtml(cat)}" ${spawner.category===cat?'selected':''}>${escapeHtml(cat)}</option>`).join('')}</select><button class="btn primary" id="search-spawner">Search</button></div>
+            ${spawnRows.length?`<div class="spawner-inventory-scroller"><button class="native-grid-arrow" data-spawner-page="${spawnPage-1}" ${spawnPage<=0?'disabled':''}>‹</button><div class="spawner-inventory-grid">${Array.from({length:32},(_,index)=>{const row=visibleSpawnRows[index];if(!row)return '<span class="spawner-grid-item empty" aria-hidden="true"></span>';return `<button class="spawner-grid-item ${spawner.selectedPath===row.runtime_path?'selected':''}" draggable="${spawnKind==='item'?'true':'false'}" data-spawn-path="${escapeHtml(row.runtime_path||'')}" data-spawn-name="${escapeHtml(row.name||'')}" title="${escapeHtml(`${row.name||'Unknown'} · ${row.category||'Other'}`)}">${spawnKind==='item'&&row.icon_path?`<img src="${escapeHtml(localFileUrl(row.icon_path))}" alt="" loading="lazy"/>`:spawnKind==='enemy'?enemyIconMarkup(row):`<span class="spawn-picker-mark">${escapeHtml(initials(row.name||'?'))}</span>`}<strong>${escapeHtml(row.name||'Unknown')}</strong></button>`;}).join('')}</div><button class="native-grid-arrow" data-spawner-page="${spawnPage+1}" ${spawnPage>=spawnPageCount-1?'disabled':''}>›</button></div><div class="native-page-dots numbered">${spawnPageNavigation}</div><small class="native-browser-count">${visibleSpawnRows.length} of ${spawnRows.length} · page ${spawnPage+1} / ${spawnPageCount}</small>`:`<div class="empty-state">${escapeHtml(spawner.error || (spawnKind==='enemy'?'No matching spawn classes. Update the RSDW Dev Kit catalog, or install RSDWTools in this server runtime.':'No matching items were found.'))}</div>`}
+          </div></details>
+          <details class="panel collapsible-panel spawner-command-panel" open><summary class="panel-header"><div><h2>Placement</h2><span class="panel-subtitle">Explicit target and confirmation</span></div></summary><div class="panel-body">
+            <div class="selected-spawn-card"><small>Selected ${spawnKind}</small><strong>${escapeHtml(spawner.selectedName||'Nothing selected')}</strong><code>${escapeHtml(spawner.selectedPath||'Choose an entry from the catalog')}</code></div>
+            ${spawnKind==='item'?`<label><small>Stack count</small><input class="field" id="spawner-count" type="number" min="1" max="9999" value="${Math.max(1,Number(spawner.count||1))}"/></label><div class="spawner-player-targets"><div class="spawner-player-target-head"><strong>Give item to a player</strong><small>Select or drag an item from the catalog.</small></div>${itemPlayers.length?itemPlayers.map((pl)=>{const playerId=String(pl.id||pl.tracker_id||'');return `<button class="spawner-player-target ${targetValue===`player:${playerId}`?'selected':''} supported" data-spawn-player="${escapeHtml(playerId)}"><span class="player-target-avatar">${escapeHtml(initials(pl.name||'P'))}</span><span><strong>${escapeHtml(pl.name||'Player')}</strong><small>Server-authoritative item service</small></span><b>GIVE</b></button>`;}).join(''):`<div class="empty-state compact">No players are online.</div>`}</div><div class="identity-box"><strong>Shared Admin Tools route</strong><p>The launcher sends a bounded item ID, count, and selected player through the local RSDWTools bridge. Dragonwilds Sync Admin Tools resolves the player and ItemData again inside the authoritative server.</p></div>`:`<label><small>Target</small><select class="select" id="spawner-target">${targetOptions}</select></label>${targetValue==='coordinates'?`<div class="spawner-coordinates"><label><small>X</small><input class="field" id="spawner-x" type="number" value="${escapeHtml(spawner.x??0)}"/></label><label><small>Y</small><input class="field" id="spawner-y" type="number" value="${escapeHtml(spawner.y??0)}"/></label><label><small>Z</small><input class="field" id="spawner-z" type="number" value="${escapeHtml(spawner.z??0)}"/></label><label><small>Yaw</small><input class="field" id="spawner-yaw" type="number" value="${escapeHtml(spawner.yaw??0)}"/></label></div>`:''}`}
+            <button class="btn primary spawner-submit" id="run-spawner" ${spawnReady?'':'disabled'}>Spawn ${spawnKind==='enemy'?'Selected Actor':'Selected Item'}</button>
+            ${spawner.lastAck?`<div class="identity-box"><strong>Last RSDW acknowledgement</strong><p>${escapeHtml(spawner.lastAck)}</p></div>`:''}
+            <div class="identity-box"><strong>Shared item repository</strong><p>Installed RSDWTools items and Dragonwilds Sync mod-manifest definitions are merged by PersistenceID and ITEM_NAME. LootMenu ${spawner.loot_menu_detected?'is detected and remains independent':'is not detected'}.</p></div>
+          </div></details>
+        </div>
+      </div>`;
+    } else if (tab === 'console') {
+      const commandRows=gameConsole.catalog?.commands||[], historyRows=gameConsole.history||[];
+      const commandPageSize=24, commandPageCount=Math.max(1,Math.ceil(commandRows.length/commandPageSize));
+      const commandPage=Math.max(0,Math.min(Number(gameConsole.page||0),commandPageCount-1));
+      const visibleCommands=commandRows.slice(commandPage*commandPageSize,(commandPage+1)*commandPageSize);
+      const historyPageSize=25,historyPageCount=Math.max(1,Math.ceil(historyRows.length/historyPageSize));
+      const historyPage=Math.max(1,Math.min(Number(gameConsole.historyPage||1),historyPageCount));
+      const visibleHistory=historyRows.slice().reverse().slice((historyPage-1)*historyPageSize,historyPage*historyPageSize);
+      const ready=!!gameConsole.toolkit?.ready, bridge=!!gameConsole.bridge?.available;
+      body=`<div class="console-workspace">
+        <section class="spawner-intro"><div><div class="eyebrow">RSDWToolkit · Server Admin</div><h2>Game Console</h2><p>Commands are validated against the router installed with this World, sent through its local game bridge, and written to the shared administration history.</p></div><div class="spawner-status-row"><span class="status-pill ${ready?'online':'offline'}">${ready?'TOOLKIT READY':'TOOLKIT MISSING'}</span><span class="status-pill ${bridge?'online':'offline'}">${bridge?'BRIDGE LIVE':'BRIDGE OFFLINE'}</span></div></section>
+        <div class="console-grid"><section class="panel"><div class="panel-header"><div><h2>Command input</h2><span class="panel-subtitle">Dragonwilds/RSDWToolkit commands only · never an operating-system shell</span></div><button class="btn ghost console-info" id="toggle-console-help" title="Browse all declared commands">i</button></div><div class="panel-body"><div class="console-input-row"><input class="field console-input" id="game-console-input" maxlength="1023" placeholder="world.weather sunny"/><button class="btn primary" id="run-game-console" ${isRunning&&bridge?'':'disabled'}>Run</button></div><div class="quick-world-controls"><label><small>Weather</small><select class="select" id="quick-weather">${['default','sunny','rain_light','rain_heavy','rain_storm','rain_lightningstorm','fog','cloudy'].map(x=>`<option value="${x}">${x.replaceAll('_',' ')}</option>`).join('')}</select></label><button class="btn ghost" id="apply-quick-weather" ${isRunning&&bridge?'':'disabled'}>Apply Weather</button><label><small>Visual time (0–24)</small><input class="field" id="quick-world-time" type="number" min="0" max="24" step="0.5" value="12"/></label><button class="btn ghost" id="apply-quick-time" ${isRunning&&bridge?'':'disabled'}>Apply Time</button></div>${gameConsole.error?`<div class="warning-box">${escapeHtml(gameConsole.error)}</div>`:''}</div></section>
+        <section class="panel"><div class="panel-header"><div><h2>Unified activity</h2><span class="panel-subtitle">${historyRows.length} retained · 25 entries per page · server, Sync, RSDW-L and acknowledgements</span></div><button class="btn ghost" id="refresh-game-console">Refresh</button></div><div class="panel-body console-history">${historyRows.length?visibleHistory.map(row=>{const at=Number(row.ts||row.at||0);const ok=row.ok!==false&&!['error','failed'].includes(String(row.level||'').toLowerCase());const message=row.message||row.ack||'';return `<div class="console-history-row ${ok?'ok':'error'}"><small>${escapeHtml(at?new Date(at*1000).toLocaleString():'')} · ${escapeHtml(String(row.source||'console').toUpperCase())} · ${escapeHtml(row.level||'info')}</small>${row.command?`<code>${escapeHtml(row.command)}</code>`:''}<span>${escapeHtml(message)}</span></div>`;}).join(''):'<div class="empty-state compact">No server, Sync, or RSDW-L activity has been recorded for this World.</div>'}${historyPageCount>1?`<div class="pager-row"><button class="btn ghost" data-console-history-page="${historyPage-1}" ${historyPage<=1?'disabled':''}>← Previous</button><span>Page ${historyPage} of ${historyPageCount}</span><button class="btn ghost" data-console-history-page="${historyPage+1}" ${historyPage>=historyPageCount?'disabled':''}>Next →</button></div>`:''}</div></section></div>
+        <details class="panel console-command-help" id="console-command-help"><summary><b>Available commands</b><span>${commandRows.length} declared by the installed router · page ${commandPage+1}/${commandPageCount}</span></summary><div class="command-help-grid">${visibleCommands.map(row=>`<button data-console-example="${escapeHtml(row.verb)}"><code>${escapeHtml(row.usage||row.verb)}</code><span class="status-pill ${row.safety==='dangerous'?'offline':row.safety==='read_only'?'online':'unknown'}">${escapeHtml(String(row.safety||'admin_write').replace('_',' '))}</span></button>`).join('')}</div><div class="pager-row"><button class="btn ghost" data-console-page="${commandPage-1}" ${commandPage<=0?'disabled':''}>← Previous</button><span>Page ${commandPage+1} of ${commandPageCount}</span><button class="btn ghost" data-console-page="${commandPage+1}" ${commandPage>=commandPageCount-1?'disabled':''}>Next →</button></div></details>
+      </div>`;
+      body=`<section class="world-runtime-console-host" data-world-runtime-console data-world-id="${escapeHtml(p.id||'')}"><div class="detached-loading"><div class="spinner"></div><strong>Opening this World's Runtime Console…</strong></div></section>`;
+    } else if (tab === 'mods') {
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World Mod Manager</h2><span class="panel-subtitle">Grouped by runtime family; distribution, hotload behavior, and source are explicit.</span></div><span class="collapse-hint">Minimize ▾</span></summary><div class="panel-body"><div class="header-actions mod-manager-actions"><button class="btn ghost" id="refresh-server-inventory">Rescan</button><button class="btn ghost" id="server-browse-nexus">Browse Nexus Mods</button><button class="btn ghost" id="server-check-nexus-updates">Check Nexus Updates</button>${inv.some((u)=>u?.source?.provider==='nexus'&&u.source.update_available)?'<button class="btn primary" id="server-update-all-nexus">Update All</button>':''}<button class="btn ghost" id="install-server-mod-zip">Install Manual ZIP</button><div class="mod-drop-zone inline-drop" id="server-mod-dropzone">Drop mod ZIP</div>${isServing ? '<button class="btn danger" id="stop-share">Stop Sync Share</button>' : ''}<button class="btn primary" id="publish-server-mods" ${isActive ? '' : 'disabled'}>Publish Client Set</button></div>
+        ${inv.length ? groupedServerMods(inv, isActive) : `<div class="empty-state">No inventory loaded yet. Rescan the shared server directory from Settings → Server to discover PAKs, UE4SS Lua mods, and RuneSchema mods.</div>`}
+        <div class="identity-box"><strong>Manual + Nexus-linked inventory</strong><p>Each mod can retain Nexus Mod ID, File ID, latest File ID/version evidence and update state without requiring the client to care where the mod came from. Automatic authenticated download remains behind the Nexus adapter boundary.</p></div>
+      </div></details></div>`;
+    } else if (tab === 'players') {
+      const tracker = state.serverPlayers[p.id] || { players: [], recent_players: [] };
+      const livePlayers = tracker.players || [];
+      const recentPlayers = [...(tracker.recent_players || [])].sort((a,b)=>Number(b.visit_count||0)-Number(a.visit_count||0) || Number(b.last_seen||0)-Number(a.last_seen||0));
+      const platformChips=(pl)=>[['steam_id','steam','Steam'],['epic_id','epic','Epic'],['xbox_id','xbox','Xbox'],['playstation_id','playstation','PlayStation'],['nintendo_id','nintendo','Nintendo']].filter(([key])=>pl?.[key]).map(([key,brand,label])=>`<span class="platform-id-chip ${brand}">${platformLogo(brand,label)} ${escapeHtml(String(pl[key]))}</span>`).join('');
+      const levelLine=(pl)=>{const level=pl?.total_level??pl?.level;return level!=null?`<span class="player-level">Level ${escapeHtml(String(level))}</span>`:'';};
+      const lastSeen=(pl)=>pl?.last_seen?new Date(Number(pl.last_seen)*1000).toLocaleString():'Unknown';
+      const playerHistoryPageSize=25,playerHistoryPageCount=Math.max(1,Math.ceil(recentPlayers.length/playerHistoryPageSize));
+      const playerHistoryPage=Math.max(1,Math.min(Number(state.serverPlayerHistoryPage[p.id]||1),playerHistoryPageCount));
+      const visibleRecentPlayers=recentPlayers.slice((playerHistoryPage-1)*playerHistoryPageSize,playerHistoryPage*playerHistoryPageSize);
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Connected Players</h2><span class="panel-subtitle">Live presence + server-authoritative RSDW coordinates when available</span></div><span>${livePlayers.length || runtime.player_count || 0} online</span></summary><div class="panel-body">
+        <div class="tracker-status ${tracker.tracker_connected ? 'connected' : ''}"><strong>${tracker.tracker_connected ? 'Tracker Connected' : 'Live player locations unavailable'}</strong><span>${tracker.tracker_connected ? 'Server-side positions update through bridge_shm and feed the shared Ashenfall map.' : 'Connected-player names remain available from server logs. The dedicated server continues normally if telemetry is unavailable.'}</span></div>
+        ${livePlayers.length ? `<div class="player-list">${livePlayers.map((pl) => { const pos=pl.position||{}; return `<article class="player-row"><div class="player-dot">●</div><div class="player-copy"><div class="player-name-line"><strong>${escapeHtml(pl.name || 'Player')}</strong>${levelLine(pl)}${pl.platform?`<span class="status-pill unknown">${escapeHtml(String(pl.platform).toUpperCase())}</span>`:''}</div><span>Connected ${formatUptime(pl.connected_seconds || 0)}</span>${platformChips(pl)?`<div class="platform-id-chips">${platformChips(pl)}</div>`:''}${pl.tracker_available && pos.x != null ? `<div class="player-coords"><span>X ${Math.round(pos.x)}</span><span>Y ${Math.round(pos.y)}</span><span>Z ${Math.round(pos.z)}</span>${pl.yaw != null ? `<span>Yaw ${Number(pl.yaw).toFixed(1)}°</span>` : ''}</div>` : '<small>Live location unavailable</small>'}</div><button class="btn ghost" data-locate-player="${escapeHtml(pl.id || pl.name)}" ${pl.map_point ? '' : 'disabled'}>Locate on Map</button></article>`; }).join('')}</div>` : '<div class="empty-state">No connected players detected.</div>'}
+      </div></details>
+      <details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Common & Recent Players</h2><span class="panel-subtitle">Persistent host history · 25 entries per page · visits, levels and platform identifiers</span></div><span>${recentPlayers.length} known</span></summary><div class="panel-body">${recentPlayers.length?`<div class="player-history-list">${visibleRecentPlayers.map(pl=>`<div class="player-history-row"><div class="player-history-identity"><strong>${escapeHtml(pl.name||'Player')}</strong>${levelLine(pl)}<small>${escapeHtml(String(pl.id||''))}</small>${platformChips(pl)?`<div class="platform-id-chips">${platformChips(pl)}</div>`:''}</div><div><small>Visits</small><b>${Number(pl.visit_count||1)}</b></div><div><small>First seen</small><span>${pl.first_seen?escapeHtml(new Date(Number(pl.first_seen)*1000).toLocaleString()):'Unknown'}</span></div><div class="player-last-seen"><small>Last seen</small><span>${escapeHtml(lastSeen(pl))}</span></div></div>`).join('')}</div>${playerHistoryPageCount>1?`<div class="pager-row"><button class="btn ghost" data-player-history-page="${playerHistoryPage-1}" ${playerHistoryPage<=1?'disabled':''}>← Previous</button><span>Page ${playerHistoryPage} of ${playerHistoryPageCount}</span><button class="btn ghost" data-player-history-page="${playerHistoryPage+1}" ${playerHistoryPage>=playerHistoryPageCount?'disabled':''}>Next →</button></div>`:''}`:'<div class="empty-state compact">Player history will populate as players join this World.</div>'}<div class="identity-box"><strong>Forward-compatible platform identity</strong><p>Steam, Epic, Xbox, PlayStation and Nintendo identifiers are retained when telemetry exposes them. Missing platform IDs remain blank rather than being inferred.</p></div></div></details>
+      <details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Shared Character Library</h2><span class="panel-subtitle">${(state.serverStarterCharacters[p.id]||[]).length} approved · ${(state.serverCharacterSubmissions[p.id]||[]).length} quarantined</span></div><button class="btn primary" id="add-starter-character">+ Add .rsdwl</button></summary><div class="panel-body">${(state.serverStarterCharacters[p.id]||[]).length?`<div class="config-file-list">${(state.serverStarterCharacters[p.id]||[]).map((c)=>`<div class="config-file-row"><div><strong>${escapeHtml(c.player_name||c.label||c.id||'Character')}</strong><small>${escapeHtml(c.id||'')} · ${formatBytes(c.size||0)} · portrait ${c.portrait_data?'included':'not supplied'}</small></div><button class="btn danger" data-remove-starter="${escapeHtml(c.id||'')}">Remove</button></div>`).join('')}</div>`:'<div class="empty-state compact">No shared characters are approved. Players are never overwritten automatically.</div>'}${(state.serverCharacterSubmissions[p.id]||[]).length?`<div class="divider"></div><h3>Quarantine Inbox</h3><div class="config-file-list">${(state.serverCharacterSubmissions[p.id]||[]).map((c)=>`<div class="config-file-row"><div><strong>${escapeHtml(c.player_name||c.file_name||'Character')}</strong><small>${formatBytes(c.size||0)} · ${escapeHtml(c.sha256||'')} · ${c.defender?.detected?'DETECTED':'inspection passed'}</small></div><div class="header-actions"><button class="btn primary compact-btn" data-approve-character-submission="${escapeHtml(c.id)}">Approve</button><button class="btn danger compact-btn" data-reject-character-submission="${escapeHtml(c.id)}">Reject</button></div></div>`).join('')}</div>`:''}<div class="identity-box"><strong>Directory boundary</strong><p>Only approved package count is announced. Incoming submissions remain quarantined until explicitly approved or rejected here.</p></div></div></details></div>`;
+    } else if (tab === 'map') {
+      body = `<div style="padding:18px">${playerMapPanelMarkup(p,{includeSetup:true,toolkit:false})}</div>`;
+    } else if (tab === 'save-editor') {
+      body = worldSaveEditorMarkup(p, 'server', isRunning);
+    } else if (tab === 'backups') {
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><h2>World Save Backups</h2><button class="btn ghost" id="refresh-server-backups">Refresh</button></summary><div class="panel-body">${backups.length ? `<div class="mod-list">${backups.map((b) => `<div class="mod-row"><div><strong>${escapeHtml(b.name)}</strong><br><small>${new Date((b.mtime || 0) * 1000).toLocaleString()}</small></div><span>${fmtSize(b.size)}</span><span>ZIP</span></div>`).join('')}</div>` : '<div class="empty-state">No timestamped World backups yet. A backup is created when switching away from a World that has live save data.</div>'}</div></details></div>`;
+    } else if (tab === 'feedback') {
+      const days=[30,60,90].includes(Number(state.serverFeedbackDays))?Number(state.serverFeedbackDays):30;
+      const cutoff=Date.now()/1000-days*86400;
+      const filtered=feedback.filter((row)=>Number(row.received_at||0)>=cutoff);
+      const pageCount=Math.max(1,Math.ceil(filtered.length/10));const page=Math.min(pageCount,Math.max(1,Number(state.serverFeedbackPage||1)));const shown=filtered.slice((page-1)*10,page*10);
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World Ratings & Reviews</h2><span class="panel-subtitle">Star values and signed review text are immutable; visibility is a separate moderation choice.</span></div><div class="header-actions">${[30,60,90].map((value)=>`<button class="btn ${days===value?'primary':'ghost'} compact-btn" data-server-feedback-days="${value}">${value} days</button>`).join('')}<button class="btn ghost" id="refresh-server-feedback">Refresh</button></div></summary><div class="panel-body">${shown.length ? `<div class="mod-list">${shown.map((f) => `<div class="mod-row feedback-row ${f.visible===false?'review-hidden':''}"><div><strong>${escapeHtml(f.client_id || 'Player')} · ${escapeHtml(String(f.rating || '—'))}/5 ${f.integrity?'· VERIFIED':''}</strong><br><small>${f.received_at ? new Date(f.received_at * 1000).toLocaleString() : ''} · network identity protected</small>${f.report ? `<div class="feedback-copy">${escapeHtml(f.report)}</div>` : ''}</div><span>${'★'.repeat(Number(f.rating||0))}${'☆'.repeat(Math.max(0,5-Number(f.rating||0)))}</span><button class="btn ghost compact-btn" data-review-visibility="${escapeHtml(f.id||'')}" data-review-visible="${f.visible===false?'0':'1'}">${f.visible===false?'Show':'Hide'} review</button></div>`).join('')}</div>` : '<div class="empty-state">No player reviews in this time window.</div>'}${filtered.length?`<nav class="world-pagination"><span>Showing ${(page-1)*10+1}–${Math.min(filtered.length,page*10)} of ${filtered.length}</span><div><button class="btn ghost compact-btn" data-server-feedback-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><b>Page ${page} of ${pageCount}</b><button class="btn ghost compact-btn" data-server-feedback-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button></div></nav>`:''}<div class="identity-box"><strong>Tamper-evident storage</strong><p>New reviews are integrity-signed outside the World profile, rate-limited to one review per source network per World every 30 days, and store only a keyed network hash. Hiding review text does not remove its star rating from the aggregate.</p></div></div></details></div>`;
+    } else if (tab === 'broadcast') {
+      const discoveryState=state.data?.application?.world_discovery||{};
+      const officialPublish=(discoveryState.last_publish_results||[]).find((row)=>String(row.url||'').includes('dragonwilds-sync-directory.dragonwilds.workers.dev'))||null;
+      const cloudPublished=officialPublish?.remote===true;
+      const cloudLabel=cloudPublished?'LISTED':(officialPublish?.error?'ERROR':'WAITING');
+      const cloudDetail=cloudPublished?'Authenticated Ed25519 heartbeat accepted':(officialPublish?.error||'Starts when this World publishes its next heartbeat');
+      const heartbeatAt=discoveryState.last_publish_at||share.last_heartbeat_at||share.last_publish_at||runtime.last_publish_at||'';
+      const fingerprint=share.fingerprint||share.manifest_fingerprint||p.sync_fingerprint||'';
+      body = `<div style="padding:18px"><div class="panel-grid"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World Broadcast</h2><span class="panel-subtitle">Continuous Sync discovery, manifest, and transfer service for this hosted World</span></div><span class="status-pill ${isServing?'online':'offline'}">${isServing?'LIVE':'OFFLINE'}</span></summary><div class="panel-body"><div class="metric-grid">${metric('Dedicated World',isRunning?'Running':'Stopped')}${metric('Sync Transfer',isServing?`TCP ${share.port||sync.port||27051}`:'Stopped')}${metric('LAN Discovery',share.broadcasting?'UDP 8422 · advertising':'Stopped')}${metric('Cloudflare Directory',cloudLabel)}${metric('Manifest',share.manifest_version?`v${share.manifest_version} · ${share.manifest_file_count||0} files`:'Not published')}${metric('Fingerprint',fingerprint?String(fingerprint).slice(0,22):'Not published')}${metric('Last Heartbeat',heartbeatAt?formatDate(heartbeatAt):'Not published')}</div><div class="identity-box"><strong>${escapeHtml(cloudDetail)}</strong><p>Cloud publication is authenticated with this installation's protected operator identity. World passwords never leave the direct client-to-host connection.</p></div><div class="identity-box"><strong>Broadcast follows the hosted World</strong><p>Starting this World publishes its verified client-required manifest and keeps discovery alive while the dedicated process is healthy. A normal Stop withdraws the broadcast. If the game crashes, Sync remains available for recovery and diagnostics until the operator stops it.</p></div><div class="header-actions">${isServing?'<button class="btn danger" id="stop-share">Stop Sync Broadcast</button>':`<button class="btn primary" id="publish-server-mods" ${isActive?'':'disabled'}>Publish / Repair Broadcast</button>`}</div></div></details><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>What is advertised</h2><span class="panel-subtitle">Gameplay and file Sync remain independent protocols</span></div></summary><div class="panel-body"><div class="network-port-matrix"><div><b>Dragonwilds gameplay</b><span>UDP ${escapeHtml(d.port||7777)}</span><small>The native game server announcement and connection.</small></div><div><b>Dragonwilds Sync</b><span>TCP ${escapeHtml(sync.port||27051)} · UDP 8422</span><small>Metadata, fingerprint verification, client-required files, and Direct Connect discovery.</small></div></div><div class="identity-box"><strong>No heavyweight polling</strong><p>The launcher owns the heartbeat timer. DragonLink-Connect receives one profile-scoped address/password handoff through its editable config and reacts to game UI object creation; it is not the broadcast transport.</p></div></div></details></div></div>`;
+    } else if (tab === 'networking') {
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Networking & Hosting</h2><span class="panel-subtitle">Gameplay, Sync transfer, Direct Connect discovery, and WebHost remain separate</span></div><button class="btn primary" id="save-server-networking">Apply Access Rules</button></summary><div class="panel-body"><div class="network-port-matrix"><div><b>Dragonwilds gameplay</b><span>UDP ${escapeHtml(d.port||7777)} · ${escapeHtml(d.networking?.publication_mode||'manual')}</span><small>Server ${escapeHtml(p.instance_number||1)}. Native gameplay format is unchanged.</small></div><div><b>World Sync transfer</b><span>TCP ${escapeHtml(sync.port||27051)} · ${escapeHtml(sync.networking?.publication_mode||'manual')}</span><small>Authenticated metadata and file transfer.</small></div><div><b>Direct Connect discovery</b><span>UDP 8422 · ${escapeHtml(sync.networking?.publication_mode||'manual')}</span><small>Allows a typed host IP to return its active Sync announcements.</small></div><div><b>WebHost</b><span>TCP ${escapeHtml(state.data?.application?.world_directory_host?.port||27080)}</span><small>Included only when its direct listener is enabled; tunnels need no inbound rule.</small></div></div><div class="reference-links">${d.networking?.publication_mode==='upnp'?'<button class="btn ghost" id="recreate-game-upnp">Recreate Gameplay UPnP</button><button class="btn ghost" id="remove-game-upnp">Remove App Gameplay Mapping</button>':''}${sync.networking?.publication_mode==='upnp'?'<button class="btn ghost" id="recreate-sync-upnp">Recreate Sync + Discovery UPnP</button><button class="btn ghost" id="remove-sync-upnp">Remove App Sync + Discovery Mappings</button>':''}<button class="btn ghost" id="configure-server-firewall">Repair All Host Firewall Rules</button><button class="btn ghost" id="open-default-router-home" data-router-home="1">Open Default Router Homepage</button></div>${accessPolicyMarkup(sync.access_policy || {blocked_ips:sync.blocked_ips||[],blocked_countries:sync.blocked_countries||[]},'server-world-access')}<div class="identity-box"><strong>One explicit host-wide repair</strong><p>Firewall elevation is requested only when Repair is chosen. It covers every configured local/co-op game port, dedicated game port, Sync transfer port, host-wide UDP 8422 discovery, and enabled direct WebHost port. Loopback IPC and outbound-only tunnels are never opened inbound.</p></div></div></details></div>`;
+    } else if (tab === 'configuration') {
+      body = `<div style="padding:18px" class="panel-grid"><details class="panel collapsible-panel" open><summary class="panel-header"><h2>World & Sync</h2><button class="btn ghost" id="edit-server-world">Edit</button></summary><div class="panel-body">${metric('Name', p.name)}${metric('Server Directory', serverInstall.install_dir || 'Settings → Server')}${metric('Game UDP Port', d.port || 7777)}${metric('Sync Transfer TCP Port', sync.port || 27051)}${metric('Direct Discovery UDP Port', 8422)}${metric('RuneSchema Core', 'Official GitHub Release')}${metric('DedicatedServer.ini', p.dedicated_config_verification?.ok?'Verified for launched executable':'Verified on next start')}${metric('Game Password Readback', p.dedicated_config_verification?.password_matches?'Matches saved World Password':(p.dedicated_config_verification?'Mismatch / not written':'Checked on next start'))}${metric('Active INI Path', p.dedicated_config_verification?.exact_path||'Resolved on next start')}<div class="identity-box"><strong>World-owned files</strong><p>This profile keeps its save, World Password, ports, mods, configuration, and backups together. The shared server installation remains under Settings → Server.</p></div></div></details><details class="panel collapsible-panel" open><summary class="panel-header"><h2>Connection</h2><div class="header-actions"><button class="btn ghost" id="detect-server-public-ip">Detect Public IP</button><button class="btn ghost" id="copy-server-connection">Copy Connection Info</button></div></summary><div class="panel-body">${metric('LAN IP', runtime.lan_ip || 'Not detected')}${metric('Public IP', externalIp)}${metric('Public Listing', hierarchy.confirmed ? 'Confirmed' : 'Not confirmed')}<div class="network-port-matrix"><div><b>Dragonwilds gameplay</b><span>UDP ${escapeHtml(d.port || 7777)} · ${escapeHtml(d.networking?.publication_mode||'manual')}</span><small>Native Dragonwilds traffic. Server ${escapeHtml(p.instance_number||1)} uses ${escapeHtml(d.port||7777)}.</small></div><div><b>Dragonwilds World Sync</b><span>TCP ${escapeHtml(sync.port || 27051)} · UDP 8422</span><small>TCP transfers files; UDP 8422 answers Direct Connect discovery. Joining clients need no inbound rule.</small></div></div><div class="reference-links"><button class="btn ghost" id="copy-server-game-rule">Copy Gameplay Rule</button><button class="btn ghost" id="copy-server-sync-rule">Copy Sync + Discovery Rules</button><button class="btn ghost" id="open-default-router-home" data-router-home="1">Open Default Router Homepage</button><button class="btn ghost" data-open-external="${escapeHtml(hierarchyUrl)}">Search Public Listing ↗</button></div><div class="identity-box"><strong>Simple connection</strong><p>Players use the server IP, exact World Name, and optional World Password. Application URLs are never substituted into Dragonwilds’ native gameplay connection.</p></div></div></details></div>`;
+      body += `<details class="panel collapsible-panel" open style="margin:18px 18px 0"><summary class="panel-header"><div><h2>RuneSchema Build</h2><span class="panel-subtitle">Official, versioned Experimental releases, and named custom builds.</span></div><span class="status-pill ${selectedRuneFlavor==='official'?'online':'unknown'}">${escapeHtml((selectedRuneFlavorRow.kind||'custom').toUpperCase())}</span></summary><div class="panel-body"><div class="runtime-build-summary"><div><small>Active version</small><strong>${escapeHtml(selectedRuneFlavorRow.version||selectedRuneFlavorName)}</strong><span>${escapeHtml(selectedRuneFlavorName)}</span></div><button class="btn primary" id="manage-runeschema-builds">Manage RuneSchema Versions</button></div><div class="identity-box"><strong>World-selected runtime</strong><p>The Version Manager keeps Experimental ZIPs as separate local copies and applies only the build selected for this World.</p></div></div></details>`;
+      body += `<details class="panel collapsible-panel" open style="margin:18px 18px 0"><summary class="panel-header"><div><h2>UE4SS Build</h2><span class="panel-subtitle">Bundled Baseline plus versioned Experimental and imported local copies.</span></div><span class="status-pill ${selectedUe4ssVersion==='baseline'?'online':'unknown'}">${escapeHtml((selectedUe4ssRow.kind||'baseline').toUpperCase())}</span></summary><div class="panel-body"><div class="runtime-build-summary"><div><small>Active version</small><strong>${escapeHtml(selectedUe4ssRow.version||selectedUe4ssRow.label||selectedUe4ssVersion)}</strong><span>${escapeHtml(selectedUe4ssRow.label||selectedUe4ssVersion)}</span></div><button class="btn primary" id="manage-ue4ss-builds">Manage UE4SS Versions</button></div><div class="identity-box"><strong>Shared local repository</strong><p>The Version Manager exposes exact versions, nicknames, publish dates, rollback, multi-select, and protected bulk deletion.</p></div></div></details>`;
+      body += managedWorldConfigMarkup(configs, isActive);
+    } else if (tab === 'maintenance') {
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Live Performance</h2><span class="panel-subtitle">Task-Manager-style · CPU, RAM, process memory, upload and download</span></div><span class="status-pill ${isRunning ? 'online' : 'unknown'}">${isRunning ? 'LIVE' : 'HOST'}</span></summary><div class="panel-body">${runtimeGraphs(runtime)}<div class="identity-box"><strong>These samples feed Server Health</strong><p>CPU and memory pressure are sampled continuously while this tab is open. Network upload/download remain visible alongside process and total system memory.</p></div></div></details><div class="panel-grid" style="margin-top:18px">
+        <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World Save</h2><span class="panel-subtitle">Only this World’s save snapshot and backups.</span></div><button class="btn primary" id="create-world-backup">Create Backup</button></summary><div class="panel-body"><div class="metric-grid">${metric('Live Save', saveStatus.live_path || (isActive ? 'Not found' : 'Inactive World'))}${metric('Live Files', String(saveStatus.live_files ?? '—'))}${metric('Live Size', saveStatus.live_bytes != null ? formatBytes(saveStatus.live_bytes) : '—')}${metric('Stored Snapshot', saveStatus.snapshot_path || '—')}${metric('Snapshot Files', String(saveStatus.snapshot_files ?? '—'))}${metric('Snapshot Size', saveStatus.snapshot_bytes != null ? formatBytes(saveStatus.snapshot_bytes) : '—')}</div>${backups.length ? `<div class="backup-stack">${backups.map((b) => `<div class="backup-row"><div><strong>${escapeHtml(b.name)}</strong><small>${new Date((b.mtime || 0) * 1000).toLocaleString()} · ${fmtSize(b.size)}</small></div><button class="btn ghost" data-restore-world-backup="${escapeHtml(b.name)}">Restore</button></div>`).join('')}</div>` : '<div class="empty-state compact-empty">No backups yet.</div>'}</div></details>
+        <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Core Configuration</h2><span class="panel-subtitle">Server/player config plus the UE4SS and RuneSchema root config files.</span></div><div class="header-actions"><button class="btn ghost" id="refresh-world-maintenance">Refresh</button>${isActive ? '<button class="btn ghost" id="regenerate-mods-txt">Regenerate mods.txt</button>' : ''}</div></summary><div class="panel-body">${configs.length ? `<div class="config-category-list">${[...new Set(configs.map((c)=>c.origin||c.scope||'world'))].map((origin)=>{const rows=configs.filter((c)=>(c.origin||c.scope||'world')===origin);const label=rows[0]?.origin_label||({world:'Server / Game',ue4ss:'UE4SS Core',runeschema:'RuneSchema Core'}[origin]||origin);const icon=origin==='runeschema'?'assets/platforms/runeschema.webp':origin==='ue4ss'?'assets/platforms/ue4ss.webp':'assets/application-icon.webp';return `<details class="config-category collapsible-panel" open><summary><img src="${icon}" alt=""/><h3>${escapeHtml(label)}</h3><span>${rows.length} file(s)</span></summary><div class="config-file-list">${rows.map((c) => `<div class="config-file-row"><div><div class="config-name-line"><strong title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</strong>${c.hotload_capable ? '<span class="status-pill online">HOTLOAD</span>' : '<span class="status-pill unknown">RESTART</span>'}${c.client_sync ? '<span class="distribution-pill client">SYNC CLIENT</span>' : '<span class="distribution-pill server">SERVER ONLY</span>'}</div><small title="${escapeHtml(c.relative_path)}">${escapeHtml(c.relative_path)} · ${formatBytes(c.size)}</small></div><button class="btn ghost" data-open-world-config="${escapeHtml(c.relative_path)}" ${c.inactive ? 'disabled' : ''}>Edit</button></div>`).join('')}</div></details>`;}).join('')}</div>` : `<div class="empty-state">${isActive ? 'No editable server/player, UE4SS root, or RuneSchema root configuration files were found.' : 'Activate this World to inspect its core configuration.'}</div>`}<div class="identity-box"><strong>Core configuration boundary</strong><p>Per-mod recipes and settings stay in Mod Management. This page contains only overarching server/player and runtime-root configuration. Credential-like server files never synchronize to clients.</p></div></div></details>
+      </div>
+      <div class="panel-grid world-ops-grid" style="margin-top:18px">
+        <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>World Save Distribution</h2><span class="panel-subtitle">Optional authenticated download, limited by the server to two requests per source IP every 24 hours.</span></div><span class="status-pill ${worldSavePolicy.enabled ? 'online' : 'unknown'}">${worldSavePolicy.enabled ? '2 / 24 HOURS' : 'DISABLED'}</span></summary><div class="panel-body"><label class="checkbox-row"><input type="checkbox" id="worldsave-download-enabled" ${worldSavePolicy.enabled ? 'checked' : ''}/> Allow authenticated players to request a copy while this World is active</label><div class="worldsave-policy-row"><div class="identity-box"><strong>Fixed recovery limit</strong><p>Each source IP may download at most two World-save copies in a rolling 24-hour window. Every accepted or refused request is visible in the server activity/console stream.</p></div><button class="btn primary" id="save-worldsave-policy">Save Policy</button></div></div></details>
+        <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Operations & Player Announcements</h2><span class="panel-subtitle">Color-coded launcher broadcasts plus timed restart/update windows.</span></div><span class="status-pill ${operationsSchedule.enabled ? 'online' : 'unknown'}">${operationsSchedule.enabled ? 'SCHEDULED' : 'MANUAL'}</span></summary><div class="panel-body"><div class="notice-editor"><label><small>Announcement type</small><select class="select" id="service-notice-level">${['info','success','warning','critical','latency','restart','update'].map((v)=>`<option value="${v}" ${serviceNotice.level===v?'selected':''}>${v[0].toUpperCase()+v.slice(1)}</option>`).join('')}</select></label><label class="notice-message-field"><small>Message shown to connected launcher clients</small><input class="field" id="service-notice-message" maxlength="300" value="${escapeHtml(serviceNotice.message || '')}" placeholder="Optional service notice or announcement"/></label><button class="btn ghost" id="save-service-notice">Publish Announcement</button><button class="btn ghost" id="clear-service-notice">Clear</button></div><div class="maintenance-calendar">
+          <div class="schedule-editor">
+            <label class="checkbox-row"><input type="checkbox" id="server-schedule-enabled" ${operationsSchedule.enabled ? 'checked' : ''}/> Enable scheduled maintenance</label>
+            <label><small>Action</small><select class="select" id="server-schedule-action"><option value="backup" ${operationsSchedule.action==='backup'?'selected':''}>Safe Backup</option><option value="restart" ${operationsSchedule.action==='restart'?'selected':''}>Restart</option><option value="update_restart" ${operationsSchedule.action==='update_restart'?'selected':''}>Update + Restart</option></select></label>
+            <label><small>Recurrence</small><select class="select" id="server-schedule-mode"><option value="daily" ${(operationsSchedule.mode || 'daily')==='daily'?'selected':''}>Every day</option><option value="weekly" ${operationsSchedule.mode==='weekly'?'selected':''}>Selected days</option><option value="interval" ${operationsSchedule.mode==='interval'?'selected':''}>Every interval</option></select></label>
+            <label><small>Local time</small><span class="native-time-wrap"><input class="field native-time" id="server-schedule-time" type="time" value="${escapeHtml(operationsSchedule.daily_time || '04:00')}"/></span></label>
+            <label class="repeat-days-field"><small>Every N days</small><input class="field" id="server-schedule-days" type="number" min="1" max="30" value="${escapeHtml(operationsSchedule.repeat_days || 1)}"/></label>
+            <label><small>Interval</small><input class="field" id="server-schedule-value" type="number" min="1" value="${Math.max(1, Math.round(Number(operationsSchedule.interval_minutes || 1440) / 60))}"/></label>
+            <label><small>Unit</small><select class="select" id="server-schedule-unit"><option value="minutes">Minutes</option><option value="hours" selected>Hours</option><option value="days">Days</option><option value="weeks">Weeks</option></select></label>
+            <label><small>Keep backups</small><input class="field" id="server-backup-retention" type="number" min="1" max="50" value="${escapeHtml(operationsSchedule.backup_retention_count || 10)}"/></label>
+          </div>
+          <div class="maintenance-weekdays"><div><strong>Run on selected days</strong><small>Used when recurrence is “Selected days.”</small></div><div class="weekday-toggle-row">${weekdayLabels.map(([label,day])=>`<label class="weekday-toggle"><input type="checkbox" data-schedule-weekday="${day}" ${scheduleWeekdays.has(day)?'checked':''}/><span>${label}</span></label>`).join('')}</div></div>
+          <div class="maintenance-blackout"><div class="maintenance-blackout-head"><label class="checkbox-row"><input type="checkbox" id="server-blackout-enabled" ${blackoutWindow.start&&blackoutWindow.end?'checked':''}/> Blackout window</label><span>Scheduled operations wait until this quiet window ends.</span></div><div class="blackout-time-row"><label><small>Start</small><span class="native-time-wrap"><input class="native-time" id="server-blackout-start" type="time" value="${escapeHtml(blackoutWindow.start || '18:00')}"/></span></label><label><small>End</small><span class="native-time-wrap"><input class="native-time" id="server-blackout-end" type="time" value="${escapeHtml(blackoutWindow.end || '23:00')}"/></span></label></div><div class="weekday-toggle-row">${weekdayLabels.map(([label,day])=>`<label class="weekday-toggle blackout"><input type="checkbox" data-blackout-weekday="${day}" ${blackoutWeekdays.has(day)?'checked':''}/><span>${label}</span></label>`).join('')}</div></div>
+          <div class="maintenance-calendar-actions"><button class="btn primary" id="save-server-schedule">Save Maintenance Calendar</button></div>
+        </div>${operationsSchedule.next_run_at ? `<div class="settings-page-note">Next operation: ${escapeHtml(new Date(Number(operationsSchedule.next_run_at) * 1000).toLocaleString())} (server local time)</div>` : ''}<div class="identity-box"><strong>Safe scheduled operations</strong><p>Backups stop the Dragonwilds server before snapshotting because Dragonwilds does not expose a verified save-quiesce command, then restore its prior running state. Restart/update warnings are issued 30, 10, 5 and 1 minute beforehand.</p></div></div></details>
+      </div>
+      <details class="panel collapsible-panel" style="margin-top:18px" open><summary class="panel-header"><h2>World File Maintenance</h2><span class="panel-subtitle">Shared dedicated-server installation is preserved</span></summary><div class="panel-body"><div class="header-actions world-maintenance-actions" style="justify-content:flex-start"><button class="btn ghost" id="server-archive-world">Archive World</button><button class="btn primary" id="server-convert-singleplayer" ${isRunning ? 'disabled' : ''}>Convert to Singleplayer</button><button class="btn ghost" id="server-merge-world" ${isRunning ? 'disabled' : ''}>Merge Changes</button><button class="btn ghost" id="clear-server-mods" ${isActive ? '' : 'disabled'}>Clear Mods</button><button class="btn danger" id="delete-world-files">Delete Server Files</button></div><div class="identity-box"><strong>Archive before experimentation</strong><p>Conversion clones a complete save snapshot. Merge Changes archives both Server and Singleplayer copies, then lets the newest complete save tree win by default; it does not perform speculative record-level .sav merging.</p></div><div class="warning-box">Delete Server Files here removes this World’s stored mods, save snapshot/backups, managed config state, and—when active—its live World-owned mutable data. It does <b>not</b> delete the shared Dragonwilds dedicated-server installation managed in Settings → Server.</div></div></details></div>`;
+    } else {
+      const allEvents = [...(runtime.events || []), ...(share.activities || []).map((x) => ({ ts: x.ts, level: 'net', message: `${x.ip}: ${x.message}` }))].sort((a,b) => (b.ts || 0) - (a.ts || 0)).slice(0,500);
+      const auditQuery=String(state.serverActivitySearch||'').trim().toLowerCase(), auditLevel=String(state.serverActivityFilter||'all');
+      const events=allEvents.filter((e)=>(auditLevel==='all'||String(e.level||'info')===auditLevel)&&(!auditQuery||String(e.message||'').toLowerCase().includes(auditQuery)));
+      const activityPageSize=25,activityPageCount=Math.max(1,Math.ceil(events.length/activityPageSize));
+      const activityPage=Math.max(1,Math.min(Number(state.serverActivityPage||1),activityPageCount));
+      const visibleEvents=events.slice((activityPage-1)*activityPageSize,activityPage*activityPageSize);
+      body = `<div style="padding:18px"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Persistent Server Activity</h2><span class="panel-subtitle">${events.length} matching · ${allEvents.length} retained · 25 entries per page</span></div><div class="header-actions"><button class="btn ghost compact-btn" id="copy-server-activity" ${visibleEvents.length?'':'disabled'}>Copy Page</button><button class="btn danger compact-btn" id="clear-server-activity" ${allEvents.length?'':'disabled'}>Clear History</button></div></summary><div class="panel-body"><div class="activity-toolbar"><label><span>Search activity</span><input class="field" id="server-activity-search" value="${escapeHtml(state.serverActivitySearch||'')}" placeholder="Backup, update, publish…"/></label><label><span>Level</span><select class="select" id="server-activity-level">${[['all','All events'],['ok','Success'],['info','Information'],['warn','Warnings'],['net','Network']].map(([key,label])=>`<option value="${key}" ${auditLevel===key?'selected':''}>${label}</option>`).join('')}</select></label></div>${visibleEvents.length ? `<div class="activity-list">${visibleEvents.map((e) => `<div class="activity-row"><span class="activity-level ${escapeHtml(e.level||'info')}">${escapeHtml((e.level || 'info').toUpperCase())}</span><div><strong>${escapeHtml(e.message || '')}</strong><small>${new Date((e.ts || 0) * 1000).toLocaleString()}</small></div></div>`).join('')}</div>${activityPageCount>1?`<div class="pager-row"><button class="btn ghost" data-activity-history-page="${activityPage-1}" ${activityPage<=1?'disabled':''}>← Previous</button><span>Page ${activityPage} of ${activityPageCount}</span><button class="btn ghost" data-activity-history-page="${activityPage+1}" ${activityPage>=activityPageCount?'disabled':''}>Next →</button></div>`:''}` : '<div class="empty-state">No server activity matches this filter.</div>'}</div></details></div>`;
+    }
+    return `
+      <div class="content">
+        <div class="page-header" style="align-items:center;margin-bottom:15px"><button class="btn ghost" id="back-servers">← Servers</button><div class="header-actions"><span class="status-pill ${runtime.busy?'unknown':isRunning?'online':'offline'}">${escapeHtml(runtime.state||(isRunning?'Running':'Stopped'))}</span><button class="btn ghost" id="open-unified-server-console">Unified Console</button><details class="compact-action-menu"><summary class="btn ghost">World Actions ▾</summary><div class="compact-action-menu-pop"><button class="btn ghost" id="open-minimal-server-world">Minimal Mode</button><button class="btn ghost" id="detach-server-world">Open Placard</button><button class="btn ghost" id="edit-server-world-top">Connection &amp; Settings</button>${!isActive ? `<button class="btn ghost" id="activate-server-world">Activate World</button>` : ''}${isServing && !isRunning ? '<button class="btn ghost" id="stop-share-top">Stop Sync Share</button>' : ''}</div></details><button class="btn danger" id="stop-server-world" ${(isRunning || isServing) && !runtime.busy ? '' : 'disabled'}>Stop</button><button class="btn ghost" id="restart-server-world" ${isRunning&&!runtime.busy ? '' : 'disabled'}>Restart</button>${isRunning?`<button class="btn ghost" id="update-restart-server-world" ${runtime.busy?'disabled':''}>Update &amp; Restart</button>`:`<button class="btn ghost" id="update-server-world" ${runtime.busy?'disabled':''}>Update</button>`}<button class="btn primary" id="broadcast-server-world" ${isRunning || runtime.busy ? 'disabled' : ''}>Start</button></div></div>
+        <section class="detail-hero" style="margin-bottom:0;border-radius:18px 18px 0 0">
+          ${banner ? `<img class="detail-banner" src="${banner}" alt="" />` : `<div class="detail-banner-fallback"></div>`}<div class="hero-overlay"></div><div class="hero-content">${icon ? `<img class="hero-icon" src="${icon}" alt="" />` : `<div class="hero-icon fallback">${escapeHtml(initials(p.name))}</div>`}<div class="hero-main"><div class="eyebrow">Hosted World</div><h1 title="${escapeHtml(p.name || 'World')}">${escapeHtml(p.name || 'World')}</h1><p>${escapeHtml(p.description || 'No description yet.')}</p></div><span class="status-pill ${isRunning ? 'online' : (isServing ? 'unknown' : 'offline')}">${isRunning ? 'RUNNING' : (isServing ? 'SYNC LIVE' : (isActive ? 'ACTIVE' : 'STOPPED'))}</span></div>
+        </section>
+        <section class="server-shell-card" style="padding:0;border-radius:0 0 18px 18px">
+          <div class="server-tabs"><span class="server-tab-group tab-group-profile">Profile</span>${tabButton('overview',t('overview'))}${tabButton('save-editor',t('worldSave'))}${tabButton('mods',t('mods'))}${tabButton('configuration',t('configuration'))}<span class="server-tab-group tab-group-tools">RSDW-L</span>${tabButton('spawner','Spawner')}${tabButton('console','Console')}<span class="server-tab-group tab-group-hosting">Hosting</span>${tabButton('networking',t('networking'))}${tabButton('maintenance',t('maintenance'))}<span class="server-tab-group tab-group-roster">Roster</span>${tabButton('players',t('players'))}${tabButton('map',t('map'))}<span class="server-tab-group tab-group-history">History</span>${tabButton('feedback',t('feedback'))}${tabButton('activity',t('activity'))}</div>${body}
+        </section>
+      </div>`;
+  }
+
+
+  function openNexusWindow(target = {}) {
+    state.nexusTarget = target || {};
+    if (detachedMode) { state.route='nexus'; render(); return; }
+    if (window.dragonwilds?.openDetachedWindow) {
+      window.dragonwilds.openDetachedWindow({ route:'nexus', title:'Dragonwilds Sync · Nexus Mods', width:1180, height:820, context:{ nexusTarget:target } });
+      return;
+    }
+    state.route='nexus'; render();
+  }
+
+  function nexusTargetLabel() {
+    const target=state.nexusTarget||{};
+    if(target.type==='server') {
+      const w=serverWorlds().find((x)=>String(x.id)===String(target.worldId||''));
+      return `Server Profile · ${w?.name||'World'}`;
+    }
+    return 'Private Worlds / Singleplayer';
+  }
+
+  function nexusFileVersion(file={}) { return String(file.version || file.mod_version || file.name || '').trim(); }
+  function nexusSourceFor(mod={}, file={}, archiveSha='') {
+    const now=new Date().toISOString();
+    return { provider:'nexus', game_domain:'runescapedragonwilds', mod_id:Number(mod.mod_id || mod.modId || 0)||null, file_id:Number(file.file_id || file.fileId || 0)||null,
+      version:nexusFileVersion(file) || String(mod.version||''), installed_version:nexusFileVersion(file) || String(mod.version||''), source_url:`https://www.nexusmods.com/runescapedragonwilds/mods/${Number(mod.mod_id||mod.modId||0)}`,
+      web_url:`https://www.nexusmods.com/runescapedragonwilds/mods/${Number(mod.mod_id||mod.modId||0)}`, archive_sha256:archiveSha||'', installed_at:now, updated_at:now, update_status:'current', auto_update:false };
+  }
+
+  async function linkInstalledNexusMod(installResult, source) {
+    const target=state.nexusTarget||{type:'singleplayer'};
+    const name=String(installResult?.result?.name || installResult?.name || '');
+    if(target.type==='server') {
+      const worldId=target.worldId || state.selectedServerWorldId;
+      const units=installResult?.units || state.serverInventory[worldId] || [];
+      const unit=units.find((u)=>String(u.name).toLowerCase()===name.toLowerCase()) || units.find((u)=>String(u.name).toLowerCase().includes(name.toLowerCase()));
+      if(unit) { const response=await api.invoke('server.world.mod.update',{id:worldId,key:unit.key,source}); state.serverInventory[worldId]=response.units||units; }
+      return;
+    }
+    const units=installResult?.units || state.singleplayerInventory || [];
+    const unit=units.find((u)=>String(u.name).toLowerCase()===name.toLowerCase()) || units.find((u)=>String(u.name).toLowerCase().includes(name.toLowerCase()));
+    if(unit) { const response=await api.invoke('singleplayer.mod.update',privateProfileParams({key:unit.key,source})); state.singleplayerInventory=response.units||units; if(response.state)state.data=response.state; }
+  }
+
+  async function installNexusArchive(zipPath, mod, file) {
+    const prepared=await window.dragonwilds.nexusPrepareArchive(zipPath);
+    zipPath=prepared.path;
+    const sha=await window.dragonwilds.fileSha256(zipPath).catch(()=> '');
+    const target=state.nexusTarget||{type:'singleplayer'};
+    const modId=Number(mod?.mod_id||mod?.modId||0)||null;
+    const currentUnits=target.type==='server'?(state.serverInventory[target.worldId||state.selectedServerWorldId]||[]):state.singleplayerInventory;
+    const existing=currentUnits.find((u)=>u?.source?.provider==='nexus' && Number(u.source.mod_id||0)===modId) || null;
+    const source=nexusSourceFor(mod,file,sha);
+    let response=null;
+    if(target.type==='server') {
+      if(target.worldId) state.selectedServerWorldId=target.worldId;
+      const world=activeServerWorld(); if(!world) throw new Error('Server Profile target was not found.');
+      const detected=await api.invoke('server.maintenance.detect_mod_zip',{zip_path:zipPath});
+      if(!detected.kind) throw new Error('Could not identify this Nexus archive as UE4SS, PAK, or RuneSchema.');
+      response=await api.invoke('server.world.mod.install',{id:world.id,zip_path:zipPath,kind:detected.kind});
+      state.serverInventory[world.id]=response.units||[]; if(response.state)state.data=response.state;
+      if(existing){source.previous={...(existing.source||{}),rollback_archive:response.result?.rollback_archive||'',captured_at:new Date().toISOString(),unit_name:existing.name||''};}
+      await linkInstalledNexusMod(response,source);
+      toast('Nexus mod installed',`${mod.name||'Mod'} · ${nexusFileVersion(file)||'file'} · ${detected.kind.toUpperCase()}${source.previous?.rollback_archive?' · rollback snapshot kept':''}`,'success'); return response;
+    }
+    const detected=await api.invoke('singleplayer.mod.detect',{zip_path:zipPath}); if(!detected.kind)throw new Error('Could not identify this Nexus archive as UE4SS, PAK, or RuneSchema.');
+    response=await api.invoke('singleplayer.mod.install',privateProfileParams({zip_path:zipPath,kind:detected.kind}));
+    state.singleplayerInventory=response.units||[]; if(response.state)state.data=response.state;
+    if(existing){source.previous={...(existing.source||{}),rollback_archive:response.result?.rollback_archive||'',captured_at:new Date().toISOString(),unit_name:existing.name||''};}
+    await linkInstalledNexusMod(response,source);
+    toast('Nexus mod installed',`${mod.name||'Mod'} · ${nexusFileVersion(file)||'file'} · ${detected.kind.toUpperCase()}${source.previous?.rollback_archive?' · rollback snapshot kept':''}`,'success'); return response;
+  }
+
+  async function rollbackNexusUnit(unit, target='singleplayer') {
+    const current={...(unit?.source||{})}; const previous=current.previous||{}; const archive=String(previous.rollback_archive||'');
+    if(!archive)return toast('Rollback unavailable','No previous-version snapshot is retained for this mod.','error');
+    if(!await managedConfirm(`Roll back ${unit.name||'this mod'} to ${previous.installed_version||previous.version||'the previous snapshot'}?\n\nDragonwilds Sync will snapshot the current version first, restore the previous archive, validate the profile, and preserve a path back to the current version.`,'Roll Back Mod'))return;
+    const kind=unit.section==='paks'?'paks':unit.section==='runeschema'?'runeschema':'ue4ss';
+    try{
+      let response;
+      if(target==='server'){
+        const world=activeServerWorld(); if(!world)throw new Error('Server Profile target was not found.');
+        response=await api.invoke('server.world.mod.install',{id:world.id,zip_path:archive,kind}); state.serverInventory[world.id]=response.units||[]; if(response.state)state.data=response.state;
+        const restored=(response.units||[]).find((u)=>String(u.name).toLowerCase()===String(previous.unit_name||unit.name).toLowerCase()) || (response.units||[]).find((u)=>u.section===unit.section&&String(u.name).toLowerCase().includes(String(unit.name).toLowerCase()));
+        if(restored){const restoredSource={...previous,provider:'nexus',previous:{...current,rollback_archive:response.result?.rollback_archive||'',captured_at:new Date().toISOString(),unit_name:unit.name||''}};const updated=await api.invoke('server.world.mod.update',{id:world.id,key:restored.key,source:restoredSource});state.serverInventory[world.id]=updated.units||state.serverInventory[world.id];}
+      }else{
+        response=await api.invoke('singleplayer.mod.install',privateProfileParams({zip_path:archive,kind})); state.singleplayerInventory=response.units||[]; if(response.state)state.data=response.state;
+        const restored=(response.units||[]).find((u)=>String(u.name).toLowerCase()===String(previous.unit_name||unit.name).toLowerCase()) || (response.units||[]).find((u)=>u.section===unit.section&&String(u.name).toLowerCase().includes(String(unit.name).toLowerCase()));
+        if(restored){const restoredSource={...previous,provider:'nexus',previous:{...current,rollback_archive:response.result?.rollback_archive||'',captured_at:new Date().toISOString(),unit_name:unit.name||''}};const updated=await api.invoke('singleplayer.mod.update',privateProfileParams({key:restored.key,source:restoredSource}));state.singleplayerInventory=updated.units||state.singleplayerInventory;if(updated.state)state.data=updated.state;}
+      }
+      render(); toast('Rollback complete',`${unit.name||'Mod'} restored to the retained previous snapshot.`,'success');
+    }catch(error){toast('Rollback failed',error.message,'error');}
+  }
+
+  async function openNexusManagedMod(unit, target='singleplayer') {
+    const modId=Number(unit?.source?.mod_id||0); if(!modId)return;
+    const nexusTarget=target==='server'?{type:'server',worldId:activeServerWorld()?.id||'',modId}:{type:'singleplayer',modId};
+    openNexusWindow(nexusTarget);
+  }
+
+  async function updateAllNexus(target='singleplayer') {
+    if(!state.nexusStatus?.connected)return toast('Connect Nexus Mods first','Settings → Integrations → Nexus Mods','error');
+    await checkNexusUpdates(target,{quiet:true});
+    const world=target==='server'?activeServerWorld():null;
+    const units=(target==='server'?(state.serverInventory[world?.id]||[]):state.singleplayerInventory).filter((u)=>u?.source?.provider==='nexus'&&u.source.update_available);
+    if(!units.length)return toast('Nexus mods are current','No safe updates are currently flagged.','success');
+      if(!await managedConfirm(`Update ${units.length} Nexus-managed mod${units.length===1?'':'s'}?\n\nEach authorized direct download is staged and validated first. Server profiles are never changed without this approval. Browser-required downloads open inside Dragonwilds Sync and are captured into staging when Nexus completes them.`,'Update Nexus Mods'))return;
+    let updated=0, interactive=0, failed=0;
+    for(const original of units){
+      try{
+        const source=original.source||{}; const mod=await window.dragonwilds.nexusMod(source.mod_id); const filesPayload=await window.dragonwilds.nexusFiles(source.mod_id); const files=filesPayload?.files||[];
+        const file=files.find((f)=>Number(f.file_id||f.fileId)===Number(source.latest_file_id))||newestNexusFile(files); if(!file)throw new Error('Latest Nexus file metadata was unavailable.');
+        const descriptor=await window.dragonwilds.nexusDownloadDescriptor({modId:source.mod_id,fileId:file.file_id||file.fileId});
+        if(descriptor.mode!=='direct'){interactive++;continue;}
+        const staged=await window.dragonwilds.nexusDownloadStage({url:descriptor.url,name:file.file_name||file.name||`nexus-${source.mod_id}-${file.file_id||file.fileId}.zip`});
+        state.nexusTarget=target==='server'?{type:'server',worldId:world.id}:{type:'singleplayer'}; await installNexusArchive(staged.path,mod,file); updated++;
+      }catch(_){failed++;}
+    }
+    render(); toast('Nexus update pass complete',`${updated} updated${interactive?` · ${interactive} require browser download`:''}${failed?` · ${failed} failed`:''}`,failed&&!updated?'error':'success');
+    if(interactive){const first=units.find((u)=>u?.source?.mod_id);if(first)openNexusManagedMod(first,target);}
+  }
+
+  function renderNexusBrowser() {
+    const status=state.nexusStatus||{}; const mod=state.nexusMod; const files=state.nexusFiles||[];
+    const img=mod?.picture_url || mod?.pictureUrl || '';
+    const author=mod?.author || mod?.uploaded_by || mod?.uploader || 'Nexus Mods author';
+    const fileRows=files.length ? files.map((f)=>`<div class="nexus-file-row"><div><strong>${escapeHtml(f.name||f.file_name||`File ${f.file_id||''}`)}</strong><span>${escapeHtml(nexusFileVersion(f)||'Version not reported')} · ${f.size_kb?`${Math.round(Number(f.size_kb)/1024)} MB`:''}</span><small>${escapeHtml(f.description||f.changelog_html||'')}</small></div><div class="header-actions"><button class="btn ghost compact-btn" data-nexus-file-page="${escapeHtml(String(mod?.mod_id||mod?.modId||''))}">Nexus Page ↗</button><button class="btn primary compact-btn" data-nexus-install-file="${escapeHtml(String(f.file_id||f.fileId||''))}">Install</button></div></div>`).join('') : '<div class="empty-state compact">Load a Nexus Mod ID to view its published files.</div>';
+    return `<div class="content nexus-page"><div class="page-header"><div><div class="eyebrow">Optional Integration</div><h1>Nexus Mods</h1><div class="page-subtitle">Nexus provides distribution and authorship. Dragonwilds Sync stages, validates, snapshots, deploys, and tracks the profile installation.</div></div><div class="header-actions"><span class="status-pill ${status.connected?'online':'unknown'}">${status.connected?`CONNECTED · ${escapeHtml(status.username||'NEXUS')}`:'NOT CONNECTED'}</span><button class="btn ghost" id="nexus-open-game-page">Browse Nexus ↗</button></div></div><section class="advanced-strip"><div><strong>Install Target</strong><span>${escapeHtml(nexusTargetLabel())}</span></div><div class="advanced-note">Archives are never extracted blindly into the game directory. Existing Dragonwilds Sync UE4SS / RuneSchema / PAK classification and validation remains authoritative.</div></section><div class="nexus-search-panel"><label><span>Search Nexus</span><div class="path-field"><input class="field" id="nexus-search-query" placeholder="Search RuneScape: Dragonwilds mods…"/><button class="btn ghost" id="nexus-search-web">Search Nexus ↗</button></div></label><label><span>Nexus Mod ID</span><div class="path-field"><input class="field" id="nexus-mod-id" type="number" min="1" value="${escapeHtml(mod?.mod_id||mod?.modId||state.nexusTarget?.modId||'')}" placeholder="e.g. 123"/><button class="btn primary" id="nexus-load-mod">Load Mod</button></div></label></div>${mod?`<section class="nexus-mod-hero">${img?`<img src="${escapeHtml(img)}" alt=""/>`:''}<div><div class="eyebrow">Nexus Mod #${escapeHtml(String(mod.mod_id||mod.modId||''))}</div><h2>${escapeHtml(mod.name||'Nexus Mod')}</h2><strong>by ${escapeHtml(String(author))}</strong><p>${escapeHtml(mod.summary||mod.description||'')}</p><div class="header-actions"><span class="status-pill online">${escapeHtml(mod.version||'VERSION')}</span><button class="btn ghost compact-btn" id="nexus-open-current">Open Nexus Page ↗</button></div></div></section>`:''}<section class="panel"><div class="panel-header"><div><h2>Files</h2><span class="panel-subtitle">Direct download is used only when Nexus authorizes it for this account/file; otherwise Dragonwilds Sync opens the normal Nexus browser download flow.</span></div></div><div class="panel-body nexus-files">${fileRows}</div></section>${state.nexusPending?`<section class="warning-box"><strong>Interactive Nexus download</strong><br/>Complete the normal Nexus download in the in-app browser. ZIP and 7z files are captured into staging and installed automatically; manual import remains available.<div class="header-actions" style="margin-top:10px"><button class="btn primary" id="nexus-import-downloaded">Import Downloaded Archive…</button></div></section>`:''}<div class="rsdw-credit">Nexus Mods is an optional source integration. Manual/local mods remain fully supported.</div></div>`;
+  }
+
+  function renderHelp() {
+    const helpUi = ({
+      en:{fieldGuide:'Dragonwilds Sync Field Guide',title:'Helpy',subtitle:'Guides for every Appy and the subapps it keeps warm, from first launch through a healthy managed World.',search:'Search Appys, Worlds, characters, mods, Sync, or health…',clear:'Clear',open:'Open screenshot',read:'Read guide',tips:'Good to know',results:'Results for',none:'No guide matched that search.',safetyTitle:'Reference guide, not a diagnostic substitute',safetyBody:'When an operation fails, use its visible error and notification details. Dragonwilds Sync never marks an unverified fingerprint, save write, runtime install, or network route as successful.',categories:['Getting Started','Dragonwilds Appy','Characters Appy','Hosting & Runtime','Mods Appy','Sync & Remote','Roster & Map','WebGUI','Maintenance','System Settings','Tours & Notices']},
+      fr:{fieldGuide:'Guide Dragonwilds Sync',title:'Aide',subtitle:'Tous les systèmes, du premier lancement à un monde hébergé sain.',search:'Rechercher mondes, personnages, UE4SS, santé…',clear:'Effacer',open:'Ouvrir la capture',read:'Lire le guide',tips:'Bon à savoir',results:'Résultats pour',none:'Aucun guide ne correspond à cette recherche.',categories:['Bien démarrer','Rejoindre des mondes','Personnages et RSDW','Configuration serveur','Mods et JSON','Réseau et santé','Carte et joueurs','Annuaires et site Web','Maintenance','Paramètres','Visites et notifications']},
+      de:{fieldGuide:'Dragonwilds Sync Handbuch',title:'Hilfe',subtitle:'Alle Systeme vom ersten Start bis zu einer gesunden gehosteten Welt.',search:'Welten, Charaktere, UE4SS, Zustand suchen…',clear:'Löschen',open:'Screenshot öffnen',read:'Handbuch lesen',tips:'Gut zu wissen',results:'Ergebnisse für',none:'Kein Handbuch entspricht dieser Suche.',categories:['Erste Schritte','Welten beitreten','Charaktere & RSDW','Servereinrichtung','Mods & JSON','Netzwerk & Zustand','Karte & Spieler','Verzeichnisse & Website','Wartung','Einstellungen','Touren & Hinweise']},
+      es:{fieldGuide:'Guía de Dragonwilds Sync',title:'Ayuda',subtitle:'Todos los sistemas, desde el primer inicio hasta un mundo alojado saludable.',search:'Buscar mundos, personajes, UE4SS, salud…',clear:'Borrar',open:'Abrir captura',read:'Leer guía',tips:'Información útil',results:'Resultados para',none:'Ninguna guía coincide con la búsqueda.',categories:['Primeros pasos','Unirse a mundos','Personajes y RSDW','Configuración del servidor','Mods y JSON','Red y salud','Mapa y jugadores','Directorios y sitio web','Mantenimiento','Ajustes','Recorridos y avisos']},
+      it:{fieldGuide:'Guida Dragonwilds Sync',title:'Aiuto',subtitle:'Ogni sistema, dal primo avvio a un mondo ospitato integro.',search:'Cerca mondi, personaggi, UE4SS, stato…',clear:'Cancella',open:'Apri schermata',read:'Leggi guida',tips:'Da sapere',results:'Risultati per',none:'Nessuna guida corrisponde alla ricerca.',categories:['Primi passi','Unirsi ai mondi','Personaggi e RSDW','Configurazione server','Mod e JSON','Rete e stato','Mappa e giocatori','Directory e sito Web','Manutenzione','Impostazioni','Tour e avvisi']}
+    })[languageCode()] || {};
+    const categories = [
+      ['getting-started','✦',helpUi.categories[0]], ['worlds','◈',helpUi.categories[1]], ['characters','♙',helpUi.categories[2]],
+      ['hosting','◆',helpUi.categories[3]], ['mods','▣',helpUi.categories[4]], ['network','◎',helpUi.categories[5]],
+      ['map','⌖',helpUi.categories[6]], ['directory','⌁',helpUi.categories[7]], ['maintenance','↻',helpUi.categories[8]], ['settings','⚙',helpUi.categories[9]], ['tours','?',helpUi.categories[10]]
+    ];
+    let guides = {
+      'getting-started': {
+        title:'Getting Started with Appys', intro:'Set up the launcher once, then move between cached primary Appys without restarting the shell or losing the active World context.', image:'01-getting-started.png', alt:'Current Dragonwilds Sync first-run setup',
+        sections:[
+          ['Choose an Appy','Dragonwilds owns Singleplayer, Co-Op, Dedicated hosting, profiles, saves, and connection roles; Characters owns identity, 3D preview, and appearance; Mods owns the repository and editors; Sync owns directories, transfer, and remote access. Their subapps hydrate under the same parent identity.'],
+          ['Confirm one Dragonwilds root','Choose any recognizable folder inside the installation. Recursive discovery resolves the game root, executable, UE4SS, RuneSchema, saves, and configuration paths. Read-only editor and model data is cached separately under the application data folder.'],
+          ['Keep profiles separate','Each World profile owns its mutable save, settings, and mod selection. Activating another World snapshots the outgoing profile before changing the live game tree.'],
+          ['Safety model','Save-changing tools create backups, validate staged output, and reject a write when the source changed after it was loaded.']
+        ], tips:['Start with the guided player tour.','The bell in the title bar keeps operation results and maintenance notices.','Use Open in Window when a large editor needs its own workspace.']
+      },
+      worlds: {
+        title:'Worlds, Favorites and Sync', intro:'World Management unifies singleplayer, co-op, and dedicated profiles while Sync shows only directories and manifests that publish a verifiable Sync endpoint.', image:'26-hosted-worlds.jpg', alt:'Managed World placards', image2:'31-world-manifest-workspace.jpg', alt2:'Editable World Manifest workspace', image3:'24-world-browser-pagination.jpg', alt3:'Paginated Sync directory',
+        sections:[
+          ['Managed Worlds','A save-backed profile is labeled SINGLEPLAYER, CO-OP, or DEDICATED SERVER. The label describes its current launch role; it does not create a second copy of the World.','26-hosted-worlds.jpg','Managed World placards'],
+          ['Editable Manifest collections','Drop one or more .rsdwl World collections to merge them. Delete entries, add Direct Connect Worlds, and export a new collection. Passwords are excluded unless you explicitly opt into the sensitive password-inclusive export. Optional live Manifest Sources remain available beneath the collection.','31-world-manifest-workspace.jpg','V1.1.1 editable World Manifest workspace'],
+          ['Multiple Manifest Hosts','Sync → Manifest accepts several compatible host addresses. Each host may receive your World heartbeat when authorized; discovery merges their presented Sync-capable Worlds by stable fingerprint into one duplicate-free roster.','29-manifest-hosts.png','Multi-host Manifest address and heartbeat workspace'],
+          ['Direct Connect','Save the exact World Name plus internal and external addresses. Automatic routing prefers the reachable LAN address at home and retains the WAN address for use away from home.'],
+          ['Fingerprint identity','A Sync World must answer with protocol dragonwilds-world-sync and a stable dws1 fingerprint. A directory claim alone is never treated as verified.'],
+          ['Signed operator identity','Launcher-hosted Worlds add an Ed25519 operator signature. The operator fingerprint, exact World name and dws1 subject are verified together; the Identity History view records legitimate changes.'],
+          ['Compatibility and safety','Compatibility Preview compares runtimes, tags and World policy before connection. Favorite alerts report status, maintenance, identity and shared-character changes. Blocking is local; reports enter the directory operator review queue.'],
+          ['Portable identity cards','A .dwsworld card carries safe identity, routes, presentation and fingerprint data without passwords or server keys. A live endpoint must still verify before the imported card is trusted.'],
+          ['Fast paginated discovery','Sync directories render ten results per page. Search and filters operate on the selected verified directory or imported Manifest without loading the game’s full public roster into the desktop.','24-world-browser-pagination.jpg','Ten-result paginated Sync directory'],
+          ['Ratings and reviews','Verified Sync Worlds can collect one five-star review per source network every 30 days with up to 250 characters. Stars and the character counter update as you type. Signed star/text records reject storage tampering; operators may hide abusive text from public display but cannot change or remove its star contribution. Review windows show the last 30, 60, or 90 days.','25-world-ratings.jpg','Five-star World review dialog in light mode'],
+          ['Community Worlds','A Discord badge appears only when the World publishes a community invite. The badge opens the configured community after linking; Discord Rich Presence remains hidden application plumbing.'],
+          ['Export several Worlds','Export Profile opens a checklist in both placard and horizontal views. Select any combination of saved Worlds to create one portable profile package.','26-hosted-worlds.jpg','Hosted World placard and export controls in light mode']
+        ], tips:['Public discovery refreshes every 30 seconds without re-probing every card.','Primary Launch/Manage actions stay visible; right-click a card for secondary actions.','LAN Scan finds trusted Sync broadcasts on the local network.']
+      },
+      characters: {
+        title:'Characters Appy and RSDW Editors', intro:'Select a character once; Identity, the dedicated 3D renderer, Appearance, progression, inventory, spells, recipes and quests stay hydrated under one parent Appy.', image:'03-characters.png', alt:'Current Characters Appy with Identity, 3D preview and Appearance', image2:'36-themed-item-editor.png', alt2:'Native Item Editor using the launcher theme', image3:'33-magic-wheel.jpg', alt3:'Formatted eight-slot Magic Wheel',
+        sections:[
+          ['One character workspace','Identity is the first row, followed by the dedicated 3D character renderer and then Appearance. Character, Item, Spell, Recipe and Quest editors remain subapps of Characters, so returning to them reuses the hydrated workspace instead of loading the full site.','03-characters.png','Current Characters Appy and dedicated 3D renderer'],
+          ['Edit a character','Choose a character, open Character, Item, Spell, Recipe or Quest Editor, make changes, then use Save Character Changes. A backup and source checksum protect every write.'],
+          ['Inventory and equipment','The Item Editor receives the selected save’s full inventory and loadout. Its compact tabs use one icon scale, Personal Storage no longer shows a hard-coded capacity, and Equipment and Action Bar use the full available width. Right-click an item for supported actions, including rename for fingerprinted custom items.','36-themed-item-editor.png','Current themed character inventory and equipment editor'],
+          ['Portable item manifests','Open the custom item repository to name an item, choose a vanilla icon or your own image, classify armour, one- or two-handed weapons, hand slot, potion, food, ammo, rune, tool, resource and other item families, and set the maximum stack quantity. Export dragonwilds-sync-items.json beside a UE4SS or RuneSchema mod, or as a .dwsync-items.json sidecar next to a PAK; Dragonwilds Sync discovers and merges those definitions automatically.'],
+          ['RPG profile summary','Character Overview presents trained skills, total skill experience, inventory slots, equipped items, tags and World associations as a compact RPG-style character sheet. Counts are derived from the selected save instead of a runtime companion.'],
+          ['Spellbook pages','The Spellbook keeps unlocked spells separate from the eight active wheel assignments and provides numbered pages for the full catalog. Drag an unlocked spell into a wheel segment or right-click a segment to clear it, then apply the guarded draft.','33-magic-wheel.jpg','Current paged Spellbook and active eight-slot wheel'],
+          ['Recipe categories','Recipe filters use the authoritative created-item identifiers from the current RSDW catalog. Equipment, Building, Consumables, Ammunition, and Materials show live counts; only genuine quest/special outputs remain Other / Unclassified.','34-recipe-categories.jpg','V1.1.1 corrected recipe category counts and cards'],
+          ['Character identity','Character Overview keeps the selected save identity, statistics, combat tags, export controls, and World associations together. The retired Ledger and Character Map surfaces are no longer duplicated.'],
+          ['Clone or delete','Clone makes an independent identity and save. Delete first creates a checksum-verified recovery backup, then removes the selected character.'],
+          ['Share for operator review','A World that accepts character submissions places every authenticated .rsdwl package in quarantine. Structural limits, safe paths, and checksums are verified before the operator can approve it into the shared starter library.'],
+          ['RSDW icons without launcher replacement','RSDWTools data and the complete upstream icon manifest can refresh on a schedule without replacing Dragonwilds Sync. Upstream icon records are replaced atomically; custom items retain their own selected or embedded icon associations.']
+        ], tips:['Do not edit the same save in the game and the editor simultaneously.','A preserve-only save can be backed up but is not presented as safely editable.','The status bar reports loading, unsaved changes, validation and save results.']
+      },
+      hosting: {
+        title:'Dragonwilds Appy', intro:'Singleplayer, Co-Op, Dedicated hosting, profiles, and connection roles share one game-icon Dragonwilds Appy; Co-Op and Dedicated can attach Sync without moving mod ownership into the runtime.', image:'05-server-setup.png', alt:'Current Dragonwilds Appy Hosting tab', image2:'06-server-health.png', alt2:'Hosted World overview and health', image3:'26-hosted-worlds.jpg', alt3:'Managed World placards',
+        sections:[
+          ['Full setup','Settings → Server can download SteamCMD, install or validate the dedicated server, generate its base layout, and check UE4SS/RuneSchema prerequisites. You may select the SteamCMD root, dedicated-server root, executable, inner RSDragonwilds folder, Saved folder, or exact Saved\\SaveGames folder.'],
+          ['Adopt an existing server','When an existing installation is selected, Dragonwilds Sync inventories its World save, settings, UE4SS, RuneSchema, and PAK surfaces. If mods are detected, an in-app warning lists them and asks whether to copy them into the selected World Profile before setup continues. The shared Steam base remains reusable.'],
+          ['Edit /Game and /Server paths','World Management → Game Setup and Server Setup contain their own directory and executable editors. Save & Validate updates the live association in place; these controls no longer redirect to removed Settings fields.'],
+          ['Profiles and active World','Each hosted World owns its mutable save, configuration and mods. Only one profile is activated into the shared dedicated installation at a time; activation swaps the selected profile in and preserves the outgoing profile first.'],
+          ['Launch and Stop','A stopped placard shows Launch. Only the exact active profile whose dedicated process is alive shows Stop. Stop validates the executable/PID, closes the process tree, waits for exit, and reports failure instead of claiming success if the server remains alive.'],
+          ['Steam version and automation','Client and dedicated-server profiles compare their installed Steam build with the currently published build. Outdated warnings are non-intrusive. Scheduled updates, backups and restarts honor maintenance blackout windows and record their result before recovering the prior running state.'],
+          ['Health score','Health combines reachable Sync/game routes, process/runtime state, resource pressure, heartbeat freshness, player evidence and network measurements. Open the evidence cards to see why a score changed.'],
+          ['Broadcast','Starting broadcast publishes LAN discovery immediately and writes a heartbeat carrying both LAN and WAN routes, the stable fingerprint and measured host bandwidth. A federation URL is optional.'],
+          ['Optional character backups','A Server Profile may request a backup of a player’s assigned character. Nothing is transmitted automatically: the player reviews the request, explicitly approves the selected character, and the authenticated .rsdwl package enters the server quarantine/review workflow.'],
+          ['Self-host a website','WebHost is its own primary application workspace. It independently runs the public browser, JSON manifests, versioned API, and audited Server Admin portal. It persists across app restarts and never follows a Dragonwilds game-server start or stop.'],
+          ['Catalog-backed spawner and map','Spawner and map views use the validated RSDW catalog cache. Dragonwilds Sync maintains the hidden RSDWTools baseline bridge with debug output disabled so player identity and coordinates can appear when the game is running.'],
+          ['Independent data updates','Settings → Application can refresh validated RSDWTools data and the upstream icon manifest without replacing Dragonwilds Sync. These are read-only application catalogs, not mods installed into Dragonwilds.']
+        ], tips:['Owner ID is required by Dragonwilds for an operator-managed server.','Keep game UDP, Sync transfer TCP, and Direct discovery UDP 8422 distinct.','Launch and Manage remain visible; secondary card operations are available by right-click.']
+      },
+      mods: {
+        title:'Mods, RuneSchema and Monaco', intro:'Mods are staged, classified and attached to a Private World or Server Profile instead of being blindly extracted into the game.', image:'37-mod-management.png', alt:'Shared Mod Management repository grouped by mod type', image2:'08-monaco.png', alt2:'Monaco JSON editor validating a managed mod file',
+        sections:[
+          ['Install safely','Drop a ZIP on the matching UE4SS or RuneSchema target. Nexus-managed ZIP and 7z downloads are captured into application staging, 7z payloads are converted for the same inspection path, traversal is rejected, and only recognized content is deployed.'],
+          ['Shared base runtimes','UE4SS and RuneSchema Core are machine/server prerequisites. Profile-specific mods remain with the World and are activated through its manifest.'],
+          ['One shared mod repository','Settings → Mod Management scans every Private World and Server Profile, groups canonical payloads as UE4SS, RuneSchema, and PAK, and shows every linked profile. Publish & Push replaces the shared copy—including new schema/config files—and updates all profiles already linked to that mod while retaining their own enablement, tags, and load order.'],
+          ['Update from a World','Inside a World’s Mods tab, right-click a mod and choose Push to Shared Library. This is the same canonical repository used by Settings, so an update made from World Management becomes available everywhere rather than creating a separate copy.'],
+          ['Nexus-managed updates','Link a mod to its Nexus Mod ID to check versions. Authorized direct downloads stage automatically; website/account downloads open in an isolated in-app browser and are captured when complete. The previous installed payload is retained for rollback when possible.'],
+          ['Unload before swapping','Right-click the currently loaded Private World or stopped hosted World and choose Unload Profile. Dragonwilds Sync snapshots its mods, configuration, and applicable save state, then returns the game/server directory to the shared runtime core baseline. Client saves, account data, and runtime cores are deliberately preserved.'],
+          ['Managed JSON editor','JSON, Lua, INI, CFG and TXT files open in the bundled Monaco editor. JSON is validated before an atomic save; sensitive server credentials are never client-synchronized. Right-click a file for Edit, Copy, or Delete. Copy creates a safely named sibling, while Delete confirms the exact contained path and prunes only newly empty child folders.'],
+          ['Browse a mod','Right-click any UE4SS or RuneSchema mod and choose Open. The two-pane Mod Editor shows its installed structure with file-type icons; Lua, JSON, JSONC, INI, CFG and text open in the side editor while binaries remain view-only. File actions are path-contained to that selected mod.'],
+          ['Describe custom items','A portable item manifest can travel beside UE4SS, RuneSchema, or PAK content. It stores display name, vanilla/custom icon, item family, equipment hand/slot and stack limit; the launcher parses it without requiring the mod to execute.'],
+        ['Identify the modder','Each managed directory mod receives one canonical ID.txt for author, links, tags, runtime role, hotload capability, and custom items. Historical identity.txt, tags.txt, and hotload.txt files remain readable.'],
+          ['Hotload and restart labels','A file marked HOTLOAD is written immediately and can be consumed by compatible tooling. RESTART REQUIRED means the file is saved now but gameplay should update on the next restart.']
+          ,['Hidden generated mods.txt','mods.txt is launcher-owned and omitted from Monaco/file lists. Activation, imports, load-order changes, and profile swaps regenerate one enabled line per selected explicit UE4SS mod as MODNAME : 1. Self-enabled runtime folders remain excluded.']
+        ], tips:['Publish only the profile copy you intend to make canonical.','Nexus is optional; manual ZIPs remain supported.','Stop a hosted World before unloading it.']
+      },
+      network: {
+        title:'Network Controls and Server Health', intro:'Connection routing, access controls, bandwidth evidence and positive identity are visible rather than hidden.', image:'09-networking.png', alt:'Network controls with country flags and VPN provider icons in light mode',
+        sections:[
+          ['LAN and WAN routes','Hosts advertise both addresses. Clients on the same private network can use LAN; the saved external route remains available when they leave that network.'],
+          ['Client address detection','Settings → Application → Network detects and displays the current LAN and public addresses without starting a server. Linked Worlds retain the server IP, exact World Name, and optional World Password.'],
+          ['Speed evidence','Open SpeedTest measures upload and download in the browser. Saved results can be broadcast as server-health evidence and are time stamped so stale data is recognizable.'],
+          ['Separated service ports','Dragonwilds gameplay uses UDP 7777 for Server 1, 7778 for Server 2, and continues upward by instance. World Sync transfer uses TCP 27051 by default, Direct Connect discovery uses host-wide UDP 8422, and WebHost uses TCP 27080. Each listener, owned firewall rule, router method, mapping verification, and outside-LAN result is reported separately.'],
+          ['Manual forwarding and UPnP','Local-only, manual router forwarding, and automatic UPnP are mutually exclusive per service. Manual mode sends no UPnP traffic and is the recommended UniFi path. UPnP is never called public until its mapping is read back and an outside-LAN service probe succeeds.'],
+          ['Country and provider art','Country rows use the open-source flag-icons catalog with emoji fallback. Known VPN providers use official-brand Simple Icons where available and a readable local fallback.']
+        ], tips:['Test internal and external routes separately.','Use My IP fills the current WAN route but never exposes a saved server key.','A failed Sync probe leaves a public World visible, but not Sync-verified.']
+      },
+      map: {
+        title:'Players & Live Map', intro:'World Management provides a lightweight player roster and Ashenfall map. Live position markers use the hidden baseline RSDWTools bridge while the selected game or server is running.', image:'06-server-health.png', alt:'World health, connected-player status, and optional live map',
+        sections:[
+          ['Map source','Dragonwilds Sync uses the permission-compatible RSDWArchive Ashenfall map rather than embedding a restricted third-party interactive map.'],
+          ['Coordinates','Player and save positions are normalized onto the Ashenfall image. The last-known character position also appears beside the character summary.'],
+          ['Toggleable overlays','Locations, resources and creatures come from cached RSDWTools/RSDWArchive data. Toggle categories to reduce visual density.'],
+          ['Live players','The active game or dedicated-server logs and supported RSDW telemetry identify connected players. A missing tracker never stops the World.'],
+          ['Persistent identity','Known Steam, Epic, Xbox, PlayStation, and Nintendo identifiers remain attached only when the runtime actually reports them; the launcher never guesses a platform.']
+        ], tips:['Refresh Map Data if the cache is stale.','Turn off Resources when reviewing player movement.','Map data refreshes separately from the launcher release.']
+      },
+      directory: {
+        title:'Sync Website and Remote Management', intro:'Sync combines the joinable-World preview and permission-scoped Remote Server access while keeping their enable switches independent.', image:'28-webhost-preview.png', alt:'Sync website preview and networking guidance', image2:'18-directory-public.png', alt2:'Paginated Sync-ready World directory', image3:'19-webhost-mods.png', alt3:'Remote mod inventory with desktop-granted authority', image4:'20-webhost-mobile.png', alt4:'Responsive phone World directory', image5:'22-webhost-permission.png', alt5:'Remote category permission request wall', image6:'23-webhost-login-mobile.png', alt6:'Phone Server Admin login',
+        sections:[
+          ['Free Directory Sources','Worlds → Sync Directories accepts multiple compatible base URLs, including this app’s own LAN WebHost or independent Internet sites exposing the same API. Sources are polled concurrently and can be paused or removed independently. The launcher matches a verified fingerprint first, then normalized IP plus exact World Name, and directly probes an advertised Sync World before promotion.'],
+          ['Manifest rebroadcast','WebHost publishes every public-safe World the application currently knows: saved and imported Manifest Worlds, curated entries, directory results, public-list results, and hosted Server Profiles. The website cross-compares those rows with the Dragonwilds public list and emits one enriched record when IP and World Name match. Credentials and synchronized file payloads are never copied into the public catalog.'],
+          ['Website composition','Directory only serves joinable Worlds and removes every Admin link and remote route. Remote only opens at the Server Admin login and exposes no World catalog. Combined mode places the separate Admin entry inside the public directory design.'],
+          ['Public surface modes','Full, Manifest Only and Total Blackout control the human-facing World Directory only. They do not silently enable or disable Remote Server Admin.'],
+          ['Desktop and mobile presentation','The website detects phone/coarse-touch versus desktop input. Phones receive a compact bottom navigation, filter sheet, swipeable health cards and touch-sized forms; the live map supports one-finger pan and two-finger pinch zoom.'],
+          ['Placard or horizontal Worlds','Use the view buttons beside Refresh to switch between the full two-column placards and the compact horizontal World rows used by the application. The choice persists in this browser only.'],
+          ['Browser language','The globe menu independently changes WebHost navigation and controls between English, French, German, Spanish and Italian. It is stored in that browser and never changes the desktop application language.'],
+          ['Live View','WebHost → Live View embeds the literal local public surface with no address bar. Navigation, popups, downloads, context inspection and developer shortcuts are blocked inside that preview. Settings & Sharing separately shows the public Internet URL, LAN URL, loopback preview, and whether the WAN route is mapped or still needs a TCP port forward.'],
+          ['Internet publishing','Direct publishing uses your WAN IP or DNS name and requires the listed TCP firewall/router route. Optional Cloudflare Quick Tunnel publishes a temporary outbound HTTPS address with no router forward; it is intended for testing and changes after restart. Use Direct mode behind a stable HTTPS reverse proxy or a named tunnel for a permanent community address.'],
+          ['Remote Server login','Enable Remote Server Access separately from the public directory. Sign-in requires the exact World Name plus either its Server Admin Password for owner recovery or a desktop-created World-scoped Server User. Sessions expire, receive a CSRF token, rate-limit repeated failures, and write successful, failed, denied, and completed operations to the audit view.'],
+          ['Server users and remote authority','Create World-scoped server users only in the desktop WebHost view. Each account keeps its own overview, player, mod/config, audit, announcement and server-action permissions; passwords are PBKDF2-hashed and write/announcement grants start off.'],
+          ['Permission requests','Denied remote categories remain visible but receive no telemetry. Their diagonal Request Permission panel creates a local notification; approve or deny it in WebHost and the decision persists to that user.'],
+          ['Website Link & Play','A Sync-ready World detail page can open the registered Dragonwilds Sync V1 handoff. The desktop app refetches the selected manifest, asks for World and access credentials locally, saves the linked World, then performs its own live fingerprint check before Sync & Play.'],
+          ['Connected players and map','Remote Management shows the lightweight connected-player roster and permission-scoped Ashenfall map. Live markers appear while the host’s baseline RSDWTools bridge supplies positions.'],
+          ['Remote maintenance','Maintenance remains World-owned, not a global Setting. A server user may receive separate read and write grants for the same recurrence, weekday, local-time, action and backup-retention calendar shown by the local Server profile.'],
+          ['Player announcements','Authorized managers can publish Info, Success, Warning or Critical Sync announcements. Clients may enable a click-through top-screen overlay that never takes focus and closes itself. In-game chat relay remains an optional separately installed bridge.'],
+          ['What the local network sees','A browser connecting directly from a private or loopback address receives the responsive Directory Control Room. It shows live status, verified counts, current Worlds, routes and the settings that are safe to change without stopping the listener.'],
+          ['One settings source','Saving public URL, publisher token, heartbeat lifetime, capacity, UPnP preference or anonymous-publishing policy in the LAN console writes the same launcher configuration used by WebHost. Remote login and every portal permission remain desktop-only authorities.'],
+          ['Administration boundary','The listener address, TCP port and start/stop switch stay desktop-owned so a web save cannot disconnect itself. The admin API requires a private direct peer, a per-process page token and same-origin requests; forwarded-address headers are ignored.'],
+          ['Manifest endpoints','GET /worlds and /manifest expose the federated compatibility manifest; GET /api/v1/worlds provides the filtered ten-result catalog; GET /health and /api/v1/health report service health; POST /heartbeats accepts publishers; GET /revocations exposes operator revocations. Heartbeats expire and connecting launchers independently verify identity again.']
+          ,['GitHub API package','The raw-source package includes docs/WEBHOST_API.md and docs/webhost-openapi.json beside the actual backend/directory_host.py and backend/directory_web.py implementation. A GitHub release can therefore publish the desktop build, the source API contract, and instructions for compatible external Manifest Hosts together.']
+          ,['Static site versus live directory','A static host such as GitHub Pages may publish the browser shell and documentation, but cannot act as the heartbeat database or authentication service. Live manifests, expiration, signatures and Remote Management require the lightweight Dragonwilds Sync API service or a compatible independently hosted API.']
+          ,['Cryptographic identity','Directory heartbeats and World identity use Ed25519 signatures. Diagnostics proves key generation, signing, verification, serialization and invalid-signature rejection without displaying private keys. Windows protects the operator private key with Current User DPAPI.']
+        ], tips:['Use the guided WebHost setup before exposing a port.','Put public deployments behind HTTPS and a DNS name when possible.','Never expose the heartbeat ingestion key in a shared screenshot.']
+      },
+      maintenance: {
+        title:'Maintenance, Restarts and Save Editing', intro:'Operational changes are explicit, scheduled and backed up, with clear separation between shared server files and World-owned data.', image:'11-maintenance.png', alt:'Maintenance calendar and player notices in light mode', image2:'12-world-save.png', alt2:'Native World save parameter editor in light mode',
+        sections:[
+          ['Soft restart','A restart notice and countdown can be published before the server process is gracefully stopped and relaunched with the same active profile. Connected launcher clients receive the notice.'],
+          ['Maintenance calendar','Schedule restart, update or backup operations, choose recurrence days and define blackout windows that defer automated work.'],
+          ['World save parameters','The native SAVE/CINF parser exposes supported typed parameters. Apply creates a backup and writes validated values to the selected Private World or Server Profile.'],
+          ['Archive, convert and merge','Conversion clones first. Merge archives both sides and selects one complete save tree; it never claims to perform an unsafe record-level .sav merge.']
+        ], tips:['Publish a notice before disruptive work.','Stop the server before conversion or a full save-tree merge.','Shared dedicated-server installation files are not deleted by Delete World Files.']
+      },
+      settings: {
+        title:'Settings', intro:'Settings uses one form rhythm across Player, Server, Application, External Declaration, Integrations and About, with responsive controls in light and dark themes.', image:'13-settings.png', alt:'Clean responsive Dragonwilds Sync settings in light mode',
+        sections:[
+          ['Player','Manage the game path, player profile, characters and client runtime repair.'],
+          ['Server','Choose isolated SteamCMD/server paths, perform full install/update, import or update UE4SS and RuneSchema, and inspect prerequisite status.'],
+          ['Application','Choose theme, RSDW data/icon refresh interval, storage locations, GPU rendering, and the renderer memory ceiling. Application updates come only from the built-in official GitHub repository. Hardware acceleration is enabled by default for smooth composition and scrolling; disable it only to diagnose driver artifacts or repeated GPU-process failures.'],
+          ['Mod Management','The dedicated Settings page is the cross-profile source of truth. It groups UE4SS, RuneSchema, and PAK mods, lists every linked Private/Server profile, opens Nexus sources in the isolated browser, and explicitly publishes one profile copy to all linked profiles.'],
+          ['Renderer memory','Automatic is the recommended ceiling. The 1, 2, 4, and 8 GB choices raise V8’s maximum old-space allowance for unusually large catalogs or long editing sessions; they do not reserve that RAM up front. GPU and memory changes are startup settings, so save them and restart Dragonwilds Sync.'],
+          ['Fast navigation','World Management paints cached tab content immediately, prevents duplicate in-flight requests, and refreshes short-lived player/map data more often than stable configuration. Collapsed or inactive panels do not force a new fetch merely because you moved between tabs.'],
+          ['External Declaration','Website and Enable Remote Management are independent Advanced switches. Overview explains the composition; Website Management contains directory, heartbeat and presentation controls; Remote Management contains users, category permissions and audit authority. Listener address, firewall, router/UPnP and reachability controls are shared because both surfaces use the same bound service.'],
+          ['Application language','The globe in the application title bar changes application navigation only. WebHost browsers keep their own language per browser, so a remote user cannot change the host application’s language.'],
+          ['Advanced','Opt Hosted Server, Website and Remote Management into the Host navigation group. Disabling a workspace preserves profiles and does not silently start or stop the independent external listener.'],
+          ['Integrations','Nexus Mods is optional. Credentials remain local and server operation never depends on an external integration.']
+        ], tips:['Changes save immediately unless a button explicitly says Save.','Light and dark themes use the same layout and control geometry.','Resetting a network policy does not delete World profiles.']
+      },
+      tours: {
+        title:'Guided Tours and Notifications', intro:'Player, Server and WebHost setup have separate guided flows; the notification center keeps operational results available after a toast disappears.', image:'14-tours.png', alt:'Guided setup in light mode', image2:'15-notifications.png', alt2:'Dragonwilds Sync notification center in light mode',
+        sections:[
+          ['Player walkthrough','Follow game-path validation, identity, Private Worlds, discovery, character assignment and the first safe Sync & Play without enabling hosting.'],
+          ['Server walkthrough','Create Owner ID, choose isolated SteamCMD/server paths, complete install and prerequisites, configure ports and fingerprint broadcast, then create the first Server Profile.'],
+          ['WebHost walkthrough','Choose Directory, Remote Admin or Combined composition; select full, manifest-only or blackout public mode; configure listener/DNS; create initial authority; then verify Live View on desktop and phone.'],
+          ['Notifications','The bell shows unread count. Update results, server operations, maintenance notices and connection events can be reviewed or dismissed.'],
+          ['Repeat a tour','Settings keeps the guided setup controls available after onboarding, so any tour can be rerun without resetting profiles.']
+        ], tips:['A skipped tour can be opened again later.','Warnings remain visible until dismissed.','Secrets and passwords are omitted from notification bodies.']
+      }
+    };
+    if (languageCode() !== 'en') {
+      const localized = {
+        fr:{intro:t=>`Ce guide explique ${t} dans Dragonwilds Sync, avec le flux sûr, les autorisations et les résultats à vérifier.`,shot:t=>`Capture d’écran de ${t}`,sections:t=>[['Objectif',`Comprendre le rôle de ${t} et les informations affichées avant toute modification.`],['Flux recommandé',`Suivez les contrôles dans l’ordre, confirmez le monde ou le profil ciblé, puis enregistrez uniquement lorsque la validation est positive.`],['Sécurité et autorité',`Les mots de passe, clés privées et écritures restent soumis à l’autorité locale de Dragonwilds Sync. Les opérations distantes sont limitées et auditées.`],['Vérification',`Utilisez l’état visible, les notifications et les détails de santé pour confirmer le résultat. Un fingerprint ou une route non vérifié ne devient jamais fiable automatiquement.`]],tips:['Les captures utilisent le mode clair pour rester lisibles.','WebHost et Serveur distant sont des fonctions indépendantes.','La langue du navigateur ne modifie pas celle de l’application.'],safetyTitle:'Guide de référence, pas un substitut au diagnostic',safetyBody:'En cas d’échec, consultez l’erreur visible et les notifications. Dragonwilds Sync ne déclare jamais réussi un fingerprint non vérifié, une écriture de sauvegarde, une installation ou une route réseau.'},
+        de:{intro:t=>`Dieses Handbuch erklärt ${t} in Dragonwilds Sync einschließlich sicherem Ablauf, Berechtigungen und prüfbaren Ergebnissen.`,shot:t=>`Screenshot von ${t}`,sections:t=>[['Zweck',`Verstehen Sie die Aufgabe von ${t} und die angezeigten Informationen, bevor etwas geändert wird.`],['Empfohlener Ablauf',`Führen Sie die Steuerelemente der Reihe nach aus, bestätigen Sie die Zielwelt oder das Profil und speichern Sie erst nach erfolgreicher Prüfung.`],['Sicherheit und Autorität',`Passwörter, private Schlüssel und Schreibzugriffe bleiben unter lokaler Dragonwilds-Sync-Autorität. Remote-Aktionen sind begrenzt und protokolliert.`],['Überprüfung',`Prüfen Sie sichtbaren Status, Benachrichtigungen und Zustandsdetails. Ein ungeprüfter Fingerprint oder Netzwerkpfad wird niemals automatisch vertrauenswürdig.`]],tips:['Screenshots verwenden den hellen Modus für gute Lesbarkeit.','WebHost und Remote-Server sind unabhängige Funktionen.','Die Browsersprache ändert die Anwendungssprache nicht.'],safetyTitle:'Referenzhandbuch, kein Ersatz für Diagnose',safetyBody:'Bei einem Fehler gelten die sichtbare Fehlermeldung und Benachrichtigungen. Dragonwilds Sync meldet ungeprüfte Fingerprints, Schreibvorgänge, Installationen oder Routen niemals als erfolgreich.'},
+        es:{intro:t=>`Esta guía explica ${t} en Dragonwilds Sync, incluido el flujo seguro, los permisos y los resultados que deben verificarse.`,shot:t=>`Captura de ${t}`,sections:t=>[['Objetivo',`Comprende la función de ${t} y la información mostrada antes de realizar cambios.`],['Flujo recomendado',`Sigue los controles en orden, confirma el mundo o perfil de destino y guarda solo después de una validación correcta.`],['Seguridad y autoridad',`Las contraseñas, claves privadas y escrituras permanecen bajo la autoridad local de Dragonwilds Sync. Las acciones remotas están limitadas y auditadas.`],['Verificación',`Usa el estado visible, las notificaciones y los detalles de salud para confirmar el resultado. Una huella o ruta sin verificar nunca se convierte automáticamente en fiable.`]],tips:['Las capturas usan el modo claro para facilitar la lectura.','WebHost y Servidor remoto son funciones independientes.','El idioma del navegador no cambia el de la aplicación.'],safetyTitle:'Guía de referencia, no sustituye el diagnóstico',safetyBody:'Cuando falle una operación, consulta el error visible y las notificaciones. Dragonwilds Sync nunca marca como correcta una huella, escritura, instalación o ruta sin verificar.'},
+        it:{intro:t=>`Questa guida spiega ${t} in Dragonwilds Sync, compresi il flusso sicuro, le autorizzazioni e i risultati da verificare.`,shot:t=>`Schermata di ${t}`,sections:t=>[['Scopo',`Comprendi il ruolo di ${t} e le informazioni mostrate prima di apportare modifiche.`],['Flusso consigliato',`Segui i controlli in ordine, conferma il mondo o profilo di destinazione e salva solo dopo una convalida positiva.`],['Sicurezza e autorità',`Password, chiavi private e scritture restano sotto l’autorità locale di Dragonwilds Sync. Le azioni remote sono limitate e registrate.`],['Verifica',`Usa stato visibile, notifiche e dettagli di integrità per confermare il risultato. Un fingerprint o percorso non verificato non diventa mai automaticamente attendibile.`]],tips:['Le schermate usano il tema chiaro per una migliore leggibilità.','WebHost e Server remoto sono funzioni indipendenti.','La lingua del browser non cambia quella dell’applicazione.'],safetyTitle:'Guida di riferimento, non sostituisce la diagnostica',safetyBody:'Quando un’operazione fallisce, consulta l’errore visibile e le notifiche. Dragonwilds Sync non indica mai come riusciti fingerprint, scritture, installazioni o percorsi non verificati.'}
+      }[languageCode()];
+      guides = Object.fromEntries(Object.entries(guides).map(([id,guide],index)=>{const title=helpUi.categories[index]||guide.title;const next={...guide,title,intro:localized.intro(title),sections:localized.sections(title),tips:localized.tips,alt:localized.shot(title)};for(let imageIndex=2;imageIndex<=7;imageIndex++)if(next[`image${imageIndex}`])next[`alt${imageIndex}`]=localized.shot(title);return [id,next];}));
+      helpUi.safetyTitle=localized.safetyTitle;helpUi.safetyBody=localized.safetyBody;
+    }
+    const query = String(state.helpSearch || '').trim().toLowerCase();
+    const selected = guides[state.helpCategory] || guides['getting-started'];
+    const searchable = (guide) => [guide.title,guide.intro,...guide.sections.flat(),...guide.tips].join(' ').toLowerCase();
+    const results = query ? Object.entries(guides).filter(([,guide])=>searchable(guide).includes(query)) : [];
+    const guideShots = (guide) => [1,2,3,4,5,6,7].filter((index)=>guide[index===1?'image':`image${index}`]).map((index)=>({
+      image:guide[index===1?'image':`image${index}`], alt:guide[index===1?'alt':`alt${index}`]||guide.title
+    }));
+    const helpStepKey=(guideId,index,title)=>`${guideId}-${String(index+1).padStart(2,'0')}-${String(title||'step').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'')}`;
+    const stepShot = (shot, title, key) => shot ? `<details class="help-step-screenshot" data-help-step="${escapeHtml(key)}"><summary><span>Screenshot for this step · ${escapeHtml(key)}</span><small>Expand ▾</small></summary><button class="help-shot" data-help-image="${escapeHtml(helpImageUrl(shot.image))}" data-help-alt="${escapeHtml(shot.alt||title)}"><img src="${escapeHtml(helpImageUrl(shot.image))}" alt="${escapeHtml(shot.alt||title)}" loading="lazy" referrerpolicy="no-referrer"/><span>${escapeHtml(helpUi.open)}</span></button></details>` : '';
+    const guideCard = (guide, id, compact=false) => `<article class="help-guide ${compact?'compact':''}">
+      <div class="help-guide-copy"><div class="eyebrow">${escapeHtml(categories.find(([key])=>key===id)?.[2] || 'Guide')}</div><h2>${escapeHtml(guide.title)}</h2><p>${escapeHtml(guide.intro)}</p></div>
+      ${!compact ? `<div class="help-flow" aria-label="Guided workflow">${guide.sections.map((section,index)=>{const [title,body,image,alt]=section;const available=guideShots(guide);const shot=image?{image,alt:alt||title}:(available[index]||null);const key=helpStepKey(id,index,title);return `<section data-help-step="${escapeHtml(key)}"><span class="help-flow-number">${index+1}</span><div><h3>${escapeHtml(title)}</h3><p>${escapeHtml(body)}</p>${stepShot(shot,title,key)}</div></section>`;}).join('')}</div>
+        <div class="help-tip-strip"><strong>${escapeHtml(helpUi.tips)}</strong>${guide.tips.map((tip)=>`<span>${escapeHtml(tip)}</span>`).join('')}</div>` : `<button class="btn ghost" data-help-category="${escapeHtml(id)}">${escapeHtml(helpUi.read)}</button>`}
+    </article>`;
+    const helpyTheme=state.data?.application?.glass_theme?'glass':state.data?.application?.theme==='light'?'white':'dark';
+    const helpyUrl=`https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/helpy.html?embed=1&theme=${helpyTheme}#getting-started`;
+    return `<div class="content help-page helpy-website-shell"><div class="helpy-focus-toolbar"><div><strong>Helpy</strong><span>Getting Started · website-managed guide</span></div><div class="header-actions"><button class="btn ghost compact-btn" id="helpy-reload">Refresh</button><button class="btn ghost compact-btn" data-open-external="${escapeHtml(helpyUrl)}">Open in browser ↗</button></div></div><section class="helpy-webview-frame"><webview id="helpy-webview" src="${escapeHtml(helpyUrl)}" partition="persist:dragonwilds-help"></webview><div class="helpy-webview-cover"><div class="spinner"></div><strong>Opening Helpy...</strong><span>Loading the focused Getting Started guide.</span></div></section>
+      <details class="helpy-offline-fallback"><summary><span>Built-in text guide</span><small>Text remains available if the website cannot load</small></summary><div class="page-header help-page-header"><div class="help-title-lockup"><img class="help-brand-icon" src="assets/application-icon.webp" alt=""/><div><div class="eyebrow">${escapeHtml(helpUi.fieldGuide)}</div><h1>${escapeHtml(helpUi.title)}</h1><div class="page-subtitle">${escapeHtml(helpUi.subtitle)}</div></div></div><div class="help-search"><span>⌕</span><input class="field" id="help-search" value="${escapeHtml(state.helpSearch||'')}" placeholder="${escapeHtml(helpUi.search)}"/><button class="btn ghost" id="help-search-clear" ${state.helpSearch?'':'disabled'}>${escapeHtml(helpUi.clear)}</button></div></div>
+      <div class="help-layout"><nav class="help-nav" aria-label="Help categories">${categories.map(([id,icon,label])=>`<button class="${state.helpCategory===id&&!query?'active':''}" data-help-category="${id}"><span>${icon}</span>${escapeHtml(label)}</button>`).join('')}</nav><div class="help-content">${query ? `<div class="help-results-head"><strong>${results.length}</strong><span>${escapeHtml(helpUi.results)} “${escapeHtml(state.helpSearch)}”</span></div>${results.length?results.map(([id,guide])=>guideCard(guide,id,true)).join(''):`<div class="empty-state">${escapeHtml(helpUi.none)}</div>`}` : guideCard(selected,state.helpCategory)}</div></div>
+      <div class="help-safety-note"><strong>${escapeHtml(helpUi.safetyTitle||'Reference guide, not a diagnostic substitute')}</strong><span>${escapeHtml(helpUi.safetyBody||'When an operation fails, use its visible error and notification details. Dragonwilds Sync never marks an unverified fingerprint, save write, runtime install, or network route as successful.')}</span></div></details>
+      <div class="help-feedback"><div><strong>Suggestions for Improvement?</strong><span>Share feedback, screenshots, and ideas with the RSDW Community.</span></div><button class="btn primary" data-open-external="https://discord.gg/gQ7uY2cQ3q">Open Community Discord ↗</button></div>
+    </div>`;
+  }
+
+  function renderSettings() {
+    const a = state.data?.application || {};
+    const p = player();
+    const serverEnabled = !!a.server_mode_enabled;
+    const integrations = a.integrations || {};
+    const nexus = integrations.nexus_mods || {};
+    const clientNetwork = a.client_network_profile || {};
+    const serverInstall = a.server_install || {};
+    const serverLayout = state.data?.server?.layout || {};
+    const runtimePrereqs = state.data?.server?.runtime_prerequisites || {};
+    const nativeLinuxServer = !!state.adminStatus?.linux && (serverInstall.linux_server_mode || 'native') !== 'proton-win64';
+    const clientLayout = state.data?.client?.layout || {};
+    const benchmarkCfg = a.server_network_benchmark || {};
+    const benchmark = benchmarkCfg.last_result || {};
+    const directoryHost = a.world_directory_host || {};
+    const directoryHostStatus = a.world_directory_host_status || {};
+    const favoriteAlerts = state.data?.client?.favorite_alerts || {};
+    const routedWebhost = state.route === 'webhost';
+    const routedRemote = state.route === 'remote-server';
+    const routedServers = state.route === 'servers' && state.serversTab === 'settings';
+    const routedMods = state.route === 'mods-app';
+    const standaloneHostWorkspace = routedRemote;
+    let topTab = routedMods ? 'mods' : (routedServers ? 'server' : ((routedWebhost || routedRemote) ? 'webhost' : (state.settingsTab || 'application')));
+    if(!routedWebhost&&!standaloneHostWorkspace&&!routedServers&&!routedMods&&!['application','advanced','integrations','about'].includes(topTab))topTab='application';
+    if(topTab==='server'&&!serverEnabled)topTab='advanced';
+    const externalSettingsTab = state.externalDeclarationTab || 'overview';
+    const externalSettings = topTab === 'external';
+    // The primary Sync workspace is deliberately combined. These standalone
+    // flags remain only for the legacy Settings → External Declaration views.
+    const standaloneWebhost = (routedWebhost && state.webhostTab === 'settings') || (externalSettings && externalSettingsTab === 'website');
+    const standaloneRemote = routedRemote || (externalSettings && externalSettingsTab === 'remote');
+    const appSub = state.applicationSettingsTab || 'application';
+    const directSettingsTabs = { about: 'about', mods: 'mods', integrations: 'integrations', advanced: 'advanced', client: 'player', server: 'server', webhost: 'webhost', external: 'webhost' };
+    const applicationSettingsTabs = { network: 'networking', storage: 'storage', runtimes: 'runtimes', application: 'application' };
+    const tab = directSettingsTabs[topTab] || applicationSettingsTabs[appSub] || 'application';
+    const settingsNav = (id, icon, label) => `<button class="${topTab === id ? 'active' : ''}" data-settings-tab="${id}"><span>${icon}</span>${label}</button>`;
+    const avatar = p.avatar_data ? `<img src="${p.avatar_data}" alt="" />` : escapeHtml(initials(p.display_name));
+    const banner = p.banner_data ? `<img class="banner" src="${p.banner_data}" alt="" />` : '';
+    let content = '';
+    if (tab === 'mods') {
+      const repository=state.modRepository;
+      const labels={ue4ss_mod:'UE4SS Mods',runeschema_mod:'RuneSchema Mods',pak_mod:'PAK Mods'};
+      const groupIcons={ue4ss_mod:'assets/platforms/ue4ss.webp',runeschema_mod:'assets/platforms/runeschema.webp',pak_mod:'assets/platforms/paks.svg'};
+      const rows=(repository?.entries||[]);
+      const groups=['ue4ss_mod','runeschema_mod','pak_mod'];
+      content = `<section class="settings-section"><div class="panel-header"><div><h2>Mod Management</h2><span class="panel-subtitle">One editable master repository with independent copies for every Private World and Server Profile.</span></div><div class="header-actions"><button class="btn ghost" id="open-mod-repository" ${repository?.root?'':'disabled'}>Open Repository</button><button class="btn primary" id="refresh-mod-repository" ${state.modRepositoryLoading?'disabled':''}>${state.modRepositoryLoading?'Scanning…':repository?'Refresh':'Load Mods'}</button></div></div>${state.modRepositoryError?`<div class="warning-box compact"><strong>Repository scan failed</strong><br/>${escapeHtml(state.modRepositoryError)}</div>`:''}<div class="identity-box"><strong>Gameplay-content fingerprints</strong><p>Content alerts compare actual mod payload only. Server-push bookkeeping, ID metadata, activation markers, timestamps, and publication state do not count as mod changes.</p></div>${repository?`<div class="mod-repository-toolbar"><label class="world-search"><span>⌕</span><input class="field" id="mod-repository-search" value="${escapeHtml(state.modRepositorySearch||'')}" placeholder="Search mod name, type, source, or linked profile…" autocomplete="off"/></label><span class="mod-repository-result-count" id="mod-repository-result-count">${rows.length} mod${rows.length===1?'':'s'}</span></div>`:''}</section>
+      ${repository ? groups.map((group)=>{const mods=rows.filter((row)=>row.group===group);return `<section class="settings-section" data-mod-group="${group}"><div class="panel-header"><div class="mod-group-heading"><img src="${groupIcons[group]}" alt=""/><div><h2>${labels[group]}</h2><span class="panel-subtitle" data-mod-group-count>${mods.length} shared ${mods.length===1?'entry':'entries'}</span></div></div><span class="status-pill unknown">${escapeHtml(group.replace('_mod','').toUpperCase())}</span></div><div class="mod-list">${mods.map((mod)=>{const source=mod.source||{};const profiles=objectRows(mod.profiles);const first=profiles[0]||{};const replaced=profiles.filter((profile)=>profile.fingerprint_status==='replaced');const searchable=[mod.name,mod.key,mod.id,group,labels[group],source.provider,source.mod_id,...profiles.flatMap((profile)=>[profile.name,profile.id,profile.kind])].filter(Boolean).join(' ').toLocaleLowerCase();return `<div class="mod-clean-row ${replaced.length?'mod-replacement-detected':''}" data-mod-search="${escapeHtml(searchable)}"><div><div class="mod-name-line"><strong>${escapeHtml(mod.name||'Mod')}</strong>${source.provider==='nexus'?`<span class="status-pill online">NEXUS #${escapeHtml(String(source.mod_id||''))}</span>`:''}${replaced.length?`<span class="status-pill danger">${replaced.length} CONTENT DIFFERENCE${replaced.length===1?'':'S'}</span>`:''}</div><div class="mod-meta">${escapeHtml(String(mod.file_count||0))} payload files · ${formatBytes(mod.size||0)} · ${profiles.length} linked profile${profiles.length===1?'':'s'} · SHA-256 ${escapeHtml(String(mod.content_hash||'not fingerprinted').slice(0,12))}</div><div class="mod-tag-row">${profiles.map((profile)=>`<span class="mod-tag ${profile.fingerprint_status==='replaced'?'replaced':''}" title="${escapeHtml(profile.content_hash||'Fingerprint unavailable')}">${escapeHtml(profile.kind==='dedicated'?'Server':'Private')} · ${escapeHtml(profile.name||profile.id)}${profile.fingerprint_status==='replaced'?' · CONTENT DIFFERS':''}</span>`).join('')}</div></div><div class="mod-row-actions">${source.web_url?`<button class="btn ghost mod-action-btn" data-repository-nexus="${escapeHtml(source.web_url)}">Nexus ↗</button>`:''}<button class="btn ghost mod-action-btn" data-repository-master-edit="${escapeHtml(mod.id)}">Edit Master</button><button class="btn ghost mod-action-btn" data-repository-pull="${escapeHtml(mod.id)}">Pull Master…</button>${first.id?`<button class="btn ghost mod-action-btn" data-repository-edit="${escapeHtml(mod.key)}" data-profile-kind="${escapeHtml(first.kind)}" data-profile-id="${escapeHtml(first.id)}">Edit Profile</button><button class="btn primary mod-action-btn" data-repository-publish="${escapeHtml(mod.key)}" data-profile-kind="${escapeHtml(first.kind)}" data-profile-id="${escapeHtml(first.id)}">Publish as Master</button>`:''}</div></div>`;}).join('')}<div class="empty-state" data-mod-search-empty ${mods.length?'hidden':''}>No profile currently contains this mod type.</div></div></section>`;}).join('') : `<section class="settings-section"><div class="empty-state">${state.modRepositoryLoading?'Scanning every saved profile for UE4SS, RuneSchema, and PAK mods…':'Load the shared repository to scan every saved profile.'}</div></section>`}`;
+      if(repository) content += `<section class="settings-section"><div class="panel-header"><div><h2>Mod ID.txt Builder</h2><span class="panel-subtitle">Consolidate legacy identity and hotload markers into one portable ID.txt per directory mod.</span></div></div><div class="config-file-list">${rows.filter((mod)=>mod.group!=='pak_mod').map((mod)=>`<div class="config-file-row" data-mod-search="${escapeHtml([mod.name,mod.key,mod.group].join(' ').toLocaleLowerCase())}"><div><strong>${escapeHtml(mod.name||'Mod')}</strong><small>${escapeHtml(labels[mod.group]||mod.group)}</small></div><button class="btn ghost" data-repository-build-id="${escapeHtml(mod.id)}">Build ID.txt…</button></div>`).join('')||'<div class="empty-state">No directory-based mods are available.</div>'}</div></section>`;
+    } else if (tab === 'about') {
+      const meta = window.DWSYNC_RELEASE_META || {};
+      const currentVersion = state.applicationUpdateMode?.version || meta.version || '1.3.0';
+      const attributionRows = (meta.attributions || []).map(([role,name])=>`<div class="attribution-row"><span>${escapeHtml(role)}</span><strong>${escapeHtml(name)}</strong></div>`).join('');
+      const changelog = (meta.changelog || []).map((release,index)=>`<details class="about-release" ${index===0?'open':''}><summary><div><strong>v${escapeHtml(release.version||'')} · ${escapeHtml(release.title||'Release')}</strong><span>${index===0?'Current build':'Previous release'}</span></div><span>⌄</span></summary><ul>${(release.items||[]).map((item)=>`<li>${escapeHtml(item)}</li>`).join('')}</ul></details>`).join('');
+      content = `<section class="settings-section about-hero"><div><div class="eyebrow">Dragonwilds Sync</div><h2>${escapeHtml(meta.name || 'V1 · First Official Release')}</h2><p>Free community launcher and synchronization tooling for RuneScape: Dragonwilds.</p></div><div class="about-version"><span>Application Version</span><strong>${escapeHtml(currentVersion)}</strong><small>RSDWL v${escapeHtml(String(meta.rsdwlVersion||3))}</small></div></section>
+        <section class="settings-section"><h2>Attributions</h2><div class="attribution-list">${attributionRows}</div><div class="identity-box"><strong>RSDW Toolkit</strong><p>Integrated RSDW-powered editors and model tooling are credited to Hi im Tat and the RSDW Modding Community. RuneSchema is credited to Snorkles. RuneScape: Dragonwilds and game assets remain property of Jagex Ltd.</p></div></section>
+        <section class="settings-section about-section"><div class="panel-header"><div><h2>Community License</h2><span class="panel-subtitle">Free redistribution, open RSDWL interoperability, no paid distribution of Dragonwilds Sync.</span></div><button class="btn ghost" id="view-community-license">View Full License</button></div><div class="license-summary">${escapeHtml(meta.licenseSummary || '')}</div></section>`;
+    } else if (tab === 'integrations') {
+      const ns = state.nexusStatus || {};
+      const integrationState=state.integrationStatus||{};
+      const rsdwIntegration=integrationState.rsdw||a.rsdw_cache_status||{};
+      const discordIntegration=state.discordStatus||{};
+      const nexusCfg = integrations.nexus_mods || {};
+      const recommendationCfg = a.recommended_mods || {};
+      const recommendationRows = recommendationCfg.mods || [];
+      const recommendationSources = recommendationCfg.community_sources || [];
+      content = `<section class="settings-section integration-overview"><div class="panel-header"><div><h2>Integration Status</h2><span class="panel-subtitle">Live status for optional services and independently updated RSDW modules.</span></div><button class="btn ghost" id="refresh-integration-status" ${state.integrationsLoading?'disabled':''}>${state.integrationsLoading?'Checking…':'Refresh Status'}</button></div><div class="computer-profile-hardware">${metric('RSDWTools',rsdwIntegration.toolkit_valid?`Ready · ${String(rsdwIntegration.revision||'').slice(0,8)||'cached'}`:'Needs refresh')}${metric('RSDWModel',rsdwIntegration.model_valid?`Ready · ${String(rsdwIntegration.model_revision||'').slice(0,8)||'cached'}`:'Needs refresh')}${metric('Discord',discordIntegration.connected||discordIntegration.active?'Connected':'Optional / idle')}${metric('Nexus Mods',ns.connected?`Connected · ${ns.username||'account'}`:'Optional / disconnected')}</div>${integrationState.errors?.length?`<div class="warning-box compact">${integrationState.errors.map(escapeHtml).join('<br/>')}</div>`:''}<div class="header-actions"><button class="btn ghost" id="rsdwl-refresh">Refresh RSDW Modules</button><button class="btn ghost" id="nexus-open-game-page">Browse Nexus Mods</button></div></section>
+      <section class="settings-section nexus-account-settings ${state.showNexusIntegration?'':'nexus-integration-hidden'}"><div class="panel-header" style="padding:0 0 12px"><div><h2 style="margin:0">Nexus Mods</h2><span class="panel-subtitle">Optional source integration for Singleplayer and Server Profile mods.</span></div><span class="status-pill ${ns.connected?'online':'unknown'}">${ns.connected?'CONNECTED':'OPTIONAL'}</span></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Account</strong><span>${ns.connected?`Connected as ${escapeHtml(ns.username||'Nexus user')}. Authentication remains local to this PC and is never sent to a Dragonwilds Sync server.`:'Authorize through Nexus Mods. Dragonwilds Sync never asks for your Nexus password.'}</span></div><div class="header-actions">${ns.connected?'<button class="btn danger" id="nexus-disconnect">Disconnect</button>':'<button class="btn primary" id="nexus-connect-sso">Connect Nexus Mods Account</button>'}</div></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Credential storage</strong><span>The application-specific Nexus key is stored with Electron/Windows secure storage when available; no plaintext API key is written to normal launcher profile state.</span></div><span class="status-pill ${ns.secure_storage?'online':'unknown'}">${ns.secure_storage?'OS SECURE STORAGE':'SESSION ONLY'}</span></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Cached update checks</strong><span>Update metadata is cached to avoid excessive API polling. Server mods are never auto-updated without operator approval.</span></div><label class="inline-check"><input type="checkbox" id="nexus-auto-check" ${nexusCfg.auto_check_updates?'checked':''}/> Periodically check linked mods</label></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Browse Dragonwilds mods</strong><span>Opens the Nexus source browser. Install targets still pass through Dragonwilds Sync staging, archive inspection, profile placement and manifest tracking.</span></div><button class="btn ghost" id="settings-browse-nexus">Browse Nexus Mods</button></div>
+      </section>
+      <section class="settings-section"><div class="panel-header"><div><h2>Creator &amp; Community Recommendations</h2><span class="panel-subtitle">The creator feed comes from GitHub. Communities can publish the same JSON format and share its URL without packaging any mod archive.</span></div><button class="btn primary" data-recommended-refresh>Refresh Lists</button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Creator feed</strong><span>${escapeHtml(recommendationCfg.creator_feed_url||'Official GitHub feed')} · ${recommendationRows.length} linked recommendations${recommendationCfg.last_refresh_at?` · refreshed ${formatDate(recommendationCfg.last_refresh_at)}`:''}</span></div><span class="status-pill ${recommendationCfg.last_error?'unknown':'online'}">${recommendationCfg.last_error?'USING CACHE':'GITHUB FED'}</span></div>
+        <div class="recommended-mod-grid">${recommendationRows.slice(0,20).map(recommendedModCardMarkup).join('')||'<div class="empty-state">Refresh the GitHub feed to load recommendations.</div>'}</div>
+        <div class="divider"></div><h3>Community List Links</h3>${recommendationSources.map((source)=>`<div class="directory-source-row"><div><strong>${escapeHtml(source.name||'Community Recommendations')}</strong><small>${escapeHtml(source.url||'')}</small></div><span class="status-pill ${source.enabled===false?'unknown':'online'}">${source.enabled===false?'PAUSED':'ENABLED'}</span><button class="btn ghost compact-btn" data-recommended-source-remove="${escapeHtml(source.id||'')}">Remove</button></div>`).join('')||'<p class="muted-small">No community recommendation lists added yet.</p>'}
+        <div class="form-grid"><label class="form-group"><span>Community name</span><input class="field" id="recommended-source-name" placeholder="Community Recommended Mods"/></label><label class="form-group full"><span>JSON feed URL</span><div class="path-field"><input class="field" id="recommended-source-url" placeholder="https://community.example/recommended-mods.json"/><button class="btn ghost" id="recommended-source-add">Add List</button></div></label></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Nexus Activity</strong><span>Opens the official Nexus Dragonwilds activity page inside the application. Dragonwilds Sync does not scrape, copy, or rehost Nexus content.</span></div><button class="btn ghost" id="open-nexus-activity">Open Nexus Activity</button></div>
+      </section>
+      <section class="settings-section nexus-account-settings ${state.showNexusIntegration?'':'nexus-integration-hidden'}"><h2>Developer / Testing</h2><div class="settings-row"><div class="settings-copy"><strong>Personal API key</strong><span>Testing only. Public releases should use Nexus's registered application SSO flow; a developer's personal key must never ship with the application.</span></div><div class="path-field"><input class="field" id="nexus-dev-key" type="password" placeholder="Personal API key (testing only)"/><button class="btn ghost" id="nexus-connect-dev-key">Connect Test Key</button></div></div><div class="identity-box"><strong>${ns.registered_app?'Registered app identity detected':'Public SSO registration pending'}</strong><p>${ns.registered_app?'This build has a Nexus application slug configured for SSO.':'Until a Nexus application slug is configured, the SSO button will explain that registration is required. Development can continue with a personal test key.'}</p></div></section>`;
+    } else if (tab === 'advanced') {
+      const webhostEnabled=!!(a.advanced||{}).webhost_enabled;
+      content = `<section class="settings-section"><div class="panel-header"><div><h2>Advanced Features</h2><span class="panel-subtitle">Optional expert features that are not required for normal play, Sync, or Remote Login.</span></div><span class="status-pill unknown">OPT-IN</span></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Show tips and pointers</strong><span>Display optional guidance panels throughout the application. Warnings, errors, security notices, and required instructions are always shown.</span></div><button class="toggle ${(a.advanced || {}).show_tips ? 'on' : ''}" id="toggle-show-tips" aria-label="Show tips and pointers" aria-pressed="${(a.advanced || {}).show_tips ? 'true' : 'false'}"></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Administrator Mode</strong><span>Firewall and machine-wide service operations need Windows elevation. Normal browsing, character editing, and profile work remain available without it.</span></div><div class="header-actions"><span class="status-pill ${state.adminStatus?.elevated?'online':'unknown'}">${state.adminStatus?.elevated?'RUNNING AS ADMIN':'STANDARD MODE'}</span>${state.adminStatus?.canRelaunch&&!state.adminStatus?.elevated?'<button class="btn primary" id="restart-as-admin">Restart as Administrator</button>':''}</div></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Hosted Server Profiles</strong><span>Installs, configures, starts, and manages Dragonwilds dedicated-server World profiles. This does not publish any website or remote login.</span></div><button class="toggle ${serverEnabled?'on':''}" id="toggle-server-mode"></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>WebHost <span class="status-pill unknown">ADVANCED</span></strong><span>Creates and serves a complete public World website, placard directory, manifest API, and heartbeat intake. Remote Login remains a separate normal Sync option.</span></div><button class="toggle ${webhostEnabled?'on':''}" id="toggle-webhost-feature"></button></div>
+        <div class="identity-box"><strong>Webhost is not Server Manager</strong><p>Advanced Webhost serves public website routes. Normal Remote Login serves only <code>/admin/login</code> and its authenticated management APIs. Neither starts automatically with a hosted World.</p></div>
+      </section><section class="settings-section"><h2>Advanced Hosting</h2>
+        <div class="settings-row"><div class="settings-copy"><strong>Enable Multiple Servers</strong><span>Dedicated World profiles expose a Server Number/Instance; game and Sync ports derive automatically from that number.</span></div><button class="toggle ${(a.advanced || {}).multiple_servers_enabled ? 'on' : ''}" id="toggle-multiple-servers"></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Guided setup</strong><span>Repeat a host walkthrough without deleting profiles or changing the other host feature.</span></div><div class="header-actions"><button class="btn ghost" id="start-server-tour">Server Setup</button><button class="btn ghost" id="start-webhost-tour">WebHost Setup</button></div></div>
+      </section><section class="settings-section"><div class="panel-header"><div><h2>Backup-first installation reset</h2><span class="panel-subtitle">Last-resort recovery. User saves, configs, and mods are copied to LocalAppData before an install is removed.</span></div><span class="status-pill offline">DESTRUCTIVE</span></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Reset Dragonwilds managed mods</strong><span>Back up saves, configuration, mods, and Dragonwilds LocalAppData; remove only launcher-managed UE4SS/PAK mod surfaces; then repair the managed runtime baseline. Steam game files and persistent EOS/account data are never deleted.</span></div><button class="btn danger" id="reset-client-install">Reset Managed Mods…</button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Reset dedicated server</strong><span>Requires every hosted World to be stopped. The selected server install is backed up, removed, reinstalled with SteamCMD validation, and its managed runtimes are repaired. Server Profiles remain in LocalAppData.</span></div><button class="btn danger" id="reset-server-install">Reset Server…</button></div>
+        <div class="warning-box compact"><strong>Backups are retained.</strong><br/>Dragonwilds Sync never deletes reset backups automatically. They are written beneath LocalAppData/Dragonwilds Sync/reset_backups with a source manifest.</div>
+      </section>`;
+    } else if (tab === 'player') {
+      content = `
+        <section class="settings-section"><h2>Player Profile</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Your launcher identity</strong><span>Add a banner, avatar, bio, and links to the communities you use. This remains separate from every hosted World.</span></div><div><div class="settings-profile-preview">${banner}<div class="profile-fade"></div><div class="profile-mini"><div class="avatar">${avatar}</div><div><strong>${escapeHtml(p.display_name || 'Player')}</strong><div style="font-size:9px;color:#ddd;margin-top:3px">${escapeHtml(p.about || 'Dragonwilds Sync player')}</div></div></div></div><button class="btn ghost" id="edit-profile-settings" style="margin-top:8px">Edit Player Profile</button></div></div>
+        </section>
+        <section class="settings-section"><h2>Characters</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Profile Characters</strong><span>Select a character once to use it in the Character, Item, Spell, Recipe, Quest, and 3D Avatar tools. Dragonwilds Sync keeps backups, World associations, and RSDWL packages.</span></div><button class="btn ghost" id="open-character-profiles">Open Characters</button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Character save location</strong><span>${escapeHtml(clientLayout.character_dir || '%LOCALAPPDATA%\\RSDragonwilds\\Saved\\SaveCharacters')}</span></div><span class="status-pill online">MANAGED</span></div>
+        </section>
+        <section class="settings-section"><div class="panel-header settings-section-head"><div><h2>Connection Addresses</h2><span class="panel-subtitle">Detected for this computer and kept separate from every saved World.</span></div><button class="btn primary" id="detect-client-public-ip">Detect Addresses</button></div>
+          <div class="metric-grid">${metric('Internal / LAN IP',clientNetwork.internal_ip||'Not detected')}${metric('External / Public IP',clientNetwork.external_ip||state.clientPublicIp||'Not detected')}${metric('Last Detection',clientNetwork.detected_at?new Date(clientNetwork.detected_at).toLocaleString():'Never')}</div>
+          <div class="identity-box"><strong>LAN-to-Internet continuity</strong><p>Every linked World can retain both its internal and external route, exact World Name, World Password, and Share/Hash code. Automatic routing retries the other saved route when this computer moves between the local network and the Internet.</p></div>
+        </section>
+        <section class="settings-section"><h2>Dragonwilds</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Dragonwilds game folder</strong><span>Choose the install, its inner RSDragonwilds folder, or a parent directory. Dragonwilds Sync searches beneath it and stores the verified game root.</span></div><div class="path-field"><input class="field" id="game-dir" value="${escapeHtml(a.game_dir || '')}" placeholder="Choose an install or parent folder" /><button class="btn ghost" id="pick-game-dir">Search Folder</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Dragonwilds executable</strong><span>Used only after positive World identity and client-required mods are verified.</span></div><div class="path-field"><input class="field" id="game-exe" value="${escapeHtml(a.game_exe || '')}" placeholder="Auto-detect if blank" /><button class="btn ghost" id="pick-game-exe">Browse</button></div></div>
+        </section>`;
+    } else if (tab === 'runtimes') {
+      const rsdw = a.rsdw_cache_status || {};
+      const core = a.client_core_runtime || {};
+      const runtimeUpdates = a.runtime_updates || {};
+      const stabilityReportUrl=(component,version)=>`https://github.com/gh0sted5456-us/Dragonwilds-Sync-Web/issues/new?labels=runtime-stability&title=${encodeURIComponent(`[Runtime stability] ${component} ${version||'unknown'}`)}&body=${encodeURIComponent(`Runtime: ${component}\nVersion: ${version||'unknown'}\nChannel: stable/baseline/experimental\nOperating system: \nDragonwilds build: \nResult: stable / unstable\nNotes: `)}`;
+      const hostedWorld = activeServerWorld() || serverWorlds()[0] || null;
+      const ue4ssLabel = core.ue4ss_installed_version || 'Managed baseline · ready on repair/update';
+      const runeschemaLabel = core.runeschema_installed_version || 'Official baseline · ready on repair/update';
+      const rsdwLabel = rsdw.revision ? `Revision ${String(rsdw.revision).slice(0,12)}` : 'No validated local revision';
+      content = `<section class="settings-section runtime-center"><div class="panel-header settings-section-head"><div><h2>Runtime &amp; Data Center</h2><span class="panel-subtitle">Load and maintain the three foundations used by Dragonwilds profiles and tools.</span></div><button class="btn primary" id="repair-client-runtimes" ${a.game_dir?'':'disabled'}>Validate &amp; Repair Client</button></div>
+        <div class="module-status-grid runtime-center-grid"><div><span>1 · UE4SS</span><strong>${core.ue4ss_installed_version?'SELECTED':'MANAGED'}</strong><small>${escapeHtml(ue4ssLabel)}</small></div><div><span>2 · RuneSchema</span><strong>${core.runeschema_installed_version?'SELECTED':'OFFICIAL'}</strong><small>${escapeHtml(runeschemaLabel)}</small></div><div><span>3 · RSDW Assets</span><strong>${rsdw.toolkit_valid?'READY':'REFRESH NEEDED'}</strong><small>${escapeHtml(rsdwLabel)}${rsdw.toolkit_valid?` · ${rsdw.data_file_count||0} data · ${rsdw.icon_manifest_count||rsdw.icon_count||0} icons`:''}</small></div></div>
+        <div class="runtime-center-flow" aria-label="Runtime loading order"><span><b>UE4SS</b><small>Loads the mod runtime</small></span><i>→</i><span><b>RuneSchema</b><small>Loads schema-driven content</small></span><i>→</i><span><b>RSDW</b><small>Supplies tools, data, and icons</small></span></div>
+        <div class="identity-box"><strong>Runtime cores are machine-owned; mods are profile-owned.</strong><p>Updating a core never replaces a World’s selected mods, saves, or settings. Connected World Sync preserves the client’s protected UE4SS files and applies only the profile payload it verified.</p></div>
+      </section>
+      <section class="settings-section runtime-core-card"><div class="panel-header settings-section-head"><div class="runtime-branded-title"><img src="assets/platforms/ue4ss.webp" alt="UE4SS"/><div><h2>UE4SS Core</h2><span class="panel-subtitle">Baseline, Stable, and Experimental stay separate; complete ZIP overrides remain available.</span></div></div><button class="btn ghost" id="manage-ue4ss-builds">Server Build Library</button></div>
+        <div class="runtime-channel-grid"><button class="runtime-channel-card baseline" id="update-client-ue4ss-baseline" ${a.game_dir?'':'disabled'}><span>Stable Baseline</span><strong>Known-good Dragonwilds 5.6 recovery</strong><small>v3.0.1-941-g0bfec09e · retained first and available offline.</small></button><button class="runtime-channel-card stable" id="update-client-ue4ss-official" ${a.game_dir?'':'disabled'}><span>Stable</span><strong>Official release channel</strong><small>Recommended when the newest stable runtime is desired.</small></button><button class="runtime-channel-card experimental" id="update-client-ue4ss-experimental" ${a.game_dir?'':'disabled'}><span>Experimental</span><strong>Newest upstream build</strong><small>For testing current UE4SS fixes and features.</small></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Community stability evidence</strong><span>Report the installed build to the website project. Reports are public, version-specific, and never change this PC's selected runtime automatically.</span></div><button class="btn ghost" data-open-external="${escapeHtml(stabilityReportUrl('UE4SS',ue4ssLabel))}">Report UE4SS Build ↗</button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Automatic UE4SS updates</strong><span>Use the managed runtime for client, local, connected, and hosted profiles unless that profile selects an override.</span></div><button class="toggle ${runtimeUpdates.ue4ss===false?'':'on'}" id="toggle-runtime-ue4ss" role="switch" aria-checked="${runtimeUpdates.ue4ss===false?'false':'true'}"></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Manual client override</strong><span>Choose a complete UE4SS ZIP. Server-only <code>version.dll</code> is rejected; the client’s protected loader files remain independent.</span></div><button class="btn ghost" id="client-import-ue4ss-core">Choose UE4SS ZIP</button></div><div class="mod-drop-zone inline-drop" id="client-ue4ss-dropzone">Drop a complete client UE4SS ZIP</div>
+        <div class="settings-row"><div class="settings-copy"><strong>Repair or remove UE4SS</strong><span>Reset removes the installed core and immediately reinstalls the selected channel. Profile mods are retained.</span></div><div class="header-actions"><button class="btn ghost" id="reset-client-ue4ss">Reset UE4SS</button><button class="btn danger" id="delete-client-ue4ss">Delete UE4SS</button></div></div>
+      </section>
+      <section class="settings-section runtime-core-card"><div class="panel-header settings-section-head"><div class="runtime-branded-title"><img src="assets/platforms/runeschema.webp" alt="RuneSchema"/><div><h2>RuneSchema Core</h2><span class="panel-subtitle">Baseline, Stable, and Experimental are independent channels; named and imported builds remain selectable.</span></div></div><button class="btn ghost" id="manage-runeschema-builds">Server Build Library</button></div>
+        <div class="runtime-channel-grid"><button class="runtime-channel-card baseline" id="update-client-runeschema-baseline" ${a.game_dir?'':'disabled'}><span>Stable Baseline</span><strong>Bundled recovery core</strong><small>Known-good offline runtime retained first by V3.</small></button><button class="runtime-channel-card stable" id="update-client-runeschema-official" ${a.game_dir?'':'disabled'}><span>Stable</span><strong>UnskippableCutscene releases</strong><small>The normal upstream RuneSchema release channel.</small></button><button class="runtime-channel-card experimental" id="update-client-runeschema-experimental" ${a.game_dir?'':'disabled'}><span>Experimental</span><strong>Built-in 0.6.3 baseline</strong><small>For testing current RuneSchema fixes, menus, and features.</small></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Community stability evidence</strong><span>Report the installed build to the website project. The website can aggregate public reports without allowing them to rewrite a local baseline.</span></div><button class="btn ghost" data-open-external="${escapeHtml(stabilityReportUrl('RuneSchema',runeschemaLabel))}">Report RuneSchema Build ↗</button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Automatic RuneSchema updates</strong><span>Keep the official machine core current unless a profile explicitly selects a stored flavor.</span></div><button class="toggle ${runtimeUpdates.runeschema===false?'':'on'}" id="toggle-runtime-runeschema" role="switch" aria-checked="${runtimeUpdates.runeschema===false?'false':'true'}"></button></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Manual client override</strong><span>Choose a complete RuneSchema core ZIP. RuneSchema child mods remain in their World profile.</span></div><button class="btn ghost" id="client-import-runeschema-core">Choose RuneSchema ZIP</button></div><div class="mod-drop-zone inline-drop" id="client-runeschema-dropzone">Drop a complete client RuneSchema core ZIP</div>
+        <div class="settings-row"><div class="settings-copy"><strong>Repair or remove RuneSchema</strong><span>Reset removes the installed core and immediately reinstalls the selected channel. RuneSchema content mods are retained.</span></div><div class="header-actions"><button class="btn ghost" id="reset-client-runeschema">Reset RuneSchema</button><button class="btn danger" id="delete-client-runeschema">Delete RuneSchema</button></div></div>
+      </section>
+      <section class="settings-section runtime-core-card"><div class="panel-header settings-section-head"><div class="runtime-branded-title"><img src="assets/navigation/rsdw-l.webp" alt="RSDW"/><div><h2>RSDW Tools, Data &amp; Icons</h2><span class="panel-subtitle">Download or update the validated data cache and an explicitly selected Client/Server Dev Kit runtime.</span></div></div><div class="header-actions"><select class="field compact-select" id="rsdw-runtime-target" aria-label="RSDW install target"><option value="data">Data &amp; icons only</option><option value="client" ${a.game_dir?'':'disabled'}>Client install</option><option value="server" ${(a.server_install||{}).install_dir?'':'disabled'}>Server install</option><option value="both" ${a.game_dir&&(a.server_install||{}).install_dir?'':'disabled'}>Client &amp; server</option></select><button class="btn primary" id="refresh-rsdw-cache">Download / Update RSDW</button></div></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Automatic RSDW refresh</strong><span>Update revision-aware assets atomically; custom item icon bindings remain untouched.</span></div><div class="settings-control-cluster"><select class="field compact-select" id="rsdw-refresh-hours"><option value="6" ${(a.rsdw_cache||{}).refresh_hours==6?'selected':''}>Every 6 hours</option><option value="12" ${(a.rsdw_cache||{}).refresh_hours==12?'selected':''}>Every 12 hours</option><option value="24" ${![6,12,48].includes(Number((a.rsdw_cache||{}).refresh_hours||24))?'selected':''}>Daily</option><option value="48" ${(a.rsdw_cache||{}).refresh_hours==48?'selected':''}>Every 2 days</option></select><button class="toggle ${(a.rsdw_cache||{}).auto_refresh===false?'':'on'}" id="toggle-rsdw-auto-refresh"></button></div></div>
+        <div class="settings-row"><div class="settings-copy"><strong>Refresh after application/server updates</strong><span>Revalidate the same RSDW revision after launcher or dedicated-server updates.</span></div><button class="toggle ${(a.rsdw_cache||{}).refresh_after_updates===false?'':'on'}" id="toggle-rsdw-update-refresh"></button></div>
+      </section>`;
+    } else if (tab === 'application') {
+      const appUpdates = a.application_updates || {};
+      const updateMode = state.applicationUpdateMode || {};
+      const performance = a.performance || {};
+      const computerProfile = a.computer_profile || {};
+      const computerHardware = a.computer_profile_hardware || {};
+      const computerRecommendation = a.computer_profile_recommendation || {};
+      const computerRuntime = activeComputerProfile();
+      const computerMode = String(computerProfile.mode || 'automatic');
+      const hardwareReady = !!(computerHardware.cpu || computerHardware.ram_total_gb || computerHardware.cpu_cores);
+      content = `
+        <section class="settings-section"><h2>Application</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Theme</strong><span>Applies across the launcher desktop, internal windows, Monaco, guided setup, and placards.</span></div><div class="theme-grid">${[['dark-fantasy','Dark','Dark graphite and antique gold'],['light','Light','Clean daylight UI'],['desert-script','Desert Script','Papyrus, indigo ink and sun-baked clay'],['eastern','Eastern','Sumi ink, vermilion and traditional Japanese screens']].map(([id,name,desc]) => `<button class="theme-card theme-preview-${id} ${(a.theme === id || (id === 'dark-fantasy' && !['light','desert-script','eastern'].includes(a.theme))) ? 'active' : ''}" data-theme-choice="${id}"><strong>${name}</strong><span>${desc}</span></button>`).join('')}</div></div>
+          <div class="settings-row glass-theme-setting"><div class="settings-copy"><strong>Cathedral stained glass</strong><span>Layer genuine leaded-glass artwork, jewel-toned transmitted light, and transparent panels over the selected theme.</span></div><button class="toggle ${a.glass_theme?'on':''}" id="toggle-glass-theme" role="switch" aria-checked="${a.glass_theme?'true':'false'}" aria-label="Cathedral stained glass"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Loading artwork</strong><span>Use the optimized V2 dragon animation, or choose your own GIF, PNG, JPG, or WebP. The same artwork appears during startup and in the small World shortcut Sync window.</span></div><div class="header-actions"><button class="btn ghost" id="choose-loading-art">Choose GIF / Image</button><button class="btn ghost" id="reset-loading-art" ${a.loading_art_url?'':'disabled'}>Use V2 Default</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Close to system tray</strong><span>Recommended. Closing the window hides Dragonwilds Sync in the Windows tray so dynamic patching, server monitoring, and passive notifications can continue. Turn this off only when you want Close to fully quit.</span></div><button class="toggle ${(a.background_mode || {}).close_to_tray === false ? '' : 'on'}" id="toggle-close-to-tray"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Start minimized</strong><span>Start Dragonwilds Sync quietly without opening the workspace.</span></div><button class="toggle ${(a.background_mode || {}).start_minimized ? 'on' : ''}" id="toggle-start-minimized"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Open Sync console when hosting starts</strong><span>Optionally open the live Dragonwilds Sync runtime console when a World starts or reconnects. The original dedicated-server console still starts minimized without taking focus when native consoles are enabled.</span></div><button class="toggle ${(a.background_mode || {}).open_sync_console_on_host_start ? 'on' : ''}" id="toggle-sync-console-on-host-start"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Hardware acceleration</strong><span>Enabled by default. Chromium uses the GPU for application composition, scrolling, images, and web surfaces. Disable only to troubleshoot driver artifacts or repeated GPU-process crashes; changing this requires a restart.</span></div><button class="toggle ${performance.hardware_acceleration===false?'':'on'}" id="toggle-hardware-acceleration" aria-label="Hardware acceleration"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Renderer memory ceiling</strong><span>Automatic is best for most PCs. Raise the ceiling only for very large catalogs, long sessions, or high-resolution 3D assets. This is a maximum V8 heap allowance, not preallocated RAM, and takes effect after restart.</span></div><div class="settings-control-cluster"><select class="select" id="renderer-memory-mb"><option value="0" ${!Number(performance.renderer_memory_mb)?'selected':''}>Automatic</option><option value="1024" ${Number(performance.renderer_memory_mb)===1024?'selected':''}>1 GB</option><option value="2048" ${Number(performance.renderer_memory_mb)===2048?'selected':''}>2 GB</option><option value="4096" ${Number(performance.renderer_memory_mb)===4096?'selected':''}>4 GB</option><option value="8192" ${Number(performance.renderer_memory_mb)===8192?'selected':''}>8 GB</option></select><button class="btn ghost" id="save-performance-settings">Save · Restart Required</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Passive notifications</strong><span>Notification center, Windows notifications, and optional top-screen World announcements. The overlay is click-through, never takes focus, and closes itself.</span></div><div class="toggle-list"><label><input type="checkbox" id="notify-enabled" ${(a.background_mode || {}).notifications_enabled === false ? '' : 'checked'} /> Enable notifications</label><label><input type="checkbox" id="announcement-overlay-enabled" ${(a.background_mode || {}).announcement_overlay_enabled === false ? '' : 'checked'} /> Top-screen announcements</label><label><input type="checkbox" id="notify-latency" ${(a.background_mode || {}).notify_high_latency === false ? '' : 'checked'} /> High latency</label><label><input type="checkbox" id="notify-restart" ${(a.background_mode || {}).notify_pending_restart === false ? '' : 'checked'} /> Pending restart</label><label><input type="checkbox" id="notify-updates" ${(a.background_mode || {}).notify_updates === false ? '' : 'checked'} /> Updates</label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Favorite World alerts</strong><span>Notify only on meaningful state changes; repeated polls are deduplicated.</span></div><div class="toggle-list"><label><input type="checkbox" id="favorite-alerts-enabled" ${favoriteAlerts.enabled===false?'':'checked'}/> Enable</label><label><input type="checkbox" id="favorite-alerts-online" ${favoriteAlerts.online===false?'':'checked'}/> Online</label><label><input type="checkbox" id="favorite-alerts-offline" ${favoriteAlerts.offline===false?'':'checked'}/> Offline</label><label><input type="checkbox" id="favorite-alerts-maintenance" ${favoriteAlerts.maintenance===false?'':'checked'}/> Maintenance</label><label><input type="checkbox" id="favorite-alerts-identity" ${favoriteAlerts.identity_changed===false?'':'checked'}/> Identity changes</label><label><input type="checkbox" id="favorite-alerts-characters" ${favoriteAlerts.shared_characters===false?'':'checked'}/> Shared characters</label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Guided tours</strong><span>Repeat onboarding without resetting profiles or deleting saved paths. Host-specific walkthroughs also live under Settings → Advanced.</span></div><div class="header-actions"><button class="btn ghost" id="start-player-tour">Player Tour</button><button class="btn ghost" id="start-server-tour">Server Tour</button><button class="btn ghost" id="start-webhost-tour">WebHost Tour</button></div></div>
+        </section>
+        <section class="settings-section computer-profile-section"><div class="panel-header settings-section-head"><div><h2>Computer Profile</h2><span class="panel-subtitle">Machine-local hosting behavior. Dragonwilds Sync never stops Windows services.</span></div><span class="status-pill ${computerRuntime.active?'online':'unknown'}">${computerRuntime.active?'HOSTING FOCUS ACTIVE':'READY FOR NEXT START'}</span></div>
+          <div class="computer-profile-hardware">${hardwareReady?`${metric('Processor',computerHardware.cpu||'Detected')}${metric('Cores / Threads',`${computerHardware.cpu_cores||'—'} / ${computerHardware.cpu_threads||'—'}`)}${metric('Memory',computerHardware.ram_total_gb?`${computerHardware.ram_total_gb} GB`:'—')}${metric('Graphics',computerHardware.primary_gpu||computerHardware.gpu||'—')}`:'<div class="empty-state compact-empty">Analyze this computer to receive a hardware-aware recommendation.</div>'}</div>
+          <div class="identity-box"><strong>${computerRecommendation.mode?`Recommended: ${escapeHtml(String(computerRecommendation.mode).replaceAll('_',' '))}`:'Conservative by default'}</strong><p>${escapeHtml(computerRecommendation.reason||'Automatic mode keeps Windows unchanged and only selects the low-resource profile when the hardware needs it.')}</p></div>
+          <div class="computer-profile-controls"><label class="form-group"><span>Profile</span><select class="select" id="computer-profile-mode">${[['automatic','Automatic (recommended)'],['balanced','Balanced'],['dedicated_host','Dedicated host'],['game_host','Play + host'],['low_resource','Low resource'],['custom','Custom']].map(([value,label])=>`<option value="${value}" ${computerMode===value?'selected':''}>${label}</option>`).join('')}</select></label><label class="form-group"><span>Server priority</span><select class="select" id="computer-profile-priority"><option value="normal" ${computerProfile.server_priority==='normal'?'selected':''}>Normal</option><option value="above_normal" ${!['normal','high'].includes(computerProfile.server_priority)?'selected':''}>Above normal</option><option value="high" ${computerProfile.server_priority==='high'?'selected':''}>High</option></select></label><label class="form-group"><span>Temporary power plan</span><select class="select" id="computer-profile-power"><option value="unchanged" ${computerProfile.power_plan!=='high_performance'?'selected':''}>Leave Windows unchanged</option><option value="high_performance" ${computerProfile.power_plan==='high_performance'?'selected':''}>High performance while hosting</option></select></label></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Hosting Focus</strong><span>While the dedicated server runs, reduce nonessential launcher refreshes and predictive loading. Server monitoring stays responsive.</span></div><div class="toggle-list"><label><input type="checkbox" id="computer-profile-hosting-focus" ${computerProfile.hosting_focus===false?'':'checked'}/> Enable focus mode</label><label><input type="checkbox" id="computer-profile-suspend-visuals" ${computerProfile.suspend_visuals===false?'':'checked'}/> Pause 3D previews</label><label><input type="checkbox" id="computer-profile-reduce-background" ${computerProfile.reduce_background_work===false?'':'checked'}/> Reduce background work</label></div></div>
+          <div class="warning-box compact"><strong>Safe process control.</strong><br/>Priority is applied only after the dedicated-server executable is verified, Realtime is never offered, and any temporary power-plan change is recorded before launch and restored when hosting stops or the launcher recovers.</div>
+          <div class="header-actions computer-profile-actions"><button class="btn ghost" id="analyze-computer-profile">Analyze This Computer</button><button class="btn primary" id="save-computer-profile">Save Computer Profile</button></div>
+        </section>
+        <section class="settings-section"><h2>Application Updates</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Portable application updates</strong><span>Checks the official Dragonwilds Sync GitHub release and verifies the portable executable before replacement.</span></div><div class="header-actions"><button class="btn ghost" id="check-application-update">Check for Updates</button><button class="btn primary" id="update-application-now" ${state.applicationUpdate?.available ? '' : 'disabled'}>Update Application</button></div></div>
+        </section>`;
+    } else if (tab === 'webhost') {
+      const webhostFeatureEnabled=!!(a.advanced||{}).webhost_enabled;
+      const remoteFeatureEnabled=!!(a.advanced||{}).remote_server_enabled;
+      const externalTab=externalSettingsTab;
+      const externalTabs=!standaloneHostWorkspace?`<nav class="settings-subnav webhost-tabs"><button class="${externalTab==='overview'?'active':''}" data-external-tab="overview">Overview</button>${webhostFeatureEnabled?`<button class="${externalTab==='website'?'active':''}" data-external-tab="website">Website &amp; Directory</button>`:''}${remoteFeatureEnabled?`<button class="${externalTab==='remote'?'active':''}" data-external-tab="remote">Server Management</button>`:''}${(webhostFeatureEnabled||remoteFeatureEnabled)?`<button class="${externalTab==='live'?'active':''}" data-external-tab="live">WebGUI Preview</button>`:''}</nav>`:'';
+      if(standaloneHostWorkspace){
+        const runningServerId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');
+        const selectedManagementWorld=serverWorlds().find((world)=>String(world.id||'')===runningServerId)||activeServerWorld()||serverWorlds()[0]||null;
+        const advertisedManagementEndpoint=selectedManagementWorld?.remote_management?.endpoint||selectedManagementWorld?.shared?.remote_management?.endpoint||selectedManagementWorld?.connection?.remote_management?.endpoint||'';
+        const detectedManagementAddress=state.serverManagementAddress||advertisedManagementEndpoint||directoryHostStatus.local_url||directoryHostStatus.lan_url||directoryHostStatus.public_url||'';
+        const loginUrl=state.serverManagementLoginUrl||serverManagementLoginUrl(detectedManagementAddress);
+        content=`<section class="settings-section server-management-login-only">
+          <div class="server-management-login-bar"><div><span>Broadcast World</span><strong>${escapeHtml(selectedManagementWorld?.name||selectedManagementWorld?.shared?.name||'No World currently broadcast')}</strong></div>${loginUrl?`<button class="btn ghost" data-open-external="${escapeHtml(loginUrl)}">Open in Browser ↗</button>`:''}</div>
+          ${loginUrl?`<div class="server-management-login-frame"><webview id="server-management-login" src="${escapeHtml(loginUrl)}" partition="persist:server-management" webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes,devTools=no"></webview></div>`:`<div class="empty-state server-management-login-empty"><strong>Server Management is not broadcasting yet.</strong><br/>Start the listener and the active World will appear here automatically with World Name, username, and password login.</div>`}
+        </section>`;
+      }else if(!standaloneHostWorkspace&&externalTab==='overview'){
+        content=externalTabs+`<section class="settings-section"><div class="panel-header"><div><h2>External Declaration</h2><span class="panel-subtitle">Choose the public surfaces this computer is allowed to expose. Website discovery and remote operation remain independent.</span></div><span class="status-pill unknown">ADVANCED</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Website</strong><span>Publish the World directory, manifest API, heartbeat intake, artwork, and join links. It grants no server-control authority.</span></div><button class="toggle ${webhostFeatureEnabled?'on':''}" id="toggle-webhost-feature"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Enable Remote Management</strong><span>Expose authenticated, World-scoped server operation with desktop-owned users, permissions, requests, and audit history.</span></div><button class="toggle ${remoteFeatureEnabled?'on':''}" id="toggle-remote-server-feature"></button></div>
+          <div class="external-declaration-preview"><img src="${escapeHtml(helpImageUrl('17-directory-admin.png'))}" alt="External website and remote management preview" referrerpolicy="no-referrer"/><div><strong>${webhostFeatureEnabled&&remoteFeatureEnabled?'Combined public directory + Server Admin':webhostFeatureEnabled?'Public World directory':remoteFeatureEnabled?'Server Admin login only':'No external surface enabled'}</strong><p>When both switches are on, the public directory gains a Server Admin entry. Website-only has no login. Remote-only opens directly to the authenticated login page.</p></div></div>
+        </section><section class="settings-section"><h2>Common questions</h2><details class="privacy-policy-box" open><summary><strong>Does this start or stop my game server?</strong><span>No</span></summary><p>External Declaration has its own persistent listener lifecycle. Hosted World Start, Stop, restart, updates, maintenance, and blackout do not silently change it.</p></details><details class="privacy-policy-box"><summary><strong>What must be port-forwarded?</strong><span>Direct hosting only</span></summary><p>Direct hosting needs this application’s website TCP port forwarded to this PC and an app-scoped Windows firewall rule. UPnP is best effort. An outbound HTTPS tunnel avoids the inbound router rule.</p></details><details class="privacy-policy-box"><summary><strong>When are mods or saves transferred?</strong><span>After authentication</span></summary><p>Browsing fetches only public identity, icon, banner, description, tags, and health. File synchronization begins only after a successful World link and its authorization checks.</p></details></section>`;
+      }else{
+      const hostedBase=String(directoryHostStatus.local_url||'').replace(/\/$/,'');
+      const publicBase=String(directoryHostStatus.public_url||'').replace(/\/$/,'');
+      const webTunnel=directoryHostStatus.tunnel||{};
+      const remoteAdmin=directoryHost.remote_admin||{};
+      const webhostIdentity=String(directoryHost.identity_name||activeServerWorld()?.name||'Dragonwilds Sync').trim()||'Dragonwilds Sync';
+      const webhostIdentitySlug=webhostIdentity.toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48)||'world';
+      const desiredDnsAlias=`https://www.dragonwildssync.${webhostIdentitySlug}.gg`;
+      const directorySurface=directoryHost.directory_enabled!==false;
+      const remoteSurface=remoteAdmin.enabled!==false;
+      const websiteComposition=directorySurface&&remoteSurface?'COMBINED DIRECTORY + REMOTE':directorySurface?'PUBLIC DIRECTORY ONLY':remoteSurface?'REMOTE SERVER ONLY':'NO PUBLIC SURFACE';
+      const publicRoute=remoteSurface&&!directorySurface?'/admin/login':'/servers';
+      const publicShareUrl=publicBase?`${publicBase}${publicRoute}`:'';
+      const publicAddressState=webTunnel.state==='starting'?'CREATING HTTPS ADDRESS':webTunnel.state==='error'?'TUNNEL NEEDS ATTENTION':directoryHostStatus.public_reachable?'INTERNET ROUTE READY':(publicShareUrl?'PORT FORWARD REQUIRED':'PUBLIC IP PENDING');
+      const remotePermissions=remoteAdmin.permissions||{};
+      const remoteUsers=remoteAdmin.users||[];
+      const pendingPermissionRequests=(remoteAdmin.permission_requests||[]).filter((request)=>request.status==='pending');
+      const permissionChoice=(id,label,description,defaultValue)=>`<label class="webhost-permission"><input type="checkbox" data-webhost-permission="${id}" ${remotePermissions[id]===undefined?(defaultValue?'checked':''):(remotePermissions[id]?'checked':'')}/><span><strong>${label}</strong><small>${description}</small></span></label>`;
+      if(!routedWebhost&&!standaloneHostWorkspace&&externalTab==='live')state.webhostTab='live';
+      else if(!routedWebhost&&!standaloneHostWorkspace)state.webhostTab='settings';
+      if(routedWebhost&&state.webhostTab==='home')state.webhostTab='settings';
+      if(routedWebhost&&state.webhostTab==='live'&&!(webhostFeatureEnabled||remoteFeatureEnabled))state.webhostTab='settings';
+      const syncTabLabels={settings:'Website &amp; Directory',manifest:'Manifest &amp; Heartbeats',remote:'Server Management',live:'WebGUI Preview'};
+      const syncTab=(key)=>`<button class="${state.webhostTab===key?'active':''}" role="tab" aria-selected="${state.webhostTab===key?'true':'false'}" tabindex="${state.webhostTab===key?'0':'-1'}" data-webhost-tab="${key}">${syncTabLabels[key]}</button>`;
+      const webhostTabs=routedWebhost?`<nav class="settings-subnav webhost-tabs" role="tablist" aria-label="Sync workspace">${syncTab('settings')}${syncTab('manifest')}${syncTab('remote')}${(webhostFeatureEnabled||remoteFeatureEnabled)?syncTab('live'):''}</nav>`:(externalTabs||`<nav class="settings-subnav webhost-tabs"><button class="${state.webhostTab==='live'?'active':''}" data-webhost-tab="live">Live View</button><button class="${state.webhostTab!=='live'?'active':''}" data-webhost-tab="settings">${standaloneRemote?'Permissions &amp; Authority':'Settings &amp; Sharing'}</button></nav>`);
+      if(routedWebhost&&state.webhostTab==='manifest'){
+        const sources=a.world_discovery?.directory_sources||[];
+        const sourceRows=sources.map((source)=>`<div class="directory-source-row"><button class="toggle ${source.enabled===false?'':'on'}" data-directory-source-toggle="${escapeHtml(source.id||'')}"></button><div><strong>${escapeHtml(source.name||'Manifest Host')}</strong><small>${escapeHtml(source.url||'')}</small></div><span class="status-pill ${source.enabled===false?'unknown':'online'}">${source.enabled===false?'PAUSED':'HEARTBEAT ACTIVE'}</span><button class="btn ghost compact-btn" data-directory-source-remove="${escapeHtml(source.id||'')}">Remove</button></div>`).join('');
+        const verified=(state.data?.client?.directory_worlds||[]).filter((world)=>world.shared?.fingerprint_verified).length;
+        content=webhostTabs+`<section class="settings-section"><div class="panel-header"><div><h2>Manifest Hosts</h2><span class="panel-subtitle">Combine multiple free Dragonwilds Sync directories into one fingerprint-verified roster.</span></div><span class="status-pill online">${verified} UNIQUE SYNC WORLDS</span></div><div class="directory-source-compose manifest-address-bar"><input class="field" id="directory-source-name" placeholder="Host name"/><input class="field" id="directory-source-url" placeholder="https://worlds.example.com"/><input class="field" id="directory-source-token" type="password" placeholder="Optional heartbeat publisher token"/><button class="btn primary" id="save-directory-source">Add Host</button></div><div class="directory-source-list">${sourceRows||'<div class="empty-state compact">No Manifest Hosts configured. Add any compatible site exposing /worlds and /heartbeats.</div>'}</div><div class="identity-box"><strong>One coherent list</strong><p>Every enabled address is polled independently. Worlds are merged by stable Sync fingerprint and exact identity, so the same World appearing on several hosts is shown once. A publisher token only authorizes your hosted World heartbeat; it never grants player or Server Admin access.</p></div><div class="header-actions"><button class="btn primary" id="refresh-manifest-hosts">Refresh All Hosts</button><button class="btn ghost" id="open-manifest-worlds">Open Filtered Sync Roster</button></div></section>`;
+      }else if(state.webhostTab==='live'){
+        const previewUrl=hostedBase?`${hostedBase}/admin/login`:'';
+        const previewReady=previewUrl&&state.webhostPreviewLoaded;
+        content=webhostTabs+`<section class="settings-section webhost-live"><div class="panel-header"><div><h2>Remote Server login preview</h2><span class="panel-subtitle">Preview the exact World Name, username, password, permissions, live state, and current server statistics surface. It loads only when requested, preventing background repainting.</span></div><div class="header-actions"><button class="btn primary" id="refresh-webhost-preview">${previewReady?'Refresh Preview':'Load Preview'}</button><div class="preview-mode-switch" role="group" aria-label="Preview viewport"><button class="btn ghost ${state.webhostPreviewMode!=='mobile'?'active':''}" data-webhost-preview="desktop">Desktop</button><button class="btn ghost ${state.webhostPreviewMode==='mobile'?'active':''}" data-webhost-preview="mobile">Mobile</button></div><span class="status-pill ${directoryHostStatus.serving?'online':'unknown'}">REMOTE SERVER ${directoryHostStatus.serving?'ONLINE':'OFFLINE'}</span>${routedWebhost?'':'<button class="btn ghost" data-webhost-tab="settings">Configure</button>'}</div></div>${previewReady?`<div class="webhost-preview-stage ${state.webhostPreviewMode==='mobile'?'mobile':''}"><div class="webhost-preview-frame"><webview id="webhost-live-preview" src="${escapeHtml(previewUrl)}" partition="persist:webhost-preview" webpreferences="contextIsolation=yes,nodeIntegration=no,sandbox=yes,devTools=no"></webview></div></div>`:`<div class="empty-state"><strong>${previewUrl?'Preview paused':'Remote Server is not serving yet.'}</strong><br/>${previewUrl?'Choose Load Preview to inspect the current login and status surface.':`Enable the Sync listener and Remote Server access first.`}</div>`}<div class="identity-box"><strong>ⓘ Remote access networking · ${escapeHtml(String(directoryHost.publication_mode||'manual').toUpperCase())}</strong><p>${directoryHost.publication_mode==='tunnel'?'Cloudflare is outbound-only; no inbound firewall rule, router forward, or UPnP mapping is used.':directoryHost.publication_mode==='upnp'?`UPnP is explicitly selected for WebHost TCP ${Number(directoryHost.port||27080)}. It is not public until mapping read-back and an outside-LAN test both succeed.`:directoryHost.publication_mode==='local'?`WebHost TCP ${Number(directoryHost.port||27080)} is limited to the local network; no router mapping is requested.`:`Manual forwarding is selected. Forward WebHost TCP ${Number(directoryHost.port||27080)} to this PC; no UPnP request is sent. UniFi: Settings → Policy Engine → Port Forwarding.`}</p></div></section>`;
+      }else{
+      content = webhostTabs+`
+        <section class="settings-section expert-feature"><div class="panel-header" style="padding:0 0 10px"><div><h2 style="margin:0">Website Listener <span class="status-pill unknown">ADVANCED</span></h2><div style="font-size:9px;color:var(--muted);margin-top:4px">One listener can serve the public World Directory, Remote Server Admin, or both. The two capabilities remain independently gated.</div></div><span class="status-pill ${directoryHostStatus.serving?'online':'unknown'}">${directoryHostStatus.serving?'ONLINE':'DISABLED'}</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Enable Web Hosting</strong><span>This switch is authoritative and persists across application restarts. It is completely separate from Hosted World process controls; starting, stopping, restarting, or updating a game server never changes it.</span></div><button class="toggle ${directoryHost.enabled?'on':''}" id="toggle-directory-host"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Remote Server Access</strong><span>Independently enables authenticated remote server administration on this listener. Turning it off removes remote login and Admin routes without disabling the public Dragonwilds Sync directory.</span></div><button class="toggle ${remoteAdmin.enabled!==false?'on':''}" id="toggle-webhost-remote-admin" aria-label="Remote Server Access" aria-pressed="${remoteAdmin.enabled!==false?'true':'false'}"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>WebHost identity</strong><span>This labels the Host navigation entry and public directory. The generated <code>.gg</code> name is a desired alias; it resolves only after a DNS/domain provider is connected to this listener.</span></div><div class="health-evidence-grid"><label><small>Identity name</small><input class="field" id="directory-host-identity" value="${escapeHtml(webhostIdentity)}" placeholder="My Dragonwilds Directory"/></label><label><small>Desired DNS alias</small><input class="field" value="${escapeHtml(desiredDnsAlias)}" readonly/></label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Listener and public address</strong><span>Use a DNS name or reverse-proxy HTTPS address when available. A detected public IP is informational and never proves that this service is reachable.</span></div><div class="health-evidence-grid"><label><small>Website TCP port</small><input class="field" id="directory-host-port" type="number" min="1" max="65535" value="${escapeHtml(directoryHost.port||27080)}"/></label><label><small>Public website / DNS URL</small><input class="field" id="directory-host-public-url" value="${escapeHtml(directoryHost.public_base_url||'')}" placeholder="https://worlds.example.com"/></label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>WebHost publishing</strong><span>Choose one method. Manual and UPnP never run together. Cloudflare binds WebHost to localhost and never changes gameplay or World Sync networking.</span></div><input type="hidden" id="directory-host-transport" value="${directoryHost.publication_mode==='tunnel'?'cloudflare_quick':'direct'}"/><select class="select" id="directory-host-publication-mode"><option value="local" ${(directoryHost.publication_mode||'manual')==='local'?'selected':''}>Local network only</option><option value="manual" ${(directoryHost.publication_mode||'manual')==='manual'?'selected':''}>Manual router forwarding</option><option value="upnp" ${directoryHost.publication_mode==='upnp'?'selected':''}>Automatic UPnP · verify mapping and Internet access</option><option value="tunnel" ${directoryHost.publication_mode==='tunnel'?'selected':''}>Cloudflare Tunnel · WebHost only</option></select></div>
+          ${directoryHost.public_transport==='cloudflare_quick'?`<div class="identity-box"><strong>Quick Tunnel · ${escapeHtml(String(webTunnel.state||'stopped').toUpperCase())}</strong><p>${escapeHtml(webTunnel.error||'No Cloudflare account or inbound firewall rule is required. The trycloudflare.com address changes whenever the tunnel restarts and is intended for testing or temporary sharing; use a named tunnel or your own DNS/reverse proxy for a stable public service.')}</p>${webTunnel.version?`<small>cloudflared ${escapeHtml(webTunnel.version)}</small>`:''}</div>`:''}
+          <div class="webhost-public-address"><div><span class="status-pill ${directoryHostStatus.public_reachable?'online':'unknown'}">${escapeHtml(publicAddressState)}</span><strong>Public Internet address</strong><code>${escapeHtml(publicShareUrl||'Detecting your external IP…')}</code><small>${directoryHostStatus.public_reachable?'This is the address to share outside your home network.':(publicShareUrl?`External IP detected. Forward TCP ${escapeHtml(String(directoryHostStatus.port||27080))} to this PC or enable UPnP before sharing.`:'The local preview remains available while public-address detection finishes.')}</small></div><div class="header-actions">${publicShareUrl?`<button class="btn ghost" id="copy-webhost-public-address">Copy</button><button class="btn primary" data-open-external="${escapeHtml(publicShareUrl)}">Open Public Address ↗</button>`:''}</div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Local-only addresses</strong><span>Live View intentionally uses loopback. LAN devices may use the LAN address; neither address works from the public Internet.</span></div><div class="webhost-address-list"><code>Preview · ${escapeHtml(directoryHostStatus.local_url||'Not running')}</code><code>LAN · ${escapeHtml(directoryHostStatus.lan_url||'Not running')}</code></div></div>
+          <div class="identity-box"><strong>Current website composition · ${escapeHtml(websiteComposition)}</strong><p>Directory only removes every remote login route and Admin link. Remote only opens directly to Server Admin login. When both are enabled, the public directory includes the integrated Server Admin entry.</p></div>
+          <div class="settings-row" style="${standaloneRemote?'display:none':''}"><div class="settings-copy"><strong>Public joinable-World Directory</strong><span>Serves World placards, manifests, heartbeat ingestion, filters, and Link &amp; Play. This is the WebHost capability and does not grant remote server control.</span></div><span class="status-pill ${directorySurface?'online':'unknown'}">${directorySurface?'ENABLED':'DISABLED IN ADVANCED'}</span></div>
+          <div class="settings-row" style="${standaloneRemote?'display:none':''}"><div class="settings-copy"><strong>Directory browser appearance</strong><span>Applies only when the public World Directory is enabled. It never disables or exposes Remote Server Admin.</span></div><select class="select" id="directory-host-surface"><option value="full" ${(directoryHost.public_surface_mode||'full')==='full'?'selected':''}>Full joinable-World browser</option><option value="manifest" ${directoryHost.public_surface_mode==='manifest'?'selected':''}>Manifest only · black icon landing</option><option value="blackout" ${directoryHost.public_surface_mode==='blackout'?'selected':''}>Total blackout · blank browser</option></select></div>
+          <div class="settings-row" style="${standaloneRemote?'display:none':''}"><div class="settings-copy"><strong>Heartbeat publishing authority</strong><span>This secret authorizes compatible launchers to publish a public-safe World heartbeat. It is never used for player access or Server Admin login.</span></div><input class="field" id="directory-host-token" type="password" value="${escapeHtml(directoryHost.ingestion_token||'')}" placeholder="Generated when enabled"/></div>
+          <div class="settings-row" style="${standaloneRemote?'display:none':''}"><div class="settings-copy"><strong>Listing lifetime and capacity</strong><span>Inactive listings expire automatically. Cached Dragonwilds Worlds are promoted only after their live fingerprint and exact World identity match.</span></div><div class="health-evidence-grid"><label><small>Listing lifetime (seconds)</small><input class="field" id="directory-host-ttl" type="number" min="60" max="1800" value="${escapeHtml(directoryHost.heartbeat_ttl_seconds||300)}"/></label><label><small>Maximum entries</small><input class="field" id="directory-host-max-entries" type="number" min="10" max="5000" value="${escapeHtml(directoryHost.max_entries||500)}"/></label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Heartbeat authority</strong><span>Anonymous publishing is independent of network exposure and remains off unless explicitly enabled.</span></div><label><input type="checkbox" id="directory-host-anonymous" ${directoryHost.allow_anonymous_heartbeats?'checked':''}/> Allow anonymous heartbeats</label></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Windows Firewall</strong><span>Repair manages only <code>Dragonwilds Sync - WebHost TCP</code> in the <code>Dragonwilds Sync</code> rule group. Elevation is requested only for this action.</span></div><button class="btn ghost" id="configure-webhost-firewall">Repair Firewall</button></div>
+          <div class="health-evidence-grid"><div class="identity-box"><small>Listener</small><strong>${escapeHtml(directoryHostStatus.network_layers?.listener||'Stopped')}</strong></div><div class="identity-box"><small>Firewall</small><strong>${escapeHtml(directoryHostStatus.network_layers?.firewall||'Not checked')}</strong></div><div class="identity-box"><small>Router method</small><strong>${escapeHtml(directoryHostStatus.network_layers?.router_method||directoryHost.publication_mode||'Manual')}</strong></div><div class="identity-box"><small>External reachability</small><strong>${escapeHtml(directoryHostStatus.network_layers?.external_reachability||'Not tested')}</strong></div></div>
+          <div class="webhost-port-matrix"><div><strong>WebHost + optional Remote Server</strong><code>TCP ${escapeHtml(String(directoryHost.port||27080))}</code><span>Windows firewall and router forwarding are required for direct Internet access. An outbound HTTPS tunnel can replace the router forward.</span></div><div><strong>Dragonwilds dedicated instances</strong><code>UDP 7777, 7778, 7779…</code><span>Server 1 starts at 7777 and every additional server increments by one. Gameplay remains configured in Servers, never by this WebHost switch.</span></div><div><strong>Dragonwilds World Sync transfer</strong><code>TCP 27051 + instance offset</code><span>Authenticated profiles and mods. Joining clients connect outbound and need no inbound client rule.</span></div><div><strong>Direct Connect discovery</strong><code>UDP 8422</code><span>One host-wide query port returns the active Sync announcements at a typed IP.</span></div></div>
+          <div class="settings-row" style="${standaloneWebhost?'display:none':''}"><div class="settings-copy"><strong>Remote Server</strong><span>A distinct remote-operation surface using desktop-created users or exact World Name + Server Admin Password. Its feature gate lives in Settings → Advanced.</span></div><span class="status-pill ${remoteSurface?'online':'unknown'}">${remoteSurface?'ENABLED':'DISABLED IN ADVANCED'}</span></div>
+          <div class="webhost-authority" style="${standaloneWebhost?'display:none':''}"><div class="panel-header"><div><h3>Portal authority</h3><span class="panel-subtitle">The desktop application is the source of truth. New sessions receive this permission snapshot; revoke existing sessions from Activity.</span></div><span class="status-pill unknown">DENY WRITE BY DEFAULT</span></div><div class="webhost-permission-grid">
+            ${permissionChoice('view_overview','View overview','World identity, routes, runtime, players, health.',true)}
+            ${permissionChoice('view_map','View live player map','See the configured Ashenfall map and authenticated live player positions.',true)}
+            ${permissionChoice('view_maintenance','View maintenance','See the World maintenance calendar and next operation.',true)}
+            ${permissionChoice('write_maintenance','Write maintenance','Change the World maintenance schedule from WebHost.',false)}
+            ${permissionChoice('view_mods','View mods','Read the hosted World mod inventory.',true)}
+            ${permissionChoice('write_mods','Write mod metadata','Change tags and hotload metadata through audited structured calls.',false)}
+            ${permissionChoice('view_config','View configs','List and open launcher-managed World configuration files.',true)}
+            ${permissionChoice('write_config','Write live configs','Save managed config/mod text through the same safe desktop file boundary.',false)}
+            ${permissionChoice('view_spawner','View item spawner','Browse the server item catalog and connected-player targets.',true)}
+            ${permissionChoice('use_spawner','Use item spawner','Give bounded item stacks through the authoritative Admin Tools server route.',false)}
+            ${permissionChoice('view_console','View game console','Browse only commands declared by the installed RSDW Toolkit router and see audited history.',true)}
+            ${permissionChoice('use_console','Use game console','Run confirmed, declared RSDW Toolkit commands through the bounded shared-memory bridge.',false)}
+            ${permissionChoice('view_audit','View audit','See remote logins, denied commands, and completed actions.',true)}
+            ${permissionChoice('send_announcements','Send announcements','Publish color-coded passive launcher announcements. In-game chat injection remains a separately detected optional bridge.',false)}
+            ${permissionChoice('start','Start World','Start this exact linked hosted World.',true)}
+            ${permissionChoice('stop','Stop World','Stop this exact linked hosted World.',true)}
+            ${permissionChoice('restart','Soft restart','Use the desktop server engine’s graceful restart.',true)}
+            ${permissionChoice('refresh','Refresh metadata','Re-scan and republish public-safe World metadata.',true)}
+          </div></div>
+          <div class="webhost-authority" style="${standaloneWebhost?'display:none':''}"><div class="panel-header"><div><h3>Server users</h3><span class="panel-subtitle">Create accounts locally, scope each one to a hosted World, and retain its individual category permissions.</span></div><button class="btn primary" id="add-webhost-user">Add Server User</button></div><div class="config-file-list">${remoteUsers.length?remoteUsers.map((user)=>`<div class="config-file-row"><div><strong>${escapeHtml(user.username||'User')}</strong><small>${escapeHtml((state.data?.server_profiles||[]).find((profile)=>String(profile.id)===String(user.world_id))?.name||user.world_id||'No World')} · ${Object.values(user.permissions||{}).filter(Boolean).length} granted · ${user.enabled===false?'Disabled':'Enabled'}</small></div><div class="header-actions"><button class="btn ghost" data-edit-webhost-user="${escapeHtml(user.username||'')}">Edit</button><button class="btn danger" data-delete-webhost-user="${escapeHtml(user.username||'')}">Delete</button></div></div>`).join(''):'<div class="empty-state compact-empty">No server users yet. The owner recovery login still uses the World Name and Server Admin Password.</div>'}</div></div>
+          <div class="webhost-authority" style="${standaloneWebhost?'display:none':''}"><div class="panel-header"><div><h3>Permission requests</h3><span class="panel-subtitle">Remote categories stay gray and send no telemetry until approved here.</span></div><span class="status-pill ${pendingPermissionRequests.length?'unknown':'online'}">${pendingPermissionRequests.length} PENDING</span></div><div class="config-file-list">${pendingPermissionRequests.length?pendingPermissionRequests.map((request)=>`<div class="config-file-row"><div><strong>${escapeHtml(request.username||'User')} requests ${escapeHtml(String(request.permission||'').replaceAll('_',' '))}</strong><small>${new Date(Number(request.requested_at||0)*1000).toLocaleString()}</small></div><div class="header-actions"><button class="btn primary" data-resolve-webhost-request="${escapeHtml(request.id||'')}" data-approve="1">Approve</button><button class="btn ghost" data-resolve-webhost-request="${escapeHtml(request.id||'')}" data-approve="0">Deny</button></div></div>`).join(''):'<div class="empty-state compact-empty">No remote permission requests.</div>'}</div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Website surfaces</strong><span>Public root: black icon landing · <code>/servers</code>: native-styled catalog · <code>/admin/login</code>: World Name + Server Admin Password · <code>/api/v1</code>: third-party API guide.</span></div><div class="header-actions"><button class="btn primary" id="save-directory-host">Save / Apply</button>${hostedBase?`<button class="btn ghost" data-open-external="${escapeHtml(hostedBase+'/servers')}">Open Server Browser ↗</button><button class="btn ghost" data-open-external="${escapeHtml(hostedBase+'/api/v1')}">API Guide ↗</button><button class="btn ghost" data-open-external="${escapeHtml(hostedBase)}">LAN Control Room ↗</button>`:''}</div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Operations</strong><span>Share candidate: ${escapeHtml(directoryHostStatus.public_url||directoryHostStatus.lan_url||directoryHostStatus.local_url||'Not running')} · ${escapeHtml(String(directoryHostStatus.verified_count||0))}/${escapeHtml(String(directoryHostStatus.world_count||0))} current Sync heartbeats · ${directoryHostStatus.public_reachable?'externally verified':'public reachability not proven'}</span></div><div class="header-actions"><button class="btn ghost" id="copy-webhost-router-rule">Copy Manual Router Rule</button><button class="btn ghost" id="open-default-router-home" data-router-home="1">Open Default Router Homepage</button><button class="btn primary" id="test-webhost-reachability">Test Listener / Reachability</button><button class="btn ghost" id="directory-host-observability">Diagnostics</button><button class="btn ghost" id="directory-host-revoke">Revoke Fingerprint</button><button class="btn danger" id="clear-directory-host">Clear Listings</button></div></div>
+          <div class="identity-box"><strong>Separate source of discovery, not a game-server dependency</strong><p>The launcher can subscribe to this self-host or any other compatible site under Worlds → Sync Directories. Normal Dragonwilds Worlds remain a separate native view. Server Admin sessions are scoped to one exact World, expire after eight hours, and record login IP, user agent, result, and every structured remote action.</p></div>
+        </section>`;
+      }
+      }
+    } else if (tab === 'networking') {
+      content = `
+        <section class="settings-section"><div class="panel-header settings-section-head"><div><h2>Connection Addresses</h2><span class="panel-subtitle">Detected for this computer and kept separate from every saved World.</span></div><button class="btn primary" id="detect-client-public-ip">Detect Addresses</button></div>
+          <div class="metric-grid">${metric('Internal / LAN IP',clientNetwork.internal_ip||'Not detected')}${metric('External / Public IP',clientNetwork.external_ip||state.clientPublicIp||'Not detected')}${metric('Last Detection',clientNetwork.detected_at?new Date(clientNetwork.detected_at).toLocaleString():'Never')}</div>
+          <div class="identity-box"><strong>LAN-to-Internet continuity</strong><p>Every linked World can retain its internal and external route, exact World Name, World Password, and Share/Hash code. Automatic routing retries the other saved route when this computer moves between the local network and the Internet.</p></div>
+        </section>
+        <section class="settings-section"><h2>Connection Behavior</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Background World checks</strong><span>Lightweight status checks for saved Worlds. These never sync mods and never run a throughput test.</span></div><button class="toggle ${a.background_server_checks !== false ? 'on' : ''}" id="toggle-bg-checks"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Allow explicit network diagnostics</strong><span>Enables the Run Link Test action. It measures the authenticated client↔host launcher path with small test payloads.</span></div><button class="toggle ${a.network_diagnostics_enabled !== false ? 'on' : ''}" id="toggle-network-diagnostics"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Write connection reports to Downloads</strong><span>For each Play or Sync attempt, writes a redacted text timeline with route selection, transferred files, client verification, host acknowledgement, and the exact failure stage.</span></div><button class="toggle ${a.connection_diagnostic_reports === true ? 'on' : ''}" id="toggle-connection-reports"></button></div>
+        </section>
+        <section class="settings-section"><h2>World Discovery</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Augment Dragonwilds public discovery</strong><span>Vanilla public-session information remains the primary browser layer. Dragonwilds Sync independently probes reachable endpoints and adds enhanced placards only after the fingerprint protocol answers.</span></div><button class="toggle ${(a.world_discovery || {}).enabled === false ? '' : 'on'}" id="toggle-world-discovery"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Load World artwork while browsing</strong><span>For the visible seven Sync-verified Worlds, download only icon, banner, description, and tags. Mods and files are never transferred until you authenticate and link.</span></div><button class="toggle ${(a.world_discovery || {}).prefetch_presentation === false ? '' : 'on'}" id="toggle-world-presentation"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Automatic refresh</strong><span>Metadata refreshes in place every 30 seconds. Search, filters, view mode, and scroll state stay intact.</span></div><span class="status-pill online">30 SECONDS</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Free Directory Sources</strong><span>${escapeHtml(String((a.world_discovery?.directory_sources||[]).length))} configured. Add any compatible free website exposing <code>/worlds</code> and <code>/heartbeats</code>; there are no subscriptions, accounts, or charges. Optional publisher tokens only authorize your hosted World's heartbeat.</span></div><button class="btn ghost" id="open-directory-source-manager">Manage Sources</button></div>
+        </section>
+        <section class="settings-section"><div class="panel-header" style="padding:0 0 10px"><div><h2 style="margin:0">Server Health Inputs</h2><div style="font-size:9px;color:var(--muted);margin-top:4px">Client-side WAN evidence is diagnostic context; it never lowers a host's Server Health score.</div></div><button class="btn primary" id="save-client-network-evidence">Save Evidence</button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Observed link quality</strong><span>Health uses client-to-host latency plus host→client and client→host throughput. P95 latency is shown when multiple clients have recent samples.</span></div><div class="identity-box" style="margin:0"><strong>Measured on the real sync path</strong><p>This is the route you actually use for Dragonwilds Sync. Throughput tests only run when you press Run Link Test.</p></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Optional client internet evidence</strong><span>Paste results from a speed test you trust. These values help explain whether poor observed performance may be client-side, but they are not treated as server faults.</span></div><div class="health-evidence-grid">
+            <label><small>Download Mbps</small><input class="field" id="client-net-down" type="number" min="0" step="0.1" value="${escapeHtml(clientNetwork.download_mbps ?? '')}" placeholder="Optional" /></label>
+            <label><small>Upload Mbps</small><input class="field" id="client-net-up" type="number" min="0" step="0.1" value="${escapeHtml(clientNetwork.upload_mbps ?? '')}" placeholder="Optional" /></label>
+            <label><small>WAN latency ms</small><input class="field" id="client-net-latency" type="number" min="0" step="0.1" value="${escapeHtml(clientNetwork.latency_ms ?? '')}" placeholder="Optional" /></label>
+            <label><small>Source / provider</small><input class="field" id="client-net-source" value="${escapeHtml(clientNetwork.source || 'manual')}" placeholder="e.g. manual speed test" /></label>
+          </div></div>
+        </section>`;
+    } else if (tab === 'server') {
+      const showLinuxSettings=!!state.adminStatus?.showLinuxSettings;
+      content = `
+        <section class="settings-section"><h2>Server Hosting</h2>
+          ${serverEnabled ? `<div class="settings-row"><div class="settings-copy"><strong>Hosted Worlds</strong><span>Open the server manager for World activation, mods, save/config maintenance, health, and runtime.</span></div><button class="btn ghost" id="go-servers">Open Hosted Worlds</button></div>` : ''}
+        </section>
+        <section class="settings-section"><div class="panel-header" style="padding:0 0 10px"><div><h2 style="margin:0">Dedicated Server Installation</h2><div style="font-size:9px;color:var(--muted);margin-top:4px">Machine-wide. Every hosted World uses this same base Dragonwilds server installation.</div></div><span class="status-pill ${serverInstall.server_exe ? 'online' : 'unknown'}">${serverInstall.server_exe ? 'CONFIGURED' : 'SETUP NEEDED'}</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Server Directory</strong><span>${showLinuxSettings?'The base directory SteamCMD installs/updates. Native Linux auto-detects ~/rs_server and /home/dragonwilds/rs_server. World saves, snapshots, and policy remain separate.':'Choose a designated parent or an existing game root. Full Setup uses \\steamcmd\\steamapps\\common\\RuneScape Dragonwilds Dedicated Server below the designated folder.'}</span></div><div class="path-field"><input class="field" id="server-install-dir" value="${escapeHtml(serverInstall.install_dir || '')}" placeholder="${showLinuxSettings?'~/rs_server':'C:\\Dragonwilds Server'}" /><button class="btn ghost" id="pick-server-install-dir">Browse</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Server Launcher</strong><span>${showLinuxSettings?'Select the native Linux launcher or an intentional Windows server executable under Wine/Proton. Full Setup fills this automatically.':'Select RSDragonwilds.exe or RSDragonwildsServer.exe. Full Setup fills this automatically.'}</span></div><div class="path-field"><input class="field" id="server-install-exe" value="${escapeHtml(serverInstall.server_exe || '')}" placeholder="${showLinuxSettings?'RSDragonwildsServer.sh or RSDragonwilds.exe':'RSDragonwilds.exe'}" /><button class="btn ghost" id="pick-server-install-exe">Browse</button></div></div>
+          ${showLinuxSettings?`<div class="settings-row"><div class="settings-copy"><strong>Linux Server Runtime</strong><span>Native Linux is the stable server path. Choose Proton/Wine only when you intentionally run the Windows dedicated server so its original Win64 UE4SS and RuneSchema DLLs can load.</span></div><select class="select" id="server-linux-mode"><option value="native" ${(serverInstall.linux_server_mode || 'native') !== 'proton-win64' ? 'selected' : ''}>Native Linux server</option><option value="proton-win64" ${serverInstall.linux_server_mode === 'proton-win64' ? 'selected' : ''}>Windows server through Proton/Wine</option></select></div>
+          <details class="privacy-policy-box" ${serverInstall.linux_server_mode === 'proton-win64' ? 'open' : ''}><summary><strong>Proton / Wine compatibility</strong><span>${escapeHtml(serverInstall.proton_executable || 'Auto-detect from PATH')}</span></summary><div style="padding:10px;display:grid;gap:10px"><label><small>Proton or Wine executable</small><input class="field" id="server-proton-executable" value="${escapeHtml(serverInstall.proton_executable || '')}" placeholder="/path/to/proton, wine64, or wine" /></label><label><small>Compatibility prefix (optional)</small><input class="field" id="server-proton-prefix" value="${escapeHtml(serverInstall.proton_prefix || '')}" placeholder="STEAM_COMPAT_DATA_PATH or WINEPREFIX" /></label><label><small>Native DLL overrides</small><input class="field" id="server-wine-dll-overrides" value="${escapeHtml(serverInstall.wine_dll_overrides || 'dwmapi=n,b;version=n,b')}" /></label><div class="identity-box" style="margin:0"><strong>No binary conversion</strong><p>Windows and Linux-Proton clients receive the same signed/hash-verified Win64 PE runtime variant. Native Linux server processes never receive those DLLs.</p></div></div></details>`:''}
+          ${showLinuxSettings?`<div class="runtime-scope-cards"><article><span class="status-pill unknown">SERVER ONLY · EXPERIMENTAL</span><strong>Native Linux UE4SS + RuneSchema</strong><p>Reserved for the native dedicated server under <code>Binaries/Linux</code>. These files are tagged <code>linux-x86_64</code>, never enter a client manifest, and require an explicitly selected native build source.</p><label><small>Native UE4SS source / archive URL</small><input class="field" id="server-native-ue4ss-source" value="${escapeHtml(serverInstall.native_linux_runtime?.ue4ss_source_url||'')}" placeholder="Optional native Linux release or archive"/></label><label><small>Native RuneSchema source / archive URL</small><input class="field" id="server-native-runeschema-source" value="${escapeHtml(serverInstall.native_linux_runtime?.runeschema_source_url||'')}" placeholder="Optional native Linux release or archive"/></label></article><article><span class="status-pill online">CLIENT REQUIRED · VERIFIED ABI</span><strong>Windows + Proton client runtime</strong><p>Sync always publishes the separate Win64 UE4SS/RuneSchema reserve to playable Windows and Proton clients. Native server files cannot cross this boundary.</p><code>win64 · windows-pe-x64 · windows, linux-proton</code></article></div>`:''}
+          <div class="settings-row"><div class="settings-copy"><strong>Player ID (Owner)</strong><span>Machine-level Dragonwilds server identity. Copy it from Dragonwilds → Settings or detect the authenticated local ID from the game log. It is written into DedicatedServer.ini; SteamCMD downloads anonymously.</span></div><div class="path-field"><input class="field" id="server-owner-id" value="${escapeHtml(serverInstall.owner_id || '')}" placeholder="Dragonwilds Player ID" /><button class="btn ghost" id="detect-server-owner-id">Detect from Game</button></div></div>
+          <details class="privacy-policy-box"><summary><strong>Advanced SteamCMD location</strong><span>${escapeHtml(serverInstall.steamcmd_dir || 'Auto beside server directory')}</span></summary><div style="padding:10px"><div class="path-field"><input class="field" id="server-steamcmd-dir" value="${escapeHtml(serverInstall.steamcmd_dir || '')}" placeholder="Auto: sibling steamcmd folder" /><button class="btn ghost" id="pick-server-steamcmd-dir">Browse</button></div></div></details>
+          <div class="server-install-actions"><button class="btn ghost" id="save-server-install-paths">Save Server Settings</button><button class="btn primary" id="settings-full-server-setup">Full Setup</button><button class="btn ghost" id="settings-configure-server-firewall">Configure Firewall</button><button class="btn ghost" id="settings-update-server">Update Server</button><button class="btn ghost" id="settings-update-restart-server">Update &amp; Restart</button></div>
+          <div class="identity-box"><strong>Installed build record</strong><p>${serverInstall.installed_buildid ? `Steam build <b>${escapeHtml(serverInstall.installed_buildid)}</b>${serverInstall.installed_at ? ` · recorded ${new Date(Number(serverInstall.installed_at) * 1000).toLocaleString()}` : ''}` : 'No successful SteamCMD installation/update has been recorded by this launcher yet.'}</p></div>
+        </section>
+        <section class="settings-section"><h2>Resolved Server Paths</h2>
+          <div class="path-map">${[['Game Root',serverLayout.game_root],['Server Config',serverLayout.config_dir],['Logs',serverLayout.logs_dir],['SaveGames',serverLayout.savegames_dir],['UE4SS Core',serverLayout.ue4ss_core_dir],['UE4SS Mods',serverLayout.ue4ss_mods_dir],['RuneSchema',serverLayout.runeschema_root],['PAK Mods',serverLayout.paks_mods_dir]].map(([label,value]) => `<div><span>${label}</span><code title="${escapeHtml(value || '')}">${escapeHtml(value || 'Save Server Directory to resolve')}</code></div>`).join('')}</div>
+          <div class="identity-box"><strong>Authoritative layout</strong><p>The selected Server Directory may be the outer dedicated-server install or the inner RSDragonwilds root. Dragonwilds Sync resolves both to the same authoritative paths; dwmapi.dll is bootstrap-only, RuneSchema is never double-classified as a UE4SS mod, and ~mods is the PAK surface.</p></div>
+        </section>
+        <section class="settings-section"><h2>Host Network Benchmark</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Cloudflare Open Speed Test</strong><span>Measure host download, upload, latency, and jitter against Cloudflare's open speed-test edge. Results feed and broadcast Server Health evidence on a low-frequency schedule.</span></div><button class="toggle ${benchmarkCfg.enabled === false ? '' : 'on'}" id="toggle-host-benchmark"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Schedule / Profile</strong><span>Default is every 24 hours with the lighter bandwidth profile.</span></div><div class="health-evidence-grid"><label><small>Interval hours</small><input class="field" id="host-benchmark-hours" type="number" min="1" max="168" value="${escapeHtml(benchmarkCfg.interval_hours || 24)}" /></label><label><small>Benchmark profile</small><select class="select" id="host-benchmark-profile"><option value="light" ${benchmarkCfg.profile !== 'full' ? 'selected' : ''}>Light</option><option value="full" ${benchmarkCfg.profile === 'full' ? 'selected' : ''}>Full</option></select></label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Last measurement</strong><span>${benchmark.measured_at ? new Date(Number(benchmark.measured_at) * 1000).toLocaleString() : 'Never measured'}${benchmark.download_mbps != null ? ` · ${benchmark.download_mbps} Mbps down / ${benchmark.upload_mbps ?? '—'} Mbps up` : ''}</span></div><div class="header-actions"><button class="btn ghost" id="save-host-benchmark-settings">Save</button><button class="btn primary" id="run-host-benchmark-settings">Run Now</button></div></div>
+        </section>
+        <section class="settings-section"><div class="panel-header" style="padding:0 0 10px"><div><h2 style="margin:0">Base Runtime Cores</h2><div style="font-size:9px;color:var(--muted);margin-top:4px">Dragonwilds Sync verifies these at startup and again before World activation, scanning, publishing, and launch.</div></div><button class="btn primary" id="settings-repair-runtimes">Verify / Repair</button></div>
+          ${nativeLinuxServer ? `<div class="settings-row"><div class="settings-copy"><strong>Native Linux runtime</strong><span>The native server is linked. Win64 UE4SS and RuneSchema installation is intentionally skipped; core server and Sync management remain active.</span></div><span class="status-pill online">NATIVE</span></div>` : `<div class="settings-row"><div class="settings-copy"><strong>UE4SS runtime</strong><span><code>dwmapi.dll</code> in Win64 plus the shared <code>ue4ss</code> core. Server Setup installs this before hosted Worlds are activated.</span></div><span class="status-pill ${runtimePrereqs.ue4ss?.installed ? 'online' : 'unknown'}">${runtimePrereqs.ue4ss?.installed ? 'READY' : 'MISSING'}</span></div>`}
+          <div class="settings-row"><div class="settings-copy"><strong>UE4SS Source</strong><span>Editable GitHub repository/release URL or direct ZIP. Use Pull / Update for the configured source, or load/drop a local release ZIP.</span></div><div style="min-width:min(620px,58vw)"><input class="field" id="server-ue4ss-source-url" value="${escapeHtml(serverInstall.ue4ss_source_url || 'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest')}" placeholder="https://github.com/.../releases/latest or direct .zip" /><div class="header-actions" style="margin-top:7px"><button class="btn ghost" id="settings-update-ue4ss">Pull / Update</button><button class="btn ghost" id="settings-import-ue4ss-core">Load ZIP</button><div class="mod-drop-zone inline-drop" id="settings-ue4ss-dropzone">Drop UE4SS ZIP</div></div></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>RuneSchema runtime</strong><span>Official core infrastructure under <code>ue4ss\Mods\RuneSchema</code>. The complete matched release is restored from upstream GitHub; separately installed child mods are preserved.</span></div><span class="status-pill ${runtimePrereqs.runeschema?.installed ? 'online' : 'unknown'}">${runtimePrereqs.runeschema?.installed ? 'READY' : ((runtimePrereqs.runeschema?.cached_core_zip || runtimePrereqs.runeschema?.bundled_core_zip) ? 'REPAIRABLE' : 'SOURCE NEEDED')}</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>RuneSchema Source</strong><span>Choose the main upstream release or the Sync experimental branch. A manually loaded unreleased core remains an explicit override until you select one of these managed sources.</span></div><div style="min-width:min(620px,58vw)"><div class="header-actions"><code>Official · github.com/UnskippableCutscene/RuneSchema</code><button class="btn ghost" id="settings-update-runeschema">Restore / Update Official</button></div><div class="header-actions" style="margin-top:7px"><code>Experimental · github.com/gh0sted5456-us/RuneSchema</code><button class="btn ghost" id="settings-update-runeschema-experimental">Install / Update Experimental</button><button class="btn ghost" id="settings-import-runeschema-override">Load Manual Override ZIP</button></div><div class="mod-drop-zone inline-drop" id="settings-runeschema-override-dropzone" style="margin-top:7px">Drop unreleased RuneSchema core ZIP · activates manual override</div><small>${escapeHtml(serverInstall.runeschema_source_name || 'Official mode')}</small></div></div>
+          <div class="identity-box"><strong>${nativeLinuxServer ? 'Native Linux boundary' : 'Installed during Server Setup'}</strong><p>${nativeLinuxServer ? 'The native server uses LinuxServer configuration and does not receive Win64 DLL runtime files. Use a Proton/Windows server path when UE4SS or RuneSchema is required.' : 'Only UE4SS and RuneSchema are installed as shared machine/server prerequisites. Dragonwilds Sync no longer bundles or installs its retired gameplay helper mods. Full Setup repairs the two runtimes before writing DedicatedServer.ini and starting hosted Worlds.'}</p></div>
+        </section>
+        <section class="settings-section" id="connections-panel"><div class="panel-header" style="padding:0 0 10px"><div><h2 style="margin:0">Connected Sync Clients</h2><div style="font-size:9px;color:var(--muted);margin-top:4px">Every IP currently authenticated to sync mods/files with this machine's hosted World(s). Right-click a row, or use ⋮, to Kick or Block.</div></div><button class="btn ghost compact-btn" id="refresh-server-connections">Refresh</button></div>
+          ${connectionsMarkup()}
+        </section>
+        <section class="settings-section"><div class="panel-header" style="padding:0 0 10px"><div><h2 style="margin:0">Global Server Access Policy</h2><div style="font-size:9px;color:var(--muted);margin-top:4px">Applied to every hosted World. Per-World rules are additive.</div></div><button class="btn primary" id="save-global-access-policy">Save Policy</button></div>
+          ${accessPolicyMarkup(a.server_access_policy || {}, 'global-access')}
+        </section>
+`;
+    } else {
+      const windowPrefs=a.window_preferences||{};
+      content = `
+        <section class="settings-section"><h2>Dragonwilds Application</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Dragonwilds game folder</strong><span>Choose the install, its inner RSDragonwilds folder, or a parent directory. Dragonwilds Sync searches beneath it and stores the verified game root.</span></div><div class="path-field"><input class="field" id="game-dir" value="${escapeHtml(a.game_dir || '')}" placeholder="Choose an install or parent folder" /><button class="btn ghost" id="pick-game-dir">Search Folder</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Dragonwilds executable</strong><span>Used only after positive World identity and client-required mods are verified.</span></div><div class="path-field"><input class="field" id="game-exe" value="${escapeHtml(a.game_exe || '')}" placeholder="Auto-detect if blank" /><button class="btn ghost" id="pick-game-exe">Browse</button></div></div>
+        </section>
+        <section class="settings-section"><div class="panel-header"><div><h2>Window &amp; Handheld</h2><span class="panel-subtitle">Choose the startup canvas and an optional controller-friendly title-card layer.</span></div><span class="status-pill unknown">HANDHELD EXPERIMENTAL</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Startup window</strong><span>Remember the current window, restore a default size, or begin maximized.</span></div><div class="window-preference-grid"><label><small>Startup behavior</small><select class="select" id="window-startup-mode"><option value="remember" ${(windowPrefs.startup_mode||'remember')==='remember'?'selected':''}>Remember current window</option><option value="default" ${windowPrefs.startup_mode==='default'?'selected':''}>Use default size</option><option value="maximized" ${windowPrefs.startup_mode==='maximized'?'selected':''}>Start maximized</option></select></label><label><small>Default resolution</small><select class="select" id="window-resolution"><option value="1280x720" ${windowPrefs.default_width===1280&&windowPrefs.default_height===720?'selected':''}>1280 × 720</option><option value="1280x800" ${windowPrefs.default_width===1280&&windowPrefs.default_height===800?'selected':''}>1280 × 800 · handheld</option><option value="1440x900" ${(!windowPrefs.default_width||windowPrefs.default_width===1440)&&(!windowPrefs.default_height||windowPrefs.default_height===900)?'selected':''}>1440 × 900</option><option value="1600x900" ${windowPrefs.default_width===1600&&windowPrefs.default_height===900?'selected':''}>1600 × 900</option><option value="1920x1080" ${windowPrefs.default_width===1920&&windowPrefs.default_height===1080?'selected':''}>1920 × 1080</option></select></label><label><small>Interface scale</small><select class="select" id="window-ui-scale">${[[.85,'85% · compact'],[1,'100%'],[1.15,'115%'],[1.25,'125% · handheld']].map(([value,label])=>`<option value="${value}" ${Math.abs(Number(windowPrefs.ui_scale||1)-value)<.01?'selected':''}>${label}</option>`).join('')}</select></label></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>SteamOS / Windows handheld title cards</strong><span>Enlarges the primary app navigation into focusable two-column cards. This uses the same application and data; it is not a separate binary.</span></div><button class="toggle ${windowPrefs.handheld_mode?'on':''}" id="toggle-handheld-mode" aria-label="Experimental handheld title cards"></button></div>
+          <div class="server-install-actions"><button class="btn primary" id="save-window-preferences">Apply Window Settings</button></div>
+        </section>
+        <section class="settings-section"><h2>World Storage</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>Keep runtime cores persistent</strong><span>Preserve shared UE4SS loader and RuneSchema core files when switching client Worlds.</span></div><button class="toggle ${a.keep_core_persistent ? 'on' : ''}" id="toggle-core"></button></div>
+          <div class="settings-row"><div class="settings-copy"><strong>APPDATA storage</strong><span>Profiles, cached Worlds, server snapshots, backups, and published files remain under Dragonwilds Sync APPDATA—not beside the EXE.</span></div><button class="btn ghost" id="open-appdata">Open Storage Folder</button></div>
+        </section>
+        <section class="settings-section"><h2>Storage Safety</h2>
+          <div class="settings-row"><div class="settings-copy"><strong>World isolation</strong><span>Inactive hosted Worlds are read from their own cached snapshot. Merely viewing a placard cannot read or swap the active World’s live mod tree.</span></div><span class="status-pill online">ENFORCED</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Save backups</strong><span>Hosted World save snapshots retain the 10 most recent timestamped backups per World.</span></div><span class="status-pill online">ENABLED</span></div>
+        </section>`;
+    }
+    return `
+      <div class="content">
+          <div class="page-header"><div><div class="eyebrow">${routedMods?'Content &amp; load order':(standaloneHostWorkspace?'Authenticated access':(routedWebhost?'Host &amp; Connect':(routedServers?'Advanced Hosting':'System')))}</div><h1>${routedMods?'Mods':(routedServers?t('servers'):(standaloneHostWorkspace?'Server Management':(routedWebhost?'Sync':'Settings')))}</h1><div class="page-subtitle">${routedMods?'Search, inspect, edit, and publish profile-owned UE4SS, RuneSchema, and PAK mods.':(routedServers?'Configure the shared dedicated-server installation, runtime cores, network benchmark, firewall, and global access policy.':(standaloneHostWorkspace?'Sign in to the currently broadcast hosted World with its World Name, username, and password.':(routedWebhost?'Configure continuous World discovery, transfer, heartbeat, and optional WebGUI services.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.')))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">${detachedMode?'↙ Return to Application':'↗ Open in Window'}</button></div></div>
+        ${routedServers?'<nav class="settings-subnav server-workspace-tabs"><button data-servers-tab="worlds">Worlds</button><button class="active" data-servers-tab="settings">Server Setup</button></nav>':''}
+        <div class="settings-layout ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'webhost-layout':''}">
+          ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav">${settingsNav('application','⚙',t('application'))}${settingsNav('advanced','◇','Advanced')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('about','ⓘ',t('about'))}</nav>`}
+          <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">${t('application')}</button><button class="${appSub==='runtimes'?'active':''}" data-application-settings-tab="runtimes">Runtime &amp; Data</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}${standaloneHostWorkspace?'':'<div class="settings-page-note">Changes save to the launcher profile immediately.</div>'}${content}</div>
+        </div>
+      </div>`;
+  }
+
+  function renderWelcome() {
+    const tips = [
+      'World profiles keep connection, mod, character, and troubleshooting state together.',
+      'Client Required mods are synchronized automatically; Server Retained mods stay private to the host.',
+      'Dragonwilds Sync checks exact World identity before trusting a server response.',
+      'Server Health separates measured evidence from operator-supplied and external reference data.',
+      'Profile → Characters opens the selected save across the RSDW editors and 3D Avatar preview while Sync keeps backups and World associations.'
+    ];
+    const tip = tips[Math.floor(Date.now() / 7000) % tips.length];
+    const cfg = state.data?.application?.application_updates || {};
+    const u = state.applicationUpdate;
+    const updateCard = u?.available && String(cfg.dismissed_version || '') !== String(u.latestVersion || '') ? `<div class="splash-notice update"><div><strong>Update available · ${escapeHtml(u.name || u.tag || u.latestVersion)}</strong><span>${escapeHtml((u.notes || 'A newer Dragonwilds Sync release is available.').split(/\r?\n/).filter(Boolean)[0]?.slice(0,220) || '')}</span></div><div class="header-actions"><button class="btn ghost compact-btn" id="splash-update-notes">View Changes</button><button class="btn ghost compact-btn" id="splash-update-later">Later</button><button class="btn primary compact-btn" id="splash-update-now">Update</button></div></div>` : '';
+    const r = state.applicationUpdateResult;
+    const changelogCard = r ? `<div class="splash-notice success"><div><strong>Updated to ${escapeHtml(r.name || `Dragonwilds Sync ${r.version || ''}`)}</strong><span>${escapeHtml((r.notes || 'Update completed successfully.').slice(0,320))}</span></div><div class="header-actions">${r.releaseUrl ? `<button class="btn ghost compact-btn" id="splash-changelog-open">Full Changelog</button>` : ''}<button class="btn primary compact-btn" id="splash-changelog-dismiss">Dismiss</button></div></div>` : '';
+    return `${renderTitlebar()}<div class="fantasy-entry"><img class="fantasy-entry-art" src="${escapeHtml(state.data?.application?.loading_art_url||'assets/theme/animated-splash.webp')}" alt=""/><div class="fantasy-entry-shade"></div><div class="fantasy-entry-card"><img src="assets/application-icon.webp" alt="Dragonwilds Sync" /><div class="eyebrow">${escapeHtml(window.DWSYNC_RELEASE_META?.name || 'V2')}</div><h1>Worlds, Mods, and Servers — One Launcher</h1><p>Everything is loaded. Enter when you're ready.</p>${updateCard}${changelogCard}<div class="entry-tip"><strong>Field Note</strong><span>${escapeHtml(tip)}</span></div><button class="btn primary entry-button" id="enter-launcher">ENTER</button><small>Dragonwilds Sync V2 · RSDWL v3 · Smart Updates</small></div></div>`;
+  }
+
+  function embeddedScrollbarCss(extra = '') {
+    const theme = document.body.dataset.theme || state.data?.application?.theme || 'dark-fantasy';
+    const palette = theme === 'light'
+      ? { track: '#eee9df', thumb: '#9a6a28', hover: '#72501f', border: '#eee9df' }
+      : { track: '#111516', thumb: '#b88a42', hover: '#d4b069', border: '#111516' };
+    return `${extra} * { scrollbar-width:thin; scrollbar-color:${palette.thumb} ${palette.track}; } *::-webkit-scrollbar { width:10px; height:10px; } *::-webkit-scrollbar-track { background:${palette.track}; border-radius:999px; } *::-webkit-scrollbar-thumb { background:${palette.thumb}; border:2px solid ${palette.border}; border-radius:999px; } *::-webkit-scrollbar-thumb:hover { background:${palette.hover}; } *::-webkit-scrollbar-corner { background:${palette.track}; }`;
+  }
+
+  function embeddedRsdwLayoutCss() {
+    return `
+      :root { color-scheme: dark; }
+      *, *::before, *::after { box-sizing:border-box !important; min-width:0; }
+      html, body { width:100% !important; max-width:none !important; min-width:0 !important; min-height:0 !important; margin:0 !important; }
+      html { overflow-x:hidden !important; }
+      body { padding:0 !important; overflow-x:hidden !important; }
+      header, .site-header, footer, .site-footer { display:none !important; }
+      body.dws-embedded > .landing-logo__dropdown { display:none !important; }
+      body.dws-embedded .panel-header--browser { display:none !important; }
+      body.dws-embedded .panel-header-actions, body.dws-embedded #load-button, body.dws-embedded #save-button { display:none !important; }
+      body.dws-embedded #character-file { display:none !important; }
+      body > main, main, .main, .content, .page, .page-content, .page-layout, .editor-layout, .tool-layout, .container, .wrapper,
+      [class*="container"], [class*="wrapper"], [class*="content"], [class*="layout"] {
+        width:100% !important; max-width:none !important; min-width:0 !important; margin-left:0 !important; margin-right:0 !important; box-sizing:border-box !important;
+      }
+      body > main, main, .main, .content, .page, .page-content { padding-left:12px !important; padding-right:12px !important; }
+      .item-editor-wrapper { width:100% !important; max-width:none !important; margin:0 !important; padding:0 !important; }
+      .page-layout, .editor-layout, .tool-layout, [class*="editor-layout"], [class*="tool-layout"] { margin:0 !important; padding:12px !important; gap:14px !important; }
+      .character-editor-panel, .item-editor-panel, .spell-editor-panel, .recipe-editor-panel, .quest-editor-panel,
+      .editor-panel, .tool-panel, .panel, section, article, form, fieldset { max-width:none !important; min-width:0 !important; box-sizing:border-box !important; }
+      .character-editor-panel, .item-editor-panel, .spell-editor-panel, .recipe-editor-panel, .quest-editor-panel, .editor-panel, .tool-panel, form { width:100% !important; }
+      input:not([type="checkbox"]):not([type="radio"]), select, textarea { max-width:100% !important; min-width:0 !important; }
+      table { max-width:100% !important; }
+      img, canvas, svg { max-width:100% !important; }
+      button, label, legend, h1, h2, h3, h4, p, span, strong, small { overflow-wrap:anywhere; }
+      [style*="max-width"] { max-width:none !important; }
+      body.item-editor-page { --panel-width:100% !important; }
+      body.item-editor-page .item-browser, body.item-editor-page .inventory-panel, body.item-editor-page .inventory-background { width:100% !important; max-width:none !important; }
+      body.character-editor-page .page-layout, body.recipe-unlocker-page .page-layout, body.quest-editor-page .page-layout { grid-template-columns:minmax(0,1fr) !important; }
+      body.character-editor-page .character-editor-panel { width:100% !important; padding:18px 20px 42px !important; }
+      body.character-editor-page #customization-grid, body.character-editor-page .skills-grid, body.character-editor-page .unlocker-grid, body.character-editor-page .vendor-reputation-grid { grid-template-columns:repeat(auto-fit,minmax(220px,1fr)) !important; }
+      @media (min-width: 980px) {
+        body.item-editor-page .page-layout, body.spell-editor-page .page-layout { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+      }
+      @media (max-width: 979px) { .page-layout, .editor-layout, .tool-layout { grid-template-columns:minmax(0,1fr) !important; } }
+    `;
+  }
+
+  function embeddedAvatarCss() {
+    return `
+      *, *::before, *::after { box-sizing:border-box !important; min-width:0; }
+      html,body { margin:0 !important; width:100% !important; max-width:none !important; min-width:0 !important; height:100% !important; overflow:hidden !important; background:#050708 !important; }
+      header, .site-header, footer, .site-footer { display:none !important; }
+      main, .main, .content, .container, .wrapper, [class*="container"], [class*="wrapper"] { width:100% !important; max-width:none !important; min-width:0 !important; margin-left:0 !important; margin-right:0 !important; }
+      #avatar-stage { position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; min-height:100vh !important; margin:0 !important; z-index:9999 !important; background:#050708 !important; }
+      canvas { display:block !important; width:100vw !important; height:100vh !important; max-width:none !important; min-height:100vh !important; }
+      #viewer, #viewport, #canvas-container, .viewer, .viewport, .model-viewer, [class*="viewer"], [class*="viewport"] { width:100% !important; height:100% !important; max-width:none !important; min-width:0 !important; }
+      select, input, button { max-width:100% !important; }
+      @media (max-width:900px) { canvas { min-height:100vh !important; } }
+    `;
+  }
+
+  function renderRsdwLauncher() {
+    const hosted=activeServerWorld()||serverWorlds()[0]||null;
+    const catalog=state.data?.application?.system_process_catalog||{};
+    const appy=catalog.applications?.['rsdw-l']||{};
+    const bridge=Object.values(catalog.components||{}).filter((row)=>row?.owner==='rsdw-l');
+    const tool=(id,title,description,icon,disabled=false)=>`<button class="rsdwl-tool-card" data-rsdwl-tool="${id}" ${disabled?'disabled':''}><span>${icon}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></div><b>Open →</b></button>`;
+    return `<div class="content rsdwl-home"><div class="page-header"><div><div class="eyebrow">RSDW Toolkit · Launcher Integration</div><h1>RSDW-L</h1><div class="page-subtitle">One cached launcher Appy for save editors, live telemetry, spawning, and the audited game console.</div></div><div class="header-actions"><button class="btn ghost" id="rsdwl-refresh">Refresh Toolkit</button><span class="status-pill ${hosted?'online':'unknown'}">${hosted?escapeHtml(hosted.name||'WORLD READY'):'NO HOSTED WORLD'}</span></div></div>
+      <section class="rsdwl-ownership-strip"><div><strong>Core keeps authority</strong><span>RSDW-L never owns profiles, permissions, runtime lifecycle, or durable state.</span></div><div><strong>${bridge.length} bounded runtime surfaces</strong><span>${escapeHtml(appy.subapps?.join(' · ')||'Editors · map · spawner · console')}</span></div></section>
+      <div class="rsdwl-tool-grid">
+        ${tool('character','Character Creator','Identity, dedicated 3D renderer, appearance, progression and save-backed fields.','◉')}
+        ${tool('inventory','Inventory & Items','Equipment, action bar, personal storage and the modded item repository.','▦')}
+        ${tool('spells','Spells, Recipes & Quests','Cached RSDW catalogs with backup-first writeback.','✦')}
+        ${tool('map','Live Map','Roster-backed coordinates and Ashenfall overlays for the selected hosted World.','⌖',!hosted)}
+        ${tool('spawner','Spawner','Permission-gated item and enemy commands through the active game bridge.','✣',!hosted)}
+        ${tool('console','Unified Console','Server lifecycle, Sync, RSDW commands, acknowledgements and failures in one timeline.','>_',!hosted)}
+      </div>
+      <section class="panel"><div class="panel-header"><div><h2>Runtime ownership</h2><span class="panel-subtitle">${escapeHtml(appy.authority||'Core-owned policy')}</span></div></div><div class="panel-body"><div class="activity-list">${bridge.map((row)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(row.kind||'service').replace(/-/g,' '))}</span><div><strong>${escapeHtml(row.id||'RSDW-L surface')}</strong><small>${escapeHtml(row.purpose||'')} · ${escapeHtml(row.lifecycle||'on demand')}</small></div></div>`).join('')||'<div class="empty-state compact">Process catalog is still hydrating.</div>'}</div></div></section>
+    </div>`;
+  }
+
+  function renderUnsafe() {
+    if (!state.data) return;
+    if(privateWorldById(state.selectedWorldId)&&Array.isArray(state.singleplayerInventory))state.privateInventory[state.selectedWorldId]=state.singleplayerInventory;
+    window.__DWSYNC_STATE__ = state.data;
+    const oldMain = root.querySelector('.main');
+    if (oldMain && state.lastScrollKey) {
+      state.scrollPositions[state.lastScrollKey] = oldMain.scrollTop;
+      oldMain.querySelectorAll('details.collapsible-panel').forEach((detail, index) => {
+        const title = detail.querySelector('summary h2')?.textContent?.trim() || `panel-${index}`;
+        state.panelStates[`${state.lastScrollKey}:${title}`] = detail.open;
+      });
+    }
+    const activeElement = document.activeElement;
+    const focusId = activeElement?.id || '';
+    const selection = activeElement && typeof activeElement.selectionStart === 'number' ? [activeElement.selectionStart, activeElement.selectionEnd] : null;
+    const activeDraft = activeElement && focusId ? {
+      value: 'value' in activeElement ? activeElement.value : undefined,
+      checked: 'checked' in activeElement ? activeElement.checked : undefined,
+    } : null;
+
+    const requestedTheme=String(state.data?.application?.theme||'dark-fantasy');
+    const theme=['dark-fantasy','light','desert-script','eastern','fantasy','high-contrast'].includes(requestedTheme)?requestedTheme:'dark-fantasy';
+    document.body.dataset.theme = theme;
+    document.body.dataset.glass = state.data?.application?.glass_theme ? '1' : '0';
+    const windowPrefs=state.data?.application?.window_preferences||{};
+    document.body.dataset.handheldMode = windowPrefs.handheld_mode ? '1' : '0';
+    const windowPreferenceSignature=JSON.stringify(windowPrefs);
+    if(windowPreferenceSignature!==appliedWindowPreferenceSignature){appliedWindowPreferenceSignature=windowPreferenceSignature;window.dragonwilds.windowPreferences?.(windowPrefs).catch(()=>{});}
+    document.body.dataset.showTips = state.data?.application?.advanced?.show_tips ? '1' : '0';
+    document.body.dataset.hostingFocus = hostingFocusActive() ? '1' : '0';
+    document.body.dataset.hostingFocusBanner = hostingFocusMarkup() ? '1' : '0';
+    document.body.dataset.hostingFocusLevel = hostingFocusActive() ? String(activeComputerProfile().focus_level||'standard') : 'off';
+    document.documentElement.lang = languageCode();
+    if (!state.entered) {
+      root.className = 'welcome-root';
+      delete root.dataset.persistentShell;
+      root.innerHTML = renderWelcome();
+      bindEvents();
+      return;
+    }
+
+    let page = '';
+    if (state.route === 'world-detail' && activeWorld()) page = activeWorld().kind === 'singleplayer' ? renderSinglePlayerDetail(activeWorld()) : renderWorldDetail(activeWorld());
+    else if (state.route === 'world-management' || state.route === 'private-worlds' || state.route === 'singleplayer') { state.route='world-management'; page = renderWorldManagement(); }
+    else if (state.route === 'shared-worlds') { state.route = 'worlds'; page = renderWorldGallery(); }
+    else if (state.route === 'worlds') page = renderWorldGallery();
+    else if (state.route === 'servers') { state.route='world-management'; state.worldManagementTab='server-setup'; page = renderWorldManagement(); }
+    else if (state.route === 'server-detail' && activeServerWorld()) page = renderServerDetail(activeServerWorld());
+    else if (state.route === 'rsdw-launcher') page = renderRsdwLauncher();
+    else if (state.route === 'rsdw-toolkit') { state.route='profile'; state.profileTab='characters'; page = renderProfile(); }
+    else if (state.route === 'profile') page = renderProfile();
+    else if (state.route === 'rsdw-editor' && detachedMode) page = renderRsdwEditorWindow();
+    else if (state.route === 'mod-explorer') page = '<section class="detached-window-host mod-explorer-workspace" id="mod-explorer-window"><div class="detached-loading"><div class="spinner"></div><strong>Opening Mod Editor…</strong></div></section>';
+    else if (state.route === 'server-console' && detachedMode) page = '<section class="detached-window-host" id="server-console-window"><div class="detached-loading"><div class="spinner"></div><strong>Opening Runtime Console…</strong></div></section>';
+    else if (state.route === 'custom-item-repository' && detachedMode) page = '<section class="detached-window-host" id="custom-item-repository-window"><div class="detached-loading"><div class="spinner"></div><strong>Opening Modded Item Repository…</strong></div></section>';
+    else if (state.route === 'nexus') page = renderNexusBrowser();
+    else if (state.route === 'help') page = renderHelp();
+    else if (state.route === 'webhost') page = renderSettings();
+    else if (state.route === 'remote-server') { state.webhostTab='login';page=renderSettings(); }
+    else if (state.route === 'mods-app') { page=renderSettings(); }
+    else if (state.route === 'settings') page = renderSettings();
+    else page = renderWorldGallery();
+    const collapsed = !!state.data?.application?.nav_collapsed;
+    root.className = `app-shell route-${state.route} ${collapsed ? 'nav-collapsed' : ''} ${detachedMode ? 'detached-shell' : ''}`;
+    let shellUpdate={main:null,changed:true};
+    if(detachedMode){
+      delete root.dataset.persistentShell;
+      root.innerHTML=`${renderTitlebar()}${operationMarkup()}${hostingFocusMarkup()}<main class="main">${page}</main>`;
+    }else shellUpdate=renderPersistentShell(page);
+    const nextKey = scrollKey();
+    state.lastScrollKey = nextKey;
+    if(!shellUpdate.changed){updateDiscordPresenceForRoute();return;}
+    bindEvents();
+    root.querySelectorAll('.identity-box').forEach((box)=>{
+      if(box.textContent.includes('File security evidence'))box.innerHTML='<strong>File integrity evidence</strong><p>Published units are verified by manifest membership, safe relative paths, file sizes, and SHA-256 hashes. Missing or changed payloads are blocked before activation and reported as validation failures.</p>';
+    });
+    setTimeout(hydrateRecommendationMedia, 0);
+    root.querySelectorAll('details.collapsible-panel').forEach((detail, index) => {
+      const title = detail.querySelector('summary h2')?.textContent?.trim() || `panel-${index}`;
+      const panelKey = `${nextKey}:${title}`;
+      if (Object.prototype.hasOwnProperty.call(state.panelStates, panelKey)) detail.open = !!state.panelStates[panelKey];
+      detail.addEventListener('toggle', () => { state.panelStates[panelKey] = detail.open; });
+    });
+    requestAnimationFrame(() => {
+      const main = root.querySelector('.main');
+      if (main) main.scrollTop = Number(state.scrollPositions[nextKey] || 0);
+      if (focusId) {
+        const nextFocus = document.getElementById(focusId);
+        if (nextFocus && !nextFocus.disabled) {
+          // Periodic status updates may redraw the shell while a user is
+          // typing. Restore the live DOM draft before focus/selection so no
+          // keystroke is lost and the viewport never jumps to the top.
+          if (activeDraft && activeDraft.value !== undefined && 'value' in nextFocus) nextFocus.value = activeDraft.value;
+          if (activeDraft && activeDraft.checked !== undefined && 'checked' in nextFocus) nextFocus.checked = activeDraft.checked;
+          nextFocus.focus({ preventScroll: true });
+          if (selection && typeof nextFocus.setSelectionRange === 'function') {
+            try { nextFocus.setSelectionRange(selection[0], selection[1]); } catch (_) {}
+          }
+        }
+      }
+    });
+    updateDiscordPresenceForRoute();
+  }
+
+  let renderFailureCount=0;
+  function render() {
+    // Monaco owns a sizeable live DOM/model tree. Background state refreshes
+    // must not tear down a dedicated Mod Editor workspace while a file is open.
+    if(state.route==='mod-explorer'&&document.querySelector('#mod-explorer-window.mod-explorer-host'))return;
+    const renderStarted=performance.now();
+    try {
+      const result=renderUnsafe();renderFailureCount=0;
+      const syncMs=Math.round((performance.now()-renderStarted)*10)/10;
+      const intent=pendingUiSwap&&performance.now()-pendingUiSwap.startedAt<15000?pendingUiSwap:{kind:'render',target:String(state.route||'unknown'),startedAt:renderStarted,wallAt:Date.now()};
+      pendingUiSwap=null;
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        const row={kind:intent.kind,target:intent.target,route:String(state.route||''),sync_ms:syncMs,settled_ms:Math.round((performance.now()-intent.startedAt)*10)/10,at:intent.wallAt};
+        uiSwapMetrics.push(row);if(uiSwapMetrics.length>MAX_UI_SWAP_METRICS)uiSwapMetrics.splice(0,uiSwapMetrics.length-MAX_UI_SWAP_METRICS);
+      }));
+      return result;
+    } catch(error) {
+      renderFailureCount+=1;
+      console.error('[renderer] UI render failed',error);
+      root.className='welcome-root renderer-recovery-root';
+      delete root.dataset.persistentShell;
+      root.innerHTML=`<div class="fatal-error"><strong>Dragonwilds Sync recovered from a display error.</strong><span>${escapeHtml(error?.message||String(error||'Unknown renderer error'))}</span><button class="btn primary" id="reload-renderer-after-error">Reload Interface</button></div>`;
+      root.querySelector('#reload-renderer-after-error')?.addEventListener('click',()=>location.reload());
+      return null;
+    }
+  }
+
+  async function installSinglePlayerZip(zipPath, forcedKind='', payload={}) {
+    if (!zipPath) return;
+    const detected=await api.invoke('singleplayer.mod.detect',{zip_path:zipPath});
+    const kind=forcedKind||detected.kind;if(!kind) throw new Error('Could not identify this ZIP as UE4SS, PAK, or RuneSchema.');
+    const response=await api.invoke('singleplayer.mod.install',privateProfileParams({zip_path:zipPath,kind,payload_root:payload.payload_root||'',payload_name:payload.payload_name||''}));
+    state.singleplayerInventory=response.units||[]; if(response.state)state.data=response.state; render();
+    toast('SinglePlayer mod installed',`${kind.toUpperCase()} · launcher load rules applied`,'success');
+  }
+
+  async function installServerZip(zipPath, forcedKind='', payload={}) {
+    const world=activeServerWorld(); const rootPath=state.data?.application?.server_install?.install_dir||'';
+    if(!world||!rootPath) throw new Error('Set the dedicated Server Directory first.');
+    const detected=await api.invoke('server.maintenance.detect_mod_zip',{zip_path:zipPath});
+    const kind=forcedKind||detected.kind;if(!kind) throw new Error('Could not identify this ZIP as UE4SS, PAK, or RuneSchema.');
+    await api.invoke('server.world.mod.install',{id:world.id,zip_path:zipPath,kind,payload_root:payload.payload_root||'',payload_name:payload.payload_name||''});
+    await refreshServerInventory(world,true); toast('World mod installed',`${kind.toUpperCase()} · launcher load rules applied`,'success');
+  }
+
+  async function openSmartModImport(zipPath, scope='server') {
+    if(!zipPath)return;
+    const detected=await api.invoke(scope==='server'?'server.maintenance.detect_mod_zip':'singleplayer.mod.detect',{zip_path:zipPath});
+    const automatic=String(detected.kind||detected.detected_kind||'');
+    const payloads=Array.isArray(detected.payloads)&&detected.payloads.length?detected.payloads:[{id:'single',kind:automatic,name:String(zipPath).split(/[\\/]/).pop().replace(/\.zip$/i,''),payload_root:'',payload_name:'',selected:true}];
+    const filename=String(zipPath).split(/[\\/]/).pop();
+    const rows=payloads.map((item,index)=>`<div class="settings-row smart-payload-row" data-payload-index="${index}"><label class="check-row" style="min-width:0"><input type="checkbox" data-payload-selected ${item.selected===false?'':'checked'}/><span><strong>${escapeHtml(item.name||`Payload ${index+1}`)}</strong><small>${escapeHtml(item.payload_root||'Archive root')}${item.manifest?` · ${escapeHtml(item.manifest)}`:''}</small></span></label><select class="select" data-payload-kind><option value="ue4ss" ${item.kind==='ue4ss'?'selected':''}>UE4SS Mod</option><option value="runeschema" ${item.kind==='runeschema'?'selected':''}>RuneSchema Mod</option><option value="paks" ${item.kind==='paks'?'selected':''}>PAK / IoStore</option></select></div>`).join('');
+    showModal(`<div class="modal-header"><div><h2>Import Mod Package</h2><p>${escapeHtml(filename)} · ${payloads.length} assignable payload${payloads.length===1?'':'s'} found. Choose what belongs in this profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Structure-aware import review</strong><p>Only each selected parent folder is applied. Source, documentation, and build debris elsewhere in the ZIP are ignored. Adjust a detected family before importing when needed.</p></div><div class="smart-payload-list">${rows}</div><div class="warning-box">UE4SS → ue4ss/Mods · RuneSchema → RuneSchema/mods · PAK → Content/Paks/~mods. Runtime cores are configured separately.</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-smart-mod-import">Import Selected</button></div>`);
+    const confirm=modalRoot.querySelector('#confirm-smart-mod-import');
+    confirm?.addEventListener('click',async()=>{const selected=[...modalRoot.querySelectorAll('.smart-payload-row')].map((row)=>{const index=Number(row.dataset.payloadIndex);return {...payloads[index],kind:row.querySelector('[data-payload-kind]')?.value||payloads[index].kind,selected:!!row.querySelector('[data-payload-selected]')?.checked};}).filter((item)=>item.selected&&item.kind);if(!selected.length)return toast('Choose a payload','Select at least one detected mod to import.','error');confirm.disabled=true;confirm.textContent=`Importing 0 / ${selected.length}…`;try{for(let i=0;i<selected.length;i++){confirm.textContent=`Importing ${i+1} / ${selected.length}…`;if(scope==='server')await installServerZip(zipPath,selected[i].kind,selected[i]);else await installSinglePlayerZip(zipPath,selected[i].kind,selected[i]);}closeModal();toast('Mod package imported',`${selected.length} payload${selected.length===1?'':'s'} applied to the profile.`,'success');}catch(error){confirm.disabled=false;confirm.textContent='Import Selected';toast('Mod import failed',error.message,'error');}});
+  }
+
+  function bindModDropZone(element, installer) {
+    if(!element)return;
+    element.addEventListener('dragover',(e)=>{e.preventDefault();element.classList.add('dragging');});
+    element.addEventListener('dragleave',()=>element.classList.remove('dragging'));
+    element.addEventListener('drop',async(e)=>{e.preventDefault();element.classList.remove('dragging');const file=e.dataTransfer?.files?.[0];const path=file?window.dragonwilds.filePath(file):'';if(!path||!path.toLowerCase().endsWith('.zip'))return toast('Drop a ZIP package','Dragonwilds Sync accepts mod ZIPs here.','error');try{await installer(path);}catch(error){toast('Mod install failed',error.message,'error');}});
+  }
+
+  function bindLoadOrderDragDrop(buttonSelector, dataKey, onMove) {
+    const rows=[];
+    root.querySelectorAll(buttonSelector).forEach((button)=>{
+      const row=button.closest('.mod-clean-row');
+      const key=String(button.dataset[dataKey]||'');
+      if(!row||!key||rows.some((entry)=>entry.row===row))return;
+      const group=key.split('::',1)[0];
+      rows.push({row,key,group});
+    });
+    const familyCounts=new Map();
+    for(const entry of rows){
+      const index=familyCounts.get(entry.group)||0; familyCounts.set(entry.group,index+1);
+      entry.index=index; entry.row.draggable=true; entry.row.classList.add('mod-order-row');
+      const nameLine=entry.row.querySelector('.mod-name-line');
+      if(nameLine&&!nameLine.querySelector('.load-order-number'))nameLine.insertAdjacentHTML('afterbegin',`<span class="load-order-number" title="Drag to change load order">${String(index+1).padStart(2,'0')}</span>`);
+      entry.row.addEventListener('dragstart',(event)=>{event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('application/x-dws-mod-order',JSON.stringify({key:entry.key,group:entry.group}));entry.row.classList.add('order-dragging');});
+      entry.row.addEventListener('dragend',()=>entry.row.classList.remove('order-dragging'));
+      entry.row.addEventListener('dragover',(event)=>{const raw=event.dataTransfer?.getData('application/x-dws-mod-order');if(!raw)return;try{if(JSON.parse(raw).group!==entry.group)return;}catch(_){return;}event.preventDefault();event.dataTransfer.dropEffect='move';entry.row.classList.add('order-target');});
+      entry.row.addEventListener('dragleave',()=>entry.row.classList.remove('order-target'));
+      entry.row.addEventListener('drop',async(event)=>{event.preventDefault();entry.row.classList.remove('order-target');let payload;try{payload=JSON.parse(event.dataTransfer?.getData('application/x-dws-mod-order')||'{}');}catch(_){return;}if(!payload.key||payload.group!==entry.group||payload.key===entry.key)return;await onMove(payload.key,entry.index);});
+    }
+  }
+
+  function bindRuntimeDropZone(element, label, installer) {
+    if(!element)return;
+    element.addEventListener('dragover',(e)=>{e.preventDefault();element.classList.add('dragging');});
+    element.addEventListener('dragleave',()=>element.classList.remove('dragging'));
+    element.addEventListener('drop',async(e)=>{e.preventDefault();element.classList.remove('dragging');const file=e.dataTransfer?.files?.[0];const path=file?window.dragonwilds.filePath(file):'';if(!path||!path.toLowerCase().endsWith('.zip'))return toast(`Drop a ${label} ZIP`,'Only ZIP runtime packages are accepted here.','error');try{await installer(path);}catch(error){toast(`${label} install failed`,error.message,'error');}});
+  }
+
+  function bindEvents() {
+    root.querySelector('#dismiss-hosting-focus')?.addEventListener('click',()=>{state.hostingFocusDismissedProfileId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');render();});
+    root.querySelector('#enter-launcher')?.addEventListener('click', () => { state.entered = true; state.route = 'world-management'; render(); const gs=state.data?.application?.guided_setup || {}; if (!gs.completed && !gs.skipped) setTimeout(() => openGuidedSetup('player'), 80); });
+    root.querySelector('#splash-update-now')?.addEventListener('click', () => applyApplicationUpdate());
+    root.querySelector('#splash-update-notes')?.addEventListener('click', () => { if (state.applicationUpdate?.releaseUrl) window.dragonwilds.openExternal(state.applicationUpdate.releaseUrl); });
+    root.querySelector('#splash-update-later')?.addEventListener('click', async () => { const cfg=state.data?.application?.application_updates||{}; state.data=await api.invoke('application.update',{application_updates:{...cfg,dismissed_version:state.applicationUpdate?.latestVersion||''}}); render(); });
+    root.querySelector('#splash-changelog-open')?.addEventListener('click', () => { if (state.applicationUpdateResult?.releaseUrl) window.dragonwilds.openExternal(state.applicationUpdateResult.releaseUrl); });
+    root.querySelector('#splash-changelog-dismiss')?.addEventListener('click', async () => { await window.dragonwilds.appUpdateDismissResult(); state.applicationUpdateResult=null; render(); });
+    bindPersistentOnce(root.querySelector('#toggle-nav-collapse'),'click','nav-collapse',() => {
+      const previous=!!state.data?.application?.nav_collapsed;
+      const collapsed=!previous;
+      state.data.application.nav_collapsed=collapsed;
+      root.classList.toggle('nav-collapsed',collapsed);
+      const button=root.querySelector('#toggle-nav-collapse');
+      if(button)button.title=collapsed?t('expandNavigation'):t('collapseNavigation');
+      api.invoke('application.update',{nav_collapsed:collapsed}).then((next)=>{state.data=next;window.__DWSYNC_STATE__=next;}).catch((error)=>{state.data.application.nav_collapsed=previous;root.classList.toggle('nav-collapsed',previous);toast('Navigation size was not saved',error.message,'error');});
+    });
+    bindPersistentOnce(root.querySelector('#application-language'),'change','language',(event) => updateApplication({ language: event.target.value }));
+    bindPersistentOnce(root.querySelector('#global-back'),'click','back',goBack);
+    bindPersistentOnce(root.querySelector('#open-notification-center'),'click','notifications',openNotificationCenter);
+    root.querySelectorAll('[data-world-review-id]').forEach((button)=>button.addEventListener('click',(event)=>{
+      event.preventDefault();event.stopPropagation();
+      const world=[...browserWorlds(),...privateWorlds(),...serverWorlds()].find((item)=>String(item.id||'')===String(button.dataset.worldReviewId||''));
+      if(world)openWorldReviews(world,30);
+    }));
+    root.querySelectorAll('[data-help-category]').forEach((button)=>button.addEventListener('click',()=>{state.helpCategory=button.dataset.helpCategory||'getting-started';state.helpSearch='';render();}));
+    const helpyWebview=root.querySelector('#helpy-webview');if(helpyWebview){const frame=helpyWebview.closest('.helpy-webview-frame');const cover=frame?.querySelector('.helpy-webview-cover');const fallback=root.querySelector('.helpy-offline-fallback');const loaded=()=>{frame?.classList.add('loaded');frame?.classList.remove('failed');if(cover)cover.hidden=true;helpyWebview.style.visibility='visible';if(fallback)fallback.open=false;};const failed=(event)=>{if(Number(event?.errorCode)===-3)return;frame?.classList.add('failed');frame?.classList.remove('loaded');if(cover){cover.hidden=false;cover.innerHTML='<strong>Helpy unavailable</strong><span>The website could not load. Choose Refresh or open the packaged guide below.</span>';}if(fallback)fallback.open=true;};helpyWebview.style.visibility='hidden';helpyWebview.addEventListener('did-finish-load',loaded);helpyWebview.addEventListener('did-fail-load',failed);root.querySelector('#helpy-reload')?.addEventListener('click',()=>{frame?.classList.remove('loaded','failed');helpyWebview.style.visibility='hidden';if(cover){cover.hidden=false;cover.innerHTML='<div class="spinner"></div><strong>Opening Helpy...</strong><span>Loading the focused Getting Started guide.</span>';}if(fallback)fallback.open=false;try{helpyWebview.reloadIgnoringCache();}catch(_){helpyWebview.reload();}});}
+    const syncHomeWebview=root.querySelector('#sync-home-webview');if(syncHomeWebview){const frame=syncHomeWebview.closest('.sync-home-frame');const cover=frame?.querySelector('.sync-home-cover');const loaded=()=>{frame?.classList.add('loaded');frame?.classList.remove('failed');};const failed=(event)=>{if(Number(event?.errorCode)===-3)return;frame?.classList.add('failed');frame?.classList.remove('loaded');if(cover){cover.innerHTML='<strong>Website unavailable</strong><span>The app could not reach GitHub Pages. Check the connection, then choose Retry.</span>';}};syncHomeWebview.addEventListener('dom-ready',loaded);syncHomeWebview.addEventListener('did-finish-load',loaded);syncHomeWebview.addEventListener('did-fail-load',failed);root.querySelector('#sync-home-reload')?.addEventListener('click',()=>{frame?.classList.remove('loaded','failed');if(cover)cover.innerHTML='<div class="spinner"></div><strong>Opening Dragonwilds Sync...</strong><span>Loading the official website inside the application.</span>';try{syncHomeWebview.reloadIgnoringCache();}catch(_){syncHomeWebview.reload();}});}
+    root.querySelector('#help-search')?.addEventListener('input',(event)=>{state.helpSearch=event.target.value;window.clearTimeout(state.helpSearchTimer);state.helpSearchTimer=window.setTimeout(()=>render(),120);});
+    root.querySelector('#help-search-clear')?.addEventListener('click',()=>{state.helpSearch='';render();});
+    root.querySelectorAll('.help-step-screenshot > summary').forEach((summary)=>summary.addEventListener('click',(event)=>{
+      event.preventDefault();
+      const details=summary.closest('details');
+      if(!details)return;
+      details.open=!details.open;
+      const label=summary.querySelector('small');
+      if(label)label.textContent=details.open?'Collapse ▴':'Expand ▾';
+    }));
+    root.querySelectorAll('[data-help-image]').forEach((button)=>button.addEventListener('click',()=>{const src=button.dataset.helpImage;const alt=button.dataset.helpAlt||'Help screenshot';showModal(`<div class="modal-header"><div><div class="eyebrow">Field Guide</div><h2>${escapeHtml(alt)}</h2></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body help-image-modal"><img src="${escapeHtml(src)}" alt="${escapeHtml(alt)}"/></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`,{title:alt,width:1320,height:900});}));
+    bindPersistentOnce(root.querySelector('#window-minimize'),'click','minimize',() => window.dragonwilds.windowMinimize());
+    bindPersistentOnce(root.querySelector('#window-maximize'),'click','maximize',() => window.dragonwilds.windowToggleMaximize());
+    bindPersistentOnce(root.querySelector('#window-close'),'click','close',async() => {if(detachedCloseGuard&&!await detachedCloseGuard())return;window.dragonwilds.windowClose();});
+    root.querySelectorAll('[data-open-external]').forEach((button) => button.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); const ok = await window.dragonwilds.openExternal(button.dataset.openExternal); if (!ok) toast('Could not open link', 'Only valid HTTP/HTTPS links are allowed.', 'error'); }));
+    root.querySelector('#view-community-license')?.addEventListener('click', async()=>{
+      const text = await window.dragonwilds.legalText();
+      showModal(`<div class="modal-header"><div><div class="eyebrow">Legal</div><h2>${escapeHtml(window.DWSYNC_RELEASE_META?.licenseTitle || 'Dragonwilds Sync Community License')}</h2><p>Dragonwilds Sync is intended to remain freely available to the community.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><pre class="license-full-text">${escapeHtml(text || window.DWSYNC_RELEASE_META?.licenseSummary || 'License text unavailable.')}</pre></div><div class="modal-footer"><span class="muted-small">Third-party components and game assets retain their own terms.</span><button class="btn primary" data-close-modal>Done</button></div>`);
+    });
+    bindPersistentOnce(root.querySelector('#player-chip'),'click','profile',async()=>{pushNavigation();state.route='profile';state.profileTab='user';stopPlayerPolling();render();try{const response=await api.invoke('characters.list',{});state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];if(state.route==='profile')render();}catch(_){} });
+    root.querySelector('#rsdwl-refresh')?.addEventListener('click',async()=>{try{const response=await api.invoke('application.rsdw.refresh',{force:true});if(response?.state)setData(response.state);toast('RSDW-L refreshed','Toolkit catalogs and launcher caches are current.','success');render();}catch(error){toast('RSDW-L refresh failed',error.message,'error');}});
+    root.querySelector('#refresh-integration-status')?.addEventListener('click',async()=>{try{await hydrateIntegrations({force:true});toast('Integration status refreshed','RSDW, Discord, and Nexus status checks completed.','success');}catch(error){toast('Integration refresh failed',error.message,'error');}});
+    root.querySelectorAll('[data-rsdwl-tool]').forEach((button)=>button.addEventListener('click',async()=>{
+      const tool=button.dataset.rsdwlTool||'character';
+      if(state.rsdwlToolLoading)return;
+      const label=button.querySelector('b');const original=label?.textContent||'Open →';state.rsdwlToolLoading=tool;button.disabled=true;if(label)label.textContent='Loading…';
+      try{
+        if(['character','inventory','spells'].includes(tool)){
+          state.rsdwTool=tool==='inventory'?'item-editor':tool==='spells'?'spell-editor':'character-editor';
+          await enterRsdwToolkit();
+          if(tool!=='character')await hydrateNativeRsdwTool(state.rsdwTool);
+          return;
+        }
+        const world=activeServerWorld()||serverWorlds()[0];
+        if(!world)throw new Error(`${tool} uses a running or configured hosted World.`);
+        state.selectedServerWorldId=world.id;
+        await prepareRsdwlServerTool(tool,world);
+        pushNavigation();state.route='server-detail';state.serverTab=tool;render();
+        if(tool==='map')startPlayerPolling(world);
+      }catch(error){toast(tool==='map'?'Map unavailable':tool==='console'?'Console unavailable':'RSDW-L tool unavailable',error.message,'error');}
+      finally{state.rsdwlToolLoading='';if(button.isConnected){button.disabled=false;if(label)label.textContent=original;}}
+    }));
+    root.querySelectorAll('[data-profile-tab]').forEach((button)=>button.addEventListener('click',async()=>{const nextTab=button.dataset.profileTab||'user';if(nextTab==='characters'){state.characterProfileTab='overview';await enterRsdwToolkit();return;}if(state.route!=='profile'||state.profileTab!==nextTab)pushNavigation();state.profileTab=nextTab;state.route='profile';stopPlayerPolling();render();}));
+    root.querySelectorAll('[data-profile-character-editor]').forEach((button)=>button.addEventListener('click',async()=>{
+      const characterId=button.dataset.profileCharacterEditor||'';
+      if(!characterId||button.disabled)return;
+      state.characterSelectedId=characterId;
+      state.rsdwTool='character-editor';
+      state.characterProfileTab='overview';
+      try{await enterRsdwToolkit();}
+      catch(error){toast('Character Editor unavailable',error.message||String(error),'error');}
+    }));
+    root.querySelector('#edit-profile-page')?.addEventListener('click',openPlayerProfile);
+    root.querySelector('#detach-profile')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowMinimize?.():window.dragonwilds.openDetachedWindow?.({route:'profile',title:'Dragonwilds Sync · Profile',context:{profileTab:state.profileTab,characterId:state.characterSelectedId,characterProfileTab:state.characterProfileTab,rsdwTool:state.rsdwTool}}));
+    root.querySelector('#detach-worlds')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowMinimize?.():window.dragonwilds.openDetachedWindow?.({route:'worlds',title:'Dragonwilds Sync · Worlds'}));
+    root.querySelector('#create-private-world')?.addEventListener('click', openCreatePrivateWorld);
+    root.querySelectorAll('[data-private-manage]').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const world=privateWorldById(button.dataset.privateManage);if(world)managePrivateWorld(world).catch((error)=>toast('Could not open Private World',error.message,'error'));}));
+    root.querySelectorAll('[data-private-page]').forEach((button)=>button.addEventListener('click',()=>{state.privateWorldPage=Math.max(1,Number(button.dataset.privatePage||1));render();}));
+    root.querySelector('#edit-private-world')?.addEventListener('click',()=>{const world=activeWorld();if(world?.kind==='singleplayer')openPrivateWorldEditor(world);});
+    root.querySelectorAll('[data-private-launch]').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const world=privateWorldById(button.dataset.privateLaunch);if(world)playWorld(world);}));
+    root.querySelectorAll('[data-private-coop]').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();const world=privateWorldById(button.dataset.privateCoop);if(world)togglePrivateCoop(world).catch((error)=>toast('Co-Op failed',error.message,'error'));}));
+    root.querySelectorAll('[data-private-convert]').forEach((button)=>button.addEventListener('click',async(event)=>{event.stopPropagation();const world=privateWorldById(button.dataset.privateConvert);if(!world)return;const name=await managedPrompt('Name for the dedicated Server profile:',world.name||'Dragonwilds World','Convert to Dedicated Server');if(!name)return;try{const response=await api.invoke('singleplayer.convert_to_server',{profile_id:world.id,id:world.id,name});if(response.state)state.data=response.state;state.selectedServerWorldId=response.profile_id||response.profile?.id||'';state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server',`${name} was cloned with its save, mods and settings. The local profile was preserved.`,'success');}catch(error){toast('Conversion failed',error.message,'error');}}));
+    root.querySelectorAll('[data-server-convert]').forEach((button)=>button.addEventListener('click',async(event)=>{event.stopPropagation();const world=serverWorlds().find((item)=>String(item.id)===String(button.dataset.serverConvert));if(!world)return;if(!await managedConfirm(`Clone “${world.name||'this World'}” into the local Singleplayer/Co-Op save area? The current local copy is archived first.`,'Convert to Singleplayer / Co-Op'))return;try{const response=await api.invoke('server.world.convert_to_singleplayer',{id:world.id});if(response.state)state.data=response.state;state.selectedWorldId=response.profile_id||response.profile?.id||state.data?.client?.active_private_world_id||'singleplayer';state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op',`${world.name||'World'} was cloned locally; the dedicated profile was preserved.`,'success');}catch(error){toast('Conversion failed',error.message,'error');}}));
+    root.querySelector('#detach-settings')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowMinimize?.():window.dragonwilds.openDetachedWindow?.({route:state.route==='webhost'?'webhost':'settings',title:state.route==='webhost'?'Dragonwilds Sync · Sync':'Dragonwilds Sync · Settings',context:{settingsTab:state.settingsTab}}));
+    root.querySelector('#detach-private-world')?.addEventListener('click',()=>{if(detachedMode){window.dragonwilds.windowMinimize?.();return;}const id=activeWorld()?.id||state.data?.client?.active_private_world_id||'singleplayer';window.__DWSYNC_PHASE5_PLACARDS__?.open(id);});
+    root.querySelector('#detach-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(w)window.__DWSYNC_PHASE5_PLACARDS__?.open(w.id);});
+    root.querySelector('#open-minimal-server-world')?.addEventListener('click',()=>{const w=activeServerWorld();if(w)window.dragonwilds.openMinimalMode?.(w.id);});
+    root.querySelector('#profile-open-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
+    root.querySelector('#sp-browse-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
+    root.querySelector('#sp-check-nexus-updates')?.addEventListener('click',()=>checkNexusUpdates('singleplayer'));
+    root.querySelector('#sp-update-all-nexus')?.addEventListener('click',()=>updateAllNexus('singleplayer'));
+    root.querySelector('#server-browse-nexus')?.addEventListener('click',()=>{const w=activeServerWorld();if(w)openNexusWindow({type:'server',worldId:w.id});});
+    root.querySelector('#server-check-nexus-updates')?.addEventListener('click',()=>checkNexusUpdates('server'));
+    root.querySelector('#server-update-all-nexus')?.addEventListener('click',()=>updateAllNexus('server'));
+    root.querySelector('#settings-browse-nexus')?.addEventListener('click',()=>openNexusWindow({type:'singleplayer'}));
+    root.querySelectorAll('[data-recommended-refresh]').forEach((button)=>button.addEventListener('click',async()=>{try{button.disabled=true;const response=await api.invoke('application.recommended_mods.refresh',{});if(response.state)state.data=response.state;render();toast(response.errors?.length?'Recommendation cache refreshed':'Recommendation lists refreshed',response.errors?.length?response.errors.join(' · '):'Creator and community links are current.',response.errors?.length?'error':'success');}catch(error){button.disabled=false;toast('Recommendation refresh failed',error.message,'error');}}));
+    root.querySelectorAll('[data-recommended-open]').forEach((button)=>button.addEventListener('click',async()=>{const url=button.dataset.recommendedOpen;if(!url)return;try{await window.dragonwilds.openInAppBrowser({url,purpose:'nexus'});}catch(error){toast('Could not open mod source',error.message,'error');}}));
+    root.querySelector('#open-nexus-activity')?.addEventListener('click',async()=>{const url=state.data?.application?.recommended_mods?.nexus_activity_url||'https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14';try{await window.dragonwilds.openInAppBrowser({url,purpose:'nexus'});}catch(error){toast('Could not open Nexus Activity',error.message,'error');}});
+    root.querySelector('#recommended-source-add')?.addEventListener('click',async()=>{const url=root.querySelector('#recommended-source-url')?.value.trim()||'';const name=root.querySelector('#recommended-source-name')?.value.trim()||'Community Recommended Mods';if(!url)return toast('Community list URL required','Enter a link to a compatible JSON recommendation feed.','error');try{const current=state.data?.application?.recommended_mods?.community_sources||[];state.data=await api.invoke('application.recommended_mods.settings',{community_sources:[...current,{name,url,enabled:true}]});const response=await api.invoke('application.recommended_mods.refresh',{});if(response.state)state.data=response.state;render();toast('Community list added',`${name} is now part of the recommendation workspace.`,'success');}catch(error){toast('Could not add community list',error.message,'error');}});
+    root.querySelectorAll('[data-recommended-source-remove]').forEach((button)=>button.addEventListener('click',async()=>{const id=button.dataset.recommendedSourceRemove;try{const current=(state.data?.application?.recommended_mods?.community_sources||[]).filter((source)=>String(source.id)!==String(id));state.data=await api.invoke('application.recommended_mods.settings',{community_sources:current});const response=await api.invoke('application.recommended_mods.refresh',{});if(response.state)state.data=response.state;render();toast('Community list removed','','success');}catch(error){toast('Could not remove community list',error.message,'error');}}));
+    root.querySelector('#nexus-connect-sso')?.addEventListener('click',async()=>{try{state.nexusStatus=await window.dragonwilds.nexusConnectSSO();toast('Nexus Mods connected',state.nexusStatus.username||'Account authorized','success');render();}catch(error){toast('Nexus authorization unavailable',error.message,'error');}});
+    root.querySelector('#nexus-connect-dev-key')?.addEventListener('click',async()=>{const key=root.querySelector('#nexus-dev-key')?.value.trim()||'';if(!key)return toast('API key required','Enter your personal Nexus API key for testing.','error');try{state.nexusStatus=await window.dragonwilds.nexusConnectDevelopmentKey(key);toast('Nexus test account connected',state.nexusStatus.username||'Validated','success');render();}catch(error){toast('Nexus key rejected',error.message,'error');}});
+    root.querySelector('#nexus-disconnect')?.addEventListener('click',async()=>{state.nexusStatus=await window.dragonwilds.nexusDisconnect();toast('Nexus Mods disconnected','','success');render();});
+    root.querySelector('#nexus-open-game-page')?.addEventListener('click',()=>window.dragonwilds.openExternal('https://www.nexusmods.com/runescapedragonwilds/mods/'));
+    root.querySelector('#nexus-search-web')?.addEventListener('click',async()=>{const q=root.querySelector('#nexus-search-query')?.value.trim()||'';try{const r=await window.dragonwilds.nexusSearch(q);await window.dragonwilds.openExternal(r.url);toast('Nexus search opened','Choose a mod, then use its Mod ID here for profile-aware installation.','success');}catch(error){toast('Could not open Nexus search',error.message,'error');}});
+    root.querySelector('#nexus-load-mod')?.addEventListener('click',async()=>{const id=Number(root.querySelector('#nexus-mod-id')?.value||0);if(!id)return toast('Nexus Mod ID required','','error');try{state.nexusMod=await window.dragonwilds.nexusMod(id);const f=await window.dragonwilds.nexusFiles(id);state.nexusFiles=Array.isArray(f?.files)?f.files:[];state.nexusPending=null;render();}catch(error){toast('Could not load Nexus mod',error.message,'error');}});
+    root.querySelector('#nexus-open-current')?.addEventListener('click',()=>{const id=state.nexusMod?.mod_id||state.nexusMod?.modId;if(id)window.dragonwilds.openExternal(`https://www.nexusmods.com/runescapedragonwilds/mods/${id}`);});
+    root.querySelectorAll('[data-nexus-file-page]').forEach((b)=>b.addEventListener('click',()=>window.dragonwilds.openExternal(`https://www.nexusmods.com/runescapedragonwilds/mods/${b.dataset.nexusFilePage}?tab=files`)));
+    root.querySelectorAll('[data-nexus-install-file]').forEach((b)=>b.addEventListener('click',async()=>{const mod=state.nexusMod;const file=(state.nexusFiles||[]).find((f)=>String(f.file_id||f.fileId)===String(b.dataset.nexusInstallFile));if(!mod||!file)return;const modId=mod.mod_id||mod.modId;const fileId=file.file_id||file.fileId;try{const descriptor=await window.dragonwilds.nexusDownloadDescriptor({modId,fileId});if(descriptor.mode==='direct'){toast('Downloading from Nexus','Staging the authorized archive…');const staged=await window.dragonwilds.nexusDownloadStage({url:descriptor.url,name:file.file_name||file.name||`nexus-${modId}-${fileId}.zip`});await installNexusArchive(staged.path,mod,file);state.nexusPending=null;render();}else{state.nexusPending={mod,file};await window.dragonwilds.openInAppBrowser({url:descriptor.url,purpose:'nexus'});render();toast('Nexus download ready','Complete the normal download here. ZIP and 7z files are captured and installed automatically.','success');}}catch(error){state.nexusPending={mod,file};toast('Direct Nexus download unavailable',`${error.message} · Opening the normal Nexus download flow is still available.`,'error');render();}}));
+    root.querySelector('#nexus-import-downloaded')?.addEventListener('click',async()=>{const pending=state.nexusPending;if(!pending)return;const file=await window.dragonwilds.pickFile('archive');if(!file)return;try{await installNexusArchive(file,pending.mod,pending.file);state.nexusPending=null;render();}catch(error){toast('Nexus mod install failed',error.message,'error');}});
+    root.querySelectorAll('[data-rsdw-character]').forEach((button)=>button.addEventListener('click',async()=>{
+      const nextId=button.dataset.rsdwCharacter;
+      if(nextId!==state.characterSelectedId&&state.rsdwNativeDraft?.characterId===state.characterSelectedId){
+        const apply=await managedConfirm('This character has an unapplied draft. Apply it before switching?\n\nChoose Cancel to keep reviewing or discard the draft.','Character Draft');
+        if(apply){try{await applyRsdwDraft();}catch(error){return toast('Draft apply blocked',error.message,'error');}}
+        else if(!await managedConfirm('Discard the current preview draft and switch characters?\n\nCancel keeps the current character and draft open.','Discard Draft'))return;
+      }
+      selectRsdwCharacter(nextId);
+    }));
+    root.querySelectorAll('[data-character-profile-tab]').forEach((button)=>button.addEventListener('click',()=>{state.characterProfileTab=button.dataset.characterProfileTab||'overview';render();}));
+    root.querySelectorAll('[data-rsdw-section]').forEach((button)=>button.addEventListener('click',async()=>{
+      state.rsdwSection=button.dataset.rsdwSection||'character'; state.profileTab=state.rsdwSection==='live-map'?'live-map':'characters';
+      if(state.rsdwSection==='live-map'){
+        const world=rsdwMapWorld(); if(world){state.rsdwMapWorldId=world.id; await refreshServerPlayers(world,true,false);} render();
+        stopPlayerPolling(); if(world) startPlayerPolling(world);
+      } else { stopPlayerPolling(); render(); }
+    }));
+    root.querySelectorAll('[data-rsdw-tool]').forEach((button)=>{
+      button.addEventListener('click',()=>{const next=button.dataset.rsdwTool||'character-editor';if(next!==state.rsdwTool){state.rsdwToolSearch='';state.rsdwToolPage=0;}state.rsdwTool=next;render();if(next!=='character-editor')hydrateNativeRsdwTool(next);});
+    });
+    root.querySelector('#rsdw-refresh-toolkit')?.addEventListener('click',()=>enterRsdwToolkit({forceSource:true}));
+    root.querySelector('#rsdw-map-world')?.addEventListener('change',async(e)=>{state.rsdwMapWorldId=e.target.value||'';const world=rsdwMapWorld();if(world)await refreshServerPlayers(world,true,false);render();stopPlayerPolling();if(world)startPlayerPolling(world);});
+    root.querySelector('#rsdw-map-refresh')?.addEventListener('click',async()=>{const world=rsdwMapWorld();if(world)await refreshServerPlayers(world,false,true);});
+    root.querySelector('#rsdw-open-avatar-external')?.addEventListener('click',()=>window.dragonwilds.openExternal(state.rsdwNativeDraft?.avatar?.url || state.rsdwCharacterPayload?.avatar?.url || 'https://rsdwmodel.com/Avatar/index.html'));
+    root.querySelector('#rsdw-import-character')?.addEventListener('click',async()=>{const file=await window.dragonwilds.pickFile('rsdwl');if(!file)return;try{const preview=await api.invoke('characters.package.inspect',{path:file});if(!await managedConfirm(`Import ${preview.player_name||preview.manifest?.player_name||'this character'}?\n\nThe RSDWL package will be validated before any save is written.`,'Import Character'))return;const response=await api.invoke('characters.import',{path:file,overwrite:false});const importedId=response.result?.character_id||'';toast('Character imported',response.result?.path||'Character restored','success');state.characterSelectedId=importedId;await enterRsdwToolkit();}catch(error){toast('Character import failed',error.message,'error');}});
+    const exportToolkitCharacter=async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;const profile=selected.profile||{};const out=await window.dragonwilds.saveFile({title:'Export Dragonwilds Character Profile',defaultPath:`${(profile.label||selected.player_name||'Character').replace(/[<>:"/\\|?*]/g,'_')}.rsdwl`,filters:[{name:'Dragonwilds Launcher Profile',extensions:['rsdwl']}]});if(!out)return;try{const result=await api.invoke('characters.export',{character_id:selected.id,output_path:out});toast('Character exported',result.path||out,'success');}catch(error){toast('Character export failed',error.message,'error');}};
+    root.querySelector('#rsdw-export-character')?.addEventListener('click',exportToolkitCharacter);
+    root.querySelector('#rsdw-backup-export')?.addEventListener('click',exportToolkitCharacter);
+    root.querySelector('#rsdw-change-portrait')?.addEventListener('click',async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;showModal(`<div class="modal-header"><div><div class="eyebrow">Character Personality</div><h2>Choose a Portrait</h2><p>Built-in portraits travel inside exported .rsdwl character packages. Your own image remains fully supported.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="character-portrait-picker">${CHARACTER_PORTRAITS.map((name)=>`<button data-stock-character-portrait="${escapeHtml(name)}" title="${escapeHtml(name.replace(/[_-]/g,' ').replace(/\.png$/i,''))}"><img src="${portraitAsset(name)}" alt=""/><span>${escapeHtml(name.replace(/[_-]/g,' ').replace(/\.png$/i,''))}</span></button>`).join('')}</div></div><div class="modal-footer"><span>Custom images are embedded, not linked.</span><div class="footer-right"><button class="btn ghost" id="custom-character-portrait">Choose Custom Image</button><button class="btn ghost" data-close-modal>Cancel</button></div></div>`,{title:'Choose Character Portrait'});const savePortrait=async(portrait)=>{const response=await api.invoke('characters.profile.update',{character_id:selected.id,profile:{...(selected.profile||{}),portrait_data:portrait}});state.characters=response.characters||state.characters;closeModal();toast('Character image updated','The portrait will be included with exported character packages.','success');await selectRsdwCharacter(selected.id,{renderFirst:false});};modalRoot.querySelectorAll('[data-stock-character-portrait]').forEach((button)=>button.addEventListener('click',async()=>{try{await savePortrait(await assetDataUrl(portraitAsset(button.dataset.stockCharacterPortrait)));}catch(error){toast('Could not update image',error.message,'error');}}));modalRoot.querySelector('#custom-character-portrait')?.addEventListener('click',async()=>{const image=await window.dragonwilds.pickImage();if(!image)return;try{await savePortrait(image.dataUrl);}catch(error){toast('Could not update image',error.message,'error');}});});
+    root.querySelector('#rsdw-toggle-favorite')?.addEventListener('click',async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;try{const response=await api.invoke('characters.profile.update',{character_id:selected.id,profile:{...(selected.profile||{}),favorite:!(selected.profile||{}).favorite}});state.characters=response.characters||state.characters;render();}catch(error){toast('Could not update favorite',error.message,'error');}});
+    root.querySelector('#character-archetype')?.addEventListener('change',(event)=>{const subtypeSelect=root.querySelector('#character-subtype');if(!subtypeSelect)return;subtypeSelect.innerHTML=(CHARACTER_ARCHETYPES[event.target.value]||[]).map(([id,label])=>`<option value="${id}">${label}</option>`).join('');});
+    root.querySelector('#save-character-archetype')?.addEventListener('click',async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;const archetype=root.querySelector('#character-archetype')?.value||'';const subtype=root.querySelector('#character-subtype')?.value||'';try{const response=await api.invoke('characters.profile.update',{character_id:selected.id,profile:{...(selected.profile||{}),archetype,subtype}});state.characters=response.characters||state.characters;render();toast('Character tags saved',`${archetype} · ${subtype.replace(/-/g,' ')}`,'success');}catch(error){toast('Could not save character tags',error.message,'error');}});
+    root.querySelector('#apply-character-archetype')?.addEventListener('click',async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;const archetype=root.querySelector('#character-archetype')?.value||'';const subtype=root.querySelector('#character-subtype')?.value||'';try{const preview=await api.invoke('characters.archetype.preview',{archetype,subtype});const pieces=(preview.items||[]).map((item)=>`${item.slot}: ${item.name}`).join('\n');if(!await managedConfirm(`Apply the ${subtype.replace(/-/g,' ')} armour template to ${selected.profile?.label||selected.player_name||selected.file_name}?\n\n${pieces}\n\nOnly head, body, and leg armour are replaced. Inventory, weapons, jewelry, skills, and appearance remain unchanged. A verified backup is created first.`,'Inject Archetype Armour'))return;const response=await api.invoke('characters.archetype.apply',{character_id:selected.id,archetype,subtype,expected_sha256:state.rsdwCharacterPayload?.sha256||selected.sha256||''});if(response.state)state.data=response.state;state.characters=response.characters?.characters||state.characters;toast('Archetype armour applied',`Backup: ${response.result?.backup||'created'} · avatar preview refreshed`,'success');await selectRsdwCharacter(selected.id,{renderFirst:false});}catch(error){toast('Archetype loadout blocked',error.message,'error');}});
+    root.querySelector('#rsdw-clone-character')?.addEventListener('click',async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;if(!await managedConfirm(`Clone ${selected.profile?.label||selected.player_name||selected.file_name}?\n\nThe clone receives an independent save identity and keeps the same World associations.`,'Clone Character'))return;try{const response=await api.invoke('characters.clone',{character_id:selected.id});if(response.state)state.data=response.state;state.characters=response.characters?.characters||state.characters;state.characterSelectedId=response.result?.character_id||state.characterSelectedId;toast('Character cloned',response.result?.file_name||'Independent save created','success');await selectRsdwCharacter(state.characterSelectedId,{renderFirst:false});}catch(error){toast('Character clone failed',error.message,'error');}});
+    root.querySelector('#rsdw-delete-character')?.addEventListener('click',async()=>{const selected=state.characters.find((c)=>c.id===state.characterSelectedId);if(!selected)return;if(!await managedConfirm(`Delete ${selected.profile?.label||selected.player_name||selected.file_name}?\n\nDragonwilds Sync creates a verified recovery backup before removing the save.`,'Delete Character'))return;try{const response=await api.invoke('characters.delete',{character_id:selected.id});if(response.state)state.data=response.state;state.characters=response.characters?.characters||[];state.characterSelectedId=response.characters?.toolkit_selected_id||state.characters[0]?.id||'';state.rsdwCharacterPayload=null;toast('Character deleted',`Recovery backup: ${response.result?.backup||'created'}`,'success');if(state.characterSelectedId)await selectRsdwCharacter(state.characterSelectedId,{renderFirst:false});else render();}catch(error){toast('Character delete failed',error.message,'error');}});
+    const nativeCharacterEditor=root.querySelector('#rsdw-native-character-editor');
+    if(nativeCharacterEditor){
+      const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
+      const loaded=state.rsdwCharacterPayload;
+      const statusLabel=root.querySelector('#rsdw-editor-status');
+      const statusDot=root.querySelector('#rsdw-editor-status-dot');
+      const saveButton=root.querySelector('#rsdw-save-character');
+      let nativePreviewTimer=null;
+      let nativePreviewSequence=0;
+      const setNativeStatus=(message,type='')=>{if(statusLabel)statusLabel.textContent=message;if(statusDot)statusDot.className=type;if(saveButton)saveButton.disabled=!['dirty','ready'].includes(type);nativeCharacterEditor.querySelectorAll('[data-character-save]').forEach((button)=>{button.disabled=!['dirty','ready'].includes(type);});const dirty=nativeCharacterEditor.querySelector('[data-character-dirty]');if(dirty){dirty.classList.toggle('dirty',type==='dirty');dirty.textContent=type==='dirty'?'Unsaved changes':type==='saving'?'Validating…':'Saved';}};
+      const collectNativeChanges=()=>{
+        const changes={meta:{},customization:{},upkeep:{},skills:{},mount:{equipped:'None',unlocked:[]},vendors:{}};
+        nativeCharacterEditor.querySelectorAll('[data-native-meta]').forEach((input)=>{changes.meta[input.dataset.nativeMeta]=input.value;});
+        nativeCharacterEditor.querySelectorAll('[data-native-customization]').forEach((input)=>{if(input.type==='radio'&&!input.checked)return;changes.customization[input.dataset.nativeCustomization]=input.value;});
+        ['Hydration','Sustenance','Endurance'].forEach((key)=>{const value=nativeCharacterEditor.querySelector(`[data-native-upkeep-value="${key}"]`);const infinite=nativeCharacterEditor.querySelector(`[data-native-upkeep-infinite="${key}"]`);changes.upkeep[key]={value:Number(value?.value||0),decay_buffer:0,infinite:!!infinite?.checked};});
+        nativeCharacterEditor.querySelectorAll('[data-native-skill]').forEach((input)=>{changes.skills[input.dataset.nativeSkill]=Number(input.value||0);});
+        changes.mount.equipped=nativeCharacterEditor.querySelector('[data-native-mount-equipped]')?.value||'None';
+        changes.mount.unlocked=Array.from(nativeCharacterEditor.querySelectorAll('[data-native-mount]:checked')).map((input)=>input.dataset.nativeMount).filter(Boolean);
+        changes.map_unlocked=!!nativeCharacterEditor.querySelector('[data-native-map-unlocked]')?.checked;
+        nativeCharacterEditor.querySelectorAll('[data-native-vendor]').forEach((input)=>{changes.vendors[input.dataset.nativeVendor]=Number(input.value||0);});
+        return changes;
+      };
+      const runNativePreview=async()=>{
+        if(!selected||!loaded?.text)return null;
+        const sequence=++nativePreviewSequence;
+        setNativeStatus('Validating native character changes…','saving');
+        try{
+          const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
+          const response=await api.invoke('characters.native.preview',{text:baseText,changes:collectNativeChanges()});
+          if(sequence!==nativePreviewSequence)return null;
+          rememberRsdwCharacterSnapshot();
+          state.rsdwNativeDraft={...response,characterId:selected.id};
+          queueRsdwAvatarPreview(response?.avatar);
+          setNativeStatus('Unsaved changes · click See changes to refresh 3D','dirty');
+          return response;
+        }catch(error){
+          if(sequence===nativePreviewSequence)setNativeStatus(`Change blocked · ${error.message}`,'error');
+          return null;
+        }
+      };
+      const scheduleNativePreview=(event)=>{
+        const target=event?.target;
+        if(target&&!target.matches('[data-native-meta], [data-native-customization], [data-native-upkeep-value], [data-native-upkeep-infinite], [data-native-skill], [data-native-mount-equipped], [data-native-mount], [data-native-map-unlocked], [data-native-vendor]'))return;
+        const appearanceCard=target?.closest?.('[data-appearance-card]');
+        if(appearanceCard&&target.tagName==='SELECT'){
+          const option=target.selectedOptions?.[0];
+          const raw=String(option?.value||'Not surfaced');
+          const label=String(option?.textContent||raw);
+          const current=appearanceCard.querySelector('.character-asset-current span');
+          if(current)current.innerHTML=`<strong>${escapeHtml(raw)}</strong><small>${escapeHtml(label!==raw?label:'Authoritative asset name')}</small>`;
+          const range=appearanceCard.querySelector('[data-native-range]');if(range)range.value=String(Math.max(0,target.selectedIndex));
+          const count=appearanceCard.querySelector('.character-asset-range span');if(count)count.textContent=`${target.options.length?target.selectedIndex+1:0} / ${target.options.length}`;
+        }
+        nativeCharacterEditor.querySelectorAll('.native-color-choice').forEach((choice)=>choice.classList.toggle('selected',!!choice.querySelector('input:checked')));
+        const typeValue=Number(nativeCharacterEditor.querySelector('[data-native-meta="character_type"]')?.value||0);
+        const typeIcon=nativeCharacterEditor.querySelector('[data-native-character-type-icon]');
+        if(typeIcon)typeIcon.src=rsdwAssetUrl(`/shared/game-ui/Character/${['Standard','Hardcore','Creative','Custom'][Math.max(0,Math.min(3,typeValue))]}.png`);
+        setNativeStatus('Unsaved changes · preparing live preview','dirty');
+        clearTimeout(nativePreviewTimer);
+        nativePreviewTimer=setTimeout(runNativePreview,220);
+      };
+      const setCharacterEditorTab=(tab)=>{
+        const next=['appearance','pose','background'].includes(tab)?tab:'appearance';
+        state.rsdwCharacterEditorTab=next;
+        nativeCharacterEditor.dataset.characterEditorActiveTab=next;
+        nativeCharacterEditor.querySelectorAll('[data-character-editor-tab]').forEach((button)=>{const active=button.dataset.characterEditorTab===next;button.classList.toggle('active',active);button.setAttribute('aria-selected',String(active));});
+        nativeCharacterEditor.querySelectorAll('[data-character-tab-panel]').forEach((panel)=>panel.classList.toggle('active',panel.dataset.characterTabPanel===next));
+      };
+      nativeCharacterEditor.querySelectorAll('[data-character-editor-tab]').forEach((button)=>button.addEventListener('click',()=>setCharacterEditorTab(button.dataset.characterEditorTab)));
+      const closeCharacterTabPopovers=()=>nativeCharacterEditor.querySelectorAll('[data-character-tab-popover]').forEach((popover)=>{popover.hidden=true;});
+      const poseSelect=nativeCharacterEditor.querySelector('[data-avatar-upstream-select="avatar-animation-select"]');
+      const poseList=nativeCharacterEditor.querySelector('[data-character-pose-list]');
+      const renderPoseChoices=(query='')=>{if(!poseList||!poseSelect)return;const needle=String(query||'').trim().toLowerCase();const options=[...poseSelect.options].filter((option)=>option.value&&!option.disabled&&(!needle||String(option.textContent||option.value).toLowerCase().includes(needle)));poseList.innerHTML=options.length?options.map((option)=>`<button type="button" class="${String(option.value)===String(poseSelect.value)?'active':''}" data-character-pose-choice="${escapeHtml(option.value)}"><i>▶</i><span><strong>${escapeHtml(option.textContent||option.value)}</strong><small>Preview-only animation</small></span></button>`).join(''):`<div class="character-popover-empty">${poseSelect.disabled?'Animations are loading from the 3D renderer…':'No poses match that filter.'}</div>`;};
+      nativeCharacterEditor.querySelectorAll('[data-character-editor-tab="pose"],[data-character-editor-tab="background"]').forEach((button)=>button.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();setCharacterEditorTab(button.dataset.characterEditorTab);const popover=nativeCharacterEditor.querySelector(`[data-character-tab-popover="${CSS.escape(button.dataset.characterEditorTab)}"]`);const opening=!!popover?.hidden;closeCharacterTabPopovers();if(popover&&opening){popover.hidden=false;if(button.dataset.characterEditorTab==='pose'){const filter=popover.querySelector('[data-character-pose-filter]');renderPoseChoices(filter?.value||'');filter?.focus();}}}));
+      nativeCharacterEditor.querySelectorAll('[data-character-popover-close]').forEach((button)=>button.addEventListener('click',closeCharacterTabPopovers));
+      nativeCharacterEditor.querySelector('[data-character-pose-filter]')?.addEventListener('input',(event)=>renderPoseChoices(event.currentTarget.value));
+      poseSelect?.addEventListener('avatar-options-ready',()=>{if(!nativeCharacterEditor.querySelector('[data-character-tab-popover="pose"]')?.hidden)renderPoseChoices(nativeCharacterEditor.querySelector('[data-character-pose-filter]')?.value||'');});
+      poseList?.addEventListener('click',(event)=>{const choice=event.target.closest('[data-character-pose-choice]');if(!choice||!poseSelect)return;poseSelect.value=choice.dataset.characterPoseChoice||'';poseSelect.dispatchEvent(new Event('change',{bubbles:true}));renderPoseChoices(nativeCharacterEditor.querySelector('[data-character-pose-filter]')?.value||'');nativeCharacterEditor.querySelector('[data-avatar-play="play"]')?.click();});
+      nativeCharacterEditor.addEventListener('pointerdown',(event)=>{if(!event.target.closest('[data-character-tab-popover],[data-character-editor-tab]'))closeCharacterTabPopovers();});
+      nativeCharacterEditor.addEventListener('keydown',(event)=>{if(event.key==='Escape')closeCharacterTabPopovers();});
+      nativeCharacterEditor.querySelectorAll('[data-native-step]').forEach((button)=>button.addEventListener('click',()=>{const key=button.dataset.nativeStep||'';const select=nativeCharacterEditor.querySelector(`select[data-native-customization="${CSS.escape(key)}"]`);if(!select||!select.options.length)return;const delta=Number(button.dataset.nativeStepDelta||0);select.selectedIndex=(select.selectedIndex+delta+select.options.length)%select.options.length;select.dispatchEvent(new Event('change',{bubbles:true}));}));
+      nativeCharacterEditor.querySelectorAll('[data-native-range]').forEach((range)=>range.addEventListener('input',(event)=>{event.stopPropagation();const key=range.dataset.nativeRange||'';const select=nativeCharacterEditor.querySelector(`select[data-native-customization="${CSS.escape(key)}"]`);if(!select)return;select.selectedIndex=Math.max(0,Math.min(select.options.length-1,Number(range.value||0)));const count=range.nextElementSibling;if(count)count.textContent=`${select.options.length?select.selectedIndex+1:0} / ${select.options.length}`;select.dispatchEvent(new Event('change',{bubbles:true}));}));
+      const restoreCharacterSnapshot=async(from,to)=>{if(!from.length)return;clearTimeout(nativePreviewTimer);to.push({draft:cloneRsdwSnapshot(state.rsdwNativeDraft),itemEditor:cloneRsdwSnapshot(state.rsdwNativeTools['item-editor']||null)});const snapshot=from.pop()||{};state.rsdwNativeDraft=cloneRsdwSnapshot(snapshot.draft);if(snapshot.itemEditor)state.rsdwNativeTools['item-editor']=cloneRsdwSnapshot(snapshot.itemEditor);queueRsdwAvatarPreview(state.rsdwNativeDraft?.avatar||loaded?.avatar);render();};
+      nativeCharacterEditor.querySelectorAll('[data-character-undo]').forEach((button)=>button.addEventListener('click',()=>restoreCharacterSnapshot(state.rsdwCharacterHistory,state.rsdwCharacterFuture)));
+      nativeCharacterEditor.querySelectorAll('[data-character-redo]').forEach((button)=>button.addEventListener('click',()=>restoreCharacterSnapshot(state.rsdwCharacterFuture,state.rsdwCharacterHistory)));
+      nativeCharacterEditor.querySelectorAll('[data-open-item-editor]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwTool='item-editor';state.rsdwToolSearch='';state.rsdwToolPage=0;render();if(!state.rsdwNativeTools['item-editor'])setTimeout(()=>hydrateNativeRsdwTool('item-editor'),0);}));
+      nativeCharacterEditor.addEventListener('input',scheduleNativePreview);
+      nativeCharacterEditor.addEventListener('change',scheduleNativePreview);
+      nativeCharacterEditor.addEventListener('keydown',(event)=>{if((event.ctrlKey||event.metaKey)&&String(event.key).toLowerCase()==='s'){event.preventDefault();saveButton?.click();}});
+      if(state.rsdwNativeDraft?.characterId===selected?.id)setNativeStatus('Unsaved changes · live 3D preview ready','dirty');
+      saveButton?.addEventListener('click',async()=>{
+        clearTimeout(nativePreviewTimer);
+        const draft=await runNativePreview();
+        if(!draft?.text||!selected||!loaded)return;
+        setNativeStatus('Creating backup and verifying writeback…','saving');
+        try{
+          const response=await api.invoke('characters.toolkit.write',{character_id:selected.id,text:draft.text,expected_sha256:loaded.sha256||''});
+          if(response.state)state.data=response.state;
+          state.characters=response.characters?.characters||state.characters;
+          toast('Character updated',`Backup: ${response.result?.backup||'created'} · RSDW schema verified`,'success');
+          await selectRsdwCharacter(selected.id,{renderFirst:false});
+        }catch(error){setNativeStatus('Writeback blocked · save changed or invalid','error');toast('Character writeback blocked',error.message,'error');}
+      });
+      nativeCharacterEditor.querySelectorAll('[data-character-save]').forEach((button)=>button.addEventListener('click',()=>saveButton?.click()));
+      nativeCharacterEditor.querySelectorAll('[data-character-export]').forEach((button)=>button.addEventListener('click',exportToolkitCharacter));
+    }
+    const nativeToolSurface=root.querySelector('[data-rsdw-native-tool]');
+    if(nativeToolSurface&&!nativeCharacterEditor){
+      const tool=nativeToolSurface.dataset.rsdwNativeTool||state.rsdwTool;
+      const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
+      const loaded=state.rsdwCharacterPayload;
+      const statusLabel=root.querySelector('#rsdw-editor-status');
+      const statusDot=root.querySelector('#rsdw-editor-status-dot');
+      const saveButton=root.querySelector('#rsdw-save-character');
+      const setToolStatus=(message,type='')=>{if(statusLabel)statusLabel.textContent=message;if(statusDot)statusDot.className=type;if(saveButton)saveButton.disabled=type!=='dirty';};
+      const applyToolChange=async(change)=>{
+        if(!selected||!loaded?.text)return;
+        const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
+        setToolStatus('Validating RSDW save change…','saving');
+        try{
+          const response=await api.invoke('characters.native.tool.preview',{text:baseText,tool,change});
+          state.rsdwNativeDraft={...response,characterId:selected.id};
+          state.rsdwNativeTools[tool]=response.native_tool;
+          render();
+        }catch(error){toast(`${(RSDW_TOOLS.find((row)=>row.id===tool)||{}).label||'RSDW editor'} change blocked`,error.message,'error');render();}
+      };
+      if(!state.rsdwNativeTools[tool]&&!state.rsdwNativeToolBusy)setTimeout(()=>hydrateNativeRsdwTool(tool),0);
+      if(state.rsdwNativeDraft?.characterId===selected?.id)setToolStatus('Unsaved RSDW changes · ready to write with backup','dirty');
+      root.querySelector('#native-tool-search-apply')?.addEventListener('click',()=>{state.rsdwToolSearch=root.querySelector('#native-tool-search')?.value||'';state.rsdwToolPage=0;render();});
+      root.querySelector('#native-tool-search')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();state.rsdwToolSearch=event.target.value||'';state.rsdwToolPage=0;render();}});
+      root.querySelectorAll('[data-native-page]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwToolPage=Math.max(0,Number(button.dataset.nativePage||0));render();}));
+      root.querySelectorAll('[data-native-item-tab]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwItemCatalogTab=button.dataset.nativeItemTab||'bag';state.rsdwItemBagCategory='';state.rsdwToolPage=0;state.rsdwToolSearch='';render();}));
+      root.querySelectorAll('[data-native-bag-category]').forEach((button)=>button.addEventListener('click',()=>{const key=button.dataset.nativeBagCategory||'';state.rsdwItemBagCategory=state.rsdwItemBagCategory===key?'':key;state.rsdwToolPage=0;render();}));
+      root.querySelectorAll('[data-recipe-category]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwRecipeCategory=button.dataset.recipeCategory||'all';state.rsdwToolPage=0;render();}));
+      root.querySelectorAll('[data-spell-drag]').forEach((node)=>node.addEventListener('dragstart',(event)=>{event.dataTransfer.setData('text/x-rsdw-spell',node.dataset.spellDrag||'');event.dataTransfer.effectAllowed='copy';}));
+      root.querySelectorAll('[data-spellbook-page]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwSpellPage=Math.max(0,Math.min(5,Number(button.dataset.spellbookPage||0)));render();}));
+      root.querySelectorAll('[data-spell-wheel-slot]').forEach((slot)=>{slot.addEventListener('dragover',(event)=>{if(event.dataTransfer.types.includes('text/x-rsdw-spell')){event.preventDefault();slot.classList.add('drag-allowed');}});slot.addEventListener('dragleave',()=>slot.classList.remove('drag-allowed'));slot.addEventListener('drop',async(event)=>{event.preventDefault();slot.classList.remove('drag-allowed');const id=event.dataTransfer.getData('text/x-rsdw-spell');if(!id)return;const index=Number(slot.dataset.spellWheelSlot||0);try{const response=await previewRsdwToolChange('spell-editor',{action:'assign-slot',slot:index,id});state.rsdwSpellWheel=(response.native_tool?.selected||[]).slice(0,48);}catch(error){toast('Spell assignment blocked',error.message,'error');}});slot.addEventListener('contextmenu',async(event)=>{event.preventDefault();const index=Number(slot.dataset.spellWheelSlot||0);try{const response=await previewRsdwToolChange('spell-editor',{action:'clear-slot',slot:index});state.rsdwSpellWheel=(response.native_tool?.selected||[]).slice(0,48);}catch(error){toast('Spellbook change blocked',error.message,'error');}});});
+      root.querySelectorAll('[data-native-inventory-section]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwInventorySection=button.dataset.nativeInventorySection||'inventory';render();}));
+      root.querySelector('#toggle-item-repository')?.addEventListener('click',()=>{state.rsdwItemRepositoryOpen=state.rsdwItemRepositoryOpen===false;render();});
+      root.querySelectorAll('[data-native-tool-toggle]').forEach((input)=>input.addEventListener('change',()=>applyToolChange({id:input.value,enabled:input.checked})));
+      root.querySelectorAll('[data-native-item-action]').forEach((button)=>button.addEventListener('click',()=>applyToolChange({action:button.dataset.nativeItemAction,section:button.dataset.section,slot:Number(button.dataset.slot||0)})));
+      root.querySelectorAll('[data-native-item-add]').forEach((button)=>button.addEventListener('click',()=>applyToolChange({action:'add',section:'inventory',tab:button.dataset.nativeItemTabKey||state.rsdwItemCatalogTab,id:button.dataset.nativeItemAdd,max:false})));
+      root.querySelectorAll('[data-native-item-add-max]').forEach((button)=>button.addEventListener('click',()=>applyToolChange({action:'add',section:'inventory',tab:button.dataset.nativeItemTabKey||state.rsdwItemCatalogTab,id:button.dataset.nativeItemAddMax,max:true})));
+      root.querySelectorAll('[data-native-item-equip]').forEach((button)=>button.addEventListener('click',()=>applyToolChange({action:'add',section:'loadout',id:button.dataset.nativeItemEquip,max:false})));
+      if(tool==='item-editor'){
+        root.querySelector('#open-custom-item-repository')?.addEventListener('click',()=>openCustomItemRepository({}));
+        const contextMenu=root.querySelector('#native-item-context-menu');
+        let contextTarget=null;
+        const hideContext=()=>{if(contextMenu)contextMenu.hidden=true;contextTarget=null;};
+        const openContext=(event,target,mode)=>{
+          if(!contextMenu)return;
+          event.preventDefault();event.stopPropagation();contextTarget=target;
+          const show=new Set(mode==='catalog'?['add','add-max']:['change','max','custom','remove','duplicate','repair']);
+          if((mode==='catalog'&&target.dataset.itemUnknown==='1')||(mode==='inventory'&&target.dataset.itemRecognized==='0'))show.add('define');
+          if(target.dataset.itemCustom==='1'){show.add('rename');show.add('write-mod');}
+          if(mode==='inventory'&&target.dataset.section==='loadout')show.delete('duplicate');
+          if(mode==='inventory'&&!target.dataset.baseDurability)show.delete('repair');
+          contextMenu.querySelectorAll('[data-native-context-action]').forEach((button)=>button.hidden=!show.has(button.dataset.nativeContextAction));
+          contextMenu.hidden=false;Object.assign(contextMenu.style,{position:'fixed',maxWidth:'calc(100vw - 16px)',maxHeight:'calc(100vh - 16px)',overflowY:'auto',right:'auto',bottom:'auto'});const bounds=contextMenu.getBoundingClientRect();contextMenu.style.left=`${Math.max(8,Math.min(event.clientX,window.innerWidth-bounds.width-8))}px`;contextMenu.style.top=`${Math.max(8,Math.min(event.clientY,window.innerHeight-bounds.height-8))}px`;
+        };
+        const catalogPayload=(node)=>({source:'catalog',id:node.dataset.itemData||'',equipment:node.dataset.itemEquipment||'',max:Number(node.dataset.itemMax||1),tab:state.rsdwItemCatalogTab});
+        const inventoryPayload=(node)=>({source:'inventory',section:node.dataset.section||'inventory',slot:Number(node.dataset.slot||0),equipment:node.dataset.itemEquipment||''});
+        let definitionOpening=false;
+        const openItemDefinition=async(node)=>{
+          const id=node?.dataset.itemData||'';
+          if(!id||definitionOpening)return;
+          definitionOpening=true;
+          try{
+            const existing=((state.data?.application?.custom_items)||[]).find((row)=>String(row.persistence_id||'').toLowerCase()===String(id).toLowerCase());
+            let upstream=null;
+            if(!existing){try{const found=await api.invoke('application.rsdw.items.search',{query:id,limit:80});upstream=(found.items||[]).find((row)=>[row.persistence_id,row.item_data,row.id].some((value)=>String(value||'').toLowerCase()===String(id).toLowerCase()))||null;}catch(_){upstream=null;}}
+            await openCustomItemRepository(existing||{persistence_id:id,name:upstream?.display_name||upstream?.name||node.dataset.itemName||id,internal_name:upstream?.internal_name||'',category:upstream?.category||({category:'Other'}).category,equipment:upstream?.equipment||node.dataset.itemEquipment||'',max_stack:Number(upstream?.max_stack||node.dataset.itemMax||node.dataset.itemCount||1),icon_ref:upstream?.icon_path||''});
+          }finally{setTimeout(()=>{definitionOpening=false;},500);}
+        };
+        const canDrop=(payload,target)=>{
+          if(!payload||!target)return false;
+          const kind=target.dataset.kind||'';
+          if(kind==='loadout')return !!payload.equipment&&payload.equipment===target.dataset.equipment;
+          if(payload.source==='catalog'&&(kind==='action'||kind==='personal'))return state.rsdwItemCatalogTab==='bag';
+          if(payload.source==='catalog'&&kind==='tabbed')return target.dataset.tab===state.rsdwItemCatalogTab;
+          return true;
+        };
+        root.querySelectorAll('[data-native-catalog-slot][data-item-data]:not([data-item-data=""])').forEach((node)=>{
+          node.addEventListener('dragstart',(event)=>{const payload=catalogPayload(node);event.dataTransfer.setData('application/json',JSON.stringify(payload));event.dataTransfer.effectAllowed='copy';});
+          node.addEventListener('click',(event)=>{if(node.dataset.itemUnknown==='1'){event.preventDefault();event.stopPropagation();openItemDefinition(node);}});
+          node.addEventListener('keydown',(event)=>{if(node.dataset.itemUnknown==='1'&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openItemDefinition(node);}});
+          node.addEventListener('dblclick',()=>{if(node.dataset.itemUnknown!=='1')applyToolChange({action:'add',section:'inventory',tab:state.rsdwItemCatalogTab,id:node.dataset.itemData,max:false});});
+          node.addEventListener('contextmenu',(event)=>openContext(event,node,'catalog'));
+        });
+        root.querySelectorAll('[data-native-item-slot]').forEach((node)=>{
+          if(node.dataset.itemData)node.addEventListener('dragstart',(event)=>{const payload=inventoryPayload(node);event.dataTransfer.setData('application/json',JSON.stringify(payload));event.dataTransfer.effectAllowed='move';});
+          node.addEventListener('dragover',(event)=>{let payload=null;try{payload=JSON.parse(event.dataTransfer.getData('application/json')||'null');}catch(_){}if(!payload&&event.dataTransfer.types.includes('application/json')){event.preventDefault();node.classList.add('drag-pending');return;}if(canDrop(payload,node)){event.preventDefault();node.classList.add('drag-allowed');}else node.classList.add('drag-blocked');});
+          node.addEventListener('dragleave',()=>node.classList.remove('drag-pending','drag-allowed','drag-blocked'));
+          node.addEventListener('drop',(event)=>{event.preventDefault();node.classList.remove('drag-pending','drag-allowed','drag-blocked');let payload=null;try{payload=JSON.parse(event.dataTransfer.getData('application/json')||'null');}catch(_){}if(!canDrop(payload,node))return;if(payload.source==='catalog'){applyToolChange({action:'add',section:node.dataset.section,tab:state.rsdwItemCatalogTab,id:payload.id,max:false,target_slot:Number(node.dataset.slot||0),action_bar:node.dataset.kind==='action'});}else if(payload.source==='inventory'){applyToolChange({action:'move',section:payload.section,source_section:payload.section,source_slot:Number(payload.slot||0),target_section:node.dataset.section,target_slot:Number(node.dataset.slot||0)});}});
+          if(node.dataset.itemData){node.addEventListener('click',(event)=>{if(node.dataset.itemRecognized==='0'){event.preventDefault();event.stopPropagation();openItemDefinition(node);}});node.addEventListener('keydown',(event)=>{if(node.dataset.itemRecognized==='0'&&(event.key==='Enter'||event.key===' ')){event.preventDefault();openItemDefinition(node);}});node.addEventListener('contextmenu',(event)=>openContext(event,node,'inventory'));node.addEventListener('dblclick',async()=>{if(node.dataset.itemRecognized==='0')return;const value=await managedPrompt(et('quantity'),String(node.dataset.itemCount||1),et('customAmount'));if(value===null)return;const amount=Number(value);if(!Number.isFinite(amount)||amount<1)return toast(et('customAmount'),'Enter a positive number.','error');applyToolChange({action:'set-count',section:node.dataset.section,slot:Number(node.dataset.slot||0),amount});});}
+        });
+        contextMenu?.querySelectorAll('[data-native-context-action]').forEach((button)=>button.addEventListener('click',async()=>{
+          const action=button.dataset.nativeContextAction;if(!contextTarget)return;
+          if(action==='change'){
+            const target=contextTarget;hideContext();state.rsdwItemRepositoryOpen=true;state.rsdwInventorySection='inventory';state.rsdwItemCatalogTab=target.dataset.tab||'bag';state.rsdwToolPage=0;render();toast('Choose a replacement','Drag an item from the repository into the selected slot, or right-click a repository item to add it.','success');return;
+          }
+          if(action==='define'){
+            const target=contextTarget;hideContext();await openItemDefinition(target);return;
+          }
+          if(action==='rename'){
+            const target=contextTarget,id=target.dataset.itemData||'';
+            const existing=((state.data?.application?.custom_items)||[]).find((row)=>String(row.persistence_id||'').toLowerCase()===String(id).toLowerCase());
+            hideContext();if(!existing)return toast('Rename unavailable','Only launcher-defined custom items can be renamed.','error');
+            const name=await managedPrompt('New display name',existing.name||target.dataset.itemName||id,'Rename Custom Item');if(name===null)return;
+            const clean=String(name).trim();if(!clean)return toast('Rename unavailable','Enter an item name.','error');
+            try{const response=await api.invoke('application.custom_items.create',{item:{...existing,name:clean}});if(response?.state)state.data=response.state;state.rsdwNativeTools['item-editor']=null;await hydrateNativeRsdwTool('item-editor');render();toast('Custom item renamed',`${id} is now displayed as ${clean}.`,'success');}catch(error){toast('Could not rename custom item',error.message,'error');}
+            return;
+          }
+          if(action==='write-mod'){
+            const id=contextTarget.dataset.itemData||'';hideContext();
+            const modDir=await window.dragonwilds.pickDirectory();if(!modDir)return;
+            try{const response=await api.invoke('application.custom_items.write_to_mod',{persistence_id:id,mod_dir:modDir});if(response?.state)state.data=response.state;toast('Item written to mod',`${response.count} definition${response.count===1?'':'s'} in ${response.path}`,'success');}
+            catch(error){toast('Could not write item to mod',error.message,'error');}
+            return;
+          }
+          if(contextTarget.matches('[data-native-catalog-slot]')){await applyToolChange({action:'add',section:'inventory',tab:state.rsdwItemCatalogTab,id:contextTarget.dataset.itemData,max:action==='add-max'});hideContext();return;}
+          const section=contextTarget.dataset.section;const slot=Number(contextTarget.dataset.slot||0);
+          if(action==='custom'){const value=await managedPrompt(et('quantity'),String(contextTarget.dataset.itemCount||1),et('customAmount'));if(value!==null){const amount=Number(value);if(Number.isFinite(amount)&&amount>=1)await applyToolChange({action:'set-count',section,slot,amount});else toast(et('customAmount'),'Enter a positive number.','error');}}
+          else await applyToolChange({action:action==='max'?'max':action,section,slot});
+          hideContext();
+        }));
+        contextMenu?.addEventListener('contextmenu',(event)=>event.preventDefault());
+        contextMenu?.addEventListener('click',(event)=>event.stopPropagation());
+        root.addEventListener('click',hideContext);
+      }
+      saveButton?.addEventListener('click',async()=>{
+        const draft=state.rsdwNativeDraft;
+        if(!draft?.text||draft.characterId!==selected?.id||!loaded)return;
+        setToolStatus('Creating backup and verifying writeback…','saving');
+        try{
+          const response=await api.invoke('characters.toolkit.write',{character_id:selected.id,text:draft.text,expected_sha256:loaded.sha256||''});
+          if(response.state)state.data=response.state;state.characters=response.characters?.characters||state.characters;
+          toast('Character updated',`Backup: ${response.result?.backup||'created'} · RSDW schema verified`,'success');
+          await selectRsdwCharacter(selected.id,{renderFirst:false});
+        }catch(error){setToolStatus('Writeback blocked · save changed or invalid','error');toast('Character writeback blocked',error.message,'error');}
+      });
+    }
+    const rsdwWebview=root.querySelector('#rsdw-tool-webview');
+    if(rsdwWebview){
+      const setEditorStatus=(text,type='')=>{const label=root.querySelector('#rsdw-editor-status');const dot=root.querySelector('#rsdw-editor-status-dot');if(label)label.textContent=text;if(dot)dot.className=type;const save=root.querySelector('#rsdw-save-character');if(save)save.disabled=!['ready','dirty'].includes(type);};
+      const sendHydration=()=>{const payload=state.rsdwCharacterPayload;if(!payload?.text)return;try{rsdwWebview.send('hydrate-rsdw-character',{text:payload.text,fileName:payload.file_name||'Character.json',token:state.rsdwHydrationToken,avatar:payload.avatar||{}});}catch(_){}};
+      rsdwWebview.addEventListener('did-finish-load',()=>{try{rsdwWebview.insertCSS(embeddedScrollbarCss(embeddedRsdwLayoutCss()));}catch(_){} sendHydration();});
+      rsdwWebview.addEventListener('did-fail-load',(event)=>{ if(Number(event.errorCode)===-3) return; state.rsdwHydrationError=`RSDWTools page failed to load (${event.errorCode}): ${event.errorDescription||'unknown error'}`; toast('RSDW editor failed to load',state.rsdwHydrationError,'error'); });
+      rsdwWebview.addEventListener('ipc-message',async(event)=>{
+        if(event.channel==='rsdw-ready')return sendHydration();
+        if(event.channel==='rsdw-hydrated'){setEditorStatus(`${state.characters.find((c)=>c.id===state.characterSelectedId)?.profile?.label||state.characters.find((c)=>c.id===state.characterSelectedId)?.player_name||'Character'} loaded · changes protected by backup`,'ready');return;}
+        if(event.channel==='rsdw-dirty'){queueRsdwAvatarPreview();setEditorStatus('Unsaved character changes · preview waiting','dirty');return;}
+        if(event.channel==='rsdw-content-size')return;
+        if(event.channel==='rsdw-preview'){
+          const edited=event.args?.[0]||{};if(!edited.text)return;
+          try{const result=await api.invoke('characters.toolkit.preview',{text:edited.text});if(state.rsdwPreviewRefreshAuthorized){state.rsdwPreviewRefreshAuthorized=false;await syncRsdwAvatarPreview(result?.avatar);state.rsdwPreviewPending=false;setEditorStatus('Unsaved changes · 3D preview refreshed','dirty');}else{queueRsdwAvatarPreview(result?.avatar);setEditorStatus('Unsaved changes · click See changes to refresh 3D','dirty');}}catch(_){/* Keep the last valid avatar while the editor is between states. */}
+          return;
+        }
+        if(event.channel==='rsdw-appearance-change'){
+          const change=event.args?.[0]||{};const key=String(change.key||'');const value=String(change.value||'');
+          const selected=state.characters.find((row)=>row.id===state.characterSelectedId);const loaded=state.rsdwCharacterPayload;
+          if(!selected||!loaded?.text||!key||!value)return;
+          const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
+          try{const result=await api.invoke('characters.native.preview',{text:baseText,changes:{customization:{[key]:value}}});state.rsdwNativeDraft={...result,characterId:selected.id};queueRsdwAvatarPreview(result?.avatar);setEditorStatus('Unsaved appearance · click See changes to refresh 3D','dirty');}catch(error){setEditorStatus(`Appearance preview blocked · ${error.message}`,'error');}
+          return;
+        }
+        if(event.channel==='rsdw-hydration-error'){const msg=event.args?.[0]?.message||'RSDWTools could not load this character.';state.rsdwHydrationError=msg;setEditorStatus('Character loading failed','error');toast('Character tools need attention',msg,'error');return;}
+        if(event.channel==='rsdw-save-error'){setEditorStatus('Save action unavailable','error');return toast('RSDW save capture failed',event.args?.[0]?.message||'Could not capture editor output.','error');}
+        if(event.channel!=='rsdw-save')return;
+        setEditorStatus('Validating edited character…','saving');
+        const edited=event.args?.[0]||{};const selected=state.characters.find((c)=>c.id===state.characterSelectedId);const loaded=state.rsdwCharacterPayload;
+        if(!selected||!loaded)return;
+        try{const response=await api.invoke('characters.toolkit.write',{character_id:selected.id,text:edited.text||'',expected_sha256:loaded.sha256||''});if(response.state)state.data=response.state;const list=response.characters?.characters||[];if(list.length)state.characters=list;toast('Character updated',`Backup: ${response.result?.backup||'created'}`,'success');await selectRsdwCharacter(selected.id,{renderFirst:false});}catch(error){setEditorStatus('Writeback blocked · save changed or invalid','error');toast('Character writeback blocked',error.message,'error');}
+      });
+      root.querySelector('#rsdw-save-character')?.addEventListener('click',()=>{setEditorStatus('Preparing RSDW save…','saving');try{rsdwWebview.send('request-rsdw-save');}catch(error){setEditorStatus('Save action unavailable','error');toast('RSDW save unavailable',error.message,'error');}});
+    }
+    const applyPendingWeaponChanges=async()=>{const guest=root.querySelector('#rsdw-avatar-webview');const pending=state.rsdwPendingWeaponItems||{};if(!guest||!Object.keys(pending).length)return;const avatar=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar;for(const [slot,item] of Object.entries(pending)){const handId=slot==='rightHand'?'slot-rightHand':'slot-leftHand';const result=await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(handId)});if(!select)return {ok:false};const clear=${JSON.stringify(!!item?.clear)};if(clear){const empty=[...select.options].find((option)=>!option.value||/none|empty|unequip|unarmed/i.test(option.textContent||''));if(!empty)return {ok:false};select.value=empty.value;select.dispatchEvent(new Event('change',{bubbles:true}));return {ok:true,value:empty.value,label:empty.textContent};}const clean=(v)=>String(v||'').toLowerCase().replace(/item|weapon|main|off|hand|one handed|two handed|1h|2h|[_./-]/g,' ').replace(/[^a-z0-9 ]/g,' ').replace(/\s+/g,' ').trim();const wanted=clean(${JSON.stringify(item?.name||'')});const tokens=wanted.split(' ').filter((v)=>v.length>2);const rows=[...select.options].map((option)=>{const hay=clean(option.textContent+' '+option.value);const score=tokens.reduce((sum,token)=>sum+(hay.includes(token)?token.length:0),0);return {option,score};}).sort((a,b)=>b.score-a.score);if(!rows[0]||rows[0].score<=0)return {ok:false};select.value=rows[0].option.value;select.dispatchEvent(new Event('change',{bubbles:true}));return {ok:true,value:rows[0].option.value,label:rows[0].option.textContent};})()`,true);if(!result?.ok)continue;if(avatar?.params)avatar.params[slot]=result.value||'';if(item?.clear)delete state.rsdwPreviewWeaponItems[slot];else state.rsdwPreviewWeaponItems[slot]=item;}state.rsdwPendingWeaponItems={};};
+    root.querySelector('#rsdw-see-changes')?.addEventListener('click',async(event)=>{try{event.currentTarget.disabled=true;await applyPendingWeaponChanges();if(state.rsdwPendingAvatar||state.rsdwNativeDraft?.avatar){await syncRsdwAvatarPreview(state.rsdwPendingAvatar||state.rsdwNativeDraft.avatar);state.rsdwPreviewPending=false;}else if(rsdwWebview){state.rsdwPreviewRefreshAuthorized=true;rsdwWebview.send('request-rsdw-preview');}else{throw new Error('The character preview editor is not ready.');}}catch(error){state.rsdwPreviewRefreshAuthorized=false;event.currentTarget.disabled=false;toast('Preview refresh unavailable',error.message,'error');}});
+    const avatarWebview=root.querySelector('#rsdw-avatar-webview');
+    if(avatarWebview){
+      const avatarShell=avatarWebview.closest('.rsdw-avatar-stage-shell');
+      const setAvatarStatus=(text,type='')=>{const el=root.querySelector('#rsdw-avatar-status');if(el){el.textContent=text;el.className=type?`avatar-status ${type}`:'avatar-status';}if(avatarShell){const visible=type==='ready'||type==='streaming';avatarShell.classList.toggle('avatar-ready',visible);avatarShell.classList.toggle('avatar-failed',type==='error');avatarShell.classList.toggle('avatar-loading',!visible&&type!=='error');const cover=avatarShell.querySelector('.rsdw-avatar-loading-cover span');if(cover&&type==='error')cover.textContent=text;}};
+      let avatarResizeObserver=null;
+      const syncAvatarHostSize=()=>{
+        if(!avatarShell||root.querySelector('#rsdw-avatar-webview')!==avatarWebview){avatarResizeObserver?.disconnect();return;}
+        const height=Math.max(480,Math.round(avatarShell.getBoundingClientRect().height||0));
+        avatarWebview.style.setProperty('height',`${height}px`,'important');
+        avatarWebview.style.setProperty('min-height',`${height}px`,'important');
+        avatarWebview.setAttribute('height',String(height));
+      };
+      syncAvatarHostSize();
+      avatarResizeObserver=typeof ResizeObserver==='function'?new ResizeObserver(syncAvatarHostSize):null;
+      avatarResizeObserver?.observe(avatarShell);
+      let avatarReady=false;
+      let avatarRecoveryAttempts=0;
+      let avatarCssInserted=false;
+      let avatarPreparePromise=null;
+      const prepareAvatarPreview=()=>{
+        if(avatarReady || root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return Promise.resolve(false);
+        if(avatarPreparePromise)return avatarPreparePromise;
+        avatarPreparePromise=(async()=>{
+         try{
+          syncAvatarHostSize();
+          if(!avatarCssInserted){
+            await avatarWebview.insertCSS(embeddedScrollbarCss(embeddedAvatarCss()));
+            avatarCssInserted=true;
+          }
+          const shell=await avatarWebview.executeJavaScript(`(()=>{document.body?.classList.add('dws-embedded');const stage=document.querySelector('#avatar-stage');const c=document.querySelector('canvas');if(!c)return {ok:false,ready:document.readyState};if(stage)Object.assign(stage.style,{position:'fixed',inset:'0',width:'100vw',height:'100vh',minHeight:'100vh',margin:'0'});Object.assign(c.style,{display:'block',width:'100vw',height:'100vh',minHeight:'100vh'});return {ok:true,api:typeof window.dwsApplyAvatarParams==='function',loading:document.querySelector('#avatar-loading')?.hidden===false,status:document.querySelector('#avatar-status')?.textContent||''};})()`,true);
+          if(!shell?.ok){return;}
+          if(!shell.api){setAvatarStatus('Canvas ready · preparing character controls…','streaming');return;}
+          // The URL hash seeds RSDWModel, but some upstream builds populate
+          // their slot selects after the first render. Reapply the complete
+          // save-backed payload now that the layered model catalog is ready so
+          // equipped armour and weapons cannot be dropped during startup.
+          await syncRsdwAvatarPreview(state.rsdwPreviewAvatar||state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar||{});
+          const result=await avatarWebview.executeJavaScript(`(()=>{const c=document.querySelector('canvas');const status=document.querySelector('#avatar-status')?.textContent||'';const warning=document.querySelector('#avatar-warning');const warningText=warning&&!warning.hidden?(warning.textContent||'').trim():'';const loading=document.querySelector('#avatar-loading')?.hidden===false;const models=(status.match(/(\\d+)\\s+layered models?/i)||[])[1]||'';return {ok:!!c&&!loading&&!warningText,w:c?.clientWidth||0,h:c?.clientHeight||0,models,status,warning:warningText,loading};})()`,true);
+          if(!result?.ok){
+            if(result?.warning) setAvatarStatus(`3D assets need attention · ${result.warning}`,'error');
+            else setAvatarStatus('Canvas ready · streaming model layers…','streaming');
+            return;
+          }
+          await avatarWebview.executeJavaScript(`(()=>new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(()=>{window.dispatchEvent(new Event('resize'));const reset=document.querySelector('#reset-view');if(reset&&!reset.disabled)reset.click();resolve(true);}))))()`,true);
+          const upstream=await avatarWebview.executeJavaScript(`(()=>Object.fromEntries(['slot-hair','slot-beard','slot-rightHand','slot-leftHand','avatar-animation-select'].map(id=>{const select=document.getElementById(id);return [id,select?{value:select.value,options:[...select.options].map(option=>({value:option.value,label:option.textContent||option.label||option.value}))}:null]})))()`,true);
+          root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>{const source=upstream?.[select.dataset.avatarUpstreamSelect];if(!source)return;const filter=String(select.dataset.avatarFilter||'').toLowerCase().replace(/[_-]/g,' ');const options=(source.options||[]).filter((option)=>!filter||String(option.label||'').toLowerCase().replace(/[_-]/g,' ').includes(filter));let selectedValue=source.value;if(select.dataset.avatarDefault==='idle'){const idle=options.find((option)=>/(^|[\s_/-])idle([\s_/-]|$)/i.test(String(option.label||'')))||options.find((option)=>/idle/i.test(String(option.label||'')));if(idle)selectedValue=idle.value;}select.innerHTML=options.map((option)=>`<option value="${escapeHtml(option.value)}" ${String(option.value)===String(selectedValue)?'selected':''}>${escapeHtml(option.label)}</option>`).join('')||'<option value="">No matching RSDWModel entries</option>';select.disabled=!options.length;select.dispatchEvent(new Event('avatar-options-ready'));if(select.dataset.avatarDefault==='idle'&&selectedValue&&String(selectedValue)!==String(source.value)){avatarWebview.executeJavaScript(`(()=>{const s=document.getElementById('avatar-animation-select');if(!s)return false;s.value=${JSON.stringify(selectedValue)};s.dispatchEvent(new Event('change',{bubbles:true}));document.getElementById('avatar-animation-play')?.click();return true;})()`,true).catch(()=>{});}});
+          const background=String(state.rsdwAvatarBackground||'theme');
+          const backgroundImage=await characterBackdropDataUrl(background);
+          await avatarWebview.executeJavaScript(characterBackgroundScript(background,backgroundImage),true);
+          avatarReady=true;
+          const fields=Object.keys(state.rsdwCharacterPayload?.avatar?.params||{}).length;
+          const modelCopy=result.models?` · ${result.models} live model layers`:'';
+          setAvatarStatus(`Avatar loaded${modelCopy} · ${fields} save-backed appearance fields`,'ready');
+          return true;
+         }catch(error){
+          console.warn('Character preview preparation deferred:',error);
+          setAvatarStatus('3D renderer is still starting…','streaming');
+          return false; /* The next lifecycle or retry callback handles pages still navigating. */
+         }
+        })().finally(()=>{avatarPreparePromise=null;});
+        return avatarPreparePromise;
+      };
+      avatarWebview.addEventListener('did-start-loading',()=>{avatarReady=false;avatarCssInserted=false;setAvatarStatus('Loading RSDWModel avatar…','loading');});
+      // A remote webview can finish before bindEvents runs. Listen to both native
+      // lifecycle signals and retry against an already-complete document so the
+      // Character card consistently opens on the live canvas rather than the
+      // upstream editor controls above it.
+      avatarWebview.addEventListener('dom-ready',prepareAvatarPreview);
+      avatarWebview.addEventListener('did-finish-load',()=>{avatarRecoveryAttempts=0;prepareAvatarPreview();});
+      const avatarPollStarted=Date.now();
+      let avatarPollDelay=120;
+      const pollAvatarPreview=async()=>{if(avatarReady||root.querySelector('#rsdw-avatar-webview')!==avatarWebview)return;await prepareAvatarPreview();if(!avatarReady&&Date.now()-avatarPollStarted<45000){const delay=avatarPollDelay;avatarPollDelay=Math.min(1000,Math.round(avatarPollDelay*1.5));setTimeout(pollAvatarPreview,delay);}else if(!avatarReady){setAvatarStatus('3D preview timed out. Select See changes to retry.','error');}};
+      setTimeout(pollAvatarPreview,40);
+      avatarWebview.addEventListener('did-fail-load',async(event)=>{const code=Number(event.errorCode);if(code===-3)return;if(avatarRecoveryAttempts<2){avatarRecoveryAttempts+=1;setAvatarStatus('Repairing the local 3D preview assets…');try{await ensureRsdwToolkitSource({force:true});const source=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar||{};await avatarWebview.loadURL(rsdwAvatarUrl(source.url));return;}catch(_){/* Surface the original connection failure below. */}}setAvatarStatus(`Avatar failed to load (${event.errorCode})`,'error');toast('Character preview failed',event.errorDescription||'RSDWModel could not load.','error');});
+      root.querySelectorAll('[data-avatar-view]').forEach((button)=>button.addEventListener('click',async()=>{
+        const action=button.dataset.avatarView||'full';
+        try{await avatarWebview.executeJavaScript(`(()=>{const action=${JSON.stringify(action)};const c=document.querySelector('canvas');if(!c)return false;const x=c.clientWidth/2,y=c.clientHeight/2;const wheel=(delta,count=1)=>{for(let i=0;i<count;i+=1)c.dispatchEvent(new WheelEvent('wheel',{deltaY:delta,clientX:x,clientY:y,bubbles:true,cancelable:true}));};const drag=(dx)=>{const opts={pointerId:71,pointerType:'mouse',button:0,buttons:1,clientX:x,clientY:y,bubbles:true,cancelable:true};c.dispatchEvent(new PointerEvent('pointerdown',opts));c.dispatchEvent(new PointerEvent('pointermove',{...opts,clientX:x+dx}));c.dispatchEvent(new PointerEvent('pointerup',{...opts,button:0,buttons:0,clientX:x+dx}));};if(action==='full'){document.querySelector('#reset-view')?.click();wheel(-260,4);}else if(action==='face'){document.querySelector('#reset-view')?.click();wheel(-260,4);wheel(-100,1);}else if(action==='zoom-in')wheel(-180,1);else if(action==='zoom-out')wheel(180,1);else if(action==='rotate-left')drag(-80);else if(action==='rotate-right')drag(80);return true;})()`,true);}catch(error){toast('Avatar control unavailable',error.message,'error');}
+      }));
+    }
+    root.querySelectorAll('[data-avatar-upstream-select]').forEach((select)=>select.addEventListener('change',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const id=select.dataset.avatarUpstreamSelect;const value=select.value;await guest.executeJavaScript(`(()=>{const select=document.getElementById(${JSON.stringify(id)});if(!select)return false;select.value=${JSON.stringify(value)};select.dispatchEvent(new Event('change',{bubbles:true}));return true;})()`,true);}catch(error){toast('RSDWModel selection unavailable',error.message,'error');}}));
+    root.querySelectorAll('[data-avatar-play]').forEach((button)=>button.addEventListener('click',async()=>{const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;const action=button.dataset.avatarPlay==='pause'?'pause':'play';try{await guest.executeJavaScript(`(()=>{const action=${JSON.stringify(action)};const direct=document.getElementById(action==='pause'?'avatar-animation-pause':'avatar-animation-play');if(direct){direct.click();return true;}const canvas=document.querySelector('canvas');if(action==='pause'&&canvas){canvas.dispatchEvent(new KeyboardEvent('keydown',{key:' ',code:'Space',bubbles:true}));return true;}return false;})()`,true);}catch(error){toast('Animation control unavailable',error.message,'error');}}));
+    const applyCharacterBackground=async(value)=>{state.rsdwAvatarBackground=value||'theme';root.querySelectorAll('[data-character-background-choice]').forEach((button)=>{const active=button.dataset.characterBackgroundChoice===state.rsdwAvatarBackground;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active));});const guest=root.querySelector('#rsdw-avatar-webview');if(!guest)return;try{const backgroundImage=await characterBackdropDataUrl(state.rsdwAvatarBackground);const isScene=CHARACTER_BACKDROPS.some((entry)=>entry.value===state.rsdwAvatarBackground);await guest.executeJavaScript(characterBackgroundScript(state.rsdwAvatarBackground,backgroundImage),true);if(isScene&&!backgroundImage)toast('Backdrop image unavailable',`The ${state.rsdwAvatarBackground} scene could not be loaded, so the viewer is using a solid background.`,'warning');}catch(error){toast('Background selection unavailable',error.message,'error');}};
+    root.querySelector('#rsdw-avatar-background')?.addEventListener('change',(event)=>applyCharacterBackground(event.currentTarget.value));
+    root.querySelectorAll('[data-character-background-choice]').forEach((button)=>button.addEventListener('click',()=>{const value=button.dataset.characterBackgroundChoice||'theme';const select=root.querySelector('#rsdw-avatar-background');if(select)select.value=value;applyCharacterBackground(value);}));
+    root.querySelectorAll('[data-rsdw-preview-slot]').forEach((button)=>button.addEventListener('click',()=>{const slot=button.dataset.rsdwPreviewSlot;if(state.rsdwPreviewHidden.has(slot))state.rsdwPreviewHidden.delete(slot);else state.rsdwPreviewHidden.add(slot);render();}));
+    root.querySelectorAll('[data-rsdw-socket-eye]').forEach((eye)=>eye.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();const slot=eye.dataset.rsdwSocketEye;if(state.rsdwPreviewHidden.has(slot))state.rsdwPreviewHidden.delete(slot);else state.rsdwPreviewHidden.add(slot);render();}));
+    root.querySelector('#rsdw-avatar-scale')?.addEventListener('input',(event)=>{state.rsdwAvatarScale=Math.max(40,Math.min(90,Number(event.currentTarget.value)||62));const shell=root.querySelector('.rsdw-avatar-stage-shell');if(shell)shell.style.setProperty('--avatar-scale',`${state.rsdwAvatarScale}vh`);const value=event.currentTarget.nextElementSibling;if(value)value.textContent=`${state.rsdwAvatarScale}%`;});
+    root.querySelector('#rsdw-hide-all-armour')?.addEventListener('click',()=>{['helmet','cape','torso','legs'].forEach((slot)=>state.rsdwPreviewHidden.add(slot));render();});
+    root.querySelector('#rsdw-show-all-preview')?.addEventListener('click',()=>{state.rsdwPreviewHidden.clear();render();});
+    root.querySelector('#rsdw-apply-draft')?.addEventListener('click',async()=>{try{await applyRsdwDraft();}catch(error){toast('Character writeback blocked',error.message,'error');}});
+    root.querySelector('#rsdw-revert-draft')?.addEventListener('click',async()=>{if(await managedConfirm('Revert every unapplied equipment and appearance change? Preview visibility and camera position remain preferences.','Revert Character Draft'))await discardRsdwDraft();});
+    const openStudioRepository=(slot)=>{state.rsdwEquipmentRepositorySlot=slot;state.rsdwEquipmentSearch='';render();if(!state.rsdwNativeTools['item-editor'])hydrateNativeRsdwTool('item-editor');};
+    const closeStudioEquipmentMenu=()=>{const menu=document.querySelector('.character-equipment-context-menu');if(!menu)return;menu._cleanup?.();menu.remove();};
+    const refreshStudioEquipmentSocket=(socket,row)=>{
+      const slot=String(socket.dataset.studioEquipmentSlot||'Equipment');
+      const occupied=!!row?.item_data;
+      socket.dataset.studioEquippedItem=occupied?String(row.item_data):'';
+      socket.classList.toggle('occupied',occupied);socket.classList.toggle('empty',!occupied);
+      socket.setAttribute('aria-label',`${slot} equipment slot · ${occupied?(row.name||row.item_data):'Empty'}`);
+      const existing=socket.querySelector(':scope > img, :scope > .studio-socket-glyph');
+      let media;
+      if(occupied&&row.icon){media=document.createElement('img');media.src=rsdwAssetUrl(row.icon);media.alt='';media.loading='lazy';}
+      else{media=document.createElement('span');media.className='studio-socket-glyph';media.textContent=slot.slice(0,1);}
+      if(existing)existing.replaceWith(media);else socket.prepend(media);
+      const label=socket.querySelector('small');if(label)label.textContent=occupied?(row.name||row.item_data):'Empty slot';
+      const status=socket.querySelector('i');if(status)status.textContent=socket.classList.contains('hidden-preview')?'Hidden in preview':'Save-backed';
+    };
+    const applyStudioContextItem=async(socket,item)=>{
+      const slot=String(socket.dataset.studioEquipmentSlot||'');
+      const itemData=String(item.item_data||'');
+      const itemName=String(item.name||itemData||'Item');
+      if(!slot||!itemData)return;
+      if(slot==='Hotbar'){
+        const index=Number(socket.dataset.characterActionSlot);const response=await previewRsdwToolChange('item-editor',{action:'add',section:'inventory',id:itemData,target_slot:index},{paint:false});const row=(response.native_tool?.sections?.inventory||[]).find((entry)=>Number(entry.slot)===index);socket.classList.toggle('occupied',!!row);socket.innerHTML=`<b>${index+1}</b>${row?.icon?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><span>${Number(row.count||1)>1?escapeHtml(row.count):''}</span>`:'<i aria-hidden="true">＋</i>'}`;closeStudioEquipmentMenu();toast('Hotbar item staged',`${itemName} is ready in action slot ${index+1}.`,'success');return;
+      }
+      if(slot==='Main Hand'||slot==='Off Hand'){
+        const pendingKey=slot==='Main Hand'?'rightHand':'leftHand';state.rsdwPendingWeaponItems={...(state.rsdwPendingWeaponItems||{}),[pendingKey]:{...item,item_data:itemData,name:itemName}};const stagedAvatar=state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar;queueRsdwAvatarPreview(stagedAvatar);socket.dataset.studioEquippedItem=itemData;socket.classList.add('occupied');socket.classList.remove('empty');socket.setAttribute('aria-label',`${slot} slot · ${itemName}`);const existing=socket.querySelector(':scope > img, :scope > .studio-socket-glyph');if(item.icon){const media=document.createElement('img');media.src=rsdwAssetUrl(item.icon);media.alt='';media.loading='lazy';existing?.replaceWith(media);}const label=socket.querySelector('small');if(label)label.textContent=itemName;toast('Weapon staged',`${itemName} will appear after See changes.`,'success');return;
+        }
+      const index=Number(socket.dataset.studioEquipmentIndex);
+      const response=await previewRsdwToolChange('item-editor',{action:'add',section:'loadout',id:itemData,target_slot:index},{paint:false});
+      closeStudioEquipmentMenu();
+      refreshStudioEquipmentSocket(socket,(response.native_tool?.sections?.loadout||[]).find((row)=>Number(row.slot)===index));
+      queueRsdwAvatarPreview(response.avatar);
+      toast('Equipment staged',`${itemName} is ready. Save Character writes it with a verified backup.`,'success');
+    };
+    const clearStudioContextSlot=async(socket)=>{
+      const slot=String(socket.dataset.studioEquipmentSlot||'');
+      if(slot==='Hotbar'){const index=Number(socket.dataset.characterActionSlot);await previewRsdwToolChange('item-editor',{action:'remove',section:'inventory',slot:index},{paint:false});socket.classList.remove('occupied');socket.innerHTML=`<b>${index+1}</b><i aria-hidden="true">＋</i>`;closeStudioEquipmentMenu();toast('Hotbar item removed',`Action slot ${index+1} is empty.`,'success');return;}
+      if(slot==='Main Hand'||slot==='Off Hand'){
+        const pendingKey=slot==='Main Hand'?'rightHand':'leftHand';state.rsdwPendingWeaponItems={...(state.rsdwPendingWeaponItems||{}),[pendingKey]:{clear:true}};queueRsdwAvatarPreview(state.rsdwNativeDraft?.avatar||state.rsdwCharacterPayload?.avatar);socket.dataset.studioEquippedItem='';socket.classList.remove('occupied');socket.classList.add('empty');socket.setAttribute('aria-label',`${slot} slot · Empty`);const existing=socket.querySelector(':scope > img, :scope > .studio-socket-glyph');const media=document.createElement('span');media.className='studio-socket-glyph';media.textContent=slot==='Main Hand'?'⚔':'◈';existing?.replaceWith(media);const label=socket.querySelector('small');if(label)label.textContent='Choose preview item';closeStudioEquipmentMenu();toast('Weapon removal staged',`${slot} will clear after See changes.`,'success');return;
+        }
+      const index=Number(socket.dataset.studioEquipmentIndex);
+      const response=await previewRsdwToolChange('item-editor',{action:'remove',section:'loadout',slot:index},{paint:false});
+      closeStudioEquipmentMenu();refreshStudioEquipmentSocket(socket,null);queueRsdwAvatarPreview(response.avatar);toast('Equipment removed',`${slot} is empty in the staged loadout.`,'success');
+    };
+    const openStudioEquipmentMenu=(socket,event)=>{
+      closeStudioEquipmentMenu();
+      const slot=String(socket.dataset.studioEquipmentSlot||'');
+      const current=String(socket.dataset.studioEquippedItem||'');
+      const editor=state.rsdwNativeTools['item-editor']||{};
+      const unique=new Map();Object.values(editor.tabs||{}).flatMap((tab)=>tab.items||[]).forEach((row)=>{if(row?.item_data&&!unique.has(row.item_data))unique.set(row.item_data,row);});
+      const items=[...unique.values()].filter((row)=>slot==='Hotbar'||characterEquipmentCompatible(row,slot)).sort((a,b)=>String(a.name||'').localeCompare(String(b.name||''))).slice(0,120);
+      const menu=document.createElement('section');menu.className='character-equipment-context-menu';menu.setAttribute('role','menu');menu.setAttribute('aria-label',`${slot} quick equip menu`);
+      menu.innerHTML=`<header><span>Quick Equip</span><strong>${escapeHtml(slot)}</strong><small>${items.length} compatible catalog item${items.length===1?'':'s'}</small></header><label class="character-equipment-menu-search"><span>⌕</span><input type="search" placeholder="Search ${escapeHtml(slot.toLowerCase())} items…" aria-label="Search compatible equipment"/></label><div class="character-equipment-menu-items">${items.map((row)=>`<button type="button" role="menuitem" data-character-equip-item="${escapeHtml(row.item_data)}" data-item-category="${escapeHtml(row.category||row.equipment||'')}" data-item-custom="${row.custom?'1':'0'}" data-character-equip-search="${escapeHtml(`${row.name||''} ${row.category||''}`.toLowerCase())}" class="${current&&current===String(row.item_data)?'current':''}">${row.icon?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/>`:'<i aria-hidden="true">◇</i>'}<span><strong>${escapeHtml(row.name||row.item_data)}</strong><small>${escapeHtml(row.category||row.equipment||slot)}</small></span>${current&&current===String(row.item_data)?'<b>Equipped</b>':''}</button>`).join('')||'<div class="character-equipment-menu-empty">The item repository is still loading. Try again when its cached catalog is ready.</div>'}</div><footer><button type="button" class="danger" data-character-equip-action="clear" ${current?'':'disabled'}>${slot==='Hotbar'?'Clear action slot':slot==='Main Hand'||slot==='Off Hand'?'Clear preview slot':'Unequip current item'}</button></footer>`;
+      document.body.append(menu);
+      const bounds=menu.getBoundingClientRect();menu.style.left=`${Math.max(8,Math.min(event.clientX,window.innerWidth-bounds.width-8))}px`;menu.style.top=`${Math.max(8,Math.min(event.clientY,window.innerHeight-bounds.height-8))}px`;
+      const outside=(outsideEvent)=>{if(!menu.contains(outsideEvent.target))closeStudioEquipmentMenu();};const keyboard=(keyEvent)=>{if(keyEvent.key==='Escape')closeStudioEquipmentMenu();};menu._cleanup=()=>{document.removeEventListener('pointerdown',outside,true);document.removeEventListener('keydown',keyboard,true);};setTimeout(()=>{document.addEventListener('pointerdown',outside,true);document.addEventListener('keydown',keyboard,true);},0);
+      const search=menu.querySelector('input');search?.addEventListener('input',()=>{const query=search.value.trim().toLowerCase();menu.querySelectorAll('[data-character-equip-item]').forEach((button)=>{button.hidden=!!query&&!String(button.dataset.characterEquipSearch||'').includes(query);});});
+      menu.addEventListener('contextmenu',(menuEvent)=>menuEvent.preventDefault());
+      menu.addEventListener('click',async(clickEvent)=>{const itemButton=clickEvent.target.closest('[data-character-equip-item]');const actionButton=clickEvent.target.closest('[data-character-equip-action]');try{if(itemButton){const item=unique.get(itemButton.dataset.characterEquipItem);if(item){itemButton.classList.add('busy');await applyStudioContextItem(socket,item);closeStudioEquipmentMenu();}}else if(actionButton?.dataset.characterEquipAction==='clear'){actionButton.disabled=true;await clearStudioContextSlot(socket);}}catch(error){toast('Equipment change blocked',error.message,'error');closeStudioEquipmentMenu();}});
+      search?.focus();if(!editor.tabs&&!state.rsdwNativeToolBusy)setTimeout(()=>hydrateNativeRsdwTool('item-editor'),0);
+    };
+    root.querySelectorAll('[data-studio-equipment-slot]').forEach((socket)=>{
+      socket.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();openStudioEquipmentMenu(socket,event);});
+      socket.addEventListener('dragover',(event)=>{if(event.dataTransfer.types.includes('application/x-rsdw-equipment')){event.preventDefault();socket.classList.add('drag-allowed');}});
+      socket.addEventListener('dragleave',()=>socket.classList.remove('drag-allowed'));
+      socket.addEventListener('drop',async(event)=>{event.preventDefault();socket.classList.remove('drag-allowed');let payload={};try{payload=JSON.parse(event.dataTransfer.getData('application/x-rsdw-equipment')||'{}');}catch(_){}const editor=state.rsdwNativeTools['item-editor']||{};const item=Object.values(editor.tabs||{}).flatMap((tab)=>tab.items||[]).find((row)=>String(row.item_data||'')===String(payload.id||''));if(!item||!characterEquipmentCompatible(item,socket.dataset.studioEquipmentSlot))return toast('Incompatible equipment',`This socket accepts ${socket.dataset.studioEquipmentSlot} items.`,'error');try{await applyStudioContextItem(socket,item);}catch(error){toast('Equipment preview blocked',error.message,'error');}});
+    });
+    root.querySelectorAll('[data-character-action-slot]').forEach((socket)=>socket.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();socket.dataset.studioEquipmentSlot='Hotbar';openStudioEquipmentMenu(socket,event);}));
+    root.querySelector('.studio-repository-grid')?.addEventListener('click',async(event)=>{
+      const item=event.target.closest('[data-studio-equipment-item]');
+      const slot=String(state.rsdwEquipmentRepositorySlot||'');
+      if(!item||slot==='Main Hand'||slot==='Off Hand')return;
+      event.preventDefault();event.stopImmediatePropagation();
+      const index=RSDW_LOADOUT_SLOTS.findIndex(([type])=>type===slot);
+      try{
+        const socket=root.querySelector(`[data-studio-equipment-index="${index}"]`);
+        if(!socket)throw new Error(`${slot} slot is unavailable.`);
+        state.rsdwEquipmentRepositorySlot='';
+        root.querySelector('#studio-repository-backdrop')?.remove();
+        await applyStudioContextItem(socket,{item_data:item.dataset.studioEquipmentItem,name:item.dataset.studioEquipmentName});
+      }catch(error){toast('Equipment preview blocked',error.message,'error');}
+    },true);
+    root.querySelectorAll('[data-studio-equipment-item]').forEach((item)=>{
+      item.addEventListener('dragstart',(event)=>{event.dataTransfer.setData('application/x-rsdw-equipment',JSON.stringify({id:item.dataset.studioEquipmentItem,type:item.dataset.studioEquipmentType}));event.dataTransfer.effectAllowed='copy';});
+      item.addEventListener('click',async()=>{const slot=String(state.rsdwEquipmentRepositorySlot||'');if(slot!=='Main Hand'&&slot!=='Off Hand')return;const handId=slot==='Main Hand'?'slot-rightHand':'slot-leftHand';const socket=root.querySelector(`[data-avatar-hand-slot="${handId}"]`);if(!socket)return toast('Weapon preview unavailable','The equipped hand slot is not mounted.','error');try{await applyStudioContextItem(socket,{item_data:item.dataset.studioEquipmentItem,name:item.dataset.studioEquipmentName});state.rsdwEquipmentRepositorySlot='';root.querySelector('#studio-repository-backdrop')?.remove();}catch(error){toast('Weapon preview unavailable',error.message,'error');}});
+    });
+    root.querySelector('#close-studio-repository')?.addEventListener('click',()=>{state.rsdwEquipmentRepositorySlot='';render();});
+    root.querySelector('#studio-repository-backdrop')?.addEventListener('click',(event)=>{if(event.target.id==='studio-repository-backdrop'){state.rsdwEquipmentRepositorySlot='';render();}});
+    root.querySelector('#studio-equipment-search-apply')?.addEventListener('click',()=>{state.rsdwEquipmentSearch=root.querySelector('#studio-equipment-search')?.value||'';render();});
+    root.querySelector('#studio-equipment-search')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){state.rsdwEquipmentSearch=event.target.value||'';render();}});
+    root.querySelector('#rsdw-capture-portrait')?.addEventListener('click',async()=>{
+      const selected=state.characters.find((c)=>c.id===state.characterSelectedId);
+      const guest=root.querySelector('#rsdw-avatar-webview');
+      if(!selected||!guest)return;
+      try{
+        const rendered=await guest.executeJavaScript(`document.querySelector('canvas')?.toDataURL('image/png')||''`,true);
+        if(!String(rendered||'').startsWith('data:image/'))throw new Error('Avatar renderer is not ready yet.');
+        const portrait=await new Promise((resolve,reject)=>{
+          const image=new Image();
+          image.onload=()=>{
+            try{
+              const side=Math.max(1,Math.round(Math.min(image.naturalWidth,image.naturalHeight)*.5));
+              const sx=Math.max(0,Math.round((image.naturalWidth-side)/2));
+              const sy=Math.max(0,Math.min(image.naturalHeight-side,Math.round(image.naturalHeight*.12)));
+              const canvas=document.createElement('canvas'); canvas.width=768; canvas.height=768;
+              const context=canvas.getContext('2d'); context.fillStyle='#050708'; context.fillRect(0,0,768,768);
+              context.drawImage(image,sx,sy,side,side,0,0,768,768); resolve(canvas.toDataURL('image/png'));
+            }catch(error){reject(error);}
+          };
+          image.onerror=()=>reject(new Error('The rendered avatar frame could not be decoded.'));
+          image.src=rendered;
+        });
+        const response=await api.invoke('characters.profile.update',{character_id:selected.id,profile:{...(selected.profile||{}),portrait_data:portrait}});
+        state.characters=response.characters||state.characters;
+        toast('Face card captured','The selected character portrait now uses the live RSDWModel view.','success');
+        await selectRsdwCharacter(selected.id,{renderFirst:false});
+      }catch(error){toast('Could not capture face card',error.message,'error');}
+    });
+    root.querySelectorAll('[data-client-mod-filter]').forEach((button) => button.addEventListener('click', () => { state.clientModFilter = button.dataset.clientModFilter === 'all' ? 'all' : 'required'; render(); }));
+    root.querySelector('#detect-client-public-ip')?.addEventListener('click', async () => {
+      try { const response = await api.invoke('client.public_ip.detect', {}); state.clientPublicIp = response.ip || ''; if(response.state)state.data=response.state; render(); toast(response.ip ? 'Addresses detected' : 'External IP unavailable', response.ip ? `LAN ${response.internal_ip||'—'} · Public ${response.ip}` : `LAN ${response.internal_ip||'—'} · public lookup unavailable`, response.ip ? 'success' : 'error'); }
+      catch (error) { toast('Public IP detection failed', error.message, 'error'); }
+    });
+    root.querySelector('#activate-server-world')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.world.activate', { id: world.id }); setData(response.state); toast('World activated', `${response.result.mods_restored} mod file(s) restored`, 'success'); }
+      catch (error) { toast('Activation blocked', error.message, 'error'); }
+    });
+    root.querySelector('#broadcast-server-world')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      launchRuntimeConsoleForWorld(world);
+      try { const response = await runServerStartOperation(world, ()=>api.invoke('server.runtime.start', { id: world.id })); setData(response.state); setDiscordPresence('Hosting World', world, { resetTimer: true, playerCount: response.result?.player_count, health: response.result?.server_health }); toast('World launched', response.result?.pid ? `Dedicated process PID ${response.result.pid} · Sync endpoint active` : 'Sync/Studio manifest refreshed.', 'success'); }
+      catch (error) { toast('Launch failed', error.message, 'error'); }
+    });
+    root.querySelector('#stop-server-world')?.addEventListener('click', async () => {
+      if (!await managedConfirm('Stop the active Dragonwilds dedicated server?','Stop Server')) return;
+      try { const response = await runOperation('Stopping hosted World', 'Closing the dedicated process tree, stopping Sync, and verifying that no runtime remains…', ()=>api.invoke('server.world.stop', {})); if(!response.result?.stop_verified || response.result?.running)throw new Error('The dedicated process did not report a verified stop.'); setData(response.state); toast('Dedicated server stopped', `PID ${response.result?.stopped_pid||'—'} · ${response.result?.stop_method||'verified'}`, 'success'); }
+      catch (error) { toast('Stop failed', error.message, 'error'); }
+    });
+    root.querySelector('#restart-server-world')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world || !await managedConfirm('Restart this Dragonwilds dedicated server?','Restart Server')) return;
+      launchRuntimeConsoleForWorld(world);
+      try { const response = await runOperation('Restarting hosted World', 'Stopping the current process, launching and verifying Dragonwilds, then republishing Sync…', ()=>api.invoke('server.world.restart', { id: world.id })); setData(response.state); setDiscordPresence('Hosting World', world, { resetTimer: true, playerCount: response.result?.player_count, health: response.result?.server_health }); toast('Dedicated server restarted', `PID ${response.result.pid}`, 'success'); }
+      catch (error) { toast('Restart failed', error.message, 'error'); }
+    });
+    root.querySelector('#update-server-world')?.addEventListener('click', async () => {
+      const world=activeServerWorld();if(!world||!await managedConfirm('Stop the active server if needed and install the latest dedicated-server build? It will remain stopped after the update.','Update Server'))return;
+      try{const response=await runOperation('Updating dedicated server','Stopping and verifying the process before SteamCMD updates the shared installation…',()=>api.invoke('server.runtime.update',{id:world.id}));if(response.state)setData(response.state);toast('Server updated','SteamCMD completed; the server remains stopped.','success');}catch(error){toast('Server update failed',error.message,'error');}
+    });
+    root.querySelector('#update-restart-server-world')?.addEventListener('click', async () => {
+      const world=activeServerWorld();if(!world||!await managedConfirm('Stop, update, and restart this hosted World? The server will only be advertised again after its process and Sync broadcast are verified.','Update & Restart'))return;
+      launchRuntimeConsoleForWorld(world);
+      try{const response=await runOperation('Updating and restarting','Stopping, updating with SteamCMD, launching and verifying the server, then publishing Sync…',()=>api.invoke('server.runtime.update_restart',{id:world.id}));if(response.state)setData(response.state);toast('Server updated and restarted',`PID ${response.result?.restart?.pid||response.result?.pid||'—'} · Sync verified`,'success');}catch(error){toast('Update & restart failed',error.message,'error');}
+    });
+    root.querySelector('#refresh-server-hardware')?.addEventListener('click', async () => {
+      try { const response = await api.invoke('server.hardware.refresh', {}); setData(response.state); toast('Hardware refreshed', '', 'success'); }
+      catch (error) { toast('Hardware probe failed', error.message, 'error'); }
+    });
+    root.querySelector('#refresh-runtime-versions')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.runtime.versions.refresh', { id: world.id }); if (response.state) setData(response.state); toast('Runtime versions refreshed', 'Dragonwilds + UE4SS version evidence updated.', 'success'); }
+      catch (error) { toast('Version refresh failed', error.message, 'error'); }
+    });
+    root.querySelector('#refresh-server-inventory')?.addEventListener('click', () => refreshServerInventory(activeServerWorld(),false,true));
+    root.querySelector('#refresh-server-backups')?.addEventListener('click', () => refreshServerBackups());
+    root.querySelector('#publish-server-mods')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.world.publish', { id: world.id }); state.serverInventory[world.id] = response.result.units || state.serverInventory[world.id] || []; setData(response.state); toast('Mod update published', `Manifest v${response.result.manifest_version}`, 'success'); }
+      catch (error) { toast('Publish failed', error.message, 'error'); }
+    });
+    const stopShare = async () => { try { const response = await api.invoke('server.share.stop', {}); setData(response.state); toast('Sync share stopped', '', 'success'); } catch (error) { toast('Stop share failed', error.message, 'error'); } };
+    root.querySelector('#stop-share')?.addEventListener('click', stopShare);
+    root.querySelector('#stop-share-top')?.addEventListener('click', stopShare);
+    root.querySelectorAll('[data-mod-mode]').forEach((control) => control.addEventListener('change', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      const key=control.dataset.modMode; const next=control.value; const inventory=state.serverInventory[world.id]||[]; const unit=inventory.find((item)=>item.key===key); if(!unit)return;
+      const previous=unit.classification; unit.classification=next; render();
+      try { await api.invoke('server.world.mod.classify', { id: world.id, key, classification: next }); toast('Mod mode saved', 'Publish & Push applies the pending mode to clients without rescanning the remote server for this click.', 'success'); }
+      catch (error) { unit.classification=previous; render(); toast('Mod classification failed', error.message, 'error'); }
+    }));
+    root.querySelectorAll('[data-mod-category]').forEach((button) => button.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      const next = button.dataset.categoryCurrent === 'permanent' ? 'temporary' : 'permanent';
+      try { const response = await api.invoke('server.world.mod.update', { id: world.id, key: button.dataset.modCategory, category: next }); state.serverInventory[world.id] = response.units || []; render(); }
+      catch (error) { toast('Mod category update failed', error.message, 'error'); }
+    }));
+    root.querySelectorAll('[data-mod-hotload]').forEach((button) => button.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return; const next = button.dataset.hotloadCurrent !== '1';
+      try { const response = await api.invoke('server.world.mod.update', { id: world.id, key: button.dataset.modHotload, hotload_capable: next }); state.serverInventory[world.id] = response.units || []; render(); toast(next ? 'Hotload tag enabled' : 'Hotload tag disabled', next ? 'Supported files in this UE4SS mod can now be edited directly through Monaco as live-capable.' : 'Changes will be treated as restart-required.', 'success'); }
+      catch (error) { toast('Could not change hotload tag', error.message, 'error'); }
+    }));
+    root.querySelectorAll('[data-mod-tags]').forEach((button) => button.addEventListener('click', async () => {
+      const world=activeServerWorld(); const unit=(state.serverInventory[world?.id]||[]).find((item)=>item.key===button.dataset.modTags); if(!world||!unit)return;
+      const value=await managedPrompt('Comma- or semicolon-separated tags. These persist with the World profile and are advertised on its verified Sync fingerprint metadata.',(unit.tags||[]).join(', '),t('editTags'));
+      if(value===null)return;
+      try{const response=await api.invoke('server.world.mod.update',{id:world.id,key:unit.key,tags:value});state.serverInventory[world.id]=response.units||[];if(response.state)setData(response.state);render();toast('Mod tags saved','Client-required mod tags are now included in World discovery metadata.','success');}catch(error){toast('Tag update failed',error.message,'error');}
+    }));
+    root.querySelectorAll('[data-edit-hotload-mod]').forEach((button) => button.addEventListener('click', () => openHotloadModFiles(activeServerWorld(), button.dataset.editHotloadMod)));
+    root.querySelectorAll('[data-server-nexus-manage]').forEach((button)=>button.addEventListener('click',()=>{const world=activeServerWorld();const unit=(state.serverInventory[world?.id]||[]).find((u)=>u.key===button.dataset.serverNexusManage);if(unit)openNexusManagedMod(unit,'server');}));
+    root.querySelectorAll('[data-server-rollback]').forEach((button)=>button.addEventListener('click',()=>{const world=activeServerWorld();const unit=(state.serverInventory[world?.id]||[]).find((u)=>u.key===button.dataset.serverRollback);if(unit)rollbackNexusUnit(unit,'server');}));
+    root.querySelectorAll('[data-mod-source]').forEach((button) => button.addEventListener('click', () => {
+      const world = activeServerWorld(); const unit = (state.serverInventory[world?.id] || []).find((u) => u.key === button.dataset.modSource); if (world && unit) openModSourceEditor(world, unit);
+    }));
+    root.querySelectorAll('[data-mod-identity]').forEach((button) => button.addEventListener('click', () => {
+      const world = activeServerWorld(); const unit = (state.serverInventory[world?.id] || []).find((u) => u.key === button.dataset.modIdentity); if (unit) openModIdentityDetails(unit);
+    }));
+    root.querySelectorAll('[data-sp-identity]').forEach((button) => button.addEventListener('click', () => {
+      const unit = (state.singleplayerInventory || []).find((u) => u.key === button.dataset.spIdentity); if (unit) openModIdentityDetails(unit);
+    }));
+    root.querySelectorAll('[data-mod-move]').forEach((button) => button.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.world.mod.move', { id: world.id, key: button.dataset.modMove, direction: Number(button.dataset.direction || 0) }); state.serverInventory[world.id] = response.units || []; render(); }
+      catch (error) { toast('Mod reorder failed', error.message, 'error'); }
+    }));
+    bindLoadOrderDragDrop('[data-mod-move]','modMove',async(key,targetIndex)=>{
+      const world=activeServerWorld(); if(!world)return;
+      try{const response=await api.invoke('server.world.mod.move',{id:world.id,key,target_index:targetIndex});state.serverInventory[world.id]=response.units||[];render();toast('Load order updated','mods.txt and PAK prefixes were repaired to match.','success');}
+      catch(error){toast('Mod reorder failed',error.message,'error');}
+    });
+    root.querySelectorAll('[data-section-push]').forEach((button) => button.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.world.section.push', { id: world.id, section: button.dataset.sectionPush }); state.serverInventory[world.id] = response.units || []; if (response.state) setData(response.state); toast('Section pushed to clients', `${button.dataset.sectionPush.toUpperCase()} · manifest v${response.result?.manifest_version || '—'}`, 'success'); }
+      catch (error) { toast('Section publish failed', error.message, 'error'); }
+    }));
+    root.querySelector('#detect-server-public-ip')?.addEventListener('click', async () => {
+      try { const response = await api.invoke('server.public_ip.detect', {}); await refreshServerRuntime(true); toast(response.ip ? 'Public IP detected' : 'Public IP unavailable', response.ip || 'Could not detect it right now.', response.ip ? 'success' : 'error'); }
+      catch (error) { toast('Public IP lookup failed', error.message, 'error'); }
+    });
+    root.querySelector('#copy-server-connection')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try {
+        const info = await api.invoke('server.connection.info', { id: world.id });
+        const lines = [`World: ${info.world_name}`, `Internal: ${info.internal_ip ? `${info.internal_ip}:${info.sync_port}` : '—'}`, `External: ${info.external_ip ? `${info.external_ip}:${info.sync_port}` : '—'}`, `Game Port: UDP ${info.game_port}`, `Sync Transfer: TCP ${info.sync_port}`, `Direct Connect Discovery: UDP ${info.sync_discovery_port||8422}`, `WebHost default: TCP 27080 (separate and optional)`, `World Password: ${info.password}`, `Sync TLS: ${info.sync_tls?'Enabled':'Disabled'}`, `TLS Password Fallback: ${info.tls_password_fallback?'Allowed':'Disabled'}`, `TLS Certificate SHA-256: ${info.tls_cert_fingerprint||'Not applicable'}`];
+        await window.dragonwilds.copyText(lines.join('\n')); toast('Connection info copied', 'World Name, routes, password, and Share/Hash code are ready to share.', 'success');
+      } catch (error) { toast('Copy failed', error.message, 'error'); }
+    });
+    const copyServerRouterRule=async(service,port)=>{try{const rule=await api.invoke('application.network.manual_rule',{service,port});const format=(item)=>`${item.service}\nProtocol: ${item.protocol}\nExternal port: ${item.external_port}\nInternal address: ${item.internal_address}\nInternal port: ${item.internal_port}\nSource: ${item.source}`;const text=[format(rule),...(rule.companion_rules||[]).map(format),`UniFi: ${rule.unifi_path}`].join('\n\n');await navigator.clipboard.writeText(text);toast('Manual router rule copied',rule.static_address_warning,'success');}catch(error){toast('Could not copy router rule',error.message,'error');}};
+    root.querySelector('#copy-server-game-rule')?.addEventListener('click',()=>copyServerRouterRule('dedicated_game',activeServerWorld()?.dedicated_config?.port||7777));
+    root.querySelector('#copy-server-sync-rule')?.addEventListener('click',()=>copyServerRouterRule('world_sync',activeServerWorld()?.sync_config?.port||27051));
+    const runServerUpnp=async(service,action='create')=>{const world=activeServerWorld();if(!world)return;try{const services=service==='sync'?['sync','sync-discovery']:[service];const rows=[];for(const item of services)rows.push(await api.invoke('server.network.upnp',{id:world.id,service:item,action}));const ok=rows.every((row)=>action==='remove'?row.deleted:row.verified);const conflict=rows.some((row)=>row.conflict);toast(ok?(action==='remove'?'UPnP mappings removed':'UPnP mappings confirmed'):conflict?'UPnP mapping conflict':'UPnP remains unverified',rows.map((row)=>`${row.protocol} ${row.port}${row.error?` · ${row.error}`:''}`).join(' | '),ok?'success':conflict?'error':'');}catch(error){toast('UPnP operation failed',error.message,'error');}};
+    root.querySelector('#recreate-game-upnp')?.addEventListener('click',()=>runServerUpnp('game'));
+    root.querySelector('#recreate-sync-upnp')?.addEventListener('click',()=>runServerUpnp('sync'));
+    root.querySelector('#remove-game-upnp')?.addEventListener('click',()=>runServerUpnp('game','remove'));
+    root.querySelector('#remove-sync-upnp')?.addEventListener('click',()=>runServerUpnp('sync','remove'));
+    root.querySelector('#configure-server-firewall')?.addEventListener('click', async () => {
+      try { const result=await api.invoke('application.firewall.repair_all',{});const ports=(result.ports||[]).map(row=>`${row.protocol} ${row.port}`).join(' · ');toast(result.ok?'Host firewall configured':'Firewall needs attention',ports||result.message||'No inbound listeners configured.',result.ok?'success':'error'); }
+      catch (error) { toast('Firewall configuration failed', error.message, 'error'); }
+    });
+    root.querySelector('#full-server-setup')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world || !await managedConfirm('Run full server setup for this World? This can install/update the dedicated server and configure Windows Firewall.','Run Server Setup')) return;
+      try { const response = await api.invoke('server.maintenance.full_setup', { id: world.id }); if (response.state) setData(response.state); toast('Full setup complete', 'Dedicated server + firewall configured', 'success'); }
+      catch (error) { toast('Full setup failed', error.message, 'error'); }
+    });
+    root.querySelector('#update-server-executables')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); const d = world?.dedicated_config || {}; if (!d.install_dir && !d.game_root) return toast('Server root required', 'Set the dedicated install/root folder first.', 'error');
+      let steam = d.steamcmd_dir; if (!steam) return toast('SteamCMD folder required', 'Set it in Edit World first.', 'error');
+      showModal(`<div class="modal-header"><div><div class="eyebrow">SteamCMD</div><h2>Updating Dedicated Server</h2><p id="server-update-phase">Preparing download...</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><progress id="server-update-progress" max="100" value="0" style="width:100%"></progress><div class="identity-box" style="margin-top:14px"><strong id="server-update-percent">0%</strong><p id="server-update-message">Starting update job...</p></div></div><div class="modal-footer"><span>The update continues safely if this window is closed.</span><button class="btn ghost" data-close-modal>Minimize</button></div>`,{title:'Server Update'});
+      try {
+        const started=await api.invoke('server.install.update.start',{install_dir:d.install_dir||d.game_root,steamcmd_dir:steam});
+        let job;
+        do {
+          await new Promise((resolve)=>setTimeout(resolve,500));
+          job=await api.invoke('server.install.update.status',{job_id:started.job_id});
+          const progress=modalRoot.querySelector('#server-update-progress');if(progress&&Number.isFinite(Number(job.percent)))progress.value=Math.max(0,Math.min(100,Number(job.percent)));
+          const phase=modalRoot.querySelector('#server-update-phase');if(phase)phase.textContent=String(job.phase||'Updating').replaceAll('-',' ');
+          const percent=modalRoot.querySelector('#server-update-percent');if(percent)percent.textContent=Number.isFinite(Number(job.percent))?`${Number(job.percent).toFixed(1)}%`:'Working...';
+          const message=modalRoot.querySelector('#server-update-message');if(message)message.textContent=job.message||'SteamCMD is working...';
+        } while(!['complete','failed'].includes(job?.status));
+        if(job.status==='failed')throw new Error(job.error||job.message||'SteamCMD update failed');
+        closeModal();toast('Server executables updated',job.result?.installed?.server_exe||'SteamCMD validation complete.','success');
+      } catch (error) { closeModal();toast('Server update failed', error.message, 'error'); }
+    });
+    root.querySelector('#check-game-update')?.addEventListener('click', async () => {
+      try { const result = await api.invoke('server.maintenance.check_game_update', {}); toast(result.buildid ? 'Current Steam public build' : 'Update check unavailable', result.buildid ? `Build ${result.buildid}` : 'Could not check Steam right now.', result.buildid ? 'success' : ''); }
+      catch (error) { toast('Update check failed', error.message, 'error'); }
+    });
+    root.querySelector('#update-ue4ss')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); const rootPath = state.data?.application?.server_install?.install_dir || ''; if (!rootPath) return toast('Server directory required', 'Set it under Settings → Server first.', 'error');
+      try { const update = await api.invoke('server.maintenance.check_ue4ss', {}); if (!update.download_url) return toast('UE4SS check unavailable', 'No release asset was discovered.', ''); if (!await managedConfirm(`Install ${update.filename} into this server's Binaries/Win64 folder?`,'Update UE4SS')) return; const result = await api.invoke('server.maintenance.install_ue4ss_update', { id: world.id, download_url: update.download_url, filename: update.filename }); toast('UE4SS updated', `${result.files_written} file(s) installed`, 'success'); await refreshServerInventory(world, true); }
+      catch (error) { toast('UE4SS update failed', error.message, 'error'); }
+    });
+    root.querySelector('#install-server-mod-zip')?.addEventListener('click', async () => {
+      const zipPath=await window.dragonwilds.pickFile('zip'); if(!zipPath)return;
+      try { await openSmartModImport(zipPath,'server'); } catch(error) { toast('Mod inspection failed',error.message,'error'); }
+    });
+    root.querySelector('#server-archive-world')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;try{const result=await api.invoke('server.world.archive',{id:world.id});toast('Server World archived',result.archive_path||'Archive created.','success');}catch(error){toast('Archive failed',error.message,'error');}});
+    root.querySelector('#server-convert-singleplayer')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm(`Clone “${world.name}” into the local Singleplayer save area? The current local copy will be archived first.`,'Convert to Singleplayer'))return;try{const result=await api.invoke('server.world.convert_to_singleplayer',{id:world.id});if(result.state)state.data=result.state;pushNavigation();state.selectedWorldId='singleplayer';state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer',`${world.name} was cloned locally; the Server Profile was kept.`,'success');}catch(error){toast('Conversion failed',error.message,'error');}});
+    root.querySelector('#server-merge-world')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;showModal(`<div class="modal-header"><div><h2>Merge World Changes</h2><p>Archive both copies and reconcile this Server Profile with the local Singleplayer save.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><label><small>Result</small><select class="select" id="merge-result-kind"><option value="server">Server</option><option value="singleplayer">Singleplayer</option></select></label><label><small>Source strategy</small><select class="select" id="merge-source-prefer"><option value="newest">Newest complete save</option><option value="server">Force Server copy</option><option value="singleplayer">Force Singleplayer copy</option></select></label></div><div class="warning-box"><strong>Safe merge</strong><br/>Dragonwilds Sync does not field-merge Unreal .sav records. Both copies are archived, then one complete save tree is selected.</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-world-merge">Merge Changes</button></div>`);modalRoot.querySelector('#confirm-world-merge')?.addEventListener('click',async()=>{try{const result_kind=modalRoot.querySelector('#merge-result-kind')?.value||'server';const prefer=modalRoot.querySelector('#merge-source-prefer')?.value||'newest';const result=await api.invoke('world.merge_changes',{profile_id:world.id,result_kind,prefer});closeModal();toast('World changes merged',`${result.source_kind||prefer} → ${result.result_kind||result_kind}; both originals archived.`,'success');}catch(error){toast('Merge failed',error.message,'error');}});});
+    root.querySelector('#clear-server-mods')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world || !await managedConfirm('Clear this World’s installed mod payloads? Shared UE4SS/RuneSchema runtime cores are preserved.','Clear World Mods')) return;
+      try { const result = await api.invoke('server.maintenance.clear_mods', { id: world.id }); toast('Mods cleared', `${result.removed_units || 0} unit(s) removed`, 'success'); await refreshServerInventory(world, true); await refreshWorldMaintenance(world, true); }
+      catch (error) { toast('Clear mods failed', error.message, 'error'); }
+    });
+    root.querySelector('#delete-server-files')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); const installDir = world?.dedicated_config?.install_dir || world?.dedicated_config?.game_root; if (!installDir || !await managedConfirm(`Permanently delete dedicated server files under:\n${installDir}\n\nWorld profile/backups remain in APPDATA.`,'Delete Server Files')) return;
+      try { await api.invoke('server.maintenance.delete_dedicated', { install_dir: installDir }); toast('Dedicated server files deleted', '', 'success'); }
+      catch (error) { toast('Delete failed', error.message, 'error'); }
+    });
+
+    root.querySelector('#refresh-world-maintenance')?.addEventListener('click', () => refreshWorldMaintenance(activeServerWorld()));
+    root.querySelector('#create-world-backup')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const result = await api.invoke('server.world.backup.create', { id: world.id }); state.serverBackups[world.id] = result.backups || []; await refreshWorldMaintenance(world, true); toast('World backup created', result.backup || '', 'success'); }
+      catch (error) { toast('Backup failed', error.message, 'error'); }
+    });
+    root.querySelectorAll('[data-restore-world-backup]').forEach((button) => button.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world || !await managedConfirm(`Restore ${button.dataset.restoreWorldBackup} to this World? Current stored save data will be replaced.`,'Restore World Backup')) return;
+      try { const result = await api.invoke('server.world.backup.restore', { id: world.id, backup: button.dataset.restoreWorldBackup }); state.serverBackups[world.id] = result.backups || []; state.serverSaveStatus[world.id] = result.save || {}; render(); toast('World backup restored', button.dataset.restoreWorldBackup, 'success'); }
+      catch (error) { toast('Restore failed', error.message, 'error'); }
+    }));
+    root.querySelector('#save-worldsave-policy')?.addEventListener('click', async () => {
+      const world=activeServerWorld(); if(!world)return;
+      const policy={ enabled:!!root.querySelector('#worldsave-download-enabled')?.checked };
+      try { const response=await api.invoke('server.world.worldsave_policy',{id:world.id,policy}); if(response.state)setData(response.state); toast('World save policy saved', policy.enabled?'Two authenticated requests per IP every 24 hours.':'World save downloads are disabled.','success'); }
+      catch(error){toast('Could not save World save policy',error.message,'error');}
+    });
+    // Operations & Player Notices remain the maintenance contract; manual
+    // notices can additionally opt into the color-coded announcement overlay.
+    root.querySelector('#save-service-notice')?.addEventListener('click', async()=>{
+      const world=activeServerWorld(); if(!world)return; const notice={level:root.querySelector('#service-notice-level')?.value||'info',message:root.querySelector('#service-notice-message')?.value.trim()||'',announcement:true};
+      try{const response=await api.invoke('server.world.notice.update',{id:world.id,notice});if(response.state)setData(response.state);toast('Player notice published',notice.message||'Notice cleared.','success');}catch(error){toast('Could not publish notice',error.message,'error');}
+    });
+    root.querySelector('#clear-service-notice')?.addEventListener('click', async()=>{ const world=activeServerWorld(); if(!world)return; try{const response=await api.invoke('server.world.notice.update',{id:world.id,notice:{level:'info',message:''}});if(response.state)setData(response.state);toast('Player notice cleared','','success');}catch(error){toast('Could not clear notice',error.message,'error');} });
+    root.querySelector('#save-server-schedule')?.addEventListener('click', async()=>{
+      const world=activeServerWorld(); if(!world)return; const value=Math.max(1,Number(root.querySelector('#server-schedule-value')?.value||24)); const unit=root.querySelector('#server-schedule-unit')?.value||'hours'; const factor={minutes:1,hours:60,days:1440,weeks:10080}[unit]||60; const mode=root.querySelector('#server-schedule-mode')?.value||'daily'; const dailyTime=root.querySelector('#server-schedule-time')?.value||'04:00'; const repeatDays=Math.max(1,Math.min(30,Number(root.querySelector('#server-schedule-days')?.value||1))); const retention=Math.max(1,Math.min(50,Number(root.querySelector('#server-backup-retention')?.value||10))); const weekdays=[...root.querySelectorAll('[data-schedule-weekday]')].filter(x=>x.checked).map(x=>Number(x.dataset.scheduleWeekday)); const blackoutEnabled=!!root.querySelector('#server-blackout-enabled')?.checked; const blackoutDays=[...root.querySelectorAll('[data-blackout-weekday]')].filter(x=>x.checked).map(x=>Number(x.dataset.blackoutWeekday)); const blackoutStart=root.querySelector('#server-blackout-start')?.value||'18:00'; const blackoutEnd=root.querySelector('#server-blackout-end')?.value||'23:00'; const schedule={enabled:!!root.querySelector('#server-schedule-enabled')?.checked,action:root.querySelector('#server-schedule-action')?.value||'restart',mode,daily_time:dailyTime,weekdays:weekdays.length?weekdays:[0,1,2,3,4,5,6],repeat_days:repeatDays,interval_minutes:value*factor,blackout_windows:blackoutEnabled?[{enabled:true,weekdays:blackoutDays.length?blackoutDays:[0,1,2,3,4,5,6],start:blackoutStart,end:blackoutEnd}]:[],warning_minutes:[30,10,5,1],backup_retention_count:retention,next_run_at:null}; const actionLabel={backup:'Safe backup',update_restart:'Update + restart',restart:'Restart'}[schedule.action]||'Restart';
+      try{const response=await api.invoke('server.world.schedule.update',{id:world.id,schedule});if(response.state)setData(response.state);toast('Server schedule saved',schedule.enabled?(mode==='weekly'?`${actionLabel} at ${dailyTime} on ${schedule.weekdays.length} selected day(s).`:mode==='daily'?`${actionLabel} at ${dailyTime} every ${repeatDays} day${repeatDays===1?'':'s'}.`:`${actionLabel} every ${value} ${unit}.`):'Recurring operation disabled.','success');}catch(error){toast('Could not save schedule',error.message,'error');}
+    });
+    root.querySelector('#server-activity-search')?.addEventListener('input',(e)=>{const caret=e.target.selectionStart;state.serverActivitySearch=e.target.value;state.serverActivityPage=1;render();const next=root.querySelector('#server-activity-search');if(next){next.focus();next.setSelectionRange(caret,caret);}});
+    root.querySelector('#server-activity-level')?.addEventListener('change',(e)=>{state.serverActivityFilter=e.target.value;state.serverActivityPage=1;render();});
+    root.querySelectorAll('[data-activity-history-page]').forEach((button)=>button.addEventListener('click',()=>{state.serverActivityPage=Math.max(1,Number(button.dataset.activityHistoryPage||1));render();}));
+    root.querySelector('#copy-server-activity')?.addEventListener('click',async()=>{const runtime=state.data?.server?.runtime||{},share=runtime.share||{};const query=String(state.serverActivitySearch||'').trim().toLowerCase(),level=String(state.serverActivityFilter||'all');const filtered=[...(runtime.events||[]),...(share.activities||[]).map((x)=>({ts:x.ts,level:'net',message:`${x.ip}: ${x.message}`}))].filter((e)=>(level==='all'||String(e.level||'info')===level)&&(!query||String(e.message||'').toLowerCase().includes(query))).sort((a,b)=>(b.ts||0)-(a.ts||0));const page=Math.max(1,Number(state.serverActivityPage||1)),rows=filtered.slice((page-1)*25,page*25);await window.dragonwilds.copyText(rows.map((e)=>`${new Date((e.ts||0)*1000).toISOString()} [${String(e.level||'info').toUpperCase()}] ${e.message||''}`).join('\n'));toast('Activity page copied',`${rows.length} visible event(s).`,'success');});
+    root.querySelector('#clear-server-activity')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm(`Clear the retained activity history for “${world.name}”?\n\nThis does not delete game logs, backups, or server files.`,'Clear Activity History'))return;try{const response=await api.invoke('server.world.activity.clear',{id:world.id});state.serverActivityPage=1;state.serverActivitySearch='';state.serverActivityFilter='all';if(response.state)setData(response.state);await refreshServerRuntime(true);toast('Activity history cleared',`${response.removed||0} retained event(s) removed.`,'success');}catch(error){toast('Could not clear activity',error.message,'error');}});
+    root.querySelectorAll('[data-open-world-config]').forEach((button) => button.addEventListener('click', () => openWorldConfigEditor(activeServerWorld(), button.dataset.openWorldConfig)));
+    root.querySelector('#manage-runeschema-builds')?.addEventListener('click',()=>openRuntimeBuildManager('runeschema'));
+    root.querySelector('#manage-ue4ss-builds')?.addEventListener('click',()=>openRuntimeBuildManager('ue4ss'));
+    root.querySelector('#delete-world-files')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world || !await managedConfirm(`Delete World-owned mutable files for “${world.name}”?\n\nThis removes its saved mod snapshot, save snapshot/backups, managed config state, and active live World data. The shared dedicated-server installation is preserved.`,'Delete World Files')) return;
+      try { const result = await api.invoke('server.world.files.delete', { id: world.id }); state.serverBackups[world.id] = []; state.serverConfigs[world.id] = []; await refreshWorldMaintenance(world, true); toast('World files deleted', result.shared_install_preserved ? 'Shared server installation preserved.' : '', 'success'); }
+      catch (error) { toast('World file deletion failed', error.message, 'error'); }
+    });
+
+    root.querySelectorAll('[data-private-tab]').forEach((button)=>button.addEventListener('click',()=>loadPrivateTabData(button.dataset.privateTab||'overview')));
+    root.querySelectorAll('[data-refresh-world-save]').forEach((button)=>button.addEventListener('click',()=>{
+      const kind=button.dataset.refreshWorldSave==='server'?'server':'private';
+      const world=kind==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
+      refreshWorldSaveEditor(world,kind,false);
+    }));
+    root.querySelector('#save-world-save-settings')?.addEventListener('click',async(buttonEvent)=>{
+      const kind=buttonEvent.currentTarget.dataset.worldSaveKind==='server'?'server':'private';
+      const world=kind==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
+      const parsed=state.worldSaveEditors[`${kind}:${world?.id}`]; if(!world||!parsed)return;
+      const values={}; root.querySelectorAll('[data-world-save-field]').forEach((input)=>{ values[input.dataset.worldSaveField]=input.type==='checkbox'?(input.checked?1:0):Number(input.value); });
+      if(!await managedConfirm(`Write ${Object.keys(values).length} parsed settings to ${parsed.file_name||'this World save'}?\n\nA full backup is created first and the staged file must pass a reparse verification before replacement.`,'Save World Settings'))return;
+      try{const response=await api.invoke('world.save.editor.write',{id:world.id,kind,values,expected_sha256:parsed.sha256||''});state.worldSaveEditors[`${kind}:${world.id}`]=response.save;if(response.state)state.data=response.state;render();toast('World save updated',`Verified write · backup ${response.save?.backup||'created'}`,'success');}catch(error){toast('World save write blocked',error.message,'error');}
+    });
+    root.querySelector('#sp-refresh')?.addEventListener('click',()=>refreshSinglePlayerInventory(false,true));
+    root.querySelectorAll('#sp-broadcast, #sp-broadcast-detail').forEach((broadcastButton)=>broadcastButton.addEventListener('click',async()=>{
+      const world=singleplayerWorld();
+      if(world?.status?.broadcasting){
+        try{const response=await api.invoke('singleplayer.broadcast.stop',{}); if(response.state)state.data=response.state; render(); toast('Private World broadcast stopped','The local save remains private and intact.','success');}catch(error){toast('Could not stop Broadcast',error.message,'error');}
+        return;
+      }
+      showModal(`<div class="modal-header"><div><h2>Broadcast Private World</h2><p>Expose launcher-managed files and metadata for co-op synchronization. Start the actual co-op session inside Dragonwilds.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>Sync Passcode</label><input class="field" id="sp-broadcast-password" type="password" placeholder="Required by players before synchronization"/></div><div class="form-group"><label>Sync Port</label><input class="field" id="sp-broadcast-port" type="number" min="1" max="65535" value="27051"/></div></div><div class="identity-box"><strong>Gameplay stays in Dragonwilds</strong><p>Broadcast advertises this World and serves only Dragonwilds Sync/Studio manifests and managed files. It does not create the co-op lobby or host gameplay.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-sp-broadcast">Broadcast</button></div></div>`);
+      modalRoot.querySelector('#confirm-sp-broadcast')?.addEventListener('click',async()=>{try{const password=modalRoot.querySelector('#sp-broadcast-password')?.value||'';const sync_port=Number(modalRoot.querySelector('#sp-broadcast-port')?.value||27051);const response=await api.invoke('singleplayer.broadcast',{password,sync_port});if(response.state)state.data=response.state;closeModal();render();toast('Private World broadcasting',`Sync endpoint :${sync_port}. Start co-op normally inside Dragonwilds.`,'success');}catch(error){toast('Broadcast failed',error.message,'error');}});
+    }));
+    root.querySelector('#sp-archive')?.addEventListener('click',async()=>{try{const result=await api.invoke('singleplayer.archive',{name:singleplayerWorld()?.name||'SinglePlayer'});toast('Private World archived',result.archive_path||'Archive created.','success');}catch(error){toast('Archive failed',error.message,'error');}});
+    root.querySelector('#sp-convert-server')?.addEventListener('click',async()=>{const name=await managedPrompt('Name for the new Server Profile:',singleplayerWorld()?.name||'SinglePlayer','Convert to Server');if(!name)return;try{const result=await api.invoke('singleplayer.convert_to_server',{name});if(result.state)state.data=result.state;state.selectedServerWorldId=result.profile_id||result.profile?.id||'';pushNavigation();state.route='server-detail';state.serverTab='overview';render();toast('Converted to Server',`${name} was cloned into a dedicated Server Profile. The Private World was kept.`,'success');}catch(error){toast('Conversion failed',error.message,'error');}});
+    root.querySelector('#sp-merge')?.addEventListener('click',async()=>{const profile_id=root.querySelector('#sp-merge-server')?.value||'';if(!profile_id)return;const result_kind=root.querySelector('#sp-merge-result')?.value||'server';const prefer=root.querySelector('#sp-merge-prefer')?.value||'newest';if(!await managedConfirm('Archive both copies and merge using the selected complete-save strategy?','Merge World Changes'))return;try{const result=await api.invoke('world.merge_changes',{profile_id,result_kind,prefer});toast('World changes merged',`${result.source_kind||'Newest'} copy → ${result.result_kind||result_kind}. Both pre-merge copies were archived.`,'success');}catch(error){toast('Merge failed',error.message,'error');}});
+    root.querySelector('#sp-install-mod')?.addEventListener('click',async()=>{const zipPath=await window.dragonwilds.pickFile('zip');if(!zipPath)return;try{await openSmartModImport(zipPath,'singleplayer');}catch(error){toast('Mod inspection failed',error.message,'error');}});
+    root.querySelectorAll('[data-sp-move]').forEach((b)=>b.addEventListener('click',async()=>{try{const response=await api.invoke('singleplayer.mod.move',privateProfileParams({key:b.dataset.spMove,direction:Number(b.dataset.direction||0)}));state.singleplayerInventory=response.units||[];if(response.state)state.data=response.state;render();}catch(error){toast('Mod reorder failed',error.message,'error');}}));
+    bindLoadOrderDragDrop('[data-sp-move]','spMove',async(key,targetIndex)=>{try{const response=await api.invoke('singleplayer.mod.move',privateProfileParams({key,target_index:targetIndex}));state.singleplayerInventory=response.units||[];if(response.state)state.data=response.state;render();toast('Load order updated','mods.txt and PAK prefixes were repaired to match.','success');}catch(error){toast('Mod reorder failed',error.message,'error');}});
+    root.querySelectorAll('.mod-clean-row').forEach((row)=>row.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();openModContextMenu(row,event);}));
+    root.querySelectorAll('[data-sp-hotload]').forEach((b)=>b.addEventListener('click',async()=>{try{const next=b.dataset.current!=='1';const response=await api.invoke('singleplayer.mod.update',privateProfileParams({key:b.dataset.spHotload,hotload_capable:next}));state.singleplayerInventory=response.units||[];render();toast(next?'Hotload enabled':'Hotload disabled',next?'ID.txt now allows live configuration writes.':'ID.txt now marks this mod as restart-required.','success');}catch(error){toast('Hotload update failed',error.message,'error');}}));
+    root.querySelector('#refresh-private-config')?.addEventListener('click',()=>loadPrivateTabData('configuration'));
+    root.querySelectorAll('[data-sp-config-file]').forEach((button)=>button.addEventListener('click',()=>openSinglePlayerModEditor(button.dataset.spConfigKey,button.dataset.spConfigFile)));
+    root.querySelectorAll('[data-sp-tags]').forEach((b)=>b.addEventListener('click',async()=>{const unit=(state.singleplayerInventory||[]).find((item)=>item.key===b.dataset.spTags);if(!unit)return;const value=await managedPrompt('Comma- or semicolon-separated tags. Tags persist in this Private World profile and are advertised while Co-Op broadcasting is active.',(unit.tags||[]).join(', '),t('editTags'));if(value===null)return;try{const response=await api.invoke('singleplayer.mod.update',privateProfileParams({key:unit.key,tags:value}));state.singleplayerInventory=response.units||[];if(response.state)setData(response.state);render();toast('Mod tags saved','The canonical ID.txt in this Private World profile has been updated.','success');}catch(error){toast('Tag update failed',error.message,'error');}}));
+    root.querySelectorAll('[data-sp-edit]').forEach((b)=>b.addEventListener('click',()=>openSinglePlayerModFiles(b.dataset.spEdit)));
+    root.querySelectorAll('[data-sp-source]').forEach((b)=>b.addEventListener('click',()=>{const unit=(state.singleplayerInventory||[]).find((u)=>u.key===b.dataset.spSource);if(unit)openSinglePlayerModSourceEditor(unit);}));
+    root.querySelectorAll('[data-sp-nexus-manage]').forEach((b)=>b.addEventListener('click',()=>{const unit=(state.singleplayerInventory||[]).find((u)=>u.key===b.dataset.spNexusManage);if(unit)openNexusManagedMod(unit,'singleplayer');}));
+    root.querySelectorAll('[data-sp-rollback]').forEach((b)=>b.addEventListener('click',()=>{const unit=(state.singleplayerInventory||[]).find((u)=>u.key===b.dataset.spRollback);if(unit)rollbackNexusUnit(unit,'singleplayer');}));
+    root.querySelectorAll('[data-sp-remove]').forEach((b)=>b.addEventListener('click',async()=>{if(!await managedConfirm('Remove this mod from this Private World profile?','Remove Mod'))return;try{const response=await api.invoke('singleplayer.mod.remove',privateProfileParams({key:b.dataset.spRemove}));state.singleplayerInventory=response.units||[];render();toast('Private World mod removed','','success');}catch(error){toast('Remove failed',error.message,'error');}}));
+    root.querySelectorAll('#sp-characters').forEach((b)=>b.addEventListener('click',()=>enterRsdwToolkit()));
+    root.querySelector('#sp-desktop')?.addEventListener('click',async()=>{try{const world=activePrivateWorld();const result=await window.dragonwilds.createWorldShortcut({worldId:world?.id||'singleplayer',worldKind:'private',name:world?.name||'Dragonwilds SinglePlayer',iconData:world?.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});toast('Private World sent to Desktop',result.path||'Shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}});
+    bindModDropZone(root.querySelector('#sp-mod-dropzone'), (path)=>openSmartModImport(path,'singleplayer'));
+    bindModDropZone(root.querySelector('#server-mod-dropzone'), (path)=>openSmartModImport(path,'server'));
+    root.querySelector('#add-world')?.addEventListener('click', () => openDirectConnect());
+    root.querySelector('#add-world-card')?.addEventListener('click', () => openDirectConnect());
+    root.querySelector('#scan-lan-worlds')?.addEventListener('click', scanLanWorlds);
+    root.querySelector('#refresh-worlds')?.addEventListener('click', () => refreshAllWorldStatuses(false));
+    root.querySelector('#import-profile-rsdwl')?.addEventListener('click', importProfileBundle);
+    root.querySelector('#import-world-identity-card')?.addEventListener('click',async()=>{const path=await window.dragonwilds.pickFile('dwsworld');if(!path)return;try{const response=await api.invoke('world.identity_card.import',{path});if(response.state)state.data=response.state;state.selectedWorldId=response.world?.id||null;render();toast('World identity card imported',response.operator_verified?'Operator signature verified. Live fingerprint will be checked before sync.':'Unsigned card imported as a profile; live fingerprint is still required.','success');}catch(error){toast('Identity card rejected',error.message,'error');}});
+    root.querySelector('#export-profile-rsdwl')?.addEventListener('click', openProfileExport);
+    root.querySelector('#manifest-choose-file')?.addEventListener('click',()=>importProfileBundle());
+    root.querySelector('#manifest-export')?.addEventListener('click',openProfileExport);
+    root.querySelector('#manifest-add-world')?.addEventListener('click',()=>openDirectConnect());
+    const manifestDropzone=root.querySelector('#manifest-dropzone');
+    if(manifestDropzone){manifestDropzone.addEventListener('dragover',(event)=>{event.preventDefault();manifestDropzone.classList.add('dragging');});manifestDropzone.addEventListener('dragleave',()=>manifestDropzone.classList.remove('dragging'));manifestDropzone.addEventListener('drop',(event)=>{event.preventDefault();manifestDropzone.classList.remove('dragging');const file=event.dataTransfer?.files?.[0];const path=file?window.dragonwilds.filePath(file):'';if(!path||!path.toLowerCase().endsWith('.rsdwl'))return toast('Drop an .rsdwl manifest','World collections use the unified .rsdwl format.','error');importProfileBundle(path);});manifestDropzone.addEventListener('keydown',(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();importProfileBundle();}});}
+    root.querySelectorAll('[data-connected-world-category]').forEach((button)=>button.addEventListener('click', async()=>{ try { const filter=button.dataset.connectedWorldCategory==='favorites'?'favorites':'all'; state.data=await api.invoke('world.browser.settings',{tab:'direct',filter,page:1}); render(); } catch(error){ toast('World category failed',error.message,'error'); } }));
+    root.querySelector('#save-directory-source')?.addEventListener('click',async()=>{const directoryUrl=root.querySelector('#directory-source-url')?.value.trim()||'';const directoryToken=root.querySelector('#directory-source-token')?.value||'';const directoryName=root.querySelector('#directory-source-name')?.value.trim()||'Community Directory';if(!directoryUrl)return toast('Directory address required','Enter a free directory website URL.','error');try{const sources=[...(state.data?.application?.world_discovery?.directory_sources||[]),{name:directoryName,url:directoryUrl,publisher_token:directoryToken,enabled:true,publish_enabled:true,priority:100}];state.data=await api.invoke('application.world_discovery.settings',{directory_sources:sources});const response=await api.invoke('world.directory.refresh',{});if(response.state)state.data=response.state;render();toast('Directory Source added',`${(response.result?.worlds||[]).filter(w=>w.shared?.fingerprint_verified).length} fingerprint-verified World(s) across all enabled sources.`,'success');}catch(error){toast('Directory Source failed',error.message,'error');}});
+    root.querySelectorAll('[data-directory-source-toggle]').forEach((button)=>button.addEventListener('click',async()=>{try{const id=button.dataset.directorySourceToggle;const sources=(state.data?.application?.world_discovery?.directory_sources||[]).map((source)=>String(source.id)===String(id)?{...source,enabled:source.enabled===false}:source);state.data=await api.invoke('application.world_discovery.settings',{directory_sources:sources});const response=await api.invoke('world.directory.refresh',{});if(response.state)state.data=response.state;render();}catch(error){toast('Directory Source update failed',error.message,'error');}}));
+    root.querySelectorAll('[data-directory-source-remove]').forEach((button)=>button.addEventListener('click',async()=>{if(!await managedConfirm('Remove this Directory Source? Saved Worlds and direct connections are kept.','Remove Directory Source'))return;try{const id=button.dataset.directorySourceRemove;const sources=(state.data?.application?.world_discovery?.directory_sources||[]).filter((source)=>String(source.id)!==String(id));state.data=await api.invoke('application.world_discovery.settings',{directory_sources:sources});const response=await api.invoke('world.directory.refresh',{});if(response.state)state.data=response.state;render();toast('Directory Source removed','No saved Worlds were deleted.','success');}catch(error){toast('Directory Source removal failed',error.message,'error');}}));
+    root.querySelector('#refresh-manifest-hosts')?.addEventListener('click',async()=>{try{const response=await api.invoke('world.directory.refresh',{});if(response.state)state.data=response.state;render();toast('Manifest Hosts refreshed',`${(response.result?.worlds||[]).filter((world)=>world.shared?.fingerprint_verified).length} fingerprint-verified World result(s), deduplicated into the roster.`,'success');}catch(error){toast('Manifest refresh failed',error.message,'error');}});
+    root.querySelector('#open-manifest-worlds')?.addEventListener('click',()=>{state.route='world-management';state.worldManagementTab='manifest';render();});
+    root.querySelectorAll('[data-world-filter]').forEach((button)=>button.addEventListener('click', async()=>{ try { state.data=await api.invoke('world.browser.settings',{filter:button.dataset.worldFilter,page:1}); render(); } catch(error){ toast('Filter update failed',error.message,'error'); } }));
+    root.querySelectorAll('[data-world-view]').forEach((button)=>button.addEventListener('click', async()=>{ try { state.data=await api.invoke('world.browser.settings',{view:button.dataset.worldView}); render(); } catch(error){ toast('View update failed',error.message,'error'); } }));
+    root.querySelector('#world-sort')?.addEventListener('change',async(e)=>{try{state.data=await api.invoke('world.browser.settings',{sort:e.target.value,page:1});render();}catch(error){toast('Sort update failed',error.message,'error');}});
+    root.querySelectorAll('[data-world-page]').forEach((button)=>button.addEventListener('click',async()=>{try{state.data=await api.invoke('world.browser.settings',{page:Number(button.dataset.worldPage||1)});render();root.querySelector('.world-browser-toolbar')?.scrollIntoView({behavior:'smooth',block:'start'});}catch(error){toast('World page failed',error.message,'error');}}));
+    root.querySelectorAll('[data-server-page]').forEach((button)=>button.addEventListener('click',()=>{state.serverWorldPage=Math.max(1,Number(button.dataset.serverPage||1));render();}));
+    root.querySelectorAll('[data-world-selector]').forEach((select)=>select.addEventListener('change',async()=>{try{state.data=await api.invoke('world.browser.settings',{[select.dataset.worldSelector]:select.value,page:1});render();}catch(error){toast('World selector failed',error.message,'error');}}));
+    root.querySelector('#clear-world-selectors')?.addEventListener('click',async()=>{try{state.data=await api.invoke('world.browser.settings',{content_type:'all',game_mode:'all',host_type:'all',tag:'all',page:1});render();}catch(error){toast('Could not clear selectors',error.message,'error');}});
+    root.querySelectorAll('[data-private-view]').forEach((button)=>button.addEventListener('click',()=>{state.privateWorldView=button.dataset.privateView==='list'?'list':'cards';render();}));
+    root.querySelectorAll('[data-server-view]').forEach((button)=>button.addEventListener('click',()=>{state.serverWorldView=button.dataset.serverView==='list'?'list':'cards';render();}));
+    root.querySelectorAll('[data-server-launch]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverLaunch));if(!world||button.disabled)return;launchRuntimeConsoleForWorld(world);try{const response=await runServerStartOperation(world,()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('World launched',response.result?.pid?`Dedicated process PID ${response.result.pid} · Sync endpoint active`:'Sync endpoint active.','success');}catch(error){toast('Launch failed',error.message,'error');}}));
+    root.querySelectorAll('[data-server-stop]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverStop));if(!world||button.disabled)return;if(!await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server'))return;const label=button.textContent;button.disabled=true;button.textContent='Stopping…';try{const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('World stopped',`PID ${response.result?.stopped_pid||'—'} · ${response.result?.stop_method||'verified'}`,'success');}catch(error){button.disabled=false;button.textContent=label;toast('Stop failed',error.message,'error');}}));
+    root.querySelectorAll('[data-server-manage]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=serverWorlds().find((w)=>String(w.id)===String(button.dataset.serverManage));if(!world)return;stopPlayerPolling();pushNavigation();state.selectedServerWorldId=world.id;state.serverTab='overview';state.route='server-detail';render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{}));}));
+    root.querySelectorAll('[data-world-launch]').forEach((button)=>button.addEventListener('click',(e)=>{e.stopPropagation();const world=browserWorlds().find((w)=>String(w.id)===String(button.dataset.worldLaunch));if(world)playWorld(world);}));
+    root.querySelectorAll('[data-world-details]').forEach((button)=>button.addEventListener('click',(e)=>{e.preventDefault();e.stopPropagation();const id=button.dataset.worldDetails;const world=worlds().find((w)=>String(w.id)===String(id))||browserWorlds().find((w)=>String(w.id)===String(id));if(!world||button.disabled)return;pushNavigation();state.selectedWorldId=String(world.id);if(state.data?.client)state.data.client.active_world_id=String(world.id);state.route='world-detail';render();}));
+    const worldSearch=root.querySelector('#world-search');
+    if(worldSearch){ let searchTimer=null; worldSearch.addEventListener('input',()=>{ clearTimeout(searchTimer); searchTimer=setTimeout(async()=>{ try { state.data=await api.invoke('world.browser.settings',{search:worldSearch.value,page:1}); render(); } catch(_){} },320); }); }
+    root.querySelector('#play-singleplayer-gallery')?.addEventListener('click', () => playWorld(singleplayerWorld()));
+    root.querySelectorAll('[data-shared-world-tab]').forEach((button)=>button.addEventListener('click',()=>{state.sharedWorldsTab=button.dataset.sharedWorldTab||'packages';render();}));
+    root.querySelectorAll('[data-package-history-page]').forEach((button)=>button.addEventListener('click',()=>{state.sharedPackageHistoryPage=Math.max(1,Number(button.dataset.packageHistoryPage||1));render();}));
+    root.querySelector('#shared-connected-only')?.addEventListener('change',(e)=>{state.sharedConnectedOnly=!!e.target.checked;render();});
+    root.querySelector('#import-world-rsdwl')?.addEventListener('click', importWorldPackage);
+    root.querySelector('#refresh-shared-worlds-feed')?.addEventListener('click', refreshSharedWorldsFeed);
+    root.querySelectorAll('[data-link-online-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.online.use',{id:button.dataset.linkOnlineWorld,link_to_my_worlds:true});if(response.state)state.data=response.state;state.selectedWorldId=response.world?.id || state.data?.client?.active_world_id || null;toast('Online World linked','Moved into My Worlds. Its private Server Key remains local-only.','success');render();}catch(error){toast('Could not link Online World',error.message,'error');}}));
+    root.querySelectorAll('[data-quick-online-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.online.use',{id:button.dataset.quickOnlineWorld,link_to_my_worlds:false});if(response.state)state.data=response.state;const world=anyClientWorld(response.world?.id);if(world)await playWorld(world);}catch(error){toast('Quick Connect failed',error.message,'error');}}));
+    root.querySelectorAll('[data-link-shared-profile]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.profile.link',{id:button.dataset.linkSharedProfile});if(response.state)state.data=response.state;toast('World linked','Moved into My Worlds.','success');render();}catch(error){toast('Could not link World',error.message,'error');}}));
+    root.querySelectorAll('[data-quick-shared-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=anyClientWorld(button.dataset.quickSharedWorld);if(world)await playWorld(world);}));
+    root.querySelectorAll('[data-desktop-shared-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const world=anyClientWorld(button.dataset.desktopSharedWorld);if(!world)throw new Error('Shared World profile is not available locally.');const iconData=world.presentation?.icon_b64||'';const result=await window.dragonwilds.createWorldShortcut({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData});toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}}));
+    root.querySelectorAll('[data-desktop-online-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.online.use',{id:button.dataset.desktopOnlineWorld,link_to_my_worlds:false});if(response.state)state.data=response.state;const world=anyClientWorld(response.world?.id);if(!world)throw new Error('Online World profile could not be prepared locally.');const iconData=world.presentation?.icon_b64||'';const result=await window.dragonwilds.createWorldShortcut({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData});toast('Sent to Desktop','Created a Quick Launch shortcut without adding the World to My Worlds.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}}));
+    root.querySelectorAll('.world-card[data-server-card="0"], .world-list-row[data-server-card="0"]').forEach((card) => card.addEventListener('click', async (e) => {
+      if (e.target.closest('button, a, input, select, textarea')) return;
+      const id=card.dataset.worldId; const privateWorld=privateWorldById(id);
+      if(privateWorld){try{await managePrivateWorld(privateWorld);}catch(error){toast('Could not open Private World',error.message,'error');}return;}
+      pushNavigation(); state.selectedWorldId=id; state.route='world-detail'; api.invoke('world.select',{id}).catch(()=>{}); render();
+    }));
+    root.querySelectorAll('.world-card[data-server-card="1"], .world-list-row[data-server-card="1"]').forEach((card) => card.addEventListener('click', (e) => {
+      if (e.target.closest('button, a, input, select, textarea')) return;
+      pushNavigation(); state.selectedServerWorldId = card.dataset.worldId; state.route = 'server-detail'; render();
+    }));
+    root.querySelectorAll('.world-card[data-world-id], .world-list-row[data-world-id]').forEach((card)=>card.addEventListener('contextmenu',(e)=>{e.preventDefault();e.stopPropagation();openCardMenu(card,e.clientX,e.clientY);}));
+
+    root.querySelector('#back-worlds')?.addEventListener('click', () => { if(state.navigationHistory.length)return goBack(); state.route = activeWorld()?.kind === 'singleplayer' ? 'private-worlds' : 'worlds'; render(); });
+    root.querySelector('#edit-world')?.addEventListener('click', () => openWorldEditor(activeWorld()));
+    root.querySelector('#copy-world-connection')?.addEventListener('click', async () => {
+      const world=activeWorld(); if(!world)return;
+      const connection=world.connection||{}, credentials=world.credentials||{}, worldName=world.identity?.world_name||world.world_name||world.name||'';
+      const syncPort=Number(connection.sync_port||27051), gamePort=Number(connection.game_port||7777);
+      const lines=[`World: ${worldName}`,`Internal Sync: ${connection.internal_ip?`${connection.internal_ip}:${syncPort}`:'—'}`,`External Sync: ${connection.external_ip?`${connection.external_ip}:${syncPort}`:'—'}`,`Game Port: ${gamePort}`,`World Password: ${credentials.password||'Not saved'}`,`Route Mode: ${connection.preference||'auto'}`];
+      try{await window.dragonwilds.copyText(lines.join('\n'));toast('Connection info copied','Both routes and the saved World credentials are ready for this device.','success');}catch(error){toast('Copy failed',error.message,'error');}
+    });
+    root.querySelector('#test-world')?.addEventListener('click', () => testWorld(activeWorld()));
+    root.querySelector('#download-world-save')?.addEventListener('click', async()=>{
+      const world=activeWorld(); if(!world)return;
+      try { const status=await api.invoke('world.worldsave.status',{id:world.id}); const info=status.result||{}; if(!info.enabled)return toast('World save download disabled','The server maintainer has not enabled World save downloads for this World.',''); if(!info.allowed){const secs=Math.max(0,Number(info.remaining_seconds||0)); const human=secs>=86400?`${Math.ceil(secs/86400)} day(s)`:secs>=3600?`${Math.ceil(secs/3600)} hour(s)`:secs>=60?`${Math.ceil(secs/60)} minute(s)`:`${secs} second(s)`; return toast('World save cooldown active',`Try again in about ${human}.`,'');} const destination=await window.dragonwilds.saveFile({title:`Download ${world.nickname||world.identity?.world_name||'World'} Save`,defaultPath:`${String(world.nickname||world.identity?.world_name||'world').replace(/[<>:"/\|?*]/g,'_')}-world-save.zip`,filters:[{name:'ZIP archive',extensions:['zip']}]}); if(!destination)return; const result=await api.invoke('world.worldsave.download',{id:world.id,destination}); toast('World save downloaded',result.result?.path||destination,'success'); }
+      catch(error){toast('World save download failed',error.message,'error');}
+    });
+    root.querySelector('#play-world')?.addEventListener('click', () => playWorld(activeWorld()));
+    root.querySelector('#run-network-health')?.addEventListener('click', async () => {
+      const world = activeWorld(); if (!world) return;
+      if (state.data?.application?.network_diagnostics_enabled === false) return toast('Network diagnostics are disabled', 'Enable them under Settings → Networking.', 'error');
+      toast('Testing server link', 'Measuring latency and small authenticated transfers on the Dragonwilds Sync path.');
+      try { const response = await api.invoke('world.network.test', { id: world.id }); setData(response.state); const n = response.result?.network || {}; toast('Link test complete', `${n.ping_ms ?? '—'} ms · ${n.host_to_client_mbps ?? '—'} Mbps down · ${n.client_to_host_mbps ?? '—'} Mbps up`, 'success'); }
+      catch (error) { toast('Link test failed', error.message, 'error'); }
+    });
+    root.querySelector('#locate-world')?.addEventListener('click', async () => {
+      const world = activeWorld(); if (!world) return;
+      try { const response = await api.invoke('world.geolocate', { id: world.id }); if (response.state) setData(response.state); toast(response.location ? 'Server location found' : 'No public location', response.location || 'Private/LAN addresses do not have a public geolocation.', response.location ? 'success' : ''); }
+      catch (error) { toast('Location lookup failed', error.message, 'error'); }
+    });
+    root.querySelector('#rate-world')?.addEventListener('click', () => openWorldFeedback(activeWorld()));
+    root.querySelector('#view-world-reviews')?.addEventListener('click', () => openWorldReviews(activeWorld(),30));
+    root.querySelector('#confirm-world-compatible')?.addEventListener('click', async () => {
+      const world = activeWorld(); if (!world) return;
+      try { const response = await api.invoke('world.compatibility.confirm', { id: world.id, success: true, note: 'Confirmed from Dragonwilds Sync after launch.' }); if (response.state) setData(response.state); toast('Compatibility confirmed', 'This successful client report is now available to the server health evidence.', 'success'); }
+      catch (error) { toast('Could not send compatibility report', error.message, 'error'); }
+    });
+
+    root.querySelector('#add-server-world')?.addEventListener('click', openServerCreate);
+    root.querySelector('#add-server-world-card')?.addEventListener('click', openServerCreate);
+    root.querySelector('#back-servers')?.addEventListener('click', () => { if(state.navigationHistory.length)return goBack(); state.route = 'servers'; render(); });
+    const consoleWindowButton=root.querySelector('#open-unified-server-console');
+    if(consoleWindowButton){consoleWindowButton.textContent='Open Console Window';consoleWindowButton.addEventListener('click',()=>openUnifiedLaunchConsole(activeServerWorld()));}
+    const inlineRuntimeConsole=root.querySelector('[data-world-runtime-console]');
+    if(inlineRuntimeConsole&&!inlineRuntimeConsole.dataset.unifiedLaunchConsole)openUnifiedLaunchConsole(activeServerWorld(),{inlineHost:inlineRuntimeConsole});
+    root.querySelectorAll('[data-server-tab]').forEach((b) => b.addEventListener('click', () => loadServerTabData(b.dataset.serverTab)));
+    const executeGameConsole=async(command)=>{const world=activeServerWorld();if(!world||!String(command||'').trim())return;if(!await managedConfirm(`Run this game command on ${world.name||'the active World'}?\n\n${command}`,'Run Game Command'))return;try{const response=await api.invoke('server.console.execute',{id:world.id,command:String(command).trim(),confirmed:true,source:'desktop',actor:'owner'});await refreshServerConsole(world,true);toast('Game command completed',response.ack||'RSDW Toolkit acknowledged the command.','success');}catch(error){await refreshServerConsole(world,true);toast('Game command failed',error.message,'error');}};
+    root.querySelector('#run-game-console')?.addEventListener('click',()=>executeGameConsole(root.querySelector('#game-console-input')?.value||''));
+    root.querySelector('#game-console-input')?.addEventListener('keydown',(event)=>{if(event.key==='Enter')executeGameConsole(event.currentTarget.value);});
+    root.querySelector('#refresh-game-console')?.addEventListener('click',()=>refreshServerConsole(activeServerWorld(),false));
+    root.querySelector('#toggle-console-help')?.addEventListener('click',()=>{const details=root.querySelector('#console-command-help');if(details){details.open=!details.open;details.scrollIntoView({behavior:'smooth',block:'start'});}});
+    root.querySelectorAll('[data-console-page]').forEach(button=>button.addEventListener('click',()=>{const world=activeServerWorld();if(!world)return;state.serverConsole[world.id]={...(state.serverConsole[world.id]||{}),page:Math.max(0,Number(button.dataset.consolePage||0))};render();root.querySelector('#console-command-help')?.setAttribute('open','');}));
+    root.querySelectorAll('[data-console-history-page]').forEach(button=>button.addEventListener('click',()=>{const world=activeServerWorld();if(!world)return;state.serverConsole[world.id]={...(state.serverConsole[world.id]||{}),historyPage:Math.max(1,Number(button.dataset.consoleHistoryPage||1))};render();}));
+    root.querySelectorAll('[data-player-history-page]').forEach(button=>button.addEventListener('click',()=>{const world=activeServerWorld();if(!world)return;state.serverPlayerHistoryPage[world.id]=Math.max(1,Number(button.dataset.playerHistoryPage||1));render();}));
+    root.querySelectorAll('[data-console-example]').forEach(button=>button.addEventListener('click',()=>{const input=root.querySelector('#game-console-input');if(input){input.value=button.dataset.consoleExample||'';input.focus();}}));
+    root.querySelector('#apply-quick-weather')?.addEventListener('click',()=>executeGameConsole(`world.weather ${root.querySelector('#quick-weather')?.value||'default'}`));
+    root.querySelector('#apply-quick-time')?.addEventListener('click',()=>executeGameConsole(`world.time ${root.querySelector('#quick-world-time')?.value||12}`));
+    root.querySelectorAll('[data-server-feedback-days]').forEach((button)=>button.addEventListener('click',()=>{state.serverFeedbackDays=Number(button.dataset.serverFeedbackDays||30);state.serverFeedbackPage=1;render();}));
+    root.querySelectorAll('[data-server-feedback-page]').forEach((button)=>button.addEventListener('click',()=>{state.serverFeedbackPage=Math.max(1,Number(button.dataset.serverFeedbackPage||1));render();}));
+    root.querySelectorAll('[data-review-visibility]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;try{const response=await api.invoke('server.feedback.visibility',{id:world.id,review_id:button.dataset.reviewVisibility,visible:button.dataset.reviewVisible!=='1'});state.serverFeedback[world.id]=response.reviews||[];render();toast('Review visibility updated','The signed rating remains in the aggregate.','success');}catch(error){toast('Review moderation failed',error.message,'error');}}));
+    root.querySelectorAll('[data-spawner-kind]').forEach((button)=>button.addEventListener('click',()=>refreshServerSpawner(activeServerWorld(),{kind:button.dataset.spawnerKind,query:'',category:'',page:0,quiet:true})));
+    root.querySelectorAll('[data-spawner-page]').forEach((button)=>button.addEventListener('click',()=>{const world=activeServerWorld();if(!world)return;state.serverSpawner[world.id]={...(state.serverSpawner[world.id]||{}),page:Math.max(0,Number(button.dataset.spawnerPage||0))};render();}));
+    root.querySelector('#search-spawner')?.addEventListener('click',()=>refreshServerSpawner(activeServerWorld(),{query:root.querySelector('#spawner-search')?.value.trim()||'',category:root.querySelector('#spawner-category')?.value||'',page:0,quiet:true}));
+    root.querySelector('#spawner-search')?.addEventListener('keydown',(event)=>{if(event.key==='Enter')refreshServerSpawner(activeServerWorld(),{query:event.currentTarget.value.trim(),category:root.querySelector('#spawner-category')?.value||'',quiet:true});});
+    root.querySelector('#spawner-category')?.addEventListener('change',(event)=>refreshServerSpawner(activeServerWorld(),{query:root.querySelector('#spawner-search')?.value.trim()||'',category:event.currentTarget.value||'',quiet:true}));
+    root.querySelector('#refresh-spawner-catalog')?.addEventListener('click',()=>{const world=activeServerWorld();const current=state.serverSpawner[world?.id]||{};refreshServerSpawner(world,{refresh:current.kind!=='item',query:current.query||'',category:current.category||'',quiet:false});});
+    root.querySelectorAll('[data-spawn-path]').forEach((button)=>button.addEventListener('click',()=>{const world=activeServerWorld();if(!world)return;state.serverSpawner[world.id]={...(state.serverSpawner[world.id]||{}),selectedPath:button.dataset.spawnPath||'',selectedName:button.dataset.spawnName||''};render();}));
+    root.querySelectorAll('[data-spawn-path][draggable="true"]').forEach((button)=>button.addEventListener('dragstart',(event)=>{event.dataTransfer.effectAllowed='copy';event.dataTransfer.setData('application/x-dragonwilds-item',JSON.stringify({runtime_path:button.dataset.spawnPath||'',name:button.dataset.spawnName||''}));}));
+    root.querySelector('#spawner-target')?.addEventListener('change',(event)=>{const world=activeServerWorld();if(!world)return;state.serverSpawner[world.id]={...(state.serverSpawner[world.id]||{}),targetValue:event.currentTarget.value};render();});
+    const runSpawnerCommand=async(world,current,target,count)=>{
+      const kind=current.kind==='item'?'item':'enemy';
+      const targetLabel=target.kind==='coordinates'?`X ${target.x}, Y ${target.y}, Z ${target.z}`:target.kind==='player'?'the selected online player':'the server local player / aim point';
+      if(!await managedConfirm(`Spawn ${count>1?`${count} × `:''}${current.selectedName||kind} at ${targetLabel}? This changes the live World immediately.`,`Spawn ${kind==='item'?'Item':'Actor'}`))return;
+      try{
+        const response=await api.invoke('server.spawner.spawn',{id:world.id,kind,runtime_path:current.selectedPath,count,target,confirmed:true});
+        if(response.state)state.data=response.state;
+        state.serverSpawner[world.id]={...(state.serverSpawner[world.id]||{}),lastAck:response.ack||'ok'};
+        render();toast('Spawner command completed',response.ack||'RSDWTools acknowledged the command.','success');
+      }catch(error){toast('Spawner command failed',error.message,'error');}
+    };
+    root.querySelectorAll('[data-spawn-player]').forEach((button)=>{
+      button.addEventListener('click',()=>{const world=activeServerWorld();if(!world)return;state.serverSpawner[world.id]={...(state.serverSpawner[world.id]||{}),targetValue:`player:${button.dataset.spawnPlayer||''}`};render();});
+      button.addEventListener('dragover',(event)=>{event.preventDefault();event.dataTransfer.dropEffect='copy';button.classList.add('drag-over');});
+      button.addEventListener('dragleave',()=>button.classList.remove('drag-over'));
+      button.addEventListener('drop',async(event)=>{event.preventDefault();button.classList.remove('drag-over');const world=activeServerWorld();if(!world)return;let dragged={};try{dragged=JSON.parse(event.dataTransfer.getData('application/x-dragonwilds-item')||'{}');}catch(_){}if(!dragged.runtime_path)return;const prior=state.serverSpawner[world.id]||{};const current={...prior,kind:'item',selectedPath:dragged.runtime_path,selectedName:dragged.name||'Item',targetValue:`player:${button.dataset.spawnPlayer||''}`};state.serverSpawner[world.id]=current;const count=Math.max(1,Math.min(9999,Number(root.querySelector('#spawner-count')?.value||current.count||1)));await runSpawnerCommand(world,current,{kind:'player',player_id:button.dataset.spawnPlayer||''},count);});
+    });
+    root.querySelector('#run-spawner')?.addEventListener('click',async()=>{
+      const world=activeServerWorld(); if(!world)return;
+      const current=state.serverSpawner[world.id]||{};
+      const kind=current.kind==='item'?'item':'enemy';
+      let target={kind:'local'};
+      const value=root.querySelector('#spawner-target')?.value||current.targetValue||(kind==='item'?'local':'coordinates');
+      if(kind==='item'&&value.startsWith('player:')) target={kind:'player',player_id:value.slice(7)};
+      else if(kind==='enemy'){
+        if(value.startsWith('player:')) target={kind:'player',player_id:value.slice(7)};
+        else if(value==='local') target={kind:'local'};
+        else target={kind:'coordinates',x:Number(root.querySelector('#spawner-x')?.value||0),y:Number(root.querySelector('#spawner-y')?.value||0),z:Number(root.querySelector('#spawner-z')?.value||0),yaw:Number(root.querySelector('#spawner-yaw')?.value||0)};
+      }
+      const count=Math.max(1,Math.min(9999,Number(root.querySelector('#spawner-count')?.value||current.count||1)));
+      state.serverSpawner[world.id]={...current,targetValue:value,count,...(target.kind==='coordinates'?target:{})};
+      await runSpawnerCommand(world,state.serverSpawner[world.id],target,count);
+    });
+    root.querySelector('#add-starter-character')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;const file=await window.dragonwilds.pickFile('rsdwl');if(!file)return;try{const response=await api.invoke('server.world.starter_characters.add',{id:world.id,path:file});state.serverStarterCharacters[world.id]=response.characters||[];render();toast('Starter character added','It will be advertised to authenticated clients after publish/start.','success');}catch(error){toast('Starter character add failed',error.message,'error');}});
+    root.querySelectorAll('[data-remove-starter]').forEach((b)=>b.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Stop offering this starter character?','Remove Starter Character'))return;try{const response=await api.invoke('server.world.starter_characters.remove',{id:world.id,character_id:b.dataset.removeStarter});state.serverStarterCharacters[world.id]=response.characters||[];render();toast('Starter character removed','','success');}catch(error){toast('Starter character remove failed',error.message,'error');}}));
+    root.querySelector('#submit-character-to-world')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const file=await window.dragonwilds.pickFile('rsdwl');if(!file)return;if(!await managedConfirm('Submit this character package to the World administrator? It will remain quarantined until they explicitly approve it.','Submit Character'))return;try{const response=await api.invoke('world.character.submit',{id:world.id,path:file});if(response.state)state.data=response.state;toast('Character submitted',response.result?.submission?.player_name||'Held for administrator review.','success');}catch(error){toast('Character submission failed',error.message,'error');}});
+    root.querySelector('#approve-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const characterId=state.data?.client?.world_character_selection?.[world.id]||'';const selected=state.characters?.find((row)=>String(row.id)===String(characterId));if(!selected)return toast('Assign a character first','Open Characters, associate one with this World, and select it before enabling recovery.','error');if(!await managedConfirm(`Retain the latest save for “${selected.player_name||selected.file_name||'the assigned character'}” on ${world.nickname||world.identity?.world_name||'this World'}?\n\nAfter this one-time consent, successful Sync connections upload the file only when it changed. It is bound to this installation’s authenticated player profile.`,'Enable Player Save Recovery'))return;try{const response=await api.invoke('world.character.backup.approve',{id:world.id,character_id:characterId});if(response.state)state.data=response.state;render();toast('Player save recovery enabled','The server retained the current save for your profile.','success');}catch(error){toast('Backup request failed',error.message,'error');}});
+    root.querySelector('#restore-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;if(!await managedConfirm('Restore the latest save retained for your authenticated player profile?\n\nIf a local file with the same name exists, DragonLink-Connect backs it up before replacement. Other characters and the World save are not changed.','Restore Latest Player Save'))return;try{const response=await api.invoke('world.character.backup.restore',{id:world.id,overwrite:true});if(response.state)setData(response.state);toast('Player save restored',response.result?.restore?.file_name||'The retained save is ready.','success');}catch(error){toast('Restore failed',error.message,'error');}});
+    root.querySelectorAll('[data-approve-character-submission]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Approve this inspected package and add it to the shared character library?','Approve Character'))return;try{const response=await api.invoke('server.world.character_submissions.approve',{id:world.id,submission_id:button.dataset.approveCharacterSubmission});state.serverStarterCharacters[world.id]=response.result?.characters||[];state.serverCharacterSubmissions[world.id]=response.result?.submissions||[];render();toast('Character approved','It is now available to authenticated clients.','success');}catch(error){toast('Approval failed',error.message,'error');}}));
+    root.querySelectorAll('[data-reject-character-submission]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Permanently delete this quarantined submission?','Reject Character'))return;try{const response=await api.invoke('server.world.character_submissions.reject',{id:world.id,submission_id:button.dataset.rejectCharacterSubmission});state.serverCharacterSubmissions[world.id]=response.result?.submissions||[];render();toast('Submission rejected','The quarantined package was deleted.','success');}catch(error){toast('Rejection failed',error.message,'error');}}));
+    root.querySelectorAll('[data-import-starter-character]').forEach((b)=>b.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;if(!await managedConfirm('Import this server-provided starter character? Existing personal characters are not overwritten.','Import Starter Character'))return;try{const response=await api.invoke('characters.import_server_starter',{world_id:world.id,character_id:b.dataset.importStarterCharacter});if(response.state)setData(response.state);toast('Starter character imported','Open Characters to assign/select it for this World.','success');}catch(error){toast('Starter character import failed',error.message,'error');}}));
+
+    root.querySelectorAll('[data-locate-player]').forEach((button)=>button.addEventListener('click',()=>{ state.selectedPlayerId=button.dataset.locatePlayer||''; state.serverTab='map'; render(); startPlayerPolling(activeServerWorld()); }));
+    root.querySelectorAll('[data-map-player]').forEach((button)=>button.addEventListener('click',()=>{ state.selectedPlayerId=button.dataset.mapPlayer||''; render(); }));
+    root.querySelectorAll('[data-map-overlay-category]').forEach((button)=>button.addEventListener('click',()=>{const category=button.dataset.mapOverlayCategory;if(state.mapOverlayFilters.has(category))state.mapOverlayFilters.delete(category);else state.mapOverlayFilters.add(category);render();}));
+    root.querySelectorAll('[data-map-overlay-preset]').forEach((button)=>button.addEventListener('click',()=>{state.mapOverlayFilters.clear();if(button.dataset.mapOverlayPreset==='all')Object.keys(state.mapOverlays?.categories||{}).forEach((category)=>state.mapOverlayFilters.add(category));render();}));
+    const activeMapWorldForView=()=>{if(state.route==='world-detail'&&activeWorld()?.kind==='singleplayer')return privateWorldById(state.selectedWorldId)||singleplayerWorld();if(state.route==='profile'&&state.profileTab==='live-map')return rsdwMapWorld();return activeServerWorld();};
+    root.querySelectorAll('[data-live-map-world]').forEach((map)=>{
+      const worldId=map.dataset.liveMapWorld||'';
+      const view=state.mapViewports[worldId]||(state.mapViewports[worldId]={scale:1,x:0,y:0});
+      const toolbar=map.previousElementSibling;
+      const clampView=()=>{view.scale=Math.max(1,Math.min(5,Number(view.scale||1)));const limit=50*(view.scale-1);view.x=Math.max(-limit,Math.min(limit,Number(view.x||0)));view.y=Math.max(-limit,Math.min(limit,Number(view.y||0)));};
+      const applyView=()=>{clampView();map.style.backgroundSize=`${view.scale*100}% ${view.scale*100}%`;const offsetX=view.x*Math.max(1,map.clientWidth)/100,offsetY=view.y*Math.max(1,map.clientHeight)/100;map.style.backgroundPosition=`calc(50% + ${offsetX}px) calc(50% + ${offsetY}px)`;map.querySelectorAll('[data-map-x][data-map-y]').forEach((marker)=>{const x=Number(marker.dataset.mapX),y=Number(marker.dataset.mapY);marker.style.left=`${50+(x*100-50)*view.scale+view.x}%`;marker.style.top=`${50+(y*100-50)*view.scale+view.y}%`;});const label=toolbar?.querySelector('[data-map-zoom-label]');if(label)label.textContent=`${Math.round(view.scale*100)}%`;};
+      toolbar?.querySelectorAll('[data-map-zoom]').forEach((button)=>button.addEventListener('click',()=>{const action=button.dataset.mapZoom;if(action==='reset'){view.scale=1;view.x=0;view.y=0;}else view.scale+=action==='in'?.25:-.25;applyView();}));
+      map.addEventListener('wheel',(event)=>{event.preventDefault();view.scale+=event.deltaY<0?.2:-.2;applyView();},{passive:false});
+      let drag=null;
+      map.addEventListener('pointerdown',(event)=>{if(event.target.closest('[data-map-player]'))return;drag={x:event.clientX,y:event.clientY,startX:view.x,startY:view.y};map.setPointerCapture(event.pointerId);map.classList.add('panning');});
+      map.addEventListener('pointermove',(event)=>{if(!drag)return;view.x=drag.startX+(event.clientX-drag.x)/Math.max(1,map.clientWidth)*100;view.y=drag.startY+(event.clientY-drag.y)/Math.max(1,map.clientHeight)*100;applyView();});
+      const endPan=()=>{drag=null;map.classList.remove('panning');};map.addEventListener('pointerup',endPan);map.addEventListener('pointercancel',endPan);
+      applyView();
+    });
+    root.querySelector('#choose-player-map-image')?.addEventListener('click',async()=>{ const world=activeMapWorldForView(); if(!world)return; const image=await window.dragonwilds.pickImage(); if(!image)return; state.serverMapConfig[world.id]={...(state.serverMapConfig[world.id]||world.player_map||{}),background_data:image.dataUrl}; render(); });
+    root.querySelector('#refresh-latest-rsdw-map')?.addEventListener('click',async()=>{const world=activeMapWorldForView();if(!world)return;toast('Updating Ashenfall map','Downloading the current real map tiles and refreshing RSDW coordinate overlays…');try{const [result,overlays]=await Promise.all([api.invoke('application.map.refresh',{force:true}),api.invoke('application.map.overlays',{force:true})]);state.mapCacheStatus=result;state.mapOverlays=overlays;const calibration=overlays?.calibration||state.serverMapConfig[world.id]?.calibration||{};const coordinate_source=overlays?.coordinate_source||result.coordinate_source||'';state.serverMapConfig[world.id]={...(state.serverMapConfig[world.id]||world.player_map||{}),background_data:result.data_url||'',calibration,coordinate_source};const isPrivate=world.id==='singleplayer'||world.kind==='singleplayer';const response=await api.invoke(isPrivate?'singleplayer.map.update':'server.world.map.update',isPrivate?{profile_id:world.id,background_data:result.data_url||'',calibration,coordinate_source}:{id:world.id,background_data:result.data_url||'',calibration,coordinate_source});if(response.state)state.data=response.state;state.serverMapConfig[world.id]=response.player_map||state.serverMapConfig[world.id];render();toast('Ashenfall map updated',`${result.source_title||'Ashenfall'} ${result.version||'latest'} · ${result.tile_count||0} tile(s) · ${Number(overlays?.point_count||0).toLocaleString()} overlay points`,'success');}catch(error){toast('Map update failed',error.message,'error');}});
+    root.querySelector('#save-player-map-settings')?.addEventListener('click',async()=>{ const world=activeMapWorldForView(); if(!world)return; const num=(id)=>{const v=root.querySelector(id)?.value.trim()||''; return v===''?null:Number(v);}; const cfg=state.serverMapConfig[world.id]||world.player_map||{}; const calibration={world_min_x:num('#map-min-x'),world_max_x:num('#map-max-x'),world_min_y:num('#map-min-y'),world_max_y:num('#map-max-y'),invert_y:!!root.querySelector('#map-invert-y')?.checked}; if([calibration.world_min_x,calibration.world_max_x,calibration.world_min_y,calibration.world_max_y].some((v)=>v==null||!Number.isFinite(v)))return toast('Map calibration incomplete','Enter all four World coordinate bounds before saving.','error'); try{const isPrivate=world.id==='singleplayer'||world.kind==='singleplayer';const params=isPrivate?{profile_id:world.id,background_data:cfg.background_data||'',calibration,coordinate_source:'manual-calibration'}:{id:world.id,background_data:cfg.background_data||'',allow_remote_clients:!!root.querySelector('#map-allow-remote')?.checked,calibration,coordinate_source:'manual-calibration'};const response=await api.invoke(isPrivate?'singleplayer.map.update':'server.world.map.update',params); state.serverMapConfig[world.id]=response.player_map||{}; if(response.state)setData(response.state);toast('Player map setup saved','World coordinates now align with this map image.','success');}catch(error){toast('Could not save map setup',error.message,'error');} });
+    root.querySelector('#confirm-server-hierarchy')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.world.hierarchy.confirm', { id: world.id, confirmed: !world.hierarchy?.confirmed }); if (response.state) setData(response.state); toast('Hierarchy evidence updated', !world.hierarchy?.confirmed ? 'Public listing marked confirmed.' : 'Public listing confirmation removed.', 'success'); }
+      catch (error) { toast('Could not update hierarchy evidence', error.message, 'error'); }
+    });
+    const runHostBenchmark = async () => {
+      toast('Running Cloudflare Open Speed Test', 'This uses measurable bandwidth. The verified result is cached and broadcast as Server Health evidence.');
+      try { const response = await api.invoke('server.network.benchmark.run', {}); if (response.state) setData(response.state); const n = response.result || {}; toast('Host benchmark complete', `${n.download_mbps ?? '—'} Mbps down · ${n.upload_mbps ?? '—'} Mbps up · ${n.latency_ms ?? '—'} ms`, 'success'); }
+      catch (error) { toast('Host benchmark failed', error.message, 'error'); }
+    };
+    root.querySelector('#run-host-benchmark-now')?.addEventListener('click', runHostBenchmark);
+    root.querySelector('#run-host-benchmark-settings')?.addEventListener('click', runHostBenchmark);
+    root.querySelector('#regenerate-mods-txt')?.addEventListener('click', async () => {
+      const world = activeServerWorld(); if (!world) return;
+      try { const response = await api.invoke('server.world.mods_txt.regenerate', { id: world.id }); if (response.state) setData(response.state); await refreshWorldMaintenance(world, true); toast('mods.txt regenerated', `${response.count || 0} explicit UE4SS entries enabled; enabled.txt runtimes are omitted.`, 'success'); }
+      catch (error) { toast('Could not regenerate mods.txt', error.message, 'error'); }
+    });
+    root.querySelector('#banner-update-server')?.addEventListener('click', () => { state.route = 'settings'; state.settingsTab = 'server'; render(); });
+    root.querySelector('#edit-server-world')?.addEventListener('click', () => openServerEditor(activeServerWorld()));
+    root.querySelector('#edit-server-world-top')?.addEventListener('click', () => openServerEditor(activeServerWorld()));
+
+    root.querySelectorAll('[data-country-search]').forEach((input)=>input.addEventListener('input',()=>{const prefix=input.dataset.countrySearch;const q=input.value.trim().toLowerCase();root.querySelectorAll(`[data-country-picker="${prefix}"] .country-option`).forEach((row)=>{row.hidden=!!q&&!`${row.dataset.countryName||''} ${row.dataset.countryCode||''}`.includes(q);});}));
+    root.querySelectorAll('.country-picker input[type=checkbox]').forEach((input)=>input.addEventListener('change',()=>{const attr=[...input.attributes].find((a)=>a.name.startsWith('data-')&&a.name.endsWith('-country'));if(!attr)return;const prefix=attr.name.slice(5,-8);const target=root.querySelector(`[data-selected-country-list="${prefix}"]`);if(!target)return;const selected=[...root.querySelectorAll(`[data-${prefix}-country]`)].filter(x=>x.checked).map(x=>x.getAttribute(`data-${prefix}-country`));target.innerHTML=selected.length?selected.map(code=>`<span class="country-flag-chip">${flagMarkup(code)} <b>${escapeHtml(countryName(code))}</b></span>`).join(''):'<span class="muted-small">No country blocks selected</span>'; }));
+    root.querySelectorAll('[data-refresh-vpn-catalog]').forEach((button)=>button.addEventListener('click',async()=>{try{const result=await api.invoke('security.vpn_catalog.refresh',{});state.vpnCatalog=result;for(const [provider,entry] of Object.entries(result.providers||{})){const ranges=entry.ranges||[];root.querySelectorAll(`[data-global-access-vpn-ranges="${provider}"],[data-world-access-vpn-ranges="${provider}"]`).forEach(el=>{if(ranges.length)el.value=ranges.join('\n');});}toast('VPN IP catalog refreshed',`${Object.values(result.providers||{}).reduce((n,e)=>n+(e.ranges||[]).length,0)} cached network range(s). Save the access policy to apply them.`,'success');}catch(error){toast('VPN catalog refresh failed',error.message,'error');}}));
+    root.querySelectorAll('[data-settings-tab]').forEach((button) => button.addEventListener('click', async() => { const next=button.dataset.settingsTab;renderSettingsPanelSwap(()=>{state.settingsTab=next;});if(state.settingsTab==='integrations')await hydrateIntegrations(); }));
+    const modRepositorySearch=root.querySelector('#mod-repository-search');
+    if(modRepositorySearch){
+      const applyModRepositorySearch=()=>{const query=modRepositorySearch.value.trim().toLocaleLowerCase();state.modRepositorySearch=modRepositorySearch.value;let total=0;root.querySelectorAll('[data-mod-group]').forEach((section)=>{let visible=0;section.querySelectorAll('[data-mod-search]').forEach((row)=>{const match=!query||String(row.dataset.modSearch||'').includes(query);row.hidden=!match;if(match){visible+=1;total+=1;}});const count=section.querySelector('[data-mod-group-count]');if(count)count.textContent=`${visible} matching ${visible===1?'entry':'entries'}`;const empty=section.querySelector('[data-mod-search-empty]');if(empty){empty.hidden=visible>0;empty.textContent=query?'No mods in this category match the search.':'No profile currently contains this mod type.';}});const result=root.querySelector('#mod-repository-result-count');if(result)result.textContent=`${total} mod${total===1?'':'s'} shown`;};
+      modRepositorySearch.addEventListener('input',applyModRepositorySearch);
+      applyModRepositorySearch();
+    }
+    root.querySelector('#refresh-mod-repository')?.addEventListener('click',async()=>{try{const repository=await loadModRepository({force:true});toast('Mod repository refreshed',`${repository.entries?.length||0} shared mod entries found.`,'success');}catch(error){toast('Mod repository scan failed',error.message,'error');}});
+    root.querySelector('#open-mod-repository')?.addEventListener('click',()=>{if(state.modRepository?.root)window.dragonwilds.openPath(state.modRepository.root);});
+    root.querySelectorAll('[data-repository-nexus]').forEach((button)=>button.addEventListener('click',()=>window.dragonwilds.openInAppBrowser({url:button.dataset.repositoryNexus,purpose:'nexus'})));
+    root.querySelectorAll('[data-repository-build-id]').forEach((button)=>button.addEventListener('click',async()=>{const entryId=button.dataset.repositoryBuildId;const entry=(state.modRepository?.entries||[]).find((row)=>String(row.id)===String(entryId));const targets=[{kind:'',id:'',name:'Master repository'},...objectRows(entry?.profiles).map((profile)=>({kind:profile.kind,id:profile.id,name:`${profile.kind==='dedicated'?'Server':'Private'} · ${profile.name||profile.id}`}))];showModal(`<div class="modal-header"><div><div class="eyebrow">Mod Identity Migration</div><h2>Build a simple ID.txt</h2><p>Choose one mod copy. Sync previews the merged identity and hotload capability before changing any files.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="config-file-list">${targets.map((target)=>`<div class="config-file-row"><div><strong>${escapeHtml(target.name)}</strong><small>${target.kind?'Profile copy':'Canonical shared copy'}</small></div><button class="btn primary" data-preview-mod-id="${escapeHtml(entryId)}" data-id-kind="${escapeHtml(target.kind)}" data-id-profile="${escapeHtml(target.id)}">Preview</button></div>`).join('')}</div><div class="identity-box"><strong>Safe migration order</strong><p>ID.txt is written atomically and read back successfully before legacy identity.txt, identities.txt, hotload.txt, or hotload.json files are deleted.</p></div></div>`);modalRoot.querySelectorAll('[data-preview-mod-id]').forEach((choice)=>choice.addEventListener('click',async()=>{try{const params={entry_id:entryId,kind:choice.dataset.idKind||'',profile_id:choice.dataset.idProfile||''};const response=await api.invoke('mod.repository.identity',params);const result=response.result||response;showModal(`<div class="modal-header"><div><div class="eyebrow">ID.txt Preview</div><h2>${escapeHtml(result.identity?.name||result.name||'Mod')}</h2><p>${escapeHtml(result.target_label||'Mod copy')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="computer-profile-hardware">${metric('Mod ID',result.identity?.mod_id||result.name||'Generated')}${metric('Runtime',result.identity?.runtime_role||'both')}${metric('Hotload',result.identity?.hotload_capable?'Yes':'No')}${metric('Legacy files',String((result.will_remove||[]).length))}</div><div class="identity-box"><strong>Files retired only after verification</strong><p>${escapeHtml((result.will_remove||[]).join(', ')||'No legacy files; ID.txt will be normalized in place.')}</p></div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="apply-mod-id">Write &amp; verify ID.txt</button></div>`);modalRoot.querySelector('#apply-mod-id')?.addEventListener('click',async()=>{try{const applied=await api.invoke('mod.repository.identity',{...params,apply:true});state.modRepository=applied.repository||applied.result?.repository||state.modRepository;closeModal();render();toast('ID.txt ready',`${(applied.result?.removed||[]).length} legacy marker(s) retired after verification.`,'success');}catch(error){toast('ID.txt migration stopped',error.message,'error');}});}catch(error){toast('ID.txt preview failed',error.message,'error');}}));}));
+    root.querySelectorAll('[data-repository-edit]').forEach((button)=>button.addEventListener('click',async()=>{const kind=button.dataset.profileKind||'';const id=button.dataset.profileId||'';if(kind==='dedicated')state.selectedServerWorldId=id;else state.selectedWorldId=id;try{await openModExplorer(kind==='dedicated'?'server':'singleplayer',button.dataset.repositoryEdit);}catch(error){toast('Mod editor could not open',error.message,'error');}}));
+    root.querySelectorAll('[data-repository-master-edit]').forEach((button)=>button.addEventListener('click',()=>openModExplorer('repository',button.dataset.repositoryMasterEdit).catch((error)=>toast('Master mod editor could not open',error.message,'error'))));
+    root.querySelectorAll('[data-repository-pull]').forEach((button)=>button.addEventListener('click',()=>{const entryId=button.dataset.repositoryPull;const profiles=[...privateWorlds().map((world)=>({kind:'local',id:world.id,name:world.name||world.nickname||world.id,type:'Private World'})),...serverWorlds().map((world)=>({kind:'dedicated',id:world.id,name:world.name||world.nickname||world.id,type:'Server Profile'}))];showModal(`<div class="modal-header"><div><h2>Pull Master Mod</h2><p>Choose one profile to replace with the current canonical payload.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="config-file-list">${profiles.map((profile)=>`<div class="config-file-row"><div><strong>${escapeHtml(profile.name)}</strong><small>${escapeHtml(profile.type)}</small></div><button class="btn primary" data-pull-master-profile="${escapeHtml(profile.id)}" data-pull-master-kind="${profile.kind}">Pull Master</button></div>`).join('')||'<div class="empty-state">Create a Private World or Server Profile first.</div>'}</div></div>`);modalRoot.querySelectorAll('[data-pull-master-profile]').forEach((pull)=>pull.addEventListener('click',async()=>{try{const response=await api.invoke('mod.repository.deploy',{entry_id:entryId,kind:pull.dataset.pullMasterKind,profile_id:pull.dataset.pullMasterProfile});state.modRepository=(response.result||response).repository||state.modRepository;closeModal();render();toast('Master mod pulled',`${(response.result||response).files||0} file(s) copied to the selected profile.`,'success');}catch(error){toast('Master pull failed',error.message,'error');}}));}));
+    root.querySelectorAll('[data-repository-publish]').forEach((button)=>button.addEventListener('click',async()=>{if(!await managedConfirm('Publish this profile copy as the canonical master?\n\nOther profiles remain unchanged until you explicitly pull the master into them.','Publish Master Mod'))return;try{const response=await api.invoke('mod.repository.publish',{kind:button.dataset.profileKind,profile_id:button.dataset.profileId,key:button.dataset.repositoryPublish,propagate:false});const result=response.result||response;state.modRepository=result.repository||state.modRepository;render();toast('Master mod published','Profile copies were left unchanged.','success');}catch(error){toast('Mod publish failed',error.message,'error');}}));
+    root.querySelectorAll('[data-repository-master-edit]').forEach((button)=>button.closest('.mod-clean-row')?.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();openRepositoryContextMenu(button.dataset.repositoryMasterEdit,event);}));
+    root.querySelectorAll('[data-servers-tab]').forEach((button) => button.addEventListener('click', () => { state.serversTab = button.dataset.serversTab === 'settings' ? 'settings' : 'worlds'; render(); }));
+    root.querySelectorAll('[data-world-management-tab]').forEach((button)=>button.addEventListener('click',()=>{state.worldManagementTab=button.dataset.worldManagementTab||'worlds';state.worldManagementPage=1;render();}));
+    root.querySelectorAll('[data-world-management-view]').forEach((button)=>button.addEventListener('click',()=>{state.worldManagementView=button.dataset.worldManagementView==='list'?'list':'cards';render();}));
+    root.querySelectorAll('[data-world-management-page]').forEach((button)=>button.addEventListener('click',()=>{state.worldManagementPage=Math.max(1,Number(button.dataset.worldManagementPage||1));render();}));
+    root.querySelector('#wm-pick-game-dir')?.addEventListener('click',async()=>{const value=await window.dragonwilds.pickDirectory();if(value)root.querySelector('#wm-game-dir').value=value;});
+    root.querySelector('#wm-pick-game-exe')?.addEventListener('click',async()=>{const value=await window.dragonwilds.pickExecutable();if(value)root.querySelector('#wm-game-exe').value=value;});
+    root.querySelector('#wm-save-game-paths')?.addEventListener('click',async()=>{const path=root.querySelector('#wm-game-dir')?.value.trim()||root.querySelector('#wm-game-exe')?.value.trim()||'';try{const validated=await api.invoke('setup.validate_client',{path});if(!validated?.ok)throw new Error(validated?.message||'The selected /Game path did not validate.');state.data=await api.invoke('application.update',{game_dir:validated.layout.game_root,game_exe:root.querySelector('#wm-game-exe')?.value.trim()||validated.layout.game_exe||''});render();toast('/Game path updated',validated.layout.game_root,'success');}catch(error){toast('Could not update /Game',error.message,'error');}});
+    root.querySelector('#wm-pick-server-dir')?.addEventListener('click',async()=>{const value=await window.dragonwilds.pickDirectory();if(value)root.querySelector('#wm-server-dir').value=value;});
+    root.querySelector('#wm-pick-server-exe')?.addEventListener('click',async()=>{const value=await window.dragonwilds.pickExecutable();if(value)root.querySelector('#wm-server-exe').value=value;});
+    root.querySelector('#wm-save-server-paths')?.addEventListener('click',async()=>{const path=root.querySelector('#wm-server-dir')?.value.trim()||root.querySelector('#wm-server-exe')?.value.trim()||'';try{const validated=await api.invoke('setup.validate_server',{path,allow_new:true});if(!validated?.ok)throw new Error(validated?.message||'The selected /Server path did not validate.');const current=state.data?.application?.server_install||{};state.data=await api.invoke('application.update',{server_install:{...current,install_dir:validated.layout.install_root,server_exe:root.querySelector('#wm-server-exe')?.value.trim()||validated.layout.server_exe||''}});if(validated.mode==='existing')await offerExistingServerModImport(validated.layout.install_root,{importNow:true});render();toast('/Server path updated',validated.layout.install_root,'success');}catch(error){toast('Could not update /Server',error.message,'error');}});
+    root.querySelector('#wm-full-server-setup')?.addEventListener('click',()=>openGuidedSetup('server',{serverEnable:true}));
+    root.querySelector('#rescan-game-worlds')?.addEventListener('click',async()=>{try{state.data=await api.invoke('state.get',{});await refreshSinglePlayerInventory(true,true);render();toast('Worlds and mods rescanned','Save-driven profiles and the active Dragonwilds mod tree were refreshed.','success');}catch(error){toast('Rescan failed',error.message,'error');}});
+    root.querySelectorAll('[data-external-tab]').forEach((button)=>button.addEventListener('click',()=>{state.externalDeclarationTab=button.dataset.externalTab||'overview';render();}));
+    root.querySelectorAll('[data-application-settings-tab]').forEach((button) => button.addEventListener('click', () => { const next=button.dataset.applicationSettingsTab;renderSettingsPanelSwap(()=>{state.applicationSettingsTab=next;}); }));
+    root.querySelectorAll('[data-access-policy-prefix]').forEach((panel)=>bindAccessPolicyUI(panel, panel.dataset.accessPolicyPrefix));
+    root.querySelector('#save-server-networking')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;try{const next={...(world.sync_config||{}),access_policy:readAccessPolicy(root,'server-world-access')};const response=await api.invoke('server.world.update',{id:world.id,sync_config:next});if(response) setData(response.state||response);toast('World networking rules applied','Sync handshake/poll/file rules updated. Dragonwilds gameplay access is unchanged.','success');}catch(error){toast('Could not apply networking rules',error.message,'error');}});
+    root.querySelector('#check-application-update')?.addEventListener('click', async()=>{ await checkApplicationUpdate(true); });
+    root.querySelector('#update-application-now')?.addEventListener('click',()=>applyApplicationUpdate());
+    root.querySelector('#toggle-application-update-check')?.addEventListener('click',()=>{const cfg=state.data?.application?.application_updates||{};updateApplication({application_updates:{...cfg,auto_check:cfg.auto_check===false}});});
+    root.querySelector('#toggle-multiple-servers')?.addEventListener('click',async()=>{try{state.data=await api.invoke('application.advanced.settings',{multiple_servers_enabled:!(state.data?.application?.advanced||{}).multiple_servers_enabled});render();}catch(error){toast('Advanced setting failed',error.message,'error');}});
+    root.querySelector('#toggle-show-tips')?.addEventListener('click',async()=>{try{state.data=await api.invoke('application.advanced.settings',{show_tips:!(state.data?.application?.advanced||{}).show_tips});render();}catch(error){toast('Tips setting failed',error.message,'error');}});
+    root.querySelector('#reset-client-install')?.addEventListener('click',async()=>{if(!await managedConfirm('Dragonwilds Sync will back up saves, configs, mods, and LocalAppData, remove only managed UE4SS/PAK mod surfaces, and repair them. Steam files and persistent EOS/account data stay in place. Continue?','Reset Dragonwilds Managed Mods'))return;try{toast('Managed reset in progress','Creating the backup before removing mod surfaces…');const result=await api.invoke('application.reset.install',{target:'client',confirmation:'RESET DRAGONWILDS'});toast(result.runtime?.ok===false?'Managed reset needs attention':'Managed reset complete',`${result.backup?.path||'Backup retained'} · Steam and EOS data preserved · ${(result.removed?.removed||[]).length} mod surface(s) reset.`,result.runtime?.ok===false?'error':'success');}catch(error){toast('Client reset stopped',error.message,'error');}});
+    root.querySelector('#repair-client-runtimes')?.addEventListener('click',async()=>{try{const result=await api.invoke('application.reset.repair_client',{});toast(result.ok?'Client runtimes repaired':'Runtime repair needs attention',(result.runtime?.repaired||result.runtime?.errors||[]).join(' · '),result.ok?'success':'error');}catch(error){toast('Client repair unavailable',error.message,'error');}});
+    const updateClientRuntime=async(component,channel='official')=>{const label=component==='ue4ss'?'UE4SS':'RuneSchema';const sources={ue4ss:{baseline:'',official:'https://github.com/UE4SS-RE/RE-UE4SS/releases/latest',experimental:'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest'},runeschema:{baseline:'',official:'https://github.com/UnskippableCutscene/RuneSchema/releases',experimental:'https://github.com/gh0sted5456-us/RuneSchema/releases'}};const displayChannel=channel==='official'?'stable':channel;try{toast(`Updating ${label}`,channel==='baseline'?`Applying and validating the bundled ${label} baseline…`:`Downloading and validating the ${displayChannel} client ${label} runtime…`);const response=await api.invoke('application.core_mod.update',{target:'client',component,channel,releases_url:sources[component][channel]});if(response.state)setData(response.state);render();toast(`${label} ${displayChannel} runtime ready`,'The managed runtime was validated and recorded for local and connected profiles.','success');}catch(error){toast(`${label} client update failed`,error.message,'error');}};
+    root.querySelector('#update-client-ue4ss-baseline')?.addEventListener('click',()=>updateClientRuntime('ue4ss','baseline'));
+    root.querySelector('#update-client-ue4ss-official')?.addEventListener('click',()=>updateClientRuntime('ue4ss','official'));
+    root.querySelector('#update-client-ue4ss-experimental')?.addEventListener('click',()=>updateClientRuntime('ue4ss','experimental'));
+    root.querySelector('#update-client-runeschema-baseline')?.addEventListener('click',()=>updateClientRuntime('runeschema','baseline'));
+    root.querySelector('#update-client-runeschema-official')?.addEventListener('click',()=>updateClientRuntime('runeschema','official'));
+    root.querySelector('#update-client-runeschema-experimental')?.addEventListener('click',()=>updateClientRuntime('runeschema','experimental'));
+    const deleteClientRuntime=async(component)=>{const label=component==='ue4ss'?'UE4SS':'RuneSchema';if(!await managedConfirm(`Delete the installed ${label} client core? Profile-owned mods are retained, but Dragonwilds cannot load this runtime until it is reinstalled.`,`Delete ${label}`))return;try{const response=await api.invoke('application.core_mod.delete',{target:'client',component});if(response.state)setData(response.state);render();toast(`${label} deleted`,'The runtime core was removed; profile-owned mods were preserved.','success');}catch(error){toast(`${label} delete failed`,error.message,'error');}};
+    const chooseRuntimeResetScope=(label)=>new Promise((resolve)=>{let settled=false;const finish=(value,closed=false)=>{if(settled)return;settled=true;if(!closed)closeModal();resolve(value);};const hasServer=!!String(state.data?.application?.server_install?.install_dir||'').trim();const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Runtime repair</div><h2>Reset ${label}</h2><p>Choose which installed copies should be cleaned and reinstalled from the Official channel.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="config-file-list"><button class="config-file-row runtime-reset-choice" data-runtime-reset-scope="client"><span><strong>Player / client install only</strong><small>Preserves profile-owned mods and the client loader files.</small></span><span>Reset client →</span></button><button class="config-file-row runtime-reset-choice" data-runtime-reset-scope="server" ${hasServer?'':'disabled'}><span><strong>Dedicated server install only</strong><small>${hasServer?'Repairs the configured Server path while retaining mods, dwmapi.dll, and server version.dll. The server must be stopped.':'Configure a Server path before selecting this option.'}</small></span><span>Reset server →</span></button><button class="config-file-row runtime-reset-choice" data-runtime-reset-scope="both" ${hasServer?'':'disabled'}><span><strong>Player and dedicated server installs</strong><small>${hasServer?'Repairs both installed copies in sequence with the same preservation rules.':'Configure a Server path before selecting this option.'}</small></span><span>Reset both →</span></button></div></div><div class="modal-footer"><span>No runtime is removed until its replacement download validates.</span><button class="btn ghost" data-close-modal>Cancel</button></div>`,{title:`Reset ${label}`,width:760,height:650});win._dwsOnNativeClosed=()=>finish(null,true);win.querySelectorAll('[data-runtime-reset-scope]').forEach((button)=>button.addEventListener('click',()=>finish(button.dataset.runtimeResetScope)));});
+    const resetClientRuntime=async(component)=>{const label=component==='ue4ss'?'UE4SS':'RuneSchema';const scope=await chooseRuntimeResetScope(label);if(!scope)return;const sources={ue4ss:'https://github.com/UE4SS-RE/RE-UE4SS/releases/latest',runeschema:'https://github.com/UnskippableCutscene/RuneSchema/releases'};const completed=[];try{if(scope==='client'||scope==='both'){toast(`Resetting client ${label}`,'Downloading the client replacement before applying the clean runtime…');const clientResponse=await api.invoke('application.core_mod.update',{target:'client',component,channel:'official',releases_url:sources[component],reset:true});completed.push('client');if(clientResponse.state)setData(clientResponse.state);}if(scope==='server'||scope==='both'){toast(`Resetting server ${label}`,'Applying the validated Official runtime to the configured dedicated-server path…');const serverResponse=await api.invoke('application.core_mod.update',{target:'server',component,channel:'official',variant:'official',releases_url:sources[component],reset:true});completed.push('server');if(serverResponse.state)setData(serverResponse.state);}render();const detail=scope==='both'?'The client and dedicated-server runtimes were reinstalled; profile mods and server loaders were preserved.':scope==='server'?'The dedicated-server runtime was reinstalled; profile mods, dwmapi.dll, and server version.dll were preserved.':'The client runtime was reinstalled and profile-owned mods were preserved.';toast(`${label} reset complete`,detail,'success');}catch(error){render();const partial=completed.length?`${completed.join(' and ')} reset completed, but the remaining reset stopped: `:'';toast(`${label} reset ${completed.length?'partially completed':'failed'}`,partial+error.message,'error');}};
+    root.querySelector('#delete-client-ue4ss')?.addEventListener('click',()=>deleteClientRuntime('ue4ss'));
+    root.querySelector('#delete-client-runeschema')?.addEventListener('click',()=>deleteClientRuntime('runeschema'));
+    root.querySelector('#reset-client-ue4ss')?.addEventListener('click',()=>resetClientRuntime('ue4ss'));
+    root.querySelector('#reset-client-runeschema')?.addEventListener('click',()=>resetClientRuntime('runeschema'));
+    const installClientRuntimeZip=async(component,zipPath)=>{if(!zipPath)return;const label=component==='ue4ss'?'UE4SS':'RuneSchema';try{const response=await api.invoke('application.core_mod.update',{target:'client',component,zip_path:zipPath});if(response.state)setData(response.state);render();toast(`${label} client baseline installed`,`The custom ${label} archive is retained in the client-only repair cache.`,'success');}catch(error){toast(`${label} client install failed`,error.message,'error');}};
+    root.querySelector('#client-import-ue4ss-core')?.addEventListener('click',async()=>installClientRuntimeZip('ue4ss',await window.dragonwilds.pickFile('zip')));
+    root.querySelector('#client-import-runeschema-core')?.addEventListener('click',async()=>installClientRuntimeZip('runeschema',await window.dragonwilds.pickFile('zip')));
+    bindRuntimeDropZone(root.querySelector('#client-ue4ss-dropzone'),'Client UE4SS',(path)=>installClientRuntimeZip('ue4ss',path));
+    bindRuntimeDropZone(root.querySelector('#client-runeschema-dropzone'),'Client RuneSchema',(path)=>installClientRuntimeZip('runeschema',path));
+    root.querySelector('#reset-server-install')?.addEventListener('click',async()=>{if(!await managedConfirm('Every hosted World must be stopped. Dragonwilds Sync will back up saves, configs, and mods, remove only managed UE4SS/PAK mod surfaces, and repair runtimes. Steam server files, Worlds, EOS/account data, dwmapi.dll, and the dedicated server version.dll remain in place. Continue?','Reset Dedicated Server Mods'))return;try{toast('Server managed reset in progress','Backing up safe files before removing mod surfaces…');const result=await api.invoke('application.reset.install',{target:'server',confirmation:'RESET SERVER'});if(result.state)setData(result.state);toast(result.ok?'Server managed reset complete':'Server runtime attention required',`${result.backup?.path||'Backup retained'} · Steam/EOS files and runtime loaders preserved${result.runtime?.errors?.length?` · ${result.runtime.errors.join(' · ')}`:''}`,result.ok?'success':'error');}catch(error){toast('Server reset stopped',error.message,'error');}});
+    root.querySelector('#restart-as-admin')?.addEventListener('click',async()=>{if(!await managedConfirm('Restart Dragonwilds Sync with Windows Administrator rights? Unsaved form fields on the current page will be discarded; saved profiles and files are preserved.','Restart as Administrator'))return;try{await window.dragonwilds.restartAsAdmin();}catch(error){toast('Administrator relaunch failed',error.message,'error');}});
+    root.querySelector('#toggle-world-discovery')?.addEventListener('click',async()=>{try{state.data=await api.invoke('application.world_discovery.settings',{enabled:(state.data?.application?.world_discovery||{}).enabled===false});render();}catch(error){toast('Discovery setting failed',error.message,'error');}});
+    root.querySelector('#toggle-world-presentation')?.addEventListener('click',async()=>{try{state.data=await api.invoke('application.world_discovery.settings',{prefetch_presentation:(state.data?.application?.world_discovery||{}).prefetch_presentation===false});render();}catch(error){toast('Artwork setting failed',error.message,'error');}});
+    root.querySelector('#open-directory-source-manager')?.addEventListener('click',()=>{state.route='world-management';state.worldManagementTab='manifest';render();});
+    const webhostPermissionLabels={view_overview:'Overview & health',view_map:'Live player map',view_maintenance:'View maintenance',write_maintenance:'Write maintenance',view_mods:'View mods',write_mods:'Write mod metadata',view_config:'View configs',write_config:'Write configs',view_spawner:'View item repository',use_spawner:'Give / spawn items',view_console:'View game console',use_console:'Use game console',view_audit:'Audit',send_announcements:'Send announcements',start:'Start World',stop:'Stop World',restart:'Soft restart',update:'Update server',refresh:'Refresh metadata'};
+    const openWebhostUserEditor=(user=null)=>{const profiles=state.data?.server_profiles||[],currentPermissions=user?.permissions||{};showModal(`<div class="modal-header"><div><div class="eyebrow">WebHost Authority</div><h2>${user?'Edit':'Create'} Server User</h2><p>Credentials are created only in the desktop application. Passwords are PBKDF2-hashed before persistence.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><label><small>User name</small><input class="field" id="webhost-user-name" value="${escapeHtml(user?.username||'')}" ${user?'readonly':''}/></label><label><small>${user?'New password (optional)':'Password'}</small><input class="field" id="webhost-user-password" type="password" placeholder="At least 10 characters"/></label><label class="full"><small>Hosted World</small><select class="select" id="webhost-user-world" ${user?'disabled':''}>${profiles.map((profile)=>`<option value="${escapeHtml(profile.id)}" ${String(profile.id)===String(user?.world_id)?'selected':''}>${escapeHtml(profile.name||profile.id)}</option>`).join('')}</select></label></div><div class="webhost-permission-grid" style="margin-top:16px">${Object.entries(webhostPermissionLabels).map(([key,label])=>`<label class="webhost-permission"><input id="webhost-user-permission-${key}" type="checkbox" data-user-permission="${key}" ${currentPermissions[key]?'checked':''}/><span><strong>${escapeHtml(label)}</strong><small>${key.startsWith('write_')||key==='send_announcements'?'Explicit remote mutation authority':'Read or operational category'}</small></span></label>`).join('')}</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-webhost-user">Save Server User</button></div>`);modalRoot.querySelector('#save-webhost-user')?.addEventListener('click',async()=>{const username=modalRoot.querySelector('#webhost-user-name')?.value.trim()||'',password=modalRoot.querySelector('#webhost-user-password')?.value||'',world_id=modalRoot.querySelector('#webhost-user-world')?.value||user?.world_id||'',permissions={};modalRoot.querySelectorAll('[data-user-permission]').forEach(input=>permissions[input.dataset.userPermission]=!!input.checked);try{state.data=await api.invoke(user?'application.world_directory_host.user.update':'application.world_directory_host.user.create',{username,password,world_id,permissions});closeModal();render();toast('Server user saved',`${username} now has persistent World-scoped authority.`,'success');}catch(error){toast('Could not save server user',error.message,'error');}});};
+    root.querySelector('#add-webhost-user')?.addEventListener('click',()=>openWebhostUserEditor());
+    root.querySelectorAll('[data-edit-webhost-user]').forEach((button)=>button.addEventListener('click',()=>{const user=(state.data?.application?.world_directory_host?.remote_admin?.users||[]).find((row)=>row.username===button.dataset.editWebhostUser);if(user)openWebhostUserEditor(user);}));
+    root.querySelectorAll('[data-delete-webhost-user]').forEach((button)=>button.addEventListener('click',async()=>{const username=button.dataset.deleteWebhostUser;if(!await managedConfirm(`Delete the remote server user “${username}”? Existing sessions lose their grants.`,`Delete ${username}`))return;try{state.data=await api.invoke('application.world_directory_host.user.delete',{username});render();toast('Server user deleted',username,'success');}catch(error){toast('Could not delete server user',error.message,'error');}}));
+    root.querySelectorAll('[data-resolve-webhost-request]').forEach((button)=>button.addEventListener('click',async()=>{try{state.data=await api.invoke('application.world_directory_host.permission.resolve',{id:button.dataset.resolveWebhostRequest,approve:button.dataset.approve==='1'});render();toast(button.dataset.approve==='1'?'Permission approved':'Permission denied','The decision was persisted to the server user.','success');}catch(error){toast('Could not resolve request',error.message,'error');}}));
+      const saveDirectoryHost=async(enabledOverride=null)=>{const current=state.data?.application?.world_directory_host||{};const currentRemote=current.remote_admin||{};const featureFlags=state.data?.application?.advanced||{};const webhostEnabled=!!featureFlags.webhost_enabled,remoteEnabled=!!featureFlags.remote_server_enabled;const remotePermissions={...(currentRemote.permissions||{})};root.querySelectorAll('[data-webhost-permission]').forEach(input=>{remotePermissions[input.dataset.webhostPermission]=!!input.checked;});const publicationMode=root.querySelector('#directory-host-publication-mode')?.value||current.publication_mode||'manual';const payload={...current,identity_name:root.querySelector('#directory-host-identity')?.value.trim()||current.identity_name||'Dragonwilds Sync',enabled:enabledOverride===null?(webhostEnabled||remoteEnabled):!!enabledOverride,directory_enabled:webhostEnabled,port:Number(root.querySelector('#directory-host-port')?.value||current.port||27080),public_base_url:root.querySelector('#directory-host-public-url')?.value.trim()||current.public_base_url||'',publication_mode:publicationMode,public_transport:publicationMode==='tunnel'?'cloudflare_quick':'direct',public_surface_mode:root.querySelector('#directory-host-surface')?.value||current.public_surface_mode||'full',ingestion_token:root.querySelector('#directory-host-token')?.value||current.ingestion_token||'',heartbeat_ttl_seconds:Number(root.querySelector('#directory-host-ttl')?.value||current.heartbeat_ttl_seconds||300),max_entries:Number(root.querySelector('#directory-host-max-entries')?.value||current.max_entries||500),upnp_enabled:publicationMode==='upnp',allow_anonymous_heartbeats:root.querySelector('#directory-host-anonymous')?!!root.querySelector('#directory-host-anonymous').checked:!!current.allow_anonymous_heartbeats,remote_admin:{...currentRemote,enabled:remoteEnabled,permissions:remotePermissions}};const response=await api.invoke('application.world_directory_host.settings',payload);if(response.state)state.data=response.state;render();return response;};
+    const syncTabButtons=[...root.querySelectorAll('.webhost-tabs [data-webhost-tab]')];
+    const activateSyncTab=(button)=>{const next=button.dataset.webhostTab||'settings';if(next===state.webhostTab)return;state.webhostTab=next;render();root.querySelector(`.webhost-tabs [data-webhost-tab="${next}"]`)?.focus();};
+    syncTabButtons.forEach((button,index)=>{button.addEventListener('click',()=>activateSyncTab(button));button.addEventListener('keydown',(event)=>{let next=index;if(event.key==='ArrowRight')next=(index+1)%syncTabButtons.length;else if(event.key==='ArrowLeft')next=(index-1+syncTabButtons.length)%syncTabButtons.length;else if(event.key==='Home')next=0;else if(event.key==='End')next=syncTabButtons.length-1;else return;event.preventDefault();syncTabButtons[next].focus();activateSyncTab(syncTabButtons[next]);});});
+    root.querySelectorAll('[data-webhost-tab]:not(.webhost-tabs [data-webhost-tab])').forEach(button=>button.addEventListener('click',()=>{state.webhostTab=button.dataset.webhostTab||'settings';render();}));
+    const openServerManagementLogin=()=>{const address=root.querySelector('#server-management-address')?.value.trim()||'';const loginUrl=serverManagementLoginUrl(address);if(!loginUrl){toast('Server address is not valid','Enter an IP address or an HTTP/HTTPS WebHost address.','error');return;}state.serverManagementAddress=address;state.serverManagementLoginUrl=loginUrl;render();};
+    root.querySelector('#load-server-management-login')?.addEventListener('click',openServerManagementLogin);
+    root.querySelector('#server-management-address')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();openServerManagementLogin();}});
+    root.querySelectorAll('[data-webhost-preview]').forEach(button=>button.addEventListener('click',()=>{const mode=button.dataset.webhostPreview==='mobile'?'mobile':'desktop';state.webhostPreviewMode=mode;root.querySelector('.webhost-preview-stage')?.classList.toggle('mobile',mode==='mobile');root.querySelectorAll('[data-webhost-preview]').forEach(item=>item.classList.toggle('active',item.dataset.webhostPreview===mode));}));
+    root.querySelector('#refresh-webhost-preview')?.addEventListener('click',()=>{const view=root.querySelector('#webhost-live-preview');if(view){try{view.reloadIgnoringCache();}catch(_){view.reload();}return;}state.webhostPreviewLoaded=true;render();});
+    root.querySelector('#toggle-webhost-directory')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
+    root.querySelector('#toggle-webhost-remote-admin')?.addEventListener('click',async()=>{try{const enabled=!!state.data?.application?.advanced?.remote_server_enabled;state.data=await api.invoke('application.advanced.settings',{remote_server_enabled:!enabled});render();toast(!enabled?'Remote Login enabled':'Remote Login disabled',!enabled?'Only authenticated Server Manager routes are available; no public Webhost was enabled.':'The public Webhost setting was not changed.','success');}catch(error){toast('Remote Login setting failed',error.message,'error');}});
+    root.querySelector('#toggle-directory-host')?.addEventListener('click',async()=>{try{const enabling=!(state.data?.application?.world_directory_host||{}).enabled;const pending=saveDirectoryHost(enabling);state.operation={title:enabling?'Starting WebHost':'Stopping WebHost',detail:enabling?'Binding the listener now; firewall, public-IP, and UPnP checks will continue in the background…':'Closing the website listener and releasing its router mapping…'};render();const response=await pending;state.operation=null;state.webhostPreviewLoaded=false;render();toast(enabling?'Website listener started':'Website listener stopped',response.status?.public_url||response.status?.local_url||'Setting saved.',enabling?'success':'');}catch(error){state.operation=null;render();toast('Website listener could not change state',error.message,'error');}});
+    root.querySelector('#save-directory-host')?.addEventListener('click',async()=>{try{const response=await saveDirectoryHost();toast(response.status?.serving?'Website composition applied':'Website settings saved',response.status?.public_url||response.status?.local_url||'Enable the listener to begin serving.','success');}catch(error){toast('Website settings failed',error.message,'error');}});
+    root.querySelector('#configure-webhost-firewall')?.addEventListener('click',async()=>{try{await saveDirectoryHost();const response=await api.invoke('application.world_directory_host.firewall',{});if(response.status)state.data.application.world_directory_host_status=response.status;render();toast(response.firewall?.ok?'WebHost firewall configured':'Firewall needs attention',response.firewall?.message||`Inbound TCP ${state.data?.application?.world_directory_host?.port||27080}` ,response.firewall?.ok?'success':'error');}catch(error){toast('WebHost firewall failed',error.message,'error');}});
+    root.querySelector('#test-webhost-reachability')?.addEventListener('click',async()=>{try{const response=await api.invoke('application.world_directory_host.reachability',{});if(response.status)state.data.application.world_directory_host_status=response.status;render();toast(response.reachability?.public_ok?'Public route answered':response.reachability?.loopback_ok?'Local listener works; public route unverified':'Listener unavailable',response.reachability?.message||'Reachability test completed.',response.reachability?.public_ok?'success':response.reachability?.loopback_ok?'':'error');}catch(error){toast('Reachability test failed',error.message,'error');}});
+    root.querySelector('#copy-webhost-router-rule')?.addEventListener('click',async()=>{try{const rule=await api.invoke('application.network.manual_rule',{service:'webhost',port:Number(state.data?.application?.world_directory_host?.port||27080)});const text=`${rule.service}\nProtocol: ${rule.protocol}\nExternal port: ${rule.external_port}\nInternal address: ${rule.internal_address}\nInternal port: ${rule.internal_port}\nSource: ${rule.source}\nUniFi: ${rule.unifi_path}`;await navigator.clipboard.writeText(text);toast('Manual router rule copied',rule.static_address_warning,'success');}catch(error){toast('Could not copy router rule',error.message,'error');}});
+    root.querySelector('#copy-webhost-public-address')?.addEventListener('click',async()=>{const value=String(state.data?.application?.world_directory_host_status?.public_url||'').replace(/\/$/,'');const cfg=state.data?.application?.world_directory_host||{};const route=(cfg.remote_admin?.enabled!==false&&cfg.directory_enabled===false)?'/admin/login':'/servers';if(!value)return;try{await navigator.clipboard.writeText(value+route);toast('Public WebHost address copied',value+route,'success');}catch(error){toast('Could not copy address',error.message,'error');}});
+    root.querySelector('#clear-directory-host')?.addEventListener('click',async()=>{if(!await managedConfirm('Clear every cached heartbeat from this self-hosted directory? Active Worlds will republish on their next heartbeat.','Clear World Directory'))return;try{const response=await api.invoke('world.directory.host.clear',{});if(response.state)state.data=response.state;render();toast('Directory listings cleared','Active launchers can republish within 60 seconds.','success');}catch(error){toast('Could not clear directory',error.message,'error');}});
+    root.querySelector('#directory-host-observability')?.addEventListener('click',async()=>{try{const value=await api.invoke('world.directory.host.observability',{});const summary=value.last_24_hours||{};const events=[...(value.events||[])].reverse();showModal(`<div class="modal-header"><div><div class="eyebrow">Directory Operations</div><h2>Heartbeat Activity</h2><p>${summary.heartbeats||0} heartbeats · ${summary.failed||0} failures · ${(value.revocations||[]).length} revocations in local registry</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${events.length?events.map((event)=>`<div class="activity-row"><span class="activity-level ${event.ok?'ok':'warn'}">${event.ok?'OK':'FAILED'}</span><div><strong>${escapeHtml(event.kind||'event')}${event.fingerprint?` · ${escapeHtml(event.fingerprint)}`:''}</strong><small>${escapeHtml(new Date(Number(event.at||0)*1000).toLocaleString())}${event.detail?` · ${escapeHtml(event.detail)}`:''}</small></div></div>`).join(''):'<div class="empty-state">No directory activity has been recorded yet.</div>'}</div></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`);}catch(error){toast('Directory activity failed',error.message,'error');}});
+    root.querySelector('#directory-host-revoke')?.addEventListener('click',async()=>{const fingerprint=await managedPrompt('Enter the exact dws1 World fingerprint to remove from this self-hosted directory.','','Revoke World Fingerprint');if(!fingerprint)return;const reason=await managedPrompt('Reason stored in the public revocation list.','Directory operator revocation','Revocation Reason');if(reason===null)return;try{await api.invoke('world.directory.host.revoke',{fingerprint:fingerprint.trim(),reason});toast('World fingerprint revoked','The directory now rejects and omits this fingerprint.','success');}catch(error){toast('Revocation failed',error.message,'error');}});
+    root.querySelectorAll('[data-theme-choice]').forEach((button) => button.addEventListener('click', () => updateApplication({ theme: button.dataset.themeChoice })));
+    root.querySelector('#toggle-glass-theme')?.addEventListener('click',()=>updateApplication({glass_theme:!state.data?.application?.glass_theme}));
+    root.querySelector('#toggle-runtime-ue4ss')?.addEventListener('click',async()=>{const current=state.data?.application?.runtime_updates||{};state.data=await api.invoke('application.runtime_updates.settings',{ue4ss:current.ue4ss===false});render();});
+    root.querySelector('#toggle-runtime-runeschema')?.addEventListener('click',async()=>{const current=state.data?.application?.runtime_updates||{};state.data=await api.invoke('application.runtime_updates.settings',{runeschema:current.runeschema===false});render();});
+    root.querySelector('#choose-loading-art')?.addEventListener('click',async()=>{try{const picked=await window.dragonwilds.pickLoadingArt();if(!picked)return;await updateApplication({loading_art_url:picked.url||''});toast('Loading artwork updated','Startup and World shortcut Sync windows now use the selected artwork.','success');}catch(error){toast('Could not update loading artwork',error.message,'error');}});
+    root.querySelector('#reset-loading-art')?.addEventListener('click',async()=>{try{await updateApplication({loading_art_url:''});toast('V2 loading artwork restored','','success');}catch(error){toast('Could not reset loading artwork',error.message,'error');}});
+    root.querySelector('#edit-profile-settings')?.addEventListener('click', openPlayerProfile);
+    root.querySelector('#open-character-profiles')?.addEventListener('click', ()=>enterRsdwToolkit());
+    root.querySelector('#refresh-rsdw-cache')?.addEventListener('click', async () => {
+      try {
+        const cfg = state.data?.application?.rsdw_cache || {};
+        const runtimeTarget = root.querySelector('#rsdw-runtime-target')?.value || 'data';
+        const response = await api.invoke('application.rsdw.refresh', { force: true, runtime_target: runtimeTarget, repo: cfg.repo || 'RSDWArchive/RSDWTools', branch: cfg.branch || 'main' });
+        if (response.state) setData(response.state);
+        const result = response.result || {};
+        const installed=(result.runtime_deployments||[]).filter((row)=>row?.ok).map((row)=>row.target).join(' + ');
+        toast('RSDW modules refreshed', `Tools ${(result.revision||'').slice(0,8)} · Model ${(result.model_revision||'').slice(0,8)}${installed?` · ${installed} runtime updated`:''}`, result.model_error ? '' : 'success');
+      } catch (error) { toast('RSDW cache refresh failed', error.message, 'error'); }
+    });
+    root.querySelector('#toggle-rsdw-update-refresh')?.addEventListener('click', async () => {
+      const current = state.data?.application?.rsdw_cache || {};
+      const nextEnabled = current.refresh_after_updates === false;
+      await updateApplication({ rsdw_cache: { ...current, refresh_after_updates: nextEnabled } });
+      toast(nextEnabled ? 'RSDW refresh tied to updates' : 'Automatic RSDW refresh disabled', nextEnabled ? 'Application and server updates share one revision-aware APPDATA cache refresh.' : 'You can still refresh RSDW manually from Application settings.', nextEnabled ? 'success' : '');
+    });
+    root.querySelector('#toggle-rsdw-auto-refresh')?.addEventListener('click', async () => {
+      const current = state.data?.application?.rsdw_cache || {};
+      await updateApplication({ rsdw_cache: { ...current, auto_refresh: current.auto_refresh === false } });
+      toast(current.auto_refresh === false ? 'Automatic RSDW module updates enabled' : 'Automatic RSDW module updates disabled', 'Manual checks remain available in Application settings.', current.auto_refresh === false ? 'success' : '');
+    });
+    root.querySelector('#rsdw-refresh-hours')?.addEventListener('change', async (event) => {
+      const current = state.data?.application?.rsdw_cache || {};
+      await updateApplication({ rsdw_cache: { ...current, refresh_hours: Number(event.target.value || 24) } });
+    });
+    root.querySelector('#save-shared-worlds-feed')?.addEventListener('click', async()=>{
+      try{const response=await api.invoke('application.shared_worlds.settings',{feed_url:root.querySelector('#shared-worlds-feed-url')?.value.trim()||'',feed_token:root.querySelector('#shared-worlds-feed-token')?.value||'',auto_refresh:!!root.querySelector('#shared-worlds-auto-refresh')?.checked,refresh_minutes:Number(root.querySelector('#shared-worlds-refresh-minutes')?.value||15)});setData(response);toast('Shared Worlds address saved','','success');}catch(error){toast('Could not save Shared Worlds address',error.message,'error');}
+    });
+    root.querySelector('#test-shared-worlds-feed')?.addEventListener('click', async()=>{
+      const url=root.querySelector('#shared-worlds-feed-url')?.value.trim()||'';
+      try{await api.invoke('application.shared_worlds.settings',{feed_url:url,feed_token:root.querySelector('#shared-worlds-feed-token')?.value||'',auto_refresh:!!root.querySelector('#shared-worlds-auto-refresh')?.checked,refresh_minutes:Number(root.querySelector('#shared-worlds-refresh-minutes')?.value||15)});const response=await api.invoke('shared.worlds.feed.refresh',{url});if(response.state)state.data=response.state;toast('Shared Worlds feed refreshed',`${response.result?.count||0} World(s) available.`,'success');render();}catch(error){toast('Shared Worlds feed failed',error.message,'error');}
+    });
+    root.querySelector('#save-global-access-policy')?.addEventListener('click', async () => {
+      try { await updateApplication({ server_access_policy: readAccessPolicy(root, 'global-access') }); toast('Global access policy saved', 'It will be combined with each World’s own policy when that World is published.', 'success'); }
+      catch (error) { toast('Access policy save failed', error.message, 'error'); }
+    });
+    root.querySelector('#refresh-server-connections')?.addEventListener('click', () => refreshServerAccessConnections(false));
+    if (root.querySelector('#connections-panel') && Date.now() - state.serverAccessConnectionsLoadedAt > 15000) refreshServerAccessConnections(true);
+    root.querySelectorAll('[data-connection-ip]').forEach((rowEl) => rowEl.addEventListener('contextmenu', (event) => { event.preventDefault(); event.stopPropagation(); openConnectionMenu(rowEl.dataset.connectionIp, event.clientX, event.clientY); }));
+    root.querySelectorAll('[data-connection-menu]').forEach((btn) => btn.addEventListener('click', (event) => { event.preventDefault(); event.stopPropagation(); const r = btn.getBoundingClientRect(); openConnectionMenu(btn.dataset.connectionMenu, r.left, r.bottom); }));
+    root.querySelector('#pick-server-install-dir')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickDirectory(); if (value) root.querySelector('#server-install-dir').value = value; });
+    root.querySelector('#pick-server-install-exe')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickExecutable(); if (value) root.querySelector('#server-install-exe').value = value; });
+    root.querySelector('#pick-server-steamcmd-dir')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickDirectory(); if (value) root.querySelector('#server-steamcmd-dir').value = value; });
+    root.querySelector('#detect-server-owner-id')?.addEventListener('click', async () => { try { const result=await api.invoke('setup.owner_id.detect',{}); if(!result.ok)throw new Error(result.error||'Player ID was not found.'); root.querySelector('#server-owner-id').value=result.owner_id; toast('Player ID detected', `${result.masked} · ${result.source}`, 'success'); } catch(error){toast('Player ID not detected',error.message,'error');} });
+    const saveServerInstallPaths = async () => { const next = await api.invoke('application.update', { server_install: { install_dir: root.querySelector('#server-install-dir')?.value.trim() || '', server_exe: root.querySelector('#server-install-exe')?.value.trim() || '', steamcmd_dir: root.querySelector('#server-steamcmd-dir')?.value.trim() || '', owner_id: root.querySelector('#server-owner-id')?.value.trim() || '', linux_server_mode: root.querySelector('#server-linux-mode')?.value || state.data.application.server_install?.linux_server_mode || 'native', proton_executable: root.querySelector('#server-proton-executable')?.value.trim() || '', proton_prefix: root.querySelector('#server-proton-prefix')?.value.trim() || '', wine_dll_overrides: root.querySelector('#server-wine-dll-overrides')?.value.trim() || 'dwmapi=n,b;version=n,b', ue4ss_source_url: root.querySelector('#server-ue4ss-source-url')?.value.trim() || '', native_linux_runtime: { ue4ss_source_url: root.querySelector('#server-native-ue4ss-source')?.value.trim() || '', runeschema_source_url: root.querySelector('#server-native-runeschema-source')?.value.trim() || '' } } }); setData(next); return next; };
+    root.querySelector('#save-server-install-paths')?.addEventListener('click', async () => {
+      try {
+        await saveServerInstallPaths();
+        const linkedPath = root.querySelector('#server-install-dir')?.value.trim() || '';
+        const validation = linkedPath ? await api.invoke('setup.validate_server', { path: linkedPath, allow_new: true }) : null;
+        if (validation?.mode === 'existing') {
+          await offerExistingServerModImport(linkedPath,{importNow:true});
+          const repaired = await api.invoke('server.install.ensure_runtimes', {});
+          if (repaired.state) setData(repaired.state);
+          const rr = repaired.result || {};
+          if (rr.ok) toast('Server linked and validated', (rr.repaired || []).join(' · ') || 'Existing UE4SS, Dragonwilds version.dll, and RuneSchema were detected and adopted.', 'success');
+          else toast('Server linked — runtime attention required', (rr.errors || []).join(' ') || 'One or more baseline runtimes could not be repaired automatically.', '');
+        } else {
+          toast('Server settings saved', 'Full Setup will install the dedicated server and its baseline runtimes here.', 'success');
+        }
+      } catch (error) { toast('Could not save server settings', error.message, 'error'); }
+    });
+    root.querySelector('#settings-full-server-setup')?.addEventListener('click', async () => {
+      if (!await managedConfirm('Run machine-wide Dragonwilds dedicated-server setup? SteamCMD may be downloaded, the server installed/validated, and firewall rules configured for your hosted World ports.','Dedicated Server Setup')) return;
+      setDiscordPresence('Updating Dragonwilds Server', null, { resetTimer: true });
+      try { await saveServerInstallPaths(); const linkedPath=root.querySelector('#server-install-dir')?.value.trim()||'';if(linkedPath)await offerExistingServerModImport(linkedPath,{importNow:true});const response = await api.invoke('server.install.full_setup', {}); if (response.state) setData(response.state); const runtimeNote = response.runtime?.ok ? ' Base runtimes ready.' : ` ${(response.runtime?.errors || []).join(' ')}`; toast(response.runtime?.ok ? 'Full server setup complete' : 'Server installed — runtime source needed', `${response.latest?.buildid ? `Steam build ${response.latest.buildid}.` : 'Dedicated server installed/validated.'}${runtimeNote}`, response.runtime?.ok ? 'success' : ''); }
+      catch (error) { toast('Full server setup failed', error.message, 'error'); }
+      finally { updateDiscordPresenceForRoute(); }
+    });
+    root.querySelector('#settings-configure-server-firewall')?.addEventListener('click', async () => { try { const result = await api.invoke('application.firewall.repair_all', {}); const ports=(result.ports||[]).map(row=>`${row.protocol} ${row.port}`).join(' · ');toast(result.ok?'Host firewall configured':'Firewall needs attention',ports||result.message||'No inbound listeners configured.',result.ok?'success':'error'); } catch (error) { toast('Firewall configuration failed', error.message, 'error'); } });
+    root.querySelector('#settings-update-server')?.addEventListener('click', async () => {
+      setDiscordPresence('Updating Dragonwilds Server', null, { resetTimer: true });
+      try { await saveServerInstallPaths(); const response = await api.invoke('server.runtime.update', {}); if (response.state) setData(response.state); toast('Server updated / validated', 'SteamCMD completed; the dedicated server remains stopped.', 'success'); }
+      catch (error) { toast('Server update failed', error.message, 'error'); }
+      finally { updateDiscordPresenceForRoute(); }
+    });
+    root.querySelector('#settings-update-restart-server')?.addEventListener('click', async () => {
+      const world=activeServerWorld();if(!world)return toast('Select a hosted World','Update & Restart needs an active Server profile.','error');
+      if(!await managedConfirm('Update the shared dedicated-server installation and restart the active World after verification?','Update & Restart'))return;
+      setDiscordPresence('Updating Dragonwilds Server',world,{resetTimer:true});
+      try{await saveServerInstallPaths();const response=await api.invoke('server.runtime.update_restart',{id:world.id});if(response.state)setData(response.state);toast('Server updated and restarted','The process and Sync broadcast are verified running.','success');launchRuntimeConsoleForWorld(world);}
+      catch(error){toast('Update & restart failed',error.message,'error');}
+      finally{updateDiscordPresenceForRoute();}
+    });
+    root.querySelector('#settings-repair-runtimes')?.addEventListener('click', async () => {
+      try { await saveServerInstallPaths(); const response = await api.invoke('server.install.ensure_runtimes', {}); if (response.state) setData(response.state); const result = response.result || {}; if (result.ok) toast('Base runtimes ready', (result.repaired || []).join(' · ') || 'UE4SS and RuneSchema passed validation.', 'success'); else toast('Runtime source required', (result.errors || ['UE4SS / RuneSchema is incomplete.']).join(' '), 'error'); }
+      catch (error) { toast('Runtime validation failed', error.message, 'error'); }
+    });
+    const installRuntimeZip = async (kind, zipPath) => {
+      await saveServerInstallPaths();
+      const method = 'server.install.ue4ss_zip';
+      const response = await api.invoke(method, { zip_path: zipPath }); if (response.state) setData(response.state);
+      toast('UE4SS installed', 'Runtime cached and deployed as a Server Setup prerequisite.', 'success');
+    };
+    const installRuneSchemaOverride = async (zipPath) => {
+      await saveServerInstallPaths();
+      const response = await api.invoke('server.install.runeschema_core', { zip_path: zipPath }); if (response.state) setData(response.state);
+      toast('Manual RuneSchema override active', 'Launch will retain this complete unreleased core until Restore Official is selected.', 'success');
+    };
+    root.querySelector('#settings-import-runeschema-override')?.addEventListener('click', async () => {
+      try { const zipPath = await window.dragonwilds.pickFile('zip'); if (zipPath) await installRuneSchemaOverride(zipPath); }
+      catch (error) { toast('Manual RuneSchema override failed', error.message, 'error'); }
+    });
+    root.querySelector('#settings-import-ue4ss-core')?.addEventListener('click', async () => {
+      try { const zipPath = await window.dragonwilds.pickFile('zip'); if (zipPath) await installRuntimeZip('ue4ss', zipPath); }
+      catch (error) { toast('UE4SS ZIP import failed', error.message, 'error'); }
+    });
+    root.querySelector('#settings-update-ue4ss')?.addEventListener('click', async () => {
+      try { await saveServerInstallPaths(); const response = await api.invoke('server.install.ue4ss_update', { releases_url: root.querySelector('#server-ue4ss-source-url')?.value.trim() || '' }); if (response.state) setData(response.state); if (!response.available) return toast('UE4SS source unavailable', 'No downloadable release ZIP was resolved from the configured source.', 'error'); toast('UE4SS updated', `${response.result?.files_written || 0} file(s) installed into the shared base runtime.`, 'success'); }
+      catch (error) { toast('UE4SS update failed', error.message, 'error'); }
+    });
+    root.querySelector('#settings-update-runeschema')?.addEventListener('click', async () => {
+      try { await saveServerInstallPaths(); const response = await api.invoke('server.install.runeschema_update', { variant: 'official' }); if (response.state) setData(response.state); toast('Official RuneSchema restored', `${response.result?.files_written || 0} matched core file(s) installed from GitHub.`, 'success'); }
+      catch (error) { toast('RuneSchema update failed', error.message, 'error'); }
+    });
+    root.querySelector('#settings-update-runeschema-experimental')?.addEventListener('click', async () => {
+      try { await saveServerInstallPaths(); const response = await api.invoke('server.install.runeschema_update', { variant: 'experimental' }); if (response.state) setData(response.state); toast('Experimental RuneSchema installed', `${response.result?.files_written || 0} matched core file(s) installed from the Sync experimental branch.`, 'success'); }
+      catch (error) { toast('Experimental RuneSchema update failed', error.message, 'error'); }
+    });
+    bindRuntimeDropZone(root.querySelector('#settings-ue4ss-dropzone'), 'UE4SS', (path) => installRuntimeZip('ue4ss', path));
+    bindRuntimeDropZone(root.querySelector('#settings-runeschema-override-dropzone'), 'RuneSchema override', (path) => installRuneSchemaOverride(path));
+    root.querySelector('#toggle-server-mode')?.addEventListener('click', async () => { if (!state.data.application.server_mode_enabled) openGuidedSetup('server', { serverEnable: true }); else {state.data=await api.invoke('application.advanced.settings',{server_enabled:false});state.settingsTab='advanced';render();toast('Server workspace hidden','Existing server files and profiles were preserved.','success');} });
+    root.querySelector('#toggle-webhost-feature')?.addEventListener('click', async () => { const enabled=!!state.data?.application?.advanced?.webhost_enabled;if(!enabled)openWebHostSetup({enableFeature:true});else{state.data=await api.invoke('application.advanced.settings',{webhost_enabled:false});render();toast('Advanced WebHost disabled',state.data?.application?.advanced?.remote_server_enabled?'The public directory was removed; Server Manager remains available at the remote login page.':'The complete website listener was stopped.','success');} });
+    root.querySelector('#toggle-remote-server-feature')?.addEventListener('click', async () => { const enabled=!!state.data?.application?.advanced?.remote_server_enabled;state.data=await api.invoke('application.advanced.settings',{remote_server_enabled:!enabled});if(!enabled){state.route='webhost';state.webhostTab='remote';}render();toast(!enabled?'Remote Login enabled':'Remote Login disabled',!enabled?'Only the authenticated Server Manager is published.':'Remote Login was removed; Advanced Webhost was unchanged.','success'); });
+    root.querySelector('#start-player-tour')?.addEventListener('click',()=>openGuidedSetup('player'));
+    root.querySelector('#start-server-tour')?.addEventListener('click',()=>openGuidedSetup('server',{serverEnable:false}));
+    root.querySelector('#start-webhost-tour')?.addEventListener('click',()=>openWebHostSetup({enableFeature:false}));
+    root.querySelector('#toggle-core')?.addEventListener('click', () => updateApplication({ keep_core_persistent: !state.data.application.keep_core_persistent }));
+    root.querySelector('#toggle-bg-checks')?.addEventListener('click', () => updateApplication({ background_server_checks: state.data.application.background_server_checks === false }));
+    root.querySelector('#toggle-network-diagnostics')?.addEventListener('click', () => updateApplication({ network_diagnostics_enabled: state.data.application.network_diagnostics_enabled === false }));
+    root.querySelector('#toggle-connection-reports')?.addEventListener('click', () => updateApplication({ connection_diagnostic_reports: state.data.application.connection_diagnostic_reports !== true }));
+    root.querySelector('#save-client-network-evidence')?.addEventListener('click', async () => {
+      const optionalNumber = (id) => { const text = root.querySelector(id)?.value.trim() || ''; return text === '' ? null : Number(text); };
+      await updateApplication({ client_network_profile: {
+        download_mbps: optionalNumber('#client-net-down'), upload_mbps: optionalNumber('#client-net-up'),
+        latency_ms: optionalNumber('#client-net-latency'), source: root.querySelector('#client-net-source')?.value.trim() || 'manual',
+        measured_at: new Date().toISOString(),
+      }});
+      toast('Client network evidence saved', 'It will be attached to explicit World link tests as diagnostic context.', 'success');
+    });
+    const saveBackgroundSettings = async () => {
+      const current = state.data.application.background_mode || {};
+      const next = {
+        ...current,
+        close_to_tray: root.querySelector('#toggle-close-to-tray')?.classList.contains('on') ?? current.close_to_tray,
+        start_minimized: root.querySelector('#toggle-start-minimized')?.classList.contains('on') ?? current.start_minimized,
+        open_sync_console_on_host_start: root.querySelector('#toggle-sync-console-on-host-start')?.classList.contains('on') ?? current.open_sync_console_on_host_start,
+        notifications_enabled: !!root.querySelector('#notify-enabled')?.checked,
+        announcement_overlay_enabled: !!root.querySelector('#announcement-overlay-enabled')?.checked,
+        notify_high_latency: !!root.querySelector('#notify-latency')?.checked,
+        notify_pending_restart: !!root.querySelector('#notify-restart')?.checked,
+        notify_updates: !!root.querySelector('#notify-updates')?.checked,
+      };
+      await updateApplication({ background_mode: next });
+      try { await window.dragonwilds.backgroundSettings(next); } catch (_) {}
+    };
+    root.querySelector('#toggle-close-to-tray')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
+    root.querySelector('#toggle-start-minimized')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
+    root.querySelector('#toggle-sync-console-on-host-start')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
+    root.querySelector('#toggle-handheld-mode')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
+    root.querySelector('#save-window-preferences')?.addEventListener('click',async()=>{
+      const [width,height]=String(root.querySelector('#window-resolution')?.value||'1440x900').split('x').map(Number);
+      const next={startup_mode:root.querySelector('#window-startup-mode')?.value||'remember',default_width:width||1440,default_height:height||900,ui_scale:Number(root.querySelector('#window-ui-scale')?.value||1),handheld_mode:!!root.querySelector('#toggle-handheld-mode')?.classList.contains('on')};
+      try{await updateApplication({window_preferences:next});await window.dragonwilds.windowPreferences?.(next);toast('Window settings applied',next.handheld_mode?'Experimental handheld title cards are active.':'Desktop window preferences are active.','success');}
+      catch(error){toast('Could not apply window settings',error.message,'error');}
+    });
+    root.querySelector('#toggle-hardware-acceleration')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
+    root.querySelector('#save-performance-settings')?.addEventListener('click',async()=>{try{await updateApplication({performance:{hardware_acceleration:root.querySelector('#toggle-hardware-acceleration')?.classList.contains('on')!==false,renderer_memory_mb:Number(root.querySelector('#renderer-memory-mb')?.value||0)}});toast('Performance settings saved','Restart Dragonwilds Sync to apply the GPU and renderer-memory startup settings.','success');}catch(error){toast('Could not save performance settings',error.message,'error');}});
+    root.querySelector('#analyze-computer-profile')?.addEventListener('click',async()=>{try{const response=await api.invoke('server.hardware.refresh',{});if(response.state)setData(response.state);else render();toast('Computer analysis complete','The recommendation now reflects this machine’s processor and memory headroom.','success');}catch(error){toast('Computer analysis failed',error.message,'error');}});
+    root.querySelector('#save-computer-profile')?.addEventListener('click',async()=>{try{const running=!!state.data?.server?.runtime?.running;await updateApplication({computer_profile:{mode:root.querySelector('#computer-profile-mode')?.value||'automatic',server_priority:root.querySelector('#computer-profile-priority')?.value||'above_normal',power_plan:root.querySelector('#computer-profile-power')?.value||'unchanged',hosting_focus:!!root.querySelector('#computer-profile-hosting-focus')?.checked,suspend_visuals:!!root.querySelector('#computer-profile-suspend-visuals')?.checked,reduce_background_work:!!root.querySelector('#computer-profile-reduce-background')?.checked}});toast('Computer profile saved',running?'Process priority and power-plan changes take effect on the next server start; launcher focus settings apply now.':'The profile will activate when the dedicated server starts.','success');}catch(error){toast('Could not save computer profile',error.message,'error');}});
+    ['#notify-enabled','#announcement-overlay-enabled','#notify-latency','#notify-restart','#notify-updates'].forEach((id) => root.querySelector(id)?.addEventListener('change', saveBackgroundSettings));
+    const saveFavoriteAlerts=async()=>{try{state.data=await api.invoke('world.favorite.alerts.settings',{enabled:!!root.querySelector('#favorite-alerts-enabled')?.checked,online:!!root.querySelector('#favorite-alerts-online')?.checked,offline:!!root.querySelector('#favorite-alerts-offline')?.checked,maintenance:!!root.querySelector('#favorite-alerts-maintenance')?.checked,identity_changed:!!root.querySelector('#favorite-alerts-identity')?.checked,shared_characters:!!root.querySelector('#favorite-alerts-characters')?.checked});render();}catch(error){toast('Favorite alert settings failed',error.message,'error');}};
+    ['#favorite-alerts-enabled','#favorite-alerts-online','#favorite-alerts-offline','#favorite-alerts-maintenance','#favorite-alerts-identity','#favorite-alerts-characters'].forEach((id)=>root.querySelector(id)?.addEventListener('change',saveFavoriteAlerts));
+    root.querySelector('#save-host-benchmark-settings')?.addEventListener('click', async () => {
+      const cfg = state.data.application.server_network_benchmark || {};
+      try { await updateApplication({ server_network_benchmark: { ...cfg, enabled: cfg.enabled !== false, interval_hours: Math.max(1, Number(root.querySelector('#host-benchmark-hours')?.value || 24)), profile: root.querySelector('#host-benchmark-profile')?.value === 'full' ? 'full' : 'light' } }); toast('Host benchmark settings saved', '', 'success'); }
+      catch (error) { toast('Could not save benchmark settings', error.message, 'error'); }
+    });
+    root.querySelector('#toggle-host-benchmark')?.addEventListener('click', async () => { const cfg = state.data.application.server_network_benchmark || {}; await updateApplication({ server_network_benchmark: { ...cfg, enabled: cfg.enabled === false } }); });
+    root.querySelector('#nexus-auto-check')?.addEventListener('change', async()=>{const n=state.data.application.integrations?.nexus_mods||{};await updateApplication({integrations:{nexus_mods:{...n,enabled:true,auto_check_updates:!!root.querySelector('#nexus-auto-check')?.checked,auto_apply_updates:false}}});});
+    root.querySelector('#open-appdata')?.addEventListener('click', async () => { try { const paths = await api.invoke('application.storage.paths', {}); const ok = await window.dragonwilds.openPath(paths.app_data); if (!ok) toast('Could not open storage folder', paths.app_data, 'error'); } catch (error) { toast('Could not open storage folder', error.message, 'error'); } });
+    root.querySelector('#go-servers')?.addEventListener('click', () => { state.route = 'servers'; render(); });
+    const resolveClientFolder=async(value)=>{if(!String(value||'').trim())return;try{toast('Searching for Dragonwilds','Checking the selected folder and its child directories…');const result=await api.invoke('setup.validate_client',{path:String(value).trim()});if(!result.ok)throw new Error(result.message||'No complete Dragonwilds client installation was found.');await updateApplication({game_dir:result.layout.game_root,game_exe:result.layout.game_exe});toast('Dragonwilds installation linked',`${result.layout.game_root}${result.directories_scanned?` · ${result.directories_scanned} folders checked`:''}`,'success');}catch(error){toast('Dragonwilds installation not found',error.message,'error');}};
+    root.querySelector('#pick-game-dir')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickDirectory(); if (value) await resolveClientFolder(value); });
+    root.querySelector('#pick-game-exe')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickExecutable(); if (value) updateApplication({ game_exe: value }); });
+    root.querySelector('#game-dir')?.addEventListener('change', (e) => resolveClientFolder(e.target.value));
+    root.querySelector('#game-exe')?.addEventListener('change', (e) => updateApplication({ game_exe: e.target.value.trim() }));
+  }
+
+  function maybeScheduleNexusAutoCheck(target='singleplayer', worldId='') {
+    const cfg=state.data?.application?.integrations?.nexus_mods||{};
+    if(cfg.auto_check_updates!==true || !state.nexusStatus?.connected)return;
+    const key=target==='server'?`server:${worldId||activeServerWorld()?.id||''}`:'singleplayer';
+    const last=Number(state.nexusAutoCheckAt[key]||0); if(Date.now()-last<30*60*1000)return;
+    state.nexusAutoCheckAt[key]=Date.now();
+    setTimeout(()=>checkNexusUpdates(target,{quiet:true}).catch(()=>{}),80);
+  }
+
+  function newestNexusFile(files = []) {
+    const usable=(Array.isArray(files)?files:[]).filter((f)=>f && (f.file_id||f.fileId));
+    if(!usable.length)return null;
+    const main=usable.filter((f)=>Number(f.category_id||f.categoryId||0)===1 || /main/i.test(String(f.category_name||f.categoryName||'')));
+    const pool=main.length?main:usable;
+    return [...pool].sort((a,b)=>Number(b.uploaded_timestamp||b.uploadedTimestamp||b.file_id||b.fileId||0)-Number(a.uploaded_timestamp||a.uploadedTimestamp||a.file_id||a.fileId||0))[0]||null;
+  }
+
+  async function checkNexusUpdates(target='singleplayer', {quiet=false}={}) {
+    if(!state.nexusStatus?.connected){ if(!quiet)toast('Connect Nexus Mods first','Settings → Integrations → Nexus Mods enables authenticated metadata checks.','error'); return {checked:0,updates:0,failed:0}; }
+    const isServer=target==='server'; const world=isServer?activeServerWorld():null;
+    if(isServer&&!world)return {checked:0,updates:0,failed:0};
+    let units=isServer?(state.serverInventory[world.id]||[]):state.singleplayerInventory;
+    const managed=units.filter((u)=>u?.source?.provider==='nexus' && Number(u.source.mod_id||0)>0);
+    if(!managed.length){if(!quiet)toast('No Nexus-managed mods','Use “Link to Nexus Mod…” on an existing mod, or install one from Nexus.');return {checked:0,updates:0,failed:0};}
+    let checked=0, updates=0, failed=0;
+    for(const unit of managed){
+      const old={...(unit.source||{})};
+      try{
+        const [mod,filesPayload]=await Promise.all([window.dragonwilds.nexusMod(old.mod_id),window.dragonwilds.nexusFiles(old.mod_id)]);
+        const latest=newestNexusFile(filesPayload?.files||[]);
+        const latestId=Number(latest?.file_id||latest?.fileId||0)||null;
+        const latestVersion=nexusFileVersion(latest||{})||String(mod?.version||'');
+        const installedId=Number(old.file_id||0)||null;
+        const installedVersion=String(old.installed_version||old.version||'');
+        const available=!!((latestId&&installedId&&latestId!==installedId)||(latestVersion&&installedVersion&&latestVersion!==installedVersion));
+        const source={...old,provider:'nexus',game_domain:'runescapedragonwilds',latest_file_id:latestId,latest_version:latestVersion,update_available:available,update_status:available?'update_available':'current',last_checked_at:Date.now()/1000};
+        if(isServer){const response=await api.invoke('server.world.mod.update',{id:world.id,key:unit.key,source});state.serverInventory[world.id]=response.units||state.serverInventory[world.id];}
+        else {const response=await api.invoke('singleplayer.mod.update',privateProfileParams({key:unit.key,source}));state.singleplayerInventory=response.units||state.singleplayerInventory;if(response.state)state.data=response.state;}
+        checked++; if(available)updates++;
+      }catch(error){
+        failed++;
+        try{
+          const source={...old,provider:'nexus',update_status:'unable_to_check',update_available:false,last_checked_at:Date.now()/1000};
+          if(isServer){const response=await api.invoke('server.world.mod.update',{id:world.id,key:unit.key,source});state.serverInventory[world.id]=response.units||state.serverInventory[world.id];}
+          else {const response=await api.invoke('singleplayer.mod.update',privateProfileParams({key:unit.key,source}));state.singleplayerInventory=response.units||state.singleplayerInventory;}
+        }catch(_){}
+      }
+    }
+    render();
+    if(!quiet)toast('Nexus update check complete',`${checked} checked · ${updates} update${updates===1?'':'s'} available${failed?` · ${failed} unable to check`:''}`,failed&&!checked?'error':'success');
+    return {checked,updates,failed};
+  }
+
+  function openSinglePlayerModSourceEditor(unit) {
+    const source=unit.source||{}; const isNexus=source.provider==='nexus';
+    showModal(`<div class="modal-header"><div><div class="eyebrow">Singleplayer Mod</div><h2>${isNexus?'Nexus Source':'Link to Nexus Mod…'}</h2><p>${escapeHtml(unit.name||'Mod')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label>Source Type</label><select class="select" id="sp-source-provider"><option value="manual" ${isNexus?'':'selected'}>Local / Unmanaged</option><option value="nexus" ${isNexus?'selected':''}>Nexus Mods</option></select></div><div class="form-group"><label>Nexus Mod ID</label><input class="field" id="sp-source-id" type="number" min="1" value="${escapeHtml(source.mod_id??'')}" placeholder="e.g. 123"/></div><div class="form-group"><label>Installed File ID</label><input class="field" id="sp-source-file-id" type="number" min="1" value="${escapeHtml(source.file_id??'')}" placeholder="Optional"/></div><div class="form-group"><label>Installed Version</label><input class="field" id="sp-source-version" value="${escapeHtml(source.installed_version||source.version||'')}" placeholder="Optional"/></div></div><div class="identity-box"><strong>Adopt without reinstalling</strong><p>Linking only records Nexus provenance and enables update tracking. Dragonwilds Sync will not replace this local installation until you explicitly choose a Nexus file to install/update.</p></div></div><div class="modal-footer"><button class="btn ghost" id="sp-source-open-nexus">Browse Nexus ↗</button><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-sp-source">Save Source</button></div></div>`);
+    modalRoot.querySelector('#sp-source-open-nexus')?.addEventListener('click',()=>{const id=Number(modalRoot.querySelector('#sp-source-id')?.value||source.mod_id||0); if(id)window.dragonwilds.openExternal(`https://www.nexusmods.com/runescapedragonwilds/mods/${id}`); else window.dragonwilds.openExternal('https://www.nexusmods.com/runescapedragonwilds/mods/');});
+    modalRoot.querySelector('#save-sp-source')?.addEventListener('click',async()=>{
+      const provider=modalRoot.querySelector('#sp-source-provider')?.value||'manual'; const num=(id)=>{const v=modalRoot.querySelector(id)?.value.trim()||'';return v?Number(v):null;};
+      try{const src=provider==='nexus'?{...source,provider:'nexus',game_domain:'runescapedragonwilds',mod_id:num('#sp-source-id'),file_id:num('#sp-source-file-id'),version:modalRoot.querySelector('#sp-source-version')?.value.trim()||'',installed_version:modalRoot.querySelector('#sp-source-version')?.value.trim()||'',update_status:'current'}:{provider:'manual'}; const response=await api.invoke('singleplayer.mod.update',privateProfileParams({key:unit.key,source:src}));state.singleplayerInventory=response.units||state.singleplayerInventory;if(response.state)state.data=response.state;closeModal();render();toast('Mod source saved',provider==='nexus'?'Nexus update tracking is now available.':'Mod returned to Local / Unmanaged.','success');}catch(error){toast('Could not save mod source',error.message,'error');}
+    });
+  }
+
+  function openModSourceEditor(world, unit) {
+    const source = unit.source || {};
+    const isNexus = source.provider === 'nexus';
+    showModal(`<div class="modal-header"><div><h2>Mod Source</h2><p>${escapeHtml(unit.name || 'Mod')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group"><label>Source Type</label><select class="select" id="mod-source-provider"><option value="manual" ${isNexus ? '' : 'selected'}>Manual</option><option value="nexus" ${isNexus ? 'selected' : ''}>Nexus Mods</option></select></div><div class="form-group"><label>Nexus Mod ID</label><input class="field" id="mod-source-id" type="number" min="1" value="${escapeHtml(source.mod_id ?? '')}" placeholder="e.g. 123" /></div><div class="form-group"><label>Installed File ID</label><input class="field" id="mod-source-file-id" type="number" min="1" value="${escapeHtml(source.file_id ?? '')}" placeholder="Optional" /></div><div class="form-group"><label>Installed Version</label><input class="field" id="mod-source-version" value="${escapeHtml(source.version || '')}" placeholder="Optional" /></div><div class="form-group"><label>Latest Known File ID</label><input class="field" id="mod-source-latest-file-id" type="number" min="1" value="${escapeHtml(source.latest_file_id ?? '')}" placeholder="Manual/update-adapter evidence" /></div><div class="form-group"><label>Latest Known Version</label><input class="field" id="mod-source-latest-version" value="${escapeHtml(source.latest_version || '')}" placeholder="Optional" /></div><div class="form-group full"><label class="inline-check"><input type="checkbox" id="mod-source-auto-update" ${source.auto_update ? 'checked' : ''} /> Allow future Nexus adapter to auto-apply this mod when policy permits</label></div></div><div class="identity-box"><strong>Source tracking without surrendering installation control</strong><p>Linking records Nexus provenance for this existing installation. Authenticated metadata/download entitlement comes from the connected Nexus account; deployment, validation, backups, and client synchronization remain owned by Dragonwilds Sync.</p></div></div><div class="modal-footer"><span>${source.update_available ? '<span class="status-pill unknown">UPDATE AVAILABLE</span>' : ''}</span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-mod-source">Save Source</button></div></div>`);
+    modalRoot.querySelector('#save-mod-source')?.addEventListener('click', async () => {
+      const provider = modalRoot.querySelector('#mod-source-provider')?.value || 'manual';
+      const numberOrNull = (id) => { const v = modalRoot.querySelector(id)?.value.trim() || ''; return v ? Number(v) : null; };
+      try {
+        const response = await api.invoke('server.world.mod.update', { id: world.id, key: unit.key, source: provider === 'nexus' ? {
+          provider: 'nexus', mod_id: numberOrNull('#mod-source-id'), file_id: numberOrNull('#mod-source-file-id'),
+          version: modalRoot.querySelector('#mod-source-version')?.value.trim() || '', latest_file_id: numberOrNull('#mod-source-latest-file-id'),
+          latest_version: modalRoot.querySelector('#mod-source-latest-version')?.value.trim() || '', auto_update: !!modalRoot.querySelector('#mod-source-auto-update')?.checked,
+          game_domain: 'runescapedragonwilds',
+        } : { provider: 'manual' } });
+        state.serverInventory[world.id] = response.units || [];
+        closeModal(); render(); toast('Mod source saved', provider === 'nexus' ? 'Nexus metadata linked.' : 'Source returned to Manual.', 'success');
+      } catch (error) { toast('Could not save mod source', error.message, 'error'); }
+    });
+  }
+
+  function characterItemLabel(item) {
+    if (!item) return '';
+    if (typeof item !== 'object') return String(item);
+    return String(item.name || item.DisplayName || item.item_name || item.id || item.ItemId || item.launcher_item_key || item.value?.name || item.value?.id || 'Item');
+  }
+
+  function characterItemSlot(item, i, kind) {
+    const label = characterItemLabel(item);
+    const icon = localFileUrl(item?.launcher_icon_path || item?.icon_path || '');
+    const quantity = item && typeof item === 'object' ? (item.quantity ?? item.Quantity ?? item.count ?? item.Count ?? '') : '';
+    return `<div class="inventory-slot character-game-slot ${item ? 'filled' : ''}" title="${escapeHtml(item ? (label || JSON.stringify(item)) : `${kind} ${i + 1}`)}">${icon ? `<img src="${escapeHtml(icon)}" alt=""/>` : `<span class="slot-fallback">${item ? '◆' : ''}</span>`}${quantity !== '' ? `<b class="slot-quantity">${escapeHtml(String(quantity))}</b>` : ''}</div>`;
+  }
+
+  // Release 1.2 retires the duplicate native save editor. Character editing now
+  // lives in RSDW Toolkit; Dragonwilds Sync retains profile association, backups,
+  // RSDWL import/export, selected-character hydration, and safe writeback.
+
+  let monacoPromise = null;
+  function loadMonaco() {
+    if (window.monaco?.editor) return Promise.resolve(window.monaco);
+    if (monacoPromise) return monacoPromise;
+    monacoPromise = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'vendor/monaco/vs/loader.js';
+      script.onload = () => {
+        try {
+          const amdRequire = window.require;
+          if (!amdRequire?.config) throw new Error('Monaco AMD loader did not initialize.');
+          window.MonacoEnvironment = { getWorkerUrl: () => 'vendor/monaco/vs/base/worker/workerMain.js' };
+          amdRequire.config({ paths: { vs: 'vendor/monaco/vs' } });
+          amdRequire(['vs/editor/editor.main'], () => resolve(window.monaco), (error) => reject(error));
+        } catch (error) { reject(error); }
+      };
+      script.onerror = () => reject(new Error('Could not load the bundled Monaco Editor runtime.'));
+      document.head.appendChild(script);
+    });
+    return monacoPromise;
+  }
+
+  // Shared reference|editable dual-pane JSON/text editor body -- the left
+  // pane is a frozen, read-only snapshot of "what it currently looks like"
+  // (exactly what was loaded from disk), the right pane is the live editable
+  // copy. Used by every config-file editor (World config, SinglePlayer mod
+  // files, core runtime config) so there's always a safe "just in case"
+  // comparison view while editing, without a second disk read.
+  function dualPaneJsonEditorHTML(opened, relativePath) {
+    const langLabel = escapeHtml(String(opened.language || 'text').toUpperCase());
+    return `<div class="dual-pane-json-editor"><section class="json-pane json-pane-reference"><div class="json-pane-head"><span>Reference · on disk</span><span class="status-pill unknown">${langLabel} · READ-ONLY</span></div><div id="monaco-json-reference" class="monaco-editor-host"></div><textarea id="json-reference-fallback" class="textarea json-fallback" spellcheck="false" readonly>${escapeHtml(opened.content || '')}</textarea></section><section class="json-pane json-pane-editable"><div class="json-pane-head"><span>Editable copy</span><span id="json-validation-status" class="status-pill ${opened.parse_error ? 'offline' : 'online'}">${opened.language === 'json' ? (opened.parse_error ? 'INVALID JSON' : 'VALID JSON') : langLabel}</span></div><div id="monaco-json-editor" class="monaco-editor-host"></div><textarea id="json-editor-fallback" class="textarea json-fallback" spellcheck="false">${escapeHtml(opened.content || '')}</textarea></section></div>`;
+  }
+
+  // Mounts both Monaco panes (or the plain-textarea fallback for each) inside
+  // whatever modal/host body already contains dualPaneJsonEditorHTML's markup.
+  // Returns { editor, fallback } for the EDITABLE pane only -- the reference
+  // pane is display-only and never read back.
+  async function mountDualPaneJsonEditor(root, opened) {
+    const language = ({ json:'json', jsonc:'json', lua:'lua', ini:'ini', cfg:'ini', text:'plaintext' })[String(opened.language || '').toLowerCase()] || 'plaintext';
+    const theme = document.body.dataset.theme === 'light' ? 'vs' : 'vs-dark';
+    const referenceFallback = root.querySelector('#json-reference-fallback');
+    const editableFallback = root.querySelector('#json-editor-fallback');
+    let editor = null, referenceEditor = null;
+    try {
+      const monaco = await loadMonaco();
+      const referenceHost = root.querySelector('#monaco-json-reference');
+      const editableHost = root.querySelector('#monaco-json-editor');
+      if (!document.body.contains(editableHost)) return { editor: null, fallback: editableFallback };
+      if (referenceHost) {
+        referenceEditor=monaco.editor.create(referenceHost, { value: opened.content || '', language, automaticLayout: true, minimap: { enabled: false }, theme, readOnly: true, domReadOnly: true, scrollBeyondLastLine: false, wordWrap: 'on' });
+        if (referenceFallback) referenceFallback.style.display = 'none';
+      }
+      editor = monaco.editor.create(editableHost, { value: opened.content || '', language, automaticLayout: true, minimap: { enabled: false }, theme, scrollBeyondLastLine: false, wordWrap: 'on', fontSize: 13, tabSize: 2 });
+      if (editableFallback) editableFallback.style.display = 'none';
+    } catch (error) {
+      if (referenceFallback) referenceFallback.style.display = 'block';
+      if (editableFallback) editableFallback.style.display = 'block';
+      toast('Monaco fallback active', `${error.message} Plain text editing remains available.`, '');
+    }
+    return { editor, fallback: editableFallback, dispose:()=>{try{editor?.dispose();}catch(_){}try{referenceEditor?.dispose();}catch(_){}} };
+  }
+
+  function modFileIcon(path, editable) {
+    const ext=String(path||'').split('.').pop().toLowerCase();
+    const icons={lua:'◈',json:'{}',jsonc:'{#}',ini:'⚙',cfg:'⚙',txt:'T',md:'M',dll:'▣',pak:'▰',png:'▧',jpg:'▧',jpeg:'▧'};
+    return `<span class="mod-file-icon ${editable?'editable':'readonly'}">${escapeHtml(icons[ext]||'◇')}</span>`;
+  }
+
+  async function openCustomItemRepository(seed={}) {
+    let host=document.querySelector('#custom-item-repository-window');
+    if(!detachedMode&&!host){
+      await window.dragonwilds?.openDetachedWindow?.({route:'custom-item-repository',title:'Dragonwilds Sync · Modded Item Repository',width:1320,height:820,context:{customItemSeed:seed}});
+      return;
+    }
+    if(!host)return;
+    if(!state.customItemManifestsScanned){
+      state.customItemManifestsScanned=true;
+      try{const discovered=await api.invoke('application.custom_items.discover',{});if(discovered?.state)state.data=discovered.state;if(discovered?.imported)toast('Mod item manifests loaded',`${discovered.imported} definition${discovered.imported===1?'':'s'} parsed from ${discovered.sources?.length||0} installed mod manifest${discovered.sources?.length===1?'':'s'}.`,'success');}catch(error){console.warn('Custom item manifest discovery failed',error);}
+    }
+    const items=[...((state.data?.application?.custom_items)||[])];
+    const itemPageSize=20;
+    const itemPageCount=Math.max(1,Math.ceil(items.length/itemPageSize));
+    state.customItemPage=Math.max(0,Math.min(Number(state.customItemPage||0),itemPageCount-1));
+    const visibleItems=items.slice(state.customItemPage*itemPageSize,(state.customItemPage+1)*itemPageSize);
+    const categories=['Armour','One-Handed Weapon','Two-Handed Weapon','Right-Hand Weapon','Left-Hand Weapon','Shield','Potion','Food','Ammo','Rune','Tool','Resource','Material','Plan','Quest Item','Other'];
+    const equipmentSlots=['','Head','Body','Legs','Cape','Jewellery','Right Hand','Left Hand','Both Hands'];
+    let iconSource=state.rsdwNativeTools['item-editor']?.tabs||{};
+    if(!Object.keys(iconSource).length){try{iconSource=(await api.invoke('application.custom_items.icons',{}))?.tabs||{};}catch(_){iconSource={};}}
+    const allIcons=[];const seenIcons=new Set();
+    Object.values(iconSource).forEach((tab)=>(tab.items||[]).forEach((row)=>{const icon=String(row.icon||'');if(icon&&!icon.startsWith('data:')&&!seenIcons.has(icon)){seenIcons.add(icon);allIcons.push({icon,name:row.name||icon});}}));
+    const iconUrl=(row)=>row.icon_data||((row.icon_ref||row.icon)?rsdwAssetUrl(row.icon_ref||row.icon):'assets/rsdw-toolkit/modded-items.svg');
+    const card=(row)=>`<article class="custom-item-card" data-custom-item-card="${escapeHtml(row.persistence_id||'')}" title="Right-click to write this definition into an installed mod"><div><img src="${escapeHtml(iconUrl(row))}" alt=""/></div><span><strong>${escapeHtml(row.display_name||row.name||'Modded Item')}</strong><code>${escapeHtml(row.internal_name||'Internal name unavailable')}</code><code>${escapeHtml(row.persistence_id||'')}</code><small>${escapeHtml(row.category||'Other')} · Stack ${Number(row.max_stack||1).toLocaleString()}${row.source_mod?` · ${escapeHtml(String(row.source_mod).split(/[\\/]/).pop())}`:''}</small></span><button class="btn ghost compact-btn" data-edit-custom-item="${escapeHtml(row.persistence_id||'')}">Edit</button><button class="btn danger compact-btn" data-delete-custom-item="${escapeHtml(row.persistence_id||'')}">Remove</button></article>`;
+    const start=seed&&typeof seed==='object'?seed:{};
+    host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Characters · Portable Item Manifest</div><h2>Modded Item Repository</h2><p>Preloaded with Characters. Display Name, Internal Name, PersistenceID, icon, and stack size remain one shared identity.</p></div></div><div class="detached-window-body custom-item-repository"><section class="custom-item-create"><div class="custom-item-icon-tools"><button class="custom-item-icon-picker" id="custom-item-icon"><img src="${escapeHtml(iconUrl(start))}" alt=""/><span>Load Custom Icon</span></button><label>Choose vanilla icon<input class="field" id="custom-item-icon-search" placeholder="Search Dragonwilds artwork…"/></label><div class="custom-item-game-icons" id="custom-item-game-icons"></div></div><label>Persistence ID<input class="field" id="custom-item-persistence" maxlength="512" value="${escapeHtml(start.persistence_id||'')}" placeholder="Save PersistenceID / ItemData key"/></label><label>Display Name<input class="field" id="custom-item-name" maxlength="160" value="${escapeHtml(start.display_name||start.name||'')}" placeholder="Player-facing item name"/></label><label>Internal Name<input class="field" id="custom-item-internal-name" maxlength="160" value="${escapeHtml(start.internal_name||'')}" placeholder="ITEM_NAME / asset name"/></label><label>Item Type<select class="select" id="custom-item-category">${categories.map((value)=>`<option ${value===(start.category||'Resource')?'selected':''}>${escapeHtml(value)}</option>`).join('')}</select></label><label>Equipment Hand / Slot<select class="select" id="custom-item-equipment">${equipmentSlots.map((value)=>`<option value="${escapeHtml(value)}" ${value===(start.equipment||'')?'selected':''}>${escapeHtml(value||'Not equippable')}</option>`).join('')}</select></label><label>Maximum Stack Quantity<input class="field" id="custom-item-stack" type="number" min="1" max="1000000000" value="${Number(start.max_stack||1)}"/></label><button class="btn primary" id="save-custom-item">${start.persistence_id?'Save Item Changes':'Save Item Definition'}</button></section><section class="custom-item-list">${visibleItems.map(card).join('')||'<div class="empty-state"><strong>No modded items yet.</strong><span>Unrecognized save items also appear in their own Item Editor tab and can be defined by right-clicking them.</span></div>'}${itemPageCount>1?`<div class="native-catalog-pagination"><button class="btn ghost compact-btn" data-custom-item-page="${state.customItemPage-1}" ${state.customItemPage<=0?'disabled':''}>Previous</button><span>Page ${state.customItemPage+1} of ${itemPageCount} · ${items.length} items</span><button class="btn ghost compact-btn" data-custom-item-page="${state.customItemPage+1}" ${state.customItemPage>=itemPageCount-1?'disabled':''}>Next</button></div>`:''}</section></div><div class="detached-window-footer"><span>${items.length} saved definition${items.length===1?'':'s'} · portable manifests include custom icon files</span><div class="footer-right"><button class="btn ghost" id="import-custom-items">Import Manifest</button><button class="btn ghost" id="export-custom-items" ${items.length?'':'disabled'}>Export Mod Manifest</button><button class="btn primary" id="done-custom-item-repository">Done</button></div></div>`;
+    host.classList.add('custom-item-repository-host');
+    let iconData=String(start.icon_data||''),iconRef=String(start.icon_ref||'');
+    const iconGrid=host.querySelector('#custom-item-game-icons');
+    const renderIcons=()=>{const query=String(host.querySelector('#custom-item-icon-search')?.value||'').trim().toLowerCase();const rows=allIcons.filter((row)=>!query||row.name.toLowerCase().includes(query)).slice(0,48);iconGrid.innerHTML=rows.map((row)=>`<button title="${escapeHtml(row.name)}" data-custom-icon-ref="${escapeHtml(row.icon)}"><img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt=""/></button>`).join('')||'<small>No matching RSDW icons.</small>';iconGrid.querySelectorAll('[data-custom-icon-ref]').forEach((button)=>button.addEventListener('click',()=>{iconRef=button.dataset.customIconRef||'';iconData='';host.querySelector('#custom-item-icon img').src=rsdwAssetUrl(iconRef);toast('Game icon selected',button.title,'success');}));};
+    renderIcons();host.querySelector('#custom-item-icon-search')?.addEventListener('input',renderIcons);
+    host.querySelector('#custom-item-icon')?.addEventListener('click',async()=>{const picked=await window.dragonwilds.pickImage();if(!picked)return;iconData=picked.dataUrl||'';iconRef='';const image=host.querySelector('#custom-item-icon img');if(image)image.src=iconData;});
+    const refreshCatalog=async(response)=>{if(response?.state)state.data=response.state;state.rsdwNativeTools['item-editor']=null;await hydrateNativeRsdwTool('item-editor');if(!detachedMode)render();await openCustomItemRepository({});};
+    host.querySelectorAll('[data-custom-item-page]').forEach((button)=>button.addEventListener('click',()=>{state.customItemPage=Math.max(0,Number(button.dataset.customItemPage||0));openCustomItemRepository(start);}));
+    host.querySelector('#save-custom-item')?.addEventListener('click',async()=>{try{const item={persistence_id:host.querySelector('#custom-item-persistence')?.value||'',name:host.querySelector('#custom-item-name')?.value||'',display_name:host.querySelector('#custom-item-name')?.value||'',internal_name:host.querySelector('#custom-item-internal-name')?.value||'',category:host.querySelector('#custom-item-category')?.value||'Other',equipment:host.querySelector('#custom-item-equipment')?.value||'',max_stack:Number(host.querySelector('#custom-item-stack')?.value||1),icon_data:iconData,icon_ref:iconRef,source_mod:start.source_mod||'',source_manifest:start.source_manifest||'',created_at:start.created_at};const response=await api.invoke('application.custom_items.create',{item});toast('Modded item saved',`${item.name} is now available to the Item Editor, Spawner, and WebGUI.`,'success');await refreshCatalog(response);}catch(error){toast('Could not save modded item',error.message,'error');}});
+    host.querySelectorAll('[data-edit-custom-item]').forEach((button)=>button.addEventListener('click',()=>{const row=items.find((item)=>String(item.persistence_id||'')===button.dataset.editCustomItem);openCustomItemRepository(row||{});}));
+    host.querySelectorAll('[data-custom-item-card]').forEach((cardNode)=>cardNode.addEventListener('contextmenu',async(event)=>{event.preventDefault();event.stopPropagation();const id=cardNode.dataset.customItemCard||'';const modDir=await window.dragonwilds.pickDirectory();if(!modDir)return;try{const response=await api.invoke('application.custom_items.write_to_mod',{persistence_id:id,mod_dir:modDir});toast('Item written to mod',`${response.count} definition${response.count===1?'':'s'} in ${response.path}`,'success');await refreshCatalog(response);}catch(error){toast('Could not write item to mod',error.message,'error');}}));
+    host.querySelectorAll('[data-delete-custom-item]').forEach((button)=>button.addEventListener('click',async()=>{if(!await managedConfirm(`Remove ${button.dataset.deleteCustomItem} from the launcher catalog? Existing save records are not deleted.`,'Remove Modded Item'))return;try{await refreshCatalog(await api.invoke('application.custom_items.delete',{persistence_id:button.dataset.deleteCustomItem}));}catch(error){toast('Could not remove modded item',error.message,'error');}}));
+    host.querySelector('#import-custom-items')?.addEventListener('click',async()=>{const path=await window.dragonwilds.pickFile('all');if(!path)return;try{const response=await api.invoke('application.custom_items.import',{path});toast('Modded item catalog imported',`${response.items?.length||0} definitions available.`,'success');await refreshCatalog(response);}catch(error){toast('Import rejected',error.message,'error');}});
+    host.querySelector('#export-custom-items')?.addEventListener('click',async()=>{const path=await window.dragonwilds.saveFile({title:'Export Portable Mod Item Manifest',defaultPath:'dragonwilds-sync-items.json',filters:[{name:'Dragonwilds Sync Item Manifest',extensions:['json']}]});if(!path)return;try{const result=await api.invoke('application.custom_items.export',{path});toast('Portable item manifest exported',result.asset_count?`${result.path} · ${result.asset_count} custom icon file(s) packaged beside the JSON`:(result.path||path),'success');}catch(error){toast('Export failed',error.message,'error');}});
+    host.querySelector('#done-custom-item-repository')?.addEventListener('click',()=>detachedMode?window.dragonwilds.windowClose():closeDesktopWindow(host.closest('.desktop-window')));
+  }
+
+  async function openModExplorer(scope, unitKey) {
+    let host=document.querySelector('#mod-explorer-window');
+    let modWindow=host?.closest('.desktop-window')||null;
+    if(!detachedMode&&!host){
+      state.modExplorerReturnRoute=state.route==='mod-explorer'?(state.modExplorerReturnRoute||'mods-app'):state.route;
+      state.modExplorerScope=scope;
+      state.modExplorerUnitKey=unitKey;
+      state.route='mod-explorer';
+      render();
+      host=document.querySelector('#mod-explorer-window');
+    }
+    if(!host)return;
+    try{host._dwsDispose?.();}catch(_){}
+    host.innerHTML='<div class="detached-loading"><div class="spinner"></div><strong>Loading mod files…</strong><span>Resolving the selected World profile and mod repository.</span></div>';
+    const world=scope==='server'?activeServerWorld():(privateWorldById(state.selectedWorldId)||singleplayerWorld());
+    try {
+      let files=[];let explorerRoot='';
+      if(scope==='repository'){
+        const response=await api.invoke('mod.repository.files',{entry_id:unitKey,tree:true});files=response.files||[];explorerRoot=String(response.root||'');
+      }else if(scope==='server'){
+        if(!world)throw new Error('Select a dedicated World first.');
+        const response=await api.invoke('server.world.mod.files',{id:world.id,key:unitKey,tree:true});
+        explorerRoot=String(response.root||'');files=response.files||[];
+      }else{
+        const profileId=world?.id||state.data?.client?.active_private_world_id||'singleplayer';
+        const response=await api.invoke('singleplayer.mod.files',{key:unitKey,profile_id:profileId,tree:true});
+        files=response.files||[];explorerRoot=String(response.root||'');
+      }
+      const repositoryEntry=scope==='repository'?(state.modRepository?.entries||[]).find((entry)=>String(entry.id)===String(unitKey)):null;
+      const name=repositoryEntry?.name||String(unitKey||'').split('::').pop()||'Mod';
+      const unitGroup=String(unitKey||'').split('::')[0].toLowerCase();
+      const logicalRoot=unitGroup==='runeschema_mod'?`RuneSchema / Mods / ${name}`:unitGroup==='ue4ss_mod'?`UE4SS / Mods / ${name}`:unitGroup==='pak_mod'?`Paks / ${name}`:`Mod Repository / ${name}`;
+      const displayRelativePath=(fileOrPath)=>{
+        const source=typeof fileOrPath==='object'?(fileOrPath.display_path||fileOrPath.relative_path||''):fileOrPath;
+        const parts=String(source||'').replace(/\\/g,'/').split('/').filter(Boolean);
+        if(!parts.length)return '';
+        const lower=parts.map((part)=>part.toLowerCase()),modName=String(name||'').toLowerCase();
+        let start=0;
+        const marker=(first,second)=>lower.findIndex((part,index)=>part===first&&lower[index+1]===second);
+        const runeMarker=marker('runeschema','mods'),ue4ssMarker=marker('ue4ss','mods');
+        if(unitGroup==='runeschema_mod'&&runeMarker>=0)start=runeMarker+2;
+        else if(unitGroup==='ue4ss_mod'&&ue4ssMarker>=0)start=ue4ssMarker+2;
+        else if(unitGroup==='pak_mod'){
+          const pakMarker=lower.findIndex((part,index)=>part==='paks'&&['~mods','mods'].includes(lower[index+1]||''));
+          if(pakMarker>=0)start=pakMarker+(['~mods','mods'].includes(lower[pakMarker+1]||'')?2:1);
+        }
+        const namedIndex=lower.findIndex((part,index)=>index>=start&&part===modName);
+        if(namedIndex>=0)start=namedIndex+1;
+        const relative=parts.slice(start);
+        if(unitGroup==='pak_mod'&&!relative.length)return parts[parts.length-1];
+        return (relative.length?relative:parts.slice(-1)).join('/');
+      };
+      const groupFor=(file)=>{const path=displayRelativePath(file),base=path.split('/').pop().toLowerCase(),ext=base.split('.').pop();if(base==='id.txt'||base==='hotload.txt'||base==='tags.txt'||base==='identity.txt')return 'Sync Identifiers';if(['pak','ucas','utoc'].includes(ext))return 'Paks';const dir=path.includes('/')?path.slice(0,path.lastIndexOf('/')).replace(/\//g,' / '):'';return dir||'Mod Root';};
+      const groups=new Map();files.forEach((file)=>{const label=groupFor(file);if(!groups.has(label))groups.set(label,[]);groups.get(label).push(file);});
+      const order=(label)=>label==='Sync Identifiers'?3:label==='Paks'?2:1;
+      const rows=[...groups.entries()].sort((a,b)=>order(a[0])-order(b[0])||a[0].localeCompare(b[0])).map(([label,entries])=>`<section class="mod-explorer-group ${label==='Sync Identifiers'?'identifiers':''}"><h3>${escapeHtml(label)}</h3>${entries.map((file)=>`<button class="mod-explorer-file ${file.editable===false?'readonly':''}" data-mod-explorer-file="${escapeHtml(file.relative_path||'')}" ${file.editable===false?'data-readonly="1"':''}>${modFileIcon(file.relative_path,file.editable!==false)}<span><b>${escapeHtml(file.name||file.relative_path)}</b><small>${escapeHtml(displayRelativePath(file))} · ${formatBytes(file.size||0)}</small></span></button>`).join('')}</section>`).join('');
+      host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">MOD EDITOR</div><h2>${escapeHtml(name)}</h2><p>${scope==='repository'?'Edit the canonical master. Profiles remain unchanged until Pull Master is selected.':'Browse folders, edit supported text files, or add a RuneSchema recipe/config inside this profile copy.'}</p><code class="mod-explorer-managed-path">${escapeHtml(logicalRoot)}</code></div><div class="header-actions"><img class="mod-editor-brand-icon" src="assets/mod-icon.webp" alt="Mods"/>${explorerRoot?'<button class="btn ghost" id="open-mod-explorer-root">Open Mod Folder</button>':''}<button class="btn ghost" id="close-mod-explorer-window">Return to Mods</button></div></div><div class="mod-explorer detached-window-body"><aside class="mod-explorer-tree"><div class="mod-explorer-root"><span>▾ ${escapeHtml(logicalRoot)}</span>${scope==='singleplayer'?'<button class="btn primary compact-btn" id="new-mod-explorer-file">+ Add File</button>':''}</div>${rows||'<div class="empty-state compact">No files were found for this mod.</div>'}</aside><section class="mod-explorer-editor" id="mod-explorer-editor"><div class="empty-state"><strong>Select a file</strong><br/>Binary files remain view-only.</div></section></div><div class="detached-window-footer"><span>Writes are atomic and cannot escape this mod directory.</span><div class="footer-right"><button class="btn primary" id="save-mod-explorer-file" disabled>Save File</button></div></div>`;
+      host.classList.add('mod-explorer-host');
+      let editor=null,opened=null,dirty=false;
+      const currentContent=()=>{const fallback=editorPane?.querySelector('#mod-explorer-fallback');return editor?editor.getValue():(fallback?.value||'');};
+      const updateDirty=()=>{dirty=!!opened&&currentContent()!==String(opened.content||'');host.dataset.dirty=dirty?'1':'0';if(saveButton)saveButton.title=dirty?'Unsaved changes':'No unsaved changes';};
+      const editorPane=host.querySelector('#mod-explorer-editor');const saveButton=host.querySelector('#save-mod-explorer-file');
+      host.querySelector('#open-mod-explorer-root')?.addEventListener('click',()=>window.dragonwilds.openPath(explorerRoot));
+      host.querySelector('#close-mod-explorer-window')?.addEventListener('click',async()=>{if(detachedMode){if(detachedCloseGuard&&!await detachedCloseGuard())return;window.dragonwilds.windowClose();}else{if(dirty&&!await managedConfirm(`Return to Mods without saving ${opened?.relative_path||'the current file'}?`,'Unsaved Mod File'))return;host._dwsDispose?.();state.route=state.modExplorerReturnRoute||'mods-app';render();}});
+      const openFile=async(file)=>{
+        if(dirty&&opened&&opened.relative_path!==file.relative_path&&!await managedConfirm(`Discard unsaved changes to ${opened.relative_path}?`,'Unsaved Mod File'))return;
+        editor?.dispose();editor=null;opened=null;saveButton.disabled=true;
+        host.querySelectorAll('.mod-explorer-file').forEach((node)=>node.classList.toggle('selected',node.dataset.modExplorerFile===file.relative_path));
+        if(file.editable===false){editorPane.innerHTML=`<div class="mod-file-preview readonly"><div class="mod-file-preview-icon">${modFileIcon(file.relative_path,false)}</div><h3>${escapeHtml(file.name||'File')}</h3><p>${escapeHtml(displayRelativePath(file))}</p><span class="status-pill unknown">VIEW ONLY · ${formatBytes(file.size||0)}</span><p>Binary and oversized files are listed for structural visibility but cannot be edited inside Dragonwilds Sync.</p></div>`;return;}
+        opened=scope==='repository'?await api.invoke('mod.repository.file.open',{entry_id:unitKey,relative_path:file.relative_path}):scope==='server'?await api.invoke('server.world.mod.file.open',{id:world.id,key:unitKey,relative_path:file.relative_path}):await api.invoke('singleplayer.mod.file.open',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:file.relative_path});
+        const initialDraft=detachedMode&&String(detachedContext.modInitialPath||'')===String(opened.relative_path||file.relative_path)&&Object.prototype.hasOwnProperty.call(detachedContext,'modDraftContent')?String(detachedContext.modDraftContent??''):String(opened.content||'');
+        editorPane.innerHTML=`<div class="mod-explorer-editor-head"><div><strong>${escapeHtml(opened.name||file.name)}</strong><small>${escapeHtml(displayRelativePath(opened.relative_path||file.relative_path))}</small></div><div class="header-actions">${opened.folder?'<button class="btn ghost compact-btn" id="open-current-mod-folder">Open Folder</button>':''}<span class="status-pill online">${escapeHtml(String(opened.language||'text').toUpperCase())}</span></div></div><div id="mod-explorer-monaco" class="monaco-editor-host"></div><textarea id="mod-explorer-fallback" class="textarea json-fallback" spellcheck="false">${escapeHtml(initialDraft)}</textarea>`;
+        const fallback=editorPane.querySelector('#mod-explorer-fallback');
+        try{const monaco=await loadMonaco();editor=monaco.editor.create(editorPane.querySelector('#mod-explorer-monaco'),{value:initialDraft,language:opened.language==='jsonc'?'json':opened.language==='lua'?'lua':opened.language==='json'?'json':opened.language==='ini'?'ini':'plaintext',automaticLayout:true,minimap:{enabled:false},theme:document.body.dataset.theme==='light'?'vs':'vs-dark',wordWrap:'on',scrollBeyondLastLine:false});editor.onDidChangeModelContent(updateDirty);fallback.style.display='none';}catch(_){fallback.style.display='block';fallback.addEventListener('input',updateDirty);}
+        editorPane.querySelector('#open-current-mod-folder')?.addEventListener('click',()=>window.dragonwilds.openPath(opened.folder));
+        dirty=initialDraft!==String(opened.content||'');updateDirty();
+        saveButton.disabled=false;
+      };
+      host._dwsDispose=()=>{editor?.dispose();editor=null;};
+      if(detachedMode)detachedCloseGuard=()=>!dirty||managedConfirm(`Close ${name} without saving ${opened?.relative_path||'the current file'}?`,'Unsaved Mod File');
+      if(modWindow){
+        modWindow._dwsDispose=()=>host._dwsDispose?.();
+        modWindow._dwsBeforeClose=()=>!dirty||managedConfirm(`Close ${name} without saving ${opened?.relative_path||'the current file'}?`,'Unsaved Mod File');
+        modWindow._dwsPopOut=async()=>{
+          const result=await window.dragonwilds.openDetachedWindow({route:'mod-explorer',title:`Dragonwilds Sync · ${name}`,width:Math.round(modWindow.getBoundingClientRect().width||1280),height:Math.round(modWindow.getBoundingClientRect().height||820),context:{modScope:scope,modUnitKey:unitKey,selectedWorldId:state.selectedWorldId,selectedServerWorldId:state.selectedServerWorldId,modInitialPath:opened?.relative_path||'',modDraftContent:opened?currentContent():'',modDraftDirty:dirty}});
+          if(result?.id){closeDesktopWindow(modWindow);return true;}return false;
+        };
+      }
+      host.querySelectorAll('[data-mod-explorer-file]').forEach((button)=>button.addEventListener('click',()=>{const file=files.find((item)=>item.relative_path===button.dataset.modExplorerFile);if(file)openFile(file).catch((error)=>toast('Could not open mod file',error.message,'error'));}));
+      host.querySelectorAll('[data-mod-explorer-file]').forEach((button)=>button.addEventListener('contextmenu',(event)=>{
+        event.preventDefault();event.stopPropagation();
+        if(scope==='repository')return;
+        const file=files.find((item)=>item.relative_path===button.dataset.modExplorerFile);if(!file)return;
+        document.querySelector('.mod-file-context-menu')?.remove();
+        const menu=document.createElement('div');menu.className='context-menu mod-file-context-menu';
+        menu.style.left=`${Math.min(event.clientX,innerWidth-190)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-150)}px`;
+        menu.innerHTML=`<button role="menuitem" data-mod-file-action="edit" ${file.editable===false?'disabled':''}>Edit</button><button role="menuitem" data-mod-file-action="copy">Copy</button><button role="menuitem" class="danger" data-mod-file-action="delete">Delete</button>`;
+        document.body.appendChild(menu);
+        const dismiss=(dismissEvent)=>{if(!menu.contains(dismissEvent.target)){menu.remove();document.removeEventListener('mousedown',dismiss);}};
+        setTimeout(()=>document.addEventListener('mousedown',dismiss),0);
+        menu.querySelectorAll('[data-mod-file-action]').forEach((actionButton)=>actionButton.addEventListener('click',async()=>{
+          const action=actionButton.dataset.modFileAction;menu.remove();document.removeEventListener('mousedown',dismiss);
+          if(action==='edit')return openFile(file).catch((error)=>toast('Could not open mod file',error.message,'error'));
+          if(action==='delete'&&!await managedConfirm(`Delete ${file.relative_path}?\n\nThis removes the selected file from ${name}. Other mod files are not changed.`,'Delete Mod File'))return;
+          try{
+            const profileId=world?.id||state.data?.client?.active_private_world_id||'singleplayer';
+            const method=scope==='server'?`server.world.config.${action}`:`singleplayer.mod.file.${action}`;
+            const params=scope==='server'?{id:world.id,relative_path:file.relative_path}:{key:unitKey,profile_id:profileId,relative_path:file.relative_path};
+            const response=await api.invoke(method,params);if(response?.state)state.data=response.state;
+            toast(action==='copy'?'Mod file copied':'Mod file deleted',action==='copy'?(response.result?.relative_path||response.relative_path||'Copy created'):`${file.relative_path} was removed.`,'success');
+            editor?.dispose();await openModExplorer(scope,unitKey);
+          }catch(error){toast(action==='copy'?'Copy failed':'Delete failed',error.message,'error');}
+        }));
+      }));
+      host.querySelector('#new-mod-explorer-file')?.addEventListener('click',async()=>{
+        const runeschema=String(unitKey||'').startsWith('runeschema_mod::');
+        const suggested=runeschema?'recipes/new_recipe.jsonc':'config/new_config.json';
+        const relativePath=await managedPrompt('Relative path inside this mod',suggested,'Add Mod File');if(!relativePath)return;
+        const ext=String(relativePath).split('.').pop().toLowerCase();
+        const initial=ext==='lua'?'-- New Dragonwilds Sync managed mod file\n':ext==='json'?'{\n  \n}\n':ext==='jsonc'?'// New RuneSchema recipe or configuration\n{\n  \n}\n':'';
+        try{
+          const profileId=world?.id||state.data?.client?.active_private_world_id||'singleplayer';
+          await api.invoke('singleplayer.mod.file.create',{key:unitKey,profile_id:profileId,relative_path:relativePath,content:initial});
+          toast('Mod file added',`${relativePath} was created inside ${name}.`,'success');await openModExplorer(scope,unitKey);
+        }catch(error){toast('Could not add mod file',error.message,'error');}
+      });
+      saveButton.addEventListener('click',async()=>{if(!opened)return;const fallback=editorPane.querySelector('#mod-explorer-fallback');const content=editor?editor.getValue():(fallback?.value||'');if(opened.language==='json'){try{JSON.parse(content);}catch(error){return toast('Invalid JSON',error.message,'error');}}const originalLabel=saveButton.textContent;saveButton.disabled=true;saveButton.textContent='Saving…';try{if(scope==='repository')await api.invoke('mod.repository.file.save',{entry_id:unitKey,relative_path:opened.relative_path,content});else if(scope==='server')await api.invoke('server.world.mod.file.save',{id:world.id,key:unitKey,relative_path:opened.relative_path,content});else await api.invoke('singleplayer.mod.file.save',{key:unitKey,profile_id:world?.id||state.data?.client?.active_private_world_id||'singleplayer',relative_path:opened.relative_path,content});opened.content=content;dirty=false;updateDirty();saveButton.textContent='✓ Saved';toast('Mod file saved',scope==='repository'?'Atomic master-repository write complete.':'Atomic profile-scoped write complete.','success');setTimeout(()=>{if(saveButton.isConnected){saveButton.textContent=originalLabel;saveButton.disabled=false;}},1400);}catch(error){saveButton.textContent=originalLabel;saveButton.disabled=false;toast('Save failed',error.message,'error');}});
+      const initialFile=files.find((item)=>String(item.relative_path||'')===String(detachedContext.modInitialPath||''));
+      if(initialFile)await openFile(initialFile);
+    }catch(error){toast('Could not open mod',error.message,'error');host.innerHTML=`<div class="detached-window-toolbar"><div><div class="eyebrow">Mod Editor</div><h2>Could not open this mod</h2></div><button class="btn ghost" id="close-mod-explorer-error">Return to Mods</button></div><div class="empty-state"><strong>The loading request failed.</strong><span>${escapeHtml(error.message||'Unknown mod-loading error')}</span><button class="btn primary" id="retry-mod-explorer">Retry</button></div>`;host.querySelector('#retry-mod-explorer')?.addEventListener('click',()=>openModExplorer(scope,unitKey));host.querySelector('#close-mod-explorer-error')?.addEventListener('click',()=>{if(detachedMode)window.dragonwilds.windowClose();else{state.route=state.modExplorerReturnRoute||'mods-app';render();}});}
+  }
+
+  function openModContextMenu(row,event){
+    const single=row.querySelector('[data-sp-tags]');const server=row.querySelector('[data-mod-tags]');const key=single?.dataset.spTags||server?.dataset.modTags;if(!key)return;
+    const scope=single?'singleplayer':'server';
+    document.querySelector('.context-menu')?.remove();const menu=document.createElement('div');menu.className='context-menu';menu.style.left=`${Math.min(event.clientX,innerWidth-250)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-190)}px`;menu.innerHTML='<button role="menuitem" data-action="open">Open / Edit</button><button role="menuitem" data-action="publish">Push to Shared Library</button><button role="menuitem" class="danger" data-action="remove">Remove from this profile</button><button role="menuitem" class="danger" data-action="delete-master">Delete from master repository</button>';document.body.appendChild(menu);
+    menu.addEventListener('click',async(e)=>{const action=e.target.dataset.action;if(!action)return;menu.remove();if(action==='open')return openModExplorer(scope,key);const kind=scope==='server'?'dedicated':'local';const profileId=scope==='server'?activeServerWorld()?.id:(state.selectedWorldId||state.data?.client?.active_private_world_id||'singleplayer');
+      if(action==='remove'){if(!await managedConfirm('Remove this mod only from the selected profile?','Remove from Profile'))return;try{const response=await api.invoke('mod.repository.profile.remove',{kind,profile_id:profileId,key});state.modRepository=normalizeModRepositoryResponse(response);if(scope==='server')state.serverInventory[profileId]=(state.serverInventory[profileId]||[]).filter(unit=>unit.key!==key);else state.singleplayerInventory=(state.singleplayerInventory||[]).filter(unit=>unit.key!==key);render();toast('Mod removed from profile','Other profiles and the master copy were preserved.','success');}catch(error){toast('Remove failed',error.message,'error');}return;}
+      if(action==='delete-master'){const entry=(state.modRepository?.entries||[]).find(item=>item.key===key);if(!entry)return toast('No master copy','Publish this profile mod before deleting a master copy.','');if(!await managedConfirm('Delete only this mod\'s canonical master copy? Profile copies remain installed.','Delete Master Mod'))return;try{const response=await api.invoke('mod.repository.delete',{entry_id:entry.id});state.modRepository=normalizeModRepositoryResponse(response);toast('Master mod deleted','Profile copies were preserved.','success');}catch(error){toast('Master deletion failed',error.message,'error');}return;}
+      if(!await managedConfirm('Publish this profile copy—including newly added schema/config files—and push it to every profile linked to this mod?','Publish Shared Mod'))return;try{const response=await api.invoke('mod.repository.publish',{kind,profile_id:profileId,key,propagate:true});const result=response.result||response;state.modRepository=result.repository||state.modRepository;toast('Shared mod published',`${result.deployed?.length||0} linked profile${result.deployed?.length===1?'':'s'} updated.`,'success');}catch(error){toast('Mod publish failed',error.message,'error');}});
+    const dismiss=(e)=>{if(!menu.contains(e.target)){menu.remove();document.removeEventListener('mousedown',dismiss);}};setTimeout(()=>document.addEventListener('mousedown',dismiss),0);
+  }
+
+  function openRepositoryContextMenu(entryId,event){
+    const entry=(state.modRepository?.entries||[]).find((row)=>String(row.id)===String(entryId));if(!entry)return;
+    document.querySelector('.context-menu')?.remove();const menu=document.createElement('div');menu.className='context-menu repository-context-menu';menu.style.left=`${Math.min(event.clientX,innerWidth-270)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-180)}px`;menu.innerHTML='<button role="menuitem" data-repository-action="remove">Remove from profile…</button><button role="menuitem" class="danger" data-repository-action="delete">Delete from master repository</button>';document.body.appendChild(menu);
+    menu.addEventListener('click',async(clickEvent)=>{const action=clickEvent.target.dataset.repositoryAction;if(!action)return;menu.remove();document.removeEventListener('mousedown',dismiss);
+      if(action==='remove'){
+        const profiles=objectRows(entry.profiles);showModal(`<div class="modal-header"><div><h2>Remove ${escapeHtml(entry.name||'mod')}</h2><p>Choose one profile. No other profile or master payload is changed.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="config-file-list">${profiles.map((profile)=>`<div class="config-file-row"><div><strong>${escapeHtml(profile.name||profile.id)}</strong><small>${profile.kind==='dedicated'?'Server profile':'Private World'} · ${escapeHtml(profile.id)}</small></div><button class="btn danger" data-remove-repository-profile="${escapeHtml(profile.id)}" data-remove-repository-kind="${escapeHtml(profile.kind)}">Remove</button></div>`).join('')||'<div class="empty-state">This master has no linked profile copies.</div>'}</div></div>`);
+        modalRoot.querySelectorAll('[data-remove-repository-profile]').forEach((button)=>button.addEventListener('click',async()=>{if(!await managedConfirm(`Remove ${entry.name||'this mod'} from only this profile?`,'Remove from Profile'))return;try{const response=await api.invoke('mod.repository.profile.remove',{kind:button.dataset.removeRepositoryKind,profile_id:button.dataset.removeRepositoryProfile,key:entry.key});state.modRepository=normalizeModRepositoryResponse(response);closeModal();render();toast('Mod removed from profile','The master repository and other profiles were preserved.','success');}catch(error){toast('Profile removal failed',error.message,'error');}}));return;
+      }
+      if(!await managedConfirm(`Delete the canonical master copy of ${entry.name||'this mod'}?\n\nProfile copies are preserved.`,'Delete Master Mod'))return;
+      try{const response=await api.invoke('mod.repository.delete',{entry_id:entry.id});state.modRepository=normalizeModRepositoryResponse(response);render();toast('Master mod deleted','Linked profile copies were preserved.','success');}catch(error){toast('Master deletion failed',error.message,'error');}
+    });
+    const dismiss=(dismissEvent)=>{if(!menu.contains(dismissEvent.target)){menu.remove();document.removeEventListener('mousedown',dismiss);}};setTimeout(()=>document.addEventListener('mousedown',dismiss),0);
+  }
+
+  async function openSinglePlayerModFiles(unitKey) {
+    try { const response=await api.invoke('singleplayer.mod.files',{key:unitKey}); const files=response.files||[]; if(!files.length)return toast('No editable files found','This hotload-tagged mod has no supported Lua/JSON/INI/TXT files.',''); if(files.length===1)return openSinglePlayerModEditor(unitKey,files[0].relative_path); showModal(`<div class="modal-header"><div><div class="eyebrow">SinglePlayer Hotload Mod</div><h2>Edit in Monaco</h2><p>Choose a launcher-managed file.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="config-file-list">${files.map((f)=>`<div class="config-file-row"><div><strong>${escapeHtml(f.name)}</strong><small>${escapeHtml(f.relative_path)}</small></div><button class="btn ghost" data-sp-hotload-file="${escapeHtml(f.relative_path)}">Edit</button></div>`).join('')}</div></div>`); modalRoot.querySelectorAll('[data-sp-hotload-file]').forEach((b)=>b.addEventListener('click',()=>{const path=b.dataset.spHotloadFile;closeModal();setTimeout(()=>openSinglePlayerModEditor(unitKey,path),0);})); }
+    catch(error){toast('Could not open SinglePlayer mod',error.message,'error');}
+  }
+
+  async function openSinglePlayerModEditor(unitKey, relativePath) {
+    try {
+      const core = unitKey === '__core__';
+      const opened = await api.invoke(core ? 'singleplayer.config.open' : 'singleplayer.mod.file.open', core ? { relative_path: relativePath } : { key: unitKey, relative_path: relativePath });
+      const isJson = opened.language === 'json';
+      const win=showModal(`<div class="modal-header"><div><h2>${escapeHtml(opened.name || (core ? 'Core Configuration' : 'Mod File'))}</h2><p>${escapeHtml(opened.category ? `${opened.category} · ${opened.relative_path}` : (opened.path||opened.relative_path||relativePath))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body json-editor-body"><div class="json-editor-status"><span class="status-pill online">${core ? 'WORLD / RUNTIME CORE' : 'PROFILE MOD'} · LAUNCHER MANAGED</span>${core ? '' : `<span class="status-pill online">HOTLOAD TAGGED</span>`}${opened.folder?'<button class="btn ghost compact-btn" id="open-sp-editor-folder">Open Folder</button>':''}</div>${dualPaneJsonEditorHTML(opened, relativePath)}<div class="identity-box"><strong>Atomic local edit</strong><p>Dragonwilds Sync writes this file atomically. Strict JSON is validated before save and the active World profile snapshot is refreshed. The left pane never changes -- it's the on-disk copy from the moment this editor opened, in case you need to check what you're changing.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="save-sp-mod-file">Save File</button></div></div>`, { native: false, detachable:false });
+      win.querySelector('.modal')?.classList.add('monaco-modal', 'dual-pane-modal');
+      const mounted = await mountDualPaneJsonEditor(win, opened);const { editor, fallback }=mounted;
+      let dirty=false;const changed=()=>{dirty=(editor?editor.getValue():(fallback?.value||''))!==String(opened.content||'');};editor?.onDidChangeModelContent(changed);fallback?.addEventListener('input',changed);
+      win._dwsDispose=mounted.dispose;win._dwsBeforeClose=()=>!dirty||managedConfirm('Close this editor without saving the current changes?','Unsaved Mod File');
+      win.querySelector('#open-sp-editor-folder')?.addEventListener('click',()=>window.dragonwilds.openPath(opened.folder));
+      win.querySelector('#save-sp-mod-file')?.addEventListener('click', async () => {
+        const content = editor ? editor.getValue() : (fallback?.value || '');
+        if (isJson) { try { JSON.parse(content); } catch (error) { return toast('Invalid JSON', error.message, 'error'); } }
+        try {
+          await api.invoke(core ? 'singleplayer.config.save' : 'singleplayer.mod.file.save', core ? { relative_path: relativePath, content } : { key: unitKey, relative_path: relativePath, content });
+          opened.content=content;dirty=false;
+          toast(core ? 'Core configuration saved' : 'SinglePlayer mod saved', 'Atomic profile-scoped write complete.', 'success');
+          closeDesktopWindow(win);
+          if (core) await loadPrivateTabData('configuration'); else await refreshSinglePlayerInventory(true);
+        } catch (error) { toast('Save failed', error.message, 'error'); }
+      });
+    } catch (error) { toast('Could not edit SinglePlayer mod', error.message, 'error'); }
+  }
+
+  async function openHotloadModFiles(world, unitKey) {
+    if (!world) return;
+    try {
+      const response = await api.invoke('server.world.config.list', { id: world.id });
+      const files = (response.configs || []).filter((item) => item.unit_key === unitKey && ['lua','json','ini','plaintext'].includes(String(item.language || '')));
+      if (!files.length) return toast('No editable files found', 'This hotload-tagged mod has no supported Lua/JSON/INI/TXT files in its live directory.', '');
+      if (files.length === 1) return openWorldConfigEditor(world, files[0].relative_path);
+      showModal(`<div class="modal-header"><div><div class="eyebrow">Hotload Mod</div><h2>Edit in Monaco</h2><p>Choose a launcher-managed file.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="config-file-list">${files.map((file) => `<div class="config-file-row"><div><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.relative_path)}</small></div><button class="btn ghost" data-hotload-file="${escapeHtml(file.relative_path)}">Edit</button></div>`).join('')}</div></div>`);
+      modalRoot.querySelectorAll('[data-hotload-file]').forEach((button) => button.addEventListener('click', () => { const path=button.dataset.hotloadFile; closeModal(); setTimeout(() => openWorldConfigEditor(world, path), 0); }));
+    } catch (error) { toast('Could not open hotload mod', error.message, 'error'); }
+  }
+
+  async function openWorldConfigEditor(world, relativePath) {
+    if (!world || !relativePath) return;
+    try {
+      const opened = await api.invoke('server.world.config.open', { id: world.id, relative_path: relativePath });
+      const isJson = opened.language === 'json';
+      const canHotload = ['json', 'lua'].includes(String(opened.language || '').toLowerCase());
+      await setDiscordPresence('Editing Server Mod', world, { state: opened.name || relativePath, force: true });
+      const win=showModal(`<div class="modal-header"><div class="modal-title-wrap"><h2>${escapeHtml(opened.name || 'World File')}</h2><p title="${escapeHtml(opened.path || opened.relative_path || relativePath)}">${escapeHtml(opened.path || opened.relative_path || relativePath)}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body json-editor-body"><div class="json-editor-status"><span class="status-pill online">MANAGED · EDITABLE ON DISK</span><span id="editor-live-status" class="status-pill ${opened.hotload_capable ? 'online' : 'unknown'}">${opened.hotload_capable ? 'HOTLOAD' : 'RESTART REQUIRED'}</span><span id="editor-sync-status" class="distribution-pill ${opened.client_sync ? 'client' : 'server'}">${opened.client_sync ? 'SYNC CLIENT' : 'SERVER ONLY'}</span>${opened.folder?'<button class="btn ghost compact-btn" id="open-world-editor-folder">Open Folder</button>':''}</div><div class="editor-policy-bar"><label><input type="checkbox" id="editor-hotload" ${opened.hotload_capable ? 'checked' : ''} ${canHotload ? '' : 'disabled'} /> Hotload capable</label><label><input type="checkbox" id="editor-client-sync" ${opened.client_sync ? 'checked' : ''} ${opened.sensitive ? 'disabled' : ''} /> Synchronize to client</label>${opened.special === 'mods_txt' ? `<span class="status-pill unknown">mods.txt MODE: ${escapeHtml(String(opened.mods_txt_mode || 'auto').toUpperCase())}</span><button class="btn ghost" id="editor-regenerate-mods-txt">Use Auto-Generated Client Set</button>` : ''}</div>${dualPaneJsonEditorHTML(opened, relativePath)}${opened.parse_error ? `<div class="warning-box">Existing JSON parse error: ${escapeHtml(opened.parse_error)}</div>` : ''}${opened.hotload_capable ? `<div class="identity-box"><strong>Hotload capable</strong><p>Changes are written immediately. Dragonwilds Sync treats this file as live-capable while the server runs and republishes it when client synchronization is enabled.</p></div>` : `<div class="warning-box">This file is not marked hotload capable. It can still be edited and saved while the server is running, but the gameplay change should be expected after the next server restart.</div>`}<div class="identity-box"><strong>Managed configuration</strong><p>Dragonwilds Sync keeps the file writable and performs every save as an atomic replacement. Safe server compatibility configs can be mirrored to clients; sensitive credential files remain host-only.</p></div></div><div class="modal-footer"><span class="muted-small">Launcher-managed file · writable outside Dragonwilds Sync</span><div class="footer-right"><button class="btn ghost" data-close-modal>Close</button><button class="btn primary" id="save-world-config">Save File</button></div></div>`,{native:false,detachable:false});
+      win.querySelector('.modal')?.classList.add('monaco-modal', 'dual-pane-modal');
+      win.querySelector('#open-world-editor-folder')?.addEventListener('click',()=>window.dragonwilds.openPath(opened.folder));
+      const status = win.querySelector('#json-validation-status');
+      const validate = (text) => {
+        if (!isJson) return true;
+        try { JSON.parse(text); if (status) { status.textContent = 'VALID JSON'; status.className = 'status-pill online'; status.title = ''; } return true; }
+        catch (error) { if (status) { status.textContent = 'INVALID JSON'; status.className = 'status-pill offline'; status.title = error.message; } return false; }
+      };
+      const mounted=await mountDualPaneJsonEditor(win, opened);const { editor, fallback } = mounted;
+      let dirty=false;const changed=()=>{const content=editor?editor.getValue():(fallback?.value||'');dirty=content!==String(opened.content||'');validate(content);};
+      editor?.onDidChangeModelContent(changed);fallback?.addEventListener('input', changed);
+      win._dwsDispose=mounted.dispose;win._dwsBeforeClose=()=>!dirty||managedConfirm('Close this editor without saving the current changes?','Unsaved World File');
+      const savePolicy = async () => {
+        const response = await api.invoke('server.world.config.policy', {
+          id: world.id, relative_path: relativePath,
+          hotload_capable: canHotload ? !!win.querySelector('#editor-hotload')?.checked : opened.hotload_capable,
+          client_sync: opened.sensitive ? false : !!win.querySelector('#editor-client-sync')?.checked,
+        });
+        const live = win.querySelector('#editor-live-status');
+        const sync = win.querySelector('#editor-sync-status');
+        if (live) { live.textContent = response.hotload_capable ? 'HOTLOAD' : 'RESTART REQUIRED'; live.className = `status-pill ${response.hotload_capable ? 'online' : 'unknown'}`; }
+        if (sync) { sync.textContent = response.client_sync ? 'SYNC CLIENT' : 'SERVER ONLY'; sync.className = `distribution-pill ${response.client_sync ? 'client' : 'server'}`; }
+        return response;
+      };
+      win.querySelector('#editor-hotload')?.addEventListener('change', () => savePolicy().catch((error) => toast('Policy update failed', error.message, 'error')));
+      win.querySelector('#editor-client-sync')?.addEventListener('change', () => savePolicy().catch((error) => toast('Policy update failed', error.message, 'error')));
+      win.querySelector('#editor-regenerate-mods-txt')?.addEventListener('click', async () => {
+        try { const result = await api.invoke('server.world.mods_txt.regenerate', { id: world.id }); toast('mods.txt returned to Auto mode', `${result.count || 0} client-required entries enabled.`, 'success'); editor?.dispose(); closeModal(); await refreshWorldMaintenance(world, true); }
+        catch (error) { toast('Could not regenerate mods.txt', error.message, 'error'); }
+      });
+      win.querySelector('#save-world-config')?.addEventListener('click', async () => {
+        const content = editor ? editor.getValue() : (fallback?.value || '');
+        if (!validate(content)) return toast('JSON is invalid', 'Fix the syntax before saving.', 'error');
+        try {
+          const result = await api.invoke('server.world.config.save', { id: world.id, relative_path: relativePath, content });
+          const suffix = result.republished ? ' · client set republished' : '';
+          if (result.live_applied) toast('File saved live', `Hotload-capable change applied${suffix}.`, 'success');
+          else if (result.restart_required) toast('File saved', `Restart required before the gameplay change takes effect${suffix}.`, '');
+          else toast('File saved', `Written atomically and returned to read-only${suffix}.`, 'success');
+          opened.content=content;dirty=false;
+          await refreshWorldMaintenance(world, true);
+        } catch (error) { toast('File save failed', error.message, 'error'); }
+      });
+    } catch (error) { toast('Could not open file', error.message, 'error'); }
+  }
+
+  function desktopWindowTitle(win) {
+    return win?.querySelector('.modal-header h2')?.textContent?.trim() || 'Dragonwilds Sync';
+  }
+
+  function taskbarRouteIcon(route='', title='') {
+    const key=String(route||'').toLowerCase(),label=String(title||'').toLowerCase();
+    if(key.includes('mod-explorer')||label.includes('mod explorer'))return '◇';
+    if(key.includes('profile')||key.includes('character')||label.includes('character'))return '♙';
+    if(key.includes('world')||key.includes('server')||label.includes('world'))return '♜';
+    if(key.includes('settings')||label.includes('settings'))return '⚙';
+    if(key.includes('nexus')||label.includes('nexus'))return '↗';
+    if(key.includes('webhost')||label.includes('webhost'))return '⌁';
+    if(key==='dialog')return '▣';
+    return '□';
+  }
+
+  function setTaskbarDisplayMode(mode) {
+    taskbarDisplayMode=mode==='icons'?'icons':'tabs';
+    try { localStorage.setItem('dragonwilds-sync-taskbar-mode',taskbarDisplayMode); } catch (_) {}
+    syncInternalTaskbar();
+  }
+
+  function openTaskbarContextMenu(event, button=null) {
+    event.preventDefault();event.stopPropagation();document.querySelector('.taskbar-context-menu')?.remove();
+    const menu=document.createElement('div');menu.className='context-menu taskbar-context-menu';menu.setAttribute('role','menu');
+    menu.style.left=`${Math.min(event.clientX,innerWidth-220)}px`;menu.style.top=`${Math.max(8,Math.min(event.clientY-86,innerHeight-132))}px`;
+    menu.innerHTML=button?'<button role="menuitem" data-taskbar-action="open">Open</button><button role="menuitem" class="danger" data-taskbar-action="close">Close</button>':`<button role="menuitem" data-taskbar-mode="tabs">${taskbarDisplayMode==='tabs'?'✓ ':''}Display as Tabs</button><button role="menuitem" data-taskbar-mode="icons">${taskbarDisplayMode==='icons'?'✓ ':''}Display as Navigation Icons</button>`;
+    document.body.appendChild(menu);
+    const dismiss=(e)=>{if(!menu.contains(e.target)){menu.remove();document.removeEventListener('mousedown',dismiss);}};setTimeout(()=>document.addEventListener('mousedown',dismiss),0);
+    menu.querySelectorAll('[data-taskbar-mode]').forEach((item)=>item.addEventListener('click',()=>{menu.remove();document.removeEventListener('mousedown',dismiss);setTaskbarDisplayMode(item.dataset.taskbarMode);}));
+    menu.querySelectorAll('[data-taskbar-action]').forEach((item)=>item.addEventListener('click',async()=>{
+      menu.remove();document.removeEventListener('mousedown',dismiss);const action=item.dataset.taskbarAction;
+      const internalId=button?.dataset.windowId||'',nativeId=button?.dataset.nativeWindowId||'';
+      if(internalId){const win=modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(internalId)}"]`);if(!win)return;if(action==='close')requestCloseDesktopWindow(win);else{win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();}return;}
+      if(!nativeId)return;
+      if(action==='close'){
+        // Closing from the in-app taskbar is optimistic: remove the tab now,
+        // then let Electron destroy the native window without blocking input.
+        state.detachedWindows=(state.detachedWindows||[]).filter((entry)=>String(entry.id||'')!==String(nativeId));syncInternalTaskbar();
+        Promise.resolve(window.dragonwilds?.closeDetachedWindow?.(nativeId)).catch(async(error)=>{try{state.detachedWindows=await window.dragonwilds?.listDetachedWindows?.()||[];syncInternalTaskbar();}catch(_){}toast('Could not close window',error.message,'error');});
+        return;
+      }
+      try{await window.dragonwilds?.restoreDetachedWindow?.(nativeId);}catch(error){toast('Could not open window',error.message,'error');}
+    }));
+  }
+
+  function focusDesktopWindow(win) {
+    if (!win || win.classList.contains('minimized')) return;
+    modalRoot.querySelectorAll('.desktop-window').forEach((item) => item.classList.remove('focused'));
+    win.classList.add('focused');
+    win.style.zIndex = String(++desktopZ);
+    internalTaskbar?.querySelectorAll('.internal-task-button').forEach((b) => b.classList.toggle('active', b.dataset.windowId === win.dataset.windowId));
+  }
+
+  function prepareDesktopWindow(win, options={}) {
+    if(!win||win.dataset.desktopReady==='1')return win;
+    win.dataset.desktopReady='1';
+    win.dataset.windowId=`dialog-${++desktopWindowSeq}`;
+    win.setAttribute('role','dialog');
+    win.setAttribute('aria-modal','false');
+    win.setAttribute('aria-label',String(options.title||desktopWindowTitle(win)));
+    win._dwsReturnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
+    const layer=modalRoot.getBoundingClientRect();
+    const width=Math.min(Math.max(520,Number(options.width||900)),Math.max(520,layer.width-30));
+    const height=Math.min(Math.max(360,Number(options.height||680)),Math.max(360,layer.height-30));
+    const offset=(desktopWindowSeq%7)*24;
+    win.style.width=`${width}px`;win.style.height=`${height}px`;
+    win.style.left=`${Math.max(12,Math.min(layer.width-width-12,32+offset))}px`;
+    win.style.top=`${Math.max(12,Math.min(layer.height-height-12,24+offset))}px`;
+    const header=win.querySelector('.modal-header');
+    if(header){
+      const controls=document.createElement('div');controls.className='desktop-window-controls';
+      controls.innerHTML=`${options.detachable===false||!window.dragonwilds?.openManagedDialog?'':'<button class="desktop-window-control popout" title="Open on another screen" aria-label="Open on another screen">↗</button>'}<button class="desktop-window-control minimize" title="Minimize" aria-label="Minimize">−</button><button class="desktop-window-control maximize" title="Maximize or restore" aria-label="Maximize or restore">+</button><button class="desktop-window-control close" title="Close" aria-label="Close">×</button>`;
+      header.appendChild(controls);
+      controls.querySelector('.minimize')?.addEventListener('click',()=>{win.classList.add('minimized');win.classList.remove('focused');syncInternalTaskbar();});
+      controls.querySelector('.popout')?.addEventListener('click',()=>popOutDesktopWindow(win,options));
+      controls.querySelector('.close')?.addEventListener('click',()=>requestCloseDesktopWindow(win));
+      const toggleMaximize=()=>{win.classList.toggle('maximized');focusDesktopWindow(win);syncInternalTaskbar();};
+      controls.querySelector('.maximize')?.addEventListener('click',toggleMaximize);
+      header.addEventListener('dblclick',(event)=>{if(!event.target.closest('button,input,select,textarea,a'))toggleMaximize();});
+      header.addEventListener('pointerdown',(event)=>{
+        if(event.button!==0||win.classList.contains('maximized')||event.target.closest('button,input,select,textarea,a'))return;
+        event.preventDefault();focusDesktopWindow(win);header.setPointerCapture(event.pointerId);
+        const startX=event.clientX,startY=event.clientY,startLeft=parseFloat(win.style.left)||0,startTop=parseFloat(win.style.top)||0;
+        const move=(moveEvent)=>{const bounds=modalRoot.getBoundingClientRect(),rect=win.getBoundingClientRect();win.style.left=`${Math.max(0,Math.min(bounds.width-Math.min(120,rect.width),startLeft+moveEvent.clientX-startX))}px`;win.style.top=`${Math.max(0,Math.min(bounds.height-44,startTop+moveEvent.clientY-startY))}px`;};
+        const stop=()=>{header.removeEventListener('pointermove',move);header.removeEventListener('pointerup',stop);header.removeEventListener('pointercancel',stop);};
+        header.addEventListener('pointermove',move);header.addEventListener('pointerup',stop);header.addEventListener('pointercancel',stop);
+      });
+    }
+    win.addEventListener('pointerdown',()=>focusDesktopWindow(win));
+    focusDesktopWindow(win);syncInternalTaskbar();return win;
+  }
+
+  function syncInternalTaskbar() {
+    if (!internalTaskbar) return;
+    if (detachedMode) { internalTaskbar.innerHTML = ''; return; }
+    const windows = [...modalRoot.querySelectorAll('.desktop-window')];
+    const nativeWindows = Array.isArray(state.detachedWindows) ? state.detachedWindows : [];
+    internalTaskbar.classList.toggle('icon-mode',taskbarDisplayMode==='icons');
+    const internalButtons = windows.map((win) => {const title=desktopWindowTitle(win),icon=taskbarRouteIcon('dialog',title);return `<button class="internal-task-button ${win.classList.contains('focused') && !win.classList.contains('minimized') ? 'active' : ''}" data-window-id="${escapeHtml(win.dataset.windowId || '')}" title="${escapeHtml(title)}"><span class="taskbar-item-icon">${win.classList.contains('minimized')?'▣':icon}</span><span class="taskbar-item-label">${escapeHtml(title)}</span></button>`;});
+    const nativeButtons = nativeWindows.map((item) => {const title=item.title||item.route||'Window',icon=taskbarRouteIcon(item.route,title);return `<button class="internal-task-button native-task-button ${item.hidden ? 'minimized' : ''}" data-native-window-id="${escapeHtml(item.id || '')}" title="${escapeHtml(title)}"><span class="taskbar-item-icon">${item.hidden?'▣':icon}</span><span class="taskbar-item-label">${escapeHtml(title)}</span></button>`;});
+    internalTaskbar.innerHTML = [...internalButtons, ...nativeButtons].join('');
+    internalTaskbar.querySelectorAll('.internal-task-button[data-window-id]').forEach((button) => button.addEventListener('click', () => {
+      const win = modalRoot.querySelector(`.desktop-window[data-window-id="${CSS.escape(button.dataset.windowId || '')}"]`);
+      if (!win) return;
+      win.classList.remove('minimized');
+      focusDesktopWindow(win); syncInternalTaskbar();
+    }));
+    internalTaskbar.querySelectorAll('.internal-task-button[data-native-window-id]').forEach((button) => button.addEventListener('click', async () => {
+      const id = button.dataset.nativeWindowId || '';
+      if (!id || !window.dragonwilds?.restoreDetachedWindow) return;
+      try { await window.dragonwilds.restoreDetachedWindow(id); }
+      catch (error) { toast('Could not restore window', error.message, 'error'); }
+    }));
+    internalTaskbar.querySelectorAll('.internal-task-button').forEach((button)=>button.addEventListener('contextmenu',(event)=>openTaskbarContextMenu(event,button)));
+    if(internalTaskbar.dataset.contextReady!=='1'){internalTaskbar.dataset.contextReady='1';internalTaskbar.addEventListener('contextmenu',(event)=>{if(event.target.closest('.internal-task-button'))return;openTaskbarContextMenu(event);});}
+  }
+
+  const managedDialogShadows = new Map();
+
+  function activeDesktopWindow() {
+    const windows = [...modalRoot.querySelectorAll('.desktop-window:not(.minimized)')];
+    const visible=windows.sort((a,b) => Number(b.style.zIndex || 0) - Number(a.style.zIndex || 0))[0];
+    if(visible)return visible;
+    const native = [...modalRoot.querySelectorAll('.managed-dialog-shadow')];
+    return native[0] || null;
+  }
+
+  // One top-level Escape contract covers mod previews, review windows, empty
+  // review states, editors, and every ordinary showModal surface. Close guards
+  // (for example unsaved Monaco files) still run through requestCloseDesktopWindow.
+  document.addEventListener('keydown',(event)=>{
+    if(event.key!=='Escape'||event.defaultPrevented)return;
+    const win=activeDesktopWindow();if(!win)return;
+    event.preventDefault();event.stopImmediatePropagation();
+    requestCloseDesktopWindow(win);
+  },true);
+
+  function dialogFields(win) {
+    const fields={};
+    win?.querySelectorAll?.('input[id],textarea[id],select[id]').forEach((el)=>{ fields[el.id]={value:el.value,checked:!!el.checked,type:el.type||el.tagName.toLowerCase()}; });
+    return fields;
+  }
+
+  function syncManagedDialog(win) {
+    const id=win?.dataset?.nativeDialogId||'';
+    if(!id || !window.dragonwilds?.updateManagedDialog) return;
+    const modal=win.querySelector('.modal');
+    window.dragonwilds.updateManagedDialog({id,html:modal?.innerHTML||'',theme:document.body.dataset.theme||'dark',fields:dialogFields(win)}).catch(()=>{});
+  }
+
+  function scheduleManagedDialogSync(win, delay=24) {
+    if(!win || win.dataset?.disposed==='1' || win._managedSyncTimer)return;
+    win._managedSyncTimer=setTimeout(()=>{
+      win._managedSyncTimer=null;
+      if(win.isConnected)syncManagedDialog(win);
+    },Math.max(0,Number(delay)||0));
+  }
+
+  function findManagedDialogTarget(win, descriptor={}) {
+    if(!win) return null;
+    if(descriptor.id) return win.querySelector(`#${CSS.escape(String(descriptor.id))}`);
+    const data=descriptor.data||{}; const entries=Object.entries(data);
+    let candidates=[...win.querySelectorAll(descriptor.tag||'button,a,input,textarea,select,[data-close-modal]')];
+    if(entries.length) candidates=candidates.filter((el)=>entries.every(([key,val])=>String(el.dataset?.[key]??'')===String(val??'')));
+    if(candidates.length===1)return candidates[0];
+    if(descriptor.text){const text=String(descriptor.text).trim();const exact=candidates.find((el)=>String(el.textContent||'').trim().slice(0,120)===text);if(exact)return exact;}
+    return candidates[0]||null;
+  }
+
+  function applyManagedDialogFields(win, fields={}) {
+    for(const [id,value] of Object.entries(fields||{})){
+      const el=win.querySelector(`#${CSS.escape(id)}`);if(!el)continue;
+      if(Object.prototype.hasOwnProperty.call(value||{},'value'))el.value=value.value??'';
+      if(Object.prototype.hasOwnProperty.call(value||{},'checked'))el.checked=!!value.checked;
+    }
+  }
+
+  function installManagedDialogBridge() {
+    if(document.body.dataset.managedDialogBridge==='1')return;
+    document.body.dataset.managedDialogBridge='1';
+    window.dragonwilds?.onManagedDialogEvent?.((payload)=>{
+      const win=managedDialogShadows.get(String(payload.id||''));if(!win)return;
+      // Input originates in the visible native window. Applying the same event
+      // to the hidden owner-side shadow may update counters/validation state,
+      // but must not cause the native document to be replaced while typing.
+      // Replacing it resets focus/caret and made textareas accept one character
+      // at a time. Clicks still synchronize the complete post-action markup.
+      win._managedApplyingNativeInput=payload.type==='input'||payload.type==='change';
+      applyManagedDialogFields(win,payload.fields||{});
+      const target=findManagedDialogTarget(win,payload.target||{});
+      if(!target){win._managedApplyingNativeInput=false;return;}
+      try{
+        if(payload.type==='click')target.click();
+        else target.dispatchEvent(new Event(payload.type||'change',{bubbles:true}));
+      }catch(error){console.error('Managed dialog event bridge failed',error);}
+      // Action clicks receive the complete local field snapshot first. Avoid
+      // replacing the popup DOM on every keystroke or checkbox change.
+      if(payload.type==='click'){scheduleManagedDialogSync(win,0);setTimeout(()=>scheduleManagedDialogSync(win,0),80);}
+      if(win._managedApplyingNativeInput)setTimeout(()=>{win._managedApplyingNativeInput=false;},0);
+    });
+    window.dragonwilds?.onManagedDialogClosed?.((payload)=>{
+      const id=String(payload.id||'');const win=managedDialogShadows.get(id);if(!win)return;
+      managedDialogShadows.delete(id);try{win._dwsOnNativeClosed?.();}catch(_){}disposeDesktopWindow(win);win.remove();syncInternalTaskbar();
+    });
+  }
+
+  function disposeDesktopWindow(win) {
+    if(!win || win.dataset?.disposed==='1')return;
+    win.dataset.disposed='1';
+    if(win._managedSyncTimer){clearTimeout(win._managedSyncTimer);win._managedSyncTimer=null;}
+    try{win._managedObserver?.disconnect?.();}catch(_){}
+    try{win._dwsDispose?.();}catch(error){console.warn('Window cleanup failed',error);}
+  }
+
+  function registerManagedDialogShadow(shadow, result={}) {
+    const id=String(result?.id||'');
+    if(!id)throw new Error('Native window did not return an identifier.');
+    shadow.dataset.nativeDialogId=id;
+    shadow.className='managed-dialog-shadow';shadow.style.display='none';
+    managedDialogShadows.set(id,shadow);
+    const observer=new MutationObserver(()=>{if(!shadow._managedApplyingNativeInput)scheduleManagedDialogSync(shadow);});
+    observer.observe(shadow,{subtree:true,childList:true,attributes:true,characterData:true});
+    shadow._managedObserver=observer;
+    syncManagedDialog(shadow);syncInternalTaskbar();
+    return shadow;
+  }
+
+  async function popOutDesktopWindow(win, options={}) {
+    if(!win || win.dataset?.nativeDialogId)return false;
+    if(typeof win._dwsPopOut==='function')return !!(await win._dwsPopOut());
+    if(!window.dragonwilds?.openManagedDialog)return false;
+    const modal=win.querySelector('.modal');
+    if(!modal)return false;
+    const title=String(options.title||desktopWindowTitle(win));
+    const rect=win.getBoundingClientRect();
+    const button=win.querySelector('.desktop-window-control.popout');if(button)button.disabled=true;
+    try{
+      const result=await window.dragonwilds.openManagedDialog({html:modal.innerHTML,title,width:Math.round(rect.width||options.width||900),height:Math.round(rect.height||options.height||680),theme:document.body.dataset.theme||'dark'});
+      registerManagedDialogShadow(win,result);
+      return true;
+    }catch(error){
+      if(button)button.disabled=false;
+      toast('Could not open window',error.message,'error');return false;
+    }
+  }
+
+  async function requestCloseDesktopWindow(win) {
+    if(!win)return false;
+    try{if(typeof win._dwsBeforeClose==='function' && !await win._dwsBeforeClose())return false;}
+    catch(error){toast('Could not close window',error.message,'error');return false;}
+    closeDesktopWindow(win);return true;
+  }
+
+  function closeDesktopWindow(win) {
+    if (!win) return;
+    const returnFocus=win._dwsReturnFocus;
+    const nativeId=win.dataset?.nativeDialogId||'';
+    if(nativeId){ managedDialogShadows.delete(nativeId); window.dragonwilds?.closeManagedDialog?.(nativeId).catch(()=>{}); disposeDesktopWindow(win); win.remove(); syncInternalTaskbar(); updateDiscordPresenceForRoute(); return; }
+    disposeDesktopWindow(win);
+    win.remove();
+    const next = activeDesktopWindow(); if (next && next.classList.contains('desktop-window')) focusDesktopWindow(next);
+    else requestAnimationFrame(()=>{if(returnFocus?.isConnected)try{returnFocus.focus({preventScroll:true});}catch(_){returnFocus.focus();}});
+    syncInternalTaskbar(); updateDiscordPresenceForRoute();
+  }
+
+  function closeModal() { closeDesktopWindow(activeDesktopWindow()); }
+
+  function showModal(html, options={}) {
+    installManagedDialogBridge();
+    if(pendingRuntimeConsoleInlineHost&&String(html||'').includes('runtime-console-app')){
+      const host=pendingRuntimeConsoleInlineHost;
+      pendingRuntimeConsoleInlineHost=null;
+      host.classList.add('runtime-console-inline-surface');
+      host.innerHTML=`<div class="modal runtime-console-inline">${html}</div>`;
+      host.querySelectorAll('.modal-close,[data-close-modal]').forEach((button)=>button.remove());
+      host.querySelector('.modal-footer')?.remove();
+      return host;
+    }
+    pendingRuntimeConsoleInlineHost=null;
+    // Keep a hidden owner-side DOM shadow so all existing save/edit handlers continue
+    // to use one code path while the visible surface is a real native BrowserWindow.
+    const shadow=document.createElement('section');
+    shadow.className='managed-dialog-shadow';
+    shadow.style.display='none';
+    shadow.innerHTML=`<div class="modal">${html}</div>`;
+    // Newest first keeps legacy modalRoot.querySelector(...) handlers scoped to
+    // the window the user just opened, even when older editors are minimized.
+    modalRoot.prepend(shadow);
+    shadow.querySelectorAll('[data-close-modal]').forEach((b)=>b.addEventListener('click',()=>requestCloseDesktopWindow(shadow)));
+    if(options.native===false){
+      shadow.style.display='block';shadow.className='desktop-window';return prepareDesktopWindow(shadow,options);
+    }
+    const title=String(options.title||shadow.querySelector('.modal-header h2')?.textContent?.trim()||'Dragonwilds Sync');
+    const width=Number(options.width||Math.min(1120,Math.max(720,window.innerWidth*0.72)));
+    const height=Number(options.height||Math.min(900,Math.max(520,window.innerHeight*0.78)));
+    if(!window.dragonwilds?.openManagedDialog){
+      shadow.style.display='block';shadow.className='desktop-window';return prepareDesktopWindow(shadow,options);
+    }
+    window.dragonwilds.openManagedDialog({html,title,width,height,theme:document.body.dataset.theme||'dark'}).then((result)=>{
+      if(!shadow.isConnected){ if(result?.id)window.dragonwilds.closeManagedDialog(result.id).catch(()=>{}); return; }
+      registerManagedDialogShadow(shadow,result);
+    }).catch((error)=>{shadow.style.display='block';shadow.className='desktop-window';prepareDesktopWindow(shadow,options);toast('Popup window fallback',error.message,'error');});
+    return shadow;
+  }
+
+  window.__DWSYNC_DESKTOP_WINDOWS__={
+    // Extension surfaces (placard mod inventories, Trash, version managers,
+    // and future application popups) are native free windows by default.
+    open:(html,options={})=>showModal(html,{...options,native:true}),
+    openEmbedded:(html,options={})=>showModal(html,{...options,native:false,detachable:false}),
+    openNative:(html,options={})=>showModal(html,{...options,native:true}),
+    close:(win)=>requestCloseDesktopWindow(win),
+    focus:(win)=>{if(!win)return;win.classList.remove('minimized');focusDesktopWindow(win);syncInternalTaskbar();},
+  };
+
+  function managedConfirm(message, title='Confirm') {
+    return new Promise((resolve)=>{
+      let settled=false;
+      const finish=(value,closed=false)=>{if(settled)return;settled=true;if(!closed)closeModal();resolve(!!value);};
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Confirmation</div><h2>${escapeHtml(title)}</h2></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box managed-confirm-copy">${escapeHtml(String(message||'')).replace(/\n/g,'<br/>')}</div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" id="managed-confirm-no">Cancel</button><button class="btn primary" id="managed-confirm-yes">Continue</button></div></div>`,{title,native:true});
+      win._dwsOnNativeClosed=()=>finish(false,true);
+      win.querySelector('#managed-confirm-no')?.addEventListener('click',()=>finish(false));
+      win.querySelector('#managed-confirm-yes')?.addEventListener('click',()=>finish(true));
+    });
+  }
+
+  function managedPrompt(message, defaultValue='', title='Input Required', inputType='text') {
+    return new Promise((resolve)=>{
+      let settled=false;
+      const finish=(value,closed=false)=>{if(settled)return;settled=true;if(!closed)closeModal();resolve(value);};
+      const safeType=['text','password','number'].includes(String(inputType||'').toLowerCase())?String(inputType).toLowerCase():'text';
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Dragonwilds Sync</div><h2>${escapeHtml(title)}</h2><p>${escapeHtml(String(message||''))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><input class="field" id="managed-prompt-value" type="${safeType}" value="${escapeHtml(String(defaultValue||''))}" autofocus/></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" id="managed-prompt-cancel">Cancel</button><button class="btn primary" id="managed-prompt-ok">Continue</button></div></div>`,{title,native:true});
+      win._dwsOnNativeClosed=()=>finish(null,true);
+      win.querySelector('#managed-prompt-cancel')?.addEventListener('click',()=>finish(null));
+      win.querySelector('#managed-prompt-ok')?.addEventListener('click',()=>finish(win.querySelector('#managed-prompt-value')?.value??''));
+      win.querySelector('#managed-prompt-value')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();finish(event.target.value);}});
+    });
+  }
+
+  const launcherCommands = [
+    ['open rsdw-l','Open the RSDW-L editor, map, spawner, and unified-console hub'],
+    ['open characters','Open the cached Character Creator and inventory workspace'],
+    ['open mods','Open the profile-aware Mod Studio and editor'],
+    ['open sync','Open Sync directory, transfer, broadcast, and remote access'],
+    ['system status','Show every declared Appy, subapp, process, service, and authority boundary'],
+    ['start broadcast','Start Sync broadcasting for the selected local/co-op World'],
+    ['end broadcast','Stop the active local/co-op Sync broadcast'],
+    ['start server','Start the selected dedicated World and its Sync endpoint'],
+    ['end server','Stop the currently running dedicated World'],
+    ['show nexus','Reveal the hidden Nexus account/testing integration panel'],
+    ['hide nexus','Hide the Nexus account/testing integration panel'],
+    ['nexus activity','Open the official Dragonwilds Nexus activity page in-app'],
+    ['help','Show the available launcher commands'],
+  ];
+
+  async function executeLauncherCommand(rawCommand) {
+    const command=String(rawCommand||'').trim().toLowerCase().replace(/\s+/g,' ');
+    if(!command || command==='help'){openLauncherConsole();return;}
+    if(command==='open rsdw-l'){navigateTo('rsdw-launcher');return;}
+    if(command==='open characters'){await enterRsdwToolkit();return;}
+    if(command==='open mods'){await handleRouteNavigation('mods-app');return;}
+    if(command==='open sync'){navigateTo('webhost',{webhostTab:'live'});return;}
+    if(command==='system status'){
+      const catalog=await api.invoke('application.process_catalog',{});const apps=Object.entries(catalog.applications||{});const components=Object.values(catalog.components||{});
+      showModal(`<div class="modal-header"><div><div class="eyebrow">Core process catalog</div><h2>Appy & Service Status</h2><p>${components.length} declared runtime surfaces · durable authority remains in ${escapeHtml(catalog.authority?.durable_state||'control-service')}.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${apps.map(([id,row])=>`<div class="activity-row"><span class="activity-level ok">APPY</span><div><strong>${escapeHtml(row.label||id)}</strong><small>Parent: ${escapeHtml(row.parentProcess||'main-renderer')} · ${escapeHtml((row.subapps||[]).join(' · '))}</small></div></div>`).join('')}${components.map((row)=>`<div class="activity-row"><span class="activity-level">${escapeHtml(String(row.kind||'service').replace(/-/g,' '))}</span><div><strong>${escapeHtml(row.id||'component')}</strong><small>Owner: ${escapeHtml(row.owner||'')} · Parent: ${escapeHtml(row.parent||'root')} · ${escapeHtml(row.lifecycle||'')}${row.consumers?.length?` · Consumers: ${escapeHtml(row.consumers.join(', '))}`:''} · ${escapeHtml(row.purpose||'')}</small></div></div>`).join('')}</div></div><div class="modal-footer"><span>Read-only catalog · no shell access</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'Dragonwilds Sync System Status',width:980,height:820});return;
+    }
+    if(command==='show nexus'){
+      state.showNexusIntegration=true;state.route='settings';state.applicationSettingsTab='integrations';state.settingsTab='integrations';render();toast('Nexus integration shown','Use “hide nexus” or restart the application to hide the account controls again.','success');return;
+    }
+    if(command==='hide nexus'){
+      state.showNexusIntegration=false;render();toast('Nexus integration hidden','Per-mod source links and Mod IDs remain active.','success');return;
+    }
+    if(command==='nexus activity'){
+      const url=state.data?.application?.recommended_mods?.nexus_activity_url||'https://www.nexusmods.com/games/runescapedragonwilds/mods?sort=endorsements&timeRange=14';
+      await window.dragonwilds.openInAppBrowser({url,purpose:'nexus'});return;
+    }
+    if(command==='start broadcast'){
+      const world=privateWorldById(state.selectedWorldId)||singleplayerWorld();if(!world)throw new Error('No local World is selected.');
+      const loaded=await api.invoke('singleplayer.profile.get',{profile_id:world.id,id:world.id});const cfg=loaded.profile?.broadcast_config||{};
+      const response=await api.invoke('singleplayer.broadcast',{profile_id:world.id,id:world.id,password:String(cfg.password||''),sync_port:Number(cfg.sync_port||27051)});if(response.state)state.data=response.state;render();toast('Broadcast started',`${world.name||'Local World'} is publishing its Sync metadata.`,'success');return;
+    }
+    if(command==='end broadcast'){
+      const world=privateWorldById(state.selectedWorldId)||singleplayerWorld();const response=await api.invoke('singleplayer.broadcast.stop',{profile_id:world?.id||'',id:world?.id||''});if(response.state)state.data=response.state;render();toast('Broadcast stopped','','success');return;
+    }
+    if(command==='start server'){
+      const world=activeServerWorld()||serverWorlds()[0];if(!world)throw new Error('No dedicated World exists.');
+      launchRuntimeConsoleForWorld(world);const response=await api.invoke('server.runtime.start',{id:world.id});if(!response.result?.running)throw new Error('The dedicated process did not report a running state.');if(response.state)setData(response.state);render();toast('Server started',world.name||'Dedicated World','success');return;
+    }
+    if(command==='end server'){
+      const response=await api.invoke('server.world.stop',{});if(response.state)setData(response.state);render();toast('Server stopped',response.result?.stop_method||'Verified stop','success');return;
+    }
+    throw new Error(`Unknown command: ${command}`);
+  }
+
+  function openLauncherConsole() {
+    const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Local command palette</div><h2>Dragonwilds Sync Console</h2><p>Press <code>~</code> anywhere outside a text editor to open this palette. Only declared application actions are accepted.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body launcher-console-body"><input class="field launcher-console-input" id="launcher-console-input" placeholder="Type a command…" autocomplete="off" autofocus/><div class="launcher-command-list">${launcherCommands.map(([name,description])=>`<button class="btn ghost" data-launcher-command="${escapeHtml(name)}"><code>${escapeHtml(name)}</code><small>${escapeHtml(description)}</small></button>`).join('')}</div><div class="identity-box"><strong>No shell access</strong><p>These commands call the same validated application operations as their buttons. They cannot execute PowerShell, CMD, arbitrary RSDW commands, or filesystem instructions.</p></div></div><div class="modal-footer"><span class="muted-small">Enter runs · Escape closes</span><button class="btn ghost" data-close-modal>Close</button></div>`,{title:'Dragonwilds Sync Console',width:840,height:680});
+    const run=async(command)=>{closeDesktopWindow(win);try{await executeLauncherCommand(command);}catch(error){toast('Command failed',error.message,'error');}};
+    win.querySelector('#launcher-console-input')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();run(event.currentTarget.value);}});
+    win.querySelectorAll('[data-launcher-command]').forEach((button)=>button.addEventListener('click',()=>run(button.dataset.launcherCommand)));
+    setTimeout(()=>win.querySelector('#launcher-console-input')?.focus(),0);
+  }
+
+  async function scanLanWorlds() {
+    toast('Scanning LAN', 'Looking for trusted Dragonwilds Sync World broadcasts.');
+    try {
+      const found = await api.invoke('client.discovery.scan', { timeout: 3.0 });
+      if (!found.length) return toast('No hosted Worlds found', 'You can still connect manually with an IP address.', '');
+      state.lanDiscoveries=found;
+      const savedRows=state.data?.client?.worlds||[];
+      showModal(`<div class="modal-header"><div><div class="eyebrow">Local Network Discovery</div><h2>Available LAN Worlds</h2><p>Select a verified broadcast. Double-click or right-click a World to add it; click its mod badges to inspect the advertised files.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="lan-world-results" role="listbox" aria-label="Verified LAN Worlds">${found.map((item,index)=>{const fingerprint=String(item.fingerprint||'');const existing=savedRows.find((world)=>fingerprint&&String(world.shared?.fingerprint||'')===fingerprint);const external=String(item.external_ip||'').trim();const verified=item.identity_verified===true;return `<article class="lan-world-result ${verified?'verified':'unverified'}" tabindex="0" role="option" aria-selected="false" data-lan-world-row="${index}"><div><strong>${escapeHtml(item.name||'Dragonwilds World')}</strong><small>${escapeHtml(external||item.ip||'No route')} · Sync ${escapeHtml(String(item.sync_port||item.port||27051))} · ${verified?'Fingerprint verified':'Identity not verified'}</small><div class="badge-row">${(item.mod_badges||[]).map((badge)=>`<button type="button" class="badge" data-lan-mods="${index}" title="View advertised mods">${escapeHtml(badge)}</button>`).join('')}</div></div><button class="btn ${existing?'ghost':'primary'}" data-lan-world-select="${index}" ${verified?'':'disabled'}>${verified?(existing?'Refresh Saved World':'Add Connected World'):'Cannot Add'}</button></article>`;}).join('')}</div></div><div class="modal-footer"><span>${found.filter((item)=>item.identity_verified===true).length} fingerprint-verified LAN World${found.filter((item)=>item.identity_verified===true).length===1?'':'s'}</span><button class="btn ghost" data-close-modal>Close</button></div>`,{title:'LAN Worlds',width:900,height:720});
+      modalRoot.querySelectorAll('[data-lan-mods]').forEach((button)=>{button.classList.add(advertisedModFamily(button.textContent));button.title=`View ${button.textContent.trim()} mods`;});
+      modalRoot.querySelector('.lan-world-results')?.addEventListener('click',(event)=>{const button=event.target.closest('[data-lan-mods]');if(!button)return;event.preventDefault();event.stopPropagation();event.stopImmediatePropagation();const item=state.lanDiscoveries?.[Number(button.dataset.lanMods)];if(item)showAdvertisedMods(item,button.textContent,'Verified LAN Metadata');},true);
+      modalRoot.querySelectorAll('[data-lan-world-select]').forEach((button)=>button.addEventListener('click',async()=>{
+        const item=state.lanDiscoveries?.[Number(button.dataset.lanWorldSelect)];if(!item)return;
+        const internalIp = String(item.ip || '').trim();
+        const syncPort = Number(item.sync_port || item.port || 27051);
+        const gamePort = Number(item.game_port || 7777);
+        const fingerprint=String(item.fingerprint||'');
+        let existing=(state.data?.client?.worlds||[]).find((world)=>(fingerprint&&String(world.shared?.fingerprint||'')===fingerprint)||(world.identity?.world_name===item.name&&String(world.connection?.internal_ip||'').split(':')[0]===internalIp));
+        const saveLanWorld=async(gamePassword='')=>{
+        button.disabled=true;
+        try{
+        {
+          const external = String(item.external_ip || existing?.connection?.external_ip || '').trim();
+          const saved = await api.invoke('world.discovery.add', {
+            identity: { world_name: item.name || 'Dragonwilds World' }, nickname: '',
+            connection: { internal_ip: internalIp, external_ip: external, preference: 'internal', sync_port: syncPort, game_port: gamePort, sync_tls:!!item.sync_tls, tls_cert_fingerprint:String(item.tls_cert_fingerprint||''), tls_password_fallback:!!item.tls_password_fallback },
+            credentials: { password: gamePassword, source: 'lan', remember: true },
+            presentation: { description:String(item.description||''), tags:item.tags||[], mod_badges:item.mod_badges||[], icon_b64:String(item.icon_b64||''), banner_b64:String(item.banner_b64||'') },
+            mod_metadata: item.mod_summary||[],
+            manifest_cache: { mod_badges:item.mod_badges||[], mod_summary:item.mod_summary||[], character_backup_requested:!!item.character_backup_requested, world_save_download:item.world_save_download||{} },
+            shared: { source:'lan', fingerprint:String(item.fingerprint||''), fingerprint_verified:true, protocol:String(item.protocol||'dragonwilds-world-sync'), protocol_version:Number(item.protocol_version||1) },
+          });
+          existing=mergeConnectedWorld(saved.world)||existing;
+          applyWorldBrowser(saved.browser);
+        }
+        closeModal();revealConnectedWorld(existing?.id||null);render();toast('LAN World saved',`${item.name||'World'} retained its LAN route and advertised external gameplay route.`,'success');
+        }catch(error){button.disabled=false;toast('Could not save LAN World',error.message,'error');}
+        };
+        if(item.password_required===true&&!String(existing?.credentials?.password||'')){
+          const passwordWin=showModal(`<div class="modal-header"><div><div class="eyebrow">LAN World · Gameplay Handoff</div><h2>${escapeHtml(item.name||'Dragonwilds World')}</h2><p>LAN trust authorizes file Sync without a password. Dragonwilds itself still requires this World's gameplay password.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-group"><label>World Password</label><input class="field" id="lan-game-password" type="password" autocomplete="off" placeholder="Enter the in-game World Password"/><small>This remains in the local encrypted profile and is handed to DragonLink-Connect only for this World.</small></div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="lan-save-world">Add World</button></div>`,{title:`LAN Connect · ${item.name||'World'}`,width:650,height:430});
+          passwordWin.querySelector('#lan-save-world')?.addEventListener('click',async()=>{const password=passwordWin.querySelector('#lan-game-password')?.value||'';if(!password)return toast('World Password required','The host reports that Dragonwilds requires a gameplay password.','warning');closeDesktopWindow(passwordWin);await saveLanWorld(password);});
+          setTimeout(()=>passwordWin.querySelector('#lan-game-password')?.focus(),0);
+        }else await saveLanWorld('');
+      }));
+      const showLanMods=(index)=>{const item=state.lanDiscoveries?.[Number(index)];if(!item)return;const mods=item.mod_summary||[];showModal(`<div class="modal-header"><div><div class="eyebrow">Verified LAN Metadata</div><h2>${escapeHtml(item.name||'World')} Mods</h2><p>${mods.length} advertised mod${mods.length===1?'':'s'} · fingerprint ${escapeHtml(String(item.fingerprint||'unknown'))}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${mods.length?mods.map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):'<div class="empty-state">This verified World advertises no mods.</div>'}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'LAN World Mods',width:760,height:650});};
+      modalRoot.querySelectorAll('[data-lan-mods]').forEach((badge)=>badge.addEventListener('click',(event)=>{event.stopPropagation();showLanMods(badge.dataset.lanMods);}));
+      modalRoot.querySelectorAll('[data-lan-world-row]').forEach((row)=>{const select=()=>{modalRoot.querySelectorAll('[data-lan-world-row]').forEach((other)=>{other.classList.toggle('selected',other===row);other.setAttribute('aria-selected',other===row?'true':'false');});};row.addEventListener('click',(event)=>{if(!event.target.closest('button'))select();});row.addEventListener('focus',select);row.addEventListener('dblclick',(event)=>{if(!event.target.closest('[data-lan-mods]'))row.querySelector('[data-lan-world-select]:not(:disabled)')?.click();});row.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();row.querySelector('[data-lan-world-select]:not(:disabled)')?.click();}});row.addEventListener('contextmenu',(event)=>{event.preventDefault();event.stopPropagation();select();document.querySelector('.context-menu')?.remove();const menu=document.createElement('div');menu.className='context-menu';menu.style.left=`${Math.min(event.clientX,innerWidth-220)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-120)}px`;menu.innerHTML=`<button role="menuitem" data-action="add" ${row.classList.contains('unverified')?'disabled':''}>Add / Refresh World</button><button role="menuitem" data-action="mods">View Advertised Mods</button>`;document.body.appendChild(menu);menu.addEventListener('click',(menuEvent)=>{const action=menuEvent.target.dataset.action;if(action==='add')row.querySelector('[data-lan-world-select]:not(:disabled)')?.click();if(action==='mods')showLanMods(row.dataset.lanWorldRow);if(action)menu.remove();});setTimeout(()=>document.addEventListener('mousedown',(dismiss)=>{if(!menu.contains(dismiss.target))menu.remove();},{once:true}),0);});});
+    } catch (error) { toast('LAN scan failed', error.message, 'error'); }
+  }
+
+  function openDirectConnect(initialAddress='') {
+    const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Direct Connect</div><h2>Find Sync Worlds at an IP</h2><p>The address is queried for active Dragonwilds Sync announcements. Nothing is saved until you choose Connect.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="path-field"><input class="field" id="direct-connect-address" value="${escapeHtml(initialAddress)}" placeholder="IP address or hostname" autocomplete="off"/><button class="btn primary" id="direct-connect-search">Search</button></div><div id="direct-connect-results" style="margin-top:14px"><div class="empty-state compact">Enter the host address to find its fingerprint-verified Sync Worlds.</div></div></div><div class="modal-footer"><button class="btn ghost" id="direct-connect-manual">Manual Connection</button><button class="btn ghost" data-close-modal>Close</button></div>`,{title:'Direct Connect',width:900,height:720});
+    const results=win.querySelector('#direct-connect-results');
+    const styleDirectModBadges=()=>results.querySelectorAll('[data-direct-mods]').forEach((button)=>{button.classList.add(advertisedModFamily(button.textContent));button.title=`View ${button.textContent.trim()} mods`;});
+    new MutationObserver(styleDirectModBadges).observe(results,{childList:true,subtree:true});
+    results.addEventListener('click',(event)=>{const button=event.target.closest('[data-direct-mods]');if(button)filterDisplayedAdvertisedMods(button.textContent);});
+    const showMods=(item)=>showModal(`<div class="modal-header"><div><div class="eyebrow">Verified Direct Metadata</div><h2>${escapeHtml(item.name||'World')} Mods</h2><p>${(item.mod_summary||[]).length} advertised mod${(item.mod_summary||[]).length===1?'':'s'} · ${escapeHtml(item.fingerprint||'')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list">${(item.mod_summary||[]).length?(item.mod_summary||[]).map((mod)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(mod.kind||mod.loader||'MOD').toUpperCase())}</span><div><strong>${escapeHtml(mod.name||mod.key||'Mod')}</strong><small>${escapeHtml([mod.version,mod.author,mod.classification].filter(Boolean).join(' · ')||'No additional metadata')}</small></div></div>`).join(''):'<div class="empty-state">This World advertises no mods.</div>'}</div></div><div class="modal-footer"><span>Read-only advertised inventory</span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'Direct World Mods',width:760,height:650});
+    const connect=(item)=>{
+      if(item.identity_verified!==true)return toast('World identity not verified',item.identity_error||'The announcement and live fingerprint did not match.','error');
+      const rules=String(item.community_rules||'').trim();
+      const connectWin=showModal(`<div class="modal-header"><div><div class="eyebrow">Verified Direct World</div><h2>Connect to ${escapeHtml(item.name||'World')}</h2><p>Fingerprint ${escapeHtml(item.fingerprint||'')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Password</label><input class="field" id="direct-world-password" type="password" placeholder="Leave blank for LAN, open, or IP-allowlisted access"/><small>The host first checks same-LAN/IP allowlist trust, then the normal password challenge.</small></div><label class="checkbox-row full"><input id="direct-dragonconnect-password" type="checkbox" checked/> Let DragonLink-Connect enter this password in the game’s Direct Connect field</label><div class="form-group full"><label>Server & Community Rules</label><div class="identity-box" style="max-height:240px;overflow:auto"><p style="white-space:pre-wrap">${escapeHtml(rules||'No additional community rules were published.')}</p></div></div>${rules?'<label class="checkbox-row full"><input id="direct-rules-agree" type="checkbox"/> I have read and agree to this World’s server and community rules.</label>':''}</div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="direct-world-connect" ${rules?'disabled':''}>Connect</button></div>`,{title:`Connect · ${item.name||'World'}`,width:760,height:680});
+      const agree=connectWin.querySelector('#direct-rules-agree');const action=connectWin.querySelector('#direct-world-connect');agree?.addEventListener('change',()=>{action.disabled=!agree.checked;});
+      action?.addEventListener('click',async()=>{
+        const password=connectWin.querySelector('#direct-world-password')?.value||'';
+        action.disabled=true;action.textContent='Saving profile…';
+        let world=null;
+        try{
+          const queried=String(item.queried_ip||item.ip||'').trim();
+          const syncPort=Number(item.sync_port||item.port||27051),gamePort=Number(item.game_port||7777),fingerprint=String(item.fingerprint||'');
+          const saved=await api.invoke('world.discovery.add',{identity:{world_name:item.name||'Dragonwilds World'},nickname:'',connection:{external_ip:queried,preference:'external',dragonconnect_password_handoff:!!connectWin.querySelector('#direct-dragonconnect-password')?.checked,sync_port:syncPort,game_port:gamePort,sync_tls:!!item.sync_tls,tls_cert_fingerprint:String(item.tls_cert_fingerprint||''),tls_password_fallback:!!item.tls_password_fallback},credentials:{password,source:'manual',remember:true},presentation:{description:String(item.description||''),community_rules:rules,tags:item.tags||[],mod_badges:item.mod_badges||[],icon_b64:String(item.icon_b64||''),banner_b64:String(item.banner_b64||'')},mod_metadata:item.mod_summary||[],manifest_cache:{mod_badges:item.mod_badges||[],mod_summary:item.mod_summary||[],community_rules:rules,character_backup_requested:!!item.character_backup_requested,world_save_download:item.world_save_download||{}},shared:{source:'direct-query',fingerprint,fingerprint_verified:true,protocol:String(item.protocol||'dragonwilds-world-sync'),protocol_version:Number(item.protocol_version||1)},connection_agreement:{accepted:!rules||!!agree?.checked,accepted_at:new Date().toISOString(),world_fingerprint:fingerprint,metadata_revision:Number(item.metadata_revision||0),rules_snapshot:rules}});
+          world=mergeConnectedWorld(saved.world);applyWorldBrowser(saved.browser);
+          if(!world)throw new Error('The verified World profile could not be prepared.');
+          action.textContent='Testing Sync…';
+          const tested=await api.invoke('world.test',{id:world.id,compact:true});
+          if(tested.world)world=mergeConnectedWorld(tested.world);
+          closeDesktopWindow(connectWin);closeDesktopWindow(win);revealConnectedWorld(world.id);render();
+          if(!tested.result?.ok)toast('World profile saved',`${item.name||'World'} was added. Sync needs attention: ${tested.result?.error||'The host did not accept this connection.'}`,'warning');
+          else toast('Direct World connected',`${item.name||'World'} · fingerprint and rules agreement saved.`,'success');
+        }catch(error){
+          if(world){closeDesktopWindow(connectWin);closeDesktopWindow(win);revealConnectedWorld(world.id);render();toast('World profile saved',`${item.name||'World'} was added, but Sync could not finish: ${error.message}`,'warning');}
+          else{action.disabled=rules?!agree?.checked:false;action.textContent='Connect';toast('Could not save World profile',error.message,'error');}
+        }
+      });
+    };
+    const paint=(rows)=>{results.innerHTML=rows.length?`<div class="lan-world-results" role="listbox" aria-label="Direct Sync Worlds">${rows.map((item,index)=>`<article class="lan-world-result ${item.identity_verified===true?'verified':'unverified'}" tabindex="0" role="option" aria-selected="false" data-direct-result="${index}"><div><strong>${escapeHtml(item.name||'Dragonwilds World')}</strong><small>${escapeHtml(item.queried_ip||item.ip||'')} · Sync ${escapeHtml(String(item.sync_port||item.port||27051))} · ${item.identity_verified===true?'Fingerprint verified':'Identity not verified'}</small><div class="badge-row">${(item.mod_badges||[]).map((badge)=>`<button type="button" class="badge" data-direct-mods="${index}">${escapeHtml(badge)}</button>`).join('')}</div></div><button class="btn primary" data-direct-connect="${index}" ${item.identity_verified===true?'':'disabled'}>${item.identity_verified===true?'Connect':'Cannot Connect'}</button></article>`).join('')}</div>`:'<div class="empty-state"><strong>No Sync announcements answered at this address.</strong><span>Confirm the host is broadcasting Sync and that UDP discovery query port 8422 is reachable.</span></div>';results.querySelectorAll('[data-direct-connect]').forEach((button)=>button.addEventListener('click',()=>connect(rows[Number(button.dataset.directConnect)])));results.querySelectorAll('[data-direct-mods]').forEach((button)=>button.addEventListener('click',(event)=>{event.stopPropagation();showMods(rows[Number(button.dataset.directMods)]);}));results.querySelectorAll('[data-direct-result]').forEach((row)=>{const select=()=>{results.querySelectorAll('[data-direct-result]').forEach((other)=>{other.classList.toggle('selected',other===row);other.setAttribute('aria-selected',other===row?'true':'false');});};row.addEventListener('click',(event)=>{if(!event.target.closest('button'))select();});row.addEventListener('focus',select);row.addEventListener('dblclick',(event)=>{if(!event.target.closest('[data-direct-mods]'))row.querySelector('[data-direct-connect]:not(:disabled)')?.click();});row.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();row.querySelector('[data-direct-connect]:not(:disabled)')?.click();}});row.addEventListener('contextmenu',(event)=>{event.preventDefault();select();document.querySelector('.context-menu')?.remove();const menu=document.createElement('div');menu.className='context-menu';menu.style.left=`${Math.min(event.clientX,innerWidth-210)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-110)}px`;menu.innerHTML=`<button data-action="connect" ${row.classList.contains('unverified')?'disabled':''}>Connect</button><button data-action="mods">View Advertised Mods</button>`;document.body.appendChild(menu);menu.addEventListener('click',(click)=>{if(click.target.dataset.action==='connect')row.querySelector('[data-direct-connect]:not(:disabled)')?.click();if(click.target.dataset.action==='mods')showMods(rows[Number(row.dataset.directResult)]);if(click.target.dataset.action)menu.remove();});});});};
+    const search=async()=>{const address=win.querySelector('#direct-connect-address')?.value.trim()||'';if(!address)return toast('Address required','Enter the host IP address or hostname.','error');const button=win.querySelector('#direct-connect-search');button.disabled=true;button.textContent='Searching…';results.innerHTML='<div class="empty-state compact">Querying this address and verifying live fingerprints…</div>';try{paint(await api.invoke('client.discovery.probe',{address,timeout:3.0}));}catch(error){results.innerHTML=`<div class="empty-state"><strong>Direct search failed.</strong><span>${escapeHtml(error.message)}</span></div>`;}finally{button.disabled=false;button.textContent='Search';}};
+    win.querySelector('#direct-connect-search')?.addEventListener('click',search);win.querySelector('#direct-connect-address')?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault();search();}});win.querySelector('#direct-connect-manual')?.addEventListener('click',()=>{const address=win.querySelector('#direct-connect-address')?.value.trim()||'';closeDesktopWindow(win);openWorldEditor(null,address);});if(initialAddress)setTimeout(search,0);
+  }
+
+
+  function openWorldFeedback(world) {
+    if (!world) return;
+    const win=showModal(`<div class="modal-header"><div><h2>Rate ${escapeHtml(world.nickname || world.identity?.world_name || 'World')}</h2><p>One tamper-evident review per source network every 30 days.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>Rating <strong id="feedback-rating-label" aria-live="polite">5 / 5</strong></label><div class="star-rating-input" role="radiogroup" aria-label="World rating">${[1,2,3,4,5].map((value)=>`<button type="button" data-star-value="${value}" class="selected" role="radio" aria-checked="${value===5?'true':'false'}" aria-label="${value} star${value===1?'':'s'}">★</button>`).join('')}<input type="hidden" id="feedback-rating" value="5"/></div></div><div class="form-group full"><label>Review <span id="feedback-count" aria-live="polite">0 / 250 characters</span></label><textarea class="textarea" id="feedback-report" maxlength="250" aria-describedby="feedback-count" placeholder="What should other players know? (250 characters maximum)"></textarea></div></div><div class="identity-box"><strong>Review integrity</strong><p>The server stores a keyed hash of the source network—not the raw IP—and signs the immutable star/text record. Operators may hide review text from public display, but that visibility choice does not rewrite its star value.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="send-world-feedback">Send Rating</button></div></div>`,{title:`Review · ${world.nickname || world.identity?.world_name || 'World'}`,width:760,height:650});
+    const stars=[...win.querySelectorAll('[data-star-value]')];
+    const setRating=(value)=>{const rating=Math.max(1,Math.min(5,Number(value)||1));win.querySelector('#feedback-rating').value=String(rating);const label=win.querySelector('#feedback-rating-label');if(label)label.textContent=`${rating} / 5`;stars.forEach((star)=>{const selected=Number(star.dataset.starValue)<=rating;star.classList.toggle('selected',selected);star.setAttribute('aria-checked',Number(star.dataset.starValue)===rating?'true':'false');});};
+    stars.forEach((button)=>{button.addEventListener('click',()=>setRating(button.dataset.starValue));button.addEventListener('keydown',(event)=>{if(!['ArrowLeft','ArrowRight','ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();const current=Number(win.querySelector('#feedback-rating').value)||5;setRating(event.key==='Home'?1:event.key==='End'?5:current+(event.key==='ArrowLeft'||event.key==='ArrowDown'?-1:1));stars[Math.max(0,Math.min(4,Number(win.querySelector('#feedback-rating').value)-1))]?.focus();});});
+    const feedback=win.querySelector('#feedback-report');const updateFeedbackCount=()=>{const count=Array.from(feedback?.value||'').length;const counter=win.querySelector('#feedback-count');if(counter){counter.textContent=`${count} / 250 characters`;counter.classList.toggle('near-limit',count>=225);}};feedback?.addEventListener('input',updateFeedbackCount);feedback?.addEventListener('change',updateFeedbackCount);updateFeedbackCount();
+    const send=win.querySelector('#send-world-feedback');send.addEventListener('click', async () => {
+      if(send.disabled)return;
+      const payload={id:world.id,rating:Number(win.querySelector('#feedback-rating')?.value||5),report:String(win.querySelector('#feedback-report')?.value||'')};
+      send.disabled=true;send.textContent='Sending…';
+      try { await api.invoke('world.feedback.submit',payload); closeDesktopWindow(win); toast('Rating sent', 'Your complete review was accepted by this World.', 'success'); await testWorld(world); }
+      catch (error) { send.disabled=false;send.textContent='Send Rating';toast('Could not send rating', error.message, 'error'); }
+    });
+  }
+
+  async function openWorldReviews(world, days = 30) {
+    if(!world)return;
+    const connected=browserWorlds().some((row)=>String(row?.id||'')===String(world.id||''));
+    const privateProfile=!connected&&privateWorlds().some((row)=>String(row?.id||'')===String(world.id||''));
+    if(privateProfile){showModal(`<div class="modal-header"><div><h2>${escapeHtml(world.name||world.identity?.world_name||'Private World')}</h2><p>Local World</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="empty-state"><strong>Reviews are for shared Sync Worlds.</strong><span>This private SinglePlayer profile has no network endpoint and is never contacted for ratings.</span></div></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`,{title:'Local World',width:720,height:440});return;}
+    const win=showModal(`<div class="modal-header"><div><h2>${escapeHtml(world.nickname||world.identity?.world_name||'World')} Reviews</h2><p>Loading verified reviews…</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="empty-state">Contacting the World directly.</div></div>`,{title:'World Reviews',width:860,height:700});
+    try{
+      const response=await api.invoke('world.feedback.list',{id:world.id,days});const rows=response.reviews||[];
+      const modal=win.querySelector('.modal');if(!modal)return;
+      modal.innerHTML=`<div class="modal-header"><div><h2>${escapeHtml(world.nickname||world.identity?.world_name||'World')} Reviews</h2><p>${response.rating_count||0} rating(s) · ${Number(response.rating_average||0).toFixed(1)} / 5</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="review-window-tabs">${[30,60,90].map((value)=>`<button class="btn ${value===days?'primary':'ghost'} compact-btn" data-review-window="${value}">${value} days</button>`).join('')}</div>${rows.length?`<div class="public-review-list">${rows.map((row)=>`<article><div><strong>${escapeHtml(row.profile_name||row.reviewer_name||row.client_id||'Player')}</strong><span>${'★'.repeat(Number(row.rating||0))}${'☆'.repeat(Math.max(0,5-Number(row.rating||0)))}</span></div><p>${escapeHtml(row.report||'No written review.')}</p><small>${new Date(Number(row.received_at||0)*1000).toLocaleString()} · integrity verified</small></article>`).join('')}</div>`:'<div class="empty-state">No visible reviews in this time window.</div>'}</div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`;
+      modal.querySelectorAll('[data-close-modal]').forEach((button)=>button.addEventListener('click',()=>closeDesktopWindow(win)));
+      modal.querySelectorAll('[data-review-window]').forEach((button)=>button.addEventListener('click',()=>{closeDesktopWindow(win);openWorldReviews(world,Number(button.dataset.reviewWindow));}));
+    }catch(error){const modal=win.querySelector('.modal');if(!modal)return;modal.innerHTML=`<div class="modal-header"><div><h2>${escapeHtml(world.nickname||world.identity?.world_name||world.name||'World')} Reviews</h2><p>Reviews are not available right now.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="empty-state"><strong>No reviews to display.</strong><span>${escapeHtml(error.message||'The World did not return a review list.')}</span></div></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`;modal.querySelectorAll('[data-close-modal]').forEach((button)=>button.addEventListener('click',()=>closeDesktopWindow(win)));}
+  }
+
+  function openWorldEditor(world = null, initialAddress = '') {
+    const edit = !!world?.id;
+    if (!edit) setDiscordPresence('Creating World', null, { resetTimer: true });
+    const c = world?.connection || {};
+    const creds = world?.credentials || {};
+    const classification=worldClassification(world||{});
+    showModal(`
+      <div class="modal-header"><div><h2>${edit ? 'Edit World Connection' : 'Connect to a World'}</h2><p>Store both LAN and WAN routes. The World Name is authoritative identity, not just a label.</p></div><button class="modal-close" data-close-modal>×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="form-group full"><label>World Name *</label><input class="field" id="f-world-name" value="${escapeHtml(world?.identity?.world_name || '')}" placeholder="Valhalla Friends" /><div class="help">Must exactly match the server's World Name. This is part of positive identification.</div></div>
+        <div class="form-group full"><label>IP Address *</label><input class="field" id="f-address" value="${escapeHtml(c.internal_ip || c.external_ip || initialAddress)}" placeholder="192.168.1.50 or host.example.com:27051" /><div class="help">Use a LAN address for local connections or a public address for remote connections. The Sync port is optional.</div></div>
+        <div class="form-group full"><label>World Password</label><input class="field" id="f-password" type="password" value="${escapeHtml(creds.password || '')}" placeholder="Leave blank for an open World" /></div>
+        <label class="checkbox-row full"><input id="f-dragonconnect-password" type="checkbox" ${c.dragonconnect_password_handoff===false?'':'checked'}/> Let DragonLink-Connect enter the saved World Password in-game</label>
+        <div class="form-group full"><label>DragonLink-Connect address</label><select class="field" id="f-direct-route">${['auto','external','internal'].map((option)=>`<option value="${option}" ${String(c.direct_connect_route||'auto')===option?'selected':''}>${{auto:'Automatic — public address when known',external:'Always the public address',internal:'Always the LAN address'}[option]}</option>`).join('')}</select><div class="help">Which address is written into the in-game Direct Connect field. Keep Automatic unless you are joining from inside the host's network and the router cannot loop back to its public IP.</div></div>
+        <label class="checkbox-row"><input id="f-sync-tls" type="checkbox" ${c.sync_tls?'checked':''}/> This World serves Sync over pinned TLS</label>
+        <div class="form-group full"><label>TLS Certificate Fingerprint</label><input class="field" id="f-tls-fingerprint" value="${escapeHtml(c.tls_cert_fingerprint || '')}" maxlength="95" placeholder="64-character SHA-256 fingerprint"/><div class="help">Required for a manually entered TLS World. Prefer LAN discovery, a Sync directory, or connection info supplied directly by the host.</div></div>
+      </div><div class="identity-box"><strong>Simple World connection</strong><p>Dragonwilds Sync uses only this IP address, the exact World Name, and the optional World Password. Identity fingerprints verify the responding World but are never connection codes.</p></div></div>
+      <div class="modal-footer">${edit ? '<button class="btn danger" id="delete-world">Delete World</button>' : '<span></span>'}<div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-world">${edit ? 'Save Changes' : 'Add World'}</button></div></div>`);
+    if (!edit) modalRoot.querySelector('#f-world-name')?.addEventListener('input', (e) => scheduleDiscordPresence('Creating World', null, { worldName: e.target.value.trim() }));
+    modalRoot.querySelector('#save-world').addEventListener('click', async () => {
+      const enteredAddress = modalRoot.querySelector('#f-address').value.trim();
+      const directRoute = modalRoot.querySelector('#f-direct-route')?.value || 'auto';
+      const payload = {
+        ...(edit ? { id: world.id } : {}),
+        kind: edit ? (world.kind || 'connected') : 'connected',
+        nickname: world?.nickname || '',
+        identity: { world_name: modalRoot.querySelector('#f-world-name').value.trim() },
+        classification,
+        connection: {
+          internal_ip: directRoute === 'external' ? String(c.internal_ip || '') : enteredAddress,
+          external_ip: directRoute === 'external' ? enteredAddress : String(c.external_ip || ''),
+          preference: 'auto',
+          direct_connect_route: directRoute,
+          dragonconnect_password_handoff: !!modalRoot.querySelector('#f-dragonconnect-password')?.checked,
+          sync_tls: !!modalRoot.querySelector('#f-sync-tls')?.checked,
+          tls_cert_fingerprint: modalRoot.querySelector('#f-tls-fingerprint')?.value.trim().replace(/[^0-9a-f]/gi,'').toLowerCase() || '',
+          tls_password_fallback: !!modalRoot.querySelector('#f-sync-tls')?.checked,
+        },
+        credentials: {
+          password: modalRoot.querySelector('#f-password').value,
+          remember: true,
+        },
+      };
+      if (!payload.identity.world_name) { toast('World Name required', 'Positive identity requires the exact server World Name.', 'error'); return; }
+      if (!payload.connection.internal_ip && !payload.connection.external_ip) { toast('IP Address required', 'Enter the local or public address for this World.', 'error'); return; }
+      if (payload.connection.sync_tls && payload.connection.tls_cert_fingerprint.length !== 64) { toast('TLS fingerprint required', 'Enter the host-provided 64-character SHA-256 certificate fingerprint.', 'error'); return; }
+      try {
+        setData(await api.invoke(edit ? 'world.update' : 'world.create', payload));
+        if (!edit) setData(await api.invoke('world.browser.settings', { tab:'direct', filter:'all', page:1 }));
+        revealConnectedWorld(state.data.client.active_world_id);
+        closeModal();
+        render();
+        toast(edit ? 'World updated' : 'World added', payload.identity.world_name, 'success');
+      } catch (error) { toast('Could not save World', error.message, 'error'); }
+    });
+    modalRoot.querySelector('#delete-world')?.addEventListener('click', () => deleteWorld(world));
+  }
+
+  async function deleteWorld(world) {
+    if (!await managedConfirm(`Delete '${world.nickname || world.identity?.world_name}' from this launcher?`,'Remove World')) return;
+    const previous=[...(state.data?.client?.worlds||[])];state.data.client.worlds=previous.filter((row)=>String(row.id)!==String(world.id));closeModal();state.route='worlds';render();
+    try { const response=await api.invoke('world.delete', { id: world.id });setData(response.state||response); state.selectedWorldId = state.data.client.active_world_id; toast('World removed', 'The linked profile and its APPDATA sync cache were deleted.', 'success'); } catch (error) { state.data.client.worlds=previous;render();toast('Delete failed', error.message, 'error'); }
+  }
+
+  function openCardMenu(button, x, y) {
+    document.querySelector('.context-menu')?.remove();
+    const server = button.dataset.serverMenu === '1' || button.dataset.serverCard === '1';
+    const id = button.dataset.cardMenu || button.dataset.worldId;
+    const privateWorld = !server ? privateWorldById(id) : null;
+    const menu = document.createElement('div'); menu.className = 'context-menu world-context-menu'; menu.setAttribute('role','menu'); menu.setAttribute('aria-label','World actions'); menu.style.left = `${Math.min(x, innerWidth - 220)}px`; menu.style.top = `${Math.min(y, innerHeight - 230)}px`;
+    if(server){
+      const runtime=state.data?.server?.runtime||{};const running=!!runtime.running&&String(runtime.active_profile_id||'')===String(id||'');const loaded=String(state.data?.server?.active_world_id||'')===String(id||'');
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button>${running?'<button role="menuitem" data-action="stop">Stop Server</button><button role="menuitem" data-action="restart">Restart Server</button>':'<button role="menuitem" data-action="start">Start Server</button>'}${loaded&&!running?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="update">Update Server</button><button role="menuitem" data-action="convert">Convert to Singleplayer / Co-Op</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
+    }else if(privateWorld){
+      const loaded=String(state.data?.client?.live_world_id||'')===String(id||'');
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="activate">Make Active Profile</button><button role="menuitem" data-action="reset-reload">Reset & Reload Profile</button>${loaded?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="coop">${privateWorld.status?.broadcasting?'Stop Co-Op':'Start Co-Op'}</button><button role="menuitem" data-action="convert">Convert to Dedicated Server</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
+    }else{
+      const favorite=(state.data?.client?.favorites||[]).map(String).includes(String(id));
+      const saved=worlds().some((world)=>String(world.id)===String(id));
+      const imported=curatedWorlds().some((world)=>String(world.id)===String(id));
+      const manageable=saved||imported;
+      const menuWorld=browserWorlds().find((world)=>String(world.id)===String(id));
+      const connected=saved;
+      const verified=worldSyncIdentity(menuWorld||{}).verified;
+      const savePolicy=worldSaveDownloadPolicy(menuWorld||{});
+      const conversionDisabled=savePolicy.disabled?'disabled title="World save download is disabled by this host"':'';
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="launch">Launch World</button><button role="menuitem" data-action="favorite">${favorite?'★ Remove Favorite':'☆ Favorite'}</button>${verified?'<button role="menuitem" data-action="metadata" title="Fetch directly from the verified World endpoint">Download Direct Metadata</button>':''}${saved?'<button role="menuitem" data-action="ping" title="Authenticated Ping / Refresh Metadata">Refresh World Status</button>':''}${connected?'<button role="menuitem" data-action="force-resync" title="Remove World-owned client files, then download and verify the complete host manifest">Reset & Resync World</button>':''}${connected?`<button role="menuitem" data-action="convert-private" ${conversionDisabled}>${savePolicy.disabled?'Convert to Private · Download Disabled':'Convert to Singleplayer / Co-Op'}</button><button role="menuitem" data-action="convert-server" ${conversionDisabled}>${savePolicy.disabled?'Convert to Server · Download Disabled':'Convert to Dedicated Server'}</button>`:''}<button role="menuitem" data-action="compatibility">Compatibility Preview</button><button role="menuitem" data-action="identity-history">Identity History</button><button role="menuitem" data-action="identity-card">Export Identity Card</button><button role="menuitem" data-action="export">Export World .rsdwl</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" data-action="report">Report / Add Local Note</button><button role="menuitem" class="danger" data-action="block">Block World</button>${manageable?`${saved?'<button role="menuitem" data-action="edit">Connection & Credentials</button>':''}<button role="menuitem" class="danger" data-action="delete">${imported&&!saved?'Delete from Manifest':'Remove World'}</button>`:''}`;
+    }
+    document.body.appendChild(menu);
+    const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss); } };
+    setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+    menu.addEventListener('click', async (e) => {
+      const action = e.target.dataset.action; if (!action) return; menu.remove();
+      if (server) {
+        const world = serverWorlds().find((w) => w.id === id); if (!world) return;
+        if (action === 'open') { stopPlayerPolling();pushNavigation(); state.selectedServerWorldId = id; state.serverTab='overview';state.route = 'server-detail'; render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{})); }
+        if (action === 'start') { launchRuntimeConsoleForWorld(world);try { const response=await runServerStartOperation(world,()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('Server started',`PID ${response.result?.pid||'—'} · Sync fingerprint active`,'success'); } catch(error){toast('Start failed',error.message,'error');} }
+        if (action === 'stop' && await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server')) { try { const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('Server stopped',`PID ${response.result?.stopped_pid||'—'}`,'success'); } catch(error){toast('Stop failed',error.message,'error');} }
+        if (action === 'unload' && await managedConfirm(`Unload “${world.name||'this hosted World'}”?\n\nChanges are snapshotted back to its Server Profile, then World-owned mods, configuration and live save data are removed from the shared server directory. Runtime cores remain installed.`,'Unload Server Profile')) { try { const response=await api.invoke('server.world.unload',{id});if(response.state)setData(response.state);render();toast('Server Profile unloaded','Changes saved; shared server directory returned to its clean runtime baseline.','success'); } catch(error){toast('Unload failed',error.message,'error');} }
+        if (action === 'restart' && await managedConfirm(`Restart ${world.name||'this hosted World'}?`,'Restart Server')) { launchRuntimeConsoleForWorld(world);try { const response=await runOperation('Restarting hosted World','Stopping, launching and verifying the dedicated server, then republishing Sync…',()=>api.invoke('server.world.restart',{id:world.id}));setData(response.state);toast('Server restarted',`PID ${response.result?.pid||'—'}`,'success'); } catch(error){toast('Restart failed',error.message,'error');} }
+        if (action === 'update') { try { const response=await api.invoke('server.runtime.update',{id:world.id});if(response.state)setData(response.state);toast('Server updated','SteamCMD completed; the server remains stopped.','success'); } catch(error){toast('Server update failed',error.message,'error');} }
+        if (action === 'convert' && await managedConfirm(`Clone “${world.name||'this World'}” into the local Singleplayer/Co-Op save area?`,'Convert World')) { try { const response=await api.invoke('server.world.convert_to_singleplayer',{id:world.id});if(response.state)state.data=response.state;state.selectedWorldId=response.profile_id||response.profile?.id||state.data?.client?.active_private_world_id||'singleplayer';state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op','The dedicated profile remains available.','success'); } catch(error){toast('Conversion failed',error.message,'error');} }
+        if (action === 'desktop') { try { const result=await window.dragonwilds.createWorldShortcut({worldId:id,worldKind:'server',name:world.name||'Hosted World',iconData:world.icon_b64||''});toast('Sent to Desktop',result.path||'Hosted World Quick Launch shortcut created.','success'); } catch(error){toast('Desktop shortcut failed',error.message,'error');} }
+        if (action === 'backup') { try { const result=await api.invoke('server.world.backup.create',{id}); state.serverBackups[id]=result.backups||[]; toast('World backup created',result.backup||world.name,'success'); } catch(error){toast('Backup failed',error.message,'error');} }
+        if (action === 'delete' && await managedConfirm(`Delete hosted World '${world.name}'?`,'Delete Hosted World')) { const previous=[...(state.data.server_profiles||[])];state.data.server_profiles=previous.filter((row)=>String(row.id)!==String(id));render();try { setData(await api.invoke('server.world.delete', { id })); toast('Hosted World deleted', '', 'success'); } catch (error) { state.data.server_profiles=previous;render();toast('Delete failed', error.message, 'error'); } }
+        return;
+      }
+      if(privateWorld){
+        if(action==='open') return managePrivateWorld(privateWorld);
+        if(action==='activate'){try{await activatePrivateWorldProfile(privateWorld,false);render();}catch(error){toast('Profile activation failed',error.message,'error');}return;}
+        if(action==='reset-reload'&&await managedConfirm(`Reset and reload “${privateWorld.name||'this Private World'}”?\n\nLauncher-managed UE4SS mods, RuneSchema child mods, PAK mods, and managed configuration are cleared from the game directory, then restored from this profile snapshot. UE4SS, RuneSchema core, DragonLink-Connect, saves, and the Steam installation are preserved.`,'Reset & Reload Profile')){try{const response=await runOperation('Reset & Reload Profile','Clearing World-owned game files and rematerializing the saved local profile.',()=>api.invoke('singleplayer.profile.reset_reload',{profile_id:id,id}));if(response.state)setData(response.state);render();toast('Private World reloaded',`${response.result?.reset?.removed_files||0} stale file(s) cleared; the saved profile is active.`,'success');}catch(error){toast('Profile reload failed',error.message,'error');}return;}
+        if(action==='unload'&&await managedConfirm(`Unload “${privateWorld.name||'this Private World'}”?\n\nChanges are snapshotted back to the profile, then World-owned UE4SS, RuneSchema and PAK mods are removed from the game directory. Shared runtime cores, saves and account data remain intact.`,'Unload Private World')){try{const response=await api.invoke('singleplayer.profile.unload',{profile_id:id,id});if(response.state)setData(response.state);render();toast('Private World unloaded','Profile changes saved; the game mod directory returned to its core baseline.','success');}catch(error){toast('Unload failed',error.message,'error');}return;}
+        if(action==='coop') return togglePrivateCoop(privateWorld);
+        if(action==='convert'){const name=await managedPrompt('Name for the dedicated Server profile:',privateWorld.name||'Dragonwilds World','Convert to Dedicated Server');if(!name)return;try{const response=await api.invoke('singleplayer.convert_to_server',{profile_id:id,id,name});if(response.state)state.data=response.state;state.selectedServerWorldId=response.profile_id||response.profile?.id||'';state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server','Save, mods, settings and profile metadata were cloned.','success');}catch(error){toast('Conversion failed',error.message,'error');}return;}
+        if(action==='backup'){try{const result=await api.invoke('singleplayer.archive',{profile_id:id,id,name:privateWorld.name||'Private World'});toast('Private World backup created',result.archive_path||privateWorld.name,'success');}catch(error){toast('Backup failed',error.message,'error');}return;}
+        if(action==='desktop'){try{const result=await window.dragonwilds.createWorldShortcut({worldId:id,worldKind:'private',name:privateWorld.name||'Private World',iconData:privateWorld.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}return;}
+        if(action==='delete'&&await managedConfirm(`Delete Private World profile '${privateWorld.name}'?${id==='singleplayer'?' This removes the generic launcher placard; newly detected game saves will still become managed profiles.':' The associated save/profile will be moved to recoverable Trash.'}`,'Delete Private World')){const previous=[...(state.data.client.private_worlds||[])];state.data.client.private_worlds=previous.filter((row)=>String(row.id)!==String(id));delete state.privateInventory[id];render();try{const response=await api.invoke('singleplayer.profile.delete',{profile_id:id,id});if(response.state)setData(response.state);state.selectedWorldId=state.data?.client?.active_private_world_id||'';render();toast('Private World profile deleted',response.trash_entry?'Moved to Settings → Trash.':'The generic profile was removed.','success');}catch(error){state.data.client.private_worlds=previous;render();toast('Delete failed',error.message,'error');}}
+        return;
+      }
+      const world = browserWorlds().find((w) => w.id === id); if (!world) return;
+      if (action === 'open') { pushNavigation(); state.selectedWorldId = id; state.route = 'world-detail'; render(); }
+      if (action === 'launch') playWorld(world);
+      if (action === 'convert-private') { const name=await managedPrompt('Name for the new Singleplayer / Co-Op profile:',world.nickname||world.identity?.world_name||'Dragonwilds World','Convert Connected World');if(name){try{const response=await api.invoke('world.convert_to_singleplayer',{id,name});if(response.state)setData(response.state);state.selectedWorldId=response.profile_id;state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op','A separate private profile was created; the Connected World remains available.','success');}catch(error){toast('Conversion failed',error.message,'error');}} }
+      if (action === 'convert-server') { const name=await managedPrompt('Name for the new Dedicated Server profile:',world.nickname||world.identity?.world_name||'Dragonwilds World','Convert Connected World');if(name){try{const response=await api.invoke('world.convert_to_server',{id,name});if(response.state)setData(response.state);state.selectedServerWorldId=response.profile_id;state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server','A separate hosted profile was created; the Connected World remains available.','success');}catch(error){toast('Conversion failed',error.message,'error');}} }
+      if (action === 'favorite') { try { const response=await api.invoke('world.favorite.toggle',{id}); if(response.state)state.data=response.state; render(); } catch(error){ toast('Favorite update failed',error.message,'error'); } }
+      if (action === 'metadata') { try { const response=await api.invoke('world.metadata.download',{id}); if(response.state)state.data=response.state; state.selectedWorldId=response.world?.id||id; render(); toast('Direct World metadata downloaded',`${response.world?.identity?.world_name||'World'} was fingerprint-verified and added to Direct Connect. The website was not used for this transfer.`,'success'); } catch(error){ toast('Direct metadata rejected',error.message,'error'); } }
+      if (action === 'ping') { try { const response=await api.invoke('world.ping',{id}); if(response.state)setData(response.state); toast('World metadata refreshed','Icon, banner, tags, description, uptime and status refreshed without syncing files.','success'); } catch(error){ toast('World ping failed',error.message,'error'); } }
+      if (action === 'force-resync' && await managedConfirm(`Reset and resync “${world.nickname||world.identity?.world_name||'this World'}”?\n\nAll World-owned UE4SS mods, RuneSchema child mods, PAK mods, and prior managed files will be removed, then downloaded and SHA-256 verified from the host. Baked runtime files, DragonLink-Connect, saves, and the Steam installation are preserved. The game will not launch automatically.`,'Reset & Resync World')) { try { const response=await runWorldSyncJob(world,'sync',true);if(response.state)setData(response.state);const result=response.result||{};render();toast('Complete resync verified',`${result.downloaded||0} downloaded · ${result.force_reset?.removed_files||0} stale file(s) removed · open Notifications for the receipt`,'success'); } catch(error){toast('Complete resync failed',error.message,'error');} }
+      if (action === 'compatibility') { try { const value=await api.invoke('world.compatibility.preview',{id}); showModal(`<div class="modal-header"><div><div class="eyebrow">Preflight</div><h2>${escapeHtml(value.world_name||'World')} Compatibility</h2><p>${value.ok?'Authenticated manifest loaded':'Public/cached preview; credentials may be required'}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="metric-grid">${metric('Route',value.route||'Not connected')}${metric('Ping',value.ping_ms!=null?`${value.ping_ms} ms`:'—')}${metric('Host OS',value.host_os||'Not published')}${metric('Client OS',value.client_os||'Unknown')}${metric('Files',String(value.file_count||0))}${metric('Download',formatBytes(value.download_bytes||0))}${metric('Restart',value.restart_likely?'Likely':'Not indicated')}${metric('Operator',value.operator_verified?'Verified':'Unsigned / pending')}</div>${value.issues?.length?`<div class="warning-box"><strong>Review before joining</strong><br/>${value.issues.map(escapeHtml).join('<br/>')}</div>`:'<div class="identity-box"><strong>Ready for authenticated synchronization</strong><p>No preflight warnings were found.</p></div>'}</div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`); } catch(error){toast('Compatibility preview failed',error.message,'error');} }
+      if (action === 'identity-history') { try { const value=await api.invoke('world.identity.history',{id}); const entries=[...(value.entries||[])].reverse(),pageSize=25,pageCount=Math.max(1,Math.ceil(entries.length/pageSize));let page=1;const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Trust Record</div><h2>World Identity History</h2><p>${escapeHtml(value.fingerprint||'No verified fingerprint yet')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="activity-list" data-identity-history-list></div><div class="pager-row" data-identity-history-pager></div></div><div class="modal-footer"><span>${entries.length} retained · 25 entries per page</span><button class="btn primary" data-close-modal>Done</button></div>`);const draw=()=>{const visible=entries.slice((page-1)*pageSize,page*pageSize),list=win.querySelector('[data-identity-history-list]'),pager=win.querySelector('[data-identity-history-pager]');if(list)list.innerHTML=visible.length?visible.map((entry)=>`<div class="activity-row"><span class="activity-level ${entry.changed_fields?.length?'warn':'ok'}">${entry.changed_fields?.length?'CHANGED':'SEEN'}</span><div><strong>${escapeHtml(entry.snapshot?.world_name||'World')} · ${escapeHtml(entry.source||'direct')}</strong><small>${escapeHtml(new Date(entry.observed_at).toLocaleString())}${entry.snapshot?.operator_fingerprint?` · operator ${escapeHtml(entry.snapshot.operator_fingerprint)}`:''}${entry.changed_fields?.length?` · ${escapeHtml(entry.changed_fields.join(', '))}`:''}</small></div></div>`).join(''):'<div class="empty-state">Download Direct Metadata once to begin this local identity history.</div>';if(pager){pager.hidden=pageCount<=1;pager.innerHTML=pageCount>1?`<button class="btn ghost" data-identity-page="${page-1}" ${page<=1?'disabled':''}>← Previous</button><span>Page ${page} of ${pageCount}</span><button class="btn ghost" data-identity-page="${page+1}" ${page>=pageCount?'disabled':''}>Next →</button>`:'';}};win.addEventListener('click',(event)=>{const button=event.target.closest('[data-identity-page]');if(!button)return;page=Math.max(1,Math.min(Number(button.dataset.identityPage||1),pageCount));draw();});draw(); } catch(error){toast('Identity history failed',error.message,'error');} }
+      if (action === 'identity-card') { const safe=String(world.nickname||world.identity?.world_name||'Dragonwilds-World').replace(/[<>:"/\\|?*]/g,'_');const outputPath=await window.dragonwilds.saveFile({title:'Export World Identity Card',defaultPath:`${safe}.dwsworld`,filters:[{name:'Dragonwilds World Identity Card',extensions:['dwsworld']}]});if(outputPath){try{const value=await api.invoke('world.identity_card.export',{id,output_path:outputPath});toast('Identity card exported',value.operator_verified?'Includes a verified operator signature and no credentials.':'No verified operator envelope was available; card is unsigned and contains no credentials.','success');}catch(error){toast('Identity card export failed',error.message,'error');}} }
+      if (action === 'report') { const reason=await managedPrompt('Describe the concern. This creates a local moderation record; it is not automatically sent to a website.','','Report World'); if(reason!==null){try{const response=await api.invoke('world.moderation.action',{id,action:'report',reason});if(response.state)state.data=response.state;toast('Local report saved','The note is retained in your launcher moderation history.','success');}catch(error){toast('Report failed',error.message,'error');}} }
+      if (action === 'block' && await managedConfirm('Block this exact World fingerprint? It will disappear from discovery results on this device.','Block World')) { try { const response=await api.invoke('world.moderation.action',{id,action:'block_world'});if(response.state)state.data=response.state;render();toast('World blocked','Its fingerprint is now filtered locally.','success'); } catch(error){toast('Block failed',error.message,'error');} }
+      if (action === 'export') await exportWorldPackage(world);
+      if (action === 'desktop') { try { const iconData=world.presentation?.icon_b64||''; const result=await window.dragonwilds.createWorldShortcut({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData}); toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success'); } catch(error){ toast('Desktop shortcut failed',error.message,'error'); } }
+      if (action === 'edit') openWorldEditor(world);
+      if (action === 'delete') deleteWorld(world);
+    });
+  }
+
+  function openConnectionMenu(ip, x, y) {
+    document.querySelector('.context-menu')?.remove();
+    const menu = document.createElement('div'); menu.className = 'context-menu'; menu.setAttribute('role', 'menu'); menu.setAttribute('aria-label', 'Connection actions');
+    menu.style.left = `${Math.min(x, innerWidth - 200)}px`; menu.style.top = `${Math.min(y, innerHeight - 100)}px`;
+    const connection=(state.serverAccessConnections||[]).find((row)=>row.ip===ip)||{};
+    menu.innerHTML = `<button role="menuitem" data-action="kick">Kick</button><button role="menuitem" class="danger" data-action="block-profile" ${connection.profile_id?'':'disabled'}>Block Profile</button><button role="menuitem" class="danger" data-action="block">Block IP</button>`;
+    document.body.appendChild(menu);
+    const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss); } };
+    setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+    menu.addEventListener('click', async (e) => {
+      const action = e.target.dataset.action; if (!action) return; menu.remove();
+      if (action === 'kick') await kickServerConnection(ip);
+      if (action === 'block-profile') await blockServerConnectionProfile(connection.profile_id,ip);
+      if (action === 'block') await blockServerConnectionIp(ip);
+    });
+  }
+
+
+
+  function showProfileChangelog(changelog = {}) {
+    const sections = [
+      ['Added', changelog.added || [], 'success'],
+      ['Updated', changelog.updated || [], 'info'],
+      ['Removed', changelog.removed || [], 'warning'],
+      ['Kept locally', changelog.kept || [], ''],
+    ];
+    const worldMarkup = sections.filter(([,items])=>items.length).map(([title,items,kind])=>`<section class="profile-change-section"><h3>${escapeHtml(title)} <span class="change-count ${kind}">${items.length}</span></h3>${items.map((item)=>`<div class="profile-change-row"><strong>${escapeHtml(item.world||'World')}</strong><span>${escapeHtml(item.reason||'')}</span></div>`).join('')}</section>`).join('');
+    const chars = changelog.characters || [];
+    showModal(`<div class="modal-header"><div><div class="eyebrow">RSDWL Profile Import</div><h2>${escapeHtml(changelog.profileName || 'Profile')} · Changes</h2><p>${escapeHtml(changelog.importedAtUtc ? new Date(changelog.importedAtUtc).toLocaleString() : 'Import complete')}</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body profile-changelog">${worldMarkup || '<div class="empty-state">No World membership changes in this snapshot.</div>'}${chars.length?`<section class="profile-change-section"><h3>Characters <span class="change-count">${chars.length}</span></h3>${chars.map((item)=>`<div class="profile-change-row"><strong>${escapeHtml(item.character||'Character')}</strong><span>${escapeHtml(item.change||'Imported')}</span></div>`).join('')}</section>`:''}<div class="identity-box"><strong>Deletion safety</strong><p>If a newer profile removes a World that you already connected independently, Dragonwilds Sync removes only its curated-profile membership and keeps your working local connection.</p></div></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`);
+  }
+
+  function openProfileExport() {
+    const p=player();
+    const exportable=[...worlds(),...curatedWorlds()].filter((world,index,all)=>all.findIndex((candidate)=>String(candidate.id)===String(world.id))===index);
+    showModal(`<div class="modal-header"><div><div class="eyebrow">World Manifest · Unified .rsdwl</div><h2>Export Editable Manifest</h2><p>Select any combination of Worlds. Imported manifests can be merged, trimmed, and exported again.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-group"><label>Manifest Name</label><input class="field" id="profile-export-name" value="${escapeHtml(p.display_name||'Dragonwilds World Manifest')}"/></div><label class="checkbox-row"><input type="checkbox" id="profile-export-characters"/> Also include character saves and launcher character metadata under /profile</label><label class="checkbox-row"><input type="checkbox" id="profile-export-worlds" checked/> Include selected Worlds under /worlds</label><div class="profile-export-worlds"><div class="profile-export-worlds-head"><strong>Worlds to export</strong><div><button class="btn ghost compact-btn" id="profile-export-select-all">Select All</button><button class="btn ghost compact-btn" id="profile-export-select-none">Clear</button></div></div>${exportable.length?exportable.map((world)=>`<label class="profile-export-world-row"><input type="checkbox" data-profile-export-world="${escapeHtml(world.id)}" checked/><span><strong>${escapeHtml(world.nickname||world.identity?.world_name||'World')}</strong><small>${escapeHtml(world.connection?.external_ip||world.connection?.internal_ip||'Profile metadata only')}</small></span><span class="status-pill ${world.shared?.curated?'unknown':'online'}">${world.shared?.curated?'MANIFEST':'CONNECTED'}</span></label>`).join(''):'<div class="empty-state compact">No connected or imported Worlds are available.</div>'}</div><label class="checkbox-row"><input type="checkbox" id="profile-export-artwork" checked/> Package selected World icons and banners when available</label><label class="checkbox-row sensitive-export"><input type="checkbox" id="profile-export-passwords"/> Include saved World passwords for immediate access</label><div class="warning-box compact"><strong>Password-inclusive manifests are sensitive.</strong><br/>Anyone with the exported file can read and use included World passwords. Server owner keys and Sync administrative keys are never exported.</div><div class="identity-box"><strong>Composable World collection</strong><p>Descriptions, tags, compatibility, connection routes, icons, and timestamps are captured. Recipients can delete entries, merge other manifests, add Worlds, and export a new signed collection.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="run-profile-export">Export .rsdwl</button></div></div>`);
+    // Connected-world exports are portable profile/discovery records, never
+    // password vaults. Remove the historical control for older markup too.
+    modalRoot.querySelector('#profile-export-passwords')?.closest('label')?.remove();
+    modalRoot.querySelector('.sensitive-export')?.remove();
+    [...modalRoot.querySelectorAll('.warning-box')].find((node)=>node.textContent.includes('Password-inclusive manifests'))?.remove();
+    const exportHeading=modalRoot.querySelector('.modal-header h2'); if(exportHeading)exportHeading.textContent='Export Profile Package';
+    const exportIdentity=modalRoot.querySelector('.identity-box'); if(exportIdentity)exportIdentity.innerHTML='<strong>Profile-wrapped and safe to share</strong><p>Connected Worlds, routes, rules, artwork, characters, and saves stay associated with this profile. World passwords and all administrative credentials are always excluded.</p>';
+    modalRoot.querySelector('#profile-export-select-all')?.addEventListener('click',()=>modalRoot.querySelectorAll('[data-profile-export-world]').forEach(input=>input.checked=true));
+    modalRoot.querySelector('#profile-export-select-none')?.addEventListener('click',()=>modalRoot.querySelectorAll('[data-profile-export-world]').forEach(input=>input.checked=false));
+    modalRoot.querySelector('#run-profile-export')?.addEventListener('click', async()=>{
+      const profileName=modalRoot.querySelector('#profile-export-name')?.value?.trim()||'Dragonwilds Profile';
+      const safe=profileName.replace(/[<>:"/\\|?*]/g,'_');
+      const outputPath=await window.dragonwilds.saveFile({title:'Export Dragonwilds Profile',defaultPath:`${safe}.rsdwl`,filters:[{name:'Dragonwilds Sync Profile',extensions:['rsdwl']}]});
+      if(!outputPath)return;
+      try{
+        const includeWorlds=!!modalRoot.querySelector('#profile-export-worlds')?.checked;const worldIds=[...modalRoot.querySelectorAll('[data-profile-export-world]:checked')].map(input=>input.dataset.profileExportWorld);
+        if(includeWorlds&&!worldIds.length)return toast('Select at least one World','Or turn off Include selected Worlds.','error');
+        const response=await api.invoke('profile.package.export',{output_path:outputPath,profile_name:profileName,include_characters:!!modalRoot.querySelector('#profile-export-characters')?.checked,include_worlds:includeWorlds,world_ids:worldIds,include_world_artwork:!!modalRoot.querySelector('#profile-export-artwork')?.checked,include_world_passwords:false});
+        if(response.state)state.data=response.state; closeModal();
+        const result=response.result||{}; toast('Profile exported',`${result.character_count||0} characters · ${result.world_count||0} Worlds`,'success'); render();
+      }catch(error){toast('Profile export failed',error.message,'error');}
+    });
+  }
+
+  async function importProfileBundle(incomingPath='') {
+    const path=incomingPath||await window.dragonwilds.pickFile('rsdwl'); if(!path)return;
+    try{
+      const info=await api.invoke('profile.package.inspect',{path});
+      const kind=info.kind||'profile';
+      if(kind==='compatibility-mod-archive'){
+        const archiveKind=String(info.archive_kind||'mod').toUpperCase();
+        if(!await managedConfirm(`“${info.name||'This file'}” is a manually converted .rsdwl file.\n\nDragonwilds Sync identified it as a ${archiveKind} mod archive, not a validated profile package. It has no signed package manifest, payload index, or export provenance.\n\nInstall it into the currently selected Player/Private World mod profile using the normal archive safety checks?`,'Install Manual RSDWL Mod'))return;
+        await installSinglePlayerZip(path);
+        toast('Manual RSDWL imported',`${archiveKind} mod installed through renamed-ZIP compatibility.`,'success');
+        return;
+      }
+      const profileName=info.profile?.profileName || info.manifest?.profile?.profileName || (kind==='legacy-world' ? info.world?.identity?.world_name : 'Legacy package');
+      const version=info.manifest?.version || '?';
+      const hasPasswords=!!info.manifest?.metadata?.worldPasswordsIncluded;
+      if(!await managedConfirm(`Import “${profileName}”?\n\nRSDWL v${version} · ${kind}\n\nWorld entries merge into the editable Manifest collection.${hasPasswords?'\n\n⚠ This manifest includes saved World passwords. They will be stored locally for immediate access.':' Server owner and administrative keys are never imported.'}`,'Import World Manifest'))return;
+      const response=await api.invoke('profile.package.import',{path,import_characters:true,import_worlds:true});
+      if(response.state)state.data=response.state; render(); showProfileChangelog(response.changelog || response.result?.changelog || {});
+    }catch(error){toast('Profile import failed',error.message,'error');}
+  }
+
+  async function exportWorldPackage(world) {
+    if (!world || world.kind === 'singleplayer') return;
+    let fallbackExternalIp = String(world.connection?.external_ip || state.clientPublicIp || '').trim();
+    if (!fallbackExternalIp && world.connection?.internal_ip) {
+      try { const response = await api.invoke('client.public_ip.detect', {}); fallbackExternalIp = response.ip || ''; state.clientPublicIp = fallbackExternalIp; } catch (_) {}
+    }
+    const name = String(world.nickname || world.identity?.world_name || 'Dragonwilds-World').replace(/[<>:"/\\|?*]/g,'_');
+    const outputPath = await window.dragonwilds.saveFile({title:'Export World Profile',defaultPath:`${name}.rsdwl`,filters:[{name:'Dragonwilds Sync Profile',extensions:['rsdwl']}]});
+    if (!outputPath) return;
+    try {
+      const response = await api.invoke('shared.worlds.package.export',{id:world.id,output_path:outputPath,fallback_external_ip:fallbackExternalIp});
+      if(response.state) state.data=response.state;
+      toast('World profile exported','RSDWL v3 profile bundle created with the selected World under /worlds.','success');
+      if(state.route==='shared-worlds')render();
+    } catch(error){ toast('World export failed',error.message,'error'); }
+  }
+
+  async function importWorldPackage() {
+    const path = await window.dragonwilds.pickFile('rsdwl');
+    if(!path)return;
+    try {
+      const inspected=await api.invoke('shared.worlds.package.inspect',{path});
+      const manifest=inspected.manifest||{}; const world=inspected.world||{};
+      const producer=manifest.producer||{}; const packageId=manifest.packageId||'';
+      if(!await managedConfirm(`Import shared World “${world.identity?.world_name || 'World'}”?\n\nPackage: RSDWL v${manifest.version || '?'} · ${packageId ? packageId.slice(0,12)+'…' : 'legacy'}\nExporter: ${manifest.exporterFingerprint || producer.fingerprint || 'unknown'}\nExported: ${manifest.exportedAtUtc || manifest.createdAtUtc || 'unknown'}\nSHA-256: ${manifest.profileSha256 || manifest.metadata?.profileSha256 || 'verified payload index'}\n\nPrivate host credentials are never imported.`,'Import World Profile'))return;
+      const linkNow=await managedConfirm('Add this World to My Worlds now?\n\nContinue = link permanently to My Worlds.\nCancel = keep it only under imported/curated Worlds for Quick Launch.','Link Imported World');
+      const response=await api.invoke('shared.worlds.package.import',{path,link_to_my_worlds:linkNow});
+      if(response.state)state.data=response.state;
+      state.selectedWorldId=response.world?.id || state.data?.client?.active_world_id || null;
+      toast('Shared World imported',linkNow?'Added to My Worlds.':'Kept under Shared Worlds for Quick Launch; you can link it later.','success');
+      render();
+    } catch(error){ toast('World import failed',error.message,'error'); }
+  }
+
+  async function refreshSharedWorldsFeed() {
+    try {
+      const response=await api.invoke('shared.worlds.feed.refresh',{});
+      if(response.state)state.data=response.state;
+      const result=response.result||{};
+      toast('Shared Worlds refreshed',`${result.count || 0} online World${Number(result.count||0)===1?'':'s'} loaded.`,'success');
+      render();
+    } catch(error){toast('Shared Worlds refresh failed',error.message,'error');}
+  }
+
+  async function updateApplication(patch) {
+    try {
+      setData(await api.invoke('application.update', patch));
+      if (Object.prototype.hasOwnProperty.call(patch || {}, 'language') && state.route === 'worlds') {
+        await refreshWorldDiscoveryAndStatuses(true);
+      }
+    } catch (error) { toast('Settings update failed', error.message, 'error'); }
+  }
+
+  async function testWorld(world) {
+    if (!world || state.busy.has(world.id)) return;
+    state.busy.add(world.id); toast('Testing connection', 'Trying the saved route order and validating World identity.');
+    try {
+      const response = await api.invoke('world.test', { id: world.id });
+      setData(response.state);
+      const result = response.result;
+      if (result.ok) toast('World verified', `${result.route} route · ${result.ping_ms} ms`, 'success');
+      else if (result.blocked) toast('Blocked by this World', `Your ${result.blocked_kind === 'country' ? 'country' : result.blocked_kind === 'region' ? 'region' : 'IP'} is blocked by the host's access policy (${result.blocked_reason || 'no reason given'}). Ask the operator to unblock you if this is unexpected.`, 'error');
+      else toast('World not verified', result.error, 'error');
+    } catch (error) { toast('Connection test failed', error.message, 'error'); }
+    finally { state.busy.delete(world.id); }
+  }
+
+
+  async function activatePrivateWorldProfile(world, quiet = true) {
+    if (!world || world.kind !== 'singleplayer') return world;
+    const response = await api.invoke('singleplayer.profile.activate', { profile_id: world.id, id: world.id });
+    if (response.state) setData(response.state);
+    if (Array.isArray(response.units)) state.singleplayerInventory = response.units;
+    if (!quiet) toast('World profile exchanged', `${world.name || 'World'} is now active. Mods, settings, characters, saves, and activeworld.txt were swapped as one profile.`, 'success');
+    return privateWorldById(world.id) || world;
+  }
+
+  async function managePrivateWorld(world) {
+    if (!world) return;
+    stopPlayerPolling();pushNavigation(); state.selectedWorldId = world.id; state.route = 'world-detail'; state.privateTab = 'overview';
+    const cached=state.privateInventory[world.id] || cachedProfileMods(world);
+    state.singleplayerInventory=Array.isArray(cached)?cached:[];
+    render();
+  }
+
+  function openPrivateWorldEditor(world) {
+    // Paint from the already hydrated World projection immediately. The full
+    // profile refines untouched fields in the background instead of delaying
+    // the in-app editor behind filesystem discovery.
+    const profile={name:world.name||'',description:world.presentation?.description||world.description||'',community_rules:world.presentation?.community_rules||world.community_rules||'',tags:world.presentation?.tags||world.tags||[],classification:world.classification||{},placard_background:world.presentation?.placard_background||world.placard_background||'1'};
+    const classification=worldClassification({...world,classification:profile.classification||world.classification});
+    const editorWindow=showModal(`<div class="modal-header"><div><div class="eyebrow">Private World</div><h2>Edit ${escapeHtml(profile.name||world.name||'Private World')}</h2><p>Presentation and placard changes persist with this World profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="edit-private-name" maxlength="80" value="${escapeHtml(profile.name||world.name||'Private World')}"/></div><div class="form-group full"><label>Description</label><textarea class="textarea" id="edit-private-description" maxlength="300">${escapeHtml(profile.description||world.presentation?.description||'')}</textarea></div><div class="form-group full"><label>Community Rules</label><textarea class="textarea community-rules-field" id="edit-private-rules" maxlength="4000">${escapeHtml(profile.community_rules||world.presentation?.community_rules||'')}</textarea></div><div class="form-group full"><label>Tags</label><input class="field" id="edit-private-tags" value="${escapeHtml((profile.tags||world.presentation?.tags||[]).join(', '))}"/></div><div class="form-group"><label>World Type</label><select class="select" id="edit-private-content">${[['vanilla','Vanilla'],['modded','Modded'],['handmade','Handmade'],['hybrid','Hybrid']].map(([key,label])=>`<option value="${key}" ${classification.content_type===key?'selected':''}>${label}</option>`).join('')}</select></div><div class="form-group"><label>Game Mode</label><select class="select" id="edit-private-mode">${[['normal','Normal'],['hardcore','Hard Mode'],['creative','Creative'],['custom','Custom']].map(([key,label])=>`<option value="${key}" ${classification.game_mode===key?'selected':''}>${label}</option>`).join('')}</select><button class="btn ghost" id="detect-private-gameplay" type="button">Read from World Save</button></div><div class="form-group full"><label class="checkbox-row"><input id="edit-private-pvp" type="checkbox" ${classification.pvp_enabled?'checked':''}/> PVP enabled</label><small>World-save detection reads Friendly Fire and difficulty markers. You can always override the detected result.</small></div><div class="form-group full"><label class="checkbox-row"><input id="edit-private-default" type="checkbox" ${world.is_default?'checked':''}/> Use this as the default profile at application startup</label><small>The first detected environment is adopted into the initial default profile. Choosing another default does not duplicate or merge profiles.</small></div><div class="form-group full"><label>Placard Background</label>${placardBackgroundPicker(profile.placard_background||world.presentation?.placard_background||'1','private-placard')}</div></div><div class="identity-box"><strong>Synced World presentation</strong><p>The selected built-in background ID travels with manifests and profile exports; the artwork itself ships once with Dragonwilds Sync.</p></div></div><div class="modal-footer"><span class="editor-hydration-status">Ready · checking profile details…</span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-private-world-profile">Save Changes</button></div></div>`,{title:'Edit Private World'});
+    editorWindow.querySelectorAll('input,textarea,select').forEach((field)=>field.addEventListener('input',()=>{field.dataset.userEdited='1';},{once:true}));
+    api.invoke('singleplayer.profile.get',{profile_id:world.id,id:world.id}).then((response)=>{if(!editorWindow?.isConnected)return;const full=response.profile||{};const hydrate=(selector,value)=>{const field=editorWindow.querySelector(selector);if(field&&!field.matches(':focus')&&!field.dataset.userEdited)field.value=String(value??'');};hydrate('#edit-private-name',full.name||profile.name);hydrate('#edit-private-description',full.description||profile.description);hydrate('#edit-private-rules',full.community_rules||profile.community_rules);hydrate('#edit-private-tags',(full.tags||profile.tags||[]).join(', '));const defaultToggle=editorWindow.querySelector('#edit-private-default');if(defaultToggle)defaultToggle.checked=!!full.is_default;const status=editorWindow.querySelector('.editor-hydration-status');if(status)status.textContent='Profile details loaded';}).catch(()=>{const status=editorWindow?.querySelector('.editor-hydration-status');if(status)status.textContent='Using cached profile details';});
+    modalRoot.querySelector('#detect-private-gameplay')?.addEventListener('click',async()=>{try{const result=await api.invoke('world.save.editor.read',{kind:'private',id:world.id});const detected=result.save?.gameplay_detection||{};modalRoot.querySelector('#edit-private-mode').value=detected.game_mode||'normal';modalRoot.querySelector('#edit-private-pvp').checked=!!detected.pvp_enabled;toast('Gameplay settings detected',`${detected.game_mode==='hardcore'?'Hard Mode':detected.game_mode||'Normal'} · ${detected.pvp_enabled?'PVP enabled':'PVP disabled'} · ${detected.confidence||'unknown'} confidence`,'success');}catch(error){toast('Could not read World Save',error.message,'error');}});
+    modalRoot.querySelector('#save-private-world-profile')?.addEventListener('click',async()=>{const name=modalRoot.querySelector('#edit-private-name')?.value.trim()||'';if(!name)return toast('World name required','','error');const description=modalRoot.querySelector('#edit-private-description')?.value.trim()||'';const community_rules=modalRoot.querySelector('#edit-private-rules')?.value.trim()||'';const tags=(modalRoot.querySelector('#edit-private-tags')?.value||'').split(',').map(x=>x.trim()).filter(Boolean);const is_default=!!modalRoot.querySelector('#edit-private-default')?.checked;const placard_background=modalRoot.querySelector('input[name="private-placard"]:checked')?.value||'1';const classification={content_type:modalRoot.querySelector('#edit-private-content')?.value||'vanilla',game_mode:modalRoot.querySelector('#edit-private-mode')?.value||'normal',pvp_enabled:!!modalRoot.querySelector('#edit-private-pvp')?.checked,host_type:world.status?.broadcasting?'coop':'singleplayer',visibility:world.status?.broadcasting?'friends':'private',declared:true};try{const saved=await api.invoke('singleplayer.profile.update',{profile_id:world.id,id:world.id,profile:{name,description,community_rules,tags,classification,placard_background,is_default}});if(saved.state)setData(saved.state);closeModal();state.selectedWorldId=world.id;render();toast('Private World updated',is_default?`${name} is now the startup default profile.`:`${name} now identifies this profile and its Sync broadcast.`,'success');}catch(error){toast('Could not update Private World',error.message,'error');}});
+  }
+
+  async function togglePrivateCoop(world) {
+    if (!world) return;
+    await activatePrivateWorldProfile(world, true);
+    const current = privateWorldById(world.id) || world;
+    if (current.status?.broadcasting) {
+      const response = await runOperation('Stopping Co-Op Sync', 'Closing the profile-owned Sync listener and removing LAN discovery safely…', ()=>api.invoke('singleplayer.broadcast.stop', { profile_id: world.id, id: world.id }));
+      if (response.state) state.data = response.state;
+      toast('Co-Op broadcast stopped', `${world.name || 'Private World'} is private again.`, 'success'); render(); return;
+    }
+    let profileResponse = await api.invoke('singleplayer.profile.get', { profile_id: world.id, id: world.id });
+    const profile = profileResponse.profile || {}; const cfg = profile.broadcast_config || {};
+    showModal(`<div class="modal-header"><div><div class="eyebrow">Private World · Co-Op</div><h2>Broadcast ${escapeHtml(world.name || 'Private World')}</h2><p>Dragonwilds Sync exposes the fingerprint, manifest and client-required files. Start the actual co-op session inside Dragonwilds.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Password</label><input class="field" id="private-coop-passcode" type="password" value="${escapeHtml(cfg.password || '')}" placeholder="Leave blank for an open World"/></div><div class="form-group"><label>Sync Port</label><input class="field" id="private-coop-port" type="number" min="1" max="65535" value="${Number(cfg.sync_port || 27051)}"/></div><label class="checkbox-row"><input type="checkbox" id="private-coop-lan" ${cfg.lan_broadcast===false?'':'checked'}/> Advertise on LAN</label></div><div class="identity-box"><strong>Gameplay stays in Dragonwilds</strong><p>This does not create or control the game lobby. It only makes this Private World discoverable/sync-capable. The same optional World Password is used for both gameplay and Sync.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="start-private-coop">Start Co-Op Broadcast</button></div></div>`, { title: `Co-Op · ${world.name || 'Private World'}` });
+    modalRoot.querySelector('#start-private-coop')?.addEventListener('click', async()=>{
+      const password=modalRoot.querySelector('#private-coop-passcode')?.value||''; const syncPort=Number(modalRoot.querySelector('#private-coop-port')?.value||27051); const lan=!!modalRoot.querySelector('#private-coop-lan')?.checked;
+      try{
+        const response=await runOperation('Starting Co-Op Sync', 'Saving the profile, building the manifest, and verifying the local Sync listener before advertising it…',async()=>{
+          await api.invoke('singleplayer.profile.update',{profile_id:world.id,profile:{broadcast_config:{...cfg,password,sync_port:syncPort,lan_broadcast:lan}}});
+          return api.invoke('singleplayer.broadcast',{profile_id:world.id,id:world.id,password,sync_port:syncPort});
+        });
+        if(response.state)state.data=response.state;closeModal();render();toast('Co-Op broadcast active','Players using Dragonwilds Sync can now discover/synchronize this Private World.','success');
+      }catch(error){toast('Co-Op broadcast failed',error.message,'error');}
+    });
+  }
+
+  function openCreatePrivateWorld() {
+    const populated=privateWorlds();
+    showModal(`<div class="modal-header"><div><div class="eyebrow">World Management</div><h2>Local Worlds</h2><p>Select a populated save-backed World or create a separate profile.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body">${populated.length?`<section class="settings-section"><label class="form-group full"><span>Populated local Worlds</span><select class="select" id="private-world-existing">${populated.map((world)=>`<option value="${escapeHtml(world.id)}">${escapeHtml(world.name||world.identity?.world_name||'Local World')}</option>`).join('')}</select></label><button class="btn primary" id="open-existing-private-world">Open Selected World</button></section>`:'<div class="empty-state compact">No populated local save profiles were detected yet.</div>'}<section class="settings-section"><h3>Create a new profile</h3><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="private-world-name" maxlength="80" placeholder="Building Test World" autofocus/></div><div class="form-group"><label>World Type</label><select class="select" id="private-world-content"><option value="vanilla">Vanilla</option><option value="modded">Modded</option><option value="handmade">Handmade</option><option value="hybrid">Hybrid</option></select></div><div class="form-group"><label>Game Mode</label><select class="select" id="private-world-mode"><option value="normal">Normal</option><option value="hardcore">Hardcore</option><option value="creative">Creative</option><option value="custom">Custom</option></select></div></div></section></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="confirm-create-private-world">Create New World</button></div></div>`, { title: 'Local Worlds' });
+    const create=async()=>{const name=modalRoot.querySelector('#private-world-name')?.value.trim()||'';if(!name)return toast('World name required','','error');try{const response=await api.invoke('singleplayer.profile.create',{name,classification:{content_type:modalRoot.querySelector('#private-world-content')?.value||'vanilla',game_mode:modalRoot.querySelector('#private-world-mode')?.value||'normal',host_type:'singleplayer',visibility:'private',declared:true}});if(response.state)state.data=response.state;const world=privateWorldById(response.profile?.id);closeModal();if(world)await managePrivateWorld(world);else render();toast('Private World created',name,'success');}catch(error){toast('Could not create Private World',error.message,'error');}};
+    modalRoot.querySelector('#confirm-create-private-world')?.addEventListener('click',create);modalRoot.querySelector('#private-world-name')?.addEventListener('keydown',(e)=>{if(e.key==='Enter')create();});
+    modalRoot.querySelector('#open-existing-private-world')?.addEventListener('click',async()=>{const world=privateWorldById(modalRoot.querySelector('#private-world-existing')?.value||'');if(!world)return;closeModal();await managePrivateWorld(world);});
+  }
+
+  async function playWorld(world) {
+    if (!world || state.busy.has(world.id)) return;
+    state.busy.add(world.id); toast(world.kind === 'singleplayer' ? 'Preparing Private World' : 'Preparing World', world.kind === 'singleplayer' ? 'Activating this World profile, character, mods and settings.' : 'Verifying identity, synchronizing required files, then launching Dragonwilds.');
+    try {
+      const local=world.kind==='singleplayer';
+      const backupRequested=!local&&!!(world.manifest_cache?.character_sharing?.request_backups||world.manifest_cache?.character_backup_requested);
+      if(backupRequested&&!['accepted','declined'].includes(String(world.player_backup?.consent||''))){
+        const approved=await managedConfirm(`${world.nickname||world.identity?.world_name||'This World'} offers server-side player-save backups.\n\nYES allows the host to retain the assigned character save after successful Sync connections so you can request a restore later. NO connects normally without sending your player save.`,`Player Save Backup`);
+        const characterId=state.data?.client?.world_character_selection?.[world.id]||'';
+        const consent=await api.invoke('world.character.backup.consent',{id:world.id,approved,character_id:characterId});
+        if(consent.state)setData(consent.state);
+        world=activeWorld()||world;
+        toast(approved?'Player backup approved':'Player backup declined',approved?(characterId?'The selected save was retained by this World.':'Assign a character later to begin backups.'):'Connection will continue without uploading your player save.',approved?'success':'');
+      }
+      const launch=()=>local?runOperation('Launching Singleplayer','Activating the selected save, character, settings, and profile mods before Dragonwilds starts…',async()=>{
+          if(local)await activatePrivateWorldProfile(world,true);
+          return api.invoke(local?'singleplayer.play':'world.play',local?{id:world.id,profile_id:world.id}:{id:world.id});
+        }):runWorldSyncJob(world,'sync');
+      const response=await launch();
+      setData(response.state);
+      if (world.kind === 'singleplayer') { setDiscordPresence('Playing Private World', world, { resetTimer: true }); toast('Dragonwilds launched', `${world.name || 'Private World'} activated and launched.`, 'success'); return; }
+      openVerifiedPlayGate(world,response);
+      toast('World ready to play','File parity is verified. Press Play in the ready window when you want to launch.','success');
+      return;
+    } catch (error) {
+      if(!local&&isFileParityMismatch(error?.message||''))openSyncMismatchConfirmation(world,error.message);
+      else toast('Play blocked', error.message, 'error');
+    }
+    finally { state.busy.delete(world.id); }
+  }
+
+  async function refreshAllWorldStatuses(quiet = false) {
+    const browser=state.data?.client?.world_browser||{};
+    const page=Math.max(1,Number(browser.page||1));
+    const eligible=worlds().filter((world)=>world.kind!=='singleplayer'&&world.kind!=='public'&&Number(world.connection?.sync_port||0)>0);
+    const checkedAt=(world)=>{const value=world.status?.last_checked_at;if(!value)return 0;const numeric=Number(value);return Number.isFinite(numeric)?numeric:(Date.parse(value)||0)/1000;};
+    const targets=eligible.slice((page-1)*10,page*10).filter((world)=>Date.now()/1000-checkedAt(world)>20).slice(0,4);
+    for(let offset=0;offset<targets.length;offset+=2){
+      const responses=await Promise.all(targets.slice(offset,offset+2).map((world)=>api.invoke('world.status',{id:world.id,compact:true}).catch(()=>null)));
+      responses.forEach((response)=>{if(response?.world)mergeConnectedWorld(response.world);});
+    }
+    if(state.data?.application?.world_discovery) state.data.application.world_discovery.last_refresh_at = new Date().toISOString();
+    render(); if(!quiet) toast('World status refreshed');
+  }
+
+  async function refreshWorldDiscoveryAndStatuses(quiet = false) {
+    let publicCount = 0;
+    let discoveryError = '';
+    if (state.data?.application?.world_discovery?.enabled !== false) {
+      try {
+        const response = await api.invoke('world.directory.refresh', {compact:true});
+        if(response.directory_worlds)state.data.client.directory_worlds=response.directory_worlds;
+        if(response.world_discovery)state.data.application.world_discovery=response.world_discovery;
+        publicCount = Number(response.result?.worlds?.length || 0) + Number(response.result?.merged_known || 0);
+        discoveryError = (response.result?.errors || []).join('; ');
+      } catch (error) {
+        discoveryError = error?.message || 'Public discovery failed.';
+      }
+    }
+    // Public/directory refresh already carries live status. Only Direct Connect
+    // needs endpoint polling, and only its visible ten rows are touched.
+    if ((state.data?.client?.world_browser?.tab||'directory')==='direct') await refreshAllWorldStatuses(true);
+    else render();
+    if (!quiet) {
+      if (discoveryError && !publicCount) toast('World discovery unavailable', `${discoveryError} Known and curated Worlds are still available.`, '');
+      else toast('Worlds refreshed', `${publicCount} World${publicCount===1?'':'s'} discovered or merged.`, 'success');
+    }
+  }
+
+  async function prefetchVisibleWorldPresentation() {
+    if (state.presentationPrefetching || state.route !== 'worlds' || state.data?.application?.world_discovery?.prefetch_presentation === false) return;
+    const ids=[...root.querySelectorAll('[data-world-id]')].map((node)=>String(node.dataset.worldId||'')).filter(Boolean).slice(0,10);
+    const all=browserWorlds();
+    const now=Date.now();
+    state.presentationPreviewAttempts ||= {};
+    const targets=ids.map((id)=>all.find((world)=>String(world.id)===id)).filter((world)=>{
+      if(!world)return false;
+      const verified=!!(world.shared?.fingerprint_verified||world.status?.sync_verified||world.shared?.verified);
+      const presentation=world.presentation||{};
+      const stale=now-(Date.parse(world.status?.last_presentation_refresh_at||0)||0)>15*60*1000;
+      const missing=!presentation.icon_b64||!presentation.banner_b64||!presentation.description;
+      return verified&&(missing||stale)&&now-Number(state.presentationPreviewAttempts[world.id]||0)>5*60*1000;
+    });
+    if(!targets.length)return;
+    state.presentationPrefetching=true;
+    try {
+      for(let offset=0;offset<targets.length;offset+=3){
+        const batch=targets.slice(offset,offset+3);
+        batch.forEach((world)=>{state.presentationPreviewAttempts[world.id]=now;});
+        const responses=await Promise.all(batch.map((world)=>api.invoke('world.metadata.preview',{id:world.id}).catch(()=>null)));
+        responses.forEach((response)=>{if(response?.state)state.data=response.state;});
+      }
+      render();
+    } finally { state.presentationPrefetching=false; }
+  }
+
+  function openPlayerProfile() {
+    const p = player();
+    const socials = p.social_links || {};
+    let avatarData = p.avatar_data || '';
+    let bannerData = p.banner_data || '';
+    showModal(`
+      <div class="modal-header"><div><h2>Player Profile</h2><p>Your launcher identity. Separate from every server World profile.</p></div><button class="modal-close" data-close-modal>×</button></div>
+      <div class="modal-body">
+        <div class="profile-banner-preview" id="player-banner-preview">${bannerData ? `<img src="${bannerData}" alt="" />` : ''}<div class="profile-banner-shade"></div><div class="profile-avatar-large" id="profile-preview">${avatarData ? `<img src="${avatarData}" alt="" />` : escapeHtml(initials(p.display_name))}</div><div class="profile-banner-actions"><button class="btn ghost" id="choose-banner">Choose Banner</button><button class="btn ghost" id="choose-avatar">Choose Avatar</button></div></div>
+        <div class="form-grid">
+          <div class="form-group full"><label>Display Name</label><input class="field" id="p-name" value="${escapeHtml(p.display_name || 'Player')}" /></div>
+          <div class="form-group full"><label>About Me</label><textarea class="textarea" id="p-about" maxlength="300">${escapeHtml(p.about || '')}</textarea></div>
+        </div>
+        <div class="divider"></div>
+        <div class="form-group full"><label>Social / Community Links</label><div class="social-grid">
+          <div><small>Steam profile</small><input class="field" id="p-social-steam" value="${escapeHtml(socials.steam || '')}" placeholder="Profile URL or Steam ID" /></div>
+          <div><small>Nexus profile</small><input class="field" id="p-social-nexus" value="${escapeHtml(socials.nexus || '')}" placeholder="Profile URL or username" /></div>
+          <div><small>Epic Games</small><input class="field" id="p-social-epic" value="${escapeHtml(socials.epic || '')}" placeholder="Display name or profile URL" /></div>
+          <div><small>Xbox</small><input class="field" id="p-social-xbox" value="${escapeHtml(socials.xbox || '')}" placeholder="Gamertag or profile URL" /></div>
+          <div><small>PlayStation</small><input class="field" id="p-social-playstation" value="${escapeHtml(socials.playstation || '')}" placeholder="Online ID or profile URL" /></div>
+          <div><small>Nintendo</small><input class="field" id="p-social-nintendo" value="${escapeHtml(socials.nintendo || '')}" placeholder="Friend code or profile" /></div>
+          <div><small>Discord</small><input class="field" id="p-social-discord" value="${escapeHtml(socials.discord || '')}" placeholder="Username or community URL" /></div>
+          <div><small>GitHub</small><input class="field" id="p-social-github" value="${escapeHtml(socials.github || '')}" placeholder="Profile URL" /></div>
+          <div><small>Twitch</small><input class="field" id="p-social-twitch" value="${escapeHtml(socials.twitch || '')}" placeholder="Channel URL" /></div>
+          <div><small>YouTube</small><input class="field" id="p-social-youtube" value="${escapeHtml(socials.youtube || '')}" placeholder="Channel URL" /></div>
+          <div><small>Website</small><input class="field" id="p-social-website" value="${escapeHtml(socials.website || '')}" placeholder="https://…" /></div>
+        </div></div>
+        <div class="identity-box"><strong>Launcher profile</strong><p>This identity stays local to Dragonwilds Sync and is separate from every hosted World or imported World profile.</p></div>
+      </div>
+      <div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-profile">Save Profile</button></div></div>`);
+    const refreshPreview = () => {
+      const preview = modalRoot.querySelector('#player-banner-preview');
+      if (!preview) return;
+      const banner = bannerData ? `<img src="${bannerData}" alt="" />` : '';
+      const avatar = avatarData ? `<img src="${avatarData}" alt="" />` : escapeHtml(initials(modalRoot.querySelector('#p-name')?.value || p.display_name));
+      preview.innerHTML = `${banner}<div class="profile-banner-shade"></div><div class="profile-avatar-large" id="profile-preview">${avatar}</div><div class="profile-banner-actions"><button class="btn ghost" id="choose-banner">Choose Banner</button><button class="btn ghost" id="choose-avatar">Choose Avatar</button></div>`;
+      bindImageButtons();
+    };
+    const bindImageButtons = () => {
+      modalRoot.querySelector('#choose-avatar')?.addEventListener('click', async () => { const picked = await window.dragonwilds.pickImage(); if (!picked) return; avatarData = picked.dataUrl; refreshPreview(); });
+      modalRoot.querySelector('#choose-banner')?.addEventListener('click', async () => { const picked = await window.dragonwilds.pickImage(); if (!picked) return; bannerData = picked.dataUrl; refreshPreview(); });
+    };
+    bindImageButtons();
+    modalRoot.querySelector('#save-profile').addEventListener('click', async () => {
+      try {
+        setData(await api.invoke('player.update', {
+          display_name: modalRoot.querySelector('#p-name').value.trim(),
+          about: modalRoot.querySelector('#p-about').value,
+          avatar_data: avatarData,
+          banner_data: bannerData,
+          social_links: {
+            discord: modalRoot.querySelector('#p-social-discord').value.trim(), steam: modalRoot.querySelector('#p-social-steam').value.trim(),
+            nexus: modalRoot.querySelector('#p-social-nexus').value.trim(), epic: modalRoot.querySelector('#p-social-epic').value.trim(),
+            xbox: modalRoot.querySelector('#p-social-xbox').value.trim(), playstation: modalRoot.querySelector('#p-social-playstation').value.trim(),
+            nintendo: modalRoot.querySelector('#p-social-nintendo').value.trim(),
+            github: modalRoot.querySelector('#p-social-github').value.trim(), twitch: modalRoot.querySelector('#p-social-twitch').value.trim(),
+            youtube: modalRoot.querySelector('#p-social-youtube').value.trim(), website: modalRoot.querySelector('#p-social-website').value.trim(),
+          },
+        }));
+        closeModal(); toast('Player Profile saved', '', 'success');
+      } catch (error) { toast('Profile save failed', error.message, 'error'); }
+    });
+  }
+
+  function openServerCreate() {
+    setDiscordPresence('Creating World', null, { resetTimer: true });
+    showModal(`<div class="modal-header"><div><h2>Create Hosted World</h2><p>Creates an advanced dedicated-server World profile with a declared browser identity.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>World Name</label><input class="field" id="s-name" placeholder="Valhalla Friends" /></div><div class="form-group"><label>World Type</label><select class="select" id="s-content-type"><option value="vanilla">Vanilla</option><option value="modded">Modded</option><option value="handmade">Handmade</option><option value="hybrid">Hybrid</option></select></div><div class="form-group"><label>Game Mode</label><select class="select" id="s-game-mode"><option value="normal">Normal</option><option value="hardcore">Hard Mode</option><option value="creative">Creative Mode</option><option value="custom">Custom</option></select></div><div class="form-group full"><label class="checkbox-row"><input id="s-pvp-enabled" type="checkbox"/> PvP Enabled</label><small>This declaration is published on the World placard and can later be detected from a World Save or changed manually.</small></div></div><div class="identity-box"><strong>Declared metadata</strong><p>Players can filter this classification. After the first save exists, World Management can read gameplay mode and PvP from that save.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="create-server-world">Create World</button></div></div>`);
+    modalRoot.querySelector('#s-name')?.addEventListener('input', (e) => scheduleDiscordPresence('Creating World', null, { worldName: e.target.value.trim() }));
+    modalRoot.querySelector('#create-server-world').addEventListener('click', async () => {
+      const name = modalRoot.querySelector('#s-name').value.trim(); if (!name) return toast('World Name required', '', 'error');
+      try { const response = await api.invoke('server.world.create', { name, classification:{content_type:modalRoot.querySelector('#s-content-type')?.value||'vanilla',game_mode:modalRoot.querySelector('#s-game-mode')?.value||'normal',pvp_enabled:!!modalRoot.querySelector('#s-pvp-enabled')?.checked,host_type:'dedicated',visibility:'public',declared:true} }); state.selectedServerWorldId = response.id; setData(response.state); closeModal(); state.route = 'server-detail'; render(); toast('Hosted World created', name, 'success'); } catch (error) { toast('Create failed', error.message, 'error'); }
+    });
+  }
+
+  function openServerEditor(world) {
+    if (!world) return;
+    const d = world.dedicated_config || {};
+    const sync = world.sync_config || {};
+    const healthConfig = world.health_config || {};
+    const healthRefs = healthConfig.hardware_reference || {};
+    const hostNetwork = healthConfig.host_network || {};
+    const classification = worldClassification(world, true);
+    let iconB64 = world.icon_b64 || '';
+    let bannerB64 = world.banner_b64 || '';
+    showModal(`<div class="modal-header"><div><h2>Edit Hosted World</h2><p>Presentation, credentials, ports, health evidence, access policy, and World runtime preferences. The shared server installation lives in Settings → Server.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group full"><label>World Name</label><input class="field" id="se-name" value="${escapeHtml(world.name || '')}" /></div>
+        <div class="form-group full"><label>Description</label><textarea class="textarea" id="se-desc" maxlength="300">${escapeHtml(world.description || '')}</textarea></div>
+        <div class="form-group full"><label>Community Rules</label><textarea class="textarea community-rules-field" id="se-community-rules" maxlength="4000" placeholder="Describe the conduct and play rules for this World. These rules are broadcast with its metadata.">${escapeHtml(world.community_rules || '')}</textarea><small>Published with the World’s Sync manifest, directory listing, hosted website, remote portal, and exported profile.</small></div>
+        <div class="form-group full"><label>Tags</label><input class="field" id="se-tags" value="${escapeHtml((world.tags || []).join(', '))}" placeholder="co-op, survival, hardcore" /></div>
+        <div class="form-group full"><label>World Discord invite (optional)</label><input class="field" id="se-discord-invite" value="${escapeHtml(world.community?.discord_invite || '')}" placeholder="https://discord.gg/your-community" /><small>Shared only through the authenticated Sync manifest, so it appears after a player successfully links this World.</small></div>
+        <div class="form-group full"><label>Discord server ID for live widget (optional)</label><input class="field" id="se-discord-guild" value="${escapeHtml(world.community?.discord_guild_id || '')}" placeholder="Numeric Discord server ID" /><small>The Discord server owner must enable its public Server Widget. Without that opt-in, Dragonwilds Sync shows only the invite.</small></div>
+        <div class="form-group"><label>World Type</label><select class="select" id="se-content-type">${[['vanilla','Vanilla'],['modded','Modded'],['handmade','Handmade'],['hybrid','Hybrid']].map(([key,label])=>`<option value="${key}" ${classification.content_type===key?'selected':''}>${label}</option>`).join('')}</select></div>
+        <div class="form-group"><label>Game Mode</label><select class="select" id="se-game-mode">${[['normal','Normal'],['hardcore','Hard Mode'],['creative','Creative'],['custom','Custom']].map(([key,label])=>`<option value="${key}" ${classification.game_mode===key?'selected':''}>${label}</option>`).join('')}</select><button class="btn ghost" id="detect-server-gameplay" type="button">Read from World Save</button></div>
+        <div class="form-group"><label class="checkbox-row"><input id="se-pvp-enabled" type="checkbox" ${classification.pvp_enabled?'checked':''}/> PVP enabled</label><small>Published with this World profile and independently editable after save detection.</small></div>
+        <div class="form-group"><label>Directory Visibility</label><select class="select" id="se-visibility"><option value="public" ${classification.visibility==='public'?'selected':''}>Public</option><option value="unlisted" ${classification.visibility==='unlisted'?'selected':''}>Unlisted</option><option value="friends" ${classification.visibility==='friends'?'selected':''}>Friends</option><option value="private" ${classification.visibility==='private'?'selected':''}>Private</option></select><small>A declaration sent with the World identity; network access rules remain authoritative.</small></div>
+        <div class="form-group"><label>Audience Identifier</label><select class="select" id="se-audience"><option value="general" ${(world.audience||'general')==='general'?'selected':''}>General / Unspecified</option><option value="kid_friendly" ${world.audience==='kid_friendly'?'selected':''}>🛡️ Kid-Friendly</option><option value="adults_only" ${world.audience==='adults_only'?'selected':''}>18+ Adults Only</option></select><small>Kid-Friendly Worlds rotate the shareable join code daily. Previously linked players retain their trusted identity.</small></div>
+        <div class="form-group full"><label>Player Platform Compatibility</label><div class="platform-compatibility-picker">${[['steam','Steam'],['epic','Epic Games'],['nintendo','Nintendo'],['playstation','PlayStation'],['xbox','Xbox']].map(([key,label])=>`<label>${platformLogo(key,label)}<input type="checkbox" id="se-platform-${key}" ${(world.platform_compatibility?.[key] ?? ['steam','epic'].includes(key))?'checked':''}/> <b>${label}</b></label>`).join('')}</div><small>Checked platforms receive a clean identifier on the desktop and hosted website. Console users may still attempt an unchecked World. Client-required mods or file writes are skipped with a warning on consoles; server-side-only mods remain eligible.</small></div>
+        <div class="form-group"><label>Shared Characters</label><label class="checkbox-row"><input id="se-character-sharing" type="checkbox" ${world.character_sharing?.enabled?'checked':''}/> Offer approved .rsdwl characters to authenticated clients</label><label class="checkbox-row"><input id="se-character-submissions" type="checkbox" ${world.character_sharing?.allow_submissions?'checked':''}/> Accept authenticated submissions into quarantine</label><label class="checkbox-row"><input id="se-character-backups" type="checkbox" ${world.character_sharing?.request_backups?'checked':''}/> Offer profile-bound player save backup and restore</label><small>Each player approves once. Changed assigned-character saves are retained separately from quarantine, and only that authenticated player profile can restore its latest copy.</small></div>
+        <div class="form-group"><label>World Icon</label><button class="btn ghost" id="se-icon">Choose Square Image</button></div>
+        <div class="form-group"><label>World Banner</label><button class="btn ghost" id="se-banner">Choose Banner Image</button></div>
+        <div class="form-group full"><label>Placard Background</label>${placardBackgroundPicker(world.placard_background||'1','server-placard')}<small>This built-in background identifier is included with the World manifest and profile export.</small></div>
+        ${(state.data?.application?.advanced || {}).multiple_servers_enabled ? `<div class="form-group"><label>Server Number / Instance</label><input class="field" id="se-instance" type="number" min="1" max="99" value="${escapeHtml(world.instance_number || 1)}"/><small>Auto ports: game ${7776 + Number(world.instance_number||1)} · Sync ${27050 + Number(world.instance_number||1)}</small></div>` : ''}
+        <div class="form-group"><label>Player ID (Owner)</label><input class="field" id="se-owner-id" value="${escapeHtml(d.owner_id || (state.data?.application?.server_install || {}).owner_id || '')}" /><small>Per-server ownership value. It is not required to download the dedicated server.</small></div>
+        <div class="form-group"><label>Game UDP Port</label><input class="field" id="se-game-port" type="number" min="1" max="65535" value="${escapeHtml(d.port || 7777)}" /><label class="checkbox-row"><input id="se-game-port-auto" type="checkbox" ${d.port_auto === false ? '' : 'checked'}/> Derive from Server Number (7777, 7778, 7779…)</label><select class="select" id="se-game-publication-mode"><option value="local" ${(d.networking?.publication_mode||'manual')==='local'?'selected':''}>Local network only</option><option value="manual" ${(d.networking?.publication_mode||'manual')==='manual'?'selected':''}>Manual router forwarding</option><option value="upnp" ${d.networking?.publication_mode==='upnp'?'selected':''}>Automatic UPnP · verify before public</option><option value="none" ${d.networking?.publication_mode==='none'?'selected':''}>No launcher-managed exposure</option></select></div>
+        <div class="form-group"><label>Server Admin Password</label><input class="field" id="se-admin-pass" type="password" value="${escapeHtml(d.admin_pass || '')}" /><small>Used for dedicated-server administration and the optional audited WebHost Server Admin login. It is not the player World Password.</small></div>
+        <div class="form-group"><label>World Password</label><input class="field" id="se-world-pass" type="password" value="${escapeHtml(d.world_pass || sync.password || '')}" placeholder="Leave blank for an open World"/><small>The same player-facing password is used for the game connection and launcher handshake. There is no separate client password.</small></div>
+        <div class="form-group"><label>Sync Transfer Port (TCP)</label><input class="field" id="se-sync-port" type="number" min="1" max="65535" value="${escapeHtml(sync.port || 27051)}" /><label class="checkbox-row"><input id="se-sync-port-auto" type="checkbox" ${sync.port_auto === false ? '' : 'checked'}/> Derive from Server Number</label><select class="select" id="se-sync-publication-mode"><option value="local" ${(sync.networking?.publication_mode||'manual')==='local'?'selected':''}>Local network only</option><option value="manual" ${(sync.networking?.publication_mode||'manual')==='manual'?'selected':''}>Manual router forwarding</option><option value="upnp" ${sync.networking?.publication_mode==='upnp'?'selected':''}>Automatic UPnP · verify before public</option><option value="none" ${sync.networking?.publication_mode==='none'?'selected':''}>Sync disabled externally</option></select><small>World Sync uses this TCP port for metadata and file transfer. Direct Connect discovery uses the fixed host-wide UDP port 8422. Joining clients need no inbound rule.</small></div>
+        <div class="form-group"><label>Secure Sync Authentication</label><label class="checkbox-row"><input id="se-sync-tls" type="checkbox" ${sync.tls_enabled?'checked':''}/> Serve the complete Sync connection over pinned TLS</label><label class="checkbox-row"><input id="se-tls-password-fallback" type="checkbox" ${sync.allow_tls_password_fallback?'checked':''} ${sync.tls_enabled?'':'disabled'}/> Allow one-time World Password fallback after challenge rejection</label><small>The fallback is impossible over HTTP. The generated certificate fingerprint is checked before credentials are sent.</small></div>
+        <div class="form-group"><label>LAN Broadcast</label><label style="display:flex;align-items:center;gap:8px"><input id="se-lan" type="checkbox" ${sync.lan_broadcast === false ? '' : 'checked'} /> Advertise this World on the LAN while serving</label></div>
+        <div class="form-group"><label>UE4SS mods.txt</label><input type="hidden" id="se-mods-txt-mode" value="auto"/><span class="status-pill online">AUTOMATIC · HIDDEN</span><small>Dragonwilds Sync writes exact <code>MODNAME : 1</code> entries and automatically pushes this hidden control file to clients whenever the World presents UE4SS mods. RuneSchema self-enables separately.</small></div>
+        <div class="form-group"><label>Base Runtime Updates</label><label class="checkbox-row"><input id="se-auto-ue4ss" type="checkbox" ${world.auto_ue4ss === false ? '' : 'checked'} /> Auto-check/update UE4SS every 6 hours when stopped</label><label class="checkbox-row"><input id="se-auto-runeschema" type="checkbox" ${world.auto_runeschema === false ? '' : 'checked'} /> Auto-update official RuneSchema from GitHub</label><label class="checkbox-row"><input id="se-auto-rsdwtools" type="checkbox" ${world.auto_rsdwtools === false ? '' : 'checked'} /> Auto-update the RSDW Tools base mod</label><small>RuneSchema uses only the official GitHub release. Dragonwilds Sync restores the complete core as one matched unit and never mixes individual DLL/config versions. Child mods remain profile-owned.</small></div>
+        <div class="form-group full"><div class="divider"></div><label>Server Health Evidence</label><div class="settings-page-note">Detected specs remain authoritative raw evidence. Optional benchmark/reference and WAN fields let the health model explain how it interpreted the host without hiding the underlying values.</div></div>
+        <div class="form-group"><label>Hardware Reference Provider</label><select class="select" id="se-health-provider"><option value="OpenBenchmarking.org" ${String(healthRefs.provider || '').toLowerCase().startsWith('openbenchmarking') ? 'selected' : ''}>OpenBenchmarking.org</option><option value="manual" ${String(healthRefs.provider || '').toLowerCase() === 'manual' ? 'selected' : ''}>Manual / Custom</option></select><label style="display:flex;align-items:center;gap:8px;margin-top:7px"><input id="se-health-auto-links" type="checkbox" ${healthRefs.auto_links === false ? '' : 'checked'} /> Auto-link detected CPU/GPU references</label></div>
+        <div class="form-group"><label>CPU Normalized Score (0–100)</label><input class="field" id="se-health-cpu-score" type="number" min="0" max="100" step="0.1" value="${escapeHtml(healthRefs.cpu_score_0_100 ?? '')}" placeholder="Optional benchmark evidence" /><small>Only used when supplied explicitly by a benchmark provider/operator. The launcher never invents this value.</small></div>
+        <div class="form-group full"><label>CPU Reference Link</label><input class="field" id="se-health-cpu-url" value="${escapeHtml(healthRefs.cpu_url || '')}" placeholder="https://…" /></div>
+        <div class="form-group"><label>GPU Normalized Score (0–100)</label><input class="field" id="se-health-gpu-score" type="number" min="0" max="100" step="0.1" value="${escapeHtml(healthRefs.gpu_score_0_100 ?? '')}" placeholder="Optional evidence" /></div>
+        <div class="form-group"><label>Reference Notes</label><input class="field" id="se-health-notes" value="${escapeHtml(healthRefs.notes || '')}" placeholder="Model/version/benchmark notes" /></div>
+        <div class="form-group full"><label>GPU Reference Link</label><input class="field" id="se-health-gpu-url" value="${escapeHtml(healthRefs.gpu_url || '')}" placeholder="https://…" /></div>
+        <div class="form-group"><label>Host Internet Download Mbps</label><input class="field" id="se-host-down" type="number" min="0" step="0.1" value="${escapeHtml(hostNetwork.download_mbps ?? '')}" placeholder="Optional" /></div>
+        <div class="form-group"><label>Host Internet Upload Mbps</label><input class="field" id="se-host-up" type="number" min="0" step="0.1" value="${escapeHtml(hostNetwork.upload_mbps ?? '')}" placeholder="Optional" /></div>
+        <div class="form-group"><label>Host WAN Latency ms</label><input class="field" id="se-host-latency" type="number" min="0" step="0.1" value="${escapeHtml(hostNetwork.latency_ms ?? '')}" placeholder="Optional" /></div>
+        <div class="form-group"><label>WAN Evidence Source</label><input class="field" id="se-host-source" value="${escapeHtml(hostNetwork.source || 'manual')}" placeholder="manual / ISP test / other" /></div>
+        <div class="form-group"><label>Health Broadcast</label><label style="display:flex;align-items:center;gap:8px"><input id="se-broadcast-hw-links" type="checkbox" ${healthConfig.broadcast_hardware_links === false ? '' : 'checked'} /> Share benchmark/reference links with clients</label><label style="display:flex;align-items:center;gap:8px;margin-top:6px"><input id="se-broadcast-host-network" type="checkbox" ${healthConfig.broadcast_host_network === false ? '' : 'checked'} /> Share raw host WAN measurements with clients</label></div>
+        <div class="form-group"><div class="identity-box" style="margin:0"><strong>Score boundary</strong><p>Observed client↔host path, CPU/RAM capacity, runtime uptime, host WAN evidence, and dedicated-server build currency contribute to Server Health. The player's own game build and client WAN speed are compatibility/diagnostic context only and cannot drag the host score down.</p></div></div>
+        <div class="form-group full"><label>World Access Policy</label><div class="settings-page-note">These rules are added on top of Settings → Server → Global Server Access Policy.</div>${accessPolicyMarkup(sync.access_policy || { blocked_ips: sync.blocked_ips || [], blocked_countries: sync.blocked_countries || [] }, 'world-access')}</div>
+      </div>
+      <div class="identity-box"><strong>Simple player connection</strong><p>Players need only the server IP, exact World Name, and optional World Password. Open Worlds leave the password blank.</p></div>
+    </div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="save-server-world">${state.data?.server?.runtime?.running&&String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'')===String(world.id)?'Save & Restart':'Save'}</button></div></div>`);
+
+    modalRoot.querySelector('#se-icon').addEventListener('click', async () => { const picked = await window.dragonwilds.pickImage(); if (picked) { iconB64 = picked.dataUrl; toast('World icon selected'); } });
+    modalRoot.querySelector('#se-banner').addEventListener('click', async () => { const picked = await window.dragonwilds.pickImage(); if (picked) { bannerB64 = picked.dataUrl; toast('World banner selected'); } });
+    modalRoot.querySelector('#se-sync-tls')?.addEventListener('change',(event)=>{const fallback=modalRoot.querySelector('#se-tls-password-fallback');if(fallback){fallback.disabled=!event.target.checked;if(!event.target.checked)fallback.checked=false;}});
+    modalRoot.querySelector('#detect-server-gameplay')?.addEventListener('click',async()=>{try{const result=await api.invoke('world.save.editor.read',{kind:'server',id:world.id});const detected=result.save?.gameplay_detection||{};modalRoot.querySelector('#se-game-mode').value=detected.game_mode||'normal';modalRoot.querySelector('#se-pvp-enabled').checked=!!detected.pvp_enabled;toast('Gameplay settings detected',`${detected.game_mode==='hardcore'?'Hard Mode':detected.game_mode||'Normal'} · ${detected.pvp_enabled?'PVP enabled':'PVP disabled'} · ${detected.confidence||'unknown'} confidence`,'success');}catch(error){toast('Could not read World Save',error.message,'error');}});
+    modalRoot.querySelector('#save-server-world').addEventListener('click', async () => {
+      const parseList = (id) => modalRoot.querySelector(id).value.split(',').map((x) => x.trim()).filter(Boolean);
+      const optionalNumber = (id) => { const text = modalRoot.querySelector(id)?.value.trim() || ''; return text === '' ? null : Number(text); };
+      try {
+        const payload = {
+          id: world.id,
+          apply_gameplay_now: true,
+          name: modalRoot.querySelector('#se-name').value.trim(),
+          description: modalRoot.querySelector('#se-desc').value,
+          community_rules: modalRoot.querySelector('#se-community-rules')?.value.trim() || '',
+          tags: parseList('#se-tags'),
+          community: {discord_invite:modalRoot.querySelector('#se-discord-invite')?.value.trim()||'',discord_guild_id:modalRoot.querySelector('#se-discord-guild')?.value.trim()||''},
+          audience: modalRoot.querySelector('#se-audience')?.value || 'general',
+          platform_compatibility: {pc:true,steam:!!modalRoot.querySelector('#se-platform-steam')?.checked,epic:!!modalRoot.querySelector('#se-platform-epic')?.checked,nintendo:!!modalRoot.querySelector('#se-platform-nintendo')?.checked,playstation:!!modalRoot.querySelector('#se-platform-playstation')?.checked,xbox:!!modalRoot.querySelector('#se-platform-xbox')?.checked},
+          classification: {content_type:modalRoot.querySelector('#se-content-type').value,game_mode:modalRoot.querySelector('#se-game-mode').value,pvp_enabled:!!modalRoot.querySelector('#se-pvp-enabled')?.checked,host_type:'dedicated',visibility:modalRoot.querySelector('#se-visibility').value,declared:true},
+          character_sharing: {enabled:!!modalRoot.querySelector('#se-character-sharing').checked,allow_submissions:!!modalRoot.querySelector('#se-character-submissions').checked,request_backups:!!modalRoot.querySelector('#se-character-backups').checked},
+          icon_b64: iconB64,
+          banner_b64: bannerB64,
+          placard_background: modalRoot.querySelector('input[name="server-placard"]:checked')?.value || '1',
+          auto_ue4ss: modalRoot.querySelector('#se-auto-ue4ss').checked,
+          auto_runeschema: modalRoot.querySelector('#se-auto-runeschema').checked,
+          auto_rsdwtools: modalRoot.querySelector('#se-auto-rsdwtools').checked,
+          mods_txt_mode: modalRoot.querySelector('#se-mods-txt-mode').value,
+          instance_number: Number(modalRoot.querySelector('#se-instance')?.value || world.instance_number || 1),
+          health_config: {
+            hardware_reference: {
+              provider: modalRoot.querySelector('#se-health-provider').value.trim() || 'OpenBenchmarking.org',
+              provider_url: String(modalRoot.querySelector('#se-health-provider').value || '').toLowerCase().startsWith('openbenchmarking') ? 'https://openbenchmarking.org/' : '',
+              auto_links: modalRoot.querySelector('#se-health-auto-links').checked,
+              cpu_url: modalRoot.querySelector('#se-health-cpu-url').value.trim(), gpu_url: modalRoot.querySelector('#se-health-gpu-url').value.trim(),
+              cpu_model: healthRefs.cpu_model || '', gpu_model: healthRefs.gpu_model || '',
+              cpu_score_0_100: optionalNumber('#se-health-cpu-score'), gpu_score_0_100: optionalNumber('#se-health-gpu-score'),
+              score_source: (optionalNumber('#se-health-cpu-score') != null || optionalNumber('#se-health-gpu-score') != null) ? (modalRoot.querySelector('#se-health-provider').value.trim() || 'manual') : '',
+              reference_generated_at: healthRefs.reference_generated_at || null,
+              notes: modalRoot.querySelector('#se-health-notes').value.trim(),
+            },
+            host_network: {
+              download_mbps: optionalNumber('#se-host-down'), upload_mbps: optionalNumber('#se-host-up'), latency_ms: optionalNumber('#se-host-latency'),
+              source: modalRoot.querySelector('#se-host-source').value.trim() || 'manual', measured_at: new Date().toISOString(),
+            },
+            broadcast_hardware_links: modalRoot.querySelector('#se-broadcast-hw-links').checked,
+            broadcast_host_network: modalRoot.querySelector('#se-broadcast-host-network').checked,
+          },
+          dedicated_config: {
+            admin_pass: modalRoot.querySelector('#se-admin-pass').value,
+            world_pass: modalRoot.querySelector('#se-world-pass').value,
+            owner_id: modalRoot.querySelector('#se-owner-id')?.value.trim() || '',
+            port: Number(modalRoot.querySelector('#se-game-port').value || 7777),
+            port_auto: !!modalRoot.querySelector('#se-game-port-auto')?.checked,
+            networking: {publication_mode:modalRoot.querySelector('#se-game-publication-mode')?.value||'manual'},
+          },
+          sync_config: {
+            password: modalRoot.querySelector('#se-world-pass').value,
+            port: Number(modalRoot.querySelector('#se-sync-port').value || 27051),
+            port_auto: !!modalRoot.querySelector('#se-sync-port-auto')?.checked,
+            networking: {publication_mode:modalRoot.querySelector('#se-sync-publication-mode')?.value||'manual'},
+            lan_broadcast: modalRoot.querySelector('#se-lan').checked,
+            tls_enabled: !!modalRoot.querySelector('#se-sync-tls')?.checked,
+            allow_tls_password_fallback: !!modalRoot.querySelector('#se-sync-tls')?.checked && !!modalRoot.querySelector('#se-tls-password-fallback')?.checked,
+            access_policy: readAccessPolicy(modalRoot, 'world-access'),
+          },
+        };
+        if (!payload.name) return toast('World Name required', '', 'error');
+        const updated=await api.invoke('server.world.update', payload);
+        setData(updated);
+        closeModal(); toast('Hosted World updated', updated?.game_password_restarted?'WorldPassword was written and the running game server restarted with it.':'Gameplay and Sync now share the saved World Password.', 'success');
+      } catch (error) { toast('Save failed', error.message, 'error'); }
+    });
+  }
+
+
+  window.dragonwilds?.onJoinRequest?.((payload)=>{state.pendingDirectoryJoin=payload;if(state.data)setTimeout(()=>openDirectoryJoin(payload),40);});
+  window.dragonwilds?.onNexusBrowserDownload?.(async(payload)=>{const pending=state.nexusPending;if(!pending)return;if(payload.state!=='completed')return toast('Nexus download did not complete',payload.name||'The browser download was interrupted.','error');try{toast('Nexus download complete','Inspecting and installing the staged archive…');await installNexusArchive(payload.path,pending.mod,pending.file);state.nexusPending=null;render();}catch(error){toast('Nexus mod install failed',error.message,'error');}});
+  document.addEventListener('dws:open-profile-mods',(event)=>{
+    const id=String(event.detail?.id||'');
+    const kind=event.detail?.kind==='server'?'server':'private';
+    if(!id)return;
+    if(kind==='server'){
+      const world=serverWorlds().find((row)=>String(row.id||'')===id);
+      if(!world)return toast('Hosted World unavailable','Refresh Hosting and try again.','error');
+      stopPlayerPolling();pushNavigation();state.selectedServerWorldId=world.id;state.serverTab='mods';state.route='server-detail';
+      if(!Array.isArray(state.serverInventory[world.id]))state.serverInventory[world.id]=cachedProfileMods(world)||[];
+      render();
+      return;
+    }
+    const world=privateWorldById(id);
+    if(!world)return toast('Private World unavailable','Refresh Dragonwilds and try again.','error');
+    stopPlayerPolling();pushNavigation();state.selectedWorldId=world.id;state.route='world-detail';
+    const cached=state.privateInventory[world.id]||cachedProfileMods(world);
+    state.singleplayerInventory=Array.isArray(cached)?cached:[];
+    state.privateTab='mods';render();
+  });
+  document.addEventListener('keydown',(event)=>{
+    if(event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey)return;
+    if(event.key!=='`'&&event.key!=='~')return;
+    const target=event.target;if(target?.matches?.('input,textarea,select,[contenteditable="true"],.monaco-editor *'))return;
+    event.preventDefault();openLauncherConsole();
+  });
+  bootstrap();
+})();

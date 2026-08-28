@@ -5,6 +5,7 @@ const root = path.resolve(__dirname, '..');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const app = read('renderer/app-v2.js');
 const css = read('renderer/release-final-cleanup.css');
+const baseCss = read('renderer/styles.css');
 const main = read('electron/main-v2.cjs');
 const preload = read('electron/preload-v2.cjs');
 const runtime = read('backend/runtime_platforms.py');
@@ -39,5 +40,12 @@ requireText(systems, 'dedicated_runtime_contract', 'Sync manifests do not expose
 requireText(archivePolicy, 'inspect_runtime_archive', 'Runtime ZIP entries are not inventoried.');
 requireText(archivePolicy, 'validate_client_targets', 'Runtime client selectors are not policy validated.');
 requireText(app, 'data-runtime-client-files', 'Runtime build rows do not expose client file selectors.');
+requireText(app, 'function gameModeBadgesMarkup', 'Shared world mode badge renderer is missing.');
+requireText(app, "hardmode: 'hard'", 'Hard mode metadata aliases are not normalized.');
+requireText(app, 'gameModeBadgesMarkup(world,server)', 'World mode badges are not shared by placards and horizontal rows.');
+requireText(baseCss, '.world-mode-pill.mode-normal', 'Normal mode badge styling is missing.');
+requireText(baseCss, '.world-mode-pill.mode-hard', 'Hard mode badge styling is missing.');
+requireText(baseCss, '.world-mode-pill.mode-creative', 'Creative mode badge styling is missing.');
+requireText(baseCss, '.world-mode-pill.mode-pvp', 'PVP badge styling is missing.');
 
 console.log('[OK] Linux server/client runtime separation and handheld window contracts');

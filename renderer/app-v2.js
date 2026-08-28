@@ -3143,27 +3143,67 @@
 
   function worldClassification(world, server = false) {
     const raw = world?.classification || {};
-    const badges = server ? [world?.auto_ue4ss && 'ue4ss', world?.auto_runeschema && 'runeschema'].filter(Boolean) : (world?.presentation?.mod_badges || []);
+    const cached = world?.manifest_cache?.classification || {};
+    const presentation = world?.presentation || {};
+    const badges = server ? [world?.auto_ue4ss && 'ue4ss', world?.auto_runeschema && 'runeschema'].filter(Boolean) : (presentation.mod_badges || []);
     const hasMods = badges.some((badge)=>!['vanilla','local','singleplayer','coop','co-op'].includes(String(badge||'').toLowerCase()));
+    const modeValue = raw.game_mode ?? raw.world_mode ?? raw.mode
+      ?? world?.game_mode ?? world?.world_mode ?? world?.mode
+      ?? presentation.game_mode ?? presentation.world_mode ?? presentation.mode
+      ?? cached.game_mode ?? cached.world_mode ?? cached.mode;
+    const modeKey = String(modeValue || 'normal').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const modeAliases = {
+      normal: 'normal',
+      standard: 'normal',
+      default: 'normal',
+      hard: 'hard',
+      hardmode: 'hard',
+      hardcore: 'hard',
+      creative: 'creative',
+      custom: 'custom',
+    };
+    const pvpValue = raw.pvp_enabled ?? raw.pvp
+      ?? world?.pvp_enabled ?? world?.pvp
+      ?? presentation.pvp_enabled ?? presentation.pvp
+      ?? cached.pvp_enabled ?? cached.pvp;
+    const pvp_enabled = pvpValue === true
+      || pvpValue === 1
+      || ['true','1','yes','on','enabled'].includes(String(pvpValue || '').trim().toLowerCase());
     return {
       content_type: ['vanilla','modded','handmade','hybrid'].includes(String(raw.content_type||'')) ? raw.content_type : (hasMods ? 'modded' : 'vanilla'),
-      game_mode: ['normal','hardcore','creative','custom'].includes(String(raw.game_mode||'')) ? raw.game_mode : 'normal',
-      pvp_enabled: !!(raw.pvp_enabled ?? raw.pvp),
+      game_mode: modeAliases[modeKey] || 'normal',
+      pvp_enabled,
       host_type: ['singleplayer','coop','dedicated','public'].includes(String(raw.host_type||'')) ? raw.host_type : (server ? 'dedicated' : world?.kind==='singleplayer' ? (world?.status?.broadcasting?'coop':'singleplayer') : 'public'),
       visibility: String(raw.visibility || (server ? 'public' : 'private')),
     };
   }
 
+  function gameModeBadgesMarkup(world, server = false) {
+    const c = worldClassification(world, server);
+    const modeLabels = {
+      normal: 'NORMAL',
+      hard: 'HARD MODE',
+      creative: 'CREATIVE',
+      custom: 'CUSTOM',
+    };
+    const mode = modeLabels[c.game_mode] ? c.game_mode : 'normal';
+    const modeBadge = `<span class="world-class-pill world-mode-pill mode-${mode}">${modeLabels[mode]}</span>`;
+    const pvpBadge = c.pvp_enabled
+      ? '<span class="world-class-pill world-mode-pill mode-pvp">PVP</span>'
+      : '';
+    return modeBadge + pvpBadge;
+  }
+
   function classificationMarkup(world, server = false) {
     const c=worldClassification(world,server);
-    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode==='hardcore'?'HARD MODE':c.game_mode.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.host_type.toUpperCase())}</span>${c.pvp_enabled?'<span class="world-class-pill">PVP</span>':''}`;
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span>${gameModeBadgesMarkup(world,server)}<span class="world-class-pill">${escapeHtml(c.host_type.toUpperCase())}</span>`;
   }
 
   function placardFrontClassificationMarkup(world, server = false) {
     const c=worldClassification(world,server);
     // Host type already owns the full-width banner. Keep the front to two
     // useful facts and leave the complete taxonomy on the details face.
-    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode==='hardcore'?'HARD MODE':c.game_mode.toUpperCase())}</span>${c.pvp_enabled?'<span class="world-class-pill">PVP</span>':''}`;
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span>${gameModeBadgesMarkup(world,server)}`;
   }
 
   function worldMenuButton(worldId, server = false) {

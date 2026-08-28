@@ -1712,6 +1712,7 @@
     state.setupMode = mode === 'server' ? 'server' : 'player';
     const server = state.setupMode === 'server';
     const a = state.data?.application || {};
+    const windowPrefs = a.window_preferences || {};
     const install = a.server_install || {};
     const initialPath = server ? (install.install_dir || '') : (a.game_dir || '');
     const owner = server ? (install.owner_id || '') : '';
@@ -1920,6 +1921,7 @@
   }
 
   const APPY_WARM_STORAGE_KEY='dragonwilds-sync-last-appy';
+  let appliedWindowPreferenceSignature='';
   const appyWarmPromises=new Map();
   const appyWarmTimers=new Map();
   let characterStudioWarmPromise=null;
@@ -3141,27 +3143,67 @@
 
   function worldClassification(world, server = false) {
     const raw = world?.classification || {};
-    const badges = server ? [world?.auto_ue4ss && 'ue4ss', world?.auto_runeschema && 'runeschema'].filter(Boolean) : (world?.presentation?.mod_badges || []);
+    const cached = world?.manifest_cache?.classification || {};
+    const presentation = world?.presentation || {};
+    const badges = server ? [world?.auto_ue4ss && 'ue4ss', world?.auto_runeschema && 'runeschema'].filter(Boolean) : (presentation.mod_badges || []);
     const hasMods = badges.some((badge)=>!['vanilla','local','singleplayer','coop','co-op'].includes(String(badge||'').toLowerCase()));
+    const modeValue = raw.game_mode ?? raw.world_mode ?? raw.mode
+      ?? world?.game_mode ?? world?.world_mode ?? world?.mode
+      ?? presentation.game_mode ?? presentation.world_mode ?? presentation.mode
+      ?? cached.game_mode ?? cached.world_mode ?? cached.mode;
+    const modeKey = String(modeValue || 'normal').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const modeAliases = {
+      normal: 'normal',
+      standard: 'normal',
+      default: 'normal',
+      hard: 'hard',
+      hardmode: 'hard',
+      hardcore: 'hard',
+      creative: 'creative',
+      custom: 'custom',
+    };
+    const pvpValue = raw.pvp_enabled ?? raw.pvp
+      ?? world?.pvp_enabled ?? world?.pvp
+      ?? presentation.pvp_enabled ?? presentation.pvp
+      ?? cached.pvp_enabled ?? cached.pvp;
+    const pvp_enabled = pvpValue === true
+      || pvpValue === 1
+      || ['true','1','yes','on','enabled'].includes(String(pvpValue || '').trim().toLowerCase());
     return {
       content_type: ['vanilla','modded','handmade','hybrid'].includes(String(raw.content_type||'')) ? raw.content_type : (hasMods ? 'modded' : 'vanilla'),
-      game_mode: ['normal','hardcore','creative','custom'].includes(String(raw.game_mode||'')) ? raw.game_mode : 'normal',
-      pvp_enabled: !!(raw.pvp_enabled ?? raw.pvp),
+      game_mode: modeAliases[modeKey] || 'normal',
+      pvp_enabled,
       host_type: ['singleplayer','coop','dedicated','public'].includes(String(raw.host_type||'')) ? raw.host_type : (server ? 'dedicated' : world?.kind==='singleplayer' ? (world?.status?.broadcasting?'coop':'singleplayer') : 'public'),
       visibility: String(raw.visibility || (server ? 'public' : 'private')),
     };
   }
 
+  function gameModeBadgesMarkup(world, server = false) {
+    const c = worldClassification(world, server);
+    const modeLabels = {
+      normal: 'NORMAL',
+      hard: 'HARD MODE',
+      creative: 'CREATIVE',
+      custom: 'CUSTOM',
+    };
+    const mode = modeLabels[c.game_mode] ? c.game_mode : 'normal';
+    const modeBadge = `<span class="world-class-pill world-mode-pill mode-${mode}">${modeLabels[mode]}</span>`;
+    const pvpBadge = c.pvp_enabled
+      ? '<span class="world-class-pill world-mode-pill mode-pvp">PVP</span>'
+      : '';
+    return modeBadge + pvpBadge;
+  }
+
   function classificationMarkup(world, server = false) {
     const c=worldClassification(world,server);
-    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode==='hardcore'?'HARD MODE':c.game_mode.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.host_type.toUpperCase())}</span>${c.pvp_enabled?'<span class="world-class-pill">PVP</span>':''}`;
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span>${gameModeBadgesMarkup(world,server)}<span class="world-class-pill">${escapeHtml(c.host_type.toUpperCase())}</span>`;
   }
 
   function placardFrontClassificationMarkup(world, server = false) {
     const c=worldClassification(world,server);
     // Host type already owns the full-width banner. Keep the front to two
     // useful facts and leave the complete taxonomy on the details face.
-    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span><span class="world-class-pill">${escapeHtml(c.game_mode==='hardcore'?'HARD MODE':c.game_mode.toUpperCase())}</span>${c.pvp_enabled?'<span class="world-class-pill">PVP</span>':''}`;
+    return `<span class="world-class-pill">${escapeHtml(c.content_type.toUpperCase())}</span>${gameModeBadgesMarkup(world,server)}`;
   }
 
   function worldMenuButton(worldId, server = false) {
@@ -4077,7 +4119,7 @@
     const formatDate=(row)=>{const raw=row.published_at||row.added_at;if(!raw)return row.kind==='baseline'||row.kind==='official'?'Protected application build':'Unknown';const date=new Date(typeof raw==='number'?raw*1000:raw);return Number.isNaN(date.getTime())?'Unknown':date.toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'});};
     const deletable=(row)=>!['baseline','official'].includes(String(row.id));
     const renameable=(row)=>!isRune?deletable(row):String(row.id).startsWith('experimental-');
-    const manager=showModal(`<div class="modal-header"><div><div class="eyebrow">${isRune?'RuneSchema':'UE4SS'} · Local Build Repository</div><h2>${title}</h2><p>Choose the exact build this World should materialize. Local copies remain available for rollback until you delete them.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body runtime-build-manager" data-runtime-build-manager="${kind}"><div class="runtime-build-toolbar"><div class="header-actions">${isRune?`<button class="btn ghost" data-runtime-build-update-official ${running?'disabled':''}>Update Official</button>`:''}<button class="btn primary" data-runtime-build-fetch ${running?'disabled':''}>Fetch Latest Experimental</button><button class="btn ghost" data-runtime-build-import ${running?'disabled':''}>Import ZIP</button></div><div class="header-actions"><label class="checkbox-row compact"><input id="runtime-build-select-all-${kind}" type="checkbox" data-runtime-build-select-all/> Select local copies</label><button class="btn danger" data-runtime-build-delete-selected disabled>Delete Selected</button></div></div><div class="runtime-build-list" role="table" aria-label="${title}"><div class="runtime-build-row runtime-build-head" role="row"><span></span><strong>Version</strong><strong>Nickname</strong><strong>Publish / stored date</strong><strong>Size</strong><strong>Actions</strong></div>${rows.map((row,rowIndex)=>{const id=String(row.id||'');const active=id===selectedId;return `<div class="runtime-build-row ${active?'active':''}" role="row" data-runtime-build-row="${escapeHtml(id)}"><span>${deletable(row)?`<input id="runtime-build-check-${kind}-${rowIndex}" type="checkbox" data-runtime-build-check="${escapeHtml(id)}" aria-label="Select ${escapeHtml(row.label||id)}"/>`:'<span class="runtime-build-lock" title="Protected build">◆</span>'}</span><span><strong>${escapeHtml(row.version||row.label||id)}</strong><small>${escapeHtml(String(row.kind||'stored').toUpperCase())}</small></span><span><b>${escapeHtml(row.label||row.name||id)}</b>${active?'<small class="runtime-build-active">ACTIVE FOR THIS WORLD</small>':''}</span><span>${escapeHtml(formatDate(row))}</span><span>${row.size?escapeHtml(formatBytes(row.size)):'—'}</span><span class="runtime-build-actions"><button class="btn ${active?'ghost':'primary'} compact-btn" data-runtime-build-apply="${escapeHtml(id)}" ${running?'disabled':''}>${active?'Reapply':'Apply'}</button>${renameable(row)?`<button class="btn ghost compact-btn" data-runtime-build-rename="${escapeHtml(id)}">Rename</button>`:''}</span></div>`;}).join('')}</div><div class="identity-box"><strong>Safe local rollback</strong><p>${isRune?'Official is protected. Experimental releases from gh0sted5456-us/RuneSchema and named custom flavors remain distinct.':'The bundled Baseline is protected. Every downloaded Experimental or imported UE4SS ZIP keeps its own local identity.'} Builds selected by any World cannot be deleted until those Worlds switch versions.</p></div></div><div class="modal-footer"><span>${rows.length} build${rows.length===1?'':'s'} · ${rows.filter(deletable).length} local ${rows.filter(deletable).length===1?'copy':'copies'}</span><button class="btn ghost" data-close-modal>Close</button></div>`,{title,width:1180,height:780});
+    const manager=showModal(`<div class="modal-header"><div><div class="eyebrow">${isRune?'RuneSchema':'UE4SS'} · Local Build Repository</div><h2>${title}</h2><p>Choose the exact server build and inspect which archive entries its clients receive.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body runtime-build-manager" data-runtime-build-manager="${kind}"><div class="runtime-build-toolbar"><div class="header-actions">${isRune?`<button class="btn ghost" data-runtime-build-update-official ${running?'disabled':''}>Update Official</button>`:''}<button class="btn primary" data-runtime-build-fetch ${running?'disabled':''}>Fetch Latest Experimental</button><button class="btn ghost" data-runtime-build-import ${running?'disabled':''}>Import ZIP</button></div><div class="header-actions"><label class="checkbox-row compact"><input id="runtime-build-select-all-${kind}" type="checkbox" data-runtime-build-select-all/> Select local copies</label><button class="btn danger" data-runtime-build-delete-selected disabled>Delete Selected</button></div></div><div class="runtime-build-list" role="table" aria-label="${title}"><div class="runtime-build-row runtime-build-head" role="row"><span></span><strong>Version</strong><strong>Nickname</strong><strong>Publish / stored date</strong><strong>Size</strong><strong>Actions</strong></div>${rows.map((row,rowIndex)=>{const id=String(row.id||'');const active=id===selectedId;return `<div class="runtime-build-row ${active?'active':''}" role="row" data-runtime-build-row="${escapeHtml(id)}"><span>${deletable(row)?`<input id="runtime-build-check-${kind}-${rowIndex}" type="checkbox" data-runtime-build-check="${escapeHtml(id)}" aria-label="Select ${escapeHtml(row.label||id)}"/>`:'<span class="runtime-build-lock" title="Protected build">◆</span>'}</span><span><strong>${escapeHtml(row.version||row.label||id)}</strong><small>${escapeHtml(String(row.kind||'stored').toUpperCase())}</small></span><span><b>${escapeHtml(row.label||row.name||id)}</b>${active?'<small class="runtime-build-active">ACTIVE FOR THIS WORLD</small>':''}</span><span>${escapeHtml(formatDate(row))}</span><span>${row.size?escapeHtml(formatBytes(row.size)):'—'}</span><span class="runtime-build-actions"><button class="btn ${active?'ghost':'primary'} compact-btn" data-runtime-build-apply="${escapeHtml(id)}" ${running?'disabled':''}>${active?'Reapply':'Apply'}</button><button class="btn ghost compact-btn" data-runtime-client-files="${escapeHtml(id)}">Client Files</button>${renameable(row)?`<button class="btn ghost compact-btn" data-runtime-build-rename="${escapeHtml(id)}">Rename</button>`:''}</span></div>`;}).join('')}</div><div class="identity-box"><strong>Archive-aware client runtime</strong><p>Every ZIP entry is inventoried by path, size, SHA-256, ABI, platform and scope. Native Linux files and the dedicated-server <code>version.dll</code> loader are locked to server-only; eligible Win64 entries can be selected per World.</p></div></div><div class="modal-footer"><span>${rows.length} build${rows.length===1?'':'s'} · ${rows.filter(deletable).length} local ${rows.filter(deletable).length===1?'copy':'copies'}</span><button class="btn ghost" data-close-modal>Close</button></div>`,{title,width:1180,height:780});
     const checked=()=>[...manager.querySelectorAll('[data-runtime-build-check]:checked')].map((node)=>node.dataset.runtimeBuildCheck);
     // Stored archives are independent from the running server process.  The
     // backend already blocks the exact build selected by any World, so do not
@@ -4086,6 +4128,17 @@
     manager.querySelectorAll('[data-runtime-build-check]').forEach((input)=>input.addEventListener('change',updateDelete));
     manager.querySelector('[data-runtime-build-select-all]')?.addEventListener('change',(event)=>{manager.querySelectorAll('[data-runtime-build-check]').forEach((input)=>{input.checked=event.currentTarget.checked;});updateDelete();});
     const reopen=()=>{closeModal();render();setTimeout(()=>openRuntimeBuildManager(kind),0);};
+    manager.querySelectorAll('[data-runtime-client-files]').forEach((button)=>button.addEventListener('click',async()=>{
+      const buildId=button.dataset.runtimeClientFiles;button.disabled=true;
+      try{
+        const response=await api.invoke('server.world.runtime_client_selection.get',{id:world.id,kind,build_id:buildId});
+        const inventory=response.inventory||{},files=inventory.files||[];closeModal();
+        const selector=showModal(`<div class="modal-header"><div><div class="eyebrow">${isRune?'RuneSchema':'UE4SS'} · Client Push Selection</div><h2>${escapeHtml(rows.find(row=>String(row.id)===buildId)?.label||buildId)}</h2><p>Choose the Win64 archive entries this World pushes to Windows and Proton clients.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body runtime-file-selector"><div class="runtime-file-selector-toolbar"><label class="checkbox-row compact"><input type="checkbox" data-runtime-files-all/> Select every eligible entry</label><span>${files.length} identified · SHA-256 ${escapeHtml(String(inventory.sha256||'').slice(0,16))}</span></div><div class="runtime-file-selector-list">${files.map((file,index)=>`<label class="runtime-file-selector-row ${file.eligible?'':'locked'}"><input type="checkbox" data-runtime-file-target="${escapeHtml(file.client_path||'')}" ${file.selected?'checked':''} ${file.eligible?'':'disabled'}/><span><strong>${escapeHtml(file.archive_path||'Archive entry')}</strong><small>${escapeHtml(file.client_path||file.locked_reason||'Server only')} · ${formatBytes(file.size||0)} · SHA-256 ${escapeHtml(String(file.sha256||'').slice(0,12))}</small></span><span><b>${escapeHtml(String(file.platform||'').toUpperCase())}</b><small>${escapeHtml(file.scope||'')}</small></span></label>`).join('')}</div><div class="identity-box"><strong>Selection is profile-scoped</strong><p>Changing this list does not alter the server archive. The next publication rebuilds the client payload and cleanup ledger from only these entries.</p></div></div><div class="modal-footer"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" data-save-runtime-client-files>Save Client Selection</button></div>`,{title:'Client Runtime Files',width:1080,height:800});
+        const eligible=()=>[...selector.querySelectorAll('[data-runtime-file-target]:not(:disabled)')];
+        selector.querySelector('[data-runtime-files-all]')?.addEventListener('change',(event)=>eligible().forEach(input=>{input.checked=event.currentTarget.checked;}));
+        selector.querySelector('[data-save-runtime-client-files]')?.addEventListener('click',async(event)=>{event.currentTarget.disabled=true;try{const targets=eligible().filter(input=>input.checked).map(input=>input.dataset.runtimeFileTarget);await api.invoke('server.world.runtime_client_selection.set',{id:world.id,kind,build_id:buildId,targets});toast('Client runtime selection saved',`${targets.length} Win64 archive entr${targets.length===1?'y':'ies'} will be published for this World.`,'success');closeModal();render();}catch(error){event.currentTarget.disabled=false;toast('Client selection failed',error.message,'error');}});
+      }catch(error){button.disabled=false;toast('Archive inventory unavailable',error.message,'error');}
+    }));
     manager.querySelectorAll('[data-runtime-build-apply]').forEach((button)=>button.addEventListener('click',async()=>{button.disabled=true;try{const method=isRune?'server.world.runeschema_flavors.select':'server.world.ue4ss_version.select';const key=isRune?'flavor_id':'version_id';const response=await api.invoke(method,{id:world.id,[key]:button.dataset.runtimeBuildApply});if(response.state)setData(response.state);toast(`${isRune?'RuneSchema':'UE4SS'} build applied`,response.applied?.message||'The selected build is ready.','success');closeModal();render();}catch(error){button.disabled=false;toast('Build could not be applied',error.message,'error');}}));
     manager.querySelector('[data-runtime-build-fetch]')?.addEventListener('click',async(event)=>{const button=event.currentTarget;button.disabled=true;button.textContent='Fetching…';try{const method=isRune?'application.runeschema_repository.fetch_experimental':'application.ue4ss_repository.fetch_experimental';const response=await api.invoke(method,{});if(response.state)setData(response.state);toast('Experimental build stored','The local repository now retains this exact release.','success');reopen();}catch(error){button.disabled=false;button.textContent='Fetch Latest Experimental';toast('Experimental fetch failed',error.message,'error');}});
     manager.querySelector('[data-runtime-build-update-official]')?.addEventListener('click',async(event)=>{const button=event.currentTarget;button.disabled=true;button.textContent='Updating…';try{const updated=await api.invoke('server.install.runeschema_update',{variant:'official'});if(updated.state)setData(updated.state);const selected=await api.invoke('server.world.runeschema_flavors.select',{id:world.id,flavor_id:'official'});if(selected.state)setData(selected.state);toast('Official RuneSchema updated','The active World now targets the refreshed Official build.','success');reopen();}catch(error){button.disabled=false;button.textContent='Update Official';toast('Official update failed',error.message,'error');}});
@@ -4653,6 +4706,7 @@
 
   function renderSettings() {
     const a = state.data?.application || {};
+    const windowPrefs = a.window_preferences || {};
     const p = player();
     const serverEnabled = !!a.server_mode_enabled;
     const integrations = a.integrations || {};
@@ -4661,7 +4715,7 @@
     const serverInstall = a.server_install || {};
     const serverLayout = state.data?.server?.layout || {};
     const runtimePrereqs = state.data?.server?.runtime_prerequisites || {};
-    const nativeLinuxServer = false;
+    const nativeLinuxServer = !!state.adminStatus?.linux && (serverInstall.linux_server_mode || 'native') !== 'proton-win64';
     const clientLayout = state.data?.client?.layout || {};
     const benchmarkCfg = a.server_network_benchmark || {};
     const benchmark = benchmarkCfg.last_result || {};
@@ -4807,6 +4861,11 @@
       const computerMode = String(computerProfile.mode || 'automatic');
       const hardwareReady = !!(computerHardware.cpu || computerHardware.ram_total_gb || computerHardware.cpu_cores);
       content = `
+        <section class="settings-section"><div class="panel-header"><div><h2>Window &amp; Handheld</h2><span class="panel-subtitle">Choose the startup canvas and an optional controller-friendly title-card layer.</span></div><span class="status-pill unknown">HANDHELD EXPERIMENTAL</span></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Window size</strong><span>Choose the launcher window size applied now and retained for future starts. Remember mode continues from the last size and position; Default mode restores this exact size each time.</span></div><div class="window-preference-grid"><label><small>Startup behavior</small><select class="select" id="window-startup-mode"><option value="remember" ${(windowPrefs.startup_mode||'remember')==='remember'?'selected':''}>Remember size and position</option><option value="default" ${windowPrefs.startup_mode==='default'?'selected':''}>Always use selected size</option><option value="maximized" ${windowPrefs.startup_mode==='maximized'?'selected':''}>Start maximized</option></select></label><label><small>Launcher resolution</small><select class="select" id="window-resolution">${[[1024,768,'1024 × 768'],[1280,720,'1280 × 720'],[1280,800,'1280 × 800 · handheld'],[1366,768,'1366 × 768'],[1440,900,'1440 × 900'],[1600,900,'1600 × 900'],[1920,1080,'1920 × 1080'],[2560,1440,'2560 × 1440']].map(([width,height,label])=>`<option value="${width}x${height}" ${Number(windowPrefs.default_width||1440)===width&&Number(windowPrefs.default_height||900)===height?'selected':''}>${label}</option>`).join('')}<option value="custom" ${![[1024,768],[1280,720],[1280,800],[1366,768],[1440,900],[1600,900],[1920,1080],[2560,1440]].some(([width,height])=>Number(windowPrefs.default_width||1440)===width&&Number(windowPrefs.default_height||900)===height)?'selected':''}>Custom…</option></select></label><label><small>Interface scale</small><select class="select" id="window-ui-scale">${[[.85,'85% · compact'],[1,'100%'],[1.15,'115%'],[1.25,'125% · handheld']].map(([value,label])=>`<option value="${value}" ${Math.abs(Number(windowPrefs.ui_scale||1)-value)<.01?'selected':''}>${label}</option>`).join('')}</select></label></div><div class="window-custom-size" id="window-custom-size" ${[[1024,768],[1280,720],[1280,800],[1366,768],[1440,900],[1600,900],[1920,1080],[2560,1440]].some(([width,height])=>Number(windowPrefs.default_width||1440)===width&&Number(windowPrefs.default_height||900)===height)?'hidden':''}><label><small>Custom width</small><input class="field" id="window-custom-width" type="number" min="960" max="3840" step="1" value="${escapeHtml(windowPrefs.default_width||1440)}" /></label><span>×</span><label><small>Custom height</small><input class="field" id="window-custom-height" type="number" min="640" max="2160" step="1" value="${escapeHtml(windowPrefs.default_height||900)}" /></label><button class="btn ghost" id="window-use-current-size">Use Current Size</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>SteamOS / Windows handheld title cards</strong><span>Enlarges the primary app navigation into focusable two-column cards. This uses the same application and data; it is not a separate binary.</span></div><button class="toggle ${windowPrefs.handheld_mode?'on':''}" id="toggle-handheld-mode" aria-label="Experimental handheld title cards"></button></div>
+          <div class="server-install-actions"><button class="btn primary" id="save-window-preferences">Apply Window Settings</button></div>
+        </section>
         <section class="settings-section"><h2>Application</h2>
           <div class="settings-row"><div class="settings-copy"><strong>Theme</strong><span>Applies across the launcher desktop, internal windows, Monaco, guided setup, and placards.</span></div><div class="theme-grid">${[['dark-fantasy','Dark','Dark graphite and antique gold'],['light','Light','Clean daylight UI'],['desert-script','Desert Script','Papyrus, indigo ink and sun-baked clay'],['eastern','Eastern','Sumi ink, vermilion and traditional Japanese screens']].map(([id,name,desc]) => `<button class="theme-card theme-preview-${id} ${(a.theme === id || (id === 'dark-fantasy' && !['light','desert-script','eastern'].includes(a.theme))) ? 'active' : ''}" data-theme-choice="${id}"><strong>${name}</strong><span>${desc}</span></button>`).join('')}</div></div>
           <div class="settings-row glass-theme-setting"><div class="settings-copy"><strong>Cathedral stained glass</strong><span>Layer genuine leaded-glass artwork, jewel-toned transmitted light, and transparent panels over the selected theme.</span></div><button class="toggle ${a.glass_theme?'on':''}" id="toggle-glass-theme" role="switch" aria-checked="${a.glass_theme?'true':'false'}" aria-label="Cathedral stained glass"></button></div>
@@ -4962,7 +5021,7 @@
           </div></div>
         </section>`;
     } else if (tab === 'server') {
-      const showLinuxSettings=false;
+      const showLinuxSettings=!!state.adminStatus?.showLinuxSettings;
       content = `
         <section class="settings-section"><h2>Server Hosting</h2>
           ${serverEnabled ? `<div class="settings-row"><div class="settings-copy"><strong>Hosted Worlds</strong><span>Open the server manager for World activation, mods, save/config maintenance, health, and runtime.</span></div><button class="btn ghost" id="go-servers">Open Hosted Worlds</button></div>` : ''}
@@ -4972,6 +5031,7 @@
           <div class="settings-row"><div class="settings-copy"><strong>Server Launcher</strong><span>${showLinuxSettings?'Select the native Linux launcher or an intentional Windows server executable under Wine/Proton. Full Setup fills this automatically.':'Select RSDragonwilds.exe or RSDragonwildsServer.exe. Full Setup fills this automatically.'}</span></div><div class="path-field"><input class="field" id="server-install-exe" value="${escapeHtml(serverInstall.server_exe || '')}" placeholder="${showLinuxSettings?'RSDragonwildsServer.sh or RSDragonwilds.exe':'RSDragonwilds.exe'}" /><button class="btn ghost" id="pick-server-install-exe">Browse</button></div></div>
           ${showLinuxSettings?`<div class="settings-row"><div class="settings-copy"><strong>Linux Server Runtime</strong><span>Native Linux is the stable server path. Choose Proton/Wine only when you intentionally run the Windows dedicated server so its original Win64 UE4SS and RuneSchema DLLs can load.</span></div><select class="select" id="server-linux-mode"><option value="native" ${(serverInstall.linux_server_mode || 'native') !== 'proton-win64' ? 'selected' : ''}>Native Linux server</option><option value="proton-win64" ${serverInstall.linux_server_mode === 'proton-win64' ? 'selected' : ''}>Windows server through Proton/Wine</option></select></div>
           <details class="privacy-policy-box" ${serverInstall.linux_server_mode === 'proton-win64' ? 'open' : ''}><summary><strong>Proton / Wine compatibility</strong><span>${escapeHtml(serverInstall.proton_executable || 'Auto-detect from PATH')}</span></summary><div style="padding:10px;display:grid;gap:10px"><label><small>Proton or Wine executable</small><input class="field" id="server-proton-executable" value="${escapeHtml(serverInstall.proton_executable || '')}" placeholder="/path/to/proton, wine64, or wine" /></label><label><small>Compatibility prefix (optional)</small><input class="field" id="server-proton-prefix" value="${escapeHtml(serverInstall.proton_prefix || '')}" placeholder="STEAM_COMPAT_DATA_PATH or WINEPREFIX" /></label><label><small>Native DLL overrides</small><input class="field" id="server-wine-dll-overrides" value="${escapeHtml(serverInstall.wine_dll_overrides || 'dwmapi=n,b;version=n,b')}" /></label><div class="identity-box" style="margin:0"><strong>No binary conversion</strong><p>Windows and Linux-Proton clients receive the same signed/hash-verified Win64 PE runtime variant. Native Linux server processes never receive those DLLs.</p></div></div></details>`:''}
+          ${showLinuxSettings?`<div class="runtime-scope-cards"><article><span class="status-pill unknown">SERVER ONLY · EXPERIMENTAL</span><strong>Native Linux UE4SS + RuneSchema</strong><p>Reserved for the native dedicated server under <code>Binaries/Linux</code>. These files are tagged <code>linux-x86_64</code>, never enter a client manifest, and require an explicitly selected native build source.</p><label><small>Native UE4SS source / archive URL</small><input class="field" id="server-native-ue4ss-source" value="${escapeHtml(serverInstall.native_linux_runtime?.ue4ss_source_url||'')}" placeholder="Optional native Linux release or archive"/></label><label><small>Native RuneSchema source / archive URL</small><input class="field" id="server-native-runeschema-source" value="${escapeHtml(serverInstall.native_linux_runtime?.runeschema_source_url||'')}" placeholder="Optional native Linux release or archive"/></label></article><article><span class="status-pill online">CLIENT REQUIRED · VERIFIED ABI</span><strong>Windows + Proton client runtime</strong><p>Sync always publishes the separate Win64 UE4SS/RuneSchema reserve to playable Windows and Proton clients. Native server files cannot cross this boundary.</p><code>win64 · windows-pe-x64 · windows, linux-proton</code></article></div>`:''}
           <div class="settings-row"><div class="settings-copy"><strong>Player ID (Owner)</strong><span>Machine-level Dragonwilds server identity. Copy it from Dragonwilds → Settings or detect the authenticated local ID from the game log. It is written into DedicatedServer.ini; SteamCMD downloads anonymously.</span></div><div class="path-field"><input class="field" id="server-owner-id" value="${escapeHtml(serverInstall.owner_id || '')}" placeholder="Dragonwilds Player ID" /><button class="btn ghost" id="detect-server-owner-id">Detect from Game</button></div></div>
           <details class="privacy-policy-box"><summary><strong>Advanced SteamCMD location</strong><span>${escapeHtml(serverInstall.steamcmd_dir || 'Auto beside server directory')}</span></summary><div style="padding:10px"><div class="path-field"><input class="field" id="server-steamcmd-dir" value="${escapeHtml(serverInstall.steamcmd_dir || '')}" placeholder="Auto: sibling steamcmd folder" /><button class="btn ghost" id="pick-server-steamcmd-dir">Browse</button></div></div></details>
           <div class="server-install-actions"><button class="btn ghost" id="save-server-install-paths">Save Server Settings</button><button class="btn primary" id="settings-full-server-setup">Full Setup</button><button class="btn ghost" id="settings-configure-server-firewall">Configure Firewall</button><button class="btn ghost" id="settings-update-server">Update Server</button><button class="btn ghost" id="settings-update-restart-server">Update &amp; Restart</button></div>
@@ -5148,6 +5208,10 @@
     const theme=['dark-fantasy','light','desert-script','eastern','fantasy','high-contrast'].includes(requestedTheme)?requestedTheme:'dark-fantasy';
     document.body.dataset.theme = theme;
     document.body.dataset.glass = state.data?.application?.glass_theme ? '1' : '0';
+    const windowPrefs=state.data?.application?.window_preferences||{};
+    document.body.dataset.handheldMode = windowPrefs.handheld_mode ? '1' : '0';
+    const windowPreferenceSignature=JSON.stringify(windowPrefs);
+    if(windowPreferenceSignature!==appliedWindowPreferenceSignature){appliedWindowPreferenceSignature=windowPreferenceSignature;window.dragonwilds.windowPreferences?.(windowPrefs).catch(()=>{});}
     document.body.dataset.showTips = state.data?.application?.advanced?.show_tips ? '1' : '0';
     document.body.dataset.hostingFocus = hostingFocusActive() ? '1' : '0';
     document.body.dataset.hostingFocusBanner = hostingFocusMarkup() ? '1' : '0';
@@ -6581,7 +6645,7 @@
     root.querySelector('#pick-server-install-exe')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickExecutable(); if (value) root.querySelector('#server-install-exe').value = value; });
     root.querySelector('#pick-server-steamcmd-dir')?.addEventListener('click', async () => { const value = await window.dragonwilds.pickDirectory(); if (value) root.querySelector('#server-steamcmd-dir').value = value; });
     root.querySelector('#detect-server-owner-id')?.addEventListener('click', async () => { try { const result=await api.invoke('setup.owner_id.detect',{}); if(!result.ok)throw new Error(result.error||'Player ID was not found.'); root.querySelector('#server-owner-id').value=result.owner_id; toast('Player ID detected', `${result.masked} · ${result.source}`, 'success'); } catch(error){toast('Player ID not detected',error.message,'error');} });
-    const saveServerInstallPaths = async () => { const next = await api.invoke('application.update', { server_install: { install_dir: root.querySelector('#server-install-dir')?.value.trim() || '', server_exe: root.querySelector('#server-install-exe')?.value.trim() || '', steamcmd_dir: root.querySelector('#server-steamcmd-dir')?.value.trim() || '', owner_id: root.querySelector('#server-owner-id')?.value.trim() || '', ue4ss_source_url: root.querySelector('#server-ue4ss-source-url')?.value.trim() || '' } }); setData(next); return next; };
+    const saveServerInstallPaths = async () => { const next = await api.invoke('application.update', { server_install: { install_dir: root.querySelector('#server-install-dir')?.value.trim() || '', server_exe: root.querySelector('#server-install-exe')?.value.trim() || '', steamcmd_dir: root.querySelector('#server-steamcmd-dir')?.value.trim() || '', owner_id: root.querySelector('#server-owner-id')?.value.trim() || '', linux_server_mode: root.querySelector('#server-linux-mode')?.value || state.data.application.server_install?.linux_server_mode || 'native', proton_executable: root.querySelector('#server-proton-executable')?.value.trim() || '', proton_prefix: root.querySelector('#server-proton-prefix')?.value.trim() || '', wine_dll_overrides: root.querySelector('#server-wine-dll-overrides')?.value.trim() || 'dwmapi=n,b;version=n,b', ue4ss_source_url: root.querySelector('#server-ue4ss-source-url')?.value.trim() || '', native_linux_runtime: { ue4ss_source_url: root.querySelector('#server-native-ue4ss-source')?.value.trim() || '', runeschema_source_url: root.querySelector('#server-native-runeschema-source')?.value.trim() || '' } } }); setData(next); return next; };
     root.querySelector('#save-server-install-paths')?.addEventListener('click', async () => {
       try {
         await saveServerInstallPaths();
@@ -6696,6 +6760,19 @@
     root.querySelector('#toggle-close-to-tray')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
     root.querySelector('#toggle-start-minimized')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
     root.querySelector('#toggle-sync-console-on-host-start')?.addEventListener('click', async (e) => { e.currentTarget.classList.toggle('on'); await saveBackgroundSettings(); });
+    root.querySelector('#toggle-handheld-mode')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
+    const syncCustomWindowSize=()=>{const custom=root.querySelector('#window-custom-size');if(custom)custom.hidden=root.querySelector('#window-resolution')?.value!=='custom';};
+    root.querySelector('#window-resolution')?.addEventListener('change',syncCustomWindowSize);
+    root.querySelector('#window-use-current-size')?.addEventListener('click',async()=>{try{const current=await window.dragonwilds.windowState?.();if(!current?.width||!current?.height)throw new Error('The current window size is unavailable.');root.querySelector('#window-resolution').value='custom';root.querySelector('#window-custom-width').value=String(current.width);root.querySelector('#window-custom-height').value=String(current.height);syncCustomWindowSize();}catch(error){toast('Could not read current size',error.message,'error');}});
+    root.querySelector('#save-window-preferences')?.addEventListener('click',async()=>{
+      const resolution=String(root.querySelector('#window-resolution')?.value||'1440x900');
+      const preset=resolution==='custom'?[]:resolution.split('x').map(Number);
+      const width=Math.max(960,Math.min(3840,Number(preset[0]||root.querySelector('#window-custom-width')?.value||1440)));
+      const height=Math.max(640,Math.min(2160,Number(preset[1]||root.querySelector('#window-custom-height')?.value||900)));
+      const next={startup_mode:root.querySelector('#window-startup-mode')?.value||'remember',default_width:width,default_height:height,ui_scale:Number(root.querySelector('#window-ui-scale')?.value||1),handheld_mode:!!root.querySelector('#toggle-handheld-mode')?.classList.contains('on')};
+      try{await updateApplication({window_preferences:next});const applied=await window.dragonwilds.windowPreferences?.(next);toast('Window settings saved',`${applied?.width||width} × ${applied?.height||height} will persist across restarts.${next.handheld_mode?' Experimental handheld title cards are active.':''}`,'success');}
+      catch(error){toast('Could not apply window settings',error.message,'error');}
+    });
     root.querySelector('#toggle-hardware-acceleration')?.addEventListener('click',(event)=>event.currentTarget.classList.toggle('on'));
     root.querySelector('#save-performance-settings')?.addEventListener('click',async()=>{try{await updateApplication({performance:{hardware_acceleration:root.querySelector('#toggle-hardware-acceleration')?.classList.contains('on')!==false,renderer_memory_mb:Number(root.querySelector('#renderer-memory-mb')?.value||0)}});toast('Performance settings saved','Restart Dragonwilds Sync to apply the GPU and renderer-memory startup settings.','success');}catch(error){toast('Could not save performance settings',error.message,'error');}});
     root.querySelector('#analyze-computer-profile')?.addEventListener('click',async()=>{try{const response=await api.invoke('server.hardware.refresh',{});if(response.state)setData(response.state);else render();toast('Computer analysis complete','The recommendation now reflects this machine’s processor and memory headroom.','success');}catch(error){toast('Computer analysis failed',error.message,'error');}});

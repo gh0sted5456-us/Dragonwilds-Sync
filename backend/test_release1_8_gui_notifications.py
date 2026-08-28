@@ -48,10 +48,10 @@ def main() -> None:
     assert "row?.remove();syncNotificationCenterEmptyState();applyFilter()" in renderer
     assert 'data-notification-filter="warnings"' in renderer and ">Dismiss All<" in renderer
     assert "api.invoke('notifications.dismiss',{id}).catch" in renderer
-    # Version 2.0.0 is deliberately Windows-only. Platform telemetry may remain
-    # defensive internally, but it must never expose the retired Linux UI.
-    assert "const showLinuxSettings=false" in renderer
-    assert "const nativeLinuxServer = false" in renderer
+    # Platform telemetry controls the Linux settings surface. Native Linux
+    # server mode stays separate from the Windows/Proton client runtime.
+    assert "const showLinuxSettings=!!state.adminStatus?.showLinuxSettings" in renderer
+    assert "const nativeLinuxServer = !!state.adminStatus?.linux" in renderer
     assert "runtimePlatformStatus()" in main_source
     assert "min-width:0!important" in styles and "repeat(3,minmax(0,1fr))" in styles
     assert "if(payload.type==='click')" in renderer

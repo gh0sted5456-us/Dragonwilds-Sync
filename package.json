@@ -11,7 +11,7 @@
   "scripts": {
     "start": "npm run check:runtime && npm run prepare:monaco && electron .",
     "headless": "python backend/dragonwilds_service.py --headless",
-    "check:runtime": "node scripts/check_node_runtime.cjs && node scripts/check_raster_assets.cjs && node scripts/check_sync_avatar_contract.cjs",
+    "check:runtime": "node scripts/check_node_runtime.cjs && node scripts/check_raster_assets.cjs && node scripts/check_sync_avatar_contract.cjs && node scripts/check_linux_handheld_contract.cjs",
     "test:backend": "node scripts/run_backend_tests.cjs",
     "test:systems:list": "node scripts/run_system_tests.cjs --list",
     "test:systems:source": "node scripts/run_system_tests.cjs --tier source",

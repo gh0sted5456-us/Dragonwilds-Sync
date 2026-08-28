@@ -20,8 +20,17 @@ def main():
     assert re.fullmatch(r"3\.\d+\.\d+", version)
     assert package_lock["version"] == version
     assert package_lock["packages"][""]["version"] == version
-    assert f"version: '{version}'" in release_meta
-    assert changelog["releases"][0]["version"] == version
+    assert f"version: '{version}'" in release_meta or f'"version": "{version}"' in release_meta
+    releases = changelog["releases"]
+    assert len(releases) == 1
+    assert changelog.get("name") == "V3"
+    assert releases[0].get("title") == "V3"
+    assert any(str(release.get("version", "")) == version for release in releases)
+    assert not list((ROOT / "docs" / "archive").glob("*_CHANGELOG.md"))
+    newest = releases[0]
+    if str(newest.get("version", "")) != version:
+        assert newest.get("status") == "testing"
+        assert tuple(map(int, str(newest["version"]).split("."))) > tuple(map(int, version.split(".")))
     assert package["build"]["linux"]["target"] == ["AppImage"]
     assert package["build"]["win"]["target"] == ["portable"]
 

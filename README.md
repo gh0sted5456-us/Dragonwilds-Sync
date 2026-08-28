@@ -7,7 +7,7 @@ Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape:
 - `main` is the stable/default branch.
 - `testing-branch` is the staged implementation, verification, and package-candidate branch.
 - The current stable source and packaged application metadata are `3.0.5`.
-- [`docs/changelog.json`](docs/changelog.json) is the canonical release history; the launcher mirrors its current entry in `renderer/release-meta.js` for offline display.
+- [`docs/changelog.json`](docs/changelog.json) is the single canonical V3 changelog; the launcher mirrors that same V3 record in `renderer/release-meta.js` for offline display.
 - A historical green result applies only to the exact commit and artifact recorded with it.
 
 A `testing-branch` candidate is promoted to `main` only after its applicable automated and package workflows pass. Real Dragonwilds, Steam/SteamCMD, cross-machine Sync, Windows packaging, Linux/Proton, router, and production Cloudflare behavior remain governed by the physical gates in [Testing](docs/TESTING.md).
@@ -68,7 +68,7 @@ A build is not verified merely because an executable exists. Use the exact gates
 - [Architecture](PROJECT_STATE/ARCHITECTURE.md)
 - [Remaining acceptance](PROJECT_STATE/ACCEPTANCE_REMAINING.md)
 
-Historical Alpha, RC, Release 1.x, V2/V3 migration, AI handoff, and phase-verification documents are preserved under `docs/archive/` and `PROJECT_STATE/archive/`. They are evidence and history, not current authority.
+Historical Alpha, RC, Release 1.x, V2/V3 migration, AI handoff, and phase-verification documents remain under `docs/archive/` and `PROJECT_STATE/archive/` as evidence. Their fragmented changelog files were consolidated into the canonical V3 record.
 
 ## Safety invariants
 

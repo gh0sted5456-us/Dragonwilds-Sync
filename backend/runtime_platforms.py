@@ -228,12 +228,14 @@ def runtime_variant_catalog() -> dict:
             "game_abi": "windows-pe-x64",
             "runtime_family": "ue4ss-win64",
             "ue4ss": True, "runeschema": True,
+            "runtime_role": "client_required", "distribution": "sync_manifest",
         },
         LINUX_PROTON: {
             "label": "Linux via Proton/Wine",
             "game_abi": "windows-pe-x64",
             "runtime_family": "ue4ss-win64",
             "ue4ss": True, "runeschema": True,
+            "runtime_role": "client_required", "distribution": "sync_manifest",
             "launch_guidance": 'WINEDLLOVERRIDES="dwmapi=n,b" %command%',
             "note": "Uses the original Win64 PE DLLs inside Proton; no DLL conversion is performed.",
         },
@@ -242,7 +244,27 @@ def runtime_variant_catalog() -> dict:
             "game_abi": "linux-elf-x64",
             "runtime_family": "none",
             "ue4ss": False, "runeschema": False,
+            "runtime_role": "server_only", "distribution": "never",
             "note": "Win64 UE4SS and RuneSchema DLL injection is not offered to a native Linux ABI.",
+        },
+    }
+
+
+def dedicated_runtime_contract(native_linux: bool = False) -> dict:
+    """Return the immutable host/client runtime boundary used by Sync manifests."""
+    return {
+        "server": {
+            "platform": "linux-x86_64" if native_linux else "win64",
+            "game_abi": "linux-elf-x64" if native_linux else "windows-pe-x64",
+            "scope": "server_only",
+            "distribution": "never",
+        },
+        "clients": {
+            "platform": "win64",
+            "game_abi": "windows-pe-x64",
+            "scope": "client_required",
+            "distribution": "sync_manifest",
+            "compatible_clients": list(WIN64_RUNTIME_PLATFORMS),
         },
     }
 

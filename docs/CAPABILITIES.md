@@ -7,6 +7,7 @@ This is the current source-level capability contract for `main`. A capability is
 - Full desktop mode and profile-focused Quick/Minimal mode use the same backend authority.
 - Single-instance handling, tray/background behavior, managed dialogs, detached application windows, placard windows, safe-graphics recovery, and Windows shortcuts are provided by Electron.
 - Dark/light themes, responsive layouts, cached navigation, bounded prewarming, localized loading states, notifications, Help, and Settings are renderer-owned presentation concerns.
+- Settings persist default window resolution, startup behavior, and interface scale. An opt-in experimental SteamOS/Windows handheld layer turns the same Appy navigation into large focusable title cards without creating a second application or data model.
 - The game-icon Dragonwilds Appy combines World Management and Dedicated hosting; Characters, Mods, RSDW-L, Sync, Helpy, and Settings retain distinct navigation entries and packaged icons.
 - In Full mode, the titlebar and navigation rail are persistent DOM; route and status renders replace the main workspace while synchronizing active, notification, Profile, language, and collapsed-shell state in place.
 - Profile lists discovered Character saves with World associations and can hand the exact selected save directly to the RSDW-L Character Editor.
@@ -36,6 +37,8 @@ This is the current source-level capability contract for `main`. A capability is
 - Every user mod exposes a deterministic SHA-256 content hash. A real-time Monaco create/save/copy/delete refreshes only that mod's profile snapshot; sibling mods, World configuration, Character saves, and profile metadata are not rewritten.
 - Client state is generated from verified CLIENT/BOTH roles. The server's literal `mods.txt` is never copied to clients.
 - Managed UE4SS and RuneSchema updates resolve downloadable ZIP assets from their official GitHub release APIs, validate the archives, and install through role-specific client/server paths. Client UE4SS installation always excludes `version.dll`.
+- Native Linux dedicated hosting and playable-client runtimes have separate reserves: `linux-x86_64` runtime material is tagged `server_only` with `distribution: never`, while Windows and Proton clients receive only the independent `win64` / `windows-pe-x64` UE4SS and RuneSchema baseline through the verified Sync manifest.
+- Downloaded and imported UE4SS/RuneSchema ZIPs expose a per-entry client-push inventory with archive path, client target, size, SHA-256, ABI, platform, scope, and eligibility. Operators can persist a per-World selection; native Linux entries and the dedicated `version.dll` loader are visible but locked to `server_only` / `never`.
 - `version.dll` is a Dragonwilds dedicated-server loader, not an upstream UE4SS client component. The launcher preserves and deploys it only to a server's `Binaries/Win64`, beside that server's `dwmapi.dll`.
 
 ## Sync, Direct Connect, and exchange

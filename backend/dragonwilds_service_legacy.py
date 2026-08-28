@@ -3643,6 +3643,20 @@ def handle(method: str, params: dict) -> object:
                     memory = 0
                 current_performance["renderer_memory_mb"] = memory if memory in {0, 1024, 2048, 4096, 8192} else 0
             incoming["performance"] = current_performance
+        if "window_preferences" in incoming:
+            current_window = dict(application.get("window_preferences") or {})
+            proposed_window = incoming.get("window_preferences") if isinstance(incoming.get("window_preferences"), dict) else {}
+            mode = str(proposed_window.get("startup_mode", current_window.get("startup_mode") or "remember")).strip().casefold()
+            current_window["startup_mode"] = mode if mode in {"remember", "default", "maximized"} else "remember"
+            for key, default, low, high in (("default_width", 1440, 960, 3840), ("default_height", 900, 640, 2160)):
+                try: value = int(proposed_window.get(key, current_window.get(key, default)) or default)
+                except (TypeError, ValueError): value = default
+                current_window[key] = max(low, min(high, value))
+            try: scale = float(proposed_window.get("ui_scale", current_window.get("ui_scale", 1.0)))
+            except (TypeError, ValueError): scale = 1.0
+            current_window["ui_scale"] = max(0.8, min(1.4, round(scale, 2)))
+            current_window["handheld_mode"] = bool(proposed_window.get("handheld_mode", current_window.get("handheld_mode", False)))
+            incoming["window_preferences"] = current_window
         if "computer_profile" in incoming:
             incoming["computer_profile"] = normalize_computer_profile(incoming.get("computer_profile"))
         if "game_dir" in incoming:
@@ -3684,6 +3698,13 @@ def handle(method: str, params: dict) -> object:
             for key in ("install_dir", "server_exe", "steamcmd_dir", "owner_id", "linux_server_mode", "proton_executable", "proton_prefix", "wine_dll_overrides", "ue4ss_source_url"):
                 if key in proposed:
                     current_install[key] = str(proposed.get(key) or "").strip()
+            native_runtime = dict(current_install.get("native_linux_runtime") or {})
+            proposed_native = proposed.get("native_linux_runtime") if isinstance(proposed.get("native_linux_runtime"), dict) else {}
+            for key in ("ue4ss_source_url", "runeschema_source_url"):
+                if key in proposed_native: native_runtime[key] = str(proposed_native.get(key) or "").strip()
+            native_runtime.update({"platform": "linux-x86_64", "scope": "server_only", "distribution": "never"})
+            current_install["native_linux_runtime"] = native_runtime
+            current_install["client_runtime"] = {"platform": "win64", "game_abi": "windows-pe-x64", "scope": "client_required", "compatible_clients": ["windows", "linux-proton"]}
             current_install["runeschema_source_url"] = "https://github.com/UnskippableCutscene/RuneSchema/releases"
             selected_server_dir = str(current_install.get("install_dir") or "").strip()
             if selected_server_dir:

@@ -295,6 +295,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   createWorldShortcut: (data) => ipcRenderer.invoke('dragonwilds:create-world-shortcut', data),
   removeWorldShortcut: (name) => ipcRenderer.invoke('dragonwilds:remove-world-shortcut', name),
   backgroundSettings: (settings) => ipcRenderer.invoke('dragonwilds:background-settings', settings),
+  windowPreferences: (settings) => ipcRenderer.invoke('dragonwilds:window-preferences', settings),
   notify: (event) => ipcRenderer.invoke('dragonwilds:notify', event),
   openMainWindow: () => ipcRenderer.invoke('dragonwilds:open-main-window'),
   openMinimalMode: (worldId) => ipcRenderer.invoke('dragonwilds:open-minimal-mode', worldId),

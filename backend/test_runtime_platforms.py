@@ -9,6 +9,8 @@ from runtime_platforms import (
     _linux_release,
     linux_distro_identity,
     server_os_badge,
+    dedicated_runtime_contract,
+    filtered_manifest,
 )
 
 
@@ -45,3 +47,18 @@ def test_linux_derivative_registry_and_os_release_detection():
     assert detected["distro_family"] == "debian"
     assert detected["distro_version"] == "18"
     assert detected["distro_codename"] == "noble"
+
+
+def test_native_server_runtime_never_crosses_client_manifest_boundary():
+    contract = dedicated_runtime_contract(True)
+    assert contract["server"] == {
+        "platform": "linux-x86_64", "game_abi": "linux-elf-x64",
+        "scope": "server_only", "distribution": "never",
+    }
+    assert contract["clients"]["platform"] == "win64"
+    assert contract["clients"]["compatible_clients"] == ["windows", "linux-proton"]
+    manifest = {"files": [
+        {"path": "Binaries/Linux/native.so", "platforms": ["linux-native"]},
+        {"path": "Binaries/Win64/dwmapi.dll", "platforms": ["windows", "linux-proton"]},
+    ]}
+    assert [row["path"] for row in filtered_manifest(manifest, "linux-proton")["files"]] == ["Binaries/Win64/dwmapi.dll"]

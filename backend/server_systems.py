@@ -45,7 +45,7 @@ from character_submissions import quarantine_submission_bytes
 from player_backups import latest_player_backup, player_backup_status, store_player_backup
 from mod_archive_layout import inspect_mod_payloads, locate_mod_payload
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
-from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS,
+from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS, dedicated_runtime_contract,
                                detect_server_host,
                                entry_allowed_for_platform, filtered_manifest,
                                normalize_client_platform, runtime_variant_catalog)
@@ -2149,7 +2149,7 @@ def _atomic_publish_copy(source: Path, destination: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]) -> dict:
+def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict], profile: dict | None = None) -> dict:
     """Publish the machine-level client runtime baseline for a World.
 
     Every connected client receives the UE4SS core and RuneSchema core through
@@ -2159,10 +2159,22 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     handled by the normal mod-unit publisher.
     """
     layout = resolve_server_layout(game_root)
+    profile = profile if isinstance(profile, dict) else {}
+    stored_selections = profile.get("runtime_client_selections") if isinstance(profile.get("runtime_client_selections"), dict) else {}
+
+    def selected_targets(kind: str, active_build: str) -> set[str] | None:
+        policy = stored_selections.get(kind) if isinstance(stored_selections.get(kind), dict) else {}
+        if str(policy.get("build_id") or "") != str(active_build or ""):
+            return None
+        return {str(value or "").replace("\\", "/").strip("/").casefold() for value in (policy.get("targets") or [])}
+
+    ue4ss_targets = selected_targets("ue4ss", str(profile.get("ue4ss_active_version_id") or "baseline"))
+    runeschema_targets = selected_targets("runeschema", str(profile.get("runeschema_flavor_id") or "official"))
     stats = {"ue4ss_files": 0, "ue4ss_baked_mod_files": 0, "runeschema_files": 0,
              "dragonconnecthelper_files": 0, "server_only_components_excluded": ["RSDW Dev Kit"],
              "version_dll_excluded": True,
-             "platforms": list(WIN64_RUNTIME_PLATFORMS), "native_linux_injection": False}
+             "platforms": list(WIN64_RUNTIME_PLATFORMS), "native_linux_injection": False,
+             "runtime_scope": "client_required", "distribution": "sync_manifest", "game_abi": "windows-pe-x64"}
 
     baked_ue4ss_names = {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS}
 
@@ -2174,12 +2186,14 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             return False
         return index + 1 < len(parts) and lowered[index + 1] in baked_ue4ss_names
 
-    def stage_file(source: Path, wire: str, generated: str) -> None:
+    def stage_file(source: Path, wire: str, generated: str) -> bool:
         if not source.is_file():
-            return
+            return False
         pure = PurePosixPath(wire.replace("\\", "/"))
         if pure.name.casefold() == SERVER_LOADER_FILENAME.casefold():
-            return
+            return False
+        if generated.startswith("ue4ss") and ue4ss_targets is not None and pure.as_posix().casefold() not in ue4ss_targets:
+            return False
         dest = PUBLISH_DIR / Path(*pure.parts)
         dest.parent.mkdir(parents=True, exist_ok=True)
         _atomic_publish_copy(source, dest)
@@ -2188,7 +2202,11 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             "category": "permanent", "kind": "file", "extract_to": "",
             "generated": generated, "baseline_runtime": True,
             "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
+            "runtime_scope": "client_required", "distribution": "sync_manifest",
+            "selection_policy": "operator" if generated.startswith("ue4ss") and ue4ss_targets is not None else "runtime_default",
+            "source_archive_entry": pure.as_posix(),
         })
+        return True
 
     def stage_ue4ss_bundle(bundle: Path) -> None:
         if not bundle.is_file():
@@ -2209,6 +2227,8 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     if PurePosixPath(*parts).name.casefold() == "mods.txt":
                         continue
                 wire = PurePosixPath("Binaries/Win64", *parts).as_posix()
+                if ue4ss_targets is not None and wire.casefold() not in ue4ss_targets:
+                    continue
                 dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
@@ -2220,6 +2240,9 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     "category": "permanent", "kind": "file", "extract_to": "",
                     "generated": "ue4ss_bundled_baseline", "baseline_runtime": True,
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
+                    "runtime_scope": "client_required", "distribution": "sync_manifest",
+                    "selection_policy": "operator" if ue4ss_targets is not None else "runtime_default",
+                    "source_archive_entry": PurePosixPath(*parts).as_posix(),
                 })
                 stats["ue4ss_files"] += 1
                 if "mods" in lowered:
@@ -2228,8 +2251,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     # Prefer the live, validated server runtime so clients receive the exact
     # baseline the server is running. Fall back to the launcher repair library.
     bootstrap = layout.ue4ss_bootstrap if layout.ue4ss_bootstrap.is_file() else UE4SS_RUNTIME_DIR / "dwmapi.dll"
-    if bootstrap.is_file():
-        stage_file(bootstrap, "Binaries/Win64/dwmapi.dll", "ue4ss_baseline")
+    if bootstrap.is_file() and stage_file(bootstrap, "Binaries/Win64/dwmapi.dll", "ue4ss_baseline"):
         stats["ue4ss_files"] += 1
     live_core = layout.ue4ss_core_dir if layout.ue4ss_core_dir.is_dir() else UE4SS_RUNTIME_DIR / "ue4ss"
     if live_core.is_dir():
@@ -2244,7 +2266,8 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     continue
             if source.name.casefold() == SERVER_LOADER_FILENAME.casefold():
                 continue
-            stage_file(source, f"Binaries/Win64/ue4ss/{rel.as_posix()}", "ue4ss_baseline")
+            if not stage_file(source, f"Binaries/Win64/ue4ss/{rel.as_posix()}", "ue4ss_baseline"):
+                continue
             stats["ue4ss_files"] += 1
             if rel.parts and rel.parts[0].casefold() == "mods":
                 stats["ue4ss_baked_mod_files"] += 1
@@ -2258,6 +2281,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         dest = PUBLISH_DIR / "_baseline" / "RuneSchema-core.zip"
         dest.parent.mkdir(parents=True, exist_ok=True)
         temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+        selected_count = 0
         with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as zf:
             wrote_enabled = False
             for source in rs_root.rglob("*"):
@@ -2266,21 +2290,32 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 rel = source.relative_to(rs_root)
                 if rel.parts and rel.parts[0].casefold() == "mods":
                     continue
+                client_target = PurePosixPath("Binaries/Win64/ue4ss/Mods/RuneSchema", *rel.parts).as_posix()
+                if runeschema_targets is not None and client_target.casefold() not in runeschema_targets:
+                    continue
                 if rel.as_posix().casefold() == "enabled.txt":
                     wrote_enabled = True
                 zf.write(source, rel.as_posix())
                 stats["runeschema_files"] += 1
-            if not wrote_enabled:
+                selected_count += 1
+            if not wrote_enabled and runeschema_targets is None:
                 zf.writestr("enabled.txt", b"")
                 stats["runeschema_files"] += 1
-        os.replace(temporary, dest)
-        manifest_files.append({
-            "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
-            "category": "permanent", "kind": "zip_bundle",
-            "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema",
-            "generated": "runeschema_baseline", "baseline_runtime": True,
-            "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
-        })
+                selected_count += 1
+        if selected_count:
+            os.replace(temporary, dest)
+            manifest_files.append({
+                "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
+                "category": "permanent", "kind": "zip_bundle",
+                "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema",
+                "generated": "runeschema_baseline", "baseline_runtime": True,
+                "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
+                "runtime_scope": "client_required", "distribution": "sync_manifest",
+                "selection_policy": "operator" if runeschema_targets is not None else "runtime_default",
+                "selected_files": sorted(runeschema_targets or []),
+            })
+        else:
+            temporary.unlink(missing_ok=True)
     else:
         rs_bundle = RUNESCHEMA_CORE_CACHE_ZIP if RUNESCHEMA_CORE_CACHE_ZIP.is_file() else _bundled_app_resource("RuneSchema-core-latest.zip")
         if rs_bundle.is_file():
@@ -2288,6 +2323,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             dest = PUBLISH_DIR / "_baseline" / "RuneSchema-core.zip"
             dest.parent.mkdir(parents=True, exist_ok=True)
             temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+            selected_count = 0
             with zipfile.ZipFile(rs_bundle) as source_zip, zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as target_zip:
                 for info in source_zip.infolist():
                     if info.is_dir():
@@ -2297,16 +2333,26 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                         parts = parts[1:]
                     if not parts or ".." in parts or parts[0].casefold() == "mods":
                         continue
+                    client_target = PurePosixPath("Binaries/Win64/ue4ss/Mods/RuneSchema", *parts).as_posix()
+                    if runeschema_targets is not None and client_target.casefold() not in runeschema_targets:
+                        continue
                     target_zip.writestr(PurePosixPath(*parts).as_posix(), source_zip.read(info))
                     stats["runeschema_files"] += 1
-            os.replace(temporary, dest)
-            manifest_files.append({
-                "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
-                "category": "permanent", "kind": "zip_bundle",
-                "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema",
-                "generated": "runeschema_bundled_baseline", "baseline_runtime": True,
-                "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
-            })
+                    selected_count += 1
+            if selected_count:
+                os.replace(temporary, dest)
+                manifest_files.append({
+                    "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
+                    "category": "permanent", "kind": "zip_bundle",
+                    "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema",
+                    "generated": "runeschema_bundled_baseline", "baseline_runtime": True,
+                    "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
+                    "runtime_scope": "client_required", "distribution": "sync_manifest",
+                    "selection_policy": "operator" if runeschema_targets is not None else "runtime_default",
+                    "selected_files": sorted(runeschema_targets or []),
+                })
+            else:
+                temporary.unlink(missing_ok=True)
     # DragonLink-Connect is launcher infrastructure required by both host and
     # client. Publish only its immutable baseline files; config.lua is generated
     # locally from the selected Connected World and must never leak host values.
@@ -2446,7 +2492,7 @@ class ShareServer:
         # prepared. Every current file is atomically promoted below, and the
         # HTTP handler serves only paths present in the active manifest.
         manifest_files = []
-        baseline_runtime = _publish_baseline_client_runtimes(game_root, manifest_files) if str(game_root or "").strip() else {"ue4ss_files": 0, "runeschema_files": 0, "version_dll_excluded": True}
+        baseline_runtime = _publish_baseline_client_runtimes(game_root, manifest_files, profile) if str(game_root or "").strip() else {"ue4ss_files": 0, "runeschema_files": 0, "version_dll_excluded": True}
         source_mods_txt = ""
         if game_root:
             try:
@@ -2576,6 +2622,7 @@ class ShareServer:
                                                       "supported_platforms": list(ALL_CLIENT_PLATFORMS),
                                                       "default_platform": "windows"},
                               "runtime_variants": runtime_variant_catalog(),
+                              "dedicated_runtime_contract": dedicated_runtime_contract(str(resolve_server_layout(game_root).win64_dir.name).casefold() == "linux" if str(game_root or '').strip() else False),
                               "files": manifest_files, "description": profile.get("description") or "", "tags": consolidated_tags,
                               "classification": classification,
                               "audience": str(profile.get("audience") or "general"),

@@ -20,7 +20,7 @@ above.
 ## Version state
 
 `package.json`, its lockfile, release metadata, and canonical changelog remain
-the authority for the shipped version. The current stable version is `3.0.4`.
+the authority for the shipped version. The current stable version is `3.0.5`.
 
 ## Core invariants
 

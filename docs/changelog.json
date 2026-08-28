@@ -1,10 +1,24 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-27T00:00:00Z",
+  "updated_at": "2026-08-28T00:00:00Z",
   "releases": [
     {
-      "version": "3.0.4",
-      "title": "Connected Profile & Network Reliability",
+      "version": "3.0.6",
+      "title": "Linux Runtime Boundaries & Handheld Layout",
+      "date": "2026-08-28",
+      "status": "testing",
+      "highlights": [
+        "Native Linux dedicated servers reserve explicitly tagged linux-x86_64 UE4SS and RuneSchema sources for server-only materialization; those files are never eligible for client distribution.",
+        "Windows and Proton players continue to receive the separate verified Win64 UE4SS and RuneSchema runtime baseline through platform-filtered Sync manifests.",
+        "Linux server mode, Proton executable, prefix, DLL overrides, and native runtime source fields now persist instead of reverting after Settings is closed.",
+        "Application Settings now include startup behavior, default resolution, interface scale, and an opt-in experimental SteamOS/Windows handheld title-card layout.",
+        "The handheld view reuses the authoritative desktop Appys and profile state, avoiding a divergent second launcher implementation.",
+        "Downloaded and imported UE4SS/RuneSchema archives expose per-file client selectors with path, hash, size, ABI, platform, scope, and cleanup metadata; native/server-only entries remain visibly locked out."
+      ]
+    },
+    {
+      "version": "3.0.5",
+      "title": "Connected Worlds & DragonLink Reliability",
       "date": "2026-08-27",
       "status": "stable",
       "highlights": [

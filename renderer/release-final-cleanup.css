@@ -81,3 +81,21 @@
 .settings-subnav button,.server-tabs button,.world-source-tabs button,.rsdw-section-tabs button{min-height:var(--dws-control-height)!important}
 @media(max-width:1050px){.settings-nav button{justify-content:center!important;text-align:center!important}.header-actions,.reference-links,.server-install-actions{justify-content:flex-start}}
 @media(max-width:700px){.content{padding:12px!important}.panel-header,.modal-header,.modal-footer{padding:12px!important}.panel-body,.modal-body{padding:14px!important}.header-actions>.btn,.reference-links>.btn,.server-install-actions>.btn{flex:1 1 150px}.settings-control-cluster{justify-content:flex-start}}
+
+/* Experimental SteamOS / Windows handheld layer. The existing Appys remain
+   authoritative; only their shell navigation becomes large title cards. */
+.window-preference-grid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:10px;width:100%}
+.runtime-scope-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 18px}
+.runtime-scope-cards article{display:grid;align-content:start;gap:9px;padding:15px;border:1px solid var(--border);border-radius:13px;background:var(--panel-2)}
+.runtime-scope-cards article>strong{font-size:14px}.runtime-scope-cards article p{margin:0;color:var(--muted);line-height:1.5}.runtime-scope-cards label{display:grid;gap:5px}
+body[data-handheld-mode="1"] .app-shell:not(.detached-shell){grid-template-columns:360px minmax(0,1fr)}
+body[data-handheld-mode="1"] .sidebar{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-content:start;gap:10px;padding:14px;overflow-y:auto}
+body[data-handheld-mode="1"] .sidebar .brand,body[data-handheld-mode="1"] .sidebar .nav-label,body[data-handheld-mode="1"] .sidebar .sidebar-spacer,body[data-handheld-mode="1"] .sidebar .player-chip{grid-column:1/-1}
+body[data-handheld-mode="1"] .sidebar .brand{padding-bottom:8px}
+body[data-handheld-mode="1"] .sidebar .nav-label{margin:7px 4px 0}
+body[data-handheld-mode="1"] .sidebar .appy-nav{min-height:92px;flex-direction:column;align-items:flex-start;justify-content:center;gap:8px;padding:13px;border-color:var(--border);background:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.015))}
+body[data-handheld-mode="1"] .sidebar .appy-nav:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+body[data-handheld-mode="1"] .sidebar .appy-nav-copy strong{font-size:13px}body[data-handheld-mode="1"] .sidebar .appy-nav-copy small{white-space:normal;font-size:9px;line-height:1.35}
+body[data-handheld-mode="1"] .sidebar .nav-icon,body[data-handheld-mode="1"] .sidebar .nav-icon-image{width:30px;height:30px}
+@media(max-width:1100px){.window-preference-grid,.runtime-scope-cards{grid-template-columns:1fr}body[data-handheld-mode="1"] .app-shell:not(.detached-shell){grid-template-columns:300px minmax(0,1fr)}}
+.runtime-file-selector{display:grid;gap:14px;min-height:0}.runtime-file-selector-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.runtime-file-selector-toolbar>span{color:var(--muted);font-size:10px}.runtime-file-selector-list{display:grid;max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:12px}.runtime-file-selector-row{display:grid;grid-template-columns:24px minmax(0,1fr) minmax(120px,.22fr);gap:12px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);background:var(--panel-2)}.runtime-file-selector-row:last-child{border-bottom:0}.runtime-file-selector-row>span{display:grid;gap:3px;min-width:0}.runtime-file-selector-row strong,.runtime-file-selector-row small{overflow-wrap:anywhere}.runtime-file-selector-row small{color:var(--muted)}.runtime-file-selector-row.locked{opacity:.62}.runtime-file-selector-row.locked>span:last-child{color:#d8b968}

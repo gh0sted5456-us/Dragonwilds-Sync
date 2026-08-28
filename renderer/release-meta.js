@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.0.4',
-  name: 'V3 · Connected Profile & Network Reliability',
+  version: '3.0.5',
+  name: 'V3 · Connected Worlds & DragonLink Reliability',
   rsdwlVersion: 3,
   attributions: [
     ['Application Creator', 'Jonesing4Space'],
@@ -9,12 +9,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ['RSDW Modding Community', 'Community contributors'],
   ],
   changelog: [{
-    version: '3.0.4',
-    title: 'Connected Profile & Network Reliability',
+    version: '3.0.5',
+    title: 'Connected Worlds & DragonLink Reliability',
     items: [
       'Connected World snapshots use a dedicated profile namespace and never hydrate as phantom SinglePlayer Worlds.',
       'Legacy migration and connected-profile deletion remove only launcher-managed snapshots; real profiles, saves, and unknown sibling files remain untouched.',
       'Connected IDs and verified Direct Connect routes remain stable through discovery, synchronization, activation, reconnect, and Play, including external/VPN paths.',
+      'Every client-delivered file or bundle carries a Dragonwilds Sync ownership and cleanup tag retained in the local managed-file ledger.',
+      'Reset & Resync and Game Restore clear tagged managed payloads and rebuild the launcher-identified UE4SS and RuneSchema runtimes without removing saves or the game installation.',
+      'DragonLink-Connect applies the freshly synced World mode to Dragonwilds’ Normal, Custom, or Creative selector alongside the verified address and optional password.',
       'Public World presence remains separate from direct-route reachability while complete sanitized connection, mod, platform, and classification metadata stays available for previews.',
       'World invite creation and deregistration require an existing signed publisher identity; only an authenticated heartbeat may establish ownership.',
       'Failed local-address probes close their UDP socket cleanly and fall back to loopback without leaking resources.',

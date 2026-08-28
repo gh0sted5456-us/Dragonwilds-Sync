@@ -207,6 +207,25 @@ def test_rpc_dispatch_import_select_and_deferred_apply():
             reloaded = profile_store.load_server_profile("world-c")
             assert reloaded["ue4ss_active_version_id"] == version_id
 
+            inventory = service.handle("server.world.runtime_client_selection.get", {
+                "id": "world-c", "kind": "ue4ss", "build_id": version_id,
+            })
+            targets = inventory["inventory"]["default_targets"]
+            assert "Binaries/Win64/dwmapi.dll" in targets
+            saved = service.handle("server.world.runtime_client_selection.set", {
+                "id": "world-c", "kind": "ue4ss", "build_id": version_id,
+                "targets": ["Binaries/Win64/ue4ss/UE4SS.dll"],
+            })
+            assert saved["selected_count"] == 1
+            cleared = service.handle("server.world.runtime_client_selection.set", {
+                "id": "world-c", "kind": "ue4ss", "build_id": version_id, "targets": [],
+            })
+            assert cleared["selected_count"] == 0
+            reread = service.handle("server.world.runtime_client_selection.get", {
+                "id": "world-c", "kind": "ue4ss", "build_id": version_id,
+            })
+            assert reread["selected_count"] == 0
+
             # Refuses while the dedicated server is running.
             def _refuse():
                 raise RuntimeError("Stop the dedicated server before switching or deleting Worlds.")

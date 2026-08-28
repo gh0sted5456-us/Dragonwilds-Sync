@@ -4,7 +4,7 @@ This file lists current boundaries that must not be presented as certified behav
 
 ## Release and versioning
 
-- Packaged metadata is 3.0.4 on `main`; `testing-branch` is reserved for staged verification and package candidates.
+- Packaged metadata is 3.0.5 on `main`; `testing-branch` is reserved for staged verification and package candidates.
 - Historical Alpha/RC/Phase green results do not certify the current head.
 
 ## Responsiveness and cancellation
@@ -28,6 +28,8 @@ This file lists current boundaries that must not be presented as certified behav
 ## Linux and Proton
 
 - Ubuntu AppImage build/smoke paths do not certify an actual Dragonwilds dedicated process under Linux/Proton/Wine.
+- Native Linux UE4SS/RuneSchema source slots and server-only distribution boundaries are implemented, but a selected upstream native archive remains experimental and requires physical ABI/load testing; Dragonwilds Sync does not convert Win64 DLLs into Linux binaries.
+- The handheld title-card layer is an early layout/input surface. Steam Deck/SteamOS packaging, gamepad focus traversal, virtual keyboard behavior, suspend/resume, and each target display scale still require physical-device acceptance.
 - The upstream RSDW live bridge uses Windows-specific shared-memory/kernel behavior. Unsupported Linux live tools must fail gracefully.
 - Proton process-tree containment and orphan cleanup require physical testing.
 

@@ -34,6 +34,8 @@ from unified_console import (
 import runeschema_tools
 import runeschema_repository
 import ue4ss_repository
+from runtime_archive_policy import inspect_runtime_archive, validate_client_targets
+from profile_store import save_server_profile
 from server_engine import _apply_profile_ue4ss
 from v2_remote_routing import install_directory_patches, remote_advertisement
 from runtime_versions import CLIENT_STEAM_APP_ID, detect_steam_cloud_status
@@ -1196,6 +1198,48 @@ def handle(method: str, params: dict) -> object:
         else:
             applied = {"deferred": True, "message": "UE4SS build saved; activate this World to apply it to the shared server runtime."}
         return {**status, "applied": applied, "state": _legacy.public_state(_legacy.load_state())}
+
+    if method in {"server.world.runtime_client_selection.get", "server.world.runtime_client_selection.set"}:
+        profile_id = str(params.get("id") or "").strip()
+        runtime_kind = str(params.get("kind") or "").strip().casefold()
+        build_id = str(params.get("build_id") or "").strip()
+        profile = _legacy.load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        if runtime_kind == "ue4ss":
+            archive = ue4ss_repository.resolve_archive(build_id)
+        elif runtime_kind == "runeschema":
+            if build_id == "official":
+                archive = _server_systems.RUNESCHEMA_CORE_CACHE_ZIP
+                if not archive.is_file():
+                    archive = _server_systems._bundled_app_resource("RuneSchema-core-latest.zip")
+                if not archive.is_file():
+                    raise FileNotFoundError("Download or restore the Official RuneSchema core before selecting its client files.")
+            elif build_id.startswith(runeschema_repository.EXPERIMENTAL_PREFIX):
+                archive = runeschema_repository.resolve_archive(build_id)
+            else:
+                row = next((item for item in profile.get("runeschema_flavors") or [] if str(item.get("id")) == build_id), None)
+                if not row:
+                    raise ValueError("Only downloaded or imported RuneSchema ZIP builds expose selectable client files.")
+                archive = (SERVER_PROFILES_DIR / profile_id / "runeschema_flavors" / str(row.get("archive") or "")).resolve()
+                flavor_root = (SERVER_PROFILES_DIR / profile_id / "runeschema_flavors").resolve()
+                if flavor_root not in archive.parents or not archive.is_file():
+                    raise FileNotFoundError("The imported RuneSchema ZIP is missing or outside its profile repository.")
+        else:
+            raise ValueError("Runtime kind must be ue4ss or runeschema.")
+        inventory = inspect_runtime_archive(archive, runtime_kind)
+        selections = profile.setdefault("runtime_client_selections", {})
+        saved = selections.get(runtime_kind) if isinstance(selections.get(runtime_kind), dict) else {}
+        selected = (list(saved.get("targets") or []) if "targets" in saved else list(inventory["default_targets"])) if str(saved.get("build_id") or "") == build_id else list(inventory["default_targets"])
+        if method.endswith(".set"):
+            selected = validate_client_targets(inventory, list(params.get("targets") or []))
+            selections[runtime_kind] = {"build_id": build_id, "targets": selected, "archive_sha256": inventory["sha256"], "updated_at": time.time()}
+            save_server_profile(profile_id, profile)
+            if state.setdefault("server", {}).get("active_world_id") == profile_id and _legacy.SHARE.status().get("serving"):
+                _legacy.ENGINE.publish(profile_id)
+        selected_set = set(selected)
+        inventory["files"] = [{**row, "selected": str(row.get("client_path") or "") in selected_set} for row in inventory["files"]]
+        return {"inventory": inventory, "build_id": build_id, "selected_count": len(selected), "state": _public_state_with_runtime_repositories()}
 
     if method == "server.console.export_log":
         # Deliberately does not go through _console_world_runtime: the log

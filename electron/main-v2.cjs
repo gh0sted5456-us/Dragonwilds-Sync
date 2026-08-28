@@ -23,6 +23,39 @@ function startupPerformanceSettings() {
   } catch (_) { return defaults; }
 }
 
+function sanitizeWindowPreferences(incoming = {}) {
+  const mode=String(incoming.startup_mode||'remember').toLowerCase();
+  const clamp=(value,fallback,min,max)=>Math.max(min,Math.min(max,Number.isFinite(Number(value))?Math.round(Number(value)):fallback));
+  const scale=Math.max(.8,Math.min(1.4,Number.isFinite(Number(incoming.ui_scale))?Number(incoming.ui_scale):1));
+  return {startup_mode:['remember','default','maximized'].includes(mode)?mode:'remember',default_width:clamp(incoming.default_width,1440,960,3840),default_height:clamp(incoming.default_height,900,640,2160),ui_scale:Math.round(scale*100)/100,handheld_mode:incoming.handheld_mode===true};
+}
+
+function startupWindowPreferences() {
+  const defaults=sanitizeWindowPreferences({});
+  try {
+    const roots=[process.env.DRAGONWILDS_SYNC_APPDATA,app.getPath('userData'),process.platform==='win32'&&process.env.LOCALAPPDATA?path.join(process.env.LOCALAPPDATA,'DragonwildsSync'):path.join(app.getPath('home'),'.dragonwilds_sync')].filter(Boolean);
+    for(const base of roots){const file=path.join(base,'launcher_v2.json');if(!fs.existsSync(file))continue;const state=JSON.parse(fs.readFileSync(file,'utf8'));return sanitizeWindowPreferences(state?.application?.window_preferences||{});}
+  } catch (_) {}
+  return defaults;
+}
+
+function rememberedWindowBounds() {
+  try {
+    const value=JSON.parse(fs.readFileSync(path.join(app.getPath('userData'),'window-bounds.json'),'utf8'));
+    if(!value||![value.x,value.y,value.width,value.height].every(Number.isFinite))return null;
+    return {x:Math.round(value.x),y:Math.round(value.y),width:Math.max(960,Math.round(value.width)),height:Math.max(640,Math.round(value.height))};
+  } catch (_) { return null; }
+}
+
+function saveRememberedWindowBounds(win) {
+  if(!win||win.isDestroyed()||win.isMaximized()||win.isMinimized())return;
+  try {
+    const directory=app.getPath('userData');fs.mkdirSync(directory,{recursive:true});
+    const target=path.join(directory,'window-bounds.json'),temporary=target+'.tmp';
+    fs.writeFileSync(temporary,JSON.stringify(win.getBounds()));fs.renameSync(temporary,target);
+  } catch (_) {}
+}
+
 const startupPerformance=startupPerformanceSettings();
 const safeGraphicsMode=process.argv.includes('--dws-safe-graphics');
 if(!startupPerformance.hardware_acceleration||safeGraphicsMode)app.disableHardwareAcceleration();
@@ -123,6 +156,8 @@ let pendingJoinRequest = null;
 let quickProcess = process.env.DWS_V3_QUICK === '1';
 let quickProcessMode = ['player','coop','server'].includes(process.env.DWS_V3_QUICK_MODE) ? process.env.DWS_V3_QUICK_MODE : 'player';
 let backgroundSettings = { close_to_tray: process.platform !== 'linux', start_minimized: false, notifications_enabled: true, announcement_overlay_enabled: true };
+let windowPreferences = startupWindowPreferences();
+let windowBoundsTimer = null;
 const notificationSeen = new Map();
 
 function cryptoHashFile(file) { const hash=crypto.createHash('sha256'); hash.update(fs.readFileSync(file)); return hash.digest('hex'); }
@@ -506,7 +541,13 @@ function managedDialogOwner(entry) {
 
 function createWindow({ show = true } = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) { if (show) { mainWindow.show(); mainWindow.focus(); } return mainWindow; }
-  mainWindow = new BrowserWindow(windowOptions({ width: 1440, height: 920, minWidth: 1080, minHeight: 700, title: 'Dragonwilds Sync' }));
+  const display=screen.getPrimaryDisplay()?.workAreaSize||{width:1920,height:1080};
+  const remembered=windowPreferences.startup_mode==='remember'?rememberedWindowBounds():null;
+  const width=Math.min(remembered?.width||windowPreferences.default_width,display.width),height=Math.min(remembered?.height||windowPreferences.default_height,display.height);
+  const rememberedArea=remembered?screen.getDisplayMatching(remembered).workArea:null;
+  const placement=rememberedArea?{x:Math.max(rememberedArea.x,Math.min(remembered.x,rememberedArea.x+rememberedArea.width-width)),y:Math.max(rememberedArea.y,Math.min(remembered.y,rememberedArea.y+rememberedArea.height-height))}:{};
+  mainWindow = new BrowserWindow(windowOptions({ width, height, ...placement, minWidth: windowPreferences.handheld_mode?900:960, minHeight: windowPreferences.handheld_mode?600:640, title: 'Dragonwilds Sync' }));
+  mainWindow.webContents.setZoomFactor(windowPreferences.ui_scale);
   attachRendererDurability(mainWindow);
   mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
     secureAttachedWebview(event, webPreferences, params);
@@ -558,10 +599,13 @@ function createWindow({ show = true } = {}) {
       finally { forceQuit=true; app.quit(); }
     });
   }
-  mainWindow.once('ready-to-show', () => { if (show && !backgroundSettings.start_minimized) mainWindow.show(); });
+  mainWindow.once('ready-to-show', () => { if(windowPreferences.startup_mode==='maximized')mainWindow.maximize();if (show && !backgroundSettings.start_minimized) mainWindow.show(); });
   mainWindow.on('close', (event) => {
+    saveRememberedWindowBounds(mainWindow);
     if (!forceQuit && backgroundSettings.close_to_tray && process.platform !== 'linux') { event.preventDefault(); mainWindow.hide(); }
   });
+  const rememberBounds=()=>{if(windowPreferences.startup_mode!=='remember')return;clearTimeout(windowBoundsTimer);windowBoundsTimer=setTimeout(()=>saveRememberedWindowBounds(mainWindow),350);};
+  mainWindow.on('resize',rememberBounds);mainWindow.on('move',rememberBounds);
   mainWindow.on('closed', () => { mainWindow = null; });
   return mainWindow;
 }
@@ -822,6 +866,17 @@ ipcMain.handle('dragonwilds:file-sha256', (_event,target) => { const file=path.r
 ipcMain.handle('dragonwilds:create-world-shortcut', (_event, data) => createWorldShortcut(data || {}));
 ipcMain.handle('dragonwilds:remove-world-shortcut', (_event, name) => { if (process.platform!=='win32') return false; const safe=String(name||'Dragonwilds World').replace(/[<>:"/\\|?*]/g,'').trim()||'Dragonwilds World'; const target=path.join(app.getPath('desktop'),`${safe}.lnk`); try { fs.unlinkSync(target); return true; } catch (_) { return false; } });
 ipcMain.handle('dragonwilds:background-settings', async (_event, incoming) => { backgroundSettings={...backgroundSettings,...(incoming||{})}; return backgroundSettings; });
+ipcMain.handle('dragonwilds:window-preferences', (event, incoming) => {
+  windowPreferences=sanitizeWindowPreferences({...windowPreferences,...(incoming||{})});
+  const win=BrowserWindow.fromWebContents(event.sender);
+  if(win&&!win.isDestroyed()){
+    win.setMinimumSize(windowPreferences.handheld_mode?900:960,windowPreferences.handheld_mode?600:640);
+    win.webContents.setZoomFactor(windowPreferences.ui_scale);
+    if(windowPreferences.startup_mode==='maximized')win.maximize();
+    else if(windowPreferences.startup_mode==='default'){if(win.isMaximized())win.unmaximize();const area=screen.getDisplayMatching(win.getBounds()).workArea;win.setSize(Math.min(windowPreferences.default_width,area.width),Math.min(windowPreferences.default_height,area.height),true);win.center();}
+  }
+  return windowPreferences;
+});
 ipcMain.handle('dragonwilds:notify', (_event, evt) => { showPassiveNotification(evt||{}); return true; });
 ipcMain.handle('dragonwilds:open-main-window', (event) => { promoteToFullApplication(event.sender); return true; });
 ipcMain.handle('dragonwilds:open-minimal-mode', (_event, worldId) => { createMinimalWindow(worldId); return true; });

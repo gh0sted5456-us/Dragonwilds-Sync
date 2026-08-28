@@ -223,6 +223,8 @@ def default_state() -> dict:
             "connection_diagnostic_reports": False,
             "defender_review_enabled": False,
             "performance": {"hardware_acceleration": True, "renderer_memory_mb": 0},
+            "window_preferences": {"startup_mode": "remember", "default_width": 1440, "default_height": 900,
+                                   "ui_scale": 1.0, "handheld_mode": False},
             "computer_profile": default_computer_profile(),
             "rsdw_cache": {"repo": "RSDWArchive/RSDWTools", "branch": "main", "model_repo": "RSDWArchive/RSDWModel", "model_branch": "main", "refresh_after_updates": True, "auto_refresh": True, "refresh_hours": 24},
             "world_discovery": {"enabled": True, "heartbeat_enabled": True, "prefetch_presentation": True, "refresh_seconds": 30, "source": "layered-native-plus-sync", "directory_url": OFFICIAL_DIRECTORY_URL, "directory_token": "", "directory_sources": [official_directory_source()], "last_refresh_at": None},
@@ -254,6 +256,10 @@ def default_state() -> dict:
                 "proton_executable": "",
                 "proton_prefix": "",
                 "wine_dll_overrides": "dwmapi=n,b;version=n,b",
+                "native_linux_runtime": {"platform": "linux-x86_64", "scope": "server_only", "distribution": "never",
+                                         "ue4ss_source_url": "", "runeschema_source_url": ""},
+                "client_runtime": {"platform": "win64", "game_abi": "windows-pe-x64", "scope": "client_required",
+                                   "compatible_clients": ["windows", "linux-proton"]},
                 "installed_buildid": "",
                 "installed_at": None,
                 "installed_build_source": "",
@@ -449,6 +455,17 @@ def load_state() -> dict:
     application.setdefault("guided_setup", {"completed": False, "skipped": False, "last_mode": "player"})
     bg = application.setdefault("background_mode", {})
     for key, default in {"close_to_tray": True, "start_minimized": False, "open_sync_console_on_host_start": False, "notifications_enabled": True, "announcement_overlay_enabled": True, "notify_high_latency": True, "notify_pending_restart": True, "notify_updates": True}.items(): bg.setdefault(key, default)
+    window = application.setdefault("window_preferences", {})
+    startup_mode = str(window.get("startup_mode") or "remember").strip().casefold()
+    window["startup_mode"] = startup_mode if startup_mode in {"remember", "default", "maximized"} else "remember"
+    for key, default, low, high in (("default_width", 1440, 960, 3840), ("default_height", 900, 640, 2160)):
+        try: value = int(window.get(key) or default)
+        except (TypeError, ValueError): value = default
+        window[key] = max(low, min(high, value))
+    try: scale = float(window.get("ui_scale", 1.0))
+    except (TypeError, ValueError): scale = 1.0
+    window["ui_scale"] = max(0.8, min(1.4, round(scale, 2)))
+    window["handheld_mode"] = bool(window.get("handheld_mode", False))
     notifications = application.setdefault("notifications", [])
     if not isinstance(notifications, list):
         application["notifications"] = []
@@ -482,6 +499,13 @@ def load_state() -> dict:
     server_install.setdefault("proton_executable", "")
     server_install.setdefault("proton_prefix", "")
     server_install.setdefault("wine_dll_overrides", "dwmapi=n,b;version=n,b")
+    native_runtime = server_install.setdefault("native_linux_runtime", {})
+    native_runtime.update({"platform": "linux-x86_64", "scope": "server_only", "distribution": "never"})
+    native_runtime.setdefault("ue4ss_source_url", "")
+    native_runtime.setdefault("runeschema_source_url", "")
+    client_runtime = server_install.setdefault("client_runtime", {})
+    client_runtime.update({"platform": "win64", "game_abi": "windows-pe-x64", "scope": "client_required",
+                           "compatible_clients": ["windows", "linux-proton"]})
     server_install.setdefault("installed_buildid", "")
     server_install.setdefault("installed_at", None)
     server_install.setdefault("installed_build_source", "")

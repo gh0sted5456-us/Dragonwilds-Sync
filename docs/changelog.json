@@ -1,10 +1,10 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-27T00:00:00Z",
+  "updated_at": "2026-08-28T00:00:00Z",
   "releases": [
     {
-      "version": "3.0.4",
-      "title": "Connected Profile & Network Reliability",
+      "version": "3.0.5",
+      "title": "Connected Worlds & DragonLink Reliability",
       "date": "2026-08-27",
       "status": "stable",
       "highlights": [

@@ -16,11 +16,11 @@ assert.throws(() => normalizeProfileId('world-a --mode=server'), /unsupported ch
 
 const shortcutFixture = fs.mkdtempSync(path.join(os.tmpdir(), 'dws-shortcuts-'));
 try {
-  const gui = path.join(shortcutFixture, 'Dragonwilds Sync and Launcher-Portable-3.0.4.exe');
-  const headless = path.join(shortcutFixture, 'Dragonwilds Sync Headless-3.0.4.exe');
+  const gui = path.join(shortcutFixture, 'Dragonwilds Sync and Launcher-Portable-3.0.5.exe');
+  const headless = path.join(shortcutFixture, 'Dragonwilds Sync Headless-3.0.5.exe');
   fs.writeFileSync(gui, 'gui'); fs.writeFileSync(headless, 'headless');
   assert.strictEqual(resolveGuiShortcutTarget(gui), path.resolve(gui));
-  assert.strictEqual(resolveHeadlessShortcutTarget({ executablePath: gui, version: '3.0.4' }), path.resolve(headless));
+  assert.strictEqual(resolveHeadlessShortcutTarget({ executablePath: gui, version: '3.0.5' }), path.resolve(headless));
   assert.throws(() => resolveHeadlessShortcutTarget({ executablePath: path.join(shortcutFixture, 'missing', 'app.exe') }), /Headless EXE|ENOENT/);
 } finally { fs.rmSync(shortcutFixture, { recursive: true, force: true }); }
 

@@ -4,7 +4,7 @@ This file lists current boundaries that must not be presented as certified behav
 
 ## Release and versioning
 
-- Packaged metadata is 3.0.4 on `main`; `testing-branch` is reserved for staged verification and package candidates.
+- Packaged metadata is 3.0.5 on `main`; `testing-branch` is reserved for staged verification and package candidates.
 - Historical Alpha/RC/Phase green results do not certify the current head.
 
 ## Responsiveness and cancellation

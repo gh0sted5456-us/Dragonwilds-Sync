@@ -41,7 +41,7 @@ This is the current source-level capability contract for `main`. A capability is
 ## Sync, Direct Connect, and exchange
 
 - Hosted Worlds can publish authenticated manifests with aggregate, per-component, and per-mod fingerprints. A content-only edit changes the selected mod component while unchanged components remain transfer-free.
-- Clients authenticate, obtain a fresh manifest, stage downloads, verify hashes, materialize role-correct content, generate local control files, prove final parity, configure DragonLink-Connect, and then become launch-ready.
+- Clients authenticate, obtain a fresh manifest, stage downloads, verify hashes, materialize role-correct content, generate local control files, prove final parity, configure DragonLink-Connect with the verified endpoint and matching Normal, Custom, or Creative World Type, and then become launch-ready.
 - Sync journals and verified handoff records support recovery without persisting credentials.
 - `.rsdwl` exchange supports bounded World, Character, identity, item-registry, and manifest data with path and checksum validation.
 

@@ -22,7 +22,7 @@ def main():
     written = {}
 
     def fake_write(game_dir, *, address="", password="", server_type="normal", enabled=True):
-        written.update({"address": address, "enabled": enabled})
+        written.update({"address": address, "enabled": enabled, "server_type": server_type})
         return {"configured": bool(enabled and address), "address": address if enabled else ""}
 
     original_write = legacy.write_direct_connect_config
@@ -33,7 +33,11 @@ def main():
         game_dir = tempfile.mkdtemp()
         result = legacy._write_world_direct_connect(game_dir, world("auto"))
         assert written["address"] == "71.22.33.44:7777", written
+        assert written["server_type"] == "normal", written
         assert result["route_used"] == "external", result
+        legacy._write_world_direct_connect(
+            game_dir, world("auto"), {"classification": {"game_mode": "creative"}})
+        assert written["server_type"] == "creative", written
         legacy._write_world_direct_connect(game_dir, world("auto", external=""))
         assert written["address"] == "192.168.1.50:7777", written
         result = legacy._write_world_direct_connect(game_dir, world("internal"))

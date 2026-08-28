@@ -162,6 +162,27 @@ def test_dragonconnect_has_managed_bundle_version_and_canonical_helper_identity(
         assert (mods / direct_connect.MOD_NAME / direct_connect.MARKER_NAME).is_file()
 
 
+def test_dragonconnect_config_maps_synced_game_mode_to_direct_world_type():
+    with tempfile.TemporaryDirectory(prefix="dws-phase6-world-type-") as td:
+        root = Path(td)
+        mods = root / "ue4ss" / "Mods"
+        mods.mkdir(parents=True)
+        fake = SimpleNamespace(game_root=root, ue4ss_mods_dir=mods)
+        old_layout = direct_connect.resolve_client_layout
+        try:
+            direct_connect.resolve_client_layout = lambda _root: fake
+            creative = direct_connect.write_profile_config(
+                root, address="203.0.113.8:7777", server_type="creative")
+            config = (mods / direct_connect.MOD_NAME / "Scripts" / "config.lua").read_text(encoding="utf-8")
+            assert creative["world_type"] == "creative"
+            assert 'WORLD_TYPE = "creative"' in config
+            custom = direct_connect.write_profile_config(
+                root, address="203.0.113.8:7777", server_type="hardcore")
+            assert custom["world_type"] == "custom"
+        finally:
+            direct_connect.resolve_client_layout = old_layout
+
+
 def test_sync_journal_is_resumable_and_handoff_receipt_never_contains_credentials():
     phase6._SYNC_JOURNAL.parent.mkdir(parents=True, exist_ok=True)
     first = phase6._begin_sync("remote-a", "world.sync")
@@ -354,6 +375,7 @@ if __name__ == "__main__":
     test_server_literal_mods_txt_is_rejected_before_transfer()
     test_client_mods_txt_is_locally_generated_from_role_filtered_state()
     test_dragonconnect_has_managed_bundle_version_and_canonical_helper_identity()
+    test_dragonconnect_config_maps_synced_game_mode_to_direct_world_type()
     test_sync_journal_is_resumable_and_handoff_receipt_never_contains_credentials()
     test_short_lived_verified_sync_can_be_reused_but_not_stale()
     test_verified_launch_uses_verified_endpoint_and_receipts_actual_handoff()

@@ -13,6 +13,7 @@
         "Connected IDs and verified Direct Connect routes remain stable through discovery, synchronization, activation, reconnect, and Play, including external/VPN paths.",
         "Every client-delivered file or bundle carries a Dragonwilds Sync ownership and cleanup tag that is retained in the local managed-file ledger.",
         "Reset & Resync and Game Restore remove tagged managed payloads, then rebuild the launcher-identified UE4SS and RuneSchema runtimes while preserving Steam, EOS, saves, and the dedicated-server loader.",
+        "DragonLink-Connect now maps the freshly synced World mode to Dragonwilds' Normal, Custom, or Creative Direct Connect selector and applies it alongside the verified address and optional password.",
         "Public World presence remains separate from direct-route reachability while complete sanitized connection, mod, platform, and classification metadata stays available for previews.",
         "World invite creation and deregistration require an existing signed publisher identity; only an authenticated heartbeat may establish ownership.",
         "Failed local-address probes close their UDP socket cleanly and fall back to loopback without leaking resources.",

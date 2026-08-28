@@ -583,7 +583,11 @@ def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | Non
                 "warning": "Dragonwilds Direct Connect currently supports IPv4 addresses and hostnames, not IPv6."}
     address = f"{host}:{port}" if host else ""
     credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
-    classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
+    local_classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
+    synced_classification = manifest.get("classification") if isinstance(manifest, dict) and isinstance(manifest.get("classification"), dict) else {}
+    # The freshly authenticated manifest describes the World that was actually
+    # synchronized. Fall back to the saved directory card only for older hosts.
+    classification = normalize_world_classification(synced_classification or local_classification)
     handoff_password = str(credentials.get("password") or "") if connection.get("dragonconnect_password_handoff", True) else ""
     written = write_direct_connect_config(game_dir, address=address, password=handoff_password,
                                           server_type=str(classification.get("game_mode") or "normal"), enabled=bool(address))

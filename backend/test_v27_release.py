@@ -59,12 +59,15 @@ def main():
         assert 'IP = ""' in config and 'PASSWORD = ""' in config
         assert "24.9.154.151" not in config and "BELTS" not in config
         assert 'TAG = "[DragonLink-Connect]"' in main_lua
-        assert 'VERSION = "0.4.3"' in main_lua
+        assert 'VERSION = "0.5.0"' in main_lua
         assert "editable:SetText(FText(value))" in main_lua
         assert 'FindAllOf, class_name' in main_lua
         assert "restored_password_objects" in main_lua
         assert 'save_from_live_field("OnTextChanged", context_object)' in main_lua
         assert 'mainmenu_worlds' in main_lua
+        assert 'WORLD_TYPE = "normal"' in config
+        assert 'selector:SetSelectedOption(label)' in main_lua
+        assert 'WORLD_TYPE_CLASS = "/Script/UMG.ComboBoxString"' in main_lua
 
     assert "assets/platforms/ue4ss.webp" in renderer
     assert "assets/platforms/runeschema.webp" in renderer

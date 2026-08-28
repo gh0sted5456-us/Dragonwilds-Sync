@@ -873,9 +873,10 @@ ipcMain.handle('dragonwilds:window-preferences', (event, incoming) => {
     win.setMinimumSize(windowPreferences.handheld_mode?900:960,windowPreferences.handheld_mode?600:640);
     win.webContents.setZoomFactor(windowPreferences.ui_scale);
     if(windowPreferences.startup_mode==='maximized')win.maximize();
-    else if(windowPreferences.startup_mode==='default'){if(win.isMaximized())win.unmaximize();const area=screen.getDisplayMatching(win.getBounds()).workArea;win.setSize(Math.min(windowPreferences.default_width,area.width),Math.min(windowPreferences.default_height,area.height),true);win.center();}
+    else {if(win.isMaximized())win.unmaximize();const area=screen.getDisplayMatching(win.getBounds()).workArea;win.setSize(Math.min(windowPreferences.default_width,area.width),Math.min(windowPreferences.default_height,area.height),true);win.center();if(windowPreferences.startup_mode==='remember')saveRememberedWindowBounds(win);}
   }
-  return windowPreferences;
+  const bounds=win&&!win.isDestroyed()?win.getBounds():{};
+  return {...windowPreferences,width:bounds.width||windowPreferences.default_width,height:bounds.height||windowPreferences.default_height};
 });
 ipcMain.handle('dragonwilds:notify', (_event, evt) => { showPassiveNotification(evt||{}); return true; });
 ipcMain.handle('dragonwilds:open-main-window', (event) => { promoteToFullApplication(event.sender); return true; });
@@ -886,7 +887,7 @@ ipcMain.handle('dragonwilds:discord-status', () => discordPresence.status());
 ipcMain.handle('dragonwilds:window-minimize', (event) => { const w=BrowserWindow.fromWebContents(event.sender); if(!w)return false; const id=detachedIdForWindow(w); if(id){w.hide(); if(mainWindow&&!mainWindow.isDestroyed()){mainWindow.show();mainWindow.focus();} notifyDetachedWindows(); return true;} w.minimize(); return true; });
 ipcMain.handle('dragonwilds:window-toggle-maximize', (event) => { const w=BrowserWindow.fromWebContents(event.sender); if(!w)return false; if(w.isMaximized())w.unmaximize();else w.maximize(); return w.isMaximized(); });
 ipcMain.handle('dragonwilds:window-close', (event) => { BrowserWindow.fromWebContents(event.sender)?.close(); return true; });
-ipcMain.handle('dragonwilds:window-state', (event) => ({ maximized:!!BrowserWindow.fromWebContents(event.sender)?.isMaximized() }));
+ipcMain.handle('dragonwilds:window-state', (event) => {const win=BrowserWindow.fromWebContents(event.sender);const bounds=win&&!win.isDestroyed()?win.getBounds():{};return {maximized:!!win?.isMaximized(),width:Number(bounds.width||0),height:Number(bounds.height||0)};});
 ipcMain.handle('dragonwilds:detached-open', (_event, payload={}) => createDetachedWindow(payload));
 ipcMain.handle('dragonwilds:detached-context', (event) => {
   const id=detachedIdForWindow(BrowserWindow.fromWebContents(event.sender));

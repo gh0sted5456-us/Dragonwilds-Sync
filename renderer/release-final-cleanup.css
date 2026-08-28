@@ -85,6 +85,8 @@
 /* Experimental SteamOS / Windows handheld layer. The existing Appys remain
    authoritative; only their shell navigation becomes large title cards. */
 .window-preference-grid{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:10px;width:100%}
+.window-custom-size{display:grid;grid-template-columns:minmax(120px,1fr) auto minmax(120px,1fr) auto;align-items:end;gap:10px;width:100%;margin-top:10px}
+.window-custom-size[hidden]{display:none}
 .runtime-scope-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:16px 18px}
 .runtime-scope-cards article{display:grid;align-content:start;gap:9px;padding:15px;border:1px solid var(--border);border-radius:13px;background:var(--panel-2)}
 .runtime-scope-cards article>strong{font-size:14px}.runtime-scope-cards article p{margin:0;color:var(--muted);line-height:1.5}.runtime-scope-cards label{display:grid;gap:5px}
@@ -97,5 +99,5 @@ body[data-handheld-mode="1"] .sidebar .appy-nav{min-height:92px;flex-direction:c
 body[data-handheld-mode="1"] .sidebar .appy-nav:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 body[data-handheld-mode="1"] .sidebar .appy-nav-copy strong{font-size:13px}body[data-handheld-mode="1"] .sidebar .appy-nav-copy small{white-space:normal;font-size:9px;line-height:1.35}
 body[data-handheld-mode="1"] .sidebar .nav-icon,body[data-handheld-mode="1"] .sidebar .nav-icon-image{width:30px;height:30px}
-@media(max-width:1100px){.window-preference-grid,.runtime-scope-cards{grid-template-columns:1fr}body[data-handheld-mode="1"] .app-shell:not(.detached-shell){grid-template-columns:300px minmax(0,1fr)}}
+@media(max-width:1100px){.window-preference-grid,.runtime-scope-cards{grid-template-columns:1fr}.window-custom-size{grid-template-columns:1fr auto 1fr}.window-custom-size .btn{grid-column:1/-1}body[data-handheld-mode="1"] .app-shell:not(.detached-shell){grid-template-columns:300px minmax(0,1fr)}}
 .runtime-file-selector{display:grid;gap:14px;min-height:0}.runtime-file-selector-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}.runtime-file-selector-toolbar>span{color:var(--muted);font-size:10px}.runtime-file-selector-list{display:grid;max-height:520px;overflow:auto;border:1px solid var(--border);border-radius:12px}.runtime-file-selector-row{display:grid;grid-template-columns:24px minmax(0,1fr) minmax(120px,.22fr);gap:12px;align-items:center;padding:11px 13px;border-bottom:1px solid var(--border);background:var(--panel-2)}.runtime-file-selector-row:last-child{border-bottom:0}.runtime-file-selector-row>span{display:grid;gap:3px;min-width:0}.runtime-file-selector-row strong,.runtime-file-selector-row small{overflow-wrap:anywhere}.runtime-file-selector-row small{color:var(--muted)}.runtime-file-selector-row.locked{opacity:.62}.runtime-file-selector-row.locked>span:last-child{color:#d8b968}

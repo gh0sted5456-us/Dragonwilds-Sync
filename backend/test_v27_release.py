@@ -21,7 +21,12 @@ def main():
     assert package_lock["version"] == version
     assert package_lock["packages"][""]["version"] == version
     assert f"version: '{version}'" in release_meta
-    assert changelog["releases"][0]["version"] == version
+    releases = changelog["releases"]
+    assert any(str(release.get("version", "")) == version for release in releases)
+    newest = releases[0]
+    if str(newest.get("version", "")) != version:
+        assert newest.get("status") == "testing"
+        assert tuple(map(int, str(newest["version"]).split("."))) > tuple(map(int, version.split(".")))
     assert package["build"]["linux"]["target"] == ["AppImage"]
     assert package["build"]["win"]["target"] == ["portable"]
 

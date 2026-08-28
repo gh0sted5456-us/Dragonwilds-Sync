@@ -22,7 +22,11 @@ def main():
     assert package_lock["packages"][""]["version"] == version
     assert f"version: '{version}'" in release_meta
     releases = changelog["releases"]
+    assert len(releases) == 1
+    assert changelog.get("name") == "V3"
+    assert releases[0].get("title") == "V3"
     assert any(str(release.get("version", "")) == version for release in releases)
+    assert not list((ROOT / "docs" / "archive").glob("*_CHANGELOG.md"))
     newest = releases[0]
     if str(newest.get("version", "")) != version:
         assert newest.get("status") == "testing"

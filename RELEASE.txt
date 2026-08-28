@@ -3,11 +3,11 @@ Dragonwilds Sync — Current Build Authority
 Packaged version: 3.0.5
 Stable/default branch: main
 Staged verification branch: testing-branch
-Canonical changelog: docs/changelog.json (3.0.5 stable)
+Canonical changelog: docs/changelog.json (single consolidated V3 record; 3.0.5 stable)
 Package shapes: Windows Portable and Ubuntu AppImage
 
 The current source combines World management, Character/RSDW-L tools, mod profiles, authenticated Sync, Direct Connect/DragonConnect, WebHost/Remote Admin, public-directory integration, supervised World Runtime Workers, and disposable feature workers.
 
 No release is approved solely by source-contract or CI success. The exact commit and artifact hashes must pass docs/TESTING.md, including applicable clean-machine, real Dragonwilds, Steam/SteamCMD, cross-machine Sync, process-cleanup, stress/soak, router, Linux/Proton, and production-service gates.
 
-Current documentation begins at docs/README.md. Historical verification records are archived and are not current release authority.
+Current documentation begins at docs/README.md. Historical verification records remain archived as evidence. All former release-note and changelog fragments are consolidated into the V3 changelog.

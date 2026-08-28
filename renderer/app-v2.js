@@ -4706,6 +4706,7 @@
 
   function renderSettings() {
     const a = state.data?.application || {};
+    const windowPrefs = a.window_preferences || {};
     const p = player();
     const serverEnabled = !!a.server_mode_enabled;
     const integrations = a.integrations || {};

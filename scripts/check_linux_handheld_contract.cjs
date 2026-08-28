@@ -22,9 +22,14 @@ requireText(app, 'linux_server_mode:', 'Linux server mode is not persisted.');
 requireText(app, "id=\"save-window-preferences\"", 'Window preference controls are missing.');
 requireText(app, "id=\"window-custom-width\"", 'Custom persistent window width is missing.');
 requireText(app, "id=\"window-use-current-size\"", 'Current window size capture is missing.');
+const renderSettingsStart = app.indexOf('function renderSettings()');
+const windowPreferencesDeclaration = app.indexOf('const windowPrefs = a.window_preferences || {};', renderSettingsStart);
 const applicationSettingsStart = app.indexOf("} else if (tab === 'application') {");
 const windowSettingsStart = app.indexOf("Window &amp; Handheld");
 const computerProfileStart = app.indexOf("computer-profile-section");
+if (!(renderSettingsStart < windowPreferencesDeclaration && windowPreferencesDeclaration < applicationSettingsStart)) {
+  throw new Error('Window preferences are not declared in the shared Settings render scope.');
+}
 if (!(applicationSettingsStart < windowSettingsStart && windowSettingsStart < computerProfileStart)) {
   throw new Error('Window & Handheld controls are not on the primary Application settings page.');
 }

@@ -2622,7 +2622,7 @@ class ShareServer:
                                                       "supported_platforms": list(ALL_CLIENT_PLATFORMS),
                                                       "default_platform": "windows"},
                               "runtime_variants": runtime_variant_catalog(),
-                              "dedicated_runtime_contract": dedicated_runtime_contract(bool(resolve_server_layout(game_root).native_linux) if str(game_root or '').strip() else False),
+                              "dedicated_runtime_contract": dedicated_runtime_contract(str(resolve_server_layout(game_root).win64_dir.name).casefold() == "linux" if str(game_root or '').strip() else False),
                               "files": manifest_files, "description": profile.get("description") or "", "tags": consolidated_tags,
                               "classification": classification,
                               "audience": str(profile.get("audience") or "general"),

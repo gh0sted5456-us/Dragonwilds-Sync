@@ -10,10 +10,11 @@ function finish(code,message){if(finished)return;finished=true;process.exitCode=
 const wait=(ms)=>new Promise((resolve)=>setTimeout(resolve,ms));
 async function until(fn,timeout=30000,label='window surface'){const end=Date.now()+timeout;while(Date.now()<end){const value=await fn();if(value)return value;await wait(100);}throw new Error(`Timed out waiting for ${label}.`);}
 async function renderer(win,source){return win.webContents.executeJavaScript(source,true);}
-async function assertPainted(win,marker=''){
+async function assertPainted(win,marker='',requireVisibleText=false){
   await until(()=>renderer(win,"document.readyState==='complete'"),30000,'window load');
   const state=await until(()=>renderer(win,`(()=>{const body=document.body;const text=String(body?.innerText||'').trim();const rect=body?.getBoundingClientRect?.();return {text,html:String(body?.innerHTML||''),width:Number(rect?.width||0),height:Number(rect?.height||0),ready:document.readyState};})()`),30000,'window body');
   if(!state.html||state.width<100||state.height<100)throw new Error(`Window did not paint a usable surface: ${JSON.stringify({width:state.width,height:state.height,html:state.html.length,text:state.text.slice(0,120)})}`);
+  if(requireVisibleText&&!state.text)throw new Error('Window loaded DOM but rendered no visible text; possible black-window regression.');
   if(marker&&!state.text.includes(marker))throw new Error(`Window painted but marker ${JSON.stringify(marker)} was missing: ${state.text.slice(0,240)}`);
 }
 
@@ -36,31 +37,33 @@ app.whenReady().then(async()=>{
     const result=await renderer(main,`window.dragonwilds.openManagedDialog({id:${JSON.stringify(id)},kind:'window-surface-test',title:'Managed Surface Test',html:'<div class="modal-header"><h2>Managed Surface Test</h2></div><div class="modal-body"><p>MANAGED_SURFACE_OK_${iteration}</p><input id="surface-field-${iteration}" value="painted"></div><div class="modal-footer"><button data-close-modal>Close</button></div>'})`);
     if(!result?.id)throw new Error(`Managed dialog did not return an id: ${JSON.stringify(result)}`);
     const child=await until(()=>BrowserWindow.getAllWindows().find((item)=>!before.has(item.id)&&!item.isDestroyed()),30000,'managed child window');
-    await assertPainted(child,`MANAGED_SURFACE_OK_${iteration}`);
+    await assertPainted(child,`MANAGED_SURFACE_OK_${iteration}`,true);
     const hostUrl=child.webContents.getURL();
     if(!/dialog-host\.html/i.test(hostUrl))throw new Error(`Managed dialog used unexpected host: ${hostUrl}`);
     await renderer(main,`window.dragonwilds.closeManagedDialog(${JSON.stringify(result.id)})`);
     await until(()=>child.isDestroyed()||!BrowserWindow.getAllWindows().includes(child),10000,'managed dialog close');
   };
 
-  const openDetached=async(iteration)=>{
+  const openDetached=async({route,iteration,context,label})=>{
     const before=new Set(BrowserWindow.getAllWindows().map((item)=>item.id));
-    const result=await renderer(main,`window.dragonwilds.openDetachedWindow({route:'settings',title:'Detached Surface Test ${iteration}',width:980,height:700,context:{settingsTab:'application'}})`);
-    if(!result?.id)throw new Error(`Detached window did not return an id: ${JSON.stringify(result)}`);
-    const child=await until(()=>BrowserWindow.getAllWindows().find((item)=>!before.has(item.id)&&!item.isDestroyed()),30000,'detached renderer window');
-    await assertPainted(child);
-    await until(()=>renderer(child,"!!document.querySelector('#app')"),30000,'detached app shell');
-    const context=await renderer(child,"window.dragonwilds?.detachedContext?.()");
-    const resolved=await context;
-    if(String(resolved?.route||'')!=='settings')throw new Error(`Detached renderer lost route context: ${JSON.stringify(resolved)}`);
+    const result=await renderer(main,`window.dragonwilds.openDetachedWindow({route:${JSON.stringify(route)},title:${JSON.stringify(`${label} ${iteration}`)},width:1100,height:760,context:${JSON.stringify(context)}})`);
+    if(!result?.id)throw new Error(`${label} did not return a detached window id: ${JSON.stringify(result)}`);
+    const child=await until(()=>BrowserWindow.getAllWindows().find((item)=>!before.has(item.id)&&!item.isDestroyed()),30000,`${label} child window`);
+    await assertPainted(child,'',true);
+    await until(()=>renderer(child,"!!document.querySelector('#app')"),30000,`${label} app shell`);
+    const resolved=await renderer(child,"window.dragonwilds?.detachedContext?.()");
+    if(String(resolved?.route||'')!==route)throw new Error(`${label} lost route context: ${JSON.stringify(resolved)}`);
+    for(const [key,value] of Object.entries(context||{}))if(String(resolved?.context?.[key]??'')!==String(value))throw new Error(`${label} lost context ${key}: ${JSON.stringify(resolved)}`);
     await renderer(main,`window.dragonwilds.closeDetachedWindow(${JSON.stringify(result.id)})`);
-    await until(()=>child.isDestroyed()||!BrowserWindow.getAllWindows().includes(child),10000,'detached window close');
+    await until(()=>child.isDestroyed()||!BrowserWindow.getAllWindows().includes(child),10000,`${label} close`);
   };
 
   await openManaged(1);
   await openManaged(2);
-  await openDetached(1);
-  await openDetached(2);
-  finish(0,'Window surfaces: PASS · managed dialog and full detached renderer both painted, closed, and reopened cleanly');
+  await openDetached({route:'settings',iteration:1,context:{settingsTab:'application'},label:'Detached Surface Test'});
+  await openDetached({route:'settings',iteration:2,context:{settingsTab:'application'},label:'Detached Surface Test'});
+  await openDetached({route:'server-console',iteration:1,context:{selectedServerWorldId:'window-surface-test-world'},label:'Runtime Console Surface Test'});
+  await openDetached({route:'server-console',iteration:2,context:{selectedServerWorldId:'window-surface-test-world'},label:'Runtime Console Surface Test'});
+  finish(0,'Window surfaces: PASS · managed dialogs, generic detached windows, and Runtime Console windows painted, closed, and reopened cleanly');
 }).catch((error)=>finish(1,`Window surfaces: FAIL · ${error?.stack||error}`));
-setTimeout(()=>finish(1,'Window surfaces: FAIL · 120 second timeout'),120000).unref?.();
+setTimeout(()=>finish(1,'Window surfaces: FAIL · 150 second timeout'),150000).unref?.();

@@ -1360,7 +1360,17 @@
         if(selected==='runeschema'&&!runeschemaOverviewLoaded)loadRuneschemaOverview();
       });
     });
-    win.querySelector('#detach-runtime-console')?.addEventListener('click',async()=>{try{const result=await window.dragonwilds.openDetachedWindow?.({route:'server-console',title:`${world.name||'World'} Runtime Console`,width:1240,height:800,context:{selectedServerWorldId:world.id}});if(result?.id&&!inlineHost)closeDesktopWindow(win);}catch(error){toast('Runtime Console could not detach',error.message,'error');}});
+    win.querySelector('#detach-runtime-console')?.addEventListener('click',async()=>{
+      try{
+        // Runtime Console already owns a live, fully wired DOM surface in the
+        // primary renderer. Mirror that surface into the lightweight managed
+        // host instead of booting a second full application/backend renderer.
+        // The managed bridge forwards inputs and clicks to this owner-side
+        // shadow, so tabs, filters, commands, and live output keep one state.
+        const opened=await popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`,width:1240,height:800});
+        if(!opened)throw new Error('The lightweight native console host is unavailable.');
+      }catch(error){toast('Runtime Console could not detach',error.message,'error');}
+    });
     let runeschemaOverviewLoaded=false,runeschemaSettingsDraft=null,runeschemaLoadOrderEntries=null;
     const rsGet=(obj,path)=>path.split('.').reduce((node,key)=>(node&&typeof node==='object')?node[key]:undefined,obj);
     const rsSet=(obj,path,value)=>{const keys=path.split('.');let node=obj;for(let i=0;i<keys.length-1;i++){if(typeof node[keys[i]]!=='object'||node[keys[i]]===null)node[keys[i]]={};node=node[keys[i]];}node[keys[keys.length-1]]=value;};

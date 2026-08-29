@@ -40,7 +40,7 @@ jobs:
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
       - name: Exercise managed and detached BrowserWindows
-        run: xvfb-run -a npx electron scripts/check_window_surfaces_electron.cjs
+        run: xvfb-run -a npx electron --no-sandbox scripts/check_window_surfaces_electron.cjs
 
   windows-window-surfaces:
     runs-on: windows-2025

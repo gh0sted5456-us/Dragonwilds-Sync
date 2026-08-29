@@ -1,4 +1,5 @@
 'use strict';
+// Triggered only on testing-branch; exact-match replacements prevent accidental renderer drift.
 const fs=require('fs');
 const path=require('path');
 const root=path.resolve(__dirname,'..');

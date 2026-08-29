@@ -3,6 +3,7 @@
   "updated_at": "2026-08-28T00:00:00Z",
   "name": "V3",
   "consolidated_from": [
+    "3.1.0",
     "3.0.6",
     "3.0.5",
     "3.0.3",
@@ -47,7 +48,7 @@
   ],
   "releases": [
     {
-      "version": "3.0.5",
+      "version": "3.1.0",
       "title": "V3",
       "date": "2026-08-28",
       "status": "stable",
@@ -81,10 +82,11 @@
         "Persistent window sizing — Application Settings provide remembered, fixed, maximized, preset, current-size, and custom resolutions plus persistent interface scale without crashing or disappearing between settings tabs.",
         "Experimental handheld layout — SteamOS and Windows handheld mode reuses the authoritative desktop application and profile state while presenting larger controller-friendly title-card navigation.",
         "Interface reliability — Settings swaps retain their shared shell; detached workspaces, native dialogs, mod viewers, notifications, Trash, and consoles remain themed, movable, focus-safe, and taskbar-aware.",
+        "Window architecture — Runtime Console and ordinary popups use the rapid managed-window host without duplicating the full application renderer, while Monaco-backed Mod Editor workspaces remain inside the authoritative application surface.",
         "Integrations — GitHub-backed application updates, RSDW assets, community recommendations, optional Nexus provenance, Discord presence, platform icons, and the standalone project website retain explicit trust boundaries.",
         "Performance and diagnostics — Compact status refreshes, bounded polling, cached presentation, batched console updates, redacted logs, network evidence, failure tails, and actionable recovery messages reduce repaint and troubleshooting noise.",
         "Safety — Credentials remain in protected storage, public metadata is sanitized, destructive operations are backup-first and path-bounded, generated client mods.txt files are local and role-filtered, and rollback remains recoverable.",
-        "Packaging — Windows remains portable-only in version 3.0.5 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
+        "Packaging — Windows remains portable-only in version 3.1.0 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
         "Release history — The former Alpha, V2.x, and incremental V3 notes are consolidated here into this single authoritative V3 changelog."
       ]
     }

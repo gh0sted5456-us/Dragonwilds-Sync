@@ -12,8 +12,8 @@ for (const label of ['Website &amp; Directory', 'Manifest &amp; Heartbeats', 'Se
 for (const stale of ['>Website Management</button>', '>Remote Management</button>', '>Live Preview</button>']) {
   if (app.includes(stale)) throw new Error(`Stale first-render Sync tab remains: ${stale}`);
 }
-if (!loader.includes('app-v2.js?v=3.0.5-dragonlink-world-type')) throw new Error('app-v2 cache key was not advanced.');
-if (!index.includes('app.js?v=3.0.5-dragonlink-world-type')) throw new Error('app loader cache key was not advanced.');
+if (!loader.includes('app-v2.js?v=3.1.0-window-hydration')) throw new Error('app-v2 cache key was not advanced.');
+if (!index.includes('app.js?v=3.1.0-window-hydration')) throw new Error('app loader cache key was not advanced.');
 if (!app.includes("typeof window.dwsApplyAvatarParams==='function'")) throw new Error('Avatar readiness must wait for the RSDWModel bridge.');
 if (!app.includes("document.querySelector('#avatar-loading')?.hidden===false")) throw new Error('Avatar readiness must use the renderer loading state.');
 if (app.includes("ready:'models-pending'")) throw new Error('Avatar readiness must not depend on one upstream status sentence.');

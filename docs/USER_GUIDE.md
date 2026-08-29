@@ -1,6 +1,6 @@
 # Player and World Owner Guide
 
-This guide describes Dragonwilds Sync `3.0.5` on the stable `main` branch.
+This guide describes Dragonwilds Sync `3.1.0` on the stable `main` branch.
 Release candidates are verified separately on `testing-branch` before promotion.
 
 ## Start safely

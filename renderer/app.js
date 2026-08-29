@@ -10,5 +10,5 @@
   }
   // Full mode executes the exact previously verified renderer synchronously so
   // the later release enhancement scripts retain their original ordering.
-  document.write('<script src="app-v2.js?v=3.0.5-dragonlink-world-type"><\\/script>');
+  document.write('<script src="app-v2.js?v=3.1.0-window-hydration"><\\/script>');
 })();

@@ -6,7 +6,7 @@ Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape:
 
 - `main` is the stable/default branch.
 - `testing-branch` is the staged implementation, verification, and package-candidate branch.
-- The current stable source and packaged application metadata are `3.0.5`.
+- The current stable source and packaged application metadata are `3.1.0`.
 - [`docs/changelog.json`](docs/changelog.json) is the single canonical V3 changelog; the launcher mirrors that same V3 record in `renderer/release-meta.js` for offline display.
 - A historical green result applies only to the exact commit and artifact recorded with it.
 

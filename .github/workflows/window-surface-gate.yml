@@ -1,0 +1,56 @@
+name: Window Surface Gate
+
+on:
+  push:
+    branches:
+      - testing-branch
+    paths:
+      - renderer/dialog-host.js
+      - renderer/app-v2.js
+      - electron/main-v2.cjs
+      - electron/preload-v2.cjs
+      - scripts/check_window_surfaces_electron.cjs
+      - scripts/check_window_navigation_lifecycle.cjs
+      - .github/workflows/window-surface-gate.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci
+      - run: node scripts/check_window_navigation_lifecycle.cjs
+
+  ubuntu-window-surfaces:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
+      - name: Exercise managed and detached BrowserWindows
+        run: xvfb-run -a npx electron scripts/check_window_surfaces_electron.cjs
+
+  windows-window-surfaces:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci
+      - name: Exercise managed and detached BrowserWindows
+        shell: powershell
+        run: npx electron scripts/check_window_surfaces_electron.cjs

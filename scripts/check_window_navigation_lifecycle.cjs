@@ -42,7 +42,7 @@ const passiveConsoleLaunch=app.match(/function launchRuntimeConsoleForWorld\(wor
 must(passiveConsoleLaunch.includes('state.selectedServerWorldId=world.id'),'server launch must associate background output with the selected World');
 must(passiveConsoleLaunch.includes('open_sync_console_on_host_start===true')&&passiveConsoleLaunch.includes('return openUnifiedLaunchConsole(world)'),'server launch may open Sync console only behind the explicit Application preference');
 for(const forbidden of ['state.route=', 'state.serverTab=', 'render()', 'openDetachedWindow'])must(!passiveConsoleLaunch.includes(forbidden),`server launch must not navigate, repaint, or directly create a renderer via ${forbidden}`);
-must(app.includes("popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`")&&!app.includes("openDetachedWindow?.({route:'server-console'"),'Runtime Console must use the lightweight themed native host instead of booting another full app renderer');
+must(app.includes("openDetachedWindow?.({route:'server-console'")&&!app.includes("popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`"),'Runtime Console must use the full detached renderer window so live controls, polling, tabs, and command state remain functional');
 for(const source of [local,world])must(source.includes('"folder": str(')&&source.includes('"root": str('),'opened files must return validated folder/root paths');
 must(local.includes('base not in path.parents')&&local.includes('rel.is_absolute()')&&local.includes('".." in rel.parts'),'SinglePlayer mod paths must remain contained');
 must(world.includes('_resolve_inside(layout.game_root, relative_path)'),'server mod paths must remain contained');

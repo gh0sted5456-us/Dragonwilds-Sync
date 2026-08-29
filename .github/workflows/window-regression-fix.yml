@@ -1,0 +1,42 @@
+name: Window Regression Repair
+
+on:
+  push:
+    branches:
+      - testing-branch
+    paths:
+      - scripts/apply_window_regression_fix.cjs
+      - .github/workflows/window-regression-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: testing-branch
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - name: Apply targeted window repair
+        run: node scripts/apply_window_regression_fix.cjs
+      - name: Verify source window lifecycle contract
+        run: node scripts/check_window_navigation_lifecycle.cjs
+      - name: Commit repaired source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No repair changes were required.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add renderer/app-v2.js scripts/check_window_navigation_lifecycle.cjs
+          git commit -m 'fix: restore reliable Runtime Console windows'
+          git push origin HEAD:testing-branch

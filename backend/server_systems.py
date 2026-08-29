@@ -2608,14 +2608,17 @@ class ShareServer:
         from sync_manifest import tag_client_deliveries
         manifest_files = tag_client_deliveries(manifest_files, profile_id)
         with STATE.lock:
-            version = max(int(profile.get("manifest_version") or 0), int(STATE.manifest.get("version") or 0)) + 1
+            previous_version = max(int(profile.get("manifest_version") or 0), int(STATE.manifest.get("version") or 0))
+            previous_manifest_fingerprint = str(
+                profile.get("manifest_fingerprint") or STATE.manifest.get("manifest_fingerprint") or ""
+            )
             metadata_revision = max(int(profile.get("metadata_revision") or 0), int(STATE.metadata_revision or 0), int(STATE.manifest.get("metadata_revision") or 0)) + 1
             STATE.password = password; STATE.server_key = ""; STATE.share_access_key = ""
             STATE.allow_shared_access = True; STATE.active_profile_id = profile_id
             STATE.lan_trust_enabled = bool(broadcast)
             STATE.tokens.clear(); STATE.token_sources.clear(); STATE.metadata_revision = metadata_revision
             fingerprint = world_sync_fingerprint(profile_id)
-            STATE.manifest = {"profile_id": profile_id, "profile_name": profile.get("name") or "World", "version": version, "metadata_revision": metadata_revision,
+            STATE.manifest = {"profile_id": profile_id, "profile_name": profile.get("name") or "World", "version": previous_version, "metadata_revision": metadata_revision,
                               "launcher_fingerprint": fingerprint,
                               "world_sync": {"protocol": WORLD_SYNC_PROTOCOL, "version": WORLD_SYNC_VERSION, "fingerprint": fingerprint},
                               "runtime_negotiation": {"protocol": 1, "request_header": "X-DWS-Client-Platform",
@@ -2665,9 +2668,21 @@ class ShareServer:
                               "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
                               "server_health": initial_health}
             client_meta = build_client_meta(STATE.manifest)
+            content_changed = (
+                not previous_manifest_fingerprint
+                or previous_manifest_fingerprint != client_meta["manifest_fingerprint"]
+            )
+            # A manifest revision describes the synchronized content contract,
+            # not how often the host has started or republished. Metadata has a
+            # separate revision above, so heartbeats, restarts, player counts,
+            # notices and other presentation refreshes do not manufacture a
+            # client file mismatch.
+            version = max(1, previous_version + (1 if content_changed else 0))
+            STATE.manifest["version"] = version
             STATE.manifest["manifest_fingerprint"] = client_meta["manifest_fingerprint"]
             STATE.manifest["component_fingerprints"] = client_meta["components"]
-            profile["manifest_version"] = version; profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile.pop("server_key", None)
+            profile["manifest_version"] = version; profile["manifest_fingerprint"] = client_meta["manifest_fingerprint"]
+            profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile.pop("server_key", None)
             profile.setdefault("sync_config", {})["port"] = int(port); profile["sync_config"]["password"] = password
             profile["sync_config"]["tls_cert_fingerprint"] = tls_cert_fingerprint
             STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""

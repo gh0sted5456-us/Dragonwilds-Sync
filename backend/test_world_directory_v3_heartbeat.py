@@ -10,6 +10,7 @@ from world_directory import normalize_heartbeat
 from unittest.mock import patch
 import json
 from pathlib import Path
+from unittest import mock
 
 
 class WorldDirectoryV3HeartbeatTests(unittest.TestCase):
@@ -101,6 +102,49 @@ class WorldDirectoryV3HeartbeatTests(unittest.TestCase):
         self.assertEqual(snapshot["mod_summary"][0]["name"], "Required Mod")
         self.assertTrue(snapshot["classification"]["pvp_enabled"])
         self.assertEqual(HEARTBEAT_INTERVAL_SECONDS, 60)
+
+    def test_official_publish_uses_self_registering_operator_heartbeat(self):
+        requests = []
+
+        class Response:
+            status = 200
+            def __enter__(self): return self
+            def __exit__(self, *_args): return False
+            def read(self, _limit=-1): return b'{"ok":true}'
+
+        service = object.__new__(DirectoryNetworkService)
+        service.endpoint = DRAGONWILDS_SYNC_NETWORK_URL
+        service.app_version = "test"
+        service.timeout = 2.0
+        service._lock = __import__("threading").RLock()
+        service._last_heartbeat_attempt = 0.0
+        service.http_open = lambda request, timeout=0: requests.append(request) or Response()
+        service.ensure_world_identity = lambda *_args, **_kwargs: {
+            "world_id": "dws-world-" + "c" * 32,
+            "public_directory_enabled": True,
+            "public_card": {"show_mods": True},
+        }
+        service._record_delivery = lambda *_args, **kwargs: {"last_http_status": kwargs.get("status", 0)}
+        with mock.patch("network_service.sign_directory_request", return_value={
+            "operator_fingerprint": "dwo1-" + "d" * 24,
+            "public_key": "publisher-key",
+            "signature": "publisher-signature",
+        }):
+            result = service.publish_official("profile", "dedicated", {
+                "name": "Existing World",
+                "fingerprint": "dws1-" + "e" * 24,
+            })
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+        self.assertTrue(request.full_url.endswith("/api/v1/heartbeat"))
+        self.assertNotIn("/register", request.full_url)
+        self.assertEqual(json.loads(request.data)["world_id"], "dws1-" + "e" * 24)
+        headers = {key.casefold(): value for key, value in request.header_items()}
+        self.assertEqual(headers["x-dws-operator"], "dwo1-" + "d" * 24)
+        self.assertEqual(headers["x-dws-public-key"], "publisher-key")
+        self.assertGreater(service._last_heartbeat_attempt, 0)
 
 
 if __name__ == "__main__":

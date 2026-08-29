@@ -23,6 +23,7 @@ from typing import Any, Callable
 import profile_settings
 import profile_store
 from network_config import DRAGONWILDS_SYNC_NETWORK_URL, network_contract
+from operator_identity import sign_directory_request
 from secret_store import SecretStore, PREFIX as SECRET_PREFIX
 from v3_migration import prepare_for_v3_migration, update_stage
 
@@ -299,7 +300,12 @@ class DirectoryNetworkService:
         for gameplay_tag in (classification.get("game_mode"), "pvp" if classification.get("pvp_enabled") else ""):
             if gameplay_tag and gameplay_tag not in public_tags:
                 public_tags.append(str(gameplay_tag))
-        snapshot = {"world_id":identity["world_id"], "world_name":world_name, "name":world_name,
+        # The Sync fingerprint was the public World identity before the V3
+        # settings document existed.  Keep publishing it when SHARE supplies
+        # one so an upgrade renews the existing directory row instead of
+        # creating a duplicate dws-world-* record beside it.
+        public_world_id = str(raw.get("world_id") or raw.get("fingerprint") or identity["world_id"])[:120]
+        snapshot = {"world_id":public_world_id, "world_name":world_name, "name":world_name,
             "description":str(card.get("description") or raw.get("description") or metadata.get("description") or "")[:600],
             "region":str(card.get("region") or raw.get("region") or classification.get("region") or "")[:80],
             "version":str(raw.get("reported_cl") or raw.get("cl") or raw.get("game_version") or "")[:80],
@@ -351,13 +357,25 @@ class DirectoryNetworkService:
         identity = self.ensure_world_identity(profile_id, kind)
         if not identity.get("public_directory_enabled"):
             return {"id":"official","name":"Dragonwilds Sync Network","enabled":False,"ok":True,"skipped":"world_publication_disabled"}
-        registration = self.register_world(profile_id, kind)
-        if not registration.get("ok"):
-            delivery = self._record_delivery("official",ok=False,status=int(registration.get("status") or 0),error=str(registration.get("error") or "world_registration_failed"))
-            return {"id":"official","name":"Dragonwilds Sync Network","enabled":True,"ok":False,"error":registration.get("error") or "world_registration_failed",**delivery}
         snapshot = self.build_public_snapshot(profile_id,kind,raw,status=status); body = _compact_json(snapshot)
-        result = self._request_json("POST","/api/v1/heartbeat",snapshot,
-            self.signed_headers(identity["credential"],body,principal={"x-dws-world-id":identity["world_id"]}))
+        # The deployed first-party Worker deliberately has no separate
+        # /register or /worlds/register mutation.  A valid Ed25519 heartbeat is
+        # the registration and renewal operation.  The former HMAC preflight
+        # returned 404 and prevented every V3.0.5 heartbeat from reaching this
+        # route, leaving a live server shown offline on the website.
+        timestamp = str(int(_now()))
+        signed = sign_directory_request(body, timestamp)
+        result = self._request_json("POST","/api/v1/heartbeat",snapshot,{
+            "x-dws-timestamp": timestamp,
+            "x-dws-signature": signed["signature"],
+            "x-dws-public-key": signed["public_key"],
+            "x-dws-operator": signed["operator_fingerprint"],
+        })
+        # Explicit renderer/headless heartbeats and the backend scheduler share
+        # this clock.  Recording every attempt prevents both owners from
+        # landing in the Worker's 15-second duplicate-pulse rate-limit window.
+        with self._lock:
+            self._last_heartbeat_attempt = _now()
         delivery = self._record_delivery("official",ok=bool(result.get("ok")),status=int(result.get("status") or 0),error=str(result.get("error") or ""))
         return {"id":"official","name":"Dragonwilds Sync Network","enabled":True,"ok":bool(result.get("ok")),
                 "status":int(result.get("status") or 0),"error":result.get("error",""),**delivery}

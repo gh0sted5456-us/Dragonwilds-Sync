@@ -135,6 +135,28 @@ def main():
                                         headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}).read())
             assert report["status"] == "match"
 
+            # Republish/start count is not a manifest revision. Identical
+            # synchronized content retains its version; changing one required
+            # mod advances it exactly once.
+            first_manifest_version = int(manifest["version"])
+            unchanged_publish = ss.SHARE.publish(
+                profile_id, ss.scan_mod_units(profile_id, str(game)), "BELTS", "key", port,
+                {"os": "test"}, 7777, broadcast=False,
+            )
+            assert unchanged_publish["manifest_version"] == first_manifest_version
+            (game / "Binaries/Win64/ue4ss/Mods/ClientVisible/main.lua").write_text("return 'changed'", encoding="utf-8")
+            changed_publish = ss.SHARE.publish(
+                profile_id, ss.scan_mod_units(profile_id, str(game)), "BELTS", "key", port,
+                {"os": "test"}, 7777, broadcast=False,
+            )
+            assert changed_publish["manifest_version"] == first_manifest_version + 1
+            repeated_changed_publish = ss.SHARE.publish(
+                profile_id, ss.scan_mod_units(profile_id, str(game)), "BELTS", "key", port,
+                {"os": "test"}, 7777, broadcast=False,
+            )
+            assert repeated_changed_publish["manifest_version"] == changed_publish["manifest_version"]
+            manifest, token, base, _ping = auth_manifest(f"127.0.0.1:{port}", "BELTS", "key")
+
             # Single RuneSchema mod zips must land under Runeschema/mods/<name>, not beside the core.
             mod_zip = root / "MagicStorage.zip"
             import zipfile

@@ -70,10 +70,12 @@ def main() -> None:
                     observed["world_secrets"][str(payload.get("world_id"))] = str(payload.get("credential") or "")
                     self._json(200, {"ok": True, "registered": True}); return
                 if self.path == "/api/v1/heartbeat":
-                    world_id = str(self.headers.get("x-dws-world-id") or payload.get("world_id") or "")
-                    secret = observed["world_secrets"].get(world_id, "")
-                    if not secret or not self._verify(secret, raw):
-                        self._json(401, {"error": "bad_world_signature"}); return
+                    # Production heartbeats self-register with the operator's
+                    # Ed25519 identity; they do not depend on the legacy HMAC
+                    # /worlds/register preflight exercised separately above.
+                    required = ("x-dws-timestamp", "x-dws-signature", "x-dws-public-key", "x-dws-operator")
+                    if not all(self.headers.get(name) for name in required):
+                        self._json(401, {"error": "publisher_identity_required"}); return
                     observed["heartbeats"].append({"payload": payload, "raw": raw, "signature": self.headers.get("x-dws-signature")})
                     self._json(200, {"ok": True}); return
                 self._json(404, {"error": "not_found"})

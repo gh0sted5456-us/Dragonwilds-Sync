@@ -337,7 +337,15 @@ def handle(method: str, params: dict) -> object:
         # official network from the same active SHARE payload. Failure in either
         # destination family is isolated and never becomes a server-stop cause.
         legacy_result = _base._heartbeat(_legacy.load_state(), exclude_official=True)
-        profile_id = str(_legacy.STATE.active_profile_id or "")
+        # Runtime-worker reattachment can restore a live SHARE before the
+        # legacy in-memory STATE mirror is populated.  The persisted active
+        # World and engine mirror are both valid recovery authorities here;
+        # without these fallbacks the scheduler clears NETWORK._active and the
+        # public heartbeat silently stops after an application/service restart.
+        current = _legacy.load_state()
+        profile_id = str(_legacy.STATE.active_profile_id or
+                         _legacy.ENGINE.active_profile_id or
+                         current.setdefault("server", {}).get("active_world_id") or "")
         if not profile_id or not _legacy.SHARE.status().get("serving"):
             NETWORK.world_stopped(reason="share_not_serving")
             return {"legacy": legacy_result, "official": {"published": False, "state": "Disabled"}}

@@ -2,6 +2,11 @@
 
 Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape: Dragonwilds. It manages Singleplayer, Co-Op, and Dedicated World profiles; UE4SS, RuneSchema, and PAK mods; authenticated host/client synchronization; character and RSDW-L tools; WebHost/Remote Admin; and public World-directory integration.
 
+**Project website:** https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/  
+**Website source:** https://github.com/gh0sted5456-us/Dragonwilds-Sync-Web
+
+The standalone website is the public home for downloads, setup instructions, the Experience section, World Builder, launcher preview, public server discovery, modding documentation, and user-facing release information. The application repository remains the authority for source code, releases, runtime contracts, and the canonical V3 changelog.
+
 ## Current build authority
 
 - `main` is the stable/default branch.
@@ -57,6 +62,8 @@ A build is not verified merely because an executable exists. Use the exact gates
 
 ## Documentation
 
+- [Project website](https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/)
+- [Website source](https://github.com/gh0sted5456-us/Dragonwilds-Sync-Web)
 - [Documentation authority and index](docs/README.md)
 - [Current capabilities](docs/CAPABILITIES.md)
 - [Current system inventory](docs/SYSTEMS.md)

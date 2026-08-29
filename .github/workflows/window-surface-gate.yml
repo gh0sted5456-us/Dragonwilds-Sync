@@ -1,3 +1,4 @@
+# Permanent multi-window regression gate. Keep this on release-bound branches.
 name: Window Surface Gate
 
 on:

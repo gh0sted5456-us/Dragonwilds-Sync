@@ -39,9 +39,14 @@ must(app.includes('editor?.dispose()')&&app.includes('referenceEditor?.dispose()
 must(app.includes('Unsaved Mod File')&&app.includes('Unsaved World File'),'editor close must guard unsaved work');
 must(app.includes('Open Mod Folder')&&app.includes('open-current-mod-folder'),'mod file locations must be actionable in-app');
 const passiveConsoleLaunch=app.match(/function launchRuntimeConsoleForWorld\(world\) \{([\s\S]*?)\n  \}/)?.[1]||'';
+const unifiedConsoleStart=app.indexOf('function openUnifiedLaunchConsole(world = activeServerWorld(), options={})');
+const unifiedConsoleEnd=app.indexOf('\n  function launchRuntimeConsoleForWorld',unifiedConsoleStart);
+const unifiedConsoleLaunch=unifiedConsoleStart>=0&&unifiedConsoleEnd>unifiedConsoleStart?app.slice(unifiedConsoleStart,unifiedConsoleEnd):'';
 must(passiveConsoleLaunch.includes('state.selectedServerWorldId=world.id'),'server launch must associate background output with the selected World');
 must(passiveConsoleLaunch.includes('open_sync_console_on_host_start===true')&&passiveConsoleLaunch.includes('return openUnifiedLaunchConsole(world)'),'server launch may open Sync console only behind the explicit Application preference');
 for(const forbidden of ['state.route=', 'state.serverTab=', 'render()', 'openDetachedWindow'])must(!passiveConsoleLaunch.includes(forbidden),`server launch must not navigate, repaint, or directly create a renderer via ${forbidden}`);
+must(unifiedConsoleLaunch.includes('const nativeWindow=!inlineHost&&!detachedMode')&&unifiedConsoleLaunch.includes('{native:nativeWindow,title:')&&!unifiedConsoleLaunch.includes('openDetachedWindow'),'Runtime Console must open directly in the lightweight managed native host instead of a second full application renderer');
+must(unifiedConsoleLaunch.includes("modalRoot.querySelectorAll('[data-unified-launch-console]')")&&unifiedConsoleLaunch.includes('restoreDetachedWindow?.(nativeId)'),'repeat Console opens must restore the existing native window instead of starting another renderer or polling loop');
 must(app.includes("popOutDesktopWindow(win,{title:`${world.name||'World'} Runtime Console`")&&!app.includes("openDetachedWindow?.({route:'server-console',title:`${world.name||'World'} Runtime Console`"),'Runtime Console must reuse its live owner-side surface through the lightweight managed host instead of booting a second full renderer');
 for(const source of [local,world])must(source.includes('"folder": str(')&&source.includes('"root": str('),'opened files must return validated folder/root paths');
 must(local.includes('base not in path.parents')&&local.includes('rel.is_absolute()')&&local.includes('".." in rel.parts'),'SinglePlayer mod paths must remain contained');

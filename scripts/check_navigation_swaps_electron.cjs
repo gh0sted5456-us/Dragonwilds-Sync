@@ -33,6 +33,23 @@ app.whenReady().then(async()=>{
   const entryState=await until(()=>win.webContents.executeJavaScript("document.querySelector('.app-shell .sidebar')?'shell':(document.querySelector('#enter-launcher, #enter-app, [data-enter-app], .welcome-enter')?'enter':'')"),30000);
   if(entryState==='enter')await win.webContents.executeJavaScript("document.querySelector('#enter-launcher, #enter-app, [data-enter-app], .welcome-enter').click()");
   await until(()=>win.webContents.executeJavaScript("!!document.querySelector('.app-shell .sidebar')"),30000);
+  await win.webContents.executeJavaScript("document.querySelector('[data-route=\"worlds\"]')?.click()");
+  await until(()=>win.webContents.executeJavaScript("!!document.querySelector('#add-world, #add-world-card')"),10000);
+  await win.webContents.executeJavaScript("document.querySelector('#add-world, #add-world-card').click()");
+  const connectNativeWindow=await until(()=>BrowserWindow.getAllWindows().find((item)=>item!==win&&!item.isDestroyed()),10000);
+  await until(()=>connectNativeWindow.webContents.executeJavaScript("document.body?.dataset?.dialogHydration==='ready'"),10000);
+  const connectWorldWindow=await until(()=>win.webContents.executeJavaScript(`(()=>{
+    const surface=[...document.querySelectorAll('.modal-window, .managed-dialog-shadow')].find((item)=>item.textContent?.includes('Unified World Access'));
+    if(!surface)return null;
+    const tabs=[...surface.querySelectorAll('[data-connect-world-tab]')].map((item)=>item.dataset.connectWorldTab);
+    const panels={};
+    for(const key of tabs){surface.querySelector('[data-connect-world-tab="'+key+'"]')?.click();panels[key]=surface.querySelector('[data-connect-world-panel]')?.textContent?.trim()||'';}
+    return {tabs,panels};
+  })()`),10000);
+  const expectedConnectTabs=['saved','lan','direct','import','host'];
+  if(!connectNativeWindow.isVisible()||expectedConnectTabs.some((key)=>!connectWorldWindow.tabs.includes(key)))throw new Error(`Unified Connect to World window is incomplete: ${JSON.stringify(connectWorldWindow)}`);
+  for(const key of expectedConnectTabs){if(!connectWorldWindow.panels[key])throw new Error(`Unified Connect to World tab ${key} rendered an empty panel.`);}
+  await win.webContents.executeJavaScript(`[...document.querySelectorAll('.modal-window, .managed-dialog-shadow')].find((item)=>item.textContent?.includes('Unified World Access'))?.querySelector('[data-close-modal]')?.click()`);
   await win.webContents.executeJavaScript("window.__DWSYNC_SWAP_METRICS__?.clear()");
   const selectors=[
     '[data-route="profile"]','[data-profile-tab="characters"]','[data-profile-tab="user"]',

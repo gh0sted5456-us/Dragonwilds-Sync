@@ -20,6 +20,7 @@ const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-lo
 const popupSafety = fs.readFileSync(path.join(root, 'renderer', 'release-popup-safety.js'), 'utf8');
 const recommendedPlacardsCss = fs.readFileSync(path.join(root, 'renderer', 'release-recommended-placards.css'), 'utf8');
 const electronMain = fs.readFileSync(path.join(root, 'electron', 'main-v2.cjs'), 'utf8');
+const appUpdater = fs.readFileSync(path.join(root, 'electron', 'app_updater.cjs'), 'utf8');
 const publicServers = fs.readFileSync(path.join(root, 'renderer', 'public-server-list.js'), 'utf8');
 const liveHelp = fs.readFileSync(path.join(root, 'renderer', 'release-vnext.js'), 'utf8');
 const liveHelpMedia = fs.readFileSync(path.join(root, 'renderer', 'release-vnext-help-media.js'), 'utf8');
@@ -190,6 +191,23 @@ assert(source.includes('data-repository-build-id') && source.includes("'mod.repo
   'Mod Management must preview and safely consolidate legacy metadata into ID.txt.');
 assert(source.includes('include_world_passwords:false') && source.includes('Profile-wrapped and safe to share'),
   'Connected-world profile exports must always exclude passwords and explain their profile wrapper.');
+assert(source.includes('function openConnectToWorld') && source.includes('Unified World Access') &&
+  source.includes("['saved','lan','direct','import','host']") && source.includes('incomingRsdwlWorldRows') &&
+  source.includes('Array.isArray(info.worlds)?info.worlds:Array.isArray(info.worlds?.worlds)?info.worlds.worlds'),
+  'Local, LAN, direct, RSDWL, and hosted World entry points must share one connection workspace.');
+assert(source.includes("comparison=incomingRevision>localRevision?'newer':'local-newer'") &&
+  source.includes("comparison=incomingTime>localTime?'newer':'local-newer'") &&
+  source.includes("canonical?'v3.exchange.import':'profile.package.import'") &&
+  source.includes("row.comparison==='new'?'copy':row.comparison==='newer'?'update':'skip'") &&
+  source.includes('Existing routes and credentials were retained where identities matched.'),
+  'RSDWL community imports must compare package metadata with the matching saved connection before import.');
+assert(baseCss.includes('.connect-world-shell') && baseCss.includes('.connect-world-line') &&
+  baseCss.includes('.splash-notice{box-sizing:border-box;width:100%;max-width:100%'),
+  'The unified connection workspace and bounded update splash layout must remain styled.');
+assert(appUpdater.includes('update-pending.json') && appUpdater.includes('update-failure.txt') &&
+  appUpdater.includes('$dst.update-new') && appUpdater.includes('Get-FileHash -LiteralPath $dst') &&
+  appUpdater.includes('sha256sum "$dst"'),
+  'The portable updater must stage, verify the installed replacement, retain rollback, and report failure after relaunch.');
 
 function sha256(relativePath) {
   return crypto.createHash('sha256')

@@ -44,6 +44,9 @@ def main():
     assert "github.com" in updater
     assert "Update blocked" in updater
     assert "Wait-Process" in updater
+    assert "update-pending.json" in updater and "update-failure.txt" in updater
+    assert "$dst.update-new" in updater and "Get-FileHash -LiteralPath $dst" in updater
+    assert 'sha256sum "$dst"' in updater
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["version"].startswith("3.")

@@ -138,39 +138,55 @@ async function stageAndApply({ app, release, repositoryUrl }) {
   const actual = sha256File(staged);
   if (actual !== String(asset.digest).toLowerCase()) { try { fs.unlinkSync(staged); } catch (_) {} throw new Error('Update blocked: downloaded asset SHA-256 does not match GitHub release metadata.'); }
 
-  const marker = path.join(app.getPath('userData'), 'update-result.json');
-  fs.writeFileSync(marker, JSON.stringify({ version: release.latestVersion, name: release.name, notes: release.notes, releaseUrl: release.releaseUrl, repository: repositoryUrl, appliedAtUtc: new Date().toISOString(), mode }, null, 2));
   const currentExe = process.platform === 'linux' ? String(process.env.APPIMAGE || process.execPath) : String(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath);
   if (!currentExe || !fs.existsSync(currentExe)) throw new Error(`The running ${expected} path could not be resolved.`);
+  const marker = path.join(app.getPath('userData'), 'update-result.json');
+  const pendingMarker = path.join(app.getPath('userData'), 'update-pending.json');
+  const failureMarker = path.join(app.getPath('userData'), 'update-failure.txt');
+  for (const stale of [marker, failureMarker]) { try { fs.unlinkSync(stale); } catch (_) {} }
+  fs.writeFileSync(pendingMarker, JSON.stringify({
+    ok: true, version: release.latestVersion, name: release.name, notes: release.notes,
+    releaseUrl: release.releaseUrl, repository: repositoryUrl, stagedAtUtc: new Date().toISOString(), mode,
+    assetName: asset.name, sha256: actual,
+  }, null, 2));
   let child;
   if (process.platform === 'linux') {
     const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.sh`);
     const shQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
-    const body = `#!/bin/sh\nset -eu\npid=${process.pid}\nsrc=${shQuote(staged)}\ndst=${shQuote(currentExe)}\nwhile kill -0 "$pid" 2>/dev/null; do sleep 0.2; done\ncp "$src" "$dst"\nchmod +x "$dst"\nrm -f "$src"\nnohup "$dst" >/dev/null 2>&1 &\nrm -f "$0"\n`;
+    const body = `#!/bin/sh\nset -eu\npid=${process.pid}\nsrc=${shQuote(staged)}\ndst=${shQuote(currentExe)}\npending=${shQuote(pendingMarker)}\nresult=${shQuote(marker)}\nfailure=${shQuote(failureMarker)}\nexpected=${shQuote(actual)}\nbackup="$dst.previous"\nnext="$dst.update-new"\nwhile kill -0 "$pid" 2>/dev/null; do sleep 0.2; done\nif cp "$src" "$next" && chmod +x "$next" && [ "$(sha256sum "$next" | awk '{print $1}')" = "$expected" ]; then\n  cp "$dst" "$backup" 2>/dev/null || true\n  mv -f "$next" "$dst"\n  if [ "$(sha256sum "$dst" | awk '{print $1}')" = "$expected" ]; then\n    rm -f "$src" "$failure"\n    mv -f "$pending" "$result"\n    nohup "$dst" >/dev/null 2>&1 &\n    rm -f "$0"\n    exit 0\n  fi\nfi\n[ -f "$backup" ] && cp "$backup" "$dst" || true\nprintf '%s' 'The staged AppImage could not replace or verify the running application. The previous executable was retained.' > "$failure"\nrm -f "$pending" "$next"\n[ -x "$dst" ] && nohup "$dst" >/dev/null 2>&1 &\nrm -f "$0"\nexit 1\n`;
     fs.writeFileSync(script, body, { encoding:'utf8', mode:0o700 });
     child = spawn('/bin/sh', [script], { detached:true, stdio:'ignore' });
   } else {
-    const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.ps1`);
-    const body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\ntry { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\nStart-Sleep -Milliseconds 600\nCopy-Item -LiteralPath $src -Destination $dst -Force\nRemove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue\nStart-Process -FilePath $dst\nRemove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue\n`;
-    fs.writeFileSync(script, body, 'utf8');
-    child = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], { detached:true, stdio:'ignore', windowsHide:true });
+    const body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\n$pending=${psQuote(pendingMarker)}\n$result=${psQuote(marker)}\n$failure=${psQuote(failureMarker)}\n$expected=${psQuote(actual)}\n$backup="$dst.previous"\n$next="$dst.update-new"\ntry {\n  try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\n  Start-Sleep -Milliseconds 700\n  Copy-Item -LiteralPath $src -Destination $next -Force\n  if ((Get-FileHash -LiteralPath $next -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'The staged replacement failed its SHA-256 verification.' }\n  if (Test-Path -LiteralPath $dst) { Copy-Item -LiteralPath $dst -Destination $backup -Force }\n  $copied=$false\n  foreach($attempt in 1..8){\n    try { Copy-Item -LiteralPath $next -Destination $dst -Force; $copied=$true; break }\n    catch { if($attempt -eq 8){throw}; Start-Sleep -Milliseconds (250*$attempt) }\n  }\n  if(-not $copied -or (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected){ throw 'The installed replacement failed its SHA-256 verification.' }\n  Remove-Item -LiteralPath $src,$next,$failure -Force -ErrorAction SilentlyContinue\n  Move-Item -LiteralPath $pending -Destination $result -Force\n  Start-Process -FilePath $dst -WorkingDirectory (Split-Path -Parent $dst)\n} catch {\n  if(Test-Path -LiteralPath $backup){ Copy-Item -LiteralPath $backup -Destination $dst -Force -ErrorAction SilentlyContinue }\n  [IO.File]::WriteAllText($failure,('Automatic update failed: '+$_.Exception.Message),[Text.UTF8Encoding]::new($false))\n  Remove-Item -LiteralPath $pending,$next -Force -ErrorAction SilentlyContinue\n  if(Test-Path -LiteralPath $dst){ Start-Process -FilePath $dst -WorkingDirectory (Split-Path -Parent $dst) }\n  exit 1\n}\n`;
+    const encoded = Buffer.from(body, 'utf16le').toString('base64');
+    child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached:true, stdio:'ignore', windowsHide:true });
   }
+  try { await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); }); }
+  catch (error) { try { fs.unlinkSync(pendingMarker); } catch (_) {} throw error; }
   child.unref();
-  setTimeout(() => app.quit(), 250);
+  setTimeout(() => app.quit(), 750);
   return { ok: true, mode, staged, targetVersion: release.latestVersion };
 }
 
 function readAppliedUpdate(app) {
   const marker = path.join(app.getPath('userData'), 'update-result.json');
+  const failureMarker = path.join(app.getPath('userData'), 'update-failure.txt');
+  try {
+    const message = fs.readFileSync(failureMarker, 'utf8').trim();
+    if (message) return { ok: false, failed: true, message, marker: true };
+  } catch (_) {}
   try {
     const data = JSON.parse(fs.readFileSync(marker, 'utf8'));
     if (String(data.version || '').replace(/^v/i, '') !== String(app.getVersion() || '').replace(/^v/i, '')) return null;
-    return { ...data, marker: true };
+    return { ok: true, ...data, marker: true };
   } catch (_) { return null; }
 }
 function dismissAppliedUpdate(app) {
-  const marker = path.join(app.getPath('userData'), 'update-result.json');
-  try { fs.unlinkSync(marker); return true; } catch (_) { return false; }
+  let removed = false;
+  for (const name of ['update-result.json', 'update-failure.txt']) {
+    try { fs.unlinkSync(path.join(app.getPath('userData'), name)); removed = true; } catch (_) {}
+  }
+  return removed;
 }
 
 module.exports = { normalizeRepository, checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate };

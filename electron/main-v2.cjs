@@ -700,7 +700,15 @@ function showPassiveNotification(event) {
   notificationSeen.set(key, now);
   if (event.overlay && backgroundSettings.announcement_overlay_enabled !== false) showAnnouncementOverlay(event);
   if (!Notification.isSupported()) return;
-  const n = new Notification({ title: String(event.title || 'Dragonwilds Sync'), body: String(event.body || ''), silent: true, icon: iconPath() });
+  let notificationIcon=iconPath();
+  const originIcon=String(event?.origin?.icon_b64||event?.origin_icon_b64||'').trim();
+  if(originIcon){
+    try{
+      const image=nativeImage.createFromDataURL(originIcon.startsWith('data:')?originIcon:`data:image/png;base64,${originIcon}`);
+      if(!image.isEmpty())notificationIcon=image;
+    }catch(_){}
+  }
+  const n = new Notification({ title: String(event.title || 'Dragonwilds Sync'), body: String(event.body || ''), silent: true, icon: notificationIcon });
   n.on('click', () => { const w = createWindow({ show: true }); w.show(); w.focus(); }); n.show();
   if (notificationSeen.size > 200) for (const [k, t] of notificationSeen) if (now - t > 24 * 3600 * 1000) notificationSeen.delete(k);
 }
@@ -713,7 +721,9 @@ function showAnnouncementOverlay(event) {
   const area=screen.getPrimaryDisplay().workArea, width=Math.min(760,Math.max(420,area.width-40));
   announcementWindow=new BrowserWindow({width,height:108,x:Math.round(area.x+(area.width-width)/2),y:area.y+18,frame:false,transparent:true,backgroundColor:'#00000000',alwaysOnTop:true,focusable:false,skipTaskbar:true,resizable:false,movable:false,show:false,hasShadow:false,webPreferences:{nodeIntegration:false,contextIsolation:true,sandbox:true,devTools:false}});
   announcementWindow.setIgnoreMouseEvents(true,{forward:false}); announcementWindow.setAlwaysOnTop(true,'screen-saver');
-  const html=`<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0;background:transparent;overflow:hidden}body{padding:5px;font:14px/1.35 Segoe UI,system-ui;color:#f7f3e9}.card{height:96px;display:grid;grid-template-columns:6px 1fr;overflow:hidden;border:1px solid ${accent};border-radius:14px;background:rgba(10,14,15,.94);box-shadow:0 16px 44px rgba(0,0,0,.48)}.accent{background:${accent}}.copy{padding:15px 18px}.title{color:${accent};font-weight:800;letter-spacing:.04em;margin-bottom:5px}.body{font-size:15px}.hint{margin-top:5px;color:#9ca5a2;font-size:10px;text-transform:uppercase;letter-spacing:.12em}</style></head><body><div class="card"><div class="accent"></div><div class="copy"><div class="title">${escapeHtml(event.title||'Dragonwilds Sync')}</div><div class="body">${escapeHtml(event.body||'')}</div><div class="hint">Passive World announcement · no focus or input captured</div></div></div></body></html>`;
+  const dataImage=value=>{const raw=String(value||'').trim();return raw?(raw.startsWith('data:')?raw:`data:image/png;base64,${raw}`):''};
+  const origin=event?.origin||{},originIcon=dataImage(origin.icon_b64),originBanner=dataImage(origin.banner_b64);
+  const html=`<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0;background:transparent;overflow:hidden}body{padding:5px;font:14px/1.35 Segoe UI,system-ui;color:#f7f3e9}.card{position:relative;isolation:isolate;height:96px;display:grid;grid-template-columns:6px ${originIcon?'58px ':''}1fr;align-items:center;overflow:hidden;border:1px solid ${accent};border-radius:14px;background:rgba(10,14,15,.94);box-shadow:0 16px 44px rgba(0,0,0,.48)}.banner{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;opacity:.28;filter:saturate(.78) contrast(1.08)}.veil{position:absolute;z-index:-1;inset:0;background:linear-gradient(90deg,rgba(8,11,12,.97),rgba(8,11,12,.76),rgba(8,11,12,.94))}.accent{height:100%;background:${accent}}.origin{width:46px;height:46px;margin-left:11px;object-fit:cover;border:1px solid ${accent};border-radius:11px;background:#090c0d;box-shadow:0 7px 18px rgba(0,0,0,.38)}.copy{padding:12px 18px}.title{color:${accent};font-weight:800;letter-spacing:.04em;margin-bottom:4px}.body{font-size:14px}.hint{margin-top:4px;color:#aab2af;font-size:9px;text-transform:uppercase;letter-spacing:.12em}</style></head><body><div class="card">${originBanner?`<img class="banner" src="${escapeHtml(originBanner)}" alt="">`:''}<div class="veil"></div><div class="accent"></div>${originIcon?`<img class="origin" src="${escapeHtml(originIcon)}" alt="">`:''}<div class="copy"><div class="title">${escapeHtml(event.title||'Dragonwilds Sync')}</div><div class="body">${escapeHtml(event.body||'')}</div><div class="hint">${escapeHtml(origin.label||'Dragonwilds Sync')} · passive notification</div></div></div></body></html>`;
   announcementWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`); announcementWindow.once('ready-to-show',()=>announcementWindow?.showInactive());
   announcementWindow.on('closed',()=>{announcementWindow=null}); announcementTimer=setTimeout(()=>{if(announcementWindow&&!announcementWindow.isDestroyed())announcementWindow.destroy();announcementTimer=null},9000);
 }

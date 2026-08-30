@@ -2060,7 +2060,7 @@
       root.innerHTML = `<div class="detached-loading"><div class="spinner"></div><strong>Opening…</strong></div>`;
     } else {
       root.className = 'welcome-root';
-      root.innerHTML = `<div class="fantasy-loading"><img class="fantasy-loading-art" src="assets/theme/animated-splash.webp" alt=""/><div class="fantasy-loading-card"><img src="assets/application-icon.webp" alt="" /><div class="spinner"></div><strong>Preparing Dragonwilds Sync</strong><span data-startup-status>Restoring Worlds, profiles, paths, and server state…</span><div class="startup-progress" role="progressbar"><i></i></div></div></div>`;
+      root.innerHTML = `<div class="fantasy-loading flat-loading"><div class="fantasy-loading-card"><img src="assets/application-icon.webp" alt="Dragonwilds Sync" /><div class="spinner"></div><strong>Preparing Dragonwilds Sync</strong><span data-startup-status>Restoring Worlds, profiles, paths, and server state…</span><div class="startup-progress" role="progressbar"><i></i></div></div></div>`;
     }
     try {
       if(detachedMode && window.dragonwilds?.detachedContext){
@@ -2206,15 +2206,16 @@
     const items = [...(state.data?.application?.notifications || [])].filter(Boolean).sort((a,b) => Number(b.created_at || 0) - Number(a.created_at || 0));
     const bucket=(item)=>{const text=`${item.kind||''} ${item.title||''} ${item.body||''}`.toLowerCase();if(/warning|error|restart|attention/.test(text))return'warnings';if(/update|upgrade|refresh|version/.test(text))return'updates';if(item.world_id||/server|world|connection|network|host/.test(text))return'servers';return'general';};
     const notificationIdentity=(item)=>{
-      const worldId=String(item.world_id||item.profile_id||'');
+      const origin=item?.origin||item?.details?.origin||{};
+      const worldId=String(item.world_id||item.profile_id||origin.id||'');
       const pools=[...worlds(),...privateWorlds(),...serverWorlds(),...sharedWorldProfiles(),...(state.data?.client?.discovered_worlds||[]),...(state.data?.client?.directory_worlds||[])];
-      const world=pools.find((entry)=>String(entry?.id||entry?.profile_id||'')===worldId);
+      const world=pools.find((entry)=>[entry?.id,entry?.profile_id,entry?.shared?.source_id,entry?.identity?.server_profile_id_hint].some((value)=>String(value||'')===worldId));
       const presentation=world?.presentation||world?.profile?.presentation||{};
       const profileMatch=worldId&&String(state.data?.player_profile?.profile_id||state.data?.player_profile?.id||'')===worldId?state.data.player_profile:null;
       return {
-        label:String(world?.name||world?.nickname||world?.identity?.world_name||world?.profile_name||profileMatch?.display_name||''),
-        icon:b64Image(presentation.icon_b64||world?.icon_b64||world?.profile?.icon_b64)||profileMatch?.avatar_data||'assets/application-icon.webp',
-        banner:b64Image(presentation.banner_b64||world?.banner_b64||world?.profile?.banner_b64)||profileMatch?.banner_data||'',
+        label:String(origin.label||world?.name||world?.nickname||world?.identity?.world_name||world?.profile_name||profileMatch?.display_name||''),
+        icon:b64Image(origin.icon_b64||presentation.icon_b64||world?.icon_b64||world?.profile?.icon_b64)||profileMatch?.avatar_data||'assets/application-icon.webp',
+        banner:b64Image(origin.banner_b64||presentation.banner_b64||world?.banner_b64||world?.profile?.banner_b64)||profileMatch?.banner_data||'',
       };
     };
     const openSyncReceipt=(item)=>{
@@ -4880,9 +4881,9 @@
           <div class="server-install-actions"><button class="btn primary" id="save-window-preferences">Apply Window Settings</button></div>
         </section>
         <section class="settings-section"><h2>Application</h2>
-          <div class="settings-row"><div class="settings-copy"><strong>Theme</strong><span>Applies across the launcher desktop, internal windows, Monaco, guided setup, and placards.</span></div><div class="theme-grid">${[['dark-fantasy','Dark','Dark graphite and antique gold'],['light','Light','Clean daylight UI'],['desert-script','Desert Script','Papyrus, indigo ink and sun-baked clay'],['eastern','Eastern','Sumi ink, vermilion and traditional Japanese screens']].map(([id,name,desc]) => `<button class="theme-card theme-preview-${id} ${(a.theme === id || (id === 'dark-fantasy' && !['light','desert-script','eastern'].includes(a.theme))) ? 'active' : ''}" data-theme-choice="${id}"><strong>${name}</strong><span>${desc}</span></button>`).join('')}</div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Theme</strong><span>Applies across the launcher desktop, internal windows, Monaco, guided setup, and placards.</span></div><div class="theme-grid">${[['dark-fantasy','Dark','Dark graphite and antique gold'],['dark-pad','Dark Pads','Solid dark surfaces with no decorative background pictures'],['light','Light','Clean daylight UI'],['desert-script','Desert Script','Papyrus, indigo ink and sun-baked clay'],['eastern','Eastern','Sumi ink, vermilion and traditional Japanese screens']].map(([id,name,desc]) => `<button class="theme-card theme-preview-${id} ${(a.theme === id || (id === 'dark-fantasy' && !['dark-pad','light','desert-script','eastern'].includes(a.theme))) ? 'active' : ''}" data-theme-choice="${id}"><strong>${name}</strong><span>${desc}</span></button>`).join('')}</div></div>
           <div class="settings-row glass-theme-setting"><div class="settings-copy"><strong>Cathedral stained glass</strong><span>Layer genuine leaded-glass artwork, jewel-toned transmitted light, and transparent panels over the selected theme.</span></div><button class="toggle ${a.glass_theme?'on':''}" id="toggle-glass-theme" role="switch" aria-checked="${a.glass_theme?'true':'false'}" aria-label="Cathedral stained glass"></button></div>
-          <div class="settings-row"><div class="settings-copy"><strong>Loading artwork</strong><span>Use the optimized V2 dragon animation, or choose your own GIF, PNG, JPG, or WebP. The same artwork appears during startup and in the small World shortcut Sync window.</span></div><div class="header-actions"><button class="btn ghost" id="choose-loading-art">Choose GIF / Image</button><button class="btn ghost" id="reset-loading-art" ${a.loading_art_url?'':'disabled'}>Use V2 Default</button></div></div>
+          <div class="settings-row"><div class="settings-copy"><strong>Entry artwork</strong><span>Illustrated themes can use the optimized V2 dragon animation or your own GIF, PNG, JPG, or WebP. Startup remains a clean black brand screen, and Dark Pads intentionally ignores decorative artwork.</span></div><div class="header-actions"><button class="btn ghost" id="choose-loading-art">Choose GIF / Image</button><button class="btn ghost" id="reset-loading-art" ${a.loading_art_url?'':'disabled'}>Use V2 Default</button></div></div>
           <div class="settings-row"><div class="settings-copy"><strong>Close to system tray</strong><span>Recommended. Closing the window hides Dragonwilds Sync in the Windows tray so dynamic patching, server monitoring, and passive notifications can continue. Turn this off only when you want Close to fully quit.</span></div><button class="toggle ${(a.background_mode || {}).close_to_tray === false ? '' : 'on'}" id="toggle-close-to-tray"></button></div>
           <div class="settings-row"><div class="settings-copy"><strong>Start minimized</strong><span>Start Dragonwilds Sync quietly without opening the workspace.</span></div><button class="toggle ${(a.background_mode || {}).start_minimized ? 'on' : ''}" id="toggle-start-minimized"></button></div>
           <div class="settings-row"><div class="settings-copy"><strong>Open Sync console when hosting starts</strong><span>Optionally open the live Dragonwilds Sync runtime console when a World starts or reconnects. The original dedicated-server console still starts minimized without taking focus when native consoles are enabled.</span></div><button class="toggle ${(a.background_mode || {}).open_sync_console_on_host_start ? 'on' : ''}" id="toggle-sync-console-on-host-start"></button></div>
@@ -5113,6 +5114,8 @@
     const updateCard = u?.available && String(cfg.dismissed_version || '') !== String(u.latestVersion || '') ? `<div class="splash-notice update"><div><strong>Update available · ${escapeHtml(u.name || u.tag || u.latestVersion)}</strong><span>${escapeHtml((u.notes || 'A newer Dragonwilds Sync release is available.').split(/\r?\n/).filter(Boolean)[0]?.slice(0,220) || '')}</span></div><div class="header-actions"><button class="btn ghost compact-btn" id="splash-update-notes">View Changes</button><button class="btn ghost compact-btn" id="splash-update-later">Later</button><button class="btn primary compact-btn" id="splash-update-now">Update</button></div></div>` : '';
     const r = state.applicationUpdateResult;
     const changelogCard = r ? `<div class="splash-notice success"><div><strong>Updated to ${escapeHtml(r.name || `Dragonwilds Sync ${r.version || ''}`)}</strong><span>${escapeHtml((r.notes || 'Update completed successfully.').slice(0,320))}</span></div><div class="header-actions">${r.releaseUrl ? `<button class="btn ghost compact-btn" id="splash-changelog-open">Full Changelog</button>` : ''}<button class="btn primary compact-btn" id="splash-changelog-dismiss">Dismiss</button></div></div>` : '';
+    const darkPad=String(state.data?.application?.theme||'')==='dark-pad';
+    if(darkPad)return `${renderTitlebar()}<div class="fantasy-entry dark-pad-entry"><div class="fantasy-entry-card"><img src="assets/application-icon.webp" alt="Dragonwilds Sync" /><div class="eyebrow">${escapeHtml(window.DWSYNC_RELEASE_META?.name || 'V3.1')}</div><h1>Dragonwilds Sync</h1>${updateCard}${changelogCard}<button class="btn primary entry-button" id="enter-launcher">ENTER</button><small>Worlds · Mods · Servers</small></div></div>`;
     return `${renderTitlebar()}<div class="fantasy-entry"><img class="fantasy-entry-art" src="${escapeHtml(state.data?.application?.loading_art_url||'assets/theme/animated-splash.webp')}" alt=""/><div class="fantasy-entry-shade"></div><div class="fantasy-entry-card"><img src="assets/application-icon.webp" alt="Dragonwilds Sync" /><div class="eyebrow">${escapeHtml(window.DWSYNC_RELEASE_META?.name || 'V3.1')}</div><h1>Worlds, Mods, and Servers — One Launcher</h1><p>Everything is loaded. Enter when you're ready.</p>${updateCard}${changelogCard}<div class="entry-tip"><strong>Field Note</strong><span>${escapeHtml(tip)}</span></div><button class="btn primary entry-button" id="enter-launcher">ENTER</button><small>Dragonwilds Sync ${escapeHtml(window.DWSYNC_RELEASE_META?.name || 'V3.1')} · RSDWL v3 · Smart Updates</small></div></div>`;
   }
 
@@ -5218,7 +5221,7 @@
     } : null;
 
     const requestedTheme=String(state.data?.application?.theme||'dark-fantasy');
-    const theme=['dark-fantasy','light','desert-script','eastern','fantasy','high-contrast'].includes(requestedTheme)?requestedTheme:'dark-fantasy';
+    const theme=['dark-fantasy','dark-pad','light','desert-script','eastern','fantasy','high-contrast'].includes(requestedTheme)?requestedTheme:'dark-fantasy';
     document.body.dataset.theme = theme;
     document.body.dataset.glass = state.data?.application?.glass_theme ? '1' : '0';
     const windowPrefs=state.data?.application?.window_preferences||{};

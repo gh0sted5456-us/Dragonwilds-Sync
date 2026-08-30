@@ -486,6 +486,38 @@ def _record_notification(state: dict, title: str, body: str, kind: str = "info",
     return {**item, "_new": True}
 
 
+def _notification_origin(state: dict, world_id: str) -> dict:
+    """Resolve World artwork for an immediate desktop notification.
+
+    Artwork is attached only to the transient delivery event. The persistent
+    center keeps the World ID and resolves current profile artwork when it
+    renders, avoiding repeated base64 banners in launcher_v2.json.
+    """
+    wanted = str(world_id or "").strip()
+    if not wanted:
+        return {}
+    client = state.get("client") or {}
+    pools = [
+        client.get("worlds") or [], client.get("private_worlds") or [],
+        client.get("discovered_worlds") or [], client.get("directory_worlds") or [],
+        ((client.get("shared_worlds") or {}).get("profiles") or []),
+    ]
+    world = next((row for pool in pools for row in pool
+                  if str((row or {}).get("id") or (row or {}).get("profile_id") or "") == wanted), None)
+    if world is None:
+        world = load_server_profile(wanted) or None
+    if not isinstance(world, dict):
+        return {}
+    presentation = world.get("presentation") if isinstance(world.get("presentation"), dict) else {}
+    identity = world.get("identity") if isinstance(world.get("identity"), dict) else {}
+    return {
+        "id": wanted,
+        "label": str(world.get("name") or world.get("nickname") or identity.get("world_name") or "World")[:120],
+        "icon_b64": str(presentation.get("icon_b64") or world.get("icon_b64") or "")[:2_000_000],
+        "banner_b64": str(presentation.get("banner_b64") or world.get("banner_b64") or "")[:4_000_000],
+    }
+
+
 def _directory_sources(config: dict) -> list[dict]:
     sources = normalize_directory_sources(config.get("directory_sources"), legacy_url=str(config.get("directory_url") or ""),
                                           legacy_token=str(config.get("directory_token") or ""))
@@ -3655,7 +3687,7 @@ def handle(method: str, params: dict) -> object:
             application["integrations"] = merge_integrations(application.get("integrations"), incoming.pop("integrations"))
         if "theme" in incoming:
             theme = str(incoming.get("theme") or "dark-fantasy")
-            incoming["theme"] = theme if theme in ("dark-fantasy", "light", "fantasy", "high-contrast", "desert-script", "eastern") else "dark-fantasy"
+            incoming["theme"] = theme if theme in ("dark-fantasy", "dark-pad", "light", "fantasy", "high-contrast", "desert-script", "eastern") else "dark-fantasy"
         if "language" in incoming:
             language = str(incoming.get("language") or "en").casefold()
             incoming["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
@@ -4715,13 +4747,14 @@ def handle(method: str, params: dict) -> object:
                                 world.setdefault("status", {})["last_metadata_refresh_at"] = now_iso()
                         ping = float(result.get("ping_ms") or 0)
                         if bg.get("notifications_enabled", True) and bg.get("notify_high_latency", True) and ping >= 180:
-                            events.append({"key": f"latency:{world.get('id')}", "title": "High latency",
+                            events.append({"key": f"latency:{world.get('id')}", "world_id": str(world.get("id") or ""), "title": "High latency",
                                            "body": f"{world.get('nickname') or (world.get('identity') or {}).get('world_name') or 'World'} is responding at {round(ping)} ms.", "kind": "latency"})
                         notice = remote.get("service_notice") or {}
                         if notice.get("message") and (not notice.get("expires_at") or float(notice.get("expires_at") or 0) > time.time()):
                             kind = str(notice.get("level") or "info")
                             if bg.get("notifications_enabled", True) and ((kind == "restart" and bg.get("notify_pending_restart", True)) or (kind == "update" and bg.get("notify_updates", True)) or kind not in {"restart","update"}):
                                 events.append({"key": f"notice:{world.get('id')}:{notice.get('updated_at') or notice.get('message')}",
+                                               "world_id": str(world.get("id") or ""),
                                                "title": str(notice.get("title") or world.get('nickname') or (world.get('identity') or {}).get('world_name') or 'World')[:120],
                                                "body": str(notice.get("message") or "")[:240], "kind": kind,
                                                "overlay": bool(notice.get("announcement"))})
@@ -4754,7 +4787,8 @@ def handle(method: str, params: dict) -> object:
         for event in events:
             recorded = _record_notification(state, event.get("title") or "Dragonwilds Sync", event.get("body") or "", event.get("kind") or "info", world_id=event.get("world_id") or "", key=event.get("key") or "")
             if recorded.get("_new"):
-                delivery_events.append(event)
+                origin = _notification_origin(state, event.get("world_id") or "")
+                delivery_events.append({**event, **({"origin": origin} if origin else {})})
         save_state(state)
         return {"events": delivery_events, "state": public_state(state)}
 

@@ -243,15 +243,8 @@
 
   function backMarkup(id, world) {
     const rules = publicRules(world);
-    const badges = customBadgeMarkup(world);
-    const compatibility = platformMarkup(world);
-    const extra = text(world?.additional_information || world?.presentation?.additional_information || world?.region || world?.classification?.region);
-    return `<div class="v3p4-back-scroll" tabindex="0" aria-label="World joining and community details">
-      ${rules?`<section class="v3p4-back-section"><h4>Community Rules</h4><p>${esc(rules)}</p></section>`:''}
-      ${badges?`<section class="v3p4-back-section"><h4>Community Badges</h4>${badges}</section>`:''}
-      ${compatibility?`<section class="v3p4-back-section"><h4>Compatibility</h4>${compatibility}</section>`:''}
-      ${extra?`<section class="v3p4-back-section"><h4>Additional Information</h4><p>${esc(extra)}</p></section>`:''}
-      ${(!rules&&!badges&&!compatibility&&!extra)?'<div class="v3p4-empty">No additional joining requirements are published for this World.</div>':''}
+    return `<div class="v3p4-back-scroll" tabindex="0" aria-label="World community guidelines">
+      ${rules?`<section class="v3p4-back-section"><h4>Community Guidelines</h4><p>${esc(rules)}</p></section>`:'<div class="v3p4-empty">No community guidelines have been broadcast for this World.</div>'}
     </div>
     <div class="v3p4-back-footer">${heartbeatMarkup(id,world)}<button class="btn ghost compact-btn" data-v3p4-toggle="${esc(id)}">← Front</button></div>`;
   }

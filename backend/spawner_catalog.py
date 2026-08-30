@@ -300,9 +300,15 @@ def spawn_command(kind: str, runtime_path: str, target: dict, count: int = 1) ->
     kind = "item" if str(kind).casefold() == "item" else "enemy"
     target_kind = str((target or {}).get("kind") or "aim").casefold()
     if kind == "item":
-        if target_kind != "local":
-            raise ValueError("Upstream RSDWTools can currently place items only at the server's local player. Remote-player item placement is not supported on a headless dedicated server.")
-        return f"world.spawn.item {path} {max(1, min(int(count or 1), 9999))}"
+        quantity = max(1, min(int(count or 1), 9999))
+        if target_kind == "local":
+            return f"give.item {path} {quantity}"
+        if target_kind == "player":
+            player_id = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str((target or {}).get("player_id") or "").strip())[:128]
+            if not player_id:
+                raise ValueError("Select an active player before giving an item")
+            return f"give.item {path} {quantity} {player_id}"
+        raise ValueError("Item target must be the local player pawn or an active player")
     if target_kind in {"aim", "local"}:
         return f"world.spawn.safe {path}"
     if target_kind != "coordinates":

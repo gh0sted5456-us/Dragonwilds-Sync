@@ -242,8 +242,18 @@
     document.body.appendChild(picker); picker.querySelector('.v3q-picker-x')?.addEventListener('click',closePicker); picker.addEventListener('click',(e)=>{if(e.target===picker)closePicker();});
     picker.querySelectorAll('[data-v3q-shortcut]').forEach((button)=>button.addEventListener('click',async()=>{
       const [selected,behavior]=button.dataset.v3qShortcut.split(':');
-      try { await window.dragonwildsV3?.createQuickShortcut?.({profileId:id,name,mode:selected,runtime:behavior==='headless'?'headless':'gui',autoStart:behavior==='start'}); toast('Quick shortcut created','success'); closePicker(); }
+      try {
+        const createShortcut=window.dragonwildsV3?.createQuickShortcut;
+        if(typeof createShortcut!=='function')throw new Error('The desktop shortcut bridge is unavailable. Restart Dragonwilds Sync and try again.');
+        button.disabled=true;
+        button.textContent='Creating…';
+        const result=await createShortcut({profileId:id,name,mode:selected,runtime:behavior==='headless'?'headless':'gui',autoStart:behavior==='start'});
+        if(!result?.ok||!result?.path)throw new Error('Windows did not confirm the desktop shortcut path.');
+        toast(`Quick shortcut created · ${result.path}`,'success');
+        closePicker();
+      }
       catch(error){toast(error?.message||String(error),'error');}
+      finally{if(button.isConnected){button.disabled=false;button.textContent=behavior==='open'?'Open Quick':behavior==='start'?'Open Quick + Start':'Headless Start';}}
     }));
   }
 

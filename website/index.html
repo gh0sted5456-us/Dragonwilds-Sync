@@ -202,6 +202,11 @@
       </div>
     </section>
 
+    <section class="section-shell runtime-community" id="runtime-compatibility">
+      <div class="section-heading reveal"><div class="eyebrow">Community compatibility</div><h2>Exact-version runtime evidence.</h2><p>UE4SS and RuneSchema percentages come from the same Application User reports shown in Dragonwilds Sync. Reports describe compatibility; they never replace a local Stable Baseline.</p></div>
+      <div class="runtime-community-web-grid" id="runtime-community-ratings"><div class="runtime-community-web-empty">Loading current community evidence…</div></div>
+    </section>
+
     <section class="section-shell docs" id="docs">
       <div class="section-heading reveal"><div class="eyebrow">Documentation</div><h2>From first launch<br>to full world control.</h2><p>The repository remains the authoritative source for setup notes, implementation details, releases, and issue tracking.</p></div>
       <div class="docs-grid"><a class="doc-card reveal" href="helpy.html"><span>01</span><div><h3>Helpy</h3><p>The same screenshot-rich field guide used inside the desktop application.</p></div><b>→</b></a><a class="doc-card reveal delay-1" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/tree/main/docs"><span>02</span><div><h3>Technical documentation</h3><p>Build notes, implementation details, and reference material.</p></div><b>↗</b></a><a class="doc-card reveal delay-2" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/issues"><span>03</span><div><h3>Issues & feedback</h3><p>Report a problem or follow development work.</p></div><b>↗</b></a></div>
@@ -215,6 +220,9 @@
   </footer>
 
   <script src="script.js"></script>
+  <script>
+    (()=>{const root=document.getElementById('runtime-community-ratings');if(!root)return;const esc=(value)=>String(value??'').replace(/[&<>"']/g,(char)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));fetch('https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/runtime-compatibility',{headers:{accept:'application/json'}}).then((response)=>{if(!response.ok)throw Error(`HTTP ${response.status}`);return response.json();}).then((payload)=>{const rows=Array.isArray(payload.ratings)?payload.ratings:[];root.innerHTML=rows.length?rows.slice(0,12).map((row)=>{const percentage=Math.max(0,Math.min(100,Number(row.percentage||0))),label=percentage<40?'Broken':percentage<80?'Good':'Excellent',tone=percentage<40?'broken':percentage<80?'good':'excellent';return `<article class="runtime-community-web-card ${tone}"><span>${esc(String(row.component||'runtime').toUpperCase())}</span><strong>${esc(row.version||'Unknown version')}</strong><div><b>${percentage}%</b><i>${label}</i></div><small>${Number(row.reports||0)} community report${Number(row.reports||0)===1?'':'s'}</small></article>`;}).join(''):'<div class="runtime-community-web-empty">No community runtime reports have been submitted yet.</div>';}).catch(()=>{root.innerHTML='<div class="runtime-community-web-empty">Community evidence is temporarily unavailable. Stable Baselines remain unaffected.</div>';});})();
+  </script>
   <script>
     (() => {
       const form = document.getElementById('remote-manager-form');

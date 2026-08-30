@@ -23,8 +23,8 @@ from zipfile import ZipFile
 from process_utils import run_hidden
 
 from network_client import download_latest_player_backup, download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, ping_world, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, upload_player_backup, worldsave_status
-from sync_engine import activate_or_adopt_client_world_profile, client_world_has_snapshot, delete_client_world_profile, launch_game, reset_client_managed_payload_for_resync, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
-from profile_store import (APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
+from sync_engine import _running_game_pid, activate_or_adopt_client_world_profile, client_world_has_snapshot, delete_client_world_profile, launch_game, reset_client_managed_payload_for_resync, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
+from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR, application_user_id, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                            server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
@@ -64,6 +64,7 @@ from spawner_catalog import catalog as spawner_catalog, refresh_spawn_catalog, s
 from rsdw_toolkit import command_catalog as rsdw_command_catalog, history as rsdw_console_history, record_event as record_rsdw_event, status as rsdw_toolkit_status, suppress_roster_poll_logging, validate_command as validate_rsdw_command
 from health_model import apply_detected_hardware_references, normalize_health_config, normalize_network_evidence
 from runtime_versions import cl_version_status, client_runtime_status, server_runtime_stack
+from runtime_compatibility import list_ratings as list_runtime_compatibility, submit_rating as submit_runtime_compatibility
 from security_policy import normalize_access_policy, normalize_cidrs, VPN_PROVIDERS, REGION_LABELS
 from security_scanner import defender_scan, defender_status, set_defender_review_enabled
 from rsdw_cache import status as rsdw_cache_status, refresh_modules as refresh_rsdw_cache, search_items as search_rsdw_items
@@ -101,13 +102,40 @@ from world_maintenance import (
     create_world_backup, delete_world_managed_files, list_world_configs, open_world_config,
     restore_world_backup, save_world_config, copy_world_config, delete_world_config,
     update_world_config_policy, world_save_status, list_server_mod_files, open_server_mod_file,
-    save_server_mod_file, remove_server_mod,
+    save_server_mod_file, create_server_mod_file, copy_server_mod_file, delete_server_mod_file, remove_server_mod,
 )
 from runeschema_flavors import delete_flavor as delete_runeschema_flavor, import_flavor as import_runeschema_flavor, list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _application_user_id(state: dict) -> str:
+    player = state.get("player_profile") or {}
+    return str(player.get("application_user_id") or player.get("profile_id") or
+               (state.get("client") or {}).get("client_id") or "client")
+
+
+def _update_client_play_session(state: dict, *, begin_world_id: str = "", launched_pid: int = 0) -> None:
+    """Accumulate linked-World play time using the existing background cadence."""
+    client = state.setdefault("client", {})
+    session = client.setdefault("play_session", {})
+    now = time.time()
+    active_id = str(session.get("world_id") or "")
+    if active_id and session.get("last_sample_at"):
+        running_pid = _running_game_pid()
+        if running_pid:
+            elapsed = max(0.0, min(300.0, now - float(session.get("last_sample_at") or now)))
+            world = next((row for row in client.get("worlds") or [] if str((row or {}).get("id") or "") == active_id), None)
+            if world is not None:
+                world["total_play_seconds"] = round(max(0.0, float(world.get("total_play_seconds") or 0)) + elapsed, 2)
+            session.update({"last_sample_at": now, "pid": running_pid})
+        else:
+            session.clear()
+    if begin_world_id:
+        session.update({"world_id": str(begin_world_id), "started_at": now, "last_sample_at": now,
+                        "pid": int(launched_pid or 0)})
 
 
 def inspect_manual_rsdwl_mod_archive(path_value: str) -> dict | None:
@@ -3293,7 +3321,7 @@ def handle(method: str, params: dict) -> object:
         _cache_local_inventory(profile_id, units, live=True, source="activate")
         client_state["live_world_id"] = profile_id
         client_state["active_private_world_id"] = profile_id
-        _record_notification(state, "World profile activated", f"{profile.get('name') or profile_id} · files, mods, settings and active marker exchanged", "success", key=f"profile-active:{profile_id}")
+        _record_notification(state, "World profile activated", f"{profile.get('name') or profile_id} · files, mods, settings and active marker exchanged", "success", world_id=profile_id, key=f"profile-active:{profile_id}")
         save_state(state)
         return {"profile": profile, "units": units, "result": {"swapped_from": live_world_id, "swapped_to": profile_id, "activation": activation, "mods_txt": mods_txt, "activeworld": str(marker), "direct_connect": direct_connect}, "state": public_state(state)}
 
@@ -3308,7 +3336,7 @@ def handle(method: str, params: dict) -> object:
         result = unload_client_world_profile(profile_id, Path(game_dir))
         result["direct_connect"] = clear_direct_connect_config(game_dir)
         client_state["live_world_id"] = ""; client_state["active_private_world_id"] = ""
-        _record_notification(state, "World profile unloaded", f"{load_singleplayer_profile(profile_id).get('name') or profile_id} captured; the client directory is back to core state.", "success", key=f"profile-unloaded:{profile_id}")
+        _record_notification(state, "World profile unloaded", f"{load_singleplayer_profile(profile_id).get('name') or profile_id} captured; the client directory is back to core state.", "success", world_id=profile_id, key=f"profile-unloaded:{profile_id}")
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
@@ -3729,6 +3757,7 @@ def handle(method: str, params: dict) -> object:
 
     if method == "player.update":
         profile = state.setdefault("player_profile", {})
+        first_profile_save = not bool(profile.get("profile_initialized"))
         profile.update({
             "display_name": str(params.get("display_name", profile.get("display_name", "Player"))).strip() or "Player",
             "about": str(params.get("about", profile.get("about", "")))[:300],
@@ -3736,6 +3765,9 @@ def handle(method: str, params: dict) -> object:
             "banner_data": str(params.get("banner_data", profile.get("banner_data", ""))),
             "social_links": normalize_social_links(params.get("social_links", profile.get("social_links"))),
         })
+        if first_profile_save:
+            profile["application_user_id"] = application_user_id(profile.get("profile_id"), profile.get("display_name"))
+        profile["profile_initialized"] = True
         save_state(state)
         return public_state(state)
 
@@ -4446,7 +4478,7 @@ def handle(method: str, params: dict) -> object:
         world = find_world(state, world_id)
         if world is None:
             raise KeyError("World not found")
-        client_id = str(state.setdefault("client", {}).get("client_id") or "client")
+        client_id = _application_user_id(state)
         latest_hint = (((world.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
         client_runtime = client_runtime_status(str((state.get("application") or {}).get("game_dir") or ""), latest_hint=latest_hint, remote=False)
         result = measure_world_link(world, client_id, client_internet=(state.get("application") or {}).get("client_network_profile") or {}, client_runtime=client_runtime)
@@ -4490,6 +4522,7 @@ def handle(method: str, params: dict) -> object:
             raise ValueError("Dragonwilds executable is not configured and could not be auto-detected.")
         pid = launch_game(Path(exe))
         world["last_played_at"] = now_iso()
+        _update_client_play_session(state, begin_world_id=world_id, launched_pid=pid)
         _remember_shared_connection(state, world)
         save_state(state)
         return {"result": {"launched": True, "pid": pid, "endpoint": game_address, "public_only": True, "direct_connect": direct_connect}, "state": public_state(state)}
@@ -4528,7 +4561,7 @@ def handle(method: str, params: dict) -> object:
         client_runtime = client_runtime_status(game_dir, latest_hint=latest_hint, remote=False)
         sync_job_id = str(params.get("_sync_job_id") or "")
         result = sync_world(
-            world, install_dir, state.get("client", {}).get("client_id") or "client",
+            world, install_dir, _application_user_id(state),
             bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime,
             progress=(lambda update: _set_world_sync_job(sync_job_id, status="running", **dict(update or {}))) if sync_job_id else None,
             force_complete=bool(params.get("force_complete", False)))
@@ -4577,7 +4610,8 @@ def handle(method: str, params: dict) -> object:
                 access = worldsave_status(world)
                 world.setdefault("status", {})["world_save_download"] = access
                 if access.get("allowed"):
-                    retained_path = APP_DATA_DIR / "connected_world_snapshots" / world_id / "world-save-latest.zip"
+                    safe_world_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", world_id).strip("._") or "connected-world"
+                    retained_path = WORLD_PROFILES_DIR / "local" / safe_world_id / "worldsaves" / "world-save-latest.zip"
                     snapshot = download_worldsave(world, str(retained_path))
                     world["retained_world_save"] = {**snapshot, "retained_at": now_iso(), "purpose": "conversion_continuity"}
                     result["retained_world_save"] = deepcopy(world["retained_world_save"])
@@ -4588,7 +4622,7 @@ def handle(method: str, params: dict) -> object:
                 result["player_backup"] = _send_assigned_player_backup(state, world)
             except Exception as exc:
                 result["player_backup"] = {"ok": False, "error": str(exc)}
-                _record_notification(state, "Player backup was not updated", str(exc), "warning", key=f"player-backup-failed:{world_id}")
+                _record_notification(state, "Player backup was not updated", str(exc), "warning", world_id=world_id, key=f"player-backup-failed:{world_id}")
         if sync_job_id:
             _set_world_sync_job(sync_job_id, status="running", phase="profile", message="Applying connection and mod settings to the World profile", percent=97,
                                 changed_files=result.get("downloaded") or 0, unchanged_files=result.get("up_to_date") or 0,
@@ -4603,6 +4637,7 @@ def handle(method: str, params: dict) -> object:
                 raise ValueError("Dragonwilds executable is not configured and could not be auto-detected.")
             pid = launch_game(Path(exe))
             world["last_played_at"] = now_iso()
+            _update_client_play_session(state, begin_world_id=world_id, launched_pid=pid)
             result["launched"] = True
             result["pid"] = pid
 
@@ -4621,6 +4656,7 @@ def handle(method: str, params: dict) -> object:
 
     if method == "client.background.tick":
         application = state.setdefault("application", {})
+        _update_client_play_session(state)
         events = []
         version_cache = application.setdefault("runtime_version_cache", {})
         if time.time() - float(version_cache.get("checked_at") or 0) >= 15 * 60:
@@ -4697,26 +4733,26 @@ def handle(method: str, params: dict) -> object:
                     favorite_alerts = state.get("client", {}).get("favorite_alerts") or {}
                     overrides = (favorite_alerts.get("worlds") or {}).get(str(world.get("id") or ""), {})
                     if str(world.get("id") or "") in set(state.get("client", {}).get("favorites") or []) and favorite_alerts.get("enabled", True) and overrides.get("offline", favorite_alerts.get("offline", True)):
-                        events.append({"key": f"favorite-offline:{world.get('id')}", "title": "Favorite World went offline",
+                        events.append({"key": f"favorite-offline:{world.get('id')}", "world_id": str(world.get("id") or ""), "title": "Favorite World went offline",
                                        "body": str(world.get("nickname") or (world.get("identity") or {}).get("world_name") or "World"), "kind": "warning"})
                 if previous_online is not True and world.get("status", {}).get("online") is True:
                     favorite_alerts = state.get("client", {}).get("favorite_alerts") or {}; overrides = (favorite_alerts.get("worlds") or {}).get(str(world.get("id") or ""), {})
                     if str(world.get("id") or "") in set(state.get("client", {}).get("favorites") or []) and favorite_alerts.get("enabled", True) and overrides.get("online", favorite_alerts.get("online", True)):
-                        events.append({"key": f"favorite-online:{world.get('id')}", "title": "Favorite World is online",
+                        events.append({"key": f"favorite-online:{world.get('id')}", "world_id": str(world.get("id") or ""), "title": "Favorite World is online",
                                        "body": str(world.get("nickname") or (world.get("identity") or {}).get("world_name") or "World"), "kind": "success"})
                 favorite_alerts = state.get("client", {}).get("favorite_alerts") or {}; overrides = (favorite_alerts.get("worlds") or {}).get(str(world.get("id") or ""), {})
                 if str(world.get("id") or "") in set(state.get("client", {}).get("favorites") or []) and favorite_alerts.get("enabled", True):
                     current_notice = (world.get("status") or {}).get("service_notice") or {}
                     if current_notice.get("message") and current_notice != previous_notice and overrides.get("maintenance", favorite_alerts.get("maintenance", True)):
-                        events.append({"key": f"favorite-maintenance:{world.get('id')}:{current_notice.get('updated_at') or current_notice.get('message')}",
+                        events.append({"key": f"favorite-maintenance:{world.get('id')}:{current_notice.get('updated_at') or current_notice.get('message')}", "world_id": str(world.get("id") or ""),
                                        "title": "Favorite World maintenance notice", "body": str(current_notice.get("message") or "")[:240], "kind": "warning"})
                     current_shared = int((world.get("shared") or {}).get("shared_character_count") or 0)
                     if current_shared > previous_shared_characters and overrides.get("shared_characters", favorite_alerts.get("shared_characters", True)):
-                        events.append({"key": f"favorite-characters:{world.get('id')}:{current_shared}", "title": "New shared character available",
+                        events.append({"key": f"favorite-characters:{world.get('id')}:{current_shared}", "world_id": str(world.get("id") or ""), "title": "New shared character available",
                                        "body": f"{world.get('nickname') or (world.get('identity') or {}).get('world_name') or 'World'} now shares {current_shared} character package(s).", "kind": "info"})
         delivery_events = []
         for event in events:
-            recorded = _record_notification(state, event.get("title") or "Dragonwilds Sync", event.get("body") or "", event.get("kind") or "info", key=event.get("key") or "")
+            recorded = _record_notification(state, event.get("title") or "Dragonwilds Sync", event.get("body") or "", event.get("kind") or "info", world_id=event.get("world_id") or "", key=event.get("key") or "")
             if recorded.get("_new"):
                 delivery_events.append(event)
         save_state(state)
@@ -4769,7 +4805,7 @@ def handle(method: str, params: dict) -> object:
         if "character_sharing" in params and isinstance(params.get("character_sharing"), dict):
             profile["character_sharing"] = {"enabled": bool(params["character_sharing"].get("enabled")),
                                             "allow_submissions": bool(params["character_sharing"].get("allow_submissions")),
-                                            "request_backups": bool(params["character_sharing"].get("request_backups"))}
+                                            "request_backups": True}
         if "community" in params and isinstance(params.get("community"), dict):
             invite = str(params["community"].get("discord_invite") or "").strip()
             guild_id = str(params["community"].get("discord_guild_id") or "").strip()
@@ -4941,8 +4977,8 @@ def handle(method: str, params: dict) -> object:
     if method == "world.character.submit":
         world = find_world(state, str(params.get("id") or ""))
         if world is None: raise KeyError("World not found")
-        result = submit_character_package(world, str(params.get("path") or ""), str(state.get("client", {}).get("client_id") or ""))
-        _record_notification(state, "Character submitted for review", f"{(world.get('identity') or {}).get('world_name') or 'World'} placed the package in quarantine.", "success", key=f"character-submit:{world.get('id')}")
+        result = submit_character_package(world, str(params.get("path") or ""), _application_user_id(state))
+        _record_notification(state, "Character submitted for review", f"{(world.get('identity') or {}).get('world_name') or 'World'} placed the package in quarantine.", "success", world_id=str(world.get("id") or ""), key=f"character-submit:{world.get('id')}")
         save_state(state); return {"result": result, "state": public_state(state)}
 
     if method == "server.runtime.status":
@@ -4977,7 +5013,7 @@ def handle(method: str, params: dict) -> object:
         units = scan_profile_snapshot_units(profile_id)
         _cache_server_inventory(profile_id, units, active=False, source="apply")
         state["server"]["active_world_id"] = ""
-        _record_notification(state, "Hosted World unloaded", f"{profile.get('name') or profile_id} captured; the shared server directory is back to core state.", "success", key=f"server-unloaded:{profile_id}")
+        _record_notification(state, "Hosted World unloaded", f"{profile.get('name') or profile_id} captured; the shared server directory is back to core state.", "success", world_id=profile_id, key=f"server-unloaded:{profile_id}")
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
@@ -4991,7 +5027,7 @@ def handle(method: str, params: dict) -> object:
         character_id = str(params.get("character_id") or client.setdefault("world_character_selection", {}).get(world_id) or "").strip()
         result = _send_assigned_player_backup(state, world, character_id, force=True)
         world.setdefault("player_backup", {})["enabled"] = True
-        _record_notification(state, "Player recovery backup enabled", f"The latest assigned-character save is retained by {(world.get('identity') or {}).get('world_name') or 'the World'} for this player profile only.", "success", key=f"character-backup:{world_id}:{character_id}")
+        _record_notification(state, "Player recovery backup enabled", f"The latest assigned-character save is retained by {(world.get('identity') or {}).get('world_name') or 'the World'} for this player profile only.", "success", world_id=world_id, key=f"character-backup:{world_id}:{character_id}")
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
@@ -5029,7 +5065,7 @@ def handle(method: str, params: dict) -> object:
         _record_notification(
             state, "Private World profile reloaded",
             f"{profile.get('name') or profile_id} was rematerialized from its saved profile; baked runtimes were preserved.",
-            "success", key=f"profile-reset-reload:{profile_id}:{int(time.time())}")
+            "success", world_id=profile_id, key=f"profile-reset-reload:{profile_id}:{int(time.time())}")
         save_state(state)
         return {"profile": profile, "units": units,
                 "result": {"reset": reset, "activation": activation, "mods_txt": mods_txt,
@@ -5078,7 +5114,7 @@ def handle(method: str, params: dict) -> object:
              "Approved; the selected character will be retained after successful Sync connections."
              if approved else
              "Declined; this World will not receive this client's player save."),
-            "success" if approved else "info", key=f"character-backup-consent:{world_id}")
+            "success" if approved else "info", world_id=world_id, key=f"character-backup-consent:{world_id}")
         save_state(state)
         return {"result": result, "state": public_state(state)}
 
@@ -5086,7 +5122,7 @@ def handle(method: str, params: dict) -> object:
         world_id = str(params.get("id") or "")
         world = find_world(state, world_id)
         if world is None: raise KeyError("World not found")
-        client_profile_id = str((state.get("client") or {}).get("client_id") or "").strip()
+        client_profile_id = _application_user_id(state)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         if not game_dir: raise ValueError("Set the Dragonwilds game folder before restoring a player save.")
         target = APP_DATA_DIR / "incoming_player_backups" / f"{world_id}-{secrets.token_hex(6)}.rsdwl"
@@ -5098,7 +5134,7 @@ def handle(method: str, params: dict) -> object:
         finally:
             target.unlink(missing_ok=True)
         world.setdefault("player_backup", {})["last_restored_at"] = now_iso()
-        _record_notification(state, "Player save restored", f"Restored {restored.get('file_name') or inspected.get('save_name') or 'the retained character save'}; any replaced local file was backed up first.", "success", key=f"character-restore:{world_id}")
+        _record_notification(state, "Player save restored", f"Restored {restored.get('file_name') or inspected.get('save_name') or 'the retained character save'}; any replaced local file was backed up first.", "success", world_id=world_id, key=f"character-restore:{world_id}")
         save_state(state)
         return {"result": {"download": download, "restore": restored}, "state": public_state(state)}
 
@@ -5177,7 +5213,7 @@ def handle(method: str, params: dict) -> object:
         }
         latest_hint = (((profile.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
         client_runtime = client_runtime_status(game_dir, latest_hint=latest_hint, remote=False)
-        result = sync_world(local_world, install_dir, str(state.get("client", {}).get("client_id") or "client"),
+        result = sync_world(local_world, install_dir, _application_user_id(state),
                             bool(application.get("keep_core_persistent", False)), client_runtime=client_runtime)
         ensure_client_base_runtimes(game_dir)
         manifest = result.get("manifest") or {}
@@ -5694,9 +5730,9 @@ def handle(method: str, params: dict) -> object:
                 selected_player = next((row for row in live if bool(row.get("is_local"))), None)
             if selected_player is None:
                 raise RuntimeError("Select a connected player before giving an item")
-            if not bool(selected_player.get("is_local")):
-                raise RuntimeError("The installed RSDWTools bridge cannot give items to a remote pawn on a headless dedicated server yet. Select the local player on a listen server; Dragonwilds Sync will not send an unsupported command.")
-            command = spawn_command("item", str(params.get("runtime_path") or ""), {"kind": "local"}, int(params.get("count") or 1))
+            target = ({"kind": "local"} if bool(selected_player.get("is_local")) else
+                      {"kind": "player", "player_id": str(selected_player.get("id") or selected_player.get("tracker_id") or "")})
+            command = spawn_command("item", str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
         else:
             command = spawn_command(kind, str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
         ack = PLAYER_BRIDGE.command(command, timeout=8.0)
@@ -5756,9 +5792,18 @@ def handle(method: str, params: dict) -> object:
     if method == "world.worldsave.download":
         world = find_world(state, str(params.get("id") or ""))
         if world is None: raise KeyError("World not found")
+        world_id = str(world.get("id") or params.get("id") or "connected-world")
+        safe_world_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", world_id).strip("._") or "connected-world"
+        retained_path = WORLD_PROFILES_DIR / "local" / safe_world_id / "worldsaves" / "world-save-latest.zip"
+        result = download_worldsave(world, str(retained_path))
         destination = str(params.get("destination") or "").strip()
-        if not destination: raise ValueError("Choose where to save the World save ZIP.")
-        result = download_worldsave(world, destination)
+        if destination:
+            exported = Path(destination)
+            exported.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(retained_path, exported)
+            result["exported_path"] = str(exported)
+        world["retained_world_save"] = {**result, "retained_at": now_iso(), "purpose": "player_requested_copy"}
+        save_state(state)
         return {"result": result, "state": public_state(state)}
 
     if method == "world.feedback.submit":
@@ -5770,7 +5815,7 @@ def handle(method: str, params: dict) -> object:
         if world is None:
             raise KeyError("World not found")
         player = state.get("player_profile") or {}
-        raw_client_id = str(params.get("client_id") or player.get("display_name") or "DragonwildsSyncClient")
+        raw_client_id = str(params.get("client_id") or player.get("application_user_id") or player.get("profile_id") or "DragonwildsSyncClient")
         client_id = re.sub(r"[^A-Za-z0-9_-]+", "_", raw_client_id).strip("_")[:64] or "DragonwildsSyncClient"
         rating = max(1, min(int(params.get("rating") or 5), 5))
         report = str(params.get("report") or "")[:250]
@@ -5803,7 +5848,7 @@ def handle(method: str, params: dict) -> object:
         world = find_world(state, world_id)
         if world is None: raise KeyError("World not found")
         player = state.get("player_profile") or {}
-        raw_client_id = str(player.get("display_name") or state.setdefault("client", {}).get("client_id") or "DragonwildsSyncClient")
+        raw_client_id = str(player.get("application_user_id") or player.get("profile_id") or state.setdefault("client", {}).get("client_id") or "DragonwildsSyncClient")
         client_id = re.sub(r"[^A-Za-z0-9_-]+", "_", raw_client_id).strip("_")[:64] or "DragonwildsSyncClient"
         latest_hint = (((world.get("manifest_cache") or {}).get("runtime_stack") or {}).get("dragonwilds") or {}).get("client_latest_buildid")
         runtime = client_runtime_status(str((state.get("application") or {}).get("game_dir") or ""), latest_hint=latest_hint, remote=False)
@@ -6425,6 +6470,33 @@ def handle(method: str, params: dict) -> object:
         result = save_server_mod_file(profile_id, server_root_for_profile(profile), str(params.get("key") or ""),
                                       str(params.get("relative_path") or ""), str(params.get("content") or ""), active)
         if active: snapshot_profile_mod_unit(profile_id, Path(server_root_for_profile(profile)), str(params.get("key") or ""))
+        return {"result": result, "state": public_state(state)}
+
+    if method == "application.runtime_compatibility.list":
+        return list_runtime_compatibility(str(params.get("component") or ""), str(params.get("version") or ""))
+
+    if method == "application.runtime_compatibility.submit":
+        result = submit_runtime_compatibility(
+            _application_user_id(state), str(params.get("component") or ""),
+            str(params.get("version") or ""), int(params.get("rating") or 0),
+        )
+        return {"result": result, "state": public_state(state)}
+
+    if method in {"server.world.mod.file.create", "server.world.mod.file.copy", "server.world.mod.file.delete"}:
+        profile_id = str(params.get("id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile: raise KeyError("Server World not found")
+        active = state.setdefault("server", {}).get("active_world_id") == profile_id
+        operation = (create_server_mod_file if method.endswith(".create") else
+                     copy_server_mod_file if method.endswith(".copy") else delete_server_mod_file)
+        if method.endswith(".create"):
+            result = operation(profile_id, server_root_for_profile(profile), str(params.get("key") or ""),
+                               str(params.get("relative_path") or ""), str(params.get("content") or ""), active)
+        else:
+            result = operation(profile_id, server_root_for_profile(profile), str(params.get("key") or ""),
+                               str(params.get("relative_path") or ""), active)
+        if active:
+            snapshot_profile_mod_unit(profile_id, Path(server_root_for_profile(profile)), str(params.get("key") or ""))
         return {"result": result, "state": public_state(state)}
 
     if method == "server.world.config.save":

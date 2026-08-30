@@ -49,7 +49,7 @@ def main():
 
     # Mod Editor is an internal, taskbar-managed editor and replaces its
     # spinner with an actionable retry surface on any load error.
-    assert "mod-explorer-host" in renderer and '<div class="eyebrow">MOD EDITOR</div>' in renderer
+    assert "mod-explorer-host" in renderer and '<div class="eyebrow">MOD EDITOR · ${' in renderer
     assert "title:`Dragonwilds Sync · ${name}`" in renderer
     assert "closeDesktopWindow(host.closest('.desktop-window'))" in renderer
     assert "id=\"retry-mod-explorer\"" in renderer and "The loading request failed." in renderer

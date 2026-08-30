@@ -1820,7 +1820,8 @@ class SyncHandler(BaseHTTPRequestHandler):
         if path == "/worldsave/status":
             with STATE.lock: profile_id = STATE.active_profile_id
             if not profile_id: self._send_json({"error": "no active World"}, 404); return
-            self._send_json(status_for_ip(profile_id, self.client_address[0])); return
+            application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            self._send_json(status_for_ip(profile_id, self.client_address[0], application_user_id)); return
         if path in {"/player-backups/status", "/player-backups/latest"}:
             with STATE.lock: profile_id = STATE.active_profile_id
             profile = load_server_profile(profile_id) if profile_id else {}
@@ -1846,7 +1847,8 @@ class SyncHandler(BaseHTTPRequestHandler):
                 profile_id = STATE.active_profile_id
                 source_dir = STATE.worldsave_source_dir
             if not profile_id: self._send_json({"error": "no active World"}, 404); return
-            access = status_for_ip(profile_id, self.client_address[0])
+            application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            access = status_for_ip(profile_id, self.client_address[0], application_user_id)
             if not access.get("enabled"):
                 STATE.activity(self.client_address[0], "World save request refused (host policy disabled)")
                 self._send_json({"error": "World save downloads are disabled by the server maintainer", **access}, 403); return
@@ -1856,7 +1858,7 @@ class SyncHandler(BaseHTTPRequestHandler):
             try:
                 target = build_worldsave_zip(profile_id, source_dir)
                 data = target.read_bytes()
-                record_download(profile_id, self.client_address[0])
+                record_download(profile_id, self.client_address[0], application_user_id)
                 STATE.activity(self.client_address[0], f"downloaded World save ({len(data)} bytes; request {int(access.get('requests_used') or 0) + 1}/2 in 24 hours)")
                 self.send_response(200); self.send_header("Content-Type", "application/zip")
                 self.send_header("Content-Disposition", f'attachment; filename="{profile_id}-world-save.zip"')
@@ -1877,20 +1879,22 @@ class SyncHandler(BaseHTTPRequestHandler):
         if path == "/backups":
             with STATE.lock: profile_id = STATE.active_profile_id
             if not profile_id: self._send_json({"backups": []}); return
-            access = status_for_ip(profile_id, self.client_address[0])
+            application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            access = status_for_ip(profile_id, self.client_address[0], application_user_id)
             self._send_json({"backups": list_profile_backups(profile_id) if access.get("enabled") else [], "download_policy": access}); return
         if path.startswith("/backups/"):
             with STATE.lock: profile_id = STATE.active_profile_id
             name = unquote(path[len("/backups/"):])
             if not profile_id or "/" in name or "\\" in name: self._send_json({"error": "not found"}, 404); return
-            access = status_for_ip(profile_id, self.client_address[0])
+            application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            access = status_for_ip(profile_id, self.client_address[0], application_user_id)
             if not access.get("enabled"): self._send_json({"error": "World save downloads are disabled"}, 403); return
             if not access.get("allowed"):
                 STATE.activity(self.client_address[0], "World backup request rate-limited (2 requests per 24 hours)")
                 self._send_json({"error": "World save request limit reached (2 per 24 hours)", **access}, 429); return
             root = _profile_backups_dir(profile_id).resolve(); target = (root / name).resolve()
             if root not in target.parents or not target.is_file(): self._send_json({"error": "not found"}, 404); return
-            data = target.read_bytes(); record_download(profile_id, self.client_address[0])
+            data = target.read_bytes(); record_download(profile_id, self.client_address[0], application_user_id)
             self.send_response(200); self.send_header("Content-Type", "application/zip")
             self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
         if path.startswith("/starter-characters/"):

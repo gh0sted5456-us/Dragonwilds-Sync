@@ -31,13 +31,15 @@ def main():
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     service = (ROOT / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+    sync_engine = (ROOT / "backend/sync_engine.py").read_text(encoding="utf-8")
     assert "connected ? 'CONNECTED WORLD' : modeLabel" in renderer
     assert "kind: edit ? (world.kind || 'connected') : 'connected'" in renderer
     assert "tab:'direct', filter:'all', page:1" in renderer
     assert "world.convert_to_singleplayer" in renderer and "world.convert_to_server" in renderer
     assert 'method in {"world.convert_to_singleplayer", "world.convert_to_server"}' in service
     assert "retained_client_copy" in service and "else worldsave_status(world)" in service
-    assert 'APP_DATA_DIR / "connected_world_snapshots"' in service
+    assert 'APP_DATA_DIR / "connected_world_snapshots"' in sync_engine
+    assert 'CLIENT_WORLDS_DIR' in sync_engine
     assert "source_world_retained" in service
     assert "import_worldsave_archive" in service
     assert "Convert to Private · Download Disabled" in renderer

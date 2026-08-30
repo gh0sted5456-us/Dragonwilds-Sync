@@ -23,7 +23,7 @@ def main() -> None:
         "application": {},
         "client": {"worlds": [connected], "world_character_selection": {}},
         "worlds": [local],
-        "player_profile": {"display_name": "Review Player"},
+        "player_profile": {"display_name": "Review Player", "application_user_id": "dwsu-0123456789abcdef0123456789abcdef"},
     }
 
     with (
@@ -37,7 +37,7 @@ def main() -> None:
     ):
         result = service.handle("world.feedback.submit", {"id": "shared-id", "rating": 4, "report": report})
         assert result["result"]["accepted"] is True
-        submit.assert_called_once_with(connected, "Review_Player", 4, report)
+        submit.assert_called_once_with(connected, "dwsu-0123456789abcdef0123456789abcdef", 4, report)
         assert state["player_profile"]["feedback_history"][-1]["report"] == report
 
         service.handle("world.feedback.list", {"id": "shared-id", "days": 60})

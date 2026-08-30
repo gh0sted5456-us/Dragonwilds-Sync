@@ -187,6 +187,53 @@ def save_server_mod_file(profile_id: str, server_root: str, key: str, relative_p
             "root": str(root), "language": _language(target), "size": len(encoded)}
 
 
+def create_server_mod_file(profile_id: str, server_root: str, key: str, relative_path: str,
+                           content: str, active: bool) -> dict:
+    group, _name = _safe_mod_key(key)
+    if group == "pak_mod":
+        raise PermissionError("PAK package files are view-only; add or replace them through Mod Import.")
+    _group_root, paths = _server_mod_paths(profile_id, server_root, key, active)
+    if len(paths) != 1 or not paths[0].is_dir():
+        raise FileNotFoundError("The selected Server mod directory was not found in this profile.")
+    root = paths[0].resolve()
+    target = _resolve_inside(root, relative_path)
+    encoded = str(content).encode("utf-8")
+    if target.suffix.lower() not in CONFIG_EXTENSIONS or len(encoded) > MAX_CONFIG_BYTES:
+        raise ValueError("New mod files must be JSON, JSONC, Lua, INI, CFG, or TXT and no larger than 2 MiB.")
+    if target.exists():
+        raise FileExistsError("A file already exists at that path in this Server profile.")
+    if target.suffix.lower() == ".json":
+        try: json.loads(str(content))
+        except Exception as exc: raise ValueError(f"JSON validation failed: {exc}") from exc
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(encoded)
+    _set_readonly(target, False)
+    return {"ok": True, "relative_path": target.relative_to(root).as_posix(), "path": str(target),
+            "root": str(root), "language": _language(target), "size": len(encoded)}
+
+
+def copy_server_mod_file(profile_id: str, server_root: str, key: str, relative_path: str, active: bool) -> dict:
+    root, source = _server_mod_file(profile_id, server_root, key, relative_path, active)
+    destination = source.with_name(f"{source.stem} - Copy{source.suffix}")
+    counter = 2
+    while destination.exists():
+        destination = source.with_name(f"{source.stem} - Copy ({counter}){source.suffix}")
+        counter += 1
+        if counter > 10_000:
+            raise RuntimeError("Could not choose an available copy name.")
+    shutil.copy2(source, destination)
+    _set_readonly(destination, False)
+    return {"ok": True, "relative_path": destination.relative_to(root).as_posix(),
+            "path": str(destination), "root": str(root), "size": destination.stat().st_size}
+
+
+def delete_server_mod_file(profile_id: str, server_root: str, key: str, relative_path: str, active: bool) -> dict:
+    root, target = _server_mod_file(profile_id, server_root, key, relative_path, active)
+    _set_readonly(target, False)
+    target.unlink()
+    return {"ok": True, "relative_path": target.relative_to(root).as_posix(), "root": str(root)}
+
+
 def remove_server_mod(profile_id: str, server_root: str, key: str, active: bool) -> dict:
     _root, paths = _server_mod_paths(profile_id, server_root, key, active)
     removed: list[str] = []

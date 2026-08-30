@@ -33,31 +33,36 @@ def store_player_backup(world_profile_id: str, player_profile_id: str, payload: 
     root.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(payload).hexdigest()
     stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-    target = root / f"{stamp}-{digest[:12]}.rsdwl"
-    temp = root / f".{target.name}.upload"
+    file_name = f"{stamp}-{digest[:12]}.rsdwl"
+    temp = root / f".{file_name}.upload"
     temp.write_bytes(payload)
     try:
         inspected = inspect_character_package(temp)
-        temp.replace(target)
     except Exception:
         temp.unlink(missing_ok=True)
         raise
     manifest = inspected.get("manifest") or {}
+    player_name = str(manifest.get("player_name") or (manifest.get("metadata") or {}).get("playerName") or "Player")[:120]
+    player_folder = normalize_player_id(player_name) or "Player"
+    named_root = root / player_folder
+    named_root.mkdir(parents=True, exist_ok=True)
+    target = named_root / file_name
+    temp.replace(target)
     record = {
         "player_profile_id": normalize_player_id(player_profile_id),
         "stored_at": time.time(),
-        "file_name": target.name,
+        "file_name": target.relative_to(root).as_posix(),
         "size": target.stat().st_size,
         "sha256": digest,
         "character_id": str(manifest.get("character_id") or (manifest.get("metadata") or {}).get("characterId") or ""),
-        "player_name": str(manifest.get("player_name") or (manifest.get("metadata") or {}).get("playerName") or "")[:120],
+        "player_name": player_name,
         "remote_ip": str(remote_ip or "")[:64],
     }
     latest = root / "latest.json"
     latest_tmp = root / ".latest.json.tmp"
     latest_tmp.write_text(json.dumps(record, indent=2), encoding="utf-8")
     latest_tmp.replace(latest)
-    versions = sorted(root.glob("*.rsdwl"), key=lambda item: item.stat().st_mtime, reverse=True)
+    versions = sorted(root.rglob("*.rsdwl"), key=lambda item: item.stat().st_mtime, reverse=True)
     for stale in versions[MAX_VERSIONS:]:
         stale.unlink(missing_ok=True)
     return {key: value for key, value in record.items() if key != "remote_ip"}
@@ -69,7 +74,10 @@ def latest_player_backup(world_profile_id: str, player_profile_id: str) -> tuple
         record = json.loads((root / "latest.json").read_text(encoding="utf-8"))
     except Exception as exc:
         raise FileNotFoundError("No retained player save backup is available for this profile yet.") from exc
-    target = root / Path(str(record.get("file_name") or "")).name
+    relative = Path(str(record.get("file_name") or ""))
+    target = (root / relative).resolve()
+    if root.resolve() not in target.parents:
+        raise FileNotFoundError("The retained player save backup path is invalid.")
     if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != str(record.get("sha256") or ""):
         raise FileNotFoundError("The retained player save backup is missing or failed its integrity check.")
     return target, {key: value for key, value in record.items() if key != "remote_ip"}

@@ -81,6 +81,27 @@ def main():
             assert "runeschema_mod::RSRequired" in keys
             assert "ue4ss_mod::RuneSchema" not in keys
 
+            # View/Edit is profile-scoped and includes binary PAK payloads for
+            # structural visibility. Inactive APPDATA snapshots must not fall
+            # back to whichever World happens to be live in the server folder.
+            live_pak_files = wm.list_server_mod_files("world-a", str(install), "pak_mod::Example", True, include_all=True)
+            assert live_pak_files["root"] == str(outer.paks_mods_dir.resolve())
+            assert [(row["name"], row["editable"]) for row in live_pak_files["files"]] == [("Example.pak", False)]
+            snapshot_root = profiles / "world-a" / "mods"
+            (snapshot_root / "pak_mods").mkdir(parents=True)
+            (snapshot_root / "pak_mods/03_ProfileOnly.pak").write_bytes(b"profile-pak")
+            (snapshot_root / "ue4ss_mods/ProfileLua").mkdir(parents=True)
+            (snapshot_root / "ue4ss_mods/ProfileLua/config.json").write_text('{"profile":true}', encoding="utf-8")
+            stored_pak_files = wm.list_server_mod_files("world-a", str(install), "pak_mod::ProfileOnly", False, include_all=True)
+            assert [row["name"] for row in stored_pak_files["files"]] == ["03_ProfileOnly.pak"]
+            stored_text = wm.open_server_mod_file("world-a", str(install), "ue4ss_mod::ProfileLua", "config.json", False)
+            assert json.loads(stored_text["content"])["profile"] is True
+            wm.save_server_mod_file("world-a", str(install), "ue4ss_mod::ProfileLua", "config.json", '{"profile":2}', False)
+            copied = wm.copy_server_mod_file("world-a", str(install), "ue4ss_mod::ProfileLua", "config.json", False)
+            assert Path(copied["path"]).is_file()
+            wm.delete_server_mod_file("world-a", str(install), "ue4ss_mod::ProfileLua", copied["relative_path"], False)
+            assert not Path(copied["path"]).exists()
+
             client_txt = ss.build_client_mods_txt(units, "Keybinds : 1\n")
             assert "ClientLua : 1" in client_txt
             assert "RuneSchema : 1" not in client_txt

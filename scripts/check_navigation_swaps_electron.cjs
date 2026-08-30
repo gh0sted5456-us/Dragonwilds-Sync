@@ -82,6 +82,16 @@ app.whenReady().then(async()=>{
     return {ok:first&&second&&third,first,second,third};
   })()`);
   if(!stableSettings.ok)throw new Error(`Settings shell repainted during category swap: ${JSON.stringify(stableSettings)}`);
+  await until(()=>win.webContents.executeJavaScript("!!document.querySelector('[data-phase6-settings-community]')"),5000);
+  await win.webContents.executeJavaScript("document.querySelector('[data-phase6-settings-community]').click()");
+  await until(()=>win.webContents.executeJavaScript("!!document.querySelector('.phase6-community-page')"),5000);
+  await win.webContents.executeJavaScript("document.querySelector('[data-settings-tab=\"integrations\"]').click()");
+  const communityExit=await until(()=>win.webContents.executeJavaScript(`(()=>({
+    integrationActive:document.querySelector('[data-settings-tab="integrations"]')?.classList.contains('active')===true,
+    integrationContent:!!document.querySelector('.integration-overview'),
+    communityGone:!document.querySelector('.phase6-community-page')
+  }))()`),5000);
+  if(!communityExit.integrationActive||!communityExit.integrationContent||!communityExit.communityGone)throw new Error(`Community prevented navigation to Integrations: ${JSON.stringify(communityExit)}`);
   await wait(300);
   const metrics=await win.webContents.executeJavaScript("window.__DWSYNC_SWAP_METRICS__?.snapshot()||null");
   if(!metrics||metrics.count<5)throw new Error(`Too few measured swaps: ${JSON.stringify(metrics)}`);

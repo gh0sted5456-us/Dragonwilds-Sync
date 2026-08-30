@@ -34,4 +34,6 @@ assert(retainedMain.includes('promoteToFullApplication(event.sender)'), 'Open Fu
 assert(renderer.includes("quickState?.profile_kind==='linked'"), 'Connected Quick must explain its verified Sync pipeline');
 assert(renderer.includes("without contacting a remote Sync host"), 'Local Quick must remain independent from remote Sync');
 assert(renderer.includes('Headless Start') && renderer.includes("runtime:behavior==='headless'?'headless':'gui'"), 'Server shortcut picker must route headless shortcuts to the standalone executable');
+assert(renderer.includes("typeof createShortcut!=='function'") && renderer.includes("!result?.ok||!result?.path"), 'Quick shortcut picker must not report success until Electron confirms the created shortcut path');
+assert(renderer.includes("button.textContent='Creating…'") && renderer.includes('finally{if(button.isConnected)'), 'Quick shortcut creation must expose progress and recover its action after an error');
 console.log('profile desktop shortcut contracts passed');

@@ -158,9 +158,10 @@ assert(source.includes("api.invoke('world.sync.job.start'") && source.includes("
   baseCss.includes('.operation-progress-track') && baseCss.includes('.operation-phases'),
   'World connection must show pollable download, unpack, profile apply, verification, and ready progress.');
 assert(source.includes('CLIENT SYNC · ${clientRequiredCount}') &&
-  source.includes("placardBackSection('Client-Required Mods'") &&
-  source.includes("placardBackSection('Server-Retained Mods'"),
-  'World placards must distinguish files pushed to clients from server-retained mods.');
+  source.includes("placardBackSection('Community Guidelines'") &&
+  !source.includes("placardBackSection('Client-Required Mods'") &&
+  !source.includes("placardBackSection('Server-Retained Mods'"),
+  'Placard fronts must retain client-sync counts while backs contain only broadcast Community Guidelines.');
 assert(source.includes('Reset & Resync World') && source.includes("runWorldSyncJob(world,'sync',true)") && source.includes('force_complete:!!forceComplete') &&
   source.includes('Reset & Reload Profile') && source.includes("singleplayer.profile.reset_reload"),
   'Every saved Connected World and Private World placard must expose the correct protected reset workflow.');

@@ -67,6 +67,53 @@ function publicCorsHeaders(): HeadersInit {
   };
 }
 
+async function sha256TextHex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", encoder.encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function cleanRuntimeComponent(value: unknown): "ue4ss" | "runeschema" | "" {
+  const component = cleanText(value, 24).toLowerCase();
+  return component === "ue4ss" || component === "runeschema" ? component : "";
+}
+
+async function runtimeCompatibility(request: Request, env: Env): Promise<Response> {
+  if (request.method === "GET") {
+    const url = new URL(request.url);
+    const component = cleanRuntimeComponent(url.searchParams.get("component"));
+    const version = cleanText(url.searchParams.get("version"), 120);
+    const clauses: string[] = [];
+    const values: string[] = [];
+    if (component) { clauses.push("component = ?"); values.push(component); }
+    if (version) { clauses.push("version = ?"); values.push(version); }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const statement = env.DB.prepare(`SELECT component, version, ROUND(AVG(rating)) AS percentage, COUNT(*) AS reports, MAX(updated_at) AS updated_at FROM runtime_compatibility_reports ${where} GROUP BY component, version ORDER BY updated_at DESC LIMIT 200`);
+    const result = await statement.bind(...values).all<Record<string, unknown>>();
+    return json({ ratings: result.results || [] }, 200, { ...publicCorsHeaders(), "cache-control": "public, max-age=60" });
+  }
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405, publicCorsHeaders());
+  const contentLength = Number(request.headers.get("content-length") || "0");
+  if (contentLength > 4096) return json({ error: "payload_too_large" }, 413, publicCorsHeaders());
+  let body: Record<string, unknown>;
+  try { body = await request.json() as Record<string, unknown>; }
+  catch { return json({ error: "invalid_json" }, 400, publicCorsHeaders()); }
+  const component = cleanRuntimeComponent(body.component);
+  const version = cleanText(body.version, 120);
+  const applicationUserId = cleanText(body.application_user_id, 80);
+  const rating = clampInt(body.rating, -1, 0, 100);
+  if (!component || !version || !/^dwsu-[a-f0-9]{32}$/.test(applicationUserId) || rating < 0) {
+    return json({ error: "component_version_application_user_id_and_rating_required" }, 400, publicCorsHeaders());
+  }
+  const connectingIp = cleanText(request.headers.get("cf-connecting-ip"), 64);
+  const reporterHash = await sha256TextHex(`DragonwildsSync.RuntimeCompatibility.v1|${applicationUserId}|${connectingIp}`);
+  const now = Math.floor(Date.now() / 1000);
+  await env.DB.prepare(`INSERT INTO runtime_compatibility_reports(reporter_hash, component, version, rating, updated_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(reporter_hash, component, version) DO UPDATE SET rating=excluded.rating, updated_at=excluded.updated_at`)
+    .bind(reporterHash, component, version, rating, now).run();
+  const aggregate = await env.DB.prepare("SELECT ROUND(AVG(rating)) AS percentage, COUNT(*) AS reports FROM runtime_compatibility_reports WHERE component = ? AND version = ?")
+    .bind(component, version).first<Record<string, unknown>>();
+  return json({ ok: true, component, version, percentage: Number(aggregate?.percentage || 0), reports: Number(aggregate?.reports || 0) }, 200, publicCorsHeaders());
+}
+
 function clampInt(value: unknown, fallback = 0, min = 0, max = 100000): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
@@ -707,6 +754,10 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/api/v1/worlds") {
       return listWorlds(env);
+    }
+
+    if (url.pathname === "/api/v1/runtime-compatibility") {
+      return runtimeCompatibility(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/api/v1/invites") {

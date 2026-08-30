@@ -100,16 +100,20 @@ def main():
         wsd.SERVER_PROFILES_DIR = profile_store.SERVER_PROFILES_DIR
         try:
             profile_store.save_server_profile("world-a", {"id": "world-a", "name": "A", "world_save_download": {"enabled": True}})
-            first = wsd.status_for_ip("world-a", "203.0.113.7", now=1000)
+            first = wsd.status_for_ip("world-a", "203.0.113.7", "dwsu-player-a", now=1000)
             assert first["allowed"] is True
-            wsd.record_download("world-a", "203.0.113.7", now=1000)
-            second = wsd.status_for_ip("world-a", "203.0.113.7", now=1001)
+            wsd.record_download("world-a", "203.0.113.7", "dwsu-player-a", now=1000)
+            second = wsd.status_for_ip("world-a", "203.0.113.7", "dwsu-player-a", now=1001)
             assert second["allowed"] is True and second["requests_remaining"] == 1
-            wsd.record_download("world-a", "203.0.113.7", now=1001)
-            blocked = wsd.status_for_ip("world-a", "203.0.113.7", now=1002)
-            other = wsd.status_for_ip("world-a", "203.0.113.8", now=1002)
+            wsd.record_download("world-a", "203.0.113.7", "dwsu-player-a", now=1001)
+            blocked = wsd.status_for_ip("world-a", "203.0.113.7", "dwsu-player-a", now=1002)
+            other = wsd.status_for_ip("world-a", "203.0.113.8", "dwsu-player-b", now=1002)
+            same_user_new_ip = wsd.status_for_ip("world-a", "203.0.113.9", "dwsu-player-a", now=1002)
+            same_ip_new_user = wsd.status_for_ip("world-a", "203.0.113.7", "dwsu-player-c", now=1002)
             assert blocked["allowed"] is False and blocked["remaining_seconds"] > 86000
             assert other["allowed"] is True
+            assert same_user_new_ip["allowed"] is False
+            assert same_ip_new_user["allowed"] is False
         finally:
             profile_store.SERVER_PROFILES_DIR = old_profiles
             wsd.SERVER_PROFILES_DIR = old_wsd_profiles

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
+import platform
 import secrets
 import shutil
 import sys
 import threading
 import tempfile
 import time
+import uuid
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +26,46 @@ from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 
 SCHEMA_VERSION = 11
 OFFICIAL_DIRECTORY_URL = DRAGONWILDS_SYNC_NETWORK_URL
+
+
+def _local_hardware_identity() -> str:
+    """Return stable local hardware inputs; callers only persist their hash."""
+    parts = [
+        platform.system(), platform.machine(), platform.node(),
+        os.environ.get("COMPUTERNAME", ""), os.environ.get("PROCESSOR_IDENTIFIER", ""),
+    ]
+    try:
+        parts.append(f"node-{uuid.getnode():012x}")
+    except Exception:
+        pass
+    return "|".join(str(value or "").strip().casefold() for value in parts)
+
+
+def application_user_id(profile_id: str, display_name: str = "Player", hardware_identity: str | None = None) -> str:
+    """Return a non-reversible, installation/profile-bound public identifier.
+
+    ``profile_id`` is generated once in LocalAppData. Hashing that private
+    device seed with the original profile label avoids exposing hardware,
+    account, or path details while giving hosts a stable identity distinct
+    from transient connection IDs and IP addresses.
+    """
+    seed = str(profile_id or "").strip()
+    if not seed:
+        seed = secrets.token_hex(12)
+    label = " ".join(str(display_name or "Player").strip().casefold().split()) or "player"
+    hardware = _local_hardware_identity() if hardware_identity is None else str(hardware_identity)
+    hardware_digest = hashlib.sha256(hardware.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(f"DragonwildsSync.ApplicationUser.v1|{seed}|{label}|{hardware_digest}".encode("utf-8")).hexdigest()
+    return f"dwsu-{digest[:32]}"
+
+
+def persist_application_user_id(value: str) -> None:
+    """Persist the public installation/profile hash as a LocalAppData sidecar."""
+    normalized = str(value or "").strip()
+    if not normalized.startswith("dwsu-"):
+        return
+    APP_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    APPLICATION_USER_ID_PATH.write_text(normalized + "\n", encoding="utf-8")
 
 
 def official_directory_source(token: str = "") -> dict:
@@ -50,6 +93,7 @@ def roaming_app_data_root() -> Path | None:
 APP_DATA_DIR = app_data_root()
 LEGACY_SETTINGS_PATH = APP_DATA_DIR / "settings.json"
 V2_SETTINGS_PATH = APP_DATA_DIR / "launcher_v2.json"
+APPLICATION_USER_ID_PATH = APP_DATA_DIR / "application-user-id.sha256"
 WORLD_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world"
 SERVER_PROFILES_DIR = WORLD_PROFILES_DIR / "dedicated"
 _WRITE_LOCK = threading.RLock()
@@ -209,6 +253,7 @@ def _legacy_world_to_v2(profile: dict) -> dict:
 
 
 def default_state() -> dict:
+    player_profile_id = secrets.token_hex(12)
     return {
         "schema_version": SCHEMA_VERSION,
         "application": {
@@ -272,7 +317,9 @@ def default_state() -> dict:
             },
         },
         "player_profile": {
-            "profile_id": secrets.token_hex(12),
+            "profile_id": player_profile_id,
+            "application_user_id": application_user_id(player_profile_id, "Player"),
+            "profile_initialized": False,
             "display_name": "Player",
             "about": "",
             "avatar_data": "",
@@ -295,6 +342,7 @@ def default_state() -> dict:
             "curated_worlds": [],
             "profile_imports": {},
             "profile_import_history": [],
+            "play_session": {},
             "favorites": [],
             "favorite_alerts": {"enabled": True, "online": True, "offline": True, "maintenance": True, "identity_changed": True, "shared_characters": True, "worlds": {}},
             "world_identity_history": {},
@@ -518,6 +566,9 @@ def load_state() -> dict:
     player = state.setdefault("player_profile", {})
     player.setdefault("profile_id", secrets.token_hex(12))
     player.setdefault("display_name", "Player")
+    player.setdefault("application_user_id", application_user_id(player.get("profile_id"), player.get("display_name")))
+    player.setdefault("profile_initialized", str(player.get("display_name") or "").strip().casefold() not in {"", "player"})
+    persist_application_user_id(player.get("application_user_id"))
     player.setdefault("about", "")
     player.setdefault("avatar_data", "")
     player.setdefault("banner_data", "")
@@ -535,6 +586,7 @@ def load_state() -> dict:
     client.setdefault("curated_worlds", [])
     client.setdefault("profile_imports", {})
     client.setdefault("profile_import_history", [])
+    client.setdefault("play_session", {})
     client.setdefault("favorites", [])
     alerts = client.setdefault("favorite_alerts", {})
     for key, default in {"enabled": True, "online": True, "offline": True, "maintenance": True, "identity_changed": True, "shared_characters": True}.items():
@@ -581,6 +633,7 @@ def load_state() -> dict:
 
 def save_state(state: dict) -> dict:
     state["schema_version"] = SCHEMA_VERSION
+    persist_application_user_id((state.get("player_profile") or {}).get("application_user_id"))
     write_json(V2_SETTINGS_PATH, state)
     with _CACHE_LOCK:
         _STATE_CACHE.update({"path": str(V2_SETTINGS_PATH), "signature": _file_signature(V2_SETTINGS_PATH), "value": deepcopy(state)})
@@ -642,7 +695,7 @@ def list_server_profiles() -> list[dict]:
             "dedicated_config": meta.get("dedicated_config") or {},
             "sync_config": {**(meta.get("sync_config") or {}), "access_policy": normalize_access_policy(((meta.get("sync_config") or {}).get("access_policy") or {"blocked_ips": (meta.get("sync_config") or {}).get("blocked_ips", []), "blocked_countries": (meta.get("sync_config") or {}).get("blocked_countries", [])}))},
             "world_save_download": meta.get("world_save_download") or {"enabled": False, "cooldown_value": 6, "cooldown_unit": "hours"},
-            "character_sharing": {"enabled": bool((meta.get("character_sharing") or {}).get("enabled", False)), "allow_submissions": bool((meta.get("character_sharing") or {}).get("allow_submissions", False)), "request_backups": bool((meta.get("character_sharing") or {}).get("request_backups", False))},
+            "character_sharing": {"enabled": bool((meta.get("character_sharing") or {}).get("enabled", False)), "allow_submissions": bool((meta.get("character_sharing") or {}).get("allow_submissions", False)), "request_backups": True},
             "operations_schedule": meta.get("operations_schedule") or {"enabled": False, "action": "restart", "interval_minutes": 1440, "next_run_at": None, "warning_minutes": [30,10,5,1], "backup_retention_count": 10},
             "service_notice": meta.get("service_notice") or {},
             "player_map": {**(meta.get("player_map") or {}), "calibration": {"world_min_x": -11075.0, "world_max_x": 408925.0, "world_min_y": -117685.0, "world_max_y": 302315.0, "invert_y": False, **((meta.get("player_map") or {}).get("calibration") or {})}},
@@ -665,8 +718,10 @@ def load_server_profile(profile_id: str) -> dict:
         if cached and cached.get("signature") == signature and isinstance(cached.get("value"), dict):
             return deepcopy(cached["value"])
     profile = read_json(target, {})
-    if isinstance(profile, dict):
+    if isinstance(profile, dict) and profile:
         profile.pop("dragon_core", None)
+        profile.setdefault("character_sharing", {})["request_backups"] = True
+        profile.setdefault("world_save_download", {})["enabled"] = True
     else:
         profile = {}
     with _CACHE_LOCK:
@@ -744,7 +799,7 @@ def create_server_profile(name: str) -> str:
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "dedicated", "visibility": "public", "declared": True}),
         "audience": "general",
         "platform_compatibility": {"pc": True, "steam": True, "epic": True, "nintendo": False, "playstation": False, "xbox": False},
-        "character_sharing": {"enabled": False, "allow_submissions": False, "request_backups": False},
+        "character_sharing": {"enabled": False, "allow_submissions": False, "request_backups": True},
         "community": {"discord_invite": "", "discord_guild_id": ""},
         "unit_overrides": {}, "feedback": [], "rating_average": 0.0, "rating_count": 0,
         "auto_ue4ss": True, "auto_runeschema": True, "auto_rsdwtools": True,
@@ -764,7 +819,7 @@ def create_server_profile(name: str) -> str:
         "sync_config": {"password": "", "server_key": secrets.token_hex(16), "share_access_key": secrets.token_hex(16), "family_join_rotated_at": "", "allow_shared_access": True, "port": 27050 + instance_number, "port_auto": True, "lan_broadcast": True,
                         "tls_enabled": False, "allow_tls_password_fallback": False, "tls_cert_fingerprint": "",
                         "networking": {"publication_mode": "manual", "external_port": 27050 + instance_number}, "access_policy": default_access_policy()},
-        "world_save_download": {"enabled": False, "cooldown_value": 6, "cooldown_unit": "hours"},
+        "world_save_download": {"enabled": True, "max_requests": 2, "window_hours": 24, "scope": "source_ip_and_application_user_id"},
         "operations_schedule": {"enabled": False, "action": "restart", "mode": "daily", "daily_time": "04:00", "weekdays": [0,1,2,3,4,5,6], "repeat_days": 1, "interval_minutes": 1440, "blackout_windows": [], "next_run_at": None, "warning_minutes": [30, 10, 5, 1], "backup_retention_count": 10, "last_run_at": None},
         "activity_log": [],
         "service_notice": {"level": "info", "message": "", "expires_at": None, "updated_at": None},

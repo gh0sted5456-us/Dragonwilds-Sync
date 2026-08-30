@@ -117,11 +117,8 @@
 
   function buildBadgeRow(world) {
     const row = makeEl('div', 'badges');
-    if (world.contentType) row.appendChild(makeBadge(world.contentType.toUpperCase()));
-    if (world.gameMode) row.appendChild(makeBadge(world.gameMode.toUpperCase()));
-    const state = buildState(world);
-    row.appendChild(makeBadge(`${world.version}${state === 'current' ? ' · Current' : state === 'outdated' ? ' · Outdated' : ''}`, state === 'current' ? 'build-current' : state === 'outdated' ? 'build-outdated' : ''));
-    world.badges.slice(0, 8).forEach((badge) => row.appendChild(makeBadge(badge, /discord|community|rsdw/i.test(badge) ? 'community' : '')));
+    [...new Set(world.badges.map((badge)=>String(badge).trim()).filter(Boolean))].slice(0, 8)
+      .forEach((badge) => row.appendChild(makeBadge(badge, /discord|community|rsdw/i.test(badge) ? 'community' : '')));
     return row;
   }
 
@@ -191,7 +188,7 @@
     body.appendChild(makeEl('div', 'card-description', world.description));
 
     const tags = makeEl('div', 'tags');
-    appendTagSet(tags, world.tags.length ? world.tags : ['Public World']);
+    appendTagSet(tags, [world.contentType || world.gameMode || 'Public World', world.version || 'Version unknown']);
     body.appendChild(tags);
     body.appendChild(buildBadgeRow(world));
 
@@ -302,7 +299,7 @@
   function makeBack(world) {
     const back = makeEl('div', 'world-card-face world-card-back');
     back.appendChild(makePlacardBackdrop(world));
-    back.appendChild(makeModeBanner(world, 'PUBLIC DETAILS'));
+    back.appendChild(makeModeBanner(world, 'COMMUNITY GUIDELINES'));
     if (world.originLabel) back.appendChild(makeEl('div', 'world-origin-banner', `DIRECTORY · ${world.originLabel}`));
     back.appendChild(makeMedia(world));
     const body = makeEl('div', 'world-card-body');
@@ -312,35 +309,9 @@
     title.append(makeEl('h3', '', world.name), makeEl('small', '', world.worldId));
     topline.append(title, makeStatusPill(world));
     body.appendChild(topline);
-    body.appendChild(makeEl('p', 'world-back-summary', world.description));
-
     const grid = makeEl('div', 'world-back-grid');
-    grid.append(
-      makeInteractiveBackSection('Mods', modFamilyButtons(world), 'None published'),
-      makeInteractiveBackSection('Community Rules', ruleButtons(world), 'None published'),
-      makeBackSection('Badges', world.badges, 'None'),
-      makeBackSection('Tags', world.tags, 'None')
-    );
+    grid.append(makeInteractiveBackSection('Community Guidelines', ruleButtons(world), 'No community guidelines have been broadcast.'));
     body.appendChild(grid);
-
-    if (world.community.enabled) {
-      const community = makeEl(world.community.invite ? 'a' : 'div', 'world-community-card');
-      if (world.community.invite) {
-        community.href = world.community.invite;
-        community.target = '_blank';
-        community.rel = 'noopener noreferrer';
-        community.addEventListener('click', (event) => event.stopPropagation());
-      }
-      const icon = makeImage('', 'assets/platforms/discord.svg');
-      if (icon) community.appendChild(icon);
-      community.appendChild(makeEl('span', '', world.community.label || 'Discord community'));
-      body.appendChild(community);
-    }
-
-    if (world.connect?.host) {
-      const port = world.connect.port > 0 ? `:${world.connect.port}` : '';
-      body.appendChild(makeEl('div', 'world-connect', `Public connect: ${world.connect.host}${port}`));
-    }
 
     const footer = makeEl('div', 'card-footer');
     footer.appendChild(makeEl('div', 'card-metrics', world.remoteAdmin ? 'Target server verified before credentials are entered.' : 'Public telemetry only — no admin access'));

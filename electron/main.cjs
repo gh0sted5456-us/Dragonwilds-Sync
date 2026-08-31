@@ -1,7 +1,8 @@
 // V3 argument adapter around the retained Electron main process.
 // One executable, one backend: new Quick CLI is translated to the proven
 // stable-profile-id window launch contract before main-v2.cjs initializes.
-const { app, ipcMain, shell } = require('electron');
+const { app, ipcMain, shell, nativeImage } = require('electron');
+const fs = require('fs');
 const path = require('path');
 const { buildHeadlessShortcutArgs, buildQuickShortcutArgs, normalizeProfileId, normalizeQuickMode } = require('./quick_shortcut.cjs');
 const { resolveGuiShortcutTarget, resolveHeadlessShortcutTarget } = require('./shortcut_targets.cjs');
@@ -27,7 +28,7 @@ function createV3QuickShortcut(data = {}) {
   const safeName = `${baseName} · ${runtime === 'headless' ? 'Headless ' : ''}${role}`;
   const shortcutPath = path.join(app.getPath('desktop'), `${safeName}.lnk`);
   const projectRoot = path.resolve(__dirname, '..');
-  const guiTarget = resolveGuiShortcutTarget(process.execPath);
+  const guiTarget = resolveGuiShortcutTarget(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath);
   const target = runtime === 'headless' && app.isPackaged
     ? resolveHeadlessShortcutTarget({ executablePath: guiTarget, version: app.getVersion(), requestedPath: data.executablePath })
     : guiTarget;
@@ -35,12 +36,25 @@ function createV3QuickShortcut(data = {}) {
     ? buildHeadlessShortcutArgs({ profileId: id, mode: shortcutMode, command: 'run' })
     : buildQuickShortcutArgs({ profileId: id, mode: shortcutMode, autoStart: auto });
   const shortcutArgs = app.isPackaged ? launchArgs : `"${projectRoot}" ${launchArgs}`;
+  let icon = target;
+  try {
+    const raw = String(data.iconData || '');
+    if (raw) {
+      const image = nativeImage.createFromDataURL(raw.startsWith('data:') ? raw : `data:image/png;base64,${raw}`);
+      if (!image.isEmpty()) {
+        const png=image.resize({width:256,height:256}).toPNG();const header=Buffer.alloc(22);
+        header.writeUInt16LE(0,0);header.writeUInt16LE(1,2);header.writeUInt16LE(1,4);header.writeUInt16LE(1,10);header.writeUInt16LE(32,12);header.writeUInt32LE(png.length,14);header.writeUInt32LE(22,18);
+        const directory=path.join(app.getPath('userData'),'QuickLaunchIcons');fs.mkdirSync(directory,{recursive:true});
+        icon=path.join(directory,`${id.replace(/[^A-Za-z0-9_-]/g,'_')}.ico`);fs.writeFileSync(icon,Buffer.concat([header,png]));
+      }
+    }
+  } catch (_) { icon=target; }
   const ok = shell.writeShortcutLink(shortcutPath, 'create', {
     target,
     args: shortcutArgs,
     description: runtime === 'headless' ? `Run ${baseName} headlessly` : `${auto ? 'Open Quick + Start' : 'Open Quick'} · ${baseName} · ${role}`,
     cwd: app.isPackaged ? path.dirname(target) : projectRoot,
-    icon: target,
+    icon,
     iconIndex: 0,
   });
   if (!ok) throw new Error('Windows did not create the Quick desktop shortcut.');

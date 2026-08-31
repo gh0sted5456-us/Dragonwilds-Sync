@@ -56,11 +56,12 @@ try {
   class DragonwildsBrowserWindow extends NativeBrowserWindow {
     constructor(options = {}) {
       const next = { ...options };
-      if (next.frame !== false && !next.titleBarStyle) {
-        next.titleBarStyle = 'hidden';
-        next.titleBarOverlay = { color: '#111817', symbolColor: '#dfc778', height: 38 };
-        next.backgroundColor ||= '#0b0f10';
-      }
+      // A genuine system frame is the final escape hatch for every auxiliary
+      // window. Hidden title-bar overlays can leave an otherwise recoverable
+      // GPU/preload failure as an uncloseable black rectangle on Windows.
+      // Frameless primary windows keep their own themed titlebar; framed
+      // popups deliberately retain native minimize/maximize/close controls.
+      next.backgroundColor ||= '#0b0f10';
       super(next);
     }
   }

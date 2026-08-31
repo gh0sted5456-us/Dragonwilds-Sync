@@ -72,7 +72,8 @@
         || (activeFilter === 'offline-sync' && isSync(world) && !online);
       if (!matchesFilter) return false;
       if (!query) return true;
-      return [world.name, world.region, world.version, ...(world.tags || []), ...(world.mods || [])]
+      const platforms = typeof worldPlatformScores === 'function' ? worldPlatformScores(world) : [];
+      return [world.name, world.region, world.version, ...(world.tags || []), ...(world.mods || []), ...platforms]
         .join(' ').toLowerCase().includes(query);
     }).sort(syncFirstCompare);
   }

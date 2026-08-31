@@ -138,6 +138,8 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
                         for item in (row.get("mod_summary") or row.get("mods") or []) if isinstance(item, dict)],
         "platform_compatibility": {"pc": True, **{key: bool((row.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"}))
                                                         for key in ("steam", "epic", "nintendo", "playstation", "xbox")}},
+        "platform_ratings": {str(key)[:32]: {"average": max(0.0, min(5.0, float((value or {}).get("average") or 0))), "count": max(0, int((value or {}).get("count") or 0))}
+                             for key, value in (row.get("platform_ratings") or {}).items() if isinstance(value, dict)},
         "declared_platforms": [str(value).strip().lower()[:32] for value in (row.get("declared_platforms") or [])[:12] if str(value).strip()],
         "player_count": max(0, min(int(players.get("current") or row.get("player_count") or 0), 10000)),
         "max_players": max(0, min(int(players.get("max") or row.get("max_players") or 0), 10000)),

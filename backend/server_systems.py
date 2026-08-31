@@ -405,10 +405,37 @@ def compute_mod_badges(units: list["ModUnit"]) -> list[str]:
     return [labels[c] for c in CATEGORY_ORDER if c in present]
 
 
+def content_aware_world_classification(profile: dict, units: list["ModUnit"], *, tags=None) -> dict:
+    """Derive Vanilla/Modded from real gameplay payloads, never loader cores.
+
+    UE4SS Core and RuneSchema Core are runtime prerequisites. Their presence
+    alone must leave a World Vanilla. A PAK, UE4SS gameplay mod, or RuneSchema
+    content mod removes Vanilla even when an older profile still contains the
+    default ``content_type=vanilla`` declaration.
+    """
+    raw = dict((profile or {}).get("classification") or {})
+    badges = compute_mod_badges(units)
+    if badges != ["VANILLA"] and str(raw.get("content_type") or "vanilla").casefold() == "vanilla":
+        raw["content_type"] = "modded"
+    return normalize_world_classification(raw, tags=tags, mod_badges=badges,
+                                          host_type="dedicated", visibility="public")
+
+
 def profile_rating_summary(profile: dict) -> tuple[float, int]:
     entries = profile.get("feedback") or []
     ratings = [int(x.get("rating")) for x in entries if isinstance(x.get("rating"), int) and 1 <= x["rating"] <= 5 and review_integrity_valid(x)]
     return ((sum(ratings) / len(ratings), len(ratings)) if ratings else (0.0, 0))
+
+
+def platform_rating_summary(profile: dict) -> dict:
+    grouped: dict[str, list[int]] = {}
+    for entry in profile.get("feedback") or []:
+        rating = entry.get("rating")
+        platform = str(entry.get("platform") or "").strip().casefold()
+        if platform and isinstance(rating, int) and 1 <= rating <= 5 and review_integrity_valid(entry):
+            grouped.setdefault(platform, []).append(rating)
+    return {platform: {"average": sum(values) / len(values), "count": len(values)}
+            for platform, values in sorted(grouped.items()) if values}
 
 
 def _review_secret() -> bytes:
@@ -423,6 +450,8 @@ def _review_secret() -> bytes:
 
 def _review_canonical(entry: dict) -> bytes:
     fields = {key: entry.get(key) for key in ("id", "world_id", "client_id", "rating", "report", "ip_hash", "received_at")}
+    if entry.get("platform"):
+        fields["platform"] = entry.get("platform")
     return json.dumps(fields, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
@@ -443,7 +472,7 @@ def public_reviews(profile: dict, days: int = 30) -> list[dict]:
     for entry in reversed(profile.get("feedback") or []):
         if float(entry.get("received_at") or 0) < cutoff or str(entry.get("id") or "") in hidden or not review_integrity_valid(entry):
             continue
-        rows.append({key: entry.get(key) for key in ("id", "client_id", "rating", "report", "received_at", "integrity")})
+        rows.append({key: entry.get(key) for key in ("id", "client_id", "rating", "platform", "report", "received_at", "integrity")})
     return rows[:200]
 
 
@@ -1654,10 +1683,15 @@ class SyncHandler(BaseHTTPRequestHandler):
             if path == "/feedback":
                 body = self._read_json(); rating = body.get("rating"); client_id = str(body.get("client_id") or "")
                 report = unicodedata.normalize("NFKC", str(body.get("report") or "")).strip()
+                platform = str(body.get("platform") or "pc").strip().casefold()
                 if isinstance(rating, bool) or not isinstance(rating, int) or not 1 <= rating <= 5:
                     raise ValueError("rating must be an integer from 1 to 5")
                 if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", client_id): raise ValueError("invalid client id")
                 if len(report) > 250 or any(ord(ch) < 32 and ch not in "\n\t" for ch in report): raise ValueError("review must be 250 characters or fewer")
+                declared = STATE.manifest.get("platform_compatibility") if isinstance(STATE.manifest.get("platform_compatibility"), dict) else {"pc": True}
+                declared_platforms = {str(key).casefold() for key, enabled in declared.items() if enabled}
+                if platform not in declared_platforms:
+                    raise ValueError("rating platform must be one declared by this World")
                 now = time.time(); ip = self.client_address[0]
                 with STATE.lock:
                     if now - STATE._feedback_last.get(ip, 0) < 10:
@@ -1673,14 +1707,15 @@ class SyncHandler(BaseHTTPRequestHandler):
                     if prior and now - float(prior.get("received_at") or 0) < 30 * 86400:
                         self._send_json({"error": "one review per network per World every 30 days"}, 429); return
                     entry = {"id": secrets.token_hex(12), "world_id": profile_id, "client_id": client_id,
-                             "rating": rating, "report": report, "ip_hash": ip_hash, "received_at": now}
+                             "rating": rating, "platform": platform, "report": report, "ip_hash": ip_hash, "received_at": now}
                     entry["integrity"] = review_integrity(entry); entries.append(entry)
                     avg, count = profile_rating_summary(profile); profile["rating_average"] = avg; profile["rating_count"] = count
                     save_server_profile(profile_id, profile)
                     with STATE.lock:
                         STATE.manifest["rating_average"] = avg; STATE.manifest["rating_count"] = count
+                        STATE.manifest["platform_ratings"] = platform_rating_summary(profile)
                         STATE.touch_metadata()
-                STATE.activity(ip, f"submitted a {rating}/5 World rating"); self._send_json({"ok": True, "review": {key: entry.get(key) for key in ("id", "rating", "received_at", "integrity")}}); return
+                STATE.activity(ip, f"submitted a {rating}/5 {platform} World rating"); self._send_json({"ok": True, "review": {key: entry.get(key) for key in ("id", "rating", "platform", "received_at", "integrity")}}); return
             self._send_json({"error": "not found"}, 404)
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             self._send_json({"error": str(exc)}, 400)
@@ -1715,11 +1750,13 @@ class SyncHandler(BaseHTTPRequestHandler):
                                  "placard_background": STATE.manifest.get("placard_background") or "1",
                                  "rating_average": STATE.manifest.get("rating_average") or 0,
                                  "rating_count": STATE.manifest.get("rating_count") or 0,
+                                 "platform_ratings": STATE.manifest.get("platform_ratings") or {},
                                  "community": STATE.manifest.get("community") or {},
                                  "community_rules": STATE.manifest.get("community_rules") or "",
                                  "shared_character_count": len(STATE.manifest.get("starter_characters") or []),
                                  "character_submissions_open": bool((STATE.manifest.get("character_sharing") or {}).get("allow_submissions")),
                                  "character_backup_requested": bool((STATE.manifest.get("character_sharing") or {}).get("request_backups")),
+                                 "dragonlink_connect": STATE.manifest.get("dragonlink_connect") or {"enabled": False},
                                  "network_health": network_health, "server_health": server_health,
                                  "runtime_stack": STATE.manifest.get("runtime_stack") or {},
                                  "connection": STATE.manifest.get("connection") or {},
@@ -1743,6 +1780,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                     "classification": STATE.manifest.get("classification") or {},
                     "audience": STATE.manifest.get("audience") or "general",
                     "platform_compatibility": STATE.manifest.get("platform_compatibility") or {"pc": True},
+                    "platform_ratings": STATE.manifest.get("platform_ratings") or {},
                     "console_policy": STATE.manifest.get("console_policy") or {},
                     "tags": STATE.manifest.get("tags") or [],
                     "mod_badges": STATE.manifest.get("mod_badges") or [],
@@ -1754,6 +1792,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                     "community": STATE.manifest.get("community") or {},
                     "community_rules": STATE.manifest.get("community_rules") or "",
                     "password_required": bool(STATE.manifest.get("password_required")),
+                    "dragonlink_connect": STATE.manifest.get("dragonlink_connect") or {"enabled": False},
                     "authentication": STATE.manifest.get("authentication") or {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
                     "world_sync": STATE.manifest.get("world_sync") or {},
                     "launcher_fingerprint": STATE.manifest.get("launcher_fingerprint") or "",
@@ -1780,7 +1819,7 @@ class SyncHandler(BaseHTTPRequestHandler):
             try: days = int(next((part.split("=", 1)[1] for part in query.split("&") if part.startswith("days=")), "30"))
             except ValueError: days = 30
             profile = load_server_profile(profile_id); avg, count = profile_rating_summary(profile)
-            self._send_json({"reviews": public_reviews(profile, days), "days": max(1, min(days, 90)), "rating_average": avg, "rating_count": count}); return
+            self._send_json({"reviews": public_reviews(profile, days), "days": max(1, min(days, 90)), "rating_average": avg, "rating_count": count, "platform_ratings": platform_rating_summary(profile)}); return
         if path == "/lan-auth":
             token = STATE.issue_lan_token(self.client_address[0], str(self.headers.get("X-DWS-Client-Profile") or ""))
             if not token:
@@ -2357,17 +2396,21 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 })
             else:
                 temporary.unlink(missing_ok=True)
-    # DragonLink-Connect is launcher infrastructure required by both host and
-    # client. Publish only its immutable baseline files; config.lua is generated
-    # locally from the selected Connected World and must never leak host values.
-    dragon_bundle = _bundled_app_resource(*BUNDLED_DRAGONCONNECT_RESOURCE)
-    if not dragon_bundle.is_file():
+    # DragonLink-Connect automation is an explicit per-World host capability.
+    # Clients always receive the manual credential handoff in the launcher, so
+    # an operator can decline this helper without making the World unjoinable.
+    # When enabled, publish only immutable baseline files; config.lua is still
+    # generated locally from the selected Connected World and never leaves the
+    # joining machine.
+    dragonlink_enabled = bool(((profile or {}).get("sync_config") or {}).get("dragonlink_connect_enabled", False))
+    dragon_bundle = _bundled_app_resource(*BUNDLED_DRAGONCONNECT_RESOURCE) if dragonlink_enabled else Path()
+    if dragonlink_enabled and not dragon_bundle.is_file():
         for legacy_name in ("DragonConnectHelper-baseline.zip", "PersistentDirectConnectIP-baseline.zip"):
             legacy_bundle = _bundled_app_resource(legacy_name)
             if legacy_bundle.is_file():
                 dragon_bundle = legacy_bundle
                 break
-    if dragon_bundle.is_file():
+    if dragonlink_enabled and dragon_bundle.is_file():
         with zipfile.ZipFile(dragon_bundle) as source_zip:
             for info in source_zip.infolist():
                 if info.is_dir():
@@ -2448,6 +2491,7 @@ class ShareServer:
                     "tls_password_fallback": bool(STATE.allow_tls_password_fallback),
                     "lan_trust": bool(STATE.lan_trust_enabled),
                     "password_required": bool(STATE.manifest.get("password_required")),
+                    "dragonlink_connect": STATE.manifest.get("dragonlink_connect") or {"enabled": False},
                     "runtime_stack": STATE.manifest.get("runtime_stack") or {},
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
                     "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count") if row.get(key) not in (None, "")}
@@ -2599,9 +2643,9 @@ class ShareServer:
                 consolidated_tags.append(value); seen_tags.add(value.casefold())
             if len(consolidated_tags) >= 24: break
         runtime_stack = server_runtime_stack(load_state().get("application") or {}, profile, runeschema_runtime_dir=RUNESCHEMA_RUNTIME_DIR, remote=True)
-        classification = normalize_world_classification(profile.get("classification"), tags=consolidated_tags,
-                                                        mod_badges=compute_mod_badges(units), host_type="dedicated", visibility="public")
+        classification = content_aware_world_classification(profile, units, tags=consolidated_tags)
         character_sharing = profile.get("character_sharing") if isinstance(profile.get("character_sharing"), dict) else {}
+        dragonlink_enabled = bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False))
         shared_characters = list_starter_characters(profile_id) if bool(character_sharing.get("enabled")) else []
         initial_health = score_server_health(hw_stats=hw_stats or {}, network_health=STATE.network_summary(None), health_config=full_health_config, uptime_seconds=None, online=STATE.server_online, runtime_stack=runtime_stack)
         # Do not leak operator-disabled reference URLs/notes through the nested health result.
@@ -2644,6 +2688,7 @@ class ShareServer:
                               "mods_txt_writer": mods_txt_writer,
                               "client_ue4ss_mods": client_ue4ss_mods,
                               "game_port": int(game_port or 7777), "rating_average": avg, "rating_count": count,
+                              "platform_ratings": platform_rating_summary(profile),
                               "hw_stats": hw_stats or {}, "network_health": STATE.network_summary(None),
                               "security_posture": {"package_validation": "hash-staging-rollback"},
                               "health_config": broadcast_health_config,
@@ -2669,6 +2714,7 @@ class ShareServer:
                               "player_map": {"allow_remote_clients": bool((profile.get("player_map") or {}).get("allow_remote_clients", False))},
                               "world_save_download": profile.get("world_save_download") or {"enabled": False},
                               "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
+                              "dragonlink_connect": {"enabled": dragonlink_enabled, "mode": "direct-panel-once" if dragonlink_enabled else "manual"},
                               "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
                               "server_health": initial_health}
             client_meta = build_client_meta(STATE.manifest)
@@ -2783,8 +2829,9 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "profile_name": str(profile.get("name") or STATE.manifest.get("profile_name") or "World")[:80],
             "description": str(profile.get("description") or "")[:300],
             "tags": refreshed_tags,
-            "classification": normalize_world_classification(profile.get("classification"), tags=refreshed_tags,
-                                                                mod_badges=STATE.manifest.get("mod_badges") or [], host_type="dedicated", visibility="public"),
+            "classification": normalize_world_classification(
+                {**(profile.get("classification") or {}), **({"content_type": "modded"} if (STATE.manifest.get("mod_badges") or ["VANILLA"]) != ["VANILLA"] and str((profile.get("classification") or {}).get("content_type") or "vanilla").casefold() == "vanilla" else {})},
+                tags=refreshed_tags, mod_badges=STATE.manifest.get("mod_badges") or [], host_type="dedicated", visibility="public"),
             "audience": str(profile.get("audience") or "general"),
             "platform_compatibility": {"pc": True, **{key: bool((profile.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"})) for key in ("steam", "epic", "nintendo", "playstation", "xbox")}},
             "console_policy": {"allow_connection_attempt": True, "client_required_writes": "skip_with_warning", "server_only_mods_supported": True},
@@ -2797,10 +2844,12 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "banner_b64": str(profile.get("banner_b64") or ""),
             "rating_average": avg,
             "rating_count": count,
+            "platform_ratings": platform_rating_summary(profile),
             "health_config": health_cfg,
             "service_notice": normalize_notice(profile.get("service_notice")),
             "world_save_download": profile.get("world_save_download") or {"enabled": False},
             "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
+            "dragonlink_connect": {"enabled": bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)), "mode": "direct-panel-once" if bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)) else "manual"},
             "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
             "player_map": {"allow_remote_clients": bool((profile.get("player_map") or {}).get("allow_remote_clients", False))},
             "external_hierarchy": {

@@ -508,9 +508,14 @@ def _launch_verified_world(legacy, state: dict, world_id: str, verified: dict) -
     direct_connect = legacy._write_world_direct_connect(
         game_dir, world, {"connection": fallback_connection} if fallback_connection else None
     )
-    if not direct_connect.get("configured"):
+    if direct_connect.get("automation_enabled") is not False and not direct_connect.get("configured"):
         raise RuntimeError(
             "DragonLink-Connect could not resolve a game address from the verified World. "
+            "Refresh the World route and sync again."
+        )
+    if direct_connect.get("automation_enabled") is False and not direct_connect.get("address"):
+        raise RuntimeError(
+            "The verified World did not publish a Direct Connect address for manual entry. "
             "Refresh the World route and sync again."
         )
     pid = sync_engine.launch_game(Path(exe))

@@ -8,8 +8,8 @@ const { pathToFileURL } = require('url');
 const { DiscordRichPresence } = require('./discord_rpc.cjs');
 const { checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate } = require('./app_updater.cjs');
 const { NexusAdapter } = require('./nexus_adapter.cjs');
-const { buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId } = require('./quick_shortcut.cjs');
-const { resolveGuiShortcutTarget } = require('./shortcut_targets.cjs');
+const { buildHeadlessShortcutArgs, buildNormalShortcutArgs, buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId } = require('./quick_shortcut.cjs');
+const { resolveGuiShortcutTarget, resolveHeadlessShortcutTarget } = require('./shortcut_targets.cjs');
 
 function startupPerformanceSettings() {
   const defaults={hardware_acceleration:true,renderer_memory_mb:0};
@@ -504,7 +504,8 @@ function createManagedDialog(ownerContents, payload = {}) {
   // Managed tools are real application windows. Keep the native Windows frame
   // as the final close/minimize escape hatch even if Chromium/GPU content fails
   // before the themed document hydrates.
-  const win = new BrowserWindow(windowOptions({ width, height, minWidth: 480, minHeight: 320, title, skipTaskbar: false, frame: true }));
+  const win = new BrowserWindow(windowOptions({ width, height, minWidth: 480, minHeight: 320, title, skipTaskbar: false, frame: true,
+    webPreferences: { preload: path.join(__dirname, 'preload-v2.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: false, backgroundThrottling: false } }));
   attachRendererDurability(win);
   const entry = { id, window: win, title, route: 'dialog', context: {}, ownerId: owner.id, html: String(payload.html || ''), theme: String(payload.theme || 'dark') };
   managedDialogs.set(id, entry);
@@ -522,11 +523,15 @@ function createManagedDialog(ownerContents, payload = {}) {
     console.error(`[managed-dialog:${id}] load failed ${code}: ${description}`); present();
   });
   win.loadFile(path.join(projectRoot(), 'renderer', 'dialog-host.html'), { query: { dialogId: id, nativeFrame: '1' } })
-    .then(present)
     .catch((error) => { console.error(`[managed-dialog:${id}] ${error?.stack || error}`); present(); });
+  // Do not expose the child at did-finish-load while Chromium may still be a
+  // background-colour-only surface. ready-to-show follows the first paint;
+  // the bounded fallback preserves an exit-capable system window on failures.
+  const presentFallback=setTimeout(present,5000);presentFallback.unref?.();
   win.once('ready-to-show', present);
   win.on('show', notifyDetachedWindows); win.on('hide', notifyDetachedWindows);
   win.on('closed', () => {
+    clearTimeout(presentFallback);
     managedDialogs.delete(id); detachedWindows.delete(id); notifyDetachedWindows();
     try { if (!owner.isDestroyed()) owner.send('dragonwilds:managed-dialog-closed', { id }); } catch (_) {}
   });
@@ -792,7 +797,10 @@ function writeWorldIcon(worldId, iconData, iconAsset = '') {
     header.writeUInt32LE(png.length,14); header.writeUInt32LE(22,18); fs.writeFileSync(target, Buffer.concat([header,png])); return target;
   } catch (_) { return fallback; }
 }
-function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind }) {
+function launcherExecutablePath() {
+  return String(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath || '').trim();
+}
+function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind, shortcutType = 'quick', executablePath = '' }) {
   if (process.platform !== 'win32') throw new Error('Send to Desktop is currently a Windows feature.');
   const id = normalizeProfileId(worldId);
   const kind = ['world', 'private', 'server'].includes(String(worldKind || '').toLowerCase()) ? String(worldKind).toLowerCase() : 'world';
@@ -803,13 +811,25 @@ function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind }) 
     const assetPath = path.join(projectRoot(), 'renderer', 'assets', safeAsset);
     if (fs.existsSync(assetPath) && fs.statSync(assetPath).isFile()) resolvedIconData = `data:image/png;base64,${fs.readFileSync(assetPath).toString('base64')}`;
   }
-  const shortcutPath = path.join(app.getPath('desktop'), `${safeName}.lnk`); const icon = writeWorldIcon(id, resolvedIconData);
+  const type = ['normal', 'quick', 'headless'].includes(String(shortcutType || '').toLowerCase()) ? String(shortcutType).toLowerCase() : 'quick';
+  if (type === 'headless' && kind !== 'server') throw new Error('Headless shortcuts are available only for dedicated Server profiles.');
+  const suffix = type === 'normal' ? 'Normal Launch' : (type === 'headless' ? 'Headless Server' : 'Quick Launch');
+  const shortcutPath = path.join(app.getPath('desktop'), `${safeName} · ${suffix}.lnk`); const icon = writeWorldIcon(id, resolvedIconData);
   const mode = modeForWorldKind(kind);
-  const quickArgs = buildQuickShortcutArgs({ profileId: id, mode, autoStart: true });
-  const target = resolveGuiShortcutTarget(process.execPath); const args = app.isPackaged ? quickArgs : `"${projectRoot()}" ${quickArgs}`;
-  const ok = shell.writeShortcutLink(shortcutPath, 'create', { target, args, description: `Quick launch ${safeName} with Dragonwilds Sync`, cwd: app.isPackaged ? path.dirname(process.execPath) : projectRoot(), icon, iconIndex: 0 });
+  const guiTarget = resolveGuiShortcutTarget(launcherExecutablePath());
+  const target = type === 'headless' && app.isPackaged
+    ? resolveHeadlessShortcutTarget({ executablePath: guiTarget, version: app.getVersion(), requestedPath: executablePath })
+    : guiTarget;
+  const launchArgs = type === 'normal'
+    ? buildNormalShortcutArgs({ profileId: id, mode })
+    : (type === 'headless'
+      ? buildHeadlessShortcutArgs({ profileId: id, mode: 'server', command: 'run' })
+      : buildQuickShortcutArgs({ profileId: id, mode, autoStart: true }));
+  const args = app.isPackaged ? launchArgs : `"${projectRoot()}" ${launchArgs}`;
+  const description = type === 'normal' ? `Open ${safeName} in Dragonwilds Sync` : (type === 'headless' ? `Run ${safeName} headlessly` : `Quick launch ${safeName} with Dragonwilds Sync`);
+  const ok = shell.writeShortcutLink(shortcutPath, 'create', { target, args, description, cwd: app.isPackaged ? path.dirname(target) : projectRoot(), icon, iconIndex: 0 });
   if (!ok) throw new Error('Windows did not create the desktop shortcut.');
-  return { ok: true, path: shortcutPath, target, icon, profileId: id, mode, arguments: quickArgs };
+  return { ok: true, path: shortcutPath, target, icon, profileId: id, mode, shortcutType: type, arguments: launchArgs };
 }
 
 ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {

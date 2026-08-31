@@ -3170,7 +3170,12 @@
     const raw = world?.classification || {};
     const cached = world?.manifest_cache?.classification || {};
     const presentation = world?.presentation || {};
-    const badges = server ? [world?.auto_ue4ss && 'ue4ss', world?.auto_runeschema && 'runeschema'].filter(Boolean) : (presentation.mod_badges || []);
+    const badges = [
+      ...(world?.mod_badges || []),
+      ...(presentation.mod_badges || []),
+      ...(world?.manifest_cache?.mod_badges || []),
+      ...(world?.metadata_cache?.world_metadata?.mod_badges || []),
+    ];
     const hasMods = badges.some((badge)=>!['vanilla','local','singleplayer','coop','co-op'].includes(String(badge||'').toLowerCase()));
     const modeValue = raw.game_mode ?? raw.world_mode ?? raw.mode
       ?? world?.game_mode ?? world?.world_mode ?? world?.mode
@@ -3194,11 +3199,16 @@
     const pvp_enabled = pvpValue === true
       || pvpValue === 1
       || ['true','1','yes','on','enabled'].includes(String(pvpValue || '').trim().toLowerCase());
+    const rawContent = String(raw.content_type || cached.content_type || '').toLowerCase();
     return {
-      content_type: ['vanilla','modded','handmade','hybrid'].includes(String(raw.content_type||'')) ? raw.content_type : (hasMods ? 'modded' : 'vanilla'),
+      content_type: hasMods && rawContent === 'vanilla'
+        ? 'modded'
+        : (['vanilla','modded','handmade','hybrid'].includes(rawContent) ? rawContent : (hasMods ? 'modded' : 'vanilla')),
       game_mode: modeAliases[modeKey] || 'normal',
       pvp_enabled,
-      host_type: ['singleplayer','coop','dedicated','public'].includes(String(raw.host_type||'')) ? raw.host_type : (server ? 'dedicated' : world?.kind==='singleplayer' ? (world?.status?.broadcasting?'coop':'singleplayer') : 'public'),
+      host_type: server
+        ? 'dedicated'
+        : (['singleplayer','coop','dedicated','public'].includes(String(raw.host_type||'')) ? raw.host_type : world?.kind==='singleplayer' ? (world?.status?.broadcasting?'coop':'singleplayer') : 'public'),
       visibility: String(raw.visibility || (server ? 'public' : 'private')),
     };
   }
@@ -3212,9 +3222,15 @@
       custom: 'CUSTOM',
     };
     const mode = modeLabels[c.game_mode] ? c.game_mode : 'normal';
-    const modeBadge = `<span class="world-class-pill world-mode-pill mode-${mode}">${modeLabels[mode]}</span>`;
+    const modeIcons = {
+      normal: 'assets/world-modes/normal.webp',
+      hard: 'assets/world-modes/hardcore.webp',
+      creative: 'assets/world-modes/creative.webp',
+    };
+    const modeIcon = modeIcons[mode] ? `<img src="${modeIcons[mode]}" alt="" aria-hidden="true"/>` : '';
+    const modeBadge = `<span class="world-class-pill world-mode-pill mode-${mode}">${modeIcon}<span>${modeLabels[mode]}</span></span>`;
     const pvpBadge = c.pvp_enabled
-      ? '<span class="world-class-pill world-mode-pill mode-pvp">PVP</span>'
+      ? '<span class="world-class-pill world-mode-pill mode-pvp"><img src="assets/world-modes/pvp.webp" alt="" aria-hidden="true"/><span>PVP</span></span>'
       : '';
     return modeBadge + pvpBadge;
   }
@@ -3259,7 +3275,7 @@
 
   function worldPlatformMarkup(world, compact = false) {
     const compat=world?.platform_compatibility||world?.compatibility?.platform_compatibility||world?.manifest_cache?.platform_compatibility||world?.manifest_cache?.compatibility?.platform_compatibility||{};
-    const definitions=[['steam','Steam'],['epic','Epic Games'],['nintendo','Nintendo'],['playstation','PlayStation'],['xbox','Xbox']];
+    const definitions=[['steam','Steam'],['epic','Epic Games'],['nintendo','Nintendo Switch 2'],['playstation','PlayStation 5'],['xbox','Xbox']];
     return definitions.filter(([key])=>compat[key]===true).map(([key,label])=>`<span class="world-platform-badge ${key}" title="Host declares ${escapeHtml(label)} compatibility; connection remains user-selectable" aria-label="${escapeHtml(label)} compatible">${platformLogo(key,label)}${compact?'':`<span>${escapeHtml(label)}</span>`}</span>`).join('');
   }
 
@@ -4074,11 +4090,47 @@
     return `<details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Core Configuration</h2><span class="panel-subtitle">Game/server, UE4SS root, and RuneSchema root configuration only.</span></div><div class="header-actions"><button class="btn ghost" id="refresh-world-maintenance">Refresh</button></div></summary><div class="panel-body">${rows ? `<div class="config-file-list">${rows}</div>` : `<div class="empty-state">${isActive ? 'No game/server, UE4SS root, or RuneSchema root configuration was found.' : 'Activate this World to inspect its core configuration.'}</div>`}<div class="identity-box"><strong>One clear boundary</strong><p>Mod recipes and mod-owned JSON/Lua/TXT stay in Mod Management. Dragonwilds Sync unlocks only these core files for validated atomic writes, then returns them to read-only.</p></div></div></details>`;
   }
 
+  function worldJoinCredentials(world, syncResponse = {}) {
+    const result=syncResponse?.result||{};
+    const manifest=result.manifest||world?.manifest_cache||{};
+    const connection=manifest.connection||world?.connection||{};
+    const direct=result.direct_connect||{};
+    const host=String(connection.external_ip||connection.internal_ip||world?.connection?.external_ip||world?.connection?.internal_ip||'').trim();
+    const port=Number(connection.game_port||world?.connection?.game_port||7777);
+    const address=String(direct.address||result.game_endpoint||(host?`${host}:${port}`:'Not published'));
+    const credentials=world?.credentials||{};
+    const capability=manifest.dragonlink_connect||world?.manifest_cache?.dragonlink_connect||{};
+    return {
+      worldName:String(manifest.profile_name||world?.identity?.world_name||world?.nickname||world?.name||'Dragonwilds World'),
+      address,
+      password:String(credentials.password||''),
+      automated:capability.enabled===true,
+    };
+  }
+
+  function worldJoinCredentialMarkup(world, syncResponse = {}) {
+    const credentials=worldJoinCredentials(world,syncResponse);
+    const row=(label,value,key,emptyLabel='Not configured')=>`<div class="world-credential-row"><div><small>${label}</small><code>${escapeHtml(value||emptyLabel)}</code></div><button class="btn ghost compact-btn" type="button" data-copy-world-credential="${key}" ${value?'':'disabled'}>Copy</button></div>`;
+    return `<section class="world-credential-receipt"><div class="world-credential-heading"><div><strong>Manual game credentials</strong><small>Keep this visible when entering the Direct Connect screen in Dragonwilds.</small></div><span class="status-pill ${credentials.automated?'online':'unknown'}">${credentials.automated?'DRAGONLINK OPT-IN':'MANUAL ENTRY'}</span></div>${row('World Name',credentials.worldName,'worldName')}${row('IP / Direct Connect address',credentials.address,'address')}${row('World Password',credentials.password,'password','No password · open World')}<div class="world-credential-modes">${gameModeBadgesMarkup(world,false)}</div></section>`;
+  }
+
+  function bindWorldCredentialCopies(panel, world, syncResponse = {}) {
+    const credentials=worldJoinCredentials(world,syncResponse);
+    panel?.querySelectorAll('[data-copy-world-credential]').forEach((button)=>button.addEventListener('click',async()=>{
+      const value=credentials[button.dataset.copyWorldCredential]||'';
+      if(!value)return;
+      await window.dragonwilds.copyText(value);
+      const prior=button.textContent;button.textContent='Copied';setTimeout(()=>{button.textContent=prior;},1000);
+    }));
+  }
+
   function openVerifiedPlayGate(world, syncResponse) {
     const result=syncResponse?.result||{};
     const changed=Number(result.downloaded||result.changed_files||0),current=Number(result.up_to_date||result.unchanged_files||0);
-    showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Verified</div><h2>${escapeHtml(world.name||world.nickname||'World')} is ready</h2><p>File matching is complete. Dragonwilds will not start until you press Play.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Parity verified</strong><p>${changed} updated · ${current} already current. DragonLink-Connect is prepared for this World.</p></div><div class="operation-steps"><span class="complete">Match</span><span class="complete">Transfer</span><span class="complete">Verify</span><span class="active">Play</span></div></div><div class="modal-footer"><span>You can close this window without launching.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Not now</button><button class="btn primary" id="launch-verified-world">Play Dragonwilds</button></div></div>`,{title:`Play · ${world.name||'Connected World'}`,width:680,height:430});
-    modalRoot.querySelector('#launch-verified-world')?.addEventListener('click',async(event)=>{
+    const credentials=worldJoinCredentials(world,syncResponse);
+    const panel=showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Verified</div><h2>${escapeHtml(world.name||world.nickname||'World')} is ready</h2><p>File matching is complete. Dragonwilds will not start until you press Play.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Parity verified</strong><p>${changed} updated · ${current} already current. ${credentials.automated?'This server opted into a one-time DragonLink-Connect handoff.':'This server uses manual Direct Connect entry.'}</p></div>${worldJoinCredentialMarkup(world,syncResponse)}<div class="operation-steps"><span class="complete">Match</span><span class="complete">Transfer</span><span class="complete">Verify</span><span class="active">Play</span></div></div><div class="modal-footer"><span>You can close this window without launching.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Not now</button><button class="btn primary" id="launch-verified-world">Play Dragonwilds</button></div></div>`,{title:`Play · ${world.name||'Connected World'}`,width:720,height:650});
+    bindWorldCredentialCopies(panel,world,syncResponse);
+    panel.querySelector('#launch-verified-world')?.addEventListener('click',async(event)=>{
       const button=event.currentTarget;button.disabled=true;button.textContent='Launching…';
       try{
         const launched=await api.invoke('world.launch_verified',{id:world.id});
@@ -4102,7 +4154,8 @@
   }
 
   function openSyncMismatchConfirmation(world, message) {
-    const panel=showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Incomplete Sync</div><h2>File mismatch detected</h2><p>${escapeHtml(world.name||world.nickname||'This World')} did not reach exact managed-file parity.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box sync-mismatch-warning"><strong>Stability may be compromised</strong><p>You can enter despite the incomplete Sync, but missing, stale, or changed files may cause crashes, missing content, or inconsistent play.</p></div><div class="sync-mismatch-reason"><strong>Why Sync stopped</strong><p>${escapeHtml(message||'The client and host file manifests do not match.')}</p></div><p class="muted">Enter only waives managed-file parity for this launch. World authentication, identity, fingerprint checks, credentials, and DragonLink routing remain enforced.</p></div><div class="modal-footer"><span>No launch occurs if you back out.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Backout</button><button class="btn danger" id="enter-incomplete-sync">Enter</button></div></div>`,{title:`Incomplete Sync · ${world.name||world.nickname||'Connected World'}`,width:720,height:520});
+    const panel=showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Incomplete Sync</div><h2>File mismatch detected</h2><p>${escapeHtml(world.name||world.nickname||'This World')} did not reach exact managed-file parity.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box sync-mismatch-warning"><strong>Stability may be compromised</strong><p>You can enter despite the incomplete Sync, but missing, stale, or changed files may cause crashes, missing content, or inconsistent play.</p></div><div class="sync-mismatch-reason"><strong>Why Sync stopped</strong><p>${escapeHtml(message||'The client and host file manifests do not match.')}</p></div>${worldJoinCredentialMarkup(world)}<p class="muted">Enter only waives managed-file parity for this launch. World authentication, identity, fingerprint checks, and credentials remain enforced.</p></div><div class="modal-footer"><span>No launch occurs if you back out.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Backout</button><button class="btn danger" id="enter-incomplete-sync">Enter</button></div></div>`,{title:`Incomplete Sync · ${world.name||world.nickname||'Connected World'}`,width:740,height:720});
+    bindWorldCredentialCopies(panel,world);
     panel.querySelector('#enter-incomplete-sync')?.addEventListener('click',async(event)=>{
       const button=event.currentTarget;button.disabled=true;button.textContent='Entering…';
       try{
@@ -6330,7 +6383,7 @@
     root.querySelectorAll('[data-sp-rollback]').forEach((b)=>b.addEventListener('click',()=>{const unit=(state.singleplayerInventory||[]).find((u)=>u.key===b.dataset.spRollback);if(unit)rollbackNexusUnit(unit,'singleplayer');}));
     root.querySelectorAll('[data-sp-remove]').forEach((b)=>b.addEventListener('click',async()=>{if(!await managedConfirm('Remove this mod from this Private World profile?','Remove Mod'))return;try{const response=await api.invoke('singleplayer.mod.remove',privateProfileParams({key:b.dataset.spRemove}));state.singleplayerInventory=response.units||[];render();toast('Private World mod removed','','success');}catch(error){toast('Remove failed',error.message,'error');}}));
     root.querySelectorAll('#sp-characters').forEach((b)=>b.addEventListener('click',()=>enterRsdwToolkit()));
-    root.querySelector('#sp-desktop')?.addEventListener('click',async()=>{try{const world=activePrivateWorld();const result=await window.dragonwilds.createWorldShortcut({worldId:world?.id||'singleplayer',worldKind:'private',name:world?.name||'Dragonwilds SinglePlayer',iconData:world?.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});toast('Private World sent to Desktop',result.path||'Shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}});
+    root.querySelector('#sp-desktop')?.addEventListener('click',async()=>{try{const world=activePrivateWorld();await sendProfileToDesktop({worldId:world?.id||'singleplayer',worldKind:'private',name:world?.name||'Dragonwilds SinglePlayer',iconData:world?.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});}catch(error){toast('Desktop shortcut failed',error.message,'error');}});
     bindModDropZone(root.querySelector('#sp-mod-dropzone'), (path)=>openSmartModImport(path,'singleplayer'));
     bindModDropZone(root.querySelector('#server-mod-dropzone'), (path)=>openSmartModImport(path,'server'));
     root.querySelector('#add-world')?.addEventListener('click', () => openConnectToWorld('saved'));
@@ -6378,8 +6431,8 @@
     root.querySelectorAll('[data-quick-online-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.online.use',{id:button.dataset.quickOnlineWorld,link_to_my_worlds:false});if(response.state)state.data=response.state;const world=anyClientWorld(response.world?.id);if(world)await playWorld(world);}catch(error){toast('Quick Connect failed',error.message,'error');}}));
     root.querySelectorAll('[data-link-shared-profile]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.profile.link',{id:button.dataset.linkSharedProfile});if(response.state)state.data=response.state;toast('World linked','Moved into My Worlds.','success');render();}catch(error){toast('Could not link World',error.message,'error');}}));
     root.querySelectorAll('[data-quick-shared-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();const world=anyClientWorld(button.dataset.quickSharedWorld);if(world)await playWorld(world);}));
-    root.querySelectorAll('[data-desktop-shared-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const world=anyClientWorld(button.dataset.desktopSharedWorld);if(!world)throw new Error('Shared World profile is not available locally.');const iconData=world.presentation?.icon_b64||'';const result=await window.dragonwilds.createWorldShortcut({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData});toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}}));
-    root.querySelectorAll('[data-desktop-online-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.online.use',{id:button.dataset.desktopOnlineWorld,link_to_my_worlds:false});if(response.state)state.data=response.state;const world=anyClientWorld(response.world?.id);if(!world)throw new Error('Online World profile could not be prepared locally.');const iconData=world.presentation?.icon_b64||'';const result=await window.dragonwilds.createWorldShortcut({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData});toast('Sent to Desktop','Created a Quick Launch shortcut without adding the World to My Worlds.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}}));
+    root.querySelectorAll('[data-desktop-shared-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const world=anyClientWorld(button.dataset.desktopSharedWorld);if(!world)throw new Error('Shared World profile is not available locally.');const iconData=world.presentation?.icon_b64||'';await sendProfileToDesktop({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData});}catch(error){toast('Desktop shortcut failed',error.message,'error');}}));
+    root.querySelectorAll('[data-desktop-online-world]').forEach((button)=>button.addEventListener('click',async(e)=>{e.stopPropagation();try{const response=await api.invoke('shared.worlds.online.use',{id:button.dataset.desktopOnlineWorld,link_to_my_worlds:false});if(response.state)state.data=response.state;const world=anyClientWorld(response.world?.id);if(!world)throw new Error('Online World profile could not be prepared locally.');const iconData=world.presentation?.icon_b64||'';await sendProfileToDesktop({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData});}catch(error){toast('Desktop shortcut failed',error.message,'error');}}));
     root.querySelectorAll('.world-card[data-server-card="0"], .world-list-row[data-server-card="0"]').forEach((card) => card.addEventListener('click', async (e) => {
       if (e.target.closest('button, a, input, select, textarea')) return;
       const id=card.dataset.worldId; const privateWorld=privateWorldById(id);
@@ -7653,6 +7706,29 @@
     });
   }
 
+  function chooseDesktopShortcutType({name='Dragonwilds World', worldKind='world'}={}) {
+    return new Promise((resolve)=>{
+      let settled=false;
+      const server=String(worldKind||'').toLowerCase()==='server';
+      const finish=(value,closed=false)=>{if(settled)return;settled=true;if(!closed)closeModal();resolve(value||null);};
+      const win=showModal(`<div class="modal-header"><div><div class="eyebrow">Send to Desktop</div><h2>${escapeHtml(name)}</h2><p>Choose how this profile should open. Every shortcut keeps this profile's icon and stable identity.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="shortcut-type-grid"><button class="shortcut-type-card" data-shortcut-type="normal"><strong>Normal Launch</strong><span>Open the full Dragonwilds Sync application with this profile identity.</span></button><button class="shortcut-type-card" data-shortcut-type="quick"><strong>Quick Launch</strong><span>Open the compact profile controller and immediately start or connect.</span></button>${server?'<button class="shortcut-type-card" data-shortcut-type="headless"><strong>Headless Server</strong><span>Start this dedicated profile through the standalone Headless EXE with no launcher window.</span></button>':''}</div>${server?'<div class="identity-box"><strong>Headless file location</strong><p>The Headless EXE must remain beside the normal portable application. The shortcut targets that standalone file directly.</p></div>':''}</div><div class="modal-footer"><span>${server?'Server profiles support all three launch types.':'Client Worlds support Normal and Quick Launch.'}</span><button class="btn ghost" id="shortcut-type-cancel">Cancel</button></div>`,{title:`Send ${name} to Desktop`,width:820,height:server?650:560,native:true});
+      win._dwsOnNativeClosed=()=>finish(null,true);
+      win.querySelector('#shortcut-type-cancel')?.addEventListener('click',()=>finish(null));
+      win.querySelectorAll('[data-shortcut-type]').forEach((button)=>button.addEventListener('click',()=>finish(button.dataset.shortcutType)));
+    });
+  }
+
+  async function sendProfileToDesktop(options={}) {
+    const shortcutType=await chooseDesktopShortcutType(options);
+    if(!shortcutType)return null;
+    const result=await window.dragonwilds.createWorldShortcut({...options,shortcutType});
+    if(!result?.ok||!result?.path)throw new Error('Windows did not confirm the desktop shortcut path.');
+    const label=shortcutType==='normal'?'Normal Launch':shortcutType==='headless'?'Headless Server':'Quick Launch';
+    toast(`${label} shortcut created`,result.path,'success');
+    return result;
+  }
+  window.__DWSYNC_SEND_PROFILE_TO_DESKTOP__=sendProfileToDesktop;
+
   const launcherCommands = [
     ['open rsdw-l','Open the RSDW-L editor, map, spawner, and unified-console hub'],
     ['open characters','Open the cached Character Creator and inventory workspace'],
@@ -7896,14 +7972,18 @@
 
   function openWorldFeedback(world) {
     if (!world) return;
-    const win=showModal(`<div class="modal-header"><div><h2>Rate ${escapeHtml(world.nickname || world.identity?.world_name || 'World')}</h2><p>One tamper-evident review per source network every 30 days.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>Rating <strong id="feedback-rating-label" aria-live="polite">5 / 5</strong></label><div class="star-rating-input" role="radiogroup" aria-label="World rating">${[1,2,3,4,5].map((value)=>`<button type="button" data-star-value="${value}" class="selected" role="radio" aria-checked="${value===5?'true':'false'}" aria-label="${value} star${value===1?'':'s'}">★</button>`).join('')}<input type="hidden" id="feedback-rating" value="5"/></div></div><div class="form-group full"><label>Review <span id="feedback-count" aria-live="polite">0 / 250 characters</span></label><textarea class="textarea" id="feedback-report" maxlength="250" aria-describedby="feedback-count" placeholder="What should other players know? (250 characters maximum)"></textarea></div></div><div class="identity-box"><strong>Review integrity</strong><p>The server stores a keyed hash of the source network—not the raw IP—and signs the immutable star/text record. Operators may hide review text from public display, but that visibility choice does not rewrite its star value.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="send-world-feedback">Send Rating</button></div></div>`,{title:`Review · ${world.nickname || world.identity?.world_name || 'World'}`,width:760,height:650});
+    const compatibility=world?.platform_compatibility||world?.manifest_cache?.platform_compatibility||{pc:true};
+    const platformLabels={pc:'PC',steam:'Steam',epic:'Epic Games',playstation:'PlayStation 5',nintendo:'Nintendo Switch 2',switch2:'Nintendo Switch 2',xbox:'Xbox'};
+    const ratingPlatforms=Object.entries(compatibility).filter(([,enabled])=>enabled).map(([key])=>key);
+    if(!ratingPlatforms.length)ratingPlatforms.push('pc');
+    const win=showModal(`<div class="modal-header"><div><h2>Rate ${escapeHtml(world.nickname || world.identity?.world_name || 'World')}</h2><p>One tamper-evident review per source network every 30 days.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="form-grid"><div class="form-group full"><label>Platform tested</label><select class="select" id="feedback-platform">${ratingPlatforms.map((key)=>`<option value="${escapeHtml(key)}">${escapeHtml(platformLabels[key]||key)}</option>`).join('')}</select><small>Only platforms declared by this server can receive compatibility scores.</small></div><div class="form-group full"><label>Compatibility Rating <strong id="feedback-rating-label" aria-live="polite">5 / 5</strong></label><div class="star-rating-input" role="radiogroup" aria-label="World compatibility rating">${[1,2,3,4,5].map((value)=>`<button type="button" data-star-value="${value}" class="selected" role="radio" aria-checked="${value===5?'true':'false'}" aria-label="${value} star${value===1?'':'s'}">★</button>`).join('')}<input type="hidden" id="feedback-rating" value="5"/></div></div><div class="form-group full"><label>Review <span id="feedback-count" aria-live="polite">0 / 250 characters</span></label><textarea class="textarea" id="feedback-report" maxlength="250" aria-describedby="feedback-count" placeholder="What should players on this platform know? (250 characters maximum)"></textarea></div></div><div class="identity-box"><strong>Platform compatibility scoring</strong><p>The public aggregate remains separated by platform, so players can query whether this exact World works well on PC, PlayStation 5, Nintendo Switch 2, or another host-declared platform. The server stores a keyed source-network hash, not the raw IP.</p></div></div><div class="modal-footer"><span></span><div class="footer-right"><button class="btn ghost" data-close-modal>Cancel</button><button class="btn primary" id="send-world-feedback">Send Rating</button></div></div>`,{title:`Review · ${world.nickname || world.identity?.world_name || 'World'}`,width:760,height:720});
     const stars=[...win.querySelectorAll('[data-star-value]')];
     const setRating=(value)=>{const rating=Math.max(1,Math.min(5,Number(value)||1));win.querySelector('#feedback-rating').value=String(rating);const label=win.querySelector('#feedback-rating-label');if(label)label.textContent=`${rating} / 5`;stars.forEach((star)=>{const selected=Number(star.dataset.starValue)<=rating;star.classList.toggle('selected',selected);star.setAttribute('aria-checked',Number(star.dataset.starValue)===rating?'true':'false');});};
     stars.forEach((button)=>{button.addEventListener('click',()=>setRating(button.dataset.starValue));button.addEventListener('keydown',(event)=>{if(!['ArrowLeft','ArrowRight','ArrowDown','ArrowUp','Home','End'].includes(event.key))return;event.preventDefault();const current=Number(win.querySelector('#feedback-rating').value)||5;setRating(event.key==='Home'?1:event.key==='End'?5:current+(event.key==='ArrowLeft'||event.key==='ArrowDown'?-1:1));stars[Math.max(0,Math.min(4,Number(win.querySelector('#feedback-rating').value)-1))]?.focus();});});
     const feedback=win.querySelector('#feedback-report');const updateFeedbackCount=()=>{const count=Array.from(feedback?.value||'').length;const counter=win.querySelector('#feedback-count');if(counter){counter.textContent=`${count} / 250 characters`;counter.classList.toggle('near-limit',count>=225);}};feedback?.addEventListener('input',updateFeedbackCount);feedback?.addEventListener('change',updateFeedbackCount);updateFeedbackCount();
     const send=win.querySelector('#send-world-feedback');send.addEventListener('click', async () => {
       if(send.disabled)return;
-      const payload={id:world.id,rating:Number(win.querySelector('#feedback-rating')?.value||5),report:String(win.querySelector('#feedback-report')?.value||'')};
+      const payload={id:world.id,rating:Number(win.querySelector('#feedback-rating')?.value||5),platform:String(win.querySelector('#feedback-platform')?.value||'pc'),report:String(win.querySelector('#feedback-report')?.value||'')};
       send.disabled=true;send.textContent='Sending…';
       try { await api.invoke('world.feedback.submit',payload); closeDesktopWindow(win); toast('Rating sent', 'Your complete review was accepted by this World.', 'success'); await testWorld(world); }
       catch (error) { send.disabled=false;send.textContent='Send Rating';toast('Could not send rating', error.message, 'error'); }
@@ -7919,7 +7999,9 @@
     try{
       const response=await api.invoke('world.feedback.list',{id:world.id,days});const rows=response.reviews||[];
       const modal=win.querySelector('.modal');if(!modal)return;
-      modal.innerHTML=`<div class="modal-header"><div><h2>${escapeHtml(world.nickname||world.identity?.world_name||'World')} Reviews</h2><p>${response.rating_count||0} rating(s) · ${Number(response.rating_average||0).toFixed(1)} / 5</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="review-window-tabs">${[30,60,90].map((value)=>`<button class="btn ${value===days?'primary':'ghost'} compact-btn" data-review-window="${value}">${value} days</button>`).join('')}</div>${rows.length?`<div class="public-review-list">${rows.map((row)=>`<article><div><strong>${escapeHtml(row.profile_name||row.reviewer_name||row.client_id||'Player')}</strong><span>${'★'.repeat(Number(row.rating||0))}${'☆'.repeat(Math.max(0,5-Number(row.rating||0)))}</span></div><p>${escapeHtml(row.report||'No written review.')}</p><small>${new Date(Number(row.received_at||0)*1000).toLocaleString()} · integrity verified</small></article>`).join('')}</div>`:'<div class="empty-state">No visible reviews in this time window.</div>'}</div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`;
+      const platformLabels={pc:'PC',steam:'Steam',epic:'Epic Games',playstation:'PlayStation 5',nintendo:'Nintendo Switch 2',switch2:'Nintendo Switch 2',xbox:'Xbox'};
+      const platformSummary=Object.entries(response.platform_ratings||{}).map(([key,value])=>`<span class="status-pill online">${escapeHtml(platformLabels[key]||key)} · ${Number(value.average||0).toFixed(1)} ★ (${Number(value.count||0)})</span>`).join('');
+      modal.innerHTML=`<div class="modal-header"><div><h2>${escapeHtml(world.nickname||world.identity?.world_name||'World')} Reviews</h2><p>${response.rating_count||0} rating(s) · ${Number(response.rating_average||0).toFixed(1)} / 5</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="review-window-tabs">${[30,60,90].map((value)=>`<button class="btn ${value===days?'primary':'ghost'} compact-btn" data-review-window="${value}">${value} days</button>`).join('')}</div>${platformSummary?`<div class="badge-row platform-rating-summary">${platformSummary}</div>`:''}${rows.length?`<div class="public-review-list">${rows.map((row)=>`<article><div><strong>${escapeHtml(row.profile_name||row.reviewer_name||row.client_id||'Player')} · ${escapeHtml(platformLabels[row.platform]||row.platform||'Legacy')}</strong><span>${'★'.repeat(Number(row.rating||0))}${'☆'.repeat(Math.max(0,5-Number(row.rating||0)))}</span></div><p>${escapeHtml(row.report||'No written review.')}</p><small>${new Date(Number(row.received_at||0)*1000).toLocaleString()} · integrity verified</small></article>`).join('')}</div>`:'<div class="empty-state">No visible reviews in this time window.</div>'}</div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`;
       modal.querySelectorAll('[data-close-modal]').forEach((button)=>button.addEventListener('click',()=>closeDesktopWindow(win)));
       modal.querySelectorAll('[data-review-window]').forEach((button)=>button.addEventListener('click',()=>{closeDesktopWindow(win);openWorldReviews(world,Number(button.dataset.reviewWindow));}));
     }catch(error){const modal=win.querySelector('.modal');if(!modal)return;modal.innerHTML=`<div class="modal-header"><div><h2>${escapeHtml(world.nickname||world.identity?.world_name||world.name||'World')} Reviews</h2><p>Reviews are not available right now.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="empty-state"><strong>No reviews to display.</strong><span>${escapeHtml(error.message||'The World did not return a review list.')}</span></div></div><div class="modal-footer"><span></span><button class="btn primary" data-close-modal>Done</button></div>`;modal.querySelectorAll('[data-close-modal]').forEach((button)=>button.addEventListener('click',()=>closeDesktopWindow(win)));}
@@ -8027,7 +8109,7 @@
         if (action === 'restart' && await managedConfirm(`Restart ${world.name||'this hosted World'}?`,'Restart Server')) { launchRuntimeConsoleForWorld(world);try { const response=await runOperation('Restarting hosted World','Stopping, launching and verifying the dedicated server, then republishing Sync…',()=>api.invoke('server.world.restart',{id:world.id}));setData(response.state);toast('Server restarted',`PID ${response.result?.pid||'—'}`,'success'); } catch(error){toast('Restart failed',error.message,'error');} }
         if (action === 'update') { try { const response=await api.invoke('server.runtime.update',{id:world.id});if(response.state)setData(response.state);toast('Server updated','SteamCMD completed; the server remains stopped.','success'); } catch(error){toast('Server update failed',error.message,'error');} }
         if (action === 'convert' && await managedConfirm(`Clone “${world.name||'this World'}” into the local Singleplayer/Co-Op save area?`,'Convert World')) { try { const response=await api.invoke('server.world.convert_to_singleplayer',{id:world.id});if(response.state)state.data=response.state;state.selectedWorldId=response.profile_id||response.profile?.id||state.data?.client?.active_private_world_id||'singleplayer';state.route='world-detail';state.privateTab='overview';render();toast('Converted to Singleplayer / Co-Op','The dedicated profile remains available.','success'); } catch(error){toast('Conversion failed',error.message,'error');} }
-        if (action === 'desktop') { try { const result=await window.dragonwilds.createWorldShortcut({worldId:id,worldKind:'server',name:world.name||'Hosted World',iconData:world.icon_b64||''});toast('Sent to Desktop',result.path||'Hosted World Quick Launch shortcut created.','success'); } catch(error){toast('Desktop shortcut failed',error.message,'error');} }
+        if (action === 'desktop') { try { await sendProfileToDesktop({worldId:id,worldKind:'server',name:world.name||'Hosted World',iconData:world.icon_b64||''}); } catch(error){toast('Desktop shortcut failed',error.message,'error');} }
         if (action === 'backup') { try { const result=await api.invoke('server.world.backup.create',{id}); state.serverBackups[id]=result.backups||[]; toast('World backup created',result.backup||world.name,'success'); } catch(error){toast('Backup failed',error.message,'error');} }
         if (action === 'delete' && await managedConfirm(`Delete hosted World '${world.name}'?`,'Delete Hosted World')) { const previous=[...(state.data.server_profiles||[])];state.data.server_profiles=previous.filter((row)=>String(row.id)!==String(id));render();try { setData(await api.invoke('server.world.delete', { id })); toast('Hosted World deleted', '', 'success'); } catch (error) { state.data.server_profiles=previous;render();toast('Delete failed', error.message, 'error'); } }
         return;
@@ -8040,7 +8122,7 @@
         if(action==='coop') return togglePrivateCoop(privateWorld);
         if(action==='convert'){const name=await managedPrompt('Name for the dedicated Server profile:',privateWorld.name||'Dragonwilds World','Convert to Dedicated Server');if(!name)return;try{const response=await api.invoke('singleplayer.convert_to_server',{profile_id:id,id,name});if(response.state)state.data=response.state;state.selectedServerWorldId=response.profile_id||response.profile?.id||'';state.route='server-detail';state.serverTab='overview';render();toast('Converted to Dedicated Server','Save, mods, settings and profile metadata were cloned.','success');}catch(error){toast('Conversion failed',error.message,'error');}return;}
         if(action==='backup'){try{const result=await api.invoke('singleplayer.archive',{profile_id:id,id,name:privateWorld.name||'Private World'});toast('Private World backup created',result.archive_path||privateWorld.name,'success');}catch(error){toast('Backup failed',error.message,'error');}return;}
-        if(action==='desktop'){try{const result=await window.dragonwilds.createWorldShortcut({worldId:id,worldKind:'private',name:privateWorld.name||'Private World',iconData:privateWorld.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success');}catch(error){toast('Desktop shortcut failed',error.message,'error');}return;}
+        if(action==='desktop'){try{await sendProfileToDesktop({worldId:id,worldKind:'private',name:privateWorld.name||'Private World',iconData:privateWorld.presentation?.icon_b64||'',iconAsset:'singleplayer-icon.png'});}catch(error){toast('Desktop shortcut failed',error.message,'error');}return;}
         if(action==='delete'&&await managedConfirm(`Delete Private World profile '${privateWorld.name}'?${id==='singleplayer'?' This removes the generic launcher placard; newly detected game saves will still become managed profiles.':' The associated save/profile will be moved to recoverable Trash.'}`,'Delete Private World')){const previous=[...(state.data.client.private_worlds||[])];state.data.client.private_worlds=previous.filter((row)=>String(row.id)!==String(id));delete state.privateInventory[id];render();try{const response=await api.invoke('singleplayer.profile.delete',{profile_id:id,id});if(response.state)setData(response.state);state.selectedWorldId=state.data?.client?.active_private_world_id||'';render();toast('Private World profile deleted',response.trash_entry?'Moved to Settings → Trash.':'The generic profile was removed.','success');}catch(error){state.data.client.private_worlds=previous;render();toast('Delete failed',error.message,'error');}}
         return;
       }
@@ -8059,7 +8141,7 @@
       if (action === 'report') { const reason=await managedPrompt('Describe the concern. This creates a local moderation record; it is not automatically sent to a website.','','Report World'); if(reason!==null){try{const response=await api.invoke('world.moderation.action',{id,action:'report',reason});if(response.state)state.data=response.state;toast('Local report saved','The note is retained in your launcher moderation history.','success');}catch(error){toast('Report failed',error.message,'error');}} }
       if (action === 'block' && await managedConfirm('Block this exact World fingerprint? It will disappear from discovery results on this device.','Block World')) { try { const response=await api.invoke('world.moderation.action',{id,action:'block_world'});if(response.state)state.data=response.state;render();toast('World blocked','Its fingerprint is now filtered locally.','success'); } catch(error){toast('Block failed',error.message,'error');} }
       if (action === 'export') await exportWorldPackage(world);
-      if (action === 'desktop') { try { const iconData=world.presentation?.icon_b64||''; const result=await window.dragonwilds.createWorldShortcut({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData}); toast('Sent to Desktop',result.path||'Quick Launch shortcut created.','success'); } catch(error){ toast('Desktop shortcut failed',error.message,'error'); } }
+      if (action === 'desktop') { try { const iconData=world.presentation?.icon_b64||''; await sendProfileToDesktop({worldId:world.id,worldKind:'world',name:world.nickname||world.identity?.world_name||'Dragonwilds World',iconData}); } catch(error){ toast('Desktop shortcut failed',error.message,'error'); } }
       if (action === 'edit') openWorldEditor(world);
       if (action === 'delete') deleteWorld(world);
     });
@@ -8471,7 +8553,7 @@
         <div class="form-group"><label class="checkbox-row"><input id="se-pvp-enabled" type="checkbox" ${classification.pvp_enabled?'checked':''}/> PVP enabled</label><small>Published with this World profile and independently editable after save detection.</small></div>
         <div class="form-group"><label>Directory Visibility</label><select class="select" id="se-visibility"><option value="public" ${classification.visibility==='public'?'selected':''}>Public</option><option value="unlisted" ${classification.visibility==='unlisted'?'selected':''}>Unlisted</option><option value="friends" ${classification.visibility==='friends'?'selected':''}>Friends</option><option value="private" ${classification.visibility==='private'?'selected':''}>Private</option></select><small>A declaration sent with the World identity; network access rules remain authoritative.</small></div>
         <div class="form-group"><label>Audience Identifier</label><select class="select" id="se-audience"><option value="general" ${(world.audience||'general')==='general'?'selected':''}>General / Unspecified</option><option value="kid_friendly" ${world.audience==='kid_friendly'?'selected':''}>🛡️ Kid-Friendly</option><option value="adults_only" ${world.audience==='adults_only'?'selected':''}>18+ Adults Only</option></select><small>Kid-Friendly Worlds rotate the shareable join code daily. Previously linked players retain their trusted identity.</small></div>
-        <div class="form-group full"><label>Player Platform Compatibility</label><div class="platform-compatibility-picker">${[['steam','Steam'],['epic','Epic Games'],['nintendo','Nintendo'],['playstation','PlayStation'],['xbox','Xbox']].map(([key,label])=>`<label>${platformLogo(key,label)}<input type="checkbox" id="se-platform-${key}" ${(world.platform_compatibility?.[key] ?? ['steam','epic'].includes(key))?'checked':''}/> <b>${label}</b></label>`).join('')}</div><small>Checked platforms receive a clean identifier on the desktop and hosted website. Console users may still attempt an unchecked World. Client-required mods or file writes are skipped with a warning on consoles; server-side-only mods remain eligible.</small></div>
+        <div class="form-group full"><label>Player Platform Compatibility</label><div class="platform-compatibility-picker">${[['steam','Steam'],['epic','Epic Games'],['nintendo','Nintendo Switch 2'],['playstation','PlayStation 5'],['xbox','Xbox']].map(([key,label])=>`<label>${platformLogo(key,label)}<input type="checkbox" id="se-platform-${key}" ${(world.platform_compatibility?.[key] ?? ['steam','epic'].includes(key))?'checked':''}/> <b>${label}</b></label>`).join('')}</div><small>Checked platforms receive a clean identifier on the desktop and hosted website. Console users may still attempt an unchecked World. Client-required mods or file writes are skipped with a warning on consoles; server-side-only mods remain eligible.</small></div>
         <div class="form-group"><label>Shared Characters</label><label class="checkbox-row"><input id="se-character-sharing" type="checkbox" ${world.character_sharing?.enabled?'checked':''}/> Offer approved .rsdwl characters to authenticated clients</label><label class="checkbox-row"><input id="se-character-submissions" type="checkbox" ${world.character_sharing?.allow_submissions?'checked':''}/> Accept authenticated submissions into quarantine</label><label class="checkbox-row"><input id="se-character-backups" type="checkbox" checked disabled/> Profile-bound player save backup and restore (required)</label><small>Each player is asked once and declining never blocks connection. Approved changed saves are retained by Application User ID and player name; only that authenticated player profile can restore its latest copy.</small></div>
         <div class="form-group"><label>World Icon</label><button class="btn ghost" id="se-icon">Choose Square Image</button></div>
         <div class="form-group"><label>World Banner</label><button class="btn ghost" id="se-banner">Choose Banner Image</button></div>
@@ -8484,6 +8566,7 @@
         <div class="form-group"><label>Sync Transfer Port (TCP)</label><input class="field" id="se-sync-port" type="number" min="1" max="65535" value="${escapeHtml(sync.port || 27051)}" /><label class="checkbox-row"><input id="se-sync-port-auto" type="checkbox" ${sync.port_auto === false ? '' : 'checked'}/> Derive from Server Number</label><select class="select" id="se-sync-publication-mode"><option value="local" ${(sync.networking?.publication_mode||'manual')==='local'?'selected':''}>Local network only</option><option value="manual" ${(sync.networking?.publication_mode||'manual')==='manual'?'selected':''}>Manual router forwarding</option><option value="upnp" ${sync.networking?.publication_mode==='upnp'?'selected':''}>Automatic UPnP · verify before public</option><option value="none" ${sync.networking?.publication_mode==='none'?'selected':''}>Sync disabled externally</option></select><small>World Sync uses this TCP port for metadata and file transfer. Direct Connect discovery uses the fixed host-wide UDP port 8422. Joining clients need no inbound rule.</small></div>
         <div class="form-group"><label>Secure Sync Authentication</label><label class="checkbox-row"><input id="se-sync-tls" type="checkbox" ${sync.tls_enabled?'checked':''}/> Serve the complete Sync connection over pinned TLS</label><label class="checkbox-row"><input id="se-tls-password-fallback" type="checkbox" ${sync.allow_tls_password_fallback?'checked':''} ${sync.tls_enabled?'':'disabled'}/> Allow one-time World Password fallback after challenge rejection</label><small>The fallback is impossible over HTTP. The generated certificate fingerprint is checked before credentials are sent.</small></div>
         <div class="form-group"><label>LAN Broadcast</label><label style="display:flex;align-items:center;gap:8px"><input id="se-lan" type="checkbox" ${sync.lan_broadcast === false ? '' : 'checked'} /> Advertise this World on the LAN while serving</label></div>
+        <div class="form-group"><label>DragonLink-Connect</label><label class="checkbox-row"><input id="se-dragonlink-connect" type="checkbox" ${sync.dragonlink_connect_enabled===true?'checked':''}/> Offer one-time in-game Direct Connect autofill</label><small>Opt-in. The joining client always receives a copyable manual credential receipt. When enabled, DragonLink writes the World fields once when the Direct Connect panel opens, then remains idle.</small></div>
         <div class="form-group"><label>UE4SS mods.txt</label><input type="hidden" id="se-mods-txt-mode" value="auto"/><span class="status-pill online">AUTOMATIC · HIDDEN</span><small>Dragonwilds Sync writes exact <code>MODNAME : 1</code> entries and automatically pushes this hidden control file to clients whenever the World presents UE4SS mods. RuneSchema self-enables separately.</small></div>
         <div class="form-group"><label>Base Runtime Updates</label><label class="checkbox-row"><input id="se-auto-ue4ss" type="checkbox" ${world.auto_ue4ss === false ? '' : 'checked'} /> Auto-check/update UE4SS every 6 hours when stopped</label><label class="checkbox-row"><input id="se-auto-runeschema" type="checkbox" ${world.auto_runeschema === false ? '' : 'checked'} /> Auto-update official RuneSchema from GitHub</label><label class="checkbox-row"><input id="se-auto-rsdwtools" type="checkbox" ${world.auto_rsdwtools === false ? '' : 'checked'} /> Auto-update the RSDW Tools base mod</label><small>RuneSchema uses only the official GitHub release. Dragonwilds Sync restores the complete core as one matched unit and never mixes individual DLL/config versions. Child mods remain profile-owned.</small></div>
         <div class="form-group full"><div class="divider"></div><label>Server Health Evidence</label><div class="settings-page-note">Detected specs remain authoritative raw evidence. Optional benchmark/reference and WAN fields let the health model explain how it interpreted the host without hiding the underlying values.</div></div>
@@ -8565,6 +8648,7 @@
             port_auto: !!modalRoot.querySelector('#se-sync-port-auto')?.checked,
             networking: {publication_mode:modalRoot.querySelector('#se-sync-publication-mode')?.value||'manual'},
             lan_broadcast: modalRoot.querySelector('#se-lan').checked,
+            dragonlink_connect_enabled: !!modalRoot.querySelector('#se-dragonlink-connect')?.checked,
             tls_enabled: !!modalRoot.querySelector('#se-sync-tls')?.checked,
             allow_tls_password_fallback: !!modalRoot.querySelector('#se-sync-tls')?.checked && !!modalRoot.querySelector('#se-tls-password-fallback')?.checked,
             access_policy: readAccessPolicy(modalRoot, 'world-access'),

@@ -81,6 +81,55 @@
     return `<div class="v3q-metric"><span>${esc(label)}</span><strong class="${cls}">${esc(value ?? '—')}</strong></div>`;
   }
 
+  const formatBytes = (value) => {
+    const bytes = Math.max(0, Number(value || 0));
+    if (bytes < 1024) return `${Math.round(bytes)} B`;
+    const units = ['KB','MB','GB','TB'];
+    let amount = bytes / 1024, index = 0;
+    while (amount >= 1024 && index < units.length - 1) { amount /= 1024; index += 1; }
+    return `${amount >= 100 ? amount.toFixed(0) : amount >= 10 ? amount.toFixed(1) : amount.toFixed(2)} ${units[index]}`;
+  };
+
+  function telemetryGraph(label, values, formatter, ceiling, tone, subtitle='') {
+    const samples = values.map(Number).filter(Number.isFinite).slice(-90);
+    const current = samples.length ? samples[samples.length - 1] : 0;
+    const max = Math.max(Number(ceiling || 0), ...samples, 1);
+    const width = 300, height = 76;
+    const points = (samples.length ? samples : [0]).map((value, index, rows) => {
+      const x = rows.length === 1 ? width : index * width / (rows.length - 1);
+      const y = height - Math.min(height, Math.max(0, value / max * height));
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const area = `0,${height} ${points} ${width},${height}`;
+    return `<article class="v3q-telemetry-card tone-${tone}">
+      <div><span>${esc(label)}</span><strong>${esc(formatter(current))}</strong></div>
+      <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="${height*.5}" x2="${width}" y2="${height*.5}"/><polygon points="${area}"/><polyline points="${points}"/></svg>
+      <small>${esc(subtitle || `${samples.length} live sample${samples.length===1?'':'s'}`)}</small>
+    </article>`;
+  }
+
+  function serverTelemetry() {
+    if (mode !== 'server') return '';
+    const telemetry = quickState?.telemetry || {};
+    const nestedRuntime = quickState?.runtime?.runtime || quickState?.runtime || {};
+    const history = Array.isArray(telemetry.history) ? telemetry.history : (Array.isArray(nestedRuntime.metric_history) ? nestedRuntime.metric_history : []);
+    const current = telemetry.metrics || nestedRuntime.metrics || history[history.length - 1] || {};
+    const series = (key) => history.length ? history.map((row)=>Number(row?.[key] || 0)) : [Number(current?.[key] || 0)];
+    const ping = Number(telemetry.ping_ms);
+    const pingValues = [Number.isFinite(ping) ? ping : 0];
+    const pingTone = !Number.isFinite(ping) ? 'muted' : ping <= 60 ? 'green' : ping <= 120 ? 'gold' : 'red';
+    return `<section class="v3q-panel v3q-telemetry"><div class="v3q-panel-head"><div><b>Live Server Telemetry</b><small>Real host and RSDragonwilds process samples · refreshes while this window is open</small></div><span class="v3q-live-chip ${quickState?.active?'ok':'muted'}"><i></i>${quickState?.active?'LIVE':'IDLE'}</span></div>
+      <div class="v3q-telemetry-grid">
+        ${telemetryGraph('Server CPU',series('process_cpu_percent'),(v)=>`${v.toFixed(1)}%`,100,'gold','RSDragonwilds process load')}
+        ${telemetryGraph('Server Memory',series('process_ram_bytes'),(v)=>formatBytes(v),0,'purple','RSDragonwilds working set')}
+        ${telemetryGraph('System RAM',series('ram_percent'),(v)=>`${v.toFixed(1)}%`,100,'blue',current.ram_total_bytes ? `${formatBytes(current.ram_used_bytes)} of ${formatBytes(current.ram_total_bytes)}` : 'Host memory pressure')}
+        ${telemetryGraph('Internet Down',series('net_down_bps'),(v)=>`${formatBytes(v)}/s`,0,'cyan','Live adapter traffic')}
+        ${telemetryGraph('Internet Up',series('net_up_bps'),(v)=>`${formatBytes(v)}/s`,0,'orange','Live adapter traffic')}
+        ${telemetryGraph('RSDragonwilds Ping',pingValues,(v)=>Number.isFinite(ping)?`${Math.round(v)} ms`:'—',Math.max(200,ping||0),pingTone,telemetry.ping_source || 'No measured latency yet')}
+      </div>
+    </section>`;
+  }
+
   function quickConsole() {
     if (!consoleOpen) return '';
     const events = consoleState?.events || consoleState?.entries || consoleState?.history || [];
@@ -104,6 +153,7 @@
     const steps=Array.isArray(quickState?.launch_sequence)?quickState.launch_sequence:[];
     if(!steps.length)return '';
     const launching=['play','host','start','restart','update_restart'].includes(activeOperation);
+    if(mode === 'server' && !launching) return '';
     return `<section class="v3q-panel v3q-launch-plan ${launching?'running':''}"><div class="v3q-panel-head"><div><b>${esc(scopeLabel())} launch path</b><small>${launching?'Running these guarded stages in order…':'Quick uses the same authoritative profile pipeline as Full.'}</small></div></div><ol>${steps.map((step,index)=>`<li><i>${index+1}</i><span>${esc(step)}</span></li>`).join('')}</ol></section>`;
   }
 
@@ -120,14 +170,15 @@
     const root = document.getElementById('app');
     if (!root) return;
     document.body.classList.add('v3-quick-body');
-    const runtimeState = quickState?.runtime?.state || (quickState?.active ? 'Running' : 'Stopped');
+    const runtimeState = quickState?.runtime?.runtime?.state || quickState?.runtime?.state || (quickState?.active ? 'Running' : 'Stopped');
     const networkState = destinationRows();
     const publicEnabled = !!quickState?.network?.public_directory_enabled;
     const players = Array.isArray(quickState?.players) ? quickState.players : [];
     const error = quickState?.error;
     const markup = `<main class="v3q-shell" data-v3-quick-root>
       <header class="v3q-header">
-        <div class="v3q-brand"><span class="v3q-mark">DW</span><div><small>DRAGONWILDS SYNC QUICK · ${esc(scopeLabel().toUpperCase())} MANAGEMENT</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1></div></div>
+        <div class="v3q-brand"><span class="v3q-mark"><img src="assets/application-icon.webp" alt="" /></span><div><small>DRAGONWILDS SYNC QUICK · ${esc(scopeLabel().toUpperCase())}</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1><span class="v3q-profile-caption">${esc(roleLabel)} control center · ${esc(quickState?.profile_kind || 'Loading profile')}</span></div></div>
+        <span class="v3q-live-chip ${statusClass(runtimeState)}"><i></i>${esc(runtimeState)}</span>
         <div class="v3q-header-actions"><button class="v3q-btn ghost" data-v3q-refresh ${busy?'disabled':''}>Refresh</button><button class="v3q-btn" data-v3q-full>Open Full Dragonwilds Sync</button></div>
       </header>
       ${error ? `<div class="v3q-error">${esc(error)}</div>` : ''}
@@ -139,15 +190,16 @@
         ${metric('Sync', quickState?.sync?.serving ? `Serving${quickState.sync.port ? ` · ${quickState.sync.port}` : ''}` : 'Not serving', statusClass(quickState?.sync?.serving?'active':'stopped'))}
         ${metric('Heartbeat', networkState[0]?.state || 'Local only', statusClass(networkState[0]?.state))}
       </section>
-      <section class="v3q-toolbar">
-        ${quickState?.controls?.play ? `<button class="v3q-btn primary big" data-v3q-action="${verifiedPlayReady?'play':'start'}" ${busy||quickState?.active?'disabled':''}>${quickState?.active?'Dragonwilds Running':verifiedPlayReady?'Play Dragonwilds':'Sync & Verify'}</button>`:''}
-        ${quickState?.controls?.host ? `<button class="v3q-btn primary big" data-v3q-action="start" ${busy||quickState?.active?'disabled':''}>${quickState?.active?'Co-Op Active':'Start Co-Op'}</button>`:''}
-        ${quickState?.controls?.start ? `<button class="v3q-btn primary big" data-v3q-action="start" ${busy||quickState?.active?'disabled':''}>Start</button>`:''}
-        ${quickState?.controls?.stop ? `<button class="v3q-btn danger" data-v3q-action="stop" ${busy||!quickState?.active?'disabled':''}>Stop</button>`:''}
-        ${quickState?.controls?.restart ? `<button class="v3q-btn" data-v3q-action="restart" ${busy||!quickState?.active?'disabled':''}>Restart</button>`:''}
-        ${quickState?.controls?.update_restart ? `<button class="v3q-btn" data-v3q-action="update_restart" ${busy?'disabled':''}>Update & Restart</button>`:''}
-        <button class="v3q-btn ghost" data-v3q-mods>View Mods</button>
-        ${quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}
+      <section class="v3q-toolbar" aria-label="Quick actions">
+        <div class="v3q-primary-actions">
+          ${quickState?.controls?.play ? `<button class="v3q-btn primary big" data-v3q-action="${verifiedPlayReady?'play':'start'}" ${busy||quickState?.active?'disabled':''}><span>${verifiedPlayReady?'▶':'◆'}</span>${quickState?.active?'Dragonwilds Running':verifiedPlayReady?'Play Dragonwilds':'Sync & Verify'}</button>`:''}
+          ${quickState?.controls?.host ? `<button class="v3q-btn primary big" data-v3q-action="start" ${busy||quickState?.active?'disabled':''}><span>▶</span>${quickState?.active?'Co-Op Active':'Start Co-Op'}</button>`:''}
+          ${quickState?.controls?.start ? `<button class="v3q-btn primary big" data-v3q-action="start" ${busy||quickState?.active?'disabled':''}><span>▶</span>${quickState?.active?'Server Running':'Start Server'}</button>`:''}
+          ${quickState?.controls?.stop ? `<button class="v3q-btn danger" data-v3q-action="stop" ${busy||!quickState?.active?'disabled':''}>■ Stop</button>`:''}
+          ${quickState?.controls?.restart ? `<button class="v3q-btn" data-v3q-action="restart" ${busy||!quickState?.active?'disabled':''}>↻ Restart</button>`:''}
+          ${quickState?.controls?.update_restart ? `<button class="v3q-btn" data-v3q-action="update_restart" ${busy?'disabled':''}>⇧ Update & Restart</button>`:''}
+        </div>
+        <div class="v3q-secondary-actions"><button class="v3q-btn ghost" data-v3q-mods>View Mods</button>${quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}</div>
       </section>
       <div class="v3q-columns">
         <section class="v3q-panel">
@@ -160,6 +212,7 @@
         ${mode === 'server' ? `<section class="v3q-panel"><div class="v3q-panel-head"><div><b>Players</b><small>${players.length} connected / observed</small></div></div><div class="v3q-players">${players.length ? players.map((p)=>`<span>${esc(p.name || p.player_name || p.id || 'Player')}</span>`).join('') : '<small>No players reported.</small>'}</div></section>` : `<section class="v3q-panel"><div class="v3q-panel-head"><div><b>${mode==='coop'?'Co-Op Host':scopeLabel()}</b><small>Same profile/runtime materialization used by Full</small></div></div><p class="v3q-copy">${esc(quickState?.description || (mode==='coop'?'Launch the local profile, then Quick can enable its Co-Op Sync host.':quickState?.profile_kind==='linked'?'Match files, transfer changes, verify parity, prepare DragonLink-Connect, then play.':'Materialize this local profile and launch it without contacting a remote Sync host.'))}</p></section>`}
       </div>
       ${launchPlan()}
+      ${serverTelemetry()}
       ${broadcastBox()}
       ${quickConsole()}
       <footer class="v3q-footer"><span>${busy?'Working…':'Ready'}</span><span>Open Full promotes this same launcher process; it does not duplicate the backend or runtime.</span></footer>
@@ -263,8 +316,8 @@
       const parent=manage.parentElement; if(!parent || parent.querySelector('[data-v3q-create-shortcut]'))return;
       const server=manage.hasAttribute('data-server-manage'); const id=manage.getAttribute(server?'data-server-manage':'data-private-manage')||'';
       const card=manage.closest('[data-world-id],article'); const name=card?.querySelector('h3')?.textContent?.trim()||'Dragonwilds World';
-      const button=document.createElement('button'); button.className='btn ghost compact-btn'; button.dataset.v3qCreateShortcut=id; button.textContent='Create Quick Shortcut';
-      button.addEventListener('click',(event)=>{event.preventDefault();event.stopPropagation();openShortcutPicker({id,name,server});}); parent.appendChild(button);
+      const button=document.createElement('button'); button.className='btn ghost compact-btn'; button.dataset.v3qCreateShortcut=id; button.textContent='Send to Desktop';
+      button.addEventListener('click',async(event)=>{event.preventDefault();event.stopPropagation();try{const send=window.__DWSYNC_SEND_PROFILE_TO_DESKTOP__;if(typeof send!=='function')throw new Error('Desktop shortcut picker is not ready.');const image=card?.querySelector('.world-icon img,img.world-icon');const source=String(image?.currentSrc||image?.src||'');await send({worldId:id,name,worldKind:server?'server':'private',iconData:source.startsWith('data:')?source:''});}catch(error){toast(error?.message||String(error),'error');}}); parent.appendChild(button);
     });
   }
 

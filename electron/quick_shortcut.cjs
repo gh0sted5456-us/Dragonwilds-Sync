@@ -23,6 +23,13 @@ function buildQuickShortcutArgs({ profileId, mode = 'player', autoStart = true }
   return `--quick --profile=${id} --mode=${normalizedMode}${autoStart ? ' --auto-start' : ''}`;
 }
 
+function buildNormalShortcutArgs({ profileId, mode = 'player' } = {}) {
+  const id = normalizeProfileId(profileId);
+  const normalizedMode = normalizeQuickMode(mode);
+  const worldKind = normalizedMode === 'server' ? 'server' : (normalizedMode === 'coop' ? 'private' : 'world');
+  return `--world-id=${id} --world-kind=${worldKind}`;
+}
+
 function buildHeadlessShortcutArgs({ profileId, mode = 'server', command = 'run' } = {}) {
   const id = normalizeProfileId(profileId);
   const normalizedMode = normalizeQuickMode(mode, 'server');
@@ -31,4 +38,4 @@ function buildHeadlessShortcutArgs({ profileId, mode = 'server', command = 'run'
   return `--headless ${normalizedCommand} --profile=${id} --mode=${normalizedMode}`;
 }
 
-module.exports = { buildHeadlessShortcutArgs, buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId, normalizeQuickMode };
+module.exports = { buildHeadlessShortcutArgs, buildNormalShortcutArgs, buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId, normalizeQuickMode };

@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.1.0',
-  "name": "V3.1",
+  version: '3.5.0',
+  "name": "V3.5",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -22,8 +22,8 @@ window.DWSYNC_RELEASE_META = Object.freeze({
   ],
   "changelog": [
     {
-      "version": "3.1.0",
-      "title": "V3.1",
+      "version": "3.5.0",
+      "title": "V3.5",
       "items": [
         "World management — One launcher now manages Singleplayer, Co-Op, Connected, and Dedicated Worlds through durable profile-scoped state, save discovery, conversion, launch, and recovery workflows.",
         "Profile integrity — Connected World snapshots use their own namespace and cannot hydrate as phantom SinglePlayer Worlds; deletion and legacy migration remove only launcher-managed snapshots.",
@@ -57,7 +57,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
         "Integrations — GitHub-backed application updates, RSDW assets, community recommendations, optional Nexus provenance, Discord presence, platform icons, and the standalone project website retain explicit trust boundaries.",
         "Performance and diagnostics — Compact status refreshes, bounded polling, cached presentation, batched console updates, redacted logs, network evidence, failure tails, and actionable recovery messages reduce repaint and troubleshooting noise.",
         "Safety — Credentials remain in protected storage, public metadata is sanitized, destructive operations are backup-first and path-bounded, generated client mods.txt files are local and role-filtered, and rollback remains recoverable.",
-        "Packaging — Windows remains portable-only in version 3.1.0 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
+        "Packaging — Windows remains portable-only in version 3.5.0 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
         "Release history — The former Alpha, V2.x, and incremental V3 notes are consolidated here into this single authoritative V3 changelog."
       ]
     }

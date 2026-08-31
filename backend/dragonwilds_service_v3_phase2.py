@@ -153,11 +153,34 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         },
     }
     if mode == "server":
+        runtime_status = runtime.get("runtime") if isinstance(runtime.get("runtime"), dict) else runtime
+        history = list(runtime_status.get("metric_history") or [])[-180:]
+        current_metrics = runtime_status.get("metrics") if isinstance(runtime_status.get("metrics"), dict) else (history[-1] if history else {})
+        network_health = profile.get("network_health") if isinstance(profile.get("network_health"), dict) else {}
+        health_config = profile.get("health_config") if isinstance(profile.get("health_config"), dict) else {}
+        host_network = health_config.get("host_network") if isinstance(health_config.get("host_network"), dict) else {}
+        benchmark_cfg = (state.get("application") or {}).get("server_network_benchmark") or {}
+        benchmark = benchmark_cfg.get("last_result") if isinstance(benchmark_cfg.get("last_result"), dict) else {}
+        ping_ms = network_health.get("avg_client_ping_ms")
+        ping_source = "Observed client to RSDragonwilds"
+        if ping_ms is None:
+            ping_ms = benchmark.get("latency_ms")
+            ping_source = "Host WAN baseline"
+        if ping_ms is None:
+            ping_ms = host_network.get("latency_ms")
+            ping_source = "Configured host WAN baseline"
+        result["telemetry"] = {
+            "metrics": current_metrics,
+            "history": history,
+            "ping_ms": ping_ms,
+            "ping_source": ping_source if ping_ms is not None else "No measured latency yet",
+            "uptime_seconds": runtime_status.get("uptime_seconds") or 0,
+        }
         active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
-        result["active"] = bool((runtime.get("runtime") or {}).get("running") and active_id == profile_id)
+        result["active"] = bool(runtime_status.get("running") and active_id == profile_id)
         result["sync"]["serving"] = bool(result["sync"]["serving"] and active_id == profile_id)
-        result["cl"] = str(((runtime.get("runtime") or {}).get("cl_version") or {}).get("reported_cl") or (runtime.get("runtime") or {}).get("reported_cl") or profile.get("last_reported_cl") or "")
-        result["players"] = list((runtime.get("runtime") or {}).get("player_details") or [])[:100]
+        result["cl"] = str((runtime_status.get("cl_version") or {}).get("reported_cl") or runtime_status.get("reported_cl") or profile.get("last_reported_cl") or "")
+        result["players"] = list(runtime_status.get("player_details") or [])[:100]
     elif mode == "coop":
         result["active"] = bool(share.get("serving") and str(_legacy.STATE.active_profile_id or "") == profile_id)
         result["players"] = list((_legacy.PLAYER_SERVICE.status() or {}).get("players") or [])[:100]

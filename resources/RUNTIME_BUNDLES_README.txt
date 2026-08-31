@@ -21,6 +21,11 @@ Built-in direct-connect baseline:
   resources/DragonLink-Connect-baseline.zip
   Canonical runtime folder: UE4SS/Mods/DragonLink-Connect
   DragonConnectHelper and PersistentDirectConnectIP are migration aliases only.
+  Runtime version: 0.6.0
+  Servers opt in per World. The helper is dormant outside Dragonwilds' Direct
+  Connect panel and writes IP, password, and World Type once per panel visit.
+  It has no timer poll and no live text-change hook. The launcher always shows
+  the same credentials for copy/manual entry, including when automation is off.
 
 Runtime choices remain explicit: Baseline is the offline recovery payload,
 Stable resolves the normal upstream release channel, and Experimental is the

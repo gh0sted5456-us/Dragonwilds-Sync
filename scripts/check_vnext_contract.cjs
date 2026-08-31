@@ -23,6 +23,7 @@ must(index.includes('release-vnext-help-media.css') && index.includes('release-v
 must(vnext.includes('data-vnext-world-tab') && vnext.includes('Declared Worlds'), 'Desktop Declared World source is missing');
 must(vnext.includes('/api/v1/worlds?active=sync') && vnext.includes('directory_verified') && vnext.includes('fingerprint_claimed') && vnext.includes('last_seen'), 'Declared semantics must come from the verified live Sync heartbeat feed');
 must(vnext.includes('dws-profile-badges') && css.includes('.world-list-row .world-list-title .dws-profile-badges'), 'Profile badges are not shared with horizontal rows');
+must(vnext.includes("new Set(['UE4SS','RUNESCHEMA'])") && vnext.includes("label === 'VANILLA' && modded") && vnext.includes("redundant.add('SINGLEPLAYER')"), 'Profile badge cleanup must hide redundant runtime labels, stale Vanilla, and server-only local labels');
 must(vnext.includes('Refresh Help') && vnext.includes('dragonwilds-sync-help-v1'), 'Refreshable cached Help shell is missing');
 must(helpMedia.includes('raw.githubusercontent.com') && helpMedia.includes('dws-help-figure') && helpMedia.includes('loading = \'lazy\''), 'Live Help image rendering must remain GitHub-scoped and lazy-loaded');
 must(helpMediaCss.includes('.dws-help-figure') && helpMediaCss.includes('object-fit:contain'), 'Live Help image layout contract is missing');
@@ -39,6 +40,7 @@ must(web.includes('directory_web_legacy') && web.includes('_legacy_public_browse
 must(web.includes('data-filter=\\"declared\\"') || web.includes('data-filter="declared"'), 'Public Declared filter is missing');
 must(web.includes('/api/v1/worlds?active=sync') && web.includes('directory_verified') && web.includes('fingerprint_claimed'), 'Public Declared projection must use verified Sync heartbeat rows');
 must(web.includes('horizontalCard') && web.includes('profileBadges'), 'Public horizontal/profile badge parity is missing');
+must(web.includes('worldIsModded') && web.includes("new Set(['UE4SS','RUNESCHEMA'])") && web.includes("v==='VANILLA'&&worldIsModded(w)"), 'Public cards must share the Vanilla/runtime/server badge cleanup');
 must(legacy.includes('def public_browser_html') && legacy.includes('def remote_admin_html'), 'Preserved public/admin WebGUI implementation is incomplete');
 
 console.log('vNext contract: PASS');

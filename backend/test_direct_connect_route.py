@@ -15,6 +15,7 @@ def world(route="auto", internal="192.168.1.50", external="71.22.33.44"):
                        "game_port": 7777, "direct_connect_route": route},
         "credentials": {"password": ""},
         "classification": {"game_mode": "normal"},
+        "manifest_cache": {"dragonlink_connect": {"enabled": True}},
     }
 
 
@@ -35,8 +36,12 @@ def main():
         assert written["address"] == "71.22.33.44:7777", written
         assert written["server_type"] == "normal", written
         assert result["route_used"] == "external", result
+        opted_out = world("auto")
+        opted_out["manifest_cache"]["dragonlink_connect"]["enabled"] = False
+        result = legacy._write_world_direct_connect(game_dir, opted_out)
+        assert result["automation_enabled"] is False and result["manual_entry_required"] is True, result
         legacy._write_world_direct_connect(
-            game_dir, world("auto"), {"classification": {"game_mode": "creative"}})
+            game_dir, world("auto"), {"classification": {"game_mode": "creative"}, "dragonlink_connect": {"enabled": True}})
         assert written["server_type"] == "creative", written
         legacy._write_world_direct_connect(game_dir, world("auto", external=""))
         assert written["address"] == "192.168.1.50:7777", written

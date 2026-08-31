@@ -3,7 +3,8 @@
 process.env.DWSYNC_TEST_MODE='1';
 process.env.DWSYNC_DISABLE_UPDATE_CHECK='1';
 const {app,BrowserWindow}=require('electron');
-app.commandLine.appendSwitch('disable-gpu');
+// Exercise the production GPU path. A software-only smoke test can miss the
+// Windows black-popup regression this suite exists to prevent.
 
 let finished=false;
 function finish(code,message){if(finished)return;finished=true;process.exitCode=code;(code?console.error:console.log)(message);app.exit(code);}

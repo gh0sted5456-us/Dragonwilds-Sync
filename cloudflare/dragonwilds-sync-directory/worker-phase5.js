@@ -15,6 +15,36 @@ async function ensureRemoteTable(env) {
   )`).run();
 }
 
+async function ensurePublicMetaTable(env) {
+  await env.DB.prepare(`CREATE TABLE IF NOT EXISTS world_public_meta_v1 (
+    world_id TEXT PRIMARY KEY,
+    payload_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`).run();
+}
+
+function sanitizePublicMeta(heartbeat) {
+  const declared = heartbeat?.platform_compatibility && typeof heartbeat.platform_compatibility === 'object' ? heartbeat.platform_compatibility : {};
+  const ratings = heartbeat?.platform_ratings && typeof heartbeat.platform_ratings === 'object' ? heartbeat.platform_ratings : {};
+  const platform_compatibility = {};
+  const platform_ratings = {};
+  for (const key of ['pc','steam','epic','playstation','nintendo','switch2','xbox']) {
+    if (declared[key] != null) platform_compatibility[key] = Boolean(declared[key]);
+    const row=ratings[key];const count=Math.max(0,Math.min(100000,Number(row?.count||0)));const average=Math.max(0,Math.min(5,Number(row?.average||0)));
+    if (count) platform_ratings[key]={average:Math.round(average*100)/100,count};
+  }
+  return { platform_compatibility, platform_ratings };
+}
+
+async function retainPublicMeta(env, heartbeat) {
+  await ensurePublicMetaTable(env);
+  const worldId=String(heartbeat?.world_id||'');if(!worldId)return;
+  await env.DB.prepare(`INSERT INTO world_public_meta_v1 (world_id,payload_json,updated_at)
+    VALUES (?1,?2,?3)
+    ON CONFLICT(world_id) DO UPDATE SET payload_json=excluded.payload_json,updated_at=excluded.updated_at`)
+    .bind(worldId,JSON.stringify(sanitizePublicMeta(heartbeat)),now()).run();
+}
+
 function safeHttpsBase(value) {
   try {
     const url = new URL(String(value || '').trim());
@@ -86,21 +116,30 @@ async function remoteRows(env, ids) {
   return map;
 }
 
+async function publicMetaRows(env, ids) {
+  await ensurePublicMetaTable(env);const wanted=[...new Set((ids||[]).map(String).filter(Boolean))].slice(0,500);const map=new Map();
+  for(let offset=0;offset<wanted.length;offset+=100){const chunk=wanted.slice(offset,offset+100);const marks=chunk.map((_,index)=>`?${index+1}`).join(',');const result=await env.DB.prepare(`SELECT world_id,payload_json,updated_at FROM world_public_meta_v1 WHERE world_id IN (${marks})`).bind(...chunk).all();for(const row of result.results||[]){if(Number(row.updated_at||0)<now()-REMOTE_ACTIVE_SECONDS)continue;try{map.set(String(row.world_id),JSON.parse(row.payload_json||'{}'));}catch(_){}}}
+  return map;
+}
+
 async function augmentWorldPayload(env, payload) {
   if (!payload || typeof payload !== 'object') return payload;
   const worlds = Array.isArray(payload.worlds) ? payload.worlds : null;
   if (worlds) {
     const remotes = await remoteRows(env, worlds.map((world) => world?.world_id));
+    const metadata = await publicMetaRows(env, worlds.map((world) => world?.world_id));
     payload.worlds = worlds.map((world) => {
       const remote = remotes.get(String(world?.world_id || ''));
-      if (!remote) return world;
-      return { ...world, remote_management: remote, capabilities: { ...(world?.capabilities || {}), remote_management: true } };
+      const meta = metadata.get(String(world?.world_id || '')) || {};
+      return { ...world, ...meta, ...(remote?{remote_management:remote}:{}), capabilities: { ...(world?.capabilities || {}), ...(remote?{remote_management:true}:{}) } };
     });
     payload.capabilities = { ...(payload.capabilities || {}), remote_admin_handoff: true };
     return payload;
   }
   if (payload.world_id) {
     const remotes = await remoteRows(env, [payload.world_id]);
+    const metadata = await publicMetaRows(env, [payload.world_id]);
+    Object.assign(payload,metadata.get(String(payload.world_id))||{});
     const remote = remotes.get(String(payload.world_id));
     if (remote) {
       payload.remote_management = remote;
@@ -127,7 +166,7 @@ export default {
     if (heartbeatClone && response.ok) {
       try {
         const heartbeat = await heartbeatClone.json();
-        await retainRemote(env, heartbeat);
+        await Promise.all([retainRemote(env, heartbeat),retainPublicMeta(env, heartbeat)]);
       } catch (_) {
         // The base worker already accepted/rejected the authoritative heartbeat.
         // Remote handoff metadata is optional and never changes that result.

@@ -68,11 +68,13 @@ def main():
         assert 'IP = ""' in config and 'PASSWORD = ""' in config
         assert "24.9.154.151" not in config and "BELTS" not in config
         assert 'TAG = "[DragonLink-Connect]"' in main_lua
-        assert 'VERSION = "0.5.0"' in main_lua
+        assert 'VERSION = "0.6.0"' in main_lua
         assert "editable:SetText(FText(value))" in main_lua
         assert 'FindAllOf, class_name' in main_lua
         assert "restored_password_objects" in main_lua
-        assert 'save_from_live_field("OnTextChanged", context_object)' in main_lua
+        assert "RegisterHook" not in main_lua
+        assert 'dormant outside Direct Connect' in main_lua
+        assert '__mode = "k"' in main_lua
         assert 'mainmenu_worlds' in main_lua
         assert 'WORLD_TYPE = "normal"' in config
         assert 'selector:SetSelectedOption(label)' in main_lua
@@ -84,6 +86,13 @@ def main():
     assert "runtime-stability" in renderer
     assert "World Broadcast" in renderer and "Publish / Repair Broadcast" in renderer
     assert "DragonLink-Connect receives one profile-scoped address/password handoff" in renderer
+    assert "Offer one-time in-game Direct Connect autofill" in renderer
+    assert "Manual game credentials" in renderer
+    assert "assets/world-modes/hardcore.webp" in renderer
+    server_systems = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
+    assert 'get("dragonlink_connect_enabled", False)' in server_systems
+    assert '"dragonlink_connect": {"enabled": dragonlink_enabled' in server_systems
+    assert "if dragonlink_enabled and dragon_bundle.is_file()" in server_systems
     assert "LAN trust authorizes file Sync without a password" in renderer
 
     assert "const world=worlds().find" in renderer

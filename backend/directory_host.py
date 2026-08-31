@@ -636,6 +636,8 @@ class DirectoryHost:
                 **{key: bool((row.get("platform_compatibility") or presentation.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"}))
                    for key in ("steam", "epic", "nintendo", "playstation", "xbox")},
             },
+            "platform_ratings": (row.get("platform_ratings") if isinstance(row.get("platform_ratings"), dict) else
+                                 (status.get("platform_ratings") if isinstance(status.get("platform_ratings"), dict) else {})),
             "sync_ready": sync_ready, "sync_protocol": str(row.get("protocol") or row.get("sync_protocol") or shared.get("protocol") or ("dragonwilds-world-sync" if sync_ready and fingerprint else ""))[:80],
             "fingerprint": fingerprint, "fingerprint_claimed": fingerprint, "fingerprint_verified": sync_ready,
             "external_ip": external_ip, "internal_ip": internal_ip, "game_port": game_port,

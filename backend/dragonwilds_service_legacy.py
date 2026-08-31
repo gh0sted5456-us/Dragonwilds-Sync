@@ -611,6 +611,10 @@ def find_world(state: dict, world_id: str) -> dict | None:
 def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | None = None) -> dict:
     connection = world.get("connection") if isinstance(world.get("connection"), dict) else {}
     advertised = manifest.get("connection") if isinstance(manifest, dict) and isinstance(manifest.get("connection"), dict) else {}
+    cached_manifest = world.get("manifest_cache") if isinstance(world.get("manifest_cache"), dict) else {}
+    advertised_capability = manifest.get("dragonlink_connect") if isinstance(manifest, dict) and isinstance(manifest.get("dragonlink_connect"), dict) else {}
+    cached_capability = cached_manifest.get("dragonlink_connect") if isinstance(cached_manifest.get("dragonlink_connect"), dict) else {}
+    dragonlink_enabled = bool((advertised_capability or cached_capability).get("enabled", False))
     internal = str(advertised.get("internal_ip") or connection.get("internal_ip") or "").strip()
     external = str(advertised.get("external_ip") or connection.get("external_ip") or (world.get("identity") or {}).get("external_ip") or "").strip()
     # Sync routing and the address handed to DragonLink-Connect are separate choices.
@@ -642,6 +646,12 @@ def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | Non
                 "internal_candidate": internal, "external_candidate": external,
                 "warning": "Dragonwilds Direct Connect currently supports IPv4 addresses and hostnames, not IPv6."}
     address = f"{host}:{port}" if host else ""
+    if not dragonlink_enabled:
+        cleared = clear_direct_connect_config(game_dir)
+        return {**cleared, "configured": False, "automation_enabled": False,
+                "manual_entry_required": True, "reason": "server_opt_out",
+                "address": address, "route": route, "route_used": route_used if address else "",
+                "internal_candidate": internal, "external_candidate": external}
     credentials = world.get("credentials") if isinstance(world.get("credentials"), dict) else {}
     local_classification = world.get("classification") if isinstance(world.get("classification"), dict) else {}
     synced_classification = manifest.get("classification") if isinstance(manifest, dict) and isinstance(manifest.get("classification"), dict) else {}
@@ -653,6 +663,7 @@ def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | Non
                                           server_type=str(classification.get("game_mode") or "normal"), enabled=bool(address))
     written.update({"route": route, "route_used": route_used if address else "",
                     "internal_candidate": internal, "external_candidate": external,
+                    "automation_enabled": True, "manual_entry_required": False,
                     "password_handoff": bool(connection.get("dragonconnect_password_handoff", True))})
     if route == "external" and not external:
         written["warning"] = ("This World is pinned to its public address for DragonLink-Connect, but no external IP is "
@@ -4912,7 +4923,7 @@ def handle(method: str, params: dict) -> object:
         dedicated.setdefault("world_name", profile.get("name") or "World")
         sync = profile.setdefault("sync_config", {})
         incoming_sync = params.get("sync_config") if isinstance(params.get("sync_config"), dict) else {}
-        for key in ("password", "port", "port_auto", "lan_broadcast"):
+        for key in ("password", "port", "port_auto", "lan_broadcast", "dragonlink_connect_enabled"):
             if key in incoming_sync:
                 sync[key] = incoming_sync.get(key)
         if "access_policy" in incoming_sync:
@@ -5853,12 +5864,13 @@ def handle(method: str, params: dict) -> object:
         client_id = re.sub(r"[^A-Za-z0-9_-]+", "_", raw_client_id).strip("_")[:64] or "DragonwildsSyncClient"
         rating = max(1, min(int(params.get("rating") or 5), 5))
         report = str(params.get("report") or "")[:250]
-        result = submit_feedback(world, client_id, rating, report)
+        platform = str(params.get("platform") or "pc").strip().casefold()
+        result = submit_feedback(world, client_id, rating, report, platform)
         history = player.setdefault("feedback_history", [])
         history.append({"world_id": world_id,
                         "world_name": str(world.get("world_name") or world.get("name") or (world.get("identity") or {}).get("world_name") or "World")[:160],
                         "character_id": str((state.setdefault("client", {}).get("world_character_selection") or {}).get(world_id) or ""),
-                        "rating": rating, "report": report, "submitted_at": now_iso()})
+                        "rating": rating, "platform": platform, "report": report, "submitted_at": now_iso()})
         player["feedback_history"] = history[-500:]
         save_state(state)
         return {"result": result, "state": public_state(state)}

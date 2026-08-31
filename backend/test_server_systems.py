@@ -62,6 +62,13 @@ def main():
             assert "runeschema_mod::BetterLoot" in keys
             assert "ue4ss_mod::mods.txt" not in keys
             assert next(u for u in units if u.key == "ue4ss_mod::ServerOnly").classification == "server_only"
+            assert ss.compute_mod_badges([u for u in units if u.group in {"ue4ss_core", "runeschema"}]) == ["VANILLA"]
+            repaired_classification = ss.normalize_world_classification(
+                {"content_type": "vanilla", "host_type": "singleplayer"},
+                mod_badges=["PAKS", "UE4SS"], host_type="dedicated", visibility="public",
+            )
+            assert repaired_classification["content_type"] == "modded"
+            assert repaired_classification["host_type"] == "dedicated"
 
             # Mode-only changes update profile metadata without rescanning the
             # live server share. The next explicit Publish & Push rescans.
@@ -116,6 +123,7 @@ def main():
             # and UE4SS master files are implied prerequisites, not "mods".
             assert all(str(m.get("subsection") or "").lower() != "master" for m in manifest["mod_summary"])
             assert all(str(m.get("name") or "").lower() not in {"dwmapi.dll", "mods.txt", "runeschema"} for m in manifest["mod_summary"])
+            assert manifest["classification"]["content_type"] == "modded", "gameplay/content mods must remove the Vanilla classification"
             assert all("ServerOnly" not in f["path"] for f in manifest["files"])
             assert all(
                 not str(f.get("path") or "").casefold().endswith("/mods.txt")
@@ -183,12 +191,14 @@ def main():
             assert (game / "Binaries/Win64/ue4ss/Mods/ShouldNotImport/main.lua").is_file()
 
             # Authenticated feedback remains profile-owned and updates ratings.
-            feedback_body = json.dumps({"client_id": "testclient", "rating": 4, "report": "Good world"}).encode()
+            feedback_body = json.dumps({"client_id": "testclient", "rating": 4, "platform": "steam", "report": "Good world"}).encode()
             feedback = json.loads(request(base + "/feedback", method="POST", data=feedback_body,
                                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"}).read())
             assert feedback["ok"] is True
             saved_profile = profile_store.load_server_profile(profile_id)
             assert saved_profile["rating_average"] == 4.0
+            assert saved_profile["feedback"][-1]["platform"] == "steam"
+            assert ss.platform_rating_summary(saved_profile) == {"steam": {"average": 4.0, "count": 1}}
             assert saved_profile["feedback"][-1]["report"] == "Good world"
 
             ss.STATE.activity("127.0.0.1", "history-clear-regression")

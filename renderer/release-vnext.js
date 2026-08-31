@@ -63,10 +63,23 @@
       ...(Array.isArray(presentation?.profile_badges) ? presentation.profile_badges : []),
       ...(Array.isArray(presentation?.mod_badges) ? presentation.mod_badges : []),
     ];
-    const labels = candidates.map(badgeLabel).filter(Boolean);
-    if (world?.auto_ue4ss) labels.push('UE4SS');
-    if (world?.auto_runeschema) labels.push('RUNESCHEMA');
-    return [...new Set(labels.map((label) => label.toUpperCase()))].slice(0, 12);
+    const classification = world?.classification || world?.manifest_cache?.classification || presentation?.classification || {};
+    const dedicated = String(world?.kind || world?.profile_kind || classification.host_type || '').toLowerCase() === 'dedicated'
+      || world?.server_profile === true
+      || world?.instance_number != null;
+    const labels = candidates.map(badgeLabel).filter(Boolean).map((label) => label.toUpperCase());
+    const contentSignals = labels.filter((label) => !['VANILLA','LOCAL','SINGLEPLAYER','CO-OP','COOP','DEDICATED','DEDICATED SERVER'].includes(label));
+    const explicitlyModded = ['modded','handmade','hybrid'].includes(String(classification.content_type || '').toLowerCase());
+    const modded = explicitlyModded || contentSignals.some((label) => ['PAK','PAKS','UE4SS','RUNESCHEMA'].includes(label));
+    const redundant = new Set(['UE4SS','RUNESCHEMA']);
+    if (dedicated) {
+      redundant.add('LOCAL');
+      redundant.add('SINGLEPLAYER');
+      redundant.add('CO-OP');
+      redundant.add('COOP');
+    }
+    const filtered = labels.filter((label) => !redundant.has(label) && !(label === 'VANILLA' && modded));
+    return [...new Set(filtered)].slice(0, 12);
   }
 
   function enhanceProfileBadges(root = document) {

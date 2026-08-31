@@ -580,7 +580,7 @@ def handle(method: str, params: dict) -> object:
             identity = read_identity(root)
             if identity: identities.append(identity)
         result = export_exchange(output, worlds=worlds, characters=characters, mod_identities=identities, item_registry=registry,
-                                 manifest_only=bool(params.get("manifest_only", False)), app_version="3.1.0")
+                                 manifest_only=bool(params.get("manifest_only", False)), app_version="3.5.0")
         update_stage("metadataMigrated", True, note="V3 canonical ID.txt/item registry exchange metadata active")
         update_stage("exportsMigrated", True, note="V3 canonical .rsdwl exporter active")
         return {"result": result, "state": _legacy.public_state(_legacy.load_state())}

@@ -496,7 +496,7 @@ def geolocate_endpoint(endpoint_value: str, timeout: float = 4.0) -> str | None:
     detail = geolocate_endpoint_detail(endpoint_value, timeout)
     return str((detail or {}).get("location") or "") or None
 
-def submit_feedback(world: dict, client_id: str, rating: int, report: str = "") -> dict:
+def submit_feedback(world: dict, client_id: str, rating: int, report: str = "", platform: str = "pc") -> dict:
     rating = max(1, min(5, int(rating)))
     attempts = []
     credentials = world.get("credentials") or {}
@@ -507,7 +507,7 @@ def submit_feedback(world: dict, client_id: str, rating: int, report: str = "") 
             if not ok:
                 attempts.append(f"{kind}: {detail}")
                 continue
-            body = json.dumps({"client_id": client_id, "rating": rating, "report": str(report or "")[:400]}).encode()
+            body = json.dumps({"client_id": client_id, "rating": rating, "platform": str(platform or "pc").strip().casefold(), "report": str(report or "")[:400]}).encode()
             response = request(
                 f"{base_url}/feedback", method="POST", data=body,
                 headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"})

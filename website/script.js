@@ -126,6 +126,18 @@ function normalizeWorld(raw) {
     mods: safeList(raw?.mods, 18),
     rules: safeList(raw?.rules, 12),
     badges: safeList(raw?.badges, 10),
+    platformCompatibility: raw?.platform_compatibility && typeof raw.platform_compatibility === 'object'
+      ? Object.fromEntries(Object.entries(raw.platform_compatibility).map(([key, enabled]) => [safeText(key, '', 32).toLowerCase(), Boolean(enabled)]).filter(([key]) => key))
+      : {},
+    platformRatings: raw?.platform_ratings && typeof raw.platform_ratings === 'object'
+      ? Object.fromEntries(Object.entries(raw.platform_ratings).map(([key, value]) => {
+        const row = value && typeof value === 'object' ? value : {};
+        return [safeText(key, '', 32).toLowerCase(), {
+          average: Math.max(0, Math.min(5, safeNumber(row.average, 0))),
+          count: Math.max(0, Math.floor(safeNumber(row.count, 0)))
+        }];
+      }).filter(([key]) => key))
+      : {},
     lastSeen: raw?.last_seen ?? null,
     heartbeatAge: safeNumber(raw?.heartbeat_age, -1),
     fingerprint: safeText(raw?.fingerprint ?? raw?.fingerprint_claimed ?? remoteAdmin?.fingerprint, '', 96),
@@ -135,6 +147,23 @@ function normalizeWorld(raw) {
       port: safeNumber(connectSource.port ?? connectSource.game_port, 0),
     } : null
   };
+}
+
+const PUBLIC_PLATFORM_LABELS = {
+  pc: 'PC', steam: 'Steam', epic: 'Epic Games', xbox: 'Xbox',
+  playstation: 'PlayStation 5', nintendo: 'Nintendo Switch 2', switch2: 'Nintendo Switch 2'
+};
+
+function worldPlatformScores(world) {
+  const declared = Object.entries(world.platformCompatibility || {}).filter(([, enabled]) => enabled).map(([key]) => key);
+  const rated = Object.keys(world.platformRatings || {});
+  return [...new Set([...declared, ...rated])].map((key) => {
+    const label = PUBLIC_PLATFORM_LABELS[key] || key;
+    const row = world.platformRatings?.[key] || {};
+    const count = Math.max(0, Number(row.count || 0));
+    const average = Math.max(0, Math.min(5, Number(row.average || 0)));
+    return count ? `${label} · ${average.toFixed(1)}★ (${count})` : `${label} · Not rated`;
+  });
 }
 
 async function fetchJson(path, timeoutMs = 8000) {
@@ -286,7 +315,7 @@ function createWorldCard(world) {
   backTop.append(makeEl('span', 'world-status', 'PUBLIC DETAILS'), makeEl('span', 'world-id', world.worldId));
   back.appendChild(backTop);
   const backGrid = makeEl('div', 'world-back-grid');
-  [['Mods', world.mods], ['Rules', world.rules], ['Badges', world.badges], ['Tags', world.tags]].forEach(([heading, values]) => {
+  [['Mods', world.mods], ['Rules', world.rules], ['Badges', world.badges], ['Tags', world.tags], ['Platform Scores', worldPlatformScores(world)]].forEach(([heading, values]) => {
     const section = makeEl('section', 'world-back-section');
     section.appendChild(makeEl('h4', '', heading));
     const list = makeEl('div', 'world-back-list');

@@ -126,7 +126,7 @@ def main():
     assert '"--runtime-worker"' in worker_supervisor, "worker spawn must use the same packaged application worker mode"
     assert "DWSYNC_DISABLE_RUNTIME_WORKERS" not in worker_supervisor, "rollback policy belongs above WorkerSupervisor"
 
-    assert package["version"] == "3.1.0"
+    assert package["version"] == "3.5.0"
     assert package["devDependencies"]["luaparse"] == "0.3.1"
     assert "scripts/check_ue4ss_lua.cjs" in package["scripts"]["check:renderer"]
     assert package["devDependencies"]["electron"] != "latest"

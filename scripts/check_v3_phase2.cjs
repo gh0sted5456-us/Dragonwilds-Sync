@@ -31,11 +31,13 @@ requireText('electron/quick_shortcut.cjs', ["--quick --profile=${id} --mode=${no
 requireText('electron/preload-v2.cjs', ['quickContext', 'createQuickShortcut', "exposeInMainWorld('dragonwilds'", "exposeInMainWorld('dragonwildsV3'"]);
 requireText('renderer/app.js', ['v3Quick', 'app-v2.js']);
 requireText('renderer/release-v3-phase2.js', [
-  'Create Quick Shortcut', 'Open Quick + Start', 'Open Full Dragonwilds Sync', 'View Mods',
+  'Send to Desktop', 'Open Quick + Start', 'Open Full Dragonwilds Sync', 'View Mods',
   'Broadcast Message', 'quick.console.execute', 'Participate in Dragonwilds Sync Network',
   'Broadcast this World publicly', '[data-application-settings-tab="network"].active',
+  'Live Server Telemetry', 'RSDragonwilds Ping', 'net_down_bps', 'v3q-telemetry-grid',
 ]);
-requireText('renderer/quick.html', ['release-v3-phase2.css', 'release-v3-phase2.js', 'v3-quick-body']);
+requireText('renderer/quick.html', ['data-v3-quick="1"', 'class="v3q-root"', 'release-v3-phase2.css', 'release-v3-phase2.js', 'v3-quick-body']);
+requireText('renderer/release-quick-window.css', ['V3.5 Quick dashboard', '.v3q-root', '.v3q-live-chip', '.v3q-primary-actions', 'grid-template-columns: repeat(6', '.v3q-telemetry-card', '.tone-cyan']);
 
 const worker = requireText('cloudflare/dragonwilds-sync-directory/worker.js', [
   '/api/v1/register', '/api/v1/presence', '/api/v1/worlds/register', '/api/v1/heartbeat',
@@ -79,7 +81,7 @@ if (!retainedMain.includes("autoStart: argv.includes('--auto-start')")) failures
 for (const token of ['startBackgroundServices', 'promoteToFullApplication', "process.env.DWS_V3_QUICK='0'", "['coop','server'].includes(mode)"]) {
   if (!retainedMain.includes(token)) failures.push(`electron/main-v2.cjs: Quick promotion/resource contract missing ${token}`);
 }
-for (const token of ['profile_scope', 'launch_sequence', '_quick_console_execute', 'unified_console_snapshot']) {
+for (const token of ['profile_scope', 'launch_sequence', '_quick_console_execute', 'unified_console_snapshot', '"telemetry"', 'metric_history']) {
   if (!read(phase2Service).includes(token)) failures.push(`${phase2Service}: profile-scoped Quick contract missing ${token}`);
 }
 for (const token of ['quickConsole()', 'data-v3q-console-filter', 'Runtime Console', 'launchPlan()', 'same launcher process']) {

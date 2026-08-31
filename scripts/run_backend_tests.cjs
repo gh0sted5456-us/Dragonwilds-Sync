@@ -25,6 +25,7 @@ const crossPlatformTests = [
   'backend/test_runeschema_063_console.py',
   'backend/test_connection_transport.py',
   'backend/test_runtime_worker_sync_password.py',
+  'backend/test_runtime_worker_directory_heartbeat.py',
   'backend/test_client_launch_once.py',
   'backend/test_direct_connect_route.py',
   'backend/test_connected_snapshot_namespace.py',

@@ -196,7 +196,7 @@ def test_start_stop_through_authoritative_manager():
     assert state["application"]["runtime_workers"]["dedicated_enabled"] is True
     assert state["application"]["runtime_workers"]["share_enabled"] is True
     assert state["application"]["runtime_workers"]["share_owner"] == "world-runtime-worker"
-    assert state["application"]["runtime_workers"]["heartbeat_owner"] == "application"
+    assert state["application"]["runtime_workers"]["heartbeat_owner"] == "application+world-runtime-worker-failover"
     assert state["application"]["runtime_workers"]["webgui_owner"] == "application"
     assert state["application"]["runtime_workers"]["desired_state"] == "revisioned-settings-snapshot"
     assert saves, "Phase 5 worker defaults should persist"

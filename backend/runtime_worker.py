@@ -20,6 +20,9 @@ from runtime_worker_protocol import (
 LOG_LIMIT = 2 * 1024 * 1024
 GAME_LOG_LIMIT = 8 * 1024 * 1024
 TAIL_LIMIT_BYTES = 48 * 1024
+DIRECTORY_HEARTBEAT_CHECK_SECONDS = 15
+DIRECTORY_HEARTBEAT_FAILOVER_SECONDS = 45
+DIRECTORY_HEARTBEAT_RETRY_SECONDS = 60
 
 
 class RuntimeWorker:
@@ -49,6 +52,11 @@ class RuntimeWorker:
         self._last_runtime_result: dict = {}
         self._monitor_stop = threading.Event()
         self._monitor_thread: threading.Thread | None = None
+        self._directory_stop = threading.Event()
+        self._directory_thread: threading.Thread | None = None
+        self._directory_network = None
+        self._directory_last_attempt = 0.0
+        self._directory_last_result: dict = {}
         self._windows_job_handle = None
         self._containment: dict = {"mode": "not-armed"}
 
@@ -161,6 +169,12 @@ class RuntimeWorker:
             "processContainment": dict(self._containment),
             "orphanWatchdog": dict(self._orphan_watchdog),
             "lastRuntimeResult": dict(self._last_runtime_result),
+            "directoryHeartbeat": {
+                "owner": "world-runtime-worker-failover",
+                "running": bool(self._directory_thread and self._directory_thread.is_alive()),
+                "lastAttemptAt": self._directory_last_attempt or None,
+                "lastResult": dict(self._directory_last_result),
+            },
         }
 
     def write_state(self, state: str | None = None) -> None:
@@ -265,19 +279,15 @@ class RuntimeWorker:
                 runtime = self._runtime_status()
                 if runtime.get("running"):
                     continue
-                share_error = ""
-                if self._runtime_engine is not None:
-                    try:
-                        self._runtime_engine.stop_share()
-                    except Exception as exc:
-                        share_error = f"{type(exc).__name__}: {exc}"[:300]
-                        self.log("FILE_SHARE_STOP_FAILED", reason="game_exit", error=share_error)
+                # Keep the Sync listener alive after an unexpected game exit.
+                # That preserves recovery, remote visibility, and a truthful
+                # Sync-only directory state until the owner restarts or stops.
                 self.runtime_state = "error"
                 self._orphan_watchdog = {}
                 self._last_runtime_result = {
                     "operation": "monitor", "at": time.time(), "ok": False,
                     "error": "Dedicated Dragonwilds process exited unexpectedly.",
-                    "shareStopError": share_error,
+                    "syncRetained": bool((runtime.get("share") or {}).get("serving")),
                 }
                 self.log("GAME_EXITED_UNEXPECTEDLY", applied_config_revision=self.applied_config_revision)
                 try:
@@ -287,6 +297,92 @@ class RuntimeWorker:
 
         self._monitor_thread = threading.Thread(target=monitor, daemon=True, name="Dragonwilds-World-Runtime-Monitor")
         self._monitor_thread.start()
+
+    def _network(self):
+        if self._directory_network is None:
+            from network_service import DirectoryNetworkService
+            self._directory_network = DirectoryNetworkService(app_version="runtime-worker")
+        return self._directory_network
+
+    @staticmethod
+    def _directory_delivery_is_fresh(delivery: dict, now: float) -> bool:
+        try:
+            last_success = float((delivery or {}).get("last_success_at") or 0)
+        except (TypeError, ValueError):
+            last_success = 0
+        return last_success > 0 and now - last_success < DIRECTORY_HEARTBEAT_FAILOVER_SECONDS
+
+    def _directory_heartbeat_once(self) -> dict:
+        """Renew the official listing when the launcher heartbeat disappears.
+
+        The delivery receipt is shared through LocalAppData. While the launcher
+        is healthy its successful pulse keeps this worker dormant. If the
+        launcher exits or reloads while the dedicated runtime and Sync listener
+        remain alive, the worker takes over without creating a second rapid
+        heartbeat stream.
+        """
+        now = time.time()
+        if now - self._directory_last_attempt < DIRECTORY_HEARTBEAT_RETRY_SECONDS:
+            return {"published": False, "skipped": "worker_retry_window"}
+        runtime = self._runtime_status()
+        share = runtime.get("share") if isinstance(runtime.get("share"), dict) else {}
+        sync_enabled = bool(share.get("serving"))
+        game_enabled = bool(runtime.get("running"))
+        if not sync_enabled and not game_enabled:
+            return {"published": False, "skipped": "runtime_or_share_inactive"}
+        network = self._network()
+        delivery = ((network._delivery_state().get("destinations") or {}).get("official") or {})
+        if self._directory_delivery_is_fresh(delivery, now):
+            return {"published": False, "skipped": "launcher_heartbeat_fresh"}
+        self._directory_last_attempt = now
+        try:
+            payload = self._share_payload()
+            payload["sync_enabled"] = sync_enabled
+            payload["game_enabled"] = game_enabled
+            result = network.publish_official(self.profile_id, "dedicated", payload)
+        except Exception as exc:
+            result = {"enabled": True, "ok": False, "error": f"{type(exc).__name__}: {exc}"[:500]}
+        self._directory_last_result = {
+            "at": now,
+            "enabled": result.get("enabled") is not False,
+            "ok": bool(result.get("ok")),
+            "status": int(result.get("status") or 0),
+            "error": str(result.get("error") or "")[:300],
+        }
+        self.log(
+            "DIRECTORY_HEARTBEAT",
+            ok=bool(result.get("ok")),
+            enabled=result.get("enabled") is not False,
+            http_status=int(result.get("status") or 0),
+            error=str(result.get("error") or "")[:300],
+        )
+        return {"published": bool(result.get("ok") and result.get("enabled") is not False), **dict(result)}
+
+    def _start_directory_heartbeat(self) -> None:
+        if self._directory_thread and self._directory_thread.is_alive():
+            return
+        self._directory_stop.clear()
+
+        def heartbeat_loop() -> None:
+            while not self._directory_stop.wait(DIRECTORY_HEARTBEAT_CHECK_SECONDS):
+                if self.stopping:
+                    return
+                try:
+                    self._directory_heartbeat_once()
+                except Exception as exc:
+                    self.log("DIRECTORY_HEARTBEAT_FAILED", error=f"{type(exc).__name__}: {exc}"[:300])
+
+        self._directory_thread = threading.Thread(
+            target=heartbeat_loop, daemon=True, name="Dragonwilds-Worker-Directory-Heartbeat"
+        )
+        self._directory_thread.start()
+
+    def _stop_directory_heartbeat(self) -> None:
+        self._directory_stop.set()
+        thread = self._directory_thread
+        if thread and thread.is_alive() and thread is not threading.current_thread():
+            thread.join(timeout=1.0)
+        self._directory_thread = None
 
     @staticmethod
     def _config_revision(payload: dict | None) -> int:
@@ -341,6 +437,7 @@ class RuntimeWorker:
                 "pid": int(runtime["pid"]), "appliedConfigRevision": self.applied_config_revision,
             }
             self._start_monitor()
+            self._start_directory_heartbeat()
             self.write_state("running")
             self.log(
                 "RUNTIME_RUNNING", game_pid=int(runtime["pid"]),
@@ -385,6 +482,7 @@ class RuntimeWorker:
             existing = before.get("share") if isinstance(before.get("share"), dict) else {}
             if existing.get("serving"):
                 changed = self._apply_share_password(payload)
+                self._start_directory_heartbeat()
                 return {"already_serving": True, "verified_serving": True, "credentials_refreshed": changed, "share": dict(existing)}
             published = engine.publish(self.profile_id)
             changed = self._apply_share_password(payload)
@@ -398,6 +496,7 @@ class RuntimeWorker:
                 raise RuntimeError("Worker started Sync/file share but could not verify that it is serving.")
             self.write_state(self.runtime_state)
             self.log("FILE_SHARE_STATUS", state="serving", port=share.get("port"))
+            self._start_directory_heartbeat()
             return {**dict(published or {}), "verified_serving": True, "credentials_refreshed": changed, "share": dict(share)}
 
     def _stop_share(self) -> dict:
@@ -426,6 +525,7 @@ class RuntimeWorker:
             return dict(value or {}) if isinstance(value, dict) else {}
 
     def _stop_runtime(self) -> dict:
+        self._stop_directory_heartbeat()
         with self._runtime_lock:
             if self._runtime_engine is None:
                 self._orphan_watchdog = {}
@@ -598,6 +698,7 @@ class RuntimeWorker:
                     pass
         self.log("WORKER_STOPPING")
         self._monitor_stop.set()
+        self._stop_directory_heartbeat()
         try:
             self._stop_runtime()
         except Exception as exc:

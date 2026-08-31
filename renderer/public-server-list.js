@@ -65,6 +65,9 @@
     const gameActive = raw?.game_active == null
       ? syncBroadcasting && ['online', 'starting', 'maintenance', 'stopping'].includes(text(raw?.status, 'offline').toLowerCase())
       : Boolean(raw.game_active);
+    const launcherBroadcasting = raw?.launcher_broadcasting == null
+      ? syncBroadcasting || gameActive
+      : Boolean(raw.launcher_broadcasting);
     return {
       id,
       name: text(raw?.world_name ?? raw?.name, 'Unnamed World'),
@@ -79,7 +82,9 @@
       isSync,
       syncBroadcasting,
       gameActive,
-      broadcastState: text(raw?.broadcast_state, gameActive ? 'sync-and-game' : 'sync-only'),
+      launcherBroadcasting,
+      broadcastState: text(raw?.broadcast_state, syncBroadcasting && gameActive ? 'sync-and-game' : syncBroadcasting ? 'sync-only' : gameActive ? 'game-only' : 'offline'),
+      broadcastWarning: text(raw?.broadcast_warning),
       host: text(connect?.host ?? raw?.public_connect_host, ''),
       port: number(connect?.port ?? raw?.public_connect_port, 0),
       lastSeen: number(raw?.last_seen, 0),
@@ -88,6 +93,27 @@
 
   const isOnline = (world) => ['online', 'starting', 'maintenance'].includes(world.status);
   const currentView = () => localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'horizontal';
+
+  function broadcastDescriptor(world) {
+    if (world.syncBroadcasting && world.gameActive) return { key: 'sync-and-game', label: 'SYNC + DRAGONWILDS', icons: ['sync', 'game'] };
+    if (world.syncBroadcasting) return { key: 'sync-only', label: 'SYNC ONLY', icons: ['sync'] };
+    if (world.gameActive) return { key: 'game-only', label: 'DRAGONWILDS ONLY', icons: ['game'] };
+    return { key: 'offline', label: 'OFFLINE', icons: [] };
+  }
+
+  function makeBroadcastBadge(world) {
+    const descriptor = broadcastDescriptor(world);
+    const badge = make('span', `dws-public-type broadcast ${descriptor.key}`);
+    const icons = make('span', 'dws-public-broadcast-icons');
+    descriptor.icons.forEach((kind) => {
+      const image = make('img');
+      image.src = kind === 'sync' ? 'assets/navigation/sync.svg' : 'assets/navigation/dragonwilds.webp';
+      image.alt = '';
+      icons.appendChild(image);
+    });
+    badge.append(icons, document.createTextNode(descriptor.label));
+    return badge;
+  }
 
   function setStatus(message, kind = '') {
     const status = withinPanel('#dws-public-server-status');
@@ -121,7 +147,8 @@
     const counts = [
       ['Sync Broadcasts', rows.length],
       ['Dragonwilds Active', rows.filter((world) => world.gameActive).length],
-      ['Sync Only', rows.filter((world) => !world.gameActive).length],
+      ['Sync Only', rows.filter((world) => world.syncBroadcasting && !world.gameActive).length],
+      ['Game Without Sync', rows.filter((world) => world.gameActive && !world.syncBroadcasting).length],
       ['Showing', filtered.length],
     ];
     counts.forEach(([label, value]) => {
@@ -147,12 +174,12 @@
       const head = make('div', 'dws-public-server-card-head');
       const title = make('div');
       title.append(make('h3', '', world.name), make('small', '', `${world.source} · ${world.id}`));
-      head.append(title, make('span', `dws-public-type sync ${world.gameActive ? 'game-active' : 'sync-only'}`, world.gameActive ? 'SYNC + GAME ACTIVE' : 'SYNC ONLY'));
+      head.append(title, makeBroadcastBadge(world));
       identity.append(head, make('div', 'dws-public-server-description', world.description));
 
       const metrics = make('div', 'dws-public-server-metrics');
       metrics.append(
-        make('span', '', world.gameActive ? 'DRAGONWILDS ACTIVE' : 'SYNC BROADCAST'),
+        make('span', '', broadcastDescriptor(world).label),
         make('span', '', world.region),
         make('span', '', `${world.current} / ${world.max || '—'} players`),
         make('span', '', world.version),
@@ -165,6 +192,9 @@
       detail.appendChild(make('div', 'dws-public-server-route', world.host
         ? `Public route: ${world.host}${world.port ? `:${world.port}` : ''}`
         : world.isSync ? 'Sync metadata published; public route not exposed.' : 'Public source does not expose a direct route.'));
+      if (world.gameActive && !world.syncBroadcasting) {
+        detail.appendChild(make('div', 'dws-public-server-warning', world.broadcastWarning || 'Dragonwilds is active without Sync. File matching and managed joining are unavailable.'));
+      }
       if (world.isSync && world.syncBroadcasting) {
         const connect = make('button', 'btn primary', 'Connect');
         connect.type = 'button';
@@ -232,7 +262,7 @@
       const source = Array.isArray(payload?.worlds) ? payload.worlds : Array.isArray(payload) ? payload : [];
       const unique = new Map();
       source.map(normalizeWorld)
-        .filter((world) => world.isSync && world.syncBroadcasting)
+        .filter((world) => world.isSync && world.launcherBroadcasting)
         .forEach((world) => unique.set(world.id, world));
       rows = [...unique.values()];
       currentPage = 1;

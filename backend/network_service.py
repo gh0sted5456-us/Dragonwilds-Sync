@@ -89,7 +89,7 @@ class DirectoryNetworkService:
         self._last_presence_attempt = 0.0
         self._last_heartbeat_attempt = 0.0
         self._capabilities_cache: tuple[float, dict] = (0.0, {})
-        self._callbacks = {key: None for key in ("custom_sources", "custom_publish", "local_ingest", "share_payload", "share_status", "profile_loader")}
+        self._callbacks = {key: None for key in ("custom_sources", "custom_publish", "local_ingest", "share_payload", "share_status", "runtime_status", "profile_loader")}
 
     def configure_callbacks(self, **callbacks) -> None:
         for key in self._callbacks:
@@ -291,7 +291,9 @@ class DirectoryNetworkService:
         metadata = raw.get("metadata") if isinstance(raw.get("metadata"),dict) else {}
         classification = raw.get("classification") if isinstance(raw.get("classification"),dict) else {}
         world_name = str(raw.get("world_name") or raw.get("name") or raw.get("server_name") or metadata.get("name") or "World")[:160]
-        public_status = {"active": "online", "disabled": "stopping"}.get(str(status or "active").casefold(), str(status or "online").casefold())
+        sync_enabled = bool(raw.get("sync_enabled", True))
+        game_enabled = bool(raw.get("game_enabled", str(status or "active").casefold() not in {"disabled", "offline"}))
+        public_status = {"active": "online", "disabled": "stopping", "offline": "stopping"}.get(str(status or "active").casefold(), str(status or "online").casefold())
         public_status = public_status if public_status in {"online", "starting", "stopping", "maintenance"} else "online"
         mod_summary = [dict(row) for row in (raw.get("mod_summary") or []) if isinstance(row, dict)] if card.get("show_mods", True) else []
         mod_badges = _bounded(raw.get("mod_badges") if card.get("show_mods", True) else [], 64, 80)
@@ -318,6 +320,7 @@ class DirectoryNetworkService:
             "badges":_bounded(raw.get("badges") if card.get("show_badges",True) else [],32,80),
             "rules":[rule_text] if rule_text else [], "community_rules":rule_text,
             "classification":classification, "pvp_enabled":bool(classification.get("pvp_enabled")),
+            "sync_enabled":sync_enabled, "game_enabled":game_enabled,
             "password_required":bool(raw.get("password_required")),
             "runtime_stack":dict(raw.get("runtime_stack") or {}),
             "platform_compatibility":dict(raw.get("platform_compatibility") or {"pc":True}),
@@ -384,16 +387,25 @@ class DirectoryNetworkService:
         with self._lock: active = deepcopy(self._active)
         if not active: return {"published":False,"state":"Disabled","reason":"no_active_world","destinations":[]}
         share_status = self._callbacks.get("share_status")
-        if status == "active" and share_status:
-            try:
-                if not bool((share_status() or {}).get("serving")):
-                    self.world_stopped(reason="share_not_serving"); return {"published":False,"state":"Disabled","reason":"share_not_serving","destinations":[]}
-            except Exception: pass
         raw = dict(active.get("payload") or {})
         share_payload = self._callbacks.get("share_payload")
         if share_payload:
             try: raw = dict(share_payload() or raw)
             except Exception: pass
+        sync_enabled = bool(raw.get("sync_enabled", True))
+        if share_status:
+            try: sync_enabled = bool((share_status() or {}).get("serving"))
+            except Exception: pass
+        game_enabled = bool(raw.get("game_enabled", True))
+        runtime_status = self._callbacks.get("runtime_status")
+        if runtime_status:
+            try: game_enabled = bool((runtime_status() or {}).get("running"))
+            except Exception: pass
+        raw["sync_enabled"] = sync_enabled
+        raw["game_enabled"] = game_enabled
+        if status == "active" and not sync_enabled and not game_enabled:
+            self.world_stopped(reason="runtime_and_sync_inactive")
+            return {"published":False,"state":"Disabled","reason":"runtime_and_sync_inactive","destinations":[]}
         raw.setdefault("world_name",raw.get("name") or "World"); raw.setdefault("last_seen",_now()); raw.setdefault("ttl_seconds",HEARTBEAT_INTERVAL_SECONDS+120)
         outcomes = []
         try: outcomes.append(self.publish_official(active["profile_id"],active["kind"],raw,status=status))

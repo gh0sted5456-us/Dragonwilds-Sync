@@ -344,7 +344,7 @@ class WorkerBackedServerEngine:
         return getattr(self.original, name)
 
 
-def _rewire_legacy_share(share_adapter: WorkerBackedShare) -> None:
+def _rewire_legacy_share(share_adapter: WorkerBackedShare, runtime_status=None) -> None:
     """Point retained V3 network readers at the worker-backed SHARE proxy.
 
     V3 Phase 2 intentionally owns the heartbeat/directory scheduler in the
@@ -369,6 +369,7 @@ def _rewire_legacy_share(share_adapter: WorkerBackedShare) -> None:
         local_ingest=getattr(phase2, "_local_ingest", None),
         share_payload=share_adapter.broadcast_payload,
         share_status=share_adapter.status,
+        runtime_status=runtime_status,
         profile_loader=getattr(phase2, "_profile_loader", None),
     )
 
@@ -384,7 +385,10 @@ def _config(state: dict) -> dict:
     config.setdefault("share_enabled", True)
     config["dedicated_stage"] = "runtime+sync-share" if bool(config.get("share_enabled", True)) else "runtime-only"
     config["share_owner"] = "world-runtime-worker" if bool(config.get("share_enabled", True)) else "application"
-    config.setdefault("heartbeat_owner", "application")
+    # The control application remains the primary publisher while it is
+    # healthy. The long-lived World worker watches the shared delivery receipt
+    # and takes over after the launcher heartbeat becomes stale.
+    config["heartbeat_owner"] = "application+world-runtime-worker-failover" if bool(config.get("share_enabled", True)) else "application"
     config.setdefault("webgui_owner", "application")
     config.setdefault("desired_state", "revisioned-settings-snapshot")
     return config
@@ -420,7 +424,7 @@ def install(runtime_manager, original_engine, share, supervisor, *, load_state: 
     if isinstance(share_adapter, WorkerBackedShare):
         share_adapter.engine = bridge
         runtime_manager.share = share_adapter
-        _rewire_legacy_share(share_adapter)
+        _rewire_legacy_share(share_adapter, bridge.status)
     active_id = str((state.get("server") or {}).get("active_world_id") or "")
     if active_id:
         worker = supervisor.reconcile(active_id)

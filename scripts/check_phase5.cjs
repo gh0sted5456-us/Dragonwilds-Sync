@@ -94,7 +94,8 @@ if (!website.includes("String(live?.fingerprint || '') !== expectedFingerprint")
 if (/^(?:from|import)\s+server_engine\b/m.test(worker)) failures.push('World worker must lazy-load ServerEngine only after a runtime command');
 if (!bridge.includes('response = self.supervisor.start_share(profile_id)')) failures.push('Phase 5D dedicated Sync publication must execute through the World worker');
 if (!bridge.includes('return self.original.publish(profile_id)')) failures.push('Phase 5D must retain an explicit share-only rollback path until parity is proven');
-if (!bridge.includes('config.setdefault("heartbeat_owner", "application")')) failures.push('Heartbeat ownership must remain application-owned in the first Phase 5D Sync-share slice');
+if (!bridge.includes('application+world-runtime-worker-failover')) failures.push('Dedicated Sync heartbeat ownership must retain the application primary with World-worker failover');
+if (!worker.includes('DIRECTORY_HEARTBEAT_FAILOVER_SECONDS') || !worker.includes('_directory_delivery_is_fresh') || !worker.includes('_start_directory_heartbeat')) failures.push('World worker must renew the official directory only after the launcher heartbeat becomes stale');
 if (!bridge.includes('config.setdefault("webgui_owner", "application")')) failures.push('WebGUI ownership must remain application-owned in the first Phase 5D Sync-share slice');
 if (!bridge.includes('legacy.SHARE = share_adapter')) failures.push('Retained V3 heartbeat readers must be rewired to the worker-backed SHARE proxy');
 if (!bridgeTests.includes('assert supervisor.calls.count(("stop_worker", "world-a")) == 1')) failures.push('Phase 5D test must prove one atomic graceful worker stop without an IPC shutdown cascade');
@@ -114,4 +115,4 @@ if (!runeschema.includes('resolver_source = _runeschema_resolver_source(source_u
 if (failures.length) {
   console.error('[Phase 5] FAIL'); failures.forEach(x => console.error(` - ${x}`)); process.exit(1);
 }
-console.log('[Phase 5] PASS · retained Phase 4 corrections, passed Phase 5C dedicated worker gate, worker-owned dedicated Sync share, and application-owned durable profile/settings authority');
+console.log('[Phase 5] PASS · retained Phase 4 corrections, passed Phase 5C dedicated worker gate, worker-owned Sync share with guarded heartbeat failover, and application-owned durable profile/settings authority');

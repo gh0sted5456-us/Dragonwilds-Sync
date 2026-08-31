@@ -14,8 +14,11 @@ for (const token of [
   'currentPage = 1',
   'dws-public-server-pagination',
   "document.querySelector('#dws-public-server-list-mount')",
-  'world.isSync && world.syncBroadcasting',
-  "filter((world) => world.isSync && world.syncBroadcasting)",
+  'world.isSync && world.launcherBroadcasting',
+  "filter((world) => world.isSync && world.launcherBroadcasting)",
+  'Dragonwilds is active without Sync',
+  'assets/navigation/dragonwilds.webp',
+  'assets/navigation/sync.svg',
   'Sync Public World Directory',
 ]) {
   if (!js.includes(token)) failures.push(`renderer/public-server-list.js: missing ${token}`);
@@ -38,4 +41,4 @@ if (failures.length) {
   failures.forEach((failure) => console.error(` - ${failure}`));
   process.exit(1);
 }
-console.log('[Sync Public World Directory] PASS · desktop rendering is Sync-only and bounded to 50 cards per page');
+console.log('[Sync Public World Directory] PASS · launcher broadcasts expose Sync, Game, and combined states across at most 50 cards per page');

@@ -95,13 +95,25 @@ class WorldDirectoryV3HeartbeatTests(unittest.TestCase):
             "mod_summary": [{"name": "Required Mod", "loader": "ue4ss", "client_required": True}],
             "classification": {"game_mode": "creative", "pvp_enabled": True},
             "runtime_stack": {"ue4ss": {"channel": "stable"}},
+            "sync_enabled": True,
+            "game_enabled": False,
         })
         self.assertEqual(snapshot["world_name"], "Preview World")
         self.assertEqual(snapshot["public_connect"], {"host": "8.8.8.8", "port": 27111})
         self.assertEqual(snapshot["game_port"], 7788)
         self.assertEqual(snapshot["mod_summary"][0]["name"], "Required Mod")
         self.assertTrue(snapshot["classification"]["pvp_enabled"])
+        self.assertTrue(snapshot["sync_enabled"])
+        self.assertFalse(snapshot["game_enabled"])
         self.assertEqual(HEARTBEAT_INTERVAL_SECONDS, 60)
+
+    def test_cloudflare_directory_exposes_all_three_live_broadcast_states(self):
+        worker = (Path(__file__).resolve().parents[1] / "cloudflare" / "world-directory" / "src" / "index.ts").read_text(encoding="utf-8")
+        self.assertIn('"sync-and-game"', worker)
+        self.assertIn('"sync-only"', worker)
+        self.assertIn('"game-only"', worker)
+        self.assertIn("launcher_broadcasting: launcherBroadcasting", worker)
+        self.assertIn("gameActive && !syncEnabled", worker)
 
     def test_official_publish_uses_self_registering_operator_heartbeat(self):
         requests = []

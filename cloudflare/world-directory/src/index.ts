@@ -37,6 +37,8 @@ type HeartbeatPayload = {
   sync_tls?: boolean;
   tls_cert_fingerprint?: string;
   game_port?: number;
+  sync_enabled?: boolean;
+  game_enabled?: boolean;
 };
 
 const encoder = new TextEncoder();
@@ -251,6 +253,8 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
     sync_tls: input.sync_tls === true,
     tls_cert_fingerprint: cleanText(input.tls_cert_fingerprint, 64).toLowerCase(),
     game_port: clampInt(input.game_port, 7777, 1, 65535),
+    sync_enabled: typeof input.sync_enabled === "boolean" ? input.sync_enabled : null,
+    game_enabled: typeof input.game_enabled === "boolean" ? input.game_enabled : null,
   };
 }
 
@@ -557,9 +561,18 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
   const lastSeen = Number(row.last_seen || 0);
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastSeen);
   const isOffline = !lastSeen || age > offlineAfterSeconds;
-  const gameActive = !isOffline && ["online", "starting", "maintenance", "stopping"].includes(String(row.status || "online"));
-
   const metadata = parseJsonObject(row.metadata_json);
+  const legacyGameActive = ["online", "starting", "maintenance", "stopping"].includes(String(row.status || "online"));
+  const syncEnabled = !isOffline && (typeof metadata.sync_enabled === "boolean" ? metadata.sync_enabled : true);
+  const gameActive = !isOffline && (typeof metadata.game_enabled === "boolean" ? metadata.game_enabled : legacyGameActive);
+  const launcherBroadcasting = syncEnabled || gameActive;
+  const broadcastState = isOffline || !launcherBroadcasting
+    ? "offline"
+    : syncEnabled && gameActive
+      ? "sync-and-game"
+      : syncEnabled
+        ? "sync-only"
+        : "game-only";
   return {
     world_id: row.world_id,
     world_name: row.world_name,
@@ -605,10 +618,12 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     sync_tls: metadata.sync_tls === true,
     tls_cert_fingerprint: metadata.tls_cert_fingerprint || "",
     sync_protocol: "dragonwilds-world-sync",
-    sync_ready: true,
-    sync_broadcasting: !isOffline,
+    sync_ready: syncEnabled,
+    sync_broadcasting: syncEnabled,
     game_active: gameActive,
-    broadcast_state: isOffline ? "offline" : gameActive ? "sync-and-game" : "sync-only",
+    launcher_broadcasting: launcherBroadcasting,
+    broadcast_state: broadcastState,
+    broadcast_warning: gameActive && !syncEnabled ? "Dragonwilds is active without Sync. File matching and managed joining are unavailable." : "",
     last_seen: lastSeen,
     heartbeat_age_seconds: age,
     source_name: "Dragonwilds Sync",
@@ -633,10 +648,8 @@ async function collectSyncWorlds(env: Env): Promise<Array<Record<string, unknown
 
   const worlds = (result.results || []).map((row) => publicWorld(row, offlineAfter));
   worlds.sort((a, b) => {
-    const aStatus = String(a.status || "");
-    const bStatus = String(b.status || "");
-    const aOnline = ["online", "starting", "maintenance"].includes(aStatus);
-    const bOnline = ["online", "starting", "maintenance"].includes(bStatus);
+    const aOnline = a.game_active === true;
+    const bOnline = b.game_active === true;
     if (aOnline !== bOnline) return Number(bOnline) - Number(aOnline);
     const seenDiff = Number(b.last_seen || 0) - Number(a.last_seen || 0);
     if (seenDiff) return seenDiff;

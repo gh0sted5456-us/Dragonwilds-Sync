@@ -61,6 +61,7 @@ NETWORK.configure_callbacks(
     local_ingest=_local_ingest,
     share_payload=_legacy.SHARE.broadcast_payload,
     share_status=_legacy.SHARE.status,
+    runtime_status=RUNTIME.get_status,
     profile_loader=_profile_loader,
 )
 
@@ -72,6 +73,14 @@ def _share_payload() -> dict:
         payload = {}
     payload.setdefault("world_name", payload.get("name") or "World")
     payload.setdefault("last_seen", time.time())
+    try:
+        payload["sync_enabled"] = bool((_legacy.SHARE.status() or {}).get("serving"))
+    except Exception:
+        payload["sync_enabled"] = False
+    try:
+        payload["game_enabled"] = bool((RUNTIME.get_status() or {}).get("running"))
+    except Exception:
+        payload["game_enabled"] = False
     return payload
 
 
@@ -369,15 +378,16 @@ def handle(method: str, params: dict) -> object:
         profile_id = str(_legacy.STATE.active_profile_id or
                          _legacy.ENGINE.active_profile_id or
                          current.setdefault("server", {}).get("active_world_id") or "")
-        if not profile_id or not _legacy.SHARE.status().get("serving"):
-            NETWORK.world_stopped(reason="share_not_serving")
+        payload = _share_payload()
+        if not profile_id or not (payload.get("sync_enabled") or payload.get("game_enabled")):
+            NETWORK.world_stopped(reason="runtime_and_sync_inactive")
             return {"legacy": legacy_result, "official": {"published": False, "state": "Disabled"}}
         host_type = str((_legacy.STATE.manifest or {}).get("host_type") or "")
         kind = "local" if host_type == "private_coop" else "dedicated"
         mode = "coop_host" if kind == "local" else "dedicated_server"
         with NETWORK._lock:
-            NETWORK._active = {"profile_id": profile_id, "kind": kind, "mode": mode, "payload": _share_payload(), "started_at": NETWORK._active.get("started_at") or time.time()}
-        official = NETWORK.publish_official(profile_id, kind, _share_payload())
+            NETWORK._active = {"profile_id": profile_id, "kind": kind, "mode": mode, "payload": payload, "started_at": NETWORK._active.get("started_at") or time.time()}
+        official = NETWORK.publish_official(profile_id, kind, payload)
         return {"legacy": legacy_result, "official": official, "network": NETWORK.status()}
 
     if method in {"server.world.start", "server.runtime.start"}:

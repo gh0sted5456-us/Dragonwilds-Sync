@@ -24,8 +24,8 @@
     { key: 'linux', label: 'Linux', src: 'assets/platforms/linux.svg', test: /\blinux\b/i },
     { key: 'discord', label: 'Discord', src: 'assets/platforms/discord.svg', test: /\b(?:discord|rsdw)\b/i },
     { key: 'nexusmods', label: 'Nexus Mods', src: 'assets/platforms/nexusmods.svg', test: /\b(?:nexus|nexus mods|nexusmods)\b/i },
-    { key: 'ue4ss', label: 'UE4SS', src: 'assets/platforms/ue4ss.png', test: /\bue4ss\b/i },
-    { key: 'runeschema', label: 'RuneSchema', src: 'assets/platforms/runeschema.png', test: /\brune\s*schema\b|\bruneschema\b/i },
+    { key: 'ue4ss', label: 'UE4SS', src: 'assets/platforms/ue4ss.webp', test: /\bue4ss\b/i },
+    { key: 'runeschema', label: 'RuneSchema', src: 'assets/platforms/runeschema.webp', test: /\brune\s*schema\b|\bruneschema\b/i },
     { key: 'paks', label: 'PAKs', src: 'assets/platforms/paks.svg', test: /\bpaks?\b|\.pak\b|\.utoc\b|\.ucas\b/i },
   ];
   const DISTROS = Object.freeze({

@@ -1,8 +1,8 @@
 /* Exact project-provided UE4SS and RuneSchema artwork for browser surfaces. */
 (() => {
   const EXACT_ECOSYSTEM_ASSETS = Object.freeze({
-    ue4ss: 'assets/platforms/ue4ss.png',
-    runeschema: 'assets/platforms/runeschema.png',
+    ue4ss: 'assets/platforms/ue4ss.webp',
+    runeschema: 'assets/platforms/runeschema.webp',
     paks: 'assets/platforms/paks.svg',
   });
 

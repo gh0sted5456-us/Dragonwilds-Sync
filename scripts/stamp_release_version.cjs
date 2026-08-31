@@ -35,8 +35,8 @@ writeJson('docs/changelog.json', (value) => {
 function replaceVersion(relative, pattern, replacement) {
   const file = path.join(root, relative);
   const original = fs.readFileSync(file, 'utf8');
+  if (!pattern.test(original)) throw new Error(`Could not locate version field in ${relative}`);
   const updated = original.replace(pattern, replacement);
-  if (updated === original) throw new Error(`Could not stamp ${relative}`);
   fs.writeFileSync(file, updated, 'utf8');
 }
 
@@ -48,10 +48,12 @@ replaceVersion(
 for (const relative of ['backend/dragonwilds_service.py', 'backend/v3_exchange.py']) {
   const file = path.join(root, relative);
   const original = fs.readFileSync(file, 'utf8');
-  const updated = original.replace(/app_version(?:\s*:\s*str)?\s*=\s*"\d+\.\d+\.\d+"/g, (match) => (
+  const appVersionPattern = /app_version(?:\s*:\s*str)?\s*=\s*"\d+\.\d+\.\d+"/g;
+  if (!appVersionPattern.test(original)) throw new Error(`Could not locate app_version in ${relative}`);
+  appVersionPattern.lastIndex = 0;
+  const updated = original.replace(appVersionPattern, (match) => (
     match.replace(/"\d+\.\d+\.\d+"/, `"${version}"`)
   ));
-  if (updated === original) throw new Error(`Could not stamp ${relative}`);
   fs.writeFileSync(file, updated, 'utf8');
 }
 

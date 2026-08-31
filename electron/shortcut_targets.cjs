@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const HEADLESS_EXE_PATTERN = /^Dragonwilds Sync Headless-(.+)\.exe$/i;
+const HEADLESS_EXE_PATTERN = /^Dragonwilds Sync Headless(?:-(.+))?\.exe$/i;
 
 function resolveGuiShortcutTarget(executablePath) {
   const target = path.resolve(String(executablePath || ''));
@@ -20,6 +20,8 @@ function resolveHeadlessShortcutTarget({ executablePath, version = '', requested
   }
   const guiTarget = resolveGuiShortcutTarget(executablePath);
   const directory = path.dirname(guiTarget);
+  const unversioned = path.join(directory, 'Dragonwilds Sync Headless.exe');
+  if (existsSync(unversioned)) return unversioned;
   const exact = path.join(directory, `Dragonwilds Sync Headless-${String(version || '').trim()}.exe`);
   if (version && existsSync(exact)) return exact;
   const candidates = readdirSync(directory, { withFileTypes: true })

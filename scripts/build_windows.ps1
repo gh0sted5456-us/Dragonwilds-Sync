@@ -454,8 +454,7 @@ try {
     # Ship the console-subsystem service as a first-class release artifact.
     # Copying it beside (not inside) the GUI portable adds no bloat to the GUI
     # binary and gives PowerShell/SSH real stdout, signals, and exit codes.
-    $packageVersion = [string]((Get-Content -LiteralPath (Join-Path $ProjectRoot 'package.json') -Raw | ConvertFrom-Json).version)
-    $headlessReleaseExe = Join-Path $releaseDir "Dragonwilds Sync Headless-$packageVersion.exe"
+    $headlessReleaseExe = Join-Path $releaseDir "Dragonwilds Sync Headless.exe"
     Copy-Item -LiteralPath $serviceExe -Destination $headlessReleaseExe -Force
     if (-not (Test-Path -LiteralPath $headlessReleaseExe -PathType Leaf)) {
         Fail-Build 'The standalone headless Windows artifact was not produced.'

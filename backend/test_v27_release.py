@@ -36,7 +36,10 @@ def main():
 
     updater = (ROOT / "electron/app_updater.cjs").read_text(encoding="utf-8")
     assert "appimage" in updater.casefold()
-    assert "/bin/sh" in updater
+    assert "app.getPath('downloads')" in updater
+    assert "manualInstall: true" in updater
+    assert "app.quit()" not in updater
+    assert "spawn(" not in updater
 
     router = manual_router_rule("world_sync", 27051, "192.168.1.10")
     assert router["protocol"] == "TCP"

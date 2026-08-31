@@ -143,18 +143,21 @@ async function handleHeartbeat(request,env) {
   return json({ok:true,world_id:worldId,received_at:seen});
 }
 function publicWorld(row) {
-  const effectiveStatus = Number(row.last_seen||0) < now()-ACTIVE_WINDOW_SECONDS ? 'offline' : row.status;
+  const syncBroadcasting = Number(row.last_seen||0) >= now()-ACTIVE_WINDOW_SECONDS;
+  const gameActive = syncBroadcasting && row.status === 'active';
+  const effectiveStatus = syncBroadcasting ? row.status : 'offline';
   const mods=JSON.parse(row.mods_json||'[]');
-  return {world_id:row.world_id,name:row.name,description:row.description,region:row.region,cl:row.cl,status:effectiveStatus,host_type:row.host_type,player_count:row.player_count,max_players:row.max_players,tags:JSON.parse(row.tags_json||'[]'),mods,mod_summary:mods,badges:JSON.parse(row.badges_json||'[]'),rules:row.rules,connection:JSON.parse(row.connection_json||'null'),last_seen:row.last_seen};
+  return {world_id:row.world_id,name:row.name,description:row.description,region:row.region,cl:row.cl,status:effectiveStatus,host_type:row.host_type,player_count:row.player_count,max_players:row.max_players,tags:JSON.parse(row.tags_json||'[]'),mods,mod_summary:mods,badges:JSON.parse(row.badges_json||'[]'),rules:row.rules,connection:JSON.parse(row.connection_json||'null'),last_seen:row.last_seen,is_sync_world:true,directory_source:'dragonwilds-sync',sync_broadcasting:syncBroadcasting,game_active:gameActive,broadcast_state:!syncBroadcasting?'offline':gameActive?'sync-and-game':'sync-only'};
 }
 async function listWorlds(env) {
-  const cutoff=now()-ACTIVE_WINDOW_SECONDS;const result=await env.DB.prepare("SELECT * FROM worlds_v3 WHERE last_seen>=?1 AND status!='offline' ORDER BY last_seen DESC LIMIT 500").bind(cutoff).all();
+  const cutoff=now()-ACTIVE_WINDOW_SECONDS;const result=await env.DB.prepare("SELECT * FROM worlds_v3 WHERE last_seen>=?1 ORDER BY last_seen DESC LIMIT 500").bind(cutoff).all();
   return json({worlds:(result.results||[]).map(publicWorld),generated_at:now()},200,PUBLIC_HEADERS);
 }
 async function worldById(env,id) {const worldId=normalizedId(id,'world'),row=await env.DB.prepare('SELECT * FROM worlds_v3 WHERE world_id=?1').bind(worldId).first();return row?json(publicWorld(row),200,PUBLIC_HEADERS):json({error:'not_found'},404,PUBLIC_HEADERS);}
 async function networkStats(env) {
   const cutoff=now()-ACTIVE_WINDOW_SECONDS;
   const worlds=await env.DB.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(player_count),0) AS players FROM worlds_v3 WHERE last_seen>=?1 AND status='active'").bind(cutoff).first();
+  const broadcasts=await env.DB.prepare("SELECT COUNT(*) AS n FROM worlds_v3 WHERE last_seen>=?1").bind(cutoff).first();
   const presence=await env.DB.prepare(`SELECT COUNT(*) AS n,
     COALESCE(SUM(CASE WHEN p.mode='client' THEN 1 ELSE 0 END),0) AS clients,
     COALESCE(SUM(CASE WHEN p.mode='dedicated_server' THEN 1 ELSE 0 END),0) AS dedicated_servers,
@@ -165,6 +168,7 @@ async function networkStats(env) {
   return json({
     active_users:activeUsers,
     active_worlds:activeWorlds,
+    sync_broadcast_worlds:Number(broadcasts?.n||0),
     dedicated_servers:Number(presence?.dedicated_servers||0),
     coop_hosts:Number(presence?.coop_hosts||0),
     clients:Number(presence?.clients||0),

@@ -1,7 +1,7 @@
 {
   "schema": "DragonwildsSync.Help.v1",
-  "version": 8,
-  "updated": "2026-08-23",
+  "version": 9,
+  "updated": "2026-08-30",
   "title": "Helpy: Dragonwilds Sync Field Guide",
   "subtitle": "A task-first visual guide to Worlds, DragonConnect, file Sync, servers, characters, mods, RSDW-L, Quick Launch, and recovery.",
   "pages": [
@@ -15,7 +15,7 @@
       "images": [{"src":"../assets/help/01-getting-started.png","alt":"Getting Started workspace"},{"src":"../assets/help/14-tours.png","alt":"Guided navigation tour"},{"src":"../assets/help/15-notifications.png","alt":"Notifications and progress center"}],
       "intro": "Dragonwilds Sync keeps Worlds, characters, mods, and launcher settings together without replacing Steam or the game.",
       "sections": [
-        {"title": "First launch", "steps": ["Launch the portable EXE or AppImage. On Linux, mark the AppImage executable or add it through Gear Lever.", "Open Settings and confirm the detected Dragonwilds installation, save directory, and preferred launch provider.", "Use Refresh Help if this guide was opened before the newest manifest downloaded."]},
+        {"title": "First launch", "steps": ["Launch Dragonwilds Sync.exe on Windows or Dragonwilds Sync.AppImage on Linux. On Linux, mark the AppImage executable or add it through Gear Lever.", "Keep Dragonwilds Sync Headless beside the normal application when you want profile-owned command-line server control or desktop Headless shortcuts.", "Open Settings and confirm the detected Dragonwilds installation, save directory, and preferred launch provider.", "Use Refresh Help if this guide was opened before the newest manifest downloaded."]},
         {"title": "Create the first profile", "steps": ["Open Worlds and choose Add World or import an existing local save.", "Choose Singleplayer, Connected World, or Dedicated Server. Identical display names are allowed because profiles use independent internal IDs.", "Add an icon, banner, description, and character assignment, then save the profile."]},
         {"title": "Safe operating pattern", "body": "Keep Steam Cloud disabled for saves managed by Sync, close the game before replacing save files, and use profile activation before launching so the correct mod set is staged."}
       ],
@@ -33,7 +33,7 @@
       "sections": [
         {"title": "Core Appys", "steps": ["Worlds manages singleplayer, Connected World, and server profiles.", "Characters edits appearance, inventory, equipment, pose, and preview background.", "Mods manages the shared repository plus profile-specific overrides.", "Servers provides runtime, SteamCMD update, map, remote-user, and WebHost controls.", "Helpy opens this same GitHub-managed guide in a focused in-app view."]},
         {"title": "Search and themes", "body": "The global search finds Appys, Worlds, characters, mods, Sync status, and help. Theme settings separate light or dark mode from the optional glass layer, including blur and stained-glass treatment."},
-        {"title": "Updates", "body": "Application update checks are separate from module and dedicated-server updates. Read the status text before restarting, especially while SteamCMD is downloading."}
+        {"title": "Safe application updates", "steps": ["Application update checks compare the running package version with the latest GitHub release; the current version should not be offered to itself.", "Choose Download Update to save the verified portable file in Downloads. Dragonwilds Sync remains open and never executes or replaces the file automatically.", "Open the update receipt, copy its instructions if needed, close Dragonwilds Sync, replace the old portable file manually, and launch the replacement.", "UE4SS, RuneSchema, RSDW, and dedicated-server updates remain separate operations with their own status and recovery controls."]}
       ]
     },
     {
@@ -67,6 +67,23 @@
         {"title": "Convert a profile", "body": "A Connected World may be converted to Singleplayer or Dedicated Server when the required save or server paths are available. Conversion keeps presentation metadata while changing runtime ownership."}
       ],
       "tips": ["NAT, VPN isolation, guest Wi-Fi, or a blocked UDP discovery port can prevent LAN discovery.", "A heartbeat publishes status and presentation metadata, never a plaintext password."]
+    },
+    {
+      "id": "public-world-directory",
+      "title": "Sync Public World Directory",
+      "category": "Worlds",
+      "summary": "Find only Worlds actively broadcasting through Dragonwilds Sync and understand their live state.",
+      "image": "../assets/help/44-connected-worlds.png",
+      "image_alt": "Connected Worlds and public Sync discovery",
+      "images": [{"src":"../assets/help/44-connected-worlds.png","alt":"Connected Worlds and Sync discovery"},{"src":"../assets/help/53-sync-server-login.png","alt":"Authenticated World connection"},{"src":"../assets/help/09-networking.png","alt":"Sync heartbeat and networking settings"}],
+      "intro": "The website World Directory is intentionally limited to verified Dragonwilds Sync heartbeats. It does not mix in general EOS, third-party, or gameplay-only server observations.",
+      "sections": [
+        {"title": "Open the directory", "steps": ["Choose World Directory from any website page or open the Public World Directory from Sync in the application.", "Search by World name, region, tag, mod, or build.", "Use All Broadcasting, Sync + Game Active, or Sync Only to narrow the live roster."]},
+        {"title": "Read the state", "body": "SYNC + GAME ACTIVE means the World is heartbeating through Dragonwilds Sync and its Dragonwilds process is active. SYNC ONLY means the Sync service is still heartbeating while the game process is stopped, recovering, or waiting to start."},
+        {"title": "What is public", "body": "A host may publish presentation, classification, player totals, build, platform declarations, rules, mod summaries, and a safe public route. World passwords, Sync credentials, owner keys, administrative credentials, and private filesystem paths are never directory fields."},
+        {"title": "When a World disappears", "body": "The listing remains only while Cloudflare receives a current signed Sync heartbeat. Stopping the game does not hide a still-broadcasting Sync service; stopping or expiring the Sync heartbeat removes the World from the active website roster."}
+      ],
+      "tips": ["A visible Sync-only World is not necessarily joinable until Dragonwilds becomes active.", "The website and application use the same stable World identity even if the host public IP changes."]
     },
     {
       "id": "characters",
@@ -160,7 +177,7 @@
       "sections": [
         {"title": "Remote Server Admin only", "body": "Enable Server Manager remote access to publish only the authenticated login surface. The public directory and World placards remain disabled."},
         {"title": "WebHost", "steps": ["Enable WebHost only when you want a public World page plus Server Admin entry.", "Configure bind address, port, firewall profile, public transport, and Cloudflare or direct public URL.", "Preview the external site and verify that passwords and private paths never appear in public metadata."]},
-        {"title": "Heartbeat metadata", "body": "Heartbeat updates include online status, players, game and Sync ports, icon, banner, description, platform, version, and mod badges/list. Connection-time metadata creates or refreshes the local Connected World profile."},
+        {"title": "Heartbeat metadata", "body": "Heartbeat updates include a distinct Sync-broadcast state and Dragonwilds-process state plus players, game and Sync ports, icon, banner, description, platform, version, and mod badges/list. The public website lists only active Dragonwilds Sync heartbeats and labels Sync + Game Active separately from Sync Only."},
         {"title": "Troubleshoot publication", "steps": ["Confirm the local directory host is running and bound to the intended interface.", "Check firewall, tunnel, public URL, ingestion token, and heartbeat timestamp.", "Use remote-only mode when public hosting is not desired; use full WebHost only after its preview is correct."]}
       ]
     },
@@ -263,6 +280,7 @@
         {"title": "Mods or icons missing", "steps": ["Rescan the correct game or server root.", "Check that the logical mod root contains the expected RuneSchema, UE4SS, or PAK payload.", "Refresh repository metadata so fingerprints, badges, custom items, and icons are rebuilt."]},
         {"title": "Remote login rejected", "steps": ["Confirm Remote Server Admin is enabled for that profile.", "Select the assigned World and enter the account username plus that user's password, not the World Password.", "Check that the account is enabled and has not been deleted or reassigned."]},
         {"title": "AppImage will not close", "body": "Wait for active save or server operations to finish, use the application Exit command, and inspect the latest log if shutdown stalls. Gear Lever integration should use the packaged Sync icon and desktop entry."},
+        {"title": "Application update repeats or closes", "steps": ["Confirm About reports the same version as the latest GitHub tag. Current tagged builds stamp that exact version into the package.", "Use Download Update and wait for the verified receipt; the application should remain open.", "If an older build closes itself, download Dragonwilds Sync directly from GitHub Releases, close the old launcher, and replace it manually. Future builds no longer self-replace or execute downloaded files."]},
         {"title": "Get diagnostic context", "body": "Record the profile type, operation, visible status message, timestamp, application version, operating system, and relevant log excerpt. Remove passwords, tokens, public IPs, and personal paths before sharing."}
       ],
       "tips": ["Use Refresh Metadata before assuming cached presentation data is lost.", "A failed external heartbeat does not prevent local server management."]

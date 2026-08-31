@@ -5,8 +5,8 @@ cd "$ROOT"
 REPORT="${1:-release/package-test-report-linux.txt}"
 mkdir -p "$(dirname "$REPORT")"
 SERVICE="$ROOT/dist-service/DragonwildsSync.Service"
-APPIMAGE="$(find "$ROOT/release" -maxdepth 1 -type f -name '*Ubuntu*.AppImage' -print -quit)"
-HEADLESS_ARCHIVE="$(find "$ROOT/release" -maxdepth 1 -type f -name 'Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz' -print -quit)"
+APPIMAGE="$(find "$ROOT/release" -maxdepth 1 -type f -name 'Dragonwilds Sync.AppImage' -print -quit)"
+HEADLESS_ARCHIVE="$(find "$ROOT/release" -maxdepth 1 -type f -name 'Dragonwilds Sync Headless.tar.gz' -print -quit)"
 HEADLESS_EXTRACT_DIR=""
 
 pass() { printf 'PASS  %s\n' "$1" | tee -a "$REPORT"; }
@@ -28,7 +28,7 @@ pass 'Packaged service JSON-RPC stdio'
 HEADLESS_EXTRACT_DIR="$(mktemp -d)"
 trap 'rm -rf -- "$HEADLESS_EXTRACT_DIR"' EXIT
 tar -xzf "$HEADLESS_ARCHIVE" -C "$HEADLESS_EXTRACT_DIR" || fail 'Standalone headless CLI tar.gz extracts'
-HEADLESS="$(find "$HEADLESS_EXTRACT_DIR" -maxdepth 1 -type f -name 'Dragonwilds-Sync-Headless-Ubuntu-*' -print -quit)"
+HEADLESS="$(find "$HEADLESS_EXTRACT_DIR" -maxdepth 1 -type f -name 'Dragonwilds Sync Headless' -print -quit)"
 [[ -n "$HEADLESS" && -x "$HEADLESS" ]] || fail 'Standalone headless CLI archive preserves executable permissions'
 pass 'Standalone headless CLI archive preserves executable permissions'
 HEADLESS_APPDATA="$(mktemp -d)"

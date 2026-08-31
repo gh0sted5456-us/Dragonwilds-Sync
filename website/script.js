@@ -113,6 +113,9 @@ function normalizeWorld(raw) {
   const worldId = safeText(raw?.world_id, 'unknown-world', 120);
   const name = safeText(raw?.world_name ?? raw?.name, 'Unnamed World', 90);
   const remoteAdmin = normalizeRemoteAdmin(raw?.remote_management, worldId, name);
+  const syncClaim = raw?.is_sync_world === true
+    || String(raw?.directory_source || '').toLowerCase() === 'dragonwilds-sync'
+    || (worldId !== 'unknown-world' && !worldId.toLowerCase().startsWith('public-'));
   return {
     worldId,
     name,
@@ -120,6 +123,9 @@ function normalizeWorld(raw) {
     region: safeText(raw?.region, 'Unknown', 40),
     version: safeText(raw?.version ?? raw?.cl, 'Unknown', 40),
     status: safeText(raw?.status, 'offline', 24).toLowerCase(),
+    syncBroadcasting: raw?.sync_broadcasting == null ? syncClaim && safeText(raw?.status, 'offline', 24).toLowerCase() !== 'offline' : Boolean(raw.sync_broadcasting),
+    gameActive: raw?.game_active == null ? safeText(raw?.status, 'offline', 24).toLowerCase() === 'active' : Boolean(raw.game_active),
+    broadcastState: safeText(raw?.broadcast_state, '', 32).toLowerCase(),
     currentPlayers: Math.max(0, safeNumber(players.current ?? raw?.player_current ?? raw?.player_count, 0)),
     maxPlayers: Math.max(0, safeNumber(players.max ?? raw?.player_max ?? raw?.max_players, 0)),
     tags: safeList(raw?.tags, 10),
@@ -292,7 +298,8 @@ function createWorldCard(world) {
   const front = makeEl('div', 'world-card-face world-card-front');
   const back = makeEl('div', 'world-card-face world-card-back');
   const top = makeEl('div', 'world-card-top');
-  const status = makeEl('span', `world-status ${isOnline(world) ? 'online' : ''}`, world.status);
+  const statusText = world.syncBroadcasting ? (world.gameActive ? 'Sync + Game Active' : 'Sync Only') : world.status;
+  const status = makeEl('span', `world-status ${world.gameActive ? 'online' : world.syncBroadcasting ? 'sync-only' : ''}`, statusText);
   top.append(status, makeEl('span', 'world-id', world.worldId));
   front.appendChild(top);
   front.appendChild(makeEl('h3', '', world.name));
@@ -306,7 +313,8 @@ function createWorldCard(world) {
   });
   front.appendChild(metrics);
   const tags = makeEl('div', 'world-card-tags');
-  (world.tags.length ? world.tags.slice(0, 5) : ['Public World']).forEach((tag) => tags.appendChild(makeEl('span', '', tag)));
+  const broadcastTags = world.syncBroadcasting ? [world.gameActive ? 'DRAGONWILDS ACTIVE' : 'SYNC ONLY', 'SYNC BROADCAST'] : [];
+  [...new Set([...broadcastTags, ...world.tags])].slice(0, 6).forEach((tag) => tags.appendChild(makeEl('span', '', tag)));
   front.appendChild(tags);
   const footer = makeEl('div', 'world-card-footer');
   footer.append(makeEl('span', '', `Last seen ${relativeTime(world.lastSeen)}`), makeEl('b', '', 'DETAILS ↻'));
@@ -315,7 +323,7 @@ function createWorldCard(world) {
   backTop.append(makeEl('span', 'world-status', 'PUBLIC DETAILS'), makeEl('span', 'world-id', world.worldId));
   back.appendChild(backTop);
   const backGrid = makeEl('div', 'world-back-grid');
-  [['Mods', world.mods], ['Rules', world.rules], ['Badges', world.badges], ['Tags', world.tags], ['Platform Scores', worldPlatformScores(world)]].forEach(([heading, values]) => {
+  [['Broadcast', broadcastTags], ['Mods', world.mods], ['Rules', world.rules], ['Badges', world.badges], ['Tags', world.tags], ['Platform Scores', worldPlatformScores(world)]].forEach(([heading, values]) => {
     const section = makeEl('section', 'world-back-section');
     section.appendChild(makeEl('h4', '', heading));
     const list = makeEl('div', 'world-back-list');
@@ -392,9 +400,12 @@ function setDirectoryState(kind, title, detail) {
 }
 
 function deriveStatsFromWorlds() {
-  const online = allWorlds.filter(isOnline);
-  $('#stat-worlds').textContent = String(online.length);
-  $('#stat-players').textContent = String(online.reduce((sum, world) => sum + world.currentPlayers, 0));
+  const broadcasting = allWorlds.filter((world) => world.syncBroadcasting);
+  const active = broadcasting.filter((world) => world.gameActive);
+  $('#stat-worlds').textContent = String(broadcasting.length);
+  const gameWorlds = $('#stat-game-worlds');
+  if (gameWorlds) gameWorlds.textContent = String(active.length);
+  $('#stat-players').textContent = String(active.reduce((sum, world) => sum + world.currentPlayers, 0));
 }
 
 async function loadWorlds() {
@@ -411,10 +422,13 @@ async function loadWorlds() {
     if (network) {
       const users = network.active_users;
       const worlds = network.active_worlds;
+      const broadcasts = network.sync_broadcast_worlds;
       const players = network.players_in_listed_worlds;
       currentBuild = safeText(network.current_build ?? network.version, '', 40) || null;
       $('#stat-users').textContent = Number.isFinite(Number(users)) ? String(Number(users)) : '—';
-      $('#stat-worlds').textContent = Number.isFinite(Number(worlds)) ? String(Number(worlds)) : $('#stat-worlds').textContent;
+      $('#stat-worlds').textContent = Number.isFinite(Number(broadcasts)) ? String(Number(broadcasts)) : $('#stat-worlds').textContent;
+      const gameWorlds = $('#stat-game-worlds');
+      if (gameWorlds) gameWorlds.textContent = Number.isFinite(Number(worlds)) ? String(Number(worlds)) : gameWorlds.textContent;
       $('#stat-players').textContent = Number.isFinite(Number(players)) ? String(Number(players)) : $('#stat-players').textContent;
       $('#stat-build').textContent = currentBuild || '—';
       $('#network-message').textContent = 'Live aggregate presence from participating Dragonwilds Sync installations and public Worlds.';
@@ -462,7 +476,7 @@ async function loadLatestRelease() {
     const date = new Date(release.published_at || release.created_at);
     releaseVersion.textContent = safeText(release.tag_name || release.name, 'Latest');
     releaseDate.textContent = Number.isNaN(date.getTime()) ? 'GitHub Releases' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-    const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
+    const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && !/headless/i.test(String(asset?.name || '')) && asset?.browser_download_url);
     if (executable) {
       releaseLink.href = executable.browser_download_url;
       releaseLink.setAttribute('download', '');

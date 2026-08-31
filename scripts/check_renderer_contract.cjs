@@ -204,10 +204,13 @@ assert(source.includes("comparison=incomingRevision>localRevision?'newer':'local
 assert(baseCss.includes('.connect-world-shell') && baseCss.includes('.connect-world-line') &&
   baseCss.includes('.splash-notice{box-sizing:border-box;width:100%;max-width:100%'),
   'The unified connection workspace and bounded update splash layout must remain styled.');
-assert(appUpdater.includes('update-pending.json') && appUpdater.includes('update-failure.txt') &&
-  appUpdater.includes('$dst.update-new') && appUpdater.includes('Get-FileHash -LiteralPath $dst') &&
-  appUpdater.includes('sha256sum "$dst"'),
-  'The portable updater must stage, verify the installed replacement, retain rollback, and report failure after relaunch.');
+assert(appUpdater.includes("app.getPath('downloads')") && appUpdater.includes('uniqueDownloadPath') &&
+  appUpdater.includes('manualInstall: true') && appUpdater.includes('downloaded asset SHA-256 does not match') &&
+  !appUpdater.includes('setTimeout(() => app.quit()') && !appUpdater.includes("spawn('powershell.exe'"),
+  'The portable updater must verify into Downloads and leave replacement/relaunch under explicit user control.');
+assert(source.includes('Update ready in Downloads') && source.includes('Show in Downloads') &&
+  source.includes('will remain open and will not replace or execute the downloaded file'),
+  'The application update receipt must explain manual replacement and keep the launcher open.');
 
 function sha256(relativePath) {
   return crypto.createHash('sha256')

@@ -4,6 +4,8 @@ Dragonwilds Sync organizes local saves, connected Worlds, hosted servers, charac
 
 ## First launch
 
+- On Windows, launch **Dragonwilds Sync.exe**. On Linux, launch **Dragonwilds Sync.AppImage** after granting executable permission.
+- Keep **Dragonwilds Sync Headless** beside the normal application when you need command-line server operation or Headless desktop shortcuts.
 - Complete **Player Setup** and select the Dragonwilds installation.
 - Let Sync validate the game layout before installing or repairing shared client prerequisites.
 - Pick a character after discovery completes.
@@ -18,6 +20,10 @@ Dragonwilds Sync organizes local saves, connected Worlds, hosted servers, charac
 3. Open **Mods** and confirm the active profile's editable mod inventory.
 4. Launch Singleplayer once, or configure Co-Op/Dedicated from Dragonwilds.
 5. Open **Sync** only when you are ready to link or publish a fingerprint-verified World.
+
+## Safe application updates
+
+**Download Update** saves the GitHub release asset to Downloads and verifies its SHA-256. The launcher remains open and does not execute, replace, or delete either file. Review the receipt, close Dragonwilds Sync, manually replace the old portable file, and start the replacement.
 
 ## Offline behavior
 

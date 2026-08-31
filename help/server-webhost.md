@@ -20,9 +20,14 @@ Stop and restart use the same operation guard and verify process-tree cleanup be
 
 WebHost can project the public World browser, accept authenticated Sync heartbeats, expose public-safe API routes, and provide paired remote server administration when enabled.
 
-## Declared Worlds
+## Sync Public World Directory
 
-A World is **Declared** only while this host has a live heartbeat for it and the host can verify its Sync fingerprint. The heartbeat registry has a TTL, so disconnected publishers disappear without a manual cleanup step.
+A World is visible only while this host has a current signed Dragonwilds Sync heartbeat and the directory can verify its Sync identity. General EOS, third-party, and gameplay-only observations are excluded. The heartbeat registry has a TTL, so disconnected publishers disappear without a manual cleanup step.
+
+The public state is split deliberately:
+
+- **SYNC + GAME ACTIVE** — the Sync heartbeat is current and the Dragonwilds process is active.
+- **SYNC ONLY** — Sync is still broadcasting while Dragonwilds is stopped, recovering, or waiting to start.
 
 ## Public safety
 

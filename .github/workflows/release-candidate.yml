@@ -27,6 +27,10 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: npm
+      - name: Stamp tag version into package metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node scripts/stamp_release_version.cjs "${GITHUB_REF_NAME#v}"
       - name: Confirm Node toolchain
         run: |
           node --version
@@ -57,8 +61,8 @@ jobs:
           name: Dragonwilds-Sync-Ubuntu-AppImage
           if-no-files-found: error
           path: |
-            release/*Ubuntu*.AppImage
-            release/Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz
+            release/Dragonwilds Sync.AppImage
+            release/Dragonwilds Sync Headless.tar.gz
             release/checksums-linux.sha256
             release/package-test-report-linux.txt
             dist-service/DragonwildsSync.Service
@@ -73,6 +77,13 @@ jobs:
         with:
           node-version-file: '.nvmrc'
           cache: npm
+      - name: Stamp tag version into package metadata
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: powershell
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^v', ''
+          node scripts/stamp_release_version.cjs $version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Confirm Node toolchain
         shell: powershell
         run: |
@@ -122,7 +133,7 @@ jobs:
       - name: Create Windows package report and checksums
         shell: powershell
         run: |
-          $portable = Get-ChildItem .\release\*Portable*.exe | Select-Object -First 1
+          $portable = Get-Item '.\release\Dragonwilds Sync.exe' -ErrorAction SilentlyContinue
           if (-not $portable) { throw 'Portable EXE was not produced.' }
           @(
             'Dragonwilds Sync Windows Release Candidate',
@@ -220,7 +231,7 @@ jobs:
           shopt -s nullglob
           executables=(release-assets/*.exe)
           appimages=(release-assets/*.AppImage)
-          headless_archives=(release-assets/Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz)
+          headless_archives=("release-assets/Dragonwilds Sync Headless.tar.gz")
           windows_checksums=(release-assets/checksums-windows.sha256)
           linux_checksums=(release-assets/checksums-linux.sha256)
           [[ ${#executables[@]} -eq 2 ]] || { echo "Expected Windows Portable and Headless EXEs; found ${#executables[@]}" >&2; exit 1; }
@@ -232,7 +243,7 @@ jobs:
           headless_test_dir="$(mktemp -d)"
           trap 'rm -rf -- "${headless_test_dir}"' EXIT
           tar -xzf "${headless_archives[0]}" -C "${headless_test_dir}"
-          headless_binary="$(find "${headless_test_dir}" -maxdepth 1 -type f -name 'Dragonwilds-Sync-Headless-Ubuntu-*' -print -quit)"
+          headless_binary="$(find "${headless_test_dir}" -maxdepth 1 -type f -name 'Dragonwilds Sync Headless' -print -quit)"
           [[ -n "${headless_binary}" && -x "${headless_binary}" ]] || { echo 'Linux headless archive did not preserve executable permissions.' >&2; exit 1; }
           ls -lh release-assets
 
@@ -245,7 +256,7 @@ jobs:
           release_assets=(
             release-assets/*.exe
             release-assets/*.AppImage
-            release-assets/Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz
+            "release-assets/Dragonwilds Sync Headless.tar.gz"
             release-assets/DragonLink-Connect-baseline.zip
             release-assets/RuneSchema-core-latest.zip
             release-assets/RuneSchema-experimental-latest.zip

@@ -15,7 +15,7 @@
   if (headerNav && hero) {
     headerNav.innerHTML = `
       <a href="world-builder.html">World Builder</a>
-      <a href="servers.html">Servers</a>
+      <a href="servers.html">World Directory</a>
       <a href="helpy.html">Helpy</a>
       <a href="#webgui">WebGUI</a>
       <a href="#downloads">Downloads</a>
@@ -41,7 +41,7 @@
       actions.innerHTML = `
         <a class="button button-primary" href="#downloads">Download Dragonwilds Sync <span aria-hidden="true">↓</span></a>
         <a class="button button-secondary" href="world-builder.html">Build a World <span aria-hidden="true">→</span></a>
-        <a class="button button-secondary" href="servers.html">Browse Servers <span aria-hidden="true">→</span></a>`;
+        <a class="button button-secondary" href="servers.html">Browse Sync Worlds <span aria-hidden="true">→</span></a>`;
     }
   }
 

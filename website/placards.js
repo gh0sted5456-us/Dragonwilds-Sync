@@ -111,13 +111,15 @@
   const makeBadge = (text, className = '') => makeEl('span', `badge ${className}`.trim(), text);
 
   function makeStatusPill(world) {
-    const online = isOnline(world);
-    return makeEl('span', `status-pill ${online ? 'online' : 'offline'}`, online ? 'ONLINE' : safeText(world.status, 'OFFLINE', 24).toUpperCase());
+    if (world.syncBroadcasting && world.gameActive) return makeEl('span', 'status-pill online', 'SYNC + GAME ACTIVE');
+    if (world.syncBroadcasting) return makeEl('span', 'status-pill sync-only', 'SYNC ONLY');
+    return makeEl('span', 'status-pill offline', safeText(world.status, 'OFFLINE', 24).toUpperCase());
   }
 
   function buildBadgeRow(world) {
     const row = makeEl('div', 'badges');
-    [...new Set(world.badges.map((badge)=>String(badge).trim()).filter(Boolean))].slice(0, 8)
+    const stateBadges = world.syncBroadcasting ? [world.gameActive ? 'DRAGONWILDS ACTIVE' : 'SYNC ONLY', 'SYNC BROADCAST'] : [];
+    [...new Set([...stateBadges, ...world.badges].map((badge)=>String(badge).trim()).filter(Boolean))].slice(0, 8)
       .forEach((badge) => row.appendChild(makeBadge(badge, /discord|community|rsdw/i.test(badge) ? 'community' : '')));
     return row;
   }

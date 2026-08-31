@@ -12,12 +12,12 @@ All three call the same `quick.*` control methods and attach to the same authent
 
 Create and validate the Server World or player profile in the full application first. Headless mode deliberately does not duplicate the profile builder, mod importer, credential editor, or installation-path setup.
 
-Download or copy the versioned `Dragonwilds Sync Headless-<version>.exe`
+Download or copy `Dragonwilds Sync Headless.exe`
 release artifact beside the normal portable application. List the profiles the
 CLI can use:
 
 ```powershell
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless profiles
+& '.\Dragonwilds Sync Headless.exe' --headless profiles
 ```
 
 From a source checkout:
@@ -26,13 +26,13 @@ From a source checkout:
 python backend/dragonwilds_service.py --headless profiles
 ```
 
-On Linux, download `Dragonwilds-Sync-Headless-Ubuntu-<version>.tar.gz`. The
+On Linux, download `Dragonwilds Sync Headless.tar.gz`. The
 archive preserves the executable permission that direct GitHub file downloads
 cannot retain:
 
 ```bash
-tar -xzf Dragonwilds-Sync-Headless-Ubuntu-3.5.0.tar.gz
-./Dragonwilds-Sync-Headless-Ubuntu-3.5.0 --headless profiles
+tar -xzf 'Dragonwilds Sync Headless.tar.gz'
+./'Dragonwilds Sync Headless' --headless profiles
 ```
 
 An exact profile ID is safest. An exact, case-insensitive World name also works. If `--profile` is omitted, the currently active profile is used.
@@ -46,7 +46,7 @@ Windows stores an absolute executable path in each `.lnk`. Put both executables 
 ## Run a server in the foreground
 
 ```powershell
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless run --mode server --profile 'world-profile-id'
+& '.\Dragonwilds Sync Headless.exe' --headless run --mode server --profile 'world-profile-id'
 ```
 
 This starts or reattaches the selected World, maintains Sync/directory heartbeats, runs scheduled maintenance, and streams the unified Game/UE4SS/RuneSchema/Server/Sync console. `Ctrl+C`, `SIGTERM`, or an SSH hangup performs the normal graceful World stop. Use a service manager for unattended hosting so it can restart the foreground controller after a machine reboot.
@@ -57,14 +57,14 @@ This starts or reattaches the selected World, maintains Sync/directory heartbeat
 
 ```powershell
 # One-shot commands attach to the current runtime and do not shut it down on exit.
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless status --profile 'world-profile-id'
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless stop --profile 'world-profile-id'
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless restart --profile 'world-profile-id'
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless update-restart --profile 'world-profile-id'
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless logs --profile 'world-profile-id' --limit 500
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless logs --profile 'world-profile-id' --follow
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless broadcast --profile 'world-profile-id' --message 'Restart in ten minutes.'
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless command --profile 'world-profile-id' --target runeschema --exec 'help'
+& '.\Dragonwilds Sync Headless.exe' --headless status --profile 'world-profile-id'
+& '.\Dragonwilds Sync Headless.exe' --headless stop --profile 'world-profile-id'
+& '.\Dragonwilds Sync Headless.exe' --headless restart --profile 'world-profile-id'
+& '.\Dragonwilds Sync Headless.exe' --headless update-restart --profile 'world-profile-id'
+& '.\Dragonwilds Sync Headless.exe' --headless logs --profile 'world-profile-id' --limit 500
+& '.\Dragonwilds Sync Headless.exe' --headless logs --profile 'world-profile-id' --follow
+& '.\Dragonwilds Sync Headless.exe' --headless broadcast --profile 'world-profile-id' --message 'Restart in ten minutes.'
+& '.\Dragonwilds Sync Headless.exe' --headless command --profile 'world-profile-id' --target runeschema --exec 'help'
 ```
 
 Add `--json` for automation-friendly newline JSON. No saved passwords or secret material are included in status or log output by the CLI.
@@ -74,7 +74,7 @@ Add `--json` for automation-friendly newline JSON. No saved passwords or secret 
 Player mode is headless only for the launcher/control plane; Dragonwilds itself remains a graphical game. A connected World is fully matched and verified before the single Play gate launches the game executable once.
 
 ```powershell
-& '.\Dragonwilds Sync Headless-3.5.0.exe' --headless play --mode player --profile 'connected-world-id'
+& '.\Dragonwilds Sync Headless.exe' --headless play --mode player --profile 'connected-world-id'
 ```
 
 The process stays attached to the unified client console while the game is running, then exits when the game closes.

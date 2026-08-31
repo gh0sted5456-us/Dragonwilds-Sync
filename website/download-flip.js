@@ -22,10 +22,10 @@
           <div class="download-platform-icons" aria-label="Supported platforms"><span class="download-platform-chip windows">WIN</span><span class="download-platform-chip linux">LINUX</span><img src="assets/platforms/steam.svg" alt="Steam"></div>
           <img src="assets/application-icon.ico" alt="Dragonwilds Sync icon">
           <div class="download-platform-actions">
-            <a class="button button-primary button-full" data-windows-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.2/Dragonwilds.Sync.and.Launcher-Portable-2.0.2.exe"><span><b>Windows</b><small>Portable EXE</small></span><span aria-hidden="true">↓</span></a>
-            <small class="download-file-note" data-windows-file>Dragonwilds Sync and Launcher Portable 2.0.2</small>
-            <a class="button button-full linux-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v2.0.2/Dragonwilds.Sync.and.Launcher-Ubuntu-2.0.2.AppImage"><span><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
-            <small class="download-file-note" data-linux-file>Dragonwilds Sync and Launcher Ubuntu 2.0.2</small>
+            <a class="button button-primary button-full" data-windows-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v3.5.1/Dragonwilds%20Sync.exe"><span><b>Windows</b><small>Portable EXE</small></span><span aria-hidden="true">↓</span></a>
+            <small class="download-file-note" data-windows-file>Dragonwilds Sync.exe</small>
+            <a class="button button-full linux-download" data-linux-download download href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/download/v3.5.1/Dragonwilds%20Sync.AppImage"><span><b>Ubuntu Linux</b><small>AppImage</small></span><span aria-hidden="true">↓</span></a>
+            <small class="download-file-note" data-linux-file>Dragonwilds Sync.AppImage</small>
           </div>
           <a class="text-link" href="https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases">Main release history</a>
         </div>
@@ -70,7 +70,7 @@
     .then((response) => { if (!response.ok) throw new Error('release lookup failed'); return response.json(); })
     .then((release) => {
       const date = new Date(release.published_at || release.created_at);
-      const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
+      const executable = (release.assets || []).find((asset) => /\.exe$/i.test(String(asset?.name || '')) && !/headless/i.test(String(asset?.name || '')) && asset?.browser_download_url);
       const appImage = (release.assets || []).find((asset) => /\.AppImage$/i.test(String(asset?.name || '')) && asset?.browser_download_url);
       flip.querySelector('[data-main-version]').textContent = release.tag_name || release.name || 'Latest';
       flip.querySelector('[data-main-date]').textContent = Number.isNaN(date.getTime()) ? 'Latest release' : date.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });

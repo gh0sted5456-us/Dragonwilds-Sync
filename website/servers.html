@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0b0d0f">
-  <meta name="description" content="Browse the combined public RuneScape: Dragonwilds server directory, including Dragonwilds Sync Worlds and approved read-only public observations.">
-  <meta property="og:title" content="Public Servers — Dragonwilds Sync">
-  <meta property="og:description" content="A combined Dragonwilds public server directory with Sync-enriched placards, public observations, build status, tags, mods, rules, and connection details.">
+  <meta name="description" content="Browse Worlds actively broadcasting through the Dragonwilds Sync Public World Directory.">
+  <meta property="og:title" content="Public World Directory — Dragonwilds Sync">
+  <meta property="og:description" content="Live Dragonwilds Sync Worlds with distinct Sync broadcast and Dragonwilds game activity status.">
   <meta property="og:type" content="website">
-  <title>Public Servers — Dragonwilds Sync</title>
+  <title>Public World Directory — Dragonwilds Sync</title>
   <link rel="icon" href="assets/application-icon.ico">
   <link rel="dragonwilds-sync-directory" type="application/json" href="directory-source.json">
   <link rel="stylesheet" href="styles.css?v=public-directory-6">
@@ -32,7 +32,7 @@
     <nav class="main-nav" id="main-nav" aria-label="Primary navigation">
       <a href="index.html">Home</a>
       <a href="world-builder.html">World Builder</a>
-      <a href="servers.html" aria-current="page">Servers</a>
+      <a href="servers.html" aria-current="page">World Directory</a>
       <a href="helpy.html">Helpy</a>
       <a href="index.html#webgui">WebGUI</a>
       <a href="index.html#downloads">Downloads</a>
@@ -51,20 +51,21 @@
     <section class="section-shell directory-page-hero">
       <div class="section-heading reveal visible">
         <div class="eyebrow"><span class="pulse-heart" aria-hidden="true">♥</span> Dragonwilds Public Network</div>
-        <h1>Public Server Directory.</h1>
-        <p>Browse one combined Dragonwilds roster. Sync Worlds are always prioritized first. Offline Sync Worlds remain in their own category for up to six hours after their last heartbeat, then disappear from the public website while historical metrics remain intact.</p>
+        <h1>Sync Public World Directory.</h1>
+        <p>Browse only Worlds actively broadcasting through Dragonwilds Sync. Each listing distinguishes a live Sync service with an active Dragonwilds game from a Sync-only host whose game process is currently stopped.</p>
       </div>
     </section>
 
     <section class="network-section section-shell" id="network">
       <div class="network-heading reveal">
         <div><div class="eyebrow"><span class="network-live-dot" id="network-live-dot"></span> Live Network Status</div><h2>See what is online now.</h2></div>
-        <p id="network-message">Connecting to the combined public Dragonwilds directory…</p>
+        <p id="network-message">Connecting to the Dragonwilds Sync heartbeat directory…</p>
       </div>
       <div class="network-stats reveal delay-1" aria-live="polite">
         <article><span>ACTIVE USERS</span><strong id="stat-users">—</strong><small>anonymous active installations</small></article>
-        <article><span>SERVERS ONLINE</span><strong id="stat-worlds">—</strong><small>public Dragonwilds worlds</small></article>
-        <article><span>PLAYERS LISTED</span><strong id="stat-players">—</strong><small>across public servers</small></article>
+        <article><span>SYNC BROADCASTS</span><strong id="stat-worlds">—</strong><small>Worlds currently heartbeating</small></article>
+        <article><span>DRAGONWILDS ACTIVE</span><strong id="stat-game-worlds">—</strong><small>game processes currently active</small></article>
+        <article><span>PLAYERS LISTED</span><strong id="stat-players">—</strong><small>across active Sync Worlds</small></article>
         <article><span>TOTAL WORLDS STARTED WITH SYNC</span><strong id="stat-total-sync-starts">—</strong><small>cumulative Sync world starts</small></article>
         <article><span>CURRENT BUILD</span><strong id="stat-build">—</strong><small>checking Steam dedicated-server build</small></article>
       </div>
@@ -74,24 +75,23 @@
       <div class="section-shell">
         <div class="worlds-header reveal">
           <div class="section-heading">
-            <div class="eyebrow">Public Server List</div>
+            <div class="eyebrow">Sync Public World Directory</div>
             <h2>Find your next world.</h2>
-            <p>Search the complete visible roster ten servers at a time. Sync Worlds sort ahead of ordinary public observations, and every filtered result remains reachable through pagination instead of overloading the page.</p>
+            <p>Search live Dragonwilds Sync broadcasts ten Worlds at a time. Status labels make it clear whether both Sync and Dragonwilds are active or whether only the Sync service is online.</p>
           </div>
           <div class="directory-state" id="directory-state"><span class="directory-dot"></span><div><strong>Server list ready</strong><small>Baked snapshot loads before live refresh.</small></div></div>
         </div>
 
         <div class="world-toolbar reveal delay-1">
           <div class="filter-group" role="group" aria-label="Server directory filter">
-            <button class="filter-button active" type="button" data-world-filter="all">All</button>
-            <button class="filter-button" type="button" data-world-filter="sync">Sync Enabled</button>
-            <button class="filter-button" type="button" data-world-filter="online">Online</button>
-            <button class="filter-button" type="button" data-world-filter="offline-sync">Offline Sync</button>
+            <button class="filter-button active" type="button" data-world-filter="all">All Broadcasting</button>
+            <button class="filter-button" type="button" data-world-filter="game-active">Sync + Game Active</button>
+            <button class="filter-button" type="button" data-world-filter="sync-only">Sync Only</button>
             <button class="filter-button" type="button" data-world-filter="modded">Modded</button>
             <button class="filter-button" type="button" data-world-filter="current">Current build</button>
           </div>
-          <label class="world-search"><span class="sr-only">Search public servers</span><input id="world-search" type="search" placeholder="Search servers, regions, tags…" autocomplete="off"></label>
-          <div class="directory-view-toggle" role="group" aria-label="Public Server List view">
+          <label class="world-search"><span class="sr-only">Search Sync Worlds</span><input id="world-search" type="search" placeholder="Search Worlds, regions, tags…" autocomplete="off"></label>
+          <div class="directory-view-toggle" role="group" aria-label="Sync Public World Directory view">
             <button type="button" data-directory-view="placards" aria-pressed="true" title="Placards">▦ Placards</button>
             <button type="button" data-directory-view="horizontal" aria-pressed="false" title="Horizontal">☰ Horizontal</button>
           </div>
@@ -106,7 +106,7 @@
           <div class="directory-placeholder"><span class="loading-ring" aria-hidden="true"></span><strong>Server snapshot is being prepared</strong><p>The Pages deployment replaces this placeholder with the current public roster before publishing.</p></div>
           <!-- PUBLIC_SERVER_SNAPSHOT_END -->
         </div>
-        <nav class="directory-pagination" id="world-pagination" aria-label="Public Server List pages" hidden></nav>
+        <nav class="directory-pagination" id="world-pagination" aria-label="Sync Public World Directory pages" hidden></nav>
       </div>
     </section>
 
@@ -124,7 +124,7 @@
 
   <footer class="site-footer">
     <div class="footer-brand"><img src="assets/application-icon.ico" alt=""><div><strong>Dragonwilds Sync</strong><span>Community toolkit for RuneScape: Dragonwilds</span></div></div>
-    <div class="footer-links"><a href="index.html">Home</a><a href="world-builder.html">World Builder</a><a href="servers.html" aria-current="page">Servers</a><a href="index.html#webgui">WebGUI</a><a href="https://discord.gg/gQ7uY2cQ3q">RSDW Community</a><a href="https://www.paypal.me/luke0494" target="_blank" rel="noopener noreferrer">Support</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
+    <div class="footer-links"><a href="index.html">Home</a><a href="world-builder.html">World Builder</a><a href="servers.html" aria-current="page">World Directory</a><a href="index.html#webgui">WebGUI</a><a href="https://discord.gg/gQ7uY2cQ3q">RSDW Community</a><a href="https://www.paypal.me/luke0494" target="_blank" rel="noopener noreferrer">Support</a><a href="https://github.com/gh0sted5456-us/Dragonwilds-Sync">GitHub</a></div>
     <p>Dragonwilds Sync is an independent community project and is not affiliated with, endorsed by, or sponsored by Jagex Ltd.</p>
   </footer>
 

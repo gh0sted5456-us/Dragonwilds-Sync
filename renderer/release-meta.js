@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.5.0',
-  "name": "V3.5",
+  version: '3.5.1',
+  "name": "V3.5.1",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -22,6 +22,15 @@ window.DWSYNC_RELEASE_META = Object.freeze({
   ],
   "changelog": [
     {
+      "version": "3.5.1",
+      "title": "V3.5.1 Update Safety",
+      "items": [
+        "Update detection now compares correctly stamped package versions so the current release is not repeatedly presented as newer than itself.",
+        "Portable updates download to the user’s Downloads folder, verify the GitHub release asset SHA-256, and remain inert until the user manually replaces the existing executable.",
+        "The launcher stays open after downloading and presents a receipt with the verified file, current executable, checksum, and explicit replacement instructions."
+      ]
+    },
+    {
       "version": "3.5.0",
       "title": "V3.5",
       "items": [
@@ -31,7 +40,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
         "Discovery and connection — LAN discovery, Direct Connect, public-directory lookup, saved routes, VPN/external paths, and Quick Connect converge on stable World identities and verified endpoints.",
         "Cloud directory — Hosted Sync Worlds publish signed, renewable Cloudflare heartbeats; public presence remains separate from direct route reachability and passwords are never published.",
         "Authentication — World-password challenges, LAN trust, pinned transport fallback, publisher identities, invites, deregistration, scoped Remote Admin users, and audit boundaries are enforced by the owning World.",
-        "Connected Worlds — Saved, Connected, and Favorite categories retain their filters and durable profiles while Public Server List owns discovery instead of duplicating World Finder behavior.",
+        "Connected Worlds — Saved, Connected, and Favorite categories retain their filters and durable profiles while Sync World Directory owns authenticated discovery instead of duplicating World Finder behavior.",
         "World metadata — Placards expose sanitized identity, status, platform, route, player, rules, rating, runtime, mod, and classification information before authentication where safe.",
         "World classifications — Normal, Hard Mode, Creative, Custom, and additive PVP metadata are normalized from legacy and current fields and shown as distinct badges on full and horizontal placards.",
         "Presence reliability — Heartbeats, LAN broadcasts, directory registration, Sync listeners, and adopted dedicated processes are supervised and recover automatically after transient failures.",
@@ -57,7 +66,7 @@ window.DWSYNC_RELEASE_META = Object.freeze({
         "Integrations — GitHub-backed application updates, RSDW assets, community recommendations, optional Nexus provenance, Discord presence, platform icons, and the standalone project website retain explicit trust boundaries.",
         "Performance and diagnostics — Compact status refreshes, bounded polling, cached presentation, batched console updates, redacted logs, network evidence, failure tails, and actionable recovery messages reduce repaint and troubleshooting noise.",
         "Safety — Credentials remain in protected storage, public metadata is sanitized, destructive operations are backup-first and path-bounded, generated client mods.txt files are local and role-filtered, and rollback remains recoverable.",
-        "Packaging — Windows remains portable-only in version 3.5.0 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
+        "Packaging — Windows remains portable-only in version 3.5.1 alongside the Ubuntu AppImage; both package paths run contract checks and packaged smoke tests before branch promotion.",
         "Release history — The former Alpha, V2.x, and incremental V3 notes are consolidated here into this single authoritative V3 changelog."
       ]
     }

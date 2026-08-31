@@ -14,7 +14,9 @@ for (const token of [
   'currentPage = 1',
   'dws-public-server-pagination',
   "document.querySelector('#dws-public-server-list-mount')",
-  'if (world.isSync)',
+  'world.isSync && world.syncBroadcasting',
+  "filter((world) => world.isSync && world.syncBroadcasting)",
+  'Sync Public World Directory',
 ]) {
   if (!js.includes(token)) failures.push(`renderer/public-server-list.js: missing ${token}`);
 }
@@ -36,4 +38,4 @@ if (failures.length) {
   failures.forEach((failure) => console.error(` - ${failure}`));
   process.exit(1);
 }
-console.log('[Public Server List] PASS · desktop rendering is bounded to 50 server cards per page');
+console.log('[Sync Public World Directory] PASS · desktop rendering is Sync-only and bounded to 50 cards per page');

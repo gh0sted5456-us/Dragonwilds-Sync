@@ -32,7 +32,8 @@ jobs:
           grep -q 'public-server-list.css' renderer/index.html
           grep -q 'public-server-list.js' renderer/index.html
           grep -q 'https://\*.workers.dev' renderer/index.html
-          grep -q 'Public Server List' renderer/public-server-list.js
+          grep -q 'Sync Public World Directory' renderer/public-server-list.js
+          grep -q 'world.isSync && world.syncBroadcasting' renderer/public-server-list.js
       - name: Check signed launcher directory lifecycle
         run: |
           grep -q 'REGISTRATION_RETENTION_DAYS' cloudflare/world-directory/src/index.ts

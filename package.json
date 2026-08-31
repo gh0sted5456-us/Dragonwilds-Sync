@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-electron",
-  "version": "3.5.0",
+  "version": "3.5.1",
   "private": true,
   "description": "A unified tool to create, launch, and share world servers with friends.",
   "main": "electron/bootstrap.cjs",
@@ -11,7 +11,7 @@
   "scripts": {
     "start": "npm run check:runtime && npm run prepare:monaco && electron .",
     "headless": "python backend/dragonwilds_service.py --headless",
-    "check:runtime": "node scripts/check_node_runtime.cjs && node scripts/check_raster_assets.cjs && node scripts/check_sync_avatar_contract.cjs && node scripts/check_linux_handheld_contract.cjs",
+    "check:runtime": "node scripts/check_node_runtime.cjs && node scripts/check_raster_assets.cjs && node scripts/check_sync_avatar_contract.cjs && node scripts/check_linux_handheld_contract.cjs && node scripts/check_manual_updater.cjs",
     "test:backend": "node scripts/run_backend_tests.cjs",
     "test:systems:list": "node scripts/run_system_tests.cjs --list",
     "test:systems:source": "node scripts/run_system_tests.cjs --tier source",
@@ -117,10 +117,10 @@
       "target": [
         "AppImage"
       ],
-      "artifactName": "${productName}-Ubuntu-${version}.${ext}"
+      "artifactName": "Dragonwilds Sync.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}"
+      "artifactName": "Dragonwilds Sync.${ext}"
     }
   },
   "dependencies": {

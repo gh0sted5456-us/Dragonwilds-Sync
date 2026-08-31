@@ -41,10 +41,12 @@
       });
       if (!response.ok) throw new Error(`Public snapshot returned HTTP ${response.status}`);
       const payload = await response.json();
-      const worlds = Array.isArray(payload?.worlds) ? payload.worlds : [];
-      cachedSnapshot = payload;
+      cachedSnapshot = {
+        ...payload,
+        worlds: (Array.isArray(payload?.worlds) ? payload.worlds : []).filter(isSyncWorld)
+      };
       cachedSnapshotAt = Date.now();
-      return payload;
+      return cachedSnapshot;
     })();
     try {
       return await snapshotRequest;
@@ -56,6 +58,13 @@
   function worldKey(world, index, source) {
     const id = String(world?.world_id ?? world?.id ?? '').trim();
     return id || `${source}-${index}`;
+  }
+
+  function isSyncWorld(world) {
+    const id = String(world?.world_id ?? world?.id ?? '').trim().toLowerCase();
+    return world?.is_sync_world === true
+      || String(world?.directory_source || '').toLowerCase() === 'dragonwilds-sync'
+      || (id && !id.startsWith('public-'));
   }
 
   function jsonResponse(payload, source) {
@@ -85,8 +94,8 @@
 
   async function combinedResponse(livePayload) {
     const snapshot = await loadSnapshot();
-    const liveWorlds = Array.isArray(livePayload?.worlds) ? livePayload.worlds : [];
-    const snapshotWorlds = Array.isArray(snapshot?.worlds) ? snapshot.worlds : [];
+    const liveWorlds = (Array.isArray(livePayload?.worlds) ? livePayload.worlds : []).filter(isSyncWorld);
+    const snapshotWorlds = (Array.isArray(snapshot?.worlds) ? snapshot.worlds : []).filter(isSyncWorld);
     const merged = new Map();
     snapshotWorlds.forEach((world, index) => merged.set(worldKey(world, index, 'snapshot'), world));
     liveWorlds.forEach((world, index) => merged.set(worldKey(world, index, 'live'), world));

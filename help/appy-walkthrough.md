@@ -39,6 +39,8 @@ Dragonwilds Sync keeps one persistent navigation shell. Moving between Appys pre
 ## 5. Sync
 
 - Open **Sync** for the directory, manifests, transfer, Website, and Remote Access surfaces.
+- **Sync Public World Directory** contains only Worlds carrying a current Dragonwilds Sync heartbeat; gameplay-only and third-party server observations are excluded.
+- **SYNC + GAME ACTIVE** means both the Sync service and Dragonwilds process are active. **SYNC ONLY** means the heartbeat remains available while the game process is stopped or recovering.
 - A join verifies the World fingerprint before applying required files.
 - The final verification must pass before Dragonwilds launches; a failed or timed-out operation leaves the launcher available for retry.
 
@@ -48,6 +50,7 @@ Dragonwilds Sync keeps one persistent navigation shell. Moving between Appys pre
 
 - **Helpy** keeps the current walkthrough and screenshots.
 - **Settings** owns application, player, network, update, integration, and system policy.
+- Application updates are verified into Downloads and require an explicit manual portable-file replacement; the running launcher never self-replaces or executes the download.
 - Dragonwilds, Characters, Mods, RSDW-L, Sync, Helpy, and Settings each use a packaged image icon rather than a temporary text glyph.
 - The titlebar and navigation rail remain mounted while Appys and background status refreshes update the main workspace, so the icons and collapsed state do not disappear or repaint between routes.
 

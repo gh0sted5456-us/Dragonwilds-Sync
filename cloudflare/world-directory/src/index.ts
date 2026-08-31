@@ -557,6 +557,7 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
   const lastSeen = Number(row.last_seen || 0);
   const age = Math.max(0, Math.floor(Date.now() / 1000) - lastSeen);
   const isOffline = !lastSeen || age > offlineAfterSeconds;
+  const gameActive = !isOffline && ["online", "starting", "maintenance", "stopping"].includes(String(row.status || "online"));
 
   const metadata = parseJsonObject(row.metadata_json);
   return {
@@ -605,6 +606,9 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     tls_cert_fingerprint: metadata.tls_cert_fingerprint || "",
     sync_protocol: "dragonwilds-world-sync",
     sync_ready: true,
+    sync_broadcasting: !isOffline,
+    game_active: gameActive,
+    broadcast_state: isOffline ? "offline" : gameActive ? "sync-and-game" : "sync-only",
     last_seen: lastSeen,
     heartbeat_age_seconds: age,
     source_name: "Dragonwilds Sync",

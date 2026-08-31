@@ -4,7 +4,6 @@
   const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync/servers.html';
   const FALLBACK_URL = 'assets/public-worlds-fallback.json';
   const PAGE_SIZE = 10;
-  const SYNC_FORGET_MS = 6 * 60 * 60 * 1000;
   const grid = document.querySelector('#world-grid');
   const pagination = document.querySelector('#world-pagination');
   if (!grid) return;
@@ -19,8 +18,11 @@
   if (baseNormalizeWorld) {
     normalizeWorld = function publicDirectoryNormalizeWorld(raw) {
       const world = baseNormalizeWorld(raw);
-      world.isSyncWorld = Boolean(raw?.is_sync_world || raw?.directory_source === 'dragonwilds-sync');
+      world.isSyncWorld = Boolean(raw?.is_sync_world || raw?.directory_source === 'dragonwilds-sync' || !String(world.worldId || '').toLowerCase().startsWith('public-'));
       world.directoryCategory = String(raw?.directory_category || '');
+      world.syncBroadcasting = raw?.sync_broadcasting == null ? isSync(world) : Boolean(raw.sync_broadcasting);
+      world.gameActive = raw?.game_active == null ? world.status === 'active' : Boolean(raw.game_active);
+      world.broadcastState = String(raw?.broadcast_state || (world.gameActive ? 'sync-and-game' : 'sync-only'));
       return world;
     };
   }
@@ -35,12 +37,6 @@
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) return 0;
     return number > 1e12 ? number : number * 1000;
-  }
-
-  function isForgottenSync(world) {
-    if (!isSync(world)) return false;
-    const seen = timestampMs(world?.lastSeen);
-    return !seen || Date.now() - seen > SYNC_FORGET_MS;
   }
 
   function syncFirstCompare(a, b) {
@@ -62,14 +58,12 @@
   function filteredWorlds() {
     const query = (document.querySelector('#world-search')?.value || '').trim().toLowerCase();
     return allWorlds.filter((world) => {
-      if (isForgottenSync(world)) return false;
-      const online = typeof isOnline === 'function' && isOnline(world);
+      if (!isSync(world) || !world.syncBroadcasting) return false;
       const matchesFilter = activeFilter === 'all'
-        || (activeFilter === 'sync' && isSync(world))
-        || (activeFilter === 'online' && online)
+        || (activeFilter === 'game-active' && world.gameActive)
+        || (activeFilter === 'sync-only' && !world.gameActive)
         || (activeFilter === 'modded' && typeof isModded === 'function' && isModded(world))
-        || (activeFilter === 'current' && typeof buildState === 'function' && buildState(world) === 'current')
-        || (activeFilter === 'offline-sync' && isSync(world) && !online);
+        || (activeFilter === 'current' && typeof buildState === 'function' && buildState(world) === 'current');
       if (!matchesFilter) return false;
       if (!query) return true;
       const platforms = typeof worldPlatformScores === 'function' ? worldPlatformScores(world) : [];
@@ -200,7 +194,7 @@
     try {
       await navigator.clipboard.writeText(PAGE_LINK);
       copyButton.textContent = 'Copied ✓';
-      if (copyStatus) copyStatus.textContent = 'Paste this webpage link into Dragonwilds Sync → Public Server List.';
+      if (copyStatus) copyStatus.textContent = 'Paste this webpage link into Dragonwilds Sync → Sync Public World Directory.';
       setTimeout(() => { copyButton.textContent = 'Copy App Link'; }, 1800);
     } catch (_) {
       if (copyStatus) copyStatus.textContent = PAGE_LINK;
@@ -227,7 +221,7 @@
 
         const deduped = new Map();
         source.map(normalizeWorld).forEach((world) => deduped.set(world.worldId, world));
-        const next = [...deduped.values()].filter((world) => !isForgottenSync(world)).sort(syncFirstCompare);
+        const next = [...deduped.values()].filter((world) => isSync(world) && world.syncBroadcasting).sort(syncFirstCompare);
         if (!next.length) return;
 
         allWorlds = next;

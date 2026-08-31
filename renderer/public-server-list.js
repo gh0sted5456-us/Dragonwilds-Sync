@@ -1,6 +1,6 @@
-/* Official Public Server List workspace for Dragonwilds Sync desktop.
-   Discovery-only: this consumes the same merged Cloudflare response as the
-   website and never imports admin credentials, World passwords, or authority. */
+/* Sync Public World Directory workspace for Dragonwilds Sync desktop.
+   Discovery-only: this consumes authenticated launcher heartbeats and never
+   imports admin credentials, World passwords, or authority. */
 (() => {
   const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/servers.html';
   const API_URL = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds';
@@ -31,14 +31,14 @@
 
   function resolveFeed(raw) {
     const value = text(raw);
-    if (!value) throw new Error('The official Public Server Directory link is unavailable.');
+    if (!value) throw new Error('The Sync Public World Directory link is unavailable.');
     let url;
-    try { url = new URL(value); } catch (_) { throw new Error('The Public Server List link is not a valid URL.'); }
-    if (url.protocol !== 'https:') throw new Error('Public Server List links must use HTTPS.');
+    try { url = new URL(value); } catch (_) { throw new Error('The Sync Public World Directory link is not a valid URL.'); }
+    if (url.protocol !== 'https:') throw new Error('Sync Public World Directory links must use HTTPS.');
 
     const host = url.hostname.toLowerCase();
     const path = url.pathname.toLowerCase().replace(/\/$/, '');
-    if (host === 'gh0sted5456-us.github.io' && path.startsWith('/dragonwilds-sync-web')) return API_URL;
+    if (host === 'gh0sted5456-us.github.io' && path.startsWith('/dragonwilds-sync')) return API_URL;
     if (host === 'dragonwilds-sync-directory.dragonwilds.workers.dev') {
       if (['/api/v1/worlds', '/worlds', '/api/worlds', '/manifest'].includes(path)) return url.toString();
       url.pathname = '/api/v1/worlds'; url.search = ''; url.hash = '';
@@ -55,8 +55,18 @@
   function normalizeWorld(raw) {
     const players = raw && typeof raw.players === 'object' && raw.players ? raw.players : {};
     const connect = raw && typeof raw.public_connect === 'object' && raw.public_connect ? raw.public_connect : null;
+    const id = text(raw?.world_id ?? raw?.source_world_id, 'sync-world');
+    const isSync = raw?.is_sync_world === true
+      || text(raw?.directory_source).toLowerCase() === 'dragonwilds-sync'
+      || !id.toLowerCase().startsWith('public-');
+    const syncBroadcasting = raw?.sync_broadcasting == null
+      ? isSync && text(raw?.status, 'offline').toLowerCase() !== 'offline'
+      : Boolean(raw.sync_broadcasting);
+    const gameActive = raw?.game_active == null
+      ? syncBroadcasting && ['online', 'starting', 'maintenance', 'stopping'].includes(text(raw?.status, 'offline').toLowerCase())
+      : Boolean(raw.game_active);
     return {
-      id: text(raw?.world_id ?? raw?.source_world_id, 'public-world'),
+      id,
       name: text(raw?.world_name ?? raw?.name, 'Unnamed World'),
       description: text(raw?.description, raw?.is_sync_world ? 'Dragonwilds Sync World' : 'Public Dragonwilds server'),
       region: text(raw?.country_name ?? raw?.region ?? raw?.country_code, 'Unknown'),
@@ -65,8 +75,11 @@
       current: Math.max(0, number(players.current ?? raw?.players_current, 0)),
       max: Math.max(0, number(players.max ?? raw?.players_max, 0)),
       tags: list(raw?.tags, 10), badges: list(raw?.badges, 8),
-      source: text(raw?.source_name, raw?.is_sync_world ? 'Dragonwilds Sync' : 'Public source'),
-      isSync: Boolean(raw?.is_sync_world),
+      source: text(raw?.source_name, isSync ? 'Dragonwilds Sync' : 'Unverified source'),
+      isSync,
+      syncBroadcasting,
+      gameActive,
+      broadcastState: text(raw?.broadcast_state, gameActive ? 'sync-and-game' : 'sync-only'),
       host: text(connect?.host ?? raw?.public_connect_host, ''),
       port: number(connect?.port ?? raw?.public_connect_port, 0),
       lastSeen: number(raw?.last_seen, 0),
@@ -106,9 +119,10 @@
 
     summary.replaceChildren();
     const counts = [
-      ['Loaded', rows.length], ['Online', rows.filter(isOnline).length],
-      ['Sync Worlds', rows.filter((world) => world.isSync).length],
-      ['Public Servers', rows.filter((world) => !world.isSync).length], ['Showing', filtered.length],
+      ['Sync Broadcasts', rows.length],
+      ['Dragonwilds Active', rows.filter((world) => world.gameActive).length],
+      ['Sync Only', rows.filter((world) => !world.gameActive).length],
+      ['Showing', filtered.length],
     ];
     counts.forEach(([label, value]) => {
       const item = make('span');
@@ -121,7 +135,7 @@
     root.querySelectorAll('[data-dws-public-view]').forEach((button) => button.classList.toggle('active', button.dataset.dwsPublicView === view));
     results.replaceChildren();
     if (!visible.length) {
-      results.appendChild(make('div', 'dws-public-empty', rows.length ? 'No public servers match this search.' : 'No public servers have been loaded yet.'));
+      results.appendChild(make('div', 'dws-public-empty', rows.length ? 'No Sync Worlds match this search.' : 'No Dragonwilds Sync Worlds are broadcasting right now.'));
       renderPagination(0);
       return;
     }
@@ -133,12 +147,12 @@
       const head = make('div', 'dws-public-server-card-head');
       const title = make('div');
       title.append(make('h3', '', world.name), make('small', '', `${world.source} · ${world.id}`));
-      head.append(title, make('span', `dws-public-type ${world.isSync ? 'sync' : 'public'}`, world.isSync ? 'SYNC WORLD' : 'PUBLIC SERVER'));
+      head.append(title, make('span', `dws-public-type sync ${world.gameActive ? 'game-active' : 'sync-only'}`, world.gameActive ? 'SYNC + GAME ACTIVE' : 'SYNC ONLY'));
       identity.append(head, make('div', 'dws-public-server-description', world.description));
 
       const metrics = make('div', 'dws-public-server-metrics');
       metrics.append(
-        make('span', '', isOnline(world) ? 'ONLINE' : world.status.toUpperCase()),
+        make('span', '', world.gameActive ? 'DRAGONWILDS ACTIVE' : 'SYNC BROADCAST'),
         make('span', '', world.region),
         make('span', '', `${world.current} / ${world.max || '—'} players`),
         make('span', '', world.version),
@@ -151,7 +165,7 @@
       detail.appendChild(make('div', 'dws-public-server-route', world.host
         ? `Public route: ${world.host}${world.port ? `:${world.port}` : ''}`
         : world.isSync ? 'Sync metadata published; public route not exposed.' : 'Public source does not expose a direct route.'));
-      if (world.isSync) {
+      if (world.isSync && world.syncBroadcasting) {
         const connect = make('button', 'btn primary', 'Connect');
         connect.type = 'button';
         connect.addEventListener('click', () => {
@@ -217,16 +231,18 @@
       const payload = await response.json();
       const source = Array.isArray(payload?.worlds) ? payload.worlds : Array.isArray(payload) ? payload : [];
       const unique = new Map();
-      source.map(normalizeWorld).forEach((world) => unique.set(world.id, world));
+      source.map(normalizeWorld)
+        .filter((world) => world.isSync && world.syncBroadcasting)
+        .forEach((world) => unique.set(world.id, world));
       rows = [...unique.values()];
       currentPage = 1;
       lastLoadedAt = Date.now();
-      setStatus(`${rows.length} public server${rows.length === 1 ? '' : 's'} loaded from ${directorySource}`, 'ok');
+      setStatus(`${rows.length} Sync World${rows.length === 1 ? '' : 's'} broadcasting from ${directorySource}`, 'ok');
       const endpointNode = root.querySelector('#dws-public-server-endpoint');
       if (endpointNode) endpointNode.textContent = endpoint;
       renderRows();
     } catch (error) {
-      setStatus(`Public Server List unavailable: ${error.message || error}`, 'error');
+      setStatus(`Sync Public World Directory unavailable: ${error.message || error}`, 'error');
       renderRows();
     }
   }
@@ -240,17 +256,17 @@
     const root = make('section', 'dws-public-server-panel');
     root.innerHTML = `
       <div class="dws-public-server-head">
-        <div><div class="eyebrow">Official signed directory</div><h2>Public Server List</h2><p>This read-only list uses the same deduplicated Cloudflare directory as the website. Connect hands a World identifier to Dragonwilds Sync's verified login and synchronization dialog; passwords are never carried in the link.</p></div>
+        <div><div class="eyebrow">Authenticated launcher heartbeats</div><h2>Sync Public World Directory</h2><p>Only Worlds actively broadcasting through Dragonwilds Sync appear here. Connect hands a World identifier to the verified login and synchronization dialog; passwords are never carried in the link.</p></div>
         <span class="dws-public-server-status" id="dws-public-server-status">Not loaded</span>
       </div>
       <div class="dws-public-server-controls">
-        <button class="btn primary" id="dws-public-server-load" type="button">Refresh Public Servers</button>
-        <label class="dws-public-search-wrap"><small>Search loaded servers</small><input class="field" id="dws-public-server-search" type="search" placeholder="World name, IP address, region, build…" /></label>
-        <div class="dws-public-view-toggle" role="group" aria-label="Public Server List view"><button type="button" data-dws-public-view="cards">▦ Placards</button><button type="button" data-dws-public-view="horizontal">☰ Horizontal</button></div>
+        <button class="btn primary" id="dws-public-server-load" type="button">Refresh Sync Worlds</button>
+        <label class="dws-public-search-wrap"><small>Search broadcasting Worlds</small><input class="field" id="dws-public-server-search" type="search" placeholder="World name, IP address, region, build…" /></label>
+        <div class="dws-public-view-toggle" role="group" aria-label="Sync Public World Directory view"><button type="button" data-dws-public-view="cards">▦ Placards</button><button type="button" data-dws-public-view="horizontal">☰ Horizontal</button></div>
       </div>
       <div class="dws-public-server-summary" id="dws-public-server-summary"></div>
-      <div class="dws-public-server-results" id="dws-public-server-results"><div class="dws-public-empty">Loading the official Public Server List…</div></div>
-      <nav class="dws-public-server-pagination" id="dws-public-server-pagination" aria-label="Public server result pages" hidden></nav>
+      <div class="dws-public-server-results" id="dws-public-server-results"><div class="dws-public-empty">Loading the Sync Public World Directory…</div></div>
+      <nav class="dws-public-server-pagination" id="dws-public-server-pagination" aria-label="Sync World result pages" hidden></nav>
       <div class="muted-small" style="margin-top:9px">Resolved read-only endpoint: <span id="dws-public-server-endpoint">—</span> · refreshes every 30 seconds while this tab is open.</div>`;
 
     root.querySelector('#dws-public-server-load')?.addEventListener('click', () => loadDirectory({ force: true }));

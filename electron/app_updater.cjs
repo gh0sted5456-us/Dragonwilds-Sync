@@ -1,12 +1,11 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
 const https = require('https');
 const crypto = require('crypto');
-const { spawn } = require('child_process');
 
 const USER_AGENT = 'DragonwildsSync/1.0';
 const MAX_REDIRECTS = 6;
+const DOWNLOAD_HOSTS = new Set(['github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com', 'github-releases.githubusercontent.com']);
 
 function normalizeRepository(input) {
   const raw = String(input || '').trim();
@@ -44,6 +43,13 @@ function requestJson(url, headers = {}, redirects = 0) {
   });
 }
 
+function assertAllowedDownloadUrl(value) {
+  let url;
+  try { url = new URL(String(value || '')); } catch (_) { throw new Error('Update download URL is invalid.'); }
+  if (url.protocol !== 'https:' || !DOWNLOAD_HOSTS.has(url.hostname.toLowerCase())) throw new Error('Update download was redirected outside the trusted GitHub asset hosts.');
+  return url;
+}
+
 function semverParts(value) {
   const m = String(value || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)(?:\.(\d+))?(?:[-+].*)?$/);
   return m ? [Number(m[1]), Number(m[2]), Number(m[3] || 0)] : null;
@@ -64,7 +70,7 @@ function chooseAsset(release, platform = process.platform) {
   if (platform === 'linux') return assets.find((a) => /\.AppImage$/i.test(String(a.name || ''))) || null;
   const exes = assets.filter((a) => /\.exe$/i.test(String(a.name || '')));
   return exes.find((a) => /portable/i.test(a.name))
-    || exes.find((a) => !/(setup|installer)/i.test(a.name))
+    || exes.find((a) => !/(setup|installer|headless)/i.test(a.name))
     || null;
 }
 function normalizeDigest(asset) {
@@ -101,6 +107,7 @@ async function checkForUpdates({ repositoryUrl, currentVersion, mode, etag = '' 
 
 function downloadFile(url, destination, redirects = 0) {
   return new Promise((resolve, reject) => {
+    try { assertAllowedDownloadUrl(url); } catch (error) { reject(error); return; }
     const req = https.get(url, { headers: { 'User-Agent': USER_AGENT, 'Accept': 'application/octet-stream' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < MAX_REDIRECTS) {
         res.resume(); return resolve(downloadFile(new URL(res.headers.location, url).toString(), destination, redirects + 1));
@@ -122,50 +129,71 @@ function sha256File(file) {
   finally { fs.closeSync(fd); }
   return hash.digest('hex');
 }
-function psQuote(value) { return `'${String(value).replace(/'/g, "''")}'`; }
+function safeAssetName(value) {
+  const name = path.basename(String(value || '')).replace(/[^A-Za-z0-9_. ()-]/g, '_').trim();
+  if (!name || !/\.(?:exe|AppImage)$/i.test(name)) throw new Error('The release asset does not have a supported portable filename.');
+  return name;
+}
+
+function uniqueDownloadPath(directory, name, expectedDigest = '') {
+  const parsed = path.parse(name);
+  for (let index = 0; index < 1000; index += 1) {
+    const candidate = path.join(directory, index ? `${parsed.name} (${index})${parsed.ext}` : name);
+    if (!fs.existsSync(candidate)) return { path: candidate, alreadyDownloaded: false };
+    if (expectedDigest) {
+      try {
+        if (sha256File(candidate) === expectedDigest) return { path: candidate, alreadyDownloaded: true };
+      } catch (_) {}
+    }
+  }
+  throw new Error('Downloads already contains too many files with this update name. Move or remove the older copies and try again.');
+}
 
 async function stageAndApply({ app, release, repositoryUrl }) {
   if (!app.isPackaged) throw new Error('Application updating is disabled in development mode.');
-  if (!['win32', 'linux'].includes(process.platform)) throw new Error(`Automatic application updating is not available on ${process.platform}.`);
+  if (!['win32', 'linux'].includes(process.platform)) throw new Error(`Portable application downloads are not available on ${process.platform}.`);
+  const repository = normalizeRepository(repositoryUrl);
   const mode = detectMode(app);
   const asset = release?.asset;
   const expected = process.platform === 'linux' ? 'Linux AppImage' : 'Portable Windows EXE';
   if (!asset?.url || !asset?.name) throw new Error(`The GitHub release does not contain a ${expected} asset.`);
+  const assetUrl = assertAllowedDownloadUrl(asset.url);
+  const expectedPrefix = `/${repository.owner}/${repository.repo}/releases/download/`.toLowerCase();
+  if (assetUrl.hostname.toLowerCase() !== 'github.com' || !assetUrl.pathname.toLowerCase().startsWith(expectedPrefix)) throw new Error('Update blocked: the selected asset does not belong to the configured Dragonwilds Sync release repository.');
   if (!asset.digest) throw new Error('Update blocked: the selected GitHub release asset does not publish a SHA-256 digest.');
-  const updateDir = path.join(app.getPath('userData'), 'updates'); fs.mkdirSync(updateDir, { recursive: true });
-  const staged = path.join(updateDir, path.basename(asset.name).replace(/[^A-Za-z0-9_. -]/g, '_'));
-  await downloadFile(asset.url, staged);
-  const actual = sha256File(staged);
-  if (actual !== String(asset.digest).toLowerCase()) { try { fs.unlinkSync(staged); } catch (_) {} throw new Error('Update blocked: downloaded asset SHA-256 does not match GitHub release metadata.'); }
-
+  const expectedDigest = String(asset.digest).toLowerCase();
+  const downloads = app.getPath('downloads');
+  fs.mkdirSync(downloads, { recursive: true });
+  const selected = uniqueDownloadPath(downloads, safeAssetName(asset.name), expectedDigest);
   const currentExe = process.platform === 'linux' ? String(process.env.APPIMAGE || process.execPath) : String(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath);
   if (!currentExe || !fs.existsSync(currentExe)) throw new Error(`The running ${expected} path could not be resolved.`);
-  const marker = path.join(app.getPath('userData'), 'update-result.json');
-  const pendingMarker = path.join(app.getPath('userData'), 'update-pending.json');
-  const failureMarker = path.join(app.getPath('userData'), 'update-failure.txt');
-  for (const stale of [marker, failureMarker]) { try { fs.unlinkSync(stale); } catch (_) {} }
-  fs.writeFileSync(pendingMarker, JSON.stringify({
-    ok: true, version: release.latestVersion, name: release.name, notes: release.notes,
-    releaseUrl: release.releaseUrl, repository: repositoryUrl, stagedAtUtc: new Date().toISOString(), mode,
-    assetName: asset.name, sha256: actual,
-  }, null, 2));
-  let child;
-  if (process.platform === 'linux') {
-    const script = path.join(os.tmpdir(), `DragonwildsSync_Update_${Date.now()}.sh`);
-    const shQuote = (value) => `'${String(value).replace(/'/g, `'"'"'`)}'`;
-    const body = `#!/bin/sh\nset -eu\npid=${process.pid}\nsrc=${shQuote(staged)}\ndst=${shQuote(currentExe)}\npending=${shQuote(pendingMarker)}\nresult=${shQuote(marker)}\nfailure=${shQuote(failureMarker)}\nexpected=${shQuote(actual)}\nbackup="$dst.previous"\nnext="$dst.update-new"\nwhile kill -0 "$pid" 2>/dev/null; do sleep 0.2; done\nif cp "$src" "$next" && chmod +x "$next" && [ "$(sha256sum "$next" | awk '{print $1}')" = "$expected" ]; then\n  cp "$dst" "$backup" 2>/dev/null || true\n  mv -f "$next" "$dst"\n  if [ "$(sha256sum "$dst" | awk '{print $1}')" = "$expected" ]; then\n    rm -f "$src" "$failure"\n    mv -f "$pending" "$result"\n    nohup "$dst" >/dev/null 2>&1 &\n    rm -f "$0"\n    exit 0\n  fi\nfi\n[ -f "$backup" ] && cp "$backup" "$dst" || true\nprintf '%s' 'The staged AppImage could not replace or verify the running application. The previous executable was retained.' > "$failure"\nrm -f "$pending" "$next"\n[ -x "$dst" ] && nohup "$dst" >/dev/null 2>&1 &\nrm -f "$0"\nexit 1\n`;
-    fs.writeFileSync(script, body, { encoding:'utf8', mode:0o700 });
-    child = spawn('/bin/sh', [script], { detached:true, stdio:'ignore' });
-  } else {
-    const body = `$ErrorActionPreference='Stop'\n$pidToWait=${process.pid}\n$src=${psQuote(staged)}\n$dst=${psQuote(currentExe)}\n$pending=${psQuote(pendingMarker)}\n$result=${psQuote(marker)}\n$failure=${psQuote(failureMarker)}\n$expected=${psQuote(actual)}\n$backup="$dst.previous"\n$next="$dst.update-new"\ntry {\n  try { Wait-Process -Id $pidToWait -ErrorAction SilentlyContinue } catch {}\n  Start-Sleep -Milliseconds 700\n  Copy-Item -LiteralPath $src -Destination $next -Force\n  if ((Get-FileHash -LiteralPath $next -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'The staged replacement failed its SHA-256 verification.' }\n  if (Test-Path -LiteralPath $dst) { Copy-Item -LiteralPath $dst -Destination $backup -Force }\n  $copied=$false\n  foreach($attempt in 1..8){\n    try { Copy-Item -LiteralPath $next -Destination $dst -Force; $copied=$true; break }\n    catch { if($attempt -eq 8){throw}; Start-Sleep -Milliseconds (250*$attempt) }\n  }\n  if(-not $copied -or (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected){ throw 'The installed replacement failed its SHA-256 verification.' }\n  Remove-Item -LiteralPath $src,$next,$failure -Force -ErrorAction SilentlyContinue\n  Move-Item -LiteralPath $pending -Destination $result -Force\n  Start-Process -FilePath $dst -WorkingDirectory (Split-Path -Parent $dst)\n} catch {\n  if(Test-Path -LiteralPath $backup){ Copy-Item -LiteralPath $backup -Destination $dst -Force -ErrorAction SilentlyContinue }\n  [IO.File]::WriteAllText($failure,('Automatic update failed: '+$_.Exception.Message),[Text.UTF8Encoding]::new($false))\n  Remove-Item -LiteralPath $pending,$next -Force -ErrorAction SilentlyContinue\n  if(Test-Path -LiteralPath $dst){ Start-Process -FilePath $dst -WorkingDirectory (Split-Path -Parent $dst) }\n  exit 1\n}\n`;
-    const encoded = Buffer.from(body, 'utf16le').toString('base64');
-    child = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-EncodedCommand', encoded], { detached:true, stdio:'ignore', windowsHide:true });
+  let actual = expectedDigest;
+  if (!selected.alreadyDownloaded) {
+    const temporary = `${selected.path}.download-${process.pid}-${Date.now()}`;
+    try {
+      await downloadFile(asset.url, temporary);
+      actual = sha256File(temporary);
+      if (actual !== expectedDigest) throw new Error('Update blocked: downloaded asset SHA-256 does not match GitHub release metadata.');
+      fs.renameSync(temporary, selected.path);
+      if (process.platform === 'linux') fs.chmodSync(selected.path, 0o755);
+    } catch (error) {
+      try { fs.unlinkSync(temporary); } catch (_) {}
+      throw error;
+    }
   }
-  try { await new Promise((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); }); }
-  catch (error) { try { fs.unlinkSync(pendingMarker); } catch (_) {} throw error; }
-  child.unref();
-  setTimeout(() => app.quit(), 750);
-  return { ok: true, mode, staged, targetVersion: release.latestVersion };
+  return {
+    ok: true,
+    mode,
+    manualInstall: true,
+    downloaded: selected.path,
+    alreadyDownloaded: selected.alreadyDownloaded,
+    currentExecutable: currentExe,
+    targetVersion: release.latestVersion,
+    sha256: actual,
+    instructions: process.platform === 'linux'
+      ? 'Close Dragonwilds Sync, replace the current AppImage with this verified download, preserve executable permission, then launch it.'
+      : 'Close Dragonwilds Sync, replace the current portable EXE with this verified download, then launch the replacement.',
+  };
 }
 
 function readAppliedUpdate(app) {
@@ -189,4 +217,4 @@ function dismissAppliedUpdate(app) {
   return removed;
 }
 
-module.exports = { normalizeRepository, checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate };
+module.exports = { normalizeRepository, checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate, isNewer, chooseAsset, uniqueDownloadPath, assertAllowedDownloadUrl };

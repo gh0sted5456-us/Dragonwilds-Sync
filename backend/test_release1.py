@@ -43,16 +43,17 @@ def main():
     assert "sha256" in updater.lower()
     assert "github.com" in updater
     assert "Update blocked" in updater
-    assert "Wait-Process" in updater
-    assert "update-pending.json" in updater and "update-failure.txt" in updater
-    assert "$dst.update-new" in updater and "Get-FileHash -LiteralPath $dst" in updater
-    assert 'sha256sum "$dst"' in updater
+    assert "app.getPath('downloads')" in updater
+    assert "manualInstall: true" in updater
+    assert "alreadyDownloaded" in updater
+    assert "app.quit()" not in updater
+    assert "spawn(" not in updater
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["version"].startswith("3.")
     assert package["build"]["win"]["target"] == ["portable"]
     assert "nsis" not in package["build"]
-    assert package["build"]["portable"]["artifactName"].startswith("${productName}-Portable-")
+    assert package["build"]["portable"]["artifactName"] == "Dragonwilds Sync.${ext}"
 
     world_sharing = (ROOT / "backend/world_sharing.py").read_text(encoding="utf-8")
     assert 'headers["Authorization"] = f"Bearer {token}"' in world_sharing

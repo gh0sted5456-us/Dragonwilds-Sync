@@ -30,7 +30,7 @@ def main():
     assert 'if ($rc -ne 0)' in text
     assert 'Testing packaged service JSON-RPC stdio' in text
     assert 'Testing packaged headless CLI output and exit code' in text
-    assert 'Dragonwilds Sync Headless-$packageVersion.exe' in text
+    assert 'Dragonwilds Sync Headless.exe' in text
     assert '$probeInput' in text and '$probeOutput' in text
     assert 'Testing packaged Ed25519 generation' in text
     assert 'application.cryptography.status' in text and 'invalid_signature_rejected' in text
@@ -126,7 +126,7 @@ def main():
     assert '"--runtime-worker"' in worker_supervisor, "worker spawn must use the same packaged application worker mode"
     assert "DWSYNC_DISABLE_RUNTIME_WORKERS" not in worker_supervisor, "rollback policy belongs above WorkerSupervisor"
 
-    assert package["version"] == "3.5.0"
+    assert re.fullmatch(r"3\.\d+\.\d+", package["version"])
     assert package["devDependencies"]["luaparse"] == "0.3.1"
     assert "scripts/check_ue4ss_lua.cjs" in package["scripts"]["check:renderer"]
     assert package["devDependencies"]["electron"] != "latest"
@@ -156,7 +156,7 @@ def main():
     assert "renderer/release-meta.js" in package["scripts"]["check:renderer"]
     assert package["build"]["win"]["target"] == ["portable"]
     assert "nsis" not in package["build"]
-    assert package["build"]["portable"]["artifactName"] == "${productName}-Portable-${version}.${ext}"
+    assert package["build"]["portable"]["artifactName"] == "Dragonwilds Sync.${ext}"
     extra = package["build"].get("extraResources", [])
     assert any(x.get("from") == "resources" for x in extra)
     assert "RuneSchema-core-latest.zip" in text
@@ -187,7 +187,7 @@ def main():
     # the production baseline and keeps all of the assertions above.
     assert package["scripts"]["build:linux"] == "bash scripts/build_linux.sh"
     assert package["build"]["linux"]["target"] == ["AppImage"]
-    assert package["build"]["linux"]["artifactName"] == "${productName}-Ubuntu-${version}.${ext}"
+    assert package["build"]["linux"]["artifactName"] == "Dragonwilds Sync.${ext}"
     assert package["build"]["linux"]["extraResources"][0]["from"] == "dist-service/DragonwildsSync.Service"
     linux_script = ROOT / "scripts" / "build_linux.sh"
     assert linux_script.is_file()
@@ -206,7 +206,7 @@ def main():
     linux_package_test = (ROOT / "scripts" / "test_packaged_linux.sh").read_text(encoding="utf-8")
     assert "archive preserves executable permissions" in linux_package_test
     release_workflow = (ROOT / ".github" / "workflows" / "release-candidate.yml").read_text(encoding="utf-8")
-    assert "Dragonwilds-Sync-Headless-Ubuntu-*.tar.gz" in release_workflow
+    assert "Dragonwilds Sync Headless.tar.gz" in release_workflow
     assert "Linux headless archive did not preserve executable permissions" in release_workflow
     assert "process.platform === 'win32' ? 'DragonwildsSync.Service.exe' : 'DragonwildsSync.Service'" in electron_main
     assert (ROOT / "docs" / "CAPABILITIES.md").is_file()

@@ -17,15 +17,14 @@ Built-in RuneSchema Experimental baseline:
   main.dll SHA-256 6820e79e282a757ec5587fa39f1fd98a87afcfa57c525ff6498f81544ffd9142
   The launcher exposes its identityOverrides, spawnSafety, and tooling.schemaTypes menus.
 
-Built-in direct-connect baseline:
-  resources/DragonLink-Connect-baseline.zip
-  Canonical runtime folder: UE4SS/Mods/DragonLink-Connect
-  DragonConnectHelper and PersistentDirectConnectIP are migration aliases only.
-  Runtime version: 0.6.0
-  Servers opt in per World. The helper is dormant outside Dragonwilds' Direct
-  Connect panel and writes IP, password, and World Type once per panel visit.
-  It has no timer poll and no live text-change hook. The launcher always shows
-  the same credentials for copy/manual entry, including when automation is off.
+Built-in DragonLink native suite:
+  resources/NativeRuntimeMods/DragonLink
+  Canonical runtime folder: UE4SS/Mods/DragonLink
+  One host DLL loads separate Items, Chat, Connect, and Proximity Loot feature DLLs.
+  Servers opt in per World. Connect reacts to the Direct Connect panel and
+  writes IP, password, and World Type once; it does not continuously poll.
+  Proximity Loot is server-only. Its enter/exit distance, magnet range, state
+  delay, and refresh interval hot-reload from the shared DragonLink.ini.
 
 Runtime choices remain explicit: Baseline is the offline recovery payload,
 Stable resolves the normal upstream release channel, and Experimental is the

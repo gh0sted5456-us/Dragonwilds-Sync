@@ -9,6 +9,7 @@ backend = Path(SPECPATH).resolve()
 renderer_assets = backend.parent / 'renderer' / 'assets'
 crypto_hiddenimports = collect_submodules('cryptography')
 crypto_binaries = collect_dynamic_libs('cryptography')
+qr_hiddenimports = ['qrcode', 'qrcode.image.pil']
 
 # WebHost serves these presentation assets directly from the one-file service.
 # Preserve their renderer-relative layout so source and packaged builds use the
@@ -17,6 +18,7 @@ webhost_assets = [
     (str(renderer_assets / 'application-icon.webp'), '.'),
     (str(renderer_assets / 'application-icon-web.webp'), '.'),
     (str(renderer_assets / 'platforms'), 'renderer/assets/platforms'),
+    (str(renderer_assets / 'providers'), 'renderer/assets/providers'),
     (str(renderer_assets / 'distros'), 'renderer/assets/distros'),
     (str(renderer_assets / 'placards'), 'renderer/assets/placards'),
 ]
@@ -27,10 +29,12 @@ a = Analysis(
     binaries=crypto_binaries,
     datas=[
         *webhost_assets,
+        (str(backend.parent / 'resources' / 'hosting-providers.json'), '.'),
         (str(backend / 'firewall_rules.ps1'), '.'),
     ],
     hiddenimports=[
         *crypto_hiddenimports,
+        *qr_hiddenimports,
         'web_release_polish',
         'editor_runtime_stabilization',
         'shell_persistence_stabilization',

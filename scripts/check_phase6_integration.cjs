@@ -48,16 +48,17 @@ requireText(phase6, 'RSDWArchive/RSDWDevKit', 'Toolkit/DevKit authoritative sour
 requireText(phase6, 'RSDWArchive/RSDWTools', 'RSDWTools authoritative data source');
 requireText(routing, 'install_phase6_integrations', 'production V2 entrypoint installs Phase 6 adapters');
 
-requireText(direct, 'LOGICAL_NAME = "DragonLink-Connect"', 'logical DragonLink-Connect identity');
-requireText(direct, 'MOD_NAME = "DragonLink-Connect"', 'canonical physical DragonLink-Connect identity');
-requireText(direct, 'MARKER_NAME', 'managed DragonConnect bundle marker');
-requireText(direct, 'def status(', 'DragonConnect update/repair status');
-requireText(direct, 'durable credentials stay in the encrypted launcher secret vault', 'runtime-only DragonConnect config note');
+requireText(direct, 'LOGICAL_NAME = "DragonLink"', 'logical DragonLink identity');
+requireText(direct, 'MOD_NAME = "DragonLink"', 'canonical physical DragonLink identity');
+requireText(direct, 'MARKER_NAME', 'managed DragonLink bundle marker');
+requireText(direct, 'DragonLink-StacksWeights.dll', 'native Stacks and Weights module');
+requireText(direct, 'dlls/DragonLink-Connect.dll', 'native Connect module');
+requireText(direct, 'def status(', 'DragonLink update/repair status');
 
 if (registry.sources.rsdwtools.runtime_component !== false) throw new Error('RSDWTools must remain data-only in the source registry.');
 if (registry.sources['rsdw-toolkit'].repository !== 'RSDWArchive/RSDWDevKit') throw new Error('RSDW Toolkit must use RSDWArchive/RSDWDevKit.');
 if (!['client','server','host'].every((role)=>registry.sources.dragonconnect.runtime_roles.includes(role))) throw new Error('DragonConnect source registry must cover host and client baselines.');
-if (!['DragonConnectHelper','PersistentDirectConnectIP'].every((name)=>registry.sources.dragonconnect.legacy_physical_names.includes(name))) throw new Error('DragonLink-Connect legacy physical identities were lost.');
+if (registry.sources.dragonconnect.bundled_fallback !== 'resources/NativeRuntimeMods/DragonLink') throw new Error('DragonLink native suite fallback is incorrect.');
 requireText(upstream, "'rsdw-toolkit'", 'offline/source UI knows Toolkit separately');
 requireText(upstream, 'Repair DragonLink-Connect', 'central dependency panel DragonLink-Connect repair');
 requireText(upstream, 'RSDWTools ≠ RSDW Toolkit', 'explicit UI taxonomy distinction');

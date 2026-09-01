@@ -58,9 +58,8 @@ CORE_COMPONENTS = {
         "aliases": ["runeschema"],
     },
     "dragonconnect": {
-        "name": "DragonLink-Connect",
-        "legacy_name": "DragonConnectHelper",
-        "type": "Direct Connect Runtime Component",
+        "name": "DragonLink",
+        "type": "Modular Application Runtime Bridge",
         "ui_group": "core_components",
         "technology": "ue4ss",
         "provider": "ue4ss_mod",
@@ -75,9 +74,10 @@ CORE_COMPONENTS = {
         "parity_payload": False,
         "profile_membership": "derived",
         "generated_mods_txt_roles": ["server", "host", "client"],
-        "physical_name": "DragonLink-Connect",
-        "physical_relationship": "UE4SS/Mods/DragonLink-Connect",
-        "aliases": ["dragonlink-connect", "dragonlink connect", "dragonconnecthelper", "dragon connect helper", "dragonconnect", "persistentdirectconnectip", "persistent direct connect ip"],
+        "physical_name": "DragonLink",
+        "physical_relationship": "UE4SS/Mods/DragonLink",
+        "capabilities": ["item_rules", "direct_connect", "server_chat"],
+        "aliases": ["dragonlink", "dragon link"],
     },
 }
 
@@ -258,6 +258,7 @@ def server_core_components(update_status: dict | None) -> list[dict]:
             "last_error": str(source.get("last_error") or ""), "remote_update_supported": bool(meta.get("remote_update_supported")),
             "update_action": str(source.get("action") or "") if meta.get("remote_update_supported") else "",
             "version_source_available": bool(source), "source_repository": str(meta.get("source_repository") or ""),
+            "capabilities": list(meta.get("capabilities") or []),
         })
     return result
 

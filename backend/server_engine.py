@@ -11,10 +11,10 @@ import sys
 import threading
 import time
 import zipfile
-from datetime import datetime
 from pathlib import Path
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
+from backup_naming import profile_naming, render_backup_name
 from process_utils import check_output_hidden, popen_game_server, popen_hidden, run_hidden
 from computer_profiles import apply_process_priority, resolve_computer_profile, begin_power_session, restore_power_session
 from health_model import apply_detected_hardware_references
@@ -44,7 +44,7 @@ DEDICATED_CONFIG_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "Config" / "W
 DEDICATED_CONFIG_FILE = DEDICATED_CONFIG_DIR / "DedicatedServer.ini"
 DEDICATED_SAVEGAMES_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames"
 PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
-SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", *UE4SS_BAKED_IN_DEFAULT_MODS}
+SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", "dragonlink", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
 OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
 EXPERIMENTAL_RUNESCHEMA_REPOSITORY = "https://github.com/gh0sted5456-us/RuneSchema"
@@ -200,14 +200,18 @@ def _live_savegames_dir(exe_path: str) -> Path | None:
 
 def _write_backup_zip(profile_id: str, live_dir: Path, retention_count: int = 10) -> Path:
     backup_dir = _profile_backups_dir(profile_id); backup_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S"); target = backup_dir / f"backup-{stamp}.zip"
+    profile = load_server_profile(profile_id) or {}
+    naming = profile_naming(profile)
+    target = backup_dir / render_backup_name(
+        naming["world_template"], suffix=".zip", world=str(profile.get("name") or profile_id),
+        kind="backup", profile=profile_id)
     # Ensure same-second snapshots don't overwrite.
     n = 1
     while target.exists(): target = backup_dir / f"backup-{stamp}-{n}.zip"; n += 1
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in live_dir.rglob("*"):
             if file.is_file(): zf.write(file, file.relative_to(live_dir).as_posix())
-    backups = sorted(backup_dir.glob("backup-*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
+    backups = sorted(backup_dir.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True)
     keep = max(1, min(50, int(retention_count or 10)))
     for old in backups[keep:]: old.unlink(missing_ok=True)
     return target
@@ -801,10 +805,63 @@ def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root:
     the app-owned repair libraries so a later self-heal cannot resurrect an
     older machine-wide flavor.
     """
+    components = profile.get("runtime_components") if isinstance(profile.get("runtime_components"), dict) else {}
+    ue4ss_enabled = bool(components.get("ue4ss", True))
+    runeschema_enabled = bool(components.get("runeschema", True))
+
+    layout = resolve_server_layout(game_root)
+    runtime_paths = profile.get("runtime_paths") if isinstance(profile.get("runtime_paths"), dict) else {}
+    server_paths = runtime_paths.get("server") if isinstance(runtime_paths.get("server"), dict) else {}
+
+    def owned_root(value: object, fallback: Path, label: str) -> Path:
+        text = str(value or "").strip()
+        if not text:
+            return fallback
+        candidate = Path(text).expanduser().resolve(strict=False)
+        game = layout.game_root.resolve(strict=False)
+        if candidate != game and game not in candidate.parents:
+            raise ValueError(f"{label} must stay inside this profile's verified server game directory: {game}")
+        return candidate
+
+    ue4ss_root = owned_root(server_paths.get("ue4ss_root"), layout.win64_dir, "UE4SS root")
+    runeschema_root = owned_root(server_paths.get("runeschema_root"), layout.runeschema_root, "RuneSchema root")
+
+    def set_runtime_marker(path: Path, enabled: bool, *, create_when_enabled: bool = False) -> str:
+        parked = path.with_name(path.name + ".dragonwilds-profile-disabled")
+        if enabled:
+            if parked.is_file() and not path.exists():
+                os.replace(parked, path)
+                return f"restored {path.name}"
+            if create_when_enabled and not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("", encoding="utf-8")
+                return f"enabled {path.name}"
+            return "unchanged"
+        if path.is_file():
+            parked.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(path, parked)
+            return f"parked {path.name}"
+        return "unchanged"
+
     with RUNTIME_MUTATION_LOCK:
-        ue4ss = _apply_profile_ue4ss(profile_id, profile, game_root)
+        activation = {
+            "ue4ss_server_loader": set_runtime_marker(layout.server_loader, ue4ss_enabled),
+            "ue4ss_bootstrap": set_runtime_marker(ue4ss_root / "dwmapi.dll", ue4ss_enabled),
+            "runeschema": set_runtime_marker(
+                runeschema_root / "enabled.txt", runeschema_enabled,
+                create_when_enabled=runeschema_enabled and (runeschema_root / "dlls").is_dir()),
+        }
+        # A standalone RuneSchema root supersedes the historical UE4SS-nested
+        # root. Park the old self-enable marker so only the selected profile
+        # path participates in this server launch.
+        if runeschema_root.resolve(strict=False) != layout.runeschema_root.resolve(strict=False):
+            activation["canonical_runeschema"] = set_runtime_marker(
+                layout.runeschema_enabled_file, False)
+        ue4ss = (_apply_profile_ue4ss(profile_id, profile, game_root) if ue4ss_enabled
+                 else {"ok": True, "changed": False, "enabled": False, "source": "profile-disabled"})
         current = load_server_profile(profile_id) or profile
-        runeschema = _apply_profile_runeschema(profile_id, current, game_root)
+        runeschema = (_apply_profile_runeschema(profile_id, current, game_root) if runeschema_enabled
+                      else {"ok": True, "changed": False, "enabled": False, "source": "profile-disabled"})
         cache_warning = ""
         try:
             capture_authoritative_runtimes(
@@ -814,14 +871,15 @@ def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root:
                 # UE4SS build; RuneSchema is refreshed every time because the
                 # historical stale-flavor cache had no trustworthy identity.
                 refresh_ue4ss=bool(ue4ss.get("changed")),
-                refresh_runeschema=True,
+                refresh_runeschema=True if runeschema_enabled else False,
             )
         except OSError as exc:
             # The live selected runtimes are already verified at this point. A
             # transient cache-write collision must not invalidate that safe live
             # install; the next stopped-server assertion will retry the refresh.
             cache_warning = f"Runtime repair-library refresh deferred: {type(exc).__name__}: {exc}"
-    return {"ue4ss": ue4ss, "runeschema": runeschema, "cache_warning": cache_warning}
+    return {"ue4ss": ue4ss, "runeschema": runeschema, "activation": activation,
+            "cache_warning": cache_warning}
 
 
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
@@ -945,6 +1003,7 @@ def server_install_config() -> dict:
     cfg = application.get("server_install") or {}
     return {
         "install_dir": str(cfg.get("install_dir") or "").strip(),
+        "runtime_game_root": str(cfg.get("runtime_game_root") or "").strip(),
         "server_exe": str(cfg.get("server_exe") or "").strip(),
         "steamcmd_dir": str(cfg.get("steamcmd_dir") or "").strip(),
         "owner_id": str(cfg.get("owner_id") or "").strip(),
@@ -1131,6 +1190,9 @@ def linux_windows_server_command(exe: str, install: dict | None = None) -> tuple
 
 def server_root_for_profile(profile: dict | None = None) -> str:
     global_cfg = server_install_config()
+    runtime_root = str(global_cfg.get("runtime_game_root") or "").strip()
+    if runtime_root:
+        return str(resolve_server_layout(runtime_root).game_root)
     selected = str(global_cfg.get("install_dir") or "").strip()
     if selected:
         return str(resolve_server_layout(selected).game_root)

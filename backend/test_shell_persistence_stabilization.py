@@ -30,7 +30,7 @@ def _profile() -> dict:
                     "classification": "local", "order": 1,
                 },
                 {
-                    "key": "ue4ss_mod::PersistentDirectConnectIP", "name": "PersistentDirectConnectIP", "group": "ue4ss_mod",
+                    "key": "ue4ss_mod::DragonLink", "name": "DragonLink", "group": "ue4ss_mod",
                     "classification": "local", "order": 3,
                 },
                 {

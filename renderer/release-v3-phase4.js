@@ -246,7 +246,7 @@
     return `<div class="v3p4-back-scroll" tabindex="0" aria-label="World community guidelines">
       ${rules?`<section class="v3p4-back-section"><h4>Community Guidelines</h4><p>${esc(rules)}</p></section>`:'<div class="v3p4-empty">No community guidelines have been broadcast for this World.</div>'}
     </div>
-    <div class="v3p4-back-footer">${heartbeatMarkup(id,world)}<button class="btn ghost compact-btn" data-v3p4-toggle="${esc(id)}">← Front</button></div>`;
+    <div class="v3p4-back-footer">${heartbeatMarkup(id,world)}<span class="card-flip-hint" aria-hidden="true">CLICK CARD · FRONT ↻</span></div>`;
   }
 
   function applySide(card, id) {
@@ -254,6 +254,7 @@
     card.dataset.v3p4Side = side;
     card.classList.toggle('v3p4-back-visible', side === 'back');
     card.classList.toggle('flipped', card.classList.contains('app-world-placard') && side === 'back');
+    card.setAttribute('role', 'button');
     card.setAttribute('aria-pressed', String(side === 'back'));
     card.setAttribute('aria-label', `${text(card.querySelector('h2,h3')?.textContent || 'World')} · ${side === 'back' ? 'details' : 'front'}`);
     const status = card.querySelector('[data-v3p4-page-status]');
@@ -271,7 +272,11 @@
         const statusMount=card.querySelector('.placard-sync-status');
         if(statusMount)statusMount.replaceChildren(identity);else card.querySelector('.placard-runtime-status')?.prepend(identity);
       }
-      if(frontBody&&!card.querySelector('.v3p4-ecosystems'))frontBody.insertAdjacentHTML('beforeend',ecosystemMarkup(id,world,true));
+      if(frontBody&&!card.querySelector('.v3p4-ecosystems')){
+        const footer=frontBody.querySelector('.placard-presentation-footer');
+        if(footer)footer.insertAdjacentHTML('beforebegin',ecosystemMarkup(id,world,true));
+        else frontBody.insertAdjacentHTML('beforeend',ecosystemMarkup(id,world,true));
+      }
       decorateEcosystemLabels(card);
       applySide(card,id);requestHeartbeat(id,card.dataset.serverCard==='1'?'dedicated':'local');requestProfileModInventory(id,card.dataset.serverCard==='1'?'server':'private');return;
     }
@@ -279,7 +284,7 @@
     while (card.firstChild) original.appendChild(card.firstChild);
     const identity = document.createElement('div'); identity.className='v3p4-front-live'; identity.innerHTML=`${heartbeatMarkup(id,world)}${platformMarkup(world)}${ecosystemMarkup(id,world,true)}`;
     original.appendChild(identity);
-    const frontControls = document.createElement('div'); frontControls.className='v3p4-page-controls'; frontControls.innerHTML=`<span data-v3p4-page-status>Page 1 / 2</span><button class="btn ghost compact-btn" data-v3p4-toggle="${esc(id)}">Details →</button>`; original.appendChild(frontControls);
+    const frontControls = document.createElement('div'); frontControls.className='v3p4-page-controls'; frontControls.innerHTML='<span data-v3p4-page-status>Page 1 / 2</span><span class="card-flip-hint" aria-hidden="true">CLICK CARD · DETAILS ↻</span>'; original.appendChild(frontControls);
     const back = document.createElement('div'); back.className='v3p4-face v3p4-back'; back.innerHTML=backMarkup(id,world);
     const inner = document.createElement('div'); inner.className='v3p4-inner'; inner.append(original,back); card.appendChild(inner); decorateEcosystemLabels(card);
     applySide(card,id);
@@ -379,6 +384,13 @@
     const closeMods=event.target.closest('[data-v3p4-close-mods]');if(closeMods){event.preventDefault();event.stopPropagation();closeModsPopup(closeMods.dataset.v3p4CloseMods);return;}
     const modBackdrop=event.target.closest('.v3p4-mod-dialog');if(modBackdrop&&event.target===modBackdrop){closeModsPopup(modBackdrop.dataset.v3p4ModDialog);return;}
     const toggleButton=event.target.closest('[data-v3p4-toggle]'); if(toggleButton){event.preventDefault();event.stopPropagation();const card=toggleButton.closest('.v3p4-placard');toggle(card);return;}
+    const surface=event.target.closest('.world-card-inner,.v3p4-inner');
+    const surfaceCard=surface?.closest('.v3p4-placard[data-world-id]');
+    const interactive=event.target.closest('button,a,input,select,textarea,label,[role="button"],.v3p4-back-scroll');
+    if(surfaceCard&&(!interactive||interactive===surfaceCard)){
+      if(String(window.getSelection?.()||'').trim())return;
+      event.preventDefault();event.stopPropagation();toggle(surfaceCard);return;
+    }
     const openMenu=event.target.closest('[data-v3p4-open-menu]'); if(openMenu){event.preventDefault();event.stopPropagation();const row=document.querySelector(`.world-list-row[data-world-id="${CSS.escape(openMenu.dataset.v3p4OpenMenu)}"]`);document.querySelector('.world-context-menu')?.remove();if(row)openRow(row);return;}
     const closeRow=event.target.closest('[data-v3p4-close-row]'); if(closeRow){event.preventDefault();event.stopPropagation();document.querySelector(`[data-v3p4-row-open="${CSS.escape(closeRow.dataset.v3p4CloseRow)}"]`)?.remove();return;}
     const closeWindow=event.target.closest('[data-v3p4-close-window]'); if(closeWindow){const id=closeWindow.dataset.v3p4CloseWindow;windows.get(id)?.remove();windows.delete(id);return;}
@@ -387,6 +399,9 @@
 
   document.addEventListener('keydown',(event)=>{
     if(event.key==='Escape'&&modDialogs.size){[...modDialogs.keys()].forEach(closeModsPopup);return;}
+    if((event.key==='Enter'||event.key===' ')&&event.target.matches('.v3p4-placard[data-world-id]')){
+      event.preventDefault();event.stopPropagation();toggle(event.target);
+    }
   });
 
   document.addEventListener('contextmenu',(event)=>{

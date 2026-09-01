@@ -36,7 +36,7 @@ def test_normalize_preserves_public_art_and_opt_in_download() -> None:
 
 
 def test_hidden_runtime_never_becomes_a_recommendation() -> None:
-    for name in ("DragonConnect", "PersistentDirectConnectIP", "RSDW Toolkit", "RSDWTools", "RSDWDevKit", "RuneSchema"):
+    for name in ("DragonLink", "RSDW Toolkit", "RSDWTools", "RSDWDevKit", "RuneSchema"):
         row = feeds.normalize_mod({
             "name": name,
             "page_url": f"https://github.com/example/{name.replace(' ', '-')}",

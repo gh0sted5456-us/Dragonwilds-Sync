@@ -62,6 +62,8 @@ def test_maintenance_calendar_blackout():
     assert backup["action"] == "backup" and backup["backup_retention_count"] == 17
     due = server_scheduler.tick_schedule({**backup, "next_run_at": base - 1}, now=base)
     assert due["due"] is True and due["events"][0]["action"] == "backup"
+    notice = server_scheduler.normalize_notice({"title": "Restart", "message": "Soon", "announcement": True, "system": True})
+    assert notice["announcement"] is True and notice["system"] is True
 
 
 def test_server_activity_persists():

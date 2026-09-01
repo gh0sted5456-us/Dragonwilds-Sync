@@ -295,9 +295,11 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
 
 def spawn_command(kind: str, runtime_path: str, target: dict, count: int = 1) -> str:
     path = str(runtime_path or "").strip()
-    if not path.startswith("/") or not re.fullmatch(r"/[A-Za-z0-9_./-]+", path):
-        raise ValueError("The selected RSDW runtime path is invalid")
     kind = "item" if str(kind).casefold() == "item" else "enemy"
+    asset_path = bool(path.startswith("/") and re.fullmatch(r"/[A-Za-z0-9_./-]+", path))
+    item_token = bool(re.fullmatch(r"[A-Za-z0-9_.:-]+", path))
+    if (kind == "item" and not (asset_path or item_token)) or (kind != "item" and not asset_path):
+        raise ValueError("The selected RSDW runtime identifier is invalid")
     target_kind = str((target or {}).get("kind") or "aim").casefold()
     if kind == "item":
         quantity = max(1, min(int(count or 1), 9999))

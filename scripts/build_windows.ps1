@@ -166,10 +166,16 @@ try {
     Write-BuildLine '[2/7] Required files'
     Test-RequiredFile 'renderer\assets\dragonwilds_icon.ico' 'Application icon'
     Test-RequiredFile 'resources\recommended-mods.json' 'GitHub-ready creator recommendation feed'
+    Test-RequiredFile 'resources\hosting-providers.json' 'Hosting provider capability registry'
     Test-RequiredFile 'scripts\check_ue4ss_lua.cjs' 'UE4SS Lua syntax verifier'
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
     Test-RequiredFile 'resources\RuneSchema-experimental-latest.zip' 'Bundled RuneSchema experimental core'
-    Test-RequiredFile 'resources\DragonLink-Connect-baseline.zip' 'Bundled DragonLink-Connect baseline'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\main.dll' 'Bundled DragonLink host DLL'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-StacksWeights.dll' 'Bundled DragonLink Stacks and Weights DLL'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Chat.dll' 'Bundled DragonLink Chat DLL'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Connect.dll' 'Bundled DragonLink Connect DLL'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink-ProximityLoot\dlls\main.dll' 'Bundled standalone Proximity Loot DLL'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink-ProximityLoot\ProximityLoot.ini' 'Bundled standalone Proximity Loot config'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\version.dll' 'Bundled Dragonwilds server-only version.dll'
     Test-RequiredFile 'scripts\prepare_monaco.cjs' 'Monaco bundling helper'
@@ -189,6 +195,8 @@ try {
     Test-RequiredFile 'backend\rsdwl_packages.py' 'Typed RSDWL v2 package envelope'
     Test-RequiredFile 'backend\world_sharing.py' 'Legacy RSDWL v2 compatibility engine'
     Test-RequiredFile 'backend\profile_bundle.py' 'Unified RSDWL v3 profile bundle engine'
+    Test-RequiredFile 'backend\profile_vault.py' 'Password-authenticated shared Profile Vault'
+    Test-RequiredFile 'backend\data_root.py' 'Program-data locator and verified migration'
     Test-RequiredFile 'resources\ID.example.txt' 'Example canonical mod ID.txt'
     Test-RequiredFile 'renderer\assets\guided\connect-world.webp' 'Client guided-setup artwork'
     Test-RequiredFile 'renderer\assets\guided\settings-reference.webp' 'Server guided-setup artwork'
@@ -209,25 +217,29 @@ try {
     $installedPyInstaller = ''
     $installedPsutil = ''
     $installedCryptography = ''
+    $installedQrcode = ''
     try {
         $installedPyInstaller = (& $pythonExe @pythonPrefix -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null | Select-Object -First 1).ToString().Trim()
         $installedPsutil = (& $pythonExe @pythonPrefix -c "import psutil; print(psutil.__version__)" 2>$null | Select-Object -First 1).ToString().Trim()
         $installedCryptography = (& $pythonExe @pythonPrefix -c "import cryptography; print(cryptography.__version__)" 2>$null | Select-Object -First 1).ToString().Trim()
+        $installedQrcode = (& $pythonExe @pythonPrefix -c "import qrcode; from importlib.metadata import version; print(version('qrcode'))" 2>$null | Select-Object -First 1).ToString().Trim()
     } catch { }
-    $pythonDepsMatch = ($installedPyInstaller -eq $expectedPyInstaller -and $installedPsutil -match '^7\.' -and $installedCryptography -match '^46\.')
+    $pythonDepsMatch = ($installedPyInstaller -eq $expectedPyInstaller -and $installedPsutil -match '^7\.' -and $installedCryptography -match '^46\.' -and $installedQrcode -match '^8\.')
     if ($pythonDepsMatch) {
-        Write-BuildLine "[OK] Python build dependencies match (PyInstaller $installedPyInstaller, psutil $installedPsutil, cryptography $installedCryptography)."
+        Write-BuildLine "[OK] Python build dependencies match (PyInstaller $installedPyInstaller, psutil $installedPsutil, cryptography $installedCryptography, qrcode $installedQrcode)."
     }
     else {
-        Write-BuildLine "Python build dependencies differ (PyInstaller '$installedPyInstaller', psutil '$installedPsutil', cryptography '$installedCryptography'; expected PyInstaller $expectedPyInstaller, psutil 7.x, and cryptography 46.x)."
+        Write-BuildLine "Python build dependencies differ (PyInstaller '$installedPyInstaller', psutil '$installedPsutil', cryptography '$installedCryptography', qrcode '$installedQrcode'; expected PyInstaller $expectedPyInstaller, psutil 7.x, cryptography 46.x, and qrcode 8.x)."
         Invoke-Native $pythonExe ($pythonPrefix + @('-m', 'pip', 'install', '--upgrade', '-r', (Join-Path $ProjectRoot 'backend\requirements-build.txt'))) 'Installing/upgrading the pinned Python build requirements...'
         $installedPyInstaller = (& $pythonExe @pythonPrefix -c "import PyInstaller; print(PyInstaller.__version__)" 2>$null | Select-Object -First 1).ToString().Trim()
         $installedPsutil = (& $pythonExe @pythonPrefix -c "import psutil; print(psutil.__version__)" 2>$null | Select-Object -First 1).ToString().Trim()
         $installedCryptography = (& $pythonExe @pythonPrefix -c "import cryptography; print(cryptography.__version__)" 2>$null | Select-Object -First 1).ToString().Trim()
+        $installedQrcode = (& $pythonExe @pythonPrefix -c "import qrcode; from importlib.metadata import version; print(version('qrcode'))" 2>$null | Select-Object -First 1).ToString().Trim()
         if ($installedPyInstaller -ne $expectedPyInstaller) { Fail-Build "PyInstaller version mismatch after pip install: found $installedPyInstaller, expected $expectedPyInstaller" }
         if ($installedPsutil -notmatch '^7\.') { Fail-Build "psutil version mismatch after pip install: found $installedPsutil, expected 7.x" }
         if ($installedCryptography -notmatch '^46\.') { Fail-Build "cryptography version mismatch after pip install: found $installedCryptography, expected 46.x" }
-        Write-BuildLine "[OK] Pinned Python dependency versions verified after install (PyInstaller $installedPyInstaller, psutil $installedPsutil, cryptography $installedCryptography)."
+        if ($installedQrcode -notmatch '^8\.') { Fail-Build "qrcode version mismatch after pip install: found $installedQrcode, expected 8.x" }
+        Write-BuildLine "[OK] Pinned Python dependency versions verified after install (PyInstaller $installedPyInstaller, psutil $installedPsutil, cryptography $installedCryptography, qrcode $installedQrcode)."
     }
 
     $rootPackage = Get-Content -LiteralPath (Join-Path $ProjectRoot 'package.json') -Raw | ConvertFrom-Json
@@ -290,6 +302,7 @@ try {
         'backend\server_systems.py',
         'backend\network_client.py',
         'backend\profile_store.py',
+        'backend\data_root.py',
         'backend\sync_engine.py',
         'backend\shared_mod_repository.py',
         'backend\world_identity.py',
@@ -314,7 +327,8 @@ try {
         'backend\world_save_distribution.py',
         'backend\rsdwl_packages.py',
         'backend\world_sharing.py',
-        'backend\profile_bundle.py'))
+        'backend\profile_bundle.py',
+        'backend\profile_vault.py'))
     Write-BuildLine ''
 
     Write-BuildLine '[5/7] Cleaning old outputs'
@@ -514,8 +528,15 @@ try {
     }
     $packedRuneSchemaExperimental = Join-Path $unpacked 'resources\resources\RuneSchema-experimental-latest.zip'
     if (-not (Test-Path -LiteralPath $packedRuneSchemaExperimental -PathType Leaf)) { Fail-Build 'Bundled RuneSchema experimental core was missing from packaged resources.' }
-    $packedDragonLinkConnect = Join-Path $unpacked 'resources\resources\DragonLink-Connect-baseline.zip'
-    if (-not (Test-Path -LiteralPath $packedDragonLinkConnect -PathType Leaf)) { Fail-Build 'Bundled DragonLink-Connect baseline was missing from packaged resources.' }
+    $packedDragonLink = Join-Path $unpacked 'resources\resources\NativeRuntimeMods\DragonLink\dlls'
+    foreach ($featureDll in @('main.dll', 'DragonLink-StacksWeights.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll')) {
+        $packedFeature = Join-Path $packedDragonLink $featureDll
+        if (-not (Test-Path -LiteralPath $packedFeature -PathType Leaf)) { Fail-Build "Bundled DragonLink native feature was missing from packaged resources: $featureDll" }
+    }
+    $packedProximity = Join-Path $unpacked 'resources\resources\NativeRuntimeMods\DragonLink-ProximityLoot'
+    foreach ($requiredProximity in @('dlls\main.dll', 'ProximityLoot.ini')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $packedProximity $requiredProximity) -PathType Leaf)) { Fail-Build "Bundled standalone Proximity Loot resource was missing: $requiredProximity" }
+    }
     Write-BuildLine '[OK] Packaged RuneSchema experimental core resource is present.'
     $packedUe4ss = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\UE4SS-core-latest.zip'
     $packedServerLoader = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\version.dll'

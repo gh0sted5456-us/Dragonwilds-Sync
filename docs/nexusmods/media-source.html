@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Dragonwilds Sync — Nexus hero source</title>
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:1400px;height:520px;overflow:hidden;background:#070a0b;color:#f3eee0;font-family:Inter,"Segoe UI",sans-serif}
+    .hero{position:relative;display:grid;grid-template-columns:390px 1fr;width:1400px;height:520px;overflow:hidden;background:linear-gradient(90deg,rgba(5,8,9,.96),rgba(8,12,13,.84)),url('../../website/assets/download-placard-background.png') center/cover}
+    .hero:before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 18% 35%,rgba(221,174,68,.18),transparent 32%),linear-gradient(180deg,rgba(255,255,255,.02),transparent 45%,rgba(0,0,0,.44));border:2px solid #806525;box-shadow:inset 0 0 80px #000}
+    .mark,.copy{position:relative;z-index:1}.mark{display:grid;place-items:center}.mark img{width:305px;height:305px;object-fit:contain;filter:drop-shadow(0 24px 45px rgba(0,0,0,.72))}
+    .copy{display:flex;flex-direction:column;justify-content:center;padding:50px 74px 50px 20px}
+    .eyebrow{color:#d4ae55;font-size:16px;font-weight:800;letter-spacing:.22em}.copy h1{margin:17px 0 15px;font-family:Georgia,"Times New Roman",serif;font-size:58px;line-height:1.02;font-weight:700}.copy h1 span{color:#d8b45d}.copy p{max-width:810px;margin:0;color:#b5c0ba;font-size:22px;line-height:1.55}.strip{display:flex;gap:9px;flex-wrap:wrap;margin-top:28px}.strip span{padding:9px 13px;border:1px solid #554823;border-radius:999px;background:rgba(11,16,16,.74);color:#ddc886;font-size:12px;font-weight:800;letter-spacing:.08em}
+  </style>
+</head>
+<body>
+  <main class="hero">
+    <div class="mark"><img src="../../renderer/assets/application-icon.webp" alt=""></div>
+    <div class="copy">
+      <div class="eyebrow">COMMUNITY-BUILT DRAGONWILDS TOOLKIT</div>
+      <h1>Keep every world,<br><span>client, and mod</span> in sync.</h1>
+      <p>One focused launcher for connected Worlds, dedicated servers, mod profiles, verified synchronization, discovery, recovery, and remote administration.</p>
+      <div class="strip"><span>CLIENT SYNC</span><span>SERVER CONTROL</span><span>MOD MANAGEMENT</span><span>PUBLIC WORLDS</span><span>QUICK + HEADLESS</span></div>
+    </div>
+  </main>
+</body>
+</html>

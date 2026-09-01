@@ -160,6 +160,14 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "operator_fingerprint": signed_identity.get("operator_fingerprint") if operator_verified else "",
         "operator_verified": operator_verified,
         "operator_identity_error": "" if operator_verified else str(signed_identity.get("error") or "identity payload mismatch"),
+        "hosting_mode": str(row.get("hosting_mode") or "local_dedicated")[:40],
+        "provider_id": str(row.get("provider_id") or "unknown")[:80],
+        "provider_display_name": str(row.get("provider_display_name") or "")[:120],
+        "provider_website": str(row.get("provider_website") or "")[:500],
+        "game_endpoint": row.get("game_endpoint") if isinstance(row.get("game_endpoint"), dict) else {},
+        "hosting_capabilities": row.get("hosting_capabilities") if isinstance(row.get("hosting_capabilities"), dict) else {},
+        "service_status": row.get("service_status") if isinstance(row.get("service_status"), dict) else {},
+        "placard_grace_seconds": max(60, min(int(row.get("placard_grace_seconds") or 900), 2592000)),
     }
 
 

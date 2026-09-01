@@ -22,7 +22,7 @@
     front.appendChild(summary);
     const controls = document.createElement('div');
     controls.className = 'v3p4-page-controls';
-    controls.innerHTML = `<span data-v3p4-page-status>Page 1 / 2</span><button class="btn ghost compact-btn" data-v3p4-toggle="${esc(id)}">Details →</button>`;
+    controls.innerHTML = '<span data-v3p4-page-status>Page 1 / 2</span><span class="card-flip-hint" aria-hidden="true">CLICK CARD · DETAILS ↻</span>';
     front.appendChild(controls);
 
     const inner = document.createElement('div');

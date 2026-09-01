@@ -54,17 +54,15 @@
       "description": "Server/host-only UE4SS runtime tooling for spawning, live map hooks, console commands and game-runtime integration. It is updated from RSDWArchive/RSDWDevKit and is never sent to joining clients."
     },
     "dragonconnect": {
-      "display_name": "DragonLink-Connect",
+      "display_name": "DragonLink",
       "enabled": true,
-      "type": "github-release",
+      "type": "bundled-native-suite",
       "repository": "gh0sted5456-us/Dragonwilds-Sync",
       "release_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases",
-      "download_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases/latest/download/DragonLink-Connect-baseline.zip",
-      "bundled_fallback": "resources/DragonLink-Connect-baseline.zip",
+      "bundled_fallback": "resources/NativeRuntimeMods/DragonLink",
       "runtime_component": true,
       "runtime_roles": ["server", "host", "client"],
-      "legacy_physical_names": ["DragonConnectHelper", "PersistentDirectConnectIP"],
-      "description": "Hidden, required host/client Direct Connect handoff component. The former physical directory name is accepted only for migration."
+      "description": "Hidden modular UE4SS application bridge with independent Items, server Chat, and one-shot client Connect DLLs."
     },
     "runeschema": {
       "display_name": "RuneSchema",

@@ -29,6 +29,7 @@ from pathlib import Path, PurePosixPath
 from urllib.parse import quote, quote_plus, unquote, urlparse
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile
+from hosting_capabilities import EXTERNAL_BROADCAST, normalize_hosting, public_hosting_metadata
 from process_utils import check_output_hidden, popen_hidden, run_hidden
 from integrations import normalize_mod_source
 from network_health import summarize_client_reports
@@ -182,7 +183,7 @@ CLIENT_RUNESCHEMA_RUNTIME_DIR = CLIENT_RUNTIME_OVERRIDE_DIR / "runeschema"
 BUNDLED_UE4SS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-core-latest.zip")
 BUNDLED_UE4SS_SETTINGS_RESOURCE = ("DragonwildsServerRuntime", "UE4SS-settings.ini")
 BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE = ("RuneSchema-experimental-latest.zip",)
-BUNDLED_DRAGONCONNECT_RESOURCE = ("DragonLink-Connect-baseline.zip",)
+BUNDLED_DRAGONCONNECT_RESOURCE = ("NativeRuntimeMods", "DragonLink")
 RSDW_DEVKIT_RELEASES_URL = "https://github.com/RSDWArchive/RSDWDevKit/releases"
 RSDW_DEVKIT_CACHE_DIR = APP_DATA_DIR / "runtime_downloads" / "rsdw_devkit"
 RSDW_DEVKIT_CACHE_ZIP = RSDW_DEVKIT_CACHE_DIR / "RSDWDevKit-latest.zip"
@@ -485,7 +486,7 @@ def list_profile_backups(profile_id: str) -> list[dict]:
     if not root.exists():
         return []
     result = []
-    for path in sorted(root.glob("backup-*.zip"), reverse=True):
+    for path in sorted(root.glob("*.zip"), key=lambda item: item.stat().st_mtime, reverse=True):
         try:
             result.append({"name": path.name, "size": path.stat().st_size, "mtime": path.stat().st_mtime})
         except OSError:
@@ -1791,6 +1792,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                     "rating_count": STATE.manifest.get("rating_count") or 0,
                     "community": STATE.manifest.get("community") or {},
                     "community_rules": STATE.manifest.get("community_rules") or "",
+                    **dict(STATE.manifest.get("hosting_public") or {}),
                     "password_required": bool(STATE.manifest.get("password_required")),
                     "dragonlink_connect": STATE.manifest.get("dragonlink_connect") or {"enabled": False},
                     "authentication": STATE.manifest.get("authentication") or {"mode": "world_password", "scope": "world-sync", "challenge": "hmac-sha256-nonce"},
@@ -2201,8 +2203,46 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     it is server-only runtime material. Per-World UE4SS/RuneSchema child mods are
     handled by the normal mod-unit publisher.
     """
-    layout = resolve_server_layout(game_root)
+    root_text = str(game_root or "").strip()
+    layout = resolve_server_layout(root_text) if root_text else None
     profile = profile if isinstance(profile, dict) else {}
+    component_policy = profile.get("runtime_components") if isinstance(profile.get("runtime_components"), dict) else {}
+    ue4ss_enabled = bool(component_policy.get("ue4ss", True))
+    runeschema_enabled = bool(component_policy.get("runeschema", True))
+    runtime_paths = profile.get("runtime_paths") if isinstance(profile.get("runtime_paths"), dict) else {}
+    server_paths = runtime_paths.get("server") if isinstance(runtime_paths.get("server"), dict) else {}
+    client_paths = runtime_paths.get("client") if isinstance(runtime_paths.get("client"), dict) else {}
+
+    def safe_client_root(value: object, fallback: str) -> str:
+        raw = str(value or fallback).replace("\\", "/").strip().strip("/")
+        pure = PurePosixPath(raw)
+        if (not raw or pure.is_absolute() or ".." in pure.parts
+                or any(":" in part for part in pure.parts)):
+            return fallback
+        return pure.as_posix()
+
+    ue4ss_client_root = safe_client_root(client_paths.get("ue4ss_root"), "Binaries/Win64")
+    runeschema_client_root = safe_client_root(
+        client_paths.get("runeschema_root"), "Binaries/Win64/ue4ss/Mods/RuneSchema")
+    def profile_server_root(value: object, fallback: Path, label: str) -> Path:
+        text = str(value or "").strip()
+        if not text:
+            return fallback
+        candidate = Path(text).expanduser().resolve(strict=False)
+        if layout is None:
+            # Broadcast-only hosting runs on a different machine from the game
+            # process. Absolute provider paths are neither readable nor trusted
+            # here, so the launcher-owned runtime library is authoritative.
+            return fallback
+        game = layout.game_root.resolve(strict=False)
+        if candidate != game and game not in candidate.parents:
+            raise ValueError(f"{label} must stay inside this profile's verified server game directory: {game}")
+        return candidate
+
+    ue4ss_server_root = profile_server_root(
+        server_paths.get("ue4ss_root"), layout.win64_dir if layout else UE4SS_RUNTIME_DIR, "UE4SS root")
+    runeschema_server_root = profile_server_root(
+        server_paths.get("runeschema_root"), layout.runeschema_root if layout else RUNESCHEMA_RUNTIME_DIR, "RuneSchema root")
     stored_selections = profile.get("runtime_client_selections") if isinstance(profile.get("runtime_client_selections"), dict) else {}
 
     def selected_targets(kind: str, active_build: str) -> set[str] | None:
@@ -2214,10 +2254,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     ue4ss_targets = selected_targets("ue4ss", str(profile.get("ue4ss_active_version_id") or "baseline"))
     runeschema_targets = selected_targets("runeschema", str(profile.get("runeschema_flavor_id") or "official"))
     stats = {"ue4ss_files": 0, "ue4ss_baked_mod_files": 0, "runeschema_files": 0,
-             "dragonconnecthelper_files": 0, "server_only_components_excluded": ["RSDW Dev Kit"],
+             "dragonlink_files": 0, "server_only_components_excluded": ["RSDW Dev Kit"],
              "version_dll_excluded": True,
              "platforms": list(WIN64_RUNTIME_PLATFORMS), "native_linux_injection": False,
-             "runtime_scope": "client_required", "distribution": "sync_manifest", "game_abi": "windows-pe-x64"}
+             "runtime_scope": "client_required", "distribution": "sync_manifest", "game_abi": "windows-pe-x64",
+             "components": {"ue4ss": ue4ss_enabled, "runeschema": runeschema_enabled},
+             "client_paths": {"ue4ss_root": ue4ss_client_root, "runeschema_root": runeschema_client_root},
+             "server_paths": {"ue4ss_root": str(ue4ss_server_root), "runeschema_root": str(runeschema_server_root)}}
 
     baked_ue4ss_names = {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS}
 
@@ -2269,7 +2312,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                         continue
                     if PurePosixPath(*parts).name.casefold() == "mods.txt":
                         continue
-                wire = PurePosixPath("Binaries/Win64", *parts).as_posix()
+                wire = PurePosixPath(ue4ss_client_root, *parts).as_posix()
                 if ue4ss_targets is not None and wire.casefold() not in ue4ss_targets:
                     continue
                 dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
@@ -2293,11 +2336,15 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
 
     # Prefer the live, validated server runtime so clients receive the exact
     # baseline the server is running. Fall back to the launcher repair library.
-    bootstrap = layout.ue4ss_bootstrap if layout.ue4ss_bootstrap.is_file() else UE4SS_RUNTIME_DIR / "dwmapi.dll"
-    if bootstrap.is_file() and stage_file(bootstrap, "Binaries/Win64/dwmapi.dll", "ue4ss_baseline"):
+    configured_bootstrap = ue4ss_server_root / "dwmapi.dll"
+    configured_core = ue4ss_server_root / "ue4ss"
+    layout_bootstrap = layout.ue4ss_bootstrap if layout else Path()
+    bootstrap = configured_bootstrap if configured_bootstrap.is_file() else (layout_bootstrap if layout and layout_bootstrap.is_file() else UE4SS_RUNTIME_DIR / "dwmapi.dll")
+    if ue4ss_enabled and bootstrap.is_file() and stage_file(bootstrap, f"{ue4ss_client_root}/dwmapi.dll", "ue4ss_baseline"):
         stats["ue4ss_files"] += 1
-    live_core = layout.ue4ss_core_dir if layout.ue4ss_core_dir.is_dir() else UE4SS_RUNTIME_DIR / "ue4ss"
-    if live_core.is_dir():
+    layout_core = layout.ue4ss_core_dir if layout else Path()
+    live_core = configured_core if configured_core.is_dir() else (layout_core if layout and layout_core.is_dir() else UE4SS_RUNTIME_DIR / "ue4ss")
+    if ue4ss_enabled and live_core.is_dir():
         for source in live_core.rglob("*"):
             if not source.is_file():
                 continue
@@ -2309,17 +2356,18 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     continue
             if source.name.casefold() == SERVER_LOADER_FILENAME.casefold():
                 continue
-            if not stage_file(source, f"Binaries/Win64/ue4ss/{rel.as_posix()}", "ue4ss_baseline"):
+            if not stage_file(source, f"{ue4ss_client_root}/ue4ss/{rel.as_posix()}", "ue4ss_baseline"):
                 continue
             stats["ue4ss_files"] += 1
             if rel.parts and rel.parts[0].casefold() == "mods":
                 stats["ue4ss_baked_mod_files"] += 1
-    if not stats["ue4ss_files"]:
+    if ue4ss_enabled and not stats["ue4ss_files"]:
         stage_ue4ss_bundle(_bundled_app_resource(*BUNDLED_UE4SS_RESOURCE))
 
-    rs_root = layout.runeschema_root if layout.runeschema_root.is_dir() else RUNESCHEMA_RUNTIME_DIR
+    layout_runeschema = layout.runeschema_root if layout else Path()
+    rs_root = runeschema_server_root if runeschema_server_root.is_dir() else (layout_runeschema if layout and layout_runeschema.is_dir() else RUNESCHEMA_RUNTIME_DIR)
     rs_bundle = None
-    if rs_root.is_dir():
+    if runeschema_enabled and rs_root.is_dir():
         wire = "_baseline/RuneSchema-core.zip"
         dest = PUBLISH_DIR / "_baseline" / "RuneSchema-core.zip"
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -2327,13 +2375,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         selected_count = 0
         with zipfile.ZipFile(temporary, "w", zipfile.ZIP_DEFLATED) as zf:
             wrote_enabled = False
-            for source in rs_root.rglob("*"):
+            for source in sorted(rs_root.rglob("*"), key=lambda item: item.relative_to(rs_root).as_posix().casefold()):
                 if not source.is_file():
                     continue
                 rel = source.relative_to(rs_root)
                 if rel.parts and rel.parts[0].casefold() == "mods":
                     continue
-                client_target = PurePosixPath("Binaries/Win64/ue4ss/Mods/RuneSchema", *rel.parts).as_posix()
+                client_target = PurePosixPath(runeschema_client_root, *rel.parts).as_posix()
                 if runeschema_targets is not None and client_target.casefold() not in runeschema_targets:
                     continue
                 if rel.as_posix().casefold() == "enabled.txt":
@@ -2342,7 +2390,10 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 stats["runeschema_files"] += 1
                 selected_count += 1
             if not wrote_enabled and runeschema_targets is None:
-                zf.writestr("enabled.txt", b"")
+                enabled_info = zipfile.ZipInfo("enabled.txt", date_time=(1980, 1, 1, 0, 0, 0))
+                enabled_info.compress_type = zipfile.ZIP_DEFLATED
+                enabled_info.external_attr = 0o100644 << 16
+                zf.writestr(enabled_info, b"")
                 stats["runeschema_files"] += 1
                 selected_count += 1
         if selected_count:
@@ -2350,7 +2401,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             manifest_files.append({
                 "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                 "category": "permanent", "kind": "zip_bundle",
-                "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema",
+                "extract_to": runeschema_client_root,
                 "generated": "runeschema_baseline", "baseline_runtime": True,
                 "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                 "runtime_scope": "client_required", "distribution": "sync_manifest",
@@ -2359,7 +2410,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             })
         else:
             temporary.unlink(missing_ok=True)
-    else:
+    elif runeschema_enabled:
         rs_bundle = RUNESCHEMA_CORE_CACHE_ZIP if RUNESCHEMA_CORE_CACHE_ZIP.is_file() else _bundled_app_resource("RuneSchema-core-latest.zip")
         if rs_bundle.is_file():
             wire = "_baseline/RuneSchema-core.zip"
@@ -2376,10 +2427,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                         parts = parts[1:]
                     if not parts or ".." in parts or parts[0].casefold() == "mods":
                         continue
-                    client_target = PurePosixPath("Binaries/Win64/ue4ss/Mods/RuneSchema", *parts).as_posix()
+                    client_target = PurePosixPath(runeschema_client_root, *parts).as_posix()
                     if runeschema_targets is not None and client_target.casefold() not in runeschema_targets:
                         continue
-                    target_zip.writestr(PurePosixPath(*parts).as_posix(), source_zip.read(info))
+                    target_info = zipfile.ZipInfo(PurePosixPath(*parts).as_posix(), date_time=(1980, 1, 1, 0, 0, 0))
+                    target_info.compress_type = zipfile.ZIP_DEFLATED
+                    target_info.external_attr = 0o100644 << 16
+                    target_zip.writestr(target_info, source_zip.read(info))
                     stats["runeschema_files"] += 1
                     selected_count += 1
             if selected_count:
@@ -2387,7 +2441,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 manifest_files.append({
                     "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                     "category": "permanent", "kind": "zip_bundle",
-                    "extract_to": "Binaries/Win64/ue4ss/Mods/RuneSchema",
+                    "extract_to": runeschema_client_root,
                     "generated": "runeschema_bundled_baseline", "baseline_runtime": True,
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                     "runtime_scope": "client_required", "distribution": "sync_manifest",
@@ -2396,49 +2450,45 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 })
             else:
                 temporary.unlink(missing_ok=True)
-    # DragonLink-Connect automation is an explicit per-World host capability.
+    # DragonLink Connect automation and Stacks/Weights distribution are
+    # independent per-World capabilities. The server always retains its native
+    # modules; only explicitly selected client-role files enter the manifest.
     # Clients always receive the manual credential handoff in the launcher, so
     # an operator can decline this helper without making the World unjoinable.
-    # When enabled, publish only immutable baseline files; config.lua is still
+    # When enabled, publish only immutable client-role DLLs. DragonLink.ini is
     # generated locally from the selected Connected World and never leaves the
     # joining machine.
-    dragonlink_enabled = bool(((profile or {}).get("sync_config") or {}).get("dragonlink_connect_enabled", False))
-    dragon_bundle = _bundled_app_resource(*BUNDLED_DRAGONCONNECT_RESOURCE) if dragonlink_enabled else Path()
-    if dragonlink_enabled and not dragon_bundle.is_file():
-        for legacy_name in ("DragonConnectHelper-baseline.zip", "PersistentDirectConnectIP-baseline.zip"):
-            legacy_bundle = _bundled_app_resource(legacy_name)
-            if legacy_bundle.is_file():
-                dragon_bundle = legacy_bundle
-                break
-    if dragonlink_enabled and dragon_bundle.is_file():
-        with zipfile.ZipFile(dragon_bundle) as source_zip:
-            for info in source_zip.infolist():
-                if info.is_dir():
-                    continue
-                parts = list(PurePosixPath(info.filename.replace("\\", "/")).parts)
-                if parts and parts[0].casefold() in {"dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"}:
-                    parts = parts[1:]
-                if not parts or ".." in parts:
-                    continue
-                relative = PurePosixPath(*parts).as_posix()
-                if relative.casefold() in {"scripts/config.lua", ".dragonwilds-sync-baseline.json"}:
-                    continue
-                wire = PurePosixPath("Binaries/Win64/ue4ss/Mods/DragonLink-Connect", *parts).as_posix()
-                dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
-                with source_zip.open(info) as src, temporary.open("wb") as out:
-                    shutil.copyfileobj(src, out)
-                os.replace(temporary, dest)
-                manifest_files.append({
-                    "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
-                    "category": "permanent", "kind": "file", "extract_to": "",
-                    "generated": "dragonlink-connect", "baseline_runtime": True,
-                    "baked_component": "dragonlink-connect", "visibility": "hidden-core",
-                    "required": True, "runtime_roles": ["client", "host", "server"],
-                    "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
-                })
-                stats["dragonconnecthelper_files"] += 1
+    dragonlink_config = (((profile or {}).get("managed_runtime_mods") or {}).get("dragonlink") or {})
+    dragonlink_connect_enabled = bool(((profile or {}).get("sync_config") or {}).get("dragonlink_connect_enabled", False))
+    push_stacks_weights = bool(dragonlink_config.get("push_stacks_weights_to_clients", False))
+    dragonlink_client_enabled = dragonlink_connect_enabled or push_stacks_weights
+    dragon_bundle = _bundled_app_resource(*BUNDLED_DRAGONCONNECT_RESOURCE) if dragonlink_client_enabled else Path()
+    if dragonlink_client_enabled and dragon_bundle.is_dir():
+        selected = ["dlls/main.dll", "enabled.txt"]
+        if push_stacks_weights:
+            selected.append("dlls/DragonLink-StacksWeights.dll")
+        if dragonlink_connect_enabled:
+            selected.append("dlls/DragonLink-Connect.dll")
+        for relative in selected:
+            source = dragon_bundle / Path(*PurePosixPath(relative).parts)
+            if not source.is_file():
+                continue
+            wire = PurePosixPath("Binaries/Win64/ue4ss/Mods/DragonLink", relative).as_posix()
+            dest = PUBLISH_DIR / Path(*PurePosixPath(wire).parts)
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            temporary = dest.with_name(dest.name + f".{secrets.token_hex(4)}.publishing")
+            shutil.copy2(source, temporary)
+            os.replace(temporary, dest)
+            manifest_files.append({
+                "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
+                "category": "permanent", "kind": "file", "extract_to": "",
+                "generated": "dragonlink", "baseline_runtime": True,
+                "baked_component": ("dragonlink_stacks_weights" if "StacksWeights" in relative else "dragonlink"),
+                "visibility": "hidden-core",
+                "required": True, "runtime_roles": ["client", "host", "server"],
+                "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
+            })
+            stats["dragonlink_files"] += 1
     return stats
 
 
@@ -2514,6 +2564,11 @@ class ShareServer:
         if not 1 <= int(port) <= 65535: raise ValueError("Sync port must be 1-65535")
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
+        hosting = normalize_hosting(profile)
+        if hosting["mode"] == EXTERNAL_BROADCAST:
+            endpoint = hosting["gameEndpoint"]
+            game_port = int(endpoint.get("port") or game_port or 7777)
+            public_ip = str(endpoint.get("host") or public_ip or profile.get("public_ip") or "")
         dedicated = profile.get("dedicated_config") if isinstance(profile.get("dedicated_config"), dict) else {}
         # Hosted Worlds expose one player credential. Prefer the same password
         # Dragonwilds reads from DedicatedServer.ini even when an older profile
@@ -2540,7 +2595,11 @@ class ShareServer:
         # prepared. Every current file is atomically promoted below, and the
         # HTTP handler serves only paths present in the active manifest.
         manifest_files = []
-        baseline_runtime = _publish_baseline_client_runtimes(game_root, manifest_files, profile) if str(game_root or "").strip() else {"ue4ss_files": 0, "runeschema_files": 0, "version_dll_excluded": True}
+        # Broadcast-only hosts have no local game directory, but clients still
+        # require the exact launcher-owned UE4SS/RuneSchema baseline selected by
+        # this World profile. The publisher therefore falls back to its verified
+        # runtime library instead of silently omitting mandatory files.
+        baseline_runtime = _publish_baseline_client_runtimes(game_root, manifest_files, profile)
         source_mods_txt = ""
         if game_root:
             try:
@@ -2676,6 +2735,7 @@ class ShareServer:
                               "dedicated_runtime_contract": dedicated_runtime_contract(str(resolve_server_layout(game_root).win64_dir.name).casefold() == "linux" if str(game_root or '').strip() else False),
                               "files": manifest_files, "description": profile.get("description") or "", "tags": consolidated_tags,
                               "classification": classification,
+                              "hosting_public": public_hosting_metadata(profile),
                               "audience": str(profile.get("audience") or "general"),
                               "platform_compatibility": {"pc": True, **{key: bool((profile.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"})) for key in ("steam", "epic", "nintendo", "playstation", "xbox")}},
                               "console_policy": {"allow_connection_attempt": True, "client_required_writes": "skip_with_warning", "server_only_mods_supported": True},
@@ -2711,6 +2771,7 @@ class ShareServer:
                                   "confirmed": bool(hierarchy.get("confirmed")), "confirmed_at": hierarchy.get("confirmed_at"),
                               },
                               "service_notice": normalize_notice(profile.get("service_notice")),
+                              "dragonlink_chat": [dict(row) for row in (profile.get("dragonlink_chat") or []) if isinstance(row, dict)][-100:],
                               "player_map": {"allow_remote_clients": bool((profile.get("player_map") or {}).get("allow_remote_clients", False))},
                               "world_save_download": profile.get("world_save_download") or {"enabled": False},
                               "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
@@ -2847,6 +2908,7 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "platform_ratings": platform_rating_summary(profile),
             "health_config": health_cfg,
             "service_notice": normalize_notice(profile.get("service_notice")),
+            "dragonlink_chat": [dict(row) for row in (profile.get("dragonlink_chat") or []) if isinstance(row, dict)][-100:],
             "world_save_download": profile.get("world_save_download") or {"enabled": False},
             "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
             "dragonlink_connect": {"enabled": bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)), "mode": "direct-panel-once" if bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)) else "manual"},
@@ -3080,7 +3142,45 @@ def delete_dedicated_server_files(install_dir: str) -> dict:
     shutil.rmtree(target); return {"ok": True, "deleted": True}
 
 
-def backup_install_for_reset(install_dir: str, *, label: str) -> dict:
+def delete_verified_game_install(expected_path: str, *, role: str) -> dict:
+    """Remove one positively identified client/server install, never a parent."""
+    target = Path(str(expected_path or "")).resolve(strict=False)
+    if not target.exists():
+        return {"ok": True, "deleted": False, "path": str(target), "role": role}
+    if not target.is_dir() or target == Path(target.anchor) or len(target.parts) < 4:
+        raise ValueError(f"Refusing to delete unsafe {role} install path: {target}")
+    client_markers = (
+        target / "RSDragonwilds.exe",
+        target / "RSDragonwilds" / "Binaries" / "Win64" / "RSDragonwilds-Win64-Shipping.exe",
+    )
+    if role not in {"client", "server"}:
+        raise ValueError(f"Unsupported RSDragonwilds install role: {role}")
+    if role == "client":
+        identified = any(marker.is_file() for marker in client_markers)
+    else:
+        # Dedicated-server launchers occur at the install root in current
+        # SteamCMD builds and beneath the inner game tree in older/community
+        # layouts. The exact deletion target is already fixed above, so a
+        # bounded positive marker search is safer than assuming one depth.
+        identified = any(
+            candidate.is_file()
+            for name in DEDICATED_SERVER_EXE_ALIASES
+            for candidate in target.glob(f"**/{name}")
+        )
+    if not identified:
+        raise ValueError(f"The exact {role} target no longer contains an RSDragonwilds executable: {target}")
+    _set_runtime_tree_writable(target, True)
+    shutil.rmtree(target)
+    return {"ok": True, "deleted": True, "path": str(target), "role": role}
+
+
+def rsdragonwilds_appdata_root() -> Path:
+    """Return the one game-owned LocalAppData root a full reinstall may clear."""
+    local = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData/Local")))
+    return Path(os.path.abspath(local / "RSDragonwilds"))
+
+
+def backup_install_for_reset(install_dir: str, *, label: str, full_game_appdata: bool = False) -> dict:
     """Capture user-owned saves/configuration/mods before a destructive repair.
 
     The backup lives outside the game tree under LocalAppData.  Runtime binaries
@@ -3113,26 +3213,50 @@ def backup_install_for_reset(install_dir: str, *, label: str) -> dict:
         else:
             shutil.copy2(candidate, destination, follow_symlinks=False)
         copied.append(relative.replace("\\", "/"))
-    local_saved = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "RSDragonwilds" / "Saved"
-    if local_saved.is_dir():
+    local_game_root = rsdragonwilds_appdata_root()
+    local_source = local_game_root if full_game_appdata else local_game_root / "Saved"
+    local_destination = (backup_root / "LocalAppData-RSDragonwilds") if full_game_appdata else (backup_root / "LocalAppData-RSDragonwilds-Saved")
+    if local_source.is_dir():
         # EOS keeps this coordination marker exclusively locked while the game
         # or Epic services are alive. It contains no identity/catalog payload;
         # skipping only the marker allows the persistent EOS cache itself to be
         # copied without turning a safe mod reset into a false failure.
-        shutil.copytree(local_saved, backup_root / "LocalAppData-RSDragonwilds-Saved", symlinks=True,
+        shutil.copytree(local_source, local_destination, symlinks=True,
                         dirs_exist_ok=True, ignore=shutil.ignore_patterns("__cache_registry_lock"))
-        copied.append("%LOCALAPPDATA%/RSDragonwilds/Saved")
+        copied.append("%LOCALAPPDATA%/RSDragonwilds" if full_game_appdata else "%LOCALAPPDATA%/RSDragonwilds/Saved")
     manifest = {
         "schema": "DragonwildsSync.ResetBackup.v1",
         "created_at": time.time(),
         "label": label,
         "install_dir": str(source),
         "copied": copied,
-        "preserved_in_place": ["Steam-owned game files", "EOS account/identity data", "%LOCALAPPDATA%/RSDragonwilds/Saved"],
-        "reset_scope": "managed_mods_only",
+        "preserved_in_place": [] if full_game_appdata else ["Steam-owned game files", "EOS account/identity data", "%LOCALAPPDATA%/RSDragonwilds/Saved"],
+        "reset_scope": "complete_game_reinstall" if full_game_appdata else "managed_mods_only",
     }
     (backup_root / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return {"ok": True, "path": str(backup_root), "copied": copied}
+
+
+def delete_rsdragonwilds_appdata(expected_path: str) -> dict:
+    """Delete only the exact RSDragonwilds LocalAppData tree after confirmation.
+
+    The caller must echo the previewed path. Resolving somewhere else through a
+    junction/symlink is rejected so this cannot become a general recursive
+    deletion primitive.
+    """
+    target = rsdragonwilds_appdata_root()
+    expected = Path(str(expected_path or "")).resolve(strict=False)
+    lexical_target = Path(os.path.abspath(target))
+    resolved_target = target.resolve(strict=False)
+    if expected != resolved_target or resolved_target != lexical_target:
+        raise ValueError(f"Refusing to delete an unverified RSDragonwilds AppData path: {target}")
+    if target.name.casefold() != "rsdragonwilds" or target == Path(target.anchor) or len(target.parts) < 3:
+        raise ValueError(f"Refusing to delete unsafe RSDragonwilds AppData path: {target}")
+    if not target.exists():
+        return {"ok": True, "deleted": False, "path": str(target)}
+    _set_runtime_tree_writable(target, True)
+    shutil.rmtree(target)
+    return {"ok": True, "deleted": True, "path": str(target)}
 
 
 def wipe_install_after_backup(install_dir: str, *, reset_client_runtime_loaders: bool = False) -> dict:

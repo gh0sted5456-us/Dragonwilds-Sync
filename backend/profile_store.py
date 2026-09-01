@@ -23,8 +23,10 @@ from world_classification import normalize_world_classification
 from networking import effective_game_port
 from computer_profiles import default_computer_profile, normalize_computer_profile
 from network_config import DRAGONWILDS_SYNC_NETWORK_URL
+from data_root import resolve_active_data_root
+from hosting_capabilities import apply_hosting_defaults, normalize_hosting
 
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 OFFICIAL_DIRECTORY_URL = DRAGONWILDS_SYNC_NETWORK_URL
 
 
@@ -75,11 +77,7 @@ def official_directory_source(token: str = "") -> dict:
 
 
 def app_data_root() -> Path:
-    override = os.environ.get("DRAGONWILDS_SYNC_APPDATA")
-    if override:
-        return Path(override)
-    local_appdata = os.environ.get("LOCALAPPDATA") if sys.platform == "win32" else None
-    return Path(local_appdata) / "DragonwildsSync" if local_appdata else Path.home() / ".dragonwilds_sync"
+    return resolve_active_data_root()
 
 
 def roaming_app_data_root() -> Path | None:
@@ -681,6 +679,11 @@ def list_server_profiles() -> list[dict]:
             "auto_ue4ss": bool(meta.get("auto_ue4ss", True)),
             "auto_runeschema": bool(meta.get("auto_runeschema", True)),
             "auto_rsdwtools": bool(meta.get("auto_rsdwtools", True)),
+            "runtime_components": meta.get("runtime_components") or {"ue4ss": True, "runeschema": True},
+            "runtime_paths": meta.get("runtime_paths") or {
+                "server": {"ue4ss_root": "", "runeschema_root": ""},
+                "client": {"ue4ss_root": "Binaries/Win64", "runeschema_root": "Binaries/Win64/ue4ss/Mods/RuneSchema"},
+            },
             "mod_management": meta.get("mod_management") or {"nexus_auto_check": False, "nexus_auto_apply": False},
             "mods_txt_mode": str(meta.get("mods_txt_mode") or "auto"),
             "mods_txt_writer": str(meta.get("mods_txt_writer") or "client_generate"),
@@ -703,6 +706,7 @@ def list_server_profiles() -> list[dict]:
             "runeschema_flavor_id": str(meta.get("runeschema_flavor_id") or "official"),
             "ue4ss_active_version_id": str(meta.get("ue4ss_active_version_id") or "baseline"),
             "manifest_version": int(meta.get("manifest_version") or 0),
+            "hosting": normalize_hosting(meta),
         })
     return result
 
@@ -719,6 +723,7 @@ def load_server_profile(profile_id: str) -> dict:
             return deepcopy(cached["value"])
     profile = read_json(target, {})
     if isinstance(profile, dict) and profile:
+        profile = apply_hosting_defaults(profile)
         profile.pop("dragon_core", None)
         profile.setdefault("character_sharing", {})["request_backups"] = True
         profile.setdefault("world_save_download", {})["enabled"] = True
@@ -736,6 +741,7 @@ def save_server_profile(profile_id: str, data: dict) -> None:
     if not profile_id:
         raise ValueError("Server World id is required")
     data = deepcopy(data)
+    data = apply_hosting_defaults(data)
     data.pop("dragon_core", None)
     target = SERVER_PROFILES_DIR / profile_id / "profile.json"
     write_json(target, data)
@@ -796,6 +802,8 @@ def create_server_profile(name: str) -> str:
     game_port = effective_game_port(instance_number)
     save_server_profile(profile_id, {
         "name": world_name, "description": "", "community_rules": "", "tags": [], "icon_b64": "", "banner_b64": "", "placard_background": "1",
+        "hosting": normalize_hosting({"hosting": {"mode": "local_dedicated", "providerId": "home-self-hosted",
+            "gameEndpoint": {"host": "", "port": game_port}, "remoteLoginEnabled": True}}),
         "classification": normalize_world_classification({"content_type": "vanilla", "game_mode": "normal", "host_type": "dedicated", "visibility": "public", "declared": True}),
         "audience": "general",
         "platform_compatibility": {"pc": True, "steam": True, "epic": True, "nintendo": False, "playstation": False, "xbox": False},
@@ -803,6 +811,11 @@ def create_server_profile(name: str) -> str:
         "community": {"discord_invite": "", "discord_guild_id": ""},
         "unit_overrides": {}, "feedback": [], "rating_average": 0.0, "rating_count": 0,
         "auto_ue4ss": True, "auto_runeschema": True, "auto_rsdwtools": True,
+        "runtime_components": {"ue4ss": True, "runeschema": True},
+        "runtime_paths": {
+            "server": {"ue4ss_root": "", "runeschema_root": ""},
+            "client": {"ue4ss_root": "Binaries/Win64", "runeschema_root": "Binaries/Win64/ue4ss/Mods/RuneSchema"},
+        },
         "mods_txt_mode": "auto",
         "mods_txt_writer": "client_generate",
         "hierarchy": {"provider": "shrug.games", "confirmed": False, "confirmed_at": None, "confirmed_by": ""},

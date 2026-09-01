@@ -42,7 +42,7 @@ requireText(css, '.dws-console-row.source-sync', 'sync console colour');
 requireText(service, 'install_engine_session_hook(_legacy.ENGINE)', 'per-process session log hook');
 requireText(service, 'if method == "server.console.unified":', 'unified console RPC');
 requireText(consoleModule, 'DragonwildsSync.previous.log', 'previous-session rotation');
-requireText(consoleModule, 'Streams: GAME CMD/STDOUT | UE4SS | RUNESCHEMA | SERVER | SYNC TRAFFIC', 'merged text log contract');
+requireText(consoleModule, 'Streams: GAME CMD/STDOUT | UE4SS | RUNESCHEMA | CHAT | SERVER | SYNC TRAFFIC', 'merged text log contract');
 requireText(consoleModule, 'def record_entry(profile_id: object, entry: dict)', 'continuous disk log writer');
 requireText(consoleModule, '_install_live_source_hooks(engine)', 'live server/sync/game source hooks');
 requireText(consoleModule, 'state.activity = activity', 'live Sync traffic hook');

@@ -12,7 +12,9 @@
   const mode = ['player','coop','server'].includes(String(launch.mode || ''))
     ? String(launch.mode)
     : (query.get('minimal') === '1' || fallbackKind === 'server' ? 'server' : (fallbackKind === 'private' ? 'coop' : 'player'));
-  const autoStart = launch.autoStart === true || query.get('autoStart') === '1';
+  let autoStart = launch.autoStart === true || query.get('autoStart') === '1';
+  const autoStartStorageKey = `dwsync.quick.autostart.${profileId || 'default'}.${mode}`;
+  if (!autoStart) autoStart = localStorage.getItem(autoStartStorageKey) === '1';
   let autoStartConsumed = false;
   let quickState = null;
   let consoleState = null;
@@ -25,9 +27,36 @@
   let refreshTimer = null;
   let verifiedPlayReady = false;
   let quickFollowTail = true;
+  let quickSection = 'overview';
+  let quickSpawner = {loaded:false,loading:false,items:[],players:[],query:'',page:0,selectedPath:'',selectedName:'',playerId:'',count:1,error:''};
+  let quickSaves = {loaded:false,loading:false,data:null,error:''};
+  let quickSavePlayer = '';
+  let quickConsoleScrollTop = 0;
+  const defaultConsoleColors={game:'#79b8ff',ue4ss:'#f38b8b',runeschema:'#65d8cf',chat:'#caa7ff',server:'#f1bf62',sync:'#72d39c'};
+  let quickConsoleColors={...defaultConsoleColors};
+  try{quickConsoleColors={...quickConsoleColors,...JSON.parse(localStorage.getItem('dwsync.console.colors')||'{}')};}catch(_){}
+  const applyConsoleColors=()=>Object.entries(quickConsoleColors).forEach(([key,value])=>document.documentElement.style.setProperty(`--dws-console-${key}`,value));
+  applyConsoleColors();
+  const chooseConsoleColor=(key,label)=>{
+    if(!defaultConsoleColors[key])return;
+    const picker=document.createElement('input');
+    picker.type='color';picker.value=quickConsoleColors[key]||defaultConsoleColors[key];picker.className='v3q-native-color-picker';
+    picker.setAttribute('aria-label',`Choose ${label} console color`);document.body.appendChild(picker);
+    const save=()=>{quickConsoleColors[key]=picker.value;localStorage.setItem('dwsync.console.colors',JSON.stringify(quickConsoleColors));applyConsoleColors();};
+    const cleanup=()=>setTimeout(()=>picker.remove(),0);
+    picker.addEventListener('input',save);picker.addEventListener('change',()=>{save();cleanup();},{once:true});picker.addEventListener('blur',cleanup,{once:true});
+    try{if(typeof picker.showPicker==='function')picker.showPicker();else picker.click();}catch(_){picker.click();}
+  };
 
   const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+  const dataImage = (value, fallback) => {
+    const source=String(value||'').trim();
+    if(/^data:image\/(?:png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=\s]+$/i.test(source))return source;
+    if(source.length>96&&/^[A-Za-z0-9+/=\s]+$/.test(source))return `data:image/png;base64,${source.replace(/\s+/g,'')}`;
+    return fallback;
+  };
   const statusClass = (value) => /active|running|current|success/i.test(String(value||'')) ? 'ok' : /partial|connecting|starting|updating/i.test(String(value||'')) ? 'warn' : /failed|error|stopped|disabled/i.test(String(value||'')) ? 'bad' : 'muted';
+  const localFileUrl = (value) => {const source=String(value||'').trim();if(!source)return '';if(/^(data:|assets\/|https?:|file:)/i.test(source))return source;const normalized=source.replace(/\\/g,'/').replace(/#/g,'%23');return normalized.startsWith('/')?`file://${normalized}`:`file:///${normalized}`;};
   const roleLabel = mode === 'server' ? 'Server' : (mode === 'coop' ? 'Co-Op' : 'Player');
   const scopeLabel = () => quickState?.profile_scope || (mode === 'server' ? 'Hosted Server' : 'World Profile');
 
@@ -135,10 +164,10 @@
     const events = consoleState?.events || consoleState?.entries || consoleState?.history || [];
     const allRows = Array.isArray(events) ? events.slice(-220) : [];
     const rows = consoleFilter==='all' ? allRows : allRows.filter((row)=>String(row.source||'').toLowerCase()===consoleFilter);
-    const filters=[['all','ALL'],['game','GAME'],['ue4ss','UE4SS'],['runeschema','RUNESCHEMA'],['server','SERVER'],['sync','SYNC']];
+    const filters=[['all','ALL'],['game','GAME'],['ue4ss','UE4SS'],['runeschema','RUNESCHEMA'],['chat','CHAT'],['server','SERVER'],['sync','SYNC']];
     return `<section class="v3q-panel v3q-console-panel">
       <div class="v3q-panel-head"><div><b>Runtime Console</b><small>One profile-scoped stream · source colors, filters, and guarded commands</small></div><div class="v3q-console-scroll"><button class="v3q-btn ghost" data-v3q-console-top>↑ Top</button><button class="v3q-btn ${quickFollowTail?'primary':'ghost'}" data-v3q-console-follow>${quickFollowTail?'● Live':'○ Paused'}</button><button class="v3q-btn ghost" data-v3q-console-bottom>↓ Bottom</button><button class="v3q-btn ghost" data-v3q-clear-console>Clear View</button></div></div>
-      <nav class="v3q-console-filters" aria-label="Console source filters">${filters.map(([key,label])=>`<button class="v3q-btn ${consoleFilter===key?'primary':'ghost'}" data-v3q-console-filter="${key}">${label} <span>${key==='all'?allRows.length:allRows.filter((row)=>String(row.source||'').toLowerCase()===key).length}</span></button>`).join('')}</nav>
+      <nav class="v3q-console-filters" aria-label="Console source filters">${filters.map(([key,label])=>`<button class="v3q-btn ${consoleFilter===key?'primary':'ghost'}" data-v3q-console-filter="${key}" ${key!=='all'?`data-v3q-console-color-key="${key}" style="--console-source-color:${esc(quickConsoleColors[key]||defaultConsoleColors[key])}" title="Left-click to filter · right-click to choose ${label} color"`:''}>${label} <span>${key==='all'?allRows.length:allRows.filter((row)=>String(row.source||'').toLowerCase()===key).length}</span></button>`).join('')}</nav>
       <div class="v3q-console" data-v3q-console>${rows.length ? rows.map((row)=>{
         const ts = row.ts || row.time || row.created_at || '';
         const message = row.message || row.ack || row.command || row.line || JSON.stringify(row);
@@ -165,6 +194,104 @@
     </section>`;
   }
 
+  async function loadQuickSpawner({force=false}={}) {
+    if(mode!=='server'||quickSpawner.loading)return;
+    quickSpawner={...quickSpawner,loading:true,error:''};renderQuick();
+    try {
+      const id=quickState?.profile_id||profileId;
+      const [catalog,roster]=await Promise.all([
+        api.invoke('server.spawner.catalog',{id,kind:'item',query:quickSpawner.query||'',limit:2000,refresh:force}),
+        api.invoke('server.players.get',{id}),
+      ]);
+      const players=roster?.players?.players||roster?.players||[];
+      quickSpawner={...quickSpawner,loaded:true,loading:false,items:Array.isArray(catalog?.items)?catalog.items:[],players:Array.isArray(players)?players.filter((row)=>row?.connected!==false):[],bridge:catalog?.bridge||{},runtime:catalog?.runtime||{},localPlayerAvailable:!!catalog?.local_player_available,error:''};
+      if(!quickSpawner.playerId&&quickSpawner.players.length)quickSpawner.playerId=String(quickSpawner.players[0].id||quickSpawner.players[0].tracker_id||'');
+    } catch(error) { quickSpawner={...quickSpawner,loaded:true,loading:false,error:error?.message||String(error)}; }
+    renderQuick();
+  }
+
+  function quickDragonLink() {
+    const status=quickState?.dragonlink||{};
+    const config=status.config?.dragonlink||{};
+    const component=status.components?.dragonlink||{};
+    const proximity=status.components?.proximity_loot||{};
+    const editable=mode==='server'&&status.editable!==false;
+    const installed=!!component.installed;
+    const current=component.current===true;
+    const moduleCard=(key,title,dll,description,serverOnly=false)=>`<article class="v3q-dragonlink-module ${config[key]?'enabled':'disabled'}"><div><span>${esc(dll)}</span><strong>${esc(title)}</strong><small>${esc(description)}</small></div><span class="v3q-live-chip ${config[key]?'ok':'muted'}"><i></i>${config[key]?'ENABLED':'OFF'}</span>${serverOnly?'<em>SERVER ONLY</em>':''}</article>`;
+    if(!editable){
+      const offered=status.advertised_connect===true;
+      return `<section class="v3q-panel v3q-dragonlink"><div class="v3q-panel-head"><div><b>DragonLink Connect</b><small>One-shot Direct Connect handoff for this World profile</small></div><span class="v3q-live-chip ${offered?'ok':'muted'}"><i></i>${offered?'HOST ENABLED':'MANUAL ENTRY'}</span></div><div class="v3q-dragonlink-client"><strong>${offered?'Automatic handoff is available':'This host requires manual Direct Connect entry'}</strong><p>${offered?'After verified Sync, DragonLink writes the saved address and password once when the game Direct Connect panel opens. It then remains idle.':'The verified connection receipt provides copy buttons for World name, address, and password.'}</p><code>${esc(status.connect_mode||'manual')}</code></div></section>`;
+    }
+    const locked=!!quickState?.active;
+    const toggle=(key,title,detail)=>`<label class="v3q-toggle"><input type="checkbox" data-v3q-dragonlink-setting="${key}" ${config[key]?'checked':''} ${locked?'disabled':''}/><span><b>${esc(title)}</b><small>${esc(detail)}</small></span></label>`;
+    const number=(key,title,value,min,max,step)=>`<label class="v3q-dragonlink-number"><span>${esc(title)}</span><input type="number" data-v3q-dragonlink-number="${key}" value="${esc(value)}" min="${min}" max="${max}" step="${step}"/></label>`;
+    const captured=(consoleState?.events||consoleState?.entries||consoleState?.history||[]).filter((row)=>String(row.source||'').toLowerCase()==='chat').slice(-60).map((row)=>({at:row.ts||row.time,sender:row.sender||row.player_name||'Player',message:row.message||row.line||''}));
+    const admin=Array.isArray(quickState?.chat)?quickState.chat:[];const chatRows=[...admin,...captured].sort((a,b)=>Number(a.at||0)-Number(b.at||0)).slice(-100);
+    const chatFeed=chatRows.length?chatRows.map((row)=>`<article class="${row.automated?'automated':''}"><b>${esc(row.sender||'Server')}</b><span>${esc(row.message||'')}</span><time>${row.at?esc(new Date(Number(row.at)*1000).toLocaleTimeString()):''}</time></article>`).join(''):'<div class="empty"><span>No chat messages yet.</span></div>';
+    const dragonLinkPanel=`<section class="v3q-panel v3q-dragonlink"><div class="v3q-panel-head"><div><b>DragonLink Application Bridge</b><small>Required Chat + Connect foundations${config.stacks_weights?' · optional Stacks & Weights enabled':''}</small></div><div class="v3q-item-status"><span class="v3q-live-chip ${installed?'ok':'bad'}"><i></i>${installed?(current?'INSTALLED · CURRENT':'INSTALLED · REPAIR AVAILABLE'):'NOT INSTALLED'}</span><button class="v3q-btn primary" data-v3q-dragonlink-save>Save &amp; Apply</button></div></div>${status.error?`<div class="v3q-error">${esc(status.error)}</div>`:''}<div class="v3q-dragonlink-modules">${config.stacks_weights?moduleCard('stacks_weights','Stacks & Weights','DragonLink-StacksWeights.dll','Combined stack authority and weight presentation module.'):''}${moduleCard('connect','Connect','DragonLink-Connect.dll','Writes Direct Connect fields once when the game panel opens.')}${moduleCard('chat','Chat','DragonLink-Chat.dll','Hydrates the application chat stream.',true)}</div><div class="v3q-dragonlink-settings">${toggle('enabled','Enable DragonLink','Master switch for the application bridge.')}${config.stacks_weights?toggle('push_stacks_weights_to_clients','Push Stacks & Weights to clients','Include the combined DLL in this World’s client Sync manifest.'):''}${toggle('connect','Direct Connect handoff','Offer one-time address/password autofill to verified clients.')}${toggle('chat','Chat bridge','Capture game chat into the DragonLink chat box.')}${toggle('capture_player_messages','Capture player messages','Forward player chat into the DragonLink chat box.')}${toggle('allow_application_announcements','Application announcements','Permit explicit automated announcements through the bridge.')}</div><section class="v3q-dragonlink-chat"><header><div><strong>Server Chat</strong><small>Player and admin chat stays here. Automated announcements also appear in Runtime Console.</small></div></header><div class="v3q-chat-feed">${chatFeed}</div><form data-v3q-chat-form><input name="message" maxlength="1000" placeholder="Type as Server Admin…"/><button class="v3q-btn primary">Send Chat</button></form><form data-v3q-broadcast-form><input name="message" maxlength="1000" placeholder="Create an automated server announcement…"/><button class="v3q-btn ghost">Announce</button></form></section><div class="v3q-dragonlink-foot"><code>${esc(component.path||'UE4SS/Mods/DragonLink')}</code><span>${locked?'Feature DLL toggles apply after stop.':'Changes apply on the next server start.'}</span></div></section>`;
+    const proximityPanel=`<section class="v3q-panel v3q-dragonlink"><div class="v3q-panel-head"><div><b>Proximity Loot</b><small>Independent UE4SS mod · server retained by default · ProximityLoot.ini hot reload</small></div><span class="v3q-live-chip ${proximity.installed?'ok':'bad'}"><i></i>${proximity.installed?(proximity.current?'INSTALLED · CURRENT':'REPAIR AVAILABLE'):'NOT INSTALLED'}</span></div><div class="v3q-dragonlink-modules">${moduleCard('proximity_loot','Proximity Loot','DragonLink-ProximityLoot/dlls/main.dll','Standalone player-distance and loot-magnet control.')}</div><div class="v3q-dragonlink-settings">${toggle('proximity_loot','Enable Proximity Loot','Enable this standalone mod on the next server start.')}${toggle('push_proximity_loot_to_clients','Push Proximity Loot to clients','Include the standalone folder and config in this World’s client Sync manifest.')}</div><div class="v3q-proximity-settings"><strong>Live tuning</strong><small>Values hot-reload from ProximityLoot.ini without touching DragonLink.</small><div>${number('proximity_threshold','Crowded enter distance',config.proximity_threshold??1200,0,100000,.1)}${number('proximity_exit_threshold','Crowded exit distance',config.proximity_exit_threshold??1350,0,100000,.1)}${number('enhanced_magnet_range','Magnet range',config.enhanced_magnet_range??800,0,100000,.1)}${number('proximity_state_delay_seconds','State delay (seconds)',config.proximity_state_delay_seconds??10,0,120,.1)}${number('proximity_refresh_seconds','Refresh interval (seconds)',config.proximity_refresh_seconds??.35,.1,5,.05)}</div></div><div class="v3q-dragonlink-foot"><code>${esc(proximity.path||'UE4SS/Mods/DragonLink-ProximityLoot')}</code><span>${locked?'Distances hot-reload; enable and distribution apply after stop.':'Enable and client distribution apply on the next server start.'}</span></div></section>`;
+    return `${dragonLinkPanel}${config.proximity_loot?proximityPanel:''}`;
+  }
+
+  async function loadQuickSaves() {
+    if(quickSaves.loading)return;
+    quickSaves={...quickSaves,loading:true,error:''};renderQuick();
+    try {
+      const data=await api.invoke('save.management.list',{profile_id:quickState?.profile_id||profileId,mode});
+      quickSaves={loaded:true,loading:false,data,error:''};
+    } catch(error) { quickSaves={...quickSaves,loaded:true,loading:false,data:null,error:error?.message||String(error)}; }
+    renderQuick();
+  }
+
+  function quickSaveManager() {
+    const data=quickSaves.data||{};
+    const worlds=Array.isArray(data.world_backups)?data.world_backups:[];
+    const playerGroups=Array.isArray(data.player_backup_groups)?data.player_backup_groups:[];
+    const when=(value)=>value?new Date(Number(value)*1000).toLocaleString():'Unknown date';
+    return `<section class="v3q-panel v3q-save-manager">
+      <div class="v3q-panel-head"><div><b>World &amp; Player Save Manager</b><small>Backup-first rollback · ${esc(data.runtime_guard||'safe stopped-state writes')}</small></div><div class="v3q-item-status"><span class="v3q-live-chip warn"><i></i>VERIFIED SWAPS</span><button class="v3q-btn ghost" data-v3q-saves-refresh ${quickSaves.loading?'disabled':''}>Refresh</button><button class="v3q-btn ghost" data-v3q-world-import>Import / Swap ZIP</button><button class="v3q-btn primary" data-v3q-world-backup ${quickSaves.loading?'disabled':''}>Create World Backup</button></div></div>
+      ${quickSaves.error?`<div class="v3q-error">${esc(quickSaves.error)}</div>`:''}
+      ${quickSaves.loading&&!quickSaves.loaded?'<div class="empty"><span>Reading managed save revisions…</span></div>':`<div class="v3q-save-columns">
+        <div><h3>World revisions</h3><p>Right-click a revision to rename, delete, or send a verified copy to the Desktop. Restore remains backup-first.</p><div class="v3q-save-list">${worlds.length?worlds.map((row)=>`<article data-v3q-save-entry="world" data-v3q-save-id="${esc(row.id||row.name||'')}" title="Right-click for save actions"><div><strong>${esc(row.name||row.id)}</strong><small>${esc(when(row.mtime))} · ${esc(formatBytes(row.size||0))}</small></div><button class="v3q-btn danger" data-v3q-world-restore="${esc(row.id||row.name||'')}">${mode==='server'&&quickState?.active?'Hot Swap':'Restore'}</button></article>`).join(''):'<div class="empty"><span>No World backups yet.</span></div>'}</div></div>
+        <div><h3>${mode==='server'?'Retained players':'Player saves'}</h3><p>Select a Player Name to see every retained backup. Each revision has rollback, Desktop export, and—on servers—next-connect delivery.</p><div class="v3q-save-list v3q-player-list">${playerGroups.length?playerGroups.map((group)=>{const revisions=Array.isArray(group.revisions)?group.revisions:[];const latest=revisions[0]||{};return `<button class="v3q-player-row" data-v3q-player-group="${esc(group.id||'')}" title="Open ${esc(group.name||'Player')} backup history"><span class="v3q-player-avatar">${esc(String(group.name||'P').slice(0,1).toUpperCase())}</span><span><strong>${esc(group.name||'Player')}</strong><small>${revisions.length} saved revision${revisions.length===1?'':'s'} · latest ${esc(when(latest.mtime))}</small></span><b>Open ›</b></button>`;}).join(''):'<div class="empty"><span>No player save revisions retained yet.</span></div>'}</div></div>
+      </div>`}
+    </section>`;
+  }
+
+  function openQuickPlayerHistory(groupId) {
+    const groups=Array.isArray(quickSaves.data?.player_backup_groups)?quickSaves.data.player_backup_groups:[];
+    const group=groups.find((row)=>String(row.id||'')===String(groupId||''));
+    if(!group)return;
+    const revisions=Array.isArray(group.revisions)?group.revisions:[];
+    document.querySelector('[data-v3q-player-history]')?.remove();
+    const overlay=document.createElement('div');overlay.className='v3q-save-overlay';overlay.dataset.v3qPlayerHistory='1';
+    overlay.innerHTML=`<section class="v3q-save-dialog"><header><div><small>PLAYER SAVE HISTORY</small><h2>${esc(group.name||'Player')}</h2><p>${revisions.length} profile-bound backup${revisions.length===1?'':'s'}</p></div><button class="v3q-btn ghost" data-v3q-history-close>Close</button></header><div class="v3q-save-list">${revisions.map((row)=>`<article data-v3q-save-entry="player" data-v3q-save-id="${esc(row.id||row.name||'')}" title="Right-click for save actions"><div><strong>${esc(row.name||row.id)}</strong><small>${esc(new Date(Number(row.mtime||0)*1000).toLocaleString())} · ${esc(formatBytes(row.size||0))}</small></div><div class="v3q-item-status"><button class="v3q-btn ghost" data-v3q-save-desktop="player:${esc(row.id||row.name||'')}">Desktop</button>${mode==='server'?`<button class="v3q-btn primary" data-v3q-player-queue="${esc(row.id||row.name||'')}">Send on Next Connect</button>`:`<button class="v3q-btn danger" data-v3q-player-restore="${esc(row.id||row.name||'')}" data-v3q-player-target="${esc(row.target_name||'')}" data-v3q-player-source="${esc(row.source||'')}">Roll Back</button>`}</div></article>`).join('')||'<div class="empty"><span>No backups retained.</span></div>'}</div><footer>Right-click any revision to rename, delete, or send it to the Desktop.</footer></section>`;
+    document.body.appendChild(overlay);bindSaveActions(overlay);overlay.querySelector('[data-v3q-history-close]')?.addEventListener('click',()=>overlay.remove());overlay.addEventListener('click',(event)=>{if(event.target===overlay)overlay.remove();});
+  }
+
+  function quickItemSpawner() {
+    const items=Array.isArray(quickSpawner.items)?quickSpawner.items:[];
+    const pageSize=30;
+    const pageCount=Math.max(1,Math.ceil(items.length/pageSize));
+    const page=Math.max(0,Math.min(Number(quickSpawner.page||0),pageCount-1));
+    const visibleItems=items.slice(page*pageSize,(page+1)*pageSize);
+    const pageIndexes=[...new Set([0,1,page-2,page-1,page,page+1,page+2,pageCount-2,pageCount-1])].filter((index)=>index>=0&&index<pageCount).sort((a,b)=>a-b);
+    const players=Array.isArray(quickSpawner.players)?quickSpawner.players:[];
+    const bridgeReady=!!quickSpawner.bridge?.available;
+    const runtimeReady=!!quickSpawner.runtime?.running&&quickSpawner.runtime?.active!==false;
+    const canGive=!!quickSpawner.selectedPath&&!!quickSpawner.playerId&&bridgeReady&&runtimeReady&&quickState?.active;
+    const selected=items.find((item)=>String(item.runtime_path||'')===String(quickSpawner.selectedPath||''))||null;
+    const selectedIcon=selected?localFileUrl(selected.icon_path||selected.icon_url||''):'';
+    return `<section class="v3q-panel v3q-item-service">
+      <div class="v3q-panel-head"><div><b>Summon Items for Players</b><small>Uses the bounded RSDW item service; no arbitrary command or full editor is loaded</small></div><div class="v3q-item-status"><span class="v3q-live-chip ${runtimeReady?'ok':'muted'}"><i></i>${runtimeReady?'WORLD LIVE':'WORLD STOPPED'}</span><span class="v3q-live-chip ${bridgeReady?'ok':'bad'}"><i></i>${bridgeReady?'BRIDGE READY':'BRIDGE OFFLINE'}</span></div></div>
+      <form class="v3q-item-search" data-v3q-item-search><input name="query" value="${esc(quickSpawner.query)}" placeholder="Search item name, ID, category, or mod…"/><button class="v3q-btn primary" type="submit" ${quickSpawner.loading?'disabled':''}>${quickSpawner.loading?'Loading…':'Search'}</button><button class="v3q-btn ghost" type="button" data-v3q-items-refresh ${quickSpawner.loading?'disabled':''}>Refresh Catalog</button></form>
+      ${quickSpawner.error?`<div class="v3q-error">${esc(quickSpawner.error)}</div>`:''}
+      <div class="v3q-item-layout"><div><div class="v3q-item-grid">${quickSpawner.loading&&!quickSpawner.loaded?'<div class="empty"><span>Loading the server item repository…</span></div>':items.length?visibleItems.map((item)=>{const path=String(item.runtime_path||'');const icon=localFileUrl(item.icon_path||item.icon_url||'');return `<button class="v3q-item ${quickSpawner.selectedPath===path?'selected':''}" data-v3q-item-path="${esc(path)}" data-v3q-item-name="${esc(item.display_name||item.name||'Item')}" title="${esc(path)}">${icon?`<img src="${esc(icon)}" alt="" loading="lazy"/>`:'<span>◇</span>'}<strong>${esc(item.display_name||item.name||'Unknown Item')}</strong><small>${esc(item.category||item.mod_name||'Item')}</small></button>`;}).join(''):'<div class="empty"><span>No matching items were found.</span></div>'}</div>${items.length?`<nav class="v3q-item-pagination" aria-label="Item catalog pages"><button class="v3q-btn ghost" data-v3q-item-page="${page-1}" ${page<=0?'disabled':''}>← Previous</button><div>${pageIndexes.map((index)=>`<button class="v3q-btn ${index===page?'primary':'ghost'}" data-v3q-item-page="${index}">${index+1}</button>`).join('')}</div><button class="v3q-btn ghost" data-v3q-item-page="${page+1}" ${page>=pageCount-1?'disabled':''}>Next →</button><span>${visibleItems.length} of ${items.length} · page ${page+1} / ${pageCount}</span></nav>`:''}</div>
+        <aside class="v3q-item-give"><small>SELECTED ITEM</small>${selectedIcon?`<img class="v3q-selected-item-icon" src="${esc(selectedIcon)}" alt=""/>`:''}<strong data-v3q-selected-item>${esc(selected?.display_name||selected?.name||'Choose an item')}</strong>${selected?`<p class="v3q-item-description">${esc(selected.description||'No item description is published in the current RSDW catalog.')}</p><dl class="v3q-item-facts"><div><dt>Category</dt><dd>${esc(selected.category||'Item')}</dd></div><div><dt>Internal name</dt><dd>${esc(selected.internal_name||selected.item_name||'—')}</dd></div><div><dt>Persistence ID</dt><dd>${esc(selected.persistence_id||selected.item_data||'—')}</dd></div><div><dt>Maximum stack</dt><dd>${esc(selected.max_stack||1)}</dd></div><div><dt>Equipment</dt><dd>${esc(selected.equipment||'Not equipped')}</dd></div><div><dt>Source / mod</dt><dd>${esc(selected.source_mod||selected.source||'RSDW baseline')}</dd></div></dl>`:''}<code>${esc(quickSpawner.selectedPath||'No item selected')}</code><label><span>Player</span><select data-v3q-item-player ${players.length?'':'disabled'}>${players.map((player)=>{const id=String(player.id||player.tracker_id||'');return `<option value="${esc(id)}" ${quickSpawner.playerId===id?'selected':''}>${esc(player.name||player.player_name||'Player')}</option>`;}).join('')}</select></label><label><span>Quantity</span><input data-v3q-item-count type="number" min="1" max="9999" value="${Math.max(1,Number(quickSpawner.count||1))}"/></label><button class="v3q-btn primary big" data-v3q-give-item ${canGive?'':'disabled'}>Give Item</button><p>${players.length?`${players.length} connected player${players.length===1?'':'s'} available.`:'No connected players are currently available.'}</p></aside></div>
+    </section>`;
+  }
+
   function renderQuick() {
     if (!quickEnabled) return;
     const root = document.getElementById('app');
@@ -175,11 +302,14 @@
     const publicEnabled = !!quickState?.network?.public_directory_enabled;
     const players = Array.isArray(quickState?.players) ? quickState.players : [];
     const error = quickState?.error;
+    const profileIcon=dataImage(quickState?.presentation?.icon_b64,'assets/application-icon.webp');
+    const profileBanner=dataImage(quickState?.presentation?.banner_b64,'assets/singleplayer-banner.webp');
     const markup = `<main class="v3q-shell" data-v3-quick-root>
       <header class="v3q-header">
-        <div class="v3q-brand"><span class="v3q-mark"><img src="assets/application-icon.webp" alt="" /></span><div><small>DRAGONWILDS SYNC QUICK · ${esc(scopeLabel().toUpperCase())}</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1><span class="v3q-profile-caption">${esc(roleLabel)} control center · ${esc(quickState?.profile_kind || 'Loading profile')}</span></div></div>
+        <img class="v3q-profile-banner" src="${esc(profileBanner)}" alt="" />
+        <div class="v3q-brand"><span class="v3q-mark"><img src="${esc(profileIcon)}" alt="" /></span><div><small>DRAGONWILDS SYNC QUICK · ${esc(scopeLabel().toUpperCase())}</small><h1>${esc(quickState?.world_name || 'Loading World…')}</h1><span class="v3q-profile-caption">${esc(roleLabel)} control center · ${esc(quickState?.profile_kind || 'Loading profile')}</span></div></div>
         <span class="v3q-live-chip ${statusClass(runtimeState)}"><i></i>${esc(runtimeState)}</span>
-        <div class="v3q-header-actions"><button class="v3q-btn ghost" data-v3q-refresh ${busy?'disabled':''}>Refresh</button><button class="v3q-btn" data-v3q-full>Open Full Dragonwilds Sync</button></div>
+        <div class="v3q-header-actions"><label class="v3q-autostart"><input type="checkbox" data-v3q-autostart ${autoStart?'checked':''}/><span><b>Start + Sync on open</b><small>${autoStart?'Automatic':'Manual button'}</small></span></label><button class="v3q-btn ghost" data-v3q-refresh ${busy?'disabled':''}>Refresh</button><button class="v3q-btn" data-v3q-full>Open Full Dragonwilds Sync</button></div>
       </header>
       ${error ? `<div class="v3q-error">${esc(error)}</div>` : ''}
       <section class="v3q-status-grid">
@@ -201,7 +331,8 @@
         </div>
         <div class="v3q-secondary-actions"><button class="v3q-btn ghost" data-v3q-mods>View Mods</button>${quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}</div>
       </section>
-      <div class="v3q-columns">
+      <nav class="v3q-section-tabs" aria-label="Quick Launch tools"><button class="v3q-btn ${quickSection==='overview'?'primary':'ghost'}" data-v3q-section="overview">Overview &amp; Console</button><button class="v3q-btn ${quickSection==='dragonlink'?'primary':'ghost'}" data-v3q-section="dragonlink">DragonLink</button>${mode==='server'?`<button class="v3q-btn ${quickSection==='items'?'primary':'ghost'}" data-v3q-section="items">Summon Items</button>`:''}<button class="v3q-btn ${quickSection==='saves'?'primary':'ghost'}" data-v3q-section="saves">Save Manager</button></nav>
+      ${quickSection==='dragonlink'?quickDragonLink():quickSection==='saves'?quickSaveManager():mode==='server'&&quickSection==='items'?quickItemSpawner():`<div class="v3q-quick-overview"><div class="v3q-columns">
         <section class="v3q-panel">
           <div class="v3q-panel-head"><div><b>World & Network</b><small>Presence and World publication are independent</small></div></div>
           <div class="v3q-world-meta"><span>Profile ID</span><code>${esc(quickState?.profile_id || profileId)}</code></div>
@@ -214,13 +345,22 @@
       ${launchPlan()}
       ${serverTelemetry()}
       ${broadcastBox()}
-      ${quickConsole()}
+      ${quickConsole()}</div>`}
       <footer class="v3q-footer"><span>${busy?'Working…':'Ready'}</span><span>Open Full promotes this same launcher process; it does not duplicate the backend or runtime.</span></footer>
     </main>`;
     if (root.__dwsQuickMarkup === markup) return;
+    const priorScroll=window.scrollY;
+    const priorItemScroll=root.querySelector('.v3q-item-grid')?.scrollTop||0;
+    const priorConsoleScroll=root.querySelector('[data-v3q-console]')?.scrollTop??quickConsoleScrollTop;
+    const focused=document.activeElement;
+    const focusedName=focused?.getAttribute?.('name')||'';
+    const focusedValue=focusedName&&'value' in focused?focused.value:null;
     root.__dwsQuickMarkup = markup;
     root.innerHTML = markup;
+    root.querySelector('.v3q-mark img')?.addEventListener('error',(event)=>{event.currentTarget.src='assets/application-icon.webp';});
+    root.querySelector('.v3q-profile-banner')?.addEventListener('error',(event)=>{event.currentTarget.src='assets/singleplayer-banner.webp';});
     bindQuick();
+    requestAnimationFrame(()=>{window.scrollTo({top:priorScroll,left:0,behavior:'instant'});const grid=root.querySelector('.v3q-item-grid');if(grid)grid.scrollTop=priorItemScroll;const consoleNode=root.querySelector('[data-v3q-console]');if(consoleNode){if(quickFollowTail)consoleNode.scrollTop=consoleNode.scrollHeight;else consoleNode.scrollTop=priorConsoleScroll;}if(focusedName){const next=root.querySelector(`[name="${CSS.escape(focusedName)}"]`);if(next&&focusedValue!==null){next.value=focusedValue;next.focus({preventScroll:true});}}});
   }
 
   async function action(name) {
@@ -241,10 +381,25 @@
     await refresh();
   }
 
+  function bindSaveActions(scope) {
+    const runEntryAction=async(kind,entryId,action)=>{
+      let newName='';
+      if(action==='rename'){newName=prompt('Rename this save revision:',String(entryId||'').split('/').pop())||'';if(!newName)return;}
+      if(action==='delete'&&!confirm(`Delete ${String(entryId||'').split('/').pop()}?\n\nThis removes only this retained revision.`))return;
+      try{const result=await invoke('save.management.entry.action',{profile_id:quickState?.profile_id||profileId,mode,kind,entry_id:entryId,action,new_name:newName});toast(action==='desktop'?`Saved to Desktop · ${result.path}`:`Save revision ${action}d`,'success');quickSaves.loaded=false;await loadQuickSaves();if(scope.closest?.('[data-v3q-player-history]'))scope.remove();}
+      catch(error){toast(error?.message||String(error),'error');}
+    };
+    scope.querySelectorAll('[data-v3q-save-entry]').forEach((row)=>row.addEventListener('contextmenu',(event)=>{event.preventDefault();document.querySelector('[data-v3q-save-menu]')?.remove();const menu=document.createElement('div');menu.className='v3q-save-menu';menu.dataset.v3qSaveMenu='1';menu.style.left=`${event.clientX}px`;menu.style.top=`${event.clientY}px`;menu.innerHTML='<button data-action="rename">Rename</button><button data-action="desktop">Send to Desktop</button><button class="danger" data-action="delete">Delete</button>';document.body.appendChild(menu);const close=()=>menu.remove();menu.querySelectorAll('[data-action]').forEach((button)=>button.addEventListener('click',()=>{const action=button.dataset.action;close();void runEntryAction(row.dataset.v3qSaveEntry||'',row.dataset.v3qSaveId||'',action);}));setTimeout(()=>document.addEventListener('pointerdown',close,{once:true}),0);}));
+    scope.querySelectorAll('[data-v3q-save-desktop]').forEach((button)=>button.addEventListener('click',()=>{const [kind,...parts]=String(button.dataset.v3qSaveDesktop||'').split(':');void runEntryAction(kind,parts.join(':'),'desktop');}));
+    scope.querySelectorAll('[data-v3q-player-queue]').forEach((button)=>button.addEventListener('click',async()=>{if(!confirm('Queue this backup for the authenticated player?\n\nTheir launcher will receive and store it in the World profile on the next connection.'))return;try{await invoke('save.management.player.queue',{profile_id:quickState?.profile_id||profileId,mode,revision_id:button.dataset.v3qPlayerQueue||''});toast('Player delivery queued','The selected backup is now the next-connect delivery.','success');}catch(error){toast(error?.message||String(error),'error');}}));
+    scope.querySelectorAll('[data-v3q-player-restore]').forEach((button)=>button.addEventListener('click',async()=>{const revision=button.dataset.v3qPlayerRestore;if(!confirm(`Roll back this player save to ${revision}?\n\nThe current revision remains recoverable.`))return;try{await invoke('save.management.player.restore',{profile_id:quickState?.profile_id||profileId,mode,revision_id:revision,target_name:button.dataset.v3qPlayerTarget||'',source:button.dataset.v3qPlayerSource||''});toast(mode==='server'?'Player recovery revision selected':'Player save restored','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}}));
+  }
+
   function bindQuick() {
     const root = document.querySelector('[data-v3-quick-root]');
     if (!root) return;
     root.querySelector('[data-v3q-refresh]')?.addEventListener('click', ()=>refresh());
+    root.querySelector('[data-v3q-autostart]')?.addEventListener('change',(event)=>{autoStart=!!event.currentTarget.checked;localStorage.setItem(autoStartStorageKey,autoStart?'1':'0');event.currentTarget.closest('label')?.querySelector('small')?.replaceChildren(autoStart?'Automatic':'Manual button');if(autoStart&&!quickState?.active){autoStartConsumed=false;void refresh();}});
     root.querySelector('[data-v3q-full]')?.addEventListener('click', ()=>api.openMainWindow?.());
     root.querySelector('[data-v3q-mods]')?.addEventListener('click', async()=>{
       const target = String(quickState?.mods?.path || '');
@@ -254,7 +409,24 @@
       api.openMainWindow?.();
     });
     root.querySelector('[data-v3q-console-toggle]')?.addEventListener('click',async()=>{consoleOpen=!consoleOpen;if(consoleOpen)await refresh({consoleToo:true});else renderQuick();});
+    root.querySelectorAll('[data-v3q-section]').forEach((button)=>button.addEventListener('click',()=>{quickSection=button.dataset.v3qSection||'overview';renderQuick();if(quickSection==='items'&&!quickSpawner.loaded)void loadQuickSpawner();if(quickSection==='saves'&&!quickSaves.loaded)void loadQuickSaves();}));
+    root.querySelectorAll('[data-v3q-player-group]').forEach((button)=>button.addEventListener('click',()=>openQuickPlayerHistory(button.dataset.v3qPlayerGroup||'')));
+    bindSaveActions(root);
+    root.querySelector('[data-v3q-saves-refresh]')?.addEventListener('click',()=>void loadQuickSaves());
+    root.querySelector('[data-v3q-world-backup]')?.addEventListener('click',async()=>{if(!confirm('Create a verified World save recovery point now? Running servers briefly stop and restart so the save cannot be captured mid-write.'))return;try{await invoke('save.management.world.backup',{profile_id:quickState?.profile_id||profileId,mode});toast('World backup created','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}});
+    root.querySelector('[data-v3q-world-import]')?.addEventListener('click',async()=>{const path=await api.pickFile?.('zip');if(!path||!confirm('Import and swap to this World save ZIP?\n\nThe current World is backed up first. A running server will stop and restart.'))return;try{await invoke('save.management.world.import',{profile_id:quickState?.profile_id||profileId,mode,path});toast('World save imported and swapped','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}});
+    root.querySelectorAll('[data-v3q-world-restore]').forEach((button)=>button.addEventListener('click',async()=>{const revision=button.dataset.v3qWorldRestore;if(!confirm(`Restore ${revision}?\n\nThe current save is backed up first. A running server will stop, swap the save, and restart.`))return;try{await invoke('save.management.world.restore',{profile_id:quickState?.profile_id||profileId,mode,revision_id:revision});toast('World save restored','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}}));
+    root.querySelector('[data-v3q-item-search]')?.addEventListener('submit',(event)=>{event.preventDefault();quickSpawner.query=String(event.currentTarget.elements.query?.value||'').trim();quickSpawner.page=0;void loadQuickSpawner();});
+    root.querySelector('[data-v3q-items-refresh]')?.addEventListener('click',()=>{quickSpawner.page=0;void loadQuickSpawner({force:true});});
+    root.querySelectorAll('[data-v3q-item-page]').forEach((button)=>button.addEventListener('click',()=>{quickSpawner.page=Math.max(0,Number(button.dataset.v3qItemPage||0));renderQuick();document.querySelector('.v3q-item-service')?.scrollIntoView({block:'start'});}));
+    root.querySelectorAll('[data-v3q-item-path]').forEach((button)=>button.addEventListener('click',()=>{quickSpawner.selectedPath=button.dataset.v3qItemPath||'';quickSpawner.selectedName=button.dataset.v3qItemName||'Item';renderQuick();}));
+    root.querySelector('[data-v3q-item-player]')?.addEventListener('change',(event)=>{quickSpawner.playerId=event.currentTarget.value||'';});
+    root.querySelector('[data-v3q-item-count]')?.addEventListener('change',(event)=>{quickSpawner.count=Math.max(1,Math.min(9999,Number(event.currentTarget.value||1)));event.currentTarget.value=String(quickSpawner.count);});
+    root.querySelector('[data-v3q-give-item]')?.addEventListener('click',async()=>{const button=root.querySelector('[data-v3q-give-item]');if(!quickSpawner.selectedPath||!quickSpawner.playerId||button?.disabled)return;button.disabled=true;try{const result=await api.invoke('server.spawner.spawn',{id:quickState?.profile_id||profileId,kind:'item',runtime_path:quickSpawner.selectedPath,count:Math.max(1,Math.min(9999,Number(quickSpawner.count||1))),target:{kind:'player',player_id:quickSpawner.playerId},confirmed:true});toast(result?.ack||`${quickSpawner.selectedName} given to player`,'success');}catch(error){toast(error?.message||String(error),'error');}finally{button.disabled=false;}});
+    root.querySelector('[data-v3q-dragonlink-save]')?.addEventListener('click',async()=>{const config={};root.querySelectorAll('[data-v3q-dragonlink-setting]').forEach((input)=>{config[input.dataset.v3qDragonlinkSetting]=!!input.checked;});root.querySelectorAll('[data-v3q-dragonlink-number]').forEach((input)=>{config[input.dataset.v3qDragonlinkNumber]=Number(input.value);});try{await invoke('quick.dragonlink.update',{profile_id:quickState?.profile_id||profileId,mode,config:{dragonlink:config}});toast('DragonLink settings saved',quickState?.active?'Proximity Loot tuning hot-reloaded.':'Native modules will use this profile configuration on the next start.','success');await refresh({consoleToo:false});}catch(error){toast(error?.message||String(error),'error');}});
+    root.querySelector('[data-v3q-chat-form]')?.addEventListener('submit',async(event)=>{event.preventDefault();const input=event.currentTarget.elements.message;const message=String(input?.value||'').trim();if(!message)return;try{await invoke('quick.chat.send',{profile_id:quickState?.profile_id||profileId,mode,message});input.value='';toast('Admin chat sent','Delivered through the active Sync profile without adding a console entry.','success');await refresh({consoleToo:true});}catch(error){toast(error?.message||String(error),'error');}});
     root.querySelectorAll('[data-v3q-console-filter]').forEach((button)=>button.addEventListener('click',()=>{consoleFilter=button.dataset.v3qConsoleFilter||'all';renderQuick();}));
+    root.querySelectorAll('[data-v3q-console-color-key]').forEach((button)=>button.addEventListener('contextmenu',(event)=>{event.preventDefault();chooseConsoleColor(button.dataset.v3qConsoleColorKey,String(button.textContent||'source').replace(/\d+\s*$/,'').trim());}));
     root.querySelectorAll('[data-v3q-action]').forEach((button)=>button.addEventListener('click', ()=>action(button.dataset.v3qAction)));
     root.querySelector('[data-v3q-public]')?.addEventListener('change', async(event)=>{
       const enabled = !!event.currentTarget.checked;
@@ -281,7 +453,7 @@
       catch(error){toast(error?.message||String(error),'error');}
       await refresh({consoleToo:false});
     });
-    const consoleNode=root.querySelector('[data-v3q-console]'); if(consoleNode){if(quickFollowTail)consoleNode.scrollTop=consoleNode.scrollHeight;consoleNode.addEventListener('scroll',()=>{if(quickFollowTail&&consoleNode.scrollHeight-consoleNode.scrollTop-consoleNode.clientHeight>90)quickFollowTail=false;},{passive:true});}
+    const consoleNode=root.querySelector('[data-v3q-console]'); if(consoleNode){if(quickFollowTail)consoleNode.scrollTop=consoleNode.scrollHeight;else consoleNode.scrollTop=quickConsoleScrollTop;consoleNode.addEventListener('scroll',()=>{quickConsoleScrollTop=consoleNode.scrollTop;if(quickFollowTail&&consoleNode.scrollHeight-consoleNode.scrollTop-consoleNode.clientHeight>90)quickFollowTail=false;},{passive:true});}
   }
 
   // ---------- Full application additive controls ----------

@@ -24,6 +24,7 @@ This directory contains the current product documentation for Dragonwilds Sync.
 - `ADMIN_TOOLS_ITEM_SPAWNER.md`
 - `ASSET_PROVENANCE.md`
 - `GITHUB_RELEASES.md`
+- `nexusmods/README.md` and `nexusmods/description.bbcode` — Nexus Mods listing copy and branded media package
 - `FUTURE_DISCORD_WORLD_INVITES.md` and `FUTURE_NATIVE_ANNOUNCEMENTS.md`
 - `upstream-sources.json`, `recommended-mods.json`, and their rendered HTML companions
 

@@ -39,6 +39,12 @@ type HeartbeatPayload = {
   game_port?: number;
   sync_enabled?: boolean;
   game_enabled?: boolean;
+  hostingMode?: "local_dedicated" | "external_broadcast";
+  providerId?: string;
+  gameEndpoint?: { host?: string; port?: number };
+  capabilities?: Record<string, boolean>;
+  serviceStatus?: Record<string, unknown>;
+  placardGraceSeconds?: number;
 };
 
 const encoder = new TextEncoder();
@@ -224,6 +230,12 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
   const platformCompatibility = cleanPlatformCompatibility(input.platform_compatibility);
   const iconUrl = cleanImageReference(input.icon_url || input.icon_b64, 65536);
   const bannerUrl = cleanImageReference(input.banner_url || input.banner_b64, 131072);
+  const hostingMode = input.hostingMode === "external_broadcast" ? "external_broadcast" : "local_dedicated";
+  const endpoint = input.gameEndpoint && typeof input.gameEndpoint === "object" ? input.gameEndpoint : {};
+  const endpointHost = cleanText(endpoint.host, 253);
+  const safeEndpointHost = /^[A-Za-z0-9._:-]+$/.test(endpointHost) ? endpointHost : "";
+  const declaredCapabilities = input.capabilities && typeof input.capabilities === "object" && !Array.isArray(input.capabilities)
+    ? Object.fromEntries(Object.entries(input.capabilities).filter(([, enabled]) => typeof enabled === "boolean").slice(0, 32)) : {};
   return {
     host_os: cleanText(input.host_os, 40).toLowerCase(),
     host_os_label: cleanText(input.host_os_label, 100),
@@ -255,6 +267,12 @@ function filterMetadata(input: HeartbeatPayload): Record<string, unknown> {
     game_port: clampInt(input.game_port, 7777, 1, 65535),
     sync_enabled: typeof input.sync_enabled === "boolean" ? input.sync_enabled : null,
     game_enabled: typeof input.game_enabled === "boolean" ? input.game_enabled : null,
+    hosting_mode: hostingMode,
+    provider_id: cleanText(input.providerId, 80).toLowerCase().replace(/[^a-z0-9_-]/g, "") || "unknown",
+    game_endpoint: { host: safeEndpointHost, port: clampInt(endpoint.port, input.game_port || 7777, 1, 65535) },
+    capabilities: declaredCapabilities,
+    service_status: input.serviceStatus && typeof input.serviceStatus === "object" && !Array.isArray(input.serviceStatus) ? input.serviceStatus : {},
+    placard_grace_seconds: clampInt(input.placardGraceSeconds, 86400, 60, 2592000),
   };
 }
 
@@ -617,6 +635,12 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
     protocol_version: Number(metadata.protocol_version || 1),
     sync_tls: metadata.sync_tls === true,
     tls_cert_fingerprint: metadata.tls_cert_fingerprint || "",
+    hosting_mode: metadata.hosting_mode || "local_dedicated",
+    provider_id: metadata.provider_id || "unknown",
+    game_endpoint: metadata.game_endpoint || { host: row.public_host || "", port: Number(metadata.game_port || 7777) },
+    capabilities: metadata.capabilities || {},
+    service_status: metadata.service_status || {},
+    placard_grace_seconds: Number(metadata.placard_grace_seconds || 86400),
     sync_protocol: "dragonwilds-world-sync",
     sync_ready: syncEnabled,
     sync_broadcasting: syncEnabled,
@@ -639,12 +663,15 @@ function publicWorld(row: Record<string, unknown>, offlineAfterSeconds: number):
 
 async function collectSyncWorlds(env: Env): Promise<Array<Record<string, unknown>>> {
   const offlineAfter = clampInt(env.OFFLINE_AFTER_SECONDS, 1800, 60, 86400);
-  const registrationCutoff = Math.floor(Date.now() / 1000) - registrationRetentionSeconds(env);
+  // The public directory is a one-hour discovery index, not a historical
+  // database. Publisher identity remains retained for the 30-day
+  // re-registration policy, but stale placards never consume public results.
+  const discoveryCutoff = Math.floor(Date.now() / 1000) - 3600;
   const result = await env.DB.prepare(`
     SELECT * FROM worlds
     WHERE is_listed = 1 AND last_seen >= ?
     ORDER BY last_seen DESC, world_name COLLATE NOCASE ASC
-  `).bind(registrationCutoff).all<Record<string, unknown>>();
+  `).bind(discoveryCutoff).all<Record<string, unknown>>();
 
   const worlds = (result.results || []).map((row) => publicWorld(row, offlineAfter));
   worlds.sort((a, b) => {
@@ -656,6 +683,47 @@ async function collectSyncWorlds(env: Env): Promise<Array<Record<string, unknown
     return String(a.world_name || "").localeCompare(String(b.world_name || ""));
   });
   return worlds;
+}
+
+function safeProbeHost(value: unknown): string {
+  const host = cleanText(value, 253).toLowerCase();
+  if (!host || host === "localhost" || host.endsWith(".local") || host.includes("%")) return "";
+  if (/^(?:10\.|127\.|169\.254\.|192\.168\.|0\.)/.test(host)) return "";
+  const match = host.match(/^172\.(\d{1,3})\./);
+  if (match && Number(match[1]) >= 16 && Number(match[1]) <= 31) return "";
+  if (host === "::1" || host.startsWith("fc") || host.startsWith("fd") || host.startsWith("fe80:")) return "";
+  return /^[a-z0-9.:[\]-]+$/.test(host) ? host : "";
+}
+
+async function pingWorld(request: Request, env: Env, worldId: string): Promise<Response> {
+  const now = Math.floor(Date.now() / 1000);
+  const row = await env.DB.prepare("SELECT * FROM worlds WHERE world_id = ? AND is_listed = 1 AND last_seen >= ?")
+    .bind(worldId, now - 3600).first<Record<string, unknown>>();
+  if (!row) return json({ ok: false, status: "unavailable", error: "not_recently_connected" }, 404, publicCorsHeaders());
+  const host = safeProbeHost(row.public_connect_host);
+  const port = clampInt(row.public_connect_port, 27051, 1, 65535);
+  if (!host) return json({ ok: false, status: "unavailable", error: "no_public_sync_endpoint" }, 409, publicCorsHeaders());
+  const metadata = parseJsonObject(row.metadata_json);
+  const scheme = metadata.sync_tls === true ? "https" : "http";
+  const bracketed = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+  const started = Date.now();
+  try {
+    const response = await fetch(`${scheme}://${bracketed}:${port}/status?compact=1`, {
+      method: "GET", redirect: "error", signal: controller.signal,
+      headers: { accept: "application/json", "user-agent": "Dragonwilds-Sync-Directory-Probe/1" },
+    });
+    if (!response.ok) throw new Error(`upstream_${response.status}`);
+    const body = await response.json<Record<string, unknown>>();
+    return json({ ok: true, status: "online", latency_ms: Date.now() - started,
+      server_online: body.server_online === true, player_count: Number(body.player_count || 0),
+      profile_id: cleanText(body.profile_id, 120), manifest_version: Number(body.manifest_version || 0),
+      checked_at: now }, 200, { ...publicCorsHeaders(), "cache-control": "public, max-age=10" });
+  } catch (error) {
+    return json({ ok: false, status: "offline", error: error instanceof Error ? error.message : "probe_failed",
+      checked_at: now }, 200, { ...publicCorsHeaders(), "cache-control": "public, max-age=10" });
+  } finally { clearTimeout(timeout); }
 }
 
 async function listWorlds(env: Env): Promise<Response> {
@@ -791,6 +859,9 @@ export default {
       const worldId = decodeURIComponent(url.pathname.slice("/api/v1/worlds/".length));
       return handleDeregister(request, env, worldId);
     }
+
+    const pingMatch = request.method === "GET" ? url.pathname.match(/^\/api\/v1\/worlds\/([^/]+)\/ping$/) : null;
+    if (pingMatch) return pingWorld(request, env, decodeURIComponent(pingMatch[1]));
 
     if (request.method === "GET" && url.pathname.startsWith("/api/v1/worlds/")) {
       const worldId = decodeURIComponent(url.pathname.slice("/api/v1/worlds/".length));

@@ -388,6 +388,18 @@ def _install_server_pipeline(server_engine_module) -> None:
             self._event(selected["cache_warning"], "warn")
         profile = server_engine_module.load_server_profile(profile_id) or profile
 
+        # Optional gameplay/observation components are profile-owned and are
+        # materialized only after the selected UE4SS runtime is final. This
+        # keeps profile switching deterministic and prevents a machine-wide
+        # baseline from silently enabling gameplay changes for every World.
+        from managed_runtime_mods import apply_profile_components
+        managed_runtime = apply_profile_components(layout.ue4ss_mods_dir, profile)
+        if managed_runtime.get("changed"):
+            names = [row.get("name") for row in managed_runtime.get("components", {}).values() if row.get("changed")]
+            self._event("Applied profile runtime components: " + ", ".join(filter(None, names)), "ok")
+        for warning in managed_runtime.get("warnings") or []:
+            self._event(str(warning), "warn")
+
         cfg = profile.setdefault("dedicated_config", {})
         launch_ready = False
         if launch_required:
@@ -428,6 +440,7 @@ def _install_server_pipeline(server_engine_module) -> None:
         prepared = {
             "profile_id": profile_id, "profile": profile, "root": root, "exe": exe,
             "runtime": dict(runtime), "units": list(units), "mods_txt": dict(mods_txt or {}),
+            "managed_runtime": managed_runtime,
             "materialization": materialized,
             "materialization_mode": mode, "managed_configs_locked": locked,
             "mod_signature": _server_mod_signature(server_engine_module, root),
@@ -482,7 +495,11 @@ def _install_server_pipeline(server_engine_module) -> None:
         writable = server_engine_module.ensure_server_runtime_writable(self._profile_root(profile))
         if writable.get("writable_repaired"):
             self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
-        self.proc = server_engine_module.popen_game_server(command, minimize_console=native_consoles, cwd=str(Path(exe).parent), env=launch_env,
+        # Windows always receives a real console allocation in minimized,
+        # non-activating form.  The preference still controls Linux's
+        # explicit -NewConsole route, but a Windows server must never flash,
+        # steal focus, or silently lose the console UE4SS expects.
+        self.proc = server_engine_module.popen_game_server(command, minimize_console=(server_engine_module.os.name == "nt" or native_consoles), cwd=str(Path(exe).parent), env=launch_env,
                                                       stdout=server_engine_module.subprocess.PIPE,
                                                       stderr=server_engine_module.subprocess.STDOUT,
                                                       text=True, encoding="utf-8", errors="replace", bufsize=1)

@@ -219,4 +219,5 @@ def normalize_notice(value: dict | None) -> dict:
     except (TypeError, ValueError):
         expires = None
     return {"level": level, "title": str(src.get("title") or "")[:80], "message": str(src.get("message") or "")[:300],
-            "expires_at": expires, "updated_at": src.get("updated_at"), "announcement": bool(src.get("announcement", False))}
+            "expires_at": expires, "updated_at": src.get("updated_at"), "announcement": bool(src.get("announcement", False)),
+            "system": bool(src.get("system", False))}

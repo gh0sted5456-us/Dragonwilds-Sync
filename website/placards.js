@@ -80,6 +80,10 @@
       countryCode: safeText(raw?.country_code ?? raw?.status?.country_code, '', 4).toUpperCase(),
       countryName: safeText(raw?.country_name ?? raw?.status?.country_name, '', 60),
       hosting: safeText(raw?.hosting ?? raw?.host_label ?? classification.hosting, '', 60),
+      hostingMode: safeText(raw?.hosting_mode, 'local_dedicated', 40),
+      providerId: safeText(raw?.provider_id, 'unknown', 80),
+      providerName: safeText(raw?.provider_display_name, '', 120),
+      serviceStatus: objectValue(raw?.service_status),
       audience,
       platform: safeText(raw?.platform ?? classification.platform, '', 40),
       contentType: safeText(raw?.content_type ?? classification.content_type, '', 40),
@@ -121,6 +125,23 @@
     const stateBadges = world.syncBroadcasting ? [world.gameActive ? 'DRAGONWILDS ACTIVE' : 'SYNC ONLY', 'SYNC BROADCAST'] : [];
     [...new Set([...stateBadges, ...world.badges].map((badge)=>String(badge).trim()).filter(Boolean))].slice(0, 8)
       .forEach((badge) => row.appendChild(makeBadge(badge, /discord|community|rsdw/i.test(badge) ? 'community' : '')));
+    return row;
+  }
+
+  function buildHostingRow(world) {
+    const row = makeEl('div', 'hosting-badges');
+    const external = world.hostingMode === 'external_broadcast';
+    const provider = makeEl('span', 'hosting-badge provider');
+    const icon = makeImage('hosting-provider-icon', `assets/providers/${external ? 'external-host.svg' : 'home-host.svg'}`);
+    if (icon) provider.appendChild(icon);
+    const fallback = external ? world.providerId.replace(/[-_]+/g, ' ') : 'Self-hosted';
+    provider.appendChild(makeEl('b', '', world.providerName || fallback));
+    const syncLive = Boolean(world.serviceStatus.broadcaster || world.serviceStatus.directory || world.syncBroadcasting);
+    const gameLive = Boolean(world.serviceStatus.game_endpoint || world.serviceStatus.game || world.gameActive);
+    row.append(provider,
+      makeEl('span', `hosting-badge ${syncLive ? 'live' : 'offline'}`, syncLive ? 'Sync live' : 'Sync offline'),
+      makeEl('span', `hosting-badge ${gameLive ? 'live' : 'offline'}`, gameLive ? 'Game live' : 'Game offline'));
+    if (syncLive && gameLive) row.appendChild(makeEl('span', 'hosting-badge live', 'Sync + Game'));
     return row;
   }
 
@@ -185,7 +206,8 @@
     const title = makeEl('div', 'card-title');
     title.appendChild(makeEl('h3', '', world.name));
     title.appendChild(makeEl('small', '', world.name !== world.authoritativeName ? `World: ${world.authoritativeName}` : world.worldId));
-    topline.append(title, makeStatusPill(world));
+    const statusPill = makeStatusPill(world);
+    topline.append(title, statusPill);
     body.appendChild(topline);
     body.appendChild(makeEl('div', 'card-description', world.description));
 
@@ -193,6 +215,7 @@
     appendTagSet(tags, [world.contentType || world.gameMode || 'Public World', world.version || 'Version unknown']);
     body.appendChild(tags);
     body.appendChild(buildBadgeRow(world));
+    body.appendChild(buildHostingRow(world));
 
     const footer = makeEl('div', 'card-footer');
     const metrics = makeEl('div', 'card-metrics');
@@ -205,6 +228,26 @@
     metrics.appendChild(makeEl('span', '', `Last seen ${relativeTime(world.lastSeen)}`));
     footer.appendChild(metrics);
     appendRating(footer, world);
+    const ping = makeEl('button', 'world-ping-button', 'PING WORLD');
+    ping.type = 'button';
+    ping.title = 'Ask this World directly for its current Sync status';
+    ping.addEventListener('click', async (event) => {
+      event.preventDefault(); event.stopPropagation();
+      ping.disabled = true; ping.textContent = 'PINGING...';
+      try {
+        const response = await fetch(`${API_BASE}/api/v1/worlds/${encodeURIComponent(world.worldId)}/ping`, { headers: { accept: 'application/json' }, cache: 'no-store' });
+        const result = await response.json();
+        const online = response.ok && result.ok === true;
+        statusPill.className = `status-pill ${online ? 'online' : 'offline'}`;
+        statusPill.textContent = online ? `LIVE · ${Math.max(0, Number(result.latency_ms || 0))} MS` : 'OFFLINE / UNAVAILABLE';
+        ping.textContent = online ? 'PING AGAIN' : 'RETRY PING';
+      } catch (_) {
+        statusPill.className = 'status-pill offline';
+        statusPill.textContent = 'OFFLINE / UNAVAILABLE';
+        ping.textContent = 'RETRY PING';
+      } finally { ping.disabled = false; }
+    });
+    footer.appendChild(ping);
     footer.appendChild(makeEl('span', 'card-flip-hint', 'DETAILS ↻'));
     body.appendChild(footer);
     front.appendChild(body);

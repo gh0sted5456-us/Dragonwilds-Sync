@@ -170,7 +170,7 @@ def main() -> None:
         "game_root": "X", "detected": True, "count": 7,
         "mods": [
             {"name": "DragonCore", "type": "UE4SS", "files": 3},
-            {"name": "PersistentDirectConnectIP", "type": "UE4SS", "files": 2},
+            {"name": "DragonLink", "type": "UE4SS", "files": 2},
             {"name": "RSDWTools", "type": "UE4SS", "files": 5},
             {"name": "RuneSchema", "type": "UE4SS", "files": 4},
             {"name": "ActualLua", "type": "UE4SS", "files": 1},
@@ -192,7 +192,7 @@ def main() -> None:
     cached = _filter_inventory_cache({"updated_at": "old", "mods": [
         {"name": "mods.txt", "group": "ue4ss_mod"},
         {"name": "DragonCore", "group": "ue4ss_mod"},
-        {"name": "PersistentDirectConnectIP", "group": "ue4ss_mod"},
+        {"name": "DragonLink", "group": "ue4ss_mod"},
         {"name": "RSDWTools", "group": "ue4ss_mod"},
         {"name": "ActualLua", "group": "ue4ss_mod"},
     ]})
@@ -208,7 +208,7 @@ def main() -> None:
     components = {row["id"]: row for row in payload["core_components"]}
     assert set(components) == {"ue4ss", "runeschema", "dragonconnect", "rsdw_toolkit"}
     assert components["runeschema"]["update_available"] is True
-    assert components["dragonconnect"]["legacy_name"] == "DragonConnectHelper"
+    assert components["dragonconnect"]["name"] == "DragonLink"
     assert components["rsdw_toolkit"]["ui_group"] == "tooling"
 
     session = {

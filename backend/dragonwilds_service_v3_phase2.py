@@ -19,6 +19,13 @@ from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 from profile_store import APP_DATA_DIR
 import profile_settings as _profile_settings
 from server_scheduler import normalize_notice
+from save_management import (inventory as save_inventory, mutate_entry,
+                             restore_local_player, select_server_player_revision)
+from backup_naming import normalize_template, profile_naming
+from managed_runtime_mods import (normalize_profile_config, apply_profile_components,
+                                  configure_live_component, status_profile_components)
+from server_layout import resolve_server_layout
+from world_operations import ARCHIVE_ROOT, CLIENT_SAVEGAMES, archive_private, import_worldsave_archive, restore_archive
 from v3_migration import update_stage
 
 # Regression-source anchors retained for historical tests that prove the former
@@ -81,6 +88,15 @@ def _share_payload() -> dict:
         payload["game_enabled"] = bool((RUNTIME.get_status() or {}).get("running"))
     except Exception:
         payload["game_enabled"] = False
+    try:
+        profile_id = str(_legacy.STATE.active_profile_id or _legacy.load_state().setdefault("server", {}).get("active_world_id") or "")
+        profile = _legacy.load_server_profile(profile_id) if profile_id else {}
+        hosting = _legacy.normalize_hosting(profile)
+        if hosting["mode"] == _legacy.EXTERNAL_BROADCAST:
+            payload["game_enabled"] = hosting["status"].get("gameEndpoint") == "reachable"
+            payload.update(_legacy.public_hosting_metadata(profile))
+    except Exception:
+        pass
     return payload
 
 
@@ -128,6 +144,9 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
     metadata_cache = profile.get("metadata_cache") if isinstance(profile.get("metadata_cache"), dict) else {}
     mods = [row for row in (metadata_cache.get("mods") or []) if isinstance(row, dict)]
     name = str(profile.get("name") or profile.get("nickname") or ((profile.get("identity") or {}).get("world_name") if isinstance(profile.get("identity"), dict) else "") or "World")
+    presentation = profile.get("presentation") if isinstance(profile.get("presentation"), dict) else {}
+    icon_b64 = str(presentation.get("icon_b64") or profile.get("icon_b64") or "")
+    banner_b64 = str(presentation.get("banner_b64") or profile.get("banner_b64") or "")
     if kind == "dedicated":
         mods_path = str(_profile_settings.profile_root("dedicated", profile_id) / "mods")
     elif kind == "local":
@@ -141,6 +160,10 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         "profile_kind": kind,
         "world_name": name,
         "description": str(profile.get("description") or ((profile.get("presentation") or {}).get("description") if isinstance(profile.get("presentation"), dict) else "") or "")[:300],
+        "presentation": {
+            "icon_b64": icon_b64[:2_000_000],
+            "banner_b64": banner_b64[:4_000_000],
+        },
         "mods": {"count": len(mods), "cached": bool(metadata_cache.get("mods_updated_at") or metadata_cache.get("updated_at")), "path": mods_path},
         "sync": {"serving": bool(share.get("serving")), "port": share.get("port"), "fingerprint": str(share.get("fingerprint") or "")[:128]},
         "network": network,
@@ -158,9 +181,36 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         "controls": {
             "play": mode == "player", "host": mode == "coop", "start": mode == "server",
             "stop": mode in {"coop", "server"}, "restart": mode == "server", "update_restart": mode == "server",
-            "console": True, "broadcast_message": mode in {"coop", "server"},
+            "console": True, "spawner": mode == "server", "saves": True,
+            "broadcast_message": mode in {"coop", "server"},
         },
+        "chat": list(profile.get("dragonlink_chat") or [])[-100:] if isinstance(profile.get("dragonlink_chat"), list) else [],
     }
+    dragonlink_config = normalize_profile_config(profile)
+    result["dragonlink"] = {
+        "config": dragonlink_config,
+        "components": {},
+        "editable": mode == "server",
+        "restart_required": True,
+    }
+    if kind == "dedicated":
+        try:
+            server_root = str(_legacy.server_root_for_profile(profile) or "").strip()
+            if server_root:
+                result["dragonlink"] = {
+                    **status_profile_components(resolve_server_layout(server_root).ue4ss_mods_dir, profile),
+                    "editable": True,
+                    "restart_required": True,
+                }
+            else:
+                result["dragonlink"]["error"] = "Set this World's dedicated server directory before installing DragonLink."
+        except Exception as exc:
+            result["dragonlink"]["error"] = str(exc)
+    elif kind == "linked":
+        manifest = profile.get("manifest_cache") if isinstance(profile.get("manifest_cache"), dict) else {}
+        advertised = manifest.get("dragonlink_connect") if isinstance(manifest.get("dragonlink_connect"), dict) else {}
+        result["dragonlink"]["advertised_connect"] = bool(advertised.get("enabled", False))
+        result["dragonlink"]["connect_mode"] = str(advertised.get("mode") or ("direct-panel-once" if advertised.get("enabled") else "manual"))
     if mode == "server":
         runtime_status = runtime.get("runtime") if isinstance(runtime.get("runtime"), dict) else runtime
         history = list(runtime_status.get("metric_history") or [])[-180:]
@@ -280,6 +330,31 @@ def _quick_broadcast(state: dict, params: dict) -> dict:
     return {"ok": True, "notice": notice, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
 
 
+def _quick_chat_send(state: dict, params: dict) -> dict:
+    """Publish ordinary admin chat without adding it to the runtime console."""
+    mode = _quick_mode(params.get("mode"))
+    if mode != "server":
+        raise ValueError("DragonLink admin chat is available only for hosted Server profiles")
+    profile_id, profile, _kind = _quick_profile(
+        state, str(params.get("profile_id") or params.get("id") or ""), mode)
+    message = str(params.get("message") or "").strip()[:1000]
+    if not message:
+        raise ValueError("Enter a chat message")
+    row = {"id": f"admin-{time.time_ns()}", "at": time.time(), "sender": "Server Admin",
+           "message": message, "kind": "chat", "automated": False}
+    history = [item for item in (profile.get("dragonlink_chat") or []) if isinstance(item, dict)][-99:]
+    profile["dragonlink_chat"] = [*history, row]
+    _legacy.save_server_profile(profile_id, profile)
+    # Refresh the active Sync payload so launcher clients receive the message.
+    active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+    if active_id == profile_id and bool((_legacy.SHARE.status() or {}).get("serving")):
+        try:
+            _legacy.ENGINE.publish(profile_id)
+        except Exception:
+            pass
+    return {"ok": True, "message": row, "chat": profile["dragonlink_chat"]}
+
+
 def _quick_console(state: dict, profile_id: str, mode: str, limit: int = 250) -> dict:
     profile_id, _profile, kind = _quick_profile(state, profile_id, mode)
     if kind == "dedicated":
@@ -393,7 +468,9 @@ def handle(method: str, params: dict) -> object:
     if method in {"server.world.start", "server.runtime.start"}:
         response = _base_handle(method, params)
         profile_id = str(params.get("id") or _legacy.load_state().setdefault("server", {}).get("active_world_id") or "")
-        network = _network_after_verified_start(profile_id, "dedicated", "dedicated_server") if profile_id else {}
+        profile = _legacy.load_server_profile(profile_id) if profile_id else {}
+        external = bool(profile and _legacy.normalize_hosting(profile)["mode"] == _legacy.EXTERNAL_BROADCAST)
+        network = _network_after_verified_start(profile_id, "dedicated", "external_broadcast" if external else "dedicated_server") if profile_id else {}
         if isinstance(response, dict):
             response["network"] = network
         return response
@@ -444,10 +521,178 @@ def handle(method: str, params: dict) -> object:
         return handle("server.runtime.update_restart", {"id": str(params.get("profile_id") or params.get("id") or ""), "restart": True})
     if method == "quick.broadcast":
         return _quick_broadcast(state, params)
+    if method == "quick.chat.send":
+        return _quick_chat_send(state, params)
     if method == "quick.console.execute":
         return _quick_console_execute(state, params)
     if method == "quick.console.get":
         return _quick_console(state, str(params.get("profile_id") or params.get("id") or ""), _quick_mode(params.get("mode")), int(params.get("limit") or 250))
+    if method == "quick.dragonlink.update":
+        if _quick_mode(params.get("mode")) != "server":
+            raise ValueError("DragonLink feature controls are editable only for hosted Server profiles")
+        profile_id = str(params.get("profile_id") or params.get("id") or "").strip()
+        return handle("server.world.managed_runtime.update", {"id": profile_id, "config": params.get("config") or {}})
+
+    if method in {"server.world.managed_runtime.status", "server.world.managed_runtime.update"}:
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+        profile = _legacy.load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        root = str(_legacy.server_root_for_profile(profile) or "").strip()
+        if not root:
+            raise ValueError("Set this World's dedicated server directory before managing runtime components")
+        mods_dir = resolve_server_layout(root).ue4ss_mods_dir
+        if method.endswith(".update"):
+            current = normalize_profile_config(profile)
+            incoming = params.get("config") if isinstance(params.get("config"), dict) else {}
+            running = bool((RUNTIME.get_status().get("runtime") or RUNTIME.get_status()).get("running"))
+            live_keys = {"proximity_threshold", "proximity_exit_threshold", "enhanced_magnet_range",
+                         "proximity_state_delay_seconds", "proximity_refresh_seconds"}
+            if running and isinstance(incoming.get("dragonlink"), dict):
+                changed_non_live = [key for key, value in incoming["dragonlink"].items()
+                                    if key not in live_keys and value != current["dragonlink"].get(key)]
+                if changed_non_live:
+                    raise RuntimeError("Stop this World before changing DragonLink feature DLL toggles; Proximity Loot distances can be tuned live")
+            for key in ("dragonlink",):
+                if isinstance(incoming.get(key), dict):
+                    current[key] = {**current[key], **incoming[key]}
+            profile["managed_runtime_mods"] = normalize_profile_config({"managed_runtime_mods": current})
+            managed_row = profile["managed_runtime_mods"]["dragonlink"]
+            overrides = profile.setdefault("unit_overrides", {})
+            proximity_override = dict(overrides.get("ue4ss_mod::DragonLink-ProximityLoot") or {})
+            proximity_override["classification"] = ("player_required" if managed_row.get("push_proximity_loot_to_clients")
+                                                        else "server_only")
+            overrides["ue4ss_mod::DragonLink-ProximityLoot"] = proximity_override
+            connect_value = current.get("dragonlink", {}).get("connect")
+            if connect_value is not None:
+                profile.setdefault("sync_config", {})["dragonlink_connect_enabled"] = bool(connect_value)
+                profile["managed_runtime_mods"]["dragonlink"]["connect"] = bool(connect_value)
+            _legacy.save_server_profile(profile_id, profile)
+            result = configure_live_component(mods_dir, profile) if running else apply_profile_components(mods_dir, profile)
+            return {"ok": True, **result, "restart_required": not running,
+                    "hot_reloaded": running, "live_keys": sorted(live_keys) if running else []}
+        return status_profile_components(mods_dir, profile)
+
+    if method == "save.management.list":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, profile, kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        game_dir = str((state.get("application") or {}).get("game_dir") or "")
+        status = None
+        if mode == "server":
+            status = _base_handle("server.world.save.status", {"id": profile_id})
+        return save_inventory(profile_id=profile_id, mode=mode, game_dir=game_dir,
+                              world_status=status, profile_name=str(profile.get("name") or profile.get("nickname") or profile_id),
+                              naming=(profile.get("backup_naming") if isinstance(profile.get("backup_naming"), dict) else {}))
+
+    if method == "save.management.naming.update":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, profile, _kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        naming = {
+            "world_template": normalize_template(params.get("world_template"), player=False),
+            "player_template": normalize_template(params.get("player_template"), player=True),
+        }
+        profile["backup_naming"] = naming
+        if mode == "server":
+            _legacy.save_server_profile(profile_id, profile)
+        else:
+            _legacy.save_singleplayer_profile(profile, profile_id)
+        return {"ok": True, "profile_id": profile_id, "backup_naming": profile_naming(profile)}
+
+    if method == "save.management.entry.action":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, _profile, _kind = _quick_profile(
+            state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        game_dir = str((state.get("application") or {}).get("game_dir") or "")
+        return mutate_entry(
+            profile_id=profile_id, mode=mode, kind=str(params.get("kind") or ""),
+            entry_id=str(params.get("entry_id") or ""), action=str(params.get("action") or ""),
+            game_dir=game_dir, new_name=str(params.get("new_name") or ""))
+
+    if method == "save.management.player.queue":
+        mode = _quick_mode(params.get("mode"))
+        if mode != "server":
+            raise ValueError("Send to player is available only for hosted Server profiles")
+        profile_id, _profile, _kind = _quick_profile(
+            state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        result = select_server_player_revision(
+            profile_id=profile_id, revision_id=str(params.get("revision_id") or ""))
+        try:
+            _legacy.ENGINE.record_event(
+                f"Queued player save delivery for {result.get('latest', {}).get('player_name') or 'Player'} on next authenticated connection.",
+                "info")
+        except Exception:
+            pass
+        return result
+
+    if method == "save.management.world.backup":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, profile, _kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        if mode == "server":
+            return _base_handle("server.world.backup.create", {"id": profile_id})
+        if _legacy._dragonwilds_client_running():
+            raise RuntimeError("Exit Dragonwilds before creating a complete local World save recovery point.")
+        return archive_private(str(profile.get("name") or "Private World"),
+                               name_template=profile_naming(profile)["world_template"])
+
+    if method == "save.management.world.restore":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, profile, _kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        revision = str(params.get("revision_id") or params.get("backup") or "")
+        if mode == "server":
+            runtime = RUNTIME.get_status().get("runtime") or RUNTIME.get_status()
+            active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+            was_running = bool(runtime.get("running") and active_id == profile_id)
+            if was_running:
+                handle("server.world.stop", {"id": profile_id})
+            try:
+                # Capture the just-stopped live tree before replacing it. This
+                # is the automatic path back from every hot-swap operation.
+                pre_swap = _base_handle("server.world.backup.create", {"id": profile_id})
+                restored = _base_handle("server.world.backup.restore", {"id": profile_id, "backup": revision})
+            finally:
+                if was_running:
+                    handle("server.world.start", {"id": profile_id})
+            return {"ok": True, "hot_swap": was_running, "pre_swap": pre_swap, "restore": restored,
+                    "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
+        if _legacy._dragonwilds_client_running():
+            raise RuntimeError("Exit Dragonwilds before swapping a local World save. The game may still be writing it.")
+        archive = (ARCHIVE_ROOT / Path(revision).name).resolve()
+        return restore_archive(archive, CLIENT_SAVEGAMES, backup_name=str(profile.get("name") or "Private World"))
+
+    if method == "save.management.player.restore":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, _profile, _kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        revision = str(params.get("revision_id") or "")
+        if mode == "server":
+            return select_server_player_revision(profile_id=profile_id, revision_id=revision)
+        if _legacy._dragonwilds_client_running():
+            raise RuntimeError("Exit Dragonwilds before rolling back a player save. The game may still be writing it.")
+        game_dir = str((state.get("application") or {}).get("game_dir") or "")
+        return restore_local_player(game_dir=game_dir, backup_name=revision,
+                                    target_name=str(params.get("target_name") or ""), source=str(params.get("source") or ""))
+
+    if method == "save.management.world.import":
+        mode = _quick_mode(params.get("mode"))
+        profile_id, profile, _kind = _quick_profile(state, str(params.get("profile_id") or params.get("id") or ""), mode)
+        source = Path(str(params.get("path") or ""))
+        if not source.is_file() or source.suffix.casefold() != ".zip":
+            raise ValueError("Choose a Dragonwilds World save ZIP to swap.")
+        if mode == "server":
+            runtime = RUNTIME.get_status().get("runtime") or RUNTIME.get_status()
+            active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
+            was_running = bool(runtime.get("running") and active_id == profile_id)
+            if was_running: handle("server.world.stop", {"id": profile_id})
+            try:
+                pre_swap = _base_handle("server.world.backup.create", {"id": profile_id})
+                result = import_worldsave_archive(source, _legacy.SERVER_PROFILES_DIR / profile_id / "savegame", replace_tree=True)
+            finally:
+                if was_running: handle("server.world.start", {"id": profile_id})
+            return {"ok": True, "hot_swap": was_running, "pre_swap": pre_swap, "import": result}
+        if _legacy._dragonwilds_client_running():
+            raise RuntimeError("Exit Dragonwilds before importing and swapping a local World save.")
+        pre_swap = archive_private(str(profile.get("name") or "Private World"))
+        return {"ok": True, "pre_swap": pre_swap,
+                "import": import_worldsave_archive(source, CLIENT_SAVEGAMES, replace_tree=True)}
 
     if method == "application.shutdown":
         NETWORK.world_stopping(reason="application_shutdown")

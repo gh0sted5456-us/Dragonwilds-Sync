@@ -18,11 +18,8 @@ _ID_RE = re.compile(r"^[A-Za-z0-9._-]{1,120}$")
 
 
 def app_data_root() -> Path:
-    override = os.environ.get("DRAGONWILDS_SYNC_APPDATA")
-    if override:
-        return Path(override)
-    local = os.environ.get("LOCALAPPDATA") if sys.platform == "win32" else None
-    return Path(local) / "DragonwildsSync" if local else Path.home() / ".dragonwilds_sync"
+    from data_root import resolve_active_data_root
+    return resolve_active_data_root()
 
 
 def safe_id(value: object, label: str = "identifier") -> str:

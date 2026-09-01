@@ -93,7 +93,7 @@ def main():
         layout.win64_dir.joinpath("dwmapi.dll").write_bytes(b"loader")
         layout.win64_dir.joinpath("ue4ss", "UE4SS.dll").parent.mkdir(parents=True)
         layout.win64_dir.joinpath("ue4ss", "UE4SS.dll").write_bytes(b"ue4ss")
-        connector = layout.ue4ss_mods_dir / "DragonLink-Connect"
+        connector = layout.ue4ss_mods_dir / "DragonLink"
         connector.mkdir(parents=True)
         (connector / "enabled.txt").write_text("", encoding="utf-8")
         rune_core = layout.runeschema_root / "dlls"

@@ -17,6 +17,12 @@ def main():
         raise AssertionError("remote item spawn must remain blocked")
     except ValueError as exc:
         assert "local player" in str(exc)
+    assert spawner.spawn_command("item", "ITEM_GUID_Sword", {"kind": "local"}, 2) == "give.item ITEM_GUID_Sword 2"
+    try:
+        spawner.spawn_command("item", "ITEM Bad;Command", {"kind": "local"})
+        raise AssertionError("unsafe item identifier was accepted")
+    except ValueError as exc:
+        assert "identifier" in str(exc)
 
     with tempfile.TemporaryDirectory() as tmp:
         selected = Path(tmp) / "selected-server"

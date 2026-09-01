@@ -38,6 +38,7 @@ _SECRET_KEYS = {
     "remote_password", "server_key", "share_access_key", "directory_token",
     "ingestion_token", "publisher_token", "feed_token", "api_key", "access_token",
     "refresh_token", "auth_token", "bearer_token", "client_secret", "remote_secret",
+    "vault_password",
 }
 _EXCLUDED_SUFFIXES = ("_hash", "_salt", "_digest", "_fingerprint", "_public_key")
 

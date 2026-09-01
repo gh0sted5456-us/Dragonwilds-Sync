@@ -60,13 +60,14 @@ def main() -> None:
     # Registry installation extends every retained profile/runtime ownership set.
     assert "mods.txt" in local_world.RESERVED_UE4SS
     assert "dragoncore" not in local_world.RESERVED_UE4SS
-    assert "persistentdirectconnectip" in local_world.RESERVED_UE4SS
+    assert "dragonlink" in local_world.RESERVED_UE4SS
     assert "rsdwtools" in local_world.RESERVED_UE4SS
     assert "rsdwdevkit" in local_world.RESERVED_UE4SS
     assert "dragoncore" not in server_engine.SERVER_INFRASTRUCTURE_UE4SS
-    assert "persistentdirectconnectip" in sync_engine.LAUNCHER_LOCAL_UE4SS_MODS
+    assert "dragonlink" in server_engine.SERVER_INFRASTRUCTURE_UE4SS
+    assert "dragonlink" in sync_engine.LAUNCHER_LOCAL_UE4SS_MODS
     assert is_parity_payload("DragonCore", "ue4ss_mod") is True
-    assert is_parity_payload("PersistentDirectConnectIP", "ue4ss_mod") is False
+    assert is_parity_payload("DragonLink", "ue4ss_mod") is False
     assert is_parity_payload("RSDWTools", "ue4ss_mod") is False
     assert is_parity_payload("ActualUserMod", "ue4ss_mod") is True
     forced_tooling = ss.ModUnit("RSDWTools", "ue4ss_mod", classification="player_required")
@@ -99,7 +100,7 @@ def main() -> None:
             mods.mkdir(parents=True, exist_ok=True)
             (mods / "mods.txt").write_text("ActualUserMod : 1\n", encoding="utf-8")
             _mkdir_mod(mods, "DragonCore", enabled=True)
-            _mkdir_mod(mods, "PersistentDirectConnectIP", enabled=True)
+            _mkdir_mod(mods, "DragonLink", enabled=True)
             _mkdir_mod(mods, "RSDWTools", enabled=True)
             _mkdir_mod(mods, "RSDWDevKit", enabled=True)
             _mkdir_mod(mods, "ActualUserMod")
@@ -114,7 +115,7 @@ def main() -> None:
             names = {str(row.get("name") or "") for row in rows}
             assert "mods.txt" not in names
             assert "DragonCore" in names
-            assert "PersistentDirectConnectIP" not in names
+            assert "DragonLink" not in names
             assert "RSDWTools" not in names
             assert "RSDWDevKit" not in names
             assert "ActualUserMod" in names
@@ -133,13 +134,13 @@ def main() -> None:
         server_layout = ss.resolve_server_layout(str(server_game))
         server_layout.ue4ss_mods_dir.mkdir(parents=True, exist_ok=True)
         dragoncore = _mkdir_mod(server_layout.ue4ss_mods_dir, "DragonCore", enabled=True)
-        dragonconnect = _mkdir_mod(server_layout.ue4ss_mods_dir, "PersistentDirectConnectIP", enabled=True)
+        dragonconnect = _mkdir_mod(server_layout.ue4ss_mods_dir, "DragonLink", enabled=True)
         toolkit = _mkdir_mod(server_layout.ue4ss_mods_dir, "RSDWTools", enabled=True)
         user = _mkdir_mod(server_layout.ue4ss_mods_dir, "ActualUserMod")
         self_enabled = _mkdir_mod(server_layout.ue4ss_mods_dir, "SelfEnabledUser", enabled=True)
         units = [
             ss.ModUnit("DragonCore", "ue4ss_mod", source_dir=dragoncore),
-            ss.ModUnit("PersistentDirectConnectIP", "ue4ss_mod", source_dir=dragonconnect),
+            ss.ModUnit("DragonLink", "ue4ss_mod", source_dir=dragonconnect),
             ss.ModUnit("RSDWTools", "ue4ss_mod", source_dir=toolkit),
             ss.ModUnit("ActualUserMod", "ue4ss_mod", source_dir=user),
             ss.ModUnit("SelfEnabledUser", "ue4ss_mod", source_dir=self_enabled),
@@ -148,7 +149,7 @@ def main() -> None:
         text = Path(generated["path"]).read_text(encoding="utf-8")
         assert "DragonCore : 1" not in text  # fixture is self-enabled through enabled.txt
         assert "ActualUserMod : 1" in text
-        assert "PersistentDirectConnectIP" not in text
+        assert "DragonLink" not in text
         assert "RSDWTools" not in text
         assert "SelfEnabledUser" not in text
 
@@ -178,7 +179,7 @@ def main() -> None:
         client_layout = sync_engine.resolve_client_layout(client_install)
         client_layout.ue4ss_mods_dir.mkdir(parents=True, exist_ok=True)
         _mkdir_mod(client_layout.ue4ss_mods_dir, "ActualUserMod")
-        _mkdir_mod(client_layout.ue4ss_mods_dir, "DragonLink-Connect", enabled=True)
+        _mkdir_mod(client_layout.ue4ss_mods_dir, "DragonLink", enabled=True)
         result = sync_engine.write_client_mods_txt(client_install, {
             "mods_txt_writer": "server_push",
             "client_ue4ss_mods": ["ActualUserMod", "DragonCore", "RSDWTools"],
@@ -186,7 +187,7 @@ def main() -> None:
         client_text = Path(result["path"]).read_text(encoding="utf-8")
         assert result["writer"] == "client_generate"
         assert "ActualUserMod : 1" in client_text
-        assert "DragonLink-Connect : 1" in client_text
+        assert "DragonLink : 1" in client_text
         assert "DragonCore : 1" in client_text
         assert "RSDWTools" not in client_text
 

@@ -11,6 +11,7 @@ import zipfile
 from pathlib import Path
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, load_server_profile, save_server_profile
+from backup_naming import render_backup_name
 from server_engine import snapshot_profile_savegame
 
 LOCAL_APPDATA = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
@@ -33,10 +34,12 @@ def tree_status(root: Path) -> dict:
     return {"path": str(root), "exists": root.exists(), "files": len(files), "bytes": sum(p.stat().st_size for p in files), "newest_mtime": newest}
 
 
-def _archive_tree(root: Path, *, kind: str, name: str, metadata: dict | None = None) -> dict:
+def _archive_tree(root: Path, *, kind: str, name: str, metadata: dict | None = None,
+                  name_template: str = "") -> dict:
     ARCHIVE_ROOT.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S")
-    target = ARCHIVE_ROOT / f"{stamp}-{_safe_name(name)}-{_safe_name(kind)}.zip"
+    target = ARCHIVE_ROOT / render_backup_name(
+        name_template or "{date}-{time}-{world}-{kind}", suffix=".zip",
+        world=name, kind=kind, profile=str((metadata or {}).get("profile_id") or ""))
     n = 1
     while target.exists():
         target = ARCHIVE_ROOT / f"{stamp}-{_safe_name(name)}-{_safe_name(kind)}-{n}.zip"; n += 1
@@ -70,7 +73,7 @@ def _overlay_tree(source: Path, destination: Path) -> None:
     if source.exists(): shutil.copytree(source, destination, dirs_exist_ok=True)
 
 
-def import_worldsave_archive(archive_path: str | Path, destination: str | Path) -> dict:
+def import_worldsave_archive(archive_path: str | Path, destination: str | Path, *, replace_tree: bool = False) -> dict:
     """Safely stage and import a host-provided World save ZIP.
 
     World-save downloads are ordinary ZIPs containing paths relative to the
@@ -88,14 +91,16 @@ def import_worldsave_archive(archive_path: str | Path, destination: str | Path) 
     total_bytes = 0
     try:
         with zipfile.ZipFile(archive, "r") as zf:
-            members = [item for item in zf.infolist() if not item.is_dir()]
+            all_members = [item for item in zf.infolist() if not item.is_dir()]
+            launcher_archive = any(str(item.filename).replace("\\", "/") == "dragonwilds-sync-world.json" for item in all_members)
+            members = [item for item in all_members if not launcher_archive or str(item.filename).replace("\\", "/").startswith("savegame/")]
             if not members:
                 raise ValueError("The downloaded World save archive is empty.")
             if len(members) > 50000:
                 raise ValueError("The downloaded World save archive contains too many files.")
             for item in members:
                 raw = str(item.filename or "").replace("\\", "/")
-                relative = Path(raw)
+                relative = Path(raw).relative_to("savegame") if launcher_archive else Path(raw)
                 unix_mode = (item.external_attr >> 16) & 0xFFFF
                 if (not raw or relative.is_absolute() or relative.drive or ".." in relative.parts
                         or stat.S_IFMT(unix_mode) == stat.S_IFLNK):
@@ -108,15 +113,15 @@ def import_worldsave_archive(archive_path: str | Path, destination: str | Path) 
                 with zf.open(item, "r") as source, output.open("wb") as sink:
                     shutil.copyfileobj(source, sink, length=1024 * 1024)
                 imported.append(relative.as_posix())
-        _overlay_tree(staging, target)
+        _atomic_replace_tree(staging, target) if replace_tree else _overlay_tree(staging, target)
         return {"ok": True, "destination": str(target), "files": imported,
                 "file_count": len(imported), "bytes": total_bytes}
     finally:
         shutil.rmtree(staging, ignore_errors=True)
 
 
-def archive_private(name: str = "SinglePlayer") -> dict:
-    return _archive_tree(CLIENT_SAVEGAMES, kind="singleplayer", name=name)
+def archive_private(name: str = "SinglePlayer", *, name_template: str = "") -> dict:
+    return _archive_tree(CLIENT_SAVEGAMES, kind="singleplayer", name=name, name_template=name_template)
 
 
 def archive_server(profile_id: str, *, server_exe: str = "") -> dict:
@@ -200,3 +205,49 @@ def list_archives(limit: int = 50) -> list[dict]:
     for path in sorted(ARCHIVE_ROOT.glob("*.zip"), key=lambda p:p.stat().st_mtime, reverse=True)[:max(1,min(int(limit),200))]:
         rows.append({"name": path.name, "path": str(path), "size": path.stat().st_size, "mtime": path.stat().st_mtime})
     return rows
+
+
+def restore_archive(archive_path: str | Path, destination: str | Path, *, backup_name: str = "pre-restore") -> dict:
+    """Restore one launcher-created World archive with an automatic rollback point.
+
+    Launcher archives contain a manifest plus a ``savegame/`` tree.  Extraction
+    is staged and bounded before the destination is atomically replaced; the
+    current destination is archived first so a rollback never destroys the
+    revision it replaced.
+    """
+    archive = Path(archive_path).resolve()
+    root = ARCHIVE_ROOT.resolve()
+    if root not in archive.parents or not archive.is_file() or archive.suffix.casefold() != ".zip":
+        raise FileNotFoundError("The selected World save archive was not found.")
+    target = Path(destination)
+    pre_restore = _archive_tree(target, kind="pre-restore", name=backup_name) if _tree_files(target) else None
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix="world-archive-restore-", dir=str(target.parent)))
+    files = 0
+    total = 0
+    try:
+        with zipfile.ZipFile(archive, "r") as zf:
+            members = [row for row in zf.infolist() if not row.is_dir() and str(row.filename).replace("\\", "/").startswith("savegame/")]
+            if not members:
+                raise ValueError("This archive does not contain a Dragonwilds save tree.")
+            if len(members) > 50000:
+                raise ValueError("The World archive contains too many files.")
+            for row in members:
+                raw = str(row.filename or "").replace("\\", "/")
+                relative = Path(raw).relative_to("savegame")
+                unix_mode = (row.external_attr >> 16) & 0xFFFF
+                if relative.is_absolute() or relative.drive or ".." in relative.parts or stat.S_IFMT(unix_mode) == stat.S_IFLNK:
+                    raise ValueError(f"Unsafe path inside World archive: {raw}")
+                total += max(0, int(row.file_size or 0))
+                if total > 4 * 1024 * 1024 * 1024:
+                    raise ValueError("The World archive exceeds the 4 GB restore limit.")
+                output = staging / relative
+                output.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(row, "r") as source, output.open("wb") as sink:
+                    shutil.copyfileobj(source, sink, length=1024 * 1024)
+                files += 1
+        _atomic_replace_tree(staging, target)
+        return {"ok": True, "archive": archive.name, "destination": str(target), "files": files,
+                "bytes": total, "pre_restore": pre_restore}
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)

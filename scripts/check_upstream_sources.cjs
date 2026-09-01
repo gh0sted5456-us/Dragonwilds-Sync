@@ -22,7 +22,9 @@ assert(registry.sources['rsdw-toolkit'].repository === 'RSDWArchive/RSDWDevKit',
 assert(['server','host'].every((role)=>(registry.sources['rsdw-toolkit'].runtime_roles || []).includes(role)), 'RSDW Dev Kit must declare server/host runtime roles.');
 assert(!(registry.sources['rsdw-toolkit'].runtime_roles || []).includes('client'), 'RSDW Dev Kit is server-only and must not be synchronized to clients.');
 assert(['client','server','host'].every((role)=>(registry.sources.dragonconnect.runtime_roles || []).includes(role)), 'DragonConnect must be baseline infrastructure for hosts and clients.');
-assert(['DragonConnectHelper','PersistentDirectConnectIP'].every((name)=>(registry.sources.dragonconnect.legacy_physical_names || []).includes(name)), 'DragonLink-Connect must retain both legacy physical identities during compatibility migration.');
+assert(registry.sources.dragonconnect.display_name === 'DragonLink', 'The application bridge must use the singular DragonLink identity.');
+assert(registry.sources.dragonconnect.bundled_fallback === 'resources/NativeRuntimeMods/DragonLink', 'DragonLink must resolve to the bundled native suite.');
+assert(!registry.sources.dragonconnect.legacy_physical_names, 'Obsolete connector aliases must not remain in the source registry.');
 assert(registry.sources.runeschema.download_url || registry.sources.runeschema.bundled_fallback, 'RuneSchema needs a remote or bundled source.');
 assert(registry.sources.ue4ss.release_url || registry.sources.ue4ss.download_url, 'UE4SS needs an update source.');
 

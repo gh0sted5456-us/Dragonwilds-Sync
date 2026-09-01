@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Install and configure the native DragonLink UE4SS suite."""
+
 import hashlib
 import json
 import os
@@ -7,231 +9,192 @@ import re
 import shutil
 import sys
 import tempfile
-import zipfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from client_layout import resolve_client_layout
 
 
-# DragonLink-Connect is the canonical physical and launcher-facing identity.
-# Both former names remain accepted strictly as on-disk migration inputs.
-MOD_NAME = "DragonLink-Connect"
-LOGICAL_NAME = "DragonLink-Connect"
-LEGACY_MOD_NAMES = ("DragonConnectHelper", "PersistentDirectConnectIP")
+MOD_NAME = "DragonLink"
+LOGICAL_NAME = "DragonLink"
 MARKER_NAME = ".dragonwilds-sync-baseline.json"
+LEGACY_MOD_NAMES = ("DragonLink-Connect", "DragonConnectHelper", "PersistentDirectConnectIP")
+REQUIRED_CLIENT_FILES = (
+    "dlls/main.dll", "dlls/DragonLink-Connect.dll",
+    "DragonLink.ini", "enabled.txt",
+)
 
 
-def _bundle_path() -> Path:
-    names = ("DragonLink-Connect-baseline.zip", "DragonConnectHelper-baseline.zip", "PersistentDirectConnectIP-baseline.zip")
+def _resources_root() -> Path:
     if getattr(sys, "frozen", False):
-        root = Path(sys.executable).resolve().parent.parent / "resources"
-        for name in names:
-            frozen = root / name
-            if frozen.is_file():
-                return frozen
-    root = Path(__file__).resolve().parent.parent / "resources"
-    return next((root / name for name in names if (root / name).is_file()), root / names[0])
+        frozen = Path(sys.executable).resolve().parent.parent / "resources"
+        if frozen.is_dir():
+            return frozen
+    return Path(__file__).resolve().parent.parent / "resources"
 
 
-def _sha256(path: Path) -> str:
+def _source() -> Path:
+    return _resources_root() / "NativeRuntimeMods" / MOD_NAME
+
+
+def _source_signature(source: Path | None = None) -> dict:
+    root = source or _source()
     digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _bundle_signature(bundle: Path | None = None) -> dict:
-    source = bundle or _bundle_path()
-    if not source.is_file():
-        return {"sha256": "", "bytes": 0}
-    return {"sha256": _sha256(source), "bytes": int(source.stat().st_size)}
+    total = 0
+    for relative in REQUIRED_CLIENT_FILES:
+        path = root / Path(relative)
+        if not path.is_file():
+            return {"sha256": "", "bytes": 0}
+        data = path.read_bytes()
+        digest.update(relative.encode("utf-8")); digest.update(b"\0"); digest.update(data)
+        total += len(data)
+    return {"sha256": digest.hexdigest(), "bytes": total}
 
 
 def _read_marker(target: Path) -> dict:
     try:
         value = json.loads((target / MARKER_NAME).read_text(encoding="utf-8"))
         return value if isinstance(value, dict) else {}
-    except Exception:
+    except (OSError, ValueError, TypeError):
         return {}
 
 
-def _write_marker(target: Path, signature: dict) -> None:
-    path = target / MARKER_NAME
-    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(target))
+def _atomic_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(signature, handle, indent=2)
-            handle.write("\n")
-            handle.flush()
-            try:
-                os.fsync(handle.fileno())
-            except OSError:
-                pass
+            handle.write(text); handle.flush()
+            try: os.fsync(handle.fileno())
+            except OSError: pass
         os.replace(temporary, path)
     finally:
-        try:
-            Path(temporary).unlink(missing_ok=True)
-        except OSError:
-            pass
+        Path(temporary).unlink(missing_ok=True)
 
 
-def _safe_extract(archive: zipfile.ZipFile, destination: Path) -> None:
-    root = destination.resolve()
-    for member in archive.infolist():
-        pure = PurePosixPath(member.filename.replace("\\", "/"))
-        if pure.is_absolute() or ".." in pure.parts or not pure.parts:
-            raise zipfile.BadZipFile(f"Unsafe DragonLink-Connect path: {member.filename}")
-        target = (destination / Path(*pure.parts)).resolve()
-        if target != root and root not in target.parents:
-            raise zipfile.BadZipFile(f"DragonLink-Connect path escapes staging: {member.filename}")
-    archive.extractall(destination)
+def _set_ini(text: str, section: str, name: str, value: str) -> str:
+    header = re.search(rf"(?im)^\s*\[{re.escape(section)}\]\s*$", text)
+    if not header:
+        return text + ("" if text.endswith("\n") else "\n") + f"[{section}]\n{name}={value}\n"
+    rest = text[header.end():]
+    following = re.search(r"(?m)^\s*\[[^\]]+\]\s*$", rest)
+    end = header.end() + (following.start() if following else len(rest))
+    body = text[header.end():end]
+    pattern = re.compile(rf"(?im)^([ \t]*{re.escape(name)}[ \t]*=[ \t]*).*$")
+    body = pattern.sub(lambda match: match.group(1) + value, body, count=1) if pattern.search(body) else body + f"\n{name}={value}\n"
+    return text[:header.end()] + body + text[end:]
+
+
+def _installed(target: Path) -> bool:
+    return all((target / Path(relative)).is_file() for relative in REQUIRED_CLIENT_FILES)
 
 
 def status(selected_root: str | Path) -> dict:
-    """Return launcher-authoritative DragonLink-Connect install/repair evidence."""
     layout = resolve_client_layout(selected_root)
     target = layout.ue4ss_mods_dir / MOD_NAME
-    bundle = _bundle_path()
-    installed = (target / "Scripts" / "main.lua").is_file() and (target / "enabled.txt").is_file()
-    marker = _read_marker(target) if target.is_dir() else {}
-    signature = _bundle_signature(bundle)
-    installed_hash = str(marker.get("sha256") or "")
-    available_hash = str(signature.get("sha256") or "")
-    current = bool(installed and installed_hash and installed_hash == available_hash)
-    if not bundle.is_file():
-        return {
-            "component": LOGICAL_NAME, "physical_name": MOD_NAME, "installed": installed,
-            "current": None, "update_available": False, "status": "source_missing",
-            "installed_version": f"bundle-{installed_hash[:12]}" if installed_hash else ("legacy" if installed else ""),
-            "available_version": "", "restart_required": True, "path": str(target),
-            "source": "bundled-baseline", "error": "DragonLink-Connect baseline is missing from launcher resources.",
-        }
+    signature = _source_signature()
+    marker = _read_marker(target)
+    installed = _installed(target)
+    current = bool(installed and signature["sha256"] and marker.get("sha256") == signature["sha256"])
+    source_available = bool(signature["sha256"])
     return {
-        "component": LOGICAL_NAME,
-        "physical_name": MOD_NAME,
-        "installed": installed,
-        "current": current,
-        "update_available": bool(not current),
-        "status": "current" if current else ("repair_available" if installed else "not_installed"),
-        "installed_version": f"bundle-{installed_hash[:12]}" if installed_hash else ("legacy" if installed else ""),
-        "available_version": f"bundle-{available_hash[:12]}",
-        "restart_required": True,
-        "path": str(target),
-        "source": "bundled-baseline",
-        "config_present": (target / "Scripts" / "config.lua").is_file(),
+        "component": LOGICAL_NAME, "physical_name": MOD_NAME, "installed": installed,
+        "current": current if source_available else None,
+        "update_available": bool(source_available and not current),
+        "status": "source_missing" if not source_available else ("current" if current else ("repair_available" if installed else "not_installed")),
+        "installed_version": f"native-{str(marker.get('sha256') or '')[:12]}" if marker else "",
+        "available_version": f"native-{signature['sha256'][:12]}" if source_available else "",
+        "restart_required": True, "path": str(target), "source": "bundled-native-suite",
+        "config_present": (target / "DragonLink.ini").is_file(),
+        "error": "The native DragonLink DLL suite is missing from launcher resources." if not source_available else "",
     }
 
 
 def ensure_installed(selected_root: str | Path) -> dict:
-    """Install/repair hidden host/client baseline; profile values are separate."""
+    """Install the client-role host and Connect DLL; preserve server-pushed shared DLLs."""
     layout = resolve_client_layout(selected_root)
     target = layout.ue4ss_mods_dir / MOD_NAME
-    main = target / "Scripts" / "main.lua"
-    bundle = _bundle_path()
-    if not bundle.is_file():
-        raise FileNotFoundError("DragonLink-Connect baseline is missing from launcher resources.")
-    signature = _bundle_signature(bundle)
-    marker = _read_marker(target) if target.is_dir() else {}
-    if main.is_file() and (target / "enabled.txt").is_file() and str(marker.get("sha256") or "") == signature["sha256"]:
+    source = _source()
+    signature = _source_signature(source)
+    if not signature["sha256"]:
+        raise FileNotFoundError("The native DragonLink DLL suite is missing from launcher resources.")
+    marker = _read_marker(target)
+    stale_dlls = tuple(target / "dlls" / name for name in (
+        "DragonLink-Core.dll", "DragonLink-Items.dll", "DragonLink-ProximityLoot.dll",
+        "DragonLink-Stacks.dll", "DragonLink-Weights.dll",
+    ))
+    if (_installed(target) and marker.get("sha256") == signature["sha256"]
+            and not any(path.is_file() for path in stale_dlls)):
         return {"ok": True, "installed": True, "changed": False, "path": str(target),
                 "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME,
-                "version": f"bundle-{signature['sha256'][:12]}"}
+                "version": f"native-{signature['sha256'][:12]}"}
 
-    # Preserve the generated active-profile config across a component repair or
-    # migration from the former physical folder name.
-    config_path = target / "Scripts" / "config.lua"
-    retained_config = b""
-    legacy_targets = [layout.ue4ss_mods_dir / name for name in LEGACY_MOD_NAMES]
-    for candidate in [target, *legacy_targets]:
-        candidate_config = candidate / "Scripts" / "config.lua"
-        try:
-            if candidate_config.is_file() and candidate_config.stat().st_size <= 64 * 1024:
-                retained_config = candidate_config.read_bytes()
-                break
-        except OSError:
-            continue
+    retained_ini = b""
+    ini_path = target / "DragonLink.ini"
+    if ini_path.is_file() and ini_path.stat().st_size <= 256 * 1024:
+        retained_ini = ini_path.read_bytes()
+    target.mkdir(parents=True, exist_ok=True)
+    for relative in REQUIRED_CLIENT_FILES:
+        src = source / Path(relative)
+        dst = target / Path(relative)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+    (target / "dlls" / "DragonLink-Chat.dll").unlink(missing_ok=True)
+    for stale_path in stale_dlls:
+        stale_path.unlink(missing_ok=True)
+    if retained_ini:
+        ini_path.write_bytes(retained_ini)
+    client_ini = ini_path.read_text(encoding="utf-8-sig")
+    stacks_weights_installed = (target / "dlls" / "DragonLink-StacksWeights.dll").is_file()
+    client_ini = _set_ini(client_ini, "Features", "StacksWeights", "true" if stacks_weights_installed else "false")
+    client_ini = _set_ini(client_ini, "Features", "Chat", "false")
+    client_ini = _set_ini(client_ini, "StacksWeights", "Enabled", "true" if stacks_weights_installed else "false")
+    client_ini = _set_ini(client_ini, "StacksWeights", "Stacks", "true")
+    client_ini = _set_ini(client_ini, "StacksWeights", "Weights", "true")
+    _atomic_text(ini_path, client_ini)
+    _atomic_text(target / MARKER_NAME, json.dumps({"component": LOGICAL_NAME, **signature}, indent=2) + "\n")
 
-    with tempfile.TemporaryDirectory(prefix="dws-direct-connect-") as temp_name:
-        staged = Path(temp_name)
-        with zipfile.ZipFile(bundle) as archive:
-            _safe_extract(archive, staged)
-        source = staged / MOD_NAME
-        if not source.is_dir():
-            source = next((staged / name for name in LEGACY_MOD_NAMES if (staged / name).is_dir()), source)
-        if not (source / "Scripts" / "main.lua").is_file():
-            raise RuntimeError("DragonLink-Connect baseline failed validation.")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(source, target, dirs_exist_ok=True)
-    (target / "enabled.txt").write_text("", encoding="utf-8")
-    if retained_config:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_bytes(retained_config)
-    _write_marker(target, signature)
-    for legacy_target in legacy_targets:
-        if legacy_target.is_dir() and legacy_target != target:
-            shutil.rmtree(legacy_target, ignore_errors=True)
+    # Deliberate one-way cutover. Only exact children of this UE4SS Mods root.
+    mods_root = layout.ue4ss_mods_dir.resolve(strict=False)
+    for name in LEGACY_MOD_NAMES:
+        legacy = (mods_root / name).resolve(strict=False)
+        if legacy != mods_root and mods_root in legacy.parents and legacy.is_dir():
+            shutil.rmtree(legacy)
     return {"ok": True, "installed": True, "changed": True, "path": str(target),
             "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME,
-            "version": f"bundle-{signature['sha256'][:12]}"}
-
-
-def _lua_string(value: str, maximum: int) -> str:
-    clean = str(value or "")[:maximum]
-    return '"' + clean.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "").replace("\n", "") + '"'
+            "version": f"native-{signature['sha256'][:12]}"}
 
 
 def _direct_world_type(server_type: str) -> str:
-    """Map Sync gameplay classification to Dragonwilds' Direct selector."""
     mode = str(server_type or "normal").strip().casefold()
-    if mode == "creative":
-        return "creative"
-    if mode in {"custom", "hardcore"}:
-        return "custom"
+    if mode == "creative": return "creative"
+    if mode in {"custom", "hardcore"}: return "custom"
     return "normal"
 
 
 def write_profile_config(selected_root: str | Path, *, address: str = "", password: str = "",
                          server_type: str = "normal", enabled: bool = True) -> dict:
-    """Atomically materialize the active World's private connection handoff."""
     installed = ensure_installed(selected_root)
     host = str(address or "").strip()[:300]
     if host and (any(ch.isspace() for ch in host) or not re.fullmatch(r"[A-Za-z0-9.:-]+", host)):
         raise ValueError("Direct Connect address contains unsupported characters.")
     mode = str(server_type or "normal").strip().casefold()
-    if mode not in {"normal", "hardcore", "creative"}:
-        mode = "custom" if mode == "custom" else "normal"
+    if mode not in {"normal", "hardcore", "creative", "custom"}: mode = "normal"
     world_type = _direct_world_type(mode)
-    config = (
-        "-- Generated by Dragonwilds Sync for the active World profile.\n"
-        "-- Runtime handoff only: durable credentials stay in the encrypted launcher secret vault.\n"
-        "-- Do not store this file in a shared mod archive.\n"
-        "return {\n"
-        f"    IP = {_lua_string(host if enabled else '', 300)},\n"
-        f"    PASSWORD = {_lua_string(password if enabled else '', 512)},\n"
-        f"    SERVER_TYPE = {_lua_string(mode, 16)},\n"
-        f"    WORLD_TYPE = {_lua_string(world_type, 16)},\n"
-        f"    ENABLE_LAST_SERVER = {'true' if enabled and bool(host) else 'false'},\n"
-        "    ENABLE_DIAGNOSTIC_LOG = false\n"
-        "}\n"
-    )
-    path = Path(installed["path"]) / "Scripts" / "config.lua"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix="config.", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            handle.write(config); handle.flush()
-            try: os.fsync(handle.fileno())
-            except OSError: pass
-        os.replace(temporary, path)
-    finally:
-        try: Path(temporary).unlink(missing_ok=True)
-        except OSError: pass
-    # Profile switching owns these values; stale fallback files would violate
-    # that boundary and are therefore cleared every time config is materialized.
-    for name in ("last_server.txt", "last_password.txt", "diagnostic.log"):
-        try: (path.parent / name).unlink(missing_ok=True)
-        except OSError: pass
+    path = Path(installed["path"]) / "DragonLink.ini"
+    text = path.read_text(encoding="utf-8-sig")
+    # Stacks & Weights is not a client baseline. The server sync manifest may
+    # place it beside Connect, and credential hydration must never disable a
+    # server-selected shared module on a subsequent pass.
+    stacks_weights_installed = (Path(installed["path"]) / "dlls" / "DragonLink-StacksWeights.dll").is_file()
+    text = _set_ini(text, "Features", "StacksWeights", "true" if stacks_weights_installed else "false")
+    text = _set_ini(text, "StacksWeights", "Enabled", "true" if stacks_weights_installed else "false")
+    for name, value in (("Enabled", "true" if enabled and bool(host) else "false"),
+                        ("IP", host if enabled else ""),
+                        ("Password", str(password or "")[:512] if enabled else ""),
+                        ("WorldType", world_type)):
+        text = _set_ini(text, "Connect", name, value)
+    text = _set_ini(text, "Features", "Connect", "true" if enabled and bool(host) else "false")
+    _atomic_text(path, text)
     return {**installed, "configured": bool(enabled and host), "address": host if enabled else "",
             "server_type": mode, "world_type": world_type, "password_written": bool(enabled and password),
             "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME}

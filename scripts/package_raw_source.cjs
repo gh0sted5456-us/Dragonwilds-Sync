@@ -99,15 +99,32 @@ function countFiles(root) {
 }
 
 assertSafeOutput();
-fs.rmSync(outputRoot, { recursive: true, force: true });
+if (fs.existsSync(outputRoot)) {
+  throw new Error(`Frozen raw-source output already exists and will not be overwritten: ${outputRoot}`);
+}
 fs.mkdirSync(outputRoot, { recursive: true });
 
 for (const directory of sourceDirectories) copyRequired(directory);
 for (const file of sourceFiles) copyRequired(file);
 
 const generated = new Date().toISOString();
-const manifest = `# Dragonwilds Sync V2 Raw Source\n\nGenerated: ${generated}\n\nThis folder is a reproducible Windows source/build workspace. Generated dependency and compiler outputs are intentionally omitted.\n\n## Build\n\n- Windows: run \`build.bat\` or \`npm run build:win\`.\n- Verification only: run \`npm ci\`, then \`npm run verify\`.\n\nThe build restores pinned Node/Python dependencies, regenerates Monaco under \`renderer/vendor\`, verifies the service and renderer, and produces the portable Windows executable. Official releases also provide an Ubuntu AppImage built by GitHub Actions.\n\nHelp screenshots, third-party attribution, runtime bootstrap archives, tests, and release documentation are included. User data, passwords, server profiles, game saves, caches, logs, dependency folders, and compiled release output are not included.\n`;
+const manifest = `# Dragonwilds Sync Unified Launcher Foundation — Frozen Raw Source\n\nGenerated: ${generated}\n\nThis is an immutable source checkpoint intended as the basis for a later refined unified launcher. Create a new working copy before editing; rerunning the packager will refuse to overwrite this folder. Generated dependency and compiler outputs are intentionally omitted.\n\n## Build\n\n- Windows: run \`build.bat\` or \`npm run build:win\`.\n- Verification only: run \`npm ci\`, then \`npm run verify\`.\n\nThe build restores pinned Node/Python dependencies, regenerates Monaco under \`renderer/vendor\`, verifies the service and renderer, and produces the portable Windows executable. Official releases also provide an Ubuntu AppImage built by GitHub Actions.\n\nHelp screenshots, third-party attribution, runtime bootstrap archives, tests, and release documentation are included. User data, passwords, server profiles, game saves, caches, logs, dependency folders, and compiled release output are not included.\n`;
 fs.writeFileSync(path.join(outputRoot, 'RAW_SOURCE_CONTENTS.md'), manifest, 'utf8');
+
+function collectHashes(root, prefix = '') {
+  const rows = [];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const full = path.join(root, entry.name);
+    if (entry.isDirectory()) rows.push(...collectHashes(full, relative));
+    else if (relative !== 'RAW_SOURCE_SHA256SUMS.txt') {
+      const digest = require('crypto').createHash('sha256').update(fs.readFileSync(full)).digest('hex');
+      rows.push(`${digest}  ${relative}`);
+    }
+  }
+  return rows;
+}
+fs.writeFileSync(path.join(outputRoot, 'RAW_SOURCE_SHA256SUMS.txt'), `${collectHashes(outputRoot).join('\n')}\n`, 'utf8');
 
 const fileCount = countFiles(outputRoot);
 process.stdout.write(`Raw source staged: ${outputRoot}\nFiles: ${fileCount}\n`);

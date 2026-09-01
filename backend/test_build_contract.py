@@ -74,11 +74,13 @@ def main():
     process_utils = PROCESS_UTILS.read_text(encoding="utf-8")
     assert "def popen_game_server(" in process_utils
     assert "CREATE_NEW_CONSOLE" in process_utils, "UE4SS requires a valid Win32 console allocation"
+    assert "SW_SHOWMINNOACTIVE" in process_utils, "the native server console should allocate minimized without taking focus"
     assert "CREATE_NO_WINDOW" in process_utils, "background helpers should remain windowless"
     server_engine = (ROOT / "backend" / "server_engine.py").read_text(encoding="utf-8")
     phase4_startup = (ROOT / "backend" / "phase4_runtime_startup.py").read_text(encoding="utf-8")
     assert "popen_game_server(" in server_engine
     assert "popen_game_server(" in phase4_startup
+    assert 'server_engine_module.os.name == "nt" or native_consoles' in phase4_startup
 
     main_v2 = ELECTRON_MAIN_V2.read_text(encoding="utf-8")
     renderer_v2 = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")

@@ -11,10 +11,28 @@ const { NexusAdapter } = require('./nexus_adapter.cjs');
 const { buildHeadlessShortcutArgs, buildNormalShortcutArgs, buildQuickShortcutArgs, modeForWorldKind, normalizeProfileId } = require('./quick_shortcut.cjs');
 const { resolveGuiShortcutTarget, resolveHeadlessShortcutTarget } = require('./shortcut_targets.cjs');
 
+function defaultProgramDataRoot() {
+  if(process.platform==='win32'&&process.env.LOCALAPPDATA)return path.join(process.env.LOCALAPPDATA,'DragonwildsSync');
+  return path.join(process.env.HOME||process.env.USERPROFILE||process.cwd(),'.dragonwilds_sync');
+}
+function activeProgramDataRoot() {
+  const override=String(process.env.DRAGONWILDS_SYNC_APPDATA||'').trim();
+  if(override)return path.resolve(override);
+  const fallback=defaultProgramDataRoot();
+  try{
+    const locator=JSON.parse(fs.readFileSync(path.join(fallback,'data-root.json'),'utf8'));
+    if(locator?.schema==='DragonwildsSync.DataRoot.v1'&&String(locator.root||'').trim()){
+      const target=path.resolve(String(locator.root));
+      if(fs.existsSync(target)&&fs.statSync(target).isDirectory())return target;
+    }
+  }catch(_){}
+  return fallback;
+}
+
 function startupPerformanceSettings() {
   const defaults={hardware_acceleration:true,renderer_memory_mb:0};
   try {
-    const base=process.env.DRAGONWILDS_SYNC_APPDATA || (process.platform==='win32'&&process.env.LOCALAPPDATA?path.join(process.env.LOCALAPPDATA,'DragonwildsSync'):'');
+    const base=activeProgramDataRoot();
     if(!base)return defaults;
     const state=JSON.parse(fs.readFileSync(path.join(base,'launcher_v2.json'),'utf8'));
     const incoming=state?.application?.performance||{};
@@ -33,7 +51,7 @@ function sanitizeWindowPreferences(incoming = {}) {
 function startupWindowPreferences() {
   const defaults=sanitizeWindowPreferences({});
   try {
-    const roots=[process.env.DRAGONWILDS_SYNC_APPDATA,app.getPath('userData'),process.platform==='win32'&&process.env.LOCALAPPDATA?path.join(process.env.LOCALAPPDATA,'DragonwildsSync'):path.join(app.getPath('home'),'.dragonwilds_sync')].filter(Boolean);
+    const roots=[activeProgramDataRoot(),app.getPath('userData'),defaultProgramDataRoot()].filter(Boolean);
     for(const base of roots){const file=path.join(base,'launcher_v2.json');if(!fs.existsSync(file))continue;const state=JSON.parse(fs.readFileSync(file,'utf8'));return sanitizeWindowPreferences(state?.application?.window_preferences||{});}
   } catch (_) {}
   return defaults;
@@ -41,7 +59,7 @@ function startupWindowPreferences() {
 
 function rememberedWindowBounds() {
   try {
-    const value=JSON.parse(fs.readFileSync(path.join(app.getPath('userData'),'window-bounds.json'),'utf8'));
+    const value=JSON.parse(fs.readFileSync(path.join(activeProgramDataRoot(),'window-bounds.json'),'utf8'));
     if(!value||![value.x,value.y,value.width,value.height].every(Number.isFinite))return null;
     return {x:Math.round(value.x),y:Math.round(value.y),width:Math.max(960,Math.round(value.width)),height:Math.max(640,Math.round(value.height))};
   } catch (_) { return null; }
@@ -50,7 +68,7 @@ function rememberedWindowBounds() {
 function saveRememberedWindowBounds(win) {
   if(!win||win.isDestroyed()||win.isMaximized()||win.isMinimized())return;
   try {
-    const directory=app.getPath('userData');fs.mkdirSync(directory,{recursive:true});
+    const directory=activeProgramDataRoot();fs.mkdirSync(directory,{recursive:true});
     const target=path.join(directory,'window-bounds.json'),temporary=target+'.tmp';
     fs.writeFileSync(temporary,JSON.stringify(win.getBounds()));fs.renameSync(temporary,target);
   } catch (_) {}
@@ -247,8 +265,9 @@ function serviceTimeoutFor(method) {
 }
 function serviceEnvironment() {
   const env = { ...process.env, PYTHONUNBUFFERED: '1', PYTHONIOENCODING: 'utf-8', DWSYNC_PARENT_PID: String(process.pid), DWSYNC_RESOURCES_DIR: app.isPackaged ? path.join(process.resourcesPath, 'resources') : path.join(projectRoot(), 'resources') };
+  if(activeProgramDataRoot()!==defaultProgramDataRoot())env.DRAGONWILDS_SYNC_APPDATA ||= activeProgramDataRoot();
   if (process.platform !== 'linux') return env;
-  env.DRAGONWILDS_SYNC_APPDATA ||= app.getPath('userData');
+  env.DRAGONWILDS_SYNC_APPDATA ||= activeProgramDataRoot();
   if (!env.LOCALAPPDATA) {
     const home = env.HOME || app.getPath('home');
     const appId = String(env.DRAGONWILDS_STEAM_APP_ID || '1374490');
@@ -573,11 +592,20 @@ function createWindow({ show = true } = {}) {
       const scrollTo=async(selector)=>{for(let attempt=0;attempt<120;attempt++){const found=await mainWindow.webContents.executeJavaScript(`(()=>{const node=document.querySelector(${JSON.stringify(selector)});if(!node)return false;node.scrollIntoView({block:'start'});return true;})()`);if(found){await wait(1400);return true;}await wait(250);}return false;};
       const waitFor=async(selector,attempts=120)=>{for(let attempt=0;attempt<attempts;attempt++){if(await mainWindow.webContents.executeJavaScript(`!!document.querySelector(${JSON.stringify(selector)})`))return true;await wait(250);}return false;};
       const enterWhenReady=async()=>{for(let attempt=0;attempt<160;attempt++){const state=await mainWindow.webContents.executeJavaScript(`(()=>{const nav=document.querySelector('[data-route="world-management"]');if(nav)return 'ready';const enter=document.querySelector('#enter-launcher');if(enter){enter.click();return 'entered';}return 'waiting';})()`);if(state==='ready'){await wait(500);return;}await wait(state==='entered'?900:250);}throw new Error('Launcher did not reach its Appy navigation within 40 seconds.');};
-      const assertAppyNavigation=async()=>{const result=await mainWindow.webContents.executeJavaScript(`(()=>{const expected=['world-management','characters-app','mods-app','rsdw-launcher','webhost','help','settings'];const app=document.querySelector('#app');const sidebar=app?.querySelector(':scope > .sidebar');const titlebar=app?.querySelector(':scope > .titlebar');const rows=[...document.querySelectorAll('.appy-nav[data-route]')];const routes=rows.map((node)=>node.dataset.route);const images=new Map(rows.map((node)=>[node.dataset.route,node.querySelector('.nav-icon img')]));const missing=expected.filter((route)=>!routes.includes(route));const missingImages=rows.filter((node)=>!node.querySelector('.nav-icon img')).map((node)=>node.dataset.route);const brokenImages=rows.filter((node)=>{const image=node.querySelector('.nav-icon img');return image&&(!image.complete||!image.naturalWidth);}).map((node)=>node.dataset.route);const baseline=window.__DWSYNC_HELP_SHELL__||(window.__DWSYNC_HELP_SHELL__={sidebar,titlebar,images});const replacedShell=!sidebar||!titlebar||baseline.sidebar!==sidebar||baseline.titlebar!==titlebar;const replacedIcons=expected.filter((route)=>baseline.images.get(route)!==images.get(route));return {ok:!missing.length&&!missingImages.length&&!brokenImages.length&&!replacedShell&&!replacedIcons.length&&!routes.includes('rsdragonwilds-app'),missing,missingImages,brokenImages,replacedShell,replacedIcons,routes};})()`);if(!result?.ok)throw new Error(`Appy navigation contract failed: ${JSON.stringify(result)}`);};
+      const assertAppyNavigation=async()=>{const result=await mainWindow.webContents.executeJavaScript(`(()=>{const expected=['world-management','characters-app','mods-app','rsdw-launcher','webhost','help','settings'];const app=document.querySelector('#app');const sidebar=app?.querySelector(':scope > .sidebar');const titlebar=app?.querySelector(':scope > .titlebar');const rows=[...document.querySelectorAll('.appy-nav[data-route]')];const routes=rows.map((node)=>node.dataset.route);const images=new Map(rows.map((node)=>[node.dataset.route,node.querySelector('.nav-icon img')]));const expectedRows=rows.filter((node)=>expected.includes(node.dataset.route));const missing=expected.filter((route)=>!routes.includes(route));const missingImages=expectedRows.filter((node)=>!node.querySelector('.nav-icon img')).map((node)=>node.dataset.route);const brokenImages=expectedRows.filter((node)=>{const image=node.querySelector('.nav-icon img');return image&&(!image.complete||!image.naturalWidth);}).map((node)=>node.dataset.route);const baseline=window.__DWSYNC_HELP_SHELL__||(window.__DWSYNC_HELP_SHELL__={sidebar,titlebar,images});const replacedShell=!sidebar||!titlebar||baseline.sidebar!==sidebar||baseline.titlebar!==titlebar;const replacedIcons=expected.filter((route)=>baseline.images.get(route)!==images.get(route));return {ok:!missing.length&&!missingImages.length&&!brokenImages.length&&!replacedShell&&!replacedIcons.length&&!routes.includes('rsdragonwilds-app'),missing,missingImages,brokenImages,replacedShell,replacedIcons,routes};})()`);if(!result?.ok)throw new Error(`Appy navigation contract failed: ${JSON.stringify(result)}`);};
       const sanitizeCaptureState=async()=>mainWindow.webContents.executeJavaScript(`(()=>{const root=window.__DWSYNC_STATE__;if(!root)return false;const replacements=[[/Effing Desync/gi,'Ashenfall Fellowship'],[/Jonesing4Space/gi,'Demo Ranger'],[/Luke/gi,'Demo Ranger'],[/24\\.9\\.154\\.151/g,'203.0.113.24']];const visit=(value,key='')=>{if(Array.isArray(value)){value.forEach((item)=>visit(item,key));return;}if(!value||typeof value!=='object')return;for(const [name,item] of Object.entries(value)){if(typeof item==='string'){const lowered=name.toLowerCase();if(/password|secret|token|owner_id|api_key/.test(lowered)){value[name]='';continue;}if(lowered==='internal_ip'){value[name]='192.0.2.24:7777';continue;}if(lowered==='external_ip'){value[name]='203.0.113.24:7777';continue;}let next=item;for(const [pattern,replacement] of replacements)next=next.replace(pattern,replacement);next=next.replace(/[A-Z]:\\\\Users\\\\[^\\\\]+/gi,'C:\\\\Users\\\\Demo');value[name]=next;}else visit(item,name);}};visit(root);if(root.player_profile)root.player_profile.display_name='Demo Ranger';return true;})()`);
       try {
         await wait(2200); await shot('01-getting-started.png');
         await enterWhenReady();await sanitizeCaptureState();await click('[data-route="world-management"]');await assertAppyNavigation();await shot('43-world-profiles.png');
+        if(await waitFor('.app-world-placard .world-card-inner',40)){
+          await shot('63-world-placard-front.png');
+          await click('.app-world-placard .world-card-inner');await shot('64-world-placard-details.png');
+          await click('.app-world-placard .world-card-inner');
+          if(process.env.DWS_HELP_CAPTURE_PLACARDS_ONLY==='1'){
+            console.log(`[OK] Current placard Help screenshots captured: ${output}`);
+            return;
+          }
+        }
         await click('[data-world-management-tab="connected"]');await shot('44-connected-worlds.png');
         await click('[data-world-management-tab="manifest"]');await shot('45-sync-files.png');
         await click('[data-world-management-tab="game-setup"]');await shot('46-game-connection.png');
@@ -789,7 +817,7 @@ function writeWorldIcon(worldId, iconData, iconAsset = '') {
     const image = nativeImage.createFromDataURL(String(iconData).startsWith('data:') ? String(iconData) : `data:image/png;base64,${iconData}`);
     if (image.isEmpty()) return fallback;
     const png = image.resize({ width: 256, height: 256 }).toPNG();
-    const dir = path.join(app.getPath('userData'), 'QuickLaunchIcons'); fs.mkdirSync(dir, { recursive: true });
+    const dir = path.join(activeProgramDataRoot(), 'QuickLaunchIcons'); fs.mkdirSync(dir, { recursive: true });
     const target = path.join(dir, `${String(worldId).replace(/[^A-Za-z0-9_-]/g, '_')}.ico`);
     // ICO can embed a PNG payload directly. ICONDIR + one ICONDIRENTRY + PNG bytes.
     const header = Buffer.alloc(22); header.writeUInt16LE(0,0); header.writeUInt16LE(1,2); header.writeUInt16LE(1,4);
@@ -799,6 +827,20 @@ function writeWorldIcon(worldId, iconData, iconAsset = '') {
 }
 function launcherExecutablePath() {
   return String(process.env.PORTABLE_EXECUTABLE_FILE || process.execPath || '').trim();
+}
+function restartApplication() {
+  if(forceQuit)return {ok:false,relaunching:false};
+  const portable=process.platform==='win32'?String(process.env.PORTABLE_EXECUTABLE_FILE||'').trim().replace(/^"(.*)"$/,'$1'):'';
+  if(portable&&fs.existsSync(portable)){
+    const quoted=`'${portable.replace(/'/g,"''")}'`;
+    const script=`Start-Sleep -Milliseconds 900; Start-Process -FilePath ${quoted} -WorkingDirectory ${`'${path.dirname(portable).replace(/'/g,"''")}'`}`;
+    const encoded=Buffer.from(script,'utf16le').toString('base64');
+    const helper=spawn('powershell.exe',['-NoLogo','-NoProfile','-NonInteractive','-WindowStyle','Hidden','-EncodedCommand',encoded],{detached:true,stdio:'ignore',windowsHide:true});
+    helper.unref();
+  }else app.relaunch({args:process.argv.slice(1)});
+  forceQuit=true;
+  app.quit();
+  return {ok:true,relaunching:true};
 }
 function createWorldShortcut({ worldId, name, iconData, iconAsset, worldKind, shortcutType = 'quick', executablePath = '' }) {
   if (process.platform !== 'win32') throw new Error('Send to Desktop is currently a Windows feature.');
@@ -840,6 +882,7 @@ ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {
 });
 ipcMain.handle('dragonwilds:admin-status', () => runtimePlatformStatus());
 ipcMain.handle('dragonwilds:restart-admin', () => restartElevated());
+ipcMain.handle('dragonwilds:restart-application', () => restartApplication());
 ipcMain.handle('dragonwilds:read-renderer-asset', async (_event, relativePath) => {
   const requested = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
   if (!requested || requested.includes('..') || !/^assets\/[A-Za-z0-9._\/-]+$/.test(requested)) {
@@ -883,7 +926,7 @@ ipcMain.handle('dragonwilds:pick-loading-art', async () => {
   const source=result.filePaths[0],extension=path.extname(source).toLowerCase();
   const stat=fs.statSync(source);if(!stat.isFile())throw new Error('The selected loading artwork is not a file.');
   if(stat.size>175*1024*1024)throw new Error('Loading artwork is limited to 175 MB. Use the optimized GIF or a static image.');
-  const targetDir=path.join(app.getPath('userData'),'Appearance');fs.mkdirSync(targetDir,{recursive:true});
+  const targetDir=path.join(activeProgramDataRoot(),'Appearance');fs.mkdirSync(targetDir,{recursive:true});
   const target=path.join(targetDir,`custom-loading-art${extension}`);fs.copyFileSync(source,target);
   return {file:target,url:pathToFileURL(target).href,size:stat.size};
 });

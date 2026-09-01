@@ -39,8 +39,9 @@ def main() -> None:
     assert by_id["runeschema"]["depends_on"] == ["ue4ss"]
     assert by_id["runeschema"]["physical_relationship"] == "UE4SS/Mods/RuneSchema"
     assert by_id["runeschema"]["update_available"] is True
-    assert by_id["dragonconnect"]["legacy_name"] == "DragonConnectHelper"
-    assert mod_visibility("DragonLink-Connect", "ue4ss_mod")["user_manageable"] is False
+    assert by_id["dragonconnect"]["name"] == "DragonLink"
+    assert by_id["dragonconnect"]["capabilities"] == ["item_rules", "direct_connect", "server_chat"]
+    assert mod_visibility("DragonLink", "ue4ss_mod")["user_manageable"] is False
     assert by_id["dragonconnect"]["runtime_roles"] == ["server", "host", "client"]
     assert by_id["rsdw_toolkit"]["ui_group"] == "tooling"
     assert by_id["rsdw_toolkit"]["source_repository"] == "RSDWArchive/RSDWDevKit"
@@ -59,19 +60,19 @@ def main() -> None:
     assert missing_by_id["rsdw_toolkit"]["dependency_problem"] is True
 
     assert mod_visibility("DragonCore", "ue4ss_mod")["user_manageable"] is True
-    assert mod_visibility("PersistentDirectConnectIP", "ue4ss_mod")["user_manageable"] is False
+    assert mod_visibility("PersistentDirectConnectIP", "ue4ss_mod")["user_manageable"] is True
     assert mod_visibility("mods.txt", "ue4ss_mod")["visibility"] == "generated-control"
     assert mod_visibility("MyLuaMod", "ue4ss_mod")["user_manageable"] is True
     assert runtime_role_allows("DragonCore", "ue4ss_mod", "server") is True
     assert runtime_role_allows("DragonCore", "ue4ss_mod", "client") is True
-    assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "client") is True
-    assert runtime_role_allows("PersistentDirectConnectIP", "ue4ss_mod", "server") is True
+    assert runtime_role_allows("DragonLink", "ue4ss_mod", "client") is True
+    assert runtime_role_allows("DragonLink", "ue4ss_mod", "server") is True
 
     assert component_for_remote_update("UE4SS") == "ue4ss"
     assert component_for_remote_update("RuneSchema") == "runeschema"
     assert component_for_remote_update("RSDW Toolkit") == "rsdw_toolkit"
     assert component_for_remote_update("RSDWTools") == "rsdw_toolkit"
-    for unsupported in ("DragonConnect", "DragonCore"):
+    for unsupported in ("DragonLink", "DragonCore"):
         try:
             component_for_remote_update(unsupported)
         except ValueError as exc:

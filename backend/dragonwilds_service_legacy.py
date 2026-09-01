@@ -13,12 +13,13 @@ import socket
 import sys
 import time
 import threading
+import tempfile
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 from process_utils import run_hidden
 
@@ -74,15 +75,17 @@ from world_operations import (CLIENT_SAVEGAMES, archive_private as archive_priva
 from world_save_editor import newest_save, parse_world_save, write_world_save
 from world_sharing import export_world_package, inspect_world_package, world_from_package
 from profile_bundle import export_profile_bundle, import_profile_bundle, inspect_profile_bundle
+from profile_vault import decrypt_profile as decrypt_profile_vault, write_encrypted_profile, vault_id as profile_vault_id
+from data_root import data_root_status, migrate_program_data
 from server_engine import player_history_payload
 from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
 
 from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
-    delete_dedicated_server_files, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
+    delete_dedicated_server_files, delete_rsdragonwilds_appdata, delete_verified_game_install, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
     download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
     ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, inspect_world_mod_zip, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, world_sync_fingerprint, RUNESCHEMA_RUNTIME_DIR,
-    pop_scan_warnings as pop_server_scan_warnings,
+    rsdragonwilds_appdata_root, pop_scan_warnings as pop_server_scan_warnings,
 )
 from public_worlds import discover_public_worlds, augment_with_sync_directory, fetch_lobbysup_history
 from world_directory import (discover_sync_worlds, remember_heartbeats, publish_heartbeat_to_sources, deregister_world_from_sources,
@@ -96,7 +99,11 @@ from networking import (DEFAULT_SYNC_DISCOVERY_PORT, apply_firewall_spec, backen
                         manual_router_rule, normalize_publication_mode, valid_port)
 from crypto_runtime import cryptography_self_test
 from computer_profiles import normalize_computer_profile, recommend_computer_profile
+from hosting_capabilities import (EXTERNAL_BROADCAST, apply_hosting_defaults, load_provider_registry,
+                                  normalize_hosting, probe_game_endpoint, public_hosting_metadata, resolve_provider)
 from character_submissions import list_submissions, approve_submission, reject_submission
+from trusted_devices import (approve_pairing as approve_trusted_pairing, create_pairing as create_trusted_pairing,
+                             list_security_state, update_device as update_trusted_device)
 from mod_tags import normalize_tags, set_hotload_marker, set_tags_file, UE4SS_BAKED_IN_DEFAULT_MODS
 from world_maintenance import (
     create_world_backup, delete_world_managed_files, list_world_configs, open_world_config,
@@ -193,6 +200,7 @@ def _world_metadata_snapshot(profile: dict) -> dict:
         "placard_background": str(profile.get("placard_background") or "1"),
         "server_specs": dict(profile.get("hw_stats") or {}),
         "internet_strength": dict(health.get("host_network") or {}),
+        "hosting": public_hosting_metadata(profile),
     }
 
 
@@ -873,6 +881,11 @@ def public_state(state: dict) -> dict:
     if ENGINE.active_profile_id is None and active_server_id:
         ENGINE.active_profile_id = active_server_id
     clone = deepcopy(state)
+    clone.setdefault("application", {})["program_data"] = data_root_status(APP_DATA_DIR)
+    local_sync = clone.setdefault("application", {}).get("profile_local_sync")
+    if isinstance(local_sync, dict):
+        local_sync["password_configured"] = bool(local_sync.get("vault_password"))
+        local_sync.pop("vault_password", None)
     recommendations = clone.setdefault("application", {}).setdefault("recommended_mods", {})
     if not recommendations.get("mods"):
         builtin = builtin_recommendations()
@@ -895,11 +908,14 @@ def public_state(state: dict) -> dict:
     version_cache = (clone.get("application") or {}).get("runtime_version_cache") or {}
     clone.setdefault("client", {})["runtime"] = dict(version_cache.get("client") or client_runtime_status(game_dir, remote=False))
     clone.setdefault("client", {})["layout"] = resolve_client_layout(game_dir).as_dict() if game_dir else {}
-    install_dir = str(((clone.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
-    clone.setdefault("server", {})["layout"] = resolve_server_layout(install_dir).as_dict() if install_dir else {}
+    server_install = ((clone.get("application") or {}).get("server_install") or {})
+    install_dir = str(server_install.get("install_dir") or "").strip()
+    runtime_game_root = str(server_install.get("runtime_game_root") or "").strip()
+    layout_source = runtime_game_root or install_dir
+    clone.setdefault("server", {})["layout"] = resolve_server_layout(layout_source).as_dict() if layout_source else {}
     clone.setdefault("server", {})["runtime_prerequisites"] = (
-        runtime_prerequisite_status(install_dir)
-        if os.getenv("DWSYNC_TEST_MODE") != "1" and install_dir and resolve_server_layout(install_dir).game_root.exists()
+        runtime_prerequisite_status(layout_source)
+        if os.getenv("DWSYNC_TEST_MODE") != "1" and layout_source and resolve_server_layout(layout_source).game_root.exists()
         else {}
     )
     runtime = ENGINE.status()
@@ -1405,6 +1421,15 @@ def _server_install_paths(state: dict) -> tuple[str, str, str]:
     return install_dir, steamcmd_dir, server_exe
 
 
+def _server_runtime_root(state: dict) -> str:
+    cfg = state.setdefault("application", {}).setdefault("server_install", {})
+    explicit = str(cfg.get("runtime_game_root") or "").strip()
+    if explicit:
+        return str(resolve_server_layout(explicit).game_root)
+    install_dir, _steamcmd_dir, _server_exe = _server_install_paths(state)
+    return str(resolve_server_layout(install_dir).game_root) if install_dir else ""
+
+
 def _steamcmd_executable(steamcmd_dir: str) -> Path:
     return Path(steamcmd_dir) / ("steamcmd.sh" if sys.platform.startswith("linux") else "steamcmd.exe")
 
@@ -1461,10 +1486,105 @@ def _run_server_update_job(job_id: str, install_dir: str, steamcmd_dir: str) -> 
         if (latest or {}).get("buildid"): install["installed_buildid"] = str(latest.get("buildid"))
         save_state(state)
         progress({"phase": "runtimes", "message": "Checking shared server runtimes", "percent": 98})
-        runtime = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
+        runtime_root = str(install.get("runtime_game_root") or install_dir)
+        runtime = ensure_base_runtimes(runtime_root, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
         _set_server_update_job(job_id, status="complete", phase="complete", message="Dedicated server update complete", percent=100, result={"latest": latest, "installed": installed, "runtime": runtime})
     except Exception as exc:
         _set_server_update_job(job_id, status="failed", phase="failed", message=str(exc), error=str(exc))
+
+
+def _running_rsdragonwilds_processes() -> list[str]:
+    if not sys.platform.startswith("win"):
+        return []
+    result = run_hidden(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True)
+    output = str(result.stdout or "").casefold()
+    names = (
+        "rsdragonwilds.exe",
+        "rsdragonwildsserver.exe",
+        "rsdragonwilds-win64-shipping.exe",
+    )
+    return [name for name in names if name in output]
+
+
+def _run_complete_server_reinstall_job(job_id: str, install_dir: str, steamcmd_dir: str, appdata_dir: str) -> None:
+    backup: dict = {}
+
+    def progress(update: dict) -> None:
+        _set_server_update_job(job_id, status="running", operation="complete-reinstall", **dict(update or {}))
+
+    try:
+        running = _running_rsdragonwilds_processes()
+        if running:
+            raise RuntimeError("Close every Dragonwilds client and dedicated-server process before the complete reinstall: " + ", ".join(running))
+        progress({"phase": "backup", "message": "Backing up server saves, configuration, mods, and RSDragonwilds AppData", "percent": 4})
+        backup = backup_install_for_reset(install_dir, label="complete-server", full_game_appdata=True)
+        progress({"phase": "remove-install", "message": f"Deleting the verified dedicated-server install: {install_dir}", "percent": 12, "backup": backup})
+        removed_install = delete_verified_game_install(install_dir, role="server")
+        progress({"phase": "remove-appdata", "message": f"Deleting the verified game AppData tree: {appdata_dir}", "percent": 18, "backup": backup})
+        removed_appdata = delete_rsdragonwilds_appdata(appdata_dir)
+        if not _steamcmd_executable(steamcmd_dir).exists():
+            progress({"phase": "steamcmd-download", "message": "Downloading SteamCMD", "percent": 20, "backup": backup})
+            download_steamcmd(steamcmd_dir, progress=progress)
+        progress({"phase": "steamcmd", "message": "Reinstalling RSDragonwilds Dedicated Server with SteamCMD", "percent": 28, "backup": backup})
+        latest = check_steam_build() or {}
+        installed = install_dedicated_server(install_dir, steamcmd_dir, progress=progress)
+        progress({"phase": "runtimes", "message": "Installing the selected UE4SS and RuneSchema runtime baselines", "percent": 96, "backup": backup})
+        current = load_state()
+        install = current.setdefault("application", {}).setdefault("server_install", {})
+        install.update({
+            "install_dir": install_dir,
+            "steamcmd_dir": steamcmd_dir,
+            "installed_at": time.time(),
+            "installed_build_source": "complete_steamcmd_reinstall",
+        })
+        if installed.get("server_exe"):
+            install["server_exe"] = installed["server_exe"]
+        if latest.get("buildid"):
+            install["installed_buildid"] = str(latest.get("buildid"))
+        runtime_root = str(install.get("runtime_game_root") or install_dir)
+        runtime = ensure_base_runtimes(
+            runtime_root,
+            ue4ss_source_url=str(install.get("ue4ss_source_url") or ""),
+            runeschema_source_url=str(install.get("runeschema_source_url") or ""),
+        )
+        profile_id = str(current.setdefault("server", {}).get("active_world_id") or "")
+        profile = load_server_profile(profile_id) if profile_id else {}
+        config_file = ""
+        if profile:
+            dedicated = profile.setdefault("dedicated_config", {})
+            dedicated["server_exe"] = str(installed.get("server_exe") or install.get("server_exe") or "")
+            config_file = str(write_dedicated_config(dedicated, install_dir))
+            save_server_profile(profile_id, profile)
+        save_state(current)
+        result = {
+            "backup": backup,
+            "removed_install": removed_install,
+            "removed_appdata": removed_appdata,
+            "installed": installed,
+            "latest": latest,
+            "runtime": runtime,
+            "config_file": config_file,
+        }
+        _set_server_update_job(
+            job_id,
+            status="complete",
+            operation="complete-reinstall",
+            phase="complete",
+            message="RSDragonwilds reinstall and runtime restoration complete",
+            percent=100,
+            result=result,
+            backup=backup,
+        )
+    except Exception as exc:
+        _set_server_update_job(
+            job_id,
+            status="failed",
+            operation="complete-reinstall",
+            phase="failed",
+            message=str(exc),
+            error=str(exc),
+            backup=backup,
+        )
 
 
 def _set_world_sync_job(job_id: str, **patch) -> None:
@@ -1852,7 +1972,15 @@ def handle(method: str, params: dict) -> object:
 
     if method == "application.storage.paths":
         return {"app_data": str(APP_DATA_DIR), "server_profiles": str(SERVER_PROFILES_DIR),
-                "client_world_cache": str(APP_DATA_DIR / "client_worlds"), "published": str(APP_DATA_DIR / "published")}
+                "client_world_cache": str(APP_DATA_DIR / "client_worlds"), "published": str(APP_DATA_DIR / "published"),
+                "program_data": data_root_status(APP_DATA_DIR)}
+
+    if method == "application.program_data.migrate":
+        if ENGINE.status().get("running"):
+            raise RuntimeError("Stop the hosted Dragonwilds server before moving program data.")
+        save_state(state)
+        return migrate_program_data(APP_DATA_DIR, parent_dir=params.get("parent_dir"),
+                                    use_default=bool(params.get("use_default", False)))
 
     if method.startswith("application.custom_items."):
         application = state.setdefault("application", {})
@@ -2826,18 +2954,30 @@ def handle(method: str, params: dict) -> object:
 
     if method == "profile.local_sync.configure":
         provider = str(params.get("provider") or "onedrive").strip().lower()
-        if provider not in {"onedrive", "google-drive"}: raise ValueError("Choose OneDrive or Google Drive.")
+        if provider not in {"onedrive", "google-drive", "shared-folder"}:
+            raise ValueError("Choose OneDrive, Google Drive, or Shared Folder.")
         enabled = bool(params.get("enabled")); folder = str(params.get("folder") or "").strip()
+        supplied_password = str(params.get("vault_password") or "")
         if enabled:
             if not folder: raise ValueError("Choose the local synced folder first.")
             selected = Path(folder).expanduser().resolve()
             if not selected.is_dir(): raise ValueError("The linked sync folder is not available on this computer.")
             folder = str(selected)
         application = state.setdefault("application", {})
-        link = {**(application.get("profile_local_sync") or {}), "provider": provider, "folder": folder,
+        previous = application.get("profile_local_sync") if isinstance(application.get("profile_local_sync"), dict) else {}
+        retained_password = supplied_password or str(previous.get("vault_password") or "")
+        if supplied_password and len(supplied_password) < 12:
+            raise ValueError("Profile Vault passwords must contain at least 12 characters.")
+        if enabled and not retained_password:
+            raise ValueError("Create a Profile Vault password before enabling automatic profile sync.")
+        link = {**previous, "provider": provider, "folder": folder,
                 "enabled": enabled, "updated_at": now_iso()}
+        if retained_password:
+            link["vault_password"] = retained_password
         application["profile_local_sync"] = link; save_state(state)
-        return {"link": link, "state": public_state(state)}
+        public_link = {key: value for key, value in link.items() if key != "vault_password"}
+        public_link["password_configured"] = bool(retained_password)
+        return {"link": public_link, "state": public_state(state)}
 
     if method == "profile.local_sync.run":
         application = state.setdefault("application", {})
@@ -2845,24 +2985,64 @@ def handle(method: str, params: dict) -> object:
         if not bool(link.get("enabled")): raise ValueError("Linked profile sync is not enabled.")
         selected = Path(str(link.get("folder") or "")).expanduser().resolve()
         if not selected.is_dir(): raise ValueError("The linked sync folder is unavailable. Open the sync client or choose the folder again.")
-        destination = selected / "Dragonwilds Sync Profiles"; destination.mkdir(parents=True, exist_ok=True)
-        player = state.setdefault("player_profile", {}); profile_id = str(player.get("profile_id") or player.get("id") or "default")
+        vault_password = str(params.get("vault_password") or link.get("vault_password") or "")
+        if not vault_password: raise ValueError("Enter the Profile Vault password before syncing this profile.")
+        player = state.setdefault("player_profile", {})
+        profile_id = str(player.get("profile_id") or player.get("id") or "").strip()
+        if not profile_id:
+            profile_id = secrets.token_hex(12)
+            player["profile_id"] = profile_id
         display_name = str(player.get("display_name") or "Dragonwilds Profile")
-        safe_name = "".join(ch if ch.isalnum() or ch in "-_ " else "_" for ch in display_name).strip(" ._")[:80] or "Dragonwilds Profile"
-        target = destination / f"{safe_name}-{profile_id}.rsdwl"; temporary = destination / f".{safe_name}-{profile_id}.syncing.rsdwl"
-        try:
-            result = export_profile_bundle(state, str(temporary), profile_name=display_name, include_characters=True,
+        with tempfile.TemporaryDirectory(prefix="dws-profile-vault-") as temp_root:
+            package_path = Path(temp_root) / "profile.rsdwl"
+            result = export_profile_bundle(state, str(package_path), profile_name=display_name, include_characters=True,
                                            include_worlds=True, include_world_artwork=True, include_world_passwords=False,
                                            game_dir=str(application.get("game_dir") or ""))
-            temporary.replace(target)
-        finally:
-            try: temporary.unlink(missing_ok=True)
-            except OSError: pass
-        link = {**link, "last_synced_at": now_iso(), "last_path": str(target), "last_error": ""}
+            encrypted = write_encrypted_profile(package_path, selected, profile_id, vault_password, profile_name=display_name)
+        link = {**link, "vault_password": vault_password, "last_synced_at": now_iso(),
+                "last_path": str(encrypted.get("path") or ""), "vault_id": encrypted.get("vault_id"), "last_error": ""}
         application["profile_local_sync"] = link; save_state(state)
-        _record_notification(state, "Linked profile saved", f"{display_name} · {link.get('provider') or 'local sync folder'}", "success", key="profile-local-sync")
+        _record_notification(state, "Encrypted profile saved", f"{display_name} · {link.get('provider') or 'shared folder'}", "success", key="profile-local-sync")
         save_state(state)
-        return {"result": {**result, "path": str(target)}, "link": link, "state": public_state(state)}
+        public_link = {key: value for key, value in link.items() if key != "vault_password"}
+        public_link["password_configured"] = True
+        return {"result": {**result, **encrypted, "path": str(encrypted.get("path") or "")},
+                "link": public_link, "state": public_state(state)}
+
+    if method == "profile.local_sync.restore":
+        folder = str(params.get("folder") or "").strip()
+        provider = str(params.get("provider") or "shared-folder").strip().lower()
+        profile_id = str(params.get("profile_id") or "").strip()
+        vault_password = str(params.get("vault_password") or "")
+        if provider not in {"onedrive", "google-drive", "shared-folder"}:
+            raise ValueError("Choose OneDrive, Google Drive, or Shared Folder.")
+        if not folder: raise ValueError("Choose the shared profile folder first.")
+        with tempfile.TemporaryDirectory(prefix="dws-profile-restore-") as temp_root:
+            package_path = Path(temp_root) / "restored-profile.rsdwl"
+            restored = decrypt_profile_vault(folder, profile_id, vault_password, package_path)
+            inspected = inspect_profile_bundle(package_path)
+            imported_id = str((inspected.get("profile") or {}).get("profileId") or "")
+            if not imported_id or not secrets.compare_digest(imported_id, profile_id):
+                raise ValueError("The decrypted package does not belong to the requested Profile ID.")
+            result = import_profile_bundle(state, package_path, game_dir=str((state.get("application") or {}).get("game_dir") or ""),
+                                           import_characters=bool(params.get("import_characters", True)), import_worlds=True)
+        profile_doc = inspected.get("profile") or {}
+        player = state.setdefault("player_profile", {})
+        player["profile_id"] = profile_id
+        player["display_name"] = str(profile_doc.get("displayName") or profile_doc.get("profileName") or player.get("display_name") or "Player")[:120]
+        player["about"] = str(profile_doc.get("about") or "")[:2000]
+        player["social_links"] = dict(profile_doc.get("socialLinks") or {})
+        application = state.setdefault("application", {})
+        application["profile_local_sync"] = {
+            **(application.get("profile_local_sync") or {}), "provider": provider,
+            "folder": str(Path(folder).expanduser().resolve()), "enabled": bool(params.get("enable_sync", True)),
+            "vault_password": vault_password, "vault_id": profile_vault_id(profile_id),
+            "last_restored_at": now_iso(), "last_path": restored.get("source") or "", "last_error": "",
+        }
+        save_state(state)
+        _record_notification(state, "Profile restored", f"{player.get('display_name') or 'Dragonwilds Profile'} · authenticated Profile Vault", "success", key="profile-local-restore")
+        save_state(state)
+        return {"result": {**restored, "changelog": result.get("changelog") or {}}, "state": public_state(state)}
 
     if method == "profile.package.import":
         path = str(params.get("path") or "").strip()
@@ -3281,6 +3461,24 @@ def handle(method: str, params: dict) -> object:
             if value not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
                 raise ValueError("Placard background must be one of the built-in choices.")
             profile["placard_background"] = value
+        if "runtime_components" in incoming and isinstance(incoming.get("runtime_components"), dict):
+            requested = incoming.get("runtime_components") or {}
+            profile["runtime_components"] = {"ue4ss": bool(requested.get("ue4ss", True)),
+                                             "runeschema": bool(requested.get("runeschema", True))}
+        if "runtime_paths" in incoming and isinstance(incoming.get("runtime_paths"), dict):
+            client_paths = incoming["runtime_paths"].get("client") if isinstance(incoming["runtime_paths"].get("client"), dict) else {}
+
+            def local_client_path(value, fallback):
+                text = str(value or fallback).replace("\\", "/").strip().strip("/")
+                pure = PurePosixPath(text)
+                if not text or pure.is_absolute() or ".." in pure.parts or any(":" in part for part in pure.parts):
+                    raise ValueError("Profile runtime destinations must stay beneath the Dragonwilds game root.")
+                return pure.as_posix()
+
+            profile["runtime_paths"] = {"client": {
+                "ue4ss_root": local_client_path(client_paths.get("ue4ss_root"), "Binaries/Win64"),
+                "runeschema_root": local_client_path(client_paths.get("runeschema_root"), "Binaries/Win64/ue4ss/Mods/RuneSchema"),
+            }}
         if "broadcast_config" in incoming and isinstance(incoming.get("broadcast_config"), dict):
             cfg = dict(profile.get("broadcast_config") or {})
             next_cfg = dict(incoming.get("broadcast_config") or {})
@@ -3766,7 +3964,7 @@ def handle(method: str, params: dict) -> object:
             current_install = dict(application.get("server_install") or {})
             proposed = incoming.get("server_install") if isinstance(incoming.get("server_install"), dict) else {}
             previous_owner_id = str(current_install.get("owner_id") or "").strip()
-            for key in ("install_dir", "server_exe", "steamcmd_dir", "owner_id", "linux_server_mode", "proton_executable", "proton_prefix", "wine_dll_overrides", "ue4ss_source_url"):
+            for key in ("install_dir", "runtime_game_root", "server_exe", "steamcmd_dir", "owner_id", "linux_server_mode", "proton_executable", "proton_prefix", "wine_dll_overrides", "ue4ss_source_url"):
                 if key in proposed:
                     current_install[key] = str(proposed.get(key) or "").strip()
             native_runtime = dict(current_install.get("native_linux_runtime") or {})
@@ -3784,6 +3982,12 @@ def handle(method: str, params: dict) -> object:
                     server_layout = resolved_server.get("layout") or {}
                     current_install["install_dir"] = str(server_layout.get("install_root") or selected_server_dir)
                     current_install["server_exe"] = str(server_layout.get("server_exe") or current_install.get("server_exe") or "")
+            selected_runtime_root = str(current_install.get("runtime_game_root") or "").strip()
+            if selected_runtime_root:
+                resolved_runtime = validate_server_path(selected_runtime_root, allow_new=False)
+                if not resolved_runtime.get("ok") or resolved_runtime.get("mode") != "existing":
+                    raise ValueError(resolved_runtime.get("message") or "The Runtime / Mod Game Root is not a complete dedicated-server game tree.")
+                current_install["runtime_game_root"] = str((resolved_runtime.get("layout") or {}).get("game_root") or selected_runtime_root)
             owner_id_changed = "owner_id" in proposed and str(current_install.get("owner_id") or "").strip() != previous_owner_id
             incoming["server_install"] = current_install
         application.update(incoming)
@@ -4098,6 +4302,149 @@ def handle(method: str, params: dict) -> object:
     if method == "setup.owner_id.detect":
         return _detect_local_owner_id()
 
+    if method == "application.reset.complete_client.preview":
+        application = state.setdefault("application", {})
+        game_dir = str(application.get("game_dir") or "").strip()
+        if not game_dir:
+            raise ValueError("Link the Dragonwilds player installation before requesting a complete reinstall.")
+        resolved = validate_client_path(game_dir)
+        if not resolved.get("ok"):
+            pending = application.get("client_complete_reinstall_pending") if isinstance(application.get("client_complete_reinstall_pending"), dict) else {}
+            if pending:
+                return {**pending, "pending": True, "ready_to_finish": False, "confirmation": "DELETE AND REINSTALL DRAGONWILDS CLIENT"}
+            raise ValueError(resolved.get("message") or "The linked Dragonwilds client install is not complete.")
+        layout = resolved.get("layout") or {}
+        install_dir = str(Path(str(layout.get("install_root") or "")).resolve(strict=False))
+        appdata_dir = str(rsdragonwilds_appdata_root().resolve(strict=False))
+        return {
+            "target": "client",
+            "install_dir": install_dir,
+            "game_root": str(Path(str(layout.get("game_root") or "")).resolve(strict=False)),
+            "appdata_dir": appdata_dir,
+            "install_exists": Path(install_dir).is_dir(),
+            "appdata_exists": Path(appdata_dir).is_dir(),
+            "running_processes": _running_rsdragonwilds_processes(),
+            "pending": False,
+            "ready_to_finish": False,
+            "confirmation": "DELETE AND REINSTALL DRAGONWILDS CLIENT",
+            "backup_root": str(APP_DATA_DIR / "reset_backups"),
+            "steam_uri": "steam://install/1374490",
+        }
+
+    if method == "application.reset.complete_client.prepare":
+        application = state.setdefault("application", {})
+        phrase = "DELETE AND REINSTALL DRAGONWILDS CLIENT"
+        if str(params.get("confirmation") or "").strip() != phrase:
+            raise ValueError(f"Complete client reinstall requires the exact confirmation phrase: {phrase}")
+        game_dir = str(application.get("game_dir") or "").strip()
+        resolved = validate_client_path(game_dir)
+        if not resolved.get("ok"):
+            raise ValueError(resolved.get("message") or "The linked Dragonwilds client install is not complete.")
+        layout = resolved.get("layout") or {}
+        install_dir = str(Path(str(layout.get("install_root") or "")).resolve(strict=False))
+        appdata_dir = str(rsdragonwilds_appdata_root().resolve(strict=False))
+        if str(Path(str(params.get("install_dir") or "")).resolve(strict=False)) != install_dir or str(Path(str(params.get("appdata_dir") or "")).resolve(strict=False)) != appdata_dir:
+            raise ValueError("The client reinstall paths changed after confirmation. Request a new preview and confirm again.")
+        running = _running_rsdragonwilds_processes()
+        if running:
+            raise RuntimeError("Close every Dragonwilds process before reinstalling: " + ", ".join(running))
+        backup = backup_install_for_reset(install_dir, label="complete-client", full_game_appdata=True)
+        removed_install = delete_verified_game_install(install_dir, role="client")
+        removed_appdata = delete_rsdragonwilds_appdata(appdata_dir)
+        pending = {
+            "pending": True,
+            "prepared_at": time.time(),
+            "install_dir": install_dir,
+            "game_root": str(layout.get("game_root") or game_dir),
+            "appdata_dir": appdata_dir,
+            "backup": backup,
+            "steam_uri": "steam://install/1374490",
+        }
+        application["client_complete_reinstall_pending"] = pending
+        save_state(state)
+        return {**pending, "removed_install": removed_install, "removed_appdata": removed_appdata, "state": public_state(state)}
+
+    if method == "application.reset.complete_client.finish":
+        application = state.setdefault("application", {})
+        pending = application.get("client_complete_reinstall_pending") if isinstance(application.get("client_complete_reinstall_pending"), dict) else {}
+        if not pending:
+            raise RuntimeError("No client reinstall is waiting for Steam.")
+        game_root = str(pending.get("game_root") or application.get("game_dir") or "").strip()
+        resolved = validate_client_path(game_root)
+        if not resolved.get("ok"):
+            raise RuntimeError("Steam has not finished reinstalling Dragonwilds at the expected path yet.")
+        runtime = ensure_client_base_runtimes(str((resolved.get("layout") or {}).get("game_root") or game_root))
+        if not runtime.get("ok"):
+            raise RuntimeError("Dragonwilds is installed, but UE4SS/RuneSchema restoration needs attention: " + "; ".join(runtime.get("errors") or []))
+        application.pop("client_complete_reinstall_pending", None)
+        application["game_dir"] = str((resolved.get("layout") or {}).get("game_root") or game_root)
+        application["game_exe"] = str((resolved.get("layout") or {}).get("game_exe") or application.get("game_exe") or "")
+        save_state(state)
+        return {"ok": True, "runtime": runtime, "backup": pending.get("backup") or {}, "state": public_state(state)}
+
+    if method == "application.reset.complete_server.preview":
+        install_dir, steamcmd_dir, _server_exe = _server_install_paths(state)
+        if not install_dir:
+            raise ValueError("Set Settings → Server → Server Directory before requesting a complete reinstall.")
+        canonical_install = str(Path(install_dir).resolve(strict=False))
+        appdata_dir = str(rsdragonwilds_appdata_root().resolve(strict=False))
+        running = _running_rsdragonwilds_processes()
+        return {
+            "target": "server",
+            "install_dir": canonical_install,
+            "appdata_dir": appdata_dir,
+            "steamcmd_dir": str(Path(steamcmd_dir or steamcmd_root_for_install(canonical_install)).resolve(strict=False)),
+            "install_exists": Path(canonical_install).is_dir(),
+            "appdata_exists": Path(appdata_dir).is_dir(),
+            "running_processes": running,
+            "ready": not running,
+            "confirmation": "DELETE AND REINSTALL RSDRAGONWILDS",
+            "backup_root": str(APP_DATA_DIR / "reset_backups"),
+        }
+
+    if method == "application.reset.complete_server.start":
+        ENGINE.assert_stopped()
+        expected_phrase = "DELETE AND REINSTALL RSDRAGONWILDS"
+        if str(params.get("confirmation") or "").strip() != expected_phrase:
+            raise ValueError(f"Complete reinstall requires the exact confirmation phrase: {expected_phrase}")
+        install_dir, steamcmd_dir, _server_exe = _server_install_paths(state)
+        if not install_dir:
+            raise ValueError("Set Settings → Server → Server Directory first.")
+        canonical_install = str(Path(install_dir).resolve(strict=False))
+        canonical_appdata = str(rsdragonwilds_appdata_root().resolve(strict=False))
+        supplied_install = str(Path(str(params.get("install_dir") or "")).resolve(strict=False))
+        supplied_appdata = str(Path(str(params.get("appdata_dir") or "")).resolve(strict=False))
+        if supplied_install != canonical_install or supplied_appdata != canonical_appdata:
+            raise ValueError("The reinstall paths changed after confirmation. Request a new preview and confirm again.")
+        running = _running_rsdragonwilds_processes()
+        if running:
+            raise RuntimeError("Close every Dragonwilds process before reinstalling: " + ", ".join(running))
+        if not Path(canonical_install).is_dir():
+            raise ValueError("The configured dedicated-server install no longer exists. Use Full Setup instead.")
+        validated = validate_server_path(canonical_install, allow_new=False)
+        if not validated.get("ok"):
+            raise ValueError(validated.get("message") or "The configured folder is not a verified RSDragonwilds dedicated-server install.")
+        steamcmd_dir = str(Path(steamcmd_dir or steamcmd_root_for_install(canonical_install)).resolve(strict=False))
+        install_path = Path(canonical_install)
+        steamcmd_path = Path(steamcmd_dir)
+        if install_path == steamcmd_path or install_path in steamcmd_path.parents:
+            raise ValueError("SteamCMD must live outside the dedicated-server install being replaced.")
+        job_id = secrets.token_hex(12)
+        _set_server_update_job(
+            job_id,
+            status="queued",
+            operation="complete-reinstall",
+            phase="queued",
+            message="Complete RSDragonwilds reinstall queued",
+            percent=0,
+        )
+        threading.Thread(
+            target=_run_complete_server_reinstall_job,
+            args=(job_id, canonical_install, steamcmd_dir, canonical_appdata),
+            daemon=True,
+        ).start()
+        return {"job_id": job_id, "status": "queued", "operation": "complete-reinstall"}
+
     if method == "application.reset.install":
         target = str(params.get("target") or "").strip().lower()
         phrase = str(params.get("confirmation") or "").strip()
@@ -4144,7 +4491,7 @@ def handle(method: str, params: dict) -> object:
         install_cfg = application.setdefault("server_install", {})
         install_cfg.update({"install_dir": install_dir, "steamcmd_dir": steamcmd_dir,
                             "installed_at": time.time(), "installed_build_source": "managed_mod_reset_preserve_steam_eos"})
-        runtime = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install_cfg.get("ue4ss_source_url") or ""),
+        runtime = ensure_base_runtimes(_server_runtime_root(state), ue4ss_source_url=str(install_cfg.get("ue4ss_source_url") or ""),
                                        runeschema_source_url=str(install_cfg.get("runeschema_source_url") or ""))
         save_state(state)
         return {"ok": bool(runtime.get("ok")), "target": target, "backup": backup, "removed": removed,
@@ -4818,6 +5165,62 @@ def handle(method: str, params: dict) -> object:
             save_state(state)
         return {"id": profile_id, "state": public_state(state)}
 
+    if method == "hosting.providers.list":
+        registry = load_provider_registry()
+        include_unverified = bool(params.get("include_unverified"))
+        registry["providers"] = [row for row in registry["providers"]
+                                 if include_unverified or row.get("status") == "active"]
+        return registry
+
+    if method == "remote.trusted_devices.list":
+        return list_security_state(world_id=str(params.get("world_id") or params.get("id") or ""))
+
+    if method == "remote.trusted_devices.pairing.create":
+        profile_id = str(params.get("world_id") or params.get("id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile: raise KeyError("Server World not found")
+        host_cfg = ((state.get("application") or {}).get("world_directory_host") or {})
+        base_url = str(host_cfg.get("public_base_url") or "").rstrip("/")
+        if not base_url:
+            status = DIRECTORY_HOST.status()
+            base_url = str(status.get("public_url") or status.get("local_url") or "").rstrip("/")
+        hosting = normalize_hosting(profile)
+        return create_trusted_pairing(broadcaster_ref=hosting.get("broadcasterDeviceId") or profile_id,
+                                      world_id=profile_id, world_name=str(profile.get("name") or "World"),
+                                      requested_role=str(params.get("role") or "viewer"), base_url=base_url)
+
+    if method == "remote.trusted_devices.pairing.approve":
+        return approve_trusted_pairing(str(params.get("request_id") or ""), approved=bool(params.get("approved")),
+                                       role=str(params.get("role") or ""),
+                                       permissions=params.get("permissions") if isinstance(params.get("permissions"), list) else None)
+
+    if method == "remote.trusted_devices.update":
+        return update_trusted_device(str(params.get("device_id") or ""), display_name=params.get("display_name"),
+                                     role=params.get("role"), status=params.get("status"), auto_login=params.get("auto_login"))
+
+    if method == "server.world.hosting.status":
+        profile_id = str(params.get("id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        hosting = normalize_hosting(profile)
+        endpoint = probe_game_endpoint(profile, float(params.get("timeout") or 2.0)) if params.get("probe") else None
+        return {"hosting": hosting, "provider": resolve_provider(hosting["providerId"]), "endpoint": endpoint,
+                "public": public_hosting_metadata(profile)}
+
+    if method == "server.world.hosting.update":
+        profile_id = str(params.get("id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        incoming = params.get("hosting") if isinstance(params.get("hosting"), dict) else {}
+        profile["hosting"] = normalize_hosting({**profile, "hosting": {**normalize_hosting(profile), **incoming}})
+        if profile["hosting"]["mode"] == EXTERNAL_BROADCAST and not profile["hosting"]["gameEndpoint"]["host"]:
+            raise ValueError("Broadcast-only mode requires the external game server hostname or IP address.")
+        save_server_profile(profile_id, apply_hosting_defaults(profile))
+        provider = resolve_provider(profile["hosting"]["providerId"])
+        return {"hosting": profile["hosting"], "provider": provider, "state": public_state(state)}
+
     if method == "server.world.update":
         profile_id = str(params.get("id") or "")
         profile = load_server_profile(profile_id)
@@ -4868,12 +5271,48 @@ def handle(method: str, params: dict) -> object:
             if value not in {"1", "2", "3", "4", "5", "6", "7", "8", "9"}:
                 raise ValueError("Placard background must be one of the built-in choices.")
             profile["placard_background"] = value
+        if "hosting" in params and isinstance(params.get("hosting"), dict):
+            profile["hosting"] = normalize_hosting({**profile, "hosting": {**normalize_hosting(profile), **params["hosting"]}})
+            if profile["hosting"]["mode"] == EXTERNAL_BROADCAST and not profile["hosting"]["gameEndpoint"]["host"]:
+                raise ValueError("Broadcast-only mode requires the external game server hostname or IP address.")
         if "auto_ue4ss" in params:
             profile["auto_ue4ss"] = bool(params.get("auto_ue4ss"))
         if "auto_runeschema" in params:
             profile["auto_runeschema"] = bool(params.get("auto_runeschema"))
         if "auto_rsdwtools" in params:
             profile["auto_rsdwtools"] = bool(params.get("auto_rsdwtools"))
+        if "runtime_components" in params and isinstance(params.get("runtime_components"), dict):
+            requested_components = params.get("runtime_components") or {}
+            profile["runtime_components"] = {
+                "ue4ss": bool(requested_components.get("ue4ss", True)),
+                "runeschema": bool(requested_components.get("runeschema", True)),
+            }
+        if "runtime_paths" in params and isinstance(params.get("runtime_paths"), dict):
+            requested_paths = params.get("runtime_paths") or {}
+            server_paths = requested_paths.get("server") if isinstance(requested_paths.get("server"), dict) else {}
+            client_paths = requested_paths.get("client") if isinstance(requested_paths.get("client"), dict) else {}
+
+            def clean_server_runtime_path(value):
+                text = str(value or "").strip()
+                return str(Path(text).expanduser().resolve(strict=False)) if text else ""
+
+            def clean_client_runtime_path(value, fallback):
+                text = str(value or fallback).replace("\\", "/").strip().strip("/")
+                pure = PurePosixPath(text)
+                if not text or pure.is_absolute() or ".." in pure.parts or any(":" in part for part in pure.parts):
+                    raise ValueError("Client runtime destinations must be safe paths relative to the Dragonwilds game root.")
+                return pure.as_posix()
+
+            profile["runtime_paths"] = {
+                "server": {
+                    "ue4ss_root": clean_server_runtime_path(server_paths.get("ue4ss_root")),
+                    "runeschema_root": clean_server_runtime_path(server_paths.get("runeschema_root")),
+                },
+                "client": {
+                    "ue4ss_root": clean_client_runtime_path(client_paths.get("ue4ss_root"), "Binaries/Win64"),
+                    "runeschema_root": clean_client_runtime_path(client_paths.get("runeschema_root"), "Binaries/Win64/ue4ss/Mods/RuneSchema"),
+                },
+            }
         profile.pop("runeschema_variant", None)
         if "mods_txt_mode" in params:
             mode = str(params.get("mods_txt_mode") or "auto").casefold()
@@ -5280,15 +5719,61 @@ def handle(method: str, params: dict) -> object:
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
         if state["server"].get("active_world_id") != profile_id:
             raise RuntimeError("Activate this World before starting it.")
+        profile = load_server_profile(profile_id)
+        hosting = normalize_hosting(profile)
+        if hosting["mode"] == EXTERNAL_BROADCAST:
+            units = scan_profile_snapshot_units(profile_id)
+            sync = profile.setdefault("sync_config", {})
+            endpoint = hosting["gameEndpoint"]
+            endpoint_status = probe_game_endpoint(profile, 2.0)
+            result = SHARE.publish(
+                profile_id, units, str(sync.get("password") or ""), "", int(sync.get("port") or 27051),
+                hw_stats=gather_server_hardware_stats(), game_port=int(endpoint.get("port") or 7777),
+                broadcast=bool(sync.get("lan_broadcast", True)), public_ip=str(endpoint.get("host") or ""),
+                game_root="", allow_shared_access=True, profile_override=profile)
+            with STATE.lock:
+                STATE.server_online = endpoint_status.get("reachable") is True
+                STATE.server_start_ts = STATE.server_start_ts or time.time()
+                STATE.manifest["host_type"] = "external_broadcast"
+                STATE.manifest["broadcast_mode"] = "sync-authority-external-game"
+            profile = load_server_profile(profile_id) or profile
+            profile["hosting"] = normalize_hosting(profile)
+            profile["hosting"]["status"].update({"syncBroadcaster": "online",
+                                                    "gameEndpoint": endpoint_status.get("status") or "unknown",
+                                                    "worldListing": "published",
+                                                    "syncManifest": "current",
+                                                    "lastEndpointCheckAt": now_iso(),
+                                                    "lastError": endpoint_status.get("error") or ""})
+            save_server_profile(profile_id, profile)
+            with STATE.lock:
+                STATE.manifest["hosting_public"] = public_hosting_metadata(profile)
+            handle("world.discovery.heartbeat", {})
+            return {"result": {**result, "hosting_mode": EXTERNAL_BROADCAST,
+                               "game_endpoint": endpoint_status, "running": False,
+                               "sync_serving": True}, "state": public_state(state)}
         result = ENGINE.start_world(profile_id)
         return {"result": result, "state": public_state(state)}
 
     if method == "server.world.stop":
+        active_id = str(state.setdefault("server", {}).get("active_world_id") or STATE.active_profile_id or "")
+        profile = load_server_profile(active_id) if active_id else {}
+        if profile and normalize_hosting(profile)["mode"] == EXTERNAL_BROADCAST:
+            SHARE.stop()
+            profile["hosting"] = normalize_hosting(profile)
+            profile["hosting"]["status"].update({"syncBroadcaster": "offline", "worldListing": "unpublished",
+                                                    "remoteLogin": "disconnected"})
+            save_server_profile(active_id, profile)
+            return {"result": {"running": False, "sync_serving": False, "stop_verified": True,
+                               "stop_method": "broadcast-only-graceful"}, "state": public_state(state)}
         result = ENGINE.stop_world()
         return {"result": result, "state": public_state(state)}
 
     if method == "server.world.restart":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        profile = load_server_profile(profile_id)
+        if profile and normalize_hosting(profile)["mode"] == EXTERNAL_BROADCAST:
+            SHARE.stop()
+            return handle("server.world.start", {"id": profile_id})
         result = ENGINE.restart_world(profile_id)
         return {"result": result, "state": public_state(state)}
 
@@ -5583,7 +6068,9 @@ def handle(method: str, params: dict) -> object:
         profile["operations_schedule"] = tick["schedule"]
         for event in tick.get("events") or []:
             if event.get("type") == "warning":
-                notice = {"level": "restart", "message": event.get("message"), "expires_at": tick["schedule"].get("next_run_at"), "updated_at": time.time()}
+                notice = {"level": "restart", "title": "Scheduled World operation",
+                          "message": event.get("message"), "expires_at": tick["schedule"].get("next_run_at"),
+                          "updated_at": time.time(), "announcement": True, "system": True}
                 profile["service_notice"] = notice
                 _record_notification(state, profile.get("name") or "Hosted World", event.get("message") or "", "restart", world_id=profile_id, key=f"scheduler:{profile_id}:{event.get('minutes')}:{tick['schedule'].get('next_run_at')}")
                 if STATE.active_profile_id == profile_id:
@@ -5621,7 +6108,9 @@ def handle(method: str, params: dict) -> object:
                 result = response.get("result") if isinstance(response, dict) else response
             profile = load_server_profile(profile_id)
             completed_message = "Scheduled World backup completed." if action == "backup" else "Scheduled server operation completed."
-            profile["service_notice"] = {"level": "info", "message": completed_message, "expires_at": time.time()+300, "updated_at": time.time()}
+            profile["service_notice"] = {"level": "info", "title": "World operation complete",
+                                         "message": completed_message, "expires_at": time.time()+300,
+                                         "updated_at": time.time(), "announcement": True, "system": True}
             save_server_profile(profile_id, profile)
             notification_kind = "update" if action == "update_restart" else ("success" if action == "backup" else "restart")
             _record_notification(state, profile.get("name") or "Hosted World", completed_message, notification_kind, world_id=profile_id, key=f"scheduler-complete:{profile_id}:{profile['service_notice'].get('updated_at')}")
@@ -5675,6 +6164,12 @@ def handle(method: str, params: dict) -> object:
                                  limit=int(params.get("limit") or 250), custom_items=list((state.get("application") or {}).get("custom_items") or []))
         result["refreshed"] = refreshed
         result["bridge"] = PLAYER_BRIDGE.status()
+        declared = rsdw_command_catalog(server_root_for_profile(profile))
+        verbs = {str(row.get("verb") or "").casefold() for row in (declared.get("commands") or [])}
+        required = ["give.item"] if result.get("kind") == "item" else ["world.spawn.safe", "world.spawn.transform"]
+        missing = [verb for verb in required if verb not in verbs]
+        result["commands"] = {"available": not missing, "required": required, "missing": missing,
+                              "source": declared.get("source") or ""}
         runtime = ENGINE.status()
         result["runtime"] = {"running": bool(runtime.get("running")),
                              "active": str(runtime.get("active_profile_id") or "") == profile_id}
@@ -5780,14 +6275,16 @@ def handle(method: str, params: dict) -> object:
             command = spawn_command("item", str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
         else:
             command = spawn_command(kind, str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
-        ack = PLAYER_BRIDGE.command(command, timeout=8.0)
+        checked = validate_rsdw_command(server_root_for_profile(profile), command)
+        ack = PLAYER_BRIDGE.command(checked["line"], timeout=8.0)
         if str(ack).casefold().startswith("err") or " failed:" in str(ack).casefold():
             raise RuntimeError(str(ack))
-        record_rsdw_event(profile_id, source="spawner", actor="owner", command=command, ok=True, ack=ack)
+        record_rsdw_event(profile_id, source="spawner", actor="owner", command=checked["line"], ok=True, ack=ack)
         _record_notification(state, profile.get("name") or "Hosted World", "Spawner command completed.", "success",
                              world_id=profile_id, key=f"spawner:{profile_id}:{time.time()}")
         save_state(state)
-        return {"ok": True, "ack": ack, "command_kind": kind, "state": public_state(state)}
+        return {"ok": True, "ack": ack, "command_kind": kind, "command": checked,
+                "state": public_state(state)}
 
     if method == "server.world.map.update":
         profile_id = str(params.get("id") or "")
@@ -6042,11 +6539,14 @@ def handle(method: str, params: dict) -> object:
 
     if method == "server.install.status":
         install_dir, steamcmd_dir, configured_exe = _server_install_paths(state)
+        runtime_game_root = str(((state.get("application") or {}).get("server_install") or {}).get("runtime_game_root") or "").strip()
+        layout_source = runtime_game_root or install_dir
         profile_id = state.setdefault("server", {}).get("active_world_id")
         profile = load_server_profile(profile_id) if profile_id else {}
         detected_exe = find_dedicated_server_exe(profile or {})
         return {
             "install_dir": install_dir, "steamcmd_dir": steamcmd_dir,
+            "runtime_game_root": str(resolve_server_layout(layout_source).game_root) if layout_source else "",
             "server_exe": configured_exe or detected_exe,
             "install_exists": bool(install_dir and Path(install_dir).exists()),
             "server_exe_exists": bool((configured_exe or detected_exe) and Path(configured_exe or detected_exe).is_file()),
@@ -6060,9 +6560,42 @@ def handle(method: str, params: dict) -> object:
             "runeschema_installed_at": ((state.get("application") or {}).get("server_install") or {}).get("runeschema_installed_at"),
             "runeschema_source_url": str(((state.get("application") or {}).get("server_install") or {}).get("runeschema_source_url") or ""),
             "runeschema_source_name": str(((state.get("application") or {}).get("server_install") or {}).get("runeschema_source_name") or ""),
-            "layout": resolve_server_layout(install_dir).as_dict() if install_dir else {},
-            "runtime_prerequisites": runtime_prerequisite_status(install_dir) if install_dir and resolve_server_layout(install_dir).game_root.exists() else {},
+            "layout": resolve_server_layout(layout_source).as_dict() if layout_source else {},
+            "runtime_prerequisites": runtime_prerequisite_status(layout_source) if layout_source and resolve_server_layout(layout_source).game_root.exists() else {},
             "connection": {"internal_ip": ENGINE.status().get("lan_ip") or "", "external_ip": ENGINE.public_ip or ""},
+        }
+
+    if method == "server.install.path_audit":
+        runtime_root = _server_runtime_root(state)
+        if not runtime_root:
+            raise ValueError("Set the dedicated-server Runtime / Mod Game Root first.")
+        layout = resolve_server_layout(runtime_root)
+        pak_extensions = {".pak", ".utoc", ".ucas", ".sig"}
+        pak_assets = []
+        if layout.paks_mods_dir.is_dir():
+            pak_assets = [item for item in layout.paks_mods_dir.rglob("*") if item.is_file() and item.suffix.casefold() in pak_extensions]
+        ue4ss_units = [item for item in layout.ue4ss_mods_dir.iterdir()] if layout.ue4ss_mods_dir.is_dir() else []
+        runeschema_units = [item for item in layout.runeschema_mods_dir.iterdir()] if layout.runeschema_mods_dir.is_dir() else []
+        paths = {
+            "game_root": str(layout.game_root),
+            "ue4ss_root": str(layout.ue4ss_core_dir),
+            "ue4ss_mods": str(layout.ue4ss_mods_dir),
+            "runeschema_root": str(layout.runeschema_root),
+            "runeschema_mods": str(layout.runeschema_mods_dir),
+            "pak_mods": str(layout.paks_mods_dir),
+        }
+        return {
+            "ok": bool((layout.game_root / "Binaries").is_dir() and (layout.game_root / "Content").is_dir()),
+            "runtime_game_root": str(layout.game_root),
+            "paths": paths,
+            "exists": {key: Path(value).is_dir() for key, value in paths.items()},
+            "counts": {
+                "ue4ss_entries": len(ue4ss_units),
+                "runeschema_entries": len(runeschema_units),
+                "pak_assets": len(pak_assets),
+                "pak_groups": len({item.stem.casefold() for item in pak_assets}),
+            },
+            "pak_samples": [str(item.relative_to(layout.paks_mods_dir)).replace("\\", "/") for item in pak_assets[:20]],
         }
 
     if method == "server.install.detect_mods":
@@ -6118,7 +6651,8 @@ def handle(method: str, params: dict) -> object:
         dedicated.setdefault("world_pass", "")
         dedicated.setdefault("port", 7777)
         dedicated["server_exe"] = str(installed.get("server_exe") or install.get("server_exe") or "")
-        runtime = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
+        runtime_root = str(install.get("runtime_game_root") or install_dir)
+        runtime = ensure_base_runtimes(runtime_root, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
         config_file = write_dedicated_config(dedicated, install_dir)
         if profile_id and profile:
             save_server_profile(profile_id, profile)
@@ -6168,7 +6702,7 @@ def handle(method: str, params: dict) -> object:
         install["installed_at"] = time.time()
         install["installed_build_source"] = "steamcmd_app_update_validate"
         save_state(state)
-        runtime = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
+        runtime = ensure_base_runtimes(_server_runtime_root(state), ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
         rsdw_refresh = None
         cache_cfg = state.setdefault("application", {}).setdefault("rsdw_cache", {})
         if bool(cache_cfg.get("refresh_after_updates", True)):
@@ -6187,7 +6721,7 @@ def handle(method: str, params: dict) -> object:
         if not install_dir:
             raise ValueError("Set Settings → Server → Server Directory first.")
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        result = ensure_base_runtimes(install_dir, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
+        result = ensure_base_runtimes(_server_runtime_root(state), ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
         return {"result": result, "state": public_state(state)}
 
     if method == "server.world.runeschema_flavors.list":
@@ -6223,19 +6757,20 @@ def handle(method: str, params: dict) -> object:
         zip_path = str(params.get("zip_path") or "").strip()
         if not zip_path:
             raise ValueError("Choose a RuneSchema core ZIP first.")
-        result = install_runeschema_zip(zip_path, install_dir)
+        runtime_root = _server_runtime_root(state)
+        result = install_runeschema_zip(zip_path, runtime_root)
         if str((result or {}).get("kind") or "").lower() != "core":
             raise ValueError("The selected ZIP was not recognized as a RuneSchema core package (expected a core package containing a mods/ directory).")
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
         install_meta["runeschema_installed_at"] = time.time()
         install_meta["runeschema_source_name"] = "Manual override · " + Path(zip_path).name
-        root_key = os.path.normcase(str(resolve_server_layout(install_dir).game_root.resolve(strict=False)))
+        root_key = os.path.normcase(str(resolve_server_layout(runtime_root).game_root.resolve(strict=False)))
         overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
         restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
         install_meta["runeschema_manual_override_roots"] = [*([item for item in overrides if item != root_key][-7:]), root_key]
         install_meta["official_runeschema_restored_roots"] = [item for item in restored if item != root_key]
         save_state(state)
-        repaired = ensure_base_runtimes(install_dir, allow_ue4ss_download=True)
+        repaired = ensure_base_runtimes(runtime_root, allow_ue4ss_download=True)
         return {"result": result, "runtime": repaired, "state": public_state(state)}
 
     if method == "server.install.ue4ss_zip":
@@ -6246,12 +6781,13 @@ def handle(method: str, params: dict) -> object:
         zip_path = str(params.get("zip_path") or "").strip()
         if not zip_path:
             raise ValueError("Choose a UE4SS ZIP first.")
-        result = install_authoritative_ue4ss_zip(zip_path, install_dir)
+        runtime_root = _server_runtime_root(state)
+        result = install_authoritative_ue4ss_zip(zip_path, runtime_root)
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
         install_meta["ue4ss_installed_version"] = Path(zip_path).name
         install_meta["ue4ss_installed_at"] = time.time()
         save_state(state)
-        repaired = ensure_base_runtimes(install_dir, allow_ue4ss_download=False, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
+        repaired = ensure_base_runtimes(runtime_root, allow_ue4ss_download=False, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
         return {"result": result, "runtime": repaired, "state": public_state(state)}
 
     if method == "server.install.runeschema_update":
@@ -6265,12 +6801,13 @@ def handle(method: str, params: dict) -> object:
             raise ValueError("RuneSchema variant must be official or experimental.")
         source_url = ("https://github.com/gh0sted5456-us/RuneSchema" if variant == "experimental"
                       else "https://github.com/UnskippableCutscene/RuneSchema")
-        result = install_authoritative_runeschema_update(source_url, install_dir)
+        runtime_root = _server_runtime_root(state)
+        result = install_authoritative_runeschema_update(source_url, runtime_root)
         install_meta["runeschema_source_url"] = source_url + "/releases"
         install_meta["runeschema_installed_at"] = time.time()
         source_name = str(result.get("filename") or result.get("source") or source_url)
         install_meta["runeschema_source_name"] = (f"Experimental · {source_name}" if variant == "experimental" else source_name)
-        root_key = os.path.normcase(str(resolve_server_layout(install_dir).game_root.resolve(strict=False)))
+        root_key = os.path.normcase(str(resolve_server_layout(runtime_root).game_root.resolve(strict=False)))
         overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
         restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
         install_meta["runeschema_manual_override_roots"] = [item for item in overrides if item != root_key]
@@ -6282,7 +6819,7 @@ def handle(method: str, params: dict) -> object:
             if variant == "official" else [item for item in restored if item != root_key]
         )
         save_state(state)
-        repaired = ensure_base_runtimes(install_dir, allow_ue4ss_download=True, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=source_url)
+        repaired = ensure_base_runtimes(runtime_root, allow_ue4ss_download=True, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=source_url)
         return {"result": result, "runtime": repaired, "state": public_state(state)}
 
     if method == "server.maintenance.download_steamcmd":
@@ -6688,10 +7225,11 @@ def _startup_runtime_repair() -> None:
         install_dir, _, _ = _server_install_paths(state)
         if not install_dir:
             return
-        layout = resolve_server_layout(install_dir)
+        runtime_root = _server_runtime_root(state)
+        layout = resolve_server_layout(runtime_root)
         if not layout.game_root.exists():
             return
-        result = ensure_base_runtimes(install_dir, allow_ue4ss_download=True)
+        result = ensure_base_runtimes(runtime_root, allow_ue4ss_download=True)
         if result.get("repaired"):
             ENGINE._event("Startup base runtime self-heal: " + "; ".join(result.get("repaired") or []), "ok")
         if result.get("errors"):
@@ -6953,6 +7491,8 @@ def _directory_remote_state(profile_id: str) -> dict:
         lifecycle = {"state": "Running" if runtime.get("running") else "Stopped", "busy": False,
                      "broadcast": SHARE.status(), "last_error": ""}
     dedicated = profile.get("dedicated_config") or {}; sync = profile.get("sync_config") or {}; classification = profile.get("classification") or {}
+    hosting = normalize_hosting(profile)
+    capabilities = dict(hosting.get("capabilities") or {})
     uptime = float(runtime.get("uptime_seconds") or 0); uptime_text = "—"
     if uptime: uptime_text = f"{int(uptime // 3600)}h {int((uptime % 3600) // 60)}m"
     health = runtime.get("health") or {}
@@ -7021,14 +7561,20 @@ def _directory_remote_state(profile_id: str) -> dict:
                     "external_route": str(runtime.get("external_ip") or "Public route advertised at runtime"), "password_required": bool(dedicated.get("world_pass")),
                     "auto_ue4ss": bool(profile.get("auto_ue4ss", True)), "auto_runeschema": bool(profile.get("auto_runeschema", True)),
                     "community": {"discord_invite": str((profile.get("community") or {}).get("discord_invite") or "")[:300],
-                                  "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]}},
+                                  "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]},
+                    "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or ""),
+                    "hosting": public_hosting_metadata(profile),
+                    "provider_panel_url": str(hosting.get("providerPanelUrl") or "") if capabilities.get("providerPanel") else ""},
         "runtime": {"running": bool(runtime.get("running")), "state": str(lifecycle.get("state") or ("Running" if runtime.get("running") else "Stopped")),
                     "busy": bool(lifecycle.get("busy")), "last_error": str(lifecycle.get("last_error") or ""),
                     "broadcast": dict(lifecycle.get("broadcast") or SHARE.status()),
                     "players_online": int(runtime.get("player_count") or len(runtime.get("players") or [])), "uptime_text": uptime_text,
                     "cpu_percent": cpu_percent, "ram_text": ram_text,
                     "cl_version": cl_version,
-                    "sync_status": "Healthy" if bool(runtime.get("running")) and SHARE.httpd else ("Starting" if runtime.get("running") else "Standby")},
+                    "sync_status": "Healthy" if SHARE.httpd else "Standby",
+                    "hosting_mode": str(hosting.get("mode") or "local_dedicated"),
+                    "capabilities": capabilities,
+                    "service_status": dict(hosting.get("status") or {})},
         "map": {"background_data": map_background[:8_000_000], "calibration": calibration,
                 "source_title": str(map_source.get("source_title") or "Ashenfall"),
                 "version": str(map_source.get("version") or ""),

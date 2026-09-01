@@ -13,7 +13,7 @@ def test_portable_catalog_replaces_runtime_companion():
     assert "RSDW_ITEM_MANIFEST_PATH" in cache
     assert "application.rsdw.refresh" in service
     assert "application.rsdw.runtime_assets.install" not in service
-    assert "No arbitrary console input is exposed" in renderer
+    assert "Dragonwilds/RSDWToolkit commands only · never an operating-system shell" in renderer
 
 
 if __name__ == "__main__":

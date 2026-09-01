@@ -26,6 +26,14 @@
   contain-intrinsic-size: auto 280px;
 }
 
+/* Category swaps retain these route surfaces and exchange only their live
+   panel. Fixed containment keeps the background and navigation compositor
+   layers stable while Chromium lays out the new panel. */
+.route-settings .settings-layout > div,
+.route-world-management .content {
+  contain: layout style;
+}
+
 html[data-dws-interacting="1"] .mod-clean-row,
 html[data-dws-interacting="1"] .world-card,
 html[data-dws-interacting="1"] .world-list-row,

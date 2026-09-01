@@ -25,6 +25,10 @@ from web_tunnel import WEB_TUNNEL
 from networking import (DEFAULT_WEBHOST_PORT, apply_firewall_spec,
                         backend_program, firewall_spec,
                         normalize_publication_mode)
+from trusted_devices import (begin_auth as trusted_begin_auth,
+                             complete_auth as trusted_complete_auth,
+                             pairing_status as trusted_pairing_status,
+                             submit_pairing as trusted_submit_pairing)
 
 
 STORE_PATH = APP_DATA_DIR / "self_hosted_world_directory.json"
@@ -59,8 +63,16 @@ PUBLIC_OPENAPI = {
         "/api/v1/admin/profiles": {"get": {"summary": "List hosted World profiles available to Remote Login (same-origin)"}},
         "/api/v1/admin/session": {"get": {"summary": "Read the linked World management session (same-origin)"}},
         "/api/v1/admin/action": {"post": {"summary": "Submit an allow-listed World command (same-origin + CSRF)"}},
+        "/api/v1/admin/pair": {"post": {"summary": "Submit a short-lived trusted-device pairing request"}},
+        "/api/v1/admin/trusted/challenge": {"post": {"summary": "Begin public-key automatic login"}},
+        "/api/v1/admin/trusted/login": {"post": {"summary": "Complete public-key automatic login"}},
     },
 }
+
+
+def _trusted_pair_html() -> bytes:
+    """Small same-origin enrollment client; secrets never enter the QR URL."""
+    return b'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Trust this device | Dragonwilds Sync</title><link rel="icon" href="/assets/icon.webp"><style>:root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:#050808;color:#eee;font:16px system-ui}.card{width:min(94vw,560px);padding:28px;border:1px solid #4e4328;border-radius:22px;background:#101514;box-shadow:0 24px 80px #000}.brand{display:flex;gap:14px;align-items:center}.brand img{width:58px;height:58px;object-fit:contain}.brand h1{margin:0;font:600 28px Georgia}.brand p,p{color:#aeb9b5}label{display:grid;gap:7px;margin:16px 0}input,select,button{font:inherit;border-radius:10px;border:1px solid #39413e;background:#09100e;color:#fff;padding:12px}button{width:100%;background:#9d792d;border-color:#d4ac52;font-weight:700;cursor:pointer}.notice{padding:12px;border-radius:10px;background:#18201d;margin-top:15px}.error{color:#ff9d9d}</style></head><body><main class="card"><div class="brand"><img src="/assets/icon.webp" alt=""><div><h1>Trust this device</h1><p>Public-key enrollment for Remote Login</p></div></div><p>This request grants only the role selected by the World owner. No World password or permanent token is present in this link.</p><label>Friendly name<input id="name" maxlength="100" placeholder="Luke's Phone"></label><label>Device type<select id="kind"><option value="phone">Phone</option><option value="tablet">Tablet</option><option value="computer">Computer</option><option value="browser">Trusted Browser</option></select></label><button id="pair">Request owner approval</button><div class="notice" id="status">Pairing links expire in about five minutes and work once.</div></main><script>const q=new URLSearchParams(location.search),status=document.querySelector('#status');const b64=b=>{let s='';new Uint8Array(b).forEach(x=>s+=String.fromCharCode(x));return btoa(s)},post=async(url,body)=>{const r=await fetch(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}),d=await r.json();if(!r.ok)throw Error(d.error||'Request failed');return d};async function awaitApproval(credential,key){for(let n=0;n<100;n++){await new Promise(r=>setTimeout(r,3000));const state=await post('/api/v1/admin/trusted/pairing-status',{pairing_id:q.get('pairing'),challenge:q.get('challenge')});if(state.status==='denied')throw Error('The World owner denied this request.');if(state.status!=='approved')continue;const auth=await post('/api/v1/admin/trusted/challenge',{device_id:state.deviceId});const signature=await crypto.subtle.sign({name:'Ed25519'},key.privateKey,new TextEncoder().encode(auth.challenge));await post('/api/v1/admin/trusted/login',{device_id:state.deviceId,challenge_id:auth.challengeId,signature_b64:b64(signature)});localStorage.setItem('dws-trusted-device',JSON.stringify({deviceId:state.deviceId,credential}));location.href='/admin/server';return}throw Error('Pairing expired before approval.')}document.querySelector('#pair').onclick=async()=>{try{status.textContent='Creating a protected device key...';const key=await crypto.subtle.generateKey({name:'Ed25519'},true,['sign','verify']);const pub=await crypto.subtle.exportKey('raw',key.publicKey),priv=await crypto.subtle.exportKey('jwk',key.privateKey),credential=crypto.randomUUID();localStorage.setItem('dws-trusted-'+credential,JSON.stringify(priv));const data=await post('/api/v1/admin/pair',{pairing_id:q.get('pairing'),challenge:q.get('challenge'),public_key_b64:b64(pub),credential_id:credential,display_name:document.querySelector('#name').value,device_class:document.querySelector('#kind').value,platform:navigator.platform||'',browser_or_app:'Trusted Browser'});status.textContent='Request sent. Waiting for the World owner...';await awaitApproval(credential,key)}catch(e){status.className='notice error';status.textContent=e.message||String(e)}};</script></body></html>'''
 
 
 def _directory_icon_bytes() -> bytes:
@@ -112,6 +124,26 @@ def _platform_icon_bytes(name: str) -> bytes:
             payload = candidate.read_bytes()
             if ((extension == ".svg" and payload.lstrip().startswith(b"<svg"))
                     or (extension == ".webp" and payload.startswith(b"RIFF") and payload[8:12] == b"WEBP")):
+                return payload
+        except OSError:
+            continue
+    return b""
+
+
+def _provider_icon_bytes(name: str) -> bytes:
+    key = Path(str(name or "")).name.casefold()
+    if key not in {"external-host.svg", "home-host.svg"}:
+        return b""
+    bundle_root = getattr(sys, "_MEIPASS", "")
+    candidates = []
+    if bundle_root:
+        candidates.extend((Path(bundle_root) / "renderer" / "assets" / "providers" / key,
+                           Path(bundle_root) / "providers" / key))
+    candidates.append(Path(__file__).resolve().parent.parent / "renderer" / "assets" / "providers" / key)
+    for candidate in candidates:
+        try:
+            payload = candidate.read_bytes()
+            if payload.lstrip().startswith(b"<svg"):
                 return payload
         except OSError:
             continue
@@ -238,7 +270,7 @@ def _admin_console_html(token: str) -> bytes:
     return f'''<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="dws-admin-token" content="{safe_token}"><title>Dragonwilds Sync · Directory Administration</title>
 <style>:root{{--bg:#070a0b;--panel:#111617;--panel2:#171d1e;--line:#393323;--gold:#d5a54a;--gold2:#f0c66e;--text:#eeeae0;--muted:#9ea6a3;--good:#72cf99;--warn:#e0b35d}}*{{box-sizing:border-box}}body{{margin:0;background:radial-gradient(circle at 80% 0,#17160f 0,transparent 34%),var(--bg);color:var(--text);font:14px/1.5 Inter,Segoe UI,system-ui,sans-serif}}header{{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:space-between;gap:18px;padding:14px clamp(18px,4vw,56px);border-bottom:1px solid var(--line);background:rgba(7,10,11,.92);backdrop-filter:blur(16px)}}.brand{{display:flex;align-items:center;gap:12px}}.brand img{{width:42px;height:42px;object-fit:contain}}.brand strong{{display:block;font-family:Georgia,serif;font-size:18px}}.brand small,.muted{{color:var(--muted)}}.badges{{display:flex;gap:8px;flex-wrap:wrap}}.badge{{padding:6px 9px;border:1px solid #494128;border-radius:999px;color:var(--gold2);font-size:11px;font-weight:800}}main{{width:min(1180px,calc(100% - 32px));margin:34px auto 70px}}.hero{{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:24px}}.eyebrow{{color:var(--gold);font-size:11px;font-weight:850;letter-spacing:.16em}}h1{{margin:7px 0 5px;font:36px/1.05 Georgia,serif}}h2{{margin:0;font:22px Georgia,serif}}.actions{{display:flex;gap:8px;flex-wrap:wrap}}button,a.button{{min-height:40px;padding:9px 14px;border:1px solid #484b48;border-radius:10px;background:#171b1c;color:var(--text);font:700 13px inherit;text-decoration:none;cursor:pointer}}button.primary{{border-color:#c18a2e;background:linear-gradient(180deg,#bd8b38,#936722);color:white}}button:hover,a.button:hover{{border-color:var(--gold)}}.stats{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}}.stat,.panel{{border:1px solid var(--line);border-radius:15px;background:linear-gradient(145deg,rgba(23,29,30,.96),rgba(14,18,19,.96));box-shadow:0 18px 44px rgba(0,0,0,.18)}}.stat{{padding:15px}}.stat span{{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em}}.stat strong{{display:block;margin-top:5px;font-size:23px}}.grid{{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:16px}}.panel{{padding:18px}}.panel-head{{display:flex;justify-content:space-between;align-items:start;gap:12px;margin-bottom:15px}}.panel-head p{{margin:4px 0 0;color:var(--muted);font-size:12px}}.form-grid{{display:grid;grid-template-columns:1fr 1fr;gap:12px}}label{{display:grid;gap:6px;color:var(--muted);font-size:11px;font-weight:700}}label.wide{{grid-column:1/-1}}input{{width:100%;height:42px;padding:0 12px;border:1px solid #3d4342;border-radius:9px;outline:0;background:#0d1112;color:var(--text)}}input:focus{{border-color:var(--gold)}}.checks{{display:grid;gap:9px;margin:15px 0}}.check{{display:flex;align-items:start;gap:9px;padding:10px;border:1px solid #303534;border-radius:9px;color:var(--text);font-size:12px}}.check input{{width:17px;height:17px;margin:1px 0 0}}.note{{margin-top:12px;padding:11px 12px;border:1px solid #3c392b;border-radius:10px;background:#12140f;color:var(--muted);font-size:11px}}.worlds{{display:grid;gap:9px}}article{{padding:12px;border:1px solid #333a38;border-radius:11px;background:#0e1213}}article>div{{display:flex;justify-content:space-between;gap:10px}}article strong{{font-size:14px}}article small,article code{{display:block;margin-top:5px;color:var(--muted);overflow-wrap:anywhere}}.ok{{color:var(--good)}}.pending{{color:var(--warn)}}.routes{{display:grid;gap:7px;margin-top:13px}}.route{{display:flex;justify-content:space-between;gap:12px;padding:9px;border-bottom:1px solid #292e2d}}.route code{{color:var(--gold2)}}#message{{min-height:20px;margin-top:10px;color:var(--muted)}}@media(max-width:850px){{.grid{{grid-template-columns:1fr}}.stats{{grid-template-columns:1fr 1fr}}.hero{{align-items:start;flex-direction:column}}}}@media(max-width:520px){{main{{width:min(100% - 20px,1180px);margin-top:20px}}header{{padding:12px}}.badges{{display:none}}.stats,.form-grid{{grid-template-columns:1fr}}label.wide{{grid-column:auto}}h1{{font-size:29px}}}}</style></head>
 <body><header><div class="brand"><img src="/assets/icon.webp" alt=""><div><strong>Dragonwilds Sync</strong><small>World Directory Administration</small></div></div><div class="badges"><span class="badge">PRIVATE NETWORK</span><span class="badge">LIVE APPLICATION SETTINGS</span></div></header><main><section class="hero"><div><div class="eyebrow">SELF-HOSTED FEDERATION</div><h1>Directory Control Room</h1><div class="muted">Manage the manifest service from this trusted network. Changes are written back to the desktop application.</div></div><div class="actions"><a class="button" href="/landing" target="_blank">Preview Public Landing</a><button id="refresh">Refresh</button><button class="primary" id="save">Save Settings</button></div></section><section class="stats"><div class="stat"><span>Service</span><strong id="service">—</strong></div><div class="stat"><span>Live Worlds</span><strong id="world-count">—</strong></div><div class="stat"><span>Verified</span><strong id="verified-count">—</strong></div><div class="stat"><span>Uptime</span><strong id="uptime">—</strong></div></section><div class="grid"><section class="panel"><div class="panel-head"><div><h2>Application-synchronized settings</h2><p>Saved here and in Settings → Application → Network.</p></div></div><div class="form-grid"><label class="wide">Public website / DNS URL<input id="public-url" placeholder="https://worlds.example.com"></label><label class="wide">Heartbeat ingestion key<input id="token" type="password" autocomplete="off" placeholder="Required unless anonymous publishing is enabled"></label><label>Heartbeat lifetime (seconds)<input id="ttl" type="number" min="60" max="1800"></label><label>Maximum directory entries<input id="max" type="number" min="10" max="5000"></label></div><div class="checks"><label class="check"><input id="upnp" type="checkbox"><span><b>Attempt UPnP mapping</b><br><span class="muted">Applied on the next listener start when changed here.</span></span></label><label class="check"><input id="anonymous" type="checkbox"><span><b>Allow anonymous heartbeats</b><br><span class="muted">Less secure. Signed World identity and live fingerprint probes still apply.</span></span></label></div><div class="note">The listener address, port, and start/stop control remain desktop-owned so this page cannot disconnect itself mid-save. Public visitors see only the centered Dragonwilds Sync mark; manifest clients use the documented JSON routes.</div><div id="message"></div></section><section class="panel"><div class="panel-head"><div><h2>Current Worlds</h2><p>Manifest candidates; launchers verify every endpoint again.</p></div></div><div class="worlds" id="worlds"></div></section></div><section class="panel" style="margin-top:16px"><div class="panel-head"><div><h2>Published endpoints</h2><p>Use the base address in Dragonwilds Sync. These routes remain available to manifest consumers.</p></div></div><div class="routes"><div class="route"><span>World manifest</span><code>/worlds</code></div><div class="route"><span>Compatibility alias</span><code>/manifest</code></div><div class="route"><span>Health</span><code>/health</code></div><div class="route"><span>Heartbeat publishing</span><code>POST /heartbeats</code></div><div class="route"><span>Revocations</span><code>/revocations</code></div></div></section></main>
-<script>const adminToken=document.querySelector('meta[name="dws-admin-token"]').content;const headers={{'X-DWS-Admin-Token':adminToken}};const el=id=>document.getElementById(id);const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));function age(seconds){{seconds=Math.max(0,Number(seconds||0));if(seconds<60)return Math.round(seconds)+'s';if(seconds<3600)return Math.round(seconds/60)+'m';return Math.round(seconds/3600)+'h'}}async function load(){{const response=await fetch('/admin/api/state',{{headers,cache:'no-store'}});if(!response.ok)throw new Error('Administration session was rejected');const data=await response.json(),cfg=data.config||{{}},status=data.status||{{}},worlds=data.worlds||[];el('service').textContent=status.serving?'ONLINE':'OFFLINE';el('service').className=status.serving?'ok':'pending';el('world-count').textContent=status.world_count||0;el('verified-count').textContent=status.verified_count||0;el('uptime').textContent=age(status.uptime_seconds);el('public-url').value=cfg.public_base_url||'';el('token').value=cfg.ingestion_token||'';el('ttl').value=cfg.heartbeat_ttl_seconds||300;el('max').value=cfg.max_entries||500;el('upnp').checked=cfg.upnp_enabled!==false;el('anonymous').checked=!!cfg.allow_anonymous_heartbeats;el('worlds').innerHTML=worlds.length?worlds.map(w=>`<article><div><strong>${{esc(w.world_name||'World')}}</strong><span class="${{w.directory_verified?'ok':'pending'}}">${{w.directory_verified?'VERIFIED':'PENDING'}}</span></div><small>${{esc(w.external_ip||w.internal_ip||'No route')}}:${{Number(w.game_port||7777)}} · Sync ${{Number(w.sync_port||27051)}}</small><code>${{esc(w.fingerprint_claimed||'')}}</code></article>`).join(''):'<div class="note">No live World heartbeats yet.</div>';}}async function save(){{el('message').textContent='Saving…';const payload={{public_base_url:el('public-url').value.trim(),ingestion_token:el('token').value,heartbeat_ttl_seconds:Number(el('ttl').value),max_entries:Number(el('max').value),upnp_enabled:el('upnp').checked,allow_anonymous_heartbeats:el('anonymous').checked}};const response=await fetch('/admin/api/settings',{{method:'POST',headers:{{...headers,'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const data=await response.json();if(!response.ok)throw new Error(data.error||'Settings were not saved');el('message').textContent='Saved to the directory host and Dragonwilds Sync application.';await load();}}el('refresh').onclick=()=>load().catch(e=>el('message').textContent=e.message);el('save').onclick=()=>save().catch(e=>el('message').textContent=e.message);load().catch(e=>el('message').textContent=e.message);setInterval(()=>load().catch(()=>{{}}),10000);</script></body></html>'''.encode("utf-8")
+<script>const adminToken=document.querySelector('meta[name="dws-admin-token"]').content;const headers={{'X-DWS-Admin-Token':adminToken}};const el=id=>document.getElementById(id);const esc=value=>String(value??'').replace(/[&<>"']/g,ch=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}}[ch]));function age(seconds){{seconds=Math.max(0,Number(seconds||0));if(seconds<60)return Math.round(seconds)+'s';if(seconds<3600)return Math.round(seconds/60)+'m';return Math.round(seconds/3600)+'h'}}async function load(){{const response=await fetch('/admin/api/state',{{headers,cache:'no-store'}});if(!response.ok)throw new Error('Administration session was rejected');const data=await response.json(),cfg=data.config||{{}},status=data.status||{{}},worlds=data.worlds||[];el('service').textContent=status.serving?'ONLINE':'OFFLINE';el('service').className=status.serving?'ok':'pending';el('world-count').textContent=status.world_count||0;el('verified-count').textContent=status.verified_count||0;el('uptime').textContent=age(status.uptime_seconds);el('public-url').value=cfg.public_base_url||'';el('token').value=cfg.ingestion_token||'';el('ttl').value=cfg.heartbeat_ttl_seconds||300;el('max').value=cfg.max_entries||500;el('upnp').checked=cfg.upnp_enabled!==false;el('anonymous').checked=!!cfg.allow_anonymous_heartbeats;el('worlds').innerHTML=worlds.length?worlds.map(w=>`<article><div><strong>${{esc(w.world_name||'World')}}</strong><span class="${{w.directory_verified?'ok':'pending'}}">${{w.directory_verified?'VERIFIED':'PENDING'}}</span></div><small>${{esc(w.external_ip||w.internal_ip||'No route')}}:${{Number(w.game_port||7777)}} · Sync ${{Number(w.sync_port||27051)}}</small><code>${{esc(w.fingerprint_claimed||'')}}</code></article>`).join(''):'<div class="note">No live World heartbeats yet.</div>';}}async function save(){{el('message').textContent='Saving...';const payload={{public_base_url:el('public-url').value.trim(),ingestion_token:el('token').value,heartbeat_ttl_seconds:Number(el('ttl').value),max_entries:Number(el('max').value),upnp_enabled:el('upnp').checked,allow_anonymous_heartbeats:el('anonymous').checked}};const response=await fetch('/admin/api/settings',{{method:'POST',headers:{{...headers,'Content-Type':'application/json'}},body:JSON.stringify(payload)}});const data=await response.json();if(!response.ok)throw new Error(data.error||'Settings were not saved');el('message').textContent='Saved to the directory host and Dragonwilds Sync application.';await load();}}el('refresh').onclick=()=>load().catch(e=>el('message').textContent=e.message);el('save').onclick=()=>save().catch(e=>el('message').textContent=e.message);load().catch(e=>el('message').textContent=e.message);setInterval(()=>load().catch(()=>{{}}),10000);</script></body></html>'''.encode("utf-8")
 
 
 _base_admin_console_html = _admin_console_html
@@ -818,6 +850,31 @@ class DirectoryHost:
             if not session or (remote_ip and str(session.get("remote_ip") or "") != str(remote_ip)): return None
             session["last_seen"] = now; return dict(session)
 
+    def trusted_remote_session(self, token: str, device: dict, remote_ip: str, user_agent: str) -> dict:
+        """Bridge a verified device credential into the existing scoped UI session."""
+        role = str(device.get("role") or "viewer")
+        grants = set(device.get("permissions") or [])
+        role_map = {
+            "view_overview": "overview", "view_map": "overview", "view_maintenance": "overview",
+            "view_mods": "sync", "view_config": "dragonlink", "view_spawner": "dragonlink",
+            "view_console": "logs", "view_audit": "logs", "send_announcements": "dragonlink",
+            "write_maintenance": "sync", "write_mods": "sync", "write_config": "dragonlink",
+            "use_spawner": "dragonlink", "use_console": "dragonlink", "start": "sync",
+            "stop": "sync", "restart": "sync", "update": "sync", "refresh": "overview",
+        }
+        now = time.time(); world_id = str(device.get("worldId") or "")
+        profile = next((row for row in self.remote_login_profiles() if str(row.get("profile_id")) == world_id), {})
+        session = {"world_id": world_id, "world_name": str(profile.get("world_name") or "World"),
+                   "username": str(device.get("displayName") or "Trusted Device")[:64], "role": role,
+                   "created_at": now, "expires_at": now + 8 * 60 * 60, "last_seen": now,
+                   "csrf": secrets.token_urlsafe(24), "remote_ip": str(remote_ip), "user_agent": str(user_agent)[:240],
+                   "permissions": {key: (role == "owner" or role_map.get(key) in grants)
+                                   for key in REMOTE_PERMISSION_DEFAULTS}}
+        with self.lock: self.remote_sessions[token] = session
+        self._remote_audit("trusted_login", ok=True, world_id=world_id, world_name=session["world_name"],
+                           remote_ip=remote_ip, user_agent=user_agent, detail=session["username"])
+        return dict(session)
+
     def remote_payload(self, session: dict) -> dict:
         if not self.remote_state_provider: raise RuntimeError("Remote Server Admin state is unavailable")
         payload = self.remote_state_provider(str(session.get("world_id") or "")) or {}
@@ -1158,7 +1215,7 @@ class DirectoryHost:
                         if remote_enabled and path == "/servers":
                             self.send_response(302); self.send_header("Location", "/admin/login"); self.send_header("Content-Length", "0"); self.end_headers(); return
                         self._json({"error": "Public World Directory is disabled"}, 404, cors=False); return
-                if (path in {"/admin/login", "/admin/server", "/api/v1/admin/session"} or path.startswith("/api/v1/admin/")) and not remote_enabled:
+                if (path in {"/admin/login", "/admin/pair", "/admin/server", "/api/v1/admin/session"} or path.startswith("/api/v1/admin/")) and not remote_enabled:
                     self._json({"error": "Remote Server Admin is disabled"}, 404, cors=False); return
                 if path in {"/worlds", "/manifest", "/api/worlds", "/revocations"} and not directory_enabled:
                     self._json({"error": "Public World Directory is disabled"}, 404); return
@@ -1198,6 +1255,11 @@ class DirectoryHost:
                     content_type = "image/webp" if asset_name.casefold().endswith(".webp") else "image/svg+xml; charset=utf-8"
                     self._send(icon, content_type, cors=False,
                                extra_headers={"Cache-Control": "public, max-age=604800, immutable"}); return
+                if path.startswith("/assets/providers/"):
+                    icon = _provider_icon_bytes(path.rsplit("/", 1)[-1])
+                    if not icon: self._json({"error": "provider icon unavailable"}, 404, cors=False); return
+                    self._send(icon, "image/svg+xml; charset=utf-8", cors=False,
+                               extra_headers={"Cache-Control": "public, max-age=604800, immutable"}); return
                 if path.startswith("/assets/distros/"):
                     icon = _distro_icon_bytes(path.rsplit("/", 1)[-1])
                     if not icon: icon = _platform_icon_bytes("linux")
@@ -1221,6 +1283,7 @@ class DirectoryHost:
                 if path.startswith("/servers/"):
                     self._send(detail_html(urllib.parse.unquote(path.split("/servers/", 1)[1])), "text/html; charset=utf-8", cors=False); return
                 if path == "/admin/login": self._send(admin_login_html(), "text/html; charset=utf-8", cors=False); return
+                if path == "/admin/pair": self._send(_trusted_pair_html(), "text/html; charset=utf-8", cors=False); return
                 if path == "/api/v1/admin/profiles":
                     if not self._same_origin(): self._json({"error": "same-origin profile selection required"}, 403, cors=False); return
                     self._json({"profiles": controller.remote_login_profiles()}, cors=False); return
@@ -1274,6 +1337,31 @@ class DirectoryHost:
                 remote_enabled = bool((controller.config.get("remote_admin") or {}).get("enabled", False))
                 if path.startswith("/api/v1/admin/") and not remote_enabled:
                     self._json({"error": "Remote Server Admin is disabled"}, 404, cors=False); return
+                if path in {"/api/v1/admin/pair", "/api/v1/admin/trusted/pairing-status", "/api/v1/admin/trusted/challenge", "/api/v1/admin/trusted/login"}:
+                    if not self._same_origin(): self._json({"error": "same-origin trusted-device request required"}, 403, cors=False); return
+                    rate_key=f"trusted|{self.client_address[0]}|{path}";now=time.time()
+                    attempts=[stamp for stamp in controller.remote_login_attempts.get(rate_key,[]) if now-stamp<600]
+                    request_limit=120 if path.endswith("/pairing-status") else 12
+                    if len(attempts)>=request_limit:
+                        self._json({"error":"Too many trusted-device requests. Wait ten minutes."},429,cors=False);return
+                    attempts.append(now);controller.remote_login_attempts[rate_key]=attempts
+                    try:
+                        length=int(self.headers.get("Content-Length","0"))
+                        if length<=0 or length>32*1024: raise ValueError("Request body must be 1-32768 bytes")
+                        values=json.loads(self.rfile.read(length))
+                        if path.endswith("/pair"):
+                            result=trusted_submit_pairing(str(values.get("pairing_id") or ""),challenge=str(values.get("challenge") or ""),fallback_code=str(values.get("fallback_code") or ""),public_key_b64=str(values.get("public_key_b64") or ""),credential_id=str(values.get("credential_id") or ""),display_name=str(values.get("display_name") or ""),device_class=str(values.get("device_class") or "browser"),platform=str(values.get("platform") or ""),browser_or_app=str(values.get("browser_or_app") or "Trusted Browser"))
+                            self._json(result,202,cors=False);return
+                        if path.endswith("/pairing-status"):
+                            self._json(trusted_pairing_status(str(values.get("pairing_id") or ""),str(values.get("challenge") or "")),cors=False);return
+                        if path.endswith("/challenge"):
+                            self._json(trusted_begin_auth(str(values.get("device_id") or "")),cors=False);return
+                        completed=trusted_complete_auth(str(values.get("device_id") or ""),str(values.get("challenge_id") or ""),str(values.get("signature_b64") or ""),metadata={"region":""})
+                        token=str(completed.pop("token"));session=controller.trusted_remote_session(token,completed.get("device") or {},self.client_address[0],str(self.headers.get("User-Agent") or ""))
+                        cookie=f"dws_remote_session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={8*60*60}"
+                        self._json({"ok":True,"world_name":session.get("world_name"),"role":session.get("role"),**completed},cors=False,extra_headers={"Set-Cookie":cookie});return
+                    except RuntimeError as exc: self._json({"error":str(exc)},429,cors=False);return
+                    except Exception as exc: self._json({"error":str(exc)},400,cors=False);return
                 if path == "/api/v1/admin/login":
                     if not self._same_origin(): self._json({"error": "same-origin login required"}, 403, cors=False); return
                     try:
@@ -1354,8 +1442,8 @@ class DirectoryHost:
                          {"ok": False, "pending": False, "changed": False,
                           "message": "Firewall is not configured. Choose Repair Firewall when ready."})
         self.mapping_stop.clear()
-        self.upnp = ({"attempted": True, "pending": True, "mapped": False, "external_ip": "", "detected_public_ip": "", "error": "Discovering a UPnP gateway…"}
-                     if mode == "upnp" else {"attempted": False, "pending": True, "mapped": False, "external_ip": "", "detected_public_ip": "", "error": "Detecting the public address…"})
+        self.upnp = ({"attempted": True, "pending": True, "mapped": False, "external_ip": "", "detected_public_ip": "", "error": "Discovering a UPnP gateway..."}
+                     if mode == "upnp" else {"attempted": False, "pending": True, "mapped": False, "external_ip": "", "detected_public_ip": "", "error": "Detecting the public address..."})
         def renew_public_endpoint():
                 # Public-IP discovery is useful even when UPnP is unavailable or
                 # intentionally disabled. It supplies a real WAN candidate while

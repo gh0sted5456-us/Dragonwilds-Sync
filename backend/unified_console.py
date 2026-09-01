@@ -51,7 +51,13 @@ _MOD_LOG_TAGS: dict[str, re.Pattern] = {
         r"^(?:\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s*)?(?:\[[^\]\r\n]{1,64}\]\s*){0,4}\[RuneSchema\]",
         re.IGNORECASE,
     ),
+    "chat": re.compile(
+        r"^(?:\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s*)?(?:\[[^\]\r\n]{1,64}\]\s*){0,4}\[DragonLink-Chat\]",
+        re.IGNORECASE,
+    ),
 }
+
+_CHAT_PAYLOAD = re.compile(r"\[DragonLink-Chat\]\s*(\{.*\})\s*$", re.IGNORECASE)
 
 # Where each registered mod keeps its own editable config, relative to the
 # UE4SS Mods folder. Mirrors the install-path convention in
@@ -125,7 +131,7 @@ def _write_header(path: Path, profile_id: str, started: float) -> None:
         "Dragonwilds Sync Unified Server Log\n"
         f"World: {profile_id}\n"
         f"Session started: {_iso(started)}\n"
-        "Streams: GAME CMD/STDOUT | UE4SS | RUNESCHEMA | SERVER | SYNC TRAFFIC\n"
+        "Streams: GAME CMD/STDOUT | UE4SS | RUNESCHEMA | CHAT | SERVER | SYNC TRAFFIC\n"
         + ("-" * 78) + "\n",
         encoding="utf-8",
     )
@@ -355,13 +361,32 @@ def _ue4ss_entries(runtime: dict, started: float, limit: int = 250) -> tuple[lis
             if pattern.match(message):
                 source = mod_key
                 break
-        rows.append({
+        entry = {
             "ts": mtime - ((len(offsets) - index) * 0.0001),
             "source": source,
             "level": level,
             "message": message[:4000],
             "_identity": f"ue4ss:{path}:{offset}",
-        })
+        }
+        if source == "chat":
+            match = _CHAT_PAYLOAD.search(message)
+            if match:
+                try:
+                    payload = json.loads(match.group(1))
+                except (ValueError, TypeError):
+                    payload = {}
+                if isinstance(payload, dict) and payload.get("schema") == "DragonLink.Chat.v1":
+                    sender = str(payload.get("sender") or payload.get("player_id") or "Player").strip()
+                    direction = str(payload.get("direction") or "chat").strip().casefold()
+                    body = str(payload.get("body") or "").strip()
+                    entry["message"] = f"{sender}: {body}"[:4000]
+                    entry["chat"] = {
+                        "direction": direction[:24], "sender": sender[:160],
+                        "player_id": str(payload.get("player_id") or "")[:160],
+                        "character_guid": str(payload.get("character_guid") or "")[:160],
+                        "body": body[:2000],
+                    }
+        rows.append(entry)
     return rows, str(path)
 
 

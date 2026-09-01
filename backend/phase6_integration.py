@@ -273,15 +273,15 @@ def _sync_world(*args, **kwargs):
     manifest = result.get("manifest") if isinstance(result, dict) and isinstance(result.get("manifest"), dict) else {}
     has_server_dragonconnect = any(
         str((entry or {}).get("baked_component") or "").casefold()
-        in {"dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip"}
+        == "dragonlink"
         for entry in (manifest.get("files") or []) if isinstance(entry, dict)
     )
     if has_server_dragonconnect:
         layout = sync_engine.resolve_client_layout(install_dir)
         target = layout.ue4ss_mods_dir / persistent_direct_connect.MOD_NAME
-        installed = (target / "Scripts" / "main.lua").is_file() and (target / "enabled.txt").is_file()
+        installed = (target / "dlls" / "main.dll").is_file() and (target / "dlls" / "DragonLink-Connect.dll").is_file() and (target / "enabled.txt").is_file()
         if not installed:
-            raise sync_engine.ConnectionError("The host manifest included DragonLink-Connect, but its required files were not materialized.")
+            raise sync_engine.ConnectionError("The host manifest included DragonLink, but its required client DLLs were not materialized.")
         role = {"role": "CLIENT", "dragonconnect": {
             "logical_name": persistent_direct_connect.LOGICAL_NAME,
             "physical_name": persistent_direct_connect.MOD_NAME,
@@ -289,7 +289,8 @@ def _sync_world(*args, **kwargs):
         }}
         _write_role_state(role)
     else:
-        # Compatibility for older hosts that do not yet publish baked components.
+        # DragonLink is launcher baseline infrastructure even when Connect is
+        # not enabled by this host.
         role = _prepare_remote_client_role(install_dir)
     if isinstance(result, dict):
         result["runtime_role"] = role

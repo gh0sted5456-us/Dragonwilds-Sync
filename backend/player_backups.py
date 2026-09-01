@@ -7,7 +7,8 @@ import time
 from pathlib import Path
 
 from character_profiles import inspect_character_package
-from profile_store import SERVER_PROFILES_DIR
+from backup_naming import profile_naming, render_backup_name
+from profile_store import SERVER_PROFILES_DIR, load_server_profile
 
 
 MAX_BACKUP_BYTES = 32 * 1024 * 1024
@@ -32,9 +33,7 @@ def store_player_backup(world_profile_id: str, player_profile_id: str, payload: 
     root = _player_root(world_profile_id, player_profile_id)
     root.mkdir(parents=True, exist_ok=True)
     digest = hashlib.sha256(payload).hexdigest()
-    stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
-    file_name = f"{stamp}-{digest[:12]}.rsdwl"
-    temp = root / f".{file_name}.upload"
+    temp = root / f".{digest[:12]}-{time.time_ns()}.upload"
     temp.write_bytes(payload)
     try:
         inspected = inspect_character_package(temp)
@@ -43,10 +42,20 @@ def store_player_backup(world_profile_id: str, player_profile_id: str, payload: 
         raise
     manifest = inspected.get("manifest") or {}
     player_name = str(manifest.get("player_name") or (manifest.get("metadata") or {}).get("playerName") or "Player")[:120]
+    character_id = str(manifest.get("character_id") or (manifest.get("metadata") or {}).get("characterId") or "")
     player_folder = normalize_player_id(player_name) or "Player"
     named_root = root / player_folder
     named_root.mkdir(parents=True, exist_ok=True)
+    profile = load_server_profile(world_profile_id) or {}
+    naming = profile_naming(profile)
+    file_name = render_backup_name(
+        naming["player_template"], suffix=".rsdwl", world=str(profile.get("name") or world_profile_id),
+        player=player_name, character=character_id or "Character", kind="backup", profile=player_profile_id)
     target = named_root / file_name
+    collision = 1
+    while target.exists():
+        target = named_root / f"{Path(file_name).stem}-{collision}.rsdwl"
+        collision += 1
     temp.replace(target)
     record = {
         "player_profile_id": normalize_player_id(player_profile_id),
@@ -54,7 +63,7 @@ def store_player_backup(world_profile_id: str, player_profile_id: str, payload: 
         "file_name": target.relative_to(root).as_posix(),
         "size": target.stat().st_size,
         "sha256": digest,
-        "character_id": str(manifest.get("character_id") or (manifest.get("metadata") or {}).get("characterId") or ""),
+        "character_id": character_id,
         "player_name": player_name,
         "remote_ip": str(remote_ip or "")[:64],
     }

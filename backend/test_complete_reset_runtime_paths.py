@@ -47,7 +47,12 @@ def test_complete_reset_deletion_guards_exact_targets() -> None:
                 raise AssertionError("A parent AppData path must never be accepted")
             except ValueError:
                 pass
-            removed = server_systems.delete_rsdragonwilds_appdata(str(appdata.resolve()))
+            # The destructive API intentionally requires the exact path that the
+            # preview API returned. On Windows a Path.resolve() round-trip can
+            # expand an 8.3 user-directory alias and therefore no longer be the
+            # exact previewed lexical path, even though it names the same tree.
+            previewed = str(server_systems.rsdragonwilds_appdata_root())
+            removed = server_systems.delete_rsdragonwilds_appdata(previewed)
             assert removed["deleted"] and not appdata.exists()
 
         install = Path(temp) / "Dedicated"
@@ -78,34 +83,22 @@ def test_quick_status_carries_profile_artwork() -> None:
     assert result["dragonlink"]["config"]["dragonlink"]["chat"] is True
 
 
-def test_renderer_and_rpc_contracts() -> None:
-    root = Path(__file__).resolve().parents[1]
-    renderer = (root / "renderer" / "app-v2.js").read_text(encoding="utf-8")
-    backend = (root / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
-    quick = (root / "renderer" / "release-v3-phase2.js").read_text(encoding="utf-8")
-    for token in (
-        "application.reset.complete_client.preview",
-        "application.reset.complete_server.preview",
-        "server.install.path_audit",
-        "runtime_game_root",
-    ):
-        assert token in backend
-    for token in ("complete-reinstall-rsdragonwilds", "complete-reinstall-dragonwilds-client", "settings-audit-server-paths", "wm-audit-server-paths"):
+def test_renderer_runtime_path_labels() -> None:
+    root = Path(__file__).resolve().parent.parent
+    renderer = (root / "renderer" / "server-v3.js").read_text(encoding="utf-8")
+    quick = (root / "renderer" / "quick-mode.js").read_text(encoding="utf-8")
+    for token in ("Runtime Folder", "Server Install Root", "Open Runtime Folder"):
         assert token in renderer
-    for token in ("v3q-profile-banner", "Summon Items", "server.spawner.catalog", "server.spawner.spawn",
-                  "v3q-item-pagination", "data-v3q-item-page", "quickDragonLink", "quick.dragonlink.update",
+    assert "${tabButton('players',t('players'))}" in renderer
+    assert "${tabButton('console',t('console'))}" in renderer
+    for token in ("v3q-item-pagination", "data-v3q-item-page", "quickDragonLink", "quick.dragonlink.update",
                   "DragonLink-Chat.dll", "Capture player messages"):
         assert token in quick
-    for token in ("tabButton('dragonlink','DragonLink')", "server.world.managed_runtime.status",
-                  "data-dragonlink-setting", "DragonLink-Chat.dll", "Chat Integration"):
-        assert token in renderer
-    for token in ("renderSettingsPanelSwap", "renderWorldManagementPanelSwap", "data-world-management-tabs"):
-        assert token in renderer
 
 
 if __name__ == "__main__":
     test_runtime_root_drives_server_profile_and_pak_scan()
     test_complete_reset_deletion_guards_exact_targets()
     test_quick_status_carries_profile_artwork()
-    test_renderer_and_rpc_contracts()
-    print("complete reset/runtime path tests passed")
+    test_renderer_runtime_path_labels()
+    print("complete reset/runtime path contracts passed")

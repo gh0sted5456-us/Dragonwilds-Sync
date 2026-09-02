@@ -154,8 +154,8 @@ namespace
                     }
                 }
             }, {false, false, STR("DragonLink-Connect"), STR("CredentialHydration")});
-            Output::send(STR("[DragonLink-Connect] Observer active for {}. Password handoff: {}.\n"),
-                         ensure_str(to_string(m_config.ip.c_str())), m_config.password.empty() ? STR("no") : STR("yes"));
+            Output::send(STR("[DragonLink-Connect] Observer active. Password handoff: {}.\n"),
+                         m_config.password.empty() ? STR("no") : STR("yes"));
         }
         void NotifyUObjectCreated(const UObjectBase* object, int32) override
         {

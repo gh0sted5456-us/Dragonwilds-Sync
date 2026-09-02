@@ -17,7 +17,13 @@ def main():
         raise AssertionError("remote item spawn must remain blocked")
     except ValueError as exc:
         assert "local player" in str(exc)
-    assert spawner.spawn_command("item", "ITEM_GUID_Sword", {"kind": "local"}, 2) == "give.item ITEM_GUID_Sword 2"
+    assert spawner.spawn_command("item", "ITEM_GUID_Sword", {"kind": "local"}, 2) == "world.items.give ITEM_GUID_Sword 2"
+    assert spawner.spawn_command("item", "/Game/Items/ITEM_Log.ITEM_Log", {"kind": "local"}) == "world.items.give ITEM_Log 1"
+    try:
+        spawner.spawn_command("item", "ITEM_GUID_Sword", {"kind": "player", "player_id": "Luke"})
+        raise AssertionError("unsupported remote item give was accepted")
+    except ValueError as exc:
+        assert "local player" in str(exc)
     try:
         spawner.spawn_command("item", "ITEM Bad;Command", {"kind": "local"})
         raise AssertionError("unsafe item identifier was accepted")

@@ -53,9 +53,15 @@ def main() -> None:
                 raise AssertionError("active RuneSchema build was deletable")
             except ValueError:
                 pass
-            profile_store.save_server_profile("world", {"name": "World", "runeschema_flavor_id": "official"})
-            deleted = repo.delete_versions(None, ["experimental-test"])
+            profile = profile_store.load_server_profile("world")
+            profile["runtime_client_selections"] = {"runeschema": {"build_id": "experimental-test", "targets": ["Binaries/Win64/RuneSchema/dlls/main.dll"]}}
+            profile_store.save_server_profile("world", profile)
+            deleted = repo.delete_versions(None, ["experimental-test"], reassign_active=True)
             assert deleted["deleted_count"] == 1 and not archive.exists()
+            assert deleted["reassigned_worlds"] == ["World"]
+            reassigned = profile_store.load_server_profile("world")
+            assert reassigned["runeschema_flavor_id"] == "official"
+            assert "runeschema" not in reassigned.get("runtime_client_selections", {})
         finally:
             profile_store.APP_DATA_DIR = originals["store_data"]
             profile_store.V2_SETTINGS_PATH = originals["store_settings"]

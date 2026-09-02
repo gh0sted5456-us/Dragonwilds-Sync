@@ -195,6 +195,11 @@ assert(source.includes('function openConnectToWorld') && source.includes('Unifie
   source.includes("['saved','lan','direct','import','host']") && source.includes('incomingRsdwlWorldRows') &&
   source.includes('Array.isArray(info.worlds)?info.worlds:Array.isArray(info.worlds?.worlds)?info.worlds.worlds'),
   'Local, LAN, direct, RSDWL, and hosted World entry points must share one connection workspace.');
+assert(source.includes("payload.type==='change'&&target.matches('input[type=\"checkbox\"],input[type=\"radio\"],select')") &&
+  source.includes("application.ue4ss_repository.delete_many',{version_ids:ids,reassign_active:true}") &&
+  source.includes("const repositoryIds=ids.filter((id)=>applicationIds.has(id))") &&
+  source.includes("application.runeschema_repository.delete_many',{version_ids:repositoryIds,reassign_active:true}"),
+  'Native runtime managers must repaint checkbox-dependent actions and safely reassign active Worlds before deleting stored flavors.');
 assert(source.includes("comparison=incomingRevision>localRevision?'newer':'local-newer'") &&
   source.includes("comparison=incomingTime>localTime?'newer':'local-newer'") &&
   source.includes("canonical?'v3.exchange.import':'profile.package.import'") &&

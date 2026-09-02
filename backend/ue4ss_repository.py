@@ -201,6 +201,28 @@ def _worlds_using(version_id: str) -> list[str]:
     return names
 
 
+def _reassign_worlds(version_ids: set[str]) -> list[str]:
+    reassigned = []
+    if not SERVER_PROFILES_DIR.exists():
+        return reassigned
+    for folder in sorted(SERVER_PROFILES_DIR.iterdir(), key=lambda p: p.name.lower()):
+        if not folder.is_dir():
+            continue
+        profile = load_server_profile(folder.name)
+        if not profile or str(profile.get("ue4ss_active_version_id") or BASELINE_ID) not in version_ids:
+            continue
+        profile["ue4ss_active_version_id"] = BASELINE_ID
+        # Client archive selections belong to the exact build and must not
+        # survive after its repository ZIP is removed.
+        selections = profile.get("runtime_client_selections")
+        policy = selections.get("ue4ss") if isinstance(selections, dict) else None
+        if isinstance(policy, dict) and str(policy.get("build_id") or "") in version_ids:
+            selections.pop("ue4ss", None)
+        save_server_profile(folder.name, profile)
+        reassigned.append(str(profile.get("name") or folder.name))
+    return reassigned
+
+
 def delete_version(state: dict, version_id: str) -> dict:
     state = state if state is not None else load_state()
     if not version_id or version_id == BASELINE_ID:
@@ -221,7 +243,7 @@ def delete_version(state: dict, version_id: str) -> dict:
     return list_versions(state)
 
 
-def delete_versions(state: dict, version_ids: list[str]) -> dict:
+def delete_versions(state: dict, version_ids: list[str], *, reassign_active: bool = False) -> dict:
     """Delete several unused local builds as one validated operation."""
     state = state if state is not None else load_state()
     requested = list(dict.fromkeys(str(item or "").strip() for item in version_ids))
@@ -237,16 +259,18 @@ def delete_versions(state: dict, version_ids: list[str]) -> dict:
         raise KeyError(f"UE4SS repository build not found: {', '.join(missing)}")
     blocked = {item: _worlds_using(item) for item in requested}
     blocked = {item: names for item, names in blocked.items() if names}
-    if blocked:
+    if blocked and not reassign_active:
         details = "; ".join(f"{known[item].get('label') or item}: {', '.join(names)}" for item, names in blocked.items())
         raise ValueError(f"Active UE4SS builds cannot be deleted. Switch these Worlds first: {details}")
+    reassigned = _reassign_worlds(set(requested)) if blocked else []
     for item in requested:
         archive = (_repo_dir() / str(known[item].get("archive") or "")).resolve()
         if _repo_dir().resolve() in archive.parents:
             archive.unlink(missing_ok=True)
     _set_rows(state, [row for row in rows if str(row.get("id")) not in set(requested)])
     save_state(state)
-    return {**list_versions(state), "deleted_ids": requested, "deleted_count": len(requested)}
+    return {**list_versions(state), "deleted_ids": requested, "deleted_count": len(requested),
+            "reassigned_worlds": reassigned}
 
 
 def rename_version(state: dict | None, version_id: str, nickname: str) -> dict:

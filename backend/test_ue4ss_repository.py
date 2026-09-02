@@ -129,12 +129,19 @@ def test_delete_refuses_baseline_and_in_use_version_then_succeeds():
         except ValueError as exc:
             assert "World A" in str(exc)
 
-        # Switch the World off this build, then deletion succeeds and the
-        # backing ZIP is actually removed from the repository folder.
-        profile_store.save_server_profile("world-a", {"name": "World A", "ue4ss_active_version_id": repo.BASELINE_ID})
+        # The manager's explicit delete action may safely return every affected
+        # World to the protected Baseline and clear build-specific client file
+        # selection before removing the repository ZIP.
+        profile = profile_store.load_server_profile("world-a")
+        profile["runtime_client_selections"] = {"ue4ss": {"build_id": version_id, "targets": ["Binaries/Win64/ue4ss/UE4SS.dll"]}}
+        profile_store.save_server_profile("world-a", profile)
         state = profile_store.load_state()
-        after = repo.delete_version(state, version_id)
+        after = repo.delete_versions(state, [version_id], reassign_active=True)
         assert all(v["id"] != version_id for v in after["versions"])
+        assert after["reassigned_worlds"] == ["World A"]
+        reassigned = profile_store.load_server_profile("world-a")
+        assert reassigned["ue4ss_active_version_id"] == repo.BASELINE_ID
+        assert "ue4ss" not in reassigned.get("runtime_client_selections", {})
         assert not any(repo._repo_dir().iterdir())
 
 

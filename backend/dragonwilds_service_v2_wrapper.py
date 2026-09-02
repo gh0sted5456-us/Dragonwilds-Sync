@@ -1158,7 +1158,7 @@ def handle(method: str, params: dict) -> object:
         return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "application.ue4ss_repository.delete_many":
-        result = ue4ss_repository.delete_versions(state, list(params.get("version_ids") or []))
+        result = ue4ss_repository.delete_versions(state, list(params.get("version_ids") or []), reassign_active=bool(params.get("reassign_active")))
         return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "application.ue4ss_repository.rename":
@@ -1173,7 +1173,7 @@ def handle(method: str, params: dict) -> object:
         return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "application.runeschema_repository.delete_many":
-        result = runeschema_repository.delete_versions(state, list(params.get("version_ids") or []))
+        result = runeschema_repository.delete_versions(state, list(params.get("version_ids") or []), reassign_active=bool(params.get("reassign_active")))
         return {**result, "state": _public_state_with_runtime_repositories()}
 
     if method == "application.runeschema_repository.rename":

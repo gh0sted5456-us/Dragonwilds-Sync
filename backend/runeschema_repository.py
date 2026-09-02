@@ -8,7 +8,7 @@ import time
 import zipfile
 from pathlib import Path
 
-from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_state
+from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
 from server_systems import download_runtime_zip
 
 
@@ -142,7 +142,27 @@ def _worlds_using(version_id: str) -> list[str]:
     return names
 
 
-def delete_versions(state: dict | None, version_ids: list[str]) -> dict:
+def _reassign_worlds(version_ids: set[str]) -> list[str]:
+    reassigned = []
+    if not SERVER_PROFILES_DIR.exists():
+        return reassigned
+    for folder in sorted(SERVER_PROFILES_DIR.iterdir(), key=lambda path: path.name.casefold()):
+        if not folder.is_dir():
+            continue
+        profile = load_server_profile(folder.name)
+        if not profile or str(profile.get("runeschema_flavor_id") or "official") not in version_ids:
+            continue
+        profile["runeschema_flavor_id"] = "official"
+        selections = profile.get("runtime_client_selections")
+        policy = selections.get("runeschema") if isinstance(selections, dict) else None
+        if isinstance(policy, dict) and str(policy.get("build_id") or "") in version_ids:
+            selections.pop("runeschema", None)
+        save_server_profile(folder.name, profile)
+        reassigned.append(str(profile.get("name") or folder.name))
+    return reassigned
+
+
+def delete_versions(state: dict | None, version_ids: list[str], *, reassign_active: bool = False) -> dict:
     state = state if state is not None else load_state()
     requested = [item for item in dict.fromkeys(str(value or "").strip() for value in version_ids) if item]
     if not requested:
@@ -154,9 +174,10 @@ def delete_versions(state: dict | None, version_ids: list[str]) -> dict:
         raise KeyError(f"RuneSchema Experimental build not found: {', '.join(missing)}")
     blocked = {item: _worlds_using(item) for item in requested}
     blocked = {item: names for item, names in blocked.items() if names}
-    if blocked:
+    if blocked and not reassign_active:
         details = "; ".join(f"{known[item].get('label') or item}: {', '.join(names)}" for item, names in blocked.items())
         raise ValueError(f"Active RuneSchema builds cannot be deleted. Switch these Worlds first: {details}")
+    reassigned = _reassign_worlds(set(requested)) if blocked else []
     for item in requested:
         archive = (_repo_dir() / str(known[item].get("archive") or "")).resolve()
         if _repo_dir().resolve() in archive.parents:
@@ -164,7 +185,8 @@ def delete_versions(state: dict | None, version_ids: list[str]) -> dict:
     selected = set(requested)
     _set_rows(state, [row for row in rows if str(row.get("id")) not in selected])
     save_state(state)
-    return {**list_versions(state), "deleted_ids": requested, "deleted_count": len(requested)}
+    return {**list_versions(state), "deleted_ids": requested, "deleted_count": len(requested),
+            "reassigned_worlds": reassigned}
 
 
 def rename_version(state: dict | None, version_id: str, nickname: str) -> dict:

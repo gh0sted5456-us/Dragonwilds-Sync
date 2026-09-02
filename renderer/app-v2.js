@@ -4231,17 +4231,22 @@
   }
 
   function worldJoinCredentials(world, syncResponse = {}) {
+    const refreshedWorlds=syncResponse?.state?.client?.worlds;
+    const refreshedWorld=Array.isArray(refreshedWorlds)
+      ? refreshedWorlds.find((candidate)=>String(candidate?.id||'')===String(world?.id||''))
+      : null;
+    const currentWorld=refreshedWorld||world||{};
     const result=syncResponse?.result||{};
-    const manifest=result.manifest||world?.manifest_cache||{};
-    const connection=manifest.connection||world?.connection||{};
+    const manifest=result.manifest||currentWorld.manifest_cache||{};
+    const connection=manifest.connection||currentWorld.connection||{};
     const direct=result.direct_connect||{};
-    const host=String(connection.external_ip||connection.internal_ip||world?.connection?.external_ip||world?.connection?.internal_ip||'').trim();
-    const port=Number(connection.game_port||world?.connection?.game_port||7777);
+    const host=String(connection.external_ip||connection.internal_ip||currentWorld.connection?.external_ip||currentWorld.connection?.internal_ip||'').trim();
+    const port=Number(connection.game_port||currentWorld.connection?.game_port||7777);
     const address=String(direct.address||result.game_endpoint||(host?`${host}:${port}`:'Not published'));
-    const credentials=world?.credentials||{};
-    const capability=manifest.dragonlink_connect||world?.manifest_cache?.dragonlink_connect||{};
+    const credentials=currentWorld.credentials||{};
+    const capability=manifest.dragonlink_connect||currentWorld.manifest_cache?.dragonlink_connect||{};
     return {
-      worldName:String(manifest.profile_name||world?.identity?.world_name||world?.nickname||world?.name||'Dragonwilds World'),
+      worldName:String(manifest.profile_name||currentWorld.identity?.world_name||currentWorld.nickname||currentWorld.name||'Dragonwilds World'),
       address,
       password:String(credentials.password||''),
       automated:capability.enabled===true,

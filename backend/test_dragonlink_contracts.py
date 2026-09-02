@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 def main() -> None:
     chat = (ROOT / "native/ue4ss-mods/DragonLink-Chat/src/main.cpp").read_text(encoding="utf-8")
     connect = (ROOT / "native/ue4ss-mods/DragonLink-Connect/src/main.cpp").read_text(encoding="utf-8")
+    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
 
     # unified_console.py consumes DragonLink.Chat.v1's `body` field. Keep the
     # legacy `message` alias during the transition so older consumers still work.
@@ -26,6 +27,14 @@ def main() -> None:
     assert 'key == L"password"' in connect
     for token in ('"direct"', '"connect"', '"join"', '"ipaddress"', '"serveraddress"', '"passcode"', '"worldpass"'):
         assert token in connect
+
+    # The ready/play gate may still hold the pre-sync World object. Credentials
+    # must come from the matching World in the refreshed response state first.
+    assert "syncResponse?.state?.client?.worlds" in renderer
+    assert "const currentWorld=refreshedWorld||world||{}" in renderer
+    credential_function = renderer.split("function worldJoinCredentials", 1)[1].split("function worldJoinCredentialMarkup", 1)[0]
+    assert "const credentials=currentWorld.credentials||{}" in credential_function
+    assert "const credentials=world?.credentials||{}" not in credential_function
 
     # Current RSDWTools exposes local-player item giving through
     # `world.items.give <ITEM_AssetName> [count]`.

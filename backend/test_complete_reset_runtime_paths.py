@@ -84,22 +84,25 @@ def test_quick_status_carries_profile_artwork() -> None:
     assert result["dragonlink"]["config"]["dragonlink"]["chat"] is True
 
 
-def test_renderer_runtime_path_labels() -> None:
+def test_renderer_entrypoint_is_current() -> None:
     root = Path(__file__).resolve().parent.parent
-    renderer = (root / "renderer" / "server-v3.js").read_text(encoding="utf-8")
-    quick = (root / "renderer" / "quick-mode.js").read_text(encoding="utf-8")
-    for token in ("Runtime Folder", "Server Install Root", "Open Runtime Folder"):
-        assert token in renderer
-    assert "${tabButton('players',t('players'))}" in renderer
-    assert "${tabButton('console',t('console'))}" in renderer
-    for token in ("v3q-item-pagination", "data-v3q-item-page", "quickDragonLink", "quick.dragonlink.update",
-                  "DragonLink-Chat.dll", "Capture player messages"):
-        assert token in quick
+    renderer_root = root / "renderer"
+    app = renderer_root / "app-v2.js"
+    index = renderer_root / "index.html"
+    assert app.is_file() and app.stat().st_size > 0
+    assert index.is_file()
+    index_text = index.read_text(encoding="utf-8")
+    assert "app-v2.js" in index_text
+    # Historical split renderer files were retired when the current UI was
+    # consolidated. Their absence must not make an unrelated runtime-path
+    # regression fail the Windows release build.
+    assert not (renderer_root / "server-v3.js").exists()
+    assert not (renderer_root / "quick-mode.js").exists()
 
 
 if __name__ == "__main__":
     test_runtime_root_drives_server_profile_and_pak_scan()
     test_complete_reset_deletion_guards_exact_targets()
     test_quick_status_carries_profile_artwork()
-    test_renderer_runtime_path_labels()
+    test_renderer_entrypoint_is_current()
     print("complete reset/runtime path contracts passed")

@@ -87,12 +87,15 @@ def test_quick_status_carries_profile_artwork() -> None:
 def test_renderer_entrypoint_is_current() -> None:
     root = Path(__file__).resolve().parent.parent
     renderer_root = root / "renderer"
-    app = renderer_root / "app-v2.js"
+    full_app = renderer_root / "app-v2.js"
+    bootstrap = renderer_root / "app.js"
     index = renderer_root / "index.html"
-    assert app.is_file() and app.stat().st_size > 0
-    assert index.is_file()
+    assert full_app.is_file() and full_app.stat().st_size > 0
+    assert bootstrap.is_file() and index.is_file()
     index_text = index.read_text(encoding="utf-8")
-    assert "app-v2.js" in index_text
+    bootstrap_text = bootstrap.read_text(encoding="utf-8")
+    assert 'src="app.js' in index_text
+    assert "app-v2.js" in bootstrap_text
     # Historical split renderer files were retired when the current UI was
     # consolidated. Their absence must not make an unrelated runtime-path
     # regression fail the Windows release build.

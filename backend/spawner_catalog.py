@@ -293,6 +293,19 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
             "loot_menu_detected": loot_menu, "live_modded_catalog": False}
 
 
+def _rsdw_item_token(runtime_path: str) -> str:
+    """Return the asset-short-name accepted by current RSDWTools world.items.give."""
+    path = str(runtime_path or "").strip()
+    if path.startswith("/"):
+        leaf = path.rsplit("/", 1)[-1]
+        token = leaf.split(".", 1)[0]
+    else:
+        token = path
+    if not re.fullmatch(r"[A-Za-z0-9_.:-]+", token):
+        raise ValueError("The selected RSDW runtime identifier is invalid")
+    return token
+
+
 def spawn_command(kind: str, runtime_path: str, target: dict, count: int = 1) -> str:
     path = str(runtime_path or "").strip()
     kind = "item" if str(kind).casefold() == "item" else "enemy"
@@ -304,13 +317,10 @@ def spawn_command(kind: str, runtime_path: str, target: dict, count: int = 1) ->
     if kind == "item":
         quantity = max(1, min(int(count or 1), 9999))
         if target_kind == "local":
-            return f"give.item {path} {quantity}"
+            return f"world.items.give {_rsdw_item_token(path)} {quantity}"
         if target_kind == "player":
-            player_id = re.sub(r"[^A-Za-z0-9_.:-]+", "_", str((target or {}).get("player_id") or "").strip())[:128]
-            if not player_id:
-                raise ValueError("Select an active player before giving an item")
-            return f"give.item {path} {quantity} {player_id}"
-        raise ValueError("Item target must be the local player pawn or an active player")
+            raise ValueError("Current RSDWTools item giving targets the local player only")
+        raise ValueError("Item target must be the local player pawn")
     if target_kind in {"aim", "local"}:
         return f"world.spawn.safe {path}"
     if target_kind != "coordinates":

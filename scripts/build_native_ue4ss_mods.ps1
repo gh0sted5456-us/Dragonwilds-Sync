@@ -13,9 +13,9 @@ $BuildDir = Join-Path $BuildRoot 'build'
 $ModsSource = Join-Path $RepoRoot 'native\ue4ss-mods'
 $StageRoot = Join-Path $RepoRoot 'resources\NativeRuntimeMods'
 
-$AllMods = @('DragonLink', 'DragonLink-StacksWeights', 'DragonLink-Chat', 'DragonLink-Connect', 'DragonLink-ProximityLoot')
-$SelectedMods = if ($CriticalOnly) { @('DragonLink', 'DragonLink-Chat', 'DragonLink-Connect') } else { $AllMods }
-$BuildTargets = if ($CriticalOnly) { @('DragonLink', 'DragonLinkChat', 'DragonLinkConnect') } else { @('DragonLink', 'DragonLinkStacksWeights', 'DragonLinkChat', 'DragonLinkConnect', 'DragonLinkProximityLoot') }
+$AllMods = @('DragonLink', 'DragonLink-Chat', 'DragonLink-Connect')
+$SelectedMods = $AllMods
+$BuildTargets = @('DragonLink', 'DragonLinkChat', 'DragonLinkConnect')
 
 foreach ($tool in @('git', 'cmake')) {
     if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
@@ -89,15 +89,14 @@ if ($LASTEXITCODE -ne 0) { throw "Native DragonLink build failed with exit code 
 $Candidates = Get-ChildItem -LiteralPath $BuildDir -Filter '*.dll' -Recurse
 $Outputs = @{
     'main.dll' = ($Candidates | Where-Object Name -eq 'DragonLink.dll' | Select-Object -First 1)
-    'DragonLink-StacksWeights.dll' = ($Candidates | Where-Object Name -eq 'DragonLink-StacksWeights.dll' | Select-Object -First 1)
     'DragonLink-Chat.dll' = ($Candidates | Where-Object Name -eq 'DragonLink-Chat.dll' | Select-Object -First 1)
     'DragonLink-Connect.dll' = ($Candidates | Where-Object Name -eq 'DragonLink-Connect.dll' | Select-Object -First 1)
 }
-$RequiredOutputs = if ($CriticalOnly) { @('main.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll') } else { @('main.dll', 'DragonLink-StacksWeights.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll') }
+$RequiredOutputs = @('main.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll')
 
 $Target = Join-Path $StageRoot 'DragonLink\dlls'
 New-Item -ItemType Directory -Force -Path $Target | Out-Null
-foreach ($legacyName in @('DragonLink-Core.dll', 'DragonLink-Items.dll', 'DragonLink-Stacks.dll', 'DragonLink-Weights.dll', 'DragonLink-ProximityLoot.dll')) {
+foreach ($legacyName in @('DragonLink-Core.dll', 'DragonLink-Items.dll', 'DragonLink-Stacks.dll', 'DragonLink-Weights.dll', 'DragonLink-StacksWeights.dll', 'DragonLink-ProximityLoot.dll')) {
     $legacyPath = Join-Path $Target $legacyName
     if (Test-Path -LiteralPath $legacyPath) { Remove-Item -LiteralPath $legacyPath -Force }
 }
@@ -108,18 +107,6 @@ foreach ($Name in $RequiredOutputs) {
 Copy-Item -LiteralPath (Join-Path $ModsSource 'DragonLink\DragonLink.ini') -Destination (Join-Path $StageRoot 'DragonLink\DragonLink.ini') -Force
 Set-Content -LiteralPath (Join-Path $StageRoot 'DragonLink\enabled.txt') -Value '' -Encoding ascii
 
-if (-not $CriticalOnly) {
-    $ProximityOutput = $Candidates | Where-Object Name -eq 'DragonLink-ProximityLoot.dll' | Select-Object -First 1
-    if (-not $ProximityOutput) { throw 'Native build did not produce DragonLink-ProximityLoot.dll' }
-    $ProximityRoot = Join-Path $StageRoot 'DragonLink-ProximityLoot'
-    $ProximityTarget = Join-Path $ProximityRoot 'dlls'
-    New-Item -ItemType Directory -Force -Path $ProximityTarget | Out-Null
-    Copy-Item -LiteralPath $ProximityOutput.FullName -Destination (Join-Path $ProximityTarget 'main.dll') -Force
-    Copy-Item -LiteralPath (Join-Path $ModsSource 'DragonLink-ProximityLoot\ProximityLoot.ini') -Destination (Join-Path $ProximityRoot 'ProximityLoot.ini') -Force
-    $proximityEnabled = Join-Path $ProximityRoot 'enabled.txt'
-    if (Test-Path -LiteralPath $proximityEnabled) { Remove-Item -LiteralPath $proximityEnabled -Force }
-}
-
 Write-Host "Staged native UE4SS mods in $StageRoot"
-if ($CriticalOnly) { Write-Host 'Critical build verified: DragonLink host + Chat + Connect.' }
+Write-Host 'Critical build verified: DragonLink host + Chat + Connect.'
 if ($KeepBuildTree) { Write-Host "Native build tree retained at $BuildRoot." }

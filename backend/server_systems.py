@@ -2450,23 +2450,17 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 })
             else:
                 temporary.unlink(missing_ok=True)
-    # DragonLink Connect automation and Stacks/Weights distribution are
-    # independent per-World capabilities. The server always retains its native
-    # modules; only explicitly selected client-role files enter the manifest.
+    # DragonLink Connect is the only client-side application bridge module.
     # Clients always receive the manual credential handoff in the launcher, so
     # an operator can decline this helper without making the World unjoinable.
     # When enabled, publish only immutable client-role DLLs. DragonLink.ini is
     # generated locally from the selected Connected World and never leaves the
     # joining machine.
-    dragonlink_config = (((profile or {}).get("managed_runtime_mods") or {}).get("dragonlink") or {})
     dragonlink_connect_enabled = bool(((profile or {}).get("sync_config") or {}).get("dragonlink_connect_enabled", False))
-    push_stacks_weights = bool(dragonlink_config.get("push_stacks_weights_to_clients", False))
-    dragonlink_client_enabled = dragonlink_connect_enabled or push_stacks_weights
+    dragonlink_client_enabled = dragonlink_connect_enabled
     dragon_bundle = _bundled_app_resource(*BUNDLED_DRAGONCONNECT_RESOURCE) if dragonlink_client_enabled else Path()
     if dragonlink_client_enabled and dragon_bundle.is_dir():
         selected = ["dlls/main.dll", "enabled.txt"]
-        if push_stacks_weights:
-            selected.append("dlls/DragonLink-StacksWeights.dll")
         if dragonlink_connect_enabled:
             selected.append("dlls/DragonLink-Connect.dll")
         for relative in selected:
@@ -2483,7 +2477,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                 "category": "permanent", "kind": "file", "extract_to": "",
                 "generated": "dragonlink", "baseline_runtime": True,
-                "baked_component": ("dragonlink_stacks_weights" if "StacksWeights" in relative else "dragonlink"),
+                "baked_component": "dragonlink",
                 "visibility": "hidden-core",
                 "required": True, "runtime_roles": ["client", "host", "server"],
                 "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",

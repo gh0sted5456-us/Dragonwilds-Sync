@@ -51,7 +51,6 @@ requireText(routing, 'install_phase6_integrations', 'production V2 entrypoint in
 requireText(direct, 'LOGICAL_NAME = "DragonLink"', 'logical DragonLink identity');
 requireText(direct, 'MOD_NAME = "DragonLink"', 'canonical physical DragonLink identity');
 requireText(direct, 'MARKER_NAME', 'managed DragonLink bundle marker');
-requireText(direct, 'DragonLink-StacksWeights.dll', 'native Stacks and Weights module');
 requireText(direct, 'dlls/DragonLink-Connect.dll', 'native Connect module');
 requireText(direct, 'def status(', 'DragonLink update/repair status');
 

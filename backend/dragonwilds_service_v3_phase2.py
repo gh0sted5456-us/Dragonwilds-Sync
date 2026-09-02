@@ -546,31 +546,21 @@ def handle(method: str, params: dict) -> object:
             current = normalize_profile_config(profile)
             incoming = params.get("config") if isinstance(params.get("config"), dict) else {}
             running = bool((RUNTIME.get_status().get("runtime") or RUNTIME.get_status()).get("running"))
-            live_keys = {"proximity_threshold", "proximity_exit_threshold", "enhanced_magnet_range",
-                         "proximity_state_delay_seconds", "proximity_refresh_seconds"}
             if running and isinstance(incoming.get("dragonlink"), dict):
-                changed_non_live = [key for key, value in incoming["dragonlink"].items()
-                                    if key not in live_keys and value != current["dragonlink"].get(key)]
-                if changed_non_live:
-                    raise RuntimeError("Stop this World before changing DragonLink feature DLL toggles; Proximity Loot distances can be tuned live")
+                if any(value != current["dragonlink"].get(key) for key, value in incoming["dragonlink"].items()):
+                    raise RuntimeError("Stop this World before changing DragonLink bridge modules")
             for key in ("dragonlink",):
                 if isinstance(incoming.get(key), dict):
                     current[key] = {**current[key], **incoming[key]}
             profile["managed_runtime_mods"] = normalize_profile_config({"managed_runtime_mods": current})
-            managed_row = profile["managed_runtime_mods"]["dragonlink"]
-            overrides = profile.setdefault("unit_overrides", {})
-            proximity_override = dict(overrides.get("ue4ss_mod::DragonLink-ProximityLoot") or {})
-            proximity_override["classification"] = ("player_required" if managed_row.get("push_proximity_loot_to_clients")
-                                                        else "server_only")
-            overrides["ue4ss_mod::DragonLink-ProximityLoot"] = proximity_override
             connect_value = current.get("dragonlink", {}).get("connect")
             if connect_value is not None:
                 profile.setdefault("sync_config", {})["dragonlink_connect_enabled"] = bool(connect_value)
                 profile["managed_runtime_mods"]["dragonlink"]["connect"] = bool(connect_value)
             _legacy.save_server_profile(profile_id, profile)
-            result = configure_live_component(mods_dir, profile) if running else apply_profile_components(mods_dir, profile)
+            result = apply_profile_components(mods_dir, profile)
             return {"ok": True, **result, "restart_required": not running,
-                    "hot_reloaded": running, "live_keys": sorted(live_keys) if running else []}
+                    "hot_reloaded": False, "live_keys": []}
         return status_profile_components(mods_dir, profile)
 
     if method == "save.management.list":

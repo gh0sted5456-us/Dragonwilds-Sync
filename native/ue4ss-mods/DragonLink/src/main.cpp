@@ -83,7 +83,7 @@ namespace
         {
             ModName = STR("DragonLink");
             ModAuthors = STR("Dragonwilds Sync");
-            ModDescription = STR("Role-gated application bridge for Stacks/Weights, Connect, and Chat");
+            ModDescription = STR("Role-gated application bridge for Connect and Chat");
             ModVersion = STR("1.0.0");
         }
 
@@ -95,7 +95,6 @@ namespace
         void on_unreal_init() override
         {
             const bool server = server_process();
-            if (feature_enabled("stacksweights", true)) load_feature(L"DragonLink-StacksWeights.dll");
             if (server && feature_enabled("chat", true)) load_feature(L"DragonLink-Chat.dll");
             if (!server && feature_enabled("connect", true)) load_feature(L"DragonLink-Connect.dll");
             Output::send(STR("[DragonLink] {} feature module(s) active in {} process.\n"), m_features.size(), server ? STR("server") : STR("client"));

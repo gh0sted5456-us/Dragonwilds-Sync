@@ -171,11 +171,8 @@ try {
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
     Test-RequiredFile 'resources\RuneSchema-experimental-latest.zip' 'Bundled RuneSchema experimental core'
     Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\main.dll' 'Bundled DragonLink host DLL'
-    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-StacksWeights.dll' 'Bundled DragonLink Stacks and Weights DLL'
     Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Chat.dll' 'Bundled DragonLink Chat DLL'
     Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Connect.dll' 'Bundled DragonLink Connect DLL'
-    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink-ProximityLoot\dlls\main.dll' 'Bundled standalone Proximity Loot DLL'
-    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink-ProximityLoot\ProximityLoot.ini' 'Bundled standalone Proximity Loot config'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\version.dll' 'Bundled Dragonwilds server-only version.dll'
     Test-RequiredFile 'scripts\prepare_monaco.cjs' 'Monaco bundling helper'
@@ -529,13 +526,9 @@ try {
     $packedRuneSchemaExperimental = Join-Path $unpacked 'resources\resources\RuneSchema-experimental-latest.zip'
     if (-not (Test-Path -LiteralPath $packedRuneSchemaExperimental -PathType Leaf)) { Fail-Build 'Bundled RuneSchema experimental core was missing from packaged resources.' }
     $packedDragonLink = Join-Path $unpacked 'resources\resources\NativeRuntimeMods\DragonLink\dlls'
-    foreach ($featureDll in @('main.dll', 'DragonLink-StacksWeights.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll')) {
+    foreach ($featureDll in @('main.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll')) {
         $packedFeature = Join-Path $packedDragonLink $featureDll
         if (-not (Test-Path -LiteralPath $packedFeature -PathType Leaf)) { Fail-Build "Bundled DragonLink native feature was missing from packaged resources: $featureDll" }
-    }
-    $packedProximity = Join-Path $unpacked 'resources\resources\NativeRuntimeMods\DragonLink-ProximityLoot'
-    foreach ($requiredProximity in @('dlls\main.dll', 'ProximityLoot.ini')) {
-        if (-not (Test-Path -LiteralPath (Join-Path $packedProximity $requiredProximity) -PathType Leaf)) { Fail-Build "Bundled standalone Proximity Loot resource was missing: $requiredProximity" }
     }
     Write-BuildLine '[OK] Packaged RuneSchema experimental core resource is present.'
     $packedUe4ss = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\UE4SS-core-latest.zip'

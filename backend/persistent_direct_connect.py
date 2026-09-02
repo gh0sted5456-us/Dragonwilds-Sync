@@ -84,6 +84,13 @@ def _set_ini(text: str, section: str, name: str, value: str) -> str:
     return text[:header.end()] + body + text[end:]
 
 
+def _drop_retired_gameplay_config(text: str) -> str:
+    text = re.sub(r"(?im)^[ \t]*StacksWeights[ \t]*=.*(?:\r?\n|$)", "", text)
+    for section in ("StacksWeights", "Stacks", "Weights", "ProximityLoot"):
+        text = re.sub(rf"(?ims)^[ \t]*\[{section}\][ \t]*\r?\n.*?(?=^[ \t]*\[[^\]]+\][ \t]*$|\Z)", "", text)
+    return text
+
+
 def _installed(target: Path) -> bool:
     return all((target / Path(relative)).is_file() for relative in REQUIRED_CLIENT_FILES)
 
@@ -110,7 +117,7 @@ def status(selected_root: str | Path) -> dict:
 
 
 def ensure_installed(selected_root: str | Path) -> dict:
-    """Install the client-role host and Connect DLL; preserve server-pushed shared DLLs."""
+    """Install the client-role host and Connect DLL."""
     layout = resolve_client_layout(selected_root)
     target = layout.ue4ss_mods_dir / MOD_NAME
     source = _source()
@@ -120,7 +127,7 @@ def ensure_installed(selected_root: str | Path) -> dict:
     marker = _read_marker(target)
     stale_dlls = tuple(target / "dlls" / name for name in (
         "DragonLink-Core.dll", "DragonLink-Items.dll", "DragonLink-ProximityLoot.dll",
-        "DragonLink-Stacks.dll", "DragonLink-Weights.dll",
+        "DragonLink-Stacks.dll", "DragonLink-Weights.dll", "DragonLink-StacksWeights.dll",
     ))
     if (_installed(target) and marker.get("sha256") == signature["sha256"]
             and not any(path.is_file() for path in stale_dlls)):
@@ -144,12 +151,8 @@ def ensure_installed(selected_root: str | Path) -> dict:
     if retained_ini:
         ini_path.write_bytes(retained_ini)
     client_ini = ini_path.read_text(encoding="utf-8-sig")
-    stacks_weights_installed = (target / "dlls" / "DragonLink-StacksWeights.dll").is_file()
-    client_ini = _set_ini(client_ini, "Features", "StacksWeights", "true" if stacks_weights_installed else "false")
+    client_ini = _drop_retired_gameplay_config(client_ini)
     client_ini = _set_ini(client_ini, "Features", "Chat", "false")
-    client_ini = _set_ini(client_ini, "StacksWeights", "Enabled", "true" if stacks_weights_installed else "false")
-    client_ini = _set_ini(client_ini, "StacksWeights", "Stacks", "true")
-    client_ini = _set_ini(client_ini, "StacksWeights", "Weights", "true")
     _atomic_text(ini_path, client_ini)
     _atomic_text(target / MARKER_NAME, json.dumps({"component": LOGICAL_NAME, **signature}, indent=2) + "\n")
 
@@ -182,12 +185,6 @@ def write_profile_config(selected_root: str | Path, *, address: str = "", passwo
     world_type = _direct_world_type(mode)
     path = Path(installed["path"]) / "DragonLink.ini"
     text = path.read_text(encoding="utf-8-sig")
-    # Stacks & Weights is not a client baseline. The server sync manifest may
-    # place it beside Connect, and credential hydration must never disable a
-    # server-selected shared module on a subsequent pass.
-    stacks_weights_installed = (Path(installed["path"]) / "dlls" / "DragonLink-StacksWeights.dll").is_file()
-    text = _set_ini(text, "Features", "StacksWeights", "true" if stacks_weights_installed else "false")
-    text = _set_ini(text, "StacksWeights", "Enabled", "true" if stacks_weights_installed else "false")
     for name, value in (("Enabled", "true" if enabled and bool(host) else "false"),
                         ("IP", host if enabled else ""),
                         ("Password", str(password or "")[:512] if enabled else ""),

@@ -64,11 +64,9 @@ def main():
 
     baseline = ROOT / "resources/NativeRuntimeMods/DragonLink"
     assert {path.name for path in (baseline / "dlls").glob("*.dll")} == {
-        "main.dll", "DragonLink-StacksWeights.dll", "DragonLink-Chat.dll", "DragonLink-Connect.dll",
+        "main.dll", "DragonLink-Chat.dll", "DragonLink-Connect.dll",
     }
-    proximity = ROOT / "resources/NativeRuntimeMods/DragonLink-ProximityLoot"
-    assert (proximity / "dlls/main.dll").is_file()
-    assert (proximity / "ProximityLoot.ini").is_file()
+    assert not (ROOT / "resources/NativeRuntimeMods/DragonLink-ProximityLoot").exists()
     config = (baseline / "DragonLink.ini").read_text(encoding="utf-8")
     assert "IP=" in config and "Password=" in config and "WorldType=normal" in config
     assert "24.9.154.151" not in config and "BELTS" not in config
@@ -85,9 +83,8 @@ def main():
     server_systems = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
     assert 'get("dragonlink_connect_enabled", False)' in server_systems
     assert '"dragonlink_connect": {"enabled": dragonlink_enabled' in server_systems
-    assert "dragonlink_client_enabled = dragonlink_connect_enabled or push_stacks_weights" in server_systems
+    assert "dragonlink_client_enabled = dragonlink_connect_enabled" in server_systems
     assert "if dragonlink_client_enabled and dragon_bundle.is_dir()" in server_systems
-    assert '"dlls/DragonLink-StacksWeights.dll"' in server_systems
     assert '"dlls/DragonLink-Connect.dll"' in server_systems
     assert "LAN trust authorizes file Sync without a password" in renderer
 

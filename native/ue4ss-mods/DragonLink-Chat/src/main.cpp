@@ -114,7 +114,7 @@ namespace
             ModName = STR("DragonLink-Chat");
             ModAuthors = STR("Dragonwilds Sync");
             ModDescription = STR("Dedicated-server game chat event bridge");
-            ModVersion = STR("1.0.0");
+            ModVersion = STR("1.0.1");
         }
 
         ~DragonLinkChatMod() override
@@ -129,16 +129,18 @@ namespace
                 auto fields = export_chat_fields(context);
                 auto body = pick(fields, "MessageBody");
                 if (body.empty()) return;
-                Output::send(STR("[DragonLink-Chat] {{\"schema\":\"DragonLink.Chat.v1\",\"direction\":\"player_to_server\",\"sender_id\":\"{}\",\"character_guid\":\"{}\",\"player_id\":\"{}\",\"message\":\"{}\"}}\n"),
+                const auto escaped_body = json_escape(body);
+                Output::send(STR("[DragonLink-Chat] {{\"schema\":\"DragonLink.Chat.v1\",\"direction\":\"player_to_server\",\"sender_id\":\"{}\",\"character_guid\":\"{}\",\"player_id\":\"{}\",\"body\":\"{}\",\"message\":\"{}\"}}\n"),
                              ensure_str(json_escape(pick(fields, "SenderId"))),
                              ensure_str(json_escape(pick(fields, "CharacterGuid"))),
                              ensure_str(json_escape(pick(fields, "PlayerId"))),
-                             ensure_str(json_escape(body)));
+                             ensure_str(escaped_body),
+                             ensure_str(escaped_body));
             };
             m_hook_name = STR("/Script/JagexChatBackend.PlayerChatComponent:Server_SendChatMessage");
             m_hook_ids = UObjectGlobals::RegisterHook(m_hook_name, receive, {}, nullptr);
             m_registered = true;
-            Output::send(STR("[DragonLink-Chat] Server chat bridge active; no polling enabled.\n"));
+            Output::send(STR("[DragonLink-Chat] Server chat bridge active; emitting DragonLink.Chat.v1 records.\n"));
         }
     };
 }

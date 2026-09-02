@@ -16,6 +16,7 @@ const crossPlatformTests = [
   'backend/test_computer_profiles.py','backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py','backend/test_profile_cache_authority.py','backend/test_state_read_durability.py','backend/test_id_hotload.py',
   'backend/test_headless_cli.py',
   'backend/test_character_item_regression.py',
+  'backend/test_character_soft_assignment.py',
   'backend/test_mod_archive_layout.py',
   'backend/test_dragonlink_native.py',
   'backend/test_hosting_capabilities.py',

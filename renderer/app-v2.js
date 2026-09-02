@@ -871,6 +871,61 @@
   function serverWorlds() { return state.data?.server_profiles || []; }
   function activeServerWorld() { return serverWorlds().find((w) => w.id === state.selectedServerWorldId) || null; }
 
+  function characterAssignableWorlds() {
+    const rows=[]; const seen=new Set();
+    const add=(world,kind)=>{const id=String(world?.id||'');if(!id||seen.has(id))return;seen.add(id);rows.push({world,id,kind,name:world?.name||world?.nickname||world?.identity?.world_name||'World'});};
+    privateWorlds().forEach((world)=>add(world,'Local / Co-Op'));
+    worlds().forEach((world)=>add(world,'Connected'));
+    serverWorlds().forEach((world)=>add(world,'Dedicated Server'));
+    return rows;
+  }
+
+  async function softAssignCharacter(characterId, worldId, { makePreferred=false }={}) {
+    const character=state.characters?.find((row)=>String(row.id)===String(characterId));
+    const target=characterAssignableWorlds().find((row)=>row.id===String(worldId));
+    if(!character||!target)throw new Error(!character?'Character not found.':'World not found.');
+    const response=await api.invoke('characters.soft_assign',{character_id:character.id,world_id:target.id,make_preferred:makePreferred});
+    if(response.state)state.data=response.state;
+    if(Array.isArray(response.characters))state.characters=response.characters;
+    render();
+    toast('Character added to World',`${character.profile?.label||character.player_name||character.file_name||'Character'} → ${target.name}${response.assignment?.preferred?' · preferred':''}`,'success');
+    return response;
+  }
+
+  function openCharacterWorldPicker(characterId) {
+    const character=state.characters?.find((row)=>String(row.id)===String(characterId));
+    if(!character)return toast('Character unavailable','Refresh Characters and try again.','error');
+    const targets=characterAssignableWorlds();
+    const linked=new Set((character.world_ids||[]).map(String));
+    const preferred=new Set((character.selected_for_worlds||[]).map(String));
+    const label=character.profile?.label||character.player_name||character.file_name||'Character';
+    showModal(`<div class="modal-header"><div><div class="eyebrow">Soft Character Assignment</div><h2>Add ${escapeHtml(label)} to a World</h2><p>Assignment helps recovery, backups, and quick profile switching. It is optional and never blocks Play.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="character-world-picker">${targets.map(({id,name,kind})=>`<button type="button" class="character-world-choice ${linked.has(id)?'linked':''}" data-character-world-choice="${escapeHtml(id)}"><span><strong>${escapeHtml(name)}</strong><small>${escapeHtml(kind)}</small></span><b>${preferred.has(id)?'Preferred':linked.has(id)?'Added · Make Preferred':'Add to World'}</b></button>`).join('')||'<div class="empty-state compact"><strong>No World profiles are available.</strong><span>Create, connect to, or host a World first.</span></div>'}</div></div><div class="modal-footer"><span>Launching without an assignment remains supported.</span><button class="btn ghost" data-close-modal>Done</button></div>`,{title:'Add Character to World'});
+    modalRoot.querySelectorAll('[data-character-world-choice]').forEach((button)=>button.addEventListener('click',async()=>{button.disabled=true;try{await softAssignCharacter(character.id,button.dataset.characterWorldChoice,{makePreferred:linked.has(button.dataset.characterWorldChoice)});closeModal();}catch(error){button.disabled=false;toast('Could not add character',error.message,'error');}}));
+  }
+
+  function openCharacterContextMenu(characterId,event) {
+    event.preventDefault();event.stopPropagation();document.querySelector('.context-menu')?.remove();
+    const menu=document.createElement('div');menu.className='context-menu';menu.style.left=`${Math.min(event.clientX,innerWidth-220)}px`;menu.style.top=`${Math.min(event.clientY,innerHeight-90)}px`;menu.innerHTML='<button role="menuitem" data-action="add-world">Add to World…</button>';
+    document.body.appendChild(menu);menu.querySelector('[data-action="add-world"]')?.addEventListener('click',()=>{menu.remove();openCharacterWorldPicker(characterId);});
+    setTimeout(()=>document.addEventListener('mousedown',(dismiss)=>{if(!menu.contains(dismiss.target))menu.remove();},{once:true}),0);
+  }
+
+  function bindCharacterWorldDragAndDrop(root) {
+    root.querySelectorAll('[data-rsdw-character]').forEach((node)=>{
+      node.draggable=true;
+      node.title='Click to open · right-click to add to a World · drag onto a World placard';
+      node.addEventListener('contextmenu',(event)=>openCharacterContextMenu(node.dataset.rsdwCharacter,event));
+      node.addEventListener('dragstart',(event)=>{const id=node.dataset.rsdwCharacter||'';event.dataTransfer?.setData('application/x-dragonwilds-character',id);event.dataTransfer?.setData('text/plain',id);if(event.dataTransfer)event.dataTransfer.effectAllowed='copy';node.classList.add('character-dragging');});
+      node.addEventListener('dragend',()=>node.classList.remove('character-dragging'));
+    });
+    root.querySelectorAll('.world-card[data-world-id], .world-list-row[data-world-id], .character-world-drop-chip[data-world-id]').forEach((target)=>{
+      target.title=[target.title,'Drop a character here to soft-assign it'].filter(Boolean).join(' · ');
+      target.addEventListener('dragover',(event)=>{if(!event.dataTransfer?.types?.includes('application/x-dragonwilds-character'))return;event.preventDefault();event.dataTransfer.dropEffect='copy';target.classList.add('character-drop-target');});
+      target.addEventListener('dragleave',(event)=>{if(!target.contains(event.relatedTarget))target.classList.remove('character-drop-target');});
+      target.addEventListener('drop',async(event)=>{const characterId=event.dataTransfer?.getData('application/x-dragonwilds-character')||'';target.classList.remove('character-drop-target');if(!characterId)return;event.preventDefault();event.stopPropagation();try{await softAssignCharacter(characterId,target.dataset.worldId);}catch(error){toast('Could not add character',error.message,'error');}});
+    });
+  }
+
   function cachedProfileMods(profile) {
     const cache=profile?.metadata_cache;
     return Array.isArray(cache?.mods) ? cache.mods.map((unit)=>({...unit})) : null;
@@ -3101,6 +3156,8 @@
       const meta=character.profile||{}; const portrait=meta.portrait_data; const active=selected?.id===character.id;
       return `<button class="character-mini ${active?'active':''}" data-rsdw-character="${escapeHtml(character.id)}">${portrait?`<img src="${portrait}" alt=""/>`:`<span class="character-mini-avatar">${escapeHtml(initials(meta.label||character.player_name||character.file_name))}</span>`}<span><strong>${escapeHtml(meta.label||character.player_name||character.file_name)}</strong><small>${character.editable?'RSDW editable':'Preserve only'} · ${new Date((character.modified_at||0)*1000).toLocaleDateString()}</small></span></button>`;
     }).join('')}</div>` : '';
+    const assignmentTargets=characterAssignableWorlds();
+    const assignmentStrip=assignmentTargets.length?`<section class="character-world-drop-strip"><div><strong>Add to World</strong><small>Drag any character above onto a World, or right-click the character.</small></div><div>${assignmentTargets.map(({id,name,kind})=>`<button type="button" class="character-world-drop-chip" data-world-id="${escapeHtml(id)}" title="Drop a character onto ${escapeHtml(name)}"><span>${escapeHtml(name)}</span><small>${escapeHtml(kind)}</small></button>`).join('')}</div></section>`:'';
     if (state.rsdwToolkitLoading && !chars.length) return `<div class="content"><div class="page-header"><div><div class="eyebrow">Profile</div><h1>Characters</h1><div class="page-subtitle">Loading character tools and saves…</div></div></div><div class="empty-state"><div class="spinner"></div><strong>Preparing Character Tools</strong></div></div>`;
     if (!selected) return `<div class="content"><div class="page-header"><div><div class="eyebrow">Profile</div><h1>Characters</h1><div class="page-subtitle">RSDW-powered identity, progression, inventory, and save tooling integrated into your Profile.</div></div><div class="header-actions"><button class="btn ghost" id="rsdw-refresh-toolkit">Refresh RSDW Toolkit</button></div></div>${rsdwToolkitTabs()}<div class="empty-state"><strong>No Dragonwilds characters found.</strong><span>Link your Dragonwilds installation in Settings → Client to use Character & Saves, or open Live Map & Tracking for hosted Worlds.</span></div><div class="rsdw-credit">RSDW tooling by <strong>Hi im Tat</strong> and the <strong>RSDW Modding Community</strong>.</div></div>`;
     const characterTabs=characterProfileTabs(selected);
@@ -3131,6 +3188,7 @@
       <div class="page-header"><div><div class="eyebrow">${escapeHtml(t('profile'))}</div><h1>${escapeHtml(t('characters'))}</h1><div class="page-subtitle">${escapeHtml(et('charactersPageSubtitle'))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-profile">${detachedMode?'↙ Return to Application':`↗ ${escapeHtml(et('openInWindow'))}`}</button>${sourceBadge}<button class="btn ghost" id="rsdw-refresh-toolkit">${escapeHtml(sourceLocal?et('refreshUpstream'):et('hydrateLocal'))}</button><button class="btn ghost" id="rsdw-import-character">${escapeHtml(et('importProfile'))}</button><button class="btn primary" id="rsdw-export-character">${escapeHtml(et('exportCharacter'))}</button></div></div>
       ${rsdwToolkitTabs()}
       ${selector}
+      ${assignmentStrip}
       ${characterTabs}
       <div class="rsdw-character-details studio-character-summary studio-combined-summary"><section class="studio-summary-card studio-overview-card"><div class="rsdw-character-identity">${profile.portrait_data?`<img src="${profile.portrait_data}" alt=""/>`:`<div class="character-profile-avatar">${escapeHtml(initials(charName))}</div>`}<div><div class="eyebrow">${escapeHtml(et('selectedCharacter'))}</div><h2>${escapeHtml(charName)}</h2><strong>${escapeHtml(selected.guid || 'No GUID surfaced')}</strong><span>${escapeHtml(selected.file_name || '')}</span></div><span class="status-pill ${selected.editable?'online':'unknown'}">${selected.editable?'RSDW READY':'PRESERVE ONLY'}</span></div><div class="rsdw-metric-grid">${stats.map(([label,value])=>`<div><span>${label}</span><strong>${escapeHtml(String(value))}</strong></div>`).join('')}</div><div class="rsdw-character-meta"><div><span>${escapeHtml(et('lastModified'))}</span><strong>${new Date((selected.modified_at||0)*1000).toLocaleString()}</strong></div><div><span>${escapeHtml(et('saveSize'))}</span><strong>${(Number(selected.size||0)/1024).toFixed(1)} KiB</strong></div><div><span>SHA-256</span><code>${escapeHtml(String(selected.sha256||'').slice(0,16))}…</code></div><div><span>${escapeHtml(et('profileStatus'))}</span><strong>${profile.favorite?`★ ${escapeHtml(et('favorite'))}`:'Standard'}</strong></div></div><div class="rsdw-character-actions"><button class="btn ghost" id="rsdw-change-portrait">${escapeHtml(et('chooseImage'))}</button><button class="btn ghost" id="rsdw-toggle-favorite">${escapeHtml(profile.favorite?et('removeFavorite'):et('favorite'))}</button><button class="btn ghost" id="rsdw-clone-character">${escapeHtml(et('cloneCharacter'))}</button><button class="btn ghost" id="rsdw-backup-export">Export .rsdwl</button><button class="btn danger" id="rsdw-delete-character">${escapeHtml(et('deleteCharacter'))}</button></div></section><section class="studio-summary-card studio-world-card"><div class="rsdw-world-associations"><strong>${escapeHtml(et('worldAssociations'))}</strong><div>${linked}</div></div></section>${state.rsdwHydrationError?`<div class="warning-box compact">${escapeHtml(state.rsdwHydrationError)}</div>`:''}</div>
       <section class="studio-summary-card studio-combat-card">${archetypeEditor}</section>
@@ -4012,7 +4070,7 @@
     if(tab==='overview'){
       body=`<div class="server-tab-body"><div class="panel-grid">
         <details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Private World</h2><span class="panel-subtitle">Local Dragonwilds save · normal game installation</span></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'BROADCASTING':'LOCAL'}</span></summary><div class="panel-body"><div class="metric-grid">${metric('World',world?.name||'Private World')}${metric('Gameplay Host','Dragonwilds game')}${metric('Broadcast',broadcasting?'Sync fingerprint live':'Off')}${metric('Sync Port',world?.status?.sync_port||27051)}${metric('Character',selected?.profile?.label||selected?.player_name||'Not assigned')}${metric('Mods',String(units.length))}${metric('Players',tracker.player_count??0)}${metric('RSDW Tracking',tracker.tracker_connected?'Live':'Idle')}</div><div class="identity-box"><strong>Singleplayer and co-op use the same World profile shell</strong><p>Broadcast exposes launcher identity, manifests, and sync files only. Dragonwilds itself still creates and owns the co-op gameplay session.</p></div></div></details>
-        <details class="panel collapsible-panel" open><summary class="panel-header"><h2>Character</h2><span class="panel-subtitle">Profile-aware save hydration</span></summary><div class="panel-body">${selected?`<div class="identity-box"><strong>${escapeHtml(selected.profile?.label||selected.player_name||selected.file_name)}</strong><p>This character is selected for this Private World.</p></div>`:'<div class="empty-state compact">No character selected yet.</div>'}<button class="btn ghost" id="sp-characters">Assign / Manage Characters</button></div></details>
+        <details class="panel collapsible-panel" open><summary class="panel-header"><h2>Character</h2><span class="panel-subtitle">Optional profile-aware save hydration</span></summary><div class="panel-body">${selected?`<div class="identity-box"><strong>${escapeHtml(selected.profile?.label||selected.player_name||selected.file_name)}</strong><p>This character is preferred for this Private World.</p></div>`:'<div class="empty-state compact"><strong>No preferred character.</strong><span>Play remains available; add one later for recovery and faster switching.</span></div>'}<button class="btn ghost" id="sp-characters">Add / Manage Characters</button></div></details>
       </div><details class="panel collapsible-panel" open style="margin-top:18px"><summary class="panel-header"><div><h2>Host Performance</h2><span class="panel-subtitle">Task-Manager-style host history · useful while testing or hosting co-op</span></div><span class="status-pill ${broadcasting?'online':'unknown'}">${broadcasting?'LIVE':'LOCAL'}</span></summary><div class="panel-body">${runtimeGraphs(runtime)}</div></details></div>`;
     } else if(tab==='players'){
       body=`<div class="server-tab-body"><details class="panel collapsible-panel" open><summary class="panel-header"><div><h2>Players</h2><span class="panel-subtitle">RSDW live tracking when the local game exposes telemetry</span></div><span class="status-pill ${tracker.tracker_connected?'online':'unknown'}">${tracker.tracker_connected?'LIVE':'WAITING'}</span></summary><div class="panel-body">${(tracker.players||[]).length?`<div class="mod-list">${tracker.players.map(pl=>`<div class="mod-row"><div><strong>${escapeHtml(pl.name||'Player')}</strong><br><small>${pl.position?`${Number(pl.position.x||0).toFixed(0)}, ${Number(pl.position.y||0).toFixed(0)}, ${Number(pl.position.z||0).toFixed(0)}`:'Position unavailable'}</small></div><span>${escapeHtml(String(pl.id||''))}</span><span></span></div>`).join('')}</div>`:'<div class="empty-state">No tracked players yet. Start Dragonwilds and host co-op normally; Broadcast does not replace the in-game host flow.</div>'}</div></details></div>`;
@@ -5576,6 +5634,7 @@
   }
 
   function bindEvents() {
+    bindCharacterWorldDragAndDrop(root);
     const runtimeRatingButtons=[...root.querySelectorAll('[data-runtime-rating]')];
     if(runtimeRatingButtons.length&&state.runtimeCompatibility===null&&!state.runtimeCompatibilityLoading){
       state.runtimeCompatibilityLoading=true;
@@ -6694,7 +6753,7 @@
     root.querySelector('#add-starter-character')?.addEventListener('click',async()=>{const world=activeServerWorld();if(!world)return;const file=await window.dragonwilds.pickFile('rsdwl');if(!file)return;try{const response=await api.invoke('server.world.starter_characters.add',{id:world.id,path:file});state.serverStarterCharacters[world.id]=response.characters||[];render();toast('Starter character added','It will be advertised to authenticated clients after publish/start.','success');}catch(error){toast('Starter character add failed',error.message,'error');}});
     root.querySelectorAll('[data-remove-starter]').forEach((b)=>b.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Stop offering this starter character?','Remove Starter Character'))return;try{const response=await api.invoke('server.world.starter_characters.remove',{id:world.id,character_id:b.dataset.removeStarter});state.serverStarterCharacters[world.id]=response.characters||[];render();toast('Starter character removed','','success');}catch(error){toast('Starter character remove failed',error.message,'error');}}));
     root.querySelector('#submit-character-to-world')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const file=await window.dragonwilds.pickFile('rsdwl');if(!file)return;if(!await managedConfirm('Submit this character package to the World administrator? It will remain quarantined until they explicitly approve it.','Submit Character'))return;try{const response=await api.invoke('world.character.submit',{id:world.id,path:file});if(response.state)state.data=response.state;toast('Character submitted',response.result?.submission?.player_name||'Held for administrator review.','success');}catch(error){toast('Character submission failed',error.message,'error');}});
-    root.querySelector('#approve-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const characterId=state.data?.client?.world_character_selection?.[world.id]||'';const selected=state.characters?.find((row)=>String(row.id)===String(characterId));if(!selected)return toast('Assign a character first','Open Characters, associate one with this World, and select it before enabling recovery.','error');if(!await managedConfirm(`Retain the latest save for “${selected.player_name||selected.file_name||'the assigned character'}” on ${world.nickname||world.identity?.world_name||'this World'}?\n\nAfter this one-time consent, successful Sync connections upload the file only when it changed. It is bound to this installation’s authenticated player profile.`,'Enable Player Save Recovery'))return;try{const response=await api.invoke('world.character.backup.approve',{id:world.id,character_id:characterId});if(response.state)state.data=response.state;render();toast('Player save recovery enabled','The server retained the current save for your profile.','success');}catch(error){toast('Backup request failed',error.message,'error');}});
+    root.querySelector('#approve-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const characterId=state.data?.client?.world_character_selection?.[world.id]||'';try{const response=await api.invoke('world.character.backup.consent',{id:world.id,approved:true,character_id:characterId});if(response.state)state.data=response.state;render();toast('Player save recovery enabled',characterId?'The current character save is retained automatically.':'Recovery is enabled and will begin when a character is soft-assigned.','success');}catch(error){toast('Backup request failed',error.message,'error');}});
     root.querySelector('#restore-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;if(!await managedConfirm('Restore the latest save retained for your authenticated player profile?\n\nIf a local file with the same name exists, DragonLink-Connect backs it up before replacement. Other characters and the World save are not changed.','Restore Latest Player Save'))return;try{const response=await api.invoke('world.character.backup.restore',{id:world.id,overwrite:true});if(response.state)setData(response.state);toast('Player save restored',response.result?.restore?.file_name||'The retained save is ready.','success');}catch(error){toast('Restore failed',error.message,'error');}});
     root.querySelectorAll('[data-approve-character-submission]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Approve this inspected package and add it to the shared character library?','Approve Character'))return;try{const response=await api.invoke('server.world.character_submissions.approve',{id:world.id,submission_id:button.dataset.approveCharacterSubmission});state.serverStarterCharacters[world.id]=response.result?.characters||[];state.serverCharacterSubmissions[world.id]=response.result?.submissions||[];render();toast('Character approved','It is now available to authenticated clients.','success');}catch(error){toast('Approval failed',error.message,'error');}}));
     root.querySelectorAll('[data-reject-character-submission]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Permanently delete this quarantined submission?','Reject Character'))return;try{const response=await api.invoke('server.world.character_submissions.reject',{id:world.id,submission_id:button.dataset.rejectCharacterSubmission});state.serverCharacterSubmissions[world.id]=response.result?.submissions||[];render();toast('Submission rejected','The quarantined package was deleted.','success');}catch(error){toast('Rejection failed',error.message,'error');}}));
@@ -8591,19 +8650,17 @@
 
   async function playWorld(world) {
     if (!world || state.busy.has(world.id)) return;
-    state.busy.add(world.id); toast(world.kind === 'singleplayer' ? 'Preparing Private World' : 'Preparing World', world.kind === 'singleplayer' ? 'Activating this World profile, character, mods and settings.' : 'Verifying identity, synchronizing required files, then launching Dragonwilds.');
+    state.busy.add(world.id); toast(world.kind === 'singleplayer' ? 'Preparing Private World' : 'Preparing World', world.kind === 'singleplayer' ? 'Activating this World profile, optional character preference, mods and settings.' : 'Verifying identity, synchronizing required files, then launching Dragonwilds.');
     try {
       const local=world.kind==='singleplayer';
       const backupRequested=!local&&!!(world.manifest_cache?.character_sharing?.request_backups||world.manifest_cache?.character_backup_requested);
-      if(backupRequested&&!['accepted','declined'].includes(String(world.player_backup?.consent||''))){
-        const approved=await managedConfirm(`${world.nickname||world.identity?.world_name||'This World'} offers server-side player-save backups.\n\nYES allows the host to retain the assigned character save after successful Sync connections so you can request a restore later. NO connects normally without sending your player save.`,`Player Save Backup`);
+      if(backupRequested&&String(world.player_backup?.consent||'')!=='accepted'){
         const characterId=state.data?.client?.world_character_selection?.[world.id]||'';
-        const consent=await api.invoke('world.character.backup.consent',{id:world.id,approved,character_id:characterId});
-        if(consent.state)setData(consent.state);
+        const consent=await api.invoke('world.character.backup.consent',{id:world.id,approved:true,character_id:characterId});
+        if(consent.state)state.data=consent.state;
         world=activeWorld()||world;
-        toast(approved?'Player backup approved':'Player backup declined',approved?(characterId?'The selected save was retained by this World.':'Assign a character later to begin backups.'):'Connection will continue without uploading your player save.',approved?'success':'');
       }
-      const launch=()=>local?runOperation('Launching Singleplayer','Activating the selected save, character, settings, and profile mods before Dragonwilds starts…',async()=>{
+      const launch=()=>local?runOperation('Launching Singleplayer','Activating the selected save, optional character preference, settings, and profile mods before Dragonwilds starts…',async()=>{
           if(local)await activatePrivateWorldProfile(world,true);
           return api.invoke(local?'singleplayer.play':'world.play',local?{id:world.id,profile_id:world.id}:{id:world.id});
         }):runWorldSyncJob(world,'sync');

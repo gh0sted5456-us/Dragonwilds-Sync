@@ -616,6 +616,19 @@ def find_world(state: dict, world_id: str) -> dict | None:
     return next((w for w in shared if w.get("id") == world_id), None)
 
 
+def find_character_assignment_world(state: dict, world_id: str) -> dict | None:
+    """Resolve optional character metadata targets without broadening Play lookup."""
+    world = find_world(state, world_id)
+    if world is not None:
+        return world
+    wanted = str(world_id or "")
+    servers = state.get("server_profiles") if isinstance(state.get("server_profiles"), list) else []
+    match = next((row for row in servers if str(row.get("id") or "") == wanted), None)
+    if match is not None:
+        return match
+    return next((row for row in list_server_profiles() if str(row.get("id") or "") == wanted), None)
+
+
 def _write_world_direct_connect(game_dir: str, world: dict, manifest: dict | None = None) -> dict:
     connection = world.get("connection") if isinstance(world.get("connection"), dict) else {}
     advertised = manifest.get("connection") if isinstance(manifest, dict) and isinstance(manifest.get("connection"), dict) else {}
@@ -4137,7 +4150,7 @@ def handle(method: str, params: dict) -> object:
     if method == "characters.associate":
         character_id = str(params.get("character_id") or "")
         if not character_id: raise ValueError("Character is required.")
-        world_ids = [str(x) for x in (params.get("world_ids") or []) if find_world(state, str(x)) is not None]
+        world_ids = [str(x) for x in (params.get("world_ids") or []) if find_character_assignment_world(state, str(x)) is not None]
         state.setdefault("player_profile", {}).setdefault("character_worlds", {})[character_id] = list(dict.fromkeys(world_ids))
         selections = state.setdefault("client", {}).setdefault("world_character_selection", {})
         for world_id, selected in list(selections.items()):
@@ -4147,15 +4160,55 @@ def handle(method: str, params: dict) -> object:
         return handle("characters.list", {})
 
     if method == "characters.select":
-        character_id = str(params.get("character_id") or "")
-        world_id = str(params.get("world_id") or "")
-        if find_world(state, world_id) is None: raise KeyError("World not found")
+        character_id = str(params.get("character_id") or "").strip()
+        world_id = str(params.get("world_id") or "").strip()
+        if not character_id: raise ValueError("Character is required.")
+        if find_character_assignment_world(state, world_id) is None: raise KeyError("World not found")
+        application = state.get("application") or {}
+        player = state.setdefault("player_profile", {})
+        client = state.setdefault("client", {})
+        characters = discover_characters(str(application.get("game_dir") or ""), player.get("character_worlds") or {}, client.get("world_character_selection") or {}, player.get("character_profiles") or {})
+        if not any(str(row.get("id") or "") == character_id for row in characters):
+            raise KeyError("Character not found")
         associations = state.setdefault("player_profile", {}).setdefault("character_worlds", {})
         allowed = associations.setdefault(character_id, [])
         if world_id not in allowed: allowed.append(world_id)
         state.setdefault("client", {}).setdefault("world_character_selection", {})[world_id] = character_id
         save_state(state)
         return handle("characters.list", {})
+
+    if method == "characters.soft_assign":
+        character_id = str(params.get("character_id") or "").strip()
+        world_id = str(params.get("world_id") or "").strip()
+        if not character_id: raise ValueError("Character is required.")
+        world = find_character_assignment_world(state, world_id)
+        if world is None: raise KeyError("World not found")
+        application = state.get("application") or {}
+        player = state.setdefault("player_profile", {})
+        client = state.setdefault("client", {})
+        characters = discover_characters(str(application.get("game_dir") or ""), player.get("character_worlds") or {}, client.get("world_character_selection") or {}, player.get("character_profiles") or {})
+        character = next((row for row in characters if str(row.get("id") or "") == character_id), None)
+        if character is None: raise KeyError("Character not found")
+        associations = player.setdefault("character_worlds", {})
+        allowed = associations.setdefault(character_id, [])
+        if world_id not in allowed:
+            allowed.append(world_id)
+        # A soft assignment improves recovery and profile convenience without
+        # making Play depend on a character. Keep an existing preference; use
+        # this character only when the World has no preferred character yet.
+        selections = client.setdefault("world_character_selection", {})
+        preferred = str(selections.get(world_id) or "")
+        if not preferred or bool(params.get("make_preferred")):
+            selections[world_id] = character_id
+            preferred = character_id
+        save_state(state)
+        payload = handle("characters.list", {})
+        return {**payload, "state": public_state(state), "assignment": {
+            "character_id": character_id,
+            "world_id": world_id,
+            "preferred": preferred == character_id,
+            "world_name": str(world.get("name") or world.get("nickname") or (world.get("identity") or {}).get("world_name") or "World"),
+        }}
 
     if method == "characters.profile.update":
         character_id = str(params.get("character_id") or "").strip()

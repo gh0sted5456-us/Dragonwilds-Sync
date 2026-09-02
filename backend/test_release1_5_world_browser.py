@@ -45,7 +45,8 @@ def test_world_browser_contract() -> None:
     assert "openCardMenu(card" in renderer
     assert "maxlength=\"250\"" in renderer and "data-review-window" in renderer
     assert "server.feedback.visibility" in renderer
-    assert "approve-character-backup" in renderer and "world.character.backup.approve" in renderer
+    assert "approve-character-backup" in renderer and "world.character.backup.consent" in renderer
+    assert "`Player Save Backup`" not in renderer, "backup enablement must not interrupt Play with a confirmation"
     assert "24-world-browser-pagination.jpg" in renderer
     assert "25-world-ratings.jpg" in renderer
     assert "26-hosted-worlds.jpg" in renderer

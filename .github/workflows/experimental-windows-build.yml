@@ -1,0 +1,80 @@
+name: Experimental Windows Build Gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - experimental
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    name: Native DragonLink + Portable EXE
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Build critical DragonLink DLLs
+        shell: powershell
+        run: |
+          & .\scripts\build_native_ue4ss_mods.ps1 -CriticalOnly
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($path in @(
+            '.\resources\NativeRuntimeMods\DragonLink\dlls\main.dll',
+            '.\resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Chat.dll',
+            '.\resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Connect.dll'
+          )) {
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Native build output missing: $path" }
+          }
+
+      - name: Verify DragonLink and RSDW contracts
+        shell: powershell
+        run: |
+          python backend\test_dragonlink_contracts.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_release1_4_spawner.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and verify Windows portable package
+        shell: powershell
+        run: |
+          $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+          & .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath '.\release\Dragonwilds Sync.exe' -PathType Leaf)) {
+            throw 'Portable EXE was not produced.'
+          }
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: experimental-windows-build-failure
+          if-no-files-found: warn
+          path: |
+            build.log
+            build-logs/*.log
+            test-results/*.md
+
+      - name: Upload verified portable build
+        if: success()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Dragonwilds-Sync-Experimental-Windows
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            build.log

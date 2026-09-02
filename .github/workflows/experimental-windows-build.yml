@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   windows-build:
-    name: Native DragonLink + Portable EXE
+    name: DragonLink contracts + Portable EXE
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -26,10 +26,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Build critical DragonLink DLLs
+      - name: Build critical DragonLink DLLs when upstream access is configured
         shell: powershell
+        env:
+          UEPSEUDO_PAT: ${{ secrets.UEPSEUDO_PAT }}
         run: |
-          & .\scripts\build_native_ue4ss_mods.ps1 -CriticalOnly
+          if ([string]::IsNullOrWhiteSpace($env:UEPSEUDO_PAT)) {
+            Write-Warning 'Native DragonLink compile skipped: upstream Re-UE4SS/UEPseudo requires an authorized Epic-linked GitHub token.'
+            '### Native DragonLink compile' | Add-Content $env:GITHUB_STEP_SUMMARY
+            '' | Add-Content $env:GITHUB_STEP_SUMMARY
+            'Skipped because repository secret `UEPSEUDO_PAT` is not configured. The Windows package and source/launcher contracts are still verified below.' | Add-Content $env:GITHUB_STEP_SUMMARY
+            exit 0
+          }
+          & .\scripts\build_native_ue4ss_mods.ps1 -CriticalOnly -UePseudoToken $env:UEPSEUDO_PAT
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($path in @(
             '.\resources\NativeRuntimeMods\DragonLink\dlls\main.dll',
@@ -38,6 +47,9 @@ jobs:
           )) {
             if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Native build output missing: $path" }
           }
+          '### Native DragonLink compile' | Add-Content $env:GITHUB_STEP_SUMMARY
+          '' | Add-Content $env:GITHUB_STEP_SUMMARY
+          'PASS: DragonLink host, Chat, and Connect compiled against the pinned UE4SS revision.' | Add-Content $env:GITHUB_STEP_SUMMARY
 
       - name: Verify DragonLink and RSDW contracts
         shell: powershell

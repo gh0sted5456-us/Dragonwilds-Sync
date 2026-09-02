@@ -36,7 +36,12 @@ def test_runtime_root_drives_server_profile_and_pak_scan() -> None:
 
 
 def test_complete_reset_deletion_guards_exact_targets() -> None:
-    with tempfile.TemporaryDirectory() as temp:
+    # Keep this security-sensitive deletion test under the checked-out workspace.
+    # Windows hosted runners expose %TEMP% through an 8.3 short user path, while
+    # Path.resolve() expands it. The production guard intentionally rejects that
+    # lexical/resolved mismatch so a junction cannot turn this into an arbitrary
+    # recursive delete primitive.
+    with tempfile.TemporaryDirectory(dir=Path.cwd()) as temp:
         local = Path(temp) / "Local"
         appdata = local / "RSDragonwilds"
         appdata.mkdir(parents=True)
@@ -47,10 +52,6 @@ def test_complete_reset_deletion_guards_exact_targets() -> None:
                 raise AssertionError("A parent AppData path must never be accepted")
             except ValueError:
                 pass
-            # The destructive API intentionally requires the exact path that the
-            # preview API returned. On Windows a Path.resolve() round-trip can
-            # expand an 8.3 user-directory alias and therefore no longer be the
-            # exact previewed lexical path, even though it names the same tree.
             previewed = str(server_systems.rsdragonwilds_appdata_root())
             removed = server_systems.delete_rsdragonwilds_appdata(previewed)
             assert removed["deleted"] and not appdata.exists()

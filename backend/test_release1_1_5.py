@@ -73,7 +73,11 @@ def test_animated_startup_splash_is_packaged():
 
 
 def test_local_appdata_migration_and_default_off_tips():
-    with tempfile.TemporaryDirectory() as tmp:
+    # Keep the fixture under the checked-out workspace. GitHub's Windows
+    # runner can expose %TEMP% through an 8.3 path (RUNNER~1) while
+    # Path.resolve() expands it, making two spellings of the same directory
+    # compare unequal. Production path normalization remains unchanged.
+    with tempfile.TemporaryDirectory(dir=ROOT) as tmp:
         base = Path(tmp)
         roaming = base / "Roaming"
         local = base / "Local"

@@ -5418,6 +5418,11 @@ def handle(method: str, params: dict) -> object:
         for key in ("password", "port", "port_auto", "lan_broadcast", "dragonlink_connect_enabled"):
             if key in incoming_sync:
                 sync[key] = incoming_sync.get(key)
+        if "file_mirror_index_url" in incoming_sync:
+            mirror_url = str(incoming_sync.get("file_mirror_index_url") or "").strip()[:2000]
+            if mirror_url and urllib.parse.urlparse(mirror_url).scheme.casefold() != "https":
+                raise ValueError("External file mirror indexes must use public HTTPS URLs.")
+            sync["file_mirror_index_url"] = mirror_url
         if "access_policy" in incoming_sync:
             sync["access_policy"] = normalize_access_policy(incoming_sync.get("access_policy"))
         elif "blocked_ips" in incoming_sync or "blocked_countries" in incoming_sync:

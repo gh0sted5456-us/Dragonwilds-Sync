@@ -8,9 +8,10 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from process_utils import popen_hidden
 from network_client import ConnectionError, auth_manifest, request
@@ -756,8 +757,83 @@ def reset_client_managed_payload_for_resync(selected_root: Path, replacement_man
             "tagged_targets": len(tagged_replacement)}
 
 
-def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "", progress=None) -> None:
+def resolve_file_mirror(manifest: dict) -> dict[str, str]:
+    """Load an optional public delivery index without granting it manifest authority."""
+    config = manifest.get("file_mirror") if isinstance(manifest.get("file_mirror"), dict) else {}
+    index_url = str(config.get("index_url") or "").strip()
+    if not index_url or urlsplit(index_url).scheme.casefold() != "https":
+        return {}
+    try:
+        response = urllib.request.urlopen(index_url, timeout=15.0)
+        try:
+            final_url = str(getattr(response, "geturl", lambda: index_url)() or index_url)
+            if urlsplit(final_url).scheme.casefold() != "https":
+                return {}
+            raw = response.read(1024 * 1024 + 1)
+        finally:
+            response.close()
+        if len(raw) > 1024 * 1024:
+            return {}
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    if not isinstance(payload, dict) or payload.get("schema") != "DragonwildsSync.FileMirror.v1":
+        return {}
+    authoritative_paths = {str(entry.get("path") or "") for entry in manifest.get("files", []) if isinstance(entry, dict)}
+    result: dict[str, str] = {}
+    for item in payload.get("files") or []:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "")
+        url = str(item.get("url") or "").strip()
+        if path in authoritative_paths and urlsplit(url).scheme.casefold() == "https":
+            result[path] = url
+    return result
+
+
+def _download_verified_mirror(url: str, entry: dict, destination: Path, progress=None) -> bool:
+    """Try an untrusted mirror. Only the server manifest's size/hash can promote bytes."""
+    expected_size = max(0, int(entry.get("size") or 0))
+    expected_hash = str(entry.get("sha256") or "").casefold()
+    partial = destination.with_name(destination.name + ".partial")
+    partial.unlink(missing_ok=True)
+    try:
+        response = urllib.request.urlopen(url, timeout=60.0)
+        try:
+            final_url = str(getattr(response, "geturl", lambda: url)() or url)
+            if urlsplit(final_url).scheme.casefold() != "https":
+                return False
+            digest = hashlib.sha256()
+            total = 0
+            with partial.open("wb") as out:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    total += len(chunk)
+                    if expected_size and total > expected_size:
+                        return False
+                    digest.update(chunk)
+                    out.write(chunk)
+                    if progress:
+                        progress(total, expected_size)
+        finally:
+            response.close()
+        if (not expected_size or total == expected_size) and digest.hexdigest() == expected_hash:
+            os.replace(partial, destination)
+            return True
+    except (OSError, ValueError, TypeError):
+        pass
+    finally:
+        partial.unlink(missing_ok=True)
+    return False
+
+
+def download_entry(base_url: str, token: str, entry: dict, destination: Path, client_platform: str = "", progress=None,
+                   mirror_url: str = "") -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
+    if mirror_url and _download_verified_mirror(mirror_url, entry, destination, progress):
+        return
     partial = destination.with_name(destination.name + ".partial")
     expected_size = max(0, int(entry.get("size") or 0))
     expected_hash = str(entry.get("sha256") or "").casefold()
@@ -901,6 +977,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     manifest["mod_summary"] = [row for row in (manifest.get("mod_summary") or [])
                                if not (isinstance(row, dict)
                                        and str(row.get("name") or "").casefold() in SERVER_ONLY_SYNC_UE4SS_MODS)]
+    mirror_urls = resolve_file_mirror(manifest)
     # New hosts already tag every delivery. Synthesize the same contract for an
     # older host so the local ledger is complete, but only host-supplied tags
     # authorize destructive runtime deletion during this reset attempt.
@@ -1002,7 +1079,8 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
                  total_bytes=total_download_bytes)
         if entry.get("kind", "file") == "zip_bundle":
             temp = game_root / LOCAL_STATE_DIR / "downloads" / (Path(entry["path"]).name + ".download")
-            download_entry(base_url, token, entry, temp, client_platform, transfer_progress)
+            download_entry(base_url, token, entry, temp, client_platform, transfer_progress,
+                           mirror_urls.get(str(entry.get("path") or ""), ""))
             review_download(temp, entry["path"])
             extract_to = str(entry.get("extract_to") or "")
             destination = safe_game_path(game_root, extract_to) if extract_to else game_root
@@ -1027,7 +1105,8 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         else:
             target = target_for_entry(install_dir, entry)
             staged = target.with_name(target.name + ".download")
-            download_entry(base_url, token, entry, staged, client_platform, transfer_progress)
+            download_entry(base_url, token, entry, staged, client_platform, transfer_progress,
+                           mirror_urls.get(str(entry.get("path") or ""), ""))
             review_download(staged, entry["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():

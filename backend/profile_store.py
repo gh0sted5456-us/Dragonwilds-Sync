@@ -830,6 +830,7 @@ def create_server_profile(name: str) -> str:
         "dedicated_config": {"server_name": world_name, "world_name": world_name, "admin_pass": "", "world_pass": "", "owner_id": "", "port": game_port, "base_port": 7777, "port_auto": True,
                              "networking": {"publication_mode": "manual", "external_port": game_port}},
         "sync_config": {"password": "", "server_key": secrets.token_hex(16), "share_access_key": secrets.token_hex(16), "family_join_rotated_at": "", "allow_shared_access": True, "port": 27050 + instance_number, "port_auto": True, "lan_broadcast": True, "dragonlink_connect_enabled": False,
+                        "file_mirror_index_url": "",
                         "tls_enabled": False, "allow_tls_password_fallback": False, "tls_cert_fingerprint": "",
                         "networking": {"publication_mode": "manual", "external_port": 27050 + instance_number}, "access_policy": default_access_policy()},
         "world_save_download": {"enabled": True, "max_requests": 2, "window_hours": 24, "scope": "source_ip_and_application_user_id"},

@@ -2579,6 +2579,9 @@ class ShareServer:
         else:
             password = _runtime_world_password(password)
         sync_options = profile.get("sync_config") if isinstance(profile.get("sync_config"), dict) else {}
+        mirror_index_url = str(sync_options.get("file_mirror_index_url") or "").strip()
+        if mirror_index_url and urlparse(mirror_index_url).scheme.casefold() != "https":
+            mirror_index_url = ""
         tls_enabled = bool(sync_options.get("tls_enabled"))
         allow_tls_password_fallback = bool(sync_options.get("allow_tls_password_fallback")) and tls_enabled
         cert_path = key_path = None
@@ -2732,6 +2735,8 @@ class ShareServer:
                                                       "supported_platforms": list(ALL_CLIENT_PLATFORMS),
                                                       "default_platform": "windows"},
                               "runtime_variants": runtime_variant_catalog(),
+                              "file_mirror": ({"schema": "DragonwildsSync.FileMirror.v1", "index_url": mirror_index_url}
+                                              if mirror_index_url else {}),
                               "dedicated_runtime_contract": dedicated_runtime_contract(str(resolve_server_layout(game_root).win64_dir.name).casefold() == "linux" if str(game_root or '').strip() else False),
                               "files": manifest_files, "description": profile.get("description") or "", "tags": consolidated_tags,
                               "classification": classification,

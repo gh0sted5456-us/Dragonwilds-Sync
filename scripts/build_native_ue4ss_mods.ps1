@@ -1,7 +1,8 @@
 param(
     [string]$BuildRoot = "$env:TEMP\dragonwilds-sync-native-ue4ss",
     [switch]$KeepBuildTree,
-    [switch]$CriticalOnly
+    [switch]$CriticalOnly,
+    [string]$UePseudoToken = $env:UEPSEUDO_PAT
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +25,7 @@ foreach ($tool in @('git', 'cmake')) {
 
 if (-not (Test-Path -LiteralPath (Join-Path $SourceRoot '.git'))) {
     New-Item -ItemType Directory -Force -Path $BuildRoot | Out-Null
-    git -c url.https://github.com/.insteadOf=git@github.com: clone https://github.com/UE4SS-RE/RE-UE4SS.git $SourceRoot
+    git clone https://github.com/UE4SS-RE/RE-UE4SS.git $SourceRoot
     if ($LASTEXITCODE -ne 0) { throw "Could not clone pinned UE4SS source (exit $LASTEXITCODE)" }
 }
 
@@ -32,8 +33,32 @@ git -C $SourceRoot fetch origin $Ue4ssCommit --depth=1
 if ($LASTEXITCODE -ne 0) { throw "Could not fetch pinned UE4SS commit $Ue4ssCommit" }
 git -C $SourceRoot checkout --detach $Ue4ssCommit
 if ($LASTEXITCODE -ne 0) { throw "Could not check out pinned UE4SS commit $Ue4ssCommit" }
-git -C $SourceRoot -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive --depth=1
-if ($LASTEXITCODE -ne 0) { throw 'Could not initialize UE4SS submodules' }
+
+# The pinned UE4SS revision depends on Re-UE4SS/UEPseudo, an upstream private
+# repository. Official UE4SS CI checks it out with UEPSEUDO_PAT. Never bake or
+# print that token; inject it only as a temporary HTTP Authorization header.
+if ([string]::IsNullOrWhiteSpace($UePseudoToken)) {
+    throw 'UEPSEUDO_PAT is required to compile UE4SS C++ mods from a clean checkout. Configure an Epic-linked GitHub token with access to Re-UE4SS/UEPseudo.'
+}
+$credentialBytes = [Text.Encoding]::ASCII.GetBytes("x-access-token:$UePseudoToken")
+$authorization = 'AUTHORIZATION: basic ' + [Convert]::ToBase64String($credentialBytes)
+$oldCount = $env:GIT_CONFIG_COUNT
+$oldKey = $env:GIT_CONFIG_KEY_0
+$oldValue = $env:GIT_CONFIG_VALUE_0
+try {
+    $env:GIT_CONFIG_COUNT = '1'
+    $env:GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader'
+    $env:GIT_CONFIG_VALUE_0 = $authorization
+    git -C $SourceRoot -c url.https://github.com/.insteadOf=git@github.com: submodule update --init --recursive --depth=1
+    if ($LASTEXITCODE -ne 0) { throw 'Could not initialize UE4SS submodules with the supplied UEPSEUDO_PAT' }
+}
+finally {
+    if ($null -eq $oldCount) { Remove-Item Env:GIT_CONFIG_COUNT -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_COUNT = $oldCount }
+    if ($null -eq $oldKey) { Remove-Item Env:GIT_CONFIG_KEY_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_KEY_0 = $oldKey }
+    if ($null -eq $oldValue) { Remove-Item Env:GIT_CONFIG_VALUE_0 -ErrorAction SilentlyContinue } else { $env:GIT_CONFIG_VALUE_0 = $oldValue }
+    $authorization = $null
+    $credentialBytes = $null
+}
 
 $CppMods = Join-Path $SourceRoot 'cppmods'
 foreach ($Name in $SelectedMods) {
@@ -58,7 +83,7 @@ Set-Content -LiteralPath $CppModsCmake -Value $CmakeText -Encoding utf8
 if (Test-Path -LiteralPath $BuildDir) { Remove-Item -LiteralPath $BuildDir -Recurse -Force }
 cmake -S $SourceRoot -B $BuildDir -A x64
 if ($LASTEXITCODE -ne 0) { throw "Native UE4SS CMake configuration failed with exit code $LASTEXITCODE" }
-cmake --build $BuildDir --config Game__Shipping__Win64 --target @BuildTargets --parallel
+& cmake --build $BuildDir --config Game__Shipping__Win64 --target $BuildTargets --parallel
 if ($LASTEXITCODE -ne 0) { throw "Native DragonLink build failed with exit code $LASTEXITCODE" }
 
 $Candidates = Get-ChildItem -LiteralPath $BuildDir -Filter '*.dll' -Recurse

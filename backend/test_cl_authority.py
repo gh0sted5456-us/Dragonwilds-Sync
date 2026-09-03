@@ -50,10 +50,11 @@ class FakeServerEngine:
         return {"running": True, "reported_cl": displayed, "cl_version": cl_version_status(displayed, displayed)}
 
 
-def _rescan_probe(method_name: str, rescanned_value: bool) -> bool:
+def _rescan_probe(method_name: str, explicit_rescan: bool, derived_rescanned: bool = True) -> bool:
     # These local variable names deliberately mirror the retained RPC handler.
     method = method_name
-    rescanned = rescanned_value
+    params = {"rescan": explicit_rescan}
+    rescanned = derived_rescanned
     return _inventory_rescan_caller(method_name)
 
 
@@ -88,11 +89,13 @@ def main() -> None:
     assert "cl_authority_guard" not in result
     assert "cl_expected_build_mismatch" not in result
 
-    # Profile-folder authority is intentionally limited to a real inventory
-    # reconciliation call. Runtime startup/apply calls must never satisfy it.
+    # Profile-folder authority is intentionally limited to an explicit Rescan.
+    # A first uncached inventory load can still set its derived `rescanned` flag,
+    # but that must preserve live adoption/runtime discovery semantics.
     assert _rescan_probe("singleplayer.inventory", True) is True
     assert _rescan_probe("server.world.inventory", True) is True
-    assert _rescan_probe("singleplayer.inventory", False) is False
+    assert _rescan_probe("singleplayer.inventory", False, True) is False
+    assert _rescan_probe("server.world.inventory", False, True) is False
     assert _rescan_probe("server.world.start", True) is False
 
     reconciliation = _reconcile_rows(
@@ -114,7 +117,7 @@ def main() -> None:
     assert reconciliation["source"] == "profile-mod-folders"
     assert reconciliation["authoritative"] is True
 
-    print("live CL authority + profile mod Rescan reconciliation: PASS")
+    print("live CL authority + explicit profile mod Rescan reconciliation: PASS")
 
 
 if __name__ == "__main__":

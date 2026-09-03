@@ -51,12 +51,16 @@ jobs:
           '' | Add-Content $env:GITHUB_STEP_SUMMARY
           'PASS: DragonLink host, Chat, and Connect compiled against the pinned UE4SS revision.' | Add-Content $env:GITHUB_STEP_SUMMARY
 
-      - name: Verify DragonLink and RSDW contracts
+      - name: Verify DragonLink, RSDW, and hybrid delivery contracts
         shell: powershell
         run: |
           python backend\test_dragonlink_contracts.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python backend\test_release1_4_spawner.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_hybrid_external_mod_delivery.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check renderer\external-mod-hosting.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build and verify Windows portable package

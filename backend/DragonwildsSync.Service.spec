@@ -38,10 +38,15 @@ a = Analysis(
         'web_release_polish',
         'editor_runtime_stabilization',
         'shell_persistence_stabilization',
+        'external_mod_hosting',
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[str(backend / 'packaged_stdio_guard.py'), str(backend / 'web_release_polish_hook.py')],
+    runtime_hooks=[
+        str(backend / 'external_mod_hosting_hook.py'),
+        str(backend / 'packaged_stdio_guard.py'),
+        str(backend / 'web_release_polish_hook.py'),
+    ],
     excludes=[],
     noarchive=False,
 )

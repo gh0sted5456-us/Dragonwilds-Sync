@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from dragonwilds_service_legacy import _dedupe_client_worlds, ensure_world_shape
+from dragonwilds_service_compat import _dedupe_client_worlds, ensure_world_shape
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -30,7 +30,7 @@ def main():
     assert state["client"]["favorites"] == ["first"]
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-    service = (ROOT / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+    service = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     sync_engine = (ROOT / "backend/sync_engine.py").read_text(encoding="utf-8")
     assert "connected ? 'CONNECTED WORLD' : modeLabel" in renderer
     assert "kind: edit ? (world.kind || 'connected') : 'connected'" in renderer

@@ -11,7 +11,7 @@ import profile_store
 import runeschema_flavors
 import world_maintenance
 import world_identity
-import dragonwilds_service_legacy as legacy_service
+import dragonwilds_service_compat as compat_service
 from server_layout import resolve_server_layout
 
 
@@ -91,15 +91,15 @@ def main() -> None:
     collision_state = {"client": {"private_worlds": [{"id": "singleplayer"}], "active_private_world_id": "singleplayer",
                                   "active_world_id": "singleplayer", "worlds": [{"id": "singleplayer", "kind": "connected",
                                   "identity": {"world_name": "Effing Desync"}, "connection": {"external_ip": "203.0.113.20", "sync_port": 27051}}]}}
-    assert legacy_service._repair_connected_world_id_collisions(collision_state) is True
+    assert compat_service._repair_connected_world_id_collisions(collision_state) is True
     repaired = collision_state["client"]["worlds"][0]
     assert repaired["id"].startswith("connected-") and collision_state["client"]["active_world_id"] == repaired["id"]
-    assert legacy_service._repair_connected_world_id_collisions(collision_state) is False
+    assert compat_service._repair_connected_world_id_collisions(collision_state) is False
     assert collision_state["client"]["worlds"][0]["id"] == repaired["id"]
 
-    legacy = (ROOT / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8")
-    assert "dws.admin.item.v1" not in legacy
-    assert 'spawn_command("item"' in legacy
+    compat = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
+    assert "dws.admin.item.v1" not in compat
+    assert 'spawn_command("item"' in compat
     assert "dragoncore" not in {name.casefold() for name in world_maintenance.UE4SS_BAKED_IN_DEFAULT_MODS}
     for archive in (ROOT / "resources").rglob("*.zip"):
         with zipfile.ZipFile(archive) as zf:
@@ -109,7 +109,7 @@ def main() -> None:
     for token in ("RuneSchema Build", "Update Official", "Fetch Latest Experimental", "Import Mod Package", "Core Configuration"):
         assert token in renderer
     assert "This private SinglePlayer profile has no network endpoint" in renderer
-    assert 'world.get("kind") or "").casefold() == "singleplayer"' in legacy
+    assert 'world.get("kind") or "").casefold() == "singleplayer"' in compat
     print("v2.7.13 core configuration, RuneSchema flavors, telemetry identity, map, spawner, and import contracts passed")
 
 

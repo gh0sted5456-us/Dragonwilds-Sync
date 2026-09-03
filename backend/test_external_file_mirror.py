@@ -60,7 +60,7 @@ def main() -> None:
         sync_engine.request = original_request
 
     root = Path(__file__).resolve().parent.parent
-    service = (root / "backend/dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+    service = (root / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     renderer = (root / "renderer/app-v2.js").read_text(encoding="utf-8")
     publisher = (root / "backend/server_systems.py").read_text(encoding="utf-8")
     assert 'sync["file_mirror_index_url"] = mirror_url' in service

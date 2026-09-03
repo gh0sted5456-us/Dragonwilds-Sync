@@ -1,8 +1,11 @@
 const fs = require('node:fs');
 const path = require('path');
 
-const registryPath = path.join(__dirname, '..', 'docs', 'upstream-sources.json');
+const root = path.join(__dirname, '..');
+const registryPath = path.join(root, 'docs', 'upstream-sources.json');
+const rendererPath = path.join(root, 'renderer', 'upstream-sources.js');
 const registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+const renderer = fs.readFileSync(rendererPath, 'utf8');
 const required = ['rsdwtools', 'rsdw-icons', 'rsdw-item-manifest', 'rsdw-toolkit', 'dragonconnect', 'runeschema', 'ue4ss'];
 
 function assert(condition, message) {
@@ -47,4 +50,22 @@ function inspect(value, trail = 'registry') {
 }
 inspect(registry);
 
-console.log(`upstream source registry checks passed · ${Object.keys(registry.sources).length} sources`);
+// Settings must be shell-first/offline-first. Opening Runtime & Data may use a
+// cached or packaged registry immediately, but it must never wait on GitHub to
+// paint the dependency controls.
+assert(renderer.includes('const FETCH_TIMEOUT_MS = 3500'), 'Upstream registry network reads must have a bounded timeout.');
+assert(renderer.includes('function primeRegistryFromLocal()'), 'Settings must have a local-first registry bootstrap.');
+assert(renderer.includes('function refreshRegistryInBackground(page, section)'), 'Remote registry refresh must be background work.');
+assert(renderer.includes("const observationRoot=document.getElementById('app')||document.documentElement"), 'Source-panel mutation work must target the app root when available.');
+const renderStart = renderer.indexOf('async function renderPanel(page, options = {})');
+const renderEnd = renderer.indexOf('\n  function enhance()', renderStart);
+assert(renderStart >= 0 && renderEnd > renderStart, 'Could not inspect the Settings source-panel renderer.');
+const renderPanel = renderer.slice(renderStart, renderEnd);
+const insertionPoint = renderPanel.indexOf("base.insertAdjacentElement('beforebegin',section)");
+assert(insertionPoint > 0, 'Settings source panel must still insert into Runtime & Data.');
+const firstPaintPath = renderPanel.slice(0, insertionPoint);
+assert(firstPaintPath.includes('primeRegistryFromLocal();'), 'Settings source panel must seed from local data before insertion.');
+assert(!firstPaintPath.includes('await loadRegistry('), 'Settings source panel must not await remote registry work before first paint.');
+assert(renderPanel.includes('refreshRegistryInBackground(page,section)'), 'Settings must refresh GitHub sources only after the local panel is mounted.');
+
+console.log(`upstream source registry checks passed · ${Object.keys(registry.sources).length} sources · Settings local-first paint`);

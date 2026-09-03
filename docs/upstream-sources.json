@@ -1,7 +1,7 @@
 {
   "schema": "DragonwildsSync.UpstreamSources.v1",
-  "updated_at": "2026-09-03T00:00:00Z",
-  "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. Logical runtime components and data sources are kept distinct even where a legacy physical directory name remains for compatibility.",
+  "updated_at": "2026-09-03T17:20:00Z",
+  "description": "Authoritative source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. UE4SS and RuneSchema keep immutable packaged stable builds while downloaded GitHub versions are retained in local version libraries. RSDW data and runtime tooling remain separate sources.",
   "security": {
     "allow_arbitrary_commands": false,
     "allowed_transport": ["https"],
@@ -17,7 +17,7 @@
       "branch": "main",
       "components": ["icons", "item-manifest", "reference-data"],
       "runtime_component": false,
-      "description": "Canonical GitHub-backed data/content source for icons, item manifests and reference data. It is not the installed UE4SS Toolkit runtime."
+      "description": "Canonical GitHub-backed data/content source for icons, item manifests and reference data. It is not the installed UE4SS Dev Kit runtime."
     },
     "rsdw-icons": {
       "display_name": "RSDW Icons",
@@ -51,7 +51,7 @@
       "runtime_roles": ["server", "host"],
       "icon": "assets/navigation/rsdw-l.webp",
       "legacy_physical_names": ["RSDWTools"],
-      "description": "Server/host-only UE4SS runtime tooling for spawning, live map hooks, console commands and game-runtime integration. It is updated from RSDWArchive/RSDWDevKit and is never sent to joining clients."
+      "description": "Server/host-only UE4SS runtime tooling for spawning, live map hooks, console commands and game-runtime integration. Releases are resolved from RSDWArchive/RSDWDevKit; this is distinct from the RSDWTools data repository and is never synchronized to joining clients."
     },
     "dragonconnect": {
       "display_name": "DragonConnect",
@@ -73,8 +73,8 @@
       "bundled_fallback": "resources/RuneSchema-core-latest.zip",
       "runtime_component": true,
       "runtime_roles": ["server", "client"],
-      "update_owner": "Dragonwilds Sync managed update path",
-      "description": "Official RuneSchema release source. Dragonwilds Sync resolves downloadable ZIP assets through GitHub's release API, validates them, installs through an explicit client/server layout, and retains the bundled package only as an offline/recovery fallback. RuneSchema child content remains a first-class logical mod family."
+      "update_owner": "Dragonwilds Sync version library",
+      "description": "The packaged RuneSchema core is the permanent Stable Packaged Build. Official GitHub releases are resolved through the release API, validated, and stored as separate local versions so a host can update, repair, switch, or roll back without losing previous builds."
     },
     "ue4ss": {
       "display_name": "UE4SS",
@@ -82,9 +82,10 @@
       "type": "github-release",
       "repository": "UE4SS-RE/RE-UE4SS",
       "release_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest",
+      "bundled_fallback": "resources/DragonwildsServerRuntime/UE4SS-core-latest.zip",
       "runtime_roles": ["server", "client"],
-      "update_owner": "Dragonwilds Sync managed update path",
-      "description": "Official UE4SS release source. Dragonwilds Sync resolves the tagged release ZIP through GitHub's API and installs it through role-specific validation. Upstream version.dll files are ignored; Dragonwilds' separate server loader is preserved only beside the dedicated server dwmapi.dll."
+      "update_owner": "Dragonwilds Sync version library",
+      "description": "The Dragonwilds-tested packaged UE4SS archive is the permanent Stable Packaged Build. Upstream UE4SS releases are validated and stored as distinct local versions before selection, preserving rollback and repair history. Upstream version.dll files remain excluded from the client runtime boundary."
     },
     "rsdwmodel": {
       "display_name": "RSDWModel",
@@ -92,7 +93,7 @@
       "type": "github-branch",
       "repository": "RSDWArchive/RSDWModel",
       "branch": "main",
-      "description": "Avatar/model source used by the RSDW Toolkit character experience."
+      "description": "Avatar/model source used by the RSDW Dev Kit character experience."
     }
   }
 }

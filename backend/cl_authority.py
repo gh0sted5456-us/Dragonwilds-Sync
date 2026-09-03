@@ -31,6 +31,7 @@ from runtime_versions import cl_version_status
 
 _PATCH_LOCK = threading.RLock()
 _EXPECTED_KEYS = ("expected_cl", "expected_cl_buildid", "expected_cl_observed_at")
+_INVENTORY_RESCAN_METHODS = frozenset({"singleplayer.inventory", "server.world.inventory"})
 
 
 def _server_install(state: dict) -> dict:
@@ -83,13 +84,16 @@ def _apply_build_binding(result: dict, state: dict, displayed: str) -> dict:
 
 
 def _inventory_rescan_caller(method_name: str) -> bool:
-    """True only while the retained RPC handler is servicing an explicit/deep inventory scan.
+    """True only while a retained inventory RPC is servicing an explicit Rescan.
 
     The scanner functions are shared with runtime launch/apply code, so changing
-    their default path semantics globally would be unsafe. Inspect only a few
-    immediate frames and redirect the scanner when the current RPC is the mod
-    inventory reconciliation path.
+    their default path semantics globally would be unsafe. Only the two inventory
+    RPC names are eligible; then inspect a few immediate frames for the retained
+    handler's matching ``method`` + ``rescanned`` locals.
     """
+    requested = str(method_name or "")
+    if requested not in _INVENTORY_RESCAN_METHODS:
+        return False
     frame = inspect.currentframe()
     try:
         frame = frame.f_back if frame else None
@@ -97,7 +101,7 @@ def _inventory_rescan_caller(method_name: str) -> bool:
             if frame is None:
                 break
             values = frame.f_locals
-            if str(values.get("method") or "") == method_name and bool(values.get("rescanned")):
+            if str(values.get("method") or "") == requested and bool(values.get("rescanned")):
                 return True
             frame = frame.f_back
     finally:

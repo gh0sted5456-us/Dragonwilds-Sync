@@ -35,6 +35,7 @@ const crossPlatformTests = [
   'backend/test_v27_14_final_cleanup.py',
   'backend/test_v27_15_runeschema_flavor_lock.py',
   'backend/test_runeschema_repository.py',
+  'backend/test_runtime_version_archive.py',
   'backend/test_runeschema_063_console.py',
   'backend/test_connection_transport.py',
   'backend/test_runtime_worker_sync_password.py',
@@ -52,7 +53,7 @@ const crossPlatformTests = [
 const windowsHistoricalTests = [
   'backend/test_alpha7.py','backend/test_alpha7_release.py','backend/test_alpha8.py','backend/test_alpha9.py','backend/test_alpha11.py','backend/test_alpha11_2.py','backend/test_alpha12.py','backend/test_alpha12_shared.py','backend/test_alpha13.py','backend/test_release1.py','backend/test_release1_1.py','backend/test_release1_1_3.py','backend/test_release1_2.py','backend/test_release1_3.py','backend/test_release1_3_1.py','backend/test_release1_3_2_runtime.py','backend/test_release1_4.py','backend/test_release1_4_integrations.py','backend/test_release1_4_directory_host.py','backend/test_release1_4_web_directory_remote.py','backend/test_release1_4_federation_safety.py','backend/test_release1_4_spawner.py','backend/test_release1_5_world_browser.py','backend/test_release1_6_character_routes_tunnel.py','backend/test_release1_7_server_adoption.py','backend/test_release1_8_gui_notifications.py','backend/test_v1_1_refinements.py','backend/test_v1_1_1_corrections.py','backend/test_release1_1_2.py','backend/test_release1_1_5.py','backend/test_networking_v1_1_5.py','backend/test_v1_1_9_mod_management.py','backend/test_windows_atomic_replace.py',
 ];
-const tests=process.platform==='win32'?[...crossPlatformTests.slice(0,29),...windowsHistoricalTests,...crossPlatformTests.slice(29)]:crossPlatformTests;
+const tests=process.platform==='win32'?[...crossPlatformTests.slice(0,30),...windowsHistoricalTests,...crossPlatformTests.slice(30)]:crossPlatformTests;
 console.log(`[backend verify] ${process.platform==='win32'?'Windows full V2 regression matrix':'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 for(const test of tests){
  const runner='scripts/v3_backend_test_runner.py';

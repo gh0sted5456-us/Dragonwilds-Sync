@@ -14,6 +14,10 @@ const shell = read('backend/shell_persistence_stabilization.py');
 const monaco = read('renderer/release-monaco-prewarm.js');
 const app = read('renderer/app.js');
 const appV2 = read('renderer/app-v2.js');
+// app.js is now the lightweight mode/compatibility loader; app-v2.js owns the
+// full application implementation. Contracts that verify actual renderer
+// behavior must inspect the composed live renderer rather than the loader alone.
+const applicationRenderer = app + '\n' + appV2;
 const profileStore = read('backend/profile_store.py');
 const v2Service = read('backend/dragonwilds_service_v2_wrapper.py');
 const serverEngine = read('backend/server_engine.py');
@@ -92,8 +96,8 @@ requireText(monaco, "script.src = 'vendor/monaco/vs/loader.js'", 'bundled Monaco
 requireText(monaco, "amdRequire(['vs/editor/editor.main']", 'Monaco editor core must preload before first editor intent');
 requireText(monaco, 'window.__DWSYNC_MONACO_STATUS__', 'Monaco readiness/failure must be observable');
 requireText(monaco, 'warm().catch(() => {})', 'Monaco must begin warming during the backend bootstrap window');
-requireText(app, 'monaco.editor.create', 'the application must still mount the real Monaco editor');
-requireText(app, "state.data = await api.invoke('bootstrap')", 'app.js must retain an asynchronous backend bootstrap window');
+requireText(applicationRenderer, 'monaco.editor.create', 'the application must still mount the real Monaco editor');
+requireText(applicationRenderer, "state.data = await api.invoke('bootstrap')", 'application renderer must retain an asynchronous backend bootstrap window');
 requireText(appV2, 'eager_only:true', 'splash must warm only the high-use feature-worker tier');
 requireText(appV2, 'const workspaceWarmPromise=prepareLauncherWorkspaces();', 'first paint must not await workspace cache warming');
 if (appV2.includes('syncHeartbeatTimer')) throw new Error('Phase 3 contract failed: renderer must not duplicate Electron-owned directory heartbeats.');

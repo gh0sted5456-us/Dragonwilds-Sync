@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 import secrets
 import shutil
@@ -22,6 +24,7 @@ REPOSITORY_URL = "https://github.com/gh0sted5456-us/RuneSchema"
 OFFICIAL_PREFIX = "official-"
 EXPERIMENTAL_PREFIX = "experimental-"
 REPO_DIR_NAME = "RuneSchemaRepository"
+INDEX_FILE_NAME = "repository.json"
 _VERSION_PATTERN = re.compile(r"\bv?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?\b")
 
 
@@ -31,12 +34,56 @@ def _repo_dir() -> Path:
     return path
 
 
+def _index_path() -> Path:
+    return _repo_dir() / INDEX_FILE_NAME
+
+
+def _read_index() -> list[dict]:
+    path = _index_path()
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows = payload.get("versions") if isinstance(payload, dict) else payload
+        return [dict(row) for row in (rows or []) if isinstance(row, dict)]
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+
+def _write_index(rows: list[dict]) -> None:
+    path = _index_path()
+    if not rows:
+        path.unlink(missing_ok=True)
+        return
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps({
+        "schema": "DragonwildsSync.RuneSchemaRepository.v1",
+        "versions": rows,
+    }, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def _rows(state: dict) -> list[dict]:
-    return list(state.setdefault("application", {}).setdefault("runeschema_repository", []))
+    state_rows = [dict(row) for row in state.setdefault("application", {}).setdefault("runeschema_repository", []) if isinstance(row, dict)]
+    disk_rows = _read_index()
+    if not disk_rows:
+        return state_rows
+    merged = list(disk_rows)
+    known_ids = {str(row.get("id") or "") for row in merged}
+    known_hashes = {str(row.get("sha256") or "") for row in merged if str(row.get("sha256") or "")}
+    for row in state_rows:
+        row_id = str(row.get("id") or "")
+        digest = str(row.get("sha256") or "")
+        if row_id in known_ids or (digest and digest in known_hashes):
+            continue
+        merged.append(row)
+    return merged
 
 
 def _set_rows(state: dict, rows: list[dict]) -> None:
-    state.setdefault("application", {})["runeschema_repository"] = rows
+    clean = [dict(row) for row in rows if isinstance(row, dict)]
+    state.setdefault("application", {})["runeschema_repository"] = clean
+    _write_index(clean)
 
 
 def _clean_label(value: str) -> str:
@@ -91,9 +138,10 @@ def list_versions(state: dict | None = None) -> dict:
         "added_at": 0,
         "published_at": "",
     }]
+    rows = _rows(state)
     kept = []
     changed = False
-    for row in _rows(state):
+    for row in rows:
         if not isinstance(row, dict):
             changed = True
             continue
@@ -116,7 +164,8 @@ def list_versions(state: dict | None = None) -> dict:
             "added_at": row.get("added_at") or 0,
             "published_at": str(row.get("published_at") or ""),
         })
-    if changed:
+    state_rows = state.setdefault("application", {}).setdefault("runeschema_repository", [])
+    if changed or state_rows != kept:
         _set_rows(state, kept)
         save_state(state)
     versions.sort(key=lambda row: (0 if row.get("id") == BASELINE_ID else 1, -(row.get("added_at") or 0)))

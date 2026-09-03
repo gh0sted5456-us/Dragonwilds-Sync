@@ -3,7 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from types import SimpleNamespace
 
-from cl_authority import install_server_engine_cl_authority_patch
+from cl_authority import (_inventory_rescan_caller, _reconcile_rows,
+                          install_server_engine_cl_authority_patch)
 from runtime_versions import cl_version_status
 
 
@@ -49,6 +50,13 @@ class FakeServerEngine:
         return {"running": True, "reported_cl": displayed, "cl_version": cl_version_status(displayed, displayed)}
 
 
+def _rescan_probe(method_name: str, rescanned_value: bool) -> bool:
+    # These local variable names deliberately mirror the retained RPC handler.
+    method = method_name
+    rescanned = rescanned_value
+    return _inventory_rescan_caller(method_name)
+
+
 def main() -> None:
     module = SimpleNamespace(ServerEngine=FakeServerEngine, load_state=load_state, save_state=save_state)
     install_server_engine_cl_authority_patch(module)
@@ -80,7 +88,33 @@ def main() -> None:
     assert "cl_authority_guard" not in result
     assert "cl_expected_build_mismatch" not in result
 
-    print("live process/log CL authority and Steam-build binding: PASS")
+    # Profile-folder authority is intentionally limited to a real inventory
+    # reconciliation call. Runtime startup/apply calls must never satisfy it.
+    assert _rescan_probe("singleplayer.inventory", True) is True
+    assert _rescan_probe("server.world.inventory", True) is True
+    assert _rescan_probe("singleplayer.inventory", False) is False
+    assert _rescan_probe("server.world.start", True) is False
+
+    reconciliation = _reconcile_rows(
+        [
+            {"key": "ue4ss_mod::Removed", "content_hash": "old-a"},
+            {"key": "ue4ss_mod::Changed", "content_hash": "old-b"},
+            {"key": "pak_mod::Same", "content_hash": "same"},
+        ],
+        [
+            {"key": "ue4ss_mod::Changed", "content_hash": "new-b"},
+            {"key": "pak_mod::Same", "content_hash": "same"},
+            {"key": "runeschema_mod::Added", "content_hash": "new-c"},
+        ],
+    )
+    assert reconciliation["added"] == ["runeschema_mod::Added"]
+    assert reconciliation["changed"] == ["ue4ss_mod::Changed"]
+    assert reconciliation["removed"] == ["ue4ss_mod::Removed"]
+    assert reconciliation["unchanged"] == ["pak_mod::Same"]
+    assert reconciliation["source"] == "profile-mod-folders"
+    assert reconciliation["authoritative"] is True
+
+    print("live CL authority + profile mod Rescan reconciliation: PASS")
 
 
 if __name__ == "__main__":

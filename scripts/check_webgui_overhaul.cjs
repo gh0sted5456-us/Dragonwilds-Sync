@@ -10,7 +10,7 @@ const release = read('renderer/release-webgui-overhaul.js');
 const css = read('renderer/release-webgui-overhaul.css');
 const desktop = read('renderer/app-v2.js');
 const service = read('backend/dragonwilds_service.py');
-const legacyService = read('backend/dragonwilds_service_legacy.py');
+const compatService = read('backend/dragonwilds_service_compat.py');
 const consoleModule = read('backend/unified_console.py');
 const recommendations = read('backend/recommendation_feeds.py');
 const rsdwCache = read('backend/rsdw_cache.py');
@@ -69,12 +69,12 @@ requireText(recommendations, '"download_url"', 'direct download feed field');
 requireText(rsdwCache, 'data/items/json/RSDragonwilds', 'canonical RSDW item JSON source');
 requireText(rsdwCache, '/shared/icons/', 'canonical RSDW shared icon source');
 requireText(rsdwCache, 'persistence_id', 'canonical persistence identity');
-requireText(legacyService, 'custom_items=list((state.get("application") or {}).get("custom_items") or [])', 'custom items merged into server catalog');
-requireText(legacyService, '"custom-broadcast"', 'server-broadcast custom item icons');
-requireText(legacyService, '/api/v1/admin/item-icon/', 'authenticated item image endpoint');
+requireText(compatService, 'custom_items=list((state.get("application") or {}).get("custom_items") or [])', 'custom items merged into server catalog');
+requireText(compatService, '"custom-broadcast"', 'server-broadcast custom item icons');
+requireText(compatService, '/api/v1/admin/item-icon/', 'authenticated item image endpoint');
 requireText(directoryHost, 'action != "spawner_icon"', 'thumbnail requests excluded from audit flood');
-requireText(legacyService, 'if action == "spawner_catalog":', 'lazy authenticated WebGUI item catalog');
-requireText(legacyService, '"spawner": {"items": [], "categories": []', 'lightweight remote viewer bootstrap');
+requireText(compatService, 'if action == "spawner_catalog":', 'lazy authenticated WebGUI item catalog');
+requireText(compatService, '"spawner": {"items": [], "categories": []', 'lightweight remote viewer bootstrap');
 
 // The original WebHost platform icon packaging bug must remain permanently
 // covered both in PyInstaller data collection and the source/one-file resolver.

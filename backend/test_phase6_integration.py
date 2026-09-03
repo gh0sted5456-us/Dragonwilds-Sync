@@ -154,12 +154,16 @@ def test_dragonconnect_has_managed_bundle_version_and_canonical_helper_identity(
             status = direct_connect.status(root)
         finally:
             direct_connect.resolve_client_layout = old_layout
-        assert installed["logical_name"] == "DragonLink"
-        assert installed["physical_name"] == "DragonLink"
+        assert installed["logical_name"] == "DragonConnect"
+        assert installed["physical_name"] == "DragonConnect"
         assert status["installed"] and status["current"]
-        assert status["installed_version"].startswith("native-")
+        assert status["installed_version"].startswith("lua-")
         assert status["available_version"] == status["installed_version"]
-        assert (mods / direct_connect.MOD_NAME / direct_connect.MARKER_NAME).is_file()
+        assert status["source"] == "bundled-lua-core"
+        target = mods / direct_connect.MOD_NAME
+        assert (target / direct_connect.MARKER_NAME).is_file()
+        assert (target / "Scripts" / "main.lua").is_file()
+        assert not (target / "dlls").exists()
 
 
 def test_dragonconnect_config_maps_synced_game_mode_to_direct_world_type():
@@ -173,9 +177,10 @@ def test_dragonconnect_config_maps_synced_game_mode_to_direct_world_type():
             direct_connect.resolve_client_layout = lambda _root: fake
             creative = direct_connect.write_profile_config(
                 root, address="203.0.113.8:7777", server_type="creative")
-            config = (mods / direct_connect.MOD_NAME / "DragonLink.ini").read_text(encoding="utf-8")
+            config = (mods / direct_connect.MOD_NAME / "Scripts" / "config.lua").read_text(encoding="utf-8")
             assert creative["world_type"] == "creative"
-            assert "WorldType=creative" in config
+            assert "world_type = [[creative]]" in config
+            assert "address = [[203.0.113.8:7777]]" in config
             custom = direct_connect.write_profile_config(
                 root, address="203.0.113.8:7777", server_type="hardcore")
             assert custom["world_type"] == "custom"
@@ -294,7 +299,7 @@ def test_verified_launch_uses_verified_endpoint_and_receipts_actual_handoff():
         phase6._verified_sync_diagnostic = lambda *_a, **_k: (reusable, {"code": "verified", "reason": "test"})
         phase6._launch_verified_world = lambda *_a, **_k: {
             "result": {"launched": True, "direct_connect": {
-                "configured": True, "address": "203.0.113.9:7777", "path": "/DragonLink/DragonLink.ini"
+                "configured": True, "address": "203.0.113.9:7777", "path": "/DragonConnect/Scripts/config.lua"
             }}
         }
         response = phase6._run_world_operation(SimpleNamespace(load_state=lambda: {}), lambda *_a: None,
@@ -347,8 +352,9 @@ def test_source_registry_keeps_rsdwtools_and_toolkit_separate():
     assert registry["data"]["rsdwtools"]["repository"] == "RSDWArchive/RSDWTools"
     assert registry["data"]["rsdwtools"]["runtime_component"] is False
     assert registry["tooling"]["rsdw_toolkit"]["repository"] == "RSDWArchive/RSDWDevKit"
-    assert registry["core"]["dragonconnect"]["runtime_roles"] == ["server", "host", "client"]
-    assert registry["core"]["dragonconnect"]["physical_name"] == "DragonLink"
+    assert registry["core"]["dragonconnect"]["runtime_roles"] == ["client"]
+    assert registry["core"]["dragonconnect"]["physical_name"] == "DragonConnect"
+    assert registry["core"]["dragonconnect"]["technology"] == "ue4ss_lua"
 
 
 def test_background_sync_job_uses_verified_dispatcher():

@@ -17,6 +17,7 @@
   let storageCache = null;
   let openedProfile = null;
   let rewritePending = false;
+  const rememberedSelection = { local: '', server: '' };
 
   const text = (value) => String(value ?? '').trim();
   const safeProfileId = (value) => {
@@ -48,6 +49,12 @@
     const detachedId = text(kind === 'server' ? detachedContext.selectedServerWorldId : detachedContext.selectedWorldId);
     if (detachedId) {
       const found = rows.find((row) => text(row?.id) === detachedId);
+      if (found) return found;
+    }
+
+    const rememberedId = text(rememberedSelection[kind]);
+    if (rememberedId) {
+      const found = rows.find((row) => text(row?.id) === rememberedId);
       if (found) return found;
     }
 
@@ -251,6 +258,15 @@
     rewritePending = true;
     requestAnimationFrame(rewriteUi);
   }
+
+  document.addEventListener('click', (event) => {
+    const target = event.target?.closest?.('[data-server-manage], [data-server-card][data-world-id], [data-private-manage], [data-private-launch], [data-private-coop], [data-world-id]');
+    if (!target) return;
+    const serverId = text(target.dataset.serverManage || (target.dataset.serverCard === '1' ? target.dataset.worldId : ''));
+    if (serverId) rememberedSelection.server = serverId;
+    const localId = text(target.dataset.privateManage || target.dataset.privateLaunch || target.dataset.privateCoop || (target.dataset.serverCard === '0' ? target.dataset.worldId : ''));
+    if (localId) rememberedSelection.local = localId;
+  }, true);
 
   const observer = new MutationObserver(scheduleRewrite);
   observer.observe(document.documentElement, { childList: true, subtree: true });

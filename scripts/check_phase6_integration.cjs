@@ -66,7 +66,7 @@ if (registry.sources.dragonconnect.type !== 'bundled-lua-core') throw new Error(
 if (registry.sources.dragonconnect.bundled_fallback !== 'resources/NativeRuntimeMods/DragonConnect') throw new Error('DragonConnect Lua fallback is incorrect.');
 requireText(upstream, "'rsdw-toolkit'", 'offline/source UI knows Toolkit separately');
 requireText(upstream, 'Repair DragonConnect', 'central dependency panel DragonConnect repair');
-requireText(upstream, 'RSDWTools ≠ RSDW Toolkit', 'explicit UI taxonomy distinction');
+requireText(upstream, 'RSDWTools ≠ RSDW Dev Kit', 'explicit UI taxonomy distinction');
 rejectText(upstream, 'Repair DragonLink-Connect', 'retired native Connect terminology');
 
 requireText(html, 'release-phase6.css', 'Phase 6 stylesheet load');

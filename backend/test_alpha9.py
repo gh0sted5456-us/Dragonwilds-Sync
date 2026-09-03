@@ -131,9 +131,9 @@ def main():
     assert "automatically pushes this hidden control file" in renderer
     assert "Client Generates Last" not in renderer and "Server Pushes File" not in renderer
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
-    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    # dragonwilds_service_compat.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (ROOT / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
     assert 'write_client_mods_txt(install_dir, manifest)' in service
 
     print("alpha 9 dynamic mods.txt tests passed")

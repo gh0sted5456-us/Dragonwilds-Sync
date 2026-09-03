@@ -43,6 +43,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --disable-pip-version-check 'cryptography>=46,<47' psutil
           if [[ -f package-lock.json ]]; then
             npm ci --ignore-scripts
           else

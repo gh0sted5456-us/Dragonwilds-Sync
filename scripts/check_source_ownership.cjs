@@ -18,6 +18,7 @@ const bootstrap = read('electron/bootstrap.cjs');
 const main = read('electron/main.cjs');
 const electronMain = read('electron/main-v2.cjs');
 const rendererHtml = list('renderer', '.html').map((file) => read(`renderer/${file}`)).join('\n');
+const rendererAdapter = read('renderer/app.js');
 const websiteHtml = list('website', '.html').map((file) => read(`website/${file}`)).join('\n');
 
 if (packageJson.main !== 'electron/bootstrap.cjs') fail(`package main is unclassified: ${packageJson.main}`);
@@ -42,9 +43,11 @@ const referencedAssets = (text, extension) => new Set(
   [...text.matchAll(new RegExp(`["']([^"']+\\.${extension})(?:\\?[^"']*)?["']`, 'g'))]
     .map((row) => path.basename(row[1])),
 );
-const liveRendererScripts = referencedAssets(rendererHtml, 'js');
+// app.js is itself loaded by renderer HTML and synchronously selects the full
+// or Quick compatibility children. Treat its literal script references as live
+// ownership rather than maintaining a growing one-off allowlist here.
+const liveRendererScripts = referencedAssets(`${rendererHtml}\n${rendererAdapter}`, 'js');
 const liveRendererStyles = referencedAssets(rendererHtml, 'css');
-if (read('renderer/app.js').includes('app-v2.js')) liveRendererScripts.add('app-v2.js');
 for (const file of rendererScripts) if (!liveRendererScripts.has(file)) fail(`unowned renderer script: renderer/${file}`);
 for (const file of rendererStyles) if (!liveRendererStyles.has(file)) fail(`unowned renderer stylesheet: renderer/${file}`);
 

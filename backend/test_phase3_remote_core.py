@@ -208,7 +208,8 @@ def main() -> None:
     components = {row["id"]: row for row in payload["core_components"]}
     assert set(components) == {"ue4ss", "runeschema", "dragonconnect", "rsdw_toolkit"}
     assert components["runeschema"]["update_available"] is True
-    assert components["dragonconnect"]["name"] == "DragonLink"
+    assert components["dragonconnect"]["name"] == "DragonConnect"
+    assert components["dragonconnect"]["runtime_roles"] == ["client"]
     assert components["rsdw_toolkit"]["ui_group"] == "tooling"
 
     session = {

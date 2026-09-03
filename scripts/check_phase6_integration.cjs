@@ -8,9 +8,11 @@ const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 const phase6 = read('backend/phase6_integration.py');
 const secrets = read('backend/secret_store.py');
 const direct = read('backend/persistent_direct_connect.py');
+const dragonConnectLua = read('resources/NativeRuntimeMods/DragonConnect/Scripts/main.lua');
 const routing = read('backend/v2_remote_routing.py');
 const renderer = read('renderer/release-phase6.js');
 const app = read('renderer/app-v2.js');
+const receipt = read('renderer/connect-world-receipt.js');
 const upstream = read('renderer/upstream-sources.js');
 const registry = JSON.parse(read('docs/upstream-sources.json'));
 const html = read('renderer/index.html');
@@ -48,22 +50,28 @@ requireText(phase6, 'RSDWArchive/RSDWDevKit', 'Toolkit/DevKit authoritative sour
 requireText(phase6, 'RSDWArchive/RSDWTools', 'RSDWTools authoritative data source');
 requireText(routing, 'install_phase6_integrations', 'production V2 entrypoint installs Phase 6 adapters');
 
-requireText(direct, 'LOGICAL_NAME = "DragonLink"', 'logical DragonLink identity');
-requireText(direct, 'MOD_NAME = "DragonLink"', 'canonical physical DragonLink identity');
-requireText(direct, 'MARKER_NAME', 'managed DragonLink bundle marker');
-requireText(direct, 'dlls/DragonLink-Connect.dll', 'native Connect module');
-requireText(direct, 'def status(', 'DragonLink update/repair status');
+requireText(direct, 'LOGICAL_NAME = "DragonConnect"', 'logical DragonConnect identity');
+requireText(direct, 'MOD_NAME = "DragonConnect"', 'canonical physical DragonConnect identity');
+requireText(direct, 'REQUIRED_CLIENT_FILES = ("Scripts/main.lua", "enabled.txt")', 'Lua-only DragonConnect payload');
+requireText(direct, 'Scripts" / "config.lua', 'profile-scoped Lua config handoff');
+requireText(direct, 'def status(', 'DragonConnect update/repair status');
+requireText(dragonConnectLua, 'FindAllOf', 'Lua widget discovery');
+requireText(dragonConnectLua, 'FText(value)', 'Lua Direct Connect field hydration');
+rejectText(dragonConnectLua, '.dll', 'native DLL dependency');
 
 if (registry.sources.rsdwtools.runtime_component !== false) throw new Error('RSDWTools must remain data-only in the source registry.');
 if (registry.sources['rsdw-toolkit'].repository !== 'RSDWArchive/RSDWDevKit') throw new Error('RSDW Toolkit must use RSDWArchive/RSDWDevKit.');
-if (!['client','server','host'].every((role)=>registry.sources.dragonconnect.runtime_roles.includes(role))) throw new Error('DragonConnect source registry must cover host and client baselines.');
-if (registry.sources.dragonconnect.bundled_fallback !== 'resources/NativeRuntimeMods/DragonLink') throw new Error('DragonLink native suite fallback is incorrect.');
+if (JSON.stringify(registry.sources.dragonconnect.runtime_roles) !== JSON.stringify(['client'])) throw new Error('DragonConnect must be client-only.');
+if (registry.sources.dragonconnect.type !== 'bundled-lua-core') throw new Error('DragonConnect must be represented as a bundled Lua Core.');
+if (registry.sources.dragonconnect.bundled_fallback !== 'resources/NativeRuntimeMods/DragonConnect') throw new Error('DragonConnect Lua fallback is incorrect.');
 requireText(upstream, "'rsdw-toolkit'", 'offline/source UI knows Toolkit separately');
-requireText(upstream, 'Repair DragonLink-Connect', 'central dependency panel DragonLink-Connect repair');
+requireText(upstream, 'Repair DragonConnect', 'central dependency panel DragonConnect repair');
 requireText(upstream, 'RSDWTools ≠ RSDW Toolkit', 'explicit UI taxonomy distinction');
+rejectText(upstream, 'Repair DragonLink-Connect', 'retired native Connect terminology');
 
 requireText(html, 'release-phase6.css', 'Phase 6 stylesheet load');
 requireText(html, 'release-phase6.js', 'Phase 6 renderer load');
+requireText(html, 'connect-world-receipt.js', 'connection receipt correction layer');
 requireText(renderer, 'data-phase6-settings-community', 'Settings → Community navigation');
 requireText(renderer, 'application.communities.list', 'cached Community load');
 requireText(renderer, 'application.communities.settings', 'Community source persistence');
@@ -78,6 +86,10 @@ requireText(css, '.phase6-integration-summary', 'final integration status stylin
 requireText(app, 'ENTER_WITH_INCOMPLETE_SYNC', 'explicit incomplete-Sync acknowledgement');
 requireText(app, '>Backout</button><button class="btn danger" id="enter-incomplete-sync">Enter</button>', 'Enter / Backout mismatch confirmation');
 requireText(app, 'Stability may be compromised', 'incomplete-Sync stability warning');
+requireText(receipt, 'World Type', 'connection receipt World Type');
+requireText(receipt, 'Game Mode', 'connection receipt Game Mode');
+requireText(receipt, 'Password required · not saved', 'protected-world password state');
+rejectText(receipt, 'Lua ready', 'implementation status jargon');
 
 // The final handoff must never introduce another runtime/process authority.
 rejectText(phase6, 'subprocess.Popen(', 'new direct subprocess lifecycle');

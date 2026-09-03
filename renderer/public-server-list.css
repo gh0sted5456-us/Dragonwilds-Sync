@@ -1,21 +1,21 @@
 /* Official Public Server List workspace for the desktop application. */
-.dws-public-server-panel{display:block;margin:14px 0 0;padding:14px;border:1px solid var(--border,#2b3134);border-radius:14px;background:var(--panel,#111516)}
-.dws-public-server-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:12px}
+.dws-public-server-panel{display:flex;flex-direction:column;margin:14px 0 0;padding:14px;border:1px solid var(--border,#2b3134);border-radius:14px;background:var(--panel,#111516);max-height:calc(100vh - 245px);overflow:hidden;min-height:0}
+.dws-public-server-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:12px;flex:0 0 auto}
 .dws-public-server-head h2{margin:2px 0 4px;font-size:18px}
 .dws-public-server-head p{margin:0;color:var(--muted,#88918f);font-size:10px;line-height:1.5;max-width:760px}
 .dws-public-server-status{display:inline-flex;align-items:center;gap:7px;padding:6px 9px;border:1px solid var(--border,#303638);border-radius:999px;color:var(--muted,#9aa19e);font-size:9px;font-weight:800;white-space:nowrap}
 .dws-public-server-status.ok{color:#85d6a6;border-color:rgba(78,180,116,.35);background:rgba(78,180,116,.08)}
 .dws-public-server-status.error{color:#e79a95;border-color:rgba(215,98,89,.35);background:rgba(215,98,89,.08)}
-.dws-public-server-controls{display:grid;grid-template-columns:auto minmax(260px,1fr) auto;gap:8px;align-items:end;margin-bottom:10px}
+.dws-public-server-controls{display:grid;grid-template-columns:auto minmax(260px,1fr) auto;gap:8px;align-items:end;margin-bottom:10px;flex:0 0 auto}
 .dws-public-server-controls label{display:grid;gap:4px}
 .dws-public-server-controls label>small{color:var(--muted,#8b9491);font-size:8px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
 .dws-public-server-controls input{min-height:38px}
 .dws-public-view-toggle{display:flex;gap:4px;padding:3px;border:1px solid var(--border,#303638);border-radius:9px;background:rgba(255,255,255,.025)}
 .dws-public-view-toggle button{min-height:32px;padding:0 9px;border:0;border-radius:7px;background:transparent;color:var(--muted,#8b9491);font-size:9px;font-weight:800;cursor:pointer}
 .dws-public-view-toggle button.active{background:var(--surface-2,#252b2d);color:var(--text,#f2f3f1)}
-.dws-public-server-summary{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:7px 0 12px;color:var(--muted,#8b9491);font-size:9px}
+.dws-public-server-summary{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:7px 0 12px;color:var(--muted,#8b9491);font-size:9px;flex:0 0 auto}
 .dws-public-server-summary b{color:var(--text,#f1f2ef)}
-.dws-public-server-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;max-height:62vh;overflow:auto;padding:2px}
+.dws-public-server-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:10px;overflow:auto;padding:2px;min-height:150px;flex:1 1 auto;scrollbar-gutter:stable;overscroll-behavior:contain}
 .dws-public-server-results.horizontal{grid-template-columns:1fr}
 .dws-public-server-card{position:relative;display:grid;gap:9px;padding:13px;border:1px solid var(--border,#303638);border-radius:12px;background:linear-gradient(180deg,rgba(29,35,36,.96),rgba(17,21,22,.98));color:var(--text,#f2f3f1);min-width:0}
 .dws-public-server-results.horizontal .dws-public-server-card{grid-template-columns:minmax(220px,1.1fr) minmax(180px,.8fr) minmax(220px,1fr);align-items:center;gap:14px;min-height:96px}
@@ -35,9 +35,14 @@
 .dws-public-server-tags{display:flex;gap:5px;flex-wrap:wrap;min-width:0}
 .dws-public-server-route{color:#9fa8a4;font-size:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .dws-public-empty{padding:26px;text-align:center;border:1px dashed var(--border,#303638);border-radius:12px;color:var(--muted,#8b9491);font-size:10px}
-.dws-public-server-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;color:var(--muted,#8b9491);font-size:9px}
+.dws-public-server-pagination{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:10px;color:var(--muted,#8b9491);font-size:9px;flex:0 0 auto}
 .dws-public-server-pagination[hidden]{display:none}
 .dws-public-server-pagination button{min-width:88px}
 .dws-public-server-pagination button:disabled{cursor:not-allowed;opacity:.45}
-@media(max-width:1050px){.dws-public-server-controls{grid-template-columns:1fr auto}.dws-public-server-controls .dws-public-search-wrap{grid-column:1}.dws-public-view-toggle{grid-column:2}.dws-public-server-results.horizontal .dws-public-server-card{grid-template-columns:1fr 1fr}}
-@media(max-width:720px){.dws-public-server-head{display:block}.dws-public-server-status{margin-top:8px}.dws-public-server-controls{display:grid;grid-template-columns:1fr}.dws-public-view-toggle{grid-column:1}.dws-public-server-results,.dws-public-server-results.horizontal{grid-template-columns:1fr}.dws-public-server-results.horizontal .dws-public-server-card{display:grid;grid-template-columns:1fr}.dws-public-server-results{max-height:none}}
+.dws-public-connect-dialog{width:min(520px,calc(100vw - 36px));border:1px solid var(--border,#303638);border-radius:14px;background:var(--panel,#111516);color:var(--text,#f2f3f1);padding:0;box-shadow:0 22px 70px rgba(0,0,0,.55)}
+.dws-public-connect-dialog::backdrop{background:rgba(0,0,0,.68)}
+.dws-public-connect-dialog form{display:grid;gap:14px;padding:18px}.dws-public-connect-dialog h3{margin:0;font-size:18px}.dws-public-connect-dialog p{margin:0;color:var(--muted,#9aa19e);font-size:10px;line-height:1.5}.dws-public-connect-dialog label{display:grid;gap:6px;font-size:9px;font-weight:800}.dws-public-connect-dialog .dws-public-connect-actions{display:flex;justify-content:flex-end;gap:8px}
+/* World Profiles / Connected Worlds already own a Connect-to-a-World placard. Keep the view toggle, suppress only the superseded header action. */
+.content:has(#add-world-card) .page-header .header-actions>[data-open-connect-world]{display:none!important}
+@media(max-width:1050px){.dws-public-server-controls{grid-template-columns:1fr auto}.dws-public-server-controls .dws-public-search-wrap{grid-column:1}.dws-public-view-toggle{grid-column:2}.dws-public-server-results.horizontal .dws-public-server-card{grid-template-columns:1fr 1fr}.dws-public-server-panel{max-height:calc(100vh - 225px)}}
+@media(max-width:720px){.dws-public-server-head{display:block}.dws-public-server-status{margin-top:8px}.dws-public-server-controls{display:grid;grid-template-columns:1fr}.dws-public-view-toggle{grid-column:1}.dws-public-server-results,.dws-public-server-results.horizontal{grid-template-columns:1fr}.dws-public-server-results.horizontal .dws-public-server-card{display:grid;grid-template-columns:1fr}.dws-public-server-panel{max-height:none;overflow:visible}.dws-public-server-results{max-height:none;min-height:0}}

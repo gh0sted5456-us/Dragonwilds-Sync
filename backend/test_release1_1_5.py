@@ -52,9 +52,9 @@ def test_character_save_and_external_recommendation_contract():
 
 def test_portable_item_manifest_replaces_runtime_companion():
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
-    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    # dragonwilds_service_compat.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (ROOT / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert 'application.custom_items.discover' in service
     assert 'dragonwilds-sync-items.json' in service and '*.dwsync-items.json' in service
@@ -113,9 +113,9 @@ def test_admin_relaunch_and_rsdw_toolkit_contracts():
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "ADMINISTRATOR MODE" in renderer and "STANDARD MODE" in renderer
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
-    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    # dragonwilds_service_compat.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (ROOT / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
     assert "First-run adoption" in service and 'client_state["live_world_id"] = profile_id' in service
     sync_engine = (ROOT / "backend" / "sync_engine.py").read_text(encoding="utf-8")
     local_world = (ROOT / "backend" / "local_world.py").read_text(encoding="utf-8")

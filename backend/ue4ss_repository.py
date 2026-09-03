@@ -12,16 +12,9 @@ from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile
 from server_systems import BUNDLED_UE4SS_RESOURCE, DEFAULT_UE4SS_RELEASES_URL, _bundled_app_resource, download_runtime_zip
 
 
-# Mirrors runeschema_flavors.py's shape (list/import/select/delete over a
-# small metadata registry plus stored ZIPs) but is deliberately app-level,
-# not per-World: the user's own words were "it'll download into a
-# repository of the application" -- UE4SS builds are identical bytes
-# regardless of which World runs them, so downloading/importing once and
-# letting every World point at the same stored archive avoids duplicate
-# copies. What *is* per-World (mirroring RuneSchema flavors) is which
-# stored version a given World has selected as active -- see
-# select_version()/profile["ue4ss_active_version_id"] and
-# server_engine._apply_profile_ue4ss, which actually materializes it.
+# UE4SS builds are stored once at the application level and selected per World.
+# The packaged build is an immutable recovery point; every distinct downloaded
+# or imported ZIP is retained by SHA-256 for rollback, repair, and comparison.
 BASELINE_ID = "baseline"
 BASELINE_VERSION = "v3.0.1-941-g0bfec09e-Dragonwilds-5.6"
 BASELINE_SHA256 = "10c8b7350177b28aad5e6371bece2347d501dd1b58f9949c512ae6aee0e0b3a8"
@@ -58,11 +51,7 @@ def _validate_ue4ss_zip(path: Path) -> list[str]:
 
 
 def _sniff_version(path: Path, names: list[str]) -> str:
-    """Best-effort version string -- RE-UE4SS's own git-describe-style tag
-    (e.g. v3.0.1-946-g265115c). Tries the archive's own single wrapper folder
-    name first (RE-UE4SS releases are shaped "UE4SS_v3.0.1-1028-gXXXXXXXX/..."),
-    then falls back to a readme/changelog inside the archive. Returns "" rather
-    than guessing when nothing is found."""
+    """Best-effort upstream git-describe version from wrapper/readme names."""
     wrappers = {parts[0] for name in names if (parts := name.split("/")) and len(parts) > 1}
     for wrapper in wrappers:
         match = _VERSION_PATTERN.search(wrapper)
@@ -101,9 +90,15 @@ def list_versions(state: dict | None = None) -> dict:
     state = state if state is not None else load_state()
     bundled = _bundled_app_resource(*BUNDLED_UE4SS_RESOURCE)
     versions = [{
-        "id": BASELINE_ID, "label": f"Official Baseline · {BASELINE_VERSION}", "kind": "baseline", "version": BASELINE_VERSION,
-        "available": bundled.is_file(), "size": bundled.stat().st_size if bundled.is_file() else 0,
-        "source": "Bundled with Dragonwilds Sync", "sha256": BASELINE_SHA256, "added_at": 0,
+        "id": BASELINE_ID,
+        "label": f"Stable Packaged Build · {BASELINE_VERSION}",
+        "kind": "baseline",
+        "version": BASELINE_VERSION,
+        "available": bundled.is_file(),
+        "size": bundled.stat().st_size if bundled.is_file() else 0,
+        "source": "Packaged with Dragonwilds Sync",
+        "sha256": BASELINE_SHA256,
+        "added_at": 0,
     }]
     kept_rows = []
     changed = False
@@ -142,7 +137,9 @@ def _store(state: dict, source: Path, *, kind: str, label: str, version: str,
             existing["published_at"] = published_at
         _set_rows(state, rows)
         save_state(state)
-        return list_versions(state)
+        result = list_versions(state)
+        result["selected_id"] = str(existing.get("id") or "")
+        return result
     version_id = secrets.token_hex(6)
     filename = f"{version_id}.zip"
     shutil.copy2(source, _repo_dir() / filename)
@@ -153,7 +150,9 @@ def _store(state: dict, source: Path, *, kind: str, label: str, version: str,
     })
     _set_rows(state, rows)
     save_state(state)
-    return list_versions(state)
+    result = list_versions(state)
+    result["selected_id"] = version_id
+    return result
 
 
 def import_version(state: dict, source_path: str, label: str = "") -> dict:
@@ -168,20 +167,24 @@ def import_version(state: dict, source_path: str, label: str = "") -> dict:
 
 
 def fetch_experimental(state: dict, source_url: str = "") -> dict:
-    """Download the latest release asset from the configured GitHub source
-    (default: upstream RE-UE4SS's own experimental-latest tag) and add it as
-    a new, distinctly versioned repository entry -- never overwrites a
-    previously downloaded build, matching "keep them and select/delete/load
-    prior entries"."""
+    """Download the current upstream UE4SS build and retain it by SHA-256.
+
+    Older distinct builds are never overwritten, so every successful fetch can
+    be selected again for repair or rollback.
+    """
     state = state if state is not None else load_state()
     url = str(source_url or "").strip() or DEFAULT_UE4SS_RELEASES_URL
     zip_path, resolved, temp = download_runtime_zip(url, prefer_contains=("ue4ss",))
     try:
+        filename = str(resolved.get("filename") or "")
+        if filename.casefold().startswith("zdev-") or filename.casefold().startswith("zcustom") or filename.casefold().startswith("zmap"):
+            raise ValueError(f"The resolved UE4SS asset is not the normal runtime package: {filename}")
         names = _validate_ue4ss_zip(zip_path)
-        version = str(resolved.get("release_tag") or "").strip() or _sniff_version(zip_path, names) \
-            or Path(str(resolved.get("filename") or "")).stem
-        label = version or "Experimental"
-        return _store(state, zip_path, kind="experimental", label=label, version=version,
+        version = str(resolved.get("release_tag") or "").strip()
+        if not version or version == "experimental-latest":
+            version = _sniff_version(zip_path, names) or Path(filename or "UE4SS").stem
+        label = version or "Downloaded UE4SS"
+        return _store(state, zip_path, kind="downloaded", label=label, version=version,
                       source_label=str(resolved.get("download_url") or url),
                       published_at=str(resolved.get("published_at") or ""))
     finally:
@@ -212,8 +215,6 @@ def _reassign_worlds(version_ids: set[str]) -> list[str]:
         if not profile or str(profile.get("ue4ss_active_version_id") or BASELINE_ID) not in version_ids:
             continue
         profile["ue4ss_active_version_id"] = BASELINE_ID
-        # Client archive selections belong to the exact build and must not
-        # survive after its repository ZIP is removed.
         selections = profile.get("runtime_client_selections")
         policy = selections.get("ue4ss") if isinstance(selections, dict) else None
         if isinstance(policy, dict) and str(policy.get("build_id") or "") in version_ids:
@@ -226,15 +227,14 @@ def _reassign_worlds(version_ids: set[str]) -> list[str]:
 def delete_version(state: dict, version_id: str) -> dict:
     state = state if state is not None else load_state()
     if not version_id or version_id == BASELINE_ID:
-        raise ValueError("The bundled Baseline build cannot be deleted.")
+        raise ValueError("The Stable Packaged Build cannot be deleted.")
     rows = _rows(state)
     target = next((row for row in rows if str(row.get("id")) == str(version_id)), None)
     if not target:
         raise KeyError("UE4SS repository version not found")
     in_use = _worlds_using(version_id)
     if in_use:
-        raise ValueError(f"This build is the active UE4SS version for: {', '.join(in_use)}. "
-                          "Switch those Worlds to a different build first.")
+        raise ValueError(f"This build is the active UE4SS version for: {', '.join(in_use)}. Switch those Worlds to a different build first.")
     archive = (_repo_dir() / str(target.get("archive") or "")).resolve()
     if _repo_dir().resolve() in archive.parents:
         archive.unlink(missing_ok=True)
@@ -244,14 +244,13 @@ def delete_version(state: dict, version_id: str) -> dict:
 
 
 def delete_versions(state: dict, version_ids: list[str], *, reassign_active: bool = False) -> dict:
-    """Delete several unused local builds as one validated operation."""
     state = state if state is not None else load_state()
     requested = list(dict.fromkeys(str(item or "").strip() for item in version_ids))
     requested = [item for item in requested if item]
     if not requested:
         raise ValueError("Select at least one UE4SS build to delete.")
     if BASELINE_ID in requested:
-        raise ValueError("The bundled Baseline build cannot be deleted.")
+        raise ValueError("The Stable Packaged Build cannot be deleted.")
     rows = _rows(state)
     known = {str(row.get("id")): row for row in rows if isinstance(row, dict)}
     missing = [item for item in requested if item not in known]
@@ -276,7 +275,7 @@ def delete_versions(state: dict, version_ids: list[str], *, reassign_active: boo
 def rename_version(state: dict | None, version_id: str, nickname: str) -> dict:
     state = state if state is not None else load_state()
     if not version_id or version_id == BASELINE_ID:
-        raise ValueError("The bundled Baseline nickname cannot be changed.")
+        raise ValueError("The Stable Packaged Build name cannot be changed.")
     label = _clean_label(nickname)
     if not label:
         raise ValueError("Enter a nickname for this UE4SS build.")
@@ -291,11 +290,10 @@ def rename_version(state: dict | None, version_id: str, nickname: str) -> dict:
 
 
 def resolve_archive(version_id: str) -> Path:
-    """Return the installable ZIP path for a stored/baseline version id."""
     if version_id == BASELINE_ID:
         bundled = _bundled_app_resource(*BUNDLED_UE4SS_RESOURCE)
         if not bundled.is_file():
-            raise FileNotFoundError("The bundled UE4SS baseline package is unavailable in this build.")
+            raise FileNotFoundError("The packaged UE4SS stable build is unavailable in this launcher build.")
         return bundled
     state = load_state()
     row = next((r for r in _rows(state) if str(r.get("id")) == str(version_id)), None)
@@ -308,10 +306,6 @@ def resolve_archive(version_id: str) -> Path:
 
 
 def select_version(state: dict, profile_id: str, version_id: str) -> tuple[dict, dict]:
-    """Record which repository entry a World should use next apply. Does not
-    install anything -- server_engine._apply_profile_ue4ss (called at
-    publish/launch time, mirroring _apply_profile_runeschema) materializes
-    it, immediately if this World is the currently active one."""
     status = list_versions(state)
     selected = next((row for row in status["versions"] if str(row["id"]) == str(version_id)), None)
     if not selected:

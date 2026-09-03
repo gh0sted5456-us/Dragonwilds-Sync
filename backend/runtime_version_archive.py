@@ -55,6 +55,21 @@ def _download_filename(row: dict, archive: Path) -> str:
     return filename or str(row.get("version") or row.get("label") or archive.name)
 
 
+def _called_from(function_name: str, limit: int = 16) -> bool:
+    """Recognize retained compatibility callers without changing their public RPCs."""
+    try:
+        frame = sys._getframe(1)
+    except ValueError:
+        return False
+    for _ in range(max(1, int(limit))):
+        if frame is None:
+            break
+        if str(frame.f_code.co_name) == str(function_name):
+            return True
+        frame = frame.f_back
+    return False
+
+
 def _record_active_server_selection(component: str, version_id: str, game_root: str) -> None:
     """Keep the selected World aligned with a Core version installed by an old update RPC."""
     import profile_store
@@ -109,8 +124,10 @@ def restore_packaged_runeschema_once(game_root: str) -> dict:
     restored = [str(item) for item in (install.get("packaged_runeschema_restored_roots") or []) if str(item)]
     layout = server_systems.resolve_server_layout(game_root)
     main_dll = layout.runeschema_root / "dlls" / "main.dll"
+    stable_name = "Stable Packaged Build · RuneSchema Launcher Base"
     if root_key in restored and main_dll.is_file():
         return {"ok": True, "changed": False, "source": "Stable Packaged Build",
+                "filename": stable_name,
                 "version_id": runeschema_repository.BASELINE_ID, "archive": str(archive)}
 
     result = server_systems.install_runeschema_zip(str(archive), game_root, role="server")
@@ -118,12 +135,13 @@ def restore_packaged_runeschema_once(game_root: str) -> dict:
     install = state.setdefault("application", {}).setdefault("server_install", {})
     restored = [str(item) for item in (install.get("packaged_runeschema_restored_roots") or []) if str(item)]
     install["runeschema_source_url"] = "bundled://RuneSchema-core-latest.zip"
-    install["runeschema_source_name"] = "Stable Packaged Build · RuneSchema Launcher Base"
+    install["runeschema_source_name"] = stable_name
     install["runeschema_installed_at"] = time.time()
     install["runeschema_version_id"] = runeschema_repository.BASELINE_ID
     install["packaged_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
     profile_store.save_state(state)
     return {**result, "ok": True, "changed": True, "source": "Stable Packaged Build",
+            "filename": stable_name,
             "version_id": runeschema_repository.BASELINE_ID, "archive": str(archive)}
 
 
@@ -159,6 +177,13 @@ def archived_client_ue4ss_update(download_url: str, game_root: str, timeout: flo
 def archived_authoritative_runeschema_update(source_url: str, game_root: str, timeout: float = 90.0,
                                               *, role: str = "server") -> dict:
     del timeout
+    # server_engine retains this historical function name for old profiles. Its
+    # "official" branch now means the immutable packaged Stable Build, while an
+    # explicit update action still comes through this adapter outside that
+    # compatibility caller and therefore downloads/archives GitHub normally.
+    if str(role or "server").strip().casefold() == "server" and _called_from("_restore_official_runeschema_once"):
+        return restore_packaged_runeschema_once(game_root)
+
     import server_systems
     version_id, archive, row = _archive_runeschema(source_url)
     result = server_systems.install_runeschema_zip(str(archive), game_root, role=role)

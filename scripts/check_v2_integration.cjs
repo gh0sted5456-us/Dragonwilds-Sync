@@ -13,7 +13,7 @@ const trashUi = read('renderer/release-v2-trash.js');
 const web = read('backend/directory_web.py');
 const service = read('backend/dragonwilds_service.py');
 const v2Service = read('backend/dragonwilds_service_v2_wrapper.py');
-const legacyService = read('backend/dragonwilds_service_legacy.py');
+const compatService = read('backend/dragonwilds_service_compat.py');
 const routing = read('backend/v2_remote_routing.py');
 const cache = read('backend/rsdw_cache.py');
 const spawner = read('backend/spawner_catalog.py');
@@ -30,7 +30,7 @@ must(css.includes('data-dws-icon-mode="color"') && css.includes('data-dws-icon-m
 must(js.includes('data-webhost-tab="remote"') && js.includes("remoteTab.textContent!=='Server Management'") && js.includes('Remote Server Manager') && js.includes('remoteEnabled') && js.includes('webHostActivated'), 'Integrated Sync Remote Server Manager contract is missing');
 must(js.includes('remoteTab.hidden=false') && js.includes("remoteTab.style.removeProperty('display')") && !js.includes('remoteTab.hidden=!remoteEnabled'), 'Server Management must remain visible while disabled so setup does not flicker away');
 must(appV2.includes("api.invoke('world.discovery.add'") && appV2.includes("api.invoke('world.status',{id:world.id,compact:true}") && appV2.includes("api.invoke('world.directory.refresh', {compact:true}") && !appV2.includes('await prefetchVisibleWorldPresentation();'), 'Discovery profiles and background refreshes must use the durable compact lifecycle');
-must(legacyService.includes('Discovery is a read-only client operation') && !legacyService.includes('apply_firewall_spec(discovery_spec, action="Query")'), 'LAN scan must not elevate or mutate the Linux firewall');
+must(compatService.includes('Discovery is a read-only client operation') && !compatService.includes('apply_firewall_spec(discovery_spec, action="Query")'), 'LAN scan must not elevate or mutate the Linux firewall');
 must(js.includes('Users & Permissions') && js.includes('application.world_directory_host.user.create'), 'Remote Server user/permission manifest is not surfaced in WebHost');
 must(appV2.includes("#toggle-webhost-remote-admin") && appV2.includes("application.advanced.settings',{remote_server_enabled:!enabled}"), 'Remote Server lifecycle is not owned by the primary renderer');
 must(directoryHost.indexOf('if remote_enabled:') < directoryHost.indexOf('if self._private_console_allowed(): page = _admin_console_html'), 'V3 WebGUI root must resolve to login before local private-console authority');
@@ -41,7 +41,7 @@ must(appV2.includes("syncTabLabels={settings:'Website &amp; Directory',manifest:
   appV2.includes("syncTab('settings')") && appV2.includes("syncTab('manifest')") &&
   appV2.includes("syncTab('remote')") && appV2.includes("syncTab('live')"),
   'Sync must expose configuration, heartbeat, Remote Server, and preview tabs');
-must(legacyService.includes('host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))') && !legacyService.includes('advanced["remote_server_enabled"] = True\n                advanced["remote_server_choice_made"] = True'), 'Webhost must not silently enable Remote Login');
+must(compatService.includes('host["enabled"] = webhost_enabled or bool(advanced.get("remote_server_enabled", False))') && !compatService.includes('advanced["remote_server_enabled"] = True\n                advanced["remote_server_choice_made"] = True'), 'Webhost must not silently enable Remote Login');
 must(web.includes('WebHost only resolves the active heartbeat') && web.includes('remote_management') && web.includes('admin/login'), 'External WebHost Remote Server router is missing');
 must(!web.includes('dws-router-password'), 'The routing hub must never collect a target server password');
 must(v2Service.includes('_legacy_handle = _legacy.handle'), 'V2 service wrapper must preserve the original handler before patching recursion');

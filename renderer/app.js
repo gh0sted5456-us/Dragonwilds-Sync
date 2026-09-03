@@ -6,6 +6,7 @@
   const quick = context.enabled === true || query.get('quick') === '1' || query.get('minimal') === '1';
   if (quick) {
     document.documentElement.dataset.v3Quick = '1';
+    document.write('<script src="release-quick-game-handoff.js?v=3.5.1-game-handoff"><\\/script>');
     return;
   }
   // Full mode executes the exact previously verified renderer synchronously so

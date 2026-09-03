@@ -35,20 +35,40 @@ const server=http.createServer((request,response)=>{
   catch(_){response.writeHead(404);response.end();}
 });
 
+function renderedValidation(dom){
+  const status=(String(dom||'').match(/<html[^>]*\bdata-validation=["'](pass|fail)["']/i)||[])[1]||'';
+  const raw=(String(dom||'').match(/<output[^>]*id=["']validation-result["'][^>]*>([\s\S]*?)<\/output>/i)||[])[1]||'';
+  const detail=raw.replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
+  return status?{status:status.toLowerCase(),detail}:null;
+}
+
 function runCase(testCase,port){
   return new Promise((resolve,reject)=>{
     const screenshot=path.join(outputDir,`world-cards-${testCase.name}.png`);
     const profile=fs.mkdtempSync(path.join(os.tmpdir(),'dwsync-gui-'));
-    let settled=false,stderr='';
-    const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);pending.delete(testCase.name);error?reject(error):resolve(value);};
-    const timer=setTimeout(()=>finish(new Error(`${testCase.name}: browser did not return a layout result`)),20000);
-    pending.set(testCase.name,(validation)=>validation.status==='pass'?finish(null,{screenshot,detail:validation.detail}):finish(new Error(`${testCase.name}: ${validation.detail||'layout failed'}`)));
+    let settled=false,stderr='',stdout='';
+    const cleanup=()=>{try{fs.rmSync(profile,{recursive:true,force:true});}catch(_){}};
+    const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);pending.delete(testCase.name);cleanup();error?reject(error):resolve(value);};
+    const accept=(validation)=>validation?.status==='pass'
+      ? finish(null,{screenshot,detail:validation.detail||'PASS'})
+      : finish(new Error(`${testCase.name}: ${validation?.detail||'layout failed'}`));
+    const timer=setTimeout(()=>finish(new Error(`${testCase.name}: browser did not return a layout result${stderr?` · ${stderr.slice(-800)}`:''}`)),30000);
+    pending.set(testCase.name,accept);
     const fixture=testCase.fixture||'scripts/fixtures/world_cards.html';
     const url=`http://127.0.0.1:${port}/${fixture}?theme=${encodeURIComponent(testCase.theme)}&case=${encodeURIComponent(testCase.name)}`;
-    const child=spawn(browser,['--headless=new','--disable-gpu','--hide-scrollbars','--run-all-compositor-stages-before-draw','--virtual-time-budget=1500',`--window-size=${testCase.width},${testCase.height}`,`--user-data-dir=${profile}`,`--screenshot=${screenshot}`,url],{windowsHide:true});
+    const args=['--headless=new','--disable-gpu','--hide-scrollbars','--run-all-compositor-stages-before-draw','--virtual-time-budget=2500','--dump-dom',`--window-size=${testCase.width},${testCase.height}`,`--user-data-dir=${profile}`,`--screenshot=${screenshot}`,url];
+    if(process.env.CI==='true'&&process.platform!=='win32')args.unshift('--no-sandbox');
+    const child=spawn(browser,args,{windowsHide:true});
+    child.stdout.on('data',(chunk)=>{stdout+=String(chunk);});
     child.stderr.on('data',(chunk)=>{stderr+=String(chunk);});
     child.on('error',(error)=>finish(error));
-    child.on('exit',(code)=>{if(code&&code!==0)finish(new Error(stderr||`${testCase.name}: browser exited ${code}`));});
+    child.on('exit',(code)=>{
+      if(settled)return;
+      if(code&&code!==0)return finish(new Error(stderr||`${testCase.name}: browser exited ${code}`));
+      const rendered=renderedValidation(stdout);
+      if(rendered)return accept(rendered);
+      finish(new Error(`${testCase.name}: browser exited without a rendered validation result${stderr?` · ${stderr.slice(-800)}`:''}`));
+    });
   });
 }
 

@@ -7,10 +7,18 @@
   <title>Dragonwilds Sync Quick</title>
   <link rel="stylesheet" href="styles.css?v=3.5.0-quick-dashboard-1" />
   <link rel="stylesheet" href="release-v3-phase2.css?v=3.5.0-quick-dashboard-1" />
-  <link rel="stylesheet" href="release-quick-window.css?v=3.5.0-quick-dashboard-1" />
+  <link rel="stylesheet" href="release-quick-window.css?v=3.5.0-quick-dashboard-2" />
+  <style>
+    /* DragonConnect is launcher-owned client infrastructure, not a hosted-server
+       Quick workspace. Keep the retired DragonLink control surface out of the UI
+       while compatibility data remains readable by older profile state. */
+    .v3q-section-tabs [data-v3q-section="dragonlink"] { display: none !important; }
+    .v3q-autostart > span { display: grid; gap: 2px; }
+    .v3q-autostart small { display: block; line-height: 1.2; }
+  </style>
 </head>
 <body class="v3-quick-body">
   <div id="app" class="v3q-root"></div>
-  <script src="release-v3-phase2.js?v=3.5.0-quick-dashboard-1"></script>
+  <script src="release-v3-phase2.js?v=3.5.0-quick-dashboard-2"></script>
 </body>
 </html>

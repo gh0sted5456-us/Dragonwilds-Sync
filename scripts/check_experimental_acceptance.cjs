@@ -29,13 +29,13 @@ const bootstrap = read('electron/bootstrap.cjs');
 const main = read('electron/main.cjs');
 const mainV2 = read('electron/main-v2.cjs');
 const service = read('backend/dragonwilds_service.py');
-const legacyService = read('backend/dragonwilds_service_legacy.py');
+const compatService = read('backend/dragonwilds_service_compat.py');
 const runtimeManager = read('backend/runtime_manager.py');
 const runtimeWorkerSupervisor = read('backend/worker_supervisor.py');
 const runtimeVersions = read('backend/runtime_versions.py');
 const managedUpdates = read('backend/managed_updates.py');
 const directoryHost = read('backend/directory_host.py');
-const directoryWeb = read('backend/directory_web_legacy.py');
+const directoryWeb = read('backend/directory_web_compat.py');
 const serverSystems = read('backend/server_systems.py');
 const serverEngine = read('backend/server_engine.py');
 const syncEngine = read('backend/sync_engine.py');
@@ -135,7 +135,7 @@ requireText(service, 'updates["game"] = {', 'unified client update state');
 requireText(service, 'updates["server"] = {', 'unified server update state');
 requireText(service, '"action": "Open Steam to update safely"', 'client update action');
 requireText(service, 'RUNTIME.update(profile_id, lambda: _legacy_handle("server.install.update"', 'server-only SteamCMD lifecycle');
-requireText(legacyService, 'install_dedicated_server(install_dir, steamcmd_dir)', 'managed dedicated SteamCMD install/update');
+requireText(compatService, 'install_dedicated_server(install_dir, steamcmd_dir)', 'managed dedicated SteamCMD install/update');
 requireText(serverSystems, '"+app_update", DEDICATED_STEAM_APP_ID, "validate"', 'SteamCMD dedicated update command');
 requireText(serverSystems, '"output": output[-4000:]', 'SteamCMD streamed success output');
 requireText(steamcmdTest, 'CLIENT_STEAM_APP_ID not in command', 'SteamCMD never targets retail client');
@@ -152,8 +152,8 @@ requireText(postVerifyTest, 'test_build_mismatch_blocks_restart_contract', 'Stea
 // Desktop and authenticated WebGUI command the same runtime operations.
 for (const method of ['server.runtime.start', 'server.runtime.stop', 'server.runtime.restart', 'server.runtime.update', 'server.runtime.update_restart']) requireText(service, method, `service RPC ${method}`);
 requireText(directoryHost, '"start": "start", "stop": "stop", "restart": "restart", "update": "update", "update_restart": "update"', 'WebGUI lifecycle permissions');
-requireText(legacyService, 'handle("server.runtime.restart"', 'remote restart routes to runtime manager');
-requireText(legacyService, '"server.runtime.update_restart" if action == "update_restart" else "server.runtime.update"', 'remote update routes to runtime manager');
+requireText(compatService, 'handle("server.runtime.restart"', 'remote restart routes to runtime manager');
+requireText(compatService, '"server.runtime.update_restart" if action == "update_restart" else "server.runtime.update"', 'remote update routes to runtime manager');
 for (const action of ['"start"', '"stop"', '"restart"', '"update"', '"update_restart"']) requireText(remoteLifecycleTest, action, `authenticated WebGUI action ${action}`);
 
 // Central update state includes launcher, retail game, server, UE4SS and RuneSchema.
@@ -170,7 +170,7 @@ requireText(service, 'Close RuneScape: Dragonwilds before updating a managed cli
 requireText(managedUpdates, 'def install_client_core', 'client UE4SS/RuneSchema managed update');
 requireText(unifiedUpdateTest, 'RuneSchema Core Update', 'RuneSchema notification regression');
 requireText(service, '_record_notification(', 'shared notification sink');
-requireText(legacyService, '"update_status": dict(((state.get("application") or {}).get("update_status") or {}))', 'WebGUI shared update status payload');
+requireText(compatService, '"update_status": dict(((state.get("application") or {}).get("update_status") or {}))', 'WebGUI shared update status payload');
 requireText(directoryWeb, 'Object.values(maintenance.update_status||{})', 'WebGUI shared update status rendering');
 
 // CL evidence remains dynamic and visible across desktop/Minimal/WebGUI.

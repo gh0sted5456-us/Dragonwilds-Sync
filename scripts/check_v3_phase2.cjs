@@ -26,10 +26,24 @@ requireText(phase2Service, [
 requireText('electron/main.cjs', [
   "--quick", "--profile", "--mode", "--auto-start", "dragonwilds:create-v3-quick-shortcut",
   "buildQuickShortcutArgs", "require('./quick_shortcut.cjs')", "require('./main-v2.cjs')",
+  "dragonwilds:window-restore", 'window.restore()', 'window.show()', 'window.focus()',
 ]);
 requireText('electron/quick_shortcut.cjs', ["--quick --profile=${id} --mode=${normalizedMode}", "--auto-start", "PROFILE_ID_PATTERN"]);
-requireText('electron/preload-v2.cjs', ['quickContext', 'createQuickShortcut', "exposeInMainWorld('dragonwilds'", "exposeInMainWorld('dragonwildsV3'"]);
-requireText('renderer/app.js', ['v3Quick', 'app-v2.js']);
+requireText('electron/preload-v2.cjs', [
+  'quickContext', 'createQuickShortcut', "exposeInMainWorld('dragonwilds'", "exposeInMainWorld('dragonwildsV3'",
+  "windowMinimize: () => ipcRenderer.invoke('dragonwilds:window-minimize')",
+  "windowRestore: () => ipcRenderer.invoke('dragonwilds:window-restore')",
+]);
+requireText('renderer/app.js', ['v3Quick', 'app-v2.js', 'release-quick-game-handoff.js']);
+const gameHandoff = requireText('renderer/release-quick-game-handoff.js', [
+  "mode !== 'player'", "api.invoke('quick.status'", 'status?.active === true',
+  'active && !lastActive && !minimizedForGame', 'await api.windowMinimize()',
+  '!active && lastActive && minimizedForGame', 'await api.windowRestore()',
+  'minimizedForGame ? 2000 : 3000',
+]);
+if (/windowClose|app\.quit|window\.close\s*\(/.test(gameHandoff)) {
+  failures.push('renderer/release-quick-game-handoff.js: game handoff must minimize/restore the launcher, never close or quit it');
+}
 requireText('renderer/release-v3-phase2.js', [
   'Send to Desktop', 'Open Quick + Start', 'Open Full Dragonwilds Sync', 'View Mods',
   'Broadcast Message', 'quick.console.execute', 'Participate in Dragonwilds Sync Network',
@@ -78,6 +92,7 @@ if (!retainedMain.includes("preload: path.join(__dirname, 'preload-v2.cjs')")) f
 if (!retainedMain.includes('sandbox: true')) failures.push('electron/main-v2.cjs: BrowserWindow preload must remain sandboxed');
 if (!retainedMain.includes("'renderer', 'quick.html'")) failures.push('electron/main-v2.cjs: Quick windows must use the lean dedicated renderer entry');
 if (!retainedMain.includes("autoStart: argv.includes('--auto-start')")) failures.push('electron/main-v2.cjs: second-instance Quick handoff must preserve auto-start');
+if (!retainedMain.includes("ipcMain.handle('dragonwilds:window-minimize'") || !retainedMain.includes('w.minimize(); return true;')) failures.push('electron/main-v2.cjs: normal Quick minimize must remain a taskbar minimize, not a launcher shutdown');
 for (const token of ['startBackgroundServices', 'promoteToFullApplication', "process.env.DWS_V3_QUICK='0'", "['coop','server'].includes(mode)"]) {
   if (!retainedMain.includes(token)) failures.push(`electron/main-v2.cjs: Quick promotion/resource contract missing ${token}`);
 }
@@ -99,4 +114,4 @@ if (!fs.existsSync(path.join(root, 'backend', 'profile_settings_v1.py'))) failur
 if (failures.length) {
   console.error('[V3 Phase 2] FAIL'); failures.forEach((failure)=>console.error(` - ${failure}`)); process.exit(1);
 }
-console.log('[V3 Phase 2] PASS · shared runtime/Quick CLI, backend network authority, anonymous network aggregates, publication controls and compatibility layers verified');
+console.log('[V3 Phase 2] PASS · shared runtime/Quick CLI, taskbar game lifecycle, backend network authority, anonymous network aggregates, publication controls and compatibility layers verified');

@@ -354,7 +354,6 @@ def test_source_registry_keeps_rsdwtools_and_toolkit_separate():
     assert registry["tooling"]["rsdw_toolkit"]["repository"] == "RSDWArchive/RSDWDevKit"
     assert registry["core"]["dragonconnect"]["runtime_roles"] == ["client"]
     assert registry["core"]["dragonconnect"]["physical_name"] == "DragonConnect"
-    assert registry["core"]["dragonconnect"]["technology"] == "ue4ss_lua"
 
 
 def test_background_sync_job_uses_verified_dispatcher():

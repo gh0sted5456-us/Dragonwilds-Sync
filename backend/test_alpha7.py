@@ -143,7 +143,7 @@ def main():
     renderer = (Path(__file__).resolve().parent.parent / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     service = (
         (Path(__file__).resolve().parent / "dragonwilds_service.py").read_text(encoding="utf-8")
-        + (Path(__file__).resolve().parent / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+        + (Path(__file__).resolve().parent / "dragonwilds_service_compat.py").read_text(encoding="utf-8")
     )
     assert "settings-repair-runtimes" in renderer
     assert "settings-import-runeschema-core" not in renderer

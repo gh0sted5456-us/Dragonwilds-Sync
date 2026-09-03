@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Install and configure the native DragonLink UE4SS suite."""
+"""Install and configure the Lua-only DragonConnect UE4SS client core."""
 
 import hashlib
 import json
@@ -14,14 +14,11 @@ from pathlib import Path
 from client_layout import resolve_client_layout
 
 
-MOD_NAME = "DragonLink"
-LOGICAL_NAME = "DragonLink"
+MOD_NAME = "DragonConnect"
+LOGICAL_NAME = "DragonConnect"
 MARKER_NAME = ".dragonwilds-sync-baseline.json"
-LEGACY_MOD_NAMES = ("DragonLink-Connect", "DragonConnectHelper", "PersistentDirectConnectIP")
-REQUIRED_CLIENT_FILES = (
-    "dlls/main.dll", "dlls/DragonLink-Connect.dll",
-    "DragonLink.ini", "enabled.txt",
-)
+LEGACY_MOD_NAMES = ("DragonLink", "DragonLink-Connect", "DragonConnectHelper", "PersistentDirectConnectIP")
+REQUIRED_CLIENT_FILES = ("Scripts/main.lua", "enabled.txt")
 
 
 def _resources_root() -> Path:
@@ -71,28 +68,18 @@ def _atomic_text(path: Path, text: str) -> None:
         Path(temporary).unlink(missing_ok=True)
 
 
-def _set_ini(text: str, section: str, name: str, value: str) -> str:
-    header = re.search(rf"(?im)^\s*\[{re.escape(section)}\]\s*$", text)
-    if not header:
-        return text + ("" if text.endswith("\n") else "\n") + f"[{section}]\n{name}={value}\n"
-    rest = text[header.end():]
-    following = re.search(r"(?m)^\s*\[[^\]]+\]\s*$", rest)
-    end = header.end() + (following.start() if following else len(rest))
-    body = text[header.end():end]
-    pattern = re.compile(rf"(?im)^([ \t]*{re.escape(name)}[ \t]*=[ \t]*).*$")
-    body = pattern.sub(lambda match: match.group(1) + value, body, count=1) if pattern.search(body) else body + f"\n{name}={value}\n"
-    return text[:header.end()] + body + text[end:]
-
-
-def _drop_retired_gameplay_config(text: str) -> str:
-    text = re.sub(r"(?im)^[ \t]*StacksWeights[ \t]*=.*(?:\r?\n|$)", "", text)
-    for section in ("StacksWeights", "Stacks", "Weights", "ProximityLoot"):
-        text = re.sub(rf"(?ims)^[ \t]*\[{section}\][ \t]*\r?\n.*?(?=^[ \t]*\[[^\]]+\][ \t]*$|\Z)", "", text)
-    return text
-
-
 def _installed(target: Path) -> bool:
     return all((target / Path(relative)).is_file() for relative in REQUIRED_CLIENT_FILES)
+
+
+def _legacy_paths(mods_root: Path) -> list[Path]:
+    root = mods_root.resolve(strict=False)
+    rows: list[Path] = []
+    for name in LEGACY_MOD_NAMES:
+        candidate = (root / name).resolve(strict=False)
+        if candidate != root and root in candidate.parents:
+            rows.append(candidate)
+    return rows
 
 
 def status(selected_root: str | Path) -> dict:
@@ -108,70 +95,68 @@ def status(selected_root: str | Path) -> dict:
         "current": current if source_available else None,
         "update_available": bool(source_available and not current),
         "status": "source_missing" if not source_available else ("current" if current else ("repair_available" if installed else "not_installed")),
-        "installed_version": f"native-{str(marker.get('sha256') or '')[:12]}" if marker else "",
-        "available_version": f"native-{signature['sha256'][:12]}" if source_available else "",
-        "restart_required": True, "path": str(target), "source": "bundled-native-suite",
-        "config_present": (target / "DragonLink.ini").is_file(),
-        "error": "The native DragonLink DLL suite is missing from launcher resources." if not source_available else "",
+        "installed_version": f"lua-{str(marker.get('sha256') or '')[:12]}" if marker else "",
+        "available_version": f"lua-{signature['sha256'][:12]}" if source_available else "",
+        "restart_required": True, "path": str(target), "source": "bundled-lua-core",
+        "config_present": (target / "Scripts" / "config.lua").is_file(),
+        "error": "The bundled DragonConnect Lua core is missing from launcher resources." if not source_available else "",
     }
 
 
 def ensure_installed(selected_root: str | Path) -> dict:
-    """Install the client-role host and Connect DLL."""
+    """Install the client-only DragonConnect Lua core and retire native predecessors."""
     layout = resolve_client_layout(selected_root)
     target = layout.ue4ss_mods_dir / MOD_NAME
     source = _source()
     signature = _source_signature(source)
     if not signature["sha256"]:
-        raise FileNotFoundError("The native DragonLink DLL suite is missing from launcher resources.")
+        raise FileNotFoundError("The bundled DragonConnect Lua core is missing from launcher resources.")
+
     marker = _read_marker(target)
-    stale_dlls = tuple(target / "dlls" / name for name in (
-        "DragonLink-Core.dll", "DragonLink-Items.dll", "DragonLink-ProximityLoot.dll",
-        "DragonLink-Stacks.dll", "DragonLink-Weights.dll", "DragonLink-StacksWeights.dll",
-    ))
-    if (_installed(target) and marker.get("sha256") == signature["sha256"]
-            and not any(path.is_file() for path in stale_dlls)):
+    legacy_paths = _legacy_paths(layout.ue4ss_mods_dir)
+    retired_artifacts = [target / "dlls", target / "DragonLink.ini"] + legacy_paths
+    clean = not any(path.exists() for path in retired_artifacts)
+    if _installed(target) and marker.get("sha256") == signature["sha256"] and clean:
         return {"ok": True, "installed": True, "changed": False, "path": str(target),
                 "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME,
-                "version": f"native-{signature['sha256'][:12]}"}
+                "version": f"lua-{signature['sha256'][:12]}"}
 
-    retained_ini = b""
-    ini_path = target / "DragonLink.ini"
-    if ini_path.is_file() and ini_path.stat().st_size <= 256 * 1024:
-        retained_ini = ini_path.read_bytes()
     target.mkdir(parents=True, exist_ok=True)
     for relative in REQUIRED_CLIENT_FILES:
         src = source / Path(relative)
         dst = target / Path(relative)
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
-    (target / "dlls" / "DragonLink-Chat.dll").unlink(missing_ok=True)
-    for stale_path in stale_dlls:
-        stale_path.unlink(missing_ok=True)
-    if retained_ini:
-        ini_path.write_bytes(retained_ini)
-    client_ini = ini_path.read_text(encoding="utf-8-sig")
-    client_ini = _drop_retired_gameplay_config(client_ini)
-    client_ini = _set_ini(client_ini, "Features", "Chat", "false")
-    _atomic_text(ini_path, client_ini)
-    _atomic_text(target / MARKER_NAME, json.dumps({"component": LOGICAL_NAME, **signature}, indent=2) + "\n")
 
-    # Deliberate one-way cutover. Only exact children of this UE4SS Mods root.
-    mods_root = layout.ue4ss_mods_dir.resolve(strict=False)
-    for name in LEGACY_MOD_NAMES:
-        legacy = (mods_root / name).resolve(strict=False)
-        if legacy != mods_root and mods_root in legacy.parents and legacy.is_dir():
+    # One-way retirement of the native DragonLink/Connect layouts. Exact children
+    # of this UE4SS Mods root only; ordinary user mods are never touched.
+    shutil.rmtree(target / "dlls", ignore_errors=True)
+    (target / "DragonLink.ini").unlink(missing_ok=True)
+    for legacy in legacy_paths:
+        if legacy.is_dir():
             shutil.rmtree(legacy)
+
+    _atomic_text(target / MARKER_NAME, json.dumps({"component": LOGICAL_NAME, **signature}, indent=2) + "\n")
     return {"ok": True, "installed": True, "changed": True, "path": str(target),
             "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME,
-            "version": f"native-{signature['sha256'][:12]}"}
+            "version": f"lua-{signature['sha256'][:12]}"}
 
 
 def _direct_world_type(server_type: str) -> str:
     mode = str(server_type or "normal").strip().casefold()
     if mode == "creative": return "creative"
-    if mode in {"custom", "hardcore"}: return "custom"
+    if mode in {"custom", "hardcore", "hard"}: return "custom"
     return "normal"
+
+
+def _lua_long_string(value: object) -> str:
+    text = str(value or "")
+    for level in range(0, 16):
+        equals = "=" * level
+        closing = "]" + equals + "]"
+        if closing not in text:
+            return "[" + equals + "[" + text + closing
+    raise ValueError("DragonConnect value contains unsupported long-string delimiters.")
 
 
 def write_profile_config(selected_root: str | Path, *, address: str = "", password: str = "",
@@ -181,19 +166,22 @@ def write_profile_config(selected_root: str | Path, *, address: str = "", passwo
     if host and (any(ch.isspace() for ch in host) or not re.fullmatch(r"[A-Za-z0-9.:-]+", host)):
         raise ValueError("Direct Connect address contains unsupported characters.")
     mode = str(server_type or "normal").strip().casefold()
-    if mode not in {"normal", "hardcore", "creative", "custom"}: mode = "normal"
+    if mode not in {"normal", "hard", "hardcore", "creative", "custom"}: mode = "normal"
     world_type = _direct_world_type(mode)
-    path = Path(installed["path"]) / "DragonLink.ini"
-    text = path.read_text(encoding="utf-8-sig")
-    for name, value in (("Enabled", "true" if enabled and bool(host) else "false"),
-                        ("IP", host if enabled else ""),
-                        ("Password", str(password or "")[:512] if enabled else ""),
-                        ("WorldType", world_type)):
-        text = _set_ini(text, "Connect", name, value)
-    text = _set_ini(text, "Features", "Connect", "true" if enabled and bool(host) else "false")
-    _atomic_text(path, text)
-    return {**installed, "configured": bool(enabled and host), "address": host if enabled else "",
-            "server_type": mode, "world_type": world_type, "password_written": bool(enabled and password),
+    active = bool(enabled and host)
+    config_path = Path(installed["path"]) / "Scripts" / "config.lua"
+    config = (
+        "-- Generated by Dragonwilds Sync. Do not store this file in a shared mod package.\n"
+        "return {\n"
+        f"  enabled = {'true' if active else 'false'},\n"
+        f"  address = {_lua_long_string(host if active else '')},\n"
+        f"  password = {_lua_long_string(str(password or '')[:512] if active else '')},\n"
+        f"  world_type = {_lua_long_string(world_type)},\n"
+        "}\n"
+    )
+    _atomic_text(config_path, config)
+    return {**installed, "configured": active, "address": host if active else "",
+            "server_type": mode, "world_type": world_type, "password_written": bool(active and password),
             "logical_name": LOGICAL_NAME, "physical_name": MOD_NAME}
 
 

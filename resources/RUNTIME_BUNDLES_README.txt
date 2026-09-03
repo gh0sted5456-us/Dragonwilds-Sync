@@ -20,11 +20,11 @@ Built-in RuneSchema Experimental baseline:
 Built-in DragonLink native suite:
   resources/NativeRuntimeMods/DragonLink
   Canonical runtime folder: UE4SS/Mods/DragonLink
-  One host DLL loads separate Items, Chat, Connect, and Proximity Loot feature DLLs.
+  One host DLL loads the role-gated Chat and Connect application-bridge modules.
   Servers opt in per World. Connect reacts to the Direct Connect panel and
   writes IP, password, and World Type once; it does not continuously poll.
-  Proximity Loot is server-only. Its enter/exit distance, magnet range, state
-  delay, and refresh interval hot-reload from the shared DragonLink.ini.
+  Gameplay mods such as Stacks/Weights and Proximity Loot are not packaged,
+  configured, or replaced by DragonLink. Server owners install those separately.
 
 Runtime choices remain explicit: Baseline is the offline recovery payload,
 Stable resolves the normal upstream release channel, and Experimental is the

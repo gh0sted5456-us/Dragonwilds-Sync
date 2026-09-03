@@ -12,12 +12,11 @@ write when no CL was observed from the current process/log session. It also
 invalidates comparison against an expected CL whose bound Steam build differs
 from the currently installed dedicated build.
 
-The same retained-runtime seam also owns one narrow mod-management correction:
+The same retained-runtime seam also owns two narrow client/profile corrections:
 explicit inventory Rescan requests use the profile-owned APPDATA mod folders as
-the management source of truth. Runtime launch/apply scans continue to use live
-game/server paths. This lets operators add, replace, or remove mods directly in
-a World profile's Mods directory and then reconcile those filesystem changes
-without routing content through an importer.
+the management source of truth, and verified background World Sync completion
+records its Phase 6 trust receipt without repeating a heavy presentation-state
+projection before the job can report ready.
 """
 
 import inspect
@@ -26,6 +25,7 @@ import threading
 import time
 
 from phase4_runtime_startup import install_phase4_runtime_patches
+from phase6_background_completion import install_phase6_background_completion
 from runtime_versions import cl_version_status
 
 
@@ -240,7 +240,7 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
 
 
 def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
-    """Install Phase 4 startup, profile-mod Rescan authority, and the live-CL guard."""
+    """Install Phase 4 startup, profile Rescan, Sync completion, and the live-CL guard."""
     if server_engine_module is None:
         import server_engine as server_engine_module  # type: ignore
 
@@ -257,6 +257,11 @@ def install_server_engine_cl_authority_patch(server_engine_module=None) -> None:
         # profile-authority wrapper preserves live runtime scans while routing
         # explicit inventory reconciliation to the World profile folders.
         _install_profile_mod_rescan_authority(server_engine_module)
+
+    # Phase 6 is installed earlier in normal service initialization. This
+    # idempotent adapter keeps only background world.sync completion off the
+    # duplicate notification/public-state path that can pin progress at 94–99%.
+    install_phase6_background_completion()
 
     engine_class = server_engine_module.ServerEngine
     if bool(getattr(engine_class, "_dws_cl_authority_guard", False)):

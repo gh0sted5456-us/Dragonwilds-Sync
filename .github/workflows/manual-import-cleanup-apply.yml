@@ -6,6 +6,7 @@ on:
       - cleanup/manual-import-removal
     paths:
       - scripts/remove_legacy_manual_import.py
+      - scripts/run_legacy_manual_import_cleanup.py
       - scripts/check_manual_import_cleanup.cjs
       - .github/workflows/manual-import-cleanup-apply.yml
   workflow_dispatch:
@@ -49,7 +50,7 @@ jobs:
           fi
 
       - name: Apply guarded source transformation
-        run: python scripts/remove_legacy_manual_import.py
+        run: python scripts/run_legacy_manual_import_cleanup.py
 
       - name: Assert only intended source files changed
         shell: bash

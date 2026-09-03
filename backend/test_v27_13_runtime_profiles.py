@@ -106,11 +106,21 @@ def main() -> None:
             assert not any("dragoncore" in name.casefold() for name in zf.namelist()), f"DragonCore is bundled in {archive}"
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-    for token in ("RuneSchema Build", "Update Official", "Fetch Latest Experimental", "Import Mod Package", "Core Configuration"):
+    for token in (
+        "RuneSchema Build",
+        "Update Official",
+        "Fetch Latest Experimental",
+        "Open Mods Folder",
+        "Folder-managed + Nexus-linked inventory",
+        "Manual mod archive import retired",
+        "Core Configuration",
+    ):
         assert token in renderer
+    for retired in ("Import Mod Package", "Install Manual ZIP", "confirm-smart-mod-import"):
+        assert retired not in renderer
     assert "This private SinglePlayer profile has no network endpoint" in renderer
     assert 'world.get("kind") or "").casefold() == "singleplayer"' in compat
-    print("v2.7.13 core configuration, RuneSchema flavors, telemetry identity, map, spawner, and import contracts passed")
+    print("v2.7.13 core configuration, RuneSchema flavors, telemetry identity, map, spawner, and folder-managed mod contracts passed")
 
 
 if __name__ == "__main__":

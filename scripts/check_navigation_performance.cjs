@@ -13,7 +13,7 @@ const navigationJs = read('renderer/release-navigation.js');
 const performanceCss = read('renderer/release-performance.css');
 const preload = read('electron/preload-v2.cjs');
 const phase3 = read('renderer/release-phase3.js');
-const legacy = read('backend/dragonwilds_service_legacy.py');
+const serviceCompat = read('backend/dragonwilds_service_compat.py');
 const appV2 = read('renderer/app-v2.js');
 
 const appPos = index.indexOf('app.js?');
@@ -88,9 +88,9 @@ must(phase3.includes("tab === 'mods'") && phase3.includes('rescan: false'), 'Mod
 must(phase3.includes('scheduleInventoryVerification') && phase3.includes('rescan: true'),
   'Found Mods must receive an idle authoritative filesystem rescan after cached paint');
 
-must(legacy.includes('def _inventory_cache(profile: dict)') && legacy.includes('def _cache_local_inventory') && legacy.includes('def _cache_server_inventory'),
+must(serviceCompat.includes('def _inventory_cache(profile: dict)') && serviceCompat.includes('def _cache_local_inventory') && serviceCompat.includes('def _cache_server_inventory'),
   'Found Mods must retain the persistent profile metadata cache');
-must(legacy.includes('bool(params.get("rescan"))') && legacy.includes('not cached["updated_at"]'),
+must(serviceCompat.includes('bool(params.get("rescan"))') && serviceCompat.includes('not cached["updated_at"]'),
   'inventory RPC must use cache normally and reserve deep scan for explicit/first-run refresh');
 
 console.log('Fast shell navigation / Found Mods cache contract: PASS');

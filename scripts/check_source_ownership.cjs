@@ -26,12 +26,13 @@ need(main, "require('./main-v2.cjs')", 'Electron argument-adapter parent');
 need(electronMain, "preload: path.join(__dirname, 'preload-v2.cjs')", 'sandbox renderer parent');
 need(electronMain, "path.join(projectRoot(), 'backend', 'dragonwilds_service.py')", 'Core subprocess parent');
 
-// preload.cjs is not a live BrowserWindow preload. It is retained solely as a
-// V3 historical-source alias; preload-v2.cjs is the self-contained sandbox
-// bridge used by every trusted application window.
+// preload.cjs is not a live BrowserWindow preload. It remains only as a tiny
+// historical redirect to preload-v2.cjs so old source-contract fixtures do not
+// carry or exercise a second bridge implementation.
 if (/preload:\s*path\.join\(__dirname,\s*['"]preload\.cjs['"]\)/.test(electronMain)) {
   fail('compatibility preload.cjs was reintroduced as a live sandbox preload');
 }
+need(read('electron/preload.cjs'), "require('./preload-v2.cjs')", 'preload compatibility redirect');
 need(read('scripts/v3_contract_runner.cjs'), "electron', 'preload.cjs'", 'preload compatibility lane');
 need(read('scripts/v3_backend_test_runner.py'), 'electron" / "preload.cjs"', 'backend preload compatibility lane');
 
@@ -72,7 +73,7 @@ const backendReferenceText = [
 ].join('\n');
 const backendEntrypoints = new Set([
   'dragonwilds_service.py', 'runtime_worker.py', 'feature_worker.py', 'orphan_watchdog.py',
-  'packaged_stdio_guard.py', 'web_release_polish_hook.py',
+  'packaged_stdio_guard.py', 'web_release_polish_hook.py', 'external_mod_hosting_hook.py',
 ]);
 for (const file of backendModules) {
   if (backendEntrypoints.has(file)) continue;
@@ -92,4 +93,4 @@ for (const method of ['feature.worker.list', 'feature.worker.prepare', 'feature.
   need(service, `method == "${method}"`, 'diagnostic feature-worker RPC classification');
 }
 
-console.log(`Source ownership contract: PASS · ${rendererScripts.size + rendererStyles.size} renderer assets · ${websiteScripts.length + websiteStyles.length} website sources · ${backendModules.length} backend modules · 1 compatibility-only preload · 7 diagnostic worker RPCs`);
+console.log(`Source ownership contract: PASS · ${rendererScripts.size + rendererStyles.size} renderer assets · ${websiteScripts.length + websiteStyles.length} website sources · ${backendModules.length} backend modules · 1 redirect-only preload shim · 7 diagnostic worker RPCs`);

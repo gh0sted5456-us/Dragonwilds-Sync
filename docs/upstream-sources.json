@@ -1,6 +1,6 @@
 {
   "schema": "DragonwildsSync.UpstreamSources.v1",
-  "updated_at": "2026-08-21T00:00:00Z",
+  "updated_at": "2026-09-03T00:00:00Z",
   "description": "Authoritative update-source registry for Dragonwilds Sync managed runtimes, tooling and RSDW content. Logical runtime components and data sources are kept distinct even where a legacy physical directory name remains for compatibility.",
   "security": {
     "allow_arbitrary_commands": false,
@@ -54,15 +54,15 @@
       "description": "Server/host-only UE4SS runtime tooling for spawning, live map hooks, console commands and game-runtime integration. It is updated from RSDWArchive/RSDWDevKit and is never sent to joining clients."
     },
     "dragonconnect": {
-      "display_name": "DragonLink",
+      "display_name": "DragonConnect",
       "enabled": true,
-      "type": "bundled-native-suite",
+      "type": "bundled-lua-core",
       "repository": "gh0sted5456-us/Dragonwilds-Sync",
       "release_url": "https://github.com/gh0sted5456-us/Dragonwilds-Sync/releases",
-      "bundled_fallback": "resources/NativeRuntimeMods/DragonLink",
+      "bundled_fallback": "resources/NativeRuntimeMods/DragonConnect",
       "runtime_component": true,
-      "runtime_roles": ["server", "host", "client"],
-      "description": "Hidden modular UE4SS application bridge with independent Items, server Chat, and one-shot client Connect DLLs."
+      "runtime_roles": ["client"],
+      "description": "Hidden launcher-owned UE4SS Lua client Core that performs the one-time verified Direct Connect address/password handoff. It contains no native DLLs and is never supplied by a World."
     },
     "runeschema": {
       "display_name": "RuneSchema",

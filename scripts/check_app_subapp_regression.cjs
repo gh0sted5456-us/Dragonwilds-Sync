@@ -8,9 +8,9 @@ const implementationFiles = [
   'renderer/app-v2.js', 'renderer/release-v3-phase2.js', 'renderer/release-phase2.js', 'renderer/release-phase3.js',
   'electron/main-v2.cjs', 'electron/preload-v2.cjs',
   'backend/dragonwilds_service.py', 'backend/dragonwilds_service_v2_wrapper.py',
-  'backend/dragonwilds_service_legacy.py', 'backend/character_profiles.py',
+  'backend/dragonwilds_service_compat.py', 'backend/character_profiles.py',
   'backend/world_save_editor.py', 'backend/spawner_catalog.py', 'backend/sync_engine.py',
-  'backend/server_systems.py', 'backend/directory_host.py', 'backend/directory_web_legacy.py',
+  'backend/server_systems.py', 'backend/directory_host.py', 'backend/directory_web_compat.py',
   'backend/system_process_catalog.py', 'backend/feature_worker.py',
   'website/script.js', 'website/placards.js',
 ];

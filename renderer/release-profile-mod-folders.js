@@ -151,28 +151,12 @@
     }
   }
 
-  function replaceImportButton(selector, kind) {
-    const old = document.querySelector(selector);
-    if (!old || old.dataset.profileFolderReplaced === '1') return;
-    const button = old.cloneNode(false);
-    button.dataset.profileFolderReplaced = '1';
-    button.id = kind === 'server' ? 'server-open-mods-folder' : 'sp-open-mods-folder';
-    button.classList.remove('primary');
-    button.classList.add('ghost');
-    button.textContent = 'Open Mods Folder';
+  function bindProfileFolderButton(selector, kind) {
+    const button = document.querySelector(selector);
+    if (!button || button.dataset.profileFolderBound === '1') return;
+    button.dataset.profileFolderBound = '1';
     button.title = 'Open this World profile’s mod folder in Windows Explorer';
     button.addEventListener('click', () => openProfileMods(kind, button));
-    old.replaceWith(button);
-  }
-
-  function replaceDropZone(selector, kind) {
-    const old = document.querySelector(selector);
-    if (!old) return;
-    const note = document.createElement('div');
-    note.className = 'identity-box profile-mod-folder-note';
-    note.dataset.profileModFolderNote = kind;
-    note.innerHTML = '<strong>Folder-managed mods</strong><p>Open this World profile’s Mods folder, add/remove/replace files in Explorer, then use Rescan. Dragonwilds Sync identifies added, changed, and removed mods from the profile folder itself.</p>';
-    old.replaceWith(note);
   }
 
   function hardenRuntimeBaselineUi() {
@@ -227,7 +211,7 @@
     });
   }
 
-  function refreshLegacyHelpCopy() {
+  function refreshFolderHelpCopy() {
     document.querySelectorAll('p, span').forEach((node) => {
       const value = text(node.textContent);
       if (value.includes('Drop a ZIP on the matching UE4SS or RuneSchema target')) {
@@ -245,12 +229,10 @@
 
   function rewriteUi() {
     rewritePending = false;
-    replaceImportButton('#sp-install-mod', 'local');
-    replaceImportButton('#install-server-mod-zip', 'server');
-    replaceDropZone('#sp-mod-dropzone', 'local');
-    replaceDropZone('#server-mod-dropzone', 'server');
+    bindProfileFolderButton('#sp-open-mods-folder', 'local');
+    bindProfileFolderButton('#server-open-mods-folder', 'server');
     hardenRuntimeBaselineUi();
-    refreshLegacyHelpCopy();
+    refreshFolderHelpCopy();
   }
 
   function scheduleRewrite() {

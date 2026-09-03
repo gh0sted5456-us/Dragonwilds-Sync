@@ -58,26 +58,30 @@ CORE_COMPONENTS = {
         "aliases": ["runeschema"],
     },
     "dragonconnect": {
-        "name": "DragonLink",
-        "type": "Modular Application Runtime Bridge",
+        "name": "DragonConnect",
+        "type": "Direct Connect Client Core",
         "ui_group": "core_components",
-        "technology": "ue4ss",
+        "technology": "ue4ss_lua",
         "provider": "ue4ss_mod",
         "physical_type": "ue4ss_mod",
-        "runtime_roles": ["server", "host", "client"],
+        "runtime_roles": ["client"],
         "visibility": "hidden-core",
         "depends_on": ["ue4ss"],
         "update_key": "",
         "remote_update_supported": False,
-        # Published by the baked-component provider, never as an ordinary
-        # World-owned mod (which could accidentally include host credentials).
+        # Launcher-owned client infrastructure. It is never accepted from a
+        # World manifest and contains no native DLL payload.
         "parity_payload": False,
         "profile_membership": "derived",
-        "generated_mods_txt_roles": ["server", "host", "client"],
-        "physical_name": "DragonLink",
-        "physical_relationship": "UE4SS/Mods/DragonLink",
-        "capabilities": ["item_rules", "direct_connect", "server_chat"],
-        "aliases": ["dragonlink", "dragon link"],
+        "generated_mods_txt_roles": ["client"],
+        "physical_name": "DragonConnect",
+        "physical_relationship": "UE4SS/Mods/DragonConnect",
+        "capabilities": ["direct_connect"],
+        "aliases": [
+            "dragonconnect", "dragon connect",
+            "dragonlink", "dragon link", "dragonlink-connect",
+            "dragonconnecthelper", "persistentdirectconnectip",
+        ],
     },
 }
 
@@ -481,7 +485,7 @@ def install_mod_taxonomy_adapters() -> None:
             result = original_write_client(install_dir, local_manifest)
             layout = sync_engine.resolve_client_layout(install_dir)
             target = layout.mods_txt
-            dragonconnect = str(CORE_COMPONENTS["dragonconnect"].get("physical_name") or "DragonLink-Connect")
+            dragonconnect = str(CORE_COMPONENTS["dragonconnect"].get("physical_name") or "DragonConnect")
             connect_dir = layout.ue4ss_mods_dir / dragonconnect
             enabled = [name for name in (result.get("enabled") or []) if is_user_manageable_mod(name, "ue4ss_mod")]
             if connect_dir.is_dir() and dragonconnect.casefold() not in {name.casefold() for name in enabled}:

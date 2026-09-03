@@ -116,10 +116,11 @@ def main() -> None:
     renderer = ((project / "renderer" / "app.js").read_text(encoding="utf-8")
                 + (project / "renderer" / "app-v2.js").read_text(encoding="utf-8"))
     profile_bundle = (project / "backend" / "profile_bundle.py").read_text(encoding="utf-8")
-    # V2 split the RPC surface: dragonwilds_service.py wraps the retained
-    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    # The retained compatibility implementation now lives in *_compat.py.
+    # *_legacy.py is only a deprecated import alias and must not be treated as
+    # the implementation source by regression contracts.
     service = ((project / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (project / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (project / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
     maintenance = (project / "backend" / "world_maintenance.py").read_text(encoding="utf-8")
     assert "const pageSize=40" in renderer
     assert '"items/manifest.json"' in profile_bundle and '"itemsRoot": "items/"' in profile_bundle

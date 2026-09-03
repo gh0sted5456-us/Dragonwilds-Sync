@@ -30,9 +30,9 @@ def test_release_contract():
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     engine = (ROOT / "backend" / "server_engine.py").read_text(encoding="utf-8")
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
-    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    # dragonwilds_service_compat.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (ROOT / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
     host = (ROOT / "backend" / "directory_host.py").read_text(encoding="utf-8")
     assert "runServerStartOperation(world" in renderer
     assert "Preview paused" in renderer and "refresh-webhost-preview" in renderer

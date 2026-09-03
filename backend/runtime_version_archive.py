@@ -8,6 +8,7 @@ builds remain immutable recovery points; direct/legacy Core update RPCs, repair
 paths, client resets, and server resets all converge on the same local archives.
 """
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -54,11 +55,84 @@ def _download_filename(row: dict, archive: Path) -> str:
     return filename or str(row.get("version") or row.get("label") or archive.name)
 
 
+def _record_active_server_selection(component: str, version_id: str, game_root: str) -> None:
+    """Keep the selected World aligned with a Core version installed by an old update RPC."""
+    import profile_store
+    import server_systems
+
+    try:
+        state = profile_store.load_state()
+        profile_id = str((state.get("server") or {}).get("active_world_id") or
+                         getattr(server_systems.STATE, "active_profile_id", "") or "").strip()
+        if not profile_id:
+            return
+        profile = profile_store.load_server_profile(profile_id)
+        if not profile:
+            return
+        engine = sys.modules.get("server_engine")
+        if engine is not None and hasattr(engine, "server_root_for_profile"):
+            expected = str(engine.server_root_for_profile(profile) or "").strip()
+            if expected:
+                try:
+                    if os.path.normcase(str(Path(expected).resolve(strict=False))) != os.path.normcase(str(Path(game_root).resolve(strict=False))):
+                        return
+                except OSError:
+                    return
+        if component == "ue4ss":
+            profile["ue4ss_active_version_id"] = str(version_id)
+            profile["ue4ss_installed_at"] = time.time()
+        elif component == "runeschema":
+            profile["runeschema_flavor_id"] = str(version_id)
+            profile.pop("runeschema_flavor_applied_sha256", None)
+            profile["runeschema_installed_at"] = time.time()
+        else:
+            return
+        profile_store.save_server_profile(profile_id, profile)
+    except Exception:
+        # Installation success is still authoritative; selection persistence is
+        # best-effort here because not every repair path has an active World.
+        return
+
+
+def restore_packaged_runeschema_once(game_root: str) -> dict:
+    """Materialize the immutable packaged RuneSchema baseline without GitHub I/O."""
+    import profile_store
+    import runeschema_repository
+    import server_systems
+
+    if not str(game_root or "").strip():
+        raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
+    archive = runeschema_repository.resolve_archive(runeschema_repository.BASELINE_ID)
+    root_key = os.path.normcase(str(server_systems.resolve_server_layout(game_root).game_root.resolve(strict=False)))
+    state = profile_store.load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    restored = [str(item) for item in (install.get("packaged_runeschema_restored_roots") or []) if str(item)]
+    layout = server_systems.resolve_server_layout(game_root)
+    main_dll = layout.runeschema_root / "dlls" / "main.dll"
+    if root_key in restored and main_dll.is_file():
+        return {"ok": True, "changed": False, "source": "Stable Packaged Build",
+                "version_id": runeschema_repository.BASELINE_ID, "archive": str(archive)}
+
+    result = server_systems.install_runeschema_zip(str(archive), game_root, role="server")
+    state = profile_store.load_state()
+    install = state.setdefault("application", {}).setdefault("server_install", {})
+    restored = [str(item) for item in (install.get("packaged_runeschema_restored_roots") or []) if str(item)]
+    install["runeschema_source_url"] = "bundled://RuneSchema-core-latest.zip"
+    install["runeschema_source_name"] = "Stable Packaged Build · RuneSchema Launcher Base"
+    install["runeschema_installed_at"] = time.time()
+    install["runeschema_version_id"] = runeschema_repository.BASELINE_ID
+    install["packaged_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
+    profile_store.save_state(state)
+    return {**result, "ok": True, "changed": True, "source": "Stable Packaged Build",
+            "version_id": runeschema_repository.BASELINE_ID, "archive": str(archive)}
+
+
 def archived_authoritative_ue4ss_update(download_url: str, game_root: str, timeout: float = 90.0) -> dict:
-    del timeout  # repository resolver owns the bounded network timeout
+    del timeout
     import server_systems
     version_id, archive, row = _archive_ue4ss(download_url)
     result = server_systems.install_authoritative_ue4ss_zip(str(archive), game_root)
+    _record_active_server_selection("ue4ss", version_id, game_root)
     return {**result,
             "filename": _download_filename(row, archive),
             "download_url": str(row.get("source") or download_url),
@@ -88,6 +162,8 @@ def archived_authoritative_runeschema_update(source_url: str, game_root: str, ti
     import server_systems
     version_id, archive, row = _archive_runeschema(source_url)
     result = server_systems.install_runeschema_zip(str(archive), game_root, role=role)
+    if str(role or "server").strip().casefold() == "server":
+        _record_active_server_selection("runeschema", version_id, game_root)
     return {**result,
             "filename": _download_filename(row, archive),
             "source": str(row.get("source") or source_url),
@@ -111,6 +187,7 @@ def archived_reset_server_core(component: str, game_root: str, application: dict
         version_id, archive, row = _archive_ue4ss(source)
         removed = managed_updates.delete_server_core(component, game_root, application)
         result = server_systems.install_authoritative_ue4ss_zip(str(archive), game_root)
+        _record_active_server_selection("ue4ss", version_id, game_root)
         filename = _download_filename(row, archive)
         install.update({"ue4ss_source_url": source,
                         "ue4ss_installed_version": filename,
@@ -135,6 +212,7 @@ def archived_reset_server_core(component: str, game_root: str, application: dict
             resolver_source, kind="official" if variant == "official" else "experimental")
         removed = managed_updates.delete_server_core(component, game_root, application)
         result = server_systems.install_runeschema_zip(str(archive), game_root, role="server")
+        _record_active_server_selection("runeschema", version_id, game_root)
         filename = _download_filename(row, archive)
         install.update({"runeschema_source_url": source,
                         "runeschema_source_name": filename,
@@ -157,7 +235,6 @@ def archived_install_client_core(component: str, game_root: str, application: di
     component = str(component or "").strip().casefold()
     values = dict(params or {})
     channel = str(values.get("channel") or "official").strip().casefold()
-    # Manual ZIPs and the packaged baseline are already durable local sources.
     if str(values.get("zip_path") or "").strip() or channel == "baseline":
         return _ORIGINAL_INSTALL_CLIENT_CORE(component, game_root, application, values)
     if component not in {"ue4ss", "runeschema"}:
@@ -229,6 +306,8 @@ def _patch_bound_imports() -> None:
             setattr(module, "install_authoritative_ue4ss_update", archived_authoritative_ue4ss_update)
         if hasattr(module, "install_authoritative_runeschema_update"):
             setattr(module, "install_authoritative_runeschema_update", archived_authoritative_runeschema_update)
+        if module_name == "server_engine" and hasattr(module, "_restore_official_runeschema_once"):
+            setattr(module, "_restore_official_runeschema_once", restore_packaged_runeschema_once)
 
 
 def install() -> bool:
@@ -242,8 +321,6 @@ def install() -> bool:
     try:
         import server_systems
         import managed_updates
-        # Resolve both repositories while the service is bootstrapping. Their
-        # functions are fully defined before this adapter is called.
         import runeschema_repository  # noqa: F401
         import ue4ss_repository  # noqa: F401
 

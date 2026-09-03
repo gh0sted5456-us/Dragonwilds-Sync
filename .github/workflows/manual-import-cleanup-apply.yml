@@ -1,0 +1,104 @@
+name: Apply legacy manual importer cleanup
+
+on:
+  push:
+    branches:
+      - cleanup/manual-import-removal
+    paths:
+      - scripts/remove_legacy_manual_import.py
+      - scripts/check_manual_import_cleanup.cjs
+      - .github/workflows/manual-import-cleanup-apply.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: manual-import-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out isolated cleanup branch
+        uses: actions/checkout@v4
+        with:
+          ref: cleanup/manual-import-removal
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.18.0'
+          cache: npm
+
+      - name: Install validation dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -f package-lock.json ]]; then
+            npm ci --ignore-scripts
+          else
+            npm install --ignore-scripts
+          fi
+
+      - name: Apply guarded source transformation
+        run: python scripts/remove_legacy_manual_import.py
+
+      - name: Assert only intended source files changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only)
+          printf 'Changed files:\n%s\n' "${changed[*]}"
+          [[ ${#changed[@]} -eq 2 ]]
+          printf '%s\n' "${changed[@]}" | grep -Fx 'renderer/app-v2.js'
+          printf '%s\n' "${changed[@]}" | grep -Fx 'renderer/release-profile-mod-folders.js'
+          git diff --check
+          git diff --stat
+
+      - name: Validate modified JavaScript syntax
+        run: |
+          node --check renderer/app-v2.js
+          node --check renderer/release-profile-mod-folders.js
+
+      - name: Validate cleanup and preserved workflows
+        run: node scripts/check_manual_import_cleanup.cjs
+
+      - name: Run renderer ownership and lifecycle checks
+        run: |
+          npm run check:ownership
+          npm run check:window-lifecycle
+
+      - name: Run full renderer contract suite
+        run: npm run check:renderer
+
+      - name: Run backend test suite
+        run: npm run test:backend
+
+      - name: Save reviewed patch
+        shell: bash
+        run: git diff --binary > manual-import-cleanup.patch
+
+      - name: Upload reviewed patch
+        uses: actions/upload-artifact@v4
+        with:
+          name: manual-import-cleanup-patch
+          path: manual-import-cleanup.patch
+          if-no-files-found: error
+
+      - name: Commit validated cleanup to work branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'Dragonwilds Sync CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add renderer/app-v2.js renderer/release-profile-mod-folders.js
+          git commit -m 'Remove legacy manual mod importer'
+          git push origin HEAD:cleanup/manual-import-removal

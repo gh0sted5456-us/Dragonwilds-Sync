@@ -170,9 +170,8 @@ try {
     Test-RequiredFile 'scripts\check_ue4ss_lua.cjs' 'UE4SS Lua syntax verifier'
     Test-RequiredFile 'resources\RuneSchema-core-latest.zip' 'Bundled RuneSchema core'
     Test-RequiredFile 'resources\RuneSchema-experimental-latest.zip' 'Bundled RuneSchema experimental core'
-    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\main.dll' 'Bundled DragonLink host DLL'
-    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Chat.dll' 'Bundled DragonLink Chat DLL'
-    Test-RequiredFile 'resources\NativeRuntimeMods\DragonLink\dlls\DragonLink-Connect.dll' 'Bundled DragonLink Connect DLL'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonConnect\Scripts\main.lua' 'Bundled DragonConnect Lua core'
+    Test-RequiredFile 'resources\NativeRuntimeMods\DragonConnect\enabled.txt' 'Bundled DragonConnect enable marker'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\UE4SS-core-latest.zip' 'Bundled Dragonwilds UE4SS runtime core'
     Test-RequiredFile 'resources\DragonwildsServerRuntime\version.dll' 'Bundled Dragonwilds server-only version.dll'
     Test-RequiredFile 'scripts\prepare_monaco.cjs' 'Monaco bundling helper'
@@ -525,12 +524,13 @@ try {
     }
     $packedRuneSchemaExperimental = Join-Path $unpacked 'resources\resources\RuneSchema-experimental-latest.zip'
     if (-not (Test-Path -LiteralPath $packedRuneSchemaExperimental -PathType Leaf)) { Fail-Build 'Bundled RuneSchema experimental core was missing from packaged resources.' }
-    $packedDragonLink = Join-Path $unpacked 'resources\resources\NativeRuntimeMods\DragonLink\dlls'
-    foreach ($featureDll in @('main.dll', 'DragonLink-Chat.dll', 'DragonLink-Connect.dll')) {
-        $packedFeature = Join-Path $packedDragonLink $featureDll
-        if (-not (Test-Path -LiteralPath $packedFeature -PathType Leaf)) { Fail-Build "Bundled DragonLink native feature was missing from packaged resources: $featureDll" }
+    $packedDragonConnect = Join-Path $unpacked 'resources\resources\NativeRuntimeMods\DragonConnect'
+    foreach ($relativeDragonConnect in @('Scripts\main.lua', 'enabled.txt')) {
+        $packedFeature = Join-Path $packedDragonConnect $relativeDragonConnect
+        if (-not (Test-Path -LiteralPath $packedFeature -PathType Leaf)) { Fail-Build "Bundled DragonConnect Lua core was missing from packaged resources: $relativeDragonConnect" }
     }
-    Write-BuildLine '[OK] Packaged RuneSchema experimental core resource is present.'
+    if (Test-Path -LiteralPath (Join-Path $packedDragonConnect 'dlls')) { Fail-Build 'DragonConnect must remain Lua-only; packaged dlls directory was found.' }
+    Write-BuildLine '[OK] Packaged DragonConnect Lua core and RuneSchema experimental core are present.'
     $packedUe4ss = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\UE4SS-core-latest.zip'
     $packedServerLoader = Join-Path $unpacked 'resources\resources\DragonwildsServerRuntime\version.dll'
     foreach ($requiredRuntime in @($packedUe4ss, $packedServerLoader)) {

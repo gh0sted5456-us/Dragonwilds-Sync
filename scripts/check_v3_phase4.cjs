@@ -74,6 +74,14 @@ need('backend/v3_phase4_host_patch.py', ['_catalog_row', 'badge_refs', 'platform
 need('backend/web_release_polish_hook.py', ['v3_phase4_web', 'v3_phase4_host_patch']);
 need('renderer/release-v3-phase4-safety.js', ['v3p4-window', 'Open in Window', 'stopPropagation', '__DWSYNC_V3_PHASE4__']);
 need('renderer/index.html', ['release-v3-phase4.css', 'release-v3-phase4-manager.css', 'release-v3-phase4.js', 'release-v3-phase4-safety.js', 'release-v3-phase4-manager.js']);
+const liveInventory = need('renderer/release-live-mod-inventory.js', [
+  "'server.world.inventory'", "'singleplayer.inventory'", 'rescan:true',
+  'notifyFresh(id, kind, rows, response)', 'refreshPlacards(id, rows)',
+  'dragonwilds:mod-inventory-refreshed', '#sp-refresh, #refresh-server-inventory',
+  'data-live-mod-inventory', 'added_count', 'changed_count', 'removed_count',
+]);
+if (!read('renderer/app.js').includes('release-live-mod-inventory.js')) failures.push('renderer/app.js: authoritative live inventory reconciliation layer is not loaded');
+if (!liveInventory.includes('setTimeout(() => void rescan(kind, selectedProfile(kind)), 0)')) failures.push('renderer/release-live-mod-inventory.js: explicit Rescan must refresh placard inventory after the retained Mod Manager handler runs');
 const phase4State = needInsensitive('PROJECT_STATE/archive/V3_PHASE4.md', ['Front/Back', 'Animations Full/Reduced/Off', 'Custom badges', 'Heartbeat', 'WebHost']);
 const phase4StateFolded = phase4State.toLowerCase();
 if (!(phase4StateFolded.includes('horizontal') && phase4StateFolded.includes('open') && (phase4StateFolded.includes('right-click') || phase4StateFolded.includes('right click')))) {
@@ -96,4 +104,4 @@ if (failures.length) {
   failures.forEach((failure) => console.error(` - ${failure}`));
   process.exit(1);
 }
-console.log('[V3 Phase 4] PASS · placards, aliases/registries, badge manager/cache, platform navigation, WebHost and backend heartbeat contract verified');
+console.log('[V3 Phase 4] PASS · placards, aliases/registries, authoritative mod rescan freshness, badge manager/cache, platform navigation, WebHost and backend heartbeat contract verified');

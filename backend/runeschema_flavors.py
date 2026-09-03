@@ -12,8 +12,8 @@ from profile_store import SERVER_PROFILES_DIR, load_server_profile, save_server_
 import runeschema_repository
 
 
-OFFICIAL = {"id": "official", "name": "Official · UnskippableCutscene", "kind": "official"}
-EXPERIMENTAL = {"id": "experimental", "name": "Experimental · Dragonwilds Sync", "kind": "experimental"}
+OFFICIAL = {"id": runeschema_repository.BASELINE_ID, "name": "Stable Packaged Build", "kind": "baseline"}
+EXPERIMENTAL = {"id": "experimental", "name": "Experimental · Legacy latest", "kind": "experimental"}
 MANAGED_IDS = {OFFICIAL["id"], EXPERIMENTAL["id"]}
 
 
@@ -30,20 +30,35 @@ def list_flavors(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile:
         raise KeyError("Server World not found")
-    rows = [OFFICIAL]
-    rows.extend(runeschema_repository.list_versions()["versions"])
+    rows = []
+    seen = set()
+    for row in runeschema_repository.list_versions()["versions"]:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("id") or "")
+        if not item_id or item_id in seen:
+            continue
+        seen.add(item_id)
+        rows.append({**row, "name": str(row.get("name") or row.get("label") or item_id)})
+    if OFFICIAL["id"] not in seen:
+        rows.insert(0, dict(OFFICIAL))
+        seen.add(OFFICIAL["id"])
     for row in profile.get("runeschema_flavors") or []:
         if not isinstance(row, dict) or str(row.get("id")) in MANAGED_IDS:
             continue
         archive = _folder(profile_id) / str(row.get("archive") or "")
         if archive.is_file():
-            rows.append({"id": str(row.get("id")), "name": _clean_name(row.get("name")) or archive.stem,
+            item_id = str(row.get("id"))
+            if item_id in seen:
+                continue
+            seen.add(item_id)
+            rows.append({"id": item_id, "name": _clean_name(row.get("name")) or archive.stem,
                          "kind": "custom", "sha256": str(row.get("sha256") or ""), "size": archive.stat().st_size})
-    selected = str(profile.get("runeschema_flavor_id") or "official")
+    selected = str(profile.get("runeschema_flavor_id") or OFFICIAL["id"])
     if selected == EXPERIMENTAL["id"]:
-        rows.insert(1, {**EXPERIMENTAL, "name": "Experimental · Legacy latest"})
+        rows.insert(1 if rows else 0, dict(EXPERIMENTAL))
     if selected not in {str(row["id"]) for row in rows}:
-        selected = "official"
+        selected = OFFICIAL["id"]
     return {"flavors": rows, "selected_id": selected}
 
 
@@ -94,8 +109,11 @@ def select_flavor(profile_id: str, flavor_id: str) -> tuple[dict, Path | None]:
     profile["runeschema_flavor_id"] = str(flavor_id)
     save_server_profile(profile_id, profile)
     archive = None
-    if str(flavor_id).startswith(runeschema_repository.EXPERIMENTAL_PREFIX):
+    repository_ids = {str(row.get("id") or "") for row in runeschema_repository.list_versions()["versions"]}
+    if str(flavor_id) in repository_ids:
         archive = runeschema_repository.resolve_archive(str(flavor_id))
+    elif str(flavor_id) == EXPERIMENTAL["id"]:
+        archive = None  # legacy managed-latest path remains owned by server_engine
     elif str(flavor_id) not in MANAGED_IDS:
         saved = next(row for row in profile.get("runeschema_flavors") or [] if str(row.get("id")) == str(flavor_id))
         archive = (_folder(profile_id) / str(saved.get("archive"))).resolve()
@@ -106,7 +124,10 @@ def select_flavor(profile_id: str, flavor_id: str) -> tuple[dict, Path | None]:
 
 def delete_flavor(profile_id: str, flavor_id: str) -> dict:
     if not flavor_id or flavor_id in MANAGED_IDS:
-        raise ValueError("Official and Experimental managed RuneSchema builds cannot be deleted.")
+        raise ValueError("The packaged and legacy managed RuneSchema builds cannot be deleted here.")
+    repository_ids = {str(row.get("id") or "") for row in runeschema_repository.list_versions()["versions"]}
+    if str(flavor_id) in repository_ids:
+        raise ValueError("Delete stored RuneSchema repository builds from the application version library.")
     profile = load_server_profile(profile_id)
     rows = list(profile.get("runeschema_flavors") or [])
     target = next((row for row in rows if str(row.get("id")) == str(flavor_id)), None)
@@ -117,6 +138,6 @@ def delete_flavor(profile_id: str, flavor_id: str) -> dict:
         archive.unlink(missing_ok=True)
     profile["runeschema_flavors"] = [row for row in rows if str(row.get("id")) != str(flavor_id)]
     if str(profile.get("runeschema_flavor_id")) == str(flavor_id):
-        profile["runeschema_flavor_id"] = "official"
+        profile["runeschema_flavor_id"] = OFFICIAL["id"]
     save_server_profile(profile_id, profile)
     return list_flavors(profile_id)

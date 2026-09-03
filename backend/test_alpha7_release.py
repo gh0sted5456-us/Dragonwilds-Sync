@@ -153,9 +153,9 @@ def main():
     styles = (ROOT / "renderer" / "styles.css").read_text(encoding="utf-8")
     main = (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
-    # dragonwilds_service_legacy.py engine, so contract tokens may live in either.
+    # dragonwilds_service_compat.py engine, so contract tokens may live in either.
     service = ((ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (ROOT / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
 
     # User-facing Alpha 7 contracts.
     for token in (
@@ -173,7 +173,7 @@ def main():
     assert "createWorldShortcut" in main and "--quick-launch" in main
     assert "--world-kind=" in main and "iconAsset" in main
     # The current shell's lightweight hosted-World Quick Launch starts the
-    # authoritative runtime directly. Keep the legacy RPC in the service for
+    # authoritative runtime directly. Keep the compatibility RPC in the service for
     # old shortcuts, but do not force the renderer to retain dead call sites.
     assert "server.runtime.start" in renderer and "server.world.quick_play" in service
     assert "height:82px" in styles and "mask-image:linear-gradient" in styles

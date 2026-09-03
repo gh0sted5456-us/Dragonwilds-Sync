@@ -17,14 +17,15 @@ Built-in RuneSchema Experimental baseline:
   main.dll SHA-256 6820e79e282a757ec5587fa39f1fd98a87afcfa57c525ff6498f81544ffd9142
   The launcher exposes its identityOverrides, spawnSafety, and tooling.schemaTypes menus.
 
-Built-in DragonLink native suite:
-  resources/NativeRuntimeMods/DragonLink
-  Canonical runtime folder: UE4SS/Mods/DragonLink
-  One host DLL loads the role-gated Chat and Connect application-bridge modules.
-  Servers opt in per World. Connect reacts to the Direct Connect panel and
-  writes IP, password, and World Type once; it does not continuously poll.
+Built-in DragonConnect client Core:
+  resources/NativeRuntimeMods/DragonConnect
+  Canonical runtime folder: UE4SS/Mods/DragonConnect
+  DragonConnect is Lua-only. It performs the one-time Direct Connect IP/password
+  handoff after Sync has verified the World and the launcher has materialized the
+  active Scripts/config.lua. There is intentionally no DragonConnect/DragonLink
+  dlls directory and no native DragonLink build step.
   Gameplay mods such as Stacks/Weights and Proximity Loot are not packaged,
-  configured, or replaced by DragonLink. Server owners install those separately.
+  configured, or replaced by DragonConnect. Server owners install those separately.
 
 Runtime choices remain explicit: Baseline is the offline recovery payload,
 Stable resolves the normal upstream release channel, and Experimental is the

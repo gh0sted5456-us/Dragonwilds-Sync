@@ -7,9 +7,10 @@ import urllib.request
 from pathlib import Path
 
 import directory_host
-# The V2 wrapper re-exports the legacy engine with ``import *``, which skips
-# underscore-private helpers. Historical internals live in the legacy module.
-from dragonwilds_service_legacy import _directory_join_catalog_world
+# The current wrapper re-exports the retained compatibility engine with
+# ``import *``, which skips underscore-private helpers. Contract-only internals
+# therefore come from the canonical compatibility module.
+from dragonwilds_service_compat import _directory_join_catalog_world
 
 
 def _free_port():
@@ -106,7 +107,7 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'/assets/platforms/ue4ss.webp' in portal and b'/assets/platforms/runeschema.webp' in portal
             assert b'mod_files' in portal and b'mod_file_open' in portal and b'mod_file_save' in portal
             assert b'Item Builder' in portal and b'dws-item-categories' in portal
-            assert b'/api/v1/admin/item-icon/' in directory_host.Path(directory_host.__file__).with_name('dragonwilds_service_legacy.py').read_bytes()
+            assert b'/api/v1/admin/item-icon/' in directory_host.Path(directory_host.__file__).with_name('dragonwilds_service_compat.py').read_bytes()
             assert b'dws-current-map' in portal and b'background-size:contain' in portal
             assert b"action==='start'&&running" in portal and b"['stop','restart','update_restart'].includes(action)&&!running" in portal
             assert b'id="web-language"' in portal and b"Browser language" in portal

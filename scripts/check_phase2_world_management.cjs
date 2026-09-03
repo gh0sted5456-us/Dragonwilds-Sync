@@ -13,7 +13,9 @@ const forbidText = (text, needle, label) => {
 const index = read('renderer/index.html');
 const phase2 = read('renderer/release-phase2.js');
 const appV2 = read('renderer/app-v2.js');
-const profileSettings = read('backend/profile_settings.py');
+// profile_settings.py is the current V3 adapter; profile_settings_v1.py owns the
+// retained WorldProfileSettings.v1 implementation it extends in place.
+const profileSettings = read('backend/profile_settings.py') + '\n' + read('backend/profile_settings_v1.py');
 const routing = read('backend/v2_remote_routing.py');
 const runner = read('scripts/run_backend_tests.cjs');
 

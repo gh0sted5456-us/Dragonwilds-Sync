@@ -175,7 +175,7 @@ async function rawInvoke(method, params = {}, meta = {}) {
     return result;
   } catch (error) {
     const durationMs = Math.max(0, performance.now() - startedAt);
-    recordMetric({ method, duration_ms: Math.round(durationMs * 10) / 10, cache: false, background: !!meta.background, ok: false, at: Date.now() });
+    recordMetric({ method: name, duration_ms: Math.round(durationMs * 10) / 10, cache: false, background: !!meta.background, ok: false, at: Date.now() });
     emitInvokeActivity({ phase: 'error', method, key: meta.key || '', duration_ms: durationMs, background: !!meta.background, message: String(error?.message || error || 'Request failed'), at: Date.now() });
     throw error;
   }
@@ -312,6 +312,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   // dialog bridge is exposed. Genuine website content continues through the
   // browser-window bridge above (for example Nexus pages).
   windowMinimize: () => ipcRenderer.invoke('dragonwilds:window-minimize'),
+  windowRestore: () => ipcRenderer.invoke('dragonwilds:window-restore'),
   windowToggleMaximize: () => ipcRenderer.invoke('dragonwilds:window-toggle-maximize'),
   windowClose: () => ipcRenderer.invoke('dragonwilds:window-close'),
   windowState: () => ipcRenderer.invoke('dragonwilds:window-state'),

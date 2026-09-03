@@ -25,7 +25,7 @@ const server=http.createServer((request,response)=>{
   const url=new URL(request.url,'http://127.0.0.1');
   if(url.pathname==='/__validation'){
     const name=url.searchParams.get('case')||'';const complete=pending.get(name);
-    if(complete){pending.delete(name);complete({status:url.searchParams.get('status'),detail:url.searchParams.get('detail')||''});}
+    if(complete)complete({status:url.searchParams.get('status'),detail:url.searchParams.get('detail')||''});
     response.writeHead(204);response.end();return;
   }
   const relative=decodeURIComponent(url.pathname).replace(/^\/+/, '');
@@ -46,27 +46,44 @@ function runCase(testCase,port){
   return new Promise((resolve,reject)=>{
     const screenshot=path.join(outputDir,`world-cards-${testCase.name}.png`);
     const profile=fs.mkdtempSync(path.join(os.tmpdir(),'dwsync-gui-'));
-    let settled=false,stderr='',stdout='';
+    let settled=false,stderr='',stdout='',reported=null,child=null,shutdownTimer=null;
     const cleanup=()=>{try{fs.rmSync(profile,{recursive:true,force:true});}catch(_){}};
-    const finish=(error,value)=>{if(settled)return;settled=true;clearTimeout(timer);pending.delete(testCase.name);cleanup();error?reject(error):resolve(value);};
-    const accept=(validation)=>validation?.status==='pass'
+    const finish=(error,value)=>{
+      if(settled)return;
+      settled=true;clearTimeout(timer);clearTimeout(shutdownTimer);pending.delete(testCase.name);
+      if(child&&child.exitCode===null&&!child.killed){try{child.kill();}catch(_){}}
+      cleanup();error?reject(error):resolve(value);
+    };
+    const settleValidation=(validation)=>validation?.status==='pass'
       ? finish(null,{screenshot,detail:validation.detail||'PASS'})
       : finish(new Error(`${testCase.name}: ${validation?.detail||'layout failed'}`));
+    const onReported=(validation)=>{
+      if(settled||!validation)return;
+      reported=validation;
+      // Give Chromium a brief chance to flush the requested screenshot/DOM, then
+      // stop it if the headless process lingers after already reporting layout.
+      if(child&&child.exitCode===null&&!shutdownTimer){
+        shutdownTimer=setTimeout(()=>{if(child&&child.exitCode===null&&!child.killed){try{child.kill();}catch(_){}}},1000);
+      }else if(!child||child.exitCode!==null){settleValidation(validation);}
+    };
     const timer=setTimeout(()=>finish(new Error(`${testCase.name}: browser did not return a layout result${stderr?` · ${stderr.slice(-800)}`:''}`)),30000);
-    pending.set(testCase.name,accept);
+    pending.set(testCase.name,onReported);
     const fixture=testCase.fixture||'scripts/fixtures/world_cards.html';
     const url=`http://127.0.0.1:${port}/${fixture}?theme=${encodeURIComponent(testCase.theme)}&case=${encodeURIComponent(testCase.name)}`;
     const args=['--headless=new','--disable-gpu','--hide-scrollbars','--run-all-compositor-stages-before-draw','--virtual-time-budget=2500','--dump-dom',`--window-size=${testCase.width},${testCase.height}`,`--user-data-dir=${profile}`,`--screenshot=${screenshot}`,url];
     if(process.env.CI==='true'&&process.platform!=='win32')args.unshift('--no-sandbox');
-    const child=spawn(browser,args,{windowsHide:true});
+    child=spawn(browser,args,{windowsHide:true});
     child.stdout.on('data',(chunk)=>{stdout+=String(chunk);});
     child.stderr.on('data',(chunk)=>{stderr+=String(chunk);});
     child.on('error',(error)=>finish(error));
-    child.on('exit',(code)=>{
+    child.on('exit',(code,signal)=>{
       if(settled)return;
-      if(code&&code!==0)return finish(new Error(stderr||`${testCase.name}: browser exited ${code}`));
+      clearTimeout(shutdownTimer);shutdownTimer=null;
       const rendered=renderedValidation(stdout);
-      if(rendered)return accept(rendered);
+      const validation=rendered||reported;
+      if(validation)return settleValidation(validation);
+      if(code&&code!==0)return finish(new Error(stderr||`${testCase.name}: browser exited ${code}`));
+      if(signal)return finish(new Error(`${testCase.name}: browser exited on ${signal} without a rendered validation result${stderr?` · ${stderr.slice(-800)}`:''}`));
       finish(new Error(`${testCase.name}: browser exited without a rendered validation result${stderr?` · ${stderr.slice(-800)}`:''}`));
     });
   });

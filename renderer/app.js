@@ -11,4 +11,9 @@
   // Full mode executes the exact previously verified renderer synchronously so
   // the later release enhancement scripts retain their original ordering.
   document.write('<script src="app-v2.js?v=3.5.0-shortcuts-windows"><\\/script>');
+  // Additive profile-mod workflow: user-managed mods live in each World's
+  // profile folder and explicit Rescan reconciles that folder authoritatively.
+  // It also annotates the packaged UE4SS/RuneSchema builds as protected recovery
+  // baselines without changing Quick Mode or the retained renderer bundle.
+  document.write('<script src="release-profile-mod-folders.js?v=3.5.1-profile-mod-folders"><\\/script>');
 })();

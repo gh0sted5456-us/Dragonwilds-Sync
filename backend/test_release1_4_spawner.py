@@ -11,7 +11,7 @@ def main():
     assert spawner.item_runtime_path("data/items/json/RSDragonwilds/Plugins/GameFeatures/Agility/Content/Items/ITEM_Cape.json") == "/Agility/Items/ITEM_Cape.ITEM_Cape"
     command = spawner.spawn_command("enemy", "/Game/Gameplay/AI/BP_Wolf.BP_Wolf_C", {"kind": "coordinates", "x": 1, "y": 2, "z": 3, "yaw": 90})
     assert command.startswith("world.spawn.transform /Game/Gameplay/AI/BP_Wolf.BP_Wolf_C ")
-    assert '"loc":[1.0,2.0,3.0]' in command
+    assert '\"loc\":[1.0,2.0,3.0]' in command
     try:
         spawner.spawn_command("item", "/Game/Items/ITEM_Log.ITEM_Log", {"kind": "coordinates"})
         raise AssertionError("remote item spawn must remain blocked")
@@ -52,12 +52,12 @@ def main():
         assert installed["items"][0]["icon_path"].endswith("T_Test.png")
         assert installed["items"][0]["runtime_path"] == "/Game/Gameplay/Items/ITEM_Test.ITEM_Test"
 
-    roster = tracker.PlayerTrackerBridge._roster_snapshot('[{"name":"Luke","x":12,"y":24,"is_local":false}]')
+    roster = tracker.PlayerTrackerBridge._roster_snapshot('[{\"name\":\"Luke\",\"x\":12,\"y\":24,\"is_local\":false}]')
     normalized = tracker.normalize_snapshot(roster)
     assert normalized["players"][0]["position_2d"] is True
     assert normalized["players"][0]["z"] == 0.0
     controller_only = tracker.normalize_snapshot(tracker.PlayerTrackerBridge._roster_snapshot(
-        '[{"name":"Joining Player","is_local":false,"alive":false}]'
+        '[{\"name\":\"Joining Player\",\"is_local\":false,\"alive\":false}]'
     ))
     assert controller_only["players"][0]["name"] == "Joining Player"
     assert controller_only["players"][0]["has_position"] is False
@@ -67,7 +67,7 @@ def main():
 
     root = Path(__file__).resolve().parents[1]
     service = ((root / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-               + (root / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8"))
+               + (root / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8"))
     renderer = (root / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for token in ("server.spawner.catalog", "server.spawner.spawn", "confirmed", "PLAYER_BRIDGE.command"):
         assert token in service, token

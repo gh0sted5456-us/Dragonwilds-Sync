@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import re
 import secrets
 import shutil
@@ -19,6 +21,7 @@ BASELINE_ID = "baseline"
 BASELINE_VERSION = "v3.0.1-941-g0bfec09e-Dragonwilds-5.6"
 BASELINE_SHA256 = "10c8b7350177b28aad5e6371bece2347d501dd1b58f9949c512ae6aee0e0b3a8"
 REPO_DIR_NAME = "UE4SSRepository"
+INDEX_FILE_NAME = "repository.json"
 
 _VERSION_PATTERN = re.compile(r"\bv?\d+\.\d+\.\d+(?:-\d+-g[0-9a-f]{6,})?\b")
 
@@ -27,6 +30,35 @@ def _repo_dir() -> Path:
     path = APP_DATA_DIR / REPO_DIR_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _index_path() -> Path:
+    return _repo_dir() / INDEX_FILE_NAME
+
+
+def _read_index() -> list[dict]:
+    path = _index_path()
+    if not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        rows = payload.get("versions") if isinstance(payload, dict) else payload
+        return [dict(row) for row in (rows or []) if isinstance(row, dict)]
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return []
+
+
+def _write_index(rows: list[dict]) -> None:
+    path = _index_path()
+    if not rows:
+        path.unlink(missing_ok=True)
+        return
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps({
+        "schema": "DragonwildsSync.UE4SSRepository.v1",
+        "versions": rows,
+    }, indent=2), encoding="utf-8")
+    os.replace(temporary, path)
 
 
 def _clean_label(value: str) -> str:
@@ -79,11 +111,26 @@ def _sniff_version(path: Path, names: list[str]) -> str:
 
 
 def _rows(state: dict) -> list[dict]:
-    return list(state.setdefault("application", {}).setdefault("ue4ss_repository", []))
+    state_rows = [dict(row) for row in state.setdefault("application", {}).setdefault("ue4ss_repository", []) if isinstance(row, dict)]
+    disk_rows = _read_index()
+    if not disk_rows:
+        return state_rows
+    merged = list(disk_rows)
+    known_ids = {str(row.get("id") or "") for row in merged}
+    known_hashes = {str(row.get("sha256") or "") for row in merged if str(row.get("sha256") or "")}
+    for row in state_rows:
+        row_id = str(row.get("id") or "")
+        digest = str(row.get("sha256") or "")
+        if row_id in known_ids or (digest and digest in known_hashes):
+            continue
+        merged.append(row)
+    return merged
 
 
 def _set_rows(state: dict, rows: list[dict]) -> None:
-    state.setdefault("application", {})["ue4ss_repository"] = rows
+    clean = [dict(row) for row in rows if isinstance(row, dict)]
+    state.setdefault("application", {})["ue4ss_repository"] = clean
+    _write_index(clean)
 
 
 def list_versions(state: dict | None = None) -> dict:
@@ -100,9 +147,10 @@ def list_versions(state: dict | None = None) -> dict:
         "sha256": BASELINE_SHA256,
         "added_at": 0,
     }]
+    rows = _rows(state)
     kept_rows = []
     changed = False
-    for row in _rows(state):
+    for row in rows:
         if not isinstance(row, dict):
             changed = True
             continue
@@ -118,7 +166,8 @@ def list_versions(state: dict | None = None) -> dict:
             "sha256": str(row.get("sha256") or ""), "added_at": row.get("added_at") or 0,
             "published_at": str(row.get("published_at") or ""),
         })
-    if changed:
+    state_rows = state.setdefault("application", {}).setdefault("ue4ss_repository", [])
+    if changed or state_rows != kept_rows:
         _set_rows(state, kept_rows)
         save_state(state)
     versions.sort(key=lambda v: (0 if v["id"] == BASELINE_ID else 1, -(v.get("added_at") or 0)))
@@ -177,7 +226,8 @@ def fetch_experimental(state: dict, source_url: str = "") -> dict:
     zip_path, resolved, temp = download_runtime_zip(url, prefer_contains=("ue4ss",))
     try:
         filename = str(resolved.get("filename") or "")
-        if filename.casefold().startswith("zdev-") or filename.casefold().startswith("zcustom") or filename.casefold().startswith("zmap"):
+        lowered = filename.casefold()
+        if lowered.startswith("zdev-") or lowered.startswith("zcustom") or lowered.startswith("zmap"):
             raise ValueError(f"The resolved UE4SS asset is not the normal runtime package: {filename}")
         names = _validate_ue4ss_zip(zip_path)
         version = str(resolved.get("release_tag") or "").strip()
@@ -316,3 +366,10 @@ def select_version(state: dict, profile_id: str, version_id: str) -> tuple[dict,
     profile["ue4ss_active_version_id"] = str(version_id)
     save_server_profile(profile_id, profile)
     return status, profile
+
+
+# The desktop service imports both runtime repositories during bootstrap. Install
+# the archive-first adapters only after this module is fully defined, so every
+# current Core update route uses a retained local ZIP before touching live files.
+from runtime_version_archive import install as _install_runtime_version_archive
+_install_runtime_version_archive()

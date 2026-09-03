@@ -61,7 +61,7 @@ def main():
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     service = (
         (ROOT / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
-        + (ROOT / "backend" / "dragonwilds_service_legacy.py").read_text(encoding="utf-8")
+        + (ROOT / "backend" / "dragonwilds_service_compat.py").read_text(encoding="utf-8")
     )
     spec = (ROOT / "backend" / "DragonwildsSync.Service.spec").read_text(encoding="utf-8")
     assert "Player ID (Owner)" in renderer

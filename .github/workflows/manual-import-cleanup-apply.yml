@@ -9,6 +9,9 @@ on:
       - scripts/run_legacy_manual_import_cleanup.py
       - scripts/check_manual_import_cleanup.cjs
       - backend/test_v27_13_runtime_profiles.py
+      - backend/test_service_rpc.py
+      - backend/cl_authority.py
+      - backend/server_engine.py
       - .github/workflows/manual-import-cleanup-apply.yml
   workflow_dispatch:
 

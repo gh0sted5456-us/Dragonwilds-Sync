@@ -1,25 +1,35 @@
-# Permanent multi-window regression gate. Keep this on release-bound branches.
-name: Window Surface Gate
+# Permanent desktop UX/multi-window regression gate. Keep this on release-bound branches.
+name: UX and Window Surface Gate
 
 on:
   push:
     branches:
       - testing-branch
+      - experimental
     paths:
-      - renderer/dialog-host.js
-      - renderer/app-v2.js
-      - electron/main-v2.cjs
-      - electron/preload-v2.cjs
-      - scripts/check_window_surfaces_electron.cjs
-      - scripts/check_window_navigation_lifecycle.cjs
-      - .github/workflows/window-surface-gate.yml
+      - 'renderer/**'
+      - 'electron/**'
+      - 'backend/dragonwilds_service*.py'
+      - 'backend/directory_web*.py'
+      - 'scripts/check_window_surfaces_electron.cjs'
+      - 'scripts/check_window_navigation_lifecycle.cjs'
+      - 'scripts/check_navigation_swaps_electron.cjs'
+      - 'scripts/check_quick_window_electron.cjs'
+      - 'scripts/quick_window_fixture_preload.cjs'
+      - 'scripts/check_world_management_navigation.cjs'
+      - 'scripts/check_public_server_list.cjs'
+      - 'scripts/check_phase2_world_management.cjs'
+      - 'scripts/check_phase3_responsiveness.cjs'
+      - 'scripts/check_navigation_performance.cjs'
+      - 'scripts/validate_world_cards_headless.cjs'
+      - '.github/workflows/window-surface-gate.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  source-contract:
+  source-ux-contracts:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
@@ -28,7 +38,15 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
       - run: npm ci
-      - run: node scripts/check_window_navigation_lifecycle.cjs
+      - name: Verify navigation, World Management, directory, and layout contracts
+        run: |
+          node scripts/check_window_navigation_lifecycle.cjs
+          node scripts/check_world_management_navigation.cjs
+          node scripts/check_public_server_list.cjs
+          node scripts/check_phase2_world_management.cjs
+          node scripts/check_phase3_responsiveness.cjs
+          node scripts/check_navigation_performance.cjs
+          node scripts/validate_world_cards_headless.cjs
 
   ubuntu-window-surfaces:
     runs-on: ubuntu-24.04
@@ -40,8 +58,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgtk-3-0 libnss3 libasound2t64
-      - name: Exercise managed and detached BrowserWindows
-        run: xvfb-run -a npx electron --no-sandbox scripts/check_window_surfaces_electron.cjs
+      - name: Exercise managed/detached windows, navigation, and Quick UI
+        run: |
+          xvfb-run -a npx electron --no-sandbox scripts/check_window_surfaces_electron.cjs
+          xvfb-run -a npx electron --no-sandbox scripts/check_navigation_swaps_electron.cjs
+          xvfb-run -a npx electron --no-sandbox scripts/check_quick_window_electron.cjs
 
   windows-window-surfaces:
     runs-on: windows-2025
@@ -52,6 +73,19 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
       - run: npm ci
-      - name: Exercise managed and detached BrowserWindows
+      - name: Exercise production Windows window surfaces
         shell: powershell
-        run: npx electron scripts/check_window_surfaces_electron.cjs
+        run: |
+          npx electron scripts/check_window_surfaces_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron scripts/check_navigation_swaps_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx electron scripts/check_quick_window_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload Quick UX capture
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: experimental-ux-capture-windows
+          if-no-files-found: ignore
+          path: test-results/quick-dashboard-v3.5.png

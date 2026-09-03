@@ -20,8 +20,8 @@
       'rsdw-item-manifest': { display_name:'RSDW Item Manifest', enabled:true, type:'github-path', repository:'RSDWArchive/RSDWTools', branch:'main', path:'data/items/json/RSDragonwilds', parent:'rsdwtools' },
       'rsdw-toolkit': { display_name:'RSDW Dev Kit', enabled:true, type:'github-release', repository:'RSDWArchive/RSDWDevKit', release_url:'https://github.com/RSDWArchive/RSDWDevKit/releases', runtime_component:true, runtime_roles:['server','host'], icon:'assets/navigation/rsdw-l.webp', legacy_physical_names:['RSDWTools'], description:'Server/host-only UE4SS runtime tooling. Updated from the RSDWDevKit release channel and never sent to clients.' },
       dragonconnect: { display_name:'DragonConnect', enabled:true, type:'bundled-lua-core', bundled_fallback:'resources/NativeRuntimeMods/DragonConnect', runtime_component:true, runtime_roles:['client'], description:'Launcher-owned Lua client Core for one-time Direct Connect address/password handoff.' },
-      runeschema: { display_name:'RuneSchema', enabled:true, type:'direct-zip', repository:'gh0sted5456-us/Dragonwilds-Sync', branch:'main', download_url:'https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync/main/resources/RuneSchema-core-latest.zip' },
-      ue4ss: { display_name:'UE4SS', enabled:true, type:'github-release', repository:'UE4SS-RE/RE-UE4SS', release_url:'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest' },
+      runeschema: { display_name:'RuneSchema', enabled:true, type:'github-release', repository:'UnskippableCutscene/RuneSchema', release_url:'https://github.com/UnskippableCutscene/RuneSchema/releases', bundled_fallback:'resources/RuneSchema-core-latest.zip', runtime_roles:['server','client'], description:'The packaged stable build is always retained. Official GitHub releases download into the local version library so they can be selected, repaired, or rolled back.' },
+      ue4ss: { display_name:'UE4SS', enabled:true, type:'github-release', repository:'UE4SS-RE/RE-UE4SS', release_url:'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest', bundled_fallback:'resources/DragonwildsServerRuntime/UE4SS-core-latest.zip', runtime_roles:['server','client'], description:'The packaged stable build is always retained. New upstream builds download into the local version library instead of replacing rollback history.' },
       rsdwmodel: { display_name:'RSDWModel', enabled:true, type:'github-branch', repository:'RSDWArchive/RSDWModel', branch:'main' }
     }
   };
@@ -80,6 +80,10 @@
     return bits.join(' · ');
   };
   const setStatus = (host, text, kind='') => { const node=host?.querySelector('[data-upstream-status]'); if(node){node.textContent=text;node.dataset.kind=kind;} };
+  const selectedVersion = (result) => {
+    const id=String(result?.selected_id||'');
+    return (result?.versions||[]).find((row)=>String(row?.id||'')===id)||null;
+  };
 
   async function configureRsdwSources() {
     const tools=src('rsdwtools'); const model=src('rsdwmodel');
@@ -105,20 +109,24 @@
     return result;
   }
 
-  async function updateRuneSchema(host) {
-    const item=src('runeschema'); const url=String(item.download_url||item.release_url||'').trim();
-    if(!url) throw new Error('RuneSchema has no downloadable source in the current registry; use the bundled/local core.');
-    setStatus(host,'Updating RuneSchema…');
-    const result=await api.invoke('server.install.runeschema_update',{releases_url:url});
-    setStatus(host,'RuneSchema updated.','ok'); return result;
+  async function downloadRuneSchemaUpdate(host) {
+    const item=src('runeschema'); const url=String(item.release_url||item.download_url||'https://github.com/UnskippableCutscene/RuneSchema/releases').trim();
+    if(!url) throw new Error('RuneSchema has no downloadable GitHub release source.');
+    setStatus(host,'Downloading RuneSchema update…');
+    const result=await api.invoke('application.runeschema_repository.fetch_experimental',{source_url:url});
+    const row=selectedVersion(result);
+    setStatus(host,`RuneSchema ${row?.label||'update'} saved to the version library. The Stable Packaged Build was kept.`, 'ok');
+    return result;
   }
 
-  async function updateUe4ss(host) {
+  async function downloadUe4ssUpdate(host) {
     const item=src('ue4ss'); const url=String(item.release_url||item.download_url||'').trim();
     if(!url) throw new Error('UE4SS has no update source in the current registry.');
-    setStatus(host,'Updating UE4SS…');
-    const result=await api.invoke('server.install.ue4ss_update',{releases_url:url});
-    setStatus(host,'UE4SS updated.','ok'); return result;
+    setStatus(host,'Downloading UE4SS update…');
+    const result=await api.invoke('application.ue4ss_repository.fetch_experimental',{source_url:url});
+    const row=selectedVersion(result);
+    setStatus(host,`UE4SS ${row?.label||'update'} saved to the version library. The Stable Packaged Build was kept.`, 'ok');
+    return result;
   }
 
   async function updateRsdwDevKit(host) {
@@ -142,7 +150,7 @@
     const base=[...page.querySelectorAll('.settings-section')].find((section)=>/Base Runtime Cores/i.test(section.textContent||''));
     if(!base)return;
     const section=document.createElement('section'); section.id='upstream-source-registry'; section.className='settings-section';
-    section.innerHTML=`<style>#upstream-source-registry .upstream-source-row small{display:block;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}#upstream-source-registry [data-upstream-status][data-kind="ok"]{color:#70d6a0}#upstream-source-registry [data-upstream-status][data-kind="error"]{color:#ef8b83}</style><div class="panel-header"><div><h2 style="margin:0">Content & Dependency Sources</h2><div class="panel-subtitle">One validated registry distinguishes RSDWTools data, RSDW Toolkit / DevKit runtime tooling, DragonConnect, RuneSchema and UE4SS. Source URLs can move through an approved commit without teaching the launcher a second ownership model.</div></div><button class="btn primary compact-btn" data-upstream-action="all">Update / Repair All</button></div><div class="settings-row"><div class="settings-copy"><strong>Upstream Registry</strong><span>Official URL is baked only as the bootstrap pointer. A validated last-known-good copy is cached for outages.</span></div><div style="min-width:min(680px,60vw)"><input class="field" data-upstream-url value="${esc(configuredUrl()||OFFICIAL_URL)}"/><div class="header-actions" style="margin-top:7px"><button class="btn ghost compact-btn" data-upstream-action="refresh-registry">Refresh Sources</button><button class="btn ghost compact-btn" data-upstream-action="save-registry">Use This Registry</button><button class="btn ghost compact-btn" data-upstream-action="reset-registry">Reset Official</button></div><small>Loaded: ${esc(sourceUrl||'fallback')}</small></div></div>${row('rsdwtools','rsdw','Refresh RSDWTools Data')}${row('rsdw-icons','icons','Refresh Icons')}${row('rsdw-item-manifest','items','Refresh Item Manifest')}${row('rsdw-toolkit','toolkit','Update Server Dev Kit')}${row('dragonconnect','dragonconnect','Repair DragonConnect')}${row('runeschema','runeschema','Update RuneSchema')}${row('ue4ss','ue4ss','Update UE4SS')}<div class="identity-box"><strong>RSDWTools ≠ RSDW Toolkit</strong><p>RSDWTools is the GitHub data source for icons/item metadata. RSDW Toolkit / DevKit is the server/host UE4SS runtime tooling mod from RSDWArchive/RSDWDevKit. DragonConnect is hidden launcher-owned Lua client Core for Direct Connect handoff; former DragonLink, DragonLink-Connect, DragonConnectHelper and PersistentDirectConnectIP folders are accepted only as migration input and retired during repair.</p></div><div class="identity-box"><strong>Safe update boundary</strong><p>The registry may provide HTTPS repositories, paths and release/archive URLs only. Dragonwilds Sync does not accept shell commands, PowerShell, post-install scripts or arbitrary executable instructions from the remote manifest.</p></div><div class="panel-subtitle" data-upstream-status>Ready.</div>`;
+    section.innerHTML=`<style>#upstream-source-registry .upstream-source-row small{display:block;color:var(--muted);margin-top:4px;overflow-wrap:anywhere}#upstream-source-registry [data-upstream-status][data-kind="ok"]{color:#70d6a0}#upstream-source-registry [data-upstream-status][data-kind="error"]{color:#ef8b83}</style><div class="panel-header"><div><h2 style="margin:0">Content & Dependency Sources</h2><div class="panel-subtitle">Packaged UE4SS and RuneSchema builds are the permanent stable repair points. GitHub updates are downloaded into version libraries and kept until you explicitly remove them. RSDWTools data and the RSDW Dev Kit remain separate sources.</div></div><button class="btn primary compact-btn" data-upstream-action="all">Refresh / Download All</button></div><div class="settings-row"><div class="settings-copy"><strong>Upstream Registry</strong><span>Official URL is baked only as the bootstrap pointer. A validated last-known-good copy is cached for outages.</span></div><div style="min-width:min(680px,60vw)"><input class="field" data-upstream-url value="${esc(configuredUrl()||OFFICIAL_URL)}"/><div class="header-actions" style="margin-top:7px"><button class="btn ghost compact-btn" data-upstream-action="refresh-registry">Refresh Sources</button><button class="btn ghost compact-btn" data-upstream-action="save-registry">Use This Registry</button><button class="btn ghost compact-btn" data-upstream-action="reset-registry">Reset Official</button></div><small>Loaded: ${esc(sourceUrl||'fallback')}</small></div></div>${row('rsdwtools','rsdw','Refresh RSDWTools Data')}${row('rsdw-icons','icons','Refresh Icons')}${row('rsdw-item-manifest','items','Refresh Item Manifest')}${row('rsdw-toolkit','toolkit','Update Server Dev Kit')}${row('dragonconnect','dragonconnect','Repair DragonConnect')}${row('runeschema','runeschema','Download RuneSchema Update')}${row('ue4ss','ue4ss','Download UE4SS Update')}<div class="identity-box"><strong>Stable first, updates retained</strong><p>UE4SS and RuneSchema always keep the packaged Stable Build. Downloading an update adds another version to the application library; it does not erase the stable package or older downloaded builds. Choose the version you want from the runtime version controls when you are ready to apply or repair it.</p></div><div class="identity-box"><strong>RSDWTools ≠ RSDW Dev Kit</strong><p>RSDWTools is the GitHub data source for icons/item metadata. RSDW Dev Kit is the server/host UE4SS runtime tooling mod from RSDWArchive/RSDWDevKit. DragonConnect is hidden launcher-owned Lua client Core for Direct Connect handoff.</p></div><div class="identity-box"><strong>Safe update boundary</strong><p>The registry may provide HTTPS repositories, paths and release/archive URLs only. Dragonwilds Sync does not accept shell commands, PowerShell, post-install scripts or arbitrary executable instructions from the remote manifest.</p></div><div class="panel-subtitle" data-upstream-status>Ready.</div>`;
     base.insertAdjacentElement('beforebegin',section);
 
     section.addEventListener('click',async(event)=>{
@@ -155,12 +163,12 @@
         if(action==='rsdw'||action==='icons'||action==='items')await refreshRsdw(section,action==='icons'?'RSDW icons':action==='items'?'RSDW item manifest':'RSDWTools data/content');
         if(action==='toolkit')await updateRsdwDevKit(section);
         if(action==='dragonconnect')await repairDragonConnect(section);
-        if(action==='runeschema')await updateRuneSchema(section);
-        if(action==='ue4ss')await updateUe4ss(section);
+        if(action==='runeschema')await downloadRuneSchemaUpdate(section);
+        if(action==='ue4ss')await downloadUe4ssUpdate(section);
         if(action==='all'){
           await refreshRsdw(section,'RSDWTools data, icons and item manifest');
           try{await repairDragonConnect(section);}catch(error){setStatus(section,`Data refresh completed; DragonConnect needs attention: ${error.message}`,'error');}
-          for(const fn of [updateRsdwDevKit,updateRuneSchema,updateUe4ss]){try{await fn(section);}catch(error){setStatus(section,`Content refresh completed; runtime update needs attention: ${error.message}`,'error');}}
+          for(const fn of [updateRsdwDevKit,downloadRuneSchemaUpdate,downloadUe4ssUpdate]){try{await fn(section);}catch(error){setStatus(section,`Content refresh completed; runtime download needs attention: ${error.message}`,'error');}}
         }
       }catch(error){setStatus(section,error.message||String(error),'error');}
       finally{loading=false;button.disabled=false;}

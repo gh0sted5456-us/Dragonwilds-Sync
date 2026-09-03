@@ -4,6 +4,7 @@
 (() => {
   const PAGE_LINK = 'https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/servers.html';
   const API_URL = 'https://dragonwilds-sync-directory.dragonwilds.workers.dev/api/v1/worlds';
+  const DIRECTORY_BASE = API_URL.replace(/\/api\/v1\/worlds$/, '');
   const VIEW_KEY = 'dragonwilds-sync-public-server-list-view';
   const REFRESH_MS = 30000;
   const PAGE_SIZE = 50;
@@ -94,6 +95,18 @@
   const isOnline = (world) => ['online', 'starting', 'maintenance'].includes(world.status);
   const currentView = () => localStorage.getItem(VIEW_KEY) === 'cards' ? 'cards' : 'horizontal';
 
+  function enforceWorldConnectPlacards() {
+    document.querySelectorAll('.content').forEach((content) => {
+      const placard = content.querySelector('#add-world-card, .direct-connect-placard, .add-world-list-row');
+      if (!placard) return;
+      content.querySelectorAll('.page-header .header-actions [data-open-connect-world]').forEach((button) => button.remove());
+      const heading = placard.querySelector('h3');
+      const strong = placard.querySelector('strong');
+      if (heading && /^connect to world$/i.test(text(heading.textContent))) heading.textContent = 'Connect to a World';
+      if (strong && /^connect to world$/i.test(text(strong.textContent))) strong.textContent = 'Connect to a World';
+    });
+  }
+
   function broadcastDescriptor(world) {
     if (world.syncBroadcasting && world.gameActive) return { key: 'sync-and-game', label: 'SYNC + DRAGONWILDS', icons: ['sync', 'game'] };
     if (world.syncBroadcasting) return { key: 'sync-only', label: 'SYNC ONLY', icons: ['sync'] };
@@ -120,6 +133,90 @@
     if (!status) return;
     status.className = `dws-public-server-status ${kind}`.trim();
     status.textContent = message;
+  }
+
+  function requestFallbackPassword(world, preview = {}) {
+    return new Promise((resolve) => {
+      const existing = document.querySelector('.dws-public-connect-dialog');
+      if (existing) existing.remove();
+      const dialog = make('dialog', 'dws-public-connect-dialog');
+      const form = make('form');
+      form.method = 'dialog';
+      const heading = make('h3', '', `Connect to ${text(preview?.identity?.world_name, world.name)}`);
+      const route = text(preview?.connection?.external_ip, world.host);
+      const detail = make('p', '', route
+        ? `Verified Sync handoff · ${route}${world.port ? `:${world.port}` : ''}. Enter the World password if one is configured.`
+        : 'Verified Sync handoff. Enter the World password if one is configured.');
+      const label = make('label', '', 'World Password');
+      const input = make('input', 'field');
+      input.type = 'password';
+      input.autocomplete = 'off';
+      input.placeholder = 'Leave blank for an open World';
+      label.appendChild(input);
+      const actions = make('div', 'dws-public-connect-actions');
+      const cancel = make('button', 'btn ghost', 'Cancel');
+      cancel.type = 'button';
+      const connect = make('button', 'btn primary', 'Connect');
+      connect.type = 'submit';
+      actions.append(cancel, connect);
+      form.append(heading, detail, label, actions);
+      dialog.appendChild(form);
+      document.body.appendChild(dialog);
+
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        try { dialog.close(); } catch (_) {}
+        dialog.remove();
+        resolve(value);
+      };
+      cancel.addEventListener('click', () => finish(null));
+      dialog.addEventListener('cancel', (event) => { event.preventDefault(); finish(null); });
+      form.addEventListener('submit', (event) => { event.preventDefault(); finish(input.value || ''); });
+      try { dialog.showModal(); input.focus(); } catch (_) { finish(null); }
+    });
+  }
+
+  async function openDirectoryWorld(world) {
+    const request = { directoryUrl: DIRECTORY_BASE, worldId: world.id };
+    const openJoin = window.__DWSYNC_OPEN_DIRECTORY_JOIN__;
+    if (typeof openJoin === 'function') {
+      openJoin(request);
+      return;
+    }
+
+    const api = window.dragonwilds;
+    if (!api?.invoke) {
+      setStatus('The connection bridge is unavailable. Restart Dragonwilds Sync and try again.', 'error');
+      return;
+    }
+
+    try {
+      setStatus(`Verifying ${world.name}…`);
+      const inspected = await api.invoke('world.directory.join.inspect', { directory_url: request.directoryUrl, world_id: request.worldId });
+      const password = await requestFallbackPassword(world, inspected?.world || {});
+      if (password === null) {
+        setStatus('Connection cancelled.');
+        return;
+      }
+      setStatus(`Linking ${world.name}…`);
+      const linked = await api.invoke('world.directory.join.link', { directory_url: request.directoryUrl, world_id: request.worldId, password });
+      const linkedWorldId = linked?.world?.id || linked?.state?.client?.active_world_id || '';
+      if (!linkedWorldId) throw new Error('The linked World did not return a stable profile ID.');
+
+      let testResult = null;
+      try { testResult = await api.invoke('world.test', { id: linkedWorldId, compact: true }); } catch (_) {}
+      if (testResult?.result?.ok === false) {
+        setStatus(`${world.name} was saved, but Sync needs attention: ${text(testResult.result.error, 'the host did not accept the test connection')}.`, 'error');
+        return;
+      }
+      setStatus(`${world.name} connected and was saved to Connected Worlds.`, 'ok');
+      window.dispatchEvent(new CustomEvent('dws:directory-world-linked', { detail: { id: linkedWorldId } }));
+      setTimeout(() => window.location.reload(), 550);
+    } catch (error) {
+      setStatus(`Could not connect to ${world.name}: ${error?.message || error}`, 'error');
+    }
   }
 
   function renderRows() {
@@ -198,14 +295,7 @@
       if (world.isSync && world.syncBroadcasting) {
         const connect = make('button', 'btn primary', 'Connect');
         connect.type = 'button';
-        connect.addEventListener('click', () => {
-          const openJoin = window.__DWSYNC_OPEN_DIRECTORY_JOIN__;
-          if (typeof openJoin !== 'function') {
-            setStatus('The verified connection dialog is not ready yet. Reopen this tab and try again.', 'error');
-            return;
-          }
-          openJoin({ directoryUrl: API_URL.replace(/\/api\/v1\/worlds$/, ''), worldId: world.id });
-        });
+        connect.addEventListener('click', () => { void openDirectoryWorld(world); });
         detail.appendChild(connect);
       }
       card.append(identity, metrics, detail);
@@ -253,7 +343,7 @@
     catch (error) { setStatus(error.message || String(error), 'error'); return; }
 
     if (!force && rows.length && Date.now() - lastLoadedAt < 5000) { renderRows(); return; }
-    setStatus('Loading public servers…');
+    setStatus('Loading Sync Worlds…');
     try {
       const response = await fetch(endpoint, { headers: { Accept: 'application/json' }, cache: 'no-store' });
       if (!response.ok) throw new Error(`Live directory HTTP ${response.status}`);
@@ -297,7 +387,7 @@
       <div class="dws-public-server-summary" id="dws-public-server-summary"></div>
       <div class="dws-public-server-results" id="dws-public-server-results"><div class="dws-public-empty">Loading the Sync Public World Directory…</div></div>
       <nav class="dws-public-server-pagination" id="dws-public-server-pagination" aria-label="Sync World result pages" hidden></nav>
-      <div class="muted-small" style="margin-top:9px">Resolved read-only endpoint: <span id="dws-public-server-endpoint">—</span> · refreshes every 30 seconds while this tab is open.</div>`;
+      <div class="muted-small" style="margin-top:9px;flex:0 0 auto">Resolved read-only endpoint: <span id="dws-public-server-endpoint">—</span> · refreshes every 30 seconds while this tab is open.</div>`;
 
     root.querySelector('#dws-public-server-load')?.addEventListener('click', () => loadDirectory({ force: true }));
     root.querySelector('#dws-public-server-search')?.addEventListener('input', () => { currentPage = 1; renderRows(); });
@@ -309,6 +399,7 @@
   }
 
   function ensure() {
+    enforceWorldConnectPlacards();
     const mount = document.querySelector('#dws-public-server-list-mount');
     if (!mount) { active = false; stopRefreshTimer(); return; }
     if (!mount.querySelector('.dws-public-server-panel')) mount.appendChild(buildPanel());

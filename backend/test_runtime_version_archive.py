@@ -52,6 +52,7 @@ def main() -> None:
             "rs_profiles": runeschema_repository.SERVER_PROFILES_DIR,
             "ue_download": ue4ss_repository.download_runtime_zip,
             "rs_download": runeschema_repository.download_runtime_zip,
+            "rs_baseline": runeschema_repository._baseline_archive,
             "ue_install": server_systems.install_authoritative_ue4ss_zip,
             "ue_client_install": server_systems.install_client_ue4ss_zip,
             "rs_install": server_systems.install_runeschema_zip,
@@ -76,6 +77,7 @@ def main() -> None:
                  "release_tag": "0.6.0"},
                 _Temp(),
             )
+            runeschema_repository._baseline_archive = lambda: rs_source
             server_systems.install_authoritative_ue4ss_zip = lambda path, target: calls.append(("ue4ss-server", Path(path), target)) or {"ok": True}
             server_systems.install_client_ue4ss_zip = lambda path, target: calls.append(("ue4ss-client", Path(path), target)) or {"ok": True, "role": "client"}
             server_systems.install_runeschema_zip = lambda path, target, **kwargs: calls.append(("runeschema", Path(path), target, kwargs)) or {"ok": True, "kind": "core", "role": kwargs.get("role")}
@@ -101,6 +103,19 @@ def main() -> None:
             assert calls[0][1] == Path(ue["archive"])
             assert calls[1][1] == Path(rs["archive"])
 
+            # The retained server_engine compatibility caller named
+            # _restore_official_runeschema_once now means the immutable packaged
+            # Stable Build, not "download whatever official GitHub has today".
+            version_count = len(runeschema_repository.list_versions()["versions"])
+            def _restore_official_runeschema_once():
+                return archive_policy.archived_authoritative_runeschema_update(
+                    "https://github.com/UnskippableCutscene/RuneSchema", str(game))
+            stable = _restore_official_runeschema_once()
+            assert stable["version_id"] == runeschema_repository.BASELINE_ID
+            assert stable["filename"].startswith("Stable Packaged Build")
+            assert calls[-1][1] == rs_source
+            assert len(runeschema_repository.list_versions()["versions"]) == version_count
+
             # Simulate an older RPC saving a state snapshot loaded before the download.
             # The ZIP-local repository indexes must recover the history on the next read.
             profile_store.save_state({"application": {}})
@@ -122,6 +137,7 @@ def main() -> None:
             runeschema_repository.SERVER_PROFILES_DIR = originals["rs_profiles"]
             ue4ss_repository.download_runtime_zip = originals["ue_download"]
             runeschema_repository.download_runtime_zip = originals["rs_download"]
+            runeschema_repository._baseline_archive = originals["rs_baseline"]
             server_systems.install_authoritative_ue4ss_zip = originals["ue_install"]
             server_systems.install_client_ue4ss_zip = originals["ue_client_install"]
             server_systems.install_runeschema_zip = originals["rs_install"]

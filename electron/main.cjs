@@ -1,7 +1,7 @@
 // V3 argument adapter around the retained Electron main process.
 // One executable, one backend: new Quick CLI is translated to the proven
 // stable-profile-id window launch contract before main-v2.cjs initializes.
-const { app, ipcMain, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, nativeImage } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { buildHeadlessShortcutArgs, buildQuickShortcutArgs, normalizeProfileId, normalizeQuickMode } = require('./quick_shortcut.cjs');
@@ -129,5 +129,18 @@ if (quick) {
     try { window.setTitle(`Dragonwilds Sync Quick · ${mode === 'server' ? 'Server' : (mode === 'coop' ? 'Co-Op' : 'Player')}`); } catch (_) {}
   });
 }
+
+// Quick Play minimizes the launcher to the taskbar while Dragonwilds owns the
+// foreground. The renderer decides when the game session has ended from the
+// authoritative Quick status; this native restore keeps the same launcher
+// window/process alive instead of closing or promoting a second window.
+ipcMain.handle('dragonwilds:window-restore', (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window || window.isDestroyed()) return false;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  return true;
+});
 
 require('./main-v2.cjs');

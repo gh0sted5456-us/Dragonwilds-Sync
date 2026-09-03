@@ -92,7 +92,7 @@ Example body:
     "max": 6
   },
   "tags": ["Modded", "PvE"],
-  "mods": ["ProximityLoot"],
+  "mods": ["ExampleServerMod"],
   "rules": ["Be respectful"],
   "badges": ["Community"],
   "public_connect": {

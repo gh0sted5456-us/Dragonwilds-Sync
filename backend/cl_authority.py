@@ -84,12 +84,13 @@ def _apply_build_binding(result: dict, state: dict, displayed: str) -> dict:
 
 
 def _inventory_rescan_caller(method_name: str) -> bool:
-    """True only while a retained inventory RPC is servicing an explicit Rescan.
+    """True only while a retained inventory RPC is servicing explicit ``rescan:true``.
 
-    The scanner functions are shared with runtime launch/apply code, so changing
-    their default path semantics globally would be unsafe. Only the two inventory
-    RPC names are eligible; then inspect a few immediate frames for the retained
-    handler's matching ``method`` + ``rescanned`` locals.
+    The retained handler also sets its local ``rescanned`` flag when no cache
+    exists. That first uncached read is adoption/discovery behavior, not the
+    user's folder reconciliation command, and must keep scanning the live
+    runtime when the selected profile is active. Only an explicit request
+    parameter may redirect inventory scanning to profile-owned APPDATA.
     """
     requested = str(method_name or "")
     if requested not in _INVENTORY_RESCAN_METHODS:
@@ -101,7 +102,9 @@ def _inventory_rescan_caller(method_name: str) -> bool:
             if frame is None:
                 break
             values = frame.f_locals
-            if str(values.get("method") or "") == requested and bool(values.get("rescanned")):
+            params = values.get("params")
+            explicit_rescan = isinstance(params, dict) and params.get("rescan") is True
+            if str(values.get("method") or "") == requested and explicit_rescan:
                 return True
             frame = frame.f_back
     finally:
@@ -168,7 +171,7 @@ def _mark_reconciliation(rows: list[dict], reconciliation: dict) -> list[dict]:
 
 
 def _install_profile_mod_rescan_authority(server_engine_module) -> None:
-    """Bind inventory Rescan to profile folders and persist add/change/remove evidence."""
+    """Bind explicit inventory Rescan to profile folders and persist change evidence."""
     legacy = sys.modules.get("dragonwilds_service_legacy")
     if legacy is None or bool(getattr(legacy, "_dws_profile_mod_rescan_authority", False)):
         return
@@ -177,8 +180,8 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
     import server_systems
 
     # Retained RPC modules imported scanner functions by object. Rebind them to
-    # wrappers so only inventory Rescan reads profile storage; launch/runtime
-    # callers still see the exact live scanner behavior they already had.
+    # wrappers so only explicit inventory Rescan reads profile storage; launch,
+    # first-run adoption, and runtime callers keep their live scanner behavior.
     def local_inventory_scan(game_dir: str, *, live: bool = False, profile_id: str = local_world.SINGLEPLAYER_ID):
         if _inventory_rescan_caller("singleplayer.inventory"):
             return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)

@@ -17,4 +17,8 @@
   // It also annotates the packaged UE4SS/RuneSchema builds as protected recovery
   // baselines without changing Quick Mode or the retained renderer bundle.
   document.write('<script src="release-profile-mod-folders.js?v=3.5.1-profile-mod-folders"><\\/script>');
+  // Phase 4 keeps a short presentation cache for placard badges. Explicit
+  // Rescan publishes fresh inventory into this view layer immediately so added,
+  // changed and removed profile mods cannot remain visually stale.
+  document.write('<script src="release-live-mod-inventory.js?v=3.5.1-live-mod-inventory"><\\/script>');
 })();

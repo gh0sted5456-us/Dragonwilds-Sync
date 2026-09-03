@@ -15,7 +15,7 @@ const helpyPage = read('website/helpy.html');
 const helpyScript = read('website/helpy.js');
 const packageConfig = JSON.parse(read('package.json'));
 const web = read('backend/directory_web.py');
-const legacy = read('backend/directory_web_legacy.py');
+const compat = read('backend/directory_web_compat.py');
 const manifest = JSON.parse(read('help/manifest.json'));
 
 must(index.includes('release-vnext.css') && index.includes('release-vnext.js'), 'vNext renderer assets are not loaded');
@@ -41,6 +41,6 @@ must(web.includes('data-filter=\\"declared\\"') || web.includes('data-filter="de
 must(web.includes('/api/v1/worlds?active=sync') && web.includes('directory_verified') && web.includes('fingerprint_claimed'), 'Public Declared projection must use verified Sync heartbeat rows');
 must(web.includes('horizontalCard') && web.includes('profileBadges'), 'Public horizontal/profile badge parity is missing');
 must(web.includes('worldIsModded') && web.includes("new Set(['UE4SS','RUNESCHEMA'])") && web.includes("v==='VANILLA'&&worldIsModded(w)"), 'Public cards must share the Vanilla/runtime/server badge cleanup');
-must(legacy.includes('def public_browser_html') && legacy.includes('def remote_admin_html'), 'Preserved public/admin WebGUI implementation is incomplete');
+must(compat.includes('def public_browser_html') && compat.includes('def remote_admin_html'), 'Preserved public/admin WebGUI compatibility implementation is incomplete');
 
 console.log('vNext contract: PASS');

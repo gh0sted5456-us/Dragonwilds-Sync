@@ -44,15 +44,11 @@ renderer/assets/platforms/ue4ss.webp
 renderer/assets/platforms/runeschema.webp
 ```
 
-These files are the exact PNG artwork supplied to the project and retained on the
-GitHub testing-ground branch.
-They are the canonical source for Desktop, WebGUI, World Builder, public placards,
-mod-family chips, documentation/UI previews, and packaged/deployed copies.
-
-Older SVG/WebP variants are legacy compatibility assets only. The tracked RuneSchema
-WebP on main is truncated and must not be used for rendering.
-Do not use them for new UI. They may be retired after all remaining hard-coded legacy
-references have been verified and migrated.
+These files are the project-supplied artwork used by Desktop, WebGUI, World Builder,
+public placards, mod-family chips, documentation/UI previews, and packaged/deployed
+copies. The old hand-drawn `ue4ss.svg` and `runeschema.svg` compatibility assets were
+retired in the September 2026 deprecated-code cleanup after active consumers were
+confirmed to use the canonical WebP registry mappings.
 
 Do not redraw, recolor, invert, trace, or substitute these two canonical marks. UI
 containers may size/crop them with `object-fit: contain`, but the artwork itself must
@@ -68,8 +64,8 @@ Sources/provenance:
 - Windows: bundled geometric Windows mark using the standard Windows blue presentation.
 - GitHub: bundled GitHub mark for local website/download presentation.
 - Linux: bundled local platform-identification artwork.
-- UE4SS: exact project-provided UE4SS logo, bundled canonically as `ue4ss.png`; used only to identify the UE4SS runtime/mod family.
-- RuneSchema: exact project-provided RuneSchema logo, bundled canonically as `runeschema.png`; used only to identify the RuneSchema mod family.
+- UE4SS: exact project-provided UE4SS logo, bundled canonically as `ue4ss.webp`; used only to identify the UE4SS runtime/mod family.
+- RuneSchema: exact project-provided RuneSchema logo, bundled canonically as `runeschema.webp`; used only to identify the RuneSchema mod family.
 - PAKs: original generic Dragonwilds Sync package/cube mark used to identify cooked Unreal PAK/UTOC/UCAS-oriented content; it is not a third-party company logo.
 
 Simple Icons is CC0-1.0. Brand names and logos remain trademarks of their

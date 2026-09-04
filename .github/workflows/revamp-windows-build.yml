@@ -30,6 +30,9 @@ jobs:
           python -m pip install --upgrade -r backend\requirements-build.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Install pinned Node build dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
       # NOTE: this branch's source is already fully materialized (the older
       # scripts\apply_*.py / update_*.py / finalize_*.py codemods this step used
       # to replay were one-time patches from earlier iterative-development

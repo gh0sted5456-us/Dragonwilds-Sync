@@ -1,0 +1,92 @@
+name: Validate Profile Mod Management Revamp
+
+on:
+  push:
+    branches:
+      - revamp/profile-mod-management
+
+permissions:
+  contents: write
+
+jobs:
+  apply-test-build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: windows-2022
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Install pinned Python build dependencies
+        shell: powershell
+        run: |
+          python -m pip install --upgrade -r backend\requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Apply guarded profile mod revamp
+        shell: powershell
+        run: |
+          python scripts\apply_profile_mod_management_revamp.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Verify focused profile-folder contracts
+        shell: powershell
+        run: |
+          python -m py_compile backend\profile_mod_layout.py backend\local_world.py backend\server_engine.py backend\server_systems.py backend\sync_engine.py backend\cl_authority.py backend\shared_mod_repository.py backend\world_maintenance.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_profile_mod_management_revamp.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_v27_13_runtime_profiles.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_cl_authority.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_sync_safety.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run full backend regression matrix
+        shell: powershell
+        run: |
+          $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          node scripts\run_backend_tests.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build and verify portable EXE
+        shell: powershell
+        run: |
+          $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+          & .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path -LiteralPath '.\release\Dragonwilds Sync.exe' -PathType Leaf)) {
+            throw 'Portable EXE was not produced.'
+          }
+
+      - name: Commit validated revamp and remove temporary tooling
+        shell: powershell
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm scripts/apply_profile_mod_management_revamp.py .github/workflows/validate-profile-mod-management-revamp.yml
+          git add backend/profile_mod_layout.py backend/local_world.py backend/server_engine.py backend/server_systems.py backend/sync_engine.py backend/cl_authority.py backend/shared_mod_repository.py backend/world_maintenance.py backend/test_profile_mod_management_revamp.py renderer/release-profile-mod-folders.js scripts/run_backend_tests.cjs
+          if (git diff --cached --quiet) { throw 'Validated revamp produced no source changes.' }
+          git commit -m 'Revamp profile mod folder authority'
+          git push origin HEAD:revamp/profile-mod-management
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: profile-mod-revamp-failure
+          if-no-files-found: warn
+          path: |
+            build.log
+            build-logs/*.log
+            test-results/*.md

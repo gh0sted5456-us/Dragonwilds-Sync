@@ -16,7 +16,8 @@
 
   let storageCache = null;
   let rewritePending = false;
-  const rememberedSelection = { local: '', server: '' };
+  let rescanBusy = false;
+  const selection = (window.__DWSYNC_PROFILE_SELECTION__ ||= { local: '', server: '' });
 
   const text = (value) => String(value ?? '').trim();
   const safeProfileId = (value) => {
@@ -42,16 +43,23 @@
     return storageCache || {};
   }
 
+  function remember(kind, id) {
+    const normalized = text(id);
+    if (!normalized) return;
+    selection[kind] = normalized;
+    window.dispatchEvent(new CustomEvent('dragonwilds:profile-selection-changed', { detail: { kind, id: normalized } }));
+  }
+
   function profileFor(kind) {
     const root = state();
     const rows = kind === 'server' ? serverWorlds(root) : privateWorlds(root);
     const detachedId = text(kind === 'server' ? detachedContext.selectedServerWorldId : detachedContext.selectedWorldId);
     if (detachedId) {
       const found = rows.find((row) => text(row?.id) === detachedId);
-      if (found) return found;
+      if (found) { remember(kind, detachedId); return found; }
     }
 
-    const rememberedId = text(rememberedSelection[kind]);
+    const rememberedId = text(selection[kind]);
     if (rememberedId) {
       const found = rows.find((row) => text(row?.id) === rememberedId);
       if (found) return found;
@@ -61,32 +69,44 @@
     const explorerId = text(explorer?.dataset?.phase5ExplorerId);
     if (explorerId) {
       const found = rows.find((row) => text(row?.id) === explorerId);
-      if (found) return found;
+      if (found) { remember(kind, explorerId); return found; }
     }
 
     const title = visibleWorldName();
     if (title) {
       const named = rows.filter((row) => text(row?.name || row?.nickname) === title);
-      if (named.length === 1) return named[0];
+      if (named.length === 1) { remember(kind, named[0].id); return named[0]; }
     }
 
     const activeId = text(kind === 'server'
       ? root?.server?.active_world_id
       : (root?.client?.active_private_world_id || root?.client?.live_world_id));
-    return rows.find((row) => text(row?.id) === activeId) || rows[0] || null;
+    const fallback = rows.find((row) => text(row?.id) === activeId) || rows[0] || null;
+    if (fallback?.id) remember(kind, fallback.id);
+    return fallback;
   }
 
-  async function modsPath(kind, profileId) {
+  async function modsPath(kind, profile) {
+    const explicit = text(profile?.mods_root || profile?.mods_path);
+    if (explicit) return explicit;
     const paths = await storagePaths();
-    const id = safeProfileId(profileId);
+    const id = safeProfileId(profile?.id);
     if (kind === 'server') {
-      const root = text(paths.server_profiles);
-      if (!root) throw new Error('Server profile storage path is unavailable.');
-      return joinPath(root, id, 'mods');
+      // SERVER_PROFILES_DIR is .../profiles/world/dedicated. Older storage-path
+      // payloads exposed the parent World root instead, so support both shapes
+      // deterministically without searching the filesystem.
+      const serverRoot = text(paths.server_profiles);
+      if (serverRoot) {
+        if (/[\\/]dedicated$/i.test(serverRoot)) return joinPath(serverRoot, id, 'mods');
+        return joinPath(serverRoot, 'dedicated', id, 'mods');
+      }
+      const appData = text(paths.app_data);
+      if (!appData) throw new Error('Application data path is unavailable.');
+      return joinPath(appData, 'profiles', 'world', 'dedicated', id, 'mods');
     }
-    const root = text(paths.app_data);
-    if (!root) throw new Error('Application data path is unavailable.');
-    return joinPath(root, 'profiles', 'world', 'local', id, 'snapshot', 'mods');
+    const appData = text(paths.app_data);
+    if (!appData) throw new Error('Application data path is unavailable.');
+    return joinPath(appData, 'profiles', 'world', 'local', id, 'snapshot', 'mods');
   }
 
   function noteFor(kind) {
@@ -110,21 +130,39 @@
     return `Refresh complete · ${added} added · ${changed} changed · ${removed} removed.`;
   }
 
-  async function authoritativeRescan(kind, profileId, { useVisibleButton = true } = {}) {
-    const visibleButton = document.querySelector(kind === 'server' ? '#refresh-server-inventory' : '#sp-refresh');
-    if (useVisibleButton && visibleButton) {
-      visibleButton.click();
-      updateNote(kind, 'Refreshing from the profile mod folder…');
-      return null;
+  async function authoritativeRescan(kind, profileId) {
+    if (!profileId || rescanBusy) return null;
+    rescanBusy = true;
+    updateNote(kind, 'Refreshing from the selected profile mod folder…');
+    try {
+      const response = await bridge.invoke(
+        kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
+        kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
+      );
+      if (response?.state && typeof response.state === 'object') {
+        window.__DWSYNC_STATE__ = response.state;
+        window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: response.state }));
+      }
+      const rows = Array.isArray(response?.units || response?.mods || response?.inventory)
+        ? (response.units || response.mods || response.inventory)
+        : [];
+      window.dispatchEvent(new CustomEvent('dragonwilds:mod-inventory-refreshed', {
+        detail: {
+          id: profileId,
+          kind,
+          rows,
+          reconciliation: response?.cache?.reconciliation || response?.reconciliation || {},
+          authoritative: true,
+        },
+      }));
+      updateNote(kind, reconciliationText(response), 'success');
+      return response;
+    } catch (error) {
+      updateNote(kind, text(error?.message || error || 'Could not refresh the selected profile Mods folder.'), 'error');
+      throw error;
+    } finally {
+      rescanBusy = false;
     }
-
-    updateNote(kind, 'Refreshing from the profile mod folder…');
-    const response = await bridge.invoke(
-      kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
-      kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
-    );
-    updateNote(kind, reconciliationText(response), 'success');
-    return response;
   }
 
   async function openProfileMods(kind, button) {
@@ -133,11 +171,12 @@
       updateNote(kind, 'No World profile is selected.');
       return;
     }
+    remember(kind, profile.id);
     const original = button.textContent;
     button.disabled = true;
     button.textContent = 'Opening…';
     try {
-      const target = await modsPath(kind, profile.id);
+      const target = await modsPath(kind, profile);
       const opened = await bridge.openPath(target);
       if (!opened) throw new Error(`Could not open ${target}`);
       updateNote(kind, `Profile folder open · ${target}`);
@@ -153,15 +192,12 @@
     const button = document.querySelector(selector);
     if (!button || button.dataset.profileFolderBound === '1') return;
     button.dataset.profileFolderBound = '1';
-    button.title = 'Open this World profile’s mod folder in Windows Explorer';
+    button.title = 'Open this World profile’s authoritative mod folder in Windows Explorer';
     button.addEventListener('click', () => openProfileMods(kind, button));
   }
 
   function hardenRuntimeBaselineUi() {
-    const labels = {
-      baseline: 'PROTECTED RECOVERY BASELINE',
-      official: 'PROTECTED RECOVERY BASELINE',
-    };
+    const labels = { baseline: 'PROTECTED RECOVERY BASELINE', official: 'PROTECTED RECOVERY BASELINE' };
     for (const [id, label] of Object.entries(labels)) {
       document.querySelectorAll(`[data-runtime-build-row="${id}"]`).forEach((row) => {
         row.dataset.recoveryBaseline = '1';
@@ -176,7 +212,6 @@
         }
       });
     }
-
     const ueBaseline = document.querySelector('#update-client-ue4ss-baseline');
     if (ueBaseline) {
       ueBaseline.title = 'Protected packaged UE4SS recovery baseline';
@@ -189,9 +224,6 @@
       const small = runeBaseline.querySelector('small');
       if (small && !/protected/i.test(small.textContent || '')) small.textContent += ' · Protected recovery copy.';
     }
-
-    // Do not advertise a hard-coded experimental version as the baseline. The
-    // status area above these cards already displays the version actually loaded.
     const runeExperimental = document.querySelector('#update-client-runeschema-experimental');
     if (runeExperimental) {
       const strong = runeExperimental.querySelector('strong');
@@ -199,14 +231,6 @@
       if (strong && /built-in\s+0\.6\.3\s+baseline/i.test(strong.textContent || '')) strong.textContent = 'Newest experimental build';
       if (small) small.textContent = 'Optional test channel; the protected packaged baseline remains available for recovery.';
     }
-
-    document.querySelectorAll('.runtime-center-grid > div').forEach((card) => {
-      const name = text(card.querySelector('span')?.textContent).toLowerCase();
-      if (!name.includes('ue4ss') && !name.includes('runeschema')) return;
-      const status = card.querySelector('strong');
-      const version = text(card.querySelector('small')?.textContent);
-      if (status && version && !/not|unknown|unavailable/i.test(version)) status.textContent = 'LOADED';
-    });
   }
 
   function refreshFolderHelpCopy() {
@@ -216,15 +240,7 @@
         node.textContent = 'Open the selected World profile’s Mods folder in Explorer, place UE4SS, RuneSchema, or PAK content in its normal folder structure, then Refresh. The profile folder is the management source of truth.';
       }
     });
-    document.querySelectorAll('.identity-box strong').forEach((strong) => {
-      if (text(strong.textContent) === 'Manual + Nexus-linked inventory') {
-        strong.textContent = 'Folder-managed + Nexus-linked inventory';
-        const paragraph = strong.parentElement?.querySelector('p');
-        if (paragraph) paragraph.textContent = 'Manual mods come from the World profile folder and are reconciled by Refresh. Nexus-linked metadata and update evidence can remain attached to discovered mods.';
-      }
-    });
   }
-
 
   function rewriteUi() {
     rewritePending = false;
@@ -241,12 +257,25 @@
   }
 
   document.addEventListener('click', (event) => {
+    const refresh = event.target?.closest?.('#sp-refresh, #refresh-server-inventory');
+    if (refresh && refresh.dataset.profileAuthorityBypass !== '1') {
+      const kind = refresh.id === 'refresh-server-inventory' ? 'server' : 'local';
+      const profile = profileFor(kind);
+      if (profile?.id) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        remember(kind, profile.id);
+        void authoritativeRescan(kind, text(profile.id));
+      }
+      return;
+    }
+
     const target = event.target?.closest?.('[data-server-manage], [data-server-card][data-world-id], [data-private-manage], [data-private-launch], [data-private-coop], [data-world-id]');
     if (!target) return;
     const serverId = text(target.dataset.serverManage || (target.dataset.serverCard === '1' ? target.dataset.worldId : ''));
-    if (serverId) rememberedSelection.server = serverId;
+    if (serverId) remember('server', serverId);
     const localId = text(target.dataset.privateManage || target.dataset.privateLaunch || target.dataset.privateCoop || (target.dataset.serverCard === '0' ? target.dataset.worldId : ''));
-    if (localId) rememberedSelection.local = localId;
+    if (localId) remember('local', localId);
   }, true);
 
   const observer = new MutationObserver(scheduleRewrite);
@@ -254,5 +283,4 @@
   window.addEventListener('dragonwilds:state-updated', scheduleRewrite);
   window.addEventListener('DOMContentLoaded', scheduleRewrite, { once: true });
   scheduleRewrite();
-
 })();

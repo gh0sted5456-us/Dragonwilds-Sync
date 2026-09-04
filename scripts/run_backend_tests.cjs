@@ -71,9 +71,10 @@ for(const test of tests){
  const scenarioDiagnostic=test==='backend/test_remote_user_permissions.py';
  const remoteScenarios=['test_password_hash_and_world_scoped_permissions','test_payload_honors_map_permission','test_desktop_user_lifecycle_and_permission_assignment','test_created_user_logs_in_through_remote_http_api'];
  try{
-  if(scenarioDiagnostic){
+ if(scenarioDiagnostic){
+   const scenarioEnv={...env}; delete scenarioEnv.DRAGONWILDS_SYNC_APPDATA;
    for(const scenario of remoteScenarios){
-    result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...env,DRAGONWILDS_SYNC_APPDATA:path.join(isolatedAppData,scenario),DWS_REMOTE_PERMISSION_SCENARIO:scenario}});
+    result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...scenarioEnv,DWS_REMOTE_PERMISSION_SCENARIO:scenario}});
     if(result.error||result.status!==0){failedScenario=scenario;break;}
    }
   }else result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});

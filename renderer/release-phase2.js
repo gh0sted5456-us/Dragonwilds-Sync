@@ -207,31 +207,6 @@
     }
   }
 
-  function joinProfilePath(base, kind, id) {
-    const separator = String(base || '').includes('\\') ? '\\' : '/';
-    const clean = String(base || '').replace(/[\\/]+$/, '');
-    const branch = kind === 'server' ? ['profiles', 'world', 'dedicated', id] : ['profiles', 'world', 'local', id];
-    return [clean, ...branch].join(separator);
-  }
-
-  async function openProfileFolder(kind, id) {
-    const state = await stateSnapshot();
-    const world = worldFor(state, kind, id);
-    let target = text(world?.profile_path);
-    if (!target) {
-      const paths = await invoke('application.storage.paths', {});
-      target = joinProfilePath(paths?.app_data, kind, id);
-    }
-    const ok = await bridge.openPath?.(target);
-    if (ok === false) throw new Error(`Windows Explorer could not open ${target}`);
-    return target;
-  }
-
-  function clickModsTab(kind) {
-    const selector = kind === 'server' ? '[data-server-tab="mods"]' : '[data-private-tab="mods"]';
-    document.querySelector(selector)?.click();
-  }
-
   function groupTabs(kind) {
     const marker = kind === 'server' ? '#detach-server-world' : '#detach-private-world';
     if (!document.querySelector(marker)) return;

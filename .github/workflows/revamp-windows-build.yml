@@ -48,6 +48,18 @@ jobs:
           python -m py_compile (Get-ChildItem -Path backend -Filter *.py -Recurse | ForEach-Object { $_.FullName })
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Verify runtime and bundled data contracts
+        run: npm run check:runtime
+
+      - name: Prepare renderer dependencies
+        run: npm run prepare:monaco
+
+      - name: Verify renderer and source contracts
+        run: npm run test:systems:source
+
+      - name: Run backend regression matrix
+        run: npm run test:systems:backend
+
       - name: Build and verify portable EXE
         shell: powershell
         run: |

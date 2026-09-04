@@ -30,52 +30,22 @@ jobs:
           python -m pip install --upgrade -r backend\requirements-build.txt
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Materialize revamp source
-        shell: powershell
-        run: |
-          python -c "from pathlib import Path; p=Path(r'scripts/apply_profile_mod_management_revamp.py'); s=p.read_text(encoding='utf-8'); old='result, count = re.subn(pattern, replacement, text, count=1, flags=re.S)'; new='result, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)'; assert old in s; p.write_text(s.replace(old,new,1), encoding='utf-8')"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\apply_profile_mod_management_revamp.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\update_profile_revamp_contract_tests.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\finalize_profile_revamp_staging.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\apply_profile_mod_destination_settings.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\update_mod_destination_test_contract.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\preserve_direct_runeschema_destination.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\update_alpha11_renderer_contract.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\update_release1_4_profile_path_contract.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\harden_character_backup_uniqueness.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\apply_executable_save_path_contract.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\finalize_executable_save_path_contract.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\route_character_imports_to_saved_root.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\route_server_publish_to_saved_root.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\fix_curated_guard_stager.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\fix_retail_client_guard.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\fix_lane_readme_hook.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\apply_curated_claude_guards.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python scripts\update_curated_path_regression_fixtures.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # NOTE: this branch's source is already fully materialized (the older
+      # scripts\apply_*.py / update_*.py / finalize_*.py codemods this step used
+      # to replay were one-time patches from earlier iterative-development
+      # phases; their exact-text anchors no longer match current source now
+      # that later commits edited those same files directly). Replaying them
+      # here hard-failed this workflow on every push (verified: even
+      # scripts\apply_profile_mod_management_revamp.py alone fails with
+      # "world maintenance inactive roots: expected exactly one match, found 0"
+      # against a clean checkout of this branch). Removed rather than patched
+      # individually since the checkout already compiles clean and passes the
+      # full backend regression matrix with no codemods applied.
 
-      - name: Compile revamp Python sources
+      - name: Compile backend Python sources
         shell: powershell
         run: |
-          python -m py_compile backend\machine_paths.py backend\profile_mod_layout.py backend\profile_mod_destinations.py backend\profile_store.py backend\guided_setup.py backend\local_world.py backend\server_engine.py backend\server_layout.py backend\server_systems.py backend\sync_engine.py backend\cl_authority.py backend\shared_mod_repository.py backend\world_maintenance.py backend\dragonwilds_service.py backend\character_profiles.py backend\save_management.py backend\world_operations.py backend\profile_bundle.py
+          python -m py_compile (Get-ChildItem -Path backend -Filter *.py -Recurse | ForEach-Object { $_.FullName })
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build and verify portable EXE

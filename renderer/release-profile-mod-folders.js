@@ -73,11 +73,11 @@
     // legacy layout (ensure_profile_mod_roots) as part of resolving it.
     const response = await bridge.invoke('application.profile.mods_root', { kind, id: profile?.id });
     const authoritative = text(response?.mods_root);
-    if (authoritative) return authoritative;
+    if (authoritative) return { path: authoritative, kind: text(response?.resolved_kind) || kind };
     // Defensive fallback only: an explicit mods_root/mods_path the backend
     // already attached to the profile object itself (never a renderer guess).
     const explicit = text(profile?.mods_root || profile?.mods_path);
-    if (explicit) return explicit;
+    if (explicit) return { path: explicit, kind };
     throw new Error('Could not resolve this World profile\'s Mods folder.');
   }
 
@@ -107,9 +107,11 @@
     rescanBusy = true;
     updateNote(kind, 'Refreshing from the selected profile mod folder…');
     try {
+      const resolved = await modsPath(kind, { id: profileId });
+      const actualKind = resolved.kind === 'server' ? 'server' : 'local';
       const response = await bridge.invoke(
-        kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
-        kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
+        actualKind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
+        actualKind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
       );
       if (response?.state && typeof response.state === 'object') {
         window.__DWSYNC_STATE__ = response.state;
@@ -121,7 +123,7 @@
       window.dispatchEvent(new CustomEvent('dragonwilds:mod-inventory-refreshed', {
         detail: {
           id: profileId,
-          kind,
+          kind: actualKind,
           rows,
           reconciliation: response?.cache?.reconciliation || response?.reconciliation || {},
           authoritative: true,
@@ -149,9 +151,9 @@
     button.textContent = 'Opening…';
     try {
       const target = await modsPath(kind, profile);
-      const opened = await bridge.openPath(target);
-      if (!opened) throw new Error(`Could not open ${target}`);
-      updateNote(kind, `Profile folder open · ${target}`);
+      const opened = await bridge.openPath(target.path);
+      if (!opened) throw new Error(`Could not open ${target.path}`);
+      updateNote(kind, `Profile folder open · ${target.path}`);
     } catch (error) {
       updateNote(kind, text(error?.message || error || 'Could not open the profile Mods folder.'), 'error');
     } finally {

@@ -103,15 +103,35 @@ def main() -> None:
             smr.LOCAL_PROFILES_DIR = base / "profiles" / "world" / "local"
             smr.SERVER_PROFILES_DIR = base / "profiles" / "world" / "dedicated"
             try:
+                (smr.LOCAL_PROFILES_DIR / "sp-world").mkdir(parents=True)
+                (smr.LOCAL_PROFILES_DIR / "sp-world" / "profile.json").write_text('{"name":"Local"}')
+                (smr.SERVER_PROFILES_DIR / "guard-world").mkdir(parents=True)
+                (smr.SERVER_PROFILES_DIR / "guard-world" / "profile.json").write_text('{"name":"Guard"}')
                 local_desc = smr.describe_profile_mods_root("local", "sp-world")
                 assert Path(local_desc["mods_root"]) == smr.LOCAL_PROFILES_DIR / "sp-world" / "snapshot" / "mods"
+                assert local_desc["resolved_kind"] == "local"
                 for lane in ("ue4ss", "runeschema", "paks"):
                     assert Path(local_desc[lane]).is_dir()
 
                 server_desc = smr.describe_profile_mods_root("dedicated", "guard-world")
                 assert Path(server_desc["mods_root"]) == smr.SERVER_PROFILES_DIR / "guard-world" / "mods"
+                assert server_desc["resolved_kind"] == "server"
                 for lane in ("ue4ss", "runeschema", "paks"):
                     assert Path(server_desc[lane]).is_dir()
+
+                # A mismatched UI shell must resolve the profile's real owner,
+                # not create and open a phantom empty folder in the wrong lane.
+                corrected = smr.describe_profile_mods_root("dedicated", "sp-world")
+                assert corrected["resolved_kind"] == "local"
+                assert Path(corrected["mods_root"]) == Path(local_desc["mods_root"])
+                assert not (smr.SERVER_PROFILES_DIR / "sp-world").exists()
+
+                try:
+                    smr.describe_profile_mods_root("dedicated", "missing-world")
+                except FileNotFoundError:
+                    pass
+                else:
+                    raise AssertionError("missing profile created a phantom Mods folder")
             finally:
                 smr.LOCAL_PROFILES_DIR, smr.SERVER_PROFILES_DIR = old_local, old_server
 

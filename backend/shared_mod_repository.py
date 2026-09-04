@@ -76,6 +76,19 @@ def mods_root_for_profile(kind: str, profile_id: str) -> Path:
     return _mods_root(kind, profile_id)
 
 
+def _resolve_existing_profile_kind(kind: str, profile_id: str) -> str:
+    """Resolve a profile ID to its actual storage lane without creating ghosts."""
+    requested = str(kind or "").strip().casefold()
+    if requested not in {"local", "dedicated"}:
+        raise ValueError("Profile kind must be local or dedicated")
+    other = "dedicated" if requested == "local" else "local"
+    for candidate in (requested, other):
+        profile_dir = _profile_dir(candidate, profile_id)
+        if (profile_dir / "profile.json").is_file():
+            return candidate
+    raise FileNotFoundError(f"World profile not found: {profile_id}")
+
+
 def describe_profile_mods_root(kind: str, profile_id: str) -> dict:
     """Authoritative, backend-resolved profile mod folder description.
 
@@ -85,8 +98,13 @@ def describe_profile_mods_root(kind: str, profile_id: str) -> dict:
     AppData or server-root string concatenation.
     """
     from profile_mod_layout import describe_profile_mod_roots
-    root = mods_root_for_profile(kind, profile_id)
-    return describe_profile_mod_roots(root)
+    resolved_kind = _resolve_existing_profile_kind(kind, profile_id)
+    root = mods_root_for_profile(resolved_kind, profile_id)
+    return {
+        **describe_profile_mod_roots(root),
+        "profile_id": _safe_component(profile_id, "Profile ID"),
+        "resolved_kind": "server" if resolved_kind == "dedicated" else "local",
+    }
 
 
 def _group_root(kind: str, profile_id: str, group: str) -> Path:

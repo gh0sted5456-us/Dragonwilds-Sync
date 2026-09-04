@@ -161,6 +161,8 @@ def main() -> None:
         # strings in the renderer (see backend/test_profile_mod_pathing_guards.py
         # for the backend-side describe_profile_mods_root() coverage).
         "bridge.invoke('application.profile.mods_root'",
+        "response?.resolved_kind",
+        "const actualKind = resolved.kind === 'server' ? 'server' : 'local';",
         "rescan: true",
         "PROTECTED RECOVERY BASELINE",
     ):

@@ -3920,6 +3920,20 @@ def handle(method: str, params: dict) -> object:
         application = state.setdefault("application", {})
         incoming = dict(params or {})
         access_policy_changed = "server_access_policy" in incoming
+        if "machine_custom_paths" in incoming:
+            proposed_paths = incoming.get("machine_custom_paths") if isinstance(incoming.get("machine_custom_paths"), list) else []
+            normalized_paths = []
+            for row in proposed_paths[:50]:
+                if not isinstance(row, dict):
+                    continue
+                label = str(row.get("label") or "").strip()[:80]
+                path = str(row.get("path") or "").strip()[:2048]
+                role = str(row.get("role") or "shared").strip().casefold()
+                if not label or not path:
+                    raise ValueError("Every additional managed location needs both a name and a folder.")
+                normalized_paths.append({"role": role if role in {"shared", "player", "server"} else "shared",
+                                         "label": label, "path": path})
+            incoming["machine_custom_paths"] = normalized_paths
         if "integrations" in incoming:
             application["integrations"] = merge_integrations(application.get("integrations"), incoming.pop("integrations"))
         if "theme" in incoming:

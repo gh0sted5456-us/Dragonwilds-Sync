@@ -43,6 +43,28 @@ def test_machine_mod_mapping_preserves_unsaved_edits_across_rebuilds() -> None:
     assert "new MutationObserver(() => void render())" in source
 
 
+def test_data_management_is_visible_extensible_and_clear() -> None:
+    mapping = _read("release-machine-mod-mapping.js")
+    app = _read("app-v2.js")
+
+    # The release panel must have an actual host in the Data Management page.
+    assert 'id="machine-paths-card"' in app
+    assert '>Data Management</button>' in app
+
+    # Fixed live deployment lanes stay obvious while operators can add named
+    # locations for future tools without silently deploying into them.
+    assert "data-machine-custom-add" in mapping
+    assert "data-machine-custom-save" in mapping
+    assert "machine_custom_paths" in mapping
+    assert "are not treated as mod deployment lanes" in mapping
+
+    # Mod Management should name the profile folder and the scan action by
+    # their actual effects instead of presenting several ambiguous verbs.
+    assert app.count("Open Profile Mod Storage") >= 2
+    assert app.count("Scan Profile Folder") >= 2
+    assert "Profile → scan → deploy" in app
+
+
 def test_player_server_setup_progress_reflects_real_state() -> None:
     source = _read("app-v2.js")
 

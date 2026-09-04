@@ -11,6 +11,7 @@
   ];
   let statusCache = null;
   let rendering = false;
+  let customLocations = null;
   // Fix for the reported "map-pasting doesn't persist" bug: this panel is
   // rebuilt (shell.innerHTML replaced) on every DOM mutation anywhere in the
   // app via the MutationObserver below, using values from statusCache -- not
@@ -58,6 +59,17 @@
     </section>`;
   }
 
+  function customLocationsMarkup() {
+    const rows = (customLocations || []).map((row, index) => `<div class="machine-custom-path-row" data-machine-custom-index="${index}">
+      <select aria-label="Location scope"><option value="shared" ${row.role === 'shared' ? 'selected' : ''}>Shared</option><option value="player" ${row.role === 'player' ? 'selected' : ''}>Player</option><option value="server" ${row.role === 'server' ? 'selected' : ''}>Server</option></select>
+      <input data-machine-custom-label value="${esc(row.label)}" placeholder="Name (for example: Config exports)" aria-label="Location name" />
+      <input data-machine-custom-path value="${esc(row.path)}" placeholder="Choose a folder" aria-label="Folder path" />
+      <button type="button" class="secondary" data-machine-custom-browse="${index}">Browse</button>
+      <button type="button" class="secondary" data-machine-custom-remove="${index}" aria-label="Remove location">Remove</button>
+    </div>`).join('');
+    return `<section class="machine-custom-paths"><div class="machine-mod-map-heading"><div><strong>Additional managed locations</strong><small>Add named folder references for tools or content introduced later. These are saved with this computer, but are not treated as mod deployment lanes until a feature explicitly uses them.</small></div><button type="button" class="secondary" data-machine-custom-add>Add Location</button></div>${rows || '<p class="hint">No additional locations have been added.</p>'}<div class="machine-mod-map-actions"><button type="button" class="primary" data-machine-custom-save>Save Additional Locations</button></div><p class="hint" data-machine-custom-note></p></section>`;
+  }
+
   function ensureStyles() {
     if (document.querySelector('#machine-mod-mapping-style')) return;
     const style = document.createElement('style');
@@ -72,6 +84,7 @@
       .machine-mod-map-row{display:block;margin:10px 0}.machine-mod-map-row>span{display:block;margin-bottom:5px}.machine-mod-map-row small{display:block;opacity:.68;margin-top:2px}
       .machine-mod-map-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.machine-mod-map-input input{width:100%;min-width:0}
       .machine-mod-map-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.machine-mod-map-role .hint{margin:9px 0 0;font-size:.84em;opacity:.72}
+      .machine-custom-paths{margin-top:14px;border:1px solid var(--border,#39404b);border-radius:12px;padding:14px}.machine-custom-path-row{display:grid;grid-template-columns:110px minmax(150px,.7fr) minmax(240px,1.5fr) auto auto;gap:8px;margin-top:8px}.machine-custom-path-row input,.machine-custom-path-row select{min-width:0;width:100%}@media(max-width:900px){.machine-custom-path-row{grid-template-columns:1fr auto}.machine-custom-path-row input[data-machine-custom-path]{grid-column:1/-1}}
     `;
     document.head.appendChild(style);
   }
@@ -82,8 +95,15 @@
     if (!card) return;
     rendering = true;
     try {
+      // Preserve unsaved additional-location edits across the same global
+      // repaint cycle that affects the fixed deployment lanes.
+      if (customLocations !== null && card.querySelector('[data-machine-custom-index]')) syncCustomLocationsFromDom();
       ensureStyles();
       const status = await loadStatus();
+      if (customLocations === null) {
+        const application = currentState().application || {};
+        customLocations = Array.isArray(application.machine_custom_paths) ? application.machine_custom_paths.map((row) => ({ role: text(row?.role) || 'shared', label: text(row?.label), path: text(row?.path) })) : [];
+      }
       let shell = card.querySelector('[data-machine-mod-mapping]');
       if (!shell) {
         shell = document.createElement('div');
@@ -101,7 +121,7 @@
           if (input) preserved[key] = input.value;
         }
       }
-      shell.innerHTML = `<header><div><strong>Installation mod mapping</strong><p>Defaults are detected from the linked executable. Override them when your installation uses a different UE4SS, RuneSchema, or PAK destination. World profiles stay isolated and deploy into these targets.</p></div></header><div class="machine-mod-map-grid">${roleMarkup('player', status.player || {})}${roleMarkup('server', status.server || {})}</div>`;
+      shell.innerHTML = `<header><div><strong>Installation paths</strong><p>Profile storage is the library. These three mapped lanes are the live destinations used when a profile is deployed to the player or server installation.</p></div></header><div class="machine-mod-map-grid">${roleMarkup('player', status.player || {})}${roleMarkup('server', status.server || {})}</div>${customLocationsMarkup()}`;
       for (const [key, value] of Object.entries(preserved)) {
         const [role, lane] = key.split(':');
         const input = document.querySelector(`#machine-map-${role}-${lane}`);
@@ -152,7 +172,44 @@
     }
   }
 
+  function syncCustomLocationsFromDom() {
+    customLocations = [...document.querySelectorAll('[data-machine-custom-index]')].map((row) => ({
+      role: text(row.querySelector('select')?.value) || 'shared',
+      label: text(row.querySelector('[data-machine-custom-label]')?.value),
+      path: text(row.querySelector('[data-machine-custom-path]')?.value),
+    }));
+  }
+
+  async function saveCustomLocations() {
+    const note = document.querySelector('[data-machine-custom-note]');
+    try {
+      syncCustomLocationsFromDom();
+      if (customLocations.some((row) => !row.label || !row.path)) throw new Error('Every additional location needs both a name and a folder.');
+      const result = await api.invoke('application.update', { machine_custom_paths: customLocations });
+      if (result?.state && typeof result.state === 'object') {
+        window.__DWSYNC_STATE__ = result.state;
+        window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: result.state }));
+      }
+      if (note) { note.textContent = 'Additional locations saved.'; note.dataset.tone = 'success'; }
+    } catch (error) {
+      if (note) { note.textContent = text(error?.message || error || 'Could not save additional locations.'); note.dataset.tone = 'error'; }
+    }
+  }
+
   document.addEventListener('click', async (event) => {
+    const addCustom = event.target.closest('[data-machine-custom-add]');
+    if (addCustom) { syncCustomLocationsFromDom(); customLocations.push({ role: 'shared', label: '', path: '' }); await render(); return; }
+    const removeCustom = event.target.closest('[data-machine-custom-remove]');
+    if (removeCustom) { syncCustomLocationsFromDom(); customLocations.splice(Number(removeCustom.dataset.machineCustomRemove), 1); await render(); return; }
+    const browseCustom = event.target.closest('[data-machine-custom-browse]');
+    if (browseCustom) {
+      syncCustomLocationsFromDom();
+      const index = Number(browseCustom.dataset.machineCustomBrowse);
+      const picked = await api.pickDirectory('Choose additional managed location', customLocations[index]?.path || '');
+      if (picked && customLocations[index]) customLocations[index].path = picked;
+      await render(); return;
+    }
+    if (event.target.closest('[data-machine-custom-save]')) { await saveCustomLocations(); return; }
     const browse = event.target.closest('[data-machine-map-browse]');
     if (browse) {
       const [role, lane] = text(browse.dataset.machineMapBrowse).split(':');

@@ -123,4 +123,22 @@ if legacy in text:
 elif canonical not in text:
     raise RuntimeError("V1.1.9 RuneSchema profile fixture path not found")
 
+# Service RPC profile switching must source each World's PAKs from that profile's
+# visible PAKs lane. Do not rely on hidden adoption from the shared live install.
+path = "backend/test_service_rpc.py"
+text = read(path)
+anchor = "            import server_engine\n"
+addition = '''            first_profile_pak_root = server_engine._profile_mods_dir(first_id) / "PAKs"\n            first_profile_pak_root.mkdir(parents=True, exist_ok=True)\n            (first_profile_pak_root / "WorldOne.pak").write_bytes(b"one")\n            rpc(proc, "server.world.inventory", {"id": first_id, "rescan": True}, 103)\n'''
+if addition not in text:
+    if anchor not in text:
+        raise RuntimeError("Service RPC server_engine anchor missing")
+    text = text.replace(anchor, anchor + addition, 1)
+legacy = '            profile_pak_root = server_engine._profile_mods_dir(second_id) / "pak_mods"\n'
+canonical = '            profile_pak_root = server_engine._profile_mods_dir(second_id) / "PAKs"\n'
+if legacy in text:
+    text = text.replace(legacy, canonical, 1)
+elif canonical not in text:
+    raise RuntimeError("Service RPC World Two PAK lane fixture missing")
+write(path, text)
+
 print("Remaining curated path regression fixtures updated without live-adoption semantics.")

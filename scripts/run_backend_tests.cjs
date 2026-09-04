@@ -70,5 +70,9 @@ for(const test of tests){
  const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result;
  try{result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});}
  finally{try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}}
- if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);} if(result.status!==0)process.exit(result.status||1);
+ if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
+ if(result.status!==0){
+  if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);
+  process.exit(result.status||1);
+ }
 }

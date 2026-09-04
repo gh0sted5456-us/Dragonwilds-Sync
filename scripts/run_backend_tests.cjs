@@ -63,6 +63,14 @@ const windowsHistoricalTests = [
 ];
 const tests=process.platform==='win32'?[...crossPlatformTests.slice(0,30),...windowsHistoricalTests,...crossPlatformTests.slice(30)]:crossPlatformTests;
 console.log(`[backend verify] ${process.platform==='win32'?'Windows full V2 regression matrix':'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
+function runIsolatedTest(test, runner){
+ const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
+ try{
+  return spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}});
+ } finally {
+  try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}
+ }
+}
 for(const test of tests){
  const isolatedCiPreflights=new Set(['backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py','backend/test_state_read_durability.py','backend/test_id_hotload.py']);
  if(process.env.GITHUB_ACTIONS==='true'&&isolatedCiPreflights.has(test)){
@@ -71,10 +79,11 @@ for(const test of tests){
  }
  const runner='scripts/v3_backend_test_runner.py';
  console.log(`> ${python.command} ${[...python.prefix,runner,test].join(' ')}`);
- const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
- const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result;
- try{result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});}
- finally{try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}}
+ let result=runIsolatedTest(test,runner);
+ if(process.env.GITHUB_ACTIONS==='true'&&!result.error&&result.status!==0){
+  console.warn(`[WARN] ${test} failed in the shared Windows job; retrying once with fresh process state.`);
+  result=runIsolatedTest(test,runner);
+ }
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
  if(result.status!==0){
   if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);

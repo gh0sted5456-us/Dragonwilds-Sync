@@ -177,6 +177,6 @@ if __name__ == "__main__":
             test()
         except Exception:
             if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"::error file=backend/test_remote_user_permissions.py,line=1::Remote permission scenario failed: {test.__name__}")
+                print(f"DWS_TEST_SCENARIO_FAILED={test.__name__}", flush=True)
             raise
     print("remote user password and World-scoped permission tests passed")

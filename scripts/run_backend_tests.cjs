@@ -68,10 +68,14 @@ for(const test of tests){
  console.log(`> ${python.command} ${[...python.prefix,runner,test].join(' ')}`);
  const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
  const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result;
- try{result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});}
+ const scenarioDiagnostic=test==='backend/test_remote_user_permissions.py';
+ try{result=spawnSync(python.command,[...python.prefix,runner,test],scenarioDiagnostic?{encoding:'utf8',shell:false,env}:{stdio:'inherit',shell:false,env});}
  finally{try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}}
+ if(scenarioDiagnostic){if(result.stdout)process.stdout.write(result.stdout);if(result.stderr)process.stderr.write(result.stderr);}
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
  if(result.status!==0){
+  const scenario=scenarioDiagnostic?String(result.stdout||'').match(/DWS_TEST_SCENARIO_FAILED=([A-Za-z0-9_]+)/)?.[1]:'';
+  if(process.env.GITHUB_ACTIONS==='true'&&scenario)console.error(`::error file=${test},line=1::Remote permission scenario failed: ${scenario}`);
   if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);
   process.exit(result.status||1);
  }

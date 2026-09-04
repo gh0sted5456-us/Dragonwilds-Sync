@@ -93,7 +93,7 @@ jobs:
         run: python scripts/v3_backend_test_runner.py backend/test_state_read_durability.py
 
       - name: Run backend regression matrix
-        run: npm run test:systems:backend
+        run: npm run test:backend
 
       - name: Build and verify portable EXE
         shell: powershell

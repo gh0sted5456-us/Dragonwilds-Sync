@@ -1,5 +1,6 @@
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
 path = Path(__file__).with_name("apply_curated_claude_guards.py")
 text = path.read_text(encoding="utf-8")
 old = '''    if old_loop in text:
@@ -45,4 +46,15 @@ test_new = '''            for key in ("ue4ss", "runeschema", "paks"):
 if text.count(test_old) != 1:
     raise RuntimeError(f"lane-note guard assertion expected once, found {text.count(test_old)}")
 path.write_text(text.replace(test_old, test_new, 1), encoding="utf-8")
-print("Profile lane notes wrap the resolver and the guard checks only the three child lanes.")
+
+# Release 1.1.5 still points its administrator-relaunch source assertions at the
+# retired Electron entrypoint. The live contract is in main-v2.cjs.
+release_test = ROOT / "backend" / "test_release1_1_5.py"
+release_text = release_test.read_text(encoding="utf-8")
+legacy = '    electron = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")\n'
+active = '    electron = (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")\n'
+if release_text.count(legacy) != 1:
+    raise RuntimeError(f"Release 1.1.5 Electron entrypoint assertion expected once, found {release_text.count(legacy)}")
+release_test.write_text(release_text.replace(legacy, active, 1), encoding="utf-8")
+
+print("Profile lane notes/test scope fixed and Release 1.1.5 now audits the active Electron entrypoint.")

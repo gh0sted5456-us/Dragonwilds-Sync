@@ -59,7 +59,9 @@ def test_player_server_setup_progress_reflects_real_state() -> None:
 
     # A step that is not confirmed done must never render as done: once a
     # step is not done, every step after it is blocked, not fabricated.
-    assert "if (!done) blocked = true;" in source
+    assert "const complete = !blocked && done;" in source
+    assert "if (!complete) blocked = true;" in source
+    assert "${complete ? '✓'" in source
 
 
 def main() -> None:

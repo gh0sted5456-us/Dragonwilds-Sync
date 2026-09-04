@@ -3747,9 +3747,10 @@
     ];
     let blocked = false;
     const rows = steps.map(([title, help, done]) => {
-      const state = done ? 'done' : (blocked ? 'blocked' : 'current');
-      if (!done) blocked = true;
-      return `<div class="setup-progress-step ${state}"><span class="setup-progress-icon">${done ? '✓' : (state === 'blocked' ? '○' : '•')}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(help)}</small></div></div>`;
+      const complete = !blocked && done;
+      const state = complete ? 'done' : (blocked ? 'blocked' : 'current');
+      if (!complete) blocked = true;
+      return `<div class="setup-progress-step ${state}"><span class="setup-progress-icon">${complete ? '✓' : (state === 'blocked' ? '○' : '•')}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(help)}</small></div></div>`;
     }).join('');
     return `<section class="setup-progress-panel"><div class="panel-header"><div><h3>Setup progress</h3><span class="panel-subtitle">Reflects the current machine configuration -- nothing here advances until its prerequisite is actually met.</span></div></div><div class="setup-progress-steps">${rows}</div></section>`;
   }

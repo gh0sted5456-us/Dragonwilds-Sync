@@ -171,8 +171,10 @@ def test_created_user_logs_in_through_remote_http_api() -> None:
 
 
 if __name__ == "__main__":
-    for test in (test_password_hash_and_world_scoped_permissions, test_payload_honors_map_permission,
-                 test_desktop_user_lifecycle_and_permission_assignment, test_created_user_logs_in_through_remote_http_api):
+    scenarios = (test_password_hash_and_world_scoped_permissions, test_payload_honors_map_permission,
+                 test_desktop_user_lifecycle_and_permission_assignment, test_created_user_logs_in_through_remote_http_api)
+    selected = os.environ.get("DWS_REMOTE_PERMISSION_SCENARIO", "").strip()
+    for test in (item for item in scenarios if not selected or item.__name__ == selected):
         if os.environ.get("GITHUB_ACTIONS") == "true":
             print(f"DWS_TEST_SCENARIO_START={test.__name__}", flush=True)
         try:

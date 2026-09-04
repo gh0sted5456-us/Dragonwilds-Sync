@@ -60,6 +60,26 @@ jobs:
       - name: Verify renderer and source contracts
         run: npm run test:systems:source
 
+      - name: Verify remote permission hashing
+        env:
+          DWS_REMOTE_PERMISSION_SCENARIO: test_password_hash_and_world_scoped_permissions
+        run: python scripts/v3_backend_test_runner.py backend/test_remote_user_permissions.py
+
+      - name: Verify remote map permission
+        env:
+          DWS_REMOTE_PERMISSION_SCENARIO: test_payload_honors_map_permission
+        run: python scripts/v3_backend_test_runner.py backend/test_remote_user_permissions.py
+
+      - name: Verify remote user lifecycle
+        env:
+          DWS_REMOTE_PERMISSION_SCENARIO: test_desktop_user_lifecycle_and_permission_assignment
+        run: python scripts/v3_backend_test_runner.py backend/test_remote_user_permissions.py
+
+      - name: Verify remote HTTP login
+        env:
+          DWS_REMOTE_PERMISSION_SCENARIO: test_created_user_logs_in_through_remote_http_api
+        run: python scripts/v3_backend_test_runner.py backend/test_remote_user_permissions.py
+
       - name: Run backend regression matrix
         run: npm run test:systems:backend
 

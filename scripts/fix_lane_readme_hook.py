@@ -30,5 +30,19 @@ def ensure_profile_mod_roots(mods_root: Path):
 '''
 if text.count(old) != 1:
     raise RuntimeError(f"lane README hook tail expected once, found {text.count(old)}")
-path.write_text(text.replace(old, new, 1), encoding="utf-8")
-print("Profile lane notes now wrap the authoritative lane resolver deterministically.")
+text = text.replace(old, new, 1)
+
+# The resolver also returns the Mods root itself. Only the three child lanes get
+# human-facing README notes.
+test_old = '''            for lane in lanes.values():
+                assert (lane / "README.txt").is_file()
+            assert "next Refresh" not in (lanes["ue4ss"] / "README.txt").read_text(encoding="utf-8")
+'''
+test_new = '''            for key in ("ue4ss", "runeschema", "paks"):
+                assert (lanes[key] / "README.txt").is_file()
+            assert "next Refresh" not in (lanes["ue4ss"] / "README.txt").read_text(encoding="utf-8")
+'''
+if text.count(test_old) != 1:
+    raise RuntimeError(f"lane-note guard assertion expected once, found {text.count(test_old)}")
+path.write_text(text.replace(test_old, test_new, 1), encoding="utf-8")
+print("Profile lane notes wrap the resolver and the guard checks only the three child lanes.")

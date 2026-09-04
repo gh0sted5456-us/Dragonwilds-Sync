@@ -163,6 +163,7 @@ def main() -> None:
         "bridge.invoke('application.profile.mods_root'",
         "response?.resolved_kind",
         "const actualKind = resolved.kind === 'server' ? 'server' : 'local';",
+        "#sp-open-mods-folder, #server-open-mods-folder",
         "rescan: true",
         "PROTECTED RECOVERY BASELINE",
     ):

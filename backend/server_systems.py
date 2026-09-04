@@ -731,6 +731,7 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     stored = SERVER_PROFILES_DIR / profile_id / "mods"
     profile_roots = ensure_profile_mod_roots(stored)
     mods = profile_roots["ue4ss"]
+    runeschema = profile_roots["runeschema"]
     paks = profile_roots["paks"]
     profile = load_server_profile(profile_id)
     overrides = profile.get("unit_overrides") or {}
@@ -787,6 +788,13 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
             add(name, "ue4ss_mod", source_dir=path)
         else:
             add(name, "ue4ss_mod", source_files=[path])
+
+    # Canonical profile storage keeps RuneSchema child mods in their own
+    # visible lane. The nested UE4SS/RuneSchema/mods case above is retained
+    # only for compatibility with profiles created by older builds.
+    for name, is_dir, path in _iter_top_level(runeschema):
+        add(name, "runeschema_mod", source_dir=path if is_dir else None,
+            source_files=[] if is_dir else [path])
 
     dirs, grouped = _group_pak_siblings(_iter_top_level(paks))
     for name, path in dirs:

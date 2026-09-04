@@ -231,6 +231,15 @@
   }
 
   document.addEventListener('click', (event) => {
+    const openFolder = event.target?.closest?.('#sp-open-mods-folder, #server-open-mods-folder');
+    if (openFolder) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const kind = openFolder.id === 'server-open-mods-folder' ? 'server' : 'local';
+      void openProfileMods(kind, openFolder);
+      return;
+    }
+
     const refresh = event.target?.closest?.('#sp-refresh, #refresh-server-inventory');
     if (refresh && refresh.dataset.profileAuthorityBypass !== '1') {
       const kind = refresh.id === 'refresh-server-inventory' ? 'server' : 'local';

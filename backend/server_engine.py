@@ -1911,6 +1911,11 @@ class ServerEngine:
         if selected.get("cache_warning"):
             self._event(selected["cache_warning"], "warn")
         profile = load_server_profile(profile_id) or profile
+        # Profile storage is authoritative even when this World is already
+        # selected. Always materialize its UE4SS/RuneSchema/PAK payloads before
+        # launch; runtime cores remain protected by restore_profile_mods().
+        restored_mod_files = restore_profile_mods(profile_id, Path(self._profile_root(profile)))
+        self._event(f"Materialized {restored_mod_files} profile mod file(s) before dedicated launch.", "ok")
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
         # Direct Start Dedicated must enforce the same runtime-role boundary as
         # unified Start World/Publish.  Client-only enabled.txt markers otherwise

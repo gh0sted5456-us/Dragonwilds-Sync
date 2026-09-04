@@ -60,6 +60,20 @@ def main() -> None:
                 assert (lanes[key] / "README.txt").is_file()
             assert "next Refresh" not in (lanes["ue4ss"] / "README.txt").read_text(encoding="utf-8")
 
+            # Canonical server-profile RuneSchema mods must be inventoried
+            # directly from Mods/RuneSchema.
+            rune_mod = lanes["runeschema"] / "ProfileRuneMod"
+            rune_mod.mkdir()
+            (rune_mod / "recipe.json").write_text("{}")
+            import server_systems as systems
+            old_system_profiles = systems.SERVER_PROFILES_DIR
+            systems.SERVER_PROFILES_DIR = se.SERVER_PROFILES_DIR
+            try:
+                snapshot_units = systems.scan_profile_snapshot_units(profile)
+            finally:
+                systems.SERVER_PROFILES_DIR = old_system_profiles
+            assert any(unit.key == "runeschema_mod::ProfileRuneMod" for unit in snapshot_units)
+
             game = server_install(base / "notes")
             layout = resolve_server_layout(game)
             layout.ue4ss_mods_dir.mkdir(parents=True, exist_ok=True)

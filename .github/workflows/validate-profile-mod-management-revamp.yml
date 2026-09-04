@@ -34,6 +34,8 @@ jobs:
       - name: Apply guarded profile mod revamp
         shell: powershell
         run: |
+          python -c "from pathlib import Path; p=Path(r'scripts/apply_profile_mod_management_revamp.py'); s=p.read_text(encoding='utf-8'); old='result, count = re.subn(pattern, replacement, text, count=1, flags=re.S)'; new='result, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)'; assert old in s; p.write_text(s.replace(old,new,1), encoding='utf-8')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\apply_profile_mod_management_revamp.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

@@ -1722,7 +1722,7 @@
       }
       if (tab === 'spawner') { await refreshServerPlayers(world, true, false); await refreshServerSpawner(world, { quiet:true }); return; }
       if (tab === 'console') { await refreshServerConsole(world, true); return; }
-      if (tab === 'mods') { await refreshServerInventory(world, true); return; }
+      if (tab === 'mods') { await refreshServerInventory(world, true, true); return; }
       if (tab === 'backups') { await refreshServerBackups(world, true); return; }
       if (tab === 'feedback') { await refreshServerFeedback(world, true); return; }
       if (tab === 'maintenance' || tab === 'configuration') { await refreshServerRuntime(true); await refreshWorldMaintenance(world, true); return; }
@@ -1751,7 +1751,7 @@
         if (tab === 'map') await ensureAshenfallMap({ world });
         render(); startPlayerPolling(world); return;
       }
-      if (tab === 'mods') { await refreshSinglePlayerInventory(true); return; }
+      if (tab === 'mods') { await refreshSinglePlayerInventory(true, true); return; }
       if (tab === 'configuration') {
         try { const response=await api.invoke('singleplayer.config.list',{profile_id:world.id});state.singleplayerConfigs[world.id]=response.configs||[]; }
         catch (_) { state.singleplayerConfigs[world.id]=[]; }
@@ -4084,7 +4084,9 @@
 
   function renderSinglePlayerDetail(world) {
     const worldId=String(world?.id||state.data?.client?.active_private_world_id||'singleplayer');
-    const units=state.singleplayerInventory||[];
+    // Inventory is profile-scoped. A process-global last-loaded list can show a
+    // different World's mods after navigating between profile detail pages.
+    const units=state.privateInventory[worldId]||[];
     const runtime=state.data?.server?.runtime||{};
     const live=String(state.data?.client?.live_world_id||'')===worldId;
     const broadcasting=!!world?.status?.broadcasting;

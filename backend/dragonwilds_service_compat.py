@@ -3703,7 +3703,11 @@ def handle(method: str, params: dict) -> object:
         cached = _inventory_cache(profile)
         rescanned = bool(params.get("rescan")) or not cached["updated_at"]
         if rescanned:
-            units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+            # Profile Mod Management inventories the profile-owned source tree,
+            # even while this World is active. The live game tree is only the
+            # deployment target and may temporarily differ from profile storage.
+            units = scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)
+            units = [{**row, "live": live} for row in units]
             cached = _cache_local_inventory(profile_id, units, live=live)
             warnings = pop_singleplayer_scan_warnings()
         else:
@@ -5877,10 +5881,10 @@ def handle(method: str, params: dict) -> object:
         cached = _inventory_cache(profile)
         rescanned = bool(params.get("rescan")) or not cached["updated_at"]
         if rescanned:
-            root = server_root_for_profile(profile)
-            # Inventory rendering remains read-only. Only the first uncached load
-            # or an explicit Rescan walks the mod tree.
-            units = scan_mod_units(profile_id, root) if active and root else scan_profile_snapshot_units(profile_id)
+            # The profile is the source of truth. Never substitute the running
+            # server installation here: it is a deployment target and can omit
+            # stored mods that have not yet been deployed.
+            units = scan_profile_snapshot_units(profile_id)
             cached = _cache_server_inventory(profile_id, units, active=active)
             rows = cached["mods"]
             warnings = pop_server_scan_warnings()

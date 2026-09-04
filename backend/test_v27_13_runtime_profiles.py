@@ -111,6 +111,7 @@ def main() -> None:
     electron_preload = (ROOT / "electron/preload-v2.cjs").read_text(encoding="utf-8")
     local_source = (ROOT / "backend/local_world.py").read_text(encoding="utf-8")
     server_source = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
+    service_source = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     for token in (
         "RuneSchema Build",
         "Update Official",
@@ -175,6 +176,11 @@ def main() -> None:
     assert "openProfileMods: (kind, id) => ipcRenderer.invoke('dragonwilds:open-profile-mods'" in electron_preload
     assert "ipcMain.handle('dragonwilds:open-profile-mods'" in electron_main
     assert "const error=await shell.openPath(value)" in electron_main
+    assert "scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)" in service_source
+    assert "units = scan_profile_snapshot_units(profile_id)" in service_source
+    assert "const units=state.privateInventory[worldId]||[];" in renderer
+    assert "refreshServerInventory(world, true, true)" in renderer
+    assert "refreshSinglePlayerInventory(true, true)" in renderer
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

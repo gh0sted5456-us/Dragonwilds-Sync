@@ -42,6 +42,11 @@ def main() -> int:
         "test_v3_phase1.py", "test_v3_phase2.py", "test_v3_phase3.py", "test_v3_phase4.py",
         "test_feature_workers.py", "test_phase5_runtime_worker_bridge.py",
         "test_character_item_regression.py", "test_complete_reset_runtime_paths.py",
+        # The profile/executable revamp is current architecture, not a preserved
+        # V1/V2 compatibility contract. These tests intentionally inspect the
+        # current service/path sources and must never be redirected to V2 files.
+        "test_executable_save_paths.py", "test_profile_mod_management_revamp.py",
+        "test_profile_mod_pathing_guards.py", "test_profile_mod_destination_settings.py",
     }
     is_current_service_test = test.name in current_service_tests
     source = test.read_text(encoding="utf-8", errors="ignore")

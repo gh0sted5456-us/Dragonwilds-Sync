@@ -73,7 +73,7 @@ for(const test of tests){
  try{
   if(scenarioDiagnostic){
    for(const scenario of remoteScenarios){
-    result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...env,DWS_REMOTE_PERMISSION_SCENARIO:scenario}});
+    result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...env,DRAGONWILDS_SYNC_APPDATA:path.join(isolatedAppData,scenario),DWS_REMOTE_PERMISSION_SCENARIO:scenario}});
     if(result.error||result.status!==0)break;
    }
   }else result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});

@@ -43,6 +43,7 @@ from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
 from server_scheduler import normalize_notice
 from player_tracker import PLAYER_SERVICE
+from runtime_architecture import normalize_runtime_architecture
 from character_profiles import list_starter_characters, starter_character_path
 from character_submissions import quarantine_submission_bytes
 from player_backups import latest_player_backup, player_backup_status, store_player_backup
@@ -2779,6 +2780,7 @@ class ShareServer:
                               "world_save_download": profile.get("world_save_download") or {"enabled": False},
                               "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
                               "dragonlink_connect": {"enabled": dragonlink_enabled, "mode": "direct-panel-once" if dragonlink_enabled else "manual"},
+                              "runtime_architecture": normalize_runtime_architecture((profile.get("sync_config") or {}).get("runtime_architecture")),
                               "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
                               "server_health": initial_health}
             client_meta = build_client_meta(STATE.manifest)
@@ -2921,6 +2923,7 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "world_save_download": profile.get("world_save_download") or {"enabled": False},
             "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
             "dragonlink_connect": {"enabled": bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)), "mode": "direct-panel-once" if bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)) else "manual"},
+            "runtime_architecture": normalize_runtime_architecture((profile.get("sync_config") or {}).get("runtime_architecture")),
             "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
             "player_map": {"allow_remote_clients": bool((profile.get("player_map") or {}).get("allow_remote_clients", False))},
             "external_hierarchy": {

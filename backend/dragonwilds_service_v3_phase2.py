@@ -210,6 +210,8 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         advertised = manifest.get("dragonlink_connect") if isinstance(manifest.get("dragonlink_connect"), dict) else {}
         result["dragonlink"]["advertised_connect"] = bool(advertised.get("enabled", False))
         result["dragonlink"]["connect_mode"] = str(advertised.get("mode") or ("direct-panel-once" if advertised.get("enabled") else "manual"))
+        from runtime_architecture import normalize_runtime_architecture
+        result["dragonlink"]["advertised_runtime_architecture"] = normalize_runtime_architecture(manifest.get("runtime_architecture"))
     if mode == "server":
         runtime_status = runtime.get("runtime") if isinstance(runtime.get("runtime"), dict) else runtime
         history = list(runtime_status.get("metric_history") or [])[-180:]

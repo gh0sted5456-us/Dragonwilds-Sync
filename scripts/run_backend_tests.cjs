@@ -22,6 +22,7 @@ const crossPlatformTests = [
   'backend/test_profile_mod_pathing_guards.py',
   'backend/test_executable_save_paths.py',
   'backend/test_profile_mod_destination_settings.py',
+  'backend/test_runtime_architecture.py',
   'backend/test_dragonlink_native.py',
   'backend/test_dragonlink_contracts.py',
   'backend/test_external_file_mirror.py',

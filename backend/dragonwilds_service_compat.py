@@ -5433,6 +5433,9 @@ def handle(method: str, params: dict) -> object:
         for key in ("password", "port", "port_auto", "lan_broadcast", "dragonlink_connect_enabled"):
             if key in incoming_sync:
                 sync[key] = incoming_sync.get(key)
+        if "runtime_architecture" in incoming_sync:
+            from runtime_architecture import normalize_runtime_architecture
+            sync["runtime_architecture"] = normalize_runtime_architecture(incoming_sync.get("runtime_architecture"))
         if "file_mirror_index_url" in incoming_sync:
             mirror_url = str(incoming_sync.get("file_mirror_index_url") or "").strip()[:2000]
             if mirror_url and urllib.parse.urlparse(mirror_url).scheme.casefold() != "https":

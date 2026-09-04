@@ -1965,7 +1965,6 @@ body[data-theme="dark-pad"][data-glass="1"] .settings-section::before,body[data-
 .unified-launch-console-row.game{border-left-color:var(--dws-console-game,#79b8ff)}.unified-launch-console-row.game b,.unified-launch-console-row.game span{color:var(--dws-console-game,#79b8ff)}
 .unified-launch-console-row.ue4ss{border-left-color:var(--dws-console-ue4ss,#f38b8b)}.unified-launch-console-row.ue4ss b,.unified-launch-console-row.ue4ss span{color:var(--dws-console-ue4ss,#f38b8b)}
 .unified-launch-console-row.runeschema{border-left-color:var(--dws-console-runeschema,#65d8cf)}.unified-launch-console-row.runeschema b,.unified-launch-console-row.runeschema span{color:var(--dws-console-runeschema,#65d8cf)}
-.unified-launch-console-row.chat{border-left-color:var(--dws-console-chat,#caa7ff)}.unified-launch-console-row.chat b,.unified-launch-console-row.chat span{color:var(--dws-console-chat,#caa7ff)}
 .unified-launch-console-row.server{border-left-color:var(--dws-console-server,#f1bf62)}.unified-launch-console-row.server b,.unified-launch-console-row.server span{color:var(--dws-console-server,#f1bf62)}
 .unified-launch-console-row.sync{border-left-color:var(--dws-console-sync,#72d39c)}.unified-launch-console-row.sync b,.unified-launch-console-row.sync span{color:var(--dws-console-sync,#72d39c)}
 .native-console-color-picker{position:fixed;left:-100px;top:-100px;width:1px;height:1px;opacity:.01;pointer-events:none}

@@ -51,13 +51,11 @@ _MOD_LOG_TAGS: dict[str, re.Pattern] = {
         r"^(?:\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s*)?(?:\[[^\]\r\n]{1,64}\]\s*){0,4}\[RuneSchema\]",
         re.IGNORECASE,
     ),
-    "chat": re.compile(
-        r"^(?:\d{1,2}:\d{2}:\d{2}(?:\.\d+)?\s*)?(?:\[[^\]\r\n]{1,64}\]\s*){0,4}\[DragonLink-Chat\]",
-        re.IGNORECASE,
-    ),
+    # A "chat" source classifier for "[DragonLink-Chat]" lines previously lived
+    # here. The native DragonLink-Chat mod/DLL is retired and never built or
+    # installed (see native/ue4ss-mods/README.md), so no UE4SS.log a current
+    # server produces can ever match it; removed rather than kept as dead code.
 }
-
-_CHAT_PAYLOAD = re.compile(r"\[DragonLink-Chat\]\s*(\{.*\})\s*$", re.IGNORECASE)
 
 # Where each registered mod keeps its own editable config, relative to the
 # UE4SS Mods folder. Mirrors the install-path convention in
@@ -368,24 +366,6 @@ def _ue4ss_entries(runtime: dict, started: float, limit: int = 250) -> tuple[lis
             "message": message[:4000],
             "_identity": f"ue4ss:{path}:{offset}",
         }
-        if source == "chat":
-            match = _CHAT_PAYLOAD.search(message)
-            if match:
-                try:
-                    payload = json.loads(match.group(1))
-                except (ValueError, TypeError):
-                    payload = {}
-                if isinstance(payload, dict) and payload.get("schema") == "DragonLink.Chat.v1":
-                    sender = str(payload.get("sender") or payload.get("player_id") or "Player").strip()
-                    direction = str(payload.get("direction") or "chat").strip().casefold()
-                    body = str(payload.get("body") or "").strip()
-                    entry["message"] = f"{sender}: {body}"[:4000]
-                    entry["chat"] = {
-                        "direction": direction[:24], "sender": sender[:160],
-                        "player_id": str(payload.get("player_id") or "")[:160],
-                        "character_guid": str(payload.get("character_guid") or "")[:160],
-                        "body": body[:2000],
-                    }
         rows.append(entry)
     return rows, str(path)
 

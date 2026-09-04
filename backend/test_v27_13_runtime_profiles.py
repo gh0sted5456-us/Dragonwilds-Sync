@@ -118,6 +118,8 @@ def main() -> None:
         "Fetch Latest Experimental",
         'id="sp-open-mods-folder"',
         'id="server-open-mods-folder"',
+        'data-profile-mod-kind="local"',
+        'data-profile-mod-kind="server"',
         'data-profile-mod-folder-note="local"',
         "Folder-managed + Nexus-linked inventory",
         "Manual mod archive import retired",
@@ -185,6 +187,7 @@ def main() -> None:
     assert "lastConsolePayload=payload||lastConsolePayload" in renderer
     assert "sourceCategory(row)===filter" in renderer
     assert "if(lastConsolePayload)draw(lastConsolePayload)" in renderer
+    assert "const profileId = text(button?.dataset?.profileId)" in overlay
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

@@ -140,23 +140,23 @@
   }
 
   async function openProfileMods(kind, button) {
-    const profile = profileFor(kind);
-    if (!profile?.id) {
+    const profileId = text(button?.dataset?.profileId);
+    if (!profileId) {
       updateNote(kind, 'No World profile is selected.');
       return;
     }
-    remember(kind, profile.id);
+    remember(kind, profileId);
     const original = button.textContent;
     button.disabled = true;
     button.textContent = 'Opening…';
     try {
       if (typeof bridge.openProfileMods === 'function') {
-        const result = await bridge.openProfileMods(kind, profile.id);
+        const result = await bridge.openProfileMods(kind, profileId);
         if (!result?.ok) throw new Error(text(result?.error) || 'Windows could not open the profile Mods folder.');
         updateNote(kind, `Profile folder open · ${text(result.path)}`);
         return;
       }
-      const target = await modsPath(kind, profile);
+      const target = await modsPath(kind, { id: profileId });
       const opened = await bridge.openPath(target.path);
       if (!opened) throw new Error(`Could not open ${target.path}`);
       updateNote(kind, `Profile folder open · ${target.path}`);
@@ -241,7 +241,7 @@
     if (openFolder) {
       event.preventDefault();
       event.stopImmediatePropagation();
-      const kind = openFolder.id === 'server-open-mods-folder' ? 'server' : 'local';
+      const kind = text(openFolder.dataset.profileModKind) === 'server' ? 'server' : 'local';
       void openProfileMods(kind, openFolder);
       return;
     }

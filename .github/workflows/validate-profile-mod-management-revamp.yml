@@ -38,6 +38,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\apply_profile_mod_management_revamp.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts\update_profile_revamp_contract_tests.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify focused profile-folder contracts
         shell: powershell
@@ -76,8 +78,8 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm scripts/apply_profile_mod_management_revamp.py .github/workflows/validate-profile-mod-management-revamp.yml
-          git add backend/profile_mod_layout.py backend/local_world.py backend/server_engine.py backend/server_systems.py backend/sync_engine.py backend/cl_authority.py backend/shared_mod_repository.py backend/world_maintenance.py backend/test_profile_mod_management_revamp.py renderer/release-profile-mod-folders.js scripts/run_backend_tests.cjs
+          git rm scripts/apply_profile_mod_management_revamp.py scripts/update_profile_revamp_contract_tests.py .github/workflows/validate-profile-mod-management-revamp.yml
+          git add backend/profile_mod_layout.py backend/local_world.py backend/server_engine.py backend/server_systems.py backend/sync_engine.py backend/cl_authority.py backend/shared_mod_repository.py backend/world_maintenance.py backend/test_profile_mod_management_revamp.py backend/test_v27_13_runtime_profiles.py backend/test_sync_safety.py renderer/release-profile-mod-folders.js scripts/run_backend_tests.cjs
           if (git diff --cached --quiet) { throw 'Validated revamp produced no source changes.' }
           git commit -m 'Revamp profile mod folder authority'
           git push origin HEAD:revamp/profile-mod-management

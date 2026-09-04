@@ -6,6 +6,8 @@ import json
 import os
 import secrets
 import socket
+import subprocess
+import sys
 import tempfile
 import urllib.request
 from pathlib import Path
@@ -174,6 +176,14 @@ if __name__ == "__main__":
     scenarios = (test_password_hash_and_world_scoped_permissions, test_payload_honors_map_permission,
                  test_desktop_user_lifecycle_and_permission_assignment, test_created_user_logs_in_through_remote_http_api)
     selected = os.environ.get("DWS_REMOTE_PERMISSION_SCENARIO", "").strip()
+    if not selected:
+        for scenario in scenarios:
+            environment = os.environ.copy()
+            environment.pop("DRAGONWILDS_SYNC_APPDATA", None)
+            environment["DWS_REMOTE_PERMISSION_SCENARIO"] = scenario.__name__
+            subprocess.run([sys.executable, str(Path(__file__).resolve())], env=environment, check=True)
+        print("remote user password and World-scoped permission tests passed")
+        raise SystemExit(0)
     for test in (item for item in scenarios if not selected or item.__name__ == selected):
         test()
     print("remote user password and World-scoped permission tests passed")

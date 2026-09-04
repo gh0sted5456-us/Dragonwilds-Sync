@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 from process_utils import run_hidden
 
-from network_client import download_latest_player_backup, download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, ping_world, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, upload_player_backup, worldsave_status
+from network_client import download_latest_player_backup, download_starter_character, download_worldsave, download_worldsave_backup, list_worldsave_backups, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, ping_world, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, upload_player_backup, worldsave_status
 from sync_engine import _running_game_pid, activate_or_adopt_client_world_profile, client_world_has_snapshot, delete_client_world_profile, launch_game, reset_client_managed_payload_for_resync, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
 from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR, application_user_id, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
@@ -6438,6 +6438,18 @@ def handle(method: str, params: dict) -> object:
         world["retained_world_save"] = {**result, "retained_at": now_iso(), "purpose": "player_requested_copy"}
         save_state(state)
         return {"result": result, "state": public_state(state)}
+
+    if method == "world.worldsave.backups.list":
+        world = find_world(state, str(params.get("id") or ""))
+        if world is None: raise KeyError("World not found")
+        return {"result": list_worldsave_backups(world)}
+
+    if method == "world.worldsave.backups.download":
+        world = find_world(state, str(params.get("id") or ""))
+        if world is None: raise KeyError("World not found")
+        destination = str(params.get("destination") or "").strip()
+        if not destination: raise ValueError("Choose where to save this World backup.")
+        return {"result": download_worldsave_backup(world, str(params.get("name") or ""), destination)}
 
     if method == "world.feedback.submit":
         world_id = str(params.get("id") or "")

@@ -1046,7 +1046,21 @@ ipcMain.handle('dragonwilds:rsdw-toolkit-root', async (_event, incoming) => {
 
 ipcMain.handle('dragonwilds:open-external', async (_event,target) => { try { const raw=String(target||'').trim(); const url=new URL(raw); const safeWeb=['http:','https:'].includes(url.protocol); const safeSteam=/^steam:\/\/(?:(?:run|rungameid|validate|install)\/(?:1374490|4019830)|nav\/games\/details\/1374490)$/i.test(raw); if(!safeWeb&&!safeSteam)return false; await shell.openExternal(url.toString()); return true; } catch(_){return false;} });
 ipcMain.handle('dragonwilds:open-in-app-browser', (event,target) => createExternalBrowserWindow(target, event.sender));
-ipcMain.handle('dragonwilds:open-path', async (_event,target) => { if(!target)return false; return !(await shell.openPath(target)); });
+ipcMain.handle('dragonwilds:open-path', async (_event,target) => {
+  const value=String(target||'').trim();
+  if(!value||!fs.existsSync(value))return false;
+  try{
+    // Electron's shell.openPath can hand a directory back to the packaged app
+    // on some Windows file-association setups. Launch Explorer explicitly so
+    // profile folders always appear in a normal desktop Explorer window.
+    if(process.platform==='win32'&&fs.statSync(value).isDirectory()){
+      const child=spawn('explorer.exe',[value],{detached:true,stdio:'ignore',windowsHide:false});
+      child.unref();
+      return true;
+    }
+    return !(await shell.openPath(value));
+  }catch(_){return false;}
+});
 ipcMain.handle('dragonwilds:reveal-path', (_event,target) => { const value=String(target||'').trim(); if(!value||!fs.existsSync(value))return false; shell.showItemInFolder(value); return true; });
 
 const gotLock = app.requestSingleInstanceLock();

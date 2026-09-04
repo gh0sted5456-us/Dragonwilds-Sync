@@ -52,8 +52,8 @@ must(navigationJs.includes('function matchingNodes') && navigationJs.includes('f
 must(navigationJs.includes("observe(document.documentElement, { childList: true, subtree: true })"),
   'noncritical release enhancement may retain the coordinated broad observer');
 
-for (const token of ['Runtime &amp; Data Center', 'update-client-ue4ss', 'update-client-runeschema', "data-application-settings-tab=\"runtimes\""]) {
-  must(appV2.includes(token), `coherent Runtime & Data controls must retain ${token}`);
+for (const token of ['Data Management', 'update-client-ue4ss', 'update-client-runeschema', 'id="machine-paths-card"', "data-application-settings-tab=\"runtimes\""]) {
+  must(appV2.includes(token), `coherent Data Management controls must retain ${token}`);
 }
 must(!appV2.includes('Client &amp; Singleplayer Runtime'),
   'legacy duplicate client runtime settings must remain consolidated into Runtime & Data');

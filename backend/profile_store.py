@@ -257,7 +257,7 @@ def default_state() -> dict:
         "schema_version": SCHEMA_VERSION,
         "application": {
             "server_mode_enabled": False,
-            "theme": "dark-fantasy",
+            "theme": "dark",
             "language": "en",
             "game_dir": "",
             "game_exe": "",
@@ -402,7 +402,8 @@ def load_state() -> dict:
         write_json(V2_SETTINGS_PATH, state)
     state.setdefault("schema_version", SCHEMA_VERSION)
     application = state.setdefault("application", {})
-    application.setdefault("theme", "dark-fantasy")
+    application["theme"] = "light" if str(application.get("theme") or "").casefold() == "light" else "dark"
+    application["glass_theme"] = False
     language = str(application.get("language") or "en").casefold()
     application["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
     application.setdefault("save_dir", "")

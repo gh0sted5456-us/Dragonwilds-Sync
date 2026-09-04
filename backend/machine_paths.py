@@ -84,12 +84,12 @@ def _server_roots_from_exe(executable: object) -> tuple[Path, Path, Path]:
 def _runeschema_target(game_root: Path) -> tuple[Path, Path]:
     root = game_root / "Binaries" / "Win64" / "ue4ss" / "Mods" / "RuneSchema"
     canonical = root / "mods"
-    if root.is_dir() and not canonical.exists():
+    if root.is_dir():
         try:
             physical = next((child for child in root.iterdir() if child.is_dir() and child.name.casefold() == "mods"), None)
         except OSError:
             physical = None
-        target = physical or root
+        target = physical or canonical
     else:
         target = canonical
     return root.resolve(strict=False), target.resolve(strict=False)
@@ -98,6 +98,10 @@ def _runeschema_target(game_root: Path) -> tuple[Path, Path]:
 def _default_mod_paths(game_root: Path) -> dict[str, Path]:
     runeschema_root, runeschema_mods = _runeschema_target(game_root)
     return {
+        "win64": (game_root / "Binaries" / "Win64").resolve(strict=False),
+        "ue4ss_root": (game_root / "Binaries" / "Win64" / "ue4ss").resolve(strict=False),
+        "ue4ss_bootstrap": (game_root / "Binaries" / "Win64" / "dwmapi.dll").resolve(strict=False),
+        "server_loader": (game_root / "Binaries" / "Win64" / "version.dll").resolve(strict=False),
         "ue4ss": (game_root / "Binaries" / "Win64" / "ue4ss" / "Mods").resolve(strict=False),
         "runeschema_root": runeschema_root,
         "runeschema": runeschema_mods,

@@ -17,12 +17,6 @@ def _legacy_explicit_paths(role: str, selected_root: object) -> dict[str, Path]:
     """
     layout = resolve_client_layout(selected_root) if role == "player" else resolve_server_layout(selected_root)
     runeschema = layout.runeschema_mods_dir
-    if not runeschema.exists() and layout.runeschema_root.exists():
-        try:
-            physical = next((child for child in layout.runeschema_root.iterdir() if child.is_dir() and child.name.casefold() == "mods"), None)
-        except OSError:
-            physical = None
-        runeschema = physical or layout.runeschema_root
     return {"ue4ss": layout.ue4ss_mods_dir.resolve(strict=False),
             "runeschema": runeschema.resolve(strict=False),
             "paks": layout.paks_mods_dir.resolve(strict=False)}

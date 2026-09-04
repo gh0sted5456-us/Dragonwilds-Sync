@@ -64,6 +64,22 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert app.count("Scan Profile Folder") >= 2
     assert "Profile → scan → deploy" in app
 
+    # Settings exposes Player paths/loaders first; Server stays an optional
+    # feature and appears only after the operator enables it.
+    assert "settingsNav('player','♙','Player')" in app
+    assert "serverEnabled?settingsNav('server','▣','Server'):''" in app
+    assert "Resolved loader layout" in mapping
+    assert "ue4ss_bootstrap" in mapping and "server_loader" in mapping
+
+
+def test_only_dark_and_light_themes_are_user_selectable() -> None:
+    app = _read("app-v2.js")
+    settings = app[app.find("function renderSettings"):app.find("function renderWelcome")]
+    assert "[['dark','Dark','Low-glare dark interface'],['light','Light','Clean light interface']]" in settings
+    for retired in ("Dark Pads", "Desert Script", "Eastern", "Cathedral stained glass", "Choose GIF / Image"):
+        assert retired not in settings
+    assert "const theme=requestedTheme==='light'?'light':'dark';" in app
+
 
 def test_player_server_setup_progress_reflects_real_state() -> None:
     source = _read("app-v2.js")

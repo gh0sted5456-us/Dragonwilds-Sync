@@ -51,9 +51,10 @@
         <div class="machine-mod-map-input"><input id="machine-map-${role}-${lane}" value="${esc(value)}" data-default="${esc(defaultValue)}" data-mapped="${esc(mapped)}" ${ready ? '' : 'disabled'} /><button type="button" class="secondary" data-machine-map-browse="${role}:${lane}" ${ready ? '' : 'disabled'}>Browse</button></div>
       </label>`;
     }).join('');
+    const runtimePaths = ready ? `<div class="machine-runtime-paths"><strong>Resolved loader layout</strong><small>Game root: ${esc(row.game_root || '')}</small><small>Bootstrap: ${esc(row.ue4ss_bootstrap || '')}</small><small>UE4SS root: ${esc(row.ue4ss_root || '')}</small>${role === 'server' ? `<small>Dedicated loader: ${esc(row.server_loader || '')}</small>` : ''}</div>` : '';
     return `<section class="machine-mod-map-role" data-machine-map-role="${role}">
       <div class="machine-mod-map-heading"><div><strong>${label} mod destinations</strong><small>${ready ? `Installation: ${esc(row.game_root || row.install_root || '')}` : esc(row?.error || 'Configure the executable and Saved directory first.')}</small></div><span class="badge ${ready ? 'ok' : 'warn'}">${ready ? 'MAPPED' : 'SETUP REQUIRED'}</span></div>
-      ${fields}
+      ${runtimePaths}${fields}
       <div class="machine-mod-map-actions"><button type="button" class="secondary" data-machine-map-defaults="${role}" ${ready ? '' : 'disabled'}>Use detected defaults</button><button type="button" class="primary" data-machine-map-save="${role}" ${ready ? '' : 'disabled'}>Save mapped paths</button></div>
       <p class="hint" data-machine-map-note="${role}">${ready ? 'These are deployment targets only. The selected World profile Mods folder remains the content source of truth.' : 'Link the executable and Saved directory above first.'}</p>
     </section>`;
@@ -82,6 +83,7 @@
       .machine-mod-map-role{border:1px solid var(--border,#39404b);border-radius:12px;padding:14px;background:color-mix(in srgb,var(--surface,#181b21) 94%,transparent)}
       .machine-mod-map-heading{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px}.machine-mod-map-heading small{display:block;margin-top:3px;opacity:.72;word-break:break-all}
       .machine-mod-map-row{display:block;margin:10px 0}.machine-mod-map-row>span{display:block;margin-bottom:5px}.machine-mod-map-row small{display:block;opacity:.68;margin-top:2px}
+      .machine-runtime-paths{display:grid;gap:4px;margin:10px 0 14px;padding:10px;border-radius:8px;background:var(--panel-2,#111516)}.machine-runtime-paths small{word-break:break-all;opacity:.76}
       .machine-mod-map-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.machine-mod-map-input input{width:100%;min-width:0}
       .machine-mod-map-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.machine-mod-map-role .hint{margin:9px 0 0;font-size:.84em;opacity:.72}
       .machine-custom-paths{margin-top:14px;border:1px solid var(--border,#39404b);border-radius:12px;padding:14px}.machine-custom-path-row{display:grid;grid-template-columns:110px minmax(150px,.7fr) minmax(240px,1.5fr) auto auto;gap:8px;margin-top:8px}.machine-custom-path-row input,.machine-custom-path-row select{min-width:0;width:100%}@media(max-width:900px){.machine-custom-path-row{grid-template-columns:1fr auto}.machine-custom-path-row input[data-machine-custom-path]{grid-column:1/-1}}

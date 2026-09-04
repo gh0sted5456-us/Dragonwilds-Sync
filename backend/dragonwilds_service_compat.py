@@ -3937,8 +3937,9 @@ def handle(method: str, params: dict) -> object:
         if "integrations" in incoming:
             application["integrations"] = merge_integrations(application.get("integrations"), incoming.pop("integrations"))
         if "theme" in incoming:
-            theme = str(incoming.get("theme") or "dark-fantasy")
-            incoming["theme"] = theme if theme in ("dark-fantasy", "dark-pad", "light", "fantasy", "high-contrast", "desert-script", "eastern") else "dark-fantasy"
+            theme = str(incoming.get("theme") or "dark").casefold()
+            incoming["theme"] = "light" if theme == "light" else "dark"
+            incoming["glass_theme"] = False
         if "language" in incoming:
             language = str(incoming.get("language") or "en").casefold()
             incoming["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"

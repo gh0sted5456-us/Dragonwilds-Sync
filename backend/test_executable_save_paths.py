@@ -38,6 +38,9 @@ def main():
         assert player["worlds"] == (saved / "SaveGames").resolve()
         assert player["characters"] == (saved / "SaveCharacters").resolve()
         assert player["ue4ss"] == (game / "Binaries" / "Win64" / "ue4ss" / "Mods").resolve()
+        assert player["ue4ss_root"] == (game / "Binaries" / "Win64" / "ue4ss").resolve()
+        assert player["ue4ss_bootstrap"] == (game / "Binaries" / "Win64" / "dwmapi.dll").resolve()
+        assert player["runeschema"] == (game / "Binaries" / "Win64" / "ue4ss" / "Mods" / "RuneSchema" / "mods").resolve()
         assert player["paks"] == (game / "Content" / "Paks" / "~mods").resolve()
         assert normalize_save_root(saved / "SaveGames") == saved.resolve()
         bogus = root / "not-a-save.sav"; bogus.write_text("x", encoding="utf-8")
@@ -58,6 +61,8 @@ def main():
         server = server_machine_paths(server_exe, server_saved)
         assert server["game_root"] == server_game.resolve()
         assert server["worlds"] == (server_saved / "SaveGames").resolve()
+        assert server["server_loader"] == (server_game / "Binaries" / "Win64" / "version.dll").resolve()
+        assert server["runeschema"] == (server_game / "Binaries" / "Win64" / "ue4ss" / "Mods" / "RuneSchema" / "mods").resolve()
 
         state = {"application": {"game_dir": "legacy-user-entered", "game_exe": "", "mod_install_paths": {"player": {"ue4ss": "bad"}},
                                  "server_install": {"install_dir": "legacy", "server_exe": ""}}}

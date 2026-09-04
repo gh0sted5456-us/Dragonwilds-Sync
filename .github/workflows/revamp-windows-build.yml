@@ -89,6 +89,9 @@ jobs:
       - name: Verify worker startup observability
         run: python scripts/v3_backend_test_runner.py backend/test_worker_startup_observability.py
 
+      - name: Verify state read durability
+        run: python scripts/v3_backend_test_runner.py backend/test_state_read_durability.py
+
       - name: Run backend regression matrix
         run: npm run test:systems:backend
 

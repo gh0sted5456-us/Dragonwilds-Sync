@@ -1050,9 +1050,17 @@ async function openDesktopPath(target) {
   const value=String(target||'').trim();
   if(!value||!fs.existsSync(value))return false;
   try{
-    // Electron routes folders through the user's desktop shell and returns an
-    // empty error string on success. This also crosses an elevated app boundary
-    // correctly, which a directly spawned explorer.exe process may not do.
+    // A normal Explorer process is more reliable for folders than shell.openPath:
+    // Windows can acknowledge openPath without surfacing a visible window.
+    if(process.platform==='win32'&&fs.statSync(value).isDirectory()){
+      try {
+        const explorer=spawn(path.join(process.env.WINDIR||'C:\\Windows','explorer.exe'),[value],{
+          detached:true,stdio:'ignore',windowsHide:false,
+        });
+        explorer.unref();
+        return true;
+      } catch (_) {}
+    }
     const error=await shell.openPath(value);
     if(!error)return true;
     if(process.platform==='win32'&&fs.statSync(value).isDirectory()){
@@ -1064,12 +1072,18 @@ async function openDesktopPath(target) {
 ipcMain.handle('dragonwilds:open-path', async (_event,target) => openDesktopPath(target));
 ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id) => {
   try {
-    const result=await serviceInvoke('application.profile.mods_root',{kind:String(kind||''),id:String(id||'')});
-    const target=String(result?.mods_root||'').trim();
-    if(!target)throw new Error('The profile Mods folder could not be resolved.');
+    const profileKind=String(kind||'').trim().toLowerCase();
+    const profileId=String(id||'').trim();
+    if(!['local','server'].includes(profileKind))throw new Error('The profile type is invalid.');
+    if(!profileId||profileId==='.'||profileId==='..'||/[\\/:*?"<>|]/.test(profileId))throw new Error('The profile id is invalid.');
+    // Resolve this directly from the application's active AppData root. Opening
+    // profile storage must not depend on the backend process being responsive.
+    const profileBase=path.join(activeProgramDataRoot(),'profiles','world',profileKind==='server'?'dedicated':'local',profileId);
+    const target=path.join(profileBase,...(profileKind==='server'?['mods']:['snapshot','mods']));
+    for(const lane of ['UE4SS','RuneSchema','PAKs'])fs.mkdirSync(path.join(target,lane),{recursive:true});
     const ok=await openDesktopPath(target);
     if(!ok)throw new Error(`Windows could not open ${target}`);
-    return {ok:true,path:target,resolved_kind:String(result?.resolved_kind||kind||'')};
+    return {ok:true,path:target,resolved_kind:profileKind};
   } catch (error) {
     return {ok:false,error:String(error?.message||error||'Could not open the profile Mods folder.')};
   }

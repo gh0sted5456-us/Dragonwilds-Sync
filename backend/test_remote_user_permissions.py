@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import http.cookiejar
 import json
+import os
 import secrets
 import socket
 import tempfile
@@ -170,8 +171,12 @@ def test_created_user_logs_in_through_remote_http_api() -> None:
 
 
 if __name__ == "__main__":
-    test_password_hash_and_world_scoped_permissions()
-    test_payload_honors_map_permission()
-    test_desktop_user_lifecycle_and_permission_assignment()
-    test_created_user_logs_in_through_remote_http_api()
+    for test in (test_password_hash_and_world_scoped_permissions, test_payload_honors_map_permission,
+                 test_desktop_user_lifecycle_and_permission_assignment, test_created_user_logs_in_through_remote_http_api):
+        try:
+            test()
+        except Exception:
+            if os.environ.get("GITHUB_ACTIONS") == "true":
+                print(f"::error file=backend/test_remote_user_permissions.py,line=1::Remote permission scenario failed: {test.__name__}")
+            raise
     print("remote user password and World-scoped permission tests passed")

@@ -1,6 +1,16 @@
 # Dragonwilds Sync — Profile Mod + Machine Path Contract
 
-This document is the review contract for the current `revamp/profile-mod-management` workstream. It is intentionally written so another reviewer (including Claude) can audit the implementation without relying on historical assumptions.
+This document is the review contract for the `revamp/executable-save-paths` workstream (executable + Saved-directory machine config, mod destination mapping, runtime architecture negotiation, DragonConnect repositioning, and Chat Bridge removal). It is intentionally written so another reviewer (including Claude/Codex) can audit the implementation without relying on historical assumptions.
+
+## Final architecture summary
+
+Nothing below is "derived only" — every layer states explicitly what is machine-authored, what is executable-derived, and what is profile-authored.
+
+- **Machine** — the exact Player/Server executable, the exact Saved directory, and the mapped UE4SS/RuneSchema/PAK deployment destinations for this installation. Destinations default from the executable but are individually overrideable and persist across restarts.
+- **Profile** — isolated mod content (`Mods/UE4SS`, `Mods/RuneSchema`, `Mods/PAKs`) for one World. Profiles own *what* mods belong to a World; they never own *where* those mods land on disk.
+- **World** — runtime architecture requirements: which loader components (UE4SS, RuneSchema) this World declares `required`/`optional`/`forbidden`/`standalone`. See "World-owned runtime architecture" below.
+- **DragonConnect** — connection/runtime metadata infrastructure (the Lua direct-connect helper and its manifest fields). Not a chat system; Chat has been removed entirely. See "DragonConnect" below.
+- **Runtime Manager** materializes the required runtime architecture (UE4SS core, RuneSchema core) into the machine's mapped destinations. **Profile Manager** materializes a World's profile-owned mod content into those same destinations. They operate on the same destination folders but own disjoint content: Runtime Manager never touches profile-owned mod units, and Profile Manager never touches runtime/core files (enforced by the exclude-lists in `server_engine.py`'s `restore_profile_mods()`/`_clear_children()`).
 
 ## Core ownership model
 
@@ -32,7 +42,14 @@ The executable determines the live game tree. From that tree Sync derives the no
 - generated `mods.txt`
 - other runtime/core files
 
-Machine-level overrides for mod destinations, where retained, are deployment targets only. They are never profile storage.
+### Mapped mod destinations
+
+The executable determines the *default* UE4SS/RuneSchema/PAK destinations, but those defaults are not a hard architectural assumption. Each of the three lanes is individually overrideable per machine role (Player, Server):
+
+- Overrides are persisted under `application.machine_mod_paths.<role>.<lane>` (`backend/machine_paths.py`'s `_apply_mod_mapping()`), validated to stay inside the resolved installation (`_validate_mod_mapping()` — an override cannot equal or escape the game root), and read back on every `application.machine_paths.status` call as `mod_overrides`/`mod_defaults`/`<lane>` (the effective, resolved value).
+- The renderer's Installation Mod Mapping panel (`renderer/release-machine-mod-mapping.js`) is where an operator edits these. It tracks unsaved edits explicitly (typed, pasted, dropped, or Browse-picked) so a background UI refresh elsewhere in the app can never silently discard an unsaved mapped path before Save is clicked — see the "renderer persistence" note in that file.
+- Deployment code (`profile_mod_destinations.py`'s `resolve_mod_install_paths()`/`default_mod_install_paths()`, and every caller that plants profile mods into a live destination) always consumes the *effective* mapped value, never re-derives its own guess.
+- Mapped destinations are deployment targets only — they are never profile storage, and switching machine mappings never moves or duplicates a profile's own `Mods/` content.
 
 ### Runtime/core ownership
 
@@ -41,6 +58,21 @@ UE4SS and RuneSchema **cores are machine runtime**, not profile mods.
 They survive World/profile swaps. Connected clients can receive required runtime/core updates quietly as part of synchronization.
 
 A profile swap must never delete RuneSchema DLL/config/enable files or the UE4SS core/bootstrap simply because a different profile is activated.
+
+### World-owned runtime architecture
+
+RuneSchema currently depends on UE4SS, but that dependency is not assumed forever. A World declares its loader/runtime requirements independently of today's default pairing, via `sync_config.runtime_architecture` (`backend/runtime_architecture.py`):
+
+```text
+runtime_architecture:
+  ue4ss:      required | optional | forbidden
+  runeschema: required | optional | forbidden | standalone
+```
+
+- `normalize_runtime_architecture()` is the single seam every reader/writer goes through; anything missing or invalid falls back to today's `{ue4ss: required, runeschema: required}` default, so an existing World that never declared an architecture reconciles exactly as it always has.
+- The World-save RPC (`dragonwilds_service_compat.py`) normalizes an incoming declaration before persisting it. Both manifest-building call sites in `server_systems.py` publish the normalized declaration alongside `dragonlink_connect`, and Quick-mode status for a linked World surfaces it as `advertised_runtime_architecture`.
+- `reconcile_local_runtime()` is a read-only report (declared vs. locally present, per component) that a client can act on. It does not install, remove, or migrate anything by itself — that stays a deliberate, separately-reviewed follow-up once a real standalone-RuneSchema build exists, matching how `managed_runtime_mods.py` already handles the retired DragonLink native runtime.
+- This is a declaration/reconciliation model only. It does not change today's UE4SS+RuneSchema-required behavior, and it is not a speculative migration engine.
 
 ### Profile-owned mod storage
 
@@ -139,6 +171,22 @@ Known compatibility requirements already found during this workstream:
 - RuneSchema child mods may use the current `RuneSchema/mods` layout;
 - existing direct-root RuneSchema child-mod layouts remain readable during migration/compatibility handling.
 
+## DragonConnect and the removed Chat Bridge
+
+DragonConnect is connection/runtime metadata infrastructure, not a chat feature. Its current role:
+
+- The Lua direct-connect helper (`resources/NativeRuntimeMods/DragonConnect/Scripts/main.lua`) and the one-time Direct Connect handoff it performs.
+- A carrier for future connection metadata, potentially including server-declared runtime architecture information (see "World-owned runtime architecture" above).
+- `core_components.py`'s `"dragonconnect"` entry is typed `"Direct Connect Client Core"` with `capabilities: ["direct_connect"]` — it has never carried, and must not be given, a chat capability.
+
+The DragonLink Chat Bridge has been removed entirely — not hidden behind a flag, physically removed:
+
+- No native `DragonLink-Chat.dll`/`native/ue4ss-mods/DragonLink-Chat/` build target.
+- No Chat toggle, Chat feed, or chat-send RPC (`quick.chat.send` and its handler are gone) anywhere in the renderer or backend.
+- No `server_chat` capability, no `chat` runtime-console log source, no build check expecting a Chat DLL.
+- Compatibility code that must keep *reading* old, retired config fields without acting on them (see `docs/DEPRECATED_CODE_CLEANUP.md`) is intentionally retained — that is migration-safety code, not a live Chat surface, and it must stay retained rather than being deleted.
+- DragonConnect's own direct-connect behavior is unaffected by the Chat removal; the two were always separate capabilities and are now separate in code as well as in name.
+
 ## RSDW cache behavior
 
 RSDW cache refresh should fail **degraded, not empty**. A heavyweight toolkit/archive failure must not erase an existing good cache or make canonical item data unavailable when the lightweight canonical catalog can still be refreshed.
@@ -162,6 +210,15 @@ A reviewer should reject the implementation if any of these fail:
 - Character Apply can overwrite a newer on-disk save without detecting the change.
 - Two rapid Character Apply operations can resolve to the same backup path.
 - A failed edited-save verification leaves the bad write in place.
+- A pasted, typed, or Browse-picked mapped mod destination reverts on its own (without the operator changing it) before Save is clicked.
+- A saved mapped mod destination does not survive an app restart, or deployment code plants mods somewhere other than the exact saved value.
+- Player or Server executable selection accepts a bare folder in place of the exact executable.
+- Setup progress shows a step as complete when its prerequisite has not actually been met, or advances on a timer rather than real state.
+- A World's `runtime_architecture` declaration is lost on save, or an existing World without one reconciles any differently than `{ue4ss: required, runeschema: required}`.
+- Any Chat toggle, Chat feed, or Chat RPC is reachable from the UI, or a build check still expects a Chat DLL.
+- DragonConnect's core metadata describes a chat capability.
+- A mod-management RPC can delete or edit a path outside the resolved profile/live mod lane via a crafted key (path traversal).
+- A server-install-deletion RPC removes a directory that was never positively verified to contain a dedicated-server executable.
 
 ## Manual acceptance test
 
@@ -181,4 +238,4 @@ A reviewer should reject the implementation if any of these fail:
 
 ## Branch/promotion rule
 
-Perform this work on `revamp/profile-mod-management` (or a successor test branch) first. Do not promote to `integration/experimental-all-changes` or `experimental` until the focused contracts, regression suite, Windows portable build, and manual acceptance checks are green.
+Perform this work on `revamp/executable-save-paths` (or a successor test branch) first. **Do not modify or merge into `experimental`.** Commit only to the revamp branch; `experimental` stays completely untouched until a maintainer explicitly decides to promote this work, and only after the focused contracts, regression suite, Windows portable build, and manual acceptance checks (sections A–F, including the runtime-architecture scenario) are green.

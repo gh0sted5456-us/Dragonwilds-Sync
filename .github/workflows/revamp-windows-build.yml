@@ -92,6 +92,9 @@ jobs:
       - name: Verify state read durability
         run: python scripts/v3_backend_test_runner.py backend/test_state_read_durability.py
 
+      - name: Verify ID and hotload behavior
+        run: python scripts/v3_backend_test_runner.py backend/test_id_hotload.py
+
       - name: Run backend regression matrix
         run: npm run test:backend
 

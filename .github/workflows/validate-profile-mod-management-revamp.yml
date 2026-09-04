@@ -40,6 +40,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\update_profile_revamp_contract_tests.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "from pathlib import Path; p=Path(r'backend/server_engine.py'); s=p.read_text(encoding='utf-8'); old='SERVER_INFRASTRUCTURE_UE4SS = {\"runeschema\", \"dragonlink\", *UE4SS_BAKED_IN_DEFAULT_MODS}'; new='SERVER_INFRASTRUCTURE_UE4SS = {\"runeschema\", \"dragonlink\", \"mods.txt\", *UE4SS_BAKED_IN_DEFAULT_MODS}'; assert old in s; p.write_text(s.replace(old,new,1), encoding='utf-8')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "from pathlib import Path; p=Path(r'backend/sync_engine.py'); s=p.read_text(encoding='utf-8'); old='LAUNCHER_LOCAL_UE4SS_MODS = {\"runeschema\", \"runeschema.zip\", \"rsdwtools\", \"dragonlink\"} | UE4SS_BAKED_IN_DEFAULT_MODS'; new='LAUNCHER_LOCAL_UE4SS_MODS = {\"runeschema\", \"runeschema.zip\", \"rsdwtools\", \"dragonlink\", \"mods.txt\"} | UE4SS_BAKED_IN_DEFAULT_MODS'; assert old in s; p.write_text(s.replace(old,new,1), encoding='utf-8')"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify focused profile-folder contracts
         shell: powershell

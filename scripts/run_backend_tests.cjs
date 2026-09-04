@@ -67,20 +67,21 @@ for(const test of tests){
  const runner='scripts/v3_backend_test_runner.py';
  console.log(`> ${python.command} ${[...python.prefix,runner,test].join(' ')}`);
  const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
- const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result;
+ const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result; let failedScenario='';
  const scenarioDiagnostic=test==='backend/test_remote_user_permissions.py';
  const remoteScenarios=['test_password_hash_and_world_scoped_permissions','test_payload_honors_map_permission','test_desktop_user_lifecycle_and_permission_assignment','test_created_user_logs_in_through_remote_http_api'];
  try{
   if(scenarioDiagnostic){
    for(const scenario of remoteScenarios){
     result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...env,DRAGONWILDS_SYNC_APPDATA:path.join(isolatedAppData,scenario),DWS_REMOTE_PERMISSION_SCENARIO:scenario}});
-    if(result.error||result.status!==0)break;
+    if(result.error||result.status!==0){failedScenario=scenario;break;}
    }
   }else result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});
  }
  finally{try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}}
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
  if(result.status!==0){
+  if(process.env.GITHUB_ACTIONS==='true'&&failedScenario)console.error(`::error file=${test},line=1::Remote permission scenario returned nonzero: ${failedScenario}`);
   if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);
   process.exit(result.status||1);
  }

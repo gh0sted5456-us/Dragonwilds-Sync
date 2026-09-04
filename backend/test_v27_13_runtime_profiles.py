@@ -106,11 +106,64 @@ def main() -> None:
             assert not any("dragoncore" in name.casefold() for name in zf.namelist()), f"DragonCore is bundled in {archive}"
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-    for token in ("RuneSchema Build", "Update Official", "Fetch Latest Experimental", "Import Mod Package", "Core Configuration"):
+    overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
+    for token in (
+        "RuneSchema Build",
+        "Update Official",
+        "Fetch Latest Experimental",
+        'id="sp-open-mods-folder"',
+        'id="server-open-mods-folder"',
+        'data-profile-mod-folder-note="local"',
+        "Folder-managed + Nexus-linked inventory",
+        "Manual mod archive import retired",
+        "Core Configuration",
+        "api.invoke('profile.package.inspect'",
+        "api.invoke('profile.package.import'",
+        "api.invoke('singleplayer.mod.detect'",
+        "api.invoke('server.maintenance.detect_mod_zip'",
+        "path.toLowerCase().endsWith('.rsdwl')",
+    ):
         assert token in renderer
+    assert renderer.count('id="sp-open-mods-folder"') == 1
+    assert renderer.count('id="server-open-mods-folder"') == 1
+    assert renderer.count("api.invoke('singleplayer.mod.install'") >= 2
+    assert renderer.count("api.invoke('server.world.mod.install'") >= 2
+    for retired in (
+        "openSmartModImport",
+        "installSinglePlayerZip",
+        "installServerZip",
+        "bindModDropZone",
+        'id="sp-install-mod"',
+        'id="install-server-mod-zip"',
+        'id="sp-mod-dropzone"',
+        'id="server-mod-dropzone"',
+        "Import Mod Package",
+        "Install Manual ZIP",
+        "confirm-smart-mod-import",
+        "Install Manual RSDWL Mod",
+    ):
+        assert retired not in renderer
+    for token in (
+        "bindProfileFolderButton('#sp-open-mods-folder', 'local')",
+        "bindProfileFolderButton('#server-open-mods-folder', 'server')",
+        "bridge.invoke('application.storage.paths'",
+        "rescan: true",
+        "PROTECTED RECOVERY BASELINE",
+    ):
+        assert token in overlay
+    for retired in (
+        "replaceImportButton",
+        "replaceDropZone",
+        "#sp-install-mod",
+        "#install-server-mod-zip",
+        "#sp-mod-dropzone",
+        "#server-mod-dropzone",
+        "refreshLegacyHelpCopy",
+    ):
+        assert retired not in overlay
     assert "This private SinglePlayer profile has no network endpoint" in renderer
     assert 'world.get("kind") or "").casefold() == "singleplayer"' in compat
-    print("v2.7.13 core configuration, RuneSchema flavors, telemetry identity, map, spawner, and import contracts passed")
+    print("v2.7.13 core configuration, RuneSchema flavors, telemetry identity, map, spawner, and folder-managed mod contracts passed")
 
 
 if __name__ == "__main__":

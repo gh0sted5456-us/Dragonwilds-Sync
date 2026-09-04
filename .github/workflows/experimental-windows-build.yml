@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - experimental
+  pull_request:
+    branches:
+      - experimental
 
 permissions:
   contents: read

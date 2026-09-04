@@ -23,6 +23,7 @@ import inspect
 import sys
 import threading
 import time
+from pathlib import Path
 
 from phase4_runtime_startup import install_phase4_runtime_patches
 from phase6_background_completion import install_phase6_background_completion
@@ -32,6 +33,8 @@ from runtime_versions import cl_version_status
 _PATCH_LOCK = threading.RLock()
 _EXPECTED_KEYS = ("expected_cl", "expected_cl_buildid", "expected_cl_observed_at")
 _INVENTORY_RESCAN_METHODS = frozenset({"singleplayer.inventory", "server.world.inventory"})
+_PROFILE_MOD_PENDING_KEY = "profile_mods_pending_apply"
+_PROFILE_MOD_PENDING_SINCE_KEY = "profile_mods_pending_since"
 
 
 def _server_install(state: dict) -> dict:
@@ -170,8 +173,23 @@ def _mark_reconciliation(rows: list[dict], reconciliation: dict) -> list[dict]:
     return rows
 
 
+def _profile_cache(profile: dict | None) -> dict:
+    if not isinstance(profile, dict):
+        return {}
+    value = profile.get("metadata_cache")
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def _install_profile_mod_rescan_authority(server_engine_module) -> None:
-    """Bind explicit inventory Rescan to profile folders and persist change evidence."""
+    """Bind explicit inventory Rescan to profile folders and persist change evidence.
+
+    An active server profile has both an APPDATA source-of-truth snapshot and a
+    materialized live tree. Explorer edits must not be overwritten by the old
+    live tree before they can be applied. Explicit Rescan therefore marks the
+    active profile as pending materialization. World switching skips the
+    outgoing live snapshot while that flag is set; activation/start clears it
+    only after the profile snapshot is restored into the stopped runtime.
+    """
     legacy = sys.modules.get("dragonwilds_service_legacy")
     if legacy is None or bool(getattr(legacy, "_dws_profile_mod_rescan_authority", False)):
         return
@@ -199,25 +217,48 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
     if callable(original_cache_local) and not bool(getattr(original_cache_local, "_dws_reconcile_cache", False)):
         def cache_local(profile_id: str, units: list[dict], *, live: bool, source: str = "rescan") -> dict:
             before_profile = legacy.load_singleplayer_profile(profile_id)
+            before_cache = _profile_cache(before_profile)
             before = legacy._inventory_cache(before_profile).get("mods") or []
             rows = [dict(row) for row in units if isinstance(row, dict)]
             reconciliation = _reconcile_rows(before, rows)
             _mark_reconciliation(rows, reconciliation)
             result = original_cache_local(profile_id, rows, live=live, source=source)
             profile = legacy.load_singleplayer_profile(profile_id)
-            cache = dict(profile.get("metadata_cache") or {})
+            cache = _profile_cache(profile)
             cache["reconciliation"] = reconciliation
-            cache["mods_authority"] = "profile-mod-folders" if source == "rescan" else str(cache.get("mods_authority") or "runtime")
+            if _inventory_rescan_caller("singleplayer.inventory"):
+                cache["mods_authority"] = "profile-mod-folders"
+            else:
+                cache["mods_authority"] = str(before_cache.get("mods_authority") or ("runtime" if live else "profile-mod-folders"))
             profile["metadata_cache"] = cache
             legacy.save_singleplayer_profile(profile, profile_id)
             return {**dict(result or {}), "reconciliation": reconciliation}
         cache_local._dws_reconcile_cache = True
         legacy._cache_local_inventory = cache_local
 
+    def server_profile_pending(profile_id: str) -> bool:
+        profile = legacy.load_server_profile(profile_id) or {}
+        return bool(_profile_cache(profile).get(_PROFILE_MOD_PENDING_KEY))
+
+    def clear_server_profile_pending(profile_id: str) -> None:
+        profile = legacy.load_server_profile(profile_id) or {}
+        if not profile:
+            return
+        cache = _profile_cache(profile)
+        if not cache.get(_PROFILE_MOD_PENDING_KEY):
+            return
+        cache.pop(_PROFILE_MOD_PENDING_KEY, None)
+        cache.pop(_PROFILE_MOD_PENDING_SINCE_KEY, None)
+        cache["profile_mods_materialized_at"] = time.time()
+        cache["mods_authority"] = "profile-mod-folders"
+        profile["metadata_cache"] = cache
+        legacy.save_server_profile(profile_id, profile)
+
     original_cache_server = getattr(legacy, "_cache_server_inventory", None)
     if callable(original_cache_server) and not bool(getattr(original_cache_server, "_dws_reconcile_cache", False)):
         def cache_server(profile_id: str, units, *, active: bool, source: str = "rescan") -> dict:
             before_profile = legacy.load_server_profile(profile_id) or {}
+            before_cache = _profile_cache(before_profile)
             before = legacy._inventory_cache(before_profile).get("mods") or []
             # Produce the same public/user-manageable rows as the retained cache
             # so content hashes and distribution roles compare apples-to-apples.
@@ -225,10 +266,11 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
                     for unit in units if legacy.user_visible_mod_unit(unit)]
             reconciliation = _reconcile_rows(before, rows)
             _mark_reconciliation(rows, reconciliation)
+            explicit_profile_rescan = _inventory_rescan_caller("server.world.inventory")
             result = original_cache_server(profile_id, units, active=active, source=source)
             profile = legacy.load_server_profile(profile_id) or {}
             if profile:
-                cache = dict(profile.get("metadata_cache") or {})
+                cache = _profile_cache(profile)
                 # Retained cache may have rebuilt rows from the original units;
                 # apply reconciliation status without changing classification.
                 status = {str(row.get("key") or ""): str(row.get("reconcile_status") or "") for row in rows}
@@ -236,12 +278,69 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
                     if isinstance(row, dict) and str(row.get("key") or "") in status:
                         row["reconcile_status"] = status[str(row.get("key") or "")]
                 cache["reconciliation"] = reconciliation
-                cache["mods_authority"] = "profile-mod-folders" if source == "rescan" else str(cache.get("mods_authority") or "runtime")
+                if explicit_profile_rescan:
+                    cache["mods_authority"] = "profile-mod-folders"
+                    if active:
+                        cache[_PROFILE_MOD_PENDING_KEY] = True
+                        cache[_PROFILE_MOD_PENDING_SINCE_KEY] = time.time()
+                    else:
+                        cache.pop(_PROFILE_MOD_PENDING_KEY, None)
+                        cache.pop(_PROFILE_MOD_PENDING_SINCE_KEY, None)
+                else:
+                    cache["mods_authority"] = str(before_cache.get("mods_authority") or ("runtime" if active else "profile-mod-folders"))
+                    if before_cache.get(_PROFILE_MOD_PENDING_KEY):
+                        cache[_PROFILE_MOD_PENDING_KEY] = True
+                        cache[_PROFILE_MOD_PENDING_SINCE_KEY] = before_cache.get(_PROFILE_MOD_PENDING_SINCE_KEY) or time.time()
                 profile["metadata_cache"] = cache
                 legacy.save_server_profile(profile_id, profile)
             return {**dict(result or {}), "reconciliation": reconciliation}
         cache_server._dws_reconcile_cache = True
         legacy._cache_server_inventory = cache_server
+
+    # The Phase 4 pipeline resolves these module functions at call time. Guard
+    # outgoing capture while profile-folder edits are pending, then clear the
+    # flag only after a successful restore into the live stopped runtime.
+    original_snapshot_mods = getattr(server_engine_module, "snapshot_profile_mods", None)
+    if callable(original_snapshot_mods) and not bool(getattr(original_snapshot_mods, "_dws_profile_pending_guard", False)):
+        def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
+            if server_profile_pending(profile_id):
+                return 0
+            return original_snapshot_mods(profile_id, game_root)
+        snapshot_profile_mods._dws_profile_pending_guard = True
+        snapshot_profile_mods._dws_previous = original_snapshot_mods
+        server_engine_module.snapshot_profile_mods = snapshot_profile_mods
+
+    original_restore_mods = getattr(server_engine_module, "restore_profile_mods", None)
+    if callable(original_restore_mods) and not bool(getattr(original_restore_mods, "_dws_profile_pending_guard", False)):
+        def restore_profile_mods(profile_id: str, game_root: Path) -> int:
+            restored = original_restore_mods(profile_id, game_root)
+            clear_server_profile_pending(profile_id)
+            return restored
+        restore_profile_mods._dws_profile_pending_guard = True
+        restore_profile_mods._dws_previous = original_restore_mods
+        server_engine_module.restore_profile_mods = restore_profile_mods
+
+    # Starting an already-selected profile normally skips profile restoration.
+    # Apply any pending Explorer changes first and invalidate Phase 4's prepared
+    # scan so mods.txt/runtime publication are rebuilt from the hydrated tree.
+    engine_type = getattr(server_engine_module, "ServerEngine", None)
+    original_start = getattr(engine_type, "start_dedicated", None) if engine_type is not None else None
+    if callable(original_start) and not bool(getattr(original_start, "_dws_profile_pending_guard", False)):
+        def start_dedicated(self, profile_id: str) -> dict:
+            if server_profile_pending(profile_id):
+                probe = getattr(self, "process_probe", None)
+                running = bool(probe().get("running")) if callable(probe) else False
+                if not running:
+                    profile = server_engine_module.load_server_profile(profile_id) or {}
+                    resolver = getattr(self, "_profile_root", None)
+                    root = str(resolver(profile) if callable(resolver) else server_engine_module.server_root_for_profile(profile) or "").strip()
+                    if root and Path(root).exists():
+                        server_engine_module.restore_profile_mods(profile_id, Path(root))
+                        self._dws_phase4_prepared = None
+            return original_start(self, profile_id)
+        start_dedicated._dws_profile_pending_guard = True
+        start_dedicated._dws_previous = original_start
+        engine_type.start_dedicated = start_dedicated
 
     legacy._dws_profile_mod_rescan_authority = True
 

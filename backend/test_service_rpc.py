@@ -109,13 +109,22 @@ def main():
 
             rpc(proc, "server.world.activate", {"id": second_id}, 8)
             assert not (pak_root / "WorldOne.pak").exists()
-            (pak_root / "WorldTwo.pak").write_bytes(b"two")
-            # External filesystem changes remain invisible until explicit Rescan.
+
+            # Explorer-managed changes are made in the selected World profile,
+            # not in the shared live dedicated-server directory. A cached read
+            # remains stable until the user explicitly selects Rescan.
+            profile_pak_root = server_engine._profile_mods_dir(second_id) / "pak_mods"
+            profile_pak_root.mkdir(parents=True, exist_ok=True)
+            (profile_pak_root / "WorldTwo.pak").write_bytes(b"two")
+            assert not (pak_root / "WorldTwo.pak").exists()
             cached_before_rescan = rpc(proc, "server.world.inventory", {"id": second_id}, 9)
             assert not any(u["key"] == "pak_mod::WorldTwo" for u in cached_before_rescan["units"])
             inv2 = rpc(proc, "server.world.inventory", {"id": second_id, "rescan": True}, 9)
             assert any(u["key"] == "pak_mod::WorldTwo" for u in inv2["units"])
 
+            # Switching away must not overwrite a profile-authoritative Explorer
+            # edit with the older live tree. Returning to the profile must then
+            # hydrate the live runtime from its preserved profile snapshot.
             rpc(proc, "server.world.activate", {"id": first_id}, 10)
             assert (pak_root / "WorldOne.pak").read_bytes() == b"one"
             assert not (pak_root / "WorldTwo.pak").exists()
@@ -123,19 +132,23 @@ def main():
             assert any(u["key"] == "pak_mod::WorldTwo" for u in inv2_after["units"])
             assert not any(u["key"] == "pak_mod::WorldOne" for u in inv2_after["units"])
 
+            rpc(proc, "server.world.activate", {"id": second_id}, 12)
+            assert (pak_root / "WorldTwo.pak").read_bytes() == b"two"
+            assert not (pak_root / "WorldOne.pak").exists()
+
             # Profile artwork is persisted as data URLs, not just held in the
             # edit modal's renderer state.
             avatar = "data:image/png;base64,iVBORw0KGgo="
             banner = "data:image/webp;base64,UklGRg=="
             updated = rpc(proc, "player.update", {"display_name": "Profile Test", "avatar_data": avatar,
-                                                   "banner_data": banner, "social_links": {"steam": "ProfileTest"}}, 12)
+                                                   "banner_data": banner, "social_links": {"steam": "ProfileTest"}}, 13)
             assert updated["player_profile"]["avatar_data"] == avatar
             assert updated["player_profile"]["banner_data"] == banner
-            reloaded = rpc(proc, "bootstrap", request_id=13)
+            reloaded = rpc(proc, "bootstrap", request_id=14)
             assert reloaded["player_profile"]["avatar_data"] == avatar
             assert reloaded["player_profile"]["banner_data"] == banner
 
-            print("service RPC isolation tests passed")
+            print("service RPC isolation and profile-folder hydration tests passed")
         finally:
             pass
 

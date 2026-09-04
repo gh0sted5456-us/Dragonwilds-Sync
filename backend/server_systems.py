@@ -3581,6 +3581,13 @@ def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
             written.append(PurePosixPath(*parts).as_posix())
     normalized = _normalize_bundled_integration_contract(target_root)
     canonical_settings = _apply_canonical_ue4ss_settings(target_root)
+    # imgui.ini is runtime-generated/optional upstream. Keep an editable blank
+    # convenience file, but never classify a valid UE4SS core as incomplete
+    # merely because a new upstream package did not ship it.
+    imgui_settings = target_root / "ue4ss" / "imgui.ini"
+    if not imgui_settings.is_file() and (target_root / "ue4ss" / "UE4SS.dll").is_file():
+        imgui_settings.parent.mkdir(parents=True, exist_ok=True)
+        imgui_settings.write_text("", encoding="utf-8")
     return {"ok": True, "files_written": len(written), "files": written,
             "server_loader_excluded": True, "integrations": normalized,
             "canonical_settings": canonical_settings}
@@ -3593,7 +3600,6 @@ def client_runtime_status(game_root: str) -> dict:
         "bootstrap": (layout.win64_dir / "dwmapi.dll").is_file(),
         "core_dll": (core / "UE4SS.dll").is_file(),
         "settings": (core / "UE4SS-settings.ini").is_file(),
-        "imgui": (core / "imgui.ini").is_file(),
     }
     rs = layout.runeschema_root
     rs_checks = {

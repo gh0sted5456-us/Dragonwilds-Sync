@@ -19,19 +19,29 @@ RUNESCHEMA_EXPERIMENTAL_TAGS_URL = f"{RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL}/ta
 
 
 def _is_runeschema_core_zip(path: Path) -> bool:
+    """Recognize RuneSchema cores at any safe release-wrapper depth.
+
+    Official/community archives commonly add a release folder and may then
+    contain a ``RuneSchema/`` payload folder.  Core identity is the self-enabled
+    runtime root itself (enabled.txt + dlls/main.dll + config/mods), not an exact
+    archive depth.
+    """
     with zipfile.ZipFile(path) as archive:
         rows = [name.replace("\\", "/").strip("/") for name in archive.namelist() if name.strip("/")]
-    first = {row.split("/", 1)[0] for row in rows}
-    if len(first) == 1:
-        wrapper = next(iter(first))
-        wrapped_rows = [row[len(wrapper) + 1:] for row in rows if row.startswith(f"{wrapper}/")]
-        if wrapped_rows:
-            rows = wrapped_rows
+    if any(not row or row.startswith("../") or "/../" in f"/{row}/" for row in rows):
+        return False
     lowered = {row.casefold() for row in rows}
-    return (any(row == "mods" or row.startswith("mods/") for row in lowered)
-            or (any(row == "config" or row.startswith("config/") for row in lowered)
-                and any(row == "dlls" or row.startswith("dlls/") for row in lowered)
-                and "enabled.txt" in lowered))
+    for row in lowered:
+        if row != "enabled.txt" and not row.endswith("/enabled.txt"):
+            continue
+        root = row[:-len("enabled.txt")].rstrip("/")
+        prefix = f"{root}/" if root else ""
+        has_main = f"{prefix}dlls/main.dll" in lowered
+        has_config = any(item == f"{prefix}config" or item.startswith(f"{prefix}config/") for item in lowered)
+        has_mods = any(item == f"{prefix}mods" or item.startswith(f"{prefix}mods/") for item in lowered)
+        if has_main and (has_config or has_mods):
+            return True
+    return False
 
 
 def ensure_runeschema_source(application: dict) -> str:

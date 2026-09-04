@@ -91,6 +91,52 @@ def _refresh_raw_items(repo: str, branch: str) -> int:
         return count
 
 
+def _refresh_catalog_only(repo: str, branch: str) -> dict:
+    """Refresh the small canonical item catalog without downloading RSDWTools wholesale.
+
+    The full RSDWTools archive is useful for the embedded editors and icon cache,
+    but item/search data must not disappear just because GitHub codeload is slow
+    or blocked on one machine.  This fallback downloads one generated catalog
+    file and lets the manifest operate in a clearly-reported degraded mode.
+    """
+    repo = str(repo or DEFAULT_REPO).strip() or DEFAULT_REPO  # type: ignore[name-defined]
+    branch = str(branch or DEFAULT_BRANCH).strip() or DEFAULT_BRANCH  # type: ignore[name-defined]
+    revision_error = ""
+    try:
+        revision = str(_legacy._latest_revision(repo, branch) or "").strip()
+    except Exception as exc:
+        revision = ""
+        revision_error = str(exc)
+    if not revision:
+        revision = f"{repo}@{branch}"
+
+    target = RSDW_WEBSITE_DIR / _CATALOG_REL  # type: ignore[name-defined]
+    RSDW_CACHE_ROOT.mkdir(parents=True, exist_ok=True)  # type: ignore[name-defined]
+    with tempfile.TemporaryDirectory(prefix="rsdw-catalog-", dir=str(RSDW_CACHE_ROOT)) as temp_name:  # type: ignore[name-defined]
+        staged = Path(temp_name) / "catalog.json"
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/website/{_CATALOG_REL.as_posix()}"
+        _legacy._download(url, staged, timeout=45)
+        value = json.loads(staged.read_text(encoding="utf-8-sig"))
+        tabs = value.get("tabs") if isinstance(value, dict) else None
+        if not isinstance(tabs, dict) or not any(
+            isinstance(section, dict) and isinstance(section.get("items"), list) and section.get("items")
+            for section in tabs.values()
+        ):
+            raise RuntimeError("RSDW lightweight catalog contained no item rows.")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        pending = target.with_name(f".{target.name}.{os.getpid()}.next")
+        shutil.copy2(staged, pending)
+        os.replace(pending, target)
+    return {
+        "ok": True,
+        "changed": True,
+        "revision": revision,
+        "fallback": "catalog-only",
+        "catalog_url": url,
+        "revision_error": revision_error,
+    }
+
+
 def _catalog_rows() -> list[dict]:
     path = RSDW_WEBSITE_DIR / _CATALOG_REL  # type: ignore[name-defined]
     value = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -431,41 +477,86 @@ def status() -> dict:
     raw_count = _json_count(RSDW_RAW_ITEMS_DIR)
     revision = str(base.get("revision") or "")
     manifest_revision = str(manifest.get("revision") or "")
+    missing_raw = int(manifest.get("missing_raw_json_count") or 0)
+    manifest_ready = bool(manifest.get("item_count") and (not revision or revision == manifest_revision))
+    raw_complete = bool(raw_count and missing_raw == 0)
+    legacy_valid = bool(base.get("valid"))
+    toolkit_valid = bool(base.get("toolkit_valid"))
     return {
         **base,
+        # Item/search data is a first-class cache capability.  A failed full
+        # toolkit/icon download may degrade presentation, but it must not make
+        # the canonical item catalog unavailable to the application.
+        "valid": bool(legacy_valid or manifest_ready),
+        "data_ready": manifest_ready,
+        "degraded": bool(manifest_ready and not (legacy_valid and toolkit_valid and raw_complete)),
         "raw_items_dir": str(RSDW_RAW_ITEMS_DIR),
         "raw_item_file_count": raw_count,
+        "raw_items_complete": raw_complete,
         "item_manifest": str(RSDW_ITEM_MANIFEST_PATH),
         "item_manifest_count": int(manifest.get("item_count") or 0),
         "item_manifest_revision": manifest_revision,
-        "item_manifest_valid": bool(manifest.get("item_count") and raw_count and (not revision or revision == manifest_revision)),
+        "item_manifest_valid": manifest_ready,
         "item_manifest_missing_icons": int(manifest.get("missing_icon_count") or 0),
-        "item_manifest_missing_raw": int(manifest.get("missing_raw_json_count") or 0),
+        "item_manifest_missing_raw": missing_raw,
     }
 
 
 def refresh(*, force: bool = False, repo: str = DEFAULT_REPO, branch: str = DEFAULT_BRANCH) -> dict:  # type: ignore[name-defined]
-    """Refresh RSDWTools, then atomically build Sync's exact item/icon manifest."""
-    tools = _legacy.refresh(force=force, repo=repo, branch=branch)
-    revision = str(tools.get("revision") or "")
+    """Refresh canonical RSDW item data without making the full archive a prerequisite.
+
+    The normal path downloads only ``catalog.json`` from raw.githubusercontent.com.
+    If that lightweight route fails on a fresh install, the historical full
+    RSDWTools archive remains a one-time fallback. Existing manifests are kept
+    as last-known-good data instead of being invalidated by a network failure.
+    """
     current = item_manifest()
-    needs_manifest = bool(force or not current.get("item_count") or str(current.get("revision") or "") != revision or not RSDW_RAW_ITEMS_DIR.exists())
+    catalog_error = ""
+    archive_fallback_error = ""
+    changed = False
+    revision = ""
+
+    try:
+        lightweight = _refresh_catalog_only(repo, branch)
+        revision = str(lightweight.get("revision") or "")
+        changed = bool(lightweight.get("changed"))
+    except Exception as exc:
+        catalog_error = str(exc)
+        if current.get("item_count"):
+            revision = str(current.get("revision") or "")
+        else:
+            try:
+                legacy = _legacy.refresh(force=force, repo=repo, branch=branch)
+                revision = str(legacy.get("revision") or "")
+                changed = bool(legacy.get("changed"))
+            except Exception as fallback_exc:
+                archive_fallback_error = str(fallback_exc)
+                raise RuntimeError(
+                    f"RSDW catalog download failed ({catalog_error}); full archive fallback also failed ({archive_fallback_error})"
+                ) from fallback_exc
+
+    needs_manifest = bool(
+        force
+        or not current.get("item_count")
+        or (revision and str(current.get("revision") or "") != revision)
+    )
     manifest_error = ""
     if needs_manifest:
         try:
-            _refresh_raw_items(repo, branch)
             _build_item_manifest(repo=repo, revision=revision)
+            changed = True
         except Exception as exc:
             manifest_error = str(exc)
-            # Keep the last known good item manifest. Initial setup cannot claim
-            # item readiness until the exact mapping was successfully built.
             if not current.get("item_count"):
                 raise
+
     result = status()
     return {
         **result,
-        "ok": bool(tools.get("ok") and result.get("item_manifest_valid")),
-        "changed": bool(tools.get("changed") or needs_manifest),
+        "ok": bool(result.get("item_manifest_valid")),
+        "changed": bool(changed),
+        "catalog_error": catalog_error,
+        "archive_fallback_error": archive_fallback_error,
         "item_manifest_error": manifest_error,
         "item_manifest_stale": bool(manifest_error or not result.get("item_manifest_valid")),
     }
@@ -473,20 +564,42 @@ def refresh(*, force: bool = False, repo: str = DEFAULT_REPO, branch: str = DEFA
 
 def refresh_modules(*, force: bool = False, repo: str = DEFAULT_REPO, branch: str = DEFAULT_BRANCH,
                     model_repo: str = DEFAULT_MODEL_REPO, model_branch: str = DEFAULT_MODEL_BRANCH) -> dict:  # type: ignore[name-defined]
+    """Refresh item data first; make large Toolkit/Model downloads best-effort.
+
+    Startup/background refreshes stay lightweight.  An explicit force refresh
+    still attempts the full RSDWTools website/icon cache and RSDWModel, but a
+    failure there no longer removes the canonical item/search dataset.
+    """
     tools = refresh(force=force, repo=repo, branch=branch)
+    toolkit_error = ""
     model_error = ""
-    try:
-        model = _legacy.refresh_model_index(force=force, repo=model_repo, branch=model_branch)
-    except Exception as exc:
-        model = _legacy.status()
-        model_error = str(exc)
+    legacy_tools = _legacy.status()
+    model = _legacy.status()
+
+    if force:
+        try:
+            legacy_tools = _legacy.refresh(force=True, repo=repo, branch=branch)
+            full_revision = str(legacy_tools.get("revision") or tools.get("item_manifest_revision") or "")
+            if full_revision:
+                _build_item_manifest(repo=repo, revision=full_revision)
+        except Exception as exc:
+            toolkit_error = str(exc)
+        try:
+            model = _legacy.refresh_model_index(force=True, repo=model_repo, branch=model_branch)
+        except Exception as exc:
+            model = _legacy.status()
+            model_error = str(exc)
+
     combined = status()
     return {
         **combined,
-        "ok": bool(combined.get("valid") and combined.get("toolkit_valid") and combined.get("item_manifest_valid")),
-        "changed": bool(tools.get("changed") or model.get("changed")),
-        "tools_changed": bool(tools.get("changed")),
+        "ok": bool(combined.get("item_manifest_valid")),
+        "changed": bool(tools.get("changed") or legacy_tools.get("changed") or model.get("changed")),
+        "tools_changed": bool(tools.get("changed") or legacy_tools.get("changed")),
         "model_changed": bool(model.get("changed")),
+        "toolkit_error": toolkit_error,
         "model_error": model_error,
         "item_manifest_error": tools.get("item_manifest_error", ""),
+        "full_refresh_attempted": bool(force),
+        "degraded": bool(combined.get("degraded") or toolkit_error or model_error),
     }

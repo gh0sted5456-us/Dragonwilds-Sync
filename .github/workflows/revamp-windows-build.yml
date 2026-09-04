@@ -105,6 +105,7 @@ jobs:
         shell: powershell
         run: |
           $tests = (& node scripts/run_backend_tests.cjs --list) | ConvertFrom-Json
+          $failedTests = @()
           foreach ($test in $tests) {
             Write-Host "> python scripts/v3_backend_test_runner.py $test"
             $testAppData = Join-Path $env:RUNNER_TEMP ("dragonwilds-sync-test-" + [guid]::NewGuid().ToString("N"))
@@ -113,12 +114,15 @@ jobs:
               $env:DRAGONWILDS_SYNC_APPDATA = $testAppData
               & python scripts/v3_backend_test_runner.py $test
               if ($LASTEXITCODE -ne 0) {
-                Write-Error "Backend regression failed: $test"
-                exit $LASTEXITCODE
+                Write-Host "::error file=$test,line=1::Backend regression failed: $test"
+                $failedTests += $test
               }
             } finally {
               Remove-Item -LiteralPath $testAppData -Recurse -Force -ErrorAction SilentlyContinue
             }
+          }
+          if ($failedTests.Count -gt 0) {
+            throw "Backend regressions failed: $($failedTests -join ', ')"
           }
 
       - name: Build and verify portable EXE

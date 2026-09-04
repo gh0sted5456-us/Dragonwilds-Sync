@@ -107,6 +107,8 @@ def main() -> None:
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
+    local_source = (ROOT / "backend/local_world.py").read_text(encoding="utf-8")
+    server_source = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
     for token in (
         "RuneSchema Build",
         "Update Official",
@@ -126,6 +128,11 @@ def main() -> None:
         assert token in renderer
     assert renderer.count('id="sp-open-mods-folder"') == 1
     assert renderer.count('id="server-open-mods-folder"') == 1
+    pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"
+    assert pre_open_scan in overlay
+    assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")
+    assert 'mods = _world_cache(profile_id) / "mods"\n    mods.mkdir(parents=True, exist_ok=True)' in local_source
+    assert 'stored = SERVER_PROFILES_DIR / profile_id / "mods"\n    stored.mkdir(parents=True, exist_ok=True)' in server_source
     assert renderer.count("api.invoke('singleplayer.mod.install'") >= 2
     assert renderer.count("api.invoke('server.world.mod.install'") >= 2
     for retired in (

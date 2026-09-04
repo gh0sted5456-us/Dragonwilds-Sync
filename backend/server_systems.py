@@ -725,6 +725,7 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
 def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     """Scan an inactive World's APPDATA-owned mod snapshot without touching live files."""
     stored = SERVER_PROFILES_DIR / profile_id / "mods"
+    stored.mkdir(parents=True, exist_ok=True)
     mods = stored / "ue4ss_mods"
     paks = stored / "pak_mods"
     profile = load_server_profile(profile_id)

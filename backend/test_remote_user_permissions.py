@@ -175,12 +175,5 @@ if __name__ == "__main__":
                  test_desktop_user_lifecycle_and_permission_assignment, test_created_user_logs_in_through_remote_http_api)
     selected = os.environ.get("DWS_REMOTE_PERMISSION_SCENARIO", "").strip()
     for test in (item for item in scenarios if not selected or item.__name__ == selected):
-        if os.environ.get("GITHUB_ACTIONS") == "true":
-            print(f"DWS_TEST_SCENARIO_START={test.__name__}", flush=True)
-        try:
-            test()
-        except Exception:
-            if os.environ.get("GITHUB_ACTIONS") == "true":
-                print(f"DWS_TEST_SCENARIO_FAILED={test.__name__}", flush=True)
-            raise
+        test()
     print("remote user password and World-scoped permission tests passed")

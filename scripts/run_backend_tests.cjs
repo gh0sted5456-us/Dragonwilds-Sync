@@ -69,14 +69,18 @@ for(const test of tests){
  const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
  const env={...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}; let result;
  const scenarioDiagnostic=test==='backend/test_remote_user_permissions.py';
- try{result=spawnSync(python.command,[...python.prefix,runner,test],scenarioDiagnostic?{encoding:'utf8',shell:false,env}:{stdio:'inherit',shell:false,env});}
+ const remoteScenarios=['test_password_hash_and_world_scoped_permissions','test_payload_honors_map_permission','test_desktop_user_lifecycle_and_permission_assignment','test_created_user_logs_in_through_remote_http_api'];
+ try{
+  if(scenarioDiagnostic){
+   for(const scenario of remoteScenarios){
+    result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...env,DWS_REMOTE_PERMISSION_SCENARIO:scenario}});
+    if(result.error||result.status!==0)break;
+   }
+  }else result=spawnSync(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env});
+ }
  finally{try{fs.rmSync(isolatedAppData,{recursive:true,force:true});}catch(error){console.warn(`[WARN] Could not remove isolated test AppData ${isolatedAppData}: ${error.message}`);}}
- if(scenarioDiagnostic){if(result.stdout)process.stdout.write(result.stdout);if(result.stderr)process.stderr.write(result.stderr);}
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
  if(result.status!==0){
-  const scenarioOutput=String(result.stdout||'');
-  const scenario=scenarioDiagnostic?(scenarioOutput.match(/DWS_TEST_SCENARIO_FAILED=([A-Za-z0-9_]+)/)?.[1]||[...scenarioOutput.matchAll(/DWS_TEST_SCENARIO_START=([A-Za-z0-9_]+)/g)].at(-1)?.[1]):'';
-  if(process.env.GITHUB_ACTIONS==='true'&&scenario)console.error(`::error file=${test},line=1::Remote permission scenario failed: ${scenario}`);
   if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);
   process.exit(result.status||1);
  }

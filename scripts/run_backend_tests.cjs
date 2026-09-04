@@ -37,6 +37,7 @@ const crossPlatformTests = [
   'backend/test_profile_vault.py',
   'backend/test_data_root.py',
   'backend/test_save_management.py',
+  'backend/test_worldsave_backup_client.py',
   'backend/test_backup_naming.py',
   'backend/test_v27_release.py',
   'backend/test_v27_13_runtime_profiles.py',

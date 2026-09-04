@@ -74,7 +74,8 @@ for(const test of tests){
  if(scenarioDiagnostic){if(result.stdout)process.stdout.write(result.stdout);if(result.stderr)process.stderr.write(result.stderr);}
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
  if(result.status!==0){
-  const scenario=scenarioDiagnostic?String(result.stdout||'').match(/DWS_TEST_SCENARIO_FAILED=([A-Za-z0-9_]+)/)?.[1]:'';
+  const scenarioOutput=String(result.stdout||'');
+  const scenario=scenarioDiagnostic?(scenarioOutput.match(/DWS_TEST_SCENARIO_FAILED=([A-Za-z0-9_]+)/)?.[1]||[...scenarioOutput.matchAll(/DWS_TEST_SCENARIO_START=([A-Za-z0-9_]+)/g)].at(-1)?.[1]):'';
   if(process.env.GITHUB_ACTIONS==='true'&&scenario)console.error(`::error file=${test},line=1::Remote permission scenario failed: ${scenario}`);
   if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);
   process.exit(result.status||1);

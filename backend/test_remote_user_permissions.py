@@ -60,11 +60,12 @@ def test_payload_honors_map_permission() -> None:
 def test_desktop_user_lifecycle_and_permission_assignment() -> None:
     state = {"application": {"world_directory_host": {"enabled": True, "remote_admin": {"enabled": True, "users": []}}}}
     old = (service.load_state, service.save_state, service.load_server_profile, service.list_server_profiles,
-           directory_host.DIRECTORY_HOST.config)
+           service.ensure_singleplayer_state, directory_host.DIRECTORY_HOST.config)
     service.load_state = lambda: state
     service.save_state = lambda _state: None
     service.load_server_profile = lambda world_id: {"id": "world-a", "name": "Effing Fixture"} if world_id == "world-a" else None
     service.list_server_profiles = lambda: [{"id": "world-a", "name": "Effing Fixture", "dedicated_config": {"admin_pass": "owner-only"}}]
+    service.ensure_singleplayer_state = lambda current: current
     try:
         service.handle("application.world_directory_host.user.create", {
             "username": "tester", "password": "fixture-password-12", "world_id": "world-a",
@@ -88,7 +89,8 @@ def test_desktop_user_lifecycle_and_permission_assignment() -> None:
         assert state["application"]["world_directory_host"]["remote_admin"]["users"] == []
     finally:
         service.load_state, service.save_state, service.load_server_profile, service.list_server_profiles = old[:4]
-        directory_host.DIRECTORY_HOST.config = old[4]
+        service.ensure_singleplayer_state = old[4]
+        directory_host.DIRECTORY_HOST.config = old[5]
 
 
 def _free_port() -> int:
@@ -105,13 +107,14 @@ def test_created_user_logs_in_through_remote_http_api() -> None:
              "remote_admin": {"enabled": True, "users": []}}}}
     profile = {"id": "world-a", "name": "Effing Desync", "dedicated_config": {"admin_pass": "owner-only"}}
     old_service = (service.load_state, service.save_state, service.load_server_profile, service.list_server_profiles,
-                   directory_host.DIRECTORY_HOST.config)
+                   service.ensure_singleplayer_state, directory_host.DIRECTORY_HOST.config)
     old_paths = (directory_host.STORE_PATH, directory_host.OBSERVABILITY_PATH, directory_host.REVOCATIONS_PATH,
                  directory_host.REMOTE_ADMIN_AUDIT_PATH, directory_host.configure_directory_firewall)
     service.load_state = lambda: state
     service.save_state = lambda _state: None
     service.load_server_profile = lambda world_id: profile if world_id == "world-a" else None
     service.list_server_profiles = lambda: [profile]
+    service.ensure_singleplayer_state = lambda current: current
     controller = directory_host.DirectoryHost()
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
@@ -160,7 +163,8 @@ def test_created_user_logs_in_through_remote_http_api() -> None:
         finally:
             controller.stop()
             service.load_state, service.save_state, service.load_server_profile, service.list_server_profiles = old_service[:4]
-            directory_host.DIRECTORY_HOST.config = old_service[4]
+            service.ensure_singleplayer_state = old_service[4]
+            directory_host.DIRECTORY_HOST.config = old_service[5]
             (directory_host.STORE_PATH, directory_host.OBSERVABILITY_PATH, directory_host.REVOCATIONS_PATH,
              directory_host.REMOTE_ADMIN_AUDIT_PATH, directory_host.configure_directory_firewall) = old_paths
 

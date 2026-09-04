@@ -12,7 +12,10 @@ import secrets
 from pathlib import Path
 
 from client_layout import resolve_client_layout
-from profile_store import APP_DATA_DIR, read_json, write_json
+from profile_mod_layout import ensure_profile_mod_roots
+from profile_store import APP_DATA_DIR, load_state, read_json, write_json
+from profile_mod_destinations import resolve_mod_install_paths
+from machine_paths import player_save_paths
 from mod_tags import discover_packaged_metadata, normalize_tags, parse_tags_file, tags_from_mod_root, tags_from_sidecar, hotload_capable_from_root, set_hotload_marker, set_tags_file, ensure_mod_contract_files, identity_from_mod_root, ensure_baked_in_ue4ss_enabled, UE4SS_BAKED_IN_DEFAULT_MODS
 from mod_archive_layout import inspect_mod_payloads, locate_mod_payload
 from integrations import normalize_mod_source
@@ -172,11 +175,11 @@ def _adopt_initial_default_environment(state: dict) -> None:
     try:
         from sync_engine import snapshot_client_world
         snapshot_client_world(profile_id, Path(game_dir))
-        layout = resolve_client_layout(game_dir)
+        save_root = player_save_paths(state, fallback_game_dir=game_dir)["worlds"]
         saves_destination = _world_cache(profile_id) / "saves"
         save_names = []
-        if layout.savegames_dir.is_dir():
-            for source in sorted(layout.savegames_dir.glob("*.sav"), key=lambda path: path.name.casefold()):
+        if save_root.is_dir():
+            for source in sorted(save_root.glob("*.sav"), key=lambda path: path.name.casefold()):
                 if source.name.casefold() == "enhancedinputusersettings.sav":
                     continue
                 saves_destination.mkdir(parents=True, exist_ok=True)
@@ -213,8 +216,7 @@ def discover_save_profiles(state: dict) -> list[dict]:
     are deliberately ignored. Existing user-edited placard names remain intact.
     """
     application = state.get("application") or {}
-    layout = resolve_client_layout(str(application.get("game_dir") or ""))
-    save_root = layout.savegames_dir
+    save_root = player_save_paths(state, fallback_game_dir=str(application.get("game_dir") or ""))["worlds"]
     discovered = []
     newly_created = []
     deleted_saves = _deleted_save_tombstones()
@@ -519,35 +521,18 @@ def detect_mod_zip_kind(zip_path: str) -> str | None:
 
 
 def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
-    mods = _world_cache(profile_id) / "mods"
-    mods.mkdir(parents=True, exist_ok=True)
-    runeschema = mods / "ue4ss_mods" / "RuneSchema"
-    runeschema_mods = runeschema / "mods"
-    if not runeschema_mods.exists() and runeschema.exists():
-        runeschema_mods = runeschema
-    return {
-        "ue4ss": mods / "ue4ss_mods",
-        "paks": mods / "pak_mods",
-        "runeschema": runeschema_mods,
-    }
+    """Return the profile-owned source folders used by Browse Mods + Refresh.
+
+    Runtime/core files never live here.  Legacy profile snapshots are migrated
+    on first access into the visible UE4SS / RuneSchema / PAKs lanes.
+    """
+    roots = ensure_profile_mod_roots(_world_cache(profile_id) / "mods")
+    return {"ue4ss": roots["ue4ss"], "paks": roots["paks"], "runeschema": roots["runeschema"]}
 
 
-def _live_roots(game_dir: str) -> dict[str, Path]:
-    layout = resolve_client_layout(game_dir)
-    rs_root = layout.runeschema_root
-    rs_mods = layout.runeschema_mods_dir
-    # Current packages use RuneSchema/Mods. Older installs keep mod payloads
-    # directly in RuneSchema; retain support for both layouts.
-    if not rs_mods.exists() and rs_root.exists():
-        # RuneSchema archives use both Mods and mods. Resolve the physical
-        # child case-insensitively so Linux/Proton behaves like Windows before
-        # falling back to the legacy direct-root layout.
-        try:
-            physical_mods = next((child for child in rs_root.iterdir() if child.is_dir() and child.name.casefold() == "mods"), None)
-        except OSError:
-            physical_mods = None
-        rs_mods = physical_mods or rs_root
-    return {"ue4ss": layout.ue4ss_mods_dir, "paks": layout.paks_mods_dir, "runeschema": rs_mods}
+def _live_roots(game_dir: str):
+    roots = resolve_mod_install_paths(load_state(), "player", game_dir)
+    return {"ue4ss": roots["ue4ss"], "paks": roots["paks"], "runeschema": roots["runeschema"]}
 
 
 def roots(game_dir: str, live: bool, profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:

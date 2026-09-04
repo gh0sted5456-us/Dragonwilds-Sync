@@ -28,6 +28,8 @@ from pathlib import Path
 import dragonwilds_service_v3_phase2 as _base
 from dragonwilds_service_v3_phase2 import *  # noqa: F401,F403
 from client_layout import resolve_client_layout
+from profile_mod_destinations import mod_destination_status
+from machine_paths import player_save_paths, save_role as save_machine_role, status as machine_path_status
 import profile_store
 from runtime_worker_bridge import install as install_runtime_worker_bridge
 from system_process_catalog import process_catalog
@@ -144,10 +146,9 @@ def _registry(state: dict, params: dict, package_items=None) -> dict:
 def _character_root_for_import(inspected: dict, state: dict) -> Path | None:
     if not inspected.get("characters"):
         return None
-    game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
-    if not game_dir:
-        raise ValueError("Configure the Dragonwilds game directory before importing Character payloads.")
-    return resolve_client_layout(game_dir).character_dir
+    application = state.get("application") if isinstance(state.get("application"), dict) else {}
+    game_dir = str(application.get("game_dir") or "").strip()
+    return player_save_paths(state, fallback_game_dir=game_dir)["characters"]
 
 
 def _phase4_bootstrap(result: dict) -> dict:
@@ -304,11 +305,25 @@ def handle(method: str, params: dict) -> object:
                 "canonical_identity": "ID.txt", "item_registry": cached_registry(),
             }
             _phase4_bootstrap(result)
+            application["machine_paths"] = machine_path_status(state)
             application["runtime_worker_supervisor"] = _workers().list_status()
             application["feature_worker_supervisor"] = _feature_workers().list_status()
             application["phase5_runtime_workers"] = _install_phase5_workers()
             application["system_process_catalog"] = process_catalog()
         return result
+
+    if method == "application.mod_destinations.get":
+        return mod_destination_status(state)
+
+    if method == "application.machine_paths.get":
+        return machine_path_status(state)
+    if method == "application.machine_paths.save":
+        role = str(params.get("role") or "").strip().casefold()
+        result = save_machine_role(state, role, params.get("executable"), params.get("save_dir"))
+        _legacy.save_state(state)
+        public = _legacy.public_state(state)
+        public.setdefault("application", {})["machine_paths"] = machine_path_status(state)
+        return {"role": role, "machine": result, "state": public}
 
     if method == "application.process_catalog":
         return process_catalog()

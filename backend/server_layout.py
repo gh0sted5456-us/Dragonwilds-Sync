@@ -6,6 +6,7 @@ from pathlib import Path
 
 DEDICATED_FOLDER = "RuneScape Dragonwilds Dedicated Server"
 NATIVE_LINUX = sys.platform.startswith("linux")
+CLIENT_SHIPPING_EXE = "RSDragonwilds-Win64-Shipping.exe"
 SERVER_EXE = "RSDragonwildsServer.sh" if NATIVE_LINUX else "RSDragonwilds.exe"
 # Keep both families visible so a Proton-managed Windows install can still be
 # linked from Linux and migrated profiles remain discoverable.
@@ -253,6 +254,20 @@ def is_complete_server_layout(layout: ServerLayout) -> bool:
             and (_has_dedicated_evidence(layout.install_root)
                  or _has_dedicated_evidence(layout.game_root)))
 
+
+
+def looks_like_retail_client(layout: ServerLayout) -> bool:
+    """Identify positive retail-client evidence without trusting planned server paths.
+
+    ``resolve_server_layout`` intentionally maps an unrecognized selection toward
+    the location Full Setup *would* create. For a safety guard we instead inspect
+    the operator-selected tree itself (and its normal nested RSDragonwilds root).
+    """
+    selected = layout.selected_root.parent if layout.selected_root.is_file() else layout.selected_root
+    roots = (selected, selected / "RSDragonwilds")
+    if any(_has_dedicated_evidence(root) for root in roots):
+        return False
+    return any((root / "Binaries" / "Win64" / CLIENT_SHIPPING_EXE).is_file() for root in roots)
 
 def discover_server_layouts(selected: str | Path, *, max_depth: int = 8,
                             max_directories: int = 25000) -> dict:

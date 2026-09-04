@@ -104,7 +104,7 @@ def test_local_appdata_migration_and_default_off_tips():
 
 
 def test_admin_relaunch_and_rsdw_toolkit_contracts():
-    electron = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
+    electron = (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
     assert "PORTABLE_EXECUTABLE_FILE" in electron
     assert "app.releaseSingleInstanceLock()" in electron
     assert "ProcessStartInfo" in electron
@@ -259,54 +259,41 @@ def test_reset_is_backup_first_and_path_guarded():
     assert "RESET DRAGONWILDS" in renderer and "RESET SERVER" in renderer
 
 
-def test_client_layout_accepts_inner_executable_and_parent_search():
+def test_exact_executable_and_saved_root_replace_parent_search():
     with tempfile.TemporaryDirectory() as tmp:
-        library = Path(tmp) / "SteamLibrary"
-        install = library / "steamapps" / "common" / "RSDragonwilds"
+        root = Path(tmp)
+        install = root / "SteamLibrary" / "steamapps" / "common" / "RSDragonwilds"
         game = install / "RSDragonwilds"
         win64 = game / "Binaries" / "Win64"
         exe = win64 / "RSDragonwilds-Win64-Shipping.exe"
         (game / "Content" / "Paks").mkdir(parents=True)
         win64.mkdir(parents=True)
         exe.write_bytes(b"test executable marker")
+        saved = root / "PlayerData" / "Saved"
+        (saved / "SaveGames").mkdir(parents=True)
+        (saved / "SaveCharacters").mkdir(parents=True)
 
-        for selected in (install, game, win64, exe):
-            result = validate_client_path(selected)
-            assert result["ok"] is True
-            assert Path(result["layout"]["install_root"]) == install
-            assert Path(result["layout"]["game_root"]) == game
-            assert Path(result["layout"]["game_exe"]) == exe
+        result = validate_client_path(exe, saved)
+        assert result["ok"] is True
+        assert Path(result["layout"]["install_root"]).resolve() == install.resolve()
+        assert Path(result["layout"]["game_root"]).resolve() == game.resolve()
+        assert Path(result["layout"]["game_exe"]).resolve() == exe.resolve()
+        assert validate_client_path(install, saved)["ok"] is False
+        assert validate_client_path(root / "SteamLibrary", saved)["ok"] is False
 
-        discovered = validate_client_path(library)
-        assert discovered["ok"] is True
-        assert discovered["directories_scanned"] > 0
-        assert Path(discovered["layout"]["install_root"]) == install
-        assert Path(discovered["layout"]["game_root"]) == game
-
-
-def test_server_layout_accepts_generic_parent_search():
-    with tempfile.TemporaryDirectory() as tmp:
-        library = Path(tmp) / "SteamLibrary"
-        install = library / "steamapps" / "common" / "RuneScape Dragonwilds Dedicated Server"
-        game = install / "RSDragonwilds"
-        win64 = game / "Binaries" / "Win64"
-        (game / "Content" / "Paks").mkdir(parents=True)
-        win64.mkdir(parents=True)
-        server_exe = install / "RSDragonwilds.exe"
+        server_install = root / "Dedicated"
+        server_game = server_install / "RSDragonwilds"
+        (server_game / "Content" / "Paks").mkdir(parents=True)
+        (server_game / "Binaries" / "Win64").mkdir(parents=True)
+        server_exe = server_install / "RSDragonwilds.exe"
         server_exe.write_bytes(b"test dedicated executable marker")
+        server_saved = root / "ServerData" / "Saved"
+        (server_saved / "SaveGames").mkdir(parents=True)
 
-        for selected in (install, game, win64, server_exe):
-            result = validate_server_path(selected, allow_new=False)
-            assert result["ok"] is True
-            assert result["mode"] == "existing"
-            assert Path(result["layout"]["install_root"]) == install
-            assert Path(result["layout"]["game_root"]) == game
-            assert Path(result["layout"]["server_exe"]) == server_exe
-
-        discovered = validate_server_path(library, allow_new=False)
-        assert discovered["ok"] is True
-        assert Path(discovered["layout"]["install_root"]) == install
-        assert Path(discovered["layout"]["game_root"]) == game
+        server_result = validate_server_path(server_exe, server_saved, allow_new=False)
+        assert server_result["ok"] is True and server_result["mode"] == "existing"
+        assert Path(server_result["layout"]["game_root"]).resolve() == server_game.resolve()
+        assert validate_server_path(server_install, server_saved, allow_new=False)["ok"] is False
 
 
 def test_world_placards_are_discovered_from_save_names():
@@ -346,7 +333,6 @@ if __name__ == "__main__":
     test_avatar_resolution_rejects_generic_slot_only_matches()
     test_profile_socials_and_character_visibility_contract()
     test_reset_is_backup_first_and_path_guarded()
-    test_client_layout_accepts_inner_executable_and_parent_search()
-    test_server_layout_accepts_generic_parent_search()
+    test_exact_executable_and_saved_root_replace_parent_search()
     test_world_placards_are_discovered_from_save_names()
     print("V1.1.6 consolidated Worlds, Character Studio, and RuneSchema tests passed")

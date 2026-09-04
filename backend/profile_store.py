@@ -260,6 +260,7 @@ def default_state() -> dict:
             "language": "en",
             "game_dir": "",
             "game_exe": "",
+            "save_dir": "",
             "keep_core_persistent": False,
             "background_server_checks": True,
             "network_diagnostics_enabled": True,
@@ -403,6 +404,7 @@ def load_state() -> dict:
     application.setdefault("theme", "dark-fantasy")
     language = str(application.get("language") or "en").casefold()
     application["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
+    application.setdefault("save_dir", "")
     application.setdefault("background_server_checks", True)
     application.setdefault("network_diagnostics_enabled", True)
     application.setdefault("connection_diagnostic_reports", False)
@@ -536,8 +538,10 @@ def load_state() -> dict:
     application["integrations"] = merge_integrations(application.get("integrations"), {})
     application["server_access_policy"] = normalize_access_policy(application.get("server_access_policy"))
     application["client_network_profile"] = normalize_network_evidence(application.get("client_network_profile"))
+    application.pop("mod_install_paths", None)
     server_install = application.setdefault("server_install", {})
     server_install.setdefault("install_dir", "")
+    server_install.setdefault("save_dir", "")
     server_install.setdefault("server_exe", "")
     server_install.setdefault("steamcmd_dir", "")
     server_install.setdefault("owner_id", "")

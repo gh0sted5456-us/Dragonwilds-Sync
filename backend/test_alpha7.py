@@ -81,10 +81,11 @@ def main():
             copied = se.snapshot_profile_mods("world-a", game)
             assert copied >= 3
             stored = profiles / "world-a" / "mods"
-            assert not (stored / "ue4ss_mods" / "RuneSchema").exists()
-            assert (stored / "runeschema_mods" / "WorldRS" / "config.json").is_file()
-            assert (stored / "ue4ss_mods" / "WorldLua" / "main.lua").is_file()
-            assert (stored / "ue4ss_mods" / "mods.txt").is_file()
+            assert not (stored / "UE4SS" / "RuneSchema").exists()
+            assert (stored / "RuneSchema" / "WorldRS" / "config.json").is_file()
+            assert (stored / "UE4SS" / "WorldLua" / "main.lua").is_file()
+            assert (stored / "PAKs" / "WorldPak.pak").is_file()
+            assert not (stored / "UE4SS" / "mods.txt").exists(), "mods.txt is generated control state, not profile content"
 
             # Restore replaces World-owned mods while leaving the base runtime intact.
             (layout.ue4ss_mods_dir / "WorldLua" / "main.lua").write_text("changed", encoding="utf-8")

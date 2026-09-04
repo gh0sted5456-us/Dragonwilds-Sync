@@ -12,6 +12,7 @@ from profile_store import SERVER_PROFILES_DIR, load_server_profile
 from server_engine import dedicated_savegames_paths_from_exe
 from server_layout import resolve_server_layout
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
+from profile_mod_layout import ensure_profile_mod_roots
 
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
 MAX_CONFIG_BYTES = 2 * 1024 * 1024
@@ -108,11 +109,12 @@ def _server_mod_paths(profile_id: str, server_root: str, key: str, active: bool)
             "pak_mod": layout.paks_mods_dir,
         }[group].resolve()
     else:
-        group_root = (_profile_dir(profile_id) / "mods" / {
-            "ue4ss_mod": "ue4ss_mods",
-            "runeschema_mod": "runeschema_mods",
-            "pak_mod": "pak_mods",
-        }[group]).resolve()
+        profile_roots = ensure_profile_mod_roots(_profile_dir(profile_id) / "mods")
+        group_root = {
+            "ue4ss_mod": profile_roots["ue4ss"],
+            "runeschema_mod": profile_roots["runeschema"],
+            "pak_mod": profile_roots["paks"],
+        }[group].resolve()
     if group != "pak_mod":
         candidate = _matching_child(group_root, name).resolve()
         return group_root, [candidate] if candidate.exists() and (candidate == group_root or group_root in candidate.parents) else []

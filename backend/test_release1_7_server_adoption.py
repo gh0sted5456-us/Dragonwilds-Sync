@@ -74,8 +74,8 @@ def main() -> None:
             assert adopted["mod_files_captured"] >= 2
             assert adopted["config_files_captured"] >= 1
             assert (profile_dir / "savegame" / "World.sav").read_bytes() == b"save-data"
-            assert (profile_dir / "mods" / "ue4ss_mods" / "ExampleMod" / "main.lua").is_file()
-            assert (profile_dir / "mods" / "pak_mods" / "Example.pak").is_file()
+            assert (profile_dir / "mods" / "UE4SS" / "ExampleMod" / "main.lua").is_file()
+            assert (profile_dir / "mods" / "PAKs" / "Example.pak").is_file()
             adopted_profile = json.loads((profile_dir / "profile.json").read_text(encoding="utf-8"))
             assert adopted_profile["name"] == "Effing Desync"
             assert adopted_profile["dedicated_config"]["world_pass"] == "secret"

@@ -20,7 +20,8 @@ from character_profiles import CHAR_CACHE, CHAR_DELETE_BACKUPS, CHAR_IMPORT_BACK
 from backup_naming import profile_naming
 from client_layout import resolve_client_layout
 from player_backups import normalize_player_id
-from profile_store import SERVER_PROFILES_DIR
+from profile_store import SERVER_PROFILES_DIR, load_state
+from machine_paths import player_save_paths
 from server_systems import list_profile_backups
 from world_operations import ARCHIVE_ROOT, CLIENT_SAVEGAMES, list_archives, tree_status
 
@@ -51,7 +52,7 @@ def _local_player_rows(game_dir: str) -> tuple[list[dict], list[dict]]:
     current: list[dict] = []
     backups: list[dict] = []
     if game_dir:
-        root = resolve_client_layout(game_dir).character_dir
+        root = player_save_paths(load_state(), fallback_game_dir=game_dir)["characters"]
         if root.is_dir():
             for path in sorted((row for row in root.iterdir() if row.is_file()), key=lambda row: row.stat().st_mtime, reverse=True):
                 name = path.name.casefold()
@@ -108,7 +109,7 @@ def inventory(*, profile_id: str, mode: str, game_dir: str = "", world_status: d
         world_backups = [{**row, "id": row.get("name"), "kind": "world-backup"} for row in list_profile_backups(profile_id)]
         players = _server_player_rows(profile_id)
     else:
-        live = tree_status(CLIENT_SAVEGAMES)
+        live = tree_status(player_save_paths(load_state(), fallback_game_dir=game_dir)["worlds"])
         worlds.append({"id": "current", "name": profile_name or "Local Dragonwilds Saves", "kind": "world-current", **live})
         world_backups = [{**row, "id": row.get("name"), "kind": "world-backup"} for row in list_archives(100)]
         players = current_players
@@ -147,7 +148,7 @@ def restore_local_player(*, game_dir: str, backup_name: str, target_name: str, s
         if len(matches) != 1:
             raise FileNotFoundError("The selected player save backup was not found.")
         backup = matches[0]
-    target_root = resolve_client_layout(game_dir).character_dir.resolve()
+    target_root = player_save_paths(load_state(), fallback_game_dir=game_dir)["characters"].resolve()
     target_root.mkdir(parents=True, exist_ok=True)
     target = (target_root / Path(target_name or backup.name).name).resolve()
     if target_root not in target.parents:

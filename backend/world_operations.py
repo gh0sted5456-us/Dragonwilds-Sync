@@ -10,13 +10,21 @@ import time
 import zipfile
 from pathlib import Path
 
-from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, load_server_profile, save_server_profile
+from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, create_server_profile, load_server_profile, load_state, save_server_profile
+from machine_paths import player_save_paths
 from backup_naming import render_backup_name
 from server_engine import snapshot_profile_savegame
 
 LOCAL_APPDATA = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
 CLIENT_SAVEGAMES = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames"
 ARCHIVE_ROOT = APP_DATA_DIR / "world_archives"
+
+
+def _client_savegames() -> Path:
+    try:
+        return player_save_paths(load_state())["worlds"]
+    except Exception:
+        return CLIENT_SAVEGAMES
 
 
 def _safe_name(value: str, fallback: str = "World") -> str:
@@ -121,7 +129,7 @@ def import_worldsave_archive(archive_path: str | Path, destination: str | Path, 
 
 
 def archive_private(name: str = "SinglePlayer", *, name_template: str = "") -> dict:
-    return _archive_tree(CLIENT_SAVEGAMES, kind="singleplayer", name=name, name_template=name_template)
+    return _archive_tree(_client_savegames(), kind="singleplayer", name=name, name_template=name_template)
 
 
 def archive_server(profile_id: str, *, server_exe: str = "") -> dict:
@@ -139,12 +147,13 @@ def convert_private_to_server(name: str, *, source_label: str = "SinglePlayer") 
     profile = create_server_profile(name)
     profile_id = str(profile["id"])
     snapshot = SERVER_PROFILES_DIR / profile_id / "savegame"
-    if CLIENT_SAVEGAMES.exists(): _atomic_replace_tree(CLIENT_SAVEGAMES, snapshot)
+    client_saves = _client_savegames()
+    if client_saves.exists(): _atomic_replace_tree(client_saves, snapshot)
     dedicated = profile.setdefault("dedicated_config", {})
     dedicated["server_name"] = name; dedicated["world_name"] = name
-    profile["conversion"] = {"from": "singleplayer", "converted_at": time.time(), "source_path": str(CLIENT_SAVEGAMES)}
+    profile["conversion"] = {"from": "singleplayer", "converted_at": time.time(), "source_path": str(client_saves)}
     save_server_profile(profile_id, profile)
-    return {"ok": True, "profile": profile, "profile_id": profile_id, "source": tree_status(CLIENT_SAVEGAMES), "snapshot": tree_status(snapshot)}
+    return {"ok": True, "profile": profile, "profile_id": profile_id, "source": tree_status(client_saves), "snapshot": tree_status(snapshot)}
 
 
 def convert_server_to_private(profile_id: str, *, server_exe: str = "") -> dict:
@@ -156,10 +165,11 @@ def convert_server_to_private(profile_id: str, *, server_exe: str = "") -> dict:
         except Exception: pass
     if not snapshot.exists() or not _tree_files(snapshot):
         raise RuntimeError("This Server Profile does not have a stored World save snapshot yet.")
-    backup = _archive_tree(CLIENT_SAVEGAMES, kind="singleplayer-pre-convert", name=profile.get("name") or "World") if CLIENT_SAVEGAMES.exists() else None
+    client_saves = _client_savegames()
+    backup = _archive_tree(client_saves, kind="singleplayer-pre-convert", name=profile.get("name") or "World") if client_saves.exists() else None
     # Conversion is a clone/overlay, not a delete of unrelated local saves.
-    _overlay_tree(snapshot, CLIENT_SAVEGAMES)
-    return {"ok": True, "world_name": profile.get("name") or "World", "backup": backup, "source": tree_status(snapshot), "destination": tree_status(CLIENT_SAVEGAMES)}
+    _overlay_tree(snapshot, client_saves)
+    return {"ok": True, "world_name": profile.get("name") or "World", "backup": backup, "source": tree_status(snapshot), "destination": tree_status(client_saves)}
 
 
 def merge_changes(profile_id: str, *, result_kind: str = "server", server_exe: str = "", prefer: str = "newest") -> dict:
@@ -176,17 +186,18 @@ def merge_changes(profile_id: str, *, result_kind: str = "server", server_exe: s
     if server_exe:
         try: snapshot_profile_savegame(profile_id, server_exe)
         except Exception: pass
-    private_stat, server_stat = tree_status(CLIENT_SAVEGAMES), tree_status(snapshot)
+    client_saves = _client_savegames()
+    private_stat, server_stat = tree_status(client_saves), tree_status(snapshot)
     if not private_stat["files"] and not server_stat["files"]:
         raise RuntimeError("Neither copy contains a World save to merge.")
     if prefer == "singleplayer": source_kind = "singleplayer"
     elif prefer == "server": source_kind = "server"
     else: source_kind = "singleplayer" if private_stat["newest_mtime"] >= server_stat["newest_mtime"] else "server"
-    source = CLIENT_SAVEGAMES if source_kind == "singleplayer" else snapshot
-    archive_private_result = _archive_tree(CLIENT_SAVEGAMES, kind="merge-private", name=profile.get("name") or "World") if private_stat["files"] else None
+    source = client_saves if source_kind == "singleplayer" else snapshot
+    archive_private_result = _archive_tree(client_saves, kind="merge-private", name=profile.get("name") or "World") if private_stat["files"] else None
     archive_server_result = _archive_tree(snapshot, kind="merge-server", name=profile.get("name") or "World", metadata={"profile_id": profile_id}) if server_stat["files"] else None
     result_kind = "singleplayer" if str(result_kind).lower().startswith("single") else "server"
-    destination = CLIENT_SAVEGAMES if result_kind == "singleplayer" else snapshot
+    destination = client_saves if result_kind == "singleplayer" else snapshot
     if source.resolve() != destination.resolve():
         _atomic_replace_tree(source, destination) if result_kind == "server" else _overlay_tree(source, destination)
     profile["conversion"] = {"merge_source": source_kind, "merge_result": result_kind, "merged_at": time.time(), "strategy": "newest-complete-save-tree"}

@@ -15,7 +15,6 @@
   } catch (_) { detachedContext = {}; }
 
   let storageCache = null;
-  let openedProfile = null;
   let rewritePending = false;
   const rememberedSelection = { local: '', server: '' };
 
@@ -107,19 +106,19 @@
     const added = Number(reconciliation.added_count || 0);
     const changed = Number(reconciliation.changed_count || 0);
     const removed = Number(reconciliation.removed_count || 0);
-    if (!added && !changed && !removed) return 'Rescan complete · no profile mod changes detected.';
-    return `Rescan complete · ${added} added · ${changed} changed · ${removed} removed.`;
+    if (!added && !changed && !removed) return 'Refresh complete · no profile mod changes detected.';
+    return `Refresh complete · ${added} added · ${changed} changed · ${removed} removed.`;
   }
 
   async function authoritativeRescan(kind, profileId, { useVisibleButton = true } = {}) {
     const visibleButton = document.querySelector(kind === 'server' ? '#refresh-server-inventory' : '#sp-refresh');
     if (useVisibleButton && visibleButton) {
       visibleButton.click();
-      updateNote(kind, 'Rescanning the profile mod folders…');
+      updateNote(kind, 'Refreshing from the profile mod folder…');
       return null;
     }
 
-    updateNote(kind, 'Rescanning the profile mod folders…');
+    updateNote(kind, 'Refreshing from the profile mod folder…');
     const response = await bridge.invoke(
       kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
       kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
@@ -139,11 +138,8 @@
     button.textContent = 'Opening…';
     try {
       const target = await modsPath(kind, profile.id);
-      // A pre-open scan also refreshes the profile cache before Explorer is shown.
-      try { await authoritativeRescan(kind, profile.id, { useVisibleButton: false }); } catch (_) {}
       const opened = await bridge.openPath(target);
       if (!opened) throw new Error(`Could not open ${target}`);
-      openedProfile = { kind, id: text(profile.id), path: target, openedAt: Date.now() };
       updateNote(kind, `Profile folder open · ${target}`);
     } catch (error) {
       updateNote(kind, text(error?.message || error || 'Could not open the profile Mods folder.'), 'error');
@@ -217,17 +213,18 @@
     document.querySelectorAll('p, span').forEach((node) => {
       const value = text(node.textContent);
       if (value.includes('Drop a ZIP on the matching UE4SS or RuneSchema target')) {
-        node.textContent = 'Open the selected World profile’s Mods folder in Explorer, place UE4SS, RuneSchema, or PAK content in its normal folder structure, then Rescan. The profile folder is the management source of truth.';
+        node.textContent = 'Open the selected World profile’s Mods folder in Explorer, place UE4SS, RuneSchema, or PAK content in its normal folder structure, then Refresh. The profile folder is the management source of truth.';
       }
     });
     document.querySelectorAll('.identity-box strong').forEach((strong) => {
       if (text(strong.textContent) === 'Manual + Nexus-linked inventory') {
         strong.textContent = 'Folder-managed + Nexus-linked inventory';
         const paragraph = strong.parentElement?.querySelector('p');
-        if (paragraph) paragraph.textContent = 'Manual mods come from the World profile folder and are reconciled by Rescan. Nexus-linked metadata and update evidence can remain attached to discovered mods.';
+        if (paragraph) paragraph.textContent = 'Manual mods come from the World profile folder and are reconciled by Refresh. Nexus-linked metadata and update evidence can remain attached to discovered mods.';
       }
     });
   }
+
 
   function rewriteUi() {
     rewritePending = false;
@@ -258,12 +255,4 @@
   window.addEventListener('DOMContentLoaded', scheduleRewrite, { once: true });
   scheduleRewrite();
 
-  window.addEventListener('focus', () => {
-    const opened = openedProfile;
-    if (!opened || Date.now() - opened.openedAt < 250) return;
-    openedProfile = null;
-    authoritativeRescan(opened.kind, opened.id).catch((error) => {
-      updateNote(opened.kind, text(error?.message || error || 'Rescan failed.'), 'error');
-    });
-  });
 })();

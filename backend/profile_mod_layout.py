@@ -28,6 +28,47 @@ CANONICAL_FOLDER_NAMES = {
 }
 SUPPORTED_OVERRIDE_GROUPS = frozenset({"ue4ss_mod", "runeschema_mod", "pak_mod"})
 
+# Browse Mods is intentionally human-editable. These notes keep the three lanes
+# self-describing and also keep empty lanes present in copied/zipped profiles.
+LANE_README = "README.txt"
+LANE_NOTE_NAMES = frozenset({LANE_README.casefold()})
+_LANE_README_TEXT = {
+    "ue4ss": (
+        "UE4SS mods for this World.\n\n"
+        "One folder per mod, exactly as the mod ships it. Drop folders here, then\n"
+        "press Refresh in Mod Management so Sync rebuilds this profile's inventory.\n\n"
+        "This folder is the source of truth. Activating/deploying this World copies\n"
+        "the refreshed profile into the configured game installation. Deleting a\n"
+        "mod here removes it from Mod Management on Refresh and from the live game\n"
+        "when this profile is next activated/deployed.\n\n"
+        "Do not put RuneSchema itself here; it is machine runtime. mods.txt is\n"
+        "generated control state and does not belong in this folder.\n"
+    ),
+    "runeschema": (
+        "RuneSchema child mods for this World.\n\n"
+        "One folder per child mod. Do not place RuneSchema's dlls/, config/, or\n"
+        "enabled.txt here; those are machine runtime. Drop child mods here, then\n"
+        "press Refresh to rebuild this profile's inventory. Activation/deployment\n"
+        "copies the refreshed lane into RuneSchema/mods.\n"
+    ),
+    "paks": (
+        "PAK mods for this World.\n\n"
+        "Drop .pak files and their .ucas/.utoc/.sig siblings directly in this\n"
+        "folder, then press Refresh to rebuild this profile's inventory.\n"
+        "Activation/deployment copies the refreshed lane into Content/Paks/~mods.\n"
+    ),
+}
+
+
+def _write_lane_readme(lane: Path, key: str) -> None:
+    note = lane / LANE_README
+    if note.exists():
+        return
+    try:
+        note.write_text(_LANE_README_TEXT[key], encoding="utf-8")
+    except OSError:
+        pass
+
 
 def _merge_tree(source: Path, destination: Path, *, exclude_names=()) -> int:
     if not source.exists():
@@ -47,12 +88,12 @@ def _merge_tree(source: Path, destination: Path, *, exclude_names=()) -> int:
             except OSError:
                 pass
         elif child.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
+            # Canonical profile storage wins collisions. Keep the legacy source
+            # inspectable rather than overwriting a mod the operator already put
+            # in the visible lane.
             if target.exists():
-                if target.is_dir():
-                    shutil.rmtree(target)
-                else:
-                    target.unlink()
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(child), str(target))
             copied += 1
     return copied
@@ -80,8 +121,10 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     ue4ss = root / CANONICAL_FOLDER_NAMES["ue4ss"]
     runeschema = root / CANONICAL_FOLDER_NAMES["runeschema"]
     paks = root / CANONICAL_FOLDER_NAMES["paks"]
-    for target in (ue4ss, runeschema, paks):
+    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks}
+    for key, target in lanes.items():
         target.mkdir(parents=True, exist_ok=True)
+        _write_lane_readme(target, key)
 
     legacy_ue4ss = root / "ue4ss_mods"
     legacy_runeschema = root / "runeschema_mods"
@@ -144,3 +187,16 @@ def describe_profile_mod_roots(mods_root: str | Path) -> dict:
         "paks": str(roots["paks"]),
         "authority": "profile-folder",
     }
+
+
+# Keep the three human-editable profile lanes self-describing regardless of how
+# the migration helper above evolves.
+_profile_mod_roots_without_notes = ensure_profile_mod_roots
+
+def ensure_profile_mod_roots(mods_root: Path):
+    lanes = _profile_mod_roots_without_notes(mods_root)
+    for key in ("ue4ss", "runeschema", "paks"):
+        lane = lanes[key]
+        lane.mkdir(parents=True, exist_ok=True)
+        _write_lane_readme(lane, key)
+    return lanes

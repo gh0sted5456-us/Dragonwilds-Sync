@@ -12,6 +12,7 @@ from pathlib import Path
 from integrations import normalize_mod_source
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS, preview_identity_consolidation, consolidate_identity_files
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, read_json, write_json
+from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
 
 
 REPOSITORY_ROOT = APP_DATA_DIR / "mod_repository"
@@ -64,16 +65,13 @@ def _mods_root(kind: str, profile_id: str) -> Path:
 
 
 def _group_root(kind: str, profile_id: str, group: str) -> Path:
-    mods = _mods_root(kind, profile_id)
+    roots = ensure_profile_mod_roots(_mods_root(kind, profile_id))
     if group == "ue4ss_mod":
-        return mods / "ue4ss_mods"
+        return roots["ue4ss"]
     if group == "runeschema_mod":
-        direct = mods / "runeschema_mods"
-        if kind == "dedicated" and direct.exists():
-            return direct
-        return mods / "ue4ss_mods" / "RuneSchema" / "mods"
+        return roots["runeschema"]
     if group == "pak_mod":
-        return mods / "pak_mods"
+        return roots["paks"]
     raise ValueError("Unsupported mod type")
 
 
@@ -163,7 +161,8 @@ def _profile_specs() -> list[tuple[str, str, Path]]:
 def _physical_keys(kind: str, profile_id: str) -> set[str]:
     keys: set[str] = set()
     ue4ss = _group_root(kind, profile_id, "ue4ss_mod")
-    excluded = {"runeschema", "mods.txt"} | {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS}
+    excluded = ({"runeschema", "mods.txt"} | LANE_NOTE_NAMES
+                | {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS})
     if ue4ss.exists():
         for child in ue4ss.iterdir():
             if child.name.casefold() not in excluded:
@@ -171,12 +170,14 @@ def _physical_keys(kind: str, profile_id: str) -> set[str]:
     runeschema = _group_root(kind, profile_id, "runeschema_mod")
     if runeschema.exists():
         for child in runeschema.iterdir():
-            if not child.name.startswith("."):
+            if not child.name.startswith(".") and child.name.casefold() not in LANE_NOTE_NAMES:
                 keys.add(f"runeschema_mod::{child.name}")
     paks = _group_root(kind, profile_id, "pak_mod")
     if paks.exists():
         seen = set()
         for child in paks.iterdir():
+            if child.name.casefold() in LANE_NOTE_NAMES:
+                continue
             clean = _clean_pak_name(child)
             if clean in seen: continue
             seen.add(clean)

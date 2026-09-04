@@ -129,10 +129,13 @@ def main() -> None:
     assert renderer.count('id="sp-open-mods-folder"') == 1
     assert renderer.count('id="server-open-mods-folder"') == 1
     pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"
-    assert pre_open_scan in overlay
-    assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")
-    assert 'mods = _world_cache(profile_id) / "mods"\n    mods.mkdir(parents=True, exist_ok=True)' in local_source
-    assert 'stored = SERVER_PROFILES_DIR / profile_id / "mods"\n    stored.mkdir(parents=True, exist_ok=True)' in server_source
+    # Browse Mods is side-effect free. Explicit Refresh is the only folder
+    # reconciliation boundary; returning focus from Explorer does not rescan.
+    assert pre_open_scan not in overlay
+    assert "openedProfile" not in overlay
+    assert "window.addEventListener('focus'" not in overlay
+    assert 'ensure_profile_mod_roots(_world_cache(profile_id) / "mods")' in local_source
+    assert 'profile_roots = ensure_profile_mod_roots(stored)' in server_source
     assert renderer.count("api.invoke('singleplayer.mod.install'") >= 2
     assert renderer.count("api.invoke('server.world.mod.install'") >= 2
     for retired in (

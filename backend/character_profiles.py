@@ -15,7 +15,8 @@ from pathlib import Path, PurePosixPath
 
 import rsdw_cache
 from client_layout import resolve_client_layout
-from profile_store import APP_DATA_DIR
+from profile_store import APP_DATA_DIR, load_state
+from machine_paths import player_save_paths
 from rsdw_cache import avatar_palette, resolve_icon, resolve_catalog_item, resolve_avatar_model, search_items
 from rsdwl_packages import RSDWL_FORMAT as ENVELOPE_FORMAT, RSDWL_VERSION as ENVELOPE_VERSION, inspect_envelope, payload_by_role, write_package
 
@@ -46,6 +47,10 @@ SKILL_NAMES = (
     "woodcutting", "artisan", "attack", "construction", "cooking", "farming",
     "fishing", "magic", "mining", "ranged", "runecrafting", "agility",
 )
+
+
+def _configured_character_root(game_dir: str = "") -> Path:
+    return player_save_paths(load_state(), fallback_game_dir=game_dir)["characters"]
 
 
 def _sha(path: Path) -> str:
@@ -346,7 +351,7 @@ def _resolve_character_path(game_dir: str, character_id: str) -> Path:
     wanted = str(character_id or "").strip()
     if not wanted:
         raise ValueError("Character is required.")
-    root = resolve_client_layout(game_dir).character_dir
+    root = _configured_character_root(game_dir)
     if not root.exists():
         raise FileNotFoundError("Dragonwilds character directory was not found.")
     for path in root.iterdir():
@@ -1422,7 +1427,10 @@ def write_character_from_toolkit(game_dir: str, character_id: str, text: str, *,
     stamp = time.strftime("%Y%m%d-%H%M%S")
     # Multiple Apply operations can occur inside one second.  Never reuse a
     # backup name: every verified write must retain its own recovery point.
-    backup = CHAR_IMPORT_BACKUPS / f"rsdw-{stamp}-{time.time_ns()}-{target.name}"
+    # time.time_ns() may have coarser effective resolution on Windows than its
+    # name suggests. Add an independent nonce so two rapid Apply operations can
+    # never resolve to the same recovery path and overwrite the first backup.
+    backup = CHAR_IMPORT_BACKUPS / f"rsdw-{stamp}-{time.time_ns()}-{secrets.token_hex(6)}-{target.name}"
     shutil.copy2(target, backup)
     # Normalize only serialization, not schema/content. RSDWTools owns the edited document.
     payload = json.dumps(obj, ensure_ascii=False, indent=2).encode("utf-8")
@@ -1967,7 +1975,7 @@ def inspect_character_package(package_path: str | Path) -> dict:
 
 def import_character_package(package_path: str | Path, game_dir: str, *, overwrite: bool = False) -> dict:
     inspected = inspect_character_package(package_path)
-    root = resolve_client_layout(game_dir).character_dir
+    root = _configured_character_root(game_dir)
     root.mkdir(parents=True, exist_ok=True)
     original_name = Path(inspected["save_name"]).name
     dest = root / original_name

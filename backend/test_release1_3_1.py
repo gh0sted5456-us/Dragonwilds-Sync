@@ -113,6 +113,7 @@ def main():
             world_operations.SERVER_PROFILES_DIR = td / "profiles"
             world_operations.ARCHIVE_ROOT = td / "archives"
             world_operations.CLIENT_SAVEGAMES.mkdir(parents=True)
+            world_operations.player_save_paths = lambda _state, **_kw: {"worlds": world_operations.CLIENT_SAVEGAMES}
             (world_operations.CLIENT_SAVEGAMES / "World.sav").write_bytes(b"private")
             def create(name):
                 p={"id":"srv-1","name":name,"dedicated_config":{}}

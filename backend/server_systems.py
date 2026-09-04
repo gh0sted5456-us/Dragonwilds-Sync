@@ -37,7 +37,9 @@ from health_model import normalize_health_config, public_health_config, score_se
 from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, trusted_ip_match, REGION_LABELS
 from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
+from machine_paths import server_save_paths
 from client_layout import resolve_client_layout
+from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
 from server_scheduler import normalize_notice
 from player_tracker import PLAYER_SERVICE
@@ -623,7 +625,8 @@ def _iter_top_level(root: Path):
     except OSError as exc:
         _LAST_SCAN_WARNINGS.append(f"Could not list {root.name or root}: {exc}")
         return []
-    return [(p.name, p.is_dir(), p) for p in sorted(entries, key=lambda x: x.name.lower()) if not p.name.startswith(".")]
+    return [(p.name, p.is_dir(), p) for p in sorted(entries, key=lambda x: x.name.lower())
+            if not p.name.startswith(".") and p.name.casefold() not in LANE_NOTE_NAMES]
 
 
 def _group_pak_siblings(entries):
@@ -725,9 +728,9 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
 def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     """Scan an inactive World's APPDATA-owned mod snapshot without touching live files."""
     stored = SERVER_PROFILES_DIR / profile_id / "mods"
-    stored.mkdir(parents=True, exist_ok=True)
-    mods = stored / "ue4ss_mods"
-    paks = stored / "pak_mods"
+    profile_roots = ensure_profile_mod_roots(stored)
+    mods = profile_roots["ue4ss"]
+    paks = profile_roots["paks"]
     profile = load_server_profile(profile_id)
     overrides = profile.get("unit_overrides") or {}
     units: list[ModUnit] = []
@@ -2796,7 +2799,13 @@ class ShareServer:
             profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile.pop("server_key", None)
             profile.setdefault("sync_config", {})["port"] = int(port); profile["sync_config"]["password"] = password
             profile["sync_config"]["tls_cert_fingerprint"] = tls_cert_fingerprint
-            STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
+            machine_state = load_state()
+            machine_install = (machine_state.get("application") or {}).get("server_install") or {}
+            if str(machine_install.get("save_dir") or "").strip():
+                STATE.worldsave_source_dir = str(server_save_paths(machine_state)["worlds"])
+            else:
+                # Compatibility only for an unconfigured historical install.
+                STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
             STATE.tls_active = tls_enabled; STATE.tls_cert_fingerprint = tls_cert_fingerprint
             STATE.allow_tls_password_fallback = allow_tls_password_fallback
         if persist_profile:
@@ -4315,8 +4324,8 @@ def deploy_authoritative_runtimes(game_root: str, include_ue4ss: bool = True, in
         # generated mods.txt; presence of a blank enabled.txt is authoritative.
         (target / "enabled.txt").write_text("", encoding="utf-8")
         (RUNESCHEMA_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
-        (target / "mods").mkdir(parents=True, exist_ok=True)
-        (RUNESCHEMA_RUNTIME_DIR / "mods").mkdir(parents=True, exist_ok=True)
+        ensure_runeschema_mods_dir(target)
+        ensure_runeschema_mods_dir(RUNESCHEMA_RUNTIME_DIR)
     canonical_settings = _apply_canonical_ue4ss_settings(win64) if include_ue4ss else {"applied": False}
     writable = _set_runtime_configs_writable(
         layout.ue4ss_core_dir, layout.runeschema_root,
@@ -4587,8 +4596,8 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
         ue4ss_root, paks_root, rs_mods_root = layout.ue4ss_mods_dir, layout.paks_mods_dir, layout.runeschema_mods_dir
     else:
         stored = SERVER_PROFILES_DIR / profile_id / "mods"
-        ue4ss_root, paks_root = stored / "ue4ss_mods", stored / "pak_mods"
-        rs_mods_root = ue4ss_root / "RuneSchema" / "mods"
+        profile_roots = ensure_profile_mod_roots(stored)
+        ue4ss_root, paks_root, rs_mods_root = profile_roots["ue4ss"], profile_roots["paks"], profile_roots["runeschema"]
     for managed_root in (ue4ss_root, paks_root, rs_mods_root):
         _set_runtime_tree_writable(managed_root, True)
     with tempfile.TemporaryDirectory(prefix="dwsync_world_mod_") as temp:
@@ -4707,6 +4716,26 @@ def detect_mod_zip_kind(path: str) -> str | None:
     return None
 
 
+
+RUNESCHEMA_MODS_README = """RuneSchema child mods load from this folder.
+
+Dragonwilds Sync creates this directory even when it is empty so child mods can
+never be confused with the RuneSchema core. Profile content is managed from the
+World's Mods/RuneSchema lane; activation/deployment materializes it here.
+"""
+
+
+def ensure_runeschema_mods_dir(runeschema_root: Path) -> Path:
+    mods = runeschema_root / "mods"
+    try:
+        mods.mkdir(parents=True, exist_ok=True)
+        note = mods / "README.txt"
+        if not note.exists():
+            note.write_text(RUNESCHEMA_MODS_README, encoding="utf-8")
+    except OSError:
+        pass
+    return mods
+
 def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server") -> dict:
     review_with_defender(zip_path, "mod package")
     """Install either a full RuneSchema package or one RuneSchema mod.
@@ -4777,7 +4806,7 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
             # A core update is a complete upstream replacement. Preserve only
             # profile-owned child mods; never mix one release's DLL with
             # another release's config/support files.
-            live_mods = live_rs / "mods"
+            live_mods = ensure_runeschema_mods_dir(live_rs)
             for child in list(live_rs.iterdir()):
                 if child != live_mods:
                     _remove_generated_path(child)

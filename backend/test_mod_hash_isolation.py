@@ -54,8 +54,8 @@ def main() -> None:
         sync_engine.CLIENT_WORLDS_DIR = root / "client-worlds"
         try:
             snapshot = sync_engine.client_world_dir("singleplayer")
-            cached_alpha = snapshot / "mods" / "ue4ss_mods" / "Alpha"
-            cached_beta = snapshot / "mods" / "ue4ss_mods" / "Beta"
+            cached_alpha = snapshot / "mods" / "UE4SS" / "Alpha"
+            cached_beta = snapshot / "mods" / "UE4SS" / "Beta"
             cached_alpha.mkdir(parents=True); cached_beta.mkdir(parents=True)
             (cached_alpha / "main.lua").write_text("return 'alpha-v1'\n", encoding="utf-8")
             (cached_beta / "main.lua").write_text("return 'beta-v1'\n", encoding="utf-8")
@@ -88,7 +88,7 @@ def main() -> None:
             (legacy_rune / "recipe.json").write_text('{"value": 1}\n', encoding="utf-8")
             rune_result = sync_engine.snapshot_client_mod_unit("singleplayer", install, "runeschema_mod::Gamma")
             assert rune_result["copied"] == 1
-            assert (snapshot / "mods" / "ue4ss_mods" / "RuneSchema" / "Gamma" / "recipe.json").is_file()
+            assert (snapshot / "mods" / "RuneSchema" / "Gamma" / "recipe.json").is_file()
         finally:
             sync_engine.CLIENT_WORLDS_DIR = original_client_worlds
 
@@ -96,13 +96,13 @@ def main() -> None:
         original_profile_dir = server_engine._profile_mods_dir
         server_engine._profile_mods_dir = lambda _profile_id: server_profile_root / "mods"
         try:
-            server_snapshot_beta = server_profile_root / "mods" / "ue4ss_mods" / "Beta" / "main.lua"
+            server_snapshot_beta = server_profile_root / "mods" / "UE4SS" / "Beta" / "main.lua"
             server_snapshot_beta.parent.mkdir(parents=True)
             server_snapshot_beta.write_bytes(b"server-beta-sentinel")
             server_beta_before = file_sha(server_snapshot_beta)
             server_engine.snapshot_profile_mod_unit("world-a", game, "ue4ss_mod::Alpha")
             assert file_sha(server_snapshot_beta) == server_beta_before
-            assert (server_profile_root / "mods" / "ue4ss_mods" / "Alpha" / "main.lua").read_text(encoding="utf-8") == "return 'alpha-v2'\n"
+            assert (server_profile_root / "mods" / "UE4SS" / "Alpha" / "main.lua").read_text(encoding="utf-8") == "return 'alpha-v2'\n"
         finally:
             server_engine._profile_mods_dir = original_profile_dir
             local_world.LOCAL_PROFILE_DIR = original_local_profile_dir

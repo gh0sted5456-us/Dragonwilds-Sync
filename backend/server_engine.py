@@ -18,7 +18,11 @@ from backup_naming import profile_naming, render_backup_name
 from process_utils import check_output_hidden, popen_game_server, popen_hidden, run_hidden
 from computer_profiles import apply_process_priority, resolve_computer_profile, begin_power_session, restore_power_session
 from health_model import apply_detected_hardware_references
-from server_layout import NATIVE_LINUX, resolve_server_layout, resolve_server_layout_from_exe
+from server_layout import (NATIVE_LINUX, looks_like_retail_client, resolve_server_layout,
+                           resolve_server_layout_from_exe)
+from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
+from profile_mod_destinations import resolve_mod_install_paths
+from machine_paths import server_save_paths
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
 from networking import DEFAULT_SYNC_DISCOVERY_PORT
@@ -43,13 +47,19 @@ LOCAL_APPDATA = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Lo
 DEDICATED_CONFIG_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "Config" / "WindowsServer"
 DEDICATED_CONFIG_FILE = DEDICATED_CONFIG_DIR / "DedicatedServer.ini"
 DEDICATED_SAVEGAMES_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames"
-PROFILE_MOD_SLOTS = ("ue4ss_mods", "runeschema_mods", "pak_mods")
-SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", "dragonlink", *UE4SS_BAKED_IN_DEFAULT_MODS}
+PROFILE_MOD_SLOTS = ("UE4SS", "RuneSchema", "PAKs")
+SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", "dragonlink", "mods.txt", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
 OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
 EXPERIMENTAL_RUNESCHEMA_REPOSITORY = "https://github.com/gh0sted5456-us/RuneSchema"
 RUNESCHEMA_FLAVOR_MARKER = ".dragonwilds-sync-flavor.json"
 UE4SS_VERSION_MARKER = ".dragonwilds-sync-ue4ss.json"
+# Lane notes are profile furniture, never live mod content.
+LANE_NOTES = set(LANE_NOTE_NAMES)
+# RuneSchema core files survive every profile swap even if a malformed/missing
+# mods/ directory makes a resolver fall back to the core root.
+RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods.txt",
+                         RUNESCHEMA_FLAVOR_MARKER, UE4SS_VERSION_MARKER}
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
@@ -183,13 +193,29 @@ def _remove_path(path: Path) -> None:
             path.unlink()
 
 
+
+def assert_dedicated_target(target: str | Path, *, action: str, from_exe: bool = False) -> None:
+    """Defense in depth: never let server write paths target the retail client."""
+    raw = str(target or "").strip()
+    if not raw:
+        return
+    layout = resolve_server_layout_from_exe(raw) if from_exe else resolve_server_layout(raw)
+    if looks_like_retail_client(layout):
+        raise ValueError(
+            f"Refusing to {action}: {layout.game_root} is the retail Dragonwilds client, "
+            "not a dedicated-server installation. Select the dedicated server executable."
+        )
+
 def dedicated_savegames_paths_from_exe(exe_path: str) -> list[Path]:
     raw = str(exe_path or "").strip()
-    if not raw: return []
-    layout = resolve_server_layout_from_exe(raw)
-    # Keep the old LOCALAPPDATA location as a migration fallback, but the
-    # dedicated installation's Saved tree is authoritative in Alpha 7.
-    return [layout.savegames_dir] if os.name != "nt" else [layout.savegames_dir, DEDICATED_SAVEGAMES_DIR]
+    if not raw:
+        return []
+    try:
+        configured = server_save_paths(load_state(), fallback_executable=raw)["worlds"]
+    except Exception:
+        configured = resolve_server_layout_from_exe(raw).savegames_dir
+    # Old LOCALAPPDATA is migration-only and never the configured authority.
+    return [configured] if os.name != "nt" else [configured, DEDICATED_SAVEGAMES_DIR]
 
 
 def _live_savegames_dir(exe_path: str) -> Path | None:
@@ -205,9 +231,12 @@ def _write_backup_zip(profile_id: str, live_dir: Path, retention_count: int = 10
     target = backup_dir / render_backup_name(
         naming["world_template"], suffix=".zip", world=str(profile.get("name") or profile_id),
         kind="backup", profile=profile_id)
-    # Ensure same-second snapshots don't overwrite.
+    # Ensure same-second snapshots never overwrite or raise on a collision.
+    base = target
     n = 1
-    while target.exists(): target = backup_dir / f"backup-{stamp}-{n}.zip"; n += 1
+    while target.exists():
+        n += 1
+        target = base.with_name(f"{base.stem}-{n}{base.suffix}")
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
         for file in live_dir.rglob("*"):
             if file.is_file(): zf.write(file, file.relative_to(live_dir).as_posix())
@@ -218,12 +247,14 @@ def _write_backup_zip(profile_id: str, live_dir: Path, retention_count: int = 10
 
 
 def snapshot_profile_savegame(profile_id: str, exe_path: str, retention_count: int = 10) -> bool:
+    assert_dedicated_target(exe_path, action="back up World saves from", from_exe=True)
     live = _live_savegames_dir(exe_path)
     if live is None or not live.exists() or not any(live.iterdir()): return False
     dest = _profile_savegame_dir(profile_id); shutil.rmtree(dest, ignore_errors=True); shutil.copytree(live, dest); _write_backup_zip(profile_id, live, retention_count); return True
 
 
 def restore_profile_savegame(profile_id: str, exe_path: str) -> bool:
+    assert_dedicated_target(exe_path, action="replace World saves in", from_exe=True)
     src = _profile_savegame_dir(profile_id)
     if not src.exists() or not any(src.iterdir()): return False
     live = _live_savegames_dir(exe_path)
@@ -283,61 +314,55 @@ def _tree_inventory(root: Path, *, exclude_names: set[str] | None = None) -> tup
 
 
 def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Capture only World-owned mod payloads, never shared runtime cores.
+    """Adopt/capture live World mods into the profile's three visible lanes.
 
-    Alpha 7 makes the ownership boundary explicit: RuneSchema itself is a
-    machine-wide runtime even though it physically lives under UE4SS/Mods. Its
-    child mods are World-owned, as are ordinary UE4SS mods, mods.txt, and PAKs.
+    Routine profile switching no longer calls this function.  Profile storage
+    is authoritative after adoption; normal activation only materializes from
+    profile -> installation.
     """
+    assert_dedicated_target(game_root, action="capture World mods from")
     layout = resolve_server_layout(game_root)
-    destination = _profile_mods_dir(profile_id); staging = destination.with_name(destination.name + ".staging")
-    rs_source = layout.runeschema_mods_dir
-    rs_excluded: set[str] = set()
-    rs_layout = "mods-subdir"
-    if rs_source == layout.runeschema_root:
-        rs_excluded = {"config", "dlls", "enabled.txt", "mods"}
-        rs_layout = "root"
-    layout_marker = destination / "runeschema_layout.txt"
-    marker_value = layout_marker.read_text(encoding="utf-8", errors="ignore").strip() if layout_marker.exists() else ""
-    # copy2 preserves mtimes, so an unchanged live tree can be compared to the
-    # profile snapshot without hashing or recopying large PAK payloads.
-    if destination.exists() and marker_value == rs_layout:
-        unchanged = (
-            _tree_inventory(layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS) == _tree_inventory(destination / "ue4ss_mods")
-            and _tree_inventory(rs_source, exclude_names=rs_excluded) == _tree_inventory(destination / "runeschema_mods")
-            and _tree_inventory(layout.paks_mods_dir) == _tree_inventory(destination / "pak_mods")
-        )
-        if unchanged:
-            return 0
-    if staging.exists(): _remove_path(staging)
-    staging.mkdir(parents=True, exist_ok=True); copied = 0
-    copied += _copy_children(layout.ue4ss_mods_dir, staging / "ue4ss_mods", exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
-    if rs_source.exists():
-        copied += _copy_children(rs_source, staging / "runeschema_mods", exclude_names=rs_excluded)
-    (staging / "runeschema_layout.txt").write_text(rs_layout, encoding="utf-8")
-    copied += _copy_children(layout.paks_mods_dir, staging / "pak_mods")
-    if destination.exists(): _remove_path(destination)
-    staging.replace(destination); return copied
+    live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
+    destination = _profile_mods_dir(profile_id)
+    current = ensure_profile_mod_roots(destination)
+    if (
+        _tree_inventory(live_roots["ue4ss"], exclude_names=SERVER_INFRASTRUCTURE_UE4SS) == _tree_inventory(current["ue4ss"])
+        and _tree_inventory(live_roots["runeschema"]) == _tree_inventory(current["runeschema"])
+        and _tree_inventory(live_roots["paks"]) == _tree_inventory(current["paks"])
+    ):
+        return 0
+    staging = destination.with_name(destination.name + ".staging")
+    if staging.exists():
+        _remove_path(staging)
+    staged = ensure_profile_mod_roots(staging)
+    copied = _copy_children(live_roots["ue4ss"], staged["ue4ss"],
+                            exclude_names=SERVER_INFRASTRUCTURE_UE4SS | LANE_NOTES)
+    if live_roots["runeschema"].exists():
+        copied += _copy_children(live_roots["runeschema"], staged["runeschema"],
+                                 exclude_names=RUNESCHEMA_CORE_NAMES | LANE_NOTES)
+    copied += _copy_children(live_roots["paks"], staged["paks"], exclude_names=LANE_NOTES)
+    if destination.exists():
+        _remove_path(destination)
+    staging.replace(destination)
+    return copied
 
 
 def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int:
-    """Capture only the edited dedicated mod, preserving every sibling snapshot."""
+    """Capture one explicit active-editor change back into profile storage."""
     group, separator, name = str(key or "").partition("::")
     if not separator or not name or name in {".", ".."} or any(token in name for token in ("/", "\\")):
         raise ValueError("Invalid mod key.")
     layout = resolve_server_layout(game_root)
-    stored = _profile_mods_dir(profile_id)
+    live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
+    stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
     if group == "ue4ss_mod":
         if name.casefold() in SERVER_INFRASTRUCTURE_UE4SS:
             raise ValueError("Runtime infrastructure is not a World-owned mod unit.")
-        source = layout.ue4ss_mods_dir / name
-        destination = stored / "ue4ss_mods" / name
+        source = live_roots["ue4ss"] / name
+        destination = stored["ue4ss"] / name
     elif group == "runeschema_mod":
-        source = layout.runeschema_mods_dir / name
-        destination = stored / "runeschema_mods" / name
-        marker = stored / "runeschema_layout.txt"
-        marker.parent.mkdir(parents=True, exist_ok=True)
-        marker.write_text("root" if layout.runeschema_mods_dir == layout.runeschema_root else "mods-subdir", encoding="utf-8")
+        source = live_roots["runeschema"] / name
+        destination = stored["runeschema"] / name
     else:
         raise ValueError("Only UE4SS and RuneSchema mod units support targeted live snapshots.")
     _remove_path(destination)
@@ -352,37 +377,26 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
 
 
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Restore World-owned payloads while preserving shared UE4SS/RuneSchema cores."""
-    layout = resolve_server_layout(game_root); stored = _profile_mods_dir(profile_id); copied = 0
+    """Plant one profile's mod lanes into the configured server installation."""
+    assert_dedicated_target(game_root, action="plant World mods into")
+    layout = resolve_server_layout(game_root)
+    live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
+    stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
+    copied = 0
 
-    # Preserve RuneSchema itself while replacing ordinary UE4SS World mods and
-    # the per-World mods.txt enablement file. Old Alpha snapshots may contain a
-    # RuneSchema directory here; it is intentionally ignored/migrated below.
-    _clear_children(layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
-    ue_src = stored / "ue4ss_mods"
-    copied += _copy_children(ue_src, layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
+    # Runtime/core infrastructure survives every profile swap.
+    _clear_children(live_roots["ue4ss"], exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
+    copied += _copy_children(stored["ue4ss"], live_roots["ue4ss"],
+                             exclude_names=SERVER_INFRASTRUCTURE_UE4SS | LANE_NOTES)
 
-    rs_src = stored / "runeschema_mods"
-    # Migration: older snapshots captured RuneSchema as part of ue4ss_mods.
-    legacy_rs = ue_src / "RuneSchema"
-    if not rs_src.exists() and legacy_rs.exists():
-        rs_src = legacy_rs / "mods" if (legacy_rs / "mods").is_dir() else legacy_rs
-    mode = "mods-subdir"
-    try:
-        mode = (stored / "runeschema_layout.txt").read_text(encoding="utf-8").strip() or mode
-    except OSError:
-        if layout.runeschema_root.exists() and not (layout.runeschema_root / "mods").exists():
-            mode = "root"
-    if mode == "root":
-        target = layout.runeschema_root
-        _clear_children(target, exclude_names={"config", "dlls", "enabled.txt"})
-    else:
-        target = layout.runeschema_root / "mods"
-        _clear_children(target)
-    copied += _copy_children(rs_src, target)
+    # RuneSchema core survives even if the destination temporarily resolves
+    # to the core root. Only child-mod content is replaceable.
+    _clear_children(live_roots["runeschema"], exclude_names=RUNESCHEMA_CORE_NAMES)
+    copied += _copy_children(stored["runeschema"], live_roots["runeschema"],
+                             exclude_names=RUNESCHEMA_CORE_NAMES | LANE_NOTES)
 
-    _clear_children(layout.paks_mods_dir)
-    copied += _copy_children(stored / "pak_mods", layout.paks_mods_dir)
+    _clear_children(live_roots["paks"])
+    copied += _copy_children(stored["paks"], live_roots["paks"], exclude_names=LANE_NOTES)
     return copied
 
 
@@ -1659,8 +1673,8 @@ class ServerEngine:
         if outgoing_id and outgoing_id != incoming_id:
             outgoing = load_server_profile(outgoing_id)
             outgoing_root = self._profile_root(outgoing) or incoming_root; outgoing_exe = find_dedicated_server_exe(outgoing) or incoming_exe
-            if outgoing_root and Path(outgoing_root).exists(): snapshot_profile_mods(outgoing_id, Path(outgoing_root))
-            if outgoing_root and Path(outgoing_root).exists(): snapshot_profile_server_config(outgoing_id, outgoing_root)
+            if outgoing_root and Path(outgoing_root).exists():
+                snapshot_profile_server_config(outgoing_id, outgoing_root)
             if outgoing_exe: snapshot_profile_savegame(outgoing_id, outgoing_exe)
         mods = restore_profile_mods(incoming_id, Path(incoming_root)) if incoming_root and Path(incoming_root).exists() else 0
         configs = restore_profile_server_config(incoming_id, incoming_root) if incoming_root and Path(incoming_root).exists() else 0
@@ -1703,7 +1717,9 @@ class ServerEngine:
         layout = resolve_server_layout(root)
         _clear_children(layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
         if layout.runeschema_mods_dir == layout.runeschema_root:
-            _clear_children(layout.runeschema_root, exclude_names={"config", "dlls", "enabled.txt"})
+            _clear_children(layout.runeschema_root, exclude_names={
+                "config", "dlls", "enabled.txt", "mods.txt",
+                RUNESCHEMA_FLAVOR_MARKER, UE4SS_VERSION_MARKER})
         else:
             _clear_children(layout.runeschema_mods_dir)
         _clear_children(layout.paks_mods_dir)

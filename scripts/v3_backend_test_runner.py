@@ -47,7 +47,7 @@ def main() -> int:
         # current service/path sources and must never be redirected to V2 files.
         "test_executable_save_paths.py", "test_profile_mod_management_revamp.py",
         "test_profile_mod_pathing_guards.py", "test_profile_mod_destination_settings.py",
-        "test_runtime_architecture.py",
+        "test_runtime_architecture.py", "test_setup_ux_regression.py",
     }
     is_current_service_test = test.name in current_service_tests
     source = test.read_text(encoding="utf-8", errors="ignore")

@@ -11,6 +11,18 @@
   ];
   let statusCache = null;
   let rendering = false;
+  // Fix for the reported "map-pasting doesn't persist" bug: this panel is
+  // rebuilt (shell.innerHTML replaced) on every DOM mutation anywhere in the
+  // app via the MutationObserver below, using values from statusCache -- not
+  // whatever the user just typed or pasted. Any unrelated UI activity (a
+  // toast, another card's poll-driven refresh, console output) was enough to
+  // silently discard an unsaved paste before "Save mapped paths" was ever
+  // clicked. Track which inputs currently hold unsaved edits so a rebuild
+  // can carry those exact values forward instead of overwriting them with
+  // stale cached data.
+  const dirty = new Set(); // keys of the form `${role}:${lane}`
+
+  function dirtyKey(role, lane) { return `${role}:${lane}`; }
 
   function esc(value) {
     return String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
@@ -79,7 +91,22 @@
         shell.className = 'machine-mod-map-shell';
         card.appendChild(shell);
       }
+      // Capture any unsaved edits before the rebuild so they survive it.
+      const preserved = {};
+      for (const role of ['player', 'server']) {
+        for (const [lane] of lanes) {
+          const key = dirtyKey(role, lane);
+          if (!dirty.has(key)) continue;
+          const input = document.querySelector(`#machine-map-${role}-${lane}`);
+          if (input) preserved[key] = input.value;
+        }
+      }
       shell.innerHTML = `<header><div><strong>Installation mod mapping</strong><p>Defaults are detected from the linked executable. Override them when your installation uses a different UE4SS, RuneSchema, or PAK destination. World profiles stay isolated and deploy into these targets.</p></div></header><div class="machine-mod-map-grid">${roleMarkup('player', status.player || {})}${roleMarkup('server', status.server || {})}</div>`;
+      for (const [key, value] of Object.entries(preserved)) {
+        const [role, lane] = key.split(':');
+        const input = document.querySelector(`#machine-map-${role}-${lane}`);
+        if (input && !input.disabled) input.value = value;
+      }
     } catch (error) {
       console.warn('Could not render machine mod mapping', error);
     } finally {
@@ -115,6 +142,7 @@
         window.__DWSYNC_STATE__ = result.state;
         window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: result.state }));
       }
+      for (const [lane] of lanes) dirty.delete(dirtyKey(role, lane));
       statusCache = null;
       await loadStatus(true);
       note(role, 'Mapped installation paths saved. Future profile deployment uses these destinations.');
@@ -131,7 +159,7 @@
       const input = document.querySelector(`#machine-map-${role}-${lane}`);
       if (!input) return;
       const picked = await api.pickDirectory(`Choose ${role === 'server' ? 'Server' : 'Player'} ${lane} mod destination`, text(input.value));
-      if (picked) input.value = picked;
+      if (picked) { input.value = picked; dirty.add(dirtyKey(role, lane)); }
       return;
     }
     const defaults = event.target.closest('[data-machine-map-defaults]');
@@ -139,13 +167,25 @@
       const role = text(defaults.dataset.machineMapDefaults);
       for (const [lane] of lanes) {
         const input = document.querySelector(`#machine-map-${role}-${lane}`);
-        if (input) input.value = text(input.dataset.default);
+        if (input) { input.value = text(input.dataset.default); dirty.add(dirtyKey(role, lane)); }
       }
       note(role, 'Detected defaults loaded. Save to make them explicit.');
       return;
     }
     const saveButton = event.target.closest('[data-machine-map-save]');
     if (saveButton) await save(text(saveButton.dataset.machineMapSave));
+  }, true);
+
+  // Typing OR pasting (Ctrl+V, middle-click paste, drag-drop) into a mapping
+  // field all fire 'input'. Mark the field dirty on the first such event so a
+  // rebuild triggered before Save is clicked preserves it instead of
+  // silently reverting to the last-known/detected value.
+  document.addEventListener('input', (event) => {
+    const row = event.target.closest?.('[data-machine-mod-lane]');
+    if (!row) return;
+    const role = row.closest('[data-machine-map-role]')?.dataset.machineMapRole;
+    const lane = row.dataset.machineModLane;
+    if (role && lane) dirty.add(dirtyKey(role, lane));
   }, true);
 
   const observer = new MutationObserver(() => void render());

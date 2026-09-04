@@ -116,10 +116,6 @@ def main() -> None:
         "RuneSchema Build",
         "Update Official",
         "Fetch Latest Experimental",
-        'id="sp-open-mods-folder"',
-        'id="server-open-mods-folder"',
-        'data-profile-mod-kind="local"',
-        'data-profile-mod-kind="server"',
         'data-profile-mod-folder-note="local"',
         "Folder-managed + Nexus-linked inventory",
         "Manual mod archive import retired",
@@ -131,8 +127,9 @@ def main() -> None:
         "path.toLowerCase().endsWith('.rsdwl')",
     ):
         assert token in renderer
-    assert renderer.count('id="sp-open-mods-folder"') == 1
-    assert renderer.count('id="server-open-mods-folder"') == 1
+    assert 'id="sp-open-mods-folder"' not in renderer
+    assert 'id="server-open-mods-folder"' not in renderer
+    assert renderer.count('data-action="profile-mod-storage"') >= 2
     pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"
     # Browse Mods is side-effect free. Explicit Refresh is the only folder
     # reconciliation boundary; returning focus from Explorer does not rescan.
@@ -159,8 +156,6 @@ def main() -> None:
     ):
         assert retired not in renderer
     for token in (
-        "bindProfileFolderButton('#sp-open-mods-folder', 'local')",
-        "bindProfileFolderButton('#server-open-mods-folder', 'server')",
         # Open Mod Folder must ask the backend for the authoritative profile
         # mod root rather than reconstructing it from AppData/server-root
         # strings in the renderer (see backend/test_profile_mod_pathing_guards.py
@@ -168,13 +163,14 @@ def main() -> None:
         "bridge.invoke('application.profile.mods_root'",
         "response?.resolved_kind",
         "const actualKind = resolved.kind === 'server' ? 'server' : 'local';",
-        "#sp-open-mods-folder, #server-open-mods-folder",
         "rescan: true",
         "PROTECTED RECOVERY BASELINE",
     ):
         assert token in overlay
     assert "bridge.invoke('application.storage.paths'" not in overlay
-    assert "typeof bridge.openProfileMods === 'function'" in overlay
+    assert "bindProfileFolderButton" not in overlay
+    assert "window.dragonwilds.openProfileMods('server',id)" in renderer
+    assert "window.dragonwilds.openProfileMods('local',id)" in renderer
     assert "openProfileMods: (kind, id) => ipcRenderer.invoke('dragonwilds:open-profile-mods'" in electron_preload
     assert "ipcMain.handle('dragonwilds:open-profile-mods'" in electron_main
     assert "const error=await shell.openPath(value)" in electron_main
@@ -190,7 +186,7 @@ def main() -> None:
     assert "lastConsolePayload=payload||lastConsolePayload" in renderer
     assert "sourceCategory(row)===filter" in renderer
     assert "if(lastConsolePayload)draw(lastConsolePayload)" in renderer
-    assert "const profileId = text(button?.dataset?.profileId)" in overlay
+    assert "const profileId = text(button?.dataset?.profileId)" not in overlay
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

@@ -215,7 +215,7 @@ def main() -> None:
         # from the exact executable and Saved root.
         renderer = (Path(__file__).parents[1] / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
         app = (Path(__file__).parents[1] / "renderer/app-v2.js").read_text(encoding="utf-8")
-        assert "bindProfileFolderButton('#sp-open-mods-folder', 'local')" in renderer
+        assert "bindProfileFolderButton" not in renderer
         assert "rescan: true" in renderer
         assert "mod install destinations" not in renderer
         assert "data-mod-destination-save" not in renderer

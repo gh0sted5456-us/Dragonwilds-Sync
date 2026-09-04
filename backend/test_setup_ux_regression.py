@@ -61,6 +61,11 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     # Mod Management should name the profile folder and the scan action by
     # their actual effects instead of presenting several ambiguous verbs.
     assert app.count("Open Profile Mod Storage") >= 2
+    assert 'id="sp-open-mods-folder"' not in app
+    assert 'id="server-open-mods-folder"' not in app
+    assert app.count('data-action="profile-mod-storage"') >= 2
+    assert 'fantasy-loading flat-loading' not in app
+    assert 'fantasy-entry dark-pad-entry' not in app
     assert app.count("Scan Profile Folder") >= 2
     assert "Profile → scan → deploy" in app
 

@@ -35,7 +35,7 @@ requireText(bridge, 'window.parent?.dragonwilds', 'reuse parent preload/backend 
 rejectText(bridge, 'openDetachedWindow', 'BrowserWindow creation from embedded bridge');
 requireText(frameActions, "query.get('phase5Internal') !== '1'", 'embedded action guard');
 requireText(frameActions, 'window.parent?.__DWSYNC_INTERNAL_WINDOWS__?.openExplorer', 'forward embedded actions to parent Explorer');
-requireText(frameActions, "target.id === 'phase2-view-mods'", 'embedded World View Mods forwarding');
+if (frameActions.includes("target.id === 'phase2-view-mods'")) fail('embedded View Mods must use its native profile Mods tab instead of being hijacked by Explorer');
 requireText(frameActions, "target.dataset.action === 'open'", 'embedded Mod Manager Explore forwarding');
 rejectText(frameActions, 'openDetachedWindow', 'BrowserWindow creation from embedded actions');
 
@@ -54,7 +54,7 @@ for (const id of ['detach-profile', 'detach-worlds', 'detach-settings', 'detach-
 }
 requireText(embeddedCss, '#modal-root', 'embedded editor/modal layer remains usable');
 requireText(embeddedCss, '#internal-taskbar', 'embedded editor minimize/restore path remains usable');
-requireText(phase5, "target.id === 'phase2-view-mods'", 'World View Mods → Explorer interception');
+if (phase5.includes("target.id === 'phase2-view-mods'")) fail('View Mods must use its native profile Mods tab instead of being hijacked by Explorer');
 requireText(phase5, "target.dataset.action === 'open'", 'Mod Manager Open/Edit → same Explorer interception');
 requireText(phase5, 'window.__DWSYNC_INTERNAL_WINDOWS__', 'internal window registry/API');
 requireText(phase5, 'desktop-window phase5-window', 'existing MDI desktop-window contract');

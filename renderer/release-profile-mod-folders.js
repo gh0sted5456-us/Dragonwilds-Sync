@@ -139,43 +139,6 @@
     }
   }
 
-  async function openProfileMods(kind, button) {
-    const profileId = text(button?.dataset?.profileId);
-    if (!profileId) {
-      updateNote(kind, 'No World profile is selected.');
-      return;
-    }
-    remember(kind, profileId);
-    const original = button.textContent;
-    button.disabled = true;
-    button.textContent = 'Opening…';
-    try {
-      if (typeof bridge.openProfileMods === 'function') {
-        const result = await bridge.openProfileMods(kind, profileId);
-        if (!result?.ok) throw new Error(text(result?.error) || 'Windows could not open the profile Mods folder.');
-        updateNote(kind, `Profile folder open · ${text(result.path)}`);
-        return;
-      }
-      const target = await modsPath(kind, { id: profileId });
-      const opened = await bridge.openPath(target.path);
-      if (!opened) throw new Error(`Could not open ${target.path}`);
-      updateNote(kind, `Profile folder open · ${target.path}`);
-    } catch (error) {
-      updateNote(kind, text(error?.message || error || 'Could not open the profile Mods folder.'), 'error');
-    } finally {
-      button.disabled = false;
-      button.textContent = original;
-    }
-  }
-
-  function bindProfileFolderButton(selector, kind) {
-    const button = document.querySelector(selector);
-    if (!button || button.dataset.profileFolderBound === '1') return;
-    button.dataset.profileFolderBound = '1';
-    button.title = 'Open this World profile’s authoritative mod folder in Windows Explorer';
-    button.addEventListener('click', () => openProfileMods(kind, button));
-  }
-
   function hardenRuntimeBaselineUi() {
     const labels = { baseline: 'PROTECTED RECOVERY BASELINE', official: 'PROTECTED RECOVERY BASELINE' };
     for (const [id, label] of Object.entries(labels)) {
@@ -224,8 +187,6 @@
 
   function rewriteUi() {
     rewritePending = false;
-    bindProfileFolderButton('#sp-open-mods-folder', 'local');
-    bindProfileFolderButton('#server-open-mods-folder', 'server');
     hardenRuntimeBaselineUi();
     refreshFolderHelpCopy();
   }
@@ -237,15 +198,6 @@
   }
 
   document.addEventListener('click', (event) => {
-    const openFolder = event.target?.closest?.('#sp-open-mods-folder, #server-open-mods-folder');
-    if (openFolder) {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const kind = text(openFolder.dataset.profileModKind) === 'server' ? 'server' : 'local';
-      void openProfileMods(kind, openFolder);
-      return;
-    }
-
     const refresh = event.target?.closest?.('#sp-refresh, #refresh-server-inventory');
     if (refresh && refresh.dataset.profileAuthorityBypass !== '1') {
       const kind = refresh.id === 'refresh-server-inventory' ? 'server' : 'local';

@@ -560,16 +560,6 @@
       return;
     }
 
-    if (target.id === 'phase2-view-mods') {
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const kind = document.querySelector('#detach-server-world') ? 'server' : 'local';
-      const state = await stateSnapshot();
-      const id = resolveSelection(kind, state);
-      if (id) await openProfileExplorer(kind, id);
-      return;
-    }
-
     if (target.dataset.action === 'open' && lastModContext) {
       const context = lastModContext;
       lastModContext = null;

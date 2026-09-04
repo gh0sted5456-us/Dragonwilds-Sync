@@ -285,33 +285,6 @@
     if (!id) return;
     lastSelection = { kind, id };
 
-    if (!actions.querySelector('#phase2-view-mods')) {
-      const viewMods = document.createElement('button');
-      viewMods.id = 'phase2-view-mods';
-      viewMods.type = 'button';
-      viewMods.className = 'btn ghost';
-      viewMods.textContent = 'View Mods';
-      viewMods.title = 'Open this World profile\'s Mods view';
-      viewMods.addEventListener('click', () => clickModsTab(kind));
-      detach.insertAdjacentElement('afterend', viewMods);
-    }
-
-    if (!actions.querySelector('#phase2-see-profile')) {
-      const explorer = document.createElement('button');
-      explorer.id = 'phase2-see-profile';
-      explorer.type = 'button';
-      explorer.className = 'btn ghost';
-      explorer.textContent = 'See in Explorer';
-      explorer.title = 'Open this managed World profile in Windows Explorer';
-      explorer.addEventListener('click', async () => {
-        explorer.disabled = true;
-        try { await openProfileFolder(kind, id); }
-        catch (error) { console.error('[Phase 2] See in Explorer failed:', error); }
-        finally { explorer.disabled = false; }
-      });
-      actions.querySelector('#phase2-view-mods')?.insertAdjacentElement('afterend', explorer);
-    }
-
     if (!actions.querySelector('.phase2-detail-save-state')) {
       const world = worldFor(state, kind, id);
       const holder = document.createElement('span');

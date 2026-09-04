@@ -5885,6 +5885,18 @@ def handle(method: str, params: dict) -> object:
             # server installation here: it is a deployment target and can omit
             # stored mods that have not yet been deployed.
             units = scan_profile_snapshot_units(profile_id)
+            # The first Server profile adopts an already-modded installation
+            # once. Persist the boundary so an intentionally emptied profile is
+            # never silently repopulated from stale deployed files later.
+            if not profile.get("mods_profile_initialized"):
+                root = server_root_for_profile(profile)
+                if not units and active and root:
+                    snapshot_profile_mods(profile_id, Path(root))
+                    units = scan_profile_snapshot_units(profile_id)
+                if units or (active and root):
+                    profile = load_server_profile(profile_id) or profile
+                    profile["mods_profile_initialized"] = True
+                    save_server_profile(profile_id, profile)
             cached = _cache_server_inventory(profile_id, units, active=active)
             rows = cached["mods"]
             warnings = pop_server_scan_warnings()

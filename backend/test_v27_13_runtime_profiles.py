@@ -178,6 +178,7 @@ def main() -> None:
     assert "const error=await shell.openPath(value)" in electron_main
     assert "scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)" in service_source
     assert "units = scan_profile_snapshot_units(profile_id)" in service_source
+    assert 'profile["mods_profile_initialized"] = True' in service_source
     assert "const units=state.privateInventory[worldId]||[];" in renderer
     assert "refreshServerInventory(world, true, true)" in renderer
     assert "refreshSinglePlayerInventory(true, true)" in renderer

@@ -35,33 +35,26 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          import re
+          import subprocess
 
           def replace_once(path: str, old: str, new: str) -> None:
               target = Path(path)
               text = target.read_text(encoding="utf-8")
               count = text.count(old)
               if count != 1:
-                  raise SystemExit(f"Expected one match in {path}, found {count}")
+                  raise SystemExit(f"Expected one literal match in {path}, found {count}")
               target.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          replace_once(
-              "renderer/release-profile-mod-folders.js",
-              """  async function authoritativeRescan(kind, profileId) {
-            const visibleButton = document.querySelector(kind === 'server' ? '#refresh-server-inventory' : '#sp-refresh');
-            if (visibleButton) {
-              visibleButton.click();
-              updateNote(kind, 'Rescanning the profile mod folders…');
-              return;
-            }
+          def regex_once(path: str, pattern: str, replacement: str) -> None:
+              target = Path(path)
+              text = target.read_text(encoding="utf-8")
+              updated, count = re.subn(pattern, replacement, text, count=1, flags=re.DOTALL)
+              if count != 1:
+                  raise SystemExit(f"Expected one regex match in {path}, found {count}")
+              target.write_text(updated, encoding="utf-8")
 
-            const response = await bridge.invoke(
-              kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
-              kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
-            );
-            updateNote(kind, reconciliationText(response), 'success');
-          }
-          """,
-              """  async function authoritativeRescan(kind, profileId, { useVisibleButton = true } = {}) {
+          new_rescan = """  async function authoritativeRescan(kind, profileId, { useVisibleButton = true } = {}) {
             const visibleButton = document.querySelector(kind === 'server' ? '#refresh-server-inventory' : '#sp-refresh');
             if (useVisibleButton && visibleButton) {
               visibleButton.click();
@@ -77,7 +70,12 @@ jobs:
             updateNote(kind, reconciliationText(response), 'success');
             return response;
           }
-          """,
+
+          async function openProfileMods"""
+          regex_once(
+              "renderer/release-profile-mod-folders.js",
+              r"  async function authoritativeRescan\(kind, profileId\) \{.*?\n  \}\n\n  async function openProfileMods",
+              new_rescan,
           )
           replace_once(
               "renderer/release-profile-mod-folders.js",
@@ -87,57 +85,24 @@ jobs:
 
           replace_once(
               "backend/cl_authority.py",
-              """    def local_inventory_scan(game_dir: str, *, live: bool = False, profile_id: str = local_world.SINGLEPLAYER_ID):
-                  if _inventory_rescan_caller("singleplayer.inventory"):
-                      return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)
-                  return local_world.scan_inventory(game_dir, live=live, profile_id=profile_id)
-          """,
-              """    def local_inventory_scan(game_dir: str, *, live: bool = False, profile_id: str = local_world.SINGLEPLAYER_ID):
-                  if _inventory_rescan_caller("singleplayer.inventory"):
-                      profile_mods_root = local_world._world_cache(profile_id) / "mods"
-                      profile_mods_root.mkdir(parents=True, exist_ok=True)
-                      return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)
-                  return local_world.scan_inventory(game_dir, live=live, profile_id=profile_id)
-          """,
+              '        if _inventory_rescan_caller("singleplayer.inventory"):\n            return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)',
+              '        if _inventory_rescan_caller("singleplayer.inventory"):\n            profile_mods_root = local_world._world_cache(profile_id) / "mods"\n            profile_mods_root.mkdir(parents=True, exist_ok=True)\n            return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)',
           )
           replace_once(
               "backend/cl_authority.py",
-              """    def server_inventory_scan(profile_id: str, game_root: str):
-                  if _inventory_rescan_caller("server.world.inventory"):
-                      return server_systems.scan_profile_snapshot_units(profile_id)
-                  return server_engine_module.scan_mod_units(profile_id, game_root)
-          """,
-              """    def server_inventory_scan(profile_id: str, game_root: str):
-                  if _inventory_rescan_caller("server.world.inventory"):
-                      profile_mods_root = Path(server_systems.SERVER_PROFILES_DIR) / str(profile_id) / "mods"
-                      profile_mods_root.mkdir(parents=True, exist_ok=True)
-                      return server_systems.scan_profile_snapshot_units(profile_id)
-                  return server_engine_module.scan_mod_units(profile_id, game_root)
-          """,
+              '        if _inventory_rescan_caller("server.world.inventory"):\n            return server_systems.scan_profile_snapshot_units(profile_id)',
+              '        if _inventory_rescan_caller("server.world.inventory"):\n            profile_mods_root = Path(server_systems.SERVER_PROFILES_DIR) / str(profile_id) / "mods"\n            profile_mods_root.mkdir(parents=True, exist_ok=True)\n            return server_systems.scan_profile_snapshot_units(profile_id)',
           )
 
           replace_once(
               "backend/test_v27_13_runtime_profiles.py",
-              """    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-              overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
-          """,
-              """    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
-              overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
-              authority = (ROOT / "backend/cl_authority.py").read_text(encoding="utf-8")
-          """,
+              '    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")\n    overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")',
+              '    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")\n    overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")\n    authority = (ROOT / "backend/cl_authority.py").read_text(encoding="utf-8")',
           )
           replace_once(
               "backend/test_v27_13_runtime_profiles.py",
-              """    assert renderer.count('id="sp-open-mods-folder"') == 1
-              assert renderer.count('id="server-open-mods-folder"') == 1
-          """,
-              """    assert renderer.count('id="sp-open-mods-folder"') == 1
-              assert renderer.count('id="server-open-mods-folder"') == 1
-              pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"
-              assert pre_open_scan in overlay
-              assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")
-              assert authority.count("profile_mods_root.mkdir(parents=True, exist_ok=True)") == 2
-          """,
+              '    assert renderer.count(\'id="sp-open-mods-folder"\') == 1\n    assert renderer.count(\'id="server-open-mods-folder"\') == 1',
+              '    assert renderer.count(\'id="sp-open-mods-folder"\') == 1\n    assert renderer.count(\'id="server-open-mods-folder"\') == 1\n    pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"\n    assert pre_open_scan in overlay\n    assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")\n    assert authority.count("profile_mods_root.mkdir(parents=True, exist_ok=True)") == 2',
           )
 
           allowed = {
@@ -145,7 +110,6 @@ jobs:
               "backend/test_v27_13_runtime_profiles.py",
               "renderer/release-profile-mod-folders.js",
           }
-          import subprocess
           changed = set(subprocess.check_output(["git", "diff", "--name-only"], text=True).splitlines())
           if changed != allowed:
               raise SystemExit(f"Unexpected transformed file set: {sorted(changed)}")

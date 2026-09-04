@@ -150,6 +150,12 @@
     button.disabled = true;
     button.textContent = 'Opening…';
     try {
+      if (typeof bridge.openProfileMods === 'function') {
+        const result = await bridge.openProfileMods(kind, profile.id);
+        if (!result?.ok) throw new Error(text(result?.error) || 'Windows could not open the profile Mods folder.');
+        updateNote(kind, `Profile folder open · ${text(result.path)}`);
+        return;
+      }
       const target = await modsPath(kind, profile);
       const opened = await bridge.openPath(target.path);
       if (!opened) throw new Error(`Could not open ${target.path}`);

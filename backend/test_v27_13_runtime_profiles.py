@@ -107,6 +107,8 @@ def main() -> None:
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
+    electron_main = (ROOT / "electron/main-v2.cjs").read_text(encoding="utf-8")
+    electron_preload = (ROOT / "electron/preload-v2.cjs").read_text(encoding="utf-8")
     local_source = (ROOT / "backend/local_world.py").read_text(encoding="utf-8")
     server_source = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
     for token in (
@@ -169,6 +171,10 @@ def main() -> None:
     ):
         assert token in overlay
     assert "bridge.invoke('application.storage.paths'" not in overlay
+    assert "typeof bridge.openProfileMods === 'function'" in overlay
+    assert "openProfileMods: (kind, id) => ipcRenderer.invoke('dragonwilds:open-profile-mods'" in electron_preload
+    assert "ipcMain.handle('dragonwilds:open-profile-mods'" in electron_main
+    assert "const error=await shell.openPath(value)" in electron_main
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

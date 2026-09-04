@@ -1046,20 +1046,33 @@ ipcMain.handle('dragonwilds:rsdw-toolkit-root', async (_event, incoming) => {
 
 ipcMain.handle('dragonwilds:open-external', async (_event,target) => { try { const raw=String(target||'').trim(); const url=new URL(raw); const safeWeb=['http:','https:'].includes(url.protocol); const safeSteam=/^steam:\/\/(?:(?:run|rungameid|validate|install)\/(?:1374490|4019830)|nav\/games\/details\/1374490)$/i.test(raw); if(!safeWeb&&!safeSteam)return false; await shell.openExternal(url.toString()); return true; } catch(_){return false;} });
 ipcMain.handle('dragonwilds:open-in-app-browser', (event,target) => createExternalBrowserWindow(target, event.sender));
-ipcMain.handle('dragonwilds:open-path', async (_event,target) => {
+async function openDesktopPath(target) {
   const value=String(target||'').trim();
   if(!value||!fs.existsSync(value))return false;
   try{
-    // Electron's shell.openPath can hand a directory back to the packaged app
-    // on some Windows file-association setups. Launch Explorer explicitly so
-    // profile folders always appear in a normal desktop Explorer window.
+    // Electron routes folders through the user's desktop shell and returns an
+    // empty error string on success. This also crosses an elevated app boundary
+    // correctly, which a directly spawned explorer.exe process may not do.
+    const error=await shell.openPath(value);
+    if(!error)return true;
     if(process.platform==='win32'&&fs.statSync(value).isDirectory()){
-      const child=spawn('explorer.exe',[value],{detached:true,stdio:'ignore',windowsHide:false});
-      child.unref();
-      return true;
+      try { shell.showItemInFolder(value); return true; } catch (_) {}
     }
-    return !(await shell.openPath(value));
+    return false;
   }catch(_){return false;}
+}
+ipcMain.handle('dragonwilds:open-path', async (_event,target) => openDesktopPath(target));
+ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id) => {
+  try {
+    const result=await serviceInvoke('application.profile.mods_root',{kind:String(kind||''),id:String(id||'')});
+    const target=String(result?.mods_root||'').trim();
+    if(!target)throw new Error('The profile Mods folder could not be resolved.');
+    const ok=await openDesktopPath(target);
+    if(!ok)throw new Error(`Windows could not open ${target}`);
+    return {ok:true,path:target,resolved_kind:String(result?.resolved_kind||kind||'')};
+  } catch (error) {
+    return {ok:false,error:String(error?.message||error||'Could not open the profile Mods folder.')};
+  }
 });
 ipcMain.handle('dragonwilds:reveal-path', (_event,target) => { const value=String(target||'').trim(); if(!value||!fs.existsSync(value))return false; shell.showItemInFolder(value); return true; });
 

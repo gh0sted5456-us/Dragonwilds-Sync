@@ -4,6 +4,20 @@ import re
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def patch_exact_path_test():
+    path = ROOT / "backend" / "test_executable_save_paths.py"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace('assert player["game_root"] == game', 'assert player["game_root"] == game.resolve()')
+    text = text.replace('assert player["worlds"] == saved / "SaveGames"', 'assert player["worlds"] == (saved / "SaveGames").resolve()')
+    text = text.replace('assert player["characters"] == saved / "SaveCharacters"', 'assert player["characters"] == (saved / "SaveCharacters").resolve()')
+    text = text.replace('assert player["ue4ss"] == game / "Binaries" / "Win64" / "ue4ss" / "Mods"', 'assert player["ue4ss"] == (game / "Binaries" / "Win64" / "ue4ss" / "Mods").resolve()')
+    text = text.replace('assert player["paks"] == game / "Content" / "Paks" / "~mods"', 'assert player["paks"] == (game / "Content" / "Paks" / "~mods").resolve()')
+    text = text.replace('assert normalize_save_root(saved / "SaveGames") == saved', 'assert normalize_save_root(saved / "SaveGames") == saved.resolve()')
+    text = text.replace('assert server["game_root"] == server_game', 'assert server["game_root"] == server_game.resolve()')
+    text = text.replace('assert server["worlds"] == server_saved / "SaveGames"', 'assert server["worlds"] == (server_saved / "SaveGames").resolve()')
+    path.write_text(text, encoding="utf-8")
+
+
 def patch_release_1_1_5():
     path = ROOT / "backend" / "test_release1_1_5.py"
     text = path.read_text(encoding="utf-8")
@@ -24,9 +38,9 @@ def patch_release_1_1_5():
 
         result = validate_client_path(exe, saved)
         assert result["ok"] is True
-        assert Path(result["layout"]["install_root"]) == install
-        assert Path(result["layout"]["game_root"]) == game
-        assert Path(result["layout"]["game_exe"]) == exe
+        assert Path(result["layout"]["install_root"]).resolve() == install.resolve()
+        assert Path(result["layout"]["game_root"]).resolve() == game.resolve()
+        assert Path(result["layout"]["game_exe"]).resolve() == exe.resolve()
         assert validate_client_path(install, saved)["ok"] is False
         assert validate_client_path(root / "SteamLibrary", saved)["ok"] is False
 
@@ -41,7 +55,7 @@ def patch_release_1_1_5():
 
         server_result = validate_server_path(server_exe, server_saved, allow_new=False)
         assert server_result["ok"] is True and server_result["mode"] == "existing"
-        assert Path(server_result["layout"]["game_root"]) == server_game
+        assert Path(server_result["layout"]["game_root"]).resolve() == server_game.resolve()
         assert validate_server_path(server_install, server_saved, allow_new=False)["ok"] is False
 
 
@@ -129,6 +143,7 @@ def patch_runner():
     path.write_text(text, encoding="utf-8")
 
 
+patch_exact_path_test()
 patch_release_1_1_5()
 patch_alpha7_release()
 replace_old_destination_test()

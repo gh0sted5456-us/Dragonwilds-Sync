@@ -27,7 +27,6 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: npm
 
       - uses: actions/setup-python@v6
         with:
@@ -35,9 +34,7 @@ jobs:
 
       - name: Install test dependencies
         shell: bash
-        run: |
-          python -m pip install --disable-pip-version-check 'cryptography>=46,<47' psutil
-          npm ci
+        run: python -m pip install --disable-pip-version-check 'cryptography>=46,<47' psutil
 
       - name: Apply narrow folder-opening fix
         shell: bash
@@ -96,25 +93,25 @@ jobs:
           )
 
           replace_once(
-              'backend/cl_authority.py',
-              '        if _inventory_rescan_caller("singleplayer.inventory"):\n            return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)',
-              '        if _inventory_rescan_caller("singleplayer.inventory"):\n            profile_mods_root = local_world._world_cache(profile_id) / "mods"\n            profile_mods_root.mkdir(parents=True, exist_ok=True)\n            return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)',
+              'backend/local_world.py',
+              'def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:\n    mods = _world_cache(profile_id) / "mods"\n    runeschema = mods / "ue4ss_mods" / "RuneSchema"',
+              'def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:\n    mods = _world_cache(profile_id) / "mods"\n    mods.mkdir(parents=True, exist_ok=True)\n    runeschema = mods / "ue4ss_mods" / "RuneSchema"',
           )
           replace_once(
-              'backend/cl_authority.py',
-              '        if _inventory_rescan_caller("server.world.inventory"):\n            return server_systems.scan_profile_snapshot_units(profile_id)',
-              '        if _inventory_rescan_caller("server.world.inventory"):\n            profile_mods_root = Path(server_systems.SERVER_PROFILES_DIR) / str(profile_id) / "mods"\n            profile_mods_root.mkdir(parents=True, exist_ok=True)\n            return server_systems.scan_profile_snapshot_units(profile_id)',
+              'backend/server_systems.py',
+              'def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:\n    """Scan an inactive World\'s APPDATA-owned mod snapshot without touching live files."""\n    stored = SERVER_PROFILES_DIR / profile_id / "mods"\n    mods = stored / "ue4ss_mods"',
+              'def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:\n    """Scan an inactive World\'s APPDATA-owned mod snapshot without touching live files."""\n    stored = SERVER_PROFILES_DIR / profile_id / "mods"\n    stored.mkdir(parents=True, exist_ok=True)\n    mods = stored / "ue4ss_mods"',
           )
 
           replace_once(
               'backend/test_v27_13_runtime_profiles.py',
               '    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")\n    overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")',
-              '    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")\n    overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")\n    authority = (ROOT / "backend/cl_authority.py").read_text(encoding="utf-8")',
+              '    renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")\n    overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")\n    local_source = (ROOT / "backend/local_world.py").read_text(encoding="utf-8")\n    server_source = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")',
           )
           replace_once(
               'backend/test_v27_13_runtime_profiles.py',
               '    assert renderer.count(\'id="sp-open-mods-folder"\') == 1\n    assert renderer.count(\'id="server-open-mods-folder"\') == 1',
-              '    assert renderer.count(\'id="sp-open-mods-folder"\') == 1\n    assert renderer.count(\'id="server-open-mods-folder"\') == 1\n    pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"\n    assert pre_open_scan in overlay\n    assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")\n    assert authority.count("profile_mods_root.mkdir(parents=True, exist_ok=True)") == 2',
+              '    assert renderer.count(\'id="sp-open-mods-folder"\') == 1\n    assert renderer.count(\'id="server-open-mods-folder"\') == 1\n    pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"\n    assert pre_open_scan in overlay\n    assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")\n    assert \'mods = _world_cache(profile_id) / "mods"\\n    mods.mkdir(parents=True, exist_ok=True)\' in local_source\n    assert \'stored = SERVER_PROFILES_DIR / profile_id / "mods"\\n    stored.mkdir(parents=True, exist_ok=True)\' in server_source',
           )
 
           replace_once(
@@ -124,12 +121,18 @@ jobs:
           )
           replace_once(
               'backend/test_service_rpc.py',
+              '            assert boot["server_profiles"] == []\n            lifecycle = rpc(proc, "server.runtime.status", request_id=2)',
+              '            assert boot["server_profiles"] == []\n\n            # A fresh local World must gain its canonical profile Mods root on\n            # explicit Rescan before Explorer is asked to open that directory.\n            import local_world\n            local_profile_mods = local_world._world_cache(local_world.SINGLEPLAYER_ID) / "mods"\n            shutil.rmtree(local_profile_mods, ignore_errors=True)\n            assert not local_profile_mods.exists()\n            rpc(proc, "singleplayer.inventory", {"profile_id": local_world.SINGLEPLAYER_ID, "rescan": True}, 101)\n            assert local_profile_mods.is_dir()\n\n            lifecycle = rpc(proc, "server.runtime.status", request_id=2)',
+          )
+          replace_once(
+              'backend/test_service_rpc.py',
               '            # Inactive inventory is read from its own snapshot, never the live World One tree.\n            inv2_inactive = rpc(proc, "server.world.inventory", {"id": second_id}, 7)',
-              '            # Explicit Rescan must materialize the canonical profile Mods root before\n            # Explorer is asked to open it, including for a completely fresh World.\n            fresh_profile_mods = server_engine._profile_mods_dir(second_id)\n            shutil.rmtree(fresh_profile_mods, ignore_errors=True)\n            assert not fresh_profile_mods.exists()\n            rpc(proc, "server.world.inventory", {"id": second_id, "rescan": True}, 7)\n            assert fresh_profile_mods.is_dir()\n\n            # Inactive inventory is read from its own snapshot, never the live World One tree.\n            inv2_inactive = rpc(proc, "server.world.inventory", {"id": second_id}, 7)',
+              '            # Explicit Rescan must materialize the canonical profile Mods root before\n            # Explorer is asked to open it, including for a completely fresh World.\n            fresh_profile_mods = server_engine._profile_mods_dir(second_id)\n            shutil.rmtree(fresh_profile_mods, ignore_errors=True)\n            assert not fresh_profile_mods.exists()\n            rpc(proc, "server.world.inventory", {"id": second_id, "rescan": True}, 102)\n            assert fresh_profile_mods.is_dir()\n\n            # Inactive inventory is read from its own snapshot, never the live World One tree.\n            inv2_inactive = rpc(proc, "server.world.inventory", {"id": second_id}, 7)',
           )
 
           allowed = {
-              'backend/cl_authority.py',
+              'backend/local_world.py',
+              'backend/server_systems.py',
               'backend/test_service_rpc.py',
               'backend/test_v27_13_runtime_profiles.py',
               'renderer/release-profile-mod-folders.js',
@@ -143,7 +146,7 @@ jobs:
         shell: bash
         run: |
           node --check renderer/release-profile-mod-folders.js
-          python -m py_compile backend/cl_authority.py backend/test_service_rpc.py backend/test_v27_13_runtime_profiles.py
+          python -m py_compile backend/local_world.py backend/server_systems.py backend/test_service_rpc.py backend/test_v27_13_runtime_profiles.py
           python backend/test_v27_13_runtime_profiles.py
           python backend/test_service_rpc.py
           git diff --check
@@ -154,7 +157,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/profile-mod-folder-open-race-apply.yml
-          git add backend/cl_authority.py backend/test_service_rpc.py backend/test_v27_13_runtime_profiles.py renderer/release-profile-mod-folders.js
+          git add backend/local_world.py backend/server_systems.py backend/test_service_rpc.py backend/test_v27_13_runtime_profiles.py renderer/release-profile-mod-folders.js
           git diff --cached --check
           git commit -m "Create fresh profile Mods folders before Explorer opens"
           git push origin HEAD:fix/profile-mod-folder-open-race

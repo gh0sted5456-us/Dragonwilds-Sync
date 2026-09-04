@@ -72,7 +72,7 @@ function runIsolatedTest(test, runner){
  }
 }
 for(const test of tests){
- const isolatedCiPreflights=new Set(['backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py','backend/test_state_read_durability.py','backend/test_id_hotload.py']);
+ const isolatedCiPreflights=new Set(['backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py','backend/test_state_read_durability.py','backend/test_id_hotload.py','backend/test_character_item_regression.py']);
  if(process.env.GITHUB_ACTIONS==='true'&&isolatedCiPreflights.has(test)){
   console.log(`> ${test} already passed as an isolated workflow preflight`);
   continue;

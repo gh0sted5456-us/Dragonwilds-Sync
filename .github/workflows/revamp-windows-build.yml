@@ -95,6 +95,9 @@ jobs:
       - name: Verify ID and hotload behavior
         run: python scripts/v3_backend_test_runner.py backend/test_id_hotload.py
 
+      - name: Verify character and item behavior
+        run: python scripts/v3_backend_test_runner.py backend/test_character_item_regression.py
+
       - name: Run backend regression matrix
         run: npm run test:backend
 

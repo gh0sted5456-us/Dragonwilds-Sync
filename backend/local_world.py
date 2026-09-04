@@ -61,6 +61,24 @@ def _safe_profile_id(value: str | None) -> str:
     return cleaned[:80] or SINGLEPLAYER_ID
 
 
+def _safe_unit_name(name: str) -> str:
+    """Reject a mod unit name that could escape its UE4SS/RuneSchema lane.
+
+    Every legitimate unit name is Path.name of a directory entry discovered
+    by scan_inventory() (see the ``f"ue4ss_mod::{path.name}"`` /
+    ``f"runeschema_mod::{path.name}"`` key construction below) and can never
+    contain a path separator or "..". A key arriving over the RPC boundary
+    is untrusted input though, and this name is joined directly onto a mod
+    lane root and can reach shutil.rmtree() (remove_mod) -- so it is
+    rejected outright rather than silently sanitized. Mirrors the equivalent
+    guard already enforced server-side in server_engine.snapshot_profile_mod_unit().
+    """
+    raw = str(name or "")
+    if not raw or raw in {".", ".."} or any(token in raw for token in ("/", "\\")) or "\x00" in raw:
+        raise ValueError("Invalid mod name.")
+    return raw
+
+
 def _profile_root(profile_id: str = SINGLEPLAYER_ID) -> Path:
     pid = _safe_profile_id(profile_id)
     return LOCAL_PROFILE_DIR if pid == SINGLEPLAYER_ID else PRIVATE_PROFILES_DIR / pid
@@ -992,10 +1010,10 @@ def remove_mod(game_dir: str, key: str, *, live: bool = False, profile_id: str =
     group, _, name = key.partition("::")
     removed = 0
     if group == "ue4ss_mod":
-        target = targets["ue4ss"] / name
+        target = targets["ue4ss"] / _safe_unit_name(name)
         if target.exists(): shutil.rmtree(target); removed = 1
     elif group == "runeschema_mod":
-        target = targets["runeschema"] / name
+        target = targets["runeschema"] / _safe_unit_name(name)
         if target.is_dir(): shutil.rmtree(target); removed = 1
         elif target.exists(): target.unlink(); removed = 1
     elif group == "pak_mod":
@@ -1014,9 +1032,9 @@ def _unit_root(game_dir: str, key: str, live: bool, profile_id: str = SINGLEPLAY
     group, _, name = str(key or "").partition("::")
     target = roots(game_dir, live, profile_id)
     if group == "ue4ss_mod":
-        base = target["ue4ss"] / name
+        base = target["ue4ss"] / _safe_unit_name(name)
     elif group == "runeschema_mod":
-        base = target["runeschema"] / name
+        base = target["runeschema"] / _safe_unit_name(name)
     elif group == "pak_mod":
         pak_group = next((item for item in _pak_groups(target["paks"]) if item["name"].casefold() == name.casefold()), None)
         if not pak_group:

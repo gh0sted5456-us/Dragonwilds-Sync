@@ -3148,10 +3148,18 @@ def install_dedicated_server(install_dir: str, steamcmd_dir: str, progress=None)
 
 
 def delete_dedicated_server_files(install_dir: str) -> dict:
-    target = Path(install_dir).resolve()
-    if not target.exists(): return {"ok": True, "deleted": False}
-    if not target.is_dir() or target == Path(target.anchor) or len(target.parts) < 2: raise ValueError(f"Refusing to delete unsafe path: {target}")
-    shutil.rmtree(target); return {"ok": True, "deleted": True}
+    """Legacy RPC entry point -- delegates to delete_verified_game_install().
+
+    This used to run its own recursive delete guarded only by "not the
+    filesystem root and at least two path segments deep", which is not a
+    positive identification of a dedicated-server install: any directory
+    with that shape (e.g. a user's Documents folder) would satisfy it. Spec
+    safety rule: never recursively delete an arbitrary user-selected
+    directory. delete_verified_game_install() is the hardened version
+    already used elsewhere -- it requires the target to actually contain a
+    dedicated-server executable marker before anything is removed.
+    """
+    return delete_verified_game_install(install_dir, role="server")
 
 
 def delete_verified_game_install(expected_path: str, *, role: str) -> dict:

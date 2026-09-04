@@ -46,6 +46,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\update_mod_destination_test_contract.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python scripts\preserve_direct_runeschema_destination.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\harden_character_backup_uniqueness.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -65,6 +67,8 @@ jobs:
           python backend\test_sync_safety.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python backend\test_alpha7.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python backend\test_alpha11.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python backend\test_profile_runtime_paths.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -94,7 +98,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git rm scripts/apply_profile_mod_management_revamp.py scripts/update_profile_revamp_contract_tests.py scripts/finalize_profile_revamp_staging.py scripts/apply_profile_mod_destination_settings.py scripts/update_mod_destination_test_contract.py scripts/harden_character_backup_uniqueness.py .github/workflows/validate-profile-mod-management-revamp.yml
+          git rm scripts/apply_profile_mod_management_revamp.py scripts/update_profile_revamp_contract_tests.py scripts/finalize_profile_revamp_staging.py scripts/apply_profile_mod_destination_settings.py scripts/update_mod_destination_test_contract.py scripts/preserve_direct_runeschema_destination.py scripts/harden_character_backup_uniqueness.py .github/workflows/validate-profile-mod-management-revamp.yml
           git add backend/profile_mod_layout.py backend/profile_mod_destinations.py backend/profile_store.py backend/local_world.py backend/server_engine.py backend/server_systems.py backend/sync_engine.py backend/cl_authority.py backend/shared_mod_repository.py backend/world_maintenance.py backend/dragonwilds_service.py backend/character_profiles.py backend/test_profile_mod_management_revamp.py backend/test_profile_mod_destination_settings.py backend/test_v27_13_runtime_profiles.py backend/test_sync_safety.py backend/test_alpha7.py renderer/release-profile-mod-folders.js scripts/run_backend_tests.cjs
           if (git diff --cached --quiet) { throw 'Validated revamp produced no source changes.' }
           git commit -m 'Revamp profile mod folder authority and destinations'

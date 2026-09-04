@@ -43,10 +43,13 @@ class SaveManagementTests(unittest.TestCase):
             character_dir.mkdir(); backup_root.mkdir()
             target = character_dir / "Player.sav"; target.write_bytes(b"new")
             backup = backup_root / "rsdw-20260831-120000-1-Player.sav"; backup.write_bytes(b"old")
-            fake_layout = type("Layout", (), {"character_dir": character_dir})()
+            save_paths = {
+                "root": root / "Saved", "characters": character_dir, "worlds": root / "worlds",
+                "config": root / "config", "logs": root / "logs", "account_config": root / "account",
+            }
             with patch.object(save_management, "CHAR_IMPORT_BACKUPS", backup_root), \
                  patch.object(save_management, "CHAR_DELETE_BACKUPS", root / "deleted"), \
-                 patch.object(save_management, "resolve_client_layout", return_value=fake_layout):
+                 patch.object(save_management, "player_save_paths", return_value=save_paths):
                 result = save_management.restore_local_player(game_dir=str(game), backup_name=backup.name,
                                                                target_name="Player.sav", source="edit/import")
             self.assertEqual(target.read_bytes(), b"old")

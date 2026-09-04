@@ -181,6 +181,9 @@ def main() -> None:
     assert "const units=state.privateInventory[worldId]||[];" in renderer
     assert "refreshServerInventory(world, true, true)" in renderer
     assert "refreshSinglePlayerInventory(true, true)" in renderer
+    assert "lastConsolePayload=payload||lastConsolePayload" in renderer
+    assert "sourceCategory(row)===filter" in renderer
+    assert "if(lastConsolePayload)draw(lastConsolePayload)" in renderer
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

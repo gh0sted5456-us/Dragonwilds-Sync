@@ -64,8 +64,9 @@ const windowsHistoricalTests = [
 const tests=process.platform==='win32'?[...crossPlatformTests.slice(0,30),...windowsHistoricalTests,...crossPlatformTests.slice(30)]:crossPlatformTests;
 console.log(`[backend verify] ${process.platform==='win32'?'Windows full V2 regression matrix':'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 for(const test of tests){
- if(process.env.GITHUB_ACTIONS==='true'&&test==='backend/test_remote_user_permissions.py'){
-  console.log('> remote user permission scenarios already passed as isolated workflow preflights');
+ const isolatedCiPreflights=new Set(['backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py']);
+ if(process.env.GITHUB_ACTIONS==='true'&&isolatedCiPreflights.has(test)){
+  console.log(`> ${test} already passed as an isolated workflow preflight`);
   continue;
  }
  const runner='scripts/v3_backend_test_runner.py';

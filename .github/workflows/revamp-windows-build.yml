@@ -80,6 +80,15 @@ jobs:
           DWS_REMOTE_PERMISSION_SCENARIO: test_created_user_logs_in_through_remote_http_api
         run: python scripts/v3_backend_test_runner.py backend/test_remote_user_permissions.py
 
+      - name: Verify service subprocess protocol
+        run: python scripts/v3_backend_test_runner.py backend/test_service_subprocess_protocol.py
+
+      - name: Verify worker IPC timeout handling
+        run: python scripts/v3_backend_test_runner.py backend/test_worker_ipc_timeout.py
+
+      - name: Verify worker startup observability
+        run: python scripts/v3_backend_test_runner.py backend/test_worker_startup_observability.py
+
       - name: Run backend regression matrix
         run: npm run test:systems:backend
 

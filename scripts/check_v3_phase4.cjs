@@ -74,14 +74,22 @@ need('backend/v3_phase4_host_patch.py', ['_catalog_row', 'badge_refs', 'platform
 need('backend/web_release_polish_hook.py', ['v3_phase4_web', 'v3_phase4_host_patch']);
 need('renderer/release-v3-phase4-safety.js', ['v3p4-window', 'Open in Window', 'stopPropagation', '__DWSYNC_V3_PHASE4__']);
 need('renderer/index.html', ['release-v3-phase4.css', 'release-v3-phase4-manager.css', 'release-v3-phase4.js', 'release-v3-phase4-safety.js', 'release-v3-phase4-manager.js']);
+// Explicit rescans are owned by the profile-folder controller, which knows the
+// authoritative selected profile. The live-inventory layer consumes the
+// resulting event and refreshes placards; it must not launch a second scan
+// from a title/active-profile guess.
+need('renderer/release-profile-mod-folders.js', [
+  "'server.world.inventory'", "'singleplayer.inventory'", 'rescan: true',
+  'authoritativeRescan(kind, profileId)', 'dragonwilds:mod-inventory-refreshed',
+  'added_count', 'changed_count', 'removed_count',
+]);
 const liveInventory = need('renderer/release-live-mod-inventory.js', [
-  "'server.world.inventory'", "'singleplayer.inventory'", 'rescan:true',
-  'notifyFresh(id, kind, rows, response)', 'refreshPlacards(id, rows)',
+  'notifyFresh(id, kind, rows, reconciliation = {})', 'refreshPlacards(id, rows)',
   'dragonwilds:mod-inventory-refreshed', '#sp-refresh, #refresh-server-inventory',
-  'data-live-mod-inventory', 'added_count', 'changed_count', 'removed_count',
+  'detail.reconciliation || {}', 'data-live-mod-inventory',
 ]);
 if (!read('renderer/app.js').includes('release-live-mod-inventory.js')) failures.push('renderer/app.js: authoritative live inventory reconciliation layer is not loaded');
-if (!liveInventory.includes('setTimeout(() => void rescan(kind, selectedProfile(kind)), 0)')) failures.push('renderer/release-live-mod-inventory.js: explicit Rescan must refresh placard inventory after the retained Mod Manager handler runs');
+if (liveInventory.includes('rescan:true') || liveInventory.includes('rescan: true')) failures.push('renderer/release-live-mod-inventory.js: live inventory must consume the authoritative refresh event instead of starting a duplicate rescan');
 const phase4State = needInsensitive('PROJECT_STATE/archive/V3_PHASE4.md', ['Front/Back', 'Animations Full/Reduced/Off', 'Custom badges', 'Heartbeat', 'WebHost']);
 const phase4StateFolded = phase4State.toLowerCase();
 if (!(phase4StateFolded.includes('horizontal') && phase4StateFolded.includes('open') && (phase4StateFolded.includes('right-click') || phase4StateFolded.includes('right click')))) {

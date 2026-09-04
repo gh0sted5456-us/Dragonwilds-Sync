@@ -3,13 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 from client_layout import resolve_client_layout
-from machine_paths import player_machine_paths, role_status, server_machine_paths
+from machine_paths import MOD_LANES, role_status
 from server_layout import resolve_server_layout
 
-LANES = ("ue4ss", "runeschema", "paks")
+LANES = MOD_LANES
 
 
 def _legacy_explicit_paths(role: str, selected_root: object) -> dict[str, Path]:
+    """Bounded compatibility only for explicit internal/test callers.
+
+    Normal Player/Server operation uses role_status(), whose effective paths are
+    either operator mappings or defaults derived from the exact executable.
+    """
     layout = resolve_client_layout(selected_root) if role == "player" else resolve_server_layout(selected_root)
     runeschema = layout.runeschema_mods_dir
     if not runeschema.exists() and layout.runeschema_root.exists():
@@ -24,31 +29,31 @@ def _legacy_explicit_paths(role: str, selected_root: object) -> dict[str, Path]:
 
 
 def resolve_mod_install_paths(state: dict, role: str, selected_root: str | Path | None = None) -> dict[str, Path]:
-    application = state.get("application") if isinstance(state.get("application"), dict) else {}
-    if role == "player":
-        exe = str(application.get("game_exe") or "").strip()
-        saved = str(application.get("save_dir") or "").strip()
-        configured_root = str(application.get("game_dir") or "").strip()
-        if exe and saved and (selected_root is None or not str(selected_root).strip() or Path(str(selected_root)).resolve(strict=False) == Path(configured_root).resolve(strict=False)):
-            paths = player_machine_paths(exe, saved)
-            return {lane: Path(paths[lane]) for lane in LANES}
-    elif role == "server":
-        install = application.get("server_install") if isinstance(application.get("server_install"), dict) else {}
-        exe = str(install.get("server_exe") or "").strip()
-        saved = str(install.get("save_dir") or "").strip()
-        configured_roots = {str(install.get("install_dir") or "").strip(), str(install.get("runtime_game_root") or "").strip()}
-        if exe and saved and (selected_root is None or not str(selected_root).strip() or any(root and Path(str(selected_root)).resolve(strict=False) == Path(root).resolve(strict=False) for root in configured_roots)):
-            paths = server_machine_paths(exe, saved)
-            return {lane: Path(paths[lane]) for lane in LANES}
-    else:
+    if role not in {"player", "server"}:
         raise ValueError("Mod destination role must be player or server.")
+    row = role_status(state, role)
+    if row.get("ready"):
+        # When a caller names the currently configured installation, always use
+        # the operator's effective mappings. This is the normal runtime path.
+        configured = str(row.get("game_root") or "").strip()
+        install_root = str(row.get("install_root") or "").strip()
+        selected = str(selected_root or "").strip()
+        if not selected:
+            return {lane: Path(str(row[lane])) for lane in LANES}
+        resolved = Path(selected).resolve(strict=False)
+        if any(root and resolved == Path(root).resolve(strict=False) for root in (configured, install_root)):
+            return {lane: Path(str(row[lane])) for lane in LANES}
     if selected_root is None or not str(selected_root).strip():
-        status = role_status(state, role)
-        raise ValueError(str(status.get("error") or "Configure the machine executable and Saved directory first."))
+        raise ValueError(str(row.get("error") or "Configure the machine executable and Saved directory first."))
     return _legacy_explicit_paths(role, selected_root)
 
 
 def default_mod_install_paths(state: dict, role: str, selected_root: str | Path | None = None) -> dict[str, Path]:
+    row = role_status(state, role)
+    if row.get("ready"):
+        defaults = row.get("mod_defaults") if isinstance(row.get("mod_defaults"), dict) else {}
+        if all(str(defaults.get(lane) or "") for lane in LANES):
+            return {lane: Path(str(defaults[lane])) for lane in LANES}
     return resolve_mod_install_paths(state, role, selected_root)
 
 
@@ -56,12 +61,14 @@ def mod_destination_status(state: dict) -> dict:
     result = {}
     for role in ("player", "server"):
         row = role_status(state, role)
+        defaults = row.get("mod_defaults") if isinstance(row.get("mod_defaults"), dict) else {}
+        overrides = row.get("mod_overrides") if isinstance(row.get("mod_overrides"), dict) else {}
         result[role] = {
             "ready": bool(row.get("ready")),
             "installation": str(row.get("game_root") or ""),
             "paths": {lane: str(row.get(lane) or "") for lane in LANES},
-            "defaults": {lane: str(row.get(lane) or "") for lane in LANES},
-            "overrides": {lane: "" for lane in LANES},
+            "defaults": {lane: str(defaults.get(lane) or "") for lane in LANES},
+            "overrides": {lane: str(overrides.get(lane) or "") for lane in LANES},
             **({"error": str(row.get("error") or "")} if not row.get("ready") else {}),
         }
     return result

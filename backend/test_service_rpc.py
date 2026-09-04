@@ -1,6 +1,7 @@
 import json
 import importlib
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -63,6 +64,16 @@ def main():
         try:
             boot = rpc(proc, "bootstrap", request_id=1)
             assert boot["server_profiles"] == []
+
+            # A fresh local World must gain its canonical profile Mods root on
+            # explicit Rescan before Explorer is asked to open that directory.
+            import local_world
+            local_profile_mods = local_world._world_cache(local_world.SINGLEPLAYER_ID) / "mods"
+            shutil.rmtree(local_profile_mods, ignore_errors=True)
+            assert not local_profile_mods.exists()
+            rpc(proc, "singleplayer.inventory", {"profile_id": local_world.SINGLEPLAYER_ID, "rescan": True}, 101)
+            assert local_profile_mods.is_dir()
+
             lifecycle = rpc(proc, "server.runtime.status", request_id=2)
             assert isinstance(lifecycle.get("state"), dict)
             assert isinstance(lifecycle.get("runtime"), dict)
@@ -103,6 +114,14 @@ def main():
                 "dedicated_config": {"port": 7777},
                 "sync_config": {"password": "pw2", "server_key": "key2"},
             }, 6)
+            # Explicit Rescan must materialize the canonical profile Mods root before
+            # Explorer is asked to open it, including for a completely fresh World.
+            fresh_profile_mods = server_engine._profile_mods_dir(second_id)
+            shutil.rmtree(fresh_profile_mods, ignore_errors=True)
+            assert not fresh_profile_mods.exists()
+            rpc(proc, "server.world.inventory", {"id": second_id, "rescan": True}, 102)
+            assert fresh_profile_mods.is_dir()
+
             # Inactive inventory is read from its own snapshot, never the live World One tree.
             inv2_inactive = rpc(proc, "server.world.inventory", {"id": second_id}, 7)
             assert not any(u["key"] == "pak_mod::WorldOne" for u in inv2_inactive["units"])

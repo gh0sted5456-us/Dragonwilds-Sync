@@ -520,6 +520,7 @@ def detect_mod_zip_kind(zip_path: str) -> str | None:
 
 def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
     mods = _world_cache(profile_id) / "mods"
+    mods.mkdir(parents=True, exist_ok=True)
     runeschema = mods / "ue4ss_mods" / "RuneSchema"
     runeschema_mods = runeschema / "mods"
     if not runeschema_mods.exists() and runeschema.exists():

@@ -64,6 +64,31 @@ def _mods_root(kind: str, profile_id: str) -> Path:
     return root / ("snapshot/mods" if kind == "local" else "mods")
 
 
+def mods_root_for_profile(kind: str, profile_id: str) -> Path:
+    """Public seam for callers (RPC layer) that need the authoritative profile
+    mods root without reaching into this module's private layout helpers.
+
+    This is the one place the local ``snapshot/mods`` vs dedicated ``mods``
+    layout distinction is decided; callers (including the renderer, via the
+    RPC that wraps this) must never re-derive it from AppData/server-root
+    string concatenation.
+    """
+    return _mods_root(kind, profile_id)
+
+
+def describe_profile_mods_root(kind: str, profile_id: str) -> dict:
+    """Authoritative, backend-resolved profile mod folder description.
+
+    Ensures the canonical UE4SS/RuneSchema/PAKs lanes exist (migrating any
+    legacy layout in the process) and returns their paths so a caller such as
+    the renderer's "Open Mod Folder" action never has to guess a path from
+    AppData or server-root string concatenation.
+    """
+    from profile_mod_layout import describe_profile_mod_roots
+    root = mods_root_for_profile(kind, profile_id)
+    return describe_profile_mod_roots(root)
+
+
 def _group_root(kind: str, profile_id: str, group: str) -> Path:
     roots = ensure_profile_mod_roots(_mods_root(kind, profile_id))
     if group == "ue4ss_mod":

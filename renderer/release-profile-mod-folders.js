@@ -14,34 +14,15 @@
     }
   } catch (_) { detachedContext = {}; }
 
-  let storageCache = null;
   let rewritePending = false;
   let rescanBusy = false;
   const selection = (window.__DWSYNC_PROFILE_SELECTION__ ||= { local: '', server: '' });
 
   const text = (value) => String(value ?? '').trim();
-  const safeProfileId = (value) => {
-    const cleaned = text(value).replace(/[^A-Za-z0-9_.-]+/g, '_').replace(/^[._-]+|[._-]+$/g, '');
-    return cleaned.slice(0, 80) || 'singleplayer';
-  };
   const state = () => (window.__DWSYNC_STATE__ && typeof window.__DWSYNC_STATE__ === 'object') ? window.__DWSYNC_STATE__ : {};
   const privateWorlds = (root) => Array.isArray(root?.client?.private_worlds) ? root.client.private_worlds : (root?.client?.singleplayer ? [root.client.singleplayer] : []);
   const serverWorlds = (root) => Array.isArray(root?.server_profiles) ? root.server_profiles : [];
   const visibleWorldName = () => text(document.querySelector('.detail-hero h1')?.textContent || document.querySelector('.phase5-explorer-world strong')?.textContent);
-
-  function joinPath(root, ...parts) {
-    const base = text(root);
-    const separator = base.includes('\\') ? '\\' : '/';
-    let result = base.replace(/[\\/]+$/, '');
-    for (const part of parts) result += `${separator}${text(part).replace(/^[\\/]+|[\\/]+$/g, '')}`;
-    return result;
-  }
-
-  async function storagePaths() {
-    if (storageCache) return storageCache;
-    storageCache = await bridge.invoke('application.storage.paths', {});
-    return storageCache || {};
-  }
 
   function remember(kind, id) {
     const normalized = text(id);
@@ -87,26 +68,17 @@
   }
 
   async function modsPath(kind, profile) {
+    // Authoritative: ask the backend for this profile's actual mod root
+    // rather than reconstructing it here. The backend also self-heals any
+    // legacy layout (ensure_profile_mod_roots) as part of resolving it.
+    const response = await bridge.invoke('application.profile.mods_root', { kind, id: profile?.id });
+    const authoritative = text(response?.mods_root);
+    if (authoritative) return authoritative;
+    // Defensive fallback only: an explicit mods_root/mods_path the backend
+    // already attached to the profile object itself (never a renderer guess).
     const explicit = text(profile?.mods_root || profile?.mods_path);
     if (explicit) return explicit;
-    const paths = await storagePaths();
-    const id = safeProfileId(profile?.id);
-    if (kind === 'server') {
-      // SERVER_PROFILES_DIR is .../profiles/world/dedicated. Older storage-path
-      // payloads exposed the parent World root instead, so support both shapes
-      // deterministically without searching the filesystem.
-      const serverRoot = text(paths.server_profiles);
-      if (serverRoot) {
-        if (/[\\/]dedicated$/i.test(serverRoot)) return joinPath(serverRoot, id, 'mods');
-        return joinPath(serverRoot, 'dedicated', id, 'mods');
-      }
-      const appData = text(paths.app_data);
-      if (!appData) throw new Error('Application data path is unavailable.');
-      return joinPath(appData, 'profiles', 'world', 'dedicated', id, 'mods');
-    }
-    const appData = text(paths.app_data);
-    if (!appData) throw new Error('Application data path is unavailable.');
-    return joinPath(appData, 'profiles', 'world', 'local', id, 'snapshot', 'mods');
+    throw new Error('Could not resolve this World profile\'s Mods folder.');
   }
 
   function noteFor(kind) {

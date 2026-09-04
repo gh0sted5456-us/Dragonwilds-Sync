@@ -156,11 +156,16 @@ def main() -> None:
     for token in (
         "bindProfileFolderButton('#sp-open-mods-folder', 'local')",
         "bindProfileFolderButton('#server-open-mods-folder', 'server')",
-        "bridge.invoke('application.storage.paths'",
+        # Open Mod Folder must ask the backend for the authoritative profile
+        # mod root rather than reconstructing it from AppData/server-root
+        # strings in the renderer (see backend/test_profile_mod_pathing_guards.py
+        # for the backend-side describe_profile_mods_root() coverage).
+        "bridge.invoke('application.profile.mods_root'",
         "rescan: true",
         "PROTECTED RECOVERY BASELINE",
     ):
         assert token in overlay
+    assert "bridge.invoke('application.storage.paths'" not in overlay
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

@@ -2,6 +2,7 @@ import tempfile
 from pathlib import Path
 
 import server_engine as se
+import shared_mod_repository as smr
 from profile_mod_layout import ensure_profile_mod_roots
 from server_layout import looks_like_retail_client, resolve_server_layout
 
@@ -94,6 +95,26 @@ def main() -> None:
             assert "adopt_unowned_live_mods" not in source
             switch = source[source.index("def activate_world("):source.index("def unload_world(")]
             assert "snapshot_profile_mods(outgoing_id" not in switch
+
+            # "Open Mod Folder" must resolve through the backend, never guess
+            # a path from AppData/server-root string concatenation in the
+            # renderer. describe_profile_mods_root() is that single seam.
+            old_local, old_server = smr.LOCAL_PROFILES_DIR, smr.SERVER_PROFILES_DIR
+            smr.LOCAL_PROFILES_DIR = base / "profiles" / "world" / "local"
+            smr.SERVER_PROFILES_DIR = base / "profiles" / "world" / "dedicated"
+            try:
+                local_desc = smr.describe_profile_mods_root("local", "sp-world")
+                assert Path(local_desc["mods_root"]) == smr.LOCAL_PROFILES_DIR / "sp-world" / "snapshot" / "mods"
+                for lane in ("ue4ss", "runeschema", "paks"):
+                    assert Path(local_desc[lane]).is_dir()
+
+                server_desc = smr.describe_profile_mods_root("dedicated", "guard-world")
+                assert Path(server_desc["mods_root"]) == smr.SERVER_PROFILES_DIR / "guard-world" / "mods"
+                for lane in ("ue4ss", "runeschema", "paks"):
+                    assert Path(server_desc[lane]).is_dir()
+            finally:
+                smr.LOCAL_PROFILES_DIR, smr.SERVER_PROFILES_DIR = old_local, old_server
+
             print("curated profile/mod path guards: PASS")
         finally:
             se.SERVER_PROFILES_DIR = old_profiles

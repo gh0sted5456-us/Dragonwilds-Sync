@@ -32,7 +32,7 @@ from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated
                            _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
                                    PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract,
-                                   delete_repository_entry, remove_profile_entry)
+                                   delete_repository_entry, remove_profile_entry, describe_profile_mods_root)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
@@ -3667,6 +3667,21 @@ def handle(method: str, params: dict) -> object:
             snapshot_profile_mods(profile_id, Path(server_root_for_profile(profile)))
         result = remove_profile_entry(kind, profile_id, key)
         return {"result": result, "repository": result.get("repository") or cached_mod_repository(), "state": public_state(state)}
+
+    if method == "application.profile.mods_root":
+        # Authoritative profile mod folder resolution. The renderer's "Open
+        # Mod Folder" action must call this rather than reconstructing the
+        # path itself from AppData/server-root strings, so the local
+        # snapshot/mods vs dedicated mods layout distinction has exactly one
+        # owner.
+        kind = str(params.get("kind") or "").strip().casefold()
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+        if kind not in {"local", "server"}:
+            raise ValueError("Profile kind must be local or server.")
+        if not profile_id:
+            raise ValueError("A World profile id is required.")
+        backend_kind = "dedicated" if kind == "server" else "local"
+        return describe_profile_mods_root(backend_kind, profile_id)
 
     if method == "singleplayer.inventory":
         profile_id = _private_profile_id(state, params)

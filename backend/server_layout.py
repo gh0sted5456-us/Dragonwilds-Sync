@@ -15,6 +15,20 @@ SERVER_EXE_ALIASES = (("RSDragonwildsServer.sh", "RSDragonwildsServer") if NATIV
 )
 
 
+def _exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 @dataclass(frozen=True)
 class ServerLayout:
     selected_root: Path
@@ -42,26 +56,26 @@ class ServerLayout:
 
 
 def _looks_like_game_root(path: Path) -> bool:
-    return (path / "Binaries" / "Win64").exists() or (path / "Content" / "Paks").exists() or (path / "Saved").exists()
+    return _exists(path / "Binaries" / "Win64") or _exists(path / "Content" / "Paks") or _exists(path / "Saved")
 
 
 def _has_dedicated_evidence(path: Path) -> bool:
     """Return true only for evidence the retail client does not also satisfy."""
     if path.name.casefold() == DEDICATED_FOLDER.casefold():
         return True
-    if any((path / name).is_file() for name in ("RSDragonwildsServer.exe",
+    if any(_is_file(path / name) for name in ("RSDragonwildsServer.exe",
                                                  "RSDragonwildsServer.sh",
                                                  "RSDragonwildsServer")):
         return True
     roots = (path, path / "RSDragonwilds")
-    return any((root / "Saved" / "Config" / platform).exists()
+    return any(_exists(root / "Saved" / "Config" / platform)
                for root in roots for platform in ("WindowsServer", "LinuxServer"))
 
 
 def _looks_like_install_root(path: Path) -> bool:
     return _has_dedicated_evidence(path) and (
-        (path / "RSDragonwilds").exists()
-        or any((path / name).exists() for name in SERVER_EXE_ALIASES)
+        _exists(path / "RSDragonwilds")
+        or any(_exists(path / name) for name in SERVER_EXE_ALIASES)
     )
 
 

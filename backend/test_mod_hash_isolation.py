@@ -83,9 +83,9 @@ def main() -> None:
             assert profile_file.read_bytes() == profile_before
             assert (cached_alpha / "main.lua").read_text(encoding="utf-8") == "return 'alpha-v2'\n"
 
-            legacy_rune = layout.runeschema_root / "Gamma"
-            legacy_rune.mkdir(parents=True)
-            (legacy_rune / "recipe.json").write_text('{"value": 1}\n', encoding="utf-8")
+            rune_mod = layout.runeschema_mods_dir / "Gamma"
+            rune_mod.mkdir(parents=True)
+            (rune_mod / "recipe.json").write_text('{"value": 1}\n', encoding="utf-8")
             rune_result = sync_engine.snapshot_client_mod_unit("singleplayer", install, "runeschema_mod::Gamma")
             assert rune_result["copied"] == 1
             assert (snapshot / "mods" / "RuneSchema" / "Gamma" / "recipe.json").is_file()

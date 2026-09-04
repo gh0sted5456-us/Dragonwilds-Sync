@@ -183,9 +183,8 @@ def main() -> None:
         assert (client_core / "UE4SS.dll").read_bytes() == b"core"
         assert (client_core / "UE4SS-settings.ini").is_file() and (client_core / "imgui.ini").is_file()
 
-        # RuneSchema also exists in the wild without a Mods child. Direct-root
-        # child mods (including their internal PAK payloads) must scan, snapshot,
-        # and swap while the shared loader config/DLLs remain installed.
+        # RuneSchema core and child mods have distinct locations. Child mods
+        # always live below RuneSchema/mods while config/DLLs remain installed.
         direct_game = root / "DirectLayout"
         direct_inner = direct_game / "RSDragonwilds"
         direct_rs = direct_inner / "Binaries/Win64/ue4ss/Mods/RuneSchema"
@@ -193,21 +192,21 @@ def main() -> None:
         (direct_rs / "DLLs").mkdir(parents=True)
         (direct_rs / "DLLs/core.dll").write_bytes(b"shared-runeschema-core")
         (direct_rs / "enabled.txt").write_text("1", encoding="utf-8")
-        (direct_rs / "DirectA/payload").mkdir(parents=True)
-        (direct_rs / "DirectA/payload/DirectA.pak").write_bytes(b"direct-a")
+        (direct_rs / "mods/DirectA/payload").mkdir(parents=True)
+        (direct_rs / "mods/DirectA/payload/DirectA.pak").write_bytes(b"direct-a")
         (direct_inner / "Content/Paks/~Mods").mkdir(parents=True)
         units = lw.scan_inventory(str(direct_game), live=True, profile_id="direct-a")
         assert any(row["key"] == "runeschema_mod::DirectA" for row in units), units
         se.snapshot_client_world("direct-a", direct_game)
-        shutil.rmtree(direct_rs / "DirectA")
-        (direct_rs / "DirectB/payload").mkdir(parents=True)
-        (direct_rs / "DirectB/payload/DirectB.pak").write_bytes(b"direct-b")
+        shutil.rmtree(direct_rs / "mods/DirectA")
+        (direct_rs / "mods/DirectB/payload").mkdir(parents=True)
+        (direct_rs / "mods/DirectB/payload/DirectB.pak").write_bytes(b"direct-b")
         se.snapshot_client_world("direct-b", direct_game)
         cached_units = lw.scan_inventory(str(direct_game), live=False, profile_id="direct-a")
         assert any(row["key"] == "runeschema_mod::DirectA" for row in cached_units), cached_units
         se.restore_client_world("direct-a", direct_game)
-        assert (direct_rs / "DirectA/payload/DirectA.pak").read_bytes() == b"direct-a"
-        assert not (direct_rs / "DirectB").exists()
+        assert (direct_rs / "mods/DirectA/payload/DirectA.pak").read_bytes() == b"direct-a"
+        assert not (direct_rs / "mods/DirectB").exists()
         assert (direct_rs / "DLLs/core.dll").read_bytes() == b"shared-runeschema-core"
 
         # Alpha 11 predates the current profile-management renderer. Keep it

@@ -62,6 +62,11 @@ const windowsHistoricalTests = [
   'backend/test_alpha7.py','backend/test_alpha7_release.py','backend/test_alpha8.py','backend/test_alpha9.py','backend/test_alpha11.py','backend/test_alpha11_2.py','backend/test_alpha12.py','backend/test_alpha12_shared.py','backend/test_alpha13.py','backend/test_release1.py','backend/test_release1_1.py','backend/test_release1_1_3.py','backend/test_release1_2.py','backend/test_release1_3.py','backend/test_release1_3_1.py','backend/test_release1_3_2_runtime.py','backend/test_release1_4.py','backend/test_release1_4_integrations.py','backend/test_release1_4_directory_host.py','backend/test_release1_4_web_directory_remote.py','backend/test_release1_4_federation_safety.py','backend/test_release1_4_spawner.py','backend/test_release1_5_world_browser.py','backend/test_release1_6_character_routes_tunnel.py','backend/test_release1_7_server_adoption.py','backend/test_release1_8_gui_notifications.py','backend/test_v1_1_refinements.py','backend/test_v1_1_1_corrections.py','backend/test_release1_1_2.py','backend/test_release1_1_5.py','backend/test_networking_v1_1_5.py','backend/test_v1_1_9_mod_management.py','backend/test_windows_atomic_replace.py',
 ];
 const tests=process.platform==='win32'?[...crossPlatformTests.slice(0,30),...windowsHistoricalTests,...crossPlatformTests.slice(30)]:crossPlatformTests;
+const isolatedCiPreflights=new Set(['backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py','backend/test_state_read_durability.py','backend/test_id_hotload.py','backend/test_character_item_regression.py','backend/test_character_soft_assignment.py']);
+if(process.argv.includes('--list')){
+ console.log(JSON.stringify(tests.filter(test=>process.env.GITHUB_ACTIONS!=='true'||!isolatedCiPreflights.has(test))));
+ process.exit(0);
+}
 console.log(`[backend verify] ${process.platform==='win32'?'Windows full V2 regression matrix':'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 async function runIsolatedTest(test, runner){
  const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
@@ -77,7 +82,6 @@ async function runIsolatedTest(test, runner){
 }
 async function main(){
 for(const test of tests){
- const isolatedCiPreflights=new Set(['backend/test_remote_user_permissions.py','backend/test_service_subprocess_protocol.py','backend/test_worker_ipc_timeout.py','backend/test_worker_startup_observability.py','backend/test_state_read_durability.py','backend/test_id_hotload.py','backend/test_character_item_regression.py','backend/test_character_soft_assignment.py']);
  if(process.env.GITHUB_ACTIONS==='true'&&isolatedCiPreflights.has(test)){
   console.log(`> ${test} already passed as an isolated workflow preflight`);
   continue;

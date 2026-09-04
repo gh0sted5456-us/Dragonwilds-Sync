@@ -102,12 +102,30 @@ jobs:
         run: python scripts/v3_backend_test_runner.py backend/test_character_soft_assignment.py
 
       - name: Run backend regression matrix
-        run: npm run test:backend
+        shell: powershell
+        run: |
+          $tests = (& node scripts/run_backend_tests.cjs --list) | ConvertFrom-Json
+          foreach ($test in $tests) {
+            Write-Host "> python scripts/v3_backend_test_runner.py $test"
+            $testAppData = Join-Path $env:RUNNER_TEMP ("dragonwilds-sync-test-" + [guid]::NewGuid().ToString("N"))
+            New-Item -ItemType Directory -Path $testAppData | Out-Null
+            try {
+              $env:DRAGONWILDS_SYNC_APPDATA = $testAppData
+              & python scripts/v3_backend_test_runner.py $test
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Backend regression failed: $test"
+                exit $LASTEXITCODE
+              }
+            } finally {
+              Remove-Item -LiteralPath $testAppData -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
 
       - name: Build and verify portable EXE
         shell: powershell
         run: |
           $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          $env:DWS_BACKEND_MATRIX_VERIFIED = '1'
           $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
           & .\scripts\build_windows.ps1 -ProjectRoot $PWD -LogPath "$PWD\build.log"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

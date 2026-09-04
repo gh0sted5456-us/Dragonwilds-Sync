@@ -296,7 +296,9 @@ try {
     # Run the 145-file backend matrix directly so every child process streams
     # to the build log. Wrapping it inside run_system_tests.py buffers a second
     # process tree and can report a healthy child as a nonzero nested process.
-    Invoke-Native $npmExe @('run', 'test:backend')
+    if ($env:DWS_BACKEND_MATRIX_VERIFIED -ne '1') {
+        Invoke-Native $npmExe @('run', 'test:backend')
+    }
     Invoke-Native $npmExe @('run', 'test:preload') 'Testing the sandboxed Electron preload bridge...'
     Invoke-Native $pythonExe ($pythonPrefix + @('-m', 'py_compile',
         'backend\dragonwilds_service.py',

@@ -202,11 +202,15 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
     # first-run adoption, and runtime callers keep their live scanner behavior.
     def local_inventory_scan(game_dir: str, *, live: bool = False, profile_id: str = local_world.SINGLEPLAYER_ID):
         if _inventory_rescan_caller("singleplayer.inventory"):
+            profile_mods_root = local_world._world_cache(profile_id) / "mods"
+            profile_mods_root.mkdir(parents=True, exist_ok=True)
             return local_world.scan_inventory(game_dir, live=False, profile_id=profile_id)
         return local_world.scan_inventory(game_dir, live=live, profile_id=profile_id)
 
     def server_inventory_scan(profile_id: str, game_root: str):
         if _inventory_rescan_caller("server.world.inventory"):
+            profile_mods_root = Path(server_systems.SERVER_PROFILES_DIR) / str(profile_id) / "mods"
+            profile_mods_root.mkdir(parents=True, exist_ok=True)
             return server_systems.scan_profile_snapshot_units(profile_id)
         return server_engine_module.scan_mod_units(profile_id, game_root)
 

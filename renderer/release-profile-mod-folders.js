@@ -111,22 +111,24 @@
     return `Rescan complete · ${added} added · ${changed} changed · ${removed} removed.`;
   }
 
-  async function authoritativeRescan(kind, profileId) {
-    const visibleButton = document.querySelector(kind === 'server' ? '#refresh-server-inventory' : '#sp-refresh');
-    if (visibleButton) {
-      visibleButton.click();
-      updateNote(kind, 'Rescanning the profile mod folders…');
-      return;
-    }
-
-    const response = await bridge.invoke(
-      kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
-      kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
-    );
-    updateNote(kind, reconciliationText(response), 'success');
+  async function authoritativeRescan(kind, profileId, { useVisibleButton = true } = {}) {
+  const visibleButton = document.querySelector(kind === 'server' ? '#refresh-server-inventory' : '#sp-refresh');
+  if (useVisibleButton && visibleButton) {
+    visibleButton.click();
+    updateNote(kind, 'Rescanning the profile mod folders…');
+    return null;
   }
 
-  async function openProfileMods(kind, button) {
+  updateNote(kind, 'Rescanning the profile mod folders…');
+  const response = await bridge.invoke(
+    kind === 'server' ? 'server.world.inventory' : 'singleplayer.inventory',
+    kind === 'server' ? { id: profileId, rescan: true } : { profile_id: profileId, rescan: true },
+  );
+  updateNote(kind, reconciliationText(response), 'success');
+  return response;
+}
+
+async function openProfileMods(kind, button) {
     const profile = profileFor(kind);
     if (!profile?.id) {
       updateNote(kind, 'No World profile is selected.');
@@ -138,7 +140,7 @@
     try {
       const target = await modsPath(kind, profile.id);
       // A pre-open scan also refreshes the profile cache before Explorer is shown.
-      try { await authoritativeRescan(kind, profile.id); } catch (_) {}
+      try { await authoritativeRescan(kind, profile.id, { useVisibleButton: false }); } catch (_) {}
       const opened = await bridge.openPath(target);
       if (!opened) throw new Error(`Could not open ${target}`);
       openedProfile = { kind, id: text(profile.id), path: target, openedAt: Date.now() };

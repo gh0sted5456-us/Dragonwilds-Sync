@@ -22,6 +22,7 @@
   // can carry those exact values forward instead of overwriting them with
   // stale cached data.
   const dirty = new Set(); // keys of the form `${role}:${lane}`
+  const drafts = new Map();
 
   function dirtyKey(role, lane) { return `${role}:${lane}`; }
 
@@ -94,7 +95,10 @@
 
   async function render() {
     if (rendering) return;
-    const card = document.querySelector('#machine-paths-card');
+    const playerSetup = document.querySelector('#wm-game-exe');
+    const serverSetup = document.querySelector('#wm-server-exe');
+    const roleFilter = playerSetup ? 'player' : serverSetup ? 'server' : '';
+    const card = (playerSetup || serverSetup)?.closest('.panel-body') || document.querySelector('#machine-paths-card');
     if (!card) return;
     rendering = true;
     try {
@@ -103,11 +107,14 @@
       if (customLocations !== null && card.querySelector('[data-machine-custom-index]')) syncCustomLocationsFromDom();
       ensureStyles();
       const status = await loadStatus();
+      if (!card.isConnected) return;
       if (customLocations === null) {
         const application = currentState().application || {};
         customLocations = Array.isArray(application.machine_custom_paths) ? application.machine_custom_paths.map((row) => ({ role: text(row?.role) || 'shared', label: text(row?.label), path: text(row?.path) })) : [];
       }
       let shell = card.querySelector('[data-machine-mod-mapping]');
+      const signature = JSON.stringify([roleFilter, status, customLocations]);
+      if (shell?.dataset.renderSignature === signature) return;
       if (!shell) {
         shell = document.createElement('div');
         shell.dataset.machineModMapping = '1';
@@ -115,7 +122,7 @@
         card.appendChild(shell);
       }
       // Capture any unsaved edits before the rebuild so they survive it.
-      const preserved = {};
+      const preserved = Object.fromEntries(drafts);
       for (const role of ['player', 'server']) {
         for (const [lane] of lanes) {
           const key = dirtyKey(role, lane);
@@ -124,7 +131,9 @@
           if (input) preserved[key] = input.value;
         }
       }
-      shell.innerHTML = `<header><div><strong>Installation paths</strong><p>Profile storage is the library. These three mapped lanes are the live destinations used when a profile is deployed to the player or server installation.</p></div></header><div class="machine-mod-map-grid">${roleMarkup('player', status.player || {})}${roleMarkup('server', status.server || {})}</div>${customLocationsMarkup()}`;
+      shell.dataset.renderSignature = signature;
+      const roles = roleFilter ? [roleFilter] : ['player', 'server'];
+      shell.innerHTML = `<header><div><strong>Mod installation folders</strong><p>Choose where this installation receives PAK, UE4SS, and RuneSchema mods when a profile is activated. Use the detected folders or enter your own, then save.</p></div></header><div class="machine-mod-map-grid">${roles.map((role) => roleMarkup(role, status[role] || {})).join('')}</div>${roleFilter ? '' : customLocationsMarkup()}`;
       for (const [key, value] of Object.entries(preserved)) {
         const [role, lane] = key.split(':');
         const input = document.querySelector(`#machine-map-${role}-${lane}`);
@@ -157,11 +166,11 @@
         window.__DWSYNC_STATE__ = result.state;
         window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: result.state }));
       }
-      for (const [lane] of lanes) dirty.delete(dirtyKey(role, lane));
+      for (const [lane] of lanes) { dirty.delete(dirtyKey(role, lane)); drafts.delete(dirtyKey(role, lane)); }
       statusCache = null;
       await loadStatus(true);
-      note(role, 'Mapped installation paths saved. Future profile deployment uses these destinations.');
       await render();
+      note(role, 'Mod folders saved. Future profile deployment uses these destinations.');
     } catch (error) {
       note(role, text(error?.message || error || 'Could not save mapped paths.'), true);
     }
@@ -211,7 +220,7 @@
       const input = document.querySelector(`#machine-map-${role}-${lane}`);
       if (!input) return;
       const picked = await api.pickDirectory(`Choose ${role === 'server' ? 'Server' : 'Player'} ${lane} mod destination`, text(input.value));
-      if (picked) { input.value = picked; dirty.add(dirtyKey(role, lane)); }
+      if (picked) { input.value = picked; dirty.add(dirtyKey(role, lane)); drafts.set(dirtyKey(role, lane), picked); }
       return;
     }
     const defaults = event.target.closest('[data-machine-map-defaults]');
@@ -219,7 +228,7 @@
       const role = text(defaults.dataset.machineMapDefaults);
       for (const [lane] of lanes) {
         const input = document.querySelector(`#machine-map-${role}-${lane}`);
-        if (input) { input.value = text(input.dataset.default); dirty.add(dirtyKey(role, lane)); }
+        if (input) { input.value = text(input.dataset.default); dirty.add(dirtyKey(role, lane)); drafts.set(dirtyKey(role, lane), input.value); }
       }
       note(role, 'Detected defaults loaded. Save to make them explicit.');
       return;
@@ -237,7 +246,7 @@
     if (!row) return;
     const role = row.closest('[data-machine-map-role]')?.dataset.machineMapRole;
     const lane = row.dataset.machineModLane;
-    if (role && lane) dirty.add(dirtyKey(role, lane));
+    if (role && lane) { dirty.add(dirtyKey(role, lane)); drafts.set(dirtyKey(role, lane), event.target.value); }
   }, true);
 
   const observer = new MutationObserver(() => void render());

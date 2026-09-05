@@ -49,7 +49,7 @@
   "releases": [
     {
       "version": "3.5.4",
-      "title": "Connection and UX Repair",
+      "title": "V3",
       "date": "2026-09-04",
       "status": "experimental",
       "summary": "Repairs packaged client-to-host synchronization, makes the complete client-compatible loader authoritative, exposes editable deployment paths, and simplifies navigation and progress feedback.",

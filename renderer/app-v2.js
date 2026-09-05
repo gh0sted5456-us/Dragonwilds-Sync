@@ -4295,14 +4295,15 @@
     return {
       worldName:String(manifest.profile_name||currentWorld.identity?.world_name||currentWorld.nickname||currentWorld.name||'Dragonwilds World'),
       address,
-      password:String(credentials.password||''),
+      password:String(result.game_credentials?.password ?? credentials.password ?? ''),
+      passwordKnown:result.game_credentials?.password_known===true,
       automated:capability.enabled===true,
     };
   }
 
   function worldJoinCredentialMarkup(world, syncResponse = {}) {
     const credentials=worldJoinCredentials(world,syncResponse);
-    const row=(label,value,key,emptyLabel='Not configured')=>`<div class="world-credential-row"><div><small>${label}</small><code>${escapeHtml(value||emptyLabel)}</code></div><button class="btn ghost compact-btn" type="button" data-copy-world-credential="${key}" ${value?'':'disabled'}>Copy</button></div>`;
+    const row=(label,value,key,emptyLabel='Not configured')=>`<div class="world-credential-row"><div><small>${label}</small><code>${escapeHtml(value||(key==='password'&&!credentials.passwordKnown?'Password unavailable · request it from the host':emptyLabel))}</code></div><button class="btn ghost compact-btn" type="button" data-copy-world-credential="${key}" ${value?'':'disabled'}>Copy</button></div>`;
     return `<section class="world-credential-receipt"><div class="world-credential-heading"><div><strong>Manual game credentials</strong><small>Keep this visible when entering the Direct Connect screen in Dragonwilds.</small></div><span class="status-pill ${credentials.automated?'online':'unknown'}">${credentials.automated?'DRAGONLINK OPT-IN':'MANUAL ENTRY'}</span></div>${row('World Name',credentials.worldName,'worldName')}${row('IP / Direct Connect address',credentials.address,'address')}${row('World Password',credentials.password,'password','No password · open World')}<div class="world-credential-modes">${gameModeBadgesMarkup(world,false)}</div></section>`;
   }
 
@@ -7947,6 +7948,8 @@
   function closeModal() { closeDesktopWindow(activeDesktopWindow()); }
 
   function showModal(html, options={}) {
+    // Keep the verified play action on its owning renderer, with direct handlers.
+    if(String(html).includes('id="launch-verified-world"'))options={...options,native:false};
     installManagedDialogBridge();
     if(pendingRuntimeConsoleInlineHost&&String(html||'').includes('runtime-console-app')){
       const host=pendingRuntimeConsoleInlineHost;

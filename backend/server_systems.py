@@ -1670,6 +1670,10 @@ class SyncHandler(BaseHTTPRequestHandler):
                 if network:
                     STATE.record_client_network(client_id, self.client_address[0], network)
                 STATE.activity(self.client_address[0], f"client '{client_id}' reported {result['status']}")
+                if result["status"] == "match":
+                    # Authenticated join receipt only; never public metadata or retained reports.
+                    with STATE.lock:
+                        result["game_credentials"] = {"password": str(STATE.password or ""), "password_known": True}
                 self._send_json(result); return
             if path == "/compatibility":
                 body = self._read_json()
@@ -1757,7 +1761,7 @@ class SyncHandler(BaseHTTPRequestHandler):
                                  "console_policy": STATE.manifest.get("console_policy") or {},
                                  "tags": STATE.manifest.get("tags") or [],
                                  "mod_badges": STATE.manifest.get("mod_badges") or [],
-                                 "mod_summary": [] if compact else (STATE.manifest.get("mod_summary") or []),
+                                 "mod_summary": STATE.manifest.get("mod_summary") or [],
                                  "description": STATE.manifest.get("description") or "",
                                  "icon_b64": "" if compact else (STATE.manifest.get("icon_b64") or ""),
                                  "banner_b64": "" if compact else (STATE.manifest.get("banner_b64") or ""),

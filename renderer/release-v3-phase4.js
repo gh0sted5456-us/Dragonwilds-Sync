@@ -74,7 +74,10 @@
 
   function modRows(world) {
     const worldId=text(world?.id || world?.profile_id || world?.world_id);
-    const sources = [modInventory.get(worldId)?.rows, world?.mod_metadata, world?.manifest_cache?.mod_summary, world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
+    const connected=asArray(state()?.client?.worlds).some((row)=>text(row?.id)===worldId);
+    const sources = connected
+      ? [world?.manifest_cache?.mod_summary, world?.presentation?.mod_summary, world?.mod_metadata]
+      : [modInventory.get(worldId)?.rows, world?.mod_metadata, world?.manifest_cache?.mod_summary, world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
     const rows = [];
     for (const source of sources) {
       for (const raw of asArray(source)) {

@@ -342,13 +342,15 @@ function restartWithSafeGraphics() {
 }
 function attachRendererDurability(win) {
   if (!win || win.isDestroyed() || rendererRecovery.has(win)) return;
-  const recovery={events:[],unresponsiveTimer:null,reloading:false};
+  const recovery={events:[],unresponsiveTimer:null,reloading:false,prompted:false};
   rendererRecovery.set(win,recovery);
   const recover=(reason)=>{
     if(win.isDestroyed()||forceQuit||shutdownInProgress||recovery.reloading)return;
     const now=Date.now();
     recovery.events=recovery.events.filter((stamp)=>now-stamp<60000);
     if(recovery.events.length>=2){
+      if(recovery.prompted)return;
+      recovery.prompted=true;
       console.error(`[renderer] recovery stopped after repeated failures: ${reason}`);
       dialog.showMessageBox(win,{type:'error',title:'Dragonwilds Sync display recovery',message:'The interface stopped repeatedly.',detail:'Restart with Safe Graphics to disable GPU composition for this session. Your server and Sync worker remain under backend lifecycle authority.',buttons:['Restart with Safe Graphics','Close'],defaultId:0,cancelId:1,noLink:true}).then(({response})=>{if(response===0)restartWithSafeGraphics();}).catch(()=>{});
       return;

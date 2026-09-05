@@ -1210,6 +1210,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         "component_fast_matches": sorted(component_fast_matches),
         "client_platform": platform_info,
         "report": report,
+        "game_credentials": report.pop("game_credentials", {}),
         "acknowledgements": {
             "client_profile_id": str(client_id or ""),
             "host_authenticated": True,

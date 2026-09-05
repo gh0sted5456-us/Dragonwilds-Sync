@@ -77,7 +77,8 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     # feature and appears only after the operator enables it.
     assert "settingsNav('player','♙','Player')" in app
     assert "serverEnabled?settingsNav('server','▣','Server'):''" in app
-    assert "Resolved loader layout" in mapping
+    assert '<details class="machine-runtime-paths">' in mapping
+    assert '<summary>View detected loader paths</summary>' in mapping
     assert "ue4ss_bootstrap" in mapping and "server_loader" in mapping
     assert "application.machine_paths.get" in mapping
     assert "application.machine_paths.mod_paths.save" in mapping

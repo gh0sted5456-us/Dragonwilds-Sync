@@ -728,21 +728,27 @@ function refreshBackgroundSettings() {
     return backgroundSettings;
   }).catch(() => backgroundSettings);
 }
+const startupNotificationDeadline = Date.now() + 15000;
+const startupNotifications = new Map();
+let startupNotificationTimer = null;
 function showPassiveNotification(event) {
   if (!backgroundSettings.notifications_enabled) return;
+  if(Date.now()<startupNotificationDeadline && !['error','critical','warning','restart'].includes(String(event.kind||'').toLowerCase())){
+    startupNotifications.set(String(event.key||`${event.title}:${event.body}`),event);
+    if(!startupNotificationTimer)startupNotificationTimer=setTimeout(()=>{
+      startupNotificationTimer=null;
+      const events=[...startupNotifications.values()];startupNotifications.clear();
+      if(events.length===1)showPassiveNotification(events[0]);
+      else if(events.length)showPassiveNotification({key:'startup-summary',title:'Dragonwilds Sync',body:events.map(item=>`${item.title||'Update'}${item.body?`: ${item.body}`:''}`).join('\n'),kind:'info'});
+    },Math.max(1,startupNotificationDeadline-Date.now()+10));
+    return;
+  }
   const key = String(event.key || `${event.title}:${event.body}`); const now = Date.now();
   const last = notificationSeen.get(key) || 0; if (now - last < 5 * 60 * 1000) return;
   notificationSeen.set(key, now);
   if (event.overlay && backgroundSettings.announcement_overlay_enabled !== false) showAnnouncementOverlay(event);
   if (!Notification.isSupported()) return;
-  let notificationIcon=iconPath();
-  const originIcon=String(event?.origin?.icon_b64||event?.origin_icon_b64||'').trim();
-  if(originIcon){
-    try{
-      const image=nativeImage.createFromDataURL(originIcon.startsWith('data:')?originIcon:`data:image/png;base64,${originIcon}`);
-      if(!image.isEmpty())notificationIcon=image;
-    }catch(_){}
-  }
+  const notificationIcon=iconPath();
   const n = new Notification({ title: String(event.title || 'Dragonwilds Sync'), body: String(event.body || ''), silent: true, icon: notificationIcon });
   n.on('click', () => { const w = createWindow({ show: true }); w.show(); w.focus(); }); n.show();
   if (notificationSeen.size > 200) for (const [k, t] of notificationSeen) if (now - t > 24 * 3600 * 1000) notificationSeen.delete(k);

@@ -85,10 +85,11 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert 'data-machine-map-save="${role}" disabled' not in mapping
 
 
-def test_startup_enters_the_usable_shell_after_the_splash() -> None:
+def test_startup_waits_for_enter_after_the_splash() -> None:
     app = _read("app-v2.js")
     bootstrap = app[app.find("async function bootstrap()"):app.find("function updateOperationProgress")]
-    assert "state.entered = true;" in bootstrap
+    assert "if (!detachedMode) {\n        state.entered = false;" in bootstrap
+    assert 'id="enter-launcher"' in app
     assert "state.route = 'world-management';" in bootstrap
 
 

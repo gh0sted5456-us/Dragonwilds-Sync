@@ -251,6 +251,7 @@ local function scan()
     local fields_visible = hydrate_fields()
     if fields_visible and address_ready and password_ready then
         apply_world_type()
+        if not auto_submit and type_ready then submit_complete = true end
         if auto_submit and type_ready then
             local connect = unique_button(connect_button)
             if connect and broadcast_click(connect, "Direct Connect") then
@@ -277,25 +278,35 @@ local function scan()
     end
 end
 
+local scan_pending = false
+local scan_count = 0
 local function later(delay_ms)
+    if submit_complete or scan_pending or scan_count >= 24 then return end
+    scan_pending = true
+    local function scheduled_scan()
+        scan_pending = false
+        if submit_complete then return end
+        scan_count = scan_count + 1
+        scan()
+        if not submit_complete then later(1000) end
+    end
     if type(ExecuteInGameThreadWithDelay) == "function" then
-        ExecuteInGameThreadWithDelay(delay_ms, scan)
+        ExecuteInGameThreadWithDelay(delay_ms, scheduled_scan)
     elseif type(ExecuteWithDelay) == "function" then
-        ExecuteWithDelay(delay_ms, scan)
+        ExecuteWithDelay(delay_ms, scheduled_scan)
+    else
+        scan_pending = false
     end
 end
 
 -- UI construction is asynchronous. Keep this retry window bounded: enough time
 -- for main-menu -> Play -> Direct navigation and field creation, but no permanent
 -- polling loop or repeated clicks after the handoff has completed.
-for _, delay in ipairs({ 0, 100, 300, 750, 1500, 2500, 4000, 6500, 9000, 12000 }) do later(delay) end
+later(750)
 
 pcall(function()
     RegisterHook("/Script/UMG.UserWidget:Construct", function()
-        later(0)
-        later(120)
-        later(350)
-        later(800)
+        later(750)
     end)
 end)
 

@@ -683,10 +683,17 @@
     setTimeout(()=>{if(button.isConnected){button.classList.remove('save-confirmed');button.textContent=original;}if(lastSaveControl===button)lastSaveControl=null;},1800);
   }
 
+  const recentToasts = new Map();
   function toast(title, message = '', type = '') {
+    const key=JSON.stringify([title,message,type]),now=Date.now();
+    if(now-(recentToasts.get(key)||0)<10000)return;
+    recentToasts.set(key,now);
+    for(const [oldKey,at] of recentToasts)if(now-at>10000)recentToasts.delete(oldKey);
     const el = document.createElement('div');
     el.className = `toast ${type}`;
     el.innerHTML = `<strong>${escapeHtml(title)}</strong>${message ? `<span>${escapeHtml(message)}</span>` : ''}`;
+    el.insertAdjacentHTML('afterbegin','<img class="toast-app-icon" src="assets/application-icon.webp" alt=""/>');
+    el.setAttribute('role',type==='error'?'alert':'status');
     toastRoot.appendChild(el);
     if(type==='success'&&/(saved|updated|written|created)/i.test(String(title||'')))markSaveSuccess();
     setTimeout(() => el.remove(), type === 'error' || type === 'warning' ? 4200 : 2400);
@@ -1648,9 +1655,10 @@
     if(state.operation)throw new Error(`${state.operation.title} is already in progress.`);
     const stages=[['applying','Applying profile mods and settings…',12],['game','Starting the dedicated game process…',34],['bridge','Waiting for the DragonLink game bridge…',56],['multiplayer','Starting the multiplayer broadcast…',76],['sync','Starting the continuous Sync broadcast…',90],['ready','Server and broadcasts are ready.',100]];
     state.operation={title:`Starting ${world?.name||'hosted World'}`,detail:stages[0][1],phase:stages[0][0],percent:stages[0][2],phases:stages.map((row)=>row[0]),position:{x:0,y:0}};render();
-    let index=0;const timer=setInterval(()=>{if(!state.operation||index>=stages.length-2)return;index+=1;const [phase,detail,percent]=stages[index];Object.assign(state.operation,{phase,detail,percent});const banner=root.querySelector('.operation-banner');if(!banner)return;banner.querySelector('[data-operation-detail]').textContent=detail;banner.querySelector('[data-operation-progress]').style.width=`${percent}%`;banner.querySelector('[data-operation-percent]').textContent=`${percent}%`;banner.querySelectorAll('[data-operation-phase]').forEach((node,nodeIndex)=>{node.classList.toggle('complete',nodeIndex<index);node.classList.toggle('active',nodeIndex===index);});},1400);
+    // Do not claim game/bridge/broadcast readiness based on elapsed time.
+    let index=0;
     try{const response=await task();index=stages.length-1;Object.assign(state.operation,{phase:'ready',detail:stages[index][1],percent:100});return response;}
-    finally{clearInterval(timer);state.operation=null;render();}
+    finally{state.operation=null;render();}
   }
 
   function startPlayerPolling(world = activeServerWorld()) {
@@ -2176,7 +2184,7 @@
       if (!state.selectedServerWorldId) state.selectedServerWorldId = state.data?.server?.active_world_id || null;
       seedPersistedInventories(state.data);
       if (!detachedMode) {
-        state.entered = true;
+        state.entered = false;
         if (!state.route || state.route === 'welcome') state.route = 'world-management';
       }
       if (detachedMode) {
@@ -4331,6 +4339,8 @@
     const credentials=worldJoinCredentials(world,syncResponse);
     const panel=showModal(`<div class="modal-header"><div><div class="eyebrow">Connected World · Verified</div><h2>${escapeHtml(world.name||world.nickname||'World')} is ready</h2><p>File matching is complete. Dragonwilds will not start until you press Play.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Parity verified</strong><p>${changed} updated · ${current} already current. ${credentials.automated?'This server opted into a one-time DragonLink-Connect handoff.':'This server uses manual Direct Connect entry.'}</p></div>${worldJoinCredentialMarkup(world,syncResponse)}<div class="operation-steps"><span class="complete">Match</span><span class="complete">Transfer</span><span class="complete">Verify</span><span class="active">Play</span></div></div><div class="modal-footer"><span>You can close this window without launching.</span><div class="footer-right"><button class="btn ghost" data-close-modal>Not now</button><button class="btn primary" id="launch-verified-world">Play Dragonwilds</button></div></div>`,{title:`Play · ${world.name||'Connected World'}`,width:720,height:650});
     bindWorldCredentialCopies(panel,world,syncResponse);
+    panel.classList.add('verified-play-dialog');
+    panel.querySelector('#launch-verified-world')?.focus();
     panel.querySelector('#launch-verified-world')?.addEventListener('click',async(event)=>{
       const button=event.currentTarget;button.disabled=true;button.textContent='Launching…';
       try{
@@ -7686,8 +7696,8 @@
     win.setAttribute('aria-label',String(options.title||desktopWindowTitle(win)));
     win._dwsReturnFocus=document.activeElement instanceof HTMLElement?document.activeElement:null;
     const layer=modalRoot.getBoundingClientRect();
-    const width=Math.min(Math.max(520,Number(options.width||900)),Math.max(520,layer.width-30));
-    const height=Math.min(Math.max(360,Number(options.height||680)),Math.max(360,layer.height-30));
+    const width=Math.min(Math.max(320,Number(options.width||900)),Math.max(240,layer.width-30));
+    const height=Math.min(Math.max(280,Number(options.height||680)),Math.max(200,layer.height-30));
     const offset=(desktopWindowSeq%7)*24;
     win.style.width=`${width}px`;win.style.height=`${height}px`;
     win.style.left=`${Math.max(12,Math.min(layer.width-width-12,32+offset))}px`;

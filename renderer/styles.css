@@ -1,3 +1,25 @@
+/* Shared native-control fallback also covers extension panels without .field. */
+body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+body textarea, body select {
+  background:var(--panel-2); color:var(--text); border:1px solid var(--border-strong);
+  border-radius:9px; padding:9px 10px; max-width:100%; min-width:0; font:inherit;
+}
+body[data-theme="light"] { color-scheme:light; }
+body:not([data-theme="light"]) { color-scheme:dark; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible {
+  outline:2px solid var(--gold); outline-offset:2px;
+}
+.toast { position:relative; padding-left:48px!important; }
+.toast-app-icon { position:absolute; left:12px; top:14px; width:26px; height:26px; object-fit:contain; }
+.verified-play-dialog { max-height:calc(100dvh - 48px)!important; }
+.verified-play-dialog > .modal { display:flex!important; flex-direction:column; height:100%; max-height:inherit; overflow:hidden; }
+.verified-play-dialog .modal-body { flex:1 1 auto; min-height:0; overflow:auto; }
+.verified-play-dialog .modal-header, .verified-play-dialog .modal-footer { flex:0 0 auto; }
+.verified-play-dialog .modal-footer { position:sticky; bottom:0; background:var(--panel); }
+.runtime-version-label { color:var(--muted); overflow-wrap:anywhere; }
+@media (prefers-reduced-motion:reduce) {
+  .fantasy-entry::before,.fantasy-loading::before { background-image:none!important; }
+}
 :root {
   --bg: #0b0e10;
   --bg-2: #101416;
@@ -700,14 +722,14 @@ body[data-theme="high-contrast"] .runtime-stack, body[data-theme="high-contrast"
   position:fixed; inset:34px 0 0; display:grid; place-items:center; overflow:hidden;
   background:#090c0d;
 }
-.fantasy-loading::before, .fantasy-entry-art {
+.fantasy-loading::before, .fantasy-entry::before, .fantasy-entry-art {
   content:""; position:absolute; inset:-4%;
   background:
     radial-gradient(circle at 50% 42%, rgba(212,176,105,.17), transparent 36%),
     url('assets/theme/animated-splash.webp') center/cover no-repeat;
   filter:saturate(.82) contrast(1.08); transform:scale(1.03);
 }
-.fantasy-loading::after, .fantasy-entry-shade {
+.fantasy-loading::after, .fantasy-entry::after, .fantasy-entry-shade {
   content:""; position:absolute; inset:0;
   background:radial-gradient(circle at 50% 46%, rgba(8,10,11,.18), rgba(8,10,11,.78) 66%, rgba(5,7,8,.96));
 }

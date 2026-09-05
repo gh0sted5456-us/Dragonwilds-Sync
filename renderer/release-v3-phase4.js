@@ -137,7 +137,11 @@
     const world=findWorld(id)||{id,name:'World'}; const rows=modRows(world).filter((row)=>row.type===family);
     const desktop=window.__DWSYNC_DESKTOP_WINDOWS__;if(!desktop?.open)return;
     const worldName=world.name||world.nickname||world.identity?.world_name||'World';
+    const stack=modInventory.get(id)?.runtimeStack||world.runtime_stack||world.manifest_cache?.runtime_stack||world.presentation?.runtime_stack||{};
+    const runtime=stack[family==='UE4SS'?'ue4ss':'runeschema']||{};
+    const runtimeLabel=runtime.installed_version||runtime.version||runtime.source_name||runtime.name||'Version not advertised by this profile';
     const host=desktop.open(`<div class="modal-header v3p4-mod-window-header"><div class="v3p4-mod-window-title"><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS · ${esc(family)}</small><h2>${esc(worldName)}</h2></span></div></div><div class="modal-body v3p4-mod-window-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div>`,{title:`${family} mods · ${worldName}`,width:680,height:Math.min(760,Math.max(420,210+rows.length*38))});
+    if(family!=='Pak')host.querySelector('.v3p4-mod-window-body h3')?.insertAdjacentHTML('afterend',`<p class="runtime-version-label">${esc(family)} loader: ${esc(runtimeLabel)}${runtime.channel?` · ${esc(runtime.channel)}`:''}</p>`);
     host.classList.add('v3p4-mod-window');host.dataset.v3p4ModDialog=key;host._dwsDispose=()=>modDialogs.delete(key);modDialogs.set(key,host);
   }
 
@@ -161,7 +165,7 @@
       const pending=api.invoke('world.ping',{id}).then((response)=>{
         const remote=response?.world;
         const rows=asArray(remote?.presentation?.mod_summary || remote?.manifest_cache?.mod_summary);
-        modInventory.set(id,{rows,remote:true,at:Date.now(),pending:null});refreshModIndicators(id);return rows;
+        modInventory.set(id,{rows,remote:true,runtimeStack:remote?.runtime_stack||remote?.manifest_cache?.runtime_stack||remote?.presentation?.runtime_stack||{},at:Date.now(),pending:null});refreshModIndicators(id);return rows;
       }).catch(()=>{modInventory.set(id,{...current,pending:null});return current?.rows||[];});
       modInventory.set(id,{...current,pending});return pending;
     }

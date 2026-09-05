@@ -281,3 +281,4 @@ assert(websitePlacards.includes("card.classList.toggle('flipped')") &&
 
 console.log('renderer route and visual asset contract checks passed');
 require('./check_renderer_bootstrap_tags.cjs');
+require('./check_startup_ux.cjs');

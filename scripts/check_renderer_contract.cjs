@@ -155,9 +155,9 @@ assert(source.includes('startBackgroundRefreshScheduler();') &&
   !source.includes('directoryAdminSyncTimer'),
   'Visible background data must use one coordinated, route-aware scheduler.');
 assert(source.includes("api.invoke('world.sync.job.start'") && source.includes("api.invoke('world.sync.job.status'") &&
-  source.includes("['connecting','comparing','downloading','unpacking','applying','verifying','profile','ready']") &&
+  source.includes("['connecting','manifest','planning','downloading','installing','verifying','acknowledging','profile','launching','ready']") &&
   baseCss.includes('.operation-progress-track') && baseCss.includes('.operation-phases'),
-  'World connection must show pollable download, unpack, profile apply, verification, and ready progress.');
+  'World connection must show pollable manifest, plan, download, install, verification, acknowledgement, profile, launch, and ready progress.');
 assert(source.includes('CLIENT SYNC · ${clientRequiredCount}') &&
   source.includes("placardBackSection('Community Guidelines'") &&
   !source.includes("placardBackSection('Client-Required Mods'") &&

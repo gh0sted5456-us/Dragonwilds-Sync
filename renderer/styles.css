@@ -1805,7 +1805,7 @@ body[data-theme="light"] .studio-summary-card,body[data-theme="light"] .studio-e
 
 /* RC stabilization: one GPU-composited splash frame, living placards, and
    compact recommendation cards with independent banner/icon surfaces. */
-.fantasy-loading::before{display:none!important}
+.fantasy-loading::before{display:block!important}
 .fantasy-loading-art,.fantasy-entry-art{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;object-position:center!important;transform:none!important;filter:saturate(.88) contrast(1.04);background:none!important}
 .world-card{position:relative;isolation:isolate;overflow:hidden}
 .world-card>.world-placard-backdrop{position:absolute;z-index:-2;inset:0;width:100%;height:100%;object-fit:cover;opacity:.16;filter:saturate(.75) contrast(.92);animation:placard-breathe 9s ease-in-out infinite alternate;pointer-events:none}

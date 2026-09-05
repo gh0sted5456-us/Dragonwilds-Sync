@@ -46,6 +46,7 @@ def test_machine_mod_mapping_preserves_unsaved_edits_across_rebuilds() -> None:
 def test_data_management_is_visible_extensible_and_clear() -> None:
     mapping = _read("release-machine-mod-mapping.js")
     app = _read("app-v2.js")
+    styles = _read("styles.css")
 
     # The release panel must have an actual host in the Data Management page.
     assert 'id="machine-paths-card"' in app
@@ -67,6 +68,8 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert 'fantasy-loading flat-loading' not in app
     assert 'fantasy-entry dark-pad-entry' not in app
     assert "900 - (performance.now() - startupSplashStartedAt)" in app
+    assert ".fantasy-loading::before{display:block!important}" in styles
+    assert ".fantasy-loading::before{display:none!important}" not in styles
     assert app.count("Scan Profile Folder") >= 2
     assert "Profile → scan → deploy" in app
 

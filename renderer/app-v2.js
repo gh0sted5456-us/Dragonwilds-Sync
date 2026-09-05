@@ -2149,6 +2149,7 @@
   }
 
   async function bootstrap() {
+    const startupSplashStartedAt = performance.now();
     installPersistentRouteDelegation();
     if (detachedMode) {
       // A detached window is a small, purpose-built pop-out (e.g. the Runtime
@@ -2203,7 +2204,12 @@
         }
       }
       // Bootstrap already contains the durable profile/system cache. Paint the
-      // usable shell immediately; warm expensive Appy caches in parallel.
+      // usable shell promptly, but allow the main startup animation to reach a
+      // visible frame before replacing it on fast machines.
+      if (!detachedMode) {
+        const remainingSplashMs = Math.max(0, 900 - (performance.now() - startupSplashStartedAt));
+        if (remainingSplashMs) await new Promise((resolve) => setTimeout(resolve, remainingSplashMs));
+      }
       const workspaceWarmPromise=prepareLauncherWorkspaces();
       render();
       void workspaceWarmPromise.then(()=>{if(!detachedMode)render();}).catch(()=>{});

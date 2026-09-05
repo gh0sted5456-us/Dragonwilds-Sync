@@ -76,7 +76,7 @@
     const worldId=text(world?.id || world?.profile_id || world?.world_id);
     const connected=asArray(state()?.client?.worlds).some((row)=>text(row?.id)===worldId);
     const sources = connected
-      ? [world?.manifest_cache?.mod_summary, world?.presentation?.mod_summary, world?.mod_metadata]
+      ? [modInventory.get(worldId)?.remote ? modInventory.get(worldId).rows : null, world?.presentation?.mod_summary, world?.manifest_cache?.mod_summary, world?.mod_metadata]
       : [modInventory.get(worldId)?.rows, world?.mod_metadata, world?.manifest_cache?.mod_summary, world?.metadata_cache?.mods, world?.mods, world?.manifest?.mods, world?.world_manifest?.mods, world?.mod_requirements, world?.sync_config?.required_mods];
     const rows = [];
     for (const source of sources) {
@@ -84,7 +84,7 @@
         const row = typeof raw === 'string' ? {name:raw} : (raw && typeof raw === 'object' ? raw : null);
         if (!row) continue;
         const name = text(row.name || row.display_name || row.mod_name || row.id || row.key);
-        if (!name || /^dragonconnect$/i.test(name.replace(/\s+/g,''))) continue;
+        if (!name || /^(readme(?:\.[^/]+)?|mods\.txt|enabled\.txt)$/i.test(name) || /^dragonconnect$/i.test(name.replace(/\s+/g,''))) continue;
         const rawType = text(`${row.section || ''} ${row.group || ''} ${row.type || ''} ${row.kind || ''} ${row.loader || ''} ${row.mod_type || ''}`).toLowerCase();
         const type = rawType.includes('rune') ? 'RuneSchema' : rawType.includes('pak') ? 'Pak' : 'UE4SS';
         const role = text(row.runtime_role || row.role || row.scope || 'BOTH').toUpperCase();
@@ -129,10 +129,11 @@
     });
   }
 
-  function openModsPopup(id, family) {
+  async function openModsPopup(id, family) {
     id=text(id); family=family==='RuneSchema'?'RuneSchema':family==='Pak'?'Pak':'UE4SS'; if(!id)return;
     const key=`${id}:${family}`; const existing=modDialogs.get(key);
     if(existing){window.__DWSYNC_DESKTOP_WINDOWS__?.focus?.(existing);return;}
+    if(asArray(state()?.client?.worlds).some((row)=>text(row?.id)===id))await requestProfileModInventory(id,'connected',true);
     const world=findWorld(id)||{id,name:'World'}; const rows=modRows(world).filter((row)=>row.type===family);
     const desktop=window.__DWSYNC_DESKTOP_WINDOWS__;if(!desktop?.open)return;
     const worldName=world.name||world.nickname||world.identity?.world_name||'World';
@@ -156,6 +157,14 @@
     id=text(id); if(!id)return Promise.resolve([]);
     const current=modInventory.get(id); if(current?.pending)return current.pending;
     if(!force&&current?.rows&&Date.now()-current.at<120000)return Promise.resolve(current.rows);
+    if(asArray(state()?.client?.worlds).some((row)=>text(row?.id)===id)){
+      const pending=api.invoke('world.ping',{id}).then((response)=>{
+        const remote=response?.world;
+        const rows=asArray(remote?.presentation?.mod_summary || remote?.manifest_cache?.mod_summary);
+        modInventory.set(id,{rows,remote:true,at:Date.now(),pending:null});refreshModIndicators(id);return rows;
+      }).catch(()=>{modInventory.set(id,{...current,pending:null});return current?.rows||[];});
+      modInventory.set(id,{...current,pending});return pending;
+    }
     const method=kind==='server'?'server.world.inventory':'singleplayer.inventory';
     const params=kind==='server'?{id,rescan:false}:{profile_id:id,rescan:false};
     const pending=api.invoke(method,params).then((response)=>{

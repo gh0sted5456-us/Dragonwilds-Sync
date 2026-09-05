@@ -280,3 +280,4 @@ assert(websitePlacards.includes("card.classList.toggle('flipped')") &&
   'Website placards must provide click and keyboard-operated 3D flipping.');
 
 console.log('renderer route and visual asset contract checks passed');
+require('./check_renderer_bootstrap_tags.cjs');

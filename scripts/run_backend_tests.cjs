@@ -47,6 +47,7 @@ const crossPlatformTests = [
   'backend/test_runtime_version_archive.py',
   'backend/test_runeschema_063_console.py',
   'backend/test_connection_transport.py',
+  'backend/test_live_share_manifest_refresh.py',
   'backend/test_runtime_worker_sync_password.py',
   'backend/test_runtime_worker_directory_heartbeat.py',
   'backend/test_client_launch_once.py',

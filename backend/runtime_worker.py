@@ -481,9 +481,25 @@ class RuntimeWorker:
                 raise RuntimeError("Sync/file share cannot start before the dedicated process is verified running.")
             existing = before.get("share") if isinstance(before.get("share"), dict) else {}
             if existing.get("serving"):
+                # A live listener is not proof that its manifest is current.
+                # Profile mods can change while the dedicated process remains
+                # online, and Publish / Repair must rescan those folders and
+                # atomically replace the advertised manifest without rebinding
+                # the port.  Returning the old share here left clients seeing
+                # the World icon/banner but no current mod badges or files.
+                published = engine.publish(self.profile_id)
                 changed = self._apply_share_password(payload)
+                after = self._runtime_status()
+                share = after.get("share") if isinstance(after.get("share"), dict) else {}
+                if not share.get("serving"):
+                    raise RuntimeError("Worker refreshed the Sync manifest but the file share is no longer serving.")
                 self._start_directory_heartbeat()
-                return {"already_serving": True, "verified_serving": True, "credentials_refreshed": changed, "share": dict(existing)}
+                self.write_state(self.runtime_state)
+                self.log("FILE_SHARE_MANIFEST_REFRESHED", state="serving", port=share.get("port"),
+                         manifest_version=share.get("manifest_version"),
+                         manifest_file_count=share.get("manifest_file_count"))
+                return {**dict(published or {}), "already_serving": True, "manifest_refreshed": True,
+                        "verified_serving": True, "credentials_refreshed": changed, "share": dict(share)}
             published = engine.publish(self.profile_id)
             changed = self._apply_share_password(payload)
             after = self._runtime_status()

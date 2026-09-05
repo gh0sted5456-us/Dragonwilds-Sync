@@ -25,7 +25,14 @@ def test_bundled_dragonconnect_has_bounded_verified_auto_handoff_contract() -> N
     assert 'OnClicked:Broadcast()' in text
     assert 'Refusing ambiguous automatic click' in text
     assert 'submit_complete' in text
-    assert 'for _, delay in ipairs({' in text
+    assert 'if submit_complete or scan_pending or scan_count >= 24 then return end' in text
+    assert 'scan_pending = true' in text
+    assert 'scan_pending = false' in text
+    assert 'scan_count = scan_count + 1' in text
+    assert 'if not submit_complete then later(1000) end' in text
+    assert 'ExecuteInGameThreadWithDelay(delay_ms, scheduled_scan)' in text
+    assert 'if not auto_submit and type_ready then submit_complete = true end' in text
+    assert 'for _, delay in ipairs({' not in text
 
     # Non-default World modes must be resolved before final submission.
     assert 'SetSelectedOption(label)' in text

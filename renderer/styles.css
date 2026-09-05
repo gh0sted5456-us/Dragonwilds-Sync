@@ -2017,3 +2017,10 @@ body[data-theme="dark-pad"][data-glass="1"] .settings-section::before,body[data-
 .operation-steps { display:flex; flex-wrap:wrap; gap:12px; margin:16px 0; }
 .operation-steps span { padding:6px 12px; border:1px solid currentColor; border-radius:6px; }
 .world-mod-badges { display:flex; flex-wrap:wrap; gap:6px; }
+.world-context-menu{max-height:calc(100vh - 16px);max-width:calc(100vw - 16px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box}
+.world-context-menu>button:focus-visible{outline:2px solid var(--gold);outline-offset:-2px;background:var(--panel-2)}
+.world-context-menu>button.danger{margin-top:6px;border-top:1px solid var(--border)}
+.settings-subnav{display:flex;flex-wrap:wrap;gap:6px}
+.settings-subnav>button{flex:0 1 auto;min-height:40px;white-space:normal}
+.field:focus-visible,.select:focus-visible,.btn:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+@media(max-width:640px){.settings-row{flex-wrap:wrap;gap:12px}.settings-row>.settings-copy{flex-basis:100%}.settings-row input:not([type=checkbox]):not([type=radio]),.settings-row select{max-width:100%;box-sizing:border-box}}

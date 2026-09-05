@@ -8411,10 +8411,25 @@
       menu.innerHTML = `<button role="menuitem" data-action="open">Open World</button><button role="menuitem" data-action="launch">Sync & Play</button>${connected?`<button role="menuitem" data-action="profile-mod-storage">Open Profile Files</button><button role="menuitem" data-action="saves">View Save Backups</button><button role="menuitem" data-action="request-save">Request World Save</button><button role="menuitem" data-action="convert-private" ${conversionDisabled}>${savePolicy.disabled?'Convert to Private · Download Disabled':'Convert to Private World'}</button><button role="menuitem" data-action="convert-server" ${conversionDisabled}>${savePolicy.disabled?'Convert to Server · Download Disabled':'Convert to Server'}</button><button role="menuitem" data-action="force-resync">Repair & Resync</button>`:''}${saved?'<button role="menuitem" data-action="ping" title="Ping / Refresh Metadata">Refresh Server Status</button>':''}<button role="menuitem" data-action="export">Export World .rsdwl</button><button role="menuitem" data-action="favorite">${favorite?'Remove Favorite':'Add Favorite'}</button>${manageable?`${saved?'<button role="menuitem" data-action="edit">Connection Settings</button>':''}<button role="menuitem" class="danger" data-action="delete">${imported&&!saved?'Remove Imported World':'Remove World'}</button>`:''}`;
     }
     document.body.appendChild(menu);
-    const dismiss = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('mousedown', dismiss); } };
-    setTimeout(() => document.addEventListener('mousedown', dismiss), 0);
+    const previousFocus=document.activeElement;
+    const closeMenu=()=>{menu.remove();document.removeEventListener('mousedown',dismiss);if(previousFocus?.isConnected)previousFocus.focus({preventScroll:true});};
+    const dismiss=(event)=>{if(!menu.contains(event.target))closeMenu();};
+    document.addEventListener('mousedown',dismiss);
+    const menuItems=()=>Array.from(menu.querySelectorAll('button:not(:disabled)'));
+    const rect=menu.getBoundingClientRect();
+    menu.style.left=`${Math.max(8,Math.min(x,innerWidth-rect.width-8))}px`;
+    menu.style.top=`${Math.max(8,Math.min(y,innerHeight-rect.height-8))}px`;
+    menuItems()[0]?.focus({preventScroll:true});
+    menu.addEventListener('keydown',(event)=>{
+      const items=menuItems(),index=items.indexOf(document.activeElement);
+      if(event.key==='Escape'||event.key==='Tab'){event.preventDefault();closeMenu();return;}
+      const next=event.key==='ArrowDown'?(index+1)%items.length:event.key==='ArrowUp'?(index-1+items.length)%items.length:event.key==='Home'?0:event.key==='End'?items.length-1:null;
+      if(next!==null){event.preventDefault();items[next]?.focus();}
+    });
     menu.addEventListener('click', async (e) => {
-      const action = e.target.dataset.action; if (!action) return; menu.remove();
+      const target=e.target.closest('button[data-action]');
+      if(!target||target.disabled)return;
+      const action=target.dataset.action;closeMenu();
       if (server) {
         const world = serverWorlds().find((w) => w.id === id); if (!world) return;
         if (action === 'open') { stopPlayerPolling();pushNavigation(); state.selectedServerWorldId = id; state.serverTab='overview';state.route = 'server-detail'; render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{})); }

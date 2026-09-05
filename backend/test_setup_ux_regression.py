@@ -79,6 +79,23 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert "serverEnabled?settingsNav('server','▣','Server'):''" in app
     assert "Resolved loader layout" in mapping
     assert "ue4ss_bootstrap" in mapping and "server_loader" in mapping
+    assert "application.machine_paths.get" in mapping
+    assert "application.machine_paths.mod_paths.save" in mapping
+    assert 'data-machine-map-save="${role}" disabled' not in mapping
+
+
+def test_startup_enters_the_usable_shell_after_the_splash() -> None:
+    app = _read("app-v2.js")
+    bootstrap = app[app.find("async function bootstrap()"):app.find("function updateOperationProgress")]
+    assert "state.entered = true;" in bootstrap
+    assert "state.route = 'world-management';" in bootstrap
+
+
+def test_world_sync_progress_matches_the_real_protocol() -> None:
+    app = _read("app-v2.js")
+    expected = "['connecting','manifest','planning','downloading','installing','verifying','acknowledging','profile','launching','ready']"
+    assert app.count(expected) >= 2
+    assert "clientModFilter: 'all'" in app
 
 
 def test_only_dark_and_light_themes_are_user_selectable() -> None:

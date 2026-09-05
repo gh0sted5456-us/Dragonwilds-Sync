@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.5.3',
-  "name": "V3.5.3",
+  version: '3.5.4',
+  "name": "V3.5.4",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,17 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "3.5.4",
+      "title": "V3.5.4 Connection & UX Repair",
+      "items": [
+        "Repairs the packaged client profile-switch crash so LAN and remote authentication, manifest transfer, verification, acknowledgement, and launch can complete.",
+        "Worlds now publish their complete client-compatible UE4SS and RuneSchema runtime alongside profile mods; dedicated server-only loaders remain protected.",
+        "Data Management exposes editable Player and Server UE4SS, RuneSchema, and PAK destinations with detected defaults and saved manual mappings.",
+        "Connected World mod inventory opens with the full server manifest, startup enters the usable application after its splash, and progress follows the real connection sequence.",
+        "Menus and controls use a cleaner shared action hierarchy and connected profiles expose their files and save backups directly."
+      ]
+    },
     {
       "version": "3.5.1",
       "title": "V3.5.1 Update Safety",

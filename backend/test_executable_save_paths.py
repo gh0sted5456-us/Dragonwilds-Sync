@@ -84,6 +84,8 @@ def main():
     assert "application.machine_paths.save" in renderer
     assert "choose a Steam library, game folder" not in renderer.casefold()
     service = (Path(__file__).parents[1] / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
+    assert '"application.machine_paths.get", "application.machine_paths.status"' in service
+    assert 'method == "application.machine_paths.mod_paths.save"' in service
     bundle = (Path(__file__).parents[1] / "backend" / "profile_bundle.py").read_text(encoding="utf-8")
     assert 'player_save_paths(state, fallback_game_dir=game_dir)["characters"]' in service
     assert 'player_save_paths(load_state(), fallback_game_dir=game_dir)["characters"]' in bundle

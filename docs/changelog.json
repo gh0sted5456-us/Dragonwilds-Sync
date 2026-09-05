@@ -1,6 +1,6 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-08-30T00:00:00Z",
+  "updated_at": "2026-09-04T00:00:00Z",
   "name": "V3",
   "consolidated_from": [
     "3.1.0",
@@ -47,6 +47,20 @@
     "2.0.0"
   ],
   "releases": [
+    {
+      "version": "3.5.4",
+      "title": "Connection and UX Repair",
+      "date": "2026-09-04",
+      "status": "experimental",
+      "summary": "Repairs packaged client-to-host synchronization, makes the complete client-compatible loader authoritative, exposes editable deployment paths, and simplifies navigation and progress feedback.",
+      "highlights": [
+        "Client profile switching now reaches LAN or remote authentication instead of failing before the handshake.",
+        "Hosts publish the complete compatible UE4SS and RuneSchema baseline plus World profile mods, with SHA-256 verification before launch.",
+        "Data Management supports detected or manually saved Player and Dedicated Server UE4SS, RuneSchema, and PAK locations.",
+        "Connected Worlds show the full server mod inventory and expose profile files, backups, repair, and play through a smaller action menu.",
+        "Connection progress now follows manifest, planning, download, installation, verification, acknowledgement, profile, and launch stages."
+      ]
+    },
     {
       "version": "3.5.3",
       "title": "V3",

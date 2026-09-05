@@ -5112,6 +5112,10 @@ def handle(method: str, params: dict) -> object:
                 exe = str(candidates[0]) if candidates else ""
             if not exe:
                 raise ValueError("Dragonwilds executable is not configured and could not be auto-detected.")
+            if sync_job_id:
+                _set_world_sync_job(sync_job_id, status="running", phase="launching", message="Manifest approved; launching Dragonwilds", percent=98,
+                                    changed_files=result.get("downloaded") or 0, unchanged_files=result.get("up_to_date") or 0,
+                                    downloaded_bytes=result.get("downloaded_bytes") or 0)
             pid = launch_game(Path(exe))
             world["last_played_at"] = now_iso()
             _update_client_play_session(state, begin_world_id=world_id, launched_pid=pid)

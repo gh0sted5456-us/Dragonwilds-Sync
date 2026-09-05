@@ -957,7 +957,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         if progress:
             progress({"phase": phase, "message": message, "percent": max(0, min(100, round(float(percent), 1))), **details})
 
-    emit("connecting", "Connecting and authenticating with the World host", 3)
+    emit("connecting", "Connecting to the World host and authenticating this client", 3)
     if not install_dir.exists():
         raise ConnectionError(f"Dragonwilds folder does not exist: {install_dir}")
     layout = resolve_client_layout(install_dir)
@@ -969,7 +969,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     client_platform = str(platform_info["platform"])
     # This authenticated manifest exchange happens on every Play/Quick Start.
     route, endpoint, manifest, token, base_url, ping_ms = resolve_verified_manifest(world, client_platform, client_id)
-    emit("comparing", "Received the current host manifest; comparing SHA-256 fingerprints", 12,
+    emit("manifest", "Authenticated; received the server's current mod manifest", 12,
          total_files=len(manifest.get("files") or []))
     # A new server filters before transmission. This client-side guard also
     # protects against an older/misconfigured host returning tagged entries.
@@ -990,7 +990,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
 
     force_reset = None
     if force_complete:
-        emit("resetting", "Removing Sync-managed files before restoring UE4SS, RuneSchema, and World payloads", 15,
+        emit("planning", "Clearing prior World-managed files for a complete reinstall", 15,
              total_files=len(manifest.get("files") or []))
         force_reset = reset_client_managed_payload_for_resync(
             install_dir, {**manifest, "files": host_tagged_files})
@@ -1050,7 +1050,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     to_remove = [] if fast_manifest_match else [p for p in old_files if p not in remote_files]
     security_reviews = []
     total_download_bytes = sum(max(0, int(entry.get("size") or 0)) for entry in to_download)
-    emit("comparing", f"{len(up_to_date)} unchanged; {len(to_download)} update(s) and {len(to_remove)} removal(s) required", 20,
+    emit("planning", f"Plan ready: {len(up_to_date)} unchanged, {len(to_download)} download(s), {len(to_remove)} removal(s)", 20,
          total_files=len(remote_files), unchanged_files=len(up_to_date), changed_files=len(to_download), removed_files=len(to_remove), total_bytes=total_download_bytes)
 
     def review_download(path: Path, manifest_path: str) -> None:
@@ -1089,7 +1089,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
             review_download(temp, entry["path"])
             extract_to = str(entry.get("extract_to") or "")
             destination = safe_game_path(game_root, extract_to) if extract_to else game_root
-            emit("unpacking", f"Unpacking {entry['path']}", min(72, transfer_percent + 2), current_file=entry["path"],
+            emit("installing", f"Installing {entry['path']}", min(72, transfer_percent + 2), current_file=entry["path"],
                  current=index, changed_files=len(to_download), unchanged_files=len(up_to_date))
             # A changed bundle is authoritative.  Extracting over the old tree
             # leaves removed DLL/config payloads behind and can make the client
@@ -1120,12 +1120,12 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
             if str(entry.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
                 _set_managed_readonly(target, False)
         downloaded_bytes += entry_size
-        emit("applying", f"Applied {entry['path']} to the active profile", 22 + (50 * index / max(1, len(to_download))),
+        emit("installing", f"Installed {entry['path']} into the active World profile", 22 + (50 * index / max(1, len(to_download))),
              current_file=entry["path"], current=index, changed_files=len(to_download), unchanged_files=len(up_to_date),
              downloaded_bytes=downloaded_bytes, total_bytes=total_download_bytes)
 
     if to_remove:
-        emit("applying", f"Removing {len(to_remove)} file(s) no longer present on the host", 76,
+        emit("installing", f"Removing {len(to_remove)} file(s) no longer present on the host", 76,
              changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
     for relative in to_remove:
         if keep_core_persistent and is_core_persistent_path(relative):
@@ -1180,6 +1180,9 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         raise ConnectionError(
             f"The host rejected the final file manifest: {detail}. "
             "No game launch occurred; Reset & Resync will remove World-owned stale files and retry.")
+
+    emit("acknowledging", "Server confirmed the client manifest matches", 92,
+         changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
 
     meta = build_client_meta(manifest)
     save_local_state(game_root, {

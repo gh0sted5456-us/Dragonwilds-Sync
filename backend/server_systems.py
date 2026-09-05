@@ -2256,16 +2256,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         server_paths.get("ue4ss_root"), layout.win64_dir if layout else UE4SS_RUNTIME_DIR, "UE4SS root")
     runeschema_server_root = profile_server_root(
         server_paths.get("runeschema_root"), layout.runeschema_root if layout else RUNESCHEMA_RUNTIME_DIR, "RuneSchema root")
-    stored_selections = profile.get("runtime_client_selections") if isinstance(profile.get("runtime_client_selections"), dict) else {}
-
-    def selected_targets(kind: str, active_build: str) -> set[str] | None:
-        policy = stored_selections.get(kind) if isinstance(stored_selections.get(kind), dict) else {}
-        if str(policy.get("build_id") or "") != str(active_build or ""):
-            return None
-        return {str(value or "").replace("\\", "/").strip("/").casefold() for value in (policy.get("targets") or [])}
-
-    ue4ss_targets = selected_targets("ue4ss", str(profile.get("ue4ss_active_version_id") or "baseline"))
-    runeschema_targets = selected_targets("runeschema", str(profile.get("runeschema_flavor_id") or "official"))
+    # A World owns its complete client-compatible loader baseline. Operators
+    # choose the UE4SS/RuneSchema build, but may not publish a partial build:
+    # every eligible file is sent so LAN and remote clients run the exact same
+    # loader/config combination as the host. Dedicated version.dll and native
+    # Linux injection files remain server-only by platform policy.
+    ue4ss_targets = None
+    runeschema_targets = None
     stats = {"ue4ss_files": 0, "ue4ss_baked_mod_files": 0, "runeschema_files": 0,
              "dragonlink_files": 0, "server_only_components_excluded": ["RSDW Dev Kit"],
              "version_dll_excluded": True,
@@ -2302,7 +2299,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             "generated": generated, "baseline_runtime": True,
             "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
             "runtime_scope": "client_required", "distribution": "sync_manifest",
-            "selection_policy": "operator" if generated.startswith("ue4ss") and ue4ss_targets is not None else "runtime_default",
+            "selection_policy": "authoritative_full_runtime",
             "source_archive_entry": pure.as_posix(),
         })
         return True
@@ -2340,7 +2337,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     "generated": "ue4ss_bundled_baseline", "baseline_runtime": True,
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                     "runtime_scope": "client_required", "distribution": "sync_manifest",
-                    "selection_policy": "operator" if ue4ss_targets is not None else "runtime_default",
+                    "selection_policy": "authoritative_full_runtime",
                     "source_archive_entry": PurePosixPath(*parts).as_posix(),
                 })
                 stats["ue4ss_files"] += 1
@@ -2418,7 +2415,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 "generated": "runeschema_baseline", "baseline_runtime": True,
                 "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                 "runtime_scope": "client_required", "distribution": "sync_manifest",
-                "selection_policy": "operator" if runeschema_targets is not None else "runtime_default",
+                "selection_policy": "authoritative_full_runtime",
                 "selected_files": sorted(runeschema_targets or []),
             })
         else:
@@ -2458,7 +2455,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     "generated": "runeschema_bundled_baseline", "baseline_runtime": True,
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                     "runtime_scope": "client_required", "distribution": "sync_manifest",
-                    "selection_policy": "operator" if runeschema_targets is not None else "runtime_default",
+                    "selection_policy": "authoritative_full_runtime",
                     "selected_files": sorted(runeschema_targets or []),
                 })
             else:

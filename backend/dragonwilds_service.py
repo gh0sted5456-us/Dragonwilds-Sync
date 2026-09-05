@@ -29,7 +29,7 @@ import dragonwilds_service_v3_phase2 as _base
 from dragonwilds_service_v3_phase2 import *  # noqa: F401,F403
 from client_layout import resolve_client_layout
 from profile_mod_destinations import mod_destination_status
-from machine_paths import player_save_paths, save_role as save_machine_role, status as machine_path_status
+from machine_paths import player_save_paths, save_mod_paths as save_machine_mod_paths, save_role as save_machine_role, status as machine_path_status
 import profile_store
 from runtime_worker_bridge import install as install_runtime_worker_bridge
 from system_process_catalog import process_catalog
@@ -315,8 +315,15 @@ def handle(method: str, params: dict) -> object:
     if method == "application.mod_destinations.get":
         return mod_destination_status(state)
 
-    if method == "application.machine_paths.get":
+    if method in {"application.machine_paths.get", "application.machine_paths.status"}:
         return machine_path_status(state)
+    if method == "application.machine_paths.mod_paths.save":
+        role = str(params.get("role") or "").strip().casefold()
+        result = save_machine_mod_paths(state, role, params.get("mod_paths"))
+        _legacy.save_state(state)
+        public = _legacy.public_state(state)
+        public.setdefault("application", {})["machine_paths"] = machine_path_status(state)
+        return {"role": role, "machine": result, "state": public}
     if method == "application.machine_paths.save":
         role = str(params.get("role") or "").strip().casefold()
         result = save_machine_role(state, role, params.get("executable"), params.get("save_dir"))
@@ -595,7 +602,7 @@ def handle(method: str, params: dict) -> object:
             identity = read_identity(root)
             if identity: identities.append(identity)
         result = export_exchange(output, worlds=worlds, characters=characters, mod_identities=identities, item_registry=registry,
-                                 manifest_only=bool(params.get("manifest_only", False)), app_version="3.5.3")
+                                 manifest_only=bool(params.get("manifest_only", False)), app_version="3.5.4")
         update_stage("metadataMigrated", True, note="V3 canonical ID.txt/item registry exchange metadata active")
         update_stage("exportsMigrated", True, note="V3 canonical .rsdwl exporter active")
         return {"result": result, "state": _legacy.public_state(_legacy.load_state())}

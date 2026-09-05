@@ -212,33 +212,34 @@ def _install_incremental_file_adapters(server_engine_module) -> None:
         import sync_engine
         original_client_snapshot = sync_engine.snapshot_client_world
 
-        def client_signature(selected_root: str | Path) -> tuple:
+        def client_signature(selected_root: str | Path, *, include_mods: bool = True) -> tuple:
             layout = sync_engine.resolve_client_layout(selected_root)
             roots = sync_engine._client_mod_roots(Path(selected_root))
-            return (
+            signature = (
                 _tree_signature(roots["ue4ss_mods"], sync_engine.LAUNCHER_LOCAL_UE4SS_MODS),
                 _tree_signature(layout.runeschema_mods_dir),
                 _tree_signature(roots["pak_mods"]),
                 _tree_signature(layout.config_dir),
                 _tree_signature(layout.game_root / sync_engine.LOCAL_STATE_DIR),
             )
+            return signature if include_mods else signature[-2:]
 
-        def snapshot_client_world(world_id: str, selected_root: Path) -> None:
+        def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: bool = True) -> None:
             if not world_id:
                 return
-            signature = client_signature(selected_root)
+            signature = client_signature(selected_root, include_mods=include_mods)
             prior = _read_state("client-snapshot", world_id)
+            signature_key = "signature" if include_mods else "non_mod_signature"
             stored = tuple(
                 tuple(tuple(cell) if isinstance(cell, list) else cell for cell in group)
                 if isinstance(group, list) else group
-                for group in prior.get("signature") or []
+                for group in prior.get(signature_key) or []
             )
             if stored == signature:
                 return
-            original_client_snapshot(world_id, selected_root)
-            _write_state("client-snapshot", world_id, {
-                "signature": [[list(row) for row in group] for group in signature],
-            })
+            original_client_snapshot(world_id, selected_root, include_mods=include_mods)
+            prior[signature_key] = [[list(row) for row in group] for group in signature]
+            _write_state("client-snapshot", world_id, prior)
 
         sync_engine.snapshot_client_world = snapshot_client_world
         legacy = sys.modules.get("dragonwilds_service_legacy")

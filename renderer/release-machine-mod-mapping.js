@@ -35,27 +35,28 @@
 
   async function loadStatus(force = false) {
     if (!force && statusCache) return statusCache;
-    statusCache = await api.invoke('application.machine_paths.status', { force: !!force });
+    statusCache = await api.invoke('application.machine_paths.get', { force: !!force });
     return statusCache || {};
   }
 
   function roleMarkup(role, row) {
     const label = role === 'server' ? 'Dedicated Server' : 'Player';
     const ready = row?.ready === true;
+    const saved = currentState()?.application?.machine_mod_paths?.[role] || {};
     const fields = lanes.map(([lane, title, help]) => {
-      const value = ready ? text(row?.[lane]) : '';
-      const defaultValue = ready ? text(row?.mod_defaults?.[lane]) : '';
-      const mapped = ready ? text(row?.mod_overrides?.[lane]) : '';
+      const defaultValue = text(row?.mod_defaults?.[lane]);
+      const mapped = text(row?.mod_overrides?.[lane] || saved?.[lane]);
+      const value = mapped || text(row?.[lane]) || defaultValue;
       return `<label class="machine-mod-map-row" data-machine-mod-lane="${lane}">
         <span><strong>${esc(title)}</strong><small>${esc(help)}</small></span>
-        <div class="machine-mod-map-input"><input id="machine-map-${role}-${lane}" value="${esc(value)}" data-default="${esc(defaultValue)}" data-mapped="${esc(mapped)}" ${ready ? '' : 'disabled'} /><button type="button" class="secondary" data-machine-map-browse="${role}:${lane}" ${ready ? '' : 'disabled'}>Browse</button></div>
+        <div class="machine-mod-map-input"><input id="machine-map-${role}-${lane}" value="${esc(value)}" data-default="${esc(defaultValue)}" data-mapped="${esc(mapped)}" /><button type="button" class="secondary" data-machine-map-browse="${role}:${lane}">Browse</button></div>
       </label>`;
     }).join('');
     const runtimePaths = ready ? `<div class="machine-runtime-paths"><strong>Resolved loader layout</strong><small>Game root: ${esc(row.game_root || '')}</small><small>Bootstrap: ${esc(row.ue4ss_bootstrap || '')}</small><small>UE4SS root: ${esc(row.ue4ss_root || '')}</small>${role === 'server' ? `<small>Dedicated loader: ${esc(row.server_loader || '')}</small>` : ''}</div>` : '';
     return `<section class="machine-mod-map-role" data-machine-map-role="${role}">
       <div class="machine-mod-map-heading"><div><strong>${label} mod destinations</strong><small>${ready ? `Installation: ${esc(row.game_root || row.install_root || '')}` : esc(row?.error || 'Configure the executable and Saved directory first.')}</small></div><span class="badge ${ready ? 'ok' : 'warn'}">${ready ? 'MAPPED' : 'SETUP REQUIRED'}</span></div>
       ${runtimePaths}${fields}
-      <div class="machine-mod-map-actions"><button type="button" class="secondary" data-machine-map-defaults="${role}" ${ready ? '' : 'disabled'}>Use detected defaults</button><button type="button" class="primary" data-machine-map-save="${role}" ${ready ? '' : 'disabled'}>Save mapped paths</button></div>
+      <div class="machine-mod-map-actions"><button type="button" class="secondary" data-machine-map-defaults="${role}">Use detected defaults</button><button type="button" class="primary" data-machine-map-save="${role}">Save mapped paths</button></div>
       <p class="hint" data-machine-map-note="${role}">${ready ? 'These are deployment targets only. The selected World profile Mods folder remains the content source of truth.' : 'Link the executable and Saved directory above first.'}</p>
     </section>`;
   }
@@ -151,15 +152,7 @@
 
   async function save(role) {
     try {
-      const state = currentState();
-      const application = state.application && typeof state.application === 'object' ? state.application : {};
-      const existing = application.machine_mod_paths && typeof application.machine_mod_paths === 'object' ? application.machine_mod_paths : {};
-      const machine_mod_paths = {
-        player: { ...(existing.player || {}) },
-        server: { ...(existing.server || {}) },
-        [role]: mappingFor(role),
-      };
-      const result = await api.invoke('application.update', { machine_mod_paths });
+      const result = await api.invoke('application.machine_paths.mod_paths.save', { role, mod_paths: mappingFor(role) });
       if (result?.state && typeof result.state === 'object') {
         window.__DWSYNC_STATE__ = result.state;
         window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: result.state }));

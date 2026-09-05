@@ -85,6 +85,13 @@ def test_save_snapshot_is_delta_and_does_not_duplicate_backups():
             phase4.STATE_ROOT = old_state_root
 
 
+def test_client_snapshot_adapter_preserves_include_mods_contract():
+    source = Path(phase4.__file__).read_text(encoding="utf-8")
+    assert "def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: bool = True)" in source
+    assert "original_client_snapshot(world_id, selected_root, include_mods=include_mods)" in source
+    assert 'signature_key = "signature" if include_mods else "non_mod_signature"' in source
+
+
 def _fake_server_module(root: Path):
     share = SimpleNamespace(serving=False)
     share.status = lambda: {"serving": bool(share.serving)}

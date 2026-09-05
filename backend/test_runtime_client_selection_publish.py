@@ -6,7 +6,7 @@ import server_systems
 from server_layout import NATIVE_LINUX
 
 
-def test_operator_runtime_file_selection_filters_published_client_baseline():
+def test_world_always_publishes_complete_client_compatible_runtime():
     previous_publish = server_systems.PUBLISH_DIR
     with TemporaryDirectory() as temp:
         root = Path(temp)
@@ -42,15 +42,15 @@ def test_operator_runtime_file_selection_filters_published_client_baseline():
             server_systems.PUBLISH_DIR = previous_publish
         paths = {row["path"]: row for row in manifest}
         assert "Binaries/Win64/ue4ss/UE4SS.dll" in paths
-        assert "Binaries/Win64/dwmapi.dll" not in paths
-        assert "Binaries/Win64/ue4ss/extra.dll" not in paths
+        assert "Binaries/Win64/dwmapi.dll" in paths
+        assert "Binaries/Win64/ue4ss/extra.dll" in paths
         assert all(not path.casefold().endswith("version.dll") for path in paths)
         rune_entry = paths["_baseline/RuneSchema-core.zip"]
-        assert rune_entry["selection_policy"] == "operator"
+        assert rune_entry["selection_policy"] == "authoritative_full_runtime"
         with zipfile.ZipFile(root / "publish" / "_baseline" / "RuneSchema-core.zip") as bundle:
-            assert bundle.namelist() == ["dlls/main.dll"]
+            assert set(bundle.namelist()) == {"enabled.txt", "dlls/main.dll", "dlls/optional.dll"}
 
 
 if __name__ == "__main__":
-    test_operator_runtime_file_selection_filters_published_client_baseline()
-    print("runtime client selection publish test passed")
+    test_world_always_publishes_complete_client_compatible_runtime()
+    print("authoritative full client runtime publish test passed")

@@ -37,10 +37,13 @@ from health_model import normalize_health_config, public_health_config, score_se
 from security_policy import direct_policy_match, merge_access_policies, normalize_access_policy, trusted_ip_match, REGION_LABELS
 from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
+from machine_paths import server_save_paths
 from client_layout import resolve_client_layout
+from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
 from server_scheduler import normalize_notice
 from player_tracker import PLAYER_SERVICE
+from runtime_architecture import normalize_runtime_architecture
 from character_profiles import list_starter_characters, starter_character_path
 from character_submissions import quarantine_submission_bytes
 from player_backups import latest_player_backup, player_backup_status, store_player_backup
@@ -623,7 +626,8 @@ def _iter_top_level(root: Path):
     except OSError as exc:
         _LAST_SCAN_WARNINGS.append(f"Could not list {root.name or root}: {exc}")
         return []
-    return [(p.name, p.is_dir(), p) for p in sorted(entries, key=lambda x: x.name.lower()) if not p.name.startswith(".")]
+    return [(p.name, p.is_dir(), p) for p in sorted(entries, key=lambda x: x.name.lower())
+            if not p.name.startswith(".") and p.name.casefold() not in LANE_NOTE_NAMES]
 
 
 def _group_pak_siblings(entries):
@@ -725,9 +729,10 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
 def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     """Scan an inactive World's APPDATA-owned mod snapshot without touching live files."""
     stored = SERVER_PROFILES_DIR / profile_id / "mods"
-    stored.mkdir(parents=True, exist_ok=True)
-    mods = stored / "ue4ss_mods"
-    paks = stored / "pak_mods"
+    profile_roots = ensure_profile_mod_roots(stored)
+    mods = profile_roots["ue4ss"]
+    runeschema = profile_roots["runeschema"]
+    paks = profile_roots["paks"]
     profile = load_server_profile(profile_id)
     overrides = profile.get("unit_overrides") or {}
     units: list[ModUnit] = []
@@ -783,6 +788,13 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
             add(name, "ue4ss_mod", source_dir=path)
         else:
             add(name, "ue4ss_mod", source_files=[path])
+
+    # Canonical profile storage keeps RuneSchema child mods in their own
+    # visible lane. The nested UE4SS/RuneSchema/mods case above is retained
+    # only for compatibility with profiles created by older builds.
+    for name, is_dir, path in _iter_top_level(runeschema):
+        add(name, "runeschema_mod", source_dir=path if is_dir else None,
+            source_files=[] if is_dir else [path])
 
     dirs, grouped = _group_pak_siblings(_iter_top_level(paks))
     for name, path in dirs:
@@ -2771,11 +2783,11 @@ class ShareServer:
                                   "confirmed": bool(hierarchy.get("confirmed")), "confirmed_at": hierarchy.get("confirmed_at"),
                               },
                               "service_notice": normalize_notice(profile.get("service_notice")),
-                              "dragonlink_chat": [dict(row) for row in (profile.get("dragonlink_chat") or []) if isinstance(row, dict)][-100:],
                               "player_map": {"allow_remote_clients": bool((profile.get("player_map") or {}).get("allow_remote_clients", False))},
                               "world_save_download": profile.get("world_save_download") or {"enabled": False},
                               "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
                               "dragonlink_connect": {"enabled": dragonlink_enabled, "mode": "direct-panel-once" if dragonlink_enabled else "manual"},
+                              "runtime_architecture": normalize_runtime_architecture((profile.get("sync_config") or {}).get("runtime_architecture")),
                               "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
                               "server_health": initial_health}
             client_meta = build_client_meta(STATE.manifest)
@@ -2796,7 +2808,13 @@ class ShareServer:
             profile["metadata_revision"] = metadata_revision; profile["last_published_at"] = time.time(); profile.pop("server_key", None)
             profile.setdefault("sync_config", {})["port"] = int(port); profile["sync_config"]["password"] = password
             profile["sync_config"]["tls_cert_fingerprint"] = tls_cert_fingerprint
-            STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
+            machine_state = load_state()
+            machine_install = (machine_state.get("application") or {}).get("server_install") or {}
+            if str(machine_install.get("save_dir") or "").strip():
+                STATE.worldsave_source_dir = str(server_save_paths(machine_state)["worlds"])
+            else:
+                # Compatibility only for an unconfigured historical install.
+                STATE.worldsave_source_dir = str(resolve_server_layout(game_root).savegames_dir) if game_root else ""
             STATE.tls_active = tls_enabled; STATE.tls_cert_fingerprint = tls_cert_fingerprint
             STATE.allow_tls_password_fallback = allow_tls_password_fallback
         if persist_profile:
@@ -2908,10 +2926,10 @@ def refresh_live_profile_metadata(profile_id: str, profile: dict | None = None) 
             "platform_ratings": platform_rating_summary(profile),
             "health_config": health_cfg,
             "service_notice": normalize_notice(profile.get("service_notice")),
-            "dragonlink_chat": [dict(row) for row in (profile.get("dragonlink_chat") or []) if isinstance(row, dict)][-100:],
             "world_save_download": profile.get("world_save_download") or {"enabled": False},
             "character_sharing": {"enabled": bool(character_sharing.get("enabled")), "allow_submissions": bool(character_sharing.get("allow_submissions")), "request_backups": bool(character_sharing.get("request_backups")), "transport": "authenticated-direct-rsdwl", "website_storage": False},
             "dragonlink_connect": {"enabled": bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)), "mode": "direct-panel-once" if bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False)) else "manual"},
+            "runtime_architecture": normalize_runtime_architecture((profile.get("sync_config") or {}).get("runtime_architecture")),
             "starter_characters": [{k: v for k, v in item.items() if k not in {"portrait_data"}} for item in shared_characters],
             "player_map": {"allow_remote_clients": bool((profile.get("player_map") or {}).get("allow_remote_clients", False))},
             "external_hierarchy": {
@@ -3136,10 +3154,18 @@ def install_dedicated_server(install_dir: str, steamcmd_dir: str, progress=None)
 
 
 def delete_dedicated_server_files(install_dir: str) -> dict:
-    target = Path(install_dir).resolve()
-    if not target.exists(): return {"ok": True, "deleted": False}
-    if not target.is_dir() or target == Path(target.anchor) or len(target.parts) < 2: raise ValueError(f"Refusing to delete unsafe path: {target}")
-    shutil.rmtree(target); return {"ok": True, "deleted": True}
+    """Legacy RPC entry point -- delegates to delete_verified_game_install().
+
+    This used to run its own recursive delete guarded only by "not the
+    filesystem root and at least two path segments deep", which is not a
+    positive identification of a dedicated-server install: any directory
+    with that shape (e.g. a user's Documents folder) would satisfy it. Spec
+    safety rule: never recursively delete an arbitrary user-selected
+    directory. delete_verified_game_install() is the hardened version
+    already used elsewhere -- it requires the target to actually contain a
+    dedicated-server executable marker before anything is removed.
+    """
+    return delete_verified_game_install(install_dir, role="server")
 
 
 def delete_verified_game_install(expected_path: str, *, role: str) -> dict:
@@ -3581,6 +3607,13 @@ def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
             written.append(PurePosixPath(*parts).as_posix())
     normalized = _normalize_bundled_integration_contract(target_root)
     canonical_settings = _apply_canonical_ue4ss_settings(target_root)
+    # imgui.ini is runtime-generated/optional upstream. Keep an editable blank
+    # convenience file, but never classify a valid UE4SS core as incomplete
+    # merely because a new upstream package did not ship it.
+    imgui_settings = target_root / "ue4ss" / "imgui.ini"
+    if not imgui_settings.is_file() and (target_root / "ue4ss" / "UE4SS.dll").is_file():
+        imgui_settings.parent.mkdir(parents=True, exist_ok=True)
+        imgui_settings.write_text("", encoding="utf-8")
     return {"ok": True, "files_written": len(written), "files": written,
             "server_loader_excluded": True, "integrations": normalized,
             "canonical_settings": canonical_settings}
@@ -3593,7 +3626,6 @@ def client_runtime_status(game_root: str) -> dict:
         "bootstrap": (layout.win64_dir / "dwmapi.dll").is_file(),
         "core_dll": (core / "UE4SS.dll").is_file(),
         "settings": (core / "UE4SS-settings.ini").is_file(),
-        "imgui": (core / "imgui.ini").is_file(),
     }
     rs = layout.runeschema_root
     rs_checks = {
@@ -4309,8 +4341,8 @@ def deploy_authoritative_runtimes(game_root: str, include_ue4ss: bool = True, in
         # generated mods.txt; presence of a blank enabled.txt is authoritative.
         (target / "enabled.txt").write_text("", encoding="utf-8")
         (RUNESCHEMA_RUNTIME_DIR / "enabled.txt").write_text("", encoding="utf-8")
-        (target / "mods").mkdir(parents=True, exist_ok=True)
-        (RUNESCHEMA_RUNTIME_DIR / "mods").mkdir(parents=True, exist_ok=True)
+        ensure_runeschema_mods_dir(target)
+        ensure_runeschema_mods_dir(RUNESCHEMA_RUNTIME_DIR)
     canonical_settings = _apply_canonical_ue4ss_settings(win64) if include_ue4ss else {"applied": False}
     writable = _set_runtime_configs_writable(
         layout.ue4ss_core_dir, layout.runeschema_root,
@@ -4581,8 +4613,8 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
         ue4ss_root, paks_root, rs_mods_root = layout.ue4ss_mods_dir, layout.paks_mods_dir, layout.runeschema_mods_dir
     else:
         stored = SERVER_PROFILES_DIR / profile_id / "mods"
-        ue4ss_root, paks_root = stored / "ue4ss_mods", stored / "pak_mods"
-        rs_mods_root = ue4ss_root / "RuneSchema" / "mods"
+        profile_roots = ensure_profile_mod_roots(stored)
+        ue4ss_root, paks_root, rs_mods_root = profile_roots["ue4ss"], profile_roots["paks"], profile_roots["runeschema"]
     for managed_root in (ue4ss_root, paks_root, rs_mods_root):
         _set_runtime_tree_writable(managed_root, True)
     with tempfile.TemporaryDirectory(prefix="dwsync_world_mod_") as temp:
@@ -4701,6 +4733,26 @@ def detect_mod_zip_kind(path: str) -> str | None:
     return None
 
 
+
+RUNESCHEMA_MODS_README = """RuneSchema child mods load from this folder.
+
+Dragonwilds Sync creates this directory even when it is empty so child mods can
+never be confused with the RuneSchema core. Profile content is managed from the
+World's Mods/RuneSchema lane; activation/deployment materializes it here.
+"""
+
+
+def ensure_runeschema_mods_dir(runeschema_root: Path) -> Path:
+    mods = runeschema_root / "mods"
+    try:
+        mods.mkdir(parents=True, exist_ok=True)
+        note = mods / "README.txt"
+        if not note.exists():
+            note.write_text(RUNESCHEMA_MODS_README, encoding="utf-8")
+    except OSError:
+        pass
+    return mods
+
 def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server") -> dict:
     review_with_defender(zip_path, "mod package")
     """Install either a full RuneSchema package or one RuneSchema mod.
@@ -4771,7 +4823,7 @@ def install_runeschema_zip(zip_path: str, game_root: str, *, role: str = "server
             # A core update is a complete upstream replacement. Preserve only
             # profile-owned child mods; never mix one release's DLL with
             # another release's config/support files.
-            live_mods = live_rs / "mods"
+            live_mods = ensure_runeschema_mods_dir(live_rs)
             for child in list(live_rs.iterdir()):
                 if child != live_mods:
                     _remove_generated_path(child)

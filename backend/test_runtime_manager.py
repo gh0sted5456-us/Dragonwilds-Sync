@@ -481,6 +481,9 @@ def test_save_migration_and_generic_profile_hide():
             local_world.PRIVATE_PROFILES_DIR = profiles
             local_world.DELETED_SAVES_PATH = profiles / ".deleted-saves.json"
             local_world.resolve_client_layout = lambda _selected: SimpleNamespace(savegames_dir=saves)
+            local_world.player_save_paths = lambda _state, **_kw: {"root": saves.parent, "worlds": saves,
+                "characters": saves.parent / "SaveCharacters", "config": saves.parent / "Config" / "Windows",
+                "logs": saves.parent / "Logs", "account_config": saves.parent / "AccountConfig"}
             state = {"application": {"game_dir": ""}, "client": {}}
             local_world.ensure_state(state)
             migrated = state["client"]["pending_profile_migrations"]
@@ -515,6 +518,9 @@ def test_initial_environment_is_adopted_once_and_default_is_exclusive():
             local_world.PRIVATE_PROFILES_DIR = profiles
             local_world.DELETED_SAVES_PATH = profiles / ".deleted-saves.json"
             local_world.resolve_client_layout = lambda _selected: SimpleNamespace(savegames_dir=saves)
+            local_world.player_save_paths = lambda _state, **_kw: {"root": saves.parent, "worlds": saves,
+                "characters": saves.parent / "SaveCharacters", "config": saves.parent / "Config" / "Windows",
+                "logs": saves.parent / "Logs", "account_config": saves.parent / "AccountConfig"}
             sync_engine.snapshot_client_world = lambda profile_id, selected: snapshots.append((profile_id, Path(selected)))
             state = {"application": {"game_dir": str(game)}, "client": {}}
             local_world.ensure_state(state)

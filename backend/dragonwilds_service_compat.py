@@ -23,7 +23,7 @@ from pathlib import Path, PurePosixPath
 from zipfile import ZipFile
 from process_utils import run_hidden
 
-from network_client import download_latest_player_backup, download_starter_character, download_worldsave, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, ping_world, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, upload_player_backup, worldsave_status
+from network_client import download_latest_player_backup, download_starter_character, download_worldsave, download_worldsave_backup, list_worldsave_backups, fetch_world_identity, fetch_world_reviews, geolocate_endpoint, geolocate_endpoint_detail, measure_world_link, ping_world, status_world, submit_feedback, submit_compatibility, submit_character_package, test_world, upload_player_backup, worldsave_status
 from sync_engine import _running_game_pid, activate_or_adopt_client_world_profile, client_world_has_snapshot, delete_client_world_profile, launch_game, reset_client_managed_payload_for_resync, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
 from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR, application_user_id, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
@@ -32,7 +32,7 @@ from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated
                            _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
                                    PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract,
-                                   delete_repository_entry, remove_profile_entry)
+                                   delete_repository_entry, remove_profile_entry, describe_profile_mods_root)
 from integrations import link_nexus_source, mark_nexus_check, merge_integrations, normalize_mod_source, normalize_social_links
 from character_profiles import (cache_world_logs, discover_characters, list_world_logs, smart_character_switch,
                                 export_character_package, import_character_package, inspect_character_package, normalize_character_meta,
@@ -3668,6 +3668,21 @@ def handle(method: str, params: dict) -> object:
         result = remove_profile_entry(kind, profile_id, key)
         return {"result": result, "repository": result.get("repository") or cached_mod_repository(), "state": public_state(state)}
 
+    if method == "application.profile.mods_root":
+        # Authoritative profile mod folder resolution. The renderer's "Open
+        # Mod Folder" action must call this rather than reconstructing the
+        # path itself from AppData/server-root strings, so the local
+        # snapshot/mods vs dedicated mods layout distinction has exactly one
+        # owner.
+        kind = str(params.get("kind") or "").strip().casefold()
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+        if kind not in {"local", "server"}:
+            raise ValueError("Profile kind must be local or server.")
+        if not profile_id:
+            raise ValueError("A World profile id is required.")
+        backend_kind = "dedicated" if kind == "server" else "local"
+        return describe_profile_mods_root(backend_kind, profile_id)
+
     if method == "singleplayer.inventory":
         profile_id = _private_profile_id(state, params)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
@@ -3688,7 +3703,11 @@ def handle(method: str, params: dict) -> object:
         cached = _inventory_cache(profile)
         rescanned = bool(params.get("rescan")) or not cached["updated_at"]
         if rescanned:
-            units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
+            # Profile Mod Management inventories the profile-owned source tree,
+            # even while this World is active. The live game tree is only the
+            # deployment target and may temporarily differ from profile storage.
+            units = scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)
+            units = [{**row, "live": live} for row in units]
             cached = _cache_local_inventory(profile_id, units, live=live)
             warnings = pop_singleplayer_scan_warnings()
         else:
@@ -3905,11 +3924,26 @@ def handle(method: str, params: dict) -> object:
         application = state.setdefault("application", {})
         incoming = dict(params or {})
         access_policy_changed = "server_access_policy" in incoming
+        if "machine_custom_paths" in incoming:
+            proposed_paths = incoming.get("machine_custom_paths") if isinstance(incoming.get("machine_custom_paths"), list) else []
+            normalized_paths = []
+            for row in proposed_paths[:50]:
+                if not isinstance(row, dict):
+                    continue
+                label = str(row.get("label") or "").strip()[:80]
+                path = str(row.get("path") or "").strip()[:2048]
+                role = str(row.get("role") or "shared").strip().casefold()
+                if not label or not path:
+                    raise ValueError("Every additional managed location needs both a name and a folder.")
+                normalized_paths.append({"role": role if role in {"shared", "player", "server"} else "shared",
+                                         "label": label, "path": path})
+            incoming["machine_custom_paths"] = normalized_paths
         if "integrations" in incoming:
             application["integrations"] = merge_integrations(application.get("integrations"), incoming.pop("integrations"))
         if "theme" in incoming:
-            theme = str(incoming.get("theme") or "dark-fantasy")
-            incoming["theme"] = theme if theme in ("dark-fantasy", "dark-pad", "light", "fantasy", "high-contrast", "desert-script", "eastern") else "dark-fantasy"
+            theme = str(incoming.get("theme") or "dark").casefold()
+            incoming["theme"] = "light" if theme == "light" else "dark"
+            incoming["glass_theme"] = False
         if "language" in incoming:
             language = str(incoming.get("language") or "en").casefold()
             incoming["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
@@ -5418,6 +5452,9 @@ def handle(method: str, params: dict) -> object:
         for key in ("password", "port", "port_auto", "lan_broadcast", "dragonlink_connect_enabled"):
             if key in incoming_sync:
                 sync[key] = incoming_sync.get(key)
+        if "runtime_architecture" in incoming_sync:
+            from runtime_architecture import normalize_runtime_architecture
+            sync["runtime_architecture"] = normalize_runtime_architecture(incoming_sync.get("runtime_architecture"))
         if "file_mirror_index_url" in incoming_sync:
             mirror_url = str(incoming_sync.get("file_mirror_index_url") or "").strip()[:2000]
             if mirror_url and urllib.parse.urlparse(mirror_url).scheme.casefold() != "https":
@@ -5844,10 +5881,22 @@ def handle(method: str, params: dict) -> object:
         cached = _inventory_cache(profile)
         rescanned = bool(params.get("rescan")) or not cached["updated_at"]
         if rescanned:
-            root = server_root_for_profile(profile)
-            # Inventory rendering remains read-only. Only the first uncached load
-            # or an explicit Rescan walks the mod tree.
-            units = scan_mod_units(profile_id, root) if active and root else scan_profile_snapshot_units(profile_id)
+            # The profile is the source of truth. Never substitute the running
+            # server installation here: it is a deployment target and can omit
+            # stored mods that have not yet been deployed.
+            units = scan_profile_snapshot_units(profile_id)
+            # The first Server profile adopts an already-modded installation
+            # once. Persist the boundary so an intentionally emptied profile is
+            # never silently repopulated from stale deployed files later.
+            if not profile.get("mods_profile_initialized"):
+                root = server_root_for_profile(profile)
+                if not units and active and root:
+                    snapshot_profile_mods(profile_id, Path(root))
+                    units = scan_profile_snapshot_units(profile_id)
+                if units or (active and root):
+                    profile = load_server_profile(profile_id) or profile
+                    profile["mods_profile_initialized"] = True
+                    save_server_profile(profile_id, profile)
             cached = _cache_server_inventory(profile_id, units, active=active)
             rows = cached["mods"]
             warnings = pop_server_scan_warnings()
@@ -6405,6 +6454,18 @@ def handle(method: str, params: dict) -> object:
         world["retained_world_save"] = {**result, "retained_at": now_iso(), "purpose": "player_requested_copy"}
         save_state(state)
         return {"result": result, "state": public_state(state)}
+
+    if method == "world.worldsave.backups.list":
+        world = find_world(state, str(params.get("id") or ""))
+        if world is None: raise KeyError("World not found")
+        return {"result": list_worldsave_backups(world)}
+
+    if method == "world.worldsave.backups.download":
+        world = find_world(state, str(params.get("id") or ""))
+        if world is None: raise KeyError("World not found")
+        destination = str(params.get("destination") or "").strip()
+        if not destination: raise ValueError("Choose where to save this World backup.")
+        return {"result": download_worldsave_backup(world, str(params.get("name") or ""), destination)}
 
     if method == "world.feedback.submit":
         world_id = str(params.get("id") or "")

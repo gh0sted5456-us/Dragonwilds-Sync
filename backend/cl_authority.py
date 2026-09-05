@@ -28,6 +28,7 @@ from pathlib import Path
 from phase4_runtime_startup import install_phase4_runtime_patches
 from phase6_background_completion import install_phase6_background_completion
 from runtime_versions import cl_version_status
+from profile_mod_layout import prune_unit_overrides
 
 
 _PATCH_LOCK = threading.RLock()
@@ -224,9 +225,14 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
             _mark_reconciliation(rows, reconciliation)
             result = original_cache_local(profile_id, rows, live=live, source=source)
             profile = legacy.load_singleplayer_profile(profile_id)
+            explicit_profile_refresh = _inventory_rescan_caller("singleplayer.inventory")
+            if explicit_profile_refresh:
+                profile, pruned = prune_unit_overrides(profile, [_row_key(row) for row in rows])
+                reconciliation["metadata_removed"] = pruned
+                reconciliation["metadata_removed_count"] = len(pruned)
             cache = _profile_cache(profile)
             cache["reconciliation"] = reconciliation
-            if _inventory_rescan_caller("singleplayer.inventory"):
+            if explicit_profile_refresh:
                 cache["mods_authority"] = "profile-mod-folders"
             else:
                 cache["mods_authority"] = str(before_cache.get("mods_authority") or ("runtime" if live else "profile-mod-folders"))
@@ -270,6 +276,10 @@ def _install_profile_mod_rescan_authority(server_engine_module) -> None:
             result = original_cache_server(profile_id, units, active=active, source=source)
             profile = legacy.load_server_profile(profile_id) or {}
             if profile:
+                if explicit_profile_rescan:
+                    profile, pruned = prune_unit_overrides(profile, [_row_key(row) for row in rows])
+                    reconciliation["metadata_removed"] = pruned
+                    reconciliation["metadata_removed_count"] = len(pruned)
                 cache = _profile_cache(profile)
                 # Retained cache may have rebuilt rows from the original units;
                 # apply reconciliation status without changing classification.

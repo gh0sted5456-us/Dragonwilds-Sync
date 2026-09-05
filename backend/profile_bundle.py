@@ -589,8 +589,9 @@ def import_profile_bundle(state: dict, package_path: str | Path, *, game_dir: st
     if import_characters:
         layout_root = None
         try:
-            from client_layout import resolve_client_layout
-            layout_root = resolve_client_layout(game_dir).character_dir
+            from machine_paths import player_save_paths
+            from profile_store import load_state
+            layout_root = player_save_paths(load_state(), fallback_game_dir=game_dir)["characters"]
         except Exception:
             layout_root = None
         if layout_root is not None:

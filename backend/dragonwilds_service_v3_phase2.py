@@ -184,7 +184,6 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
             "console": True, "spawner": mode == "server", "saves": True,
             "broadcast_message": mode in {"coop", "server"},
         },
-        "chat": list(profile.get("dragonlink_chat") or [])[-100:] if isinstance(profile.get("dragonlink_chat"), list) else [],
     }
     dragonlink_config = normalize_profile_config(profile)
     result["dragonlink"] = {
@@ -211,6 +210,8 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         advertised = manifest.get("dragonlink_connect") if isinstance(manifest.get("dragonlink_connect"), dict) else {}
         result["dragonlink"]["advertised_connect"] = bool(advertised.get("enabled", False))
         result["dragonlink"]["connect_mode"] = str(advertised.get("mode") or ("direct-panel-once" if advertised.get("enabled") else "manual"))
+        from runtime_architecture import normalize_runtime_architecture
+        result["dragonlink"]["advertised_runtime_architecture"] = normalize_runtime_architecture(manifest.get("runtime_architecture"))
     if mode == "server":
         runtime_status = runtime.get("runtime") if isinstance(runtime.get("runtime"), dict) else runtime
         history = list(runtime_status.get("metric_history") or [])[-180:]
@@ -328,31 +329,6 @@ def _quick_broadcast(state: dict, params: dict) -> dict:
             _legacy.STATE.manifest["service_notice"] = dict(notice)
             _legacy.STATE.manifest["metadata_revision"] = int(_legacy.STATE.manifest.get("metadata_revision") or 0) + 1
     return {"ok": True, "notice": notice, "quick": _quick_status(_legacy.load_state(), profile_id, mode)}
-
-
-def _quick_chat_send(state: dict, params: dict) -> dict:
-    """Publish ordinary admin chat without adding it to the runtime console."""
-    mode = _quick_mode(params.get("mode"))
-    if mode != "server":
-        raise ValueError("DragonLink admin chat is available only for hosted Server profiles")
-    profile_id, profile, _kind = _quick_profile(
-        state, str(params.get("profile_id") or params.get("id") or ""), mode)
-    message = str(params.get("message") or "").strip()[:1000]
-    if not message:
-        raise ValueError("Enter a chat message")
-    row = {"id": f"admin-{time.time_ns()}", "at": time.time(), "sender": "Server Admin",
-           "message": message, "kind": "chat", "automated": False}
-    history = [item for item in (profile.get("dragonlink_chat") or []) if isinstance(item, dict)][-99:]
-    profile["dragonlink_chat"] = [*history, row]
-    _legacy.save_server_profile(profile_id, profile)
-    # Refresh the active Sync payload so launcher clients receive the message.
-    active_id = str(state.setdefault("server", {}).get("active_world_id") or _legacy.ENGINE.active_profile_id or "")
-    if active_id == profile_id and bool((_legacy.SHARE.status() or {}).get("serving")):
-        try:
-            _legacy.ENGINE.publish(profile_id)
-        except Exception:
-            pass
-    return {"ok": True, "message": row, "chat": profile["dragonlink_chat"]}
 
 
 def _quick_console(state: dict, profile_id: str, mode: str, limit: int = 250) -> dict:
@@ -521,8 +497,6 @@ def handle(method: str, params: dict) -> object:
         return handle("server.runtime.update_restart", {"id": str(params.get("profile_id") or params.get("id") or ""), "restart": True})
     if method == "quick.broadcast":
         return _quick_broadcast(state, params)
-    if method == "quick.chat.send":
-        return _quick_chat_send(state, params)
     if method == "quick.console.execute":
         return _quick_console_execute(state, params)
     if method == "quick.console.get":

@@ -30,7 +30,7 @@ def main() -> None:
                     "source": {"provider": "nexus", "mod_id": 42, "version": "1.0"}
                 }},
             })
-            payload = profile / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
+            payload = profile / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
             payload.mkdir(parents=True)
             (payload / "schema.json").write_text(text, encoding="utf-8")
 
@@ -47,14 +47,14 @@ def main() -> None:
         # A server scan/publish is allowed to normalize launcher-owned metadata
         # without creating a false gameplay-content replacement warning.
         for profile_id in ("world-a", "world-b"):
-            payload = repository.LOCAL_PROFILES_DIR / profile_id / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
+            payload = repository.LOCAL_PROFILES_DIR / profile_id / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
             (payload / "ID.txt").write_text(f"mod_id: SharedSchema\nscan: {profile_id}\n", encoding="utf-8")
             (payload / "enabled.txt").write_text("", encoding="utf-8")
         metadata_scan = repository.refresh_repository()["entries"][0]
         assert next(row for row in metadata_scan["profiles"] if row["id"] == "world-a")["fingerprint_status"] == "unchanged"
         assert next(row for row in metadata_scan["profiles"] if row["id"] == "world-b")["fingerprint_status"] == "replaced"
 
-        source = repository.LOCAL_PROFILES_DIR / "world-a" / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
+        source = repository.LOCAL_PROFILES_DIR / "world-a" / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
         canonical_hash = entry["content_hash"]
         (source / "schema.json").write_text("replacement", encoding="utf-8")
         rescanned = repository.refresh_repository()["entries"][0]
@@ -68,7 +68,7 @@ def main() -> None:
         assert next(row for row in restored["profiles"] if row["id"] == "world-a")["fingerprint_status"] == "unchanged"
         (source / "new-schema.json").write_text("new", encoding="utf-8")
         result = repository.publish_from_profile("local", "world-a", "runeschema_mod::SharedSchema", propagate=True)
-        target = repository.LOCAL_PROFILES_DIR / "world-b" / "snapshot" / "mods" / "ue4ss_mods" / "RuneSchema" / "mods" / "SharedSchema"
+        target = repository.LOCAL_PROFILES_DIR / "world-b" / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
         assert (target / "schema.json").read_text(encoding="utf-8") == "first"
         assert (target / "new-schema.json").read_text(encoding="utf-8") == "new"
         assert len(result["deployed"]) == 1

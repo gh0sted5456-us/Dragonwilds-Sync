@@ -6,12 +6,27 @@ from pathlib import Path
 
 DEDICATED_FOLDER = "RuneScape Dragonwilds Dedicated Server"
 NATIVE_LINUX = sys.platform.startswith("linux")
+CLIENT_SHIPPING_EXE = "RSDragonwilds-Win64-Shipping.exe"
 SERVER_EXE = "RSDragonwildsServer.sh" if NATIVE_LINUX else "RSDragonwilds.exe"
 # Keep both families visible so a Proton-managed Windows install can still be
 # linked from Linux and migrated profiles remain discoverable.
 SERVER_EXE_ALIASES = (("RSDragonwildsServer.sh", "RSDragonwildsServer") if NATIVE_LINUX else ()) + (
     "RSDragonwilds.exe", "RSDragonwildsServer.exe",
 )
+
+
+def _exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -41,26 +56,26 @@ class ServerLayout:
 
 
 def _looks_like_game_root(path: Path) -> bool:
-    return (path / "Binaries" / "Win64").exists() or (path / "Content" / "Paks").exists() or (path / "Saved").exists()
+    return _exists(path / "Binaries" / "Win64") or _exists(path / "Content" / "Paks") or _exists(path / "Saved")
 
 
 def _has_dedicated_evidence(path: Path) -> bool:
     """Return true only for evidence the retail client does not also satisfy."""
     if path.name.casefold() == DEDICATED_FOLDER.casefold():
         return True
-    if any((path / name).is_file() for name in ("RSDragonwildsServer.exe",
+    if any(_is_file(path / name) for name in ("RSDragonwildsServer.exe",
                                                  "RSDragonwildsServer.sh",
                                                  "RSDragonwildsServer")):
         return True
     roots = (path, path / "RSDragonwilds")
-    return any((root / "Saved" / "Config" / platform).exists()
+    return any(_exists(root / "Saved" / "Config" / platform)
                for root in roots for platform in ("WindowsServer", "LinuxServer"))
 
 
 def _looks_like_install_root(path: Path) -> bool:
     return _has_dedicated_evidence(path) and (
-        (path / "RSDragonwilds").exists()
-        or any((path / name).exists() for name in SERVER_EXE_ALIASES)
+        _exists(path / "RSDragonwilds")
+        or any(_exists(path / name) for name in SERVER_EXE_ALIASES)
     )
 
 
@@ -253,6 +268,20 @@ def is_complete_server_layout(layout: ServerLayout) -> bool:
             and (_has_dedicated_evidence(layout.install_root)
                  or _has_dedicated_evidence(layout.game_root)))
 
+
+
+def looks_like_retail_client(layout: ServerLayout) -> bool:
+    """Identify positive retail-client evidence without trusting planned server paths.
+
+    ``resolve_server_layout`` intentionally maps an unrecognized selection toward
+    the location Full Setup *would* create. For a safety guard we instead inspect
+    the operator-selected tree itself (and its normal nested RSDragonwilds root).
+    """
+    selected = layout.selected_root.parent if layout.selected_root.is_file() else layout.selected_root
+    roots = (selected, selected / "RSDragonwilds")
+    if any(_has_dedicated_evidence(root) for root in roots):
+        return False
+    return any((root / "Binaries" / "Win64" / CLIENT_SHIPPING_EXE).is_file() for root in roots)
 
 def discover_server_layouts(selected: str | Path, *, max_depth: int = 8,
                             max_directories: int = 25000) -> dict:

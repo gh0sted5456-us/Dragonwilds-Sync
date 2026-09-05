@@ -75,13 +75,12 @@ def main():
     assert "Refresh Ashenfall Map" in renderer and "application.map.refresh" in service
     assert "metaforge.app/runescape-dragonwilds/map/ashenfall" in map_updater.METAFORGE_SOURCE_PAGE
 
-    # Theme and layout hardening: the current catalog remains explicit and legacy fantasy IDs stay retired.
-    assert "['dark-fantasy','Dark','Dark graphite and antique gold']" in renderer
-    assert "['light','Light','Clean daylight UI']" in renderer
-    assert "['desert-script','Desert Script','Papyrus, indigo ink and sun-baked clay']" in renderer
-    assert "['eastern','Eastern','Sumi ink, vermilion and traditional Japanese screens']" in renderer
-    assert "Cathedral stained glass" in renderer
-    assert "['fantasy'" not in renderer[renderer.find("function renderSettings"):renderer.find("function renderWelcome")]
+    # The application deliberately exposes only consistent dark/light modes.
+    settings = renderer[renderer.find("function renderSettings"):renderer.find("function renderWelcome")]
+    assert "['dark','Dark','Low-glare dark interface']" in settings
+    assert "['light','Light','Clean light interface']" in settings
+    assert "Dark Pads" not in settings and "Desert Script" not in settings and "Eastern" not in settings
+    assert "Cathedral stained glass" not in settings
     assert "grid-template-columns:repeat(auto-fill,minmax(min(330px,100%),1fr))" in styles
     assert ".settings-nav{max-height:none!important;overflow:visible!important" in styles
     assert "scrollbar-color" in styles and "::-webkit-scrollbar-thumb" in styles
@@ -113,6 +112,7 @@ def main():
             world_operations.SERVER_PROFILES_DIR = td / "profiles"
             world_operations.ARCHIVE_ROOT = td / "archives"
             world_operations.CLIENT_SAVEGAMES.mkdir(parents=True)
+            world_operations.player_save_paths = lambda _state, **_kw: {"worlds": world_operations.CLIENT_SAVEGAMES}
             (world_operations.CLIENT_SAVEGAMES / "World.sav").write_bytes(b"private")
             def create(name):
                 p={"id":"srv-1","name":name,"dedicated_config":{}}

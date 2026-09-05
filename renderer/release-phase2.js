@@ -207,31 +207,6 @@
     }
   }
 
-  function joinProfilePath(base, kind, id) {
-    const separator = String(base || '').includes('\\') ? '\\' : '/';
-    const clean = String(base || '').replace(/[\\/]+$/, '');
-    const branch = kind === 'server' ? ['profiles', 'world', 'dedicated', id] : ['profiles', 'world', 'local', id];
-    return [clean, ...branch].join(separator);
-  }
-
-  async function openProfileFolder(kind, id) {
-    const state = await stateSnapshot();
-    const world = worldFor(state, kind, id);
-    let target = text(world?.profile_path);
-    if (!target) {
-      const paths = await invoke('application.storage.paths', {});
-      target = joinProfilePath(paths?.app_data, kind, id);
-    }
-    const ok = await bridge.openPath?.(target);
-    if (ok === false) throw new Error(`Windows Explorer could not open ${target}`);
-    return target;
-  }
-
-  function clickModsTab(kind) {
-    const selector = kind === 'server' ? '[data-server-tab="mods"]' : '[data-private-tab="mods"]';
-    document.querySelector(selector)?.click();
-  }
-
   function groupTabs(kind) {
     const marker = kind === 'server' ? '#detach-server-world' : '#detach-private-world';
     if (!document.querySelector(marker)) return;
@@ -284,33 +259,6 @@
     const id = resolveDetailIdentity(state, kind);
     if (!id) return;
     lastSelection = { kind, id };
-
-    if (!actions.querySelector('#phase2-view-mods')) {
-      const viewMods = document.createElement('button');
-      viewMods.id = 'phase2-view-mods';
-      viewMods.type = 'button';
-      viewMods.className = 'btn ghost';
-      viewMods.textContent = 'View Mods';
-      viewMods.title = 'Open this World profile\'s Mods view';
-      viewMods.addEventListener('click', () => clickModsTab(kind));
-      detach.insertAdjacentElement('afterend', viewMods);
-    }
-
-    if (!actions.querySelector('#phase2-see-profile')) {
-      const explorer = document.createElement('button');
-      explorer.id = 'phase2-see-profile';
-      explorer.type = 'button';
-      explorer.className = 'btn ghost';
-      explorer.textContent = 'See in Explorer';
-      explorer.title = 'Open this managed World profile in Windows Explorer';
-      explorer.addEventListener('click', async () => {
-        explorer.disabled = true;
-        try { await openProfileFolder(kind, id); }
-        catch (error) { console.error('[Phase 2] See in Explorer failed:', error); }
-        finally { explorer.disabled = false; }
-      });
-      actions.querySelector('#phase2-view-mods')?.insertAdjacentElement('afterend', explorer);
-    }
 
     if (!actions.querySelector('.phase2-detail-save-state')) {
       const world = worldFor(state, kind, id);

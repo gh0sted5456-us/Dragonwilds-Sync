@@ -107,14 +107,15 @@ def main() -> None:
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     overlay = (ROOT / "renderer/release-profile-mod-folders.js").read_text(encoding="utf-8")
+    electron_main = (ROOT / "electron/main-v2.cjs").read_text(encoding="utf-8")
+    electron_preload = (ROOT / "electron/preload-v2.cjs").read_text(encoding="utf-8")
     local_source = (ROOT / "backend/local_world.py").read_text(encoding="utf-8")
     server_source = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
+    service_source = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     for token in (
         "RuneSchema Build",
         "Update Official",
         "Fetch Latest Experimental",
-        'id="sp-open-mods-folder"',
-        'id="server-open-mods-folder"',
         'data-profile-mod-folder-note="local"',
         "Folder-managed + Nexus-linked inventory",
         "Manual mod archive import retired",
@@ -126,13 +127,17 @@ def main() -> None:
         "path.toLowerCase().endsWith('.rsdwl')",
     ):
         assert token in renderer
-    assert renderer.count('id="sp-open-mods-folder"') == 1
-    assert renderer.count('id="server-open-mods-folder"') == 1
+    assert 'id="sp-open-mods-folder"' not in renderer
+    assert 'id="server-open-mods-folder"' not in renderer
+    assert renderer.count('data-action="profile-mod-storage"') >= 2
     pre_open_scan = "await authoritativeRescan(kind, profile.id, { useVisibleButton: false })"
-    assert pre_open_scan in overlay
-    assert overlay.index(pre_open_scan) < overlay.index("const opened = await bridge.openPath(target);")
-    assert 'mods = _world_cache(profile_id) / "mods"\n    mods.mkdir(parents=True, exist_ok=True)' in local_source
-    assert 'stored = SERVER_PROFILES_DIR / profile_id / "mods"\n    stored.mkdir(parents=True, exist_ok=True)' in server_source
+    # Browse Mods is side-effect free. Explicit Refresh is the only folder
+    # reconciliation boundary; returning focus from Explorer does not rescan.
+    assert pre_open_scan not in overlay
+    assert "openedProfile" not in overlay
+    assert "window.addEventListener('focus'" not in overlay
+    assert 'ensure_profile_mod_roots(_world_cache(profile_id) / "mods")' in local_source
+    assert 'profile_roots = ensure_profile_mod_roots(stored)' in server_source
     assert renderer.count("api.invoke('singleplayer.mod.install'") >= 2
     assert renderer.count("api.invoke('server.world.mod.install'") >= 2
     for retired in (
@@ -151,13 +156,37 @@ def main() -> None:
     ):
         assert retired not in renderer
     for token in (
-        "bindProfileFolderButton('#sp-open-mods-folder', 'local')",
-        "bindProfileFolderButton('#server-open-mods-folder', 'server')",
-        "bridge.invoke('application.storage.paths'",
+        # Open Mod Folder must ask the backend for the authoritative profile
+        # mod root rather than reconstructing it from AppData/server-root
+        # strings in the renderer (see backend/test_profile_mod_pathing_guards.py
+        # for the backend-side describe_profile_mods_root() coverage).
+        "bridge.invoke('application.profile.mods_root'",
+        "response?.resolved_kind",
+        "const actualKind = resolved.kind === 'server' ? 'server' : 'local';",
         "rescan: true",
         "PROTECTED RECOVERY BASELINE",
     ):
         assert token in overlay
+    assert "bridge.invoke('application.storage.paths'" not in overlay
+    assert "bindProfileFolderButton" not in overlay
+    assert "window.dragonwilds.openProfileMods('server',id)" in renderer
+    assert "window.dragonwilds.openProfileMods('local',id)" in renderer
+    assert "openProfileMods: (kind, id) => ipcRenderer.invoke('dragonwilds:open-profile-mods'" in electron_preload
+    assert "ipcMain.handle('dragonwilds:open-profile-mods'" in electron_main
+    assert "const error=await shell.openPath(value)" in electron_main
+    assert "path.join(process.env.WINDIR||'C:\\\\Windows','explorer.exe')" in electron_main
+    assert "for(const lane of ['UE4SS','RuneSchema','PAKs'])" in electron_main
+    assert "path.join(activeProgramDataRoot(),'profiles','world'" in electron_main
+    assert "scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)" in service_source
+    assert "units = scan_profile_snapshot_units(profile_id)" in service_source
+    assert 'profile["mods_profile_initialized"] = True' in service_source
+    assert "const units=state.privateInventory[worldId]||[];" in renderer
+    assert "refreshServerInventory(world, true, true)" in renderer
+    assert "refreshSinglePlayerInventory(true, true)" in renderer
+    assert "lastConsolePayload=payload||lastConsolePayload" in renderer
+    assert "sourceCategory(row)===filter" in renderer
+    assert "if(lastConsolePayload)draw(lastConsolePayload)" in renderer
+    assert "const profileId = text(button?.dataset?.profileId)" not in overlay
     for retired in (
         "replaceImportButton",
         "replaceDropZone",

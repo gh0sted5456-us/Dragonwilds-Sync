@@ -49,15 +49,6 @@
     const openExplorer = parentExplorer();
     if (typeof openExplorer !== 'function') return;
 
-    if (target.id === 'phase2-view-mods') {
-      const context = currentKindAndId();
-      if (!context.id) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      openExplorer(context.kind, context.id);
-      return;
-    }
-
     if (target.dataset.action === 'open' && lastModContext) {
       const context = currentKindAndId();
       const mod = lastModContext;

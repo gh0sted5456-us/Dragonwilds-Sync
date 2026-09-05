@@ -172,8 +172,10 @@ def test_read_only_legacy_mod_snapshot_can_be_replaced():
             current.write_text("return {}", encoding="utf-8")
             copied = server_engine.snapshot_profile_mods("world", game)
             assert copied == 1
+            # First access migrates/removes the old internal lane and writes
+            # the replacement into the visible profile-owned UE4SS folder.
             assert not legacy.exists()
-            assert (server_engine.SERVER_PROFILES_DIR / "world" / "mods" / "ue4ss_mods" / "WorldMod" / "Scripts" / "main.lua").is_file()
+            assert (server_engine.SERVER_PROFILES_DIR / "world" / "mods" / "UE4SS" / "WorldMod" / "Scripts" / "main.lua").is_file()
         finally:
             server_engine.SERVER_PROFILES_DIR = old_profiles
 
@@ -239,10 +241,10 @@ def test_ui_contract():
     for label in ("Character Editor", "Item Editor", "Spell Editor", "Recipe Unlocker", "Quest Editor"):
         assert label in renderer
 
-    # Settings white-bar regression + themed scrollbars + expanded theme surface.
+    # Settings white-bar regression + themed scrollbars + two-mode theme surface.
     assert ".settings-subnav button{appearance:none" in styles
     assert "::-webkit-scrollbar-thumb" in styles and "scrollbar-color" in styles
-    assert "['desert-script','Desert Script'" in renderer and "['eastern','Eastern'" in renderer
+    assert "['dark','Dark','Low-glare dark interface']" in renderer and "['light','Light','Clean light interface']" in renderer
 
     # Networking surface + per-World tab + drag/drop + provider icons.
     assert "Country Blocking" in renderer and "Block Individual IP" in renderer and "Block Common VPN Providers" in renderer

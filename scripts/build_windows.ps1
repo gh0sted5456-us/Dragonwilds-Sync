@@ -290,7 +290,15 @@ try {
     Write-BuildLine ''
 
     Write-BuildLine '[4/7] Verification'
-    Invoke-Native $npmExe @('run', 'verify')
+    Invoke-Native $npmExe @('run', 'check:runtime')
+    Invoke-Native $npmExe @('run', 'prepare:monaco')
+    Invoke-Native $npmExe @('run', 'test:systems:source')
+    # Run the 145-file backend matrix directly so every child process streams
+    # to the build log. Wrapping it inside run_system_tests.py buffers a second
+    # process tree and can report a healthy child as a nonzero nested process.
+    if ($env:DWS_BACKEND_MATRIX_VERIFIED -ne '1') {
+        Invoke-Native $npmExe @('run', 'test:backend')
+    }
     Invoke-Native $npmExe @('run', 'test:preload') 'Testing the sandboxed Electron preload bridge...'
     Invoke-Native $pythonExe ($pythonPrefix + @('-m', 'py_compile',
         'backend\dragonwilds_service.py',

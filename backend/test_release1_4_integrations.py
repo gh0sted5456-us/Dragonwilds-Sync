@@ -76,6 +76,7 @@ def test_character_verified_writeback() -> None:
         old_layout = character_profiles.resolve_client_layout
         old_backups = character_profiles.CHAR_IMPORT_BACKUPS
         character_profiles.resolve_client_layout = lambda _game: SimpleNamespace(character_dir=character_dir)
+        character_profiles.player_save_paths = lambda _state, **_kw: {"characters": character_dir}
         character_profiles.CHAR_IMPORT_BACKUPS = root / "backups"
         try:
             discovered = character_profiles.discover_characters("")
@@ -116,6 +117,7 @@ def test_character_clone_delete_and_equipment_avatar() -> None:
             rsdw_cache._ITEM_INDEX_CACHE,
         )
         character_profiles.resolve_client_layout = lambda _game: SimpleNamespace(character_dir=character_dir)
+        character_profiles.player_save_paths = lambda _state, **_kw: {"characters": character_dir}
         character_profiles.CHAR_DELETE_BACKUPS = root / "deleted"
         rsdw_cache.RSDW_DATA_DIR = data_dir; rsdw_cache.RSDW_MODEL_INDEX = model_index
         rsdw_cache.RSDW_RAW_ITEMS_DIR = root / "raw_items"

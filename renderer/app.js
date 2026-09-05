@@ -13,12 +13,12 @@
   // the later release enhancement scripts retain their original ordering.
   document.write('<script src="app-v2.js?v=3.5.0-shortcuts-windows"><\\/script>');
   // Additive profile-mod workflow: user-managed mods live in each World's
-  // profile folder and explicit Rescan reconciles that folder authoritatively.
-  // It also annotates the packaged UE4SS/RuneSchema builds as protected recovery
-  // baselines without changing Quick Mode or the retained renderer bundle.
-  document.write('<script src="release-profile-mod-folders.js?v=3.5.1-profile-mod-folders"><\\/script>');
-  // Phase 4 keeps a short presentation cache for placard badges. Explicit
-  // Rescan publishes fresh inventory into this view layer immediately so added,
-  // changed and removed profile mods cannot remain visually stale.
-  document.write('<script src="release-live-mod-inventory.js?v=3.5.1-live-mod-inventory"><\\/script>');
+  // profile folder and explicit Refresh reconciles that folder authoritatively.
+  document.write('<script src="release-profile-mod-folders.js?v=3.5.2-profile-authority"><\\/script>');
+  // Installation mapping stays machine-owned and separate from profile content.
+  // Defaults derive from the exact linked executable; operators may explicitly
+  // map UE4SS, RuneSchema and PAK destinations for current/future loader layouts.
+  document.write('<script src="release-machine-mod-mapping.js?v=3.5.2-machine-mod-mapping"><\\/script>');
+  // Fresh profile inventory immediately updates the presentation layer.
+  document.write('<script src="release-live-mod-inventory.js?v=3.5.2-live-mod-inventory"><\\/script>');
 })();

@@ -1046,7 +1046,48 @@ ipcMain.handle('dragonwilds:rsdw-toolkit-root', async (_event, incoming) => {
 
 ipcMain.handle('dragonwilds:open-external', async (_event,target) => { try { const raw=String(target||'').trim(); const url=new URL(raw); const safeWeb=['http:','https:'].includes(url.protocol); const safeSteam=/^steam:\/\/(?:(?:run|rungameid|validate|install)\/(?:1374490|4019830)|nav\/games\/details\/1374490)$/i.test(raw); if(!safeWeb&&!safeSteam)return false; await shell.openExternal(url.toString()); return true; } catch(_){return false;} });
 ipcMain.handle('dragonwilds:open-in-app-browser', (event,target) => createExternalBrowserWindow(target, event.sender));
-ipcMain.handle('dragonwilds:open-path', async (_event,target) => { if(!target)return false; return !(await shell.openPath(target)); });
+async function openDesktopPath(target) {
+  const value=String(target||'').trim();
+  if(!value||!fs.existsSync(value))return false;
+  try{
+    // A normal Explorer process is more reliable for folders than shell.openPath:
+    // Windows can acknowledge openPath without surfacing a visible window.
+    if(process.platform==='win32'&&fs.statSync(value).isDirectory()){
+      try {
+        const explorer=spawn(path.join(process.env.WINDIR||'C:\\Windows','explorer.exe'),[value],{
+          detached:true,stdio:'ignore',windowsHide:false,
+        });
+        explorer.unref();
+        return true;
+      } catch (_) {}
+    }
+    const error=await shell.openPath(value);
+    if(!error)return true;
+    if(process.platform==='win32'&&fs.statSync(value).isDirectory()){
+      try { shell.showItemInFolder(value); return true; } catch (_) {}
+    }
+    return false;
+  }catch(_){return false;}
+}
+ipcMain.handle('dragonwilds:open-path', async (_event,target) => openDesktopPath(target));
+ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id) => {
+  try {
+    const profileKind=String(kind||'').trim().toLowerCase();
+    const profileId=String(id||'').trim();
+    if(!['local','server'].includes(profileKind))throw new Error('The profile type is invalid.');
+    if(!profileId||profileId==='.'||profileId==='..'||/[\\/:*?"<>|]/.test(profileId))throw new Error('The profile id is invalid.');
+    // Resolve this directly from the application's active AppData root. Opening
+    // profile storage must not depend on the backend process being responsive.
+    const profileBase=path.join(activeProgramDataRoot(),'profiles','world',profileKind==='server'?'dedicated':'local',profileId);
+    const target=path.join(profileBase,...(profileKind==='server'?['mods']:['snapshot','mods']));
+    for(const lane of ['UE4SS','RuneSchema','PAKs'])fs.mkdirSync(path.join(target,lane),{recursive:true});
+    const ok=await openDesktopPath(target);
+    if(!ok)throw new Error(`Windows could not open ${target}`);
+    return {ok:true,path:target,resolved_kind:profileKind};
+  } catch (error) {
+    return {ok:false,error:String(error?.message||error||'Could not open the profile Mods folder.')};
+  }
+});
 ipcMain.handle('dragonwilds:reveal-path', (_event,target) => { const value=String(target||'').trim(); if(!value||!fs.existsSync(value))return false; shell.showItemInFolder(value); return true; });
 
 const gotLock = app.requestSingleInstanceLock();

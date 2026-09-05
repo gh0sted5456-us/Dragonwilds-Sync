@@ -15,10 +15,12 @@ from urllib.parse import quote, urlsplit
 
 from process_utils import popen_hidden
 from network_client import ConnectionError, auth_manifest, request
-from profile_store import APP_DATA_DIR
+from profile_store import APP_DATA_DIR, load_state
+from profile_mod_destinations import resolve_mod_install_paths
 from security_scanner import defender_scan, defender_status
 from world_identity import candidate_endpoints, normalize_endpoint, positive_world_identity
 from client_layout import resolve_client_layout
+from profile_mod_layout import ensure_profile_mod_roots
 from runtime_platforms import detect_client_platform, entry_allowed_for_platform
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
@@ -46,7 +48,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # with whatever was cached in that profile's snapshot -- silently
 # downgrading UE4SS's own runtime files back to whatever version existed
 # the last time that particular profile was snapshotted.
-LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "dragonlink"} | UE4SS_BAKED_IN_DEFAULT_MODS
+LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "dragonlink", "mods.txt"} | UE4SS_BAKED_IN_DEFAULT_MODS
 RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
 SERVER_ONLY_SYNC_UE4SS_MODS = frozenset({
     "rsdwtools", "rsdwtoolkit", "rsdw toolkit", "rsdw tool kit",
@@ -104,8 +106,8 @@ def safe_path_under(root: Path, relative: str, label: str = "path") -> Path:
 
 
 def _client_mod_roots(selected: Path) -> dict[str, Path]:
-    layout = resolve_client_layout(selected)
-    return {"ue4ss_mods": layout.ue4ss_mods_dir, "pak_mods": layout.paks_mods_dir}
+    roots = resolve_mod_install_paths(load_state(), "player", selected)
+    return {"ue4ss_mods": roots["ue4ss"], "pak_mods": roots["paks"], "runeschema_mods": roots["runeschema"]}
 
 
 def target_for_entry(selected: Path, entry: dict) -> Path:
@@ -334,16 +336,40 @@ def copy_profile_mod_slot(src: Path, dst: Path, slot: str) -> None:
             shutil.copy2(child, target)
 
 
-def snapshot_client_world(world_id: str, selected_root: Path) -> None:
+def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: bool = True) -> None:
+    """Capture profile state; mod capture is adoption-only after folder authority.
+
+    Once a profile has its own Browse Mods tree, routine A -> B switching never
+    copies live installation mods back over that source tree.  Config/managed
+    state may still be refreshed independently.
+    """
     if not world_id:
         return
     layout = resolve_client_layout(selected_root)
+    profile_live = _client_mod_roots(selected_root)
     game_root = layout.game_root
     destination = client_world_dir(world_id)
     mods_destination = destination / "mods"
     managed_destination = destination / "managed_files"
     config_destination = destination / "configs" / "game"
-    _remove_launcher_managed_tree(mods_destination)
+    if include_mods:
+        _remove_launcher_managed_tree(mods_destination)
+        profile_roots = ensure_profile_mod_roots(mods_destination)
+        # UE4SS core/baked helpers and RuneSchema core are never profile-owned.
+        profile_roots["ue4ss"].mkdir(parents=True, exist_ok=True)
+        for child in profile_live["ue4ss_mods"].iterdir() if profile_live["ue4ss_mods"].exists() else []:
+            if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
+                continue
+            target = profile_roots["ue4ss"] / child.name
+            if child.is_dir():
+                shutil.copytree(child, target, dirs_exist_ok=True)
+            elif child.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(child, target)
+        if profile_live["runeschema_mods"].exists():
+            copy_tree(profile_live["runeschema_mods"], profile_roots["runeschema"])
+        if profile_live["pak_mods"].exists():
+            copy_tree(profile_live["pak_mods"], profile_roots["paks"])
     _remove_launcher_managed_tree(managed_destination)
     _remove_launcher_managed_tree(config_destination)
     state = load_local_state(game_root)
@@ -355,13 +381,6 @@ def snapshot_client_world(world_id: str, selected_root: Path) -> None:
             target = managed_destination / Path(*PurePosixPath(relative).parts)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
-    roots = _client_mod_roots(selected_root)
-    for slot in PROFILE_MOD_SLOTS:
-        source = roots[slot]
-        if source.exists():
-            copy_profile_mod_slot(source, mods_destination / slot, slot)
-    # LocalAppData game configuration is World-profile state. AccountConfig,
-    # EOS data and credentials live elsewhere and are intentionally untouched.
     if layout.config_dir.exists():
         copy_tree(layout.config_dir, config_destination)
     state_path = game_root / LOCAL_STATE_DIR / STATE_FILE
@@ -393,26 +412,23 @@ def activate_or_adopt_client_world_profile(outgoing_world_id: str | None, incomi
 
 
 def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> dict:
-    """Refresh one World-owned mod snapshot without touching sibling state."""
+    """Capture one explicit active-editor change into authoritative profile storage."""
     group, separator, name = str(key or "").partition("::")
     if not separator or not name or name in {".", ".."} or any(token in name for token in ("/", "\\")):
         raise ValueError("Invalid mod key.")
     if group not in {"ue4ss_mod", "runeschema_mod"}:
         raise ValueError("Only UE4SS and RuneSchema mod units support targeted live snapshots.")
     layout = resolve_client_layout(selected_root)
-    snapshot_root = client_world_dir(world_id) / "mods" / "ue4ss_mods"
+    profile_live = _client_mod_roots(selected_root)
+    stored = ensure_profile_mod_roots(client_world_dir(world_id) / "mods")
     if group == "ue4ss_mod":
         if name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
             raise ValueError("Runtime infrastructure is not a World-owned mod unit.")
-        source = layout.ue4ss_mods_dir / name
-        destination = snapshot_root / name
+        source = profile_live["ue4ss_mods"] / name
+        destination = stored["ue4ss"] / name
     else:
-        runeschema_source_root = layout.runeschema_mods_dir
-        if not runeschema_source_root.exists() and layout.runeschema_root.exists():
-            runeschema_source_root = layout.runeschema_root
-        source = runeschema_source_root / name
-        rune_snapshot = snapshot_root / "RuneSchema"
-        destination = rune_snapshot / name if runeschema_source_root == layout.runeschema_root else rune_snapshot / "Mods" / name
+        source = profile_live["runeschema_mods"] / name
+        destination = stored["runeschema"] / name
     _remove_launcher_managed_tree(destination)
     copied = 0
     if source.is_dir():
@@ -429,10 +445,8 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
     if not world_id:
         return
     layout = resolve_client_layout(selected_root)
+    profile_live = _client_mod_roots(selected_root)
     game_root = layout.game_root
-    # UE4SS's client bootstrap is machine-level runtime infrastructure. It is
-    # never owned by a World profile and must survive every profile swap even
-    # when an older managed-state manifest incorrectly lists it as payload.
     runtime_core = {
         (layout.win64_dir / "dwmapi.dll").resolve(),
         (layout.win64_dir / "ue4ss" / "UE4SS.dll").resolve(),
@@ -449,43 +463,29 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
             if target.is_file():
                 _set_managed_readonly(target, False)
                 target.unlink()
-    roots = _client_mod_roots(selected_root)
-    for slot in PROFILE_MOD_SLOTS:
-        live = roots[slot]
-        if live.exists():
-            if slot == "ue4ss_mods":
-                for child in list(live.iterdir()):
-                    if child.name.casefold() == "runeschema":
-                        nested = False
-                        for candidate in (child / "Mods", child / "mods"):
-                            if candidate.exists():
-                                nested = True
-                                _remove_launcher_managed_tree(candidate)
-                        if not nested:
-                            for entry in list(child.iterdir()):
-                                if entry.name.casefold() in RUNESCHEMA_CORE_NAMES:
-                                    continue
-                                if entry.is_dir():
-                                    _remove_launcher_managed_tree(entry)
-                                else:
-                                    _set_managed_readonly(entry, False)
-                                    entry.unlink(missing_ok=True)
-                        continue
-                    if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
-                        continue
-                    if child.is_dir():
-                        _remove_launcher_managed_tree(child)
-                    else:
-                        # mods.txt and server-pushed managed controls are made
-                        # read-only after activation. They are launcher-owned,
-                        # so release that protection before replacing profiles.
-                        _set_managed_readonly(child, False)
-                        child.unlink(missing_ok=True)
+
+    profile_roots = ensure_profile_mod_roots(stored / "mods")
+    # Clear only profile-owned live destinations. Runtime/core survives.
+    if profile_live["ue4ss_mods"].exists():
+        for child in list(profile_live["ue4ss_mods"].iterdir()):
+            if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
+                continue
+            if child.is_dir():
+                _remove_launcher_managed_tree(child)
             else:
-                _remove_launcher_managed_tree(live)
-        cached = stored / "mods" / slot
-        if cached.exists():
-            copy_profile_mod_slot(cached, live, slot)
+                _set_managed_readonly(child, False)
+                child.unlink(missing_ok=True)
+    if profile_live["runeschema_mods"].exists():
+        _remove_launcher_managed_tree(profile_live["runeschema_mods"])
+    profile_live["runeschema_mods"].mkdir(parents=True, exist_ok=True)
+    if profile_live["pak_mods"].exists():
+        _remove_launcher_managed_tree(profile_live["pak_mods"])
+    profile_live["pak_mods"].mkdir(parents=True, exist_ok=True)
+
+    copy_tree(profile_roots["ue4ss"], profile_live["ue4ss_mods"])
+    copy_tree(profile_roots["runeschema"], profile_live["runeschema_mods"])
+    copy_tree(profile_roots["paks"], profile_live["pak_mods"])
+
     cached_config = stored / "configs" / "game"
     if cached_config.exists():
         if layout.config_dir.exists():
@@ -521,21 +521,26 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
 
 
 def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
-    """Compare live World-owned mod files with the selected profile snapshot."""
-    stored = client_world_dir(world_id) / "mods"
-    roots = _client_mod_roots(selected_root)
+    """Compare the three configured live destinations to profile storage."""
+    layout = resolve_client_layout(selected_root)
+    stored = ensure_profile_mod_roots(client_world_dir(world_id) / "mods")
     result = {"profile_id": world_id, "clean": True, "slots": {}}
-    for slot in PROFILE_MOD_SLOTS:
-        live_root = roots[slot]
-        cached_root = stored / slot
-        if slot == "ue4ss_mods":
-            live = {p.name.casefold() for p in live_root.iterdir()} if live_root.exists() else set()
-            cached = {p.name.casefold() for p in cached_root.iterdir()} if cached_root.exists() else set()
-            live -= LAUNCHER_LOCAL_UE4SS_MODS
-            cached -= LAUNCHER_LOCAL_UE4SS_MODS
-        else:
-            live = {p.relative_to(live_root).as_posix().casefold() for p in live_root.rglob("*") if p.is_file()} if live_root.exists() else set()
-            cached = {p.relative_to(cached_root).as_posix().casefold() for p in cached_root.rglob("*") if p.is_file()} if cached_root.exists() else set()
+
+    live_ue = {p.name.casefold() for p in layout.ue4ss_mods_dir.iterdir()} if layout.ue4ss_mods_dir.exists() else set()
+    live_ue -= LAUNCHER_LOCAL_UE4SS_MODS
+    cached_ue = {p.name.casefold() for p in stored["ue4ss"].iterdir()} if stored["ue4ss"].exists() else set()
+    comparisons = {
+        "UE4SS": (live_ue, cached_ue),
+        "RuneSchema": (
+            {p.relative_to(layout.runeschema_mods_dir).as_posix().casefold() for p in layout.runeschema_mods_dir.rglob("*") if p.is_file()} if layout.runeschema_mods_dir.exists() else set(),
+            {p.relative_to(stored["runeschema"]).as_posix().casefold() for p in stored["runeschema"].rglob("*") if p.is_file()} if stored["runeschema"].exists() else set(),
+        ),
+        "PAKs": (
+            {p.relative_to(layout.paks_mods_dir).as_posix().casefold() for p in layout.paks_mods_dir.rglob("*") if p.is_file()} if layout.paks_mods_dir.exists() else set(),
+            {p.relative_to(stored["paks"]).as_posix().casefold() for p in stored["paks"].rglob("*") if p.is_file()} if stored["paks"].exists() else set(),
+        ),
+    }
+    for slot, (live, cached) in comparisons.items():
         unexpected = sorted(live - cached)
         missing = sorted(cached - live)
         result["slots"][slot] = {"unexpected": unexpected, "missing": missing}
@@ -553,7 +558,7 @@ def switch_client_world_profile(outgoing_world_id: str | None, incoming_world_id
     incoming = str(incoming_world_id).strip()
     game_root = resolve_client_layout(selected_root).game_root
     if outgoing:
-        snapshot_client_world(outgoing, selected_root)
+        snapshot_client_world(outgoing, selected_root, include_mods=False)
     remove_active_world(game_root)
     try:
         restore_client_world(incoming, selected_root)

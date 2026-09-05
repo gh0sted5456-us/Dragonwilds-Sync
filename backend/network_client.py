@@ -682,6 +682,51 @@ def download_worldsave(world: dict, destination: str) -> dict:
     raise ConnectionError("; ".join(attempts) if attempts else "No internal or external IP is configured.")
 
 
+def list_worldsave_backups(world: dict) -> dict:
+    """List host-retained World save revisions available to this player."""
+    attempts = []
+    for route, endpoint in candidate_endpoints(world):
+        try:
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint)
+            ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
+            if not ok:
+                attempts.append(f"{route}: {detail}"); continue
+            result = json.loads(request(f"{base_url}/backups", headers={"Authorization": f"Bearer {token}"}).read())
+            return {**result, "route": route, "endpoint": endpoint}
+        except Exception as exc:
+            attempts.append(f"{route}: {exc}")
+    raise ConnectionError("; ".join(attempts) if attempts else "No internal or external IP is configured.")
+
+
+def download_worldsave_backup(world: dict, backup_name: str, destination: str) -> dict:
+    """Download one named host revision; the host enforces policy and limits."""
+    from pathlib import Path
+    clean_name = Path(str(backup_name or "")).name
+    if not clean_name or clean_name != str(backup_name or "") or "/" in clean_name or "\\" in clean_name:
+        raise ValueError("Invalid World save backup name.")
+    target = Path(destination); target.parent.mkdir(parents=True, exist_ok=True)
+    attempts = []
+    for route, endpoint in candidate_endpoints(world):
+        temp = target.with_suffix(target.suffix + ".part")
+        try:
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint)
+            ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
+            if not ok:
+                attempts.append(f"{route}: {detail}"); continue
+            response = request(f"{base_url}/backups/{quote(clean_name, safe='')}", headers={"Authorization": f"Bearer {token}"}, timeout=120.0)
+            with temp.open("wb") as stream:
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk: break
+                    stream.write(chunk)
+            temp.replace(target)
+            return {"ok": True, "path": str(target), "size": target.stat().st_size, "name": clean_name,
+                    "route": route, "endpoint": endpoint}
+        except Exception as exc:
+            temp.unlink(missing_ok=True); attempts.append(f"{route}: {exc}")
+    raise ConnectionError("; ".join(attempts) if attempts else "No internal or external IP is configured.")
+
+
 def download_starter_character(world: dict, character_id: str, destination) -> dict:
     """Download one server-offered .rsdwl after normal World authentication.
 

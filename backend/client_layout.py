@@ -7,6 +7,20 @@ from pathlib import Path
 LOCAL_APPDATA = Path(os.getenv("LOCALAPPDATA", str(Path.home() / "AppData" / "Local")))
 
 
+def _exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _is_file(path: Path) -> bool:
+    try:
+        return path.is_file()
+    except OSError:
+        return False
+
+
 @dataclass(frozen=True)
 class ClientLayout:
     selected_root: Path
@@ -32,7 +46,7 @@ class ClientLayout:
 
 
 def _content_root(path: Path) -> bool:
-    return (path / "Content" / "Paks").exists() or (path / "Binaries" / "Win64").exists()
+    return _exists(path / "Content" / "Paks") or _exists(path / "Binaries" / "Win64")
 
 
 def _child_case_insensitive(parent: Path, canonical_name: str) -> Path:
@@ -50,7 +64,7 @@ def _child_case_insensitive(parent: Path, canonical_name: str) -> Path:
 
 def resolve_client_layout(selected: str | Path) -> ClientLayout:
     raw = Path(str(selected or "").strip()).expanduser()
-    if raw.is_file():
+    if _is_file(raw):
         raw = raw.parent
     # Accept the executable folder and other descendants as a user-friendly
     # selection while still resolving one canonical game/install root.
@@ -58,7 +72,7 @@ def resolve_client_layout(selected: str | Path) -> ClientLayout:
     # their install. A not-yet-created profile/test path must remain local and
     # deterministic; walking its ancestors could accidentally adopt an
     # unrelated real installation elsewhere under LocalAppData.
-    ancestry = [raw, *list(raw.parents)[:5]] if raw.exists() else [raw]
+    ancestry = [raw, *list(raw.parents)[:5]] if _exists(raw) else [raw]
     direct_game_root = next((candidate for candidate in ancestry if _content_root(candidate)), None)
     nested_install_root = next((candidate for candidate in ancestry if _content_root(candidate / "RSDragonwilds")), None)
     if direct_game_root is not None:
@@ -75,12 +89,12 @@ def resolve_client_layout(selected: str | Path) -> ClientLayout:
     # the shipping binary. Launching the shipping EXE directly can briefly show
     # a window and then leave Steam believing the game is still running.
     exe_candidates = [install_root / "RSDragonwilds.exe", game_root / "RSDragonwilds.exe", game_root / "Binaries" / "Win64" / "RSDragonwilds-Win64-Shipping.exe"]
-    game_exe = next((p for p in exe_candidates if p.is_file()), exe_candidates[0])
+    game_exe = next((p for p in exe_candidates if _is_file(p)), exe_candidates[0])
     paks_lower = game_root / "Content" / "Paks" / "~mods"
     paks_upper = game_root / "Content" / "Paks" / "~Mods"
     # Preserve an existing retail spelling; new layouts use the current ~mods
     # convention from the supported client layout.
-    paks = paks_upper if paks_upper.exists() else paks_lower
+    paks = paks_upper if _exists(paks_upper) else paks_lower
     win64 = game_root / "Binaries" / "Win64"
     ue4ss_mods = win64 / "ue4ss" / "Mods"
     runeschema = _child_case_insensitive(ue4ss_mods, "RuneSchema")

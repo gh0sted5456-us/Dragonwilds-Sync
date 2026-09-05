@@ -29,22 +29,29 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         temp = Path(td)
 
-        # Guided player setup accepts the real retail two-level RSDragonwilds layout.
+        # Guided player setup uses the exact executable plus the Saved root.
         client = _client_fixture(temp / "client")
-        checked = gs.validate_client_path(client)
+        client_exe = client / "RSDragonwilds.exe"
+        client_saved = temp / "client-saves" / "Saved"
+        (client_saved / "SaveGames").mkdir(parents=True)
+        (client_saved / "SaveCharacters").mkdir(parents=True)
+        checked = gs.validate_client_path(client_exe, client_saved)
         assert checked["ok"] is True, checked
         paks_mods = checked["layout"]["paks_mods_dir"].replace("\\", "/").casefold()
         assert paks_mods.endswith("content/paks/~mods"), checked["layout"]["paks_mods_dir"]
+        assert gs.validate_client_path(client, client_saved)["ok"] is False
 
-        # Guided server setup accepts an existing authoritative RSDragonwilds layout
-        # and also a writable parent for a brand-new SteamCMD Full Setup.
+        # Existing server runtime authority is exact executable + Saved root.
+        # A writable parent remains valid only as Full Setup installer input.
         server_outer = temp / "server" / "RuneScape Dragonwilds Dedicated Server"
         server_game = server_outer / "RSDragonwilds"
         (server_game / "Binaries" / "Win64").mkdir(parents=True)
         (server_game / "Content" / "Paks").mkdir(parents=True)
-        (server_game / "Saved" / "Config" / "WindowsServer").mkdir(parents=True)
-        (server_outer / "RSDragonwilds.exe").write_bytes(b"exe")
-        server_check = gs.validate_server_path(server_outer, allow_new=True)
+        server_exe = server_outer / "RSDragonwilds.exe"
+        server_exe.write_bytes(b"exe")
+        server_saved = temp / "server-saves" / "Saved"
+        (server_saved / "SaveGames").mkdir(parents=True)
+        server_check = gs.validate_server_path(server_exe, server_saved, allow_new=False)
         assert server_check["ok"] is True and server_check["mode"] == "existing", server_check
         new_parent = temp / "fresh-server-location"
         new_parent.mkdir()

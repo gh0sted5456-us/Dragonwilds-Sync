@@ -66,7 +66,7 @@ def main():
     assert "session-only" in nexus.lower() or "session_only" in nexus
     assert "nexusConnectSSO" in preload and "nexusDownloadStage" in preload
     assert "Link to Nexus Mod…" in renderer
-    assert "Check Nexus Updates" in renderer and "Update All" in renderer and "Rollback" in renderer
+    assert "Check for Updates" in renderer and "Update All" in renderer and "Rollback" in renderer
     assert "archive_sha256" in renderer and "rollback_archive" in renderer
 
     # Rollback ZIP snapshots preserve both directory and package-file shapes.

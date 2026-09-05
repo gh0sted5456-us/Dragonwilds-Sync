@@ -12,6 +12,7 @@ from pathlib import Path
 from integrations import normalize_mod_source
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS, preview_identity_consolidation, consolidate_identity_files
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, read_json, write_json
+from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
 
 
 REPOSITORY_ROOT = APP_DATA_DIR / "mod_repository"
@@ -63,17 +64,57 @@ def _mods_root(kind: str, profile_id: str) -> Path:
     return root / ("snapshot/mods" if kind == "local" else "mods")
 
 
+def mods_root_for_profile(kind: str, profile_id: str) -> Path:
+    """Public seam for callers (RPC layer) that need the authoritative profile
+    mods root without reaching into this module's private layout helpers.
+
+    This is the one place the local ``snapshot/mods`` vs dedicated ``mods``
+    layout distinction is decided; callers (including the renderer, via the
+    RPC that wraps this) must never re-derive it from AppData/server-root
+    string concatenation.
+    """
+    return _mods_root(kind, profile_id)
+
+
+def _resolve_existing_profile_kind(kind: str, profile_id: str) -> str:
+    """Resolve a profile ID to its actual storage lane without creating ghosts."""
+    requested = str(kind or "").strip().casefold()
+    if requested not in {"local", "dedicated"}:
+        raise ValueError("Profile kind must be local or dedicated")
+    other = "dedicated" if requested == "local" else "local"
+    for candidate in (requested, other):
+        profile_dir = _profile_dir(candidate, profile_id)
+        if (profile_dir / "profile.json").is_file():
+            return candidate
+    raise FileNotFoundError(f"World profile not found: {profile_id}")
+
+
+def describe_profile_mods_root(kind: str, profile_id: str) -> dict:
+    """Authoritative, backend-resolved profile mod folder description.
+
+    Ensures the canonical UE4SS/RuneSchema/PAKs lanes exist (migrating any
+    legacy layout in the process) and returns their paths so a caller such as
+    the renderer's "Open Mod Folder" action never has to guess a path from
+    AppData or server-root string concatenation.
+    """
+    from profile_mod_layout import describe_profile_mod_roots
+    resolved_kind = _resolve_existing_profile_kind(kind, profile_id)
+    root = mods_root_for_profile(resolved_kind, profile_id)
+    return {
+        **describe_profile_mod_roots(root),
+        "profile_id": _safe_component(profile_id, "Profile ID"),
+        "resolved_kind": "server" if resolved_kind == "dedicated" else "local",
+    }
+
+
 def _group_root(kind: str, profile_id: str, group: str) -> Path:
-    mods = _mods_root(kind, profile_id)
+    roots = ensure_profile_mod_roots(_mods_root(kind, profile_id))
     if group == "ue4ss_mod":
-        return mods / "ue4ss_mods"
+        return roots["ue4ss"]
     if group == "runeschema_mod":
-        direct = mods / "runeschema_mods"
-        if kind == "dedicated" and direct.exists():
-            return direct
-        return mods / "ue4ss_mods" / "RuneSchema" / "mods"
+        return roots["runeschema"]
     if group == "pak_mod":
-        return mods / "pak_mods"
+        return roots["paks"]
     raise ValueError("Unsupported mod type")
 
 
@@ -163,7 +204,8 @@ def _profile_specs() -> list[tuple[str, str, Path]]:
 def _physical_keys(kind: str, profile_id: str) -> set[str]:
     keys: set[str] = set()
     ue4ss = _group_root(kind, profile_id, "ue4ss_mod")
-    excluded = {"runeschema", "mods.txt"} | {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS}
+    excluded = ({"runeschema", "mods.txt"} | LANE_NOTE_NAMES
+                | {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS})
     if ue4ss.exists():
         for child in ue4ss.iterdir():
             if child.name.casefold() not in excluded:
@@ -171,12 +213,14 @@ def _physical_keys(kind: str, profile_id: str) -> set[str]:
     runeschema = _group_root(kind, profile_id, "runeschema_mod")
     if runeschema.exists():
         for child in runeschema.iterdir():
-            if not child.name.startswith("."):
+            if not child.name.startswith(".") and child.name.casefold() not in LANE_NOTE_NAMES:
                 keys.add(f"runeschema_mod::{child.name}")
     paks = _group_root(kind, profile_id, "pak_mod")
     if paks.exists():
         seen = set()
         for child in paks.iterdir():
+            if child.name.casefold() in LANE_NOTE_NAMES:
+                continue
             clean = _clean_pak_name(child)
             if clean in seen: continue
             seen.add(clean)

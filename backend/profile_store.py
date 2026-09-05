@@ -20,6 +20,7 @@ from integrations import default_integrations, merge_integrations, normalize_soc
 from health_model import default_health_config, normalize_health_config, normalize_network_evidence
 from security_policy import default_access_policy, normalize_access_policy
 from world_classification import normalize_world_classification
+from runtime_architecture import DEFAULT_ARCHITECTURE
 from networking import effective_game_port
 from computer_profiles import default_computer_profile, normalize_computer_profile
 from network_config import DRAGONWILDS_SYNC_NETWORK_URL
@@ -256,10 +257,11 @@ def default_state() -> dict:
         "schema_version": SCHEMA_VERSION,
         "application": {
             "server_mode_enabled": False,
-            "theme": "dark-fantasy",
+            "theme": "dark",
             "language": "en",
             "game_dir": "",
             "game_exe": "",
+            "save_dir": "",
             "keep_core_persistent": False,
             "background_server_checks": True,
             "network_diagnostics_enabled": True,
@@ -400,9 +402,11 @@ def load_state() -> dict:
         write_json(V2_SETTINGS_PATH, state)
     state.setdefault("schema_version", SCHEMA_VERSION)
     application = state.setdefault("application", {})
-    application.setdefault("theme", "dark-fantasy")
+    application["theme"] = "light" if str(application.get("theme") or "").casefold() == "light" else "dark"
+    application["glass_theme"] = False
     language = str(application.get("language") or "en").casefold()
     application["language"] = language if language in {"en", "fr", "de", "es", "it"} else "en"
+    application.setdefault("save_dir", "")
     application.setdefault("background_server_checks", True)
     application.setdefault("network_diagnostics_enabled", True)
     application.setdefault("connection_diagnostic_reports", False)
@@ -536,8 +540,10 @@ def load_state() -> dict:
     application["integrations"] = merge_integrations(application.get("integrations"), {})
     application["server_access_policy"] = normalize_access_policy(application.get("server_access_policy"))
     application["client_network_profile"] = normalize_network_evidence(application.get("client_network_profile"))
+    application.pop("mod_install_paths", None)
     server_install = application.setdefault("server_install", {})
     server_install.setdefault("install_dir", "")
+    server_install.setdefault("save_dir", "")
     server_install.setdefault("server_exe", "")
     server_install.setdefault("steamcmd_dir", "")
     server_install.setdefault("owner_id", "")
@@ -830,6 +836,7 @@ def create_server_profile(name: str) -> str:
         "dedicated_config": {"server_name": world_name, "world_name": world_name, "admin_pass": "", "world_pass": "", "owner_id": "", "port": game_port, "base_port": 7777, "port_auto": True,
                              "networking": {"publication_mode": "manual", "external_port": game_port}},
         "sync_config": {"password": "", "server_key": secrets.token_hex(16), "share_access_key": secrets.token_hex(16), "family_join_rotated_at": "", "allow_shared_access": True, "port": 27050 + instance_number, "port_auto": True, "lan_broadcast": True, "dragonlink_connect_enabled": False,
+                        "runtime_architecture": dict(DEFAULT_ARCHITECTURE),
                         "file_mirror_index_url": "",
                         "tls_enabled": False, "allow_tls_password_fallback": False, "tls_cert_fingerprint": "",
                         "networking": {"publication_mode": "manual", "external_port": 27050 + instance_number}, "access_policy": default_access_policy()},

@@ -83,8 +83,11 @@ for (const [application, wanted] of Object.entries(expected)) {
 if (!implementation.includes('from editor_runtime_stabilization import install as _install_editor_runtime_stabilization')) {
   fail('Source service launch does not install the Character/Item editor fallback');
 }
-if (!implementation.includes('f"rsdw-{stamp}-{time.time_ns()}-{target.name}"')) {
-  fail('Character writeback backups are not unique per Apply');
+// Windows can expose coarser effective time_ns() resolution than its name
+// suggests. Every Apply must include an independent random nonce in addition
+// to the timestamp so two rapid writes cannot overwrite the same backup.
+if (!implementation.includes('f"rsdw-{stamp}-{time.time_ns()}-{secrets.token_hex(6)}-{target.name}"')) {
+  fail('Character writeback backups are not protected by an independent nonce per Apply');
 }
 for (const method of [
   'application.custom_items.list', 'application.custom_items.discover', 'application.custom_items.icons',

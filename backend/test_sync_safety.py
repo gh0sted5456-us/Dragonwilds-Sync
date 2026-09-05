@@ -47,8 +47,8 @@ def main():
         try:
             sync_engine.snapshot_client_world("A", selected)
             profile_b = sync_engine.client_world_dir("B")
-            (profile_b / "mods" / "ue4ss_mods" / "ModB").mkdir(parents=True)
-            (profile_b / "mods" / "ue4ss_mods" / "ModB" / "main.lua").write_text("B", encoding="utf-8")
+            (profile_b / "mods" / "UE4SS" / "ModB").mkdir(parents=True)
+            (profile_b / "mods" / "UE4SS" / "ModB" / "main.lua").write_text("B", encoding="utf-8")
             b_state = {"profile_id": "B", "files": {"config/world.ini": {
                 "kind": "file", "target_scope": "client_config", "target_path": "WorldSettings.ini",
             }}}
@@ -78,7 +78,7 @@ def main():
             assert (live_mods / "ModB").is_dir() and not (live_mods / "ModA").exists()
             adopted = sync_engine.activate_or_adopt_client_world_profile(None, "C", selected)
             assert adopted["adopted"] is True and sync_engine.client_world_has_snapshot("C")
-            assert (sync_engine.client_world_dir("C") / "mods" / "ue4ss_mods" / "ModB" / "main.lua").read_text(encoding="utf-8") == "B"
+            assert (sync_engine.client_world_dir("C") / "mods" / "UE4SS" / "ModB" / "main.lua").read_text(encoding="utf-8") == "B"
         finally:
             sync_engine.CLIENT_WORLDS_DIR = old_worlds
             client_layout.LOCAL_APPDATA = old_local_appdata

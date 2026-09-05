@@ -351,7 +351,6 @@ def _install_server_pipeline(server_engine_module) -> None:
             prior_root = self._profile_root(prior) or root
             prior_exe = server_engine_module.find_dedicated_server_exe(prior) or exe
             if prior_root and Path(prior_root).exists():
-                server_engine_module.snapshot_profile_mods(prior_id, Path(prior_root))
                 server_engine_module.snapshot_profile_server_config(prior_id, prior_root)
             if prior_exe and Path(prior_exe).is_file():
                 server_engine_module.snapshot_profile_savegame(prior_id, prior_exe)
@@ -369,11 +368,14 @@ def _install_server_pipeline(server_engine_module) -> None:
                 materialized["save_action"] = "deferred_no_server_exe"
         elif marker_id and marker_id != profile_id:
             mode = "unknown_owner_preserved"
-            server_engine_module.snapshot_profile_mods(profile_id, Path(root))
             server_engine_module.snapshot_profile_server_config(profile_id, root)
         elif not marker_id:
-            server_engine_module.snapshot_profile_mods(profile_id, Path(root))
             server_engine_module.snapshot_profile_server_config(profile_id, root)
+
+        # Replant even on same-profile activation: untracked live mods must
+        # not survive merely because the active marker already matches.
+        if mode != "profile_switch":
+            materialized["mods"] = server_engine_module.restore_profile_mods(profile_id, Path(root))
 
         runtime = original_runtime(root)
         if not runtime.get("ok"):

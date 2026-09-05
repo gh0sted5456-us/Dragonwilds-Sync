@@ -384,6 +384,13 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
     copied = 0
 
+    from mod_deployment_cleanup import vacate_mod_lanes
+    vacate_mod_lanes([
+        (live_roots["ue4ss"], SERVER_INFRASTRUCTURE_UE4SS),
+        (live_roots["runeschema"], RUNESCHEMA_CORE_NAMES),
+        (live_roots["paks"], set()),
+    ], APP_DATA_DIR / "Backups" / "DisplacedMods", protected=[game_root], sources=stored.values())
+
     # Runtime/core infrastructure survives every profile swap.
     _clear_children(live_roots["ue4ss"], exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
     copied += _copy_children(stored["ue4ss"], live_roots["ue4ss"],

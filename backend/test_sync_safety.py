@@ -64,6 +64,14 @@ def main():
             assert not (live_mods / "ModA").exists() and (live_mods / "ModB").is_dir()
             assert live_config.read_text(encoding="utf-8") == "world=B"
 
+            # Re-activating B must not keep an unrelated manually installed mod.
+            (live_mods / "UnexpectedMod").mkdir()
+            (live_mods / "UnexpectedMod" / "main.lua").write_text("stray")
+            same = sync_engine.activate_or_adopt_client_world_profile("B", "B", selected)
+            assert same["clean"] and same["already_active"]
+            assert not (live_mods / "UnexpectedMod").exists()
+            assert (live_mods / "ModB" / "main.lua").read_text() == "B"
+
             report_a = sync_engine.switch_client_world_profile("B", "A", selected)
             assert report_a["clean"] is True
             assert (live_mods / "RSDWTools" / "enabled.txt").is_file()

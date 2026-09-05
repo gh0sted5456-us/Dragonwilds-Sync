@@ -5027,8 +5027,8 @@ def handle(method: str, params: dict) -> object:
                 state.setdefault("player_profile", {}).get("character_worlds") or {},
                 state.setdefault("client", {}).get("world_character_selection") or {},
                 state.setdefault("player_profile", {}).get("character_profiles") or {})
+        switch_client_world_profile(live_world_id, world_id, install_dir)
         if live_world_id != world_id:
-            switch_client_world_profile(live_world_id, world_id, install_dir)
             state["client"]["live_world_id"] = world_id
             save_state(state)
 
@@ -5776,8 +5776,8 @@ def handle(method: str, params: dict) -> object:
             state.setdefault("player_profile", {}).get("character_worlds") or {},
             state.setdefault("client", {}).get("world_character_selection") or {},
             state.setdefault("player_profile", {}).get("character_profiles") or {})
+        switch_client_world_profile(live_world_id, client_world_id, install_dir)
         if live_world_id != client_world_id:
-            switch_client_world_profile(live_world_id, client_world_id, install_dir)
             state["client"]["live_world_id"] = client_world_id
 
         ensure_client_base_runtimes(game_dir)

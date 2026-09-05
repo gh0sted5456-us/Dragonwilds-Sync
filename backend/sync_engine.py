@@ -399,7 +399,8 @@ def activate_or_adopt_client_world_profile(outgoing_world_id: str | None, incomi
     if not incoming:
         raise ValueError("Incoming World profile is required")
     if outgoing == incoming:
-        return {"profile_id": incoming, "clean": True, "adopted": False, "already_active": True}
+        report = switch_client_world_profile(outgoing, incoming, selected_root)
+        return {**report, "adopted": False, "already_active": True}
     if not outgoing and not client_world_has_snapshot(incoming):
         snapshot_client_world(incoming, selected_root)
         report = audit_client_world_profile(incoming, selected_root)
@@ -454,6 +455,12 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         (layout.win64_dir / "ue4ss" / "imgui.ini").resolve(),
     }
     stored = client_world_dir(world_id)
+    from mod_deployment_cleanup import vacate_mod_lanes
+    vacate_mod_lanes([
+        (profile_live["ue4ss_mods"], LAUNCHER_LOCAL_UE4SS_MODS),
+        (profile_live["runeschema_mods"], RUNESCHEMA_CORE_NAMES),
+        (profile_live["pak_mods"], set()),
+    ], APP_DATA_DIR / "Backups" / "DisplacedMods", protected=[game_root], sources=[stored])
     outgoing = load_local_state(game_root)
     for relative, info in outgoing.get("files", {}).items():
         if info.get("kind", "file") == "file":

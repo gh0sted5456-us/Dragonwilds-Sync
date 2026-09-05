@@ -5132,6 +5132,9 @@ def handle(method: str, params: dict) -> object:
             _set_world_sync_job(sync_job_id, status="running", phase="ready", message="Profile verified and ready to play", percent=99,
                                 changed_files=result.get("downloaded") or 0, unchanged_files=result.get("up_to_date") or 0,
                                 downloaded_bytes=result.get("downloaded_bytes") or 0)
+            # Completion must not wait on server status, runtime scans, or other
+            # dashboard work performed by public_state. The UI merges this World.
+            return {"result": result, "world": sanitize_world_for_renderer(world)}
         return {"result": result, "state": public_state(state)}
 
 

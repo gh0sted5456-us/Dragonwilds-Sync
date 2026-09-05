@@ -3251,7 +3251,15 @@
     state.operation={title:action==='play'?'Synchronizing & launching World':'Synchronizing World',detail:'Connecting to the World host…',phase:'connecting',percent:0,diagnostics,position:{x:0,y:0}};render();
     try{
       const started=await api.invoke('world.sync.job.start',{id:world.id,action,diagnostics,force_complete:!!forceComplete});const jobId=started.job_id;if(!jobId)throw new Error('World Sync did not return a job identifier.');
-      while(true){await new Promise(resolve=>setTimeout(resolve,250));const job=await api.invoke('world.sync.job.status',{job_id:jobId});updateOperationProgress(job);if(job.status==='failed'){if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'warning');throw new Error(job.error||job.message||'World Sync failed.');}if(job.status==='complete'){if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'success');return job.response;}}
+      while(true){await new Promise(resolve=>setTimeout(resolve,250));const job=await api.invoke('world.sync.job.status',{job_id:jobId});updateOperationProgress(job);if(job.status==='failed'){if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'warning');throw new Error(job.error||job.message||'World Sync failed.');}if(job.status==='complete'){
+        if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'success');
+        const response=job.response;
+        if(response?.world&&!response.state){
+          const updated=response.world;
+          response.state={...state.data,client:{...state.data.client,worlds:(state.data.client?.worlds||[]).map((item)=>String(item.id)===String(updated.id)?updated:item)}};
+        }
+        return response;
+      }}
     }finally{state.operation=null;render();}
   }
 

@@ -86,7 +86,7 @@ def install_phase6_background_completion() -> dict:
         # Current retained world.sync always returns state. Keep a defensive
         # fallback for older compatible providers, but do not create a second
         # projection on the normal path.
-        if "state" not in response:
+        if "state" not in response and "world" not in response:
             load_state = getattr(legacy, "load_state", None)
             public_state = getattr(legacy, "public_state", None)
             if callable(load_state) and callable(public_state):

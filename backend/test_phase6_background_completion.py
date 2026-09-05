@@ -141,3 +141,22 @@ def test_background_world_sync_records_interruption_before_reraising():
     finally:
         _restore_module("dragonwilds_service_legacy", old_legacy)
         _restore_module("phase6_integration", old_phase6)
+def test_world_receipt_does_not_project_dashboard():
+    old_legacy = sys.modules.get("dragonwilds_service_legacy")
+    old_phase6 = sys.modules.get("phase6_integration")
+    def forbidden(*args):
+        raise AssertionError("Dashboard projection blocks verified completion")
+    response = {"result": {}, "world": {"id": "remote-fast"}}
+    legacy = SimpleNamespace(_WORLD_SYNC_DISPATCH=lambda *args: None, load_state=forbidden, public_state=forbidden)
+    phase6 = SimpleNamespace(_ORIGINAL_LEGACY_HANDLE=lambda *args: response,
+                            _begin_sync=lambda *args: None, _complete_sync=lambda *args: {}, _fail_sync=lambda *args: None)
+    try:
+        sys.modules["dragonwilds_service_legacy"] = legacy
+        sys.modules["phase6_integration"] = phase6
+        background.install_phase6_background_completion()
+        actual = legacy._WORLD_SYNC_DISPATCH("world.sync", {"id": "remote-fast", "_sync_job_id": "fast"})
+        assert actual["world"]["id"] == "remote-fast"
+        assert actual["phase6"]["background_completion"] is True
+    finally:
+        _restore_module("dragonwilds_service_legacy", old_legacy)
+        _restore_module("phase6_integration", old_phase6)

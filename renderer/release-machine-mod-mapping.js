@@ -50,14 +50,14 @@
       const value = mapped || text(row?.[lane]) || defaultValue;
       return `<label class="machine-mod-map-row" data-machine-mod-lane="${lane}">
         <span><strong>${esc(title)}</strong><small>${esc(help)}</small></span>
-        <div class="machine-mod-map-input"><input id="machine-map-${role}-${lane}" value="${esc(value)}" data-default="${esc(defaultValue)}" data-mapped="${esc(mapped)}" /><button type="button" class="secondary" data-machine-map-browse="${role}:${lane}">Browse</button></div>
+        <div class="machine-mod-map-input"><input class="field" id="machine-map-${role}-${lane}" value="${esc(value)}" data-default="${esc(defaultValue)}" data-mapped="${esc(mapped)}" spellcheck="false" /><button type="button" class="btn ghost" data-machine-map-browse="${role}:${lane}">Browse</button></div>
       </label>`;
     }).join('');
-    const runtimePaths = ready ? `<div class="machine-runtime-paths"><strong>Resolved loader layout</strong><small>Game root: ${esc(row.game_root || '')}</small><small>Bootstrap: ${esc(row.ue4ss_bootstrap || '')}</small><small>UE4SS root: ${esc(row.ue4ss_root || '')}</small>${role === 'server' ? `<small>Dedicated loader: ${esc(row.server_loader || '')}</small>` : ''}</div>` : '';
+    const runtimePaths = ready ? `<details class="machine-runtime-paths"><summary>View detected loader paths</summary><small>Game root: ${esc(row.game_root || '')}</small><small>Bootstrap: ${esc(row.ue4ss_bootstrap || '')}</small><small>UE4SS root: ${esc(row.ue4ss_root || '')}</small>${role === 'server' ? `<small>Dedicated loader: ${esc(row.server_loader || '')}</small>` : ''}</details>` : '';
     return `<section class="machine-mod-map-role" data-machine-map-role="${role}">
       <div class="machine-mod-map-heading"><div><strong>${label} mod destinations</strong><small>${ready ? `Installation: ${esc(row.game_root || row.install_root || '')}` : esc(row?.error || 'Configure the executable and Saved directory first.')}</small></div><span class="badge ${ready ? 'ok' : 'warn'}">${ready ? 'MAPPED' : 'SETUP REQUIRED'}</span></div>
       ${runtimePaths}${fields}
-      <div class="machine-mod-map-actions"><button type="button" class="secondary" data-machine-map-defaults="${role}">Use detected defaults</button><button type="button" class="primary" data-machine-map-save="${role}">Save mapped paths</button></div>
+      <div class="machine-mod-map-actions"><button type="button" class="btn ghost" data-machine-map-defaults="${role}">Use detected defaults</button><button type="button" class="btn primary" data-machine-map-save="${role}">Save mod folders</button></div>
       <p class="hint" data-machine-map-note="${role}">${ready ? 'These are deployment targets only. The selected World profile Mods folder remains the content source of truth.' : 'Link the executable and Saved directory above first.'}</p>
     </section>`;
   }
@@ -81,13 +81,21 @@
       .machine-mod-map-shell{margin-top:18px;padding-top:16px;border-top:1px solid var(--border,#39404b)}
       .machine-mod-map-shell>header{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;margin-bottom:12px}
       .machine-mod-map-shell>header p{margin:4px 0 0;max-width:760px;opacity:.78}
-      .machine-mod-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:14px}
+      .machine-mod-map-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:14px}
       .machine-mod-map-role{border:1px solid var(--border,#39404b);border-radius:12px;padding:14px;background:color-mix(in srgb,var(--surface,#181b21) 94%,transparent)}
       .machine-mod-map-heading{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:12px}.machine-mod-map-heading small{display:block;margin-top:3px;opacity:.72;word-break:break-all}
       .machine-mod-map-row{display:block;margin:10px 0}.machine-mod-map-row>span{display:block;margin-bottom:5px}.machine-mod-map-row small{display:block;opacity:.68;margin-top:2px}
-      .machine-runtime-paths{display:grid;gap:4px;margin:10px 0 14px;padding:10px;border-radius:8px;background:var(--panel-2,#111516)}.machine-runtime-paths small{word-break:break-all;opacity:.76}
+      .machine-runtime-paths{margin:12px 0 18px;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2,var(--surface))}.machine-runtime-paths summary{cursor:pointer;color:var(--muted);font-weight:600}.machine-runtime-paths small{display:block;margin-top:8px;overflow-wrap:anywhere;color:var(--muted)}
       .machine-mod-map-input{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}.machine-mod-map-input input{width:100%;min-width:0}
       .machine-mod-map-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.machine-mod-map-role .hint{margin:9px 0 0;font-size:.84em;opacity:.72}
+      .machine-mod-map-row{margin:18px 0}.machine-mod-map-row small{color:var(--muted);opacity:1;line-height:1.5}
+      .machine-mod-map-input{grid-template-columns:minmax(0,1fr) 96px;align-items:stretch}
+      .machine-mod-map-input .field{box-sizing:border-box;min-height:40px;padding:10px 12px;font-size:13px}
+      .machine-mod-map-actions{padding-top:16px;border-top:1px solid var(--border);flex-wrap:wrap}
+      .machine-mod-map-actions .btn{min-width:160px}
+      .machine-mod-map-role .hint[data-tone=success]{color:var(--text);opacity:1}
+      .machine-mod-map-role .hint[data-tone=error]{color:#ef7777;opacity:1}
+      @media(max-width:540px){.machine-mod-map-actions .btn{flex:1 1 100%;min-width:0}.machine-mod-map-heading{flex-wrap:wrap}}
       .machine-custom-paths{margin-top:14px;border:1px solid var(--border,#39404b);border-radius:12px;padding:14px}.machine-custom-path-row{display:grid;grid-template-columns:110px minmax(150px,.7fr) minmax(240px,1.5fr) auto auto;gap:8px;margin-top:8px}.machine-custom-path-row input,.machine-custom-path-row select{min-width:0;width:100%}@media(max-width:900px){.machine-custom-path-row{grid-template-columns:1fr auto}.machine-custom-path-row input[data-machine-custom-path]{grid-column:1/-1}}
     `;
     document.head.appendChild(style);

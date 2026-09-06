@@ -112,6 +112,24 @@ async function recordAcceptedSyncStart(env: any, payload: Record<string, any>): 
 
 export default {
   async fetch(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
+    try {
+      return await routeRequest(request, env, ctx);
+    } catch {
+      // Do not expose SQL, secrets, request bodies or invite tokens in errors.
+      console.error(JSON.stringify({ event: 'directory_request_failed', retry_after: 300 }));
+      return new Response(JSON.stringify({ error: 'directory_temporarily_unavailable', retry_after: 300 }), {
+        status: 503,
+        headers: { 'content-type': 'application/json', 'cache-control': 'no-store',
+          'retry-after': '300', 'access-control-allow-origin': '*' },
+      });
+    }
+  },
+  async scheduled(controller: ScheduledController, env: any, ctx: ExecutionContext): Promise<void> {
+    if (typeof core.scheduled === 'function') await core.scheduled(controller, env, ctx);
+  },
+};
+
+async function routeRequest(request: Request, env: any, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
     if (request.method === 'POST' && url.pathname === '/api/v1/heartbeat') {
@@ -129,8 +147,4 @@ export default {
     }
 
     return core.fetch(request, env, ctx);
-  },
-  async scheduled(controller: ScheduledController, env: any, ctx: ExecutionContext): Promise<void> {
-    if (typeof core.scheduled === 'function') await core.scheduled(controller, env, ctx);
-  },
-};
+}

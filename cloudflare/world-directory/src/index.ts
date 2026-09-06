@@ -280,13 +280,29 @@ function registrationRetentionSeconds(env: Env): number {
   return clampInt(env.REGISTRATION_RETENTION_DAYS, 30, 1, 365) * 86400;
 }
 
-async function purgeStaleRegistrations(env: Env, now = Math.floor(Date.now() / 1000)): Promise<void> {
+async function purgeStaleRegistrations(env: Env, now = Math.floor(Date.now() / 1000), worldId?: string): Promise<void> {
   const cutoff = now - registrationRetentionSeconds(env);
+  if (worldId) {
+    const world = await env.DB.prepare("SELECT last_seen FROM worlds WHERE world_id = ?")
+      .bind(worldId).first<{ last_seen: number }>();
+    if (world && Number(world.last_seen) >= cutoff) return;
+    // Request-time expiry must never scan every World's history. Preserve the
+    // ownership re-registration boundary using indexed, World-scoped deletes.
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM world_invites WHERE world_id = ? AND (expires_at <= ? OR world_id IN (SELECT world_id FROM worlds WHERE world_id = ? AND last_seen < ?))").bind(worldId, now, worldId, cutoff),
+      env.DB.prepare("DELETE FROM heartbeat_history WHERE world_id = ? AND world_id IN (SELECT world_id FROM worlds WHERE world_id = ? AND last_seen < ?)").bind(worldId, worldId, cutoff),
+      env.DB.prepare("DELETE FROM worlds WHERE world_id = ? AND last_seen < ?").bind(worldId, cutoff),
+      env.DB.prepare("DELETE FROM world_publishers WHERE world_id = ? AND last_seen < ?").bind(worldId, cutoff),
+    ]);
+    return;
+  }
   await env.DB.batch([
     env.DB.prepare("DELETE FROM world_invites WHERE expires_at <= ? OR world_id IN (SELECT world_id FROM worlds WHERE last_seen < ?)").bind(now, cutoff),
     env.DB.prepare("DELETE FROM heartbeat_history WHERE world_id IN (SELECT world_id FROM worlds WHERE last_seen < ?)").bind(cutoff),
     env.DB.prepare("DELETE FROM worlds WHERE last_seen < ?").bind(cutoff),
     env.DB.prepare("DELETE FROM world_publishers WHERE last_seen < ?").bind(cutoff),
+    env.DB.prepare("DELETE FROM heartbeat_history WHERE seen_at < ?")
+      .bind(now - clampInt(env.HISTORY_RETENTION_DAYS, 7, 1, 90) * 86400),
   ]);
 }
 
@@ -439,7 +455,7 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
 
   // Expired ownership must be removed before authentication so a World that has
   // been offline for the full retention window can register cleanly again.
-  await purgeStaleRegistrations(env, nowSeconds);
+  await purgeStaleRegistrations(env, nowSeconds, payload.world_id);
   const publisher = await authenticatePublisher(request, env, timestamp, rawBody, payload.world_id, true);
   if (!publisher.ok) return publisher.response;
 
@@ -510,10 +526,6 @@ async function handleHeartbeat(request: Request, env: Env): Promise<Response> {
     `).bind(payload.world_id, now, status, playersCurrent, playersMax, payload.version || ""),
   ]);
 
-  const retentionDays = clampInt(env.HISTORY_RETENTION_DAYS, 7, 1, 90);
-  const cutoff = now - retentionDays * 86400;
-  await env.DB.prepare("DELETE FROM heartbeat_history WHERE seen_at < ?").bind(cutoff).run();
-
   return json({
     ok: true,
     world_id: payload.world_id,
@@ -543,7 +555,7 @@ async function handleDeregister(request: Request, env: Env, pathWorldId: string)
   const bodyWorldId = cleanText(parsed.world_id, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
   if (!worldId || bodyWorldId !== worldId) return json({ error: "world_id_mismatch" }, 400);
 
-  await purgeStaleRegistrations(env, now);
+  await purgeStaleRegistrations(env, now, worldId);
   const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId, false);
   if (!publisher.ok) return publisher.response;
   await env.DB.batch([
@@ -769,7 +781,7 @@ async function createWorldInvite(request: Request, env: Env): Promise<Response> 
   catch { return json({ error: "invalid_json" }, 400, publicCorsHeaders()); }
   const worldId = cleanText(input.world_id, 80).toLowerCase().replace(/[^a-z0-9._-]/g, "-");
   if (!worldId) return json({ error: "world_id_required" }, 400, publicCorsHeaders());
-  await purgeStaleRegistrations(env, now);
+  await purgeStaleRegistrations(env, now, worldId);
   const publisher = await authenticatePublisher(request, env, timestamp, rawBody, worldId, false);
   if (!publisher.ok) return publisher.response;
   const row = await env.DB.prepare("SELECT * FROM worlds WHERE world_id = ? AND is_listed = 1").bind(worldId).first<Record<string, unknown>>();

@@ -165,3 +165,21 @@ HISTORY_RETENTION_DAYS=7
 The daily `17 4 * * *` UTC cron deletes expired invites and stale registration/history rows. It does not scan or ingest third-party server sources.
 
 The official Worker URL remains the canonical Dragonwilds Sync network endpoint used by the desktop application for signed heartbeat publication and Sync-world discovery.
+# September 2026 retention quota repair
+
+Production metrics showed 707 history-cleanup executions reading 4.56 million
+rows in 24 hours while deleting none. History retention now runs only in the
+existing daily scheduled job (`17 4 * * *`, UTC), backed by migration
+`0008_history_retention_index.sql`. Ordinary heartbeats first perform a
+primary-key World lookup; fresh Worlds do not run any cleanup deletes. Expired
+publisher re-registration remains scoped to that World, preserving ownership
+rules without global request-time scans.
+
+Apply the additive index migration before deploying. It does not delete data;
+the scheduled job retains the existing seven-day history/thirty-day registration
+policies. Database failures return a generic HTTP 503 with `Retry-After: 300`,
+without returning internal SQL or credentials. Clients should honor that delay.
+
+Run `npm test` for the SQLite-backed heartbeat/cron/index/error regression and
+`npx tsc --noEmit` for types. GitHub deployment runs both. Existing exhausted daily
+quotas may still require the next quota reset; deployment does not reset usage.

@@ -1,7 +1,7 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-09-04T00:00:00Z",
-  "name": "V3",
+  "updated_at": "2026-09-05T00:00:00Z",
+  "name": "V4",
   "consolidated_from": [
     "3.1.0",
     "3.0.6",
@@ -47,6 +47,20 @@
     "2.0.0"
   ],
   "releases": [
+    {
+      "version": "4.0.0",
+      "title": "V4",
+      "date": "2026-09-05",
+      "status": "stable",
+      "summary": "Promotes the verified experimental profile, synchronization, runtime safety, and launcher lifecycle improvements to the main release.",
+      "highlights": [
+        "Server-authoritative mod inventories and compatible loader synchronization, with editable Player and Server deployment paths.",
+        "Runtime updates require approval; RSDW asset downloads and archive extraction are hardened.",
+        "Animated Welcome and Updates landing page, explicit Enter, visible update status and retry, and safe executable reopen.",
+        "On-demand editor loading, reduced startup work, bounded shutdown, and corrected Windows worker ownership checks.",
+        "Verified with 149 backend test files, renderer contracts, Python compilation, and real Electron landing and reopen tests."
+      ]
+    },
     {
       "version": "3.5.4",
       "title": "V3",

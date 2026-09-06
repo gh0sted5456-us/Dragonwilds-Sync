@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '3.5.4',
-  "name": "V3.5.4",
+  version: '4.0.0',
+  "name": "V4.0.0",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,16 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "4.0.0",
+      "title": "V4 · Profiles, Sync & Launcher Reliability",
+      "items": [
+        "Server-authoritative mod inventories and compatible runtime synchronization with editable Player and Server mod destinations.",
+        "Runtime updates require approval, and RSDW asset downloads and archive extraction are hardened.",
+        "The animated update landing page remains until Enter and returns on an idle full-application reopen.",
+        "Editor loading is on demand; startup, shutdown, and Windows feature-worker ownership are more reliable."
+      ]
+    },
     {
       "version": "3.5.4",
       "title": "V3.5.4 Connection & UX Repair",

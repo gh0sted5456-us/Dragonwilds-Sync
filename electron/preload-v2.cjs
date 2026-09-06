@@ -339,6 +339,7 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   onManagedDialogEvent: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-event',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-event',fn); },
   onManagedDialogUpdate: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-update',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-update',fn); },
   onManagedDialogClosed: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:managed-dialog-closed',fn); return ()=>ipcRenderer.removeListener('dragonwilds:managed-dialog-closed',fn); },
+  onLandingRequest: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=()=>callback(); ipcRenderer.on('dragonwilds:show-landing',fn); return ()=>ipcRenderer.removeListener('dragonwilds:show-landing',fn); },
   onJoinRequest: (callback) => { if (typeof callback !== 'function') return () => {}; const fn=(_event,payload)=>callback(payload||{}); ipcRenderer.on('dragonwilds:join-request',fn); return ()=>ipcRenderer.removeListener('dragonwilds:join-request',fn); },
   nexusStatus: () => ipcRenderer.invoke('dragonwilds:nexus-status'),
   nexusConnectSSO: () => ipcRenderer.invoke('dragonwilds:nexus-connect-sso'),

@@ -733,11 +733,7 @@ body[data-theme="high-contrast"] .runtime-stack, body[data-theme="high-contrast"
   content:""; position:absolute; inset:0;
   background:radial-gradient(circle at 50% 46%, rgba(8,10,11,.18), rgba(8,10,11,.78) 66%, rgba(5,7,8,.96));
 }
-.flat-loading,.dark-pad-entry{background:#000}
-.flat-loading::before,.flat-loading::after{display:none}
-.flat-loading .fantasy-loading-card,.dark-pad-entry .fantasy-entry-card{border:0;background:transparent;box-shadow:none;backdrop-filter:none;-webkit-backdrop-filter:none}
-.dark-pad-entry .fantasy-entry-card{max-width:520px}
-.dark-pad-entry .entry-button{margin-top:24px}
+.landing-link { -webkit-app-region:no-drag; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
 .fantasy-loading-card, .fantasy-entry-card {
   position:relative; z-index:2; width:min(620px,calc(100vw - 48px)); max-height:calc(100vh - 90px);
   overflow:auto; text-align:center; padding:34px 38px; border:1px solid var(--border-strong);

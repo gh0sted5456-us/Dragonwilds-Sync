@@ -12,7 +12,7 @@ const { resolveGuiShortcutTarget, resolveHeadlessShortcutTarget } = require('./s
 // focus; Chromium's background throttling otherwise makes initial model-layer
 // hydration look stalled on Linux and lower-power Windows systems.
 app.on('web-contents-created', (_event, contents) => {
-  try { contents.setBackgroundThrottling(false); } catch (_) {}
+  try { if(contents.getType()==='webview')contents.setBackgroundThrottling(false); } catch (_) {}
 });
 
 

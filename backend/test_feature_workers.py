@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import os
 import struct
+import sys
 import tempfile
+from types import SimpleNamespace
+from unittest.mock import patch
 from pathlib import Path
 
 
@@ -29,7 +32,22 @@ def main() -> None:
         import feature_worker_protocol as feature_protocol
         from feature_worker_protocol import FEATURE_WORKER_DOMAINS, read_state
         from feature_worker_supervisor import FeatureWorkerSupervisor
+        from feature_worker import FeatureWorker
         from profile_store import SERVER_PROFILES_DIR, create_server_profile
+
+        probe = FeatureWorker.__new__(FeatureWorker)
+        probe.parent_pid = 42
+        live = SimpleNamespace(pid=42, is_running=lambda: True)
+        redirector = SimpleNamespace(pid=43, is_running=lambda: True)
+        dead = SimpleNamespace(pid=42, is_running=lambda: False)
+        for ancestors, expected_alive in [([live], True), ([redirector, live], True),
+                                          ([redirector], False), ([dead], False), ([], False)]:
+            with patch('psutil.Process', return_value=SimpleNamespace(parents=lambda: ancestors)):
+                assert probe._parent_is_alive() is expected_alive
+        with patch.dict(sys.modules, {'psutil': None}), patch('feature_worker.os.name', 'nt'), \
+             patch('feature_worker.os.getppid', return_value=42), patch('feature_worker.os.kill') as kill:
+            assert probe._parent_is_alive() is True
+            kill.assert_not_called()
 
         expected = {
             "world-management", "save-studio", "mod-library", "directory-map",

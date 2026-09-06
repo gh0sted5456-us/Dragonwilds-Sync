@@ -95,11 +95,12 @@ if (phase3.includes('setInterval(')) {
 requireText(monaco, "script.src = 'vendor/monaco/vs/loader.js'", 'bundled Monaco loader must be prewarmed');
 requireText(monaco, "amdRequire(['vs/editor/editor.main']", 'Monaco editor core must preload before first editor intent');
 requireText(monaco, 'window.__DWSYNC_MONACO_STATUS__', 'Monaco readiness/failure must be observable');
-requireText(monaco, 'warm().catch(() => {})', 'Monaco must begin warming during the backend bootstrap window');
+if (monaco.includes('warm().catch(() => {})')) throw new Error('Landing must not eagerly load Monaco.');
+requireText(applicationRenderer, 'window.__DWSYNC_MONACO__?.warm()', 'Editors must use the shared on-demand loader');
 requireText(applicationRenderer, 'monaco.editor.create', 'the application must still mount the real Monaco editor');
 requireText(applicationRenderer, "state.data = await api.invoke('bootstrap')", 'application renderer must retain an asynchronous backend bootstrap window');
 requireText(appV2, 'eager_only:true', 'splash must warm only the high-use feature-worker tier');
-requireText(appV2, 'const workspaceWarmPromise=prepareLauncherWorkspaces();', 'first paint must not await workspace cache warming');
+requireText(appV2, 'void prepareLauncherWorkspaces().catch(()=>{});', 'Enter starts workspace warming without blocking navigation');
 if (appV2.includes('syncHeartbeatTimer')) throw new Error('Phase 3 contract failed: renderer must not duplicate Electron-owned directory heartbeats.');
 requireText(profileStore, '_STATE_CACHE', 'launcher state must have a process-local memory cache');
 requireText(profileStore, '_PROFILE_CACHE', 'World profiles must have a process-local memory cache');

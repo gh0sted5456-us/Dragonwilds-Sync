@@ -3,6 +3,7 @@
   const modalRoot = document.getElementById('modal-root');
   const toastRoot = document.getElementById('toast-root');
   const internalTaskbar = document.getElementById('internal-taskbar');
+  let rendererDisposed = false;
   let taskbarDisplayMode = (()=>{ try { return localStorage.getItem('dragonwilds-sync-taskbar-mode') === 'icons' ? 'icons' : 'tabs'; } catch (_) { return 'tabs'; } })();
   let desktopWindowSeq = 0;
   // Popup windows must remain above placards (Phase 4/5 use the 10020-10100
@@ -754,6 +755,8 @@
 
   function scheduleBackgroundRefresh(delay=1200) {
     clearTimeout(state.backgroundRefreshTimer);
+    state.backgroundRefreshTimer=null;
+    if(rendererDisposed || !state.entered)return;
     state.backgroundRefreshTimer=setTimeout(runBackgroundRefresh,Math.max(250,Number(delay)||1200));
   }
 
@@ -1900,19 +1903,33 @@
     modalRoot.querySelector('#guided-webhost-complete')?.addEventListener('click',async()=>{try{const enabled=!!modalRoot.querySelector('#guided-webhost-start')?.checked;const surface=modalRoot.querySelector('#guided-webhost-surface')?.value||'full';const publicationMode=modalRoot.querySelector('#guided-webhost-publication-mode')?.value||'manual';const next={...cfg,enabled,directory_enabled:true,port:Number(modalRoot.querySelector('#guided-webhost-port')?.value||27080),public_base_url:modalRoot.querySelector('#guided-webhost-url')?.value.trim()||'',publication_mode:publicationMode,upnp_enabled:publicationMode==='upnp',public_transport:publicationMode==='tunnel'?'cloudflare_quick':'direct',public_surface_mode:surface,remote_admin:{...remote}};state.data=await api.invoke('application.advanced.settings',{webhost_enabled:true});const response=await api.invoke('application.world_directory_host.settings',next);if(response.state)state.data=response.state;if(modalRoot.querySelector('#guided-webhost-firewall')?.checked&&enabled&&!['tunnel','none'].includes(publicationMode))await api.invoke('application.world_directory_host.firewall',{});closeModal();state.route='webhost';state.webhostTab=enabled?'live':'settings';render();toast('WebHost setup saved',enabled?(publicationMode==='tunnel'?'The local listener is online and the temporary HTTPS address is being created.':'The listener is online. Run external verification before sharing it.'):'The workspace is ready; the listener remains off.','success');}catch(error){toast('WebHost setup failed',error.message,'error');}});
   }
 
-  async function checkApplicationUpdate(manual = false) {
+  let applicationUpdateCheckPromise = null;
+  function checkApplicationUpdate(manual = false) {
+    if (applicationUpdateCheckPromise) return applicationUpdateCheckPromise;
+    applicationUpdateCheckPromise = performApplicationUpdateCheck(manual).finally(() => { applicationUpdateCheckPromise = null; });
+    return applicationUpdateCheckPromise;
+  }
+
+  async function performApplicationUpdateCheck(manual = false) {
     const cfg = state.data?.application?.application_updates || {};
     const repositoryUrl = 'https://github.com/gh0sted5456-us/Dragonwilds-Sync';
+    state.applicationUpdateChecking = true;
+    state.applicationUpdateError = '';
+    state.applicationUpdateNotModified = false;
+    render();
     try {
       let result = await window.dragonwilds.appUpdateCheck({ repositoryUrl, etag: cfg.etag || '' });
       if (result.notModified && (manual || (cfg.last_available_version && cfg.dismissed_version !== cfg.last_available_version))) {
         result = await window.dragonwilds.appUpdateCheck({ repositoryUrl, etag: '' });
       }
       if (result.notModified) {
+        state.applicationUpdateNotModified = true;
+        state.applicationUpdateChecked = true;
         if (manual) toast('Application is current', 'GitHub reports no release metadata changes.', 'success');
         return result;
       }
       state.applicationUpdate = result;
+      state.applicationUpdateChecked = true;
       const updatedCfg = { ...cfg, github_url: repositoryUrl, etag: result.etag || '', last_checked_at: new Date().toISOString(), last_available_version: result.latestVersion || '', last_error: '' };
       state.data = await api.invoke('application.update', { application_updates: updatedCfg });
       state.data = await api.invoke('application.update_status.record', {
@@ -1925,11 +1942,15 @@
       render();
       return result;
     } catch (error) {
+      state.applicationUpdateError = error.message || String(error);
       const updatedCfg = { ...cfg, last_checked_at: new Date().toISOString(), last_error: error.message };
       try { state.data = await api.invoke('application.update', { application_updates: updatedCfg }); } catch (_) {}
       try { state.data = await api.invoke('application.update_status.record', {installed_version:window.DWSYNC_RELEASE_META?.version||'',update_available:false,restart_required:false,status:'unable_to_check',checked_at:Date.now()/1000,action:'Retry from the desktop launcher',last_error:error.message}); } catch (_) {}
       if (manual) toast('Application update check failed', error.message, 'error');
       return null;
+    } finally {
+      state.applicationUpdateChecking = false;
+      render();
     }
   }
 
@@ -2119,6 +2140,7 @@
   }
 
   function scheduleAppyWarm(appy,{delay=100,timeout=1200}={}) {
+    if(rendererDisposed || !state.entered)return;
     const value=String(appy||'').trim();
     if(!value||appyWarmPromises.has(value)||appyWarmTimers.has(value))return;
     const pending={timer:null,idle:null};
@@ -2135,29 +2157,19 @@
     const tasks=[
       ['Core World workspace',()=>api.invoke('feature.worker.prepare',{owner:'launcher-splash',eager_only:true,applications:['shell','worlds']})],
       ['Selected profile cache',()=>window.dragonwilds.prewarm?.(selectedInventoryWarmRequests())],
-      ['Launcher integrations',()=>Promise.allSettled([
-        window.dragonwilds.adminStatus?.(),window.dragonwilds.appUpdateMode?.(),window.dragonwilds.appUpdateResult?.(),
-        window.dragonwilds.nexusStatus?.(),window.dragonwilds.listDetachedWindows?.(),
-      ]).then((results)=>{
-        if(results[0]?.status==='fulfilled'&&results[0].value)state.adminStatus=results[0].value;
-        if(results[1]?.status==='fulfilled')state.applicationUpdateMode=results[1].value;
-        if(results[2]?.status==='fulfilled')state.applicationUpdateResult=results[2].value;
-        if(results[3]?.status==='fulfilled')state.nexusStatus=results[3].value;
-        if(results[4]?.status==='fulfilled')state.detachedWindows=results[4].value||[];
-      })],
     ];
     let done=0;updateStartupProgress(done,tasks.length,'Starting launcher workspaces…');
-    const deadline=(task,label)=>Promise.race([
-      Promise.resolve().then(task),
-      new Promise((resolve)=>setTimeout(()=>resolve({deferred:true,label}),12000)),
-    ]);
+    const deadline=async(task,label)=>{
+      let timer;
+      try{return await Promise.race([Promise.resolve().then(task),new Promise((resolve)=>{timer=setTimeout(()=>resolve({deferred:true,label}),12000);})]);}
+      finally{clearTimeout(timer);}
+    };
     await Promise.allSettled(tasks.map(async([label,task])=>{try{return await deadline(task,label);}finally{done+=1;updateStartupProgress(done,tasks.length,`Prepared ${label}`);}}));
     updateStartupProgress(tasks.length,tasks.length,'Launcher workspaces ready');
     scheduleAppyWarm(lastAppy(),{delay:80,timeout:1800});
   }
 
   async function bootstrap() {
-    const startupSplashStartedAt = performance.now();
     installPersistentRouteDelegation();
     if (detachedMode) {
       // A detached window is a small, purpose-built pop-out (e.g. the Runtime
@@ -2215,24 +2227,17 @@
           } catch (error) { state.rsdwHydrationError = error.message || String(error); }
         }
       }
-      // Bootstrap already contains the durable profile/system cache. Paint the
-      // usable shell promptly, but allow the main startup animation to reach a
-      // visible frame before replacing it on fast machines.
-      if (!detachedMode) {
-        const remainingSplashMs = Math.max(0, 900 - (performance.now() - startupSplashStartedAt));
-        if (remainingSplashMs) await new Promise((resolve) => setTimeout(resolve, remainingSplashMs));
-      }
-      const workspaceWarmPromise=prepareLauncherWorkspaces();
+      // The animated landing page persists until Enter; no artificial delay or
+      // editor/feature-worker warm-up is needed to keep the splash visible.
       render();
-      void workspaceWarmPromise.then(()=>{if(!detachedMode)render();}).catch(()=>{});
       // Native shell status, account status, update checks, and toolkit feed
       // hydration are secondary. They must never hold the first usable frame.
-      if(detachedMode) Promise.allSettled([
+      const integrationPromise = Promise.allSettled([
         window.dragonwilds.adminStatus?.(),
         window.dragonwilds.appUpdateMode?.(),
         window.dragonwilds.appUpdateResult?.(),
         window.dragonwilds.nexusStatus?.(),
-        Promise.resolve([]),
+        detachedMode ? Promise.resolve([]) : window.dragonwilds.listDetachedWindows?.(),
       ]).then((results)=>{
         if(results[0]?.status==='fulfilled'&&results[0].value)state.adminStatus=results[0].value;
         if(results[1]?.status==='fulfilled')state.applicationUpdateMode=results[1].value;
@@ -2244,21 +2249,21 @@
       if (!detachedMode && window.dragonwilds?.listDetachedWindows) {
         window.dragonwilds.onDetachedWindowsChanged?.((items)=>{ state.detachedWindows=items||[]; syncInternalTaskbar(); });
       }
-      setTimeout(async()=>{
+      void integrationPromise.then(async()=>{
+        const updateCfg = state.data?.application?.application_updates || {};
+        if (!detachedMode && updateCfg.auto_check !== false) {
+          try { await checkApplicationUpdate(false); } catch (_) {}
+        }
         if (!detachedMode && state.applicationUpdateResult && state.data?.application?.rsdw_cache?.refresh_after_updates !== false) {
           try { const refreshed = await api.invoke('application.rsdw.refresh', { force: false }); if (refreshed?.state) setData(refreshed.state); } catch (_) {}
         }
-        const updateCfg = state.data?.application?.application_updates || {};
-        if (!detachedMode && updateCfg.auto_check !== false && String(updateCfg.github_url || '').trim()) {
-          try { await checkApplicationUpdate(false); } catch (_) {}
-        }
-      },250);
+      });
       if (detachedMode && state.route === 'mod-explorer') {
         const host=()=>document.querySelector('#mod-explorer-window');
         if(!detachedContext.modUnitKey){
           const target=host();if(target)target.innerHTML='<div class="empty-state"><strong>Mod Editor context was not received.</strong><span>Close this window and open the mod again from its profile. No file was changed.</span></div>';
         }else{
-          void workspaceWarmPromise.then(()=>openModExplorer(detachedContext.modScope||'singleplayer',detachedContext.modUnitKey)).catch((error)=>{const target=host();if(target)target.innerHTML=`<div class="empty-state"><strong>Mod Editor could not hydrate.</strong><span>${escapeHtml(error?.message||String(error))}</span></div>`;});
+          void openModExplorer(detachedContext.modScope||'singleplayer',detachedContext.modUnitKey).catch((error)=>{const target=host();if(target)target.innerHTML=`<div class="empty-state"><strong>Mod Editor could not hydrate.</strong><span>${escapeHtml(error?.message||String(error))}</span></div>`;});
         }
       }
       if (detachedMode && state.route === 'server-console') setTimeout(()=>openUnifiedLaunchConsole(activeServerWorld(),{inlineHost:document.querySelector('#server-console-window')}),60);
@@ -2311,7 +2316,7 @@
     const unread = notices.filter((item) => item && item.read !== true).length;
     const elevated = !!state.adminStatus?.elevated;
     return `<header class="titlebar">
-      <div class="titlebar-left"><button class="titlebar-collapse" id="toggle-nav-collapse" title="${collapsed ? t('expandNavigation') : t('collapseNavigation')}">☰</button>${state.navigationHistory.length ? `<button class="titlebar-back" id="global-back" title="${t('back')}">←</button>` : ''}<img class="titlebar-app-icon" src="assets/application-icon.webp" alt="" /><span class="titlebar-title">Dragonwilds Sync</span></div>
+      <div class="titlebar-left"><button class="titlebar-collapse" id="toggle-nav-collapse" title="${collapsed ? t('expandNavigation') : t('collapseNavigation')}">☰</button>${state.navigationHistory.length ? `<button class="titlebar-back" id="global-back" title="${t('back')}">←</button>` : ''}<img class="titlebar-app-icon" src="assets/application-icon.webp" alt="" /><button class="titlebar-title landing-link" id="open-landing" title="Welcome and application updates">Dragonwilds Sync</button></div>
       <div class="titlebar-spacer"></div>
       <span class="titlebar-privilege ${elevated?'elevated':'standard'}" title="${elevated?'Dragonwilds Sync is running with Windows Administrator rights.':'Dragonwilds Sync is running with standard Windows rights.'}">${elevated?'ADMINISTRATOR MODE':'STANDARD MODE'}</span>
       <label class="titlebar-language" title="Language / Langue / Sprache / Idioma / Lingua"><span aria-hidden="true">🌐</span><select id="application-language" aria-label="Language"><option value="en" ${languageCode()==='en'?'selected':''}>🇺🇸 English</option><option value="fr" ${languageCode()==='fr'?'selected':''}>🇫🇷 Français</option><option value="de" ${languageCode()==='de'?'selected':''}>🇩🇪 Deutsch</option><option value="es" ${languageCode()==='es'?'selected':''}>🇪🇸 Español</option><option value="it" ${languageCode()==='it'?'selected':''}>🇮🇹 Italiano</option></select></label>
@@ -5398,20 +5403,14 @@
   }
 
   function renderWelcome() {
-    const tips = [
-      'World profiles keep connection, mod, character, and troubleshooting state together.',
-      'Client Required mods are synchronized automatically; Server Retained mods stay private to the host.',
-      'Dragonwilds Sync checks exact World identity before trusting a server response.',
-      'Server Health separates measured evidence from operator-supplied and external reference data.',
-      'Profile → Characters opens the selected save across the RSDW editors and 3D Avatar preview while Sync keeps backups and World associations.'
-    ];
-    const tip = tips[Math.floor(Date.now() / 7000) % tips.length];
     const cfg = state.data?.application?.application_updates || {};
     const u = state.applicationUpdate;
+    const updateError = state.applicationUpdateError ?? cfg.last_error;
+    const status = state.applicationUpdateChecking ? 'Checking for application updates…' : updateError ? `Could not check for updates: ${updateError}` : u?.available ? `Update available: ${u.name || u.tag || u.latestVersion}` : state.applicationUpdateNotModified ? 'No release changes since the last check.' : state.applicationUpdateChecked ? 'Your application is up to date.' : cfg.auto_check === false ? 'Automatic update checks are off.' : 'Application update check pending…';
     const updateCard = u?.available && String(cfg.dismissed_version || '') !== String(u.latestVersion || '') ? `<div class="splash-notice update"><div><strong>Update available · ${escapeHtml(u.name || u.tag || u.latestVersion)}</strong><span>${escapeHtml((u.notes || 'A newer Dragonwilds Sync release is available.').split(/\r?\n/).filter(Boolean)[0]?.slice(0,220) || '')}</span></div><div class="header-actions"><button class="btn ghost compact-btn" id="splash-update-notes" ${state.applicationUpdateApplying?'disabled':''}>Changes</button><button class="btn ghost compact-btn" id="splash-update-later" ${state.applicationUpdateApplying?'disabled':''}>Later</button><button class="btn primary compact-btn" id="splash-update-now" ${state.applicationUpdateApplying?'disabled':''}>${state.applicationUpdateApplying?'Downloading…':'Download'}</button></div></div>` : '';
     const r = state.applicationUpdateResult;
     const changelogCard = r ? (r.failed ? `<div class="splash-notice failure"><div><strong>Automatic update needs attention</strong><span>${escapeHtml(r.message||'The previous executable was retained. Download the release manually or retry from Settings.')}</span></div><div class="header-actions"><button class="btn primary compact-btn" id="splash-changelog-dismiss">Dismiss</button></div></div>` : `<div class="splash-notice success"><div><strong>Updated to ${escapeHtml(r.name || `Dragonwilds Sync ${r.version || ''}`)}</strong><span>${escapeHtml((r.notes || 'Update completed successfully.').slice(0,320))}</span></div><div class="header-actions">${r.releaseUrl ? `<button class="btn ghost compact-btn" id="splash-changelog-open">Full Changelog</button>` : ''}<button class="btn primary compact-btn" id="splash-changelog-dismiss">Dismiss</button></div></div>`) : '';
-    return `${renderTitlebar()}<div class="fantasy-entry"><div class="fantasy-entry-card"><img src="assets/application-icon.webp" alt="Dragonwilds Sync" /><div class="eyebrow">${escapeHtml(window.DWSYNC_RELEASE_META?.name || 'V3.1')}</div><h1>Dragonwilds Sync</h1>${updateCard}${changelogCard}<button class="btn primary entry-button" id="enter-launcher">ENTER</button><small>Worlds · Mods${state.data?.application?.server_mode_enabled?' · Servers':''}</small></div></div>`;
+    return `${renderTitlebar()}<div class="fantasy-entry"><div class="fantasy-entry-card"><img src="assets/application-icon.webp" alt="Dragonwilds Sync" /><div class="eyebrow">${escapeHtml(window.DWSYNC_RELEASE_META?.name || 'World launcher')}</div><h1>Dragonwilds Sync</h1><p role="status" data-landing-update-status>${escapeHtml(status)}</p>${updateCard}${changelogCard}<button class="btn ghost compact-btn" id="check-application-update" ${state.applicationUpdateChecking?'disabled':''}>Check for updates</button><button class="btn primary entry-button" id="enter-launcher">ENTER</button><small>Worlds · Mods${state.data?.application?.server_mode_enabled?' · Servers':''}</small></div></div>`;
   }
 
   function embeddedScrollbarCss(extra = '') {
@@ -5677,6 +5676,8 @@
     root.querySelector('#dismiss-hosting-focus')?.addEventListener('click',()=>{state.hostingFocusDismissedProfileId=String(state.data?.server?.runtime?.active_profile_id||state.data?.server?.active_world_id||'');render();});
     root.querySelector('#enter-launcher')?.addEventListener('click', () => {
       state.entered = true; state.route = 'world-management'; render();
+      scheduleBackgroundRefresh(250);
+      void prepareLauncherWorkspaces().catch(()=>{});
       const needsProfile=!state.data?.player_profile?.profile_initialized;
       const gs=state.data?.application?.guided_setup || {};
       if(needsProfile)setTimeout(() => openPlayerProfile(true),80);
@@ -7277,26 +7278,9 @@
   // lives in RSDW Toolkit; Dragonwilds Sync retains profile association, backups,
   // RSDWL import/export, selected-character hydration, and safe writeback.
 
-  let monacoPromise = null;
   function loadMonaco() {
     if (window.monaco?.editor) return Promise.resolve(window.monaco);
-    if (monacoPromise) return monacoPromise;
-    monacoPromise = new Promise((resolve, reject) => {
-      const script = document.createElement('script');
-      script.src = 'vendor/monaco/vs/loader.js';
-      script.onload = () => {
-        try {
-          const amdRequire = window.require;
-          if (!amdRequire?.config) throw new Error('Monaco AMD loader did not initialize.');
-          window.MonacoEnvironment = { getWorkerUrl: () => 'vendor/monaco/vs/base/worker/workerMain.js' };
-          amdRequire.config({ paths: { vs: 'vendor/monaco/vs' } });
-          amdRequire(['vs/editor/editor.main'], () => resolve(window.monaco), (error) => reject(error));
-        } catch (error) { reject(error); }
-      };
-      script.onerror = () => reject(new Error('Could not load the bundled Monaco Editor runtime.'));
-      document.head.appendChild(script);
-    });
-    return monacoPromise;
+    return window.__DWSYNC_MONACO__?.warm() || Promise.reject(new Error('The bundled editor loader is unavailable.'));
   }
 
   // Shared reference|editable dual-pane JSON/text editor body -- the left
@@ -9046,6 +9030,24 @@
   }
 
 
+  function showLandingPage() {
+    // Never replace a live sync, launch receipt, or editor with unsaved work.
+    if(detachedMode || !state.data || state.operation || modalRoot.children.length)return;
+    stopPlayerPolling();
+    for(const appy of appyWarmTimers.keys())cancelScheduledAppyWarm(appy);
+    state.entered=false;
+    clearTimeout(state.backgroundRefreshTimer);state.backgroundRefreshTimer=null;
+    render();
+    if(state.data?.application?.application_updates?.auto_check!==false)void checkApplicationUpdate(false);
+  }
+  document.addEventListener('click',(event)=>{if(event.target.closest?.('#open-landing'))showLandingPage();});
+  window.dragonwilds?.onLandingRequest?.(showLandingPage);
+  window.addEventListener('pagehide',()=>{
+    rendererDisposed=true;
+    clearTimeout(state.backgroundRefreshTimer);state.backgroundRefreshTimer=null;
+    stopPlayerPolling();
+    for(const appy of appyWarmTimers.keys())cancelScheduledAppyWarm(appy);
+  },{once:true});
   window.dragonwilds?.onJoinRequest?.((payload)=>{state.pendingDirectoryJoin=payload;if(state.data)setTimeout(()=>openDirectoryJoin(payload),40);});
   window.dragonwilds?.onNexusBrowserDownload?.(async(payload)=>{const pending=state.nexusPending;if(!pending)return;if(payload.state!=='completed')return toast('Nexus download did not complete',payload.name||'The browser download was interrupted.','error');try{toast('Nexus download complete','Inspecting and installing the staged archive…');await installNexusArchive(payload.path,pending.mod,pending.file);state.nexusPending=null;render();}catch(error){toast('Nexus mod install failed',error.message,'error');}});
   document.addEventListener('dws:open-profile-mods',(event)=>{

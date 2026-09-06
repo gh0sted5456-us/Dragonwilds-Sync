@@ -67,7 +67,8 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert app.count('data-action="profile-mod-storage"') >= 2
     assert 'fantasy-loading flat-loading' not in app
     assert 'fantasy-entry dark-pad-entry' not in app
-    assert "900 - (performance.now() - startupSplashStartedAt)" in app
+    assert "startupSplashStartedAt" not in app  # persistent landing, no artificial delay
+    assert 'data-landing-update-status' in app
     assert ".fantasy-loading::before{display:block!important}" in styles
     assert ".fantasy-loading::before{display:none!important}" not in styles
     assert app.count("Scan Profile Folder") >= 2

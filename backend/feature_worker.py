@@ -93,7 +93,11 @@ class FeatureWorker:
         }
 
     def write_state(self, state: str | None = None) -> None:
-        atomic_json(state_path(self.domain), self.status(state))
+        # Parent monitoring and the serve-loop finalizer can finish together.
+        # Serialize replacements, especially on Windows where an open target
+        # can otherwise turn an orderly shutdown into PermissionError.
+        with self._lease_lock:
+            atomic_json(state_path(self.domain), self.status(state))
 
     def _cancel_idle_timer(self) -> None:
         timer = self._idle_timer
@@ -102,11 +106,12 @@ class FeatureWorker:
             timer.cancel()
 
     def _request_stop(self, reason: str) -> None:
-        if self.stopping:
-            return
-        self.stopping = True
-        self.state = "stopping"
-        self.write_state("stopping")
+        with self._lease_lock:
+            if self.stopping:
+                return
+            self.stopping = True
+            self.state = "stopping"
+            self.write_state("stopping")
         # Closing a multiprocessing Listener from another thread does not
         # reliably interrupt a blocking named-pipe accept on Windows. Wake the
         # accept with an authenticated local connection; the serve loop sees
@@ -137,23 +142,34 @@ class FeatureWorker:
                 return
         self._request_stop("idle-timeout")
 
+    def _parent_is_alive(self) -> bool:
+        try:
+            import psutil  # type: ignore
+            # A Windows venv python.exe is a redirector: the recorded Core is
+            # an ancestor, not necessarily the immediate OS parent. Require
+            # the recorded owner in the actual process chain, not just any
+            # live process bearing that PID.
+            return any(parent.pid == self.parent_pid and parent.is_running()
+                       for parent in psutil.Process().parents())
+        except ImportError:
+            # Never use os.kill(pid, 0) as a Windows liveness probe: Python's
+            # Windows implementation can terminate the target process.
+            if os.name == "nt":
+                return os.getppid() == self.parent_pid
+            try:
+                os.kill(self.parent_pid, 0)
+                return os.getppid() == self.parent_pid
+            except OSError:
+                return False
+        except Exception:
+            return False
+
     def _monitor_parent(self) -> None:
         while not self.stopping:
             # Windows can continue reporting the original PPID after that
             # process exits, so comparing os.getppid() alone leaves an orphan
             # holding its splash lease. Probe the recorded Core PID itself.
-            try:
-                import psutil  # type: ignore
-                parent_alive = psutil.pid_exists(self.parent_pid) and psutil.Process(self.parent_pid).is_running()
-            except ImportError:
-                try:
-                    os.kill(self.parent_pid, 0)
-                    parent_alive = True
-                except OSError:
-                    parent_alive = False
-            except Exception:
-                parent_alive = False
-            if not parent_alive or os.getppid() != self.parent_pid:
+            if not self._parent_is_alive():
                 self._request_stop("parent-exited")
                 # A disposable feature worker owns no durable or runtime
                 # authority. If Windows leaves the named-pipe accept blocked,

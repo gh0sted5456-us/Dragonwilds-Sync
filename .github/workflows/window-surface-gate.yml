@@ -14,6 +14,7 @@ on:
       - 'scripts/check_window_surfaces_electron.cjs'
       - 'scripts/check_window_navigation_lifecycle.cjs'
       - 'scripts/check_navigation_swaps_electron.cjs'
+      - 'scripts/check_landing_lifecycle_electron.cjs'
       - 'scripts/check_quick_window_electron.cjs'
       - 'scripts/quick_window_fixture_preload.cjs'
       - 'scripts/check_world_management_navigation.cjs'
@@ -66,6 +67,7 @@ jobs:
       - name: Exercise managed/detached windows, navigation, and Quick UI
         run: |
           export DRAGONWILDS_SYNC_PYTHON="$(command -v python)"
+          xvfb-run -a npx electron --no-sandbox scripts/check_landing_lifecycle_electron.cjs
           xvfb-run -a npx electron --no-sandbox scripts/check_window_surfaces_electron.cjs
           xvfb-run -a npx electron --no-sandbox scripts/check_navigation_swaps_electron.cjs
           xvfb-run -a npx electron --no-sandbox scripts/check_quick_window_electron.cjs
@@ -88,6 +90,8 @@ jobs:
         shell: powershell
         run: |
           $env:DRAGONWILDS_SYNC_PYTHON = (Get-Command python).Source
+          npx electron scripts/check_landing_lifecycle_electron.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npx electron scripts/check_window_surfaces_electron.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           npx electron scripts/check_navigation_swaps_electron.cjs

@@ -37,3 +37,21 @@ assert.ok(!start.includes('setInterval'));
 assert.ok(renderer.includes("panel.querySelector('#launch-verified-world')?.focus()"));
 assert.ok(renderer.includes("api.invoke('world.launch_verified',{id:world.id})"));
 console.log('Startup notification grouping, icons, splash entry, and honest loading: PASS');
+
+// Shutdown must prevent timers/late IPC from spawning a replacement backend.
+const shutdown = vm.createContext({
+  visualShutdownStarted:true, shutdownInProgress:true, shutdownComplete:false,
+  service:null, Promise, Error,
+  serviceCommand:()=>{throw new Error('Backend must not respawn during shutdown');},
+});
+const serviceCode=native.slice(native.indexOf('function startService()'),native.indexOf('function serviceInvoke('));
+vm.runInContext(serviceCode,shutdown);
+shutdown.startService();
+assert.equal(shutdown.service,null);
+const invokeStart=native.indexOf('function serviceInvoke(');
+const invokeEnd=native.indexOf('\nfunction ',invokeStart+1);
+vm.runInContext(native.slice(invokeStart,invokeEnd),shutdown);
+Promise.all([
+  assert.rejects(shutdown.serviceInvoke('state.get'),/shutting down/),
+  assert.rejects(shutdown.serviceInvoke('application.shutdown'),/not running/),
+]).then(()=>console.log('Shutdown RPC containment and no backend respawn: PASS')).catch(error=>{console.error(error);process.exitCode=1;});

@@ -284,9 +284,11 @@ function serviceEnvironment() {
   return env;
 }
 function startService() {
+  if (visualShutdownStarted || shutdownComplete) return;
   if (service && !service.killed) return;
   const cfg = serviceCommand();
   serviceStderrTail = '';
+  serviceBuffer = '';
   service = spawn(cfg.command, cfg.args, { cwd: cfg.cwd, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: process.platform !== 'win32', env: serviceEnvironment() });
   service.stdout.setEncoding('utf8');
   service.stdout.on('data', (chunk) => {
@@ -306,6 +308,7 @@ function startService() {
   service.on('error', (error) => { rejectAllPending(`Could not start Dragonwilds service: ${error.message}`); service = null; });
 }
 function serviceInvoke(method, params = {}, options = {}) {
+  if ((visualShutdownStarted || shutdownInProgress || shutdownComplete) && method !== 'application.shutdown') return Promise.reject(new Error('Dragonwilds Sync is shutting down.'));
   startService();
   return new Promise((resolve, reject) => {
     if (!service || !service.stdin || service.killed) return reject(new Error('Dragonwilds service is not running.'));
@@ -813,7 +816,11 @@ function promoteToFullApplication(sourceContents = null) {
   quickProcess=false;process.env.DWS_V3_QUICK='0';process.env.DWS_V3_QUICK_PROFILE='';process.env.DWS_V3_QUICK_MODE='';process.env.DWS_V3_QUICK_AUTOSTART='0';
   if(tray){tray.destroy();tray=null;}
   startBackgroundServices({full:true});
+  const existing=mainWindow && !mainWindow.isDestroyed();
   const window=createWindow({show:true});window.show();window.focus();
+  // Explicit full-app reopen is different from restoring a minimized window.
+  // A tray-resident process must not silently skip the updates landing page.
+  if(existing && !window.webContents.isLoadingMainFrame())window.webContents.send('dragonwilds:show-landing');
   const source=sourceContents ? BrowserWindow.fromWebContents(sourceContents) : null;
   if(source && source!==window && !source.isDestroyed())source.close();
   return window;
@@ -1213,6 +1220,7 @@ function beginVisualApplicationExit(){
   // authority-preserving cleanup continues in the background.
   for(const win of BrowserWindow.getAllWindows()){try{win.hide();}catch(_){}}
   if(tray){try{tray.destroy();}catch(_){}tray=null;}
+  stopLauncherOwnedShellServices();
 }
 
 async function performFullApplicationExit(){
@@ -1221,10 +1229,7 @@ async function performFullApplicationExit(){
   try{
     if(service&&!service.killed){
       const shutdownTimeoutMs=process.platform==='linux'?7000:30000;
-      let timeoutId;
-      const timeout=new Promise((_,reject)=>{timeoutId=setTimeout(()=>reject(new Error('Backend shutdown verification timed out.')),shutdownTimeoutMs);});
-      try{await Promise.race([serviceInvoke('application.shutdown',{}, {timeoutMs:shutdownTimeoutMs}),timeout]);}
-      finally{if(timeoutId)clearTimeout(timeoutId);}
+      await serviceInvoke('application.shutdown',{}, {timeoutMs:shutdownTimeoutMs});
     }
   }catch(error){console.error(`[shutdown] ${error?.stack||error}`);}
   finally{
@@ -1233,6 +1238,7 @@ async function performFullApplicationExit(){
     // is the containment fallback for a wedged Core/worker IPC path; unlike a
     // plain child.kill(), it cannot leave launcher-owned grandchildren alive.
     terminateBackendProcessTree();
+    rejectAllPending('Dragonwilds Sync has shut down.');
     shutdownComplete=true;shutdownInProgress=false;
     if(shutdownWatchdog){clearTimeout(shutdownWatchdog);shutdownWatchdog=null;}
     app.quit();

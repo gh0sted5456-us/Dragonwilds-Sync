@@ -74,9 +74,14 @@ if(process.argv.includes('--list')){
 console.log(`[backend verify] ${process.platform==='win32'?'Windows full V2 regression matrix':'Ubuntu cross-platform RC matrix'} · ${tests.length} test files`);
 async function runIsolatedTest(test, runner){
  const isolatedAppData=fs.mkdtempSync(path.join(os.tmpdir(),'dragonwilds-sync-test-'));
+ // Legacy modules cache Windows app-data paths at import time, before a test
+ // installs its fixture. Never let reset/backup tests discover real game saves.
+ const localAppData=path.join(isolatedAppData,'LocalAppData');
+ const roamingAppData=path.join(isolatedAppData,'RoamingAppData');
+ fs.mkdirSync(localAppData,{recursive:true});fs.mkdirSync(roamingAppData,{recursive:true});
  try{
   return await new Promise(resolve=>{
-   const child=spawn(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData}});
+   const child=spawn(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData,LOCALAPPDATA:localAppData,APPDATA:roamingAppData}});
    child.once('error',error=>resolve({error,status:null}));
    child.once('close',status=>resolve({error:null,status}));
   });

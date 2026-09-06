@@ -18,8 +18,9 @@ from server_systems import BUNDLED_UE4SS_RESOURCE, DEFAULT_UE4SS_RELEASES_URL, _
 # The packaged build is an immutable recovery point; every distinct downloaded
 # or imported ZIP is retained by SHA-256 for rollback, repair, and comparison.
 BASELINE_ID = "baseline"
-BASELINE_VERSION = "v3.0.1-941-g0bfec09e-Dragonwilds-5.6"
-BASELINE_SHA256 = "10c8b7350177b28aad5e6371bece2347d501dd1b58f9949c512ae6aee0e0b3a8"
+# Identity follows the supplied archive name; do not infer an upstream commit.
+BASELINE_VERSION = "ue4ss_3.01_RSDragonwilds"
+BASELINE_SHA256 = "d2e93f803a58e86ca73b5f7bd4a68383b965d797410fc29a2ed1036a675312f3"
 REPO_DIR_NAME = "UE4SSRepository"
 INDEX_FILE_NAME = "repository.json"
 

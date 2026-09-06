@@ -210,6 +210,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
 
     if channel == "baseline":
         if component == "ue4ss":
+            from ue4ss_repository import BASELINE_VERSION
             archive = server_systems._bundled_app_resource(*server_systems.BUNDLED_UE4SS_RESOURCE)
             if not archive.is_file():
                 raise FileNotFoundError("The bundled UE4SS recovery baseline is missing.")
@@ -217,7 +218,7 @@ def install_client_core(component: str, game_root: str, application: dict, param
             metadata.update({
                 "ue4ss_source_url": "bundled://UE4SS-core-latest.zip",
                 "ue4ss_channel": "baseline",
-                "ue4ss_installed_version": "Baseline · v3.0.1-941-g0bfec09e · Dragonwilds 5.6",
+                "ue4ss_installed_version": f"Baseline · {BASELINE_VERSION}",
                 "ue4ss_installed_at": time.time(), "ue4ss_manual_override": False,
             })
             return {"component": "UE4SS", "baseline": True, "archive": str(archive), "result": result}

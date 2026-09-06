@@ -1,10 +1,18 @@
 Dragonwilds Sync launcher-owned runtime bundles
 
-Official UE4SS baseline:
-  v3.0.1-941-g0bfec09e-Dragonwilds-5.6
-  SHA-256 10c8b7350177b28aad5e6371bece2347d501dd1b58f9949c512ae6aee0e0b3a8
+Selected Dragonwilds UE4SS baseline:
+  ue4ss_3.01_RSDragonwilds.zip (user-supplied, 2026-09-05)
+  Archive SHA-256 d2e93f803a58e86ca73b5f7bd4a68383b965d797410fc29a2ed1036a675312f3
+  UE4SS.dll SHA-256 fde02bade58eb015f8436beb8efe0fdfd3dc55f51b0c670953c26de714734b65
+  Version label uses the supplied filename, not an inferred upstream commit.
+  The original ZIP is retained byte-for-byte. Installers remove its single
+  ue4ss_3.01_RSDragonwilds wrapper when deploying into Binaries/Win64.
+  Canonical settings match the supplied baseline, including enabled consoles;
+  explicit runtime console preferences still govern launch behavior.
+  Updating the bundled baseline does not authorize replacing existing installs.
+  Existing builds require an explicit baseline selection/apply action.
 
-The UE4SS baseline is kept as one complete upstream archive. RuneSchema is a
+The UE4SS baseline is kept as one complete supplied archive. RuneSchema is a
 separate selectable runtime and is never baked into or mixed with that archive.
 
 Built-in RuneSchema Stable safety baseline:

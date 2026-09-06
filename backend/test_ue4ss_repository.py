@@ -65,8 +65,8 @@ def test_baseline_always_present_and_resolves_the_shipped_bundled_resource():
     with _sandbox():
         status = repo.list_versions()
         assert status["versions"][0]["id"] == repo.BASELINE_ID
-        assert status["versions"][0]["version"] == "v3.0.1-941-g0bfec09e-Dragonwilds-5.6"
-        assert status["versions"][0]["sha256"] == "10c8b7350177b28aad5e6371bece2347d501dd1b58f9949c512ae6aee0e0b3a8"
+        assert status["versions"][0]["version"] == "ue4ss_3.01_RSDragonwilds"
+        assert status["versions"][0]["sha256"] == "d2e93f803a58e86ca73b5f7bd4a68383b965d797410fc29a2ed1036a675312f3"
         # resources/DragonwildsServerRuntime/UE4SS-core-latest.zip ships in
         # this checkout, so the baseline entry is real, not hypothetical.
         assert status["versions"][0]["available"] is True
@@ -74,6 +74,36 @@ def test_baseline_always_present_and_resolves_the_shipped_bundled_resource():
         archive = repo.resolve_archive(repo.BASELINE_ID)
         assert archive.is_file()
         assert hashlib.sha256(archive.read_bytes()).hexdigest() == repo.BASELINE_SHA256
+
+
+def test_supplied_baseline_deploys_to_player_and_server_without_wrapper():
+    import server_systems
+    archive = repo.resolve_archive(repo.BASELINE_ID)
+    with zipfile.ZipFile(archive) as bundle:
+        assert bundle.testzip() is None
+        wrapper = 'ue4ss_3.01_RSDragonwilds/'
+        dll = bundle.read(wrapper + 'ue4ss/UE4SS.dll')
+        assert hashlib.sha256(dll).hexdigest() == 'fde02bade58eb015f8436beb8efe0fdfd3dc55f51b0c670953c26de714734b65'
+        settings = bundle.read(wrapper + 'ue4ss/UE4SS-settings.ini').decode('utf-8').replace('\r\n', '\n').strip()
+        assert not any('/RuneSchema/' in name or '/RSDWTools/' in name for name in bundle.namelist())
+    with tempfile.TemporaryDirectory(prefix='dws-baseline-layout-') as temporary:
+        root = Path(temporary)
+        player = root / 'Player' / 'RSDragonwilds'
+        (player / 'Content/Paks').mkdir(parents=True)
+        player_win64 = player / 'Binaries/Win64'
+        server_win64 = root / 'Server/RSDragonwilds/Binaries/Win64'
+        server_win64.mkdir(parents=True)
+        (server_win64 / 'version.dll').write_bytes(b'existing-server-loader')
+        server_systems.install_client_ue4ss_zip(str(archive), str(player))
+        server_systems.install_ue4ss_zip(str(archive), str(server_win64))
+        for win64 in (player_win64, server_win64):
+            assert (win64 / 'ue4ss/UE4SS.dll').read_bytes() == dll
+            assert (win64 / 'dwmapi.dll').is_file()
+            assert (win64 / 'ue4ss/Mods/BPModLoaderMod/Scripts/main.lua').is_file()
+            assert (win64 / 'ue4ss/UE4SS-settings.ini').read_text(encoding='utf-8').strip() == settings
+            assert not (win64 / 'ue4ss_3.01_RSDragonwilds').exists()
+        assert not (player_win64 / 'version.dll').exists()
+        assert (server_win64 / 'version.dll').read_bytes() == b'existing-server-loader'
 
 
 def test_import_validates_and_dedups_by_content():
@@ -249,6 +279,7 @@ def test_rpc_dispatch_import_select_and_deferred_apply():
 
 def main():
     test_baseline_always_present_and_resolves_the_shipped_bundled_resource()
+    test_supplied_baseline_deploys_to_player_and_server_without_wrapper()
     test_import_validates_and_dedups_by_content()
     test_delete_refuses_baseline_and_in_use_version_then_succeeds()
     test_select_version_records_per_world_choice_without_installing()

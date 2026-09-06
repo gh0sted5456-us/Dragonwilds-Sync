@@ -268,7 +268,7 @@ def collect_character_entries(state: dict, character_ids: Iterable[str], *, game
 
 def export_exchange(output_path: str | Path, *, worlds: Iterable[dict] = (), characters: Iterable[dict] = (),
                     mod_identities: Iterable[dict] = (), item_registry: dict | None = None,
-                    manifest_only: bool = False, app_version: str = "4.0.0") -> dict:
+                    manifest_only: bool = False, app_version: str = "4.0.1") -> dict:
     target = Path(output_path)
     if target.suffix.casefold() != ".rsdwl": target = target.with_suffix(".rsdwl")
     target.parent.mkdir(parents=True, exist_ok=True)

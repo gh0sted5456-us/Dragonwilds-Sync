@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from runtime_versions import DRAGONWILDS_SYNC_VERSION
 import tempfile
 import time
 from pathlib import Path
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def main():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"].startswith("3.")
+    assert package["version"] == DRAGONWILDS_SYNC_VERSION
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     styles = (ROOT / "renderer/styles.css").read_text(encoding="utf-8")

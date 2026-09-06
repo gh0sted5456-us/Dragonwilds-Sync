@@ -48,6 +48,17 @@
   ],
   "releases": [
     {
+      "version": "4.0.1",
+      "title": "V4",
+      "date": "2026-09-05",
+      "status": "stable",
+      "summary": "Repairs historical release checks that incorrectly rejected the v4 major version.",
+      "highlights": [
+        "Release tests verify semantic versions and matching package/backend metadata rather than requiring version 3.",
+        "Retains all v4 profile, synchronization, runtime approval, landing-page, and lifecycle improvements."
+      ]
+    },
+    {
       "version": "4.0.0",
       "title": "V4",
       "date": "2026-09-05",

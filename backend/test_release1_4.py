@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from runtime_versions import DRAGONWILDS_SYNC_VERSION
 import stat
 import struct
 import tempfile
@@ -210,7 +211,7 @@ def test_ui_contract():
     )
     meta = (ROOT / "renderer" / "release-meta.js").read_text(encoding="utf-8")
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"].startswith("3.") and package.get("author") == "RSDW Modding Community"
+    assert package["version"] == DRAGONWILDS_SYNC_VERSION and package.get("author") == "RSDW Modding Community"
     assert f"version: '{package['version']}'" in meta
 
     # Worlds route + public refresh + profile-backed Private Worlds + view modes.

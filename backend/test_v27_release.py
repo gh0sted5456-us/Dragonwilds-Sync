@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 from networking import manual_router_rule
+from runtime_versions import DRAGONWILDS_SYNC_VERSION
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,15 +17,17 @@ def main():
     release_meta = (ROOT / "renderer/release-meta.js").read_text(encoding="utf-8")
     changelog = json.loads((ROOT / "docs/changelog.json").read_text(encoding="utf-8"))
     version = str(package["version"])
-    assert re.fullmatch(r"3\.\d+\.\d+", version)
+    assert re.fullmatch(r"(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)", version)
+    assert int(version.split(".")[0]) >= 3
+    assert version == DRAGONWILDS_SYNC_VERSION
     assert package_lock["version"] == version
     assert package_lock["packages"][""]["version"] == version
     assert f"version: '{version}'" in release_meta or f'"version": "{version}"' in release_meta
     releases = changelog["releases"]
     assert releases
     assert len({str(release.get("version", "")) for release in releases}) == len(releases)
-    assert changelog.get("name") == "V3"
-    assert releases[0].get("title") == "V3"
+    assert changelog.get("name") == f"V{version.split('.')[0]}"
+    assert releases[0].get("title") == f"V{str(releases[0]['version']).split('.')[0]}"
     assert any(str(release.get("version", "")) == version for release in releases)
     assert not list((ROOT / "docs" / "archive").glob("*_CHANGELOG.md"))
     newest = releases[0]

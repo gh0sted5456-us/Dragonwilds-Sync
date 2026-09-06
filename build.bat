@@ -14,10 +14,10 @@ if exist "%LAUNCH_ERR%" del /q "%LAUNCH_ERR%" >nul 2>nul
 >>"%BUILD_LOG%" echo Started: %DATE% %TIME%
 >>"%BUILD_LOG%" echo.
 
-title Dragonwilds Sync 4.0.0 - Portable Build
+title Dragonwilds Sync 4.0.1 - Portable Build
 
 echo ============================================================
-echo   Dragonwilds Sync 4.0.0 - Portable Windows Build
+echo   Dragonwilds Sync 4.0.1 - Portable Windows Build
 echo ============================================================
 echo Project:   %CD%
 echo Build log: "%BUILD_LOG%"

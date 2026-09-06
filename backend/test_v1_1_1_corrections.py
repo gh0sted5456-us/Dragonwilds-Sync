@@ -1,4 +1,5 @@
 import json
+from runtime_versions import DRAGONWILDS_SYNC_VERSION
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_packaged_three_examples_are_explicit_resources():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"].startswith("3.")
+    assert package["version"] == DRAGONWILDS_SYNC_VERSION
     resources = package["build"]["extraResources"]
     three = next(row for row in resources if row.get("to") == "rsdw-viewer/three")
     assert three["from"] == "node_modules/three"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from runtime_versions import DRAGONWILDS_SYNC_VERSION
 from pathlib import Path
 
 from mod_tags import parse_tags_text
@@ -50,7 +51,7 @@ def main():
     assert "spawn(" not in updater
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"].startswith("3.")
+    assert package["version"] == DRAGONWILDS_SYNC_VERSION
     assert package["build"]["win"]["target"] == ["portable"]
     assert "nsis" not in package["build"]
     assert package["build"]["portable"]["artifactName"] == "Dragonwilds Sync.${ext}"

@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '4.0.0',
-  "name": "V4.0.0",
+  version: '4.0.1',
+  "name": "V4.0.1",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,14 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "4.0.1",
+      "title": "V4.0.1 · Release Build Repair",
+      "items": [
+        "Corrects legacy release checks that rejected version 4 while retaining package and backend version consistency checks.",
+        "Includes the v4 animated update landing page, runtime update approval, profile synchronization, and lifecycle improvements."
+      ]
+    },
     {
       "version": "4.0.0",
       "title": "V4 · Profiles, Sync & Launcher Reliability",

@@ -364,6 +364,7 @@ def select_version(state: dict, profile_id: str, version_id: str) -> tuple[dict,
     if not profile:
         raise KeyError("Server World not found")
     profile["ue4ss_active_version_id"] = str(version_id)
+    profile["ue4ss_selection_pending"] = True
     save_server_profile(profile_id, profile)
     return status, profile
 

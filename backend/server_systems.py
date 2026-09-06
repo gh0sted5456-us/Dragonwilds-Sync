@@ -4176,7 +4176,7 @@ def capture_authoritative_runtimes(
             "canonical_settings": {"live": canonical_live, "library": canonical_library}}
 
 
-def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
+def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = False, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
     """Serialize runtime repair with startup/manual update operations."""
     with RUNTIME_MUTATION_LOCK:
         return _ensure_base_runtimes_unlocked(
@@ -4188,7 +4188,7 @@ def ensure_base_runtimes(game_root: str, *, allow_ue4ss_download: bool = True, u
         )
 
 
-def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool = True, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
+def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool = False, ue4ss_source_url: str = "", runeschema_source_url: str = "", auto_rsdwtools: bool = True) -> dict:
     """Self-heal UE4SS and RuneSchema before a hosted World is used.
 
     Server Setup owns these machine-wide prerequisites. UE4SS can bootstrap
@@ -4265,7 +4265,7 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
         elif _bundled_app_resource("RuneSchema-core-latest.zip").is_file():
             install_runeschema_zip(str(_bundled_app_resource("RuneSchema-core-latest.zip")), str(layout.game_root))
             repaired.append("RuneSchema installed from launcher-bundled core package")
-        elif str(runeschema_source_url or "").strip():
+        elif allow_ue4ss_download and str(runeschema_source_url or "").strip():
             try:
                 result = install_authoritative_runeschema_update(str(runeschema_source_url).strip(), str(layout.game_root))
                 repaired.append(f"RuneSchema installed from {result.get('filename') or runeschema_source_url}")

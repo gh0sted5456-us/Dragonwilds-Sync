@@ -83,7 +83,7 @@ def runeschema_status(application: dict, server_stack: dict, *, force: bool = Fa
     """
     install = application.setdefault("server_install", {})
     stack_row = server_stack.get("runeschema") if isinstance(server_stack.get("runeschema"), dict) else {}
-    installed = str(install.get("runeschema_source_name") or stack_row.get("source_name") or "").strip()
+    installed = str(stack_row.get("installed_version") or stack_row.get("source_name") or install.get("runeschema_source_name") or "").strip()
     source_url = ensure_runeschema_source(application)
     resolver_source = _runeschema_resolver_source(source_url)
     cache = install.get("runeschema_update_check") if isinstance(install.get("runeschema_update_check"), dict) else {}
@@ -314,9 +314,8 @@ def restore_identified_client_cores(game_root: str, application: dict) -> dict:
             restored[component] = {"source": "launcher-baseline", "channel": "baseline"}
             continue
         try:
-            restored[component] = install_client_core(component, game_root, application, {
-                "channel": channel, "releases_url": source, "reset": True,
-            })
+            errors.append(f"{component.upper()} requires approval to download a new release; the cached runtime was retained.")
+            restored[component] = {"source": source, "channel": channel, "approval_required": True}
         except Exception as exc:
             errors.append(f"{component.upper()} recorded source restore failed: {exc}")
             restored[component] = {"source": source, "channel": channel, "fallback_installed": True,

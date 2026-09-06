@@ -6863,6 +6863,8 @@ def handle(method: str, params: dict) -> object:
         profile_id = str(params.get("id") or "")
         result, _archive = select_runeschema_flavor(profile_id, str(params.get("flavor_id") or "official"))
         profile = load_server_profile(profile_id)
+        profile["runeschema_selection_pending"] = True
+        save_server_profile(profile_id, profile)
         if state.setdefault("server", {}).get("active_world_id") == profile_id:
             root = server_root_for_profile(profile)
             applied = _apply_profile_runeschema(profile_id, profile, root)

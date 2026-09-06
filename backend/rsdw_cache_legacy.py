@@ -199,15 +199,20 @@ def avatar_palette() -> dict:
 
 
 def _request_json(url: str, timeout: int = 20) -> dict:
+    from rsdw_asset_safety import validate_url, GitHubRedirect
+    validate_url(url)
     request = urllib.request.Request(url, headers={"User-Agent": "DragonwildsSync/Alpha12", "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    with urllib.request.build_opener(GitHubRedirect()).open(request, timeout=timeout) as response:
+        validate_url(response.geturl())
+        payload = response.read(4 * 1024 * 1024 + 1)
+        if len(payload) > 4 * 1024 * 1024:
+            raise ValueError("RSDW GitHub metadata exceeds size limit")
+        return json.loads(payload.decode("utf-8"))
 
 
 def _download(url: str, target: Path, timeout: int = 90) -> None:
-    request = urllib.request.Request(url, headers={"User-Agent": "DragonwildsSync/Alpha12"})
-    with urllib.request.urlopen(request, timeout=timeout) as response, target.open("wb") as output:
-        shutil.copyfileobj(response, output)
+    from rsdw_asset_safety import download
+    download(url, target, timeout)
 
 
 def _latest_revision(repo: str, branch: str) -> str:
@@ -251,7 +256,7 @@ def refresh(*, force: bool = False, repo: str = DEFAULT_REPO, branch: str = DEFA
         with tempfile.TemporaryDirectory(prefix="rsdw-refresh-", dir=str(RSDW_CACHE_ROOT)) as temp_name:
             temp = Path(temp_name)
             archive_path = temp / "rsdw.zip"
-            _download(f"https://codeload.github.com/{repo}/zip/refs/heads/{branch}", archive_path)
+            _download(f"https://codeload.github.com/{repo}/zip/{revision}", archive_path)
             extract = temp / "extract"
             extract.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(archive_path) as zf:
@@ -264,7 +269,8 @@ def refresh(*, force: bool = False, repo: str = DEFAULT_REPO, branch: str = DEFA
                     member_path = (extract / member.filename).resolve()
                     if member_path != extract_root and extract_root not in member_path.parents:
                         raise RuntimeError(f"Unsafe path in RSDW archive: {member.filename}")
-                zf.extractall(extract)
+                from rsdw_asset_safety import extract_archive
+                extract_archive(zf, extract)
             roots = [p for p in extract.iterdir() if p.is_dir()]
             if not roots:
                 raise RuntimeError("RSDW archive contained no repository root.")

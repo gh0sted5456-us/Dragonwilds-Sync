@@ -569,41 +569,34 @@ def _runtime_secret(value: object, label: str) -> str:
     return resolved
 
 
-def _restore_official_runeschema_once(game_root: str) -> dict:
+def _restore_official_runeschema_once(game_root: str, *, approved: bool = False) -> dict:
     """Replace retired launcher variants with one complete official GitHub core."""
     if not str(game_root or "").strip():
         raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
     root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
     state = load_state()
     install = state.setdefault("application", {}).setdefault("server_install", {})
+    if approved:
+        result = install_authoritative_runeschema_update(OFFICIAL_RUNESCHEMA_REPOSITORY, game_root)
+        return {**result, "ok": True, "changed": True}
     manual = [str(item) for item in (install.get("runeschema_manual_override_roots") or []) if str(item)]
     if root_key in manual:
         return {"ok": True, "changed": False, "manual_override": True, "source": "manual override"}
     restored = [str(item) for item in (install.get("official_runeschema_restored_roots") or []) if str(item)]
     if root_key in restored:
         return {"ok": True, "changed": False, "source": OFFICIAL_RUNESCHEMA_REPOSITORY}
-    result = install_authoritative_runeschema_update(OFFICIAL_RUNESCHEMA_REPOSITORY, game_root)
-    # The GitHub transfer may take long enough for unrelated application state
-    # to change. Reload before recording the completed migration so those
-    # changes are never replaced by the pre-download snapshot.
-    state = load_state()
-    install = state.setdefault("application", {}).setdefault("server_install", {})
-    restored = [str(item) for item in (install.get("official_runeschema_restored_roots") or []) if str(item)]
-    install["runeschema_source_url"] = OFFICIAL_RUNESCHEMA_REPOSITORY + "/releases"
-    install["runeschema_source_name"] = str(result.get("filename") or "Official GitHub RuneSchema")
-    install["runeschema_installed_at"] = time.time()
-    install["official_runeschema_restored_roots"] = [*([item for item in restored if item != root_key][-7:]), root_key]
-    save_state(state)
-    return {**result, "ok": True, "changed": True}
+    if _runeschema_main_dll(resolve_server_layout(game_root).runeschema_root):
+        return {"ok": True, "changed": False, "approval_required": True, "source": "installed runtime"}
+    raise RuntimeError("RuneSchema installation requires approval. Choose a version in Settings before launching.")
 
 
-def _restore_managed_runeschema_once(game_root: str, variant: str) -> dict:
+def _restore_managed_runeschema_once(game_root: str, variant: str, *, approved: bool = False) -> dict:
     """Materialize the selected managed RuneSchema channel once per server root."""
     selected = str(variant or "official").strip().casefold()
     if selected not in {"official", "experimental"}:
         raise ValueError("Managed RuneSchema variant must be official or experimental.")
     if selected == "official":
-        return _restore_official_runeschema_once(game_root)
+        return _restore_official_runeschema_once(game_root, approved=approved)
     if not str(game_root or "").strip():
         raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
     root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
@@ -616,6 +609,13 @@ def _restore_managed_runeschema_once(game_root: str, variant: str) -> dict:
         if _installed_flavor_matches(game_root, "experimental", digest):
             return {"ok": True, "changed": False, "source": bundled.name,
                     "variant": selected, "verified": True, "archive_sha256": digest}
+        live_root = resolve_server_layout(game_root).runeschema_root
+        try:
+            same_archive = json.loads((live_root / RUNESCHEMA_FLAVOR_MARKER).read_text(encoding="utf-8")).get("archive_sha256") == digest
+        except (OSError, ValueError):
+            same_archive = False
+        if _runeschema_main_dll(live_root) and not (approved or same_archive):
+            return {"ok": True, "changed": False, "approval_required": True, "source": "installed runtime"}
         result = install_runeschema_zip(str(bundled), game_root)
         if str(result.get("kind") or "") != "core":
             raise RuntimeError("The bundled Experimental RuneSchema is not a complete core runtime.")
@@ -638,18 +638,7 @@ def _restore_managed_runeschema_once(game_root: str, variant: str) -> dict:
     managed = dict(install.get("runeschema_managed_variant_roots") or {})
     if managed.get(root_key) == selected and _runeschema_main_dll(resolve_server_layout(game_root).runeschema_root):
         return {"ok": True, "changed": False, "source": EXPERIMENTAL_RUNESCHEMA_REPOSITORY, "variant": selected}
-    result = install_authoritative_runeschema_update(EXPERIMENTAL_RUNESCHEMA_REPOSITORY, game_root)
-    state = load_state()
-    install = state.setdefault("application", {}).setdefault("server_install", {})
-    managed = dict(install.get("runeschema_managed_variant_roots") or {})
-    managed[root_key] = selected
-    install["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
-    install["runeschema_source_url"] = EXPERIMENTAL_RUNESCHEMA_REPOSITORY + "/releases"
-    install["runeschema_source_name"] = f"Experimental · {result.get('filename') or 'Dragonwilds Sync RuneSchema'}"
-    install["runeschema_installed_at"] = time.time()
-    install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
-    save_state(state)
-    return {**result, "ok": True, "changed": True, "variant": selected}
+    raise RuntimeError("RuneSchema installation requires approval. Choose a version in Settings before launching.")
 
 
 def _file_sha256(path: Path) -> str:
@@ -739,10 +728,13 @@ def _apply_profile_ue4ss(profile_id: str, profile: dict, game_root: str) -> dict
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
     if _installed_ue4ss_matches(game_root, selected_id, digest):
         return {"ok": True, "changed": False, "source": selected_id, "verified": True}
+    if selected_id == ue4ss_repository.BASELINE_ID and not profile.get("ue4ss_selection_pending") and (resolve_server_layout(game_root).win64_dir / "ue4ss" / "UE4SS.dll").is_file():
+        return {"ok": True, "changed": False, "source": "installed runtime", "approval_required": True}
     result = install_ue4ss_zip(str(archive), str(resolve_server_layout(game_root).win64_dir))
     _write_installed_ue4ss_marker(game_root, selected_id, digest)
     profile = load_server_profile(profile_id)
     profile["ue4ss_active_version_id"] = selected_id
+    profile.pop("ue4ss_selection_pending", None)
     profile["ue4ss_installed_at"] = time.time()
     save_server_profile(profile_id, profile)
     return {**result, "changed": True, "source": selected_id}
@@ -775,8 +767,11 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
             install = state.setdefault("application", {}).setdefault("server_install", {})
             install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
             save_state(state)
-        result = _restore_managed_runeschema_once(game_root, selected_id)
+        result = _restore_managed_runeschema_once(game_root, selected_id, approved=bool(profile.get("runeschema_selection_pending")))
+        if result.get("approval_required"):
+            return result
         profile = load_server_profile(profile_id)
+        profile.pop("runeschema_selection_pending", None)
         profile.pop("runeschema_flavor_applied_sha256", None)
         profile["runeschema_source_name"] = ("Experimental · Dragonwilds Sync" if selected_id == "experimental" else "Official · UnskippableCutscene")
         save_server_profile(profile_id, profile)
@@ -1502,58 +1497,22 @@ class ServerEngine:
         self._runtime_check_thread.start()
 
     def _runtime_check_worker(self, profile_id: str) -> None:
+        # Background checks are advisory only. Installation remains an explicit
+        # Settings action, regardless of legacy auto_ue4ss flags.
         try:
+            info = check_ue4ss_update() or {}
             profile = load_server_profile(profile_id)
-            root = self._profile_root(profile) if profile else ""
-            if root and Path(root).exists():
-                repaired = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
-                if repaired.get("repaired"):
-                    self._event("Base runtime self-heal: " + "; ".join(repaired.get("repaired") or []), "ok")
-                if not repaired.get("ok"):
-                    self._event("Base runtime attention required: " + "; ".join(repaired.get("errors") or []), "warn")
-                    return
-                try:
-                    selected = _assert_profile_runtime_selection(profile_id, profile, root)
-                except Exception as exc:
-                    self._event(f"Selected runtime re-apply after self-heal failed: {type(exc).__name__}: {exc}", "warn")
-                    return
-                if selected["ue4ss"].get("changed"):
-                    self._event(f"Re-applied the selected UE4SS build after self-heal ({selected['ue4ss'].get('source') or 'repository build'}).", "ok")
-                if selected["runeschema"].get("changed"):
-                    self._event(f"Re-applied the selected RuneSchema flavor after self-heal ({selected['runeschema'].get('source') or 'selected flavor'}).", "ok")
-                if selected.get("cache_warning"):
-                    self._event(selected["cache_warning"], "warn")
-            info = check_ue4ss_update()
-            if not info or not info.get("download_url"):
-                return
-            profile = load_server_profile(profile_id)
-            if not profile or not profile.get("auto_ue4ss", True):
-                return
-            filename = str(info.get("filename") or "")
-            if filename and filename == str(profile.get("ue4ss_installed_version") or ""):
-                return
-            # Never replace loader/runtime files under a live game process. If
-            # the server came online while the network check was running, the
-            # next six-hour/startup check will handle it instead.
-            if _find_running_server_pid() is not None or self.active_profile_id != profile_id:
-                self._event(f"UE4SS {filename or 'update'} is available; automatic install deferred until the hosted World is stopped.")
-                return
-            root = self._profile_root(profile)
-            if not root or not Path(root).exists():
-                return
-            self._runtime_update_in_progress = True
-            result = install_authoritative_ue4ss_update(str(info["download_url"]), root)
-            profile = load_server_profile(profile_id)
-            profile["ue4ss_installed_version"] = filename or str(info["download_url"]).rsplit("/", 1)[-1]
-            save_server_profile(profile_id, profile)
-            self._event(f"Automatically updated authoritative UE4SS runtime to {profile['ue4ss_installed_version']} ({result.get('files_written', 0)} file(s)).", "ok")
-            if SHARE.status().get("serving") and self.active_profile_id == profile_id:
-                self.publish(profile_id)
-                self._event("Re-published the active manifest after the automatic UE4SS update.", "ok")
+            version = str(info.get("filename") or "")
+            if profile and version and version != str(profile.get("ue4ss_installed_version") or ""):
+                self._event(f"UE4SS {version} is available. Review and install it in Settings; no runtime files were changed.")
+                from runtime_update_notice import record_notice
+                state = load_state()
+                if record_notice(state, "UE4SS", version, profile_id):
+                    save_state(state)
         except Exception as exc:
-            self._event(f"Automatic UE4SS update check failed: {type(exc).__name__}: {exc}", "warn")
-        finally:
-            self._runtime_update_in_progress = False
+            self._event(f"Runtime update check failed: {exc}", "warn")
+        return
+
 
     def _sample_metrics(self, pid: int | None) -> dict:
         now = time.time()

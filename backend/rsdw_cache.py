@@ -56,12 +56,8 @@ def _json_count(root: Path) -> int:
 
 
 def _safe_archive_extract(zf: zipfile.ZipFile, target: Path) -> None:
-    target_root = target.resolve()
-    for member in zf.infolist():
-        member_path = (target / member.filename).resolve()
-        if member_path != target_root and target_root not in member_path.parents:
-            raise RuntimeError(f"Unsafe path in RSDW archive: {member.filename}")
-    zf.extractall(target)
+    from rsdw_asset_safety import extract_archive
+    extract_archive(zf, target)
 
 
 def _refresh_raw_items(repo: str, branch: str) -> int:
@@ -114,7 +110,8 @@ def _refresh_catalog_only(repo: str, branch: str) -> dict:
     RSDW_CACHE_ROOT.mkdir(parents=True, exist_ok=True)  # type: ignore[name-defined]
     with tempfile.TemporaryDirectory(prefix="rsdw-catalog-", dir=str(RSDW_CACHE_ROOT)) as temp_name:  # type: ignore[name-defined]
         staged = Path(temp_name) / "catalog.json"
-        url = f"https://raw.githubusercontent.com/{repo}/{branch}/website/{_CATALOG_REL.as_posix()}"
+        asset_ref = revision if re.fullmatch(r"[0-9a-fA-F]{40}", revision) else branch
+        url = f"https://raw.githubusercontent.com/{repo}/{asset_ref}/website/{_CATALOG_REL.as_posix()}"
         _legacy._download(url, staged, timeout=45)
         value = json.loads(staged.read_text(encoding="utf-8-sig"))
         tabs = value.get("tabs") if isinstance(value, dict) else None

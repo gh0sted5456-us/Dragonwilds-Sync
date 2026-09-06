@@ -318,7 +318,13 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
     cl_status = cl_version_status((profile or {}).get("last_reported_cl"), expected_cl)
 
     ue_latest = latest_ue4ss_release() if remote else {}
-    ue_installed = str(install.get("ue4ss_installed_version") or (profile or {}).get("ue4ss_installed_version") or "")
+    ue_id = str((profile or {}).get("ue4ss_active_version_id") or "")
+    ue_rows = (application or {}).get("ue4ss_repository") or []
+    ue_selected = next((row for row in ue_rows if isinstance(row, dict) and str(row.get("id")) == ue_id), {}) if isinstance(ue_rows, list) else {}
+    ue_installed = str(ue_selected.get("version") or ue_selected.get("label") or (profile or {}).get("ue4ss_installed_version") or install.get("ue4ss_installed_version") or ue_id)
+    rs_id = str((profile or {}).get("runeschema_flavor_id") or "")
+    rs_selected = next((row for row in ((profile or {}).get("runeschema_flavors") or []) if isinstance(row, dict) and str(row.get("id")) == rs_id), {})
+    rs_name = str(rs_selected.get("name") or (profile or {}).get("runeschema_source_name") or install.get("runeschema_source_name") or rs_id)
     ue_latest_version = str(ue_latest.get("version") or ue_latest.get("filename") or "")
 
     rs_installed_at = install.get("runeschema_installed_at") or (profile or {}).get("runeschema_installed_at")
@@ -331,7 +337,7 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
     release_dates_align = (release_delta <= 72 * 3600) if release_delta is not None else None
 
     def runtime_channel(kind: str, source: str) -> str:
-        explicit = str(install.get(f"{kind}_channel") or (profile or {}).get(f"{kind}_channel") or "").strip().casefold()
+        explicit = str((profile or {}).get(f"{kind}_channel") or install.get(f"{kind}_channel") or "").strip().casefold()
         if explicit in {"baseline", "stable", "experimental"}:
             return explicit
         lowered = source.casefold()
@@ -372,6 +378,8 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
             "checked_at": max(float(server_latest.get("checked_at") or 0), float(client_latest.get("checked_at") or 0)) or None,
         },
         "ue4ss": {
+            "selected_id": ue_id,
+            "source_name": str(ue_selected.get("label") or ue_installed),
             "channel": runtime_channel("ue4ss", ue_source),
             "installed_version": ue_installed,
             "latest_version": ue_latest_version,
@@ -380,9 +388,11 @@ def server_runtime_stack(application: dict, profile: dict, *, runeschema_runtime
             "checked_at": ue_latest.get("checked_at"),
         },
         "runeschema": {
+            "selected_id": rs_id,
+            "installed_version": str(rs_selected.get("version") or (profile or {}).get("runeschema_installed_version") or rs_name),
             "channel": runtime_channel("runeschema", rs_source),
             "installed_at": rs_installed_at,
-            "source_name": str(install.get("runeschema_source_name") or (profile or {}).get("runeschema_source_name") or ""),
+            "source_name": rs_name,
             "version_basis": "installed-date",
         },
     }

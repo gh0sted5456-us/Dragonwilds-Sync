@@ -274,11 +274,9 @@ def test_game_restore_reapplies_launcher_identified_runtime_sources() -> None:
             "runeschema_channel": "official", "runeschema_source_url": "https://example.invalid/runeschema",
         }}
         result = managed_updates.restore_identified_client_cores("C:/Dragonwilds", application)
-        assert result["ok"] is True and result["exact_selection_restored"] is True
-        assert [row[0] for row in calls] == ["ue4ss", "runeschema"]
-        assert all(row[2]["reset"] is True for row in calls)
-        assert calls[0][2]["releases_url"] == "https://example.invalid/ue4ss"
-        assert calls[1][2]["releases_url"] == "https://example.invalid/runeschema"
+        assert result["exact_selection_restored"] is False
+        assert calls == [], "Game restore must not download newer loader releases"
+        assert all(result["restored"][name]["approval_required"] for name in ("ue4ss", "runeschema"))
     finally:
         managed_updates.server_systems.ensure_client_base_runtimes = old_ensure
         managed_updates.server_systems.client_runtime_status = old_status

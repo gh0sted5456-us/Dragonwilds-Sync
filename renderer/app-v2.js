@@ -5721,7 +5721,15 @@
     bindPersistentOnce(root.querySelector('#window-minimize'),'click','minimize',() => window.dragonwilds.windowMinimize());
     bindPersistentOnce(root.querySelector('#window-maximize'),'click','maximize',() => window.dragonwilds.windowToggleMaximize());
     bindPersistentOnce(root.querySelector('#window-close'),'click','close',async() => {if(detachedCloseGuard&&!await detachedCloseGuard())return;window.dragonwilds.windowClose();});
-    root.querySelectorAll('[data-open-external]').forEach((button) => button.addEventListener('click', async (e) => { e.preventDefault(); e.stopPropagation(); const ok = await window.dragonwilds.openExternal(button.dataset.openExternal); if (!ok) toast('Could not open link', 'Only valid HTTP/HTTPS links are allowed.', 'error'); }));
+    root.querySelectorAll('[data-open-external]').forEach((button) => button.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const ok = await window.dragonwilds.openExternal(button.dataset.openExternal);
+      if (!ok) return toast('Could not open link', 'The application could not open this link.', 'error');
+      if(button.closest('.server-update-banner') && button.dataset.openExternal==='steam://run/1374490'){
+        toast('Refreshing application assets','Steam manages the game update. RSDW icons and assets are refreshing separately.');
+        void api.invoke('application.rsdw.refresh',{runtime_target:'data'}).then(()=>toast('RSDW assets refreshed','Application icons and assets are ready.','success')).catch(error=>toast('Asset refresh needs attention',error.message,'warning'));
+      }
+    }));
     root.querySelector('#view-community-license')?.addEventListener('click', async()=>{
       const text = await window.dragonwilds.legalText();
       showModal(`<div class="modal-header"><div><div class="eyebrow">Legal</div><h2>${escapeHtml(window.DWSYNC_RELEASE_META?.licenseTitle || 'Dragonwilds Sync Community License')}</h2><p>Dragonwilds Sync is intended to remain freely available to the community.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><pre class="license-full-text">${escapeHtml(text || window.DWSYNC_RELEASE_META?.licenseSummary || 'License text unavailable.')}</pre></div><div class="modal-footer"><span class="muted-small">Third-party components and game assets retain their own terms.</span><button class="btn primary" data-close-modal>Done</button></div>`);

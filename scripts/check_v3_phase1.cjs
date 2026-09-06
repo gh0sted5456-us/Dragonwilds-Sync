@@ -5,7 +5,7 @@ const root = path.resolve(__dirname, '..');
 const deprecatedHost = 'dragonwilds-sync-directory.' + 'lucas-alexander-jones94.workers.dev';
 const expectedNetworkUrl = 'https://dragonwilds-sync-directory.' + 'dragonwilds.workers.dev';
 const transitionalSecretEnv = 'WORLD_' + 'SECRETS_JSON';
-const ignoredRoots = new Set(['.git', 'node_modules', 'release', 'dist-service', '.venv-build']);
+const ignoredRoots = new Set(['.git', 'node_modules', 'release', 'dist-service', '.venv-build', '.pnpm-store', '.tmp-test-home']);
 const textExtensions = new Set(['.py', '.js', '.cjs', '.mjs', '.json', '.md', '.txt', '.html', '.css', '.yml', '.yaml', '.ps1', '.bat', '.sh']);
 // These files publish or consume the canonical endpoint for non-Python
 // surfaces. They are replicas, not configuration authorities. Keeping the

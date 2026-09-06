@@ -2,7 +2,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
-const { createHmac } = require('node:crypto');
+const { createHash, generateKeyPairSync, sign } = require('node:crypto');
 const { stripTypeScriptTypes } = require('node:module');
 function load(name) {
   const text = fs.readFileSync(path.join(__dirname, 'src', name + '.ts'), 'utf8');
@@ -26,15 +26,23 @@ function load(name) {
   };},async batch(statements){return Promise.all(statements.map(s=>s.run()));}};
   const worker=load('public-directory-entry').default;
   const now=Math.floor(Date.now()/1000);
-  const secret='test-only-retention-secret-32-characters';
-  const env={DB,WORLD_SECRETS_JSON:JSON.stringify({test:secret})};
+  // Exercise the current publisher identity flow, not legacy shared secrets.
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const rawPublicKey = Buffer.from(publicKey.export({format:'jwk'}).x, 'base64url');
+  const publicKeyText = rawPublicKey.toString('base64');
+  const fingerprint = 'dwo1-' + createHash('sha256').update(rawPublicKey).digest('hex').slice(0,24);
+  const env={DB};
+  db.prepare('INSERT INTO world_publishers(world_id,operator_fingerprint,public_key,registered_at,last_seen) VALUES(?,?,?,?,?)').run('test',fingerprint,publicKeyText,now-60,now-60);
   db.prepare('INSERT INTO worlds(world_id,world_name,last_seen) VALUES(?,?,?)').run('test','Test',now-60);
   db.prepare('INSERT INTO heartbeat_history(world_id,seen_at,status) VALUES(?,?,?)').run('test',now-86400*8,'online');
   const pending=[];const ctx={waitUntil(p){pending.push(p);}};
   const body=JSON.stringify({world_id:'test',world_name:'Test',status:'online'});
-  const signature=createHmac('sha256',secret).update(`${now}.${body}`).digest('hex');
-  const response=await worker.fetch(new Request('https://test/api/v1/heartbeat',{method:'POST',body,headers:{'x-dws-timestamp':String(now),'x-dws-signature':signature}}),env,ctx);
-  assert.equal(response.status,200,await response.text());
+  const signature=sign(null,Buffer.from(`${now}.${body}`),privateKey).toString('base64');
+  const response=await worker.fetch(new Request('https://test/api/v1/heartbeat',{method:'POST',body,headers:{'x-dws-timestamp':String(now),'x-dws-signature':signature,'x-dws-public-key':publicKeyText,'x-dws-operator':fingerprint}}),env,ctx);
+  const result=await response.json();
+  assert.equal(response.status,200,JSON.stringify(result));
+  assert.equal(result.registration,'ed25519-self-registration');
+  assert.equal(result.operator_fingerprint,fingerprint);
   await Promise.all(pending);
   assert.ok(!queries.some(sql=>/^DELETE/i.test(sql.trim())),'Healthy heartbeat must not run cleanup');
   assert.equal(db.prepare('SELECT COUNT(*) AS n FROM heartbeat_history').get().n,2);

@@ -6774,6 +6774,16 @@
     root.querySelectorAll('[data-remove-starter]').forEach((b)=>b.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Stop offering this starter character?','Remove Starter Character'))return;try{const response=await api.invoke('server.world.starter_characters.remove',{id:world.id,character_id:b.dataset.removeStarter});state.serverStarterCharacters[world.id]=response.characters||[];render();toast('Starter character removed','','success');}catch(error){toast('Starter character remove failed',error.message,'error');}}));
     root.querySelector('#submit-character-to-world')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const file=await window.dragonwilds.pickFile('rsdwl');if(!file)return;if(!await managedConfirm('Submit this character package to the World administrator? It will remain quarantined until they explicitly approve it.','Submit Character'))return;try{const response=await api.invoke('world.character.submit',{id:world.id,path:file});if(response.state)state.data=response.state;toast('Character submitted',response.result?.submission?.player_name||'Held for administrator review.','success');}catch(error){toast('Character submission failed',error.message,'error');}});
     root.querySelector('#approve-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;const characterId=state.data?.client?.world_character_selection?.[world.id]||'';try{const response=await api.invoke('world.character.backup.consent',{id:world.id,approved:true,character_id:characterId});if(response.state)state.data=response.state;render();toast('Player save recovery enabled',characterId?'The current character save is retained automatically.':'Recovery is enabled and will begin when a character is soft-assigned.','success');}catch(error){toast('Backup request failed',error.message,'error');}});
+    const recoveryButton=root.querySelector('#restore-character-backup');
+    if(recoveryButton&&!root.querySelector('#view-returned-player-saves')){
+      const returned=document.createElement('button');returned.className='btn ghost';returned.id='view-returned-player-saves';returned.textContent='View Returned Saves';
+      recoveryButton.after(returned);
+      returned.addEventListener('click',async()=>{
+        const world=activeWorld();if(!world)return;
+        try{const result=await api.invoke('world.character.backup.returns',{id:world.id});await window.dragonwilds.openPath(result.path);if(result.error)toast('Save delivery check failed',result.error,'warning');}
+        catch(error){toast('Could not open returned saves',error.message,'error');}
+      });
+    }
     root.querySelector('#restore-character-backup')?.addEventListener('click',async()=>{const world=activeWorld();if(!world)return;if(!await managedConfirm('Restore the latest save retained for your authenticated player profile?\n\nIf a local file with the same name exists, DragonLink-Connect backs it up before replacement. Other characters and the World save are not changed.','Restore Latest Player Save'))return;try{const response=await api.invoke('world.character.backup.restore',{id:world.id,overwrite:true});if(response.state)setData(response.state);toast('Player save restored',response.result?.restore?.file_name||'The retained save is ready.','success');}catch(error){toast('Restore failed',error.message,'error');}});
     root.querySelectorAll('[data-approve-character-submission]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Approve this inspected package and add it to the shared character library?','Approve Character'))return;try{const response=await api.invoke('server.world.character_submissions.approve',{id:world.id,submission_id:button.dataset.approveCharacterSubmission});state.serverStarterCharacters[world.id]=response.result?.characters||[];state.serverCharacterSubmissions[world.id]=response.result?.submissions||[];render();toast('Character approved','It is now available to authenticated clients.','success');}catch(error){toast('Approval failed',error.message,'error');}}));
     root.querySelectorAll('[data-reject-character-submission]').forEach((button)=>button.addEventListener('click',async()=>{const world=activeServerWorld();if(!world||!await managedConfirm('Permanently delete this quarantined submission?','Reject Character'))return;try{const response=await api.invoke('server.world.character_submissions.reject',{id:world.id,submission_id:button.dataset.rejectCharacterSubmission});state.serverCharacterSubmissions[world.id]=response.result?.submissions||[];render();toast('Submission rejected','The quarantined package was deleted.','success');}catch(error){toast('Rejection failed',error.message,'error');}}));
@@ -7916,6 +7926,20 @@
       modalRoot.querySelector('#save-manager-backup-world')?.addEventListener('click',async()=>{if(!await managedConfirm('Create a verified World recovery point now? A running dedicated server briefly stops and restarts.','Create World Backup'))return;try{await api.invoke('save.management.world.backup',{profile_id:profileId,mode});toast('World backup created','','success');closeModal();await load();}catch(error){toast('Backup failed',error.message,'error');}});
       modalRoot.querySelectorAll('[data-save-manager-world]').forEach((button)=>button.addEventListener('click',async()=>{const revision=button.dataset.saveManagerWorld;if(!await managedConfirm(`Restore ${revision}?\n\nThe current World save is backed up first.`,`Restore World Save`))return;try{await api.invoke('save.management.world.restore',{profile_id:profileId,mode,revision_id:revision});toast('World save restored',revision,'success');closeModal();await load();}catch(error){toast('Restore failed',error.message,'error');}}));
       modalRoot.querySelectorAll('[data-save-manager-player]').forEach((button)=>button.addEventListener('click',async()=>{const revision=button.dataset.saveManagerPlayer;if(!await managedConfirm(`Roll back this player save to ${revision}?\n\nThe current revision remains recoverable.`,`Roll Back Player Save`))return;try{await api.invoke('save.management.player.restore',{profile_id:profileId,mode,revision_id:revision,target_name:button.dataset.saveManagerTarget||'',source:button.dataset.saveManagerSource||''});toast(mode==='server'?'Player recovery revision selected':'Player save restored',revision,'success');closeModal();await load();}catch(error){toast('Player rollback failed',error.message,'error');}}));
+      if(mode==='server'){
+        modalRoot.querySelectorAll('[data-save-manager-player]').forEach((oldButton)=>{
+          const button=oldButton.cloneNode(true);oldButton.replaceWith(button);
+          button.textContent='Send to Player';button.className='btn primary';
+          button.addEventListener('click',async()=>{
+            const revision=button.dataset.saveManagerPlayer;
+            if(!await managedConfirm(`Send this revision to its original player?\n\n${revision}\n\nOffline players receive it on their next background check. Their live save is not replaced.`, 'Send Player Save'))return;
+            try{await api.invoke('save.management.player.queue',{profile_id:profileId,mode,revision_id:revision});toast('Save queued for delivery','The player will be notified when their verified copy arrives.','success');}
+            catch(error){toast('Save delivery failed',error.message,'error');}
+          });
+        });
+        const note=modalRoot.querySelector('.identity-box p');
+        if(note)note.textContent='Expand a player to select a revision. Send to Player queues a private copy for that authenticated player, who is notified on receipt. Live saves are never silently overwritten.';
+      }
     };
     try{await load();}catch(error){toast('Save Manager failed to load',error.message,'error');}
   }
@@ -7958,6 +7982,9 @@
   function closeModal() { closeDesktopWindow(activeDesktopWindow()); }
 
   function showModal(html, options={}) {
+    // Save history uses native details toggles and nested confirmations. Keep
+    // its controls in the owning renderer, not a mirrored native dialog.
+    if(String(html).includes('id="save-manager-backup-world"'))options={...options,native:false};
     // Keep the verified play action on its owning renderer, with direct handlers.
     if(String(html).includes('id="launch-verified-world"'))options={...options,native:false};
     installManagedDialogBridge();

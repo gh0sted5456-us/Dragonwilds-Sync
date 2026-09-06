@@ -168,13 +168,19 @@ def restore_local_player(*, game_dir: str, backup_name: str, target_name: str, s
             "pre_restore": str(pre_restore) if pre_restore else "", "sha256": _sha(target)}
 
 
-def select_server_player_revision(*, profile_id: str, revision_id: str) -> dict:
+def select_server_player_revision(*, profile_id: str, revision_id: str, deliver: bool = False) -> dict:
     root = (SERVER_PROFILES_DIR / normalize_player_id(profile_id) / "player_backups").resolve()
     relative = Path(str(revision_id or "").replace("\\", "/"))
+    if relative.is_absolute() or relative.drive or ".." in relative.parts or len(relative.parts) < 2:
+        raise ValueError("Select a profile-relative retained player save revision.")
     target = (root / relative).resolve()
     if root not in target.parents or not target.is_file() or target.suffix.casefold() != ".rsdwl":
         raise FileNotFoundError("The retained player save revision was not found.")
     inspected = inspect_character_package(target)
+    delivery = None
+    if deliver:
+        from save_delivery import queue
+        delivery = queue(profile_id, relative.parts[0], target)
     player_root = root / relative.parts[0]
     record_path = player_root / "latest.json"
     previous = record_path.read_text(encoding="utf-8") if record_path.is_file() else ""
@@ -192,6 +198,7 @@ def select_server_player_revision(*, profile_id: str, revision_id: str) -> dict:
     temp.write_text(json.dumps(record, indent=2), encoding="utf-8")
     temp.replace(record_path)
     return {"ok": True, "selected": revision_id, "latest": record,
+            "delivery": delivery,
             "note": "The selected revision will be delivered to this player's profile on their next authenticated connection."}
 
 

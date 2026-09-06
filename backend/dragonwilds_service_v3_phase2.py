@@ -579,7 +579,7 @@ def handle(method: str, params: dict) -> object:
         profile_id, _profile, _kind = _quick_profile(
             state, str(params.get("profile_id") or params.get("id") or ""), mode)
         result = select_server_player_revision(
-            profile_id=profile_id, revision_id=str(params.get("revision_id") or ""))
+            profile_id=profile_id, revision_id=str(params.get("revision_id") or ""), deliver=True)
         try:
             _legacy.ENGINE.record_event(
                 f"Queued player save delivery for {result.get('latest', {}).get('player_name') or 'Player'} on next authenticated connection.",

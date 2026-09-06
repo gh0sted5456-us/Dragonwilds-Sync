@@ -18,6 +18,69 @@ from world_identity import (DEFAULT_SYNC_TRANSPORT_PORT, candidate_endpoints,
 from operator_identity import verify_world_identity
 
 
+def receive_player_save_deliveries(world: dict, destination: str, *, client_profile_id: str) -> list[dict]:
+    """Stage verified private returns; acknowledge only after durable storage.
+
+    Local receipt metadata survives restart/ack retry and suppresses duplicates.
+    No live character is imported by this background operation.
+    """
+    from character_profiles import inspect_character_package
+    from player_backups import MAX_BACKUP_BYTES
+    root = Path(destination)
+    errors = []
+    for route, endpoint in candidate_endpoints(world):
+        try:
+            manifest, token, base_url, _ = _auth_manifest_for_world(world, endpoint, client_profile_id=client_profile_id)
+            ok, detail = positive_world_identity(world, endpoint, manifest.get("profile_name"))
+            if not ok:
+                raise ConnectionError(detail)
+            headers = {"Authorization": f"Bearer {token}"}
+            with request(f"{base_url}/player-backups/deliveries", headers=headers, timeout=8.0) as response:
+                offered = json.loads(response.read(128 * 1024)).get("deliveries") or []
+            received = []
+            for row in offered[:5]:  # bound each background tick
+                delivery_id = str(row.get("id") or "")
+                digest = str(row.get("sha256") or "")
+                if not re.fullmatch(r"[0-9a-f]{32}", delivery_id) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+                    raise ValueError("Invalid save delivery manifest.")
+                root.mkdir(parents=True, exist_ok=True)
+                target = root / f"{delivery_id}.rsdwl"
+                receipt = root / f"{delivery_id}.json"
+                if not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != digest:
+                    with request(f"{base_url}/player-backups/delivery/{delivery_id}", headers=headers, timeout=20.0) as response:
+                        data = response.read(MAX_BACKUP_BYTES + 1)
+                    if not data or len(data) > MAX_BACKUP_BYTES or hashlib.sha256(data).hexdigest() != digest:
+                        raise ValueError("Returned save failed size or checksum verification.")
+                    temp = target.with_suffix(".part")
+                    try:
+                        temp.write_bytes(data)
+                        inspect_character_package(temp)
+                        temp.replace(target)
+                    finally:
+                        temp.unlink(missing_ok=True)
+                # Receipt is persisted before ACK; notification state is owned by Core.
+                if not receipt.is_file():
+                    temp = receipt.with_suffix(".tmp")
+                    temp.write_text(json.dumps({**row, "path": str(target)}), encoding="utf-8")
+                    temp.replace(receipt)
+                received.append({**row, "path": str(target)})
+                try:
+                    with request(f"{base_url}/player-backups/delivery/ack", method="POST",
+                                 headers={**headers, "Content-Type": "application/json"},
+                                 data=json.dumps({"id": delivery_id, "sha256": digest}).encode(), timeout=8.0) as response:
+                        response.read(4096)
+                except Exception:
+                    pass  # retained receipt makes the next retry idempotent
+            return received
+        except urllib.error.HTTPError as exc:
+            if exc.code in (403, 404):
+                return []  # policy disabled or older host, not an offline World
+            errors.append(f"{route}: {exc}")
+        except Exception as exc:
+            errors.append(f"{route}: {exc}")
+    raise ConnectionError("; ".join(errors) or "No route to the World.")
+
+
 def normalize_endpoint(value, default_port: int = DEFAULT_SYNC_TRANSPORT_PORT):
     """Normalize an endpoint that will be dialed by the Sync HTTP client."""
     return _normalize_endpoint(value, default_port=default_port)

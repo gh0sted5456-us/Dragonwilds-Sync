@@ -1608,6 +1608,15 @@ class SyncHandler(BaseHTTPRequestHandler):
                 return
             if not self._auth_ok():
                 self._send_json({"error": "unauthorized"}, 401); return
+            if path == "/player-backups/delivery/ack":
+                from save_delivery import acknowledge
+                with STATE.lock: profile_id = STATE.active_profile_id
+                player_id = str(self._auth_context().get("client_profile_id") or "")
+                if not profile_id or not player_id:
+                    self._send_json({"error": "Authenticated player required"}, 403); return
+                body = self._read_json()
+                acknowledge(profile_id, player_id, str(body.get("id") or ""), str(body.get("sha256") or ""))
+                self._send_json({"ok": True}); return
             if path == "/character-submissions":
                 with STATE.lock: profile_id = STATE.active_profile_id
                 profile = load_server_profile(profile_id) if profile_id else {}
@@ -1880,7 +1889,7 @@ class SyncHandler(BaseHTTPRequestHandler):
             if not profile_id: self._send_json({"error": "no active World"}, 404); return
             application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
             self._send_json(status_for_ip(profile_id, self.client_address[0], application_user_id)); return
-        if path in {"/player-backups/status", "/player-backups/latest"}:
+        if path in {"/player-backups/status", "/player-backups/latest", "/player-backups/deliveries"} or path.startswith("/player-backups/delivery/"):
             with STATE.lock: profile_id = STATE.active_profile_id
             profile = load_server_profile(profile_id) if profile_id else {}
             sharing = profile.get("character_sharing") if isinstance(profile.get("character_sharing"), dict) else {}
@@ -1889,8 +1898,22 @@ class SyncHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "This World is not retaining player save backups."}, 403); return
             if not player_profile_id:
                 self._send_json({"error": "An authenticated player profile is required for backup recovery."}, 403); return
+            from save_delivery import offers, payload, request_notice
+            if path == "/player-backups/deliveries":
+                self._send_json({"deliveries": offers(profile_id, player_profile_id)}, extra_headers={"Cache-Control": "no-store"}); return
+            if path.startswith("/player-backups/delivery/"):
+                try:
+                    target, record = payload(profile_id, player_profile_id, path.rsplit("/", 1)[-1])
+                except (OSError, ValueError):
+                    self._send_json({"error": "Save delivery unavailable"}, 404); return
+                data = target.read_bytes()
+                self.send_response(200); self.send_header("Content-Type", "application/vnd.dragonwilds.rsdwl")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("X-DWS-SHA256", record["sha256"])
+                self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data); return
             if path.endswith("/status"):
                 self._send_json(player_backup_status(profile_id, player_profile_id)); return
+            request_notice(profile_id, player_profile_id, "Player save")
             try: target, record = latest_player_backup(profile_id, player_profile_id)
             except FileNotFoundError as exc:
                 self._send_json({"error": str(exc)}, 404); return
@@ -1906,6 +1929,8 @@ class SyncHandler(BaseHTTPRequestHandler):
                 source_dir = STATE.worldsave_source_dir
             if not profile_id: self._send_json({"error": "no active World"}, 404); return
             application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            from save_delivery import request_notice
+            if application_user_id: request_notice(profile_id, application_user_id, "World save")
             access = status_for_ip(profile_id, self.client_address[0], application_user_id)
             if not access.get("enabled"):
                 STATE.activity(self.client_address[0], "World save request refused (host policy disabled)")
@@ -1945,6 +1970,8 @@ class SyncHandler(BaseHTTPRequestHandler):
             name = unquote(path[len("/backups/"):])
             if not profile_id or "/" in name or "\\" in name: self._send_json({"error": "not found"}, 404); return
             application_user_id = str(self._auth_context().get("client_profile_id") or "").strip()
+            from save_delivery import request_notice
+            if application_user_id: request_notice(profile_id, application_user_id, "World save")
             access = status_for_ip(profile_id, self.client_address[0], application_user_id)
             if not access.get("enabled"): self._send_json({"error": "World save downloads are disabled"}, 403); return
             if not access.get("allowed"):

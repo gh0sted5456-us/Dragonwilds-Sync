@@ -886,6 +886,36 @@ def _propagate_machine_owner_id(owner_id: str) -> int:
     return updated
 
 
+def _returned_save_events(state: dict, world: dict) -> list[dict]:
+    from network_client import receive_player_save_deliveries
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(world.get("id") or "")).strip("._")
+    if not safe_id:
+        return []
+    root = WORLD_PROFILES_DIR / "local" / safe_id / "returned_player_saves"
+    backup = world.setdefault("player_backup", {})
+    if time.time() - float(backup.get("delivery_checked_at") or 0) >= 60:
+        backup["delivery_checked_at"] = time.time()
+        try:
+            receive_player_save_deliveries(world, str(root), client_profile_id=_application_user_id(state))
+            backup.pop("delivery_error", None)
+        except Exception as exc:
+            backup["delivery_error"] = str(exc)
+    seen = backup.setdefault("notified_deliveries", [])
+    events = []
+    for path in sorted(root.glob("*.json")):
+        try:
+            row = json.loads(path.read_text(encoding="utf-8"))
+            if row["id"] in seen:
+                continue
+            events.append({"key": f"save-return:{safe_id}:{row['id']}", "world_id": world["id"],
+                           "title": "Server returned a player save", "kind": "success",
+                           "body": f"{world.get('nickname') or 'Your server'} sent {row.get('player_name') or 'a player'} save. A copy is in {root}. Your live save is unchanged."})
+            seen.append(row["id"])
+        except (OSError, ValueError, KeyError):
+            continue
+    return events
+
+
 def public_state(state: dict) -> dict:
     ensure_singleplayer_state(state)
     if _repair_connected_world_id_collisions(state):
@@ -4302,6 +4332,18 @@ def handle(method: str, params: dict) -> object:
         save_state(state)
         return result
 
+    if method == "world.character.backup.returns":
+        world = find_world(state, str(params.get("id") or ""))
+        if world is None:
+            raise KeyError("World not found")
+        for event in _returned_save_events(state, world):
+            _record_notification(state, event["title"], event["body"], event["kind"], world_id=world["id"], key=event["key"])
+        safe_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(world["id"])).strip("._")
+        root = WORLD_PROFILES_DIR / "local" / safe_id / "returned_player_saves"
+        root.mkdir(parents=True, exist_ok=True)
+        save_state(state)
+        return {"path": str(root), "error": (world.get("player_backup") or {}).get("delivery_error") or ""}
+
     if method == "characters.import":
         application = state.get("application") or {}
         game_dir = str(application.get("game_dir") or "").strip()
@@ -5141,7 +5183,11 @@ def handle(method: str, params: dict) -> object:
     if method == "client.background.tick":
         application = state.setdefault("application", {})
         _update_client_play_session(state)
-        events = []
+        from save_delivery import request_events
+        seen_requests = application.setdefault("seen_save_requests", [])
+        events = request_events(seen_requests)
+        seen_requests.extend(event["key"] for event in events)
+        application["seen_save_requests"] = seen_requests[-10000:]
         version_cache = application.setdefault("runtime_version_cache", {})
         if time.time() - float(version_cache.get("checked_at") or 0) >= 15 * 60:
             game_dir = str(application.get("game_dir") or "").strip()
@@ -5168,6 +5214,7 @@ def handle(method: str, params: dict) -> object:
                     result = status_world(world)
                     status = world.setdefault("status", {})
                     if result.get("ok"):
+                        events.extend(_returned_save_events(state, world))
                         remote = result.get("status") or {}
                         previous_revision = status.get("metadata_revision")
                         remote_revision = remote.get("metadata_revision")

@@ -2,6 +2,11 @@ name: Deploy Cloudflare World Directory
 
 on:
   workflow_dispatch:
+    inputs:
+      deploy_only:
+        description: 'Emergency compatible Worker deployment while D1 quota blocks migrations; apply migrations after reset'
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -42,6 +47,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Apply D1 migrations
+        if: ${{ !inputs.deploy_only }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}

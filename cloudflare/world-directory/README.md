@@ -183,3 +183,7 @@ without returning internal SQL or credentials. Clients should honor that delay.
 Run `npm test` for the SQLite-backed heartbeat/cron/index/error regression and
 `npx tsc --noEmit` for types. GitHub deployment runs both. Existing exhausted daily
 quotas may still require the next quota reset; deployment does not reset usage.
+If D1 is already refusing all queries, manually dispatch the deployment workflow
+with `deploy_only=true` for this schema-compatible hotfix. Rerun normally after
+the midnight UTC quota reset to apply the index. Do not use this option for
+future changes that require a new schema.

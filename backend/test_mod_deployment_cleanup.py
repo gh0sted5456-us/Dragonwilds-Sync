@@ -2,6 +2,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import shutil
+import json
 
 from mod_deployment_cleanup import vacate_mod_lanes, deploy_profile_lanes, deploy_staged_loaders
 
@@ -56,6 +57,25 @@ def main():
         deploy_profile_lanes([(staged, live, set())], ledger, base / 'safe-backups')
         assert (live / 'owned.lua').read_text() == 'first'
         assert (live / 'unrelated.lua').read_text() == 'client'
+        # Replacing the staged set must tolerate stale ownership of content
+        # that is now protected, without removing that content.
+        protected = live / 'RuneSchema/dlls/core.dll'
+        protected.parent.mkdir(parents=True)
+        protected.write_bytes(b'keep-loader')
+        old = json.loads(ledger.read_text())
+        old['0']['files'].extend(['RuneSchema/dlls/core.dll', 'README.txt'])
+        ledger.write_text(json.dumps(old))
+        (live / 'README.txt').write_text('keep-note')
+        (staged / 'owned.lua').unlink()
+        (staged / 'replacement.lua').write_text('current')
+        deploy_profile_lanes([(staged, live, {'runeschema'})], ledger, base / 'safe-backups')
+        assert protected.read_bytes() == b'keep-loader'
+        assert (live / 'README.txt').read_text() == 'keep-note'
+        assert not (live / 'owned.lua').exists()
+        assert (live / 'replacement.lua').read_text() == 'current'
+        assert json.loads(ledger.read_text())['0']['files'] == ['replacement.lua']
+        # Restore this fixture for the subsequent ordinary removal test.
+        (staged / 'owned.lua').write_text('first')
         from profile_mod_layout import ensure_profile_mod_roots
         staged_roots = ensure_profile_mod_roots(base / 'loader-profile')
         (staged_roots['win64'] / 'ue4ss/UE4SS.dll').write_bytes(b'server-core')

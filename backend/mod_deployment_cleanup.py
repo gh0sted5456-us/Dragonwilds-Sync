@@ -96,7 +96,10 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
         if old.get('destination') == str(destination.resolve()):
             for rel in old.get('files', []):
                 if str(rel).replace('\\', '/').split('/')[0].casefold() in excluded:
-                    raise ValueError('Manifest attempts to remove protected infrastructure')
+                    # Older layouts/loader selections can have recorded files
+                    # now owned by another protected lane. Retire that stale
+                    # claim, never delete the file or block unrelated mods.
+                    continue
                 if rel not in current:
                     removal.add(checked(destination, rel))
         records[str(index)] = {'destination': str(destination.resolve()), 'files': sorted(current)}

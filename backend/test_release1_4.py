@@ -188,7 +188,7 @@ def test_nested_read_only_snapshot_preserves_cores_without_overlay():
         server_engine.SERVER_PROFILES_DIR = root / "profiles"
         try:
             stored = server_engine.ensure_profile_mod_roots(root / "profiles/world/mods")
-            old = stored["ue4ss"] / "DragonwildsSyncGameBridge/config.ini"
+            old = stored["ue4ss"] / "ProfileHelper/config.ini"
             old.parent.mkdir(parents=True)
             old.write_bytes(b"old config")
             old.chmod(stat.S_IREAD)
@@ -203,7 +203,7 @@ def test_nested_read_only_snapshot_preserves_cores_without_overlay():
                 core.parent.mkdir(parents=True, exist_ok=True)
                 core.write_bytes(b"keep core")
             game = root / "game"
-            live = game / "Binaries/Win64/ue4ss/Mods/DragonwildsSyncGameBridge/config.ini"
+            live = game / "Binaries/Win64/ue4ss/Mods/ProfileHelper/config.ini"
             live.parent.mkdir(parents=True)
             live.write_bytes(b"new config")
             assert server_engine.snapshot_profile_mods("world", game) == 1

@@ -253,13 +253,13 @@ def _write_role_state(payload: dict) -> None:
 
 def _prepare_remote_client_role(install_dir: Path) -> dict:
     layout = sync_engine.resolve_client_layout(install_dir)
-    dragonconnect = persistent_direct_connect.ensure_installed(layout.game_root)
+    dragonconnect = persistent_direct_connect.status(layout.game_root)
     result = {
         "role": "CLIENT",
         "dragonconnect": {
             "logical_name": persistent_direct_connect.LOGICAL_NAME,
             "physical_name": persistent_direct_connect.MOD_NAME,
-            "installed": bool(dragonconnect.get("installed", True)),
+            "installed": bool(dragonconnect.get("installed", False)),
             "version": str(dragonconnect.get("version") or ""),
         },
     }
@@ -894,11 +894,6 @@ def _community_refresh(legacy, original_handle, state: dict) -> dict:
 
 def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
     params = params if isinstance(params, dict) else {}
-    if method in {"server.runtime.start", "server.world.start", "server.install.ensure_runtimes"}:
-        state = legacy.load_state()
-        server_root = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
-        if server_root and Path(server_root).exists():
-            persistent_direct_connect.ensure_installed(server_root)
     if method in {"world.sync", "world.play", "world.launch_verified", "world.launch_mismatch_override"}:
         return _run_world_operation(legacy, original_handle, method, params)
     if method == "application.phase6.status":
@@ -916,10 +911,10 @@ def _phase6_legacy_handler(legacy, original_handle, method: str, params: dict):
             raise ValueError("Set the Dragonwilds game folder first.")
         result = persistent_direct_connect.ensure_installed(game_dir)
         server_root = str(((state.get("application") or {}).get("server_install") or {}).get("install_dir") or "").strip()
-        server_result = persistent_direct_connect.ensure_installed(server_root) if server_root and Path(server_root).exists() else None
+        server_result = None  # DragonConnect is an optional client mod.
         legacy._record_notification(
             state, "DragonLink-Connect repaired",
-            f"The hidden host/client connection baseline is current ({result.get('version') or 'bundled baseline'}).",
+            f"The optional client connection mod is current ({result.get('version') or 'bundled baseline'}).",
             "success", key=f"dragonconnect-repair:{result.get('version') or 'baseline'}",
         )
         legacy.save_state(state)

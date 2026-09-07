@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 import os
+from retired_mods import is_retired_mod_path, retire_bridge
 import platform
 import re
 import secrets
@@ -215,8 +216,7 @@ def user_visible_mod_unit(unit: "ModUnit") -> bool:
     """Hide shared upstream runtimes while exposing every World-owned mod."""
     return (unit.group not in {"ue4ss_core", "runeschema"}
             and unit.name.casefold() not in {
-                "mods.txt", "dwmapi.dll", *SERVER_ONLY_UE4SS_MOD_NAMES,
-                "dragonlink-connect", "dragonconnecthelper", "persistentdirectconnectip",
+                "mods.txt", "dwmapi.dll",
             })
 RUNTIME_MUTATION_LOCK = threading.RLock()
 
@@ -703,6 +703,8 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
     _LAST_SCAN_WARNINGS.extend(ensure_baked_in_ue4ss_enabled(mods))
     for name, is_dir, path in _iter_top_level(mods):
         lower = name.lower()
+        if is_retired_mod_path(name):
+            continue
         if not is_dir and lower == "mods.txt":
             # Launcher-owned UE4SS control state is not a user-manageable mod.
             continue
@@ -796,6 +798,8 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     _LAST_SCAN_WARNINGS.extend(ensure_baked_in_ue4ss_enabled(mods))
     for name, is_dir, path in _iter_top_level(mods):
         lower = name.lower()
+        if is_retired_mod_path(name):
+            continue
         if not is_dir and lower == "mods.txt":
             continue
         if is_dir and lower in UE4SS_BAKED_IN_DEFAULT_MODS:
@@ -3662,6 +3666,8 @@ def install_client_ue4ss_zip(zip_path: str, game_root: str) -> dict:
             if Path(parts[-1]).name.casefold() == SERVER_LOADER_FILENAME.casefold():
                 continue
             lower = [part.casefold() for part in parts]
+            if is_retired_mod_path('/'.join(parts)):
+                continue
             # RuneSchema child mods are World-profile material and must never
             # be seeded by the machine baseline. RSDW Dev Kit/RSDWTools is an
             # explicit managed runtime and must never arrive incidentally in a
@@ -3759,13 +3765,11 @@ def ensure_client_base_runtimes(game_root: str) -> dict:
                 errors.append("Bundled RuneSchema baseline is unavailable.")
         except Exception as exc:
             errors.append(f"RuneSchema client baseline repair failed: {exc}")
-    try:
-        from persistent_direct_connect import ensure_installed as ensure_persistent_direct_connect
-        functional = ensure_persistent_direct_connect(layout.game_root)
-        if functional.get("changed"):
-            repaired.append("Persistent Direct Connect functional baseline installed")
-    except Exception as exc:
-        errors.append(f"Persistent Direct Connect baseline repair failed: {exc}")
+    retire_bridge(layout.ue4ss_mods_dir, APP_DATA_DIR / 'Backups' / 'RetiredMods')
+    # Optional DragonConnect is installed only after an explicit opt-in.
+    from profile_mod_destinations import resolve_mod_install_paths
+    retire_bridge(resolve_mod_install_paths(load_state(), 'player', layout.game_root)['ue4ss'],
+                  APP_DATA_DIR / 'Backups' / 'RetiredMods')
     # RSDW Dev Kit is not a client prerequisite. Character/model data used by
     # the desktop app lives in its APPDATA cache; an optional client copy is
     # installed only by the explicit Settings target control.
@@ -3796,6 +3800,8 @@ def install_ue4ss_zip(zip_path: str, binaries_dir: str) -> dict:
                 continue
             lower = [part.casefold() for part in parts]
             if "runeschema" in lower and "mods" in lower[lower.index("runeschema") + 1:]:
+                continue
+            if is_retired_mod_path('/'.join(parts)):
                 continue
             target = (root / Path(*parts)).resolve(); resolved_root = root.resolve()
             if target != resolved_root and resolved_root not in target.parents: raise zipfile.BadZipFile(f"UE4SS archive path escapes destination: {info.filename}")
@@ -4275,6 +4281,10 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
     layout = resolve_server_layout(game_root)
     if not layout.game_root.exists():
         raise ValueError("The dedicated server game root does not exist yet. Run Settings → Server → Full Setup first.")
+    retire_bridge(layout.ue4ss_mods_dir, APP_DATA_DIR / 'Backups' / 'RetiredMods')
+    from profile_mod_destinations import resolve_mod_install_paths
+    retire_bridge(resolve_mod_install_paths(load_state(), 'server', layout.game_root)['ue4ss'],
+                  APP_DATA_DIR / 'Backups' / 'RetiredMods')
     # Repair every path an older launcher release may have marked read-only
     # before validation, profile restore, mods.txt generation, or process start.
     for managed_root in (
@@ -4348,22 +4358,10 @@ def _ensure_base_runtimes_unlocked(game_root: str, *, allow_ue4ss_download: bool
         else:
             errors.append("RuneSchema is missing. Load a core ZIP, configure a GitHub/release ZIP source, or use a launcher build containing the bundled RuneSchema core.")
 
-    try:
-        from persistent_direct_connect import ensure_installed as ensure_dragonconnect
-        dragonconnect = ensure_dragonconnect(layout.game_root)
-        if dragonconnect.get("changed"):
-            repaired.append("DragonLink-Connect host baseline installed/repaired")
-    except Exception as exc:
-        errors.append(f"DragonLink-Connect host baseline repair failed: {exc}")
+    # DragonConnect is client-only and opt-in, never a server prerequisite.
 
-    try:
-        rsdwtools = ensure_rsdwtools_baseline(layout.ue4ss_mods_dir, allow_update=auto_rsdwtools)
-        if rsdwtools.get("changed"):
-            repaired.append("RSDWTools bridge baseline installed/updated (DEBUG_BRIDGE=false)")
-        if not rsdwtools.get("ok"):
-            errors.append(str(rsdwtools.get("error") or "RSDWTools baseline repair failed."))
-    except Exception as exc:
-        errors.append(f"RSDWTools server baseline repair failed: {exc}")
+    # RSDWTools is an optional mod, not a missing-runtime repair target.
+    # Explicit tooling install/update actions still own its installation.
 
     after = runtime_prerequisite_status(game_root)
     base_ok = bool(after.get("ok"))
@@ -4393,6 +4391,10 @@ def deploy_authoritative_runtimes(game_root: str, include_ue4ss: bool = True, in
             if not src.is_file():
                 continue
             rel = src.relative_to(UE4SS_RUNTIME_DIR)
+            # Cached helper mods are not runtime prerequisites. Never resurrect
+            # an operator-deleted mod when repairing the loader itself.
+            if 'mods' in [part.casefold() for part in rel.parts]:
+                continue
             if src.name.casefold() == SERVER_LOADER_FILENAME.casefold() and rel != Path(SERVER_LOADER_FILENAME):
                 continue
             dest = win64 / rel

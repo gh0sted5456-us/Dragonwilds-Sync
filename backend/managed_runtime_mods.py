@@ -25,8 +25,7 @@ def normalize_profile_config(profile: dict | None) -> dict:
     incoming = profile.get("managed_runtime_mods") if isinstance(profile.get("managed_runtime_mods"), dict) else {}
     configured = incoming.get(COMPONENT_KEY) if isinstance(incoming.get(COMPONENT_KEY), dict) else {}
     sync_config = profile.get("sync_config") if isinstance(profile.get("sync_config"), dict) else {}
-    connect_enabled = (bool(sync_config.get("dragonlink_connect_enabled"))
-                       if "dragonlink_connect_enabled" in sync_config else bool(configured.get("connect", False)))
+    connect_enabled = sync_config.get("dragonlink_connect_enabled") is True
     return {COMPONENT_KEY: {
         # Native server/host bridge execution is retired. ``connect`` remains
         # meaningful because the server can opt clients into DragonConnect.

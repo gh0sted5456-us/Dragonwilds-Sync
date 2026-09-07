@@ -161,7 +161,10 @@ def _lua_long_string(value: object) -> str:
 
 def write_profile_config(selected_root: str | Path, *, address: str = "", password: str = "",
                          server_type: str = "normal", enabled: bool = True) -> dict:
-    installed = ensure_installed(selected_root)
+    # Clearing an opt-out must not install or repair the optional mod.
+    installed = ensure_installed(selected_root) if enabled else status(selected_root)
+    if not enabled and not installed.get('installed'):
+        return {**installed, 'configured': False, 'address': '', 'password_written': False}
     host = str(address or "").strip()[:300]
     if host and (any(ch.isspace() for ch in host) or not re.fullmatch(r"[A-Za-z0-9.:-]+", host)):
         raise ValueError("Direct Connect address contains unsupported characters.")

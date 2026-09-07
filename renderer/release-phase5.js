@@ -25,9 +25,7 @@
   };
   const safeKey = (value) => text(value).replace(/[^A-Za-z0-9_.:-]+/g, '-').slice(0, 160) || 'window';
   const HIDDEN_MOD_NAMES = new Set([
-    'dragonconnect', 'persistentdirectconnectip', 'rsdwtools', 'rsdwdevkit',
-    'runeschema', 'mods.txt', 'enabled.txt', 'shared', 'bpml_genericfunctions', 'bpmodloadermod',
-    'cheatmanagerenablermod', 'consolecommandsmod', 'consoleenablermod', 'keybinds',
+    'runeschema', 'mods.txt', 'enabled.txt',
   ]);
 
   let zIndex = 900;

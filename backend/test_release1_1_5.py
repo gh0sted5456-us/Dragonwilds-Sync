@@ -175,9 +175,8 @@ def test_client_mod_discovery_hides_managed_runtime_and_baseline_units():
         (rsdw / "web" / "catalog" / "meta.json").write_text(json.dumps({"itemCount": 1373}), encoding="utf-8")
 
         rows = scan_inventory(str(game), live=True)
-        # RSDWTools is launcher-managed baseline plumbing in V2. It remains
-        # available to the toolkit bridge but is not a user-facing mod row.
-        assert {row["name"] for row in rows} == {"VisiblePak", "VisibleUE4SSMod", "VisibleRuneSchemaMod"}
+        # Optional tooling stays functional while becoming a manageable mod.
+        assert {row["name"] for row in rows} == {"VisiblePak", "VisibleUE4SSMod", "VisibleRuneSchemaMod", "RSDWTools"}
         assert toolkit_status(game)["ready"] is True
         commands = command_catalog(game)
         assert commands["available"] is True and commands["count"] == 2

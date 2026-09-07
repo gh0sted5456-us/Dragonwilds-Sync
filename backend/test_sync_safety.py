@@ -9,6 +9,39 @@ from sync_manifest import tag_client_deliveries
 
 
 def main():
+    from retired_mods import retire_bridge
+    from profile_mod_layout import ensure_profile_mod_roots, profile_spare_backup, restore_profile_spares
+    import persistent_direct_connect
+    from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
+    assert not UE4SS_BAKED_IN_DEFAULT_MODS
+    from mod_deployment_cleanup import deploy_profile_lanes
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source, live = root / 'profile', root / 'live'
+        helper = source / 'ConsoleEnablerMod/main.lua'
+        helper.parent.mkdir(parents=True)
+        helper.write_text('default helper')
+        lanes = [(source, live, UE4SS_BAKED_IN_DEFAULT_MODS)]
+        deploy_profile_lanes(lanes, root / 'receipt.json', root / 'backup')
+        assert (live / 'ConsoleEnablerMod/main.lua').exists()
+        helper.unlink()
+        deploy_profile_lanes(lanes, root / 'receipt.json', root / 'backup')
+        assert not (live / 'ConsoleEnablerMod/main.lua').exists()
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        mods = root / 'profile/mods'
+        lanes = ensure_profile_mod_roots(mods)
+        bridge = lanes['ue4ss'] / 'DragonwildsSyncGameBridge'
+        bridge.mkdir()
+        (bridge / 'main.lua').write_text('retired')
+        profile_spare_backup(mods, 'protect', 'Binaries/Win64/ue4ss')
+        retired = retire_bridge(lanes['ue4ss'], root / 'recovery')
+        assert not bridge.exists() and Path(retired[0]).is_dir()
+        restore_profile_spares(mods)
+        assert not bridge.exists(), 'Explicit old spare backup resurrected retired bridge'
+        result = persistent_direct_connect.clear_profile_config(root / 'game')
+        assert not result['installed'] and not result['configured']
+        assert not (root / 'game/Binaries/Win64/ue4ss/Mods/DragonConnect').exists()
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
         source, target = root / 'live.ini', root / 'snapshot.ini'

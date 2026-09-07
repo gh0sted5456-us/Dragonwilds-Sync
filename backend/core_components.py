@@ -183,9 +183,10 @@ def mod_visibility(name: object, group: object = "") -> dict:
     component = component_metadata_for_mod(raw_name, raw_group)
     if component:
         roles = list(component.get("runtime_roles") or [])
+        optional_mod = component.get('id') in {'dragonconnect', 'rsdw_toolkit'}
         return {
-            "visibility": str(component.get("visibility") or "hidden-core"), "managed": True,
-            "user_manageable": False, "parity_payload": bool(component.get("parity_payload")),
+            "visibility": "user-mod" if optional_mod else str(component.get('visibility') or 'managed-core'), "managed": not optional_mod,
+            "user_manageable": optional_mod, "parity_payload": bool(component.get("parity_payload")),
             "profile_membership": str(component.get("profile_membership") or "derived"),
             "runtime_roles": roles, "runtime_role": "/".join(roles),
             "component_id": str(component.get("id") or ""),
@@ -209,7 +210,8 @@ def runtime_role_allows(name: object, group: object, role: str) -> bool:
     role_key = str(role or "").strip().casefold()
     info = mod_visibility(name, group)
     roles = {str(value).casefold() for value in (info.get("runtime_roles") or [])}
-    return bool(info.get("user_manageable")) or role_key in roles
+    # Being removable does not make a client-only helper server-compatible.
+    return role_key in roles
 
 
 def managed_physical_names() -> set[str]:
@@ -481,14 +483,14 @@ def install_mod_taxonomy_adapters() -> None:
             local_manifest["mods_txt_writer"] = "client_generate"
             local_manifest["client_ue4ss_mods"] = [
                 name for name in (manifest.get("client_ue4ss_mods") or [])
-                if is_user_manageable_mod(name, "ue4ss_mod")
+                if is_parity_payload(name, "ue4ss_mod")
             ]
             result = original_write_client(install_dir, local_manifest)
             layout = sync_engine.resolve_client_layout(install_dir)
             target = layout.mods_txt
             dragonconnect = str(CORE_COMPONENTS["dragonconnect"].get("physical_name") or "DragonConnect")
             connect_dir = layout.ue4ss_mods_dir / dragonconnect
-            enabled = [name for name in (result.get("enabled") or []) if is_user_manageable_mod(name, "ue4ss_mod")]
+            enabled = [name for name in (result.get("enabled") or []) if is_parity_payload(name, "ue4ss_mod")]
             if connect_dir.is_dir() and dragonconnect.casefold() not in {name.casefold() for name in enabled}:
                 enabled.append(dragonconnect)
             # Rebuild from the authoritative role-filtered list. Toolkit can

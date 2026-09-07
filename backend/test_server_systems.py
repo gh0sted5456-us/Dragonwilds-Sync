@@ -182,13 +182,15 @@ def main():
                 zf.writestr("UE4SS/dwmapi.dll", "loader")
                 zf.writestr("UE4SS/ue4ss/UE4SS.dll", "core")
                 zf.writestr("UE4SS/ue4ss/Mods/ShouldNotImport/main.lua", "return true")
+                zf.writestr("UE4SS/ue4ss/Mods/DragonwildsSyncGameBridge/main.lua", "retired")
             ue_result = ss.install_authoritative_ue4ss_zip(str(ue_zip), str(game))
-            # UE4SS baselines now retain bundled standard modules. Only
-            # RuneSchema/mods children remain profile-owned and excluded.
+            # Archives may retain helpers in recovery storage, but runtime
+            # repair must never resurrect them into profile-owned live Mods.
             assert ue_result["files_written"] == 3
             assert (ss.UE4SS_RUNTIME_DIR / "dwmapi.dll").read_text() == "loader"
             assert (game / "Binaries/Win64/dwmapi.dll").read_text() == "loader"
-            assert (game / "Binaries/Win64/ue4ss/Mods/ShouldNotImport/main.lua").is_file()
+            assert not (game / "Binaries/Win64/ue4ss/Mods/ShouldNotImport/main.lua").exists()
+            assert not (ss.UE4SS_RUNTIME_DIR / "ue4ss/Mods/DragonwildsSyncGameBridge").exists()
 
             # Authenticated feedback remains profile-owned and updates ratings.
             feedback_body = json.dumps({"client_id": "testclient", "rating": 4, "platform": "steam", "report": "Good world"}).encode()

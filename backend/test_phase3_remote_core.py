@@ -178,8 +178,8 @@ def main() -> None:
             {"name": "ActualPack", "type": "PAK", "files": 3},
         ],
     })
-    assert found["detected"] is True and found["count"] == 4
-    assert {row["name"] for row in found["mods"]} == {"DragonCore", "ActualLua", "SchemaContent", "ActualPack"}
+    assert found["detected"] is True and found["count"] == 6
+    assert {row["name"] for row in found["mods"]} == {"DragonCore", "DragonLink", "RSDWTools", "ActualLua", "SchemaContent", "ActualPack"}
 
     direct = _filter_public_units({"units": [
         {"name": "DragonCore", "group": "ue4ss_mod"},
@@ -187,7 +187,7 @@ def main() -> None:
         {"name": "ActualLua", "group": "ue4ss_mod"},
         {"name": "SchemaContent", "group": "runeschema_mod"},
     ]})
-    assert [row["name"] for row in direct["units"]] == ["DragonCore", "ActualLua", "SchemaContent"]
+    assert [row["name"] for row in direct["units"]] == ["DragonCore", "RSDWTools", "ActualLua", "SchemaContent"]
 
     cached = _filter_inventory_cache({"updated_at": "old", "mods": [
         {"name": "mods.txt", "group": "ue4ss_mod"},
@@ -197,7 +197,7 @@ def main() -> None:
         {"name": "ActualLua", "group": "ue4ss_mod"},
     ]})
     assert cached["updated_at"] == "old"
-    assert [row["name"] for row in cached["mods"]] == ["DragonCore", "ActualLua"]
+    assert [row["name"] for row in cached["mods"]] == ["DragonCore", "DragonLink", "RSDWTools", "ActualLua"]
 
     module = SimpleNamespace(DirectoryHost=FakeHost, normalize_heartbeat=normalize_heartbeat)
     install_directory_patches(module)

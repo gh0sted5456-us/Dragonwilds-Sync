@@ -12,11 +12,8 @@
   let desktopZ = 11000;
   const query = new URLSearchParams(window.location.search);
   const detachedMode = query.get('detached') === '1';
-  // UE4SS ships these Lua mods baked into its own default distribution (loader/console/cheat
-  // scaffolding, not something the player installed). They physically exist on disk and stay
-  // untouched, but they aren't presented in the load-order list since there's nothing for a
-  // player or server operator to manage about them.
-  const UE4SS_BAKED_IN_MOD_NAMES = new Set(['bpml_genericfunctions','bpmodloadermod','cheatmanagerenablermod','consolecommandsmod','consoleenablermod','keybinds','shared']);
+  // Default UE4SS helpers are visible, editable, removable profile mods.
+  const UE4SS_BAKED_IN_MOD_NAMES = new Set();
   const isBakedInUe4ssMod = (unit) => unit && unit.group === 'ue4ss_mod' && UE4SS_BAKED_IN_MOD_NAMES.has(String(unit.name || '').trim().toLowerCase());
   const detachedRoute = query.get('route') || '';
   let detachedContext = {};

@@ -106,6 +106,9 @@ def restore_profile_spares(mods_root: str | Path) -> list[str]:
             protected = _spare_path(root, row['path'])
             snapshot = _spare_path(storage, row['snapshot'])
             for record in row['files']:
+                from retired_mods import is_retired_mod_path
+                if is_retired_mod_path(record['path']):
+                    continue
                 target = _spare_path(root, record['path'])
                 if not target.is_relative_to(protected):
                     raise ValueError('Spare file is outside its protected folder')
@@ -323,6 +326,8 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     except OSError:
         pass
 
+    from retired_mods import retire_bridge
+    retire_bridge(ue4ss, root.parent / 'retired-mod-backups')
     return {"root": root, **lanes}
 
 

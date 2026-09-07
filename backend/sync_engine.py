@@ -49,7 +49,7 @@ PROFILE_MOD_SLOTS = ("ue4ss_mods", "pak_mods")
 # with whatever was cached in that profile's snapshot -- silently
 # downgrading UE4SS's own runtime files back to whatever version existed
 # the last time that particular profile was snapshotted.
-LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "rsdwtools", "dragonlink", "mods.txt"} | UE4SS_BAKED_IN_DEFAULT_MODS
+LAUNCHER_LOCAL_UE4SS_MODS = {"runeschema", "runeschema.zip", "mods.txt"} | UE4SS_BAKED_IN_DEFAULT_MODS
 RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods"}
 SERVER_ONLY_SYNC_UE4SS_MODS = frozenset({
     "rsdwtools", "rsdwtoolkit", "rsdw toolkit", "rsdw tool kit",
@@ -981,6 +981,9 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         raise ConnectionError(f"Dragonwilds folder does not exist: {install_dir}")
     layout = resolve_client_layout(install_dir)
     game_root = layout.game_root
+    from retired_mods import retire_bridge
+    retire_bridge(layout.ue4ss_mods_dir, APP_DATA_DIR / 'Backups' / 'RetiredMods')
+    retire_bridge(_client_mod_roots(install_dir)['ue4ss_mods'], APP_DATA_DIR / 'Backups' / 'RetiredMods')
     if not game_root.exists():
         raise ConnectionError(f"Dragonwilds game root does not exist: {game_root}")
 

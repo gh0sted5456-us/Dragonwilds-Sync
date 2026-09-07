@@ -10,16 +10,15 @@ HOTLOAD_MARKERS = ("hotload.txt", "hotload.json")
 IDENTITY_FILENAME = CANONICAL_FILENAME
 LEGACY_IDENTITY_FILENAME = "IDENTITY.txt"
 
-# UE4SS ships these Lua mods baked into its own default distribution (loader
-# scaffolding, console/cheat enabler toggles, keybind config, shared helpers).
-# They physically exist on disk and are left untouched, but launcher mod lists
-# don't present them since there is nothing for a player or server operator to
-# manage about them -- they're part of the UE4SS runtime itself, not a mod a
-# player installed.
-UE4SS_BAKED_IN_DEFAULT_MODS = {
+# Informational upstream defaults. None receives implicit deletion protection,
+# hidden inventory status, or automatic re-enabling.
+KNOWN_UE4SS_DEFAULT_MODS = {
     "bpml_genericfunctions", "bpmodloadermod", "cheatmanagerenablermod",
     "consolecommandsmod", "consoleenablermod", "keybinds", "shared",
 }
+# Compatibility name used by old inventory/deployment exclusions. Default
+# helper mods are ordinary removable profile content, not protected runtime.
+UE4SS_BAKED_IN_DEFAULT_MODS: set[str] = set()
 
 _IDENTITY_LINK_LABELS = {
     "nexus": "Nexus", "nexusmods": "Nexus", "nexus_link": "Nexus", "nexuslink": "Nexus",

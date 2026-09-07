@@ -47,7 +47,7 @@ def main() -> None:
             )
             assert not any("rsdwtools" in str(row.get("path") or "").casefold()
                            for row in ss.STATE.manifest.get("files") or [])
-            assert not any(str(row.get("name") or "").casefold() == "rsdwtools"
+            assert any(str(row.get("name") or "").casefold() == "rsdwtools"
                            for row in ss.STATE.manifest.get("mod_summary") or [])
             assert "RSDWTools" not in (ss.STATE.manifest.get("client_ue4ss_mods") or [])
             assert share.broadcast_payload()["password_required"] is True
@@ -154,8 +154,8 @@ def main() -> None:
         assert "SelfEnabledUser" not in text
 
         assert ss.user_visible_mod_unit(units[0]) is True
-        assert ss.user_visible_mod_unit(units[1]) is False
-        assert ss.user_visible_mod_unit(units[2]) is False
+        assert ss.user_visible_mod_unit(units[1]) is True
+        assert ss.user_visible_mod_unit(units[2]) is True  # Optional tooling is manageable.
         assert ss.user_visible_mod_unit(units[3]) is True
 
         # Dedicated public row serialization must not traverse the same mod tree

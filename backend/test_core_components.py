@@ -44,11 +44,10 @@ def main() -> None:
     assert by_id["dragonconnect"]["technology"] == "ue4ss_lua"
     assert by_id["dragonconnect"]["runtime_roles"] == ["client"]
     assert by_id["dragonconnect"]["physical_relationship"] == "UE4SS/Mods/DragonConnect"
-    # Current and retired names are all hidden infrastructure so an old folder
-    # cannot accidentally become World parity content during migration.
-    assert mod_visibility("DragonConnect", "ue4ss_mod")["user_manageable"] is False
-    assert mod_visibility("DragonLink", "ue4ss_mod")["user_manageable"] is False
-    assert mod_visibility("PersistentDirectConnectIP", "ue4ss_mod")["user_manageable"] is False
+    # Optional helpers are manageable without weakening role/parity policy.
+    assert mod_visibility("DragonConnect", "ue4ss_mod")["user_manageable"] is True
+    assert mod_visibility("DragonLink", "ue4ss_mod")["user_manageable"] is True
+    assert mod_visibility("PersistentDirectConnectIP", "ue4ss_mod")["user_manageable"] is True
     assert by_id["rsdw_toolkit"]["ui_group"] == "tooling"
     assert by_id["rsdw_toolkit"]["source_repository"] == "RSDWArchive/RSDWDevKit"
     assert by_id["rsdw_toolkit"]["remote_update_supported"] is True

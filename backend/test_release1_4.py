@@ -176,7 +176,7 @@ def test_read_only_legacy_mod_snapshot_can_be_replaced():
             # First access migrates/removes the old internal lane and writes
             # the replacement into the visible profile-owned UE4SS folder.
             assert not legacy.exists()
-            assert (server_engine.SERVER_PROFILES_DIR / "world" / "mods" / "UE4SS" / "WorldMod" / "Scripts" / "main.lua").is_file()
+            assert (server_engine.SERVER_PROFILES_DIR / "world" / "mods" / "Binaries/Win64/ue4ss/Mods" / "WorldMod" / "Scripts" / "main.lua").is_file()
         finally:
             server_engine.SERVER_PROFILES_DIR = old_profiles
 

@@ -171,11 +171,11 @@ def main() -> None:
     assert "bindProfileFolderButton" not in overlay
     assert "window.dragonwilds.openProfileMods('server',id)" in renderer
     assert "window.dragonwilds.openProfileMods('local',id)" in renderer
-    assert "openProfileMods: (kind, id) => ipcRenderer.invoke('dragonwilds:open-profile-mods'" in electron_preload
+    assert "openProfileMods: (kind, id, lane = '') => ipcRenderer.invoke('dragonwilds:open-profile-mods'" in electron_preload
     assert "ipcMain.handle('dragonwilds:open-profile-mods'" in electron_main
     assert "const error=await shell.openPath(value)" in electron_main
     assert "path.join(process.env.WINDIR||'C:\\\\Windows','explorer.exe')" in electron_main
-    assert "for(const lane of ['UE4SS','RuneSchema','PAKs'])" in electron_main
+    assert "Content/Paks/~mods" in electron_main and "Binaries/Win64/ue4ss/Mods" in electron_main
     assert "path.join(activeProgramDataRoot(),'profiles','world'" in electron_main
     assert "scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)" in service_source
     assert "units = scan_profile_snapshot_units(profile_id)" in service_source

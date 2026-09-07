@@ -1,14 +1,27 @@
 # Profile-owned Win64 mods
 
-Profiles now have four standard storage folders: `UE4SS`, `RuneSchema`, `PAKs`,
-and `Win64`. Win64 is independent of UE4SS; it is not a loader version.
-
-For a mod that belongs beside the `ue4ss` directory, put its files in the
-profile's `Mods/Win64` folder with the layout required by the mod author:
+Profiles mirror the game directory. Win64 mods remain independent of UE4SS;
+Win64 is a destination, not a loader version.
 
 ```text
-Profile/Mods/Win64/LootMenu/... -> Game/Binaries/Win64/LootMenu/...
-Profile/Mods/Win64/Example.dll -> Game/Binaries/Win64/Example.dll
+mods/
+  Binaries/Win64/
+    dwmapi.dll
+    ue4ss/Mods/RuneSchema/mods/
+    LootMenu/
+  Content/Paks/~mods/
+```
+
+Legacy flat folders are SHA-256 backed up to the profile's sibling
+`staging-migration-backups` directory before migration. New-layout files win
+collisions; unmerged legacy files stay in that recovery directory.
+
+For a mod that belongs beside the `ue4ss` directory, put its files in the
+profile's `mods/Binaries/Win64` folder with the layout required by the mod author:
+
+```text
+Profile/mods/Binaries/Win64/LootMenu/... -> Game/Binaries/Win64/LootMenu/...
+Profile/mods/Binaries/Win64/Example.dll -> Game/Binaries/Win64/Example.dll
 ```
 
 Refresh Mod Management. Mark content **Client Required** to deliver it to
@@ -34,6 +47,14 @@ This does not auto-detect a new archive format or certify that a mod works on
 native Linux. Follow the mod author's layout and platform instructions.
 
 ## Regression checks
+
+Normal deployment removes only previously recorded files, not unrelated client
+mods. The connection warning offers Cancel, Continue without migration, or
+Back up & migrate. Suppression is per saved server and never authorizes automatic
+migration. Migration backs up Binaries and Content (excluding files immediately
+inside Content/Paks), then moves only the configured Mods/mods/~mods contents.
+LogicMods and launcher activeworld state are not moved. RuneSchema's nested mods
+are handled once; diagnostics are not part of the required loader publication.
 
 - `python backend/test_win64_profile_mods.py`: profile scan, actual publisher
   manifest, advertised destination, retained-only exclusion, client path

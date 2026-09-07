@@ -127,7 +127,7 @@ def main():
             assert not any(u["key"] == "pak_mod::WorldOne" for u in inv2_inactive["units"])
 
             rpc(proc, "server.world.activate", {"id": second_id}, 8)
-            assert not (pak_root / "WorldOne.pak").exists()
+            assert (pak_root / "WorldOne.pak").exists(), 'Unmanaged pre-existing files are preserved'
 
             # Explorer-managed changes are made in the selected World profile,
             # not in the shared live dedicated-server directory. A cached read

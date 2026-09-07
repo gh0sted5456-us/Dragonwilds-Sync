@@ -92,7 +92,10 @@ async function runIsolatedTest(test, runner){
  }
 }
 async function main(){
+const failures=[];
 for(const test of tests){
+ const filter=process.argv.find(arg=>arg.startsWith('--filter='))?.slice(9);
+ if(filter&&!filter.split(',').some(name=>test.includes(name)))continue;
  if(process.env.GITHUB_ACTIONS==='true'&&isolatedCiPreflights.has(test)){
   console.log(`> ${test} already passed as an isolated workflow preflight`);
   continue;
@@ -107,8 +110,10 @@ for(const test of tests){
  if(result.error){console.error(`[ERROR] Could not run ${test}: ${result.error.message}`);process.exit(1);}
  if(result.status!==0){
   if(process.env.GITHUB_ACTIONS==='true')console.error(`::error file=${test},line=1::Backend regression failed: ${test}`);
-  process.exit(result.status||1);
+  if(process.argv.includes('--keep-going'))failures.push(test);
+  else process.exit(result.status||1);
  }
 }
+if(failures.length){console.error('Backend failures:\n'+failures.join('\n'));process.exit(1);}
 }
 main().catch(error=>{console.error(error);process.exit(1);});

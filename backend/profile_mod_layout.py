@@ -2,16 +2,10 @@ from __future__ import annotations
 
 """Canonical on-disk contract for World/Profile-owned mod payloads.
 
-A profile owns four visible folders beneath its Mods root:
-
-    Mods/UE4SS
-    Mods/RuneSchema
-    Mods/PAKs
-    Mods/Win64
-
-These are *profile storage*, not runtime/core folders.  UE4SS and RuneSchema
-cores stay machine/runtime-managed.  The selected profile is materialized from
-these folders into the configured Dragonwilds installation destinations.
+A profile mirrors the game beneath its Mods root: Binaries/Win64 and
+Content/Paks/~mods. UE4SS mods nest under ue4ss/Mods; RuneSchema child mods
+nest under ue4ss/Mods/RuneSchema/mods. Loader trees retain their own runtime
+classification rather than becoming ordinary Win64 mods.
 
 Older Dragonwilds Sync builds used several internal names and, for local
 profiles, nested RuneSchema child mods below ``ue4ss_mods/RuneSchema/mods``.
@@ -20,13 +14,15 @@ canonical folders before legacy containers are retired.
 """
 
 import shutil
+import hashlib
+import uuid
 from pathlib import Path
 
 CANONICAL_FOLDER_NAMES = {
-    "ue4ss": "UE4SS",
-    "runeschema": "RuneSchema",
-    "paks": "PAKs",
-    "win64": "Win64",
+    "ue4ss": "Binaries/Win64/ue4ss/Mods",
+    "runeschema": "Binaries/Win64/ue4ss/Mods/RuneSchema/mods",
+    "paks": "Content/Paks/~mods",
+    "win64": "Binaries/Win64",
 }
 SUPPORTED_OVERRIDE_GROUPS = frozenset({"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"})
 
@@ -38,9 +34,10 @@ _LANE_README_TEXT = {
     "win64": (
         "Profile-owned Win64 mods.\n\n"
         "Place the mod's Win64 contents here with the same folder layout.\n"
-        "For example Win64/LootMenu/... deploys to Binaries/Win64/LootMenu/...\n"
+        "For example Binaries/Win64/LootMenu/... deploys to the same game path.\n"
         "beside ue4ss. Refresh the profile and select Client Required to publish.\n"
-        "Do not copy the whole game Win64 directory or its game/loader files.\n"
+        "Do not copy game executables. Stage complete loader builds at their\n"
+        "normal paths; runtime files remain separate from ordinary mod units.\n"
     ),
     "ue4ss": (
         "UE4SS mods for this World.\n\n"
@@ -50,7 +47,7 @@ _LANE_README_TEXT = {
         "the refreshed profile into the configured game installation. Deleting a\n"
         "mod here removes it from Mod Management on Refresh and from the live game\n"
         "when this profile is next activated/deployed.\n\n"
-        "Do not put RuneSchema itself here; it is machine runtime. mods.txt is\n"
+        "RuneSchema lives here with child mods inside RuneSchema/mods. mods.txt is\n"
         "generated control state and does not belong in this folder.\n"
     ),
     "runeschema": (
@@ -123,17 +120,57 @@ def _remove_empty(path: Path) -> None:
         pass
 
 
+def _validate_storage_tree(root: Path) -> None:
+    for item in (root, *root.parents):
+        if item.is_symlink() or item.is_junction():
+            raise ValueError('Profile storage must not traverse filesystem links')
+    if root.exists():
+        for item in root.rglob('*'):
+            if item.is_symlink() or item.is_junction():
+                raise ValueError('Profile storage must not contain filesystem links')
+
+
+def _backup_legacy(root: Path, legacy: list[Path]) -> Path | None:
+    if not legacy:
+        return
+    # Sibling recovery storage is never scanned or distributed as a mod.
+    backup = root.parent / 'staging-migration-backups' / uuid.uuid4().hex
+    for source in legacy:
+        _validate_storage_tree(source)
+    for source in legacy:
+        target = backup / source.name
+        shutil.copytree(source, target)
+        for item in source.rglob('*'):
+            if item.is_file():
+                copied = target / item.relative_to(source)
+                with item.open('rb') as original, copied.open('rb') as saved:
+                    if hashlib.file_digest(original, 'sha256').digest() != hashlib.file_digest(saved, 'sha256').digest():
+                        raise OSError('Profile migration backup verification failed')
+    return backup
+
+
 def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     """Create/migrate one profile's canonical visible mod folders."""
     root = Path(mods_root)
+    _validate_storage_tree(root)
     root.mkdir(parents=True, exist_ok=True)
+    previous = {key: root / name for key, name in {
+        'ue4ss': 'UE4SS', 'runeschema': 'RuneSchema', 'paks': 'PAKs', 'win64': 'Win64'}.items()}
+    old_internal = [root / name for name in ('ue4ss_mods', 'runeschema_mods', 'pak_mods')]
+    backup = _backup_legacy(root, [p for p in [*previous.values(), *old_internal] if p.is_dir()])
     ue4ss = root / CANONICAL_FOLDER_NAMES["ue4ss"]
     runeschema = root / CANONICAL_FOLDER_NAMES["runeschema"]
     paks = root / CANONICAL_FOLDER_NAMES["paks"]
-    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks, "win64": root / "Win64"}
+    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks, "win64": root / CANONICAL_FOLDER_NAMES['win64']}
     for key, target in lanes.items():
         target.mkdir(parents=True, exist_ok=True)
         _write_lane_readme(target, key)
+    for key, source in previous.items():
+        _merge_tree(source, lanes[key], exclude_names={LANE_README})
+        if source.is_dir():
+            # Notes are generated, not user mod data; their original copy is backed up.
+            (source / LANE_README).unlink(missing_ok=True)
+            _remove_empty(source)
 
     legacy_ue4ss = root / "ue4ss_mods"
     legacy_runeschema = root / "runeschema_mods"
@@ -154,6 +191,13 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     _merge_tree(legacy_paks, paks)
     for legacy in (legacy_runeschema, legacy_ue4ss, legacy_paks):
         _remove_empty(legacy)
+    # Conflicting/retired legacy files remain recoverable outside the staged
+    # payload. Never overwrite the new layout or repeatedly remigrate leftovers.
+    for legacy in [*previous.values(), *old_internal]:
+        if legacy.exists() and backup:
+            conflict = backup / 'unmerged' / legacy.name
+            conflict.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy), str(conflict))
 
     # Retired snapshot-layout marker is no longer necessary once the source
     # folder has an explicit RuneSchema lane.
@@ -197,16 +241,3 @@ def describe_profile_mod_roots(mods_root: str | Path) -> dict:
         "win64": str(roots["win64"]),
         "authority": "profile-folder",
     }
-
-
-# Keep the three human-editable profile lanes self-describing regardless of how
-# the migration helper above evolves.
-_profile_mod_roots_without_notes = ensure_profile_mod_roots
-
-def ensure_profile_mod_roots(mods_root: Path):
-    lanes = _profile_mod_roots_without_notes(mods_root)
-    for key in ("ue4ss", "runeschema", "paks"):
-        lane = lanes[key]
-        lane.mkdir(parents=True, exist_ok=True)
-        _write_lane_readme(lane, key)
-    return lanes

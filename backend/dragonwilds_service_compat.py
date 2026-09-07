@@ -2658,6 +2658,47 @@ def handle(method: str, params: dict) -> object:
         else: curated.append(world)
         save_state(state); return {"world": world, "operator_verified": bool(operator_check.get("verified")), "state": public_state(state)}
 
+    if method in {"world.mods.migration.preview", "world.mods.migration.apply"}:
+        world = find_world(state, str(params.get('id') or ''))
+        if world is None:
+            raise KeyError('World not found')
+        from sync_engine import resolve_verified_manifest, detect_client_platform
+        from client_layout import resolve_client_layout
+        from profile_mod_destinations import resolve_mod_install_paths
+        from mod_deployment_cleanup import backup_installation, vacate_mod_lanes
+        selected = str((state.get('application') or {}).get('game_dir') or '').strip()
+        if not selected:
+            raise ValueError('Configure your game installation before synchronizing')
+        game = resolve_client_layout(Path(selected)).game_root
+        _route, _endpoint, manifest, _token, _base, _ping = resolve_verified_manifest(
+            world, str(detect_client_platform(game)['platform']), _application_user_id(state))
+        from sync_manifest import manifest_fingerprint
+        fingerprint = manifest_fingerprint(manifest)
+        paths = resolve_mod_install_paths(state, 'player', game)
+        lanes = [(paths['ue4ss'], {'runeschema'}), (paths['runeschema'], set()), (paths['paks'], set())]
+        if method.endswith('.preview'):
+            return {'manifest_fingerprint': fingerprint, 'file_count': len(manifest.get('files') or []),
+                    'warning_disabled': bool(world.get('mod_migration_warning_disabled')),
+                    'paths': [str(path) for path, _ in lanes]}
+        choice = str(params.get('choice') or '')
+        if choice not in {'continue', 'migrate'}:
+            raise ValueError('An explicit migration choice is required')
+        if str(params.get('manifest_fingerprint') or '') != fingerprint:
+            raise ValueError('The server manifest changed. Review the migration warning again.')
+        backup = None
+        if choice == 'migrate':
+            if _running_game_pid():
+                raise ValueError('Close Dragonwilds before migrating installed mods')
+            # Migration is deliberately narrower than editable deployment maps.
+            # A mapped loader root must never be mistaken for its child mod lane.
+            if [Path(p).name.casefold() for p, _ in lanes] != ['mods', 'mods', '~mods']:
+                raise ValueError('Migration requires UE4SS/Mods, RuneSchema/mods and Paks/~mods destinations. Correct the mappings or continue without migration.')
+            backup = backup_installation(game, APP_DATA_DIR / 'Backups' / 'ClientModMigration', [p for p, _ in lanes])
+            vacate_mod_lanes(lanes, APP_DATA_DIR / 'Backups' / 'MigratedMods', protected=[game])
+        world['mod_migration_warning_disabled'] = bool(params.get('disable_warning'))
+        save_state(state)
+        return {'ok': True, 'backup': str(backup) if backup else '', 'state': public_state(state)}
+
     if method == "world.compatibility.preview":
         world = find_world(state, str(params.get("id") or ""))
         if world is None:
@@ -5629,7 +5670,7 @@ def handle(method: str, params: dict) -> object:
         server_exe = str(dedicated.get("server_exe") or find_dedicated_server_exe(profile) or "")
         result = ENGINE.activate_world(outgoing, profile_id, game_root, server_exe)
         state["server"]["active_world_id"] = profile_id
-        units = scan_mod_units(profile_id, game_root) if game_root else []
+        units = scan_profile_snapshot_units(profile_id)
         _cache_server_inventory(profile_id, units, active=True, source="apply")
         save_state(state)
         return {"result": result, "state": public_state(state)}
@@ -5944,7 +5985,7 @@ def handle(method: str, params: dict) -> object:
             # never silently repopulated from stale deployed files later.
             if not profile.get("mods_profile_initialized"):
                 root = server_root_for_profile(profile)
-                if not units and active and root:
+                if not units and active and root and len(list_server_profiles()) == 1:
                     snapshot_profile_mods(profile_id, Path(root))
                     units = scan_profile_snapshot_units(profile_id)
                 if units or (active and root):

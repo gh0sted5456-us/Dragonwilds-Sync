@@ -195,9 +195,33 @@ def role_status(state: dict, role: str) -> dict:
             paths = server_machine_paths(install.get("server_exe"), install.get("save_dir"), mapping)
         else:
             raise ValueError("Machine path role must be player or server.")
-        return {"ready": True, **_public(paths)}
+        result = {"ready": True, **_public(paths)}
+        result["runtime_locations"] = runtime_location_choices(state, role, paths["game_root"])
+        return result
     except Exception as exc:
         return {"ready": False, "role": role, "error": str(exc)}
+
+
+def runtime_location_choices(state: dict, role: str, game_root: Path) -> list[dict]:
+    """Expose saved locations to profile editors without exporting host drive letters."""
+    root = Path(game_root).resolve(strict=False)
+    choices = [
+        {"label": "Win64", "path": str(root / 'Binaries' / 'Win64')},
+        {"label": "RuneSchema", "path": str(root / 'Binaries' / 'Win64' / 'ue4ss' / 'Mods' / 'RuneSchema')},
+    ]
+    custom = (state.get('application') or {}).get('machine_custom_paths') or []
+    choices.extend(dict(row) for row in custom if isinstance(row, dict) and row.get('role', 'shared') in {'shared', role})
+    for row in choices:
+        row['label'] = str(row.get('label') or 'Saved location')
+        try:
+            candidate = _path(row.get('path'))
+            relative = candidate.relative_to(root)
+            if not relative.parts:
+                raise ValueError('Choose a subfolder, not the whole game installation')
+            row.update(path=str(candidate), game_relative=relative.as_posix(), eligible=True)
+        except (ValueError, OSError):
+            row.update(game_relative='', eligible=False, reason='Outside this installation; profile loader paths must stay inside the game folder')
+    return choices
 
 
 def status(state: dict) -> dict:

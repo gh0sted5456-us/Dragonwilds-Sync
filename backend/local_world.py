@@ -845,11 +845,11 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
     profile = load_profile(profile_id); overrides = profile.get("unit_overrides") or {}
     units: list[dict] = []
     warnings: list[str] = []
-    from win64_mods import payload_files
+    from win64_mods import payload_files, payload_entries
     from server_systems import ModUnit
     win64 = _snapshot_roots(profile_id)["win64"]
     list(payload_files(win64))
-    for path in win64.iterdir():
+    for path in payload_entries(win64):
         if path.name.startswith('.') or path.name.casefold() == 'readme.txt':
             continue
         unit = ModUnit(name=path.name, group='win64_mod', source_dir=path if path.is_dir() else None,
@@ -1334,10 +1334,10 @@ def distribution_units(game_dir: str, profile_id: str = SINGLEPLAYER_ID):
     targets = _live_roots(game_dir)
     profile = load_profile(profile_id); overrides = profile.get("unit_overrides") or {}
     result = []
-    from win64_mods import payload_files
+    from win64_mods import payload_files, payload_entries
     win64 = _snapshot_roots(profile_id)["win64"]
     list(payload_files(win64))
-    for path in win64.iterdir():
+    for path in payload_entries(win64):
         if path.name.startswith('.') or path.name.casefold() == 'readme.txt':
             continue
         override = overrides.get(f'win64_mod::{path.name}') or {}

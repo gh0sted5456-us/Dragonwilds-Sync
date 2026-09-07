@@ -47,14 +47,14 @@ def main() -> None:
         # A server scan/publish is allowed to normalize launcher-owned metadata
         # without creating a false gameplay-content replacement warning.
         for profile_id in ("world-a", "world-b"):
-            payload = repository.LOCAL_PROFILES_DIR / profile_id / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
+            payload = repository.LOCAL_PROFILES_DIR / profile_id / "snapshot" / "mods" / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods" / "SharedSchema"
             (payload / "ID.txt").write_text(f"mod_id: SharedSchema\nscan: {profile_id}\n", encoding="utf-8")
             (payload / "enabled.txt").write_text("", encoding="utf-8")
         metadata_scan = repository.refresh_repository()["entries"][0]
         assert next(row for row in metadata_scan["profiles"] if row["id"] == "world-a")["fingerprint_status"] == "unchanged"
         assert next(row for row in metadata_scan["profiles"] if row["id"] == "world-b")["fingerprint_status"] == "replaced"
 
-        source = repository.LOCAL_PROFILES_DIR / "world-a" / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
+        source = repository.LOCAL_PROFILES_DIR / "world-a" / "snapshot" / "mods" / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods" / "SharedSchema"
         canonical_hash = entry["content_hash"]
         (source / "schema.json").write_text("replacement", encoding="utf-8")
         rescanned = repository.refresh_repository()["entries"][0]
@@ -68,7 +68,7 @@ def main() -> None:
         assert next(row for row in restored["profiles"] if row["id"] == "world-a")["fingerprint_status"] == "unchanged"
         (source / "new-schema.json").write_text("new", encoding="utf-8")
         result = repository.publish_from_profile("local", "world-a", "runeschema_mod::SharedSchema", propagate=True)
-        target = repository.LOCAL_PROFILES_DIR / "world-b" / "snapshot" / "mods" / "RuneSchema" / "SharedSchema"
+        target = repository.LOCAL_PROFILES_DIR / "world-b" / "snapshot" / "mods" / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods" / "SharedSchema"
         assert (target / "schema.json").read_text(encoding="utf-8") == "first"
         assert (target / "new-schema.json").read_text(encoding="utf-8") == "new"
         assert len(result["deployed"]) == 1

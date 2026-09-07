@@ -711,7 +711,8 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
             # nothing here for an operator to manage, so it isn't listed.
             continue
         if is_dir and lower == "runeschema":
-            add(name, "runeschema", source_dir=path, exclude={"mods"})
+            if any(p.is_file() and p.relative_to(path).parts[0].casefold() not in {'mods', 'diagnostics'} for p in path.rglob('*')):
+                add(name, "runeschema", source_dir=path, exclude={"mods", "diagnostics"})
             rs_mod_root = layout.runeschema_mods_dir
             if rs_mod_root != layout.runeschema_root:
                 for sub_name, sub_is_dir, sub_path in _iter_top_level(rs_mod_root):
@@ -800,7 +801,8 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
         if is_dir and lower in UE4SS_BAKED_IN_DEFAULT_MODS:
             continue
         if is_dir and lower == "runeschema":
-            add(name, "runeschema", source_dir=path, exclude={"mods"})
+            if any(p.is_file() and p.relative_to(path).parts[0].casefold() not in {'mods', 'diagnostics'} for p in path.rglob('*')):
+                add(name, "runeschema", source_dir=path, exclude={"mods", "diagnostics"})
             for sub_name, sub_is_dir, sub_path in _iter_top_level(path / "mods"):
                 add(sub_name, "runeschema_mod", source_dir=sub_path if sub_is_dir else None,
                     source_files=[] if sub_is_dir else [sub_path])
@@ -824,11 +826,11 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
         _order, clean_stem = _strip_pak_load_prefix(stem)
         add(clean_stem, "pak_mod", source_files=files)
 
-    from win64_mods import payload_files
+    from win64_mods import payload_files, payload_entries
     list(payload_files(win64))  # Validate the entire declaration before publishing any file.
-    for name, is_dir, path in _iter_top_level(win64):
-        add(name, "win64_mod", source_dir=path if is_dir else None,
-            source_files=[] if is_dir else [path])
+    for path in payload_entries(win64):
+        add(path.name, "win64_mod", source_dir=path if path.is_dir() else None,
+            source_files=[] if path.is_dir() else [path])
 
     # UE4SS loader files are machine-level authoritative runtime files in the
     # current storage model and therefore are not duplicated into each inactive
@@ -2314,6 +2316,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         server_paths.get("ue4ss_root"), layout.win64_dir if layout else UE4SS_RUNTIME_DIR, "UE4SS root")
     runeschema_server_root = profile_server_root(
         server_paths.get("runeschema_root"), layout.runeschema_root if layout else RUNESCHEMA_RUNTIME_DIR, "RuneSchema root")
+    profile_id = str((profile or {}).get('id') or '')
+    if profile_id and profile_id not in {'.', '..'} and not any(c in profile_id for c in '/\\:'):
+        staged = ensure_profile_mod_roots(SERVER_PROFILES_DIR / profile_id / 'mods')
+        if (staged['win64'] / 'ue4ss' / 'UE4SS.dll').is_file():
+            ue4ss_server_root = staged['win64']
+        if any((staged['runeschema'].parent / 'dlls').glob('*')):
+            runeschema_server_root = staged['runeschema'].parent
     # A World owns its complete client-compatible loader baseline. Operators
     # choose the UE4SS/RuneSchema build, but may not publish a partial build:
     # every eligible file is sent so LAN and remote clients run the exact same
@@ -2447,7 +2456,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 if not source.is_file():
                     continue
                 rel = source.relative_to(rs_root)
-                if rel.parts and rel.parts[0].casefold() == "mods":
+                if rel.parts and rel.parts[0].casefold() in {"mods", "diagnostics"}:
                     continue
                 client_target = PurePosixPath(runeschema_client_root, *rel.parts).as_posix()
                 if runeschema_targets is not None and client_target.casefold() not in runeschema_targets:
@@ -2626,6 +2635,11 @@ class ShareServer:
         if not 1 <= int(port) <= 65535: raise ValueError("Sync port must be 1-65535")
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
+        if persist_profile and profile.get('mods_profile_initialized'):
+            mod_groups = {'ue4ss_mod', 'runeschema_mod', 'pak_mod', 'win64_mod'}
+            staged_units = scan_profile_snapshot_units(profile_id)
+            units = [unit for unit in units if unit.group not in mod_groups]
+            units.extend(unit for unit in staged_units if unit.group in mod_groups)
         hosting = normalize_hosting(profile)
         if hosting["mode"] == EXTERNAL_BROADCAST:
             endpoint = hosting["gameEndpoint"]

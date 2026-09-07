@@ -436,7 +436,8 @@ def _install_server_pipeline(server_engine_module) -> None:
         mods_txt = {}
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             mods_txt = original_generate(profile_id, root, units=units)
-        server_engine_module.snapshot_profile_mods(profile_id, Path(root))
+        # Runtime preparation is not permission to adopt unrelated live mods.
+        # Explicit import/adoption owns writes back into profile staging.
         self.active_profile_id = profile_id
         server_engine_module.STATE.active_profile_id = profile_id
         write_active_world(layout.game_root, profile_id, "dedicated")

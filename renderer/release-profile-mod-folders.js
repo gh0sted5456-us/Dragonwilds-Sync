@@ -16,9 +16,12 @@
 
   let rewritePending = false;
   let rescanBusy = false;
+  let machinePaths = null;
+  let machinePathsPending = null;
   const selection = (window.__DWSYNC_PROFILE_SELECTION__ ||= { local: '', server: '' });
 
   const text = (value) => String(value ?? '').trim();
+  const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
   const state = () => (window.__DWSYNC_STATE__ && typeof window.__DWSYNC_STATE__ === 'object') ? window.__DWSYNC_STATE__ : {};
   const privateWorlds = (root) => Array.isArray(root?.client?.private_worlds) ? root.client.private_worlds : (root?.client?.singleplayer ? [root.client.singleplayer] : []);
   const serverWorlds = (root) => Array.isArray(root?.server_profiles) ? root.server_profiles : [];
@@ -189,7 +192,60 @@
     rewritePending = false;
     hardenRuntimeBaselineUi();
     refreshFolderHelpCopy();
+    void refreshRuntimeLocationChoices();
   }
+
+  async function refreshRuntimeLocationChoices() {
+    const definitions = [
+      ['edit-private-ue4ss-root','player',true], ['edit-private-runeschema-root','player',true],
+      ['se-server-ue4ss-root','server',false], ['se-server-runeschema-root','server',false],
+      ['se-client-ue4ss-root','server',true], ['se-client-runeschema-root','server',true],
+    ];
+    if (!definitions.some(([id]) => document.getElementById(id))) return;
+    try {
+      if (!machinePaths) {
+        machinePathsPending ||= bridge.invoke('application.machine_paths.get', {}).finally(()=>{machinePathsPending=null;});
+        machinePaths = await machinePathsPending;
+      }
+      for (const [id, role, relative] of definitions) {
+        const input = document.getElementById(id);
+        if (!input) continue;
+        const choices = machinePaths?.[role]?.runtime_locations || (relative ? [
+          {label:'Win64',game_relative:'Binaries/Win64',eligible:true},
+          {label:'RuneSchema',game_relative:'Binaries/Win64/ue4ss/Mods/RuneSchema',eligible:true},
+        ] : []);
+        let picker = input.parentElement.querySelector(`[data-profile-runtime-choice="${id}"]`);
+        if (!picker) {
+          picker = document.createElement('select');
+          picker.className = 'select';
+          picker.dataset.profileRuntimeChoice = id;
+          picker.setAttribute('aria-label','Choose a saved location for '+id.replaceAll('-',' '));
+          picker.title='Choose a saved location, or type directly in the path field. Save the profile to apply.';
+          input.insertAdjacentElement('afterend',picker);
+        }
+        const signature = JSON.stringify([choices,relative]);
+        if (picker.dataset.locationSignature === signature || picker === document.activeElement) continue;
+        picker.dataset.locationSignature = signature;
+        picker.innerHTML = '<option value="">Choose Win64 or a saved location…</option>' + choices.map((row)=>{
+          const value = relative ? row.game_relative : row.path;
+          return `<option value="${esc(value||'')}" ${row.eligible?'':'disabled'}>${esc(row.label)} — ${esc(row.eligible?value:row.reason)}</option>`;
+        }).join('');
+      }
+    } catch (error) { console.warn('Saved profile locations unavailable',error); }
+  }
+
+  document.addEventListener('change',(event)=>{
+    const picker=event.target.closest?.('[data-profile-runtime-choice]');
+    if(!picker||!picker.value)return;
+    const root=picker.closest('.modal')||document;
+    const input=root.querySelector('#'+picker.dataset.profileRuntimeChoice);
+    if(!input)return;
+    input.value=picker.value;
+    input.dataset.userEdited='1';
+    input.dispatchEvent(new Event('input',{bubbles:true}));
+    input.dispatchEvent(new Event('change',{bubbles:true}));
+    picker.value='';
+  },true);
 
   function scheduleRewrite() {
     if (rewritePending) return;
@@ -198,6 +254,19 @@
   }
 
   document.addEventListener('click', (event) => {
+    const folder=event.target?.closest?.('[data-open-profile-mod-lane]');
+    if(folder){
+      event.preventDefault();event.stopImmediatePropagation();
+      const host=folder.closest('.profile-storage-destinations');
+      let note=host?.querySelector('[data-profile-storage-status]');
+      if(!note&&host){note=document.createElement('p');note.dataset.profileStorageStatus='1';note.setAttribute('role','status');host.append(note);}
+      folder.disabled=true;
+      Promise.resolve().then(()=>bridge.invoke('application.profile.mods_root',{kind:folder.dataset.profileKind,id:folder.dataset.profileId})).then(()=>bridge.openProfileMods(folder.dataset.profileKind,folder.dataset.profileId,folder.dataset.openProfileModLane)).then((result)=>{
+        if(!result?.ok)throw Error(result?.error||'Could not open this profile folder');
+        if(note)note.textContent='Opened '+result.path+'. Add files here, then scan the profile.';
+      }).catch((error)=>{if(note)note.textContent=text(error.message||error);}).finally(()=>{folder.disabled=false;});
+      return;
+    }
     const refresh = event.target?.closest?.('#sp-refresh, #refresh-server-inventory');
     if (refresh && refresh.dataset.profileAuthorityBypass !== '1') {
       const kind = refresh.id === 'refresh-server-inventory' ? 'server' : 'local';
@@ -221,7 +290,7 @@
 
   const observer = new MutationObserver(scheduleRewrite);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.addEventListener('dragonwilds:state-updated', scheduleRewrite);
+  window.addEventListener('dragonwilds:state-updated', () => {machinePaths=null;scheduleRewrite();});
   window.addEventListener('DOMContentLoaded', scheduleRewrite, { once: true });
   scheduleRewrite();
 })();

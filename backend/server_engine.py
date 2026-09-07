@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import zipfile
+import tempfile
 from pathlib import Path
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
@@ -386,26 +387,13 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
     copied = 0
 
-    from mod_deployment_cleanup import vacate_mod_lanes
-    vacate_mod_lanes([
-        (live_roots["ue4ss"], SERVER_INFRASTRUCTURE_UE4SS),
-        (live_roots["runeschema"], RUNESCHEMA_CORE_NAMES),
-        (live_roots["paks"], set()),
-    ], APP_DATA_DIR / "Backups" / "DisplacedMods", protected=[game_root], sources=stored.values())
-
-    # Runtime/core infrastructure survives every profile swap.
-    _clear_children(live_roots["ue4ss"], exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
-    copied += _copy_children(stored["ue4ss"], live_roots["ue4ss"],
-                             exclude_names=SERVER_INFRASTRUCTURE_UE4SS | LANE_NOTES)
-
-    # RuneSchema core survives even if the destination temporarily resolves
-    # to the core root. Only child-mod content is replaceable.
-    _clear_children(live_roots["runeschema"], exclude_names=RUNESCHEMA_CORE_NAMES)
-    copied += _copy_children(stored["runeschema"], live_roots["runeschema"],
-                             exclude_names=RUNESCHEMA_CORE_NAMES | LANE_NOTES)
-
-    _clear_children(live_roots["paks"])
-    copied += _copy_children(stored["paks"], live_roots["paks"], exclude_names=LANE_NOTES)
+    from mod_deployment_cleanup import deploy_profile_lanes
+    copied += deploy_profile_lanes([
+        (stored['ue4ss'], live_roots['ue4ss'], SERVER_INFRASTRUCTURE_UE4SS | {'runeschema'}),
+        (stored['runeschema'], live_roots['runeschema'], RUNESCHEMA_CORE_NAMES),
+        (stored['paks'], live_roots['paks'], set()),
+    ], game_root / '.dragonwilds-sync' / 'profile-mod-files.json',
+        APP_DATA_DIR / 'Backups' / 'DisplacedMods')
     from win64_mods import deploy
     copied += deploy(stored["win64"], layout.game_root / "Binaries" / "Win64",
                      layout.game_root / ".dragonwilds-sync" / "win64-profile-files.json",
@@ -884,6 +872,12 @@ def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root:
         current = load_server_profile(profile_id) or profile
         runeschema = (_apply_profile_runeschema(profile_id, current, game_root) if runeschema_enabled
                       else {"ok": True, "changed": False, "enabled": False, "source": "profile-disabled"})
+        from mod_deployment_cleanup import deploy_staged_loaders
+        staged_count = deploy_staged_loaders(ensure_profile_mod_roots(_profile_mods_dir(profile_id)),
+            ue4ss_root, runeschema_root, Path(game_root) / '.dragonwilds-sync' / 'profile-loader-files.json',
+            APP_DATA_DIR / 'Backups' / 'DisplacedLoaders', ue_enabled=ue4ss_enabled, rs_enabled=runeschema_enabled)
+        if staged_count:
+            ue4ss['staged_files'] = staged_count
         cache_warning = ""
         try:
             capture_authoritative_runtimes(
@@ -1683,18 +1677,18 @@ class ServerEngine:
         executable = server_exe or find_dedicated_server_exe(profile)
         if SHARE.status().get("serving"):
             SHARE.stop()
-        mods = snapshot_profile_mods(profile_id, Path(root))
+        mods = 0  # Staging remains authoritative; unload is not adoption.
         configs = snapshot_profile_server_config(profile_id, root)
         save = snapshot_profile_savegame(profile_id, executable) if executable else False
         layout = resolve_server_layout(root)
-        _clear_children(layout.ue4ss_mods_dir, exclude_names=SERVER_INFRASTRUCTURE_UE4SS)
-        if layout.runeschema_mods_dir == layout.runeschema_root:
-            _clear_children(layout.runeschema_root, exclude_names={
-                "config", "dlls", "enabled.txt", "mods.txt",
-                RUNESCHEMA_FLAVOR_MARKER, UE4SS_VERSION_MARKER})
-        else:
-            _clear_children(layout.runeschema_mods_dir)
-        _clear_children(layout.paks_mods_dir)
+        from mod_deployment_cleanup import deploy_profile_lanes
+        targets = resolve_mod_install_paths(load_state(), 'server', Path(root))
+        with tempfile.TemporaryDirectory(prefix='dws-unload-') as empty:
+            deploy_profile_lanes([
+                (Path(empty), targets['ue4ss'], SERVER_INFRASTRUCTURE_UE4SS | {'runeschema'}),
+                (Path(empty), targets['runeschema'], RUNESCHEMA_CORE_NAMES),
+                (Path(empty), targets['paks'], set()),
+            ], layout.game_root / '.dragonwilds-sync' / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
         _clear_children(layout.config_dir)
         live_save = _live_savegames_dir(executable) if executable else None
         if live_save is not None and live_save.exists():

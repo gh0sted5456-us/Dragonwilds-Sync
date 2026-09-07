@@ -206,9 +206,9 @@ def _profile_specs() -> list[tuple[str, str, Path]]:
 def _physical_keys(kind: str, profile_id: str) -> set[str]:
     keys: set[str] = set()
     win64 = _group_root(kind, profile_id, "win64_mod")
-    from win64_mods import payload_files
+    from win64_mods import payload_files, payload_entries
     list(payload_files(win64))
-    for child in win64.iterdir():
+    for child in payload_entries(win64):
         if not child.name.startswith('.') and child.name.casefold() not in LANE_NOTE_NAMES:
             keys.add(f"win64_mod::{child.name}")
     ue4ss = _group_root(kind, profile_id, "ue4ss_mod")

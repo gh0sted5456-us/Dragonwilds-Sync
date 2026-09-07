@@ -123,14 +123,14 @@ def main() -> None:
             assert (game / "Binaries/Win64/ue4ss/Mods/AlphaLua/main.lua").is_file()
             assert (game / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods/AlphaSchema/config.json").is_file()
             assert (game / "Content/Paks/~mods/AlphaPack.pak").is_file()
-            assert not (game / "Binaries/Win64/ue4ss/Mods/BetaLua").exists()
+            assert (game / "Binaries/Win64/ue4ss/Mods/BetaLua").exists(), 'Undeclared live files are not swept'
             assert (rs_core / "dlls" / "main.dll").read_bytes() == b"runtime-core"
 
             se.restore_profile_mods("world-b", game)
             assert (game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta'"
             assert (game / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods/BetaSchema/config.json").is_file()
             assert (game / "Content/Paks/~mods/BetaPack.pak").read_bytes() == b"Beta-pak"
-            assert not (game / "Binaries/Win64/ue4ss/Mods/AlphaLua").exists()
+            assert not (game / "Binaries/Win64/ue4ss/Mods/AlphaLua/main.lua").exists()
             assert (rs_core / "dlls" / "main.dll").read_bytes() == b"runtime-core"
 
             # Host transfer gate: publish the freshly scanned dedicated mod set,
@@ -152,6 +152,9 @@ def main() -> None:
 
             (client_game / "Content" / "Paks").mkdir(parents=True, exist_ok=True)
             (client_game / "Binaries" / "Win64").mkdir(parents=True, exist_ok=True)
+            stray = client_game / 'Binaries/Win64/ue4ss/Mods/UnmanagedClient/main.lua'
+            stray.parent.mkdir(parents=True)
+            stray.write_text('client-owned')
             world = {
                 "id": "client-world-b",
                 "identity": {"world_name": "World B", "server_profile_id_hint": "world-b"},
@@ -179,6 +182,7 @@ def main() -> None:
             assert (client_game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta'"
             assert (client_game / "Content/Paks/~mods/BetaPack.pak").read_bytes() == b"Beta-pak"
             assert not (client_game / "Binaries/Win64/ue4ss/Mods/AlphaLua").exists()
+            assert stray.read_text() == 'client-owned', 'Unmanaged client files survive sync'
 
             unchanged = sync_world(world, client_install, "integration-client")
             assert unchanged["fast_manifest_match"] is True

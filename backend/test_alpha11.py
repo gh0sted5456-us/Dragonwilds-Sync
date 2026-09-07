@@ -163,7 +163,7 @@ def main() -> None:
         se.restore_client_world("private-a", game)
         assert (live_ue4ss / "WorldA/Scripts/main.lua").read_text(encoding="utf-8") == "return 'A'\n"
         assert (live_paks / "WorldA.pak").read_bytes() == b"pak-a"
-        assert not (live_ue4ss / "WorldB").exists() and not (live_paks / "WorldB.pak").exists()
+        assert (live_ue4ss / "WorldB").exists() and (live_paks / "WorldB.pak").exists(), 'Unmanaged files survive activation'
         (live_ue4ss / "WorldA/Scripts/main.lua").write_text("return 'A-updated'\n", encoding="utf-8")
         se.snapshot_client_world("private-a", game)
         report = se.switch_client_world_profile("private-a", "private-b", game)
@@ -206,7 +206,7 @@ def main() -> None:
         assert any(row["key"] == "runeschema_mod::DirectA" for row in cached_units), cached_units
         se.restore_client_world("direct-a", direct_game)
         assert (direct_rs / "mods/DirectA/payload/DirectA.pak").read_bytes() == b"direct-a"
-        assert not (direct_rs / "mods/DirectB").exists()
+        assert (direct_rs / "mods/DirectB").exists(), 'Unmanaged direct RuneSchema mods survive'
         assert (direct_rs / "DLLs/core.dll").read_bytes() == b"shared-runeschema-core"
 
         # Alpha 11 predates the current profile-management renderer. Keep it

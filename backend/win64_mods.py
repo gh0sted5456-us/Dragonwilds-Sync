@@ -22,13 +22,26 @@ def validate_relative(value: str) -> str:
     return PurePosixPath(*parts).as_posix()
 
 
+def payload_entries(root: Path):
+    """Independent mods only; loader trees use their own manifest categories."""
+    nested = root.name.casefold() == 'win64' and root.parent.name.casefold() == 'binaries'
+    for item in sorted(root.iterdir()) if root.exists() else ():
+        if item.name.startswith('.') or item.name.casefold() == 'readme.txt':
+            continue
+        if nested and item.name.casefold() in {'ue4ss', 'dwmapi.dll', 'version.dll', 'ue4ss.dll'}:
+            continue
+        yield item
+
+
 def payload_files(root: Path, *, prefix: str = ''):
     if not root.exists():
         return
     if root.is_symlink() or root.is_junction():
         raise ValueError('Win64 profile storage must not be a filesystem link')
     seen = set()
-    for item in sorted(root.rglob('*')):
+    entries = list(root.rglob('*')) if prefix else [item for top in payload_entries(root)
+                                                for item in ([top, *top.rglob('*')] if top.is_dir() else [top])]
+    for item in sorted(entries):
         if item.is_symlink() or item.is_junction():
             raise ValueError('Win64 mod payload must not contain filesystem links')
         if item.is_file() and not any(p.startswith('.') for p in item.relative_to(root).parts):

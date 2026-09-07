@@ -1085,20 +1085,25 @@ async function openDesktopPath(target) {
   }catch(_){return false;}
 }
 ipcMain.handle('dragonwilds:open-path', async (_event,target) => openDesktopPath(target));
-ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id) => {
+ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id,lane = '') => {
   try {
     const profileKind=String(kind||'').trim().toLowerCase();
     const profileId=String(id||'').trim();
     if(!['local','server'].includes(profileKind))throw new Error('The profile type is invalid.');
     if(!profileId||profileId==='.'||profileId==='..'||/[\\/:*?"<>|]/.test(profileId))throw new Error('The profile id is invalid.');
+    const folders={UE4SS:'Binaries/Win64/ue4ss/Mods',RuneSchema:'Binaries/Win64/ue4ss/Mods/RuneSchema/mods',PAKs:'Content/Paks/~mods',Win64:'Binaries/Win64'};
+    const lanes=Object.keys(folders);
+    const selectedLane=String(lane||'');
+    if(selectedLane&&!lanes.includes(selectedLane))throw new Error('Unknown profile mod folder.');
     // Resolve this directly from the application's active AppData root. Opening
     // profile storage must not depend on the backend process being responsive.
     const profileBase=path.join(activeProgramDataRoot(),'profiles','world',profileKind==='server'?'dedicated':'local',profileId);
     const target=path.join(profileBase,...(profileKind==='server'?['mods']:['snapshot','mods']));
-    for(const lane of ['UE4SS','RuneSchema','PAKs'])fs.mkdirSync(path.join(target,lane),{recursive:true});
-    const ok=await openDesktopPath(target);
-    if(!ok)throw new Error(`Windows could not open ${target}`);
-    return {ok:true,path:target,resolved_kind:profileKind};
+    for(const folder of Object.values(folders))fs.mkdirSync(path.join(target,folder),{recursive:true});
+    const selected=selectedLane?path.join(target,folders[selectedLane]):target;
+    const ok=await openDesktopPath(selected);
+    if(!ok)throw new Error(`Windows could not open ${selected}`);
+    return {ok:true,path:selected,resolved_kind:profileKind};
   } catch (error) {
     return {ok:false,error:String(error?.message||error||'Could not open the profile Mods folder.')};
   }

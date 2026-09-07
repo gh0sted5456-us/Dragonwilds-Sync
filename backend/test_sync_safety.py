@@ -61,15 +61,15 @@ def main():
             report_b = sync_engine.switch_client_world_profile("A", "B", selected)
             assert report_b["clean"] is True
             assert (live_mods / "RSDWTools" / "enabled.txt").is_file()
-            assert not (live_mods / "ModA").exists() and (live_mods / "ModB").is_dir()
+            assert (live_mods / "ModA").exists() and (live_mods / "ModB").is_dir()
             assert live_config.read_text(encoding="utf-8") == "world=B"
 
-            # Re-activating B must not keep an unrelated manually installed mod.
+            # Re-activating B preserves unrelated manually installed mods.
             (live_mods / "UnexpectedMod").mkdir()
             (live_mods / "UnexpectedMod" / "main.lua").write_text("stray")
             same = sync_engine.activate_or_adopt_client_world_profile("B", "B", selected)
             assert same["clean"] and same["already_active"]
-            assert not (live_mods / "UnexpectedMod").exists()
+            assert (live_mods / "UnexpectedMod").exists()
             assert (live_mods / "ModB" / "main.lua").read_text() == "B"
 
             report_a = sync_engine.switch_client_world_profile("B", "A", selected)
@@ -86,7 +86,7 @@ def main():
             assert (live_mods / "ModB").is_dir() and not (live_mods / "ModA").exists()
             adopted = sync_engine.activate_or_adopt_client_world_profile(None, "C", selected)
             assert adopted["adopted"] is True and sync_engine.client_world_has_snapshot("C")
-            assert (sync_engine.client_world_dir("C") / "mods" / "UE4SS" / "ModB" / "main.lua").read_text(encoding="utf-8") == "B"
+            assert (sync_engine.client_world_dir("C") / "mods" / "Binaries/Win64/ue4ss/Mods" / "ModB" / "main.lua").read_text(encoding="utf-8") == "B"
         finally:
             sync_engine.CLIENT_WORLDS_DIR = old_worlds
             client_layout.LOCAL_APPDATA = old_local_appdata
@@ -123,13 +123,13 @@ def main():
             "Binaries/Win64/dwmapi.dll": {"kind": "file"},
         }})
         reset = sync_engine.reset_client_managed_payload_for_resync(game)
-        assert reset["core_preserved"] and reset["removed_files"] >= 4
+        assert reset["core_preserved"] and reset["removed_files"] == 1
         assert layout.win64_dir.joinpath("dwmapi.dll").is_file()
         assert layout.win64_dir.joinpath("ue4ss", "UE4SS.dll").is_file()
         assert (connector / "enabled.txt").is_file()
         assert (rune_core / "main.dll").is_file()
-        assert not rune_child.exists() and not orphan.exists()
-        assert not layout.paks_mods_dir.exists() and not tracked_config.exists()
+        assert rune_child.exists() and orphan.exists()
+        assert layout.paks_mods_dir.exists() and not tracked_config.exists()
         assert not (game / sync_engine.LOCAL_STATE_DIR / sync_engine.STATE_FILE).exists()
 
     # A tagged replacement manifest makes Reset & Resync delete the identified
@@ -152,7 +152,7 @@ def main():
         reset = sync_engine.reset_client_managed_payload_for_resync(game, {"profile_id": "remote", "files": tagged})
         assert reset["runtime_reset"] is True and reset["core_preserved"] is False
         assert reset["tagged_targets"] == 2
-        assert not ue4ss.exists() and not layout.runeschema_root.exists()
+        assert not ue4ss.exists() and rune.exists(), 'No bundle receipt means no authority to sweep the RuneSchema tree'
         assert "runtime:baseline" in reset["runtime_components_to_restore"]
     print("sync safety tests passed")
 

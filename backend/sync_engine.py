@@ -10,7 +10,8 @@ import threading
 import time
 import urllib.request
 import zipfile
-from pathlib import Path, PurePosixPath
+import tempfile
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from urllib.parse import quote, urlsplit
 
 from process_utils import popen_hidden
@@ -75,9 +76,14 @@ def sha256_file(path: Path) -> str:
 
 
 def safe_game_path(game_root: Path, relative: str) -> Path:
-    pure = PurePosixPath(relative)
-    if pure.is_absolute() or ".." in pure.parts:
+    pure = PurePosixPath(str(relative).replace('\\', '/'))
+    if pure.is_absolute() or ".." in pure.parts or PureWindowsPath(relative).drive:
         raise ConnectionError(f"Server manifest contains an unsafe path: {relative}")
+    parts = [p.casefold() for p in pure.parts]
+    if (parts and parts[0] in {'.dwsync', '.dragonwilds-sync', 'activeworld', 'activeworld.txt'}
+            or len(parts) == 3 and parts[:2] == ['content', 'paks'] and parts[2] not in {'~mods', 'logicmods'}
+            or any(p.startswith('rsdragonwilds') and p.endswith('.exe') for p in parts)):
+        raise ConnectionError(f'Manifest cannot replace protected game or launcher files: {relative}')
     target = (game_root / Path(*pure.parts)).resolve()
     root = game_root.resolve()
     if target != root and root not in target.parents:
@@ -380,6 +386,22 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
     _remove_launcher_managed_tree(config_destination)
     state = load_local_state(game_root)
     for relative, info in state.get("files", {}).items():
+        if include_mods and info.get('kind') == 'zip_bundle':
+            receipt = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
+            if receipt.is_file():
+                records = json.loads(receipt.read_text(encoding='utf-8'))
+                extract_to = str(info.get('extract_to') or '')
+                if extract_to.startswith('Binaries/Win64/'):
+                    bundle_root = safe_game_path(game_root, extract_to)
+                    for record in records.values():
+                        if record.get('destination') != str(bundle_root.resolve()):
+                            continue
+                        for name in record.get('files', []):
+                            source = safe_path_under(bundle_root, name)
+                            target = safe_path_under(mods_destination, extract_to + '/' + name)
+                            if source.is_file():
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                shutil.copy2(source, target)
         if info.get("kind", "file") != "file":
             continue
         source = target_for_state(selected_root, relative, info)
@@ -390,6 +412,10 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
             if include_mods and info.get("mod_group") == "win64_mod":
                 from win64_mods import safe_target
                 visible = safe_target(profile_roots["win64"], relative[len("Binaries/Win64/"):])
+                visible.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, visible)
+            elif include_mods and info.get('baseline_runtime') and relative.startswith('Binaries/Win64/'):
+                visible = safe_path_under(mods_destination, relative)
                 visible.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, visible)
     if layout.config_dir.exists():
@@ -466,12 +492,6 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         (layout.win64_dir / "ue4ss" / "imgui.ini").resolve(),
     }
     stored = client_world_dir(world_id)
-    from mod_deployment_cleanup import vacate_mod_lanes
-    vacate_mod_lanes([
-        (profile_live["ue4ss_mods"], LAUNCHER_LOCAL_UE4SS_MODS),
-        (profile_live["runeschema_mods"], RUNESCHEMA_CORE_NAMES),
-        (profile_live["pak_mods"], set()),
-    ], APP_DATA_DIR / "Backups" / "DisplacedMods", protected=[game_root], sources=[stored])
     outgoing = load_local_state(game_root)
     for relative, info in outgoing.get("files", {}).items():
         if info.get("kind", "file") == "file":
@@ -483,30 +503,19 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
                 target.unlink()
 
     profile_roots = ensure_profile_mod_roots(stored / "mods")
-    # Clear only profile-owned live destinations. Runtime/core survives.
-    if profile_live["ue4ss_mods"].exists():
-        for child in list(profile_live["ue4ss_mods"].iterdir()):
-            if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
-                continue
-            if child.is_dir():
-                _remove_launcher_managed_tree(child)
-            else:
-                _set_managed_readonly(child, False)
-                child.unlink(missing_ok=True)
-    if profile_live["runeschema_mods"].exists():
-        _remove_launcher_managed_tree(profile_live["runeschema_mods"])
-    profile_live["runeschema_mods"].mkdir(parents=True, exist_ok=True)
-    if profile_live["pak_mods"].exists():
-        _remove_launcher_managed_tree(profile_live["pak_mods"])
-    profile_live["pak_mods"].mkdir(parents=True, exist_ok=True)
-
-    copy_tree(profile_roots["ue4ss"], profile_live["ue4ss_mods"])
-    copy_tree(profile_roots["runeschema"], profile_live["runeschema_mods"])
-    copy_tree(profile_roots["paks"], profile_live["pak_mods"])
+    from mod_deployment_cleanup import deploy_profile_lanes
+    deploy_profile_lanes([
+        (profile_roots['ue4ss'], profile_live['ue4ss_mods'], LAUNCHER_LOCAL_UE4SS_MODS | {'runeschema'}),
+        (profile_roots['runeschema'], profile_live['runeschema_mods'], RUNESCHEMA_CORE_NAMES),
+        (profile_roots['paks'], profile_live['pak_mods'], set()),
+    ], game_root / LOCAL_STATE_DIR / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
     from win64_mods import deploy
     deploy(profile_roots["win64"], layout.win64_dir,
            game_root / LOCAL_STATE_DIR / "win64-profile-files.json",
            APP_DATA_DIR / "Backups" / "DisplacedWin64Mods")
+    from mod_deployment_cleanup import deploy_staged_loaders
+    deploy_staged_loaders(profile_roots, layout.win64_dir, layout.runeschema_root,
+        game_root / LOCAL_STATE_DIR / 'profile-loader-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedLoaders')
 
     cached_config = stored / "configs" / "game"
     if cached_config.exists():
@@ -529,6 +538,14 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
+                # Even without migration approval, collisions are recoverable;
+                # unrelated siblings are never swept.
+                backup = APP_DATA_DIR / 'Backups' / 'SyncReplacements' / str(time.time_ns())
+                backup.mkdir(parents=True)
+                shutil.copy2(target, backup / 'original')
+                if sha256_file(target) != sha256_file(backup / 'original'):
+                    raise ConnectionError('Replacement backup verification failed')
+                (backup / 'manifest.json').write_text(json.dumps({'original': str(target), 'stored': 'original'}), encoding='utf-8')
                 _set_managed_readonly(target, False)
             shutil.copy2(cached, target)
             if str(info.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
@@ -551,6 +568,7 @@ def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
     live_ue = {p.name.casefold() for p in layout.ue4ss_mods_dir.iterdir()} if layout.ue4ss_mods_dir.exists() else set()
     live_ue -= LAUNCHER_LOCAL_UE4SS_MODS
     cached_ue = {p.name.casefold() for p in stored["ue4ss"].iterdir()} if stored["ue4ss"].exists() else set()
+    cached_ue -= LAUNCHER_LOCAL_UE4SS_MODS | {'runeschema', 'readme.txt'}
     comparisons = {
         "UE4SS": (live_ue, cached_ue),
         "RuneSchema": (
@@ -563,10 +581,13 @@ def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
         ),
     }
     for slot, (live, cached) in comparisons.items():
+        cached -= {'readme.txt'}
+        live -= {'readme.txt'}
         unexpected = sorted(live - cached)
         missing = sorted(cached - live)
         result["slots"][slot] = {"unexpected": unexpected, "missing": missing}
-        if unexpected or missing:
+        # Unmanaged client additions are informational, not a failed sync.
+        if missing:
             result["clean"] = False
     return result
 
@@ -624,40 +645,13 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
             removed_managed += 1
     removed_mods = 0
     roots = _client_mod_roots(selected_root)
-    for slot, live in roots.items():
-        if not live.exists():
-            continue
-        if slot == "ue4ss_mods":
-            for child in list(live.iterdir()):
-                if child.name.casefold() == "runeschema":
-                    nested = False
-                    for candidate in (child / "Mods", child / "mods"):
-                        if candidate.exists():
-                            nested = True
-                            removed_mods += sum(1 for p in candidate.rglob("*") if p.is_file())
-                            _remove_launcher_managed_tree(candidate)
-                    if not nested:
-                        for entry in list(child.iterdir()):
-                            if entry.name.casefold() in RUNESCHEMA_CORE_NAMES:
-                                continue
-                            removed_mods += sum(1 for p in entry.rglob("*") if p.is_file()) if entry.is_dir() else 1
-                            if entry.is_dir():
-                                _remove_launcher_managed_tree(entry)
-                            else:
-                                _set_managed_readonly(entry, False)
-                                entry.unlink(missing_ok=True)
-                    continue
-                if child.name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
-                    continue
-                removed_mods += sum(1 for p in child.rglob("*") if p.is_file()) if child.is_dir() else 1
-                if child.is_dir():
-                    _remove_launcher_managed_tree(child)
-                else:
-                    _set_managed_readonly(child, False)
-                    child.unlink(missing_ok=True)
-        else:
-            removed_mods += sum(1 for p in live.rglob("*") if p.is_file())
-            _remove_launcher_managed_tree(live)
+    from mod_deployment_cleanup import deploy_profile_lanes
+    with tempfile.TemporaryDirectory(prefix='dws-unload-') as empty:
+        deploy_profile_lanes([
+            (Path(empty), roots['ue4ss_mods'], LAUNCHER_LOCAL_UE4SS_MODS | {'runeschema'}),
+            (Path(empty), roots['runeschema_mods'], RUNESCHEMA_CORE_NAMES),
+            (Path(empty), roots['pak_mods'], set()),
+        ], layout.game_root / LOCAL_STATE_DIR / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
     (layout.game_root / LOCAL_STATE_DIR / STATE_FILE).unlink(missing_ok=True)
     (layout.game_root / LOCAL_STATE_DIR / META_FILE).unlink(missing_ok=True)
     remove_active_world(layout.game_root)
@@ -723,6 +717,11 @@ def reset_client_managed_payload_for_resync(selected_root: Path, replacement_man
             if not extract_to or (not tagged and is_baked_client_path(extract_to)):
                 return
             target = safe_game_path(game_root, extract_to)
+            from mod_deployment_cleanup import deploy_profile_lanes
+            bundle_ledger = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
+            with tempfile.TemporaryDirectory(prefix='dws-reset-') as empty:
+                deploy_profile_lanes([(Path(empty), target, set())], bundle_ledger, APP_DATA_DIR / 'Backups' / 'DisplacedMods')
+            return
         else:
             target = target_for_state(selected_root, relative, info)
         identity = os.path.normcase(str(target.resolve(strict=False)))
@@ -748,28 +747,7 @@ def reset_client_managed_payload_for_resync(selected_root: Path, replacement_man
     for entry in tagged_replacement:
         remove_entry(str(entry.get("path") or ""), entry, tagged=True)
 
-    # Clear orphaned UE4SS mods, but retain machine-level baseline components.
-    if layout.ue4ss_mods_dir.is_dir():
-        for child in list(layout.ue4ss_mods_dir.iterdir()):
-            name = child.name.casefold()
-            if name == "runeschema":
-                for rune_mods in (child / "Mods", child / "mods"):
-                    if rune_mods.exists():
-                        removed_files += sum(1 for item in rune_mods.rglob("*") if item.is_file())
-                        _remove_launcher_managed_tree(rune_mods)
-                continue
-            if name in LAUNCHER_LOCAL_UE4SS_MODS:
-                continue
-            removed_files += sum(1 for item in child.rglob("*") if item.is_file()) if child.is_dir() else 1
-            if child.is_dir():
-                _remove_launcher_managed_tree(child)
-            else:
-                _set_managed_readonly(child, False)
-                child.unlink(missing_ok=True)
-
-    if layout.paks_mods_dir.exists():
-        removed_files += sum(1 for item in layout.paks_mods_dir.rglob("*") if item.is_file())
-        _remove_launcher_managed_tree(layout.paks_mods_dir)
+    # Orphans are not owned. Only explicit Back up & migrate may move them.
 
     state_root = game_root / LOCAL_STATE_DIR
     (state_root / STATE_FILE).unlink(missing_ok=True)
@@ -1113,21 +1091,15 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
             destination = safe_game_path(game_root, extract_to) if extract_to else game_root
             emit("installing", f"Installing {entry['path']}", min(72, transfer_percent + 2), current_file=entry["path"],
                  current=index, changed_files=len(to_download), unchanged_files=len(up_to_date))
-            # A changed bundle is authoritative.  Extracting over the old tree
-            # leaves removed DLL/config payloads behind and can make the client
-            # differ even after every newly advertised file was downloaded.
-            # Move the old tree into the launcher's recoverable rollback area,
-            # then materialize the verified server bundle into a clean folder.
-            if destination.exists() and destination != game_root:
-                rollback = game_root / LOCAL_STATE_DIR / "rollback" / str(int(time.time() * 1000)) / Path(extract_to)
-                rollback.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    os.replace(destination, rollback)
-                except OSError:
-                    shutil.copytree(destination, rollback, dirs_exist_ok=True)
-                    shutil.rmtree(destination, ignore_errors=True)
-            destination.mkdir(parents=True, exist_ok=True)
-            safe_extract_zip(temp, destination)
+            from mod_deployment_cleanup import deploy_profile_lanes
+            bundle_ledger = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(entry['path'].encode()).hexdigest() + '.json')
+            with tempfile.TemporaryDirectory(prefix='dws-bundle-') as extracted:
+                safe_extract_zip(temp, Path(extracted))
+                for payload in Path(extracted).rglob('*'):
+                    if payload.is_file():
+                        safe_game_path(game_root, str(PurePosixPath(extract_to, payload.relative_to(extracted).as_posix())))
+                deploy_profile_lanes([(Path(extracted), destination, set())], bundle_ledger,
+                                     APP_DATA_DIR / 'Backups' / 'DisplacedMods')
             temp.unlink(missing_ok=True)
         else:
             target = target_for_entry(install_dir, entry)
@@ -1137,6 +1109,12 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
             review_download(staged, entry["path"])
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
+                backup = APP_DATA_DIR / 'Backups' / 'SyncReplacements' / str(time.time_ns())
+                backup.mkdir(parents=True)
+                shutil.copy2(target, backup / 'original')
+                if sha256_file(target) != sha256_file(backup / 'original'):
+                    raise ConnectionError('Replacement backup verification failed')
+                (backup / 'manifest.json').write_text(json.dumps({'original': str(target), 'stored': 'original'}), encoding='utf-8')
                 _set_managed_readonly(target, False)
             os.replace(staged, target)
             if str(entry.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
@@ -1163,7 +1141,11 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
                 for f in manifest.get("files", []))
             folder = safe_game_path(game_root, extract_to)
             if folder.exists() and not nested_active:
-                shutil.rmtree(folder, ignore_errors=True)
+                from mod_deployment_cleanup import deploy_profile_lanes
+                bundle_ledger = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
+                with tempfile.TemporaryDirectory(prefix='dws-empty-') as empty:
+                    deploy_profile_lanes([(Path(empty), folder, set())], bundle_ledger,
+                                         APP_DATA_DIR / 'Backups' / 'DisplacedMods')
         else:
             target = target_for_state(install_dir, relative, old)
             if target.is_file():

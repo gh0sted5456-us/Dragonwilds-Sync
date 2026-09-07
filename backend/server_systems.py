@@ -4674,8 +4674,9 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
                           preferred_kind: str | None = None, payload_root: str = "", payload_name: str = "") -> dict:
     """Install a normal World mod ZIP into its authoritative live/snapshot slot.
 
-    UE4SS imports deliberately lose embedded enabled.txt so Dragonwilds Sync owns
-    enablement/order through mods.txt. Normal PAKs receive numeric load prefixes.
+    UE4SS imports preserve an operator-supplied enabled.txt. Such mods self-enable
+    and are excluded from generated mods.txt to prevent duplicate initialization.
+    Normal PAKs receive numeric load prefixes.
     RuneSchema mods remain untouched beneath RuneSchema/mods and have no order.
     """
     archive = Path(zip_path)
@@ -4714,11 +4715,8 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
             rollback_archive = _snapshot_world_mod_rollback(profile_id, [dest], f"ue4ss-{mod_name}")
             shutil.rmtree(dest, ignore_errors=True)
             written = _copy_mod_contents(content, dest)
-            removed = 0
-            for marker in list(dest.rglob("enabled.txt")):
-                marker.unlink(missing_ok=True); removed += 1
             if archive_metadata.get("hotload_capable"): set_hotload_marker(dest, True)
-            result = {"ok": True, "kind": kind, "name": mod_name, "destination": str(dest), "files_written": written, "enabled_markers_removed": removed, "rollback_archive": rollback_archive}
+            result = {"ok": True, "kind": kind, "name": mod_name, "destination": str(dest), "files_written": written, "enabled_markers_removed": 0, "rollback_archive": rollback_archive}
         elif kind == "runeschema":
             archive_metadata = discover_packaged_metadata(metadata_root, effective_root=content)
             dest = rs_mods_root / mod_name

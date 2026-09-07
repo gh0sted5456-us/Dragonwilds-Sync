@@ -491,7 +491,8 @@ def install_mod_taxonomy_adapters() -> None:
             dragonconnect = str(CORE_COMPONENTS["dragonconnect"].get("physical_name") or "DragonConnect")
             connect_dir = layout.ue4ss_mods_dir / dragonconnect
             enabled = [name for name in (result.get("enabled") or []) if is_parity_payload(name, "ue4ss_mod")]
-            if connect_dir.is_dir() and dragonconnect.casefold() not in {name.casefold() for name in enabled}:
+            if (connect_dir.is_dir() and not (connect_dir / "enabled.txt").is_file()
+                    and dragonconnect.casefold() not in {name.casefold() for name in enabled}):
                 enabled.append(dragonconnect)
             # Rebuild from the authoritative role-filtered list. Toolkit can
             # never leak into a joining client's control file.

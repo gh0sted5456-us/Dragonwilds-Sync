@@ -617,16 +617,6 @@ def _rename_pak_groups(root: Path, ordered_names: list[str]) -> None:
         temp.rename(final)
 
 
-def _remove_enabled_markers(root: Path) -> int:
-    removed = 0
-    for marker in list(root.rglob("enabled.txt")) if root.exists() else []:
-        try:
-            marker.unlink(); removed += 1
-        except OSError:
-            pass
-    return removed
-
-
 def _snapshot_mod_rollback(paths: list[Path], label: str, profile_id: str = SINGLEPLAYER_ID) -> str:
     existing = [Path(p) for p in paths if Path(p).exists()]
     if not existing:
@@ -730,9 +720,8 @@ def install_mod_zip(game_dir: str, zip_path: str, *, live: bool = False, preferr
             rollback_archive = _snapshot_mod_rollback([dest], f"ue4ss-{mod_name}", profile_id)
             shutil.rmtree(dest, ignore_errors=True)
             written = _copy_tree_contents(content, dest)
-            removed = _remove_enabled_markers(dest)
             if archive_metadata.get("hotload_capable"): set_hotload_marker(dest, True)
-            result = {"ok": True, "kind": kind, "name": mod_name, "destination": str(dest), "files_written": written, "enabled_markers_removed": removed, "rollback_archive": rollback_archive}
+            result = {"ok": True, "kind": kind, "name": mod_name, "destination": str(dest), "files_written": written, "enabled_markers_removed": 0, "rollback_archive": rollback_archive}
         elif kind == "runeschema":
             archive_metadata = discover_packaged_metadata(metadata_root, effective_root=content, recursive_fallback=False)
             dest = targets["runeschema"] / mod_name

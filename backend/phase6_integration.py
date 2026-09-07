@@ -194,21 +194,22 @@ def _write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
     def add(name: object, *, derived: bool = False) -> None:
         value = str(name or "").strip()
         key = value.casefold()
-        if not value or key in seen or key in {"mods.txt", "dwmapi.dll", "rsdwtools", "rsdwdevkit", "rsdw toolkit"}:
+        if not value or key in seen or key in {"mods.txt", "dwmapi.dll", "runeschema", "rsdwtools", "rsdwdevkit", "rsdw toolkit"}:
             return
         if not derived and not core_components.is_user_manageable_mod(value, "ue4ss_mod"):
             return
         mod_dir = layout.ue4ss_mods_dir / value
-        # User mods carrying enabled.txt retain their existing auto-load
-        # mechanism. Derived frameworks/components are listed explicitly so the
-        # runtime plan is unambiguous and reproducible.
-        if not derived and (mod_dir / "enabled.txt").is_file():
+        # enabled.txt and mods.txt are two alternative UE4SS activation
+        # mechanisms. Never write a directory into mods.txt when it already
+        # self-enables, including derived/core components such as RuneSchema or
+        # DragonConnect. Listing both makes UE4SS initialize the mod twice.
+        if (mod_dir / "enabled.txt").is_file():
             return
         seen.add(key)
         selected.append(value)
 
-    if (layout.ue4ss_mods_dir / "RuneSchema").is_dir():
-        add("RuneSchema", derived=True)
+    # RuneSchema is a self-enabled framework beneath UE4SS/Mods. It is never a
+    # mods.txt entry, even if a damaged install temporarily lacks its marker.
     for raw in manifest.get("client_ue4ss_mods") or []:
         add(raw)
     if (layout.ue4ss_mods_dir / persistent_direct_connect.MOD_NAME).is_dir():
@@ -241,7 +242,7 @@ def _write_client_mods_txt(install_dir: Path, manifest: dict) -> dict:
         "enabled": selected,
         "count": len(selected),
         "derived": {
-            "runeschema": "RuneSchema" in selected,
+            "runeschema": False,
             "dragonconnect": persistent_direct_connect.MOD_NAME in selected,
         },
     }

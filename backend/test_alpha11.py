@@ -36,24 +36,25 @@ def main() -> None:
         local = lw.ensure_state(state)
         assert local["kind"] == "singleplayer" and local["id"] == "singleplayer"
 
-        # UE4SS: embedded enabled.txt is removed and ordering is controlled by mods.txt.
+        # UE4SS: operator-supplied enabled.txt is preserved and takes precedence
+        # over launcher-managed mods.txt activation.
         zip_a = root / "Zulu.zip"
         make_zip(zip_a, {"Zulu/Scripts/main.lua": "return true", "Zulu/enabled.txt": "", "Zulu/tags.txt": "combat; nexus-ready", "Zulu/hotload.txt": ""})
         result_a = lw.install_mod_zip(str(game), str(zip_a), live=True)
-        assert result_a["kind"] == "ue4ss" and result_a["enabled_markers_removed"] == 1
+        assert result_a["kind"] == "ue4ss" and result_a["enabled_markers_removed"] == 0
         assert result_a["tags"] == ["combat", "nexus-ready"] and result_a["hotload_capable"] is True
-        assert not (inner / "Binaries/Win64/ue4ss/Mods/Zulu/enabled.txt").exists()
+        assert (inner / "Binaries/Win64/ue4ss/Mods/Zulu/enabled.txt").is_file()
         assert (inner / "Binaries/Win64/ue4ss/Mods/Zulu/hotload.txt").is_file()
         assert (inner / "Binaries/Win64/ue4ss/Mods/Zulu/ID.txt").is_file()
 
         zip_b = root / "Alpha.zip"
-        make_zip(zip_b, {"Alpha/Scripts/main.lua": "return true", "Alpha/enabled.txt": ""})
+        make_zip(zip_b, {"Alpha/Scripts/main.lua": "return true"})
         lw.install_mod_zip(str(game), str(zip_b), live=True)
         lw.move_mod(str(game), "ue4ss_mod::Zulu", target_index=0, live=True)
         written = lw.write_mods_txt(str(game))
-        assert written["enabled"][:2] == ["Zulu", "Alpha"], written
+        assert written["enabled"] == ["Alpha"], written
         mods_text = (inner / "Binaries/Win64/ue4ss/Mods/mods.txt").read_text(encoding="utf-8")
-        assert mods_text.index("Zulu : 1") < mods_text.index("Alpha : 1")
+        assert "Zulu : 1" not in mods_text and "Alpha : 1" in mods_text
         assert (inner / "Binaries/Win64/ue4ss/Mods/mods.txt").stat().st_mode & 0o222
         # Every managed directory mod carries editable launcher metadata, even
         # when hotload is disabled and no tags have been assigned yet.

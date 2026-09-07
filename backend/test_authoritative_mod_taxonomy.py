@@ -187,7 +187,7 @@ def main() -> None:
         client_text = Path(result["path"]).read_text(encoding="utf-8")
         assert result["writer"] == "client_generate"
         assert "ActualUserMod : 1" in client_text
-        assert "DragonConnect : 1" in client_text
+        assert "DragonConnect : 1" not in client_text
         assert "DragonCore : 1" in client_text
         assert "RSDWTools" not in client_text
 

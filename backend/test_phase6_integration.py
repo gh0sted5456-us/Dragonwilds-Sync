@@ -115,6 +115,9 @@ def test_client_mods_txt_is_locally_generated_from_role_filtered_state():
         mods.mkdir(parents=True)
         for name in ("RuneSchema", direct_connect.MOD_NAME, "DragonCore", "RSDWTools", "ClientQoL"):
             (mods / name).mkdir(parents=True)
+        (mods / "RuneSchema" / "enabled.txt").write_text("", encoding="utf-8")
+        (mods / direct_connect.MOD_NAME / "enabled.txt").write_text("", encoding="utf-8")
+        (mods / "ClientQoL" / "enabled.txt").write_text("", encoding="utf-8")
         target = root / "mods.txt"
         target.write_text("Keybinds : 1\n", encoding="utf-8")
         fake = SimpleNamespace(game_root=root, ue4ss_mods_dir=mods, mods_txt=target)
@@ -133,9 +136,9 @@ def test_client_mods_txt_is_locally_generated_from_role_filtered_state():
         text = target.read_text(encoding="utf-8")
         assert result["writer"] == "client_generate"
         assert "Server mods.txt is never copied" in text
-        assert "RuneSchema : 1" in text
-        assert f"{direct_connect.MOD_NAME} : 1" in text
-        assert "ClientQoL : 1" in text
+        assert "RuneSchema : 1" not in text
+        assert f"{direct_connect.MOD_NAME} : 1" not in text
+        assert "ClientQoL : 1" not in text
         assert "DragonCore : 1" in text
         assert "RSDWTools" not in text
         assert "Keybinds : 1" in text

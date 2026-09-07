@@ -48,6 +48,18 @@
   ],
   "releases": [
     {
+      "version": "4.0.3",
+      "title": "V4",
+      "date": "2026-09-07",
+      "status": "stable",
+      "summary": "Prevents duplicate UE4SS mod initialization across local, hosted, and synchronized profiles.",
+      "highlights": [
+        "A mod carrying enabled.txt is never also written into UE4SS Mods/mods.txt.",
+        "Player and Server imports preserve operator-supplied enabled.txt markers.",
+        "RuneSchema remains self-enabled and receives a blank marker automatically when an imported runtime does not provide one."
+      ]
+    },
+    {
       "version": "4.0.2",
       "title": "V4",
       "date": "2026-09-07",

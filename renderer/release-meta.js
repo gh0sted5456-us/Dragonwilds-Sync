@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '4.0.2',
-  "name": "V4.0.2",
+  version: '4.0.3',
+  "name": "V4.0.3",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,14 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "4.0.3",
+      "title": "V4.0.3 · Single-Load Mod Activation",
+      "items": [
+        "Prevents UE4SS mods from being activated through both enabled.txt and mods.txt after profile deployment or client synchronization.",
+        "Preserves operator-supplied enabled.txt markers and automatically restores RuneSchema's marker when a runtime package omits it."
+      ]
+    },
     {
       "version": "4.0.2",
       "title": "V4.0.2 · Profile Runtime Reliability",

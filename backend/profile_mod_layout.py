@@ -16,7 +16,124 @@ canonical folders before legacy containers are retired.
 import shutil
 import hashlib
 import uuid
-from pathlib import Path
+import json
+import threading
+from pathlib import Path, PureWindowsPath
+
+_SPARE_LOCK = threading.RLock()
+
+
+def _spare_path(root: Path, relative: str) -> Path:
+    parts = str(relative).replace('\\', '/').split('/')
+    if PureWindowsPath(str(relative)).drive or any(
+            p in {'', '.', '..'} or any(c in p for c in ':<>"|?*') or p.endswith((' ', '.'))
+            for p in parts):
+        raise ValueError('Choose a relative folder inside profile staging')
+    target = root.joinpath(*parts)
+    for item in (target, *target.parents):
+        if item.is_symlink() or item.is_junction():
+            raise ValueError('Protected profile folders must not traverse filesystem links')
+    return target
+
+
+def _spare_state(mods_root: Path):
+    owner = mods_root.parent.parent if mods_root.parent.name.casefold() == 'snapshot' else mods_root.parent
+    storage = owner / 'profile-spare-backups'
+    _validate_storage_tree(storage)
+    manifest = storage / 'protection.json'
+    rows = json.loads(manifest.read_text(encoding='utf-8')) if manifest.is_file() else []
+    if not isinstance(rows, list):
+        raise ValueError('Invalid profile spare-backup manifest')
+    return storage, manifest, rows
+
+
+def profile_spare_backup(mods_root: str | Path, action='list', relative='') -> dict:
+    """Explicit backup of a staging folder. Never adopt or edit live game files."""
+    root = Path(mods_root)
+    _validate_storage_tree(root)
+    with _SPARE_LOCK:
+        storage, manifest, rows = _spare_state(root)
+        if action not in {'list', 'protect', 'unprotect'}:
+            raise ValueError('Unknown profile protection action')
+        if action != 'list':
+            selected = _spare_path(root, relative)
+            relative = selected.relative_to(root).as_posix()
+            key = relative.casefold()
+            if action == 'protect':
+                if not selected.is_dir():
+                    raise ValueError('The staged folder must exist before saving a spare backup')
+                for row in rows:
+                    other = str(row['path']).casefold()
+                    if other != key and (other.startswith(key + '/') or key.startswith(other + '/')):
+                        raise ValueError('This folder overlaps an existing protected folder; update that backup instead')
+                snapshot_id = uuid.uuid4().hex
+                snapshot = storage / snapshot_id
+                files = []
+                for source in selected.rglob('*'):
+                    if source.is_file():
+                        rel = source.relative_to(root).as_posix()
+                        _spare_path(root, rel)
+                        target = snapshot / rel
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(source, target)
+                        with source.open('rb') as original, target.open('rb') as copied:
+                            digest = hashlib.file_digest(original, 'sha256').hexdigest()
+                            if digest != hashlib.file_digest(copied, 'sha256').hexdigest():
+                                raise OSError('Spare backup verification failed')
+                        files.append({'path': rel, 'sha256': digest})
+                if not files:
+                    raise ValueError('This folder has no files to protect')
+                replacement = {'path': relative, 'snapshot': snapshot_id, 'files': files}
+            rows = [row for row in rows if str(row['path']).casefold() != key]
+            if action == 'protect':
+                rows.append(replacement)
+            storage.mkdir(parents=True, exist_ok=True)
+            temporary = storage / (uuid.uuid4().hex + '.tmp')
+            temporary.write_text(json.dumps(rows, indent=2), encoding='utf-8')
+            temporary.replace(manifest)
+        return {'folders': [{'path': row['path'], 'file_count': len(row['files'])} for row in rows],
+                'backup_root': str(storage)}
+
+
+def restore_profile_spares(mods_root: str | Path) -> list[str]:
+    """Before deployment, restore missing paths only. Existing files always win."""
+    root = Path(mods_root)
+    _validate_storage_tree(root)
+    with _SPARE_LOCK:
+        storage, _, rows = _spare_state(root)
+        planned = []
+        for row in rows:
+            protected = _spare_path(root, row['path'])
+            snapshot = _spare_path(storage, row['snapshot'])
+            for record in row['files']:
+                target = _spare_path(root, record['path'])
+                if not target.is_relative_to(protected):
+                    raise ValueError('Spare file is outside its protected folder')
+                if target.exists():
+                    continue
+                source = _spare_path(snapshot, record['path'])
+                with source.open('rb') as stream:
+                    if hashlib.file_digest(stream, 'sha256').hexdigest() != record['sha256']:
+                        raise OSError('Spare backup is damaged; deployment stopped')
+                planned.append((source, target, record['sha256']))
+        restored = []
+        for source, target, expected_hash in planned:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                output = target.open('xb')  # Never overwrite an edit, even during a race.
+            except FileExistsError:
+                continue
+            try:
+                with output, source.open('rb') as stream:
+                    shutil.copyfileobj(stream, output)
+                with target.open('rb') as stream:
+                    if hashlib.file_digest(stream, 'sha256').hexdigest() != expected_hash:
+                        raise OSError('Restored spare failed verification; deployment stopped')
+            except Exception:
+                target.unlink(missing_ok=True)
+                raise
+            restored.append(target.relative_to(root).as_posix())
+        return restored
 
 CANONICAL_FOLDER_NAMES = {
     "ue4ss": "Binaries/Win64/ue4ss/Mods",

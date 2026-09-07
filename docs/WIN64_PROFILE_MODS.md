@@ -48,6 +48,21 @@ native Linux. Follow the mod author's layout and platform instructions.
 
 ## Regression checks
 
+### Optional spare protection
+
+In a profile's staging panel, expand **Protect a staged folder · spare backup**.
+Enter its staging-relative path (for example `Binaries/Win64/ue4ss`, or
+`Binaries/Win64/LootMenu`) and choose **Save spare backup**. This records a
+verified spare of the folder's current files outside the mod payload. Saving
+again explicitly refreshes the protected set; old spare copies are retained.
+
+Before deployment, files missing at their original relative paths are restored.
+Existing files—including edited or newly replaced versions—are never overwritten.
+Browsing and rescanning do not restore files. A damaged required spare stops
+deployment instead of copying unverified bytes. **Stop protecting entered folder**
+disables restoration without deleting the spare copies. New files added after
+the backup are not protected until the backup is explicitly refreshed.
+
 Normal deployment removes only previously recorded files, not unrelated client
 mods. The connection warning offers Cancel, Continue without migration, or
 Back up & migrate. Suppression is per saved server and never authorizes automatic

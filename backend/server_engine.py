@@ -382,6 +382,8 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     """Plant one profile's mod lanes into the configured server installation."""
     assert_dedicated_target(game_root, action="plant World mods into")
+    from profile_mod_layout import restore_profile_spares
+    restore_profile_spares(_profile_mods_dir(profile_id))
     layout = resolve_server_layout(game_root)
     live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
     stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
@@ -815,6 +817,8 @@ def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root:
     the app-owned repair libraries so a later self-heal cannot resurrect an
     older machine-wide flavor.
     """
+    from profile_mod_layout import restore_profile_spares
+    restore_profile_spares(_profile_mods_dir(profile_id))
     components = profile.get("runtime_components") if isinstance(profile.get("runtime_components"), dict) else {}
     ue4ss_enabled = bool(components.get("ue4ss", True))
     runeschema_enabled = bool(components.get("runeschema", True))

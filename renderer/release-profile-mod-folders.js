@@ -192,6 +192,12 @@
     rewritePending = false;
     hardenRuntimeBaselineUi();
     refreshFolderHelpCopy();
+    document.querySelectorAll('.profile-storage-destinations').forEach((host)=>{
+      if(host.querySelector('[data-profile-spare-panel]'))return;
+      const panel=document.createElement('details');panel.dataset.profileSparePanel='1';
+      panel.innerHTML='<summary>Protect a staged folder · spare backup</summary><p>Restore missing files before deployment. Existing or edited files are never overwritten. Saving again explicitly refreshes the spare copy.</p><label>Folder relative to profile staging<input class="input" data-profile-spare-path placeholder="Binaries/Win64/ue4ss"></label><div class="header-actions"><button type="button" class="btn primary" data-profile-spare-action="protect">Save spare backup</button><button type="button" class="btn ghost" data-profile-spare-action="list">Show protected folders</button><button type="button" class="btn ghost" data-profile-spare-action="unprotect">Stop protecting entered folder</button></div><p role="status" data-profile-spare-status></p>';
+      host.append(panel);
+    });
     void refreshRuntimeLocationChoices();
   }
 
@@ -254,6 +260,18 @@
   }
 
   document.addEventListener('click', (event) => {
+    const spare=event.target?.closest?.('[data-profile-spare-action]');
+    if(spare){
+      event.preventDefault();event.stopImmediatePropagation();
+      const host=spare.closest('.profile-storage-destinations');
+      const identity=host.querySelector('[data-open-profile-mod-lane]');
+      const note=host.querySelector('[data-profile-spare-status]');
+      spare.disabled=true;note.textContent='Working…';
+      bridge.invoke('application.profile.protection',{kind:identity.dataset.profileKind,id:identity.dataset.profileId,action:spare.dataset.profileSpareAction,path:host.querySelector('[data-profile-spare-path]').value.trim()}).then(result=>{
+        note.textContent=(spare.dataset.profileSpareAction==='unprotect'?'Protection removed; spare copies retained. ':'')+(result.folders?.length?result.folders.map(row=>`${row.path} (${row.file_count} files)`).join(' · '):'No protected folders.');
+      }).catch(error=>{note.textContent=error.message||String(error);}).finally(()=>{spare.disabled=false;});
+      return;
+    }
     const folder=event.target?.closest?.('[data-open-profile-mod-lane]');
     if(folder){
       event.preventDefault();event.stopImmediatePropagation();

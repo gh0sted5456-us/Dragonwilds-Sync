@@ -2636,6 +2636,8 @@ class ShareServer:
         profile = dict(profile_override or load_server_profile(profile_id) or {})
         if not profile: raise KeyError("World profile not found")
         if persist_profile and profile.get('mods_profile_initialized'):
+            from profile_mod_layout import restore_profile_spares
+            restore_profile_spares(SERVER_PROFILES_DIR / profile_id / 'mods')
             mod_groups = {'ue4ss_mod', 'runeschema_mod', 'pak_mod', 'win64_mod'}
             staged_units = scan_profile_snapshot_units(profile_id)
             units = [unit for unit in units if unit.group not in mod_groups]

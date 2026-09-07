@@ -93,6 +93,22 @@ app.whenReady().then(async () => {
       document.querySelector('[data-open-profile-mod-lane]').click();await tick();
       assert(JSON.stringify(window.openedProfile)===JSON.stringify(['server','chosen','Win64']),'Opened wrong profile or lane');
       assert(document.querySelector('[data-profile-storage-status]').textContent.includes('Opened'),'Missing folder feedback');
+      const originalInvoke=window.dragonwilds.invoke;
+      window.dragonwilds.invoke=async(method,params)=>{
+        if(method!=='application.profile.protection')return originalInvoke(method,params);
+        window.spareRequest=params;
+        return {folders:params.action==='unprotect'?[]:[{path:params.path,file_count:2}]};
+      };
+      const spareInput=document.querySelector('[data-profile-spare-path]');
+      spareInput.closest('details').open=true;
+      spareInput.focus();spareInput.value='Binaries/Win64/ue4ss/Mods/Important';
+      document.body.append(document.createElement('span'));await tick();
+      assert(document.activeElement===spareInput,'Spare path typing lost focus');
+      document.querySelector('[data-profile-spare-action="protect"]').click();await tick();
+      assert(spareRequest.kind==='server'&&spareRequest.id==='chosen'&&spareRequest.path===spareInput.value,'Backup targeted wrong profile or folder');
+      assert(document.querySelector('[data-profile-spare-status]').textContent.includes('2 files'),'Backup receipt missing');
+      document.querySelector('[data-profile-spare-action="unprotect"]').click();await tick();
+      assert(spareRequest.action==='unprotect','Unable to stop protecting a folder');
       return 'PASS: saved locations, relative client paths, absolute host paths, draft persistence and explicit Win64 profile folder';
     })()`));
     await win.loadURL('data:text/html,<main></main>');

@@ -3739,7 +3739,7 @@ def handle(method: str, params: dict) -> object:
         result = remove_profile_entry(kind, profile_id, key)
         return {"result": result, "repository": result.get("repository") or cached_mod_repository(), "state": public_state(state)}
 
-    if method == "application.profile.mods_root":
+    if method in {"application.profile.mods_root", "application.profile.protection"}:
         # Authoritative profile mod folder resolution. The renderer's "Open
         # Mod Folder" action must call this rather than reconstructing the
         # path itself from AppData/server-root strings, so the local
@@ -3752,7 +3752,11 @@ def handle(method: str, params: dict) -> object:
         if not profile_id:
             raise ValueError("A World profile id is required.")
         backend_kind = "dedicated" if kind == "server" else "local"
-        return describe_profile_mods_root(backend_kind, profile_id)
+        resolved = describe_profile_mods_root(backend_kind, profile_id)
+        if method == 'application.profile.protection':
+            from profile_mod_layout import profile_spare_backup
+            return profile_spare_backup(resolved['mods_root'], str(params.get('action') or 'list'), str(params.get('path') or ''))
+        return resolved
 
     if method == "singleplayer.inventory":
         profile_id = _private_profile_id(state, params)

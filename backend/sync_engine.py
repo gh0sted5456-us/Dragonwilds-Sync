@@ -482,6 +482,8 @@ def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> di
 def restore_client_world(world_id: str, selected_root: Path) -> None:
     if not world_id:
         return
+    from profile_mod_layout import restore_profile_spares
+    restore_profile_spares(client_world_dir(world_id) / 'mods')
     layout = resolve_client_layout(selected_root)
     profile_live = _client_mod_roots(selected_root)
     game_root = layout.game_root

@@ -34,8 +34,8 @@ const runeschema = need('backend/managed_updates.py', [
   'install_authoritative_runeschema_update'
 ]);
 const sources = need('docs/upstream-sources.json', [
-  '"repository": "UnskippableCutscene/RuneSchema"',
-  '"release_url": "https://github.com/UnskippableCutscene/RuneSchema/releases"',
+  '"repository": "gh0sted5456-us/RuneSchema"',
+  '"release_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E"',
   '"type": "github-release"'
 ]);
 need('backend/test_managed_updates.py', [

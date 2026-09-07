@@ -50,7 +50,9 @@ app.whenReady().then(async () => {
   assert.ok(updateChecks > 0, 'Main landing must check application releases');
   assert.equal(await win.webContents.executeJavaScript(`!!document.querySelector('#splash-update-now') && document.querySelector('[data-landing-update-status]').textContent.includes('Landing test update')`), true);
   assert.equal(await win.webContents.executeJavaScript(`!!document.querySelector('script[data-dws-monaco-loader]')`), false, 'Landing must not load the editor');
-  assert.equal(await win.webContents.executeJavaScript(`getComputedStyle(document.querySelector('.fantasy-entry'),'::before').backgroundImage.includes('animated-splash.webp')`), true);
+  const splash = await win.webContents.executeJavaScript(`({reduced:matchMedia('(prefers-reduced-motion: reduce)').matches,background:getComputedStyle(document.querySelector('.fantasy-entry'),'::before').backgroundImage})`);
+  assert.equal(splash.reduced ? splash.background === 'none' : splash.background.includes('animated-splash.webp'), true,
+    `Splash should respect the system motion preference: ${JSON.stringify(splash)}`);
   fs.mkdirSync(path.join(__dirname,'../test-results'),{recursive:true});
   fs.writeFileSync(path.join(__dirname,'../test-results/landing-lifecycle.png'),(await win.webContents.capturePage()).toPNG());
   await win.webContents.executeJavaScript(`document.querySelector('#enter-launcher').click()`);

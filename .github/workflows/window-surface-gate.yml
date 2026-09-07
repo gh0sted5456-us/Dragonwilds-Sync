@@ -6,8 +6,11 @@ on:
     branches:
       - testing-branch
       - experimental
+      - main
     paths:
       - 'renderer/**'
+      - 'build-assets/application-icon.png'
+      - 'package.json'
       - 'electron/**'
       - 'backend/dragonwilds_service*.py'
       - 'backend/directory_web*.py'
@@ -23,6 +26,7 @@ on:
       - 'scripts/check_phase3_responsiveness.cjs'
       - 'scripts/check_navigation_performance.cjs'
       - 'scripts/validate_world_cards_headless.cjs'
+      - 'scripts/fixtures/**'
       - '.github/workflows/window-surface-gate.yml'
   workflow_dispatch:
 

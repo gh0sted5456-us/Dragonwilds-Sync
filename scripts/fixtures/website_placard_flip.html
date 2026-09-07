@@ -31,7 +31,7 @@
     const params=new URLSearchParams(location.search),card=document.querySelector('#flip-card');
     const flip=()=>{const flipped=card.classList.toggle('flipped');card.setAttribute('aria-pressed',String(flipped));};
     card.addEventListener('click',flip);card.addEventListener('keydown',(event)=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();flip();}});
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{card.click();setTimeout(()=>{
+    window.addEventListener('load',()=>{card.click();setTimeout(()=>{
       const faces=[...card.querySelectorAll('.world-card-face')],inner=getComputedStyle(card.querySelector('.world-card-inner'));
       const loaded=(selector)=>[...card.querySelectorAll(selector)].every((img)=>img.complete&&img.naturalWidth);
       const errors=[];
@@ -44,7 +44,7 @@
       const detail=errors.length?`FAIL · ${errors.join(' · ')}`:'PASS · true 3D flip · both faces inherit placard, banner, and icon';
       document.querySelector('#validation-result').textContent=detail;
       fetch(`/__validation?case=${encodeURIComponent(params.get('case')||'flip')}&status=${errors.length?'fail':'pass'}&detail=${encodeURIComponent(detail)}`).catch(()=>{});
-    },700);}));
+    },700);});
   </script>
 </body>
 </html>

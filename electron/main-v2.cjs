@@ -326,7 +326,7 @@ function serviceInvoke(method, params = {}, options = {}) {
   });
 }
 
-function iconPath() { return path.join(projectRoot(), 'renderer', 'assets', process.platform === 'win32' ? 'dragonwilds_icon.ico' : 'application-icon.webp'); }
+function iconPath() { return process.platform === 'win32' ? path.join(projectRoot(), 'renderer', 'assets', 'dragonwilds_icon.ico') : path.join(projectRoot(), 'build-assets', 'application-icon.png'); }
 function windowOptions(extra = {}) {
   return { backgroundColor: '#0b0e10', icon: iconPath(), show: false, frame: false, autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, 'preload-v2.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true }, ...extra };
@@ -783,7 +783,14 @@ function createTray() {
     }
     promoteToFullApplication();
   };
-  tray = new Tray(iconPath()); tray.setToolTip('Dragonwilds Sync');
+  try {
+    tray = new Tray(iconPath());
+  } catch (error) {
+    // A desktop without a usable system tray must still open the launcher.
+    console.warn('System tray unavailable:', error.message);
+    return;
+  }
+  tray.setToolTip('Dragonwilds Sync');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: quickProcess ? 'Open Quick Launch' : 'Open Dragonwilds Sync', click: openLauncher },
     { type: 'separator' },

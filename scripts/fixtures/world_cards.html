@@ -56,7 +56,9 @@
     const intersects=(a,b)=>a.left<b.right-.5&&a.right>b.left+.5&&a.top<b.bottom-.5&&a.bottom>b.top+.5;
     const luminance=(value)=>{const rgb=(value.match(/[\d.]+/g)||[]).slice(0,3).map(Number).map((channel)=>{const normalized=channel/255;return normalized<=.03928?normalized/12.92:((normalized+.055)/1.055)**2.4;});return .2126*(rgb[0]||0)+.7152*(rgb[1]||0)+.0722*(rgb[2]||0);};
     const contrast=(foreground,background)=>{const high=Math.max(luminance(foreground),luminance(background));const low=Math.min(luminance(foreground),luminance(background));return (high+.05)/(low+.05);};
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    // Headless Chromium can suspend animation frames; font readiness and
+    // synchronous layout reads provide the actual prerequisite for this check.
+    document.fonts.ready.then(()=>{
       const card=document.querySelector('#validation-placard');
       const body=rect(card.querySelector('.world-card-body'));
       const footer=rect(card.querySelector('.card-footer'));
@@ -99,7 +101,7 @@
       const detail=errors.length?`FAIL · ${errors.join(' · ')}`:`PASS · no overlap · horizontal ${row.height}px`;
       document.querySelector('#validation-result').textContent=detail;
       if(location.protocol==='http:'||location.protocol==='https:')fetch(`/__validation?case=${encodeURIComponent(params.get('case')||'unknown')}&status=${errors.length?'fail':'pass'}&detail=${encodeURIComponent(detail)}`).catch(()=>{});
-    }));
+    });
   </script>
 </body>
 </html>

@@ -36,8 +36,14 @@ app.whenReady().then(async()=>{
   await win.webContents.executeJavaScript("document.querySelector('[data-route=\"worlds\"]')?.click()");
   await until(()=>win.webContents.executeJavaScript("!!document.querySelector('#add-world, #add-world-card')"),10000);
   await win.webContents.executeJavaScript("document.querySelector('#add-world, #add-world-card').click()");
-  const connectNativeWindow=await until(()=>BrowserWindow.getAllWindows().find((item)=>item!==win&&!item.isDestroyed()),10000);
-  await until(()=>connectNativeWindow.webContents.executeJavaScript("document.body?.dataset?.dialogHydration==='ready'"),10000);
+  const connectNativeWindow=await until(async()=>{
+    for(const item of BrowserWindow.getAllWindows()){
+      if(item===win||item.isDestroyed()||item.webContents.isLoadingMainFrame())continue;
+      if(await item.webContents.executeJavaScript("document.body?.dataset?.dialogHydration==='ready' && !!document.querySelector('[data-connect-world-tab]')"))return item;
+    }
+    return null;
+  },10000);
+  await until(()=>!connectNativeWindow.isDestroyed()&&connectNativeWindow.isVisible(),10000);
   const connectWorldWindow=await until(()=>win.webContents.executeJavaScript(`(()=>{
     const surface=[...document.querySelectorAll('.modal-window, .managed-dialog-shadow')].find((item)=>item.textContent?.includes('Unified World Access'));
     if(!surface)return null;

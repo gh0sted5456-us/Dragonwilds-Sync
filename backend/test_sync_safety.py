@@ -11,6 +11,17 @@ from sync_manifest import tag_client_deliveries
 def main():
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
+        source, target = root / 'live.ini', root / 'snapshot.ini'
+        source.write_bytes(b'verified configuration')
+        target.write_bytes(b'previous capture')
+        target.chmod(0o444)
+        sync_engine._copy_snapshot_file(source, target)
+        assert target.read_bytes() == source.read_bytes()
+        assert not list(root.glob('.snapshot-*'))
+    source_code = Path(sync_engine.__file__).read_text(encoding='utf-8')
+    assert source_code.index('emit("profile", "Saving the verified World profile snapshot"') < source_code.index('snapshot_client_world(world["id"], install_dir)')
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
         assert safe_game_path(root, "Binaries/Win64/test.dll") == (root / "Binaries" / "Win64" / "test.dll").resolve()
         try:
             safe_game_path(root, "../../Windows/System32/nope.dll")

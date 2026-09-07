@@ -260,7 +260,7 @@ function rejectAllPending(message) { for (const waiter of pending.values()) { cl
 function serviceTimeoutFor(method) {
   const name=String(method||'').toLowerCase();
   if(['world.discovery.heartbeat','client.background.tick','server.scheduler.tick','server.network.benchmark.maybe','application.rsdw.maybe'].includes(name))return BACKGROUND_SERVICE_TIMEOUT_MS;
-  if(/(?:backup|restore|update|install|download|sync|refresh|import|export|scan|reconcile|materialize)/.test(name))return LONG_SERVICE_TIMEOUT_MS;
+  if(/(?:backup|restore|update|install|download|sync|migration|refresh|import|export|scan|reconcile|materialize)/.test(name))return LONG_SERVICE_TIMEOUT_MS;
   return DEFAULT_SERVICE_TIMEOUT_MS;
 }
 function serviceEnvironment() {

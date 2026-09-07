@@ -348,6 +348,23 @@ def copy_profile_mod_slot(src: Path, dst: Path, slot: str) -> None:
             shutil.copy2(child, target)
 
 
+def _copy_snapshot_file(source: Path, target: Path) -> None:
+    """Replace an overlapping captured/bundle file without writing through readonly flags."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix='.snapshot-', dir=target.parent)
+    os.close(fd)
+    staged = Path(temporary)
+    try:
+        shutil.copy2(source, staged)
+        if target.exists():
+            target.chmod(target.stat().st_mode | 0o200)
+        os.replace(staged, target)
+    finally:
+        if staged.exists():
+            staged.chmod(staged.stat().st_mode | 0o200)
+            staged.unlink()
+
+
 def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: bool = True) -> None:
     """Capture profile state; mod capture is adoption-only after folder authority.
 
@@ -401,7 +418,7 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
                             target = safe_path_under(mods_destination, extract_to + '/' + name)
                             if source.is_file():
                                 target.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(source, target)
+                                _copy_snapshot_file(source, target)
         if info.get("kind", "file") != "file":
             continue
         source = target_for_state(selected_root, relative, info)
@@ -417,7 +434,7 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
             elif include_mods and info.get('baseline_runtime') and relative.startswith('Binaries/Win64/'):
                 visible = safe_path_under(mods_destination, relative)
                 visible.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, visible)
+                _copy_snapshot_file(source, visible)
     if layout.config_dir.exists():
         copy_tree(layout.config_dir, config_destination)
     state_path = game_root / LOCAL_STATE_DIR / STATE_FILE
@@ -1200,9 +1217,12 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         "synced_at": time.time(),
         "files": new_files,
     })
-    snapshot_client_world(world["id"], install_dir)
     emit("profile", "Saving the verified World profile snapshot", 94,
          changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
+    try:
+        snapshot_client_world(world["id"], install_dir)
+    except OSError as exc:
+        raise ConnectionError(f"The server confirmed the manifest, but saving the local World profile failed: {exc}. No game launch occurred.") from exc
     return {
         "ok": True,
         "launch_ready": True,

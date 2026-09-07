@@ -137,6 +137,19 @@ app.whenReady().then(async () => {
       const choice=calls.find(c=>c.method.endsWith('.apply')).params;
       assert(choice.choice==='continue'&&choice.disable_warning===true,'Wrong per-server consent');
       assert(calls.findIndex(c=>c.method.endsWith('.apply'))<calls.findIndex(c=>c.method.endsWith('.start')),'Sync started before consent');
+      calls.length=0;
+      const originalInvoke=api.invoke;
+      let finishMigration;
+      api.invoke=(method,params)=>method.endsWith('.apply')?new Promise(resolve=>{calls.push({method,params});finishMigration=resolve;}):originalInvoke(method,params);
+      pending=testSync({id:'server'},'sync');await tick();
+      document.querySelector('[data-migration-choice="migrate"]').click();await tick();
+      assert(state.operation.detail.includes('Backing up'),'Migration has no visible busy status');
+      assert(!calls.some(c=>c.method.endsWith('.start')),'Sync raced unfinished migration');
+      assert(calls.find(c=>c.method.endsWith('.apply')).params.choice==='migrate','Migrate choice not forwarded');
+      let blocked=false;try{await testSync({id:'server'},'sync');}catch(error){blocked=true;}
+      assert(blocked,'Duplicate connect allowed during migration');
+      finishMigration({ok:true});await pending;
+      assert(state.operation===null,'Completed migration/sync left busy overlay');
       return 'PASS: embedded migration warning, cancellation, per-server suppression and consent-before-sync';
     })()`));
     win.destroy();app.exit(0);

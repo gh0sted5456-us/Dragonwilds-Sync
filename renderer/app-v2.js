@@ -3260,6 +3260,8 @@
 
   async function runWorldSyncJob(world, action='play', forceComplete=false) {
     if(state.operation)throw new Error(`${state.operation.title} is already in progress.`);
+    state.operation={title:'Preparing World synchronization',detail:'Requesting the server manifest…',phase:'connecting',percent:0,position:{x:0,y:0}};render();
+    try{
     const migration=await api.invoke('world.mods.migration.preview',{id:world.id});
     if(!migration.warning_disabled){
       const choice=await new Promise((resolve)=>{
@@ -3270,13 +3272,13 @@
         win.querySelectorAll('[data-migration-choice]').forEach(button=>button.addEventListener('click',()=>finish(button.dataset.migrationChoice)));
       });
       if(choice.choice==='cancel')throw new Error('Synchronization cancelled; no migration performed.');
+      state.operation.detail=choice.choice==='migrate'?'Backing up and verifying installed files before moving mods. This can take several minutes…':'Keeping existing mods; preparing synchronization…';render();
       const prepared=await api.invoke('world.mods.migration.apply',{id:world.id,choice:choice.choice,disable_warning:choice.disable,manifest_fingerprint:migration.manifest_fingerprint});
       if(prepared.state)setData(prepared.state);
       if(prepared.backup)toast('Migration backup verified',prepared.backup,'success');
     }
     const diagnostics=state.data?.application?.connection_diagnostic_reports===true;
     state.operation={title:action==='play'?'Synchronizing & launching World':'Synchronizing World',detail:'Connecting to the World host…',phase:'connecting',percent:0,diagnostics,position:{x:0,y:0}};render();
-    try{
       const started=await api.invoke('world.sync.job.start',{id:world.id,action,diagnostics,force_complete:!!forceComplete});const jobId=started.job_id;if(!jobId)throw new Error('World Sync did not return a job identifier.');
       while(true){await new Promise(resolve=>setTimeout(resolve,250));const job=await api.invoke('world.sync.job.status',{job_id:jobId});updateOperationProgress(job);if(job.status==='failed'){if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'warning');throw new Error(job.error||job.message||'World Sync failed.');}if(job.status==='complete'){
         if(job.diagnostic_path)toast('Connection report saved',job.diagnostic_path,'success');

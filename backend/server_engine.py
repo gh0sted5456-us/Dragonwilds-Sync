@@ -335,6 +335,8 @@ def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     if staging.exists():
         _remove_path(staging)
     staged = ensure_profile_mod_roots(staging)
+    # Explicit Win64 declarations must survive captures of the other lanes.
+    _copy_children(current["win64"], staged["win64"], exclude_names=LANE_NOTES)
     copied = _copy_children(live_roots["ue4ss"], staged["ue4ss"],
                             exclude_names=SERVER_INFRASTRUCTURE_UE4SS | LANE_NOTES)
     if live_roots["runeschema"].exists():
@@ -404,6 +406,10 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
 
     _clear_children(live_roots["paks"])
     copied += _copy_children(stored["paks"], live_roots["paks"], exclude_names=LANE_NOTES)
+    from win64_mods import deploy
+    copied += deploy(stored["win64"], layout.game_root / "Binaries" / "Win64",
+                     layout.game_root / ".dragonwilds-sync" / "win64-profile-files.json",
+                     APP_DATA_DIR / "Backups" / "DisplacedWin64Mods")
     return copied
 
 

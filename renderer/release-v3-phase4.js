@@ -21,7 +21,7 @@
   const text = (value) => String(value ?? '').trim();
   const asArray = (value) => Array.isArray(value) ? value : [];
   const state = () => (window.__DWSYNC_STATE__ && typeof window.__DWSYNC_STATE__ === 'object') ? window.__DWSYNC_STATE__ : {};
-  const ecosystemAssets = {UE4SS:'assets/platforms/ue4ss.webp',RuneSchema:'assets/platforms/runeschema.webp',Pak:'assets/platforms/paks.svg'};
+  const ecosystemAssets = {Win64:'assets/platforms/paks.svg',UE4SS:'assets/platforms/ue4ss.webp',RuneSchema:'assets/platforms/runeschema.webp',Pak:'assets/platforms/paks.svg'};
   const animationMode = () => {
     const value = text(state()?.application?.v3_phase4?.animation_mode || state()?.application?.performance?.animations || 'full').toLowerCase();
     return ['full','reduced','off'].includes(value) ? value : 'full';
@@ -86,9 +86,9 @@
         const name = text(row.name || row.display_name || row.mod_name || row.id || row.key);
         if (!name || /^(readme(?:\.[^/]+)?|mods\.txt|enabled\.txt)$/i.test(name) || /^dragonconnect$/i.test(name.replace(/\s+/g,''))) continue;
         const rawType = text(`${row.section || ''} ${row.group || ''} ${row.type || ''} ${row.kind || ''} ${row.loader || ''} ${row.mod_type || ''}`).toLowerCase();
-        const type = rawType.includes('rune') ? 'RuneSchema' : rawType.includes('pak') ? 'Pak' : 'UE4SS';
+        const type = rawType.includes('win64') ? 'Win64' : rawType.includes('rune') ? 'RuneSchema' : rawType.includes('pak') ? 'Pak' : 'UE4SS';
         const role = text(row.runtime_role || row.role || row.scope || 'BOTH').toUpperCase();
-        rows.push({name, version:text(row.version || row.mod_version), type, role, required:row.required !== false});
+        rows.push({name, version:text(row.version || row.mod_version), type, role, required:row.required !== false, deployment_target:text(row.deployment_target)});
       }
       if (rows.length) break;
     }
@@ -113,7 +113,7 @@
 
   function ecosystemFamilies(world) {
     const mods=modRows(world); const advertised=asArray(world?.presentation?.mod_badges).map((value)=>text(value).toLowerCase());
-    return ['Pak','UE4SS','RuneSchema'].filter((family)=>mods.some((row)=>row.type===family) || (family==='UE4SS'&&!!world?.auto_ue4ss) || (family==='RuneSchema'&&!!world?.auto_runeschema) || advertised.some((value)=>value.replace(/\s+/g,'')===(family==='Pak'?'paks':family.toLowerCase())));
+    return ['Pak','UE4SS','RuneSchema','Win64'].filter((family)=>mods.some((row)=>row.type===family) || (family==='UE4SS'&&!!world?.auto_ue4ss) || (family==='RuneSchema'&&!!world?.auto_runeschema) || advertised.some((value)=>value.replace(/\s+/g,'')===(family==='Pak'?'paks':family.toLowerCase())));
   }
 
   function ecosystemMarkup(id, world, compact=false) {
@@ -130,7 +130,7 @@
   }
 
   async function openModsPopup(id, family) {
-    id=text(id); family=family==='RuneSchema'?'RuneSchema':family==='Pak'?'Pak':'UE4SS'; if(!id)return;
+    id=text(id); family=['RuneSchema','Pak','Win64'].includes(family)?family:'UE4SS'; if(!id)return;
     const key=`${id}:${family}`; const existing=modDialogs.get(key);
     if(existing){window.__DWSYNC_DESKTOP_WINDOWS__?.focus?.(existing);return;}
     if(asArray(state()?.client?.worlds).some((row)=>text(row?.id)===id))await requestProfileModInventory(id,'connected',true);
@@ -140,8 +140,8 @@
     const stack=modInventory.get(id)?.runtimeStack||world.runtime_stack||world.manifest_cache?.runtime_stack||world.presentation?.runtime_stack||{};
     const runtime=stack[family==='UE4SS'?'ue4ss':'runeschema']||{};
     const runtimeLabel=runtime.installed_version||runtime.version||runtime.source_name||runtime.name||'Version not advertised by this profile';
-    const host=desktop.open(`<div class="modal-header v3p4-mod-window-header"><div class="v3p4-mod-window-title"><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS · ${esc(family)}</small><h2>${esc(worldName)}</h2></span></div></div><div class="modal-body v3p4-mod-window-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div>`,{title:`${family} mods · ${worldName}`,width:680,height:Math.min(760,Math.max(420,210+rows.length*38))});
-    if(family!=='Pak')host.querySelector('.v3p4-mod-window-body h3')?.insertAdjacentHTML('afterend',`<p class="runtime-version-label">${esc(family)} loader: ${esc(runtimeLabel)}${runtime.channel?` · ${esc(runtime.channel)}`:''}</p>`);
+    const host=desktop.open(`<div class="modal-header v3p4-mod-window-header"><div class="v3p4-mod-window-title"><img src="${ecosystemAssets[family]}" alt=""/><span><small>PROFILE MODS · ${esc(family)}</small><h2>${esc(worldName)}</h2></span></div></div><div class="modal-body v3p4-mod-window-body"><h3>${esc(family)} loaded mods</h3>${rows.length?`<div class="v3p4-mod-list">${rows.map((row)=>`<div><strong>${esc(row.name)}</strong><span>${esc(row.version||'Version not advertised')} · ${esc(row.role)}${row.deployment_target ? ' · Installs to: '+esc(row.deployment_target) : ''} · ${row.required?'Required':'Optional'}</span></div>`).join('')}</div>`:`<div class="v3p4-empty">No loaded ${esc(family)} mods are recorded for this profile.</div>`}</div>`,{title:`${family} mods · ${worldName}`,width:680,height:Math.min(760,Math.max(420,210+rows.length*38))});
+    if(['UE4SS','RuneSchema'].includes(family))host.querySelector('.v3p4-mod-window-body h3')?.insertAdjacentHTML('afterend',`<p class="runtime-version-label">${esc(family)} loader: ${esc(runtimeLabel)}${runtime.channel?` · ${esc(runtime.channel)}`:''}</p>`);
     host.classList.add('v3p4-mod-window');host.dataset.v3p4ModDialog=key;host._dwsDispose=()=>modDialogs.delete(key);modDialogs.set(key,host);
   }
 

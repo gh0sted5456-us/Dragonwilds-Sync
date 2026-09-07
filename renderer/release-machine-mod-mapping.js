@@ -12,6 +12,7 @@
   let statusCache = null;
   let rendering = false;
   let customLocations = null;
+  let customRevision = 0;
   // Fix for the reported "map-pasting doesn't persist" bug: this panel is
   // rebuilt (shell.innerHTML replaced) on every DOM mutation anywhere in the
   // app via the MutationObserver below, using values from statusCache -- not
@@ -57,6 +58,7 @@
     return `<section class="machine-mod-map-role" data-machine-map-role="${role}">
       <div class="machine-mod-map-heading"><div><strong>${label} mod destinations</strong><small>${ready ? `Installation: ${esc(row.game_root || row.install_root || '')}` : esc(row?.error || 'Configure the executable and Saved directory first.')}</small></div><span class="badge ${ready ? 'ok' : 'warn'}">${ready ? 'MAPPED' : 'SETUP REQUIRED'}</span></div>
       ${runtimePaths}${fields}
+      <div class="machine-mod-map-row"><strong>Win64 Mods (independent)</strong><small>Profile Mods/Win64 content deploys beside ue4ss, preserving its folder layout. This destination follows the selected game executable.</small><code>${esc(row?.game_root ? text(row.game_root).replace(/[\\/]+$/, '') + '/Binaries/Win64' : 'Select the game executable to resolve Win64')}</code></div>
       <div class="machine-mod-map-actions"><button type="button" class="btn ghost" data-machine-map-defaults="${role}">Use detected defaults</button><button type="button" class="btn primary" data-machine-map-save="${role}">Save mod folders</button></div>
       <p class="hint" data-machine-map-note="${role}">${ready ? 'These are deployment targets only. The selected World profile Mods folder remains the content source of truth.' : 'Link the executable and Saved directory above first.'}</p>
     </section>`;
@@ -65,8 +67,8 @@
   function customLocationsMarkup() {
     const rows = (customLocations || []).map((row, index) => `<div class="machine-custom-path-row" data-machine-custom-index="${index}">
       <select aria-label="Location scope"><option value="shared" ${row.role === 'shared' ? 'selected' : ''}>Shared</option><option value="player" ${row.role === 'player' ? 'selected' : ''}>Player</option><option value="server" ${row.role === 'server' ? 'selected' : ''}>Server</option></select>
-      <input data-machine-custom-label value="${esc(row.label)}" placeholder="Name (for example: Config exports)" aria-label="Location name" />
-      <input data-machine-custom-path value="${esc(row.path)}" placeholder="Choose a folder" aria-label="Folder path" />
+      <input class="field" data-machine-custom-label value="${esc(row.label)}" placeholder="Name (for example: Config exports)" aria-label="Location name" />
+      <input class="field" data-machine-custom-path value="${esc(row.path)}" placeholder="Choose a folder" aria-label="Folder path" />
       <button type="button" class="secondary" data-machine-custom-browse="${index}">Browse</button>
       <button type="button" class="secondary" data-machine-custom-remove="${index}" aria-label="Remove location">Remove</button>
     </div>`).join('');
@@ -101,8 +103,9 @@
     document.head.appendChild(style);
   }
 
-  async function render() {
+  async function render(force = false) {
     if (rendering) return;
+    if (!force && document.activeElement?.closest?.('[data-machine-mod-mapping]')) return;
     const playerSetup = document.querySelector('#wm-game-exe');
     const serverSetup = document.querySelector('#wm-server-exe');
     const roleFilter = playerSetup ? 'player' : serverSetup ? 'server' : '';
@@ -112,16 +115,16 @@
     try {
       // Preserve unsaved additional-location edits across the same global
       // repaint cycle that affects the fixed deployment lanes.
-      if (customLocations !== null && card.querySelector('[data-machine-custom-index]')) syncCustomLocationsFromDom();
       ensureStyles();
       const status = await loadStatus();
       if (!card.isConnected) return;
+      if (!force && document.activeElement?.closest?.('[data-machine-mod-mapping]')) return;
       if (customLocations === null) {
         const application = currentState().application || {};
         customLocations = Array.isArray(application.machine_custom_paths) ? application.machine_custom_paths.map((row) => ({ role: text(row?.role) || 'shared', label: text(row?.label), path: text(row?.path) })) : [];
       }
       let shell = card.querySelector('[data-machine-mod-mapping]');
-      const signature = JSON.stringify([roleFilter, status, customLocations]);
+      const signature = JSON.stringify([roleFilter, status, customRevision]);
       if (shell?.dataset.renderSignature === signature) return;
       if (!shell) {
         shell = document.createElement('div');
@@ -177,7 +180,7 @@
       for (const [lane] of lanes) { dirty.delete(dirtyKey(role, lane)); drafts.delete(dirtyKey(role, lane)); }
       statusCache = null;
       await loadStatus(true);
-      await render();
+      await render(true);
       note(role, 'Mod folders saved. Future profile deployment uses these destinations.');
     } catch (error) {
       note(role, text(error?.message || error || 'Could not save mapped paths.'), true);
@@ -187,8 +190,8 @@
   function syncCustomLocationsFromDom() {
     customLocations = [...document.querySelectorAll('[data-machine-custom-index]')].map((row) => ({
       role: text(row.querySelector('select')?.value) || 'shared',
-      label: text(row.querySelector('[data-machine-custom-label]')?.value),
-      path: text(row.querySelector('[data-machine-custom-path]')?.value),
+      label: String(row.querySelector('[data-machine-custom-label]')?.value || ''),
+      path: String(row.querySelector('[data-machine-custom-path]')?.value || ''),
     }));
   }
 
@@ -196,11 +199,13 @@
     const note = document.querySelector('[data-machine-custom-note]');
     try {
       syncCustomLocationsFromDom();
+      customLocations = customLocations.map((row) => ({ ...row, label: text(row.label), path: text(row.path) }));
       if (customLocations.some((row) => !row.label || !row.path)) throw new Error('Every additional location needs both a name and a folder.');
       const result = await api.invoke('application.update', { machine_custom_paths: customLocations });
-      if (result?.state && typeof result.state === 'object') {
-        window.__DWSYNC_STATE__ = result.state;
-        window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: result.state }));
+      const savedState = result?.state || (result?.application ? result : null);
+      if (savedState && typeof savedState === 'object') {
+        window.__DWSYNC_STATE__ = savedState;
+        window.dispatchEvent(new CustomEvent('dragonwilds:state-updated', { detail: savedState }));
       }
       if (note) { note.textContent = 'Additional locations saved.'; note.dataset.tone = 'success'; }
     } catch (error) {
@@ -210,16 +215,16 @@
 
   document.addEventListener('click', async (event) => {
     const addCustom = event.target.closest('[data-machine-custom-add]');
-    if (addCustom) { syncCustomLocationsFromDom(); customLocations.push({ role: 'shared', label: '', path: '' }); await render(); return; }
+    if (addCustom) { syncCustomLocationsFromDom(); customLocations.push({ role: 'shared', label: '', path: '' }); customRevision++; await render(true); return; }
     const removeCustom = event.target.closest('[data-machine-custom-remove]');
-    if (removeCustom) { syncCustomLocationsFromDom(); customLocations.splice(Number(removeCustom.dataset.machineCustomRemove), 1); await render(); return; }
+    if (removeCustom) { syncCustomLocationsFromDom(); customLocations.splice(Number(removeCustom.dataset.machineCustomRemove), 1); customRevision++; await render(true); return; }
     const browseCustom = event.target.closest('[data-machine-custom-browse]');
     if (browseCustom) {
       syncCustomLocationsFromDom();
       const index = Number(browseCustom.dataset.machineCustomBrowse);
       const picked = await api.pickDirectory('Choose additional managed location', customLocations[index]?.path || '');
       if (picked && customLocations[index]) customLocations[index].path = picked;
-      await render(); return;
+      customRevision++; await render(true); return;
     }
     if (event.target.closest('[data-machine-custom-save]')) { await saveCustomLocations(); return; }
     const browse = event.target.closest('[data-machine-map-browse]');
@@ -250,11 +255,15 @@
   // rebuild triggered before Save is clicked preserves it instead of
   // silently reverting to the last-known/detected value.
   document.addEventListener('input', (event) => {
+    if (event.target.closest?.('[data-machine-custom-index]')) { syncCustomLocationsFromDom(); return; }
     const row = event.target.closest?.('[data-machine-mod-lane]');
     if (!row) return;
     const role = row.closest('[data-machine-map-role]')?.dataset.machineMapRole;
     const lane = row.dataset.machineModLane;
     if (role && lane) { dirty.add(dirtyKey(role, lane)); drafts.set(dirtyKey(role, lane), event.target.value); }
+  }, true);
+  document.addEventListener('change', (event) => {
+    if (event.target.closest?.('[data-machine-custom-index]')) syncCustomLocationsFromDom();
   }, true);
 
   const observer = new MutationObserver(() => void render());

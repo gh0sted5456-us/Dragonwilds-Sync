@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - experimental
       - testing-branch
       - testing-ground
       - main

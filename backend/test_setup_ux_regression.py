@@ -131,6 +131,24 @@ def test_player_server_setup_progress_reflects_real_state() -> None:
     assert "${complete ? '✓'" in source
 
 
+def test_custom_locations_keep_drafts_without_focus_churn() -> None:
+    source = _read('release-machine-mod-mapping.js')
+    render = source[source.index('async function render('):source.index('function mappingFor(')]
+    assert 'syncCustomLocationsFromDom()' not in render
+    assert 'document.activeElement?.closest?' in render
+    assert 'JSON.stringify([roleFilter, status, customRevision])' in render
+    assert "event.target.closest?.('[data-machine-custom-index]')" in source
+    assert 'customRevision++; await render(true)' in source
+
+
+def test_confirmations_stay_on_the_visible_owner_renderer() -> None:
+    source = _read('app-v2.js')
+    confirm = source[source.index('function managedConfirm('):source.index('function managedPrompt(')]
+    assert 'native:false,detachable:false' in confirm
+    assert '_dwsBeforeClose=()=>{finish(false,true);return true;}' in confirm
+    assert "includes('data-remove-repository-profile'))options={...options,native:false,detachable:false}" in source
+
+
 def main() -> None:
     tests = [value for name, value in list(globals().items()) if name.startswith("test_") and callable(value)]
     for test in tests:

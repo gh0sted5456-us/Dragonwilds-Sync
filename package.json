@@ -18,6 +18,7 @@
     "test:systems:backend": "node scripts/run_system_tests.cjs --tier backend",
     "test:systems": "node scripts/run_system_tests.cjs --tier all-automated",
     "test:preload": "electron scripts/check_preload_bridge_electron.cjs",
+    "test:mod-mapping": "electron scripts/test_machine_mod_mapping.cjs",
     "test:navigation-swaps": "electron scripts/check_navigation_swaps_electron.cjs",
     "test:profile-launch": "node scripts/check_profile_shortcuts.cjs && python backend/test_sync_safety.py && electron scripts/check_profile_shortcut_electron.cjs",
     "check:window-lifecycle": "node scripts/check_window_navigation_lifecycle.cjs",

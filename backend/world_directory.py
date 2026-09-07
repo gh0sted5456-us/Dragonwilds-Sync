@@ -133,7 +133,7 @@ def normalize_heartbeat(row: dict, *, source: str = "local") -> dict | None:
         "fingerprint_claimed": fingerprint, "host_type": host_type,
         **host_meta, "server_os_badge": server_os_badge(host_meta),
         "mod_badges": [str(value)[:32] for value in (row.get("mod_badges") or row.get("mods") or [])[:12] if not isinstance(value, dict)],
-        "mod_summary": [{key: value for key in ("key", "name", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count")
+        "mod_summary": [{key: value for key in ("key", "name", "group", "deployment_target", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count")
                          if (value := item.get(key)) not in (None, "")}
                         for item in (row.get("mod_summary") or row.get("mods") or []) if isinstance(item, dict)],
         "platform_compatibility": {"pc": True, **{key: bool((row.get("platform_compatibility") or {}).get(key, key in {"steam", "epic"}))

@@ -341,6 +341,7 @@ def install_mod_taxonomy_adapters() -> None:
             section = server_systems.UNIT_GROUP_SECTION.get(self.group, ("other", ""))
             return {
                 "key": self.key, "name": self.name, "group": self.group,
+                "deployment_target": server_systems.GROUP_DEST_BASE[self.group],
                 "section": section[0], "subsection": section[1],
                 "classification": self.classification, "category": self.category,
                 "distribution": "client_required" if self.classification == "player_required" else "server_retained",

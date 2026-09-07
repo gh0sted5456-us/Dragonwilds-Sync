@@ -2,11 +2,12 @@ from __future__ import annotations
 
 """Canonical on-disk contract for World/Profile-owned mod payloads.
 
-A profile owns exactly three visible folders beneath its Mods root:
+A profile owns four visible folders beneath its Mods root:
 
     Mods/UE4SS
     Mods/RuneSchema
     Mods/PAKs
+    Mods/Win64
 
 These are *profile storage*, not runtime/core folders.  UE4SS and RuneSchema
 cores stay machine/runtime-managed.  The selected profile is materialized from
@@ -25,14 +26,22 @@ CANONICAL_FOLDER_NAMES = {
     "ue4ss": "UE4SS",
     "runeschema": "RuneSchema",
     "paks": "PAKs",
+    "win64": "Win64",
 }
-SUPPORTED_OVERRIDE_GROUPS = frozenset({"ue4ss_mod", "runeschema_mod", "pak_mod"})
+SUPPORTED_OVERRIDE_GROUPS = frozenset({"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"})
 
 # Browse Mods is intentionally human-editable. These notes keep the three lanes
 # self-describing and also keep empty lanes present in copied/zipped profiles.
 LANE_README = "README.txt"
 LANE_NOTE_NAMES = frozenset({LANE_README.casefold()})
 _LANE_README_TEXT = {
+    "win64": (
+        "Profile-owned Win64 mods.\n\n"
+        "Place the mod's Win64 contents here with the same folder layout.\n"
+        "For example Win64/LootMenu/... deploys to Binaries/Win64/LootMenu/...\n"
+        "beside ue4ss. Refresh the profile and select Client Required to publish.\n"
+        "Do not copy the whole game Win64 directory or its game/loader files.\n"
+    ),
     "ue4ss": (
         "UE4SS mods for this World.\n\n"
         "One folder per mod, exactly as the mod ships it. Drop folders here, then\n"
@@ -121,7 +130,7 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     ue4ss = root / CANONICAL_FOLDER_NAMES["ue4ss"]
     runeschema = root / CANONICAL_FOLDER_NAMES["runeschema"]
     paks = root / CANONICAL_FOLDER_NAMES["paks"]
-    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks}
+    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks, "win64": root / "Win64"}
     for key, target in lanes.items():
         target.mkdir(parents=True, exist_ok=True)
         _write_lane_readme(target, key)
@@ -153,7 +162,7 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     except OSError:
         pass
 
-    return {"root": root, "ue4ss": ue4ss, "runeschema": runeschema, "paks": paks}
+    return {"root": root, **lanes}
 
 
 def prune_unit_overrides(profile: dict, active_keys) -> tuple[dict, list[str]]:
@@ -185,6 +194,7 @@ def describe_profile_mod_roots(mods_root: str | Path) -> dict:
         "ue4ss": str(roots["ue4ss"]),
         "runeschema": str(roots["runeschema"]),
         "paks": str(roots["paks"]),
+        "win64": str(roots["win64"]),
         "authority": "profile-folder",
     }
 

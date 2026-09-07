@@ -19,7 +19,7 @@ REPOSITORY_ROOT = APP_DATA_DIR / "mod_repository"
 PAYLOAD_ROOT = REPOSITORY_ROOT / "payloads"
 INDEX_PATH = REPOSITORY_ROOT / "index.json"
 LOCAL_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
-SUPPORTED_GROUPS = {"ue4ss_mod", "runeschema_mod", "pak_mod"}
+SUPPORTED_GROUPS = {"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"}
 EDITABLE_EXTENSIONS = {".lua", ".json", ".jsonc", ".ini", ".cfg", ".txt"}
 FINGERPRINT_ALGORITHM = "sha256-mod-payload-v2"
 # Inventory/publish repairs may create or normalize these application-facing
@@ -115,6 +115,8 @@ def _group_root(kind: str, profile_id: str, group: str) -> Path:
         return roots["runeschema"]
     if group == "pak_mod":
         return roots["paks"]
+    if group == "win64_mod":
+        return roots["win64"]
     raise ValueError("Unsupported mod type")
 
 
@@ -203,6 +205,12 @@ def _profile_specs() -> list[tuple[str, str, Path]]:
 
 def _physical_keys(kind: str, profile_id: str) -> set[str]:
     keys: set[str] = set()
+    win64 = _group_root(kind, profile_id, "win64_mod")
+    from win64_mods import payload_files
+    list(payload_files(win64))
+    for child in win64.iterdir():
+        if not child.name.startswith('.') and child.name.casefold() not in LANE_NOTE_NAMES:
+            keys.add(f"win64_mod::{child.name}")
     ue4ss = _group_root(kind, profile_id, "ue4ss_mod")
     excluded = ({"runeschema", "mods.txt"} | LANE_NOTE_NAMES
                 | {name.casefold() for name in UE4SS_BAKED_IN_DEFAULT_MODS})
@@ -490,7 +498,7 @@ def _deploy(entry: dict, kind: str, profile_id: str) -> int:
 def publish_from_profile(kind: str, profile_id: str, key: str, *, propagate: bool = True) -> dict:
     group, separator, name = str(key or "").partition("::")
     if not separator or group not in SUPPORTED_GROUPS:
-        raise ValueError("Choose a UE4SS, RuneSchema, or PAK mod")
+        raise ValueError("Choose a UE4SS, RuneSchema, PAK, or Win64 mod")
     profile = read_json(_profile_file(kind, profile_id), {})
     override = ((profile.get("unit_overrides") or {}).get(key) or {})
     source = normalize_mod_source(override.get("source"))

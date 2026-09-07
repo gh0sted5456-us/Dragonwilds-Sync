@@ -31,6 +31,8 @@ def component_key(entry: dict) -> str:
         return f"settings:{target_path.casefold() or PurePosixPath(path).name.casefold()}"
     if entry.get("baseline_runtime"):
         return f"runtime:{generated or 'baseline'}"
+    if entry.get("mod_group") == "win64_mod":
+        return f"win64:{entry.get('mod_name') or PurePosixPath(path).name}"
 
     logical = extract_to or path
     parts = list(PurePosixPath(logical).parts)

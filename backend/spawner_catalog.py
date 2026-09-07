@@ -206,7 +206,8 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
     text = str(query or "").strip().casefold()
     limit = max(1, min(int(limit or 250), 2500))
     layout = resolve_server_layout(game_root) if str(game_root or "").strip() else None
-    loot_menu = bool(layout and ((layout.ue4ss_mods_dir / "LootMenu" / "dlls" / "main.dll").is_file()
+    loot_menu = bool(layout and ((layout.win64_dir / "LootMenu").is_dir()
+                                 or (layout.ue4ss_mods_dir / "LootMenu" / "dlls" / "main.dll").is_file()
                                  or (layout.ue4ss_mods_dir / "LootMenu" / "main.dll").is_file()))
     if kind == "item":
         installed_rows, installed_status = _load_installed_item_catalog(game_root)

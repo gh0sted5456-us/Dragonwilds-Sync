@@ -545,7 +545,7 @@ def _snapshot_roots(profile_id: str = SINGLEPLAYER_ID) -> dict[str, Path]:
     on first access into the visible UE4SS / RuneSchema / PAKs lanes.
     """
     roots = ensure_profile_mod_roots(_world_cache(profile_id) / "mods")
-    return {"ue4ss": roots["ue4ss"], "paks": roots["paks"], "runeschema": roots["runeschema"]}
+    return {"ue4ss": roots["ue4ss"], "paks": roots["paks"], "runeschema": roots["runeschema"], "win64": roots["win64"]}
 
 
 def _live_roots(game_dir: str):
@@ -845,6 +845,16 @@ def scan_inventory(game_dir: str, *, live: bool = False, profile_id: str = SINGL
     profile = load_profile(profile_id); overrides = profile.get("unit_overrides") or {}
     units: list[dict] = []
     warnings: list[str] = []
+    from win64_mods import payload_files
+    from server_systems import ModUnit
+    win64 = _snapshot_roots(profile_id)["win64"]
+    list(payload_files(win64))
+    for path in win64.iterdir():
+        if path.name.startswith('.') or path.name.casefold() == 'readme.txt':
+            continue
+        unit = ModUnit(name=path.name, group='win64_mod', source_dir=path if path.is_dir() else None,
+                       source_files=[] if path.is_dir() else [path])
+        units.append({**unit.public(), "live": live, "classification": "local"})
     ue = targets["ue4ss"]
     if ue.exists():
         warnings.extend(ensure_baked_in_ue4ss_enabled(ue))
@@ -1009,7 +1019,12 @@ def remove_mod(game_dir: str, key: str, *, live: bool = False, profile_id: str =
     targets = roots(game_dir, live, profile_id)
     group, _, name = key.partition("::")
     removed = 0
-    if group == "ue4ss_mod":
+    if group == "win64_mod":
+        from win64_mods import safe_target
+        target = safe_target(_snapshot_roots(profile_id)["win64"], _safe_unit_name(name))
+        if target.is_dir(): shutil.rmtree(target); removed = 1
+        elif target.is_file(): target.unlink(); removed = 1
+    elif group == "ue4ss_mod":
         target = targets["ue4ss"] / _safe_unit_name(name)
         if target.exists(): shutil.rmtree(target); removed = 1
     elif group == "runeschema_mod":
@@ -1319,6 +1334,17 @@ def distribution_units(game_dir: str, profile_id: str = SINGLEPLAYER_ID):
     targets = _live_roots(game_dir)
     profile = load_profile(profile_id); overrides = profile.get("unit_overrides") or {}
     result = []
+    from win64_mods import payload_files
+    win64 = _snapshot_roots(profile_id)["win64"]
+    list(payload_files(win64))
+    for path in win64.iterdir():
+        if path.name.startswith('.') or path.name.casefold() == 'readme.txt':
+            continue
+        override = overrides.get(f'win64_mod::{path.name}') or {}
+        result.append(ModUnit(name=path.name, group='win64_mod',
+                              source_dir=path if path.is_dir() else None,
+                              source_files=[] if path.is_dir() else [path],
+                              classification='server_only' if override.get('classification') == 'server_only' else 'player_required'))
     ue = targets["ue4ss"]
     if ue.exists():
         for path in sorted(ue.iterdir(), key=lambda p: p.name.casefold()):

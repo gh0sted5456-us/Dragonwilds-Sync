@@ -49,7 +49,7 @@ const renderer = need('renderer/release-v3-phase4.js', [
   "assets/platforms/ue4ss.webp", "assets/platforms/runeschema.webp", 'data-v3p4-mod-family',
   'openModsPopup', 'closeModPopup:closeModsPopup', 'No loaded ${esc(family)} mods are recorded for this profile.', "event.key==='Escape'"
   , 'requestProfileModInventory', "'server.world.inventory'", "'singleplayer.inventory'", 'rescan:false',
-  "row.section || ''", "['Pak','UE4SS','RuneSchema']", 'refreshModIndicators', 'Date.now()-current.at<120000',
+  "row.section || ''", "['Pak','UE4SS','RuneSchema','Win64']", 'deployment_target', 'refreshModIndicators', 'Date.now()-current.at<120000',
   'const cardSides = new WeakMap()', 'cardSides.get(card)', 'cardSides.set(card,next)'
 ]);
 if (/const card=event\.target\.closest\('\.v3p4-placard,\.app-world-placard'\)/.test(renderer)) failures.push('Placards must flip only from explicit front/back controls');

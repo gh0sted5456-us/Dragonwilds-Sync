@@ -240,6 +240,7 @@ def signed_operator_world_identity(manifest: dict) -> dict:
     })
 
 GROUP_DEST_BASE = {
+    "win64_mod": "Binaries/Win64",
     "ue4ss_core": "Binaries/Win64",
     "ue4ss_mod": "Binaries/Win64/ue4ss/Mods",
     "runeschema": "Binaries/Win64/ue4ss/Mods",
@@ -247,6 +248,7 @@ GROUP_DEST_BASE = {
     "pak_mod": "Content/Paks/~mods",
 }
 GROUP_LABELS = {
+    "win64_mod": "Win64 Mods",
     "ue4ss_core": "UE4SS Core",
     "ue4ss_mod": "UE4SS LUA",
     "runeschema": "RuneSchema",
@@ -254,6 +256,7 @@ GROUP_LABELS = {
     "pak_mod": "Paks",
 }
 UNIT_GROUP_SECTION = {
+    "win64_mod": ("win64", "Binaries/Win64 (independent mod files)"),
     "pak_mod": ("paks", ""),
     "ue4ss_core": ("ue4ss", "master"),
     "ue4ss_mod": ("ue4ss", "slave"),
@@ -261,9 +264,10 @@ UNIT_GROUP_SECTION = {
     "runeschema_mod": ("runeschema", "slave"),
 }
 CATEGORY_OF_GROUP = {
+    "win64_mod": "win64",
     "pak_mod": "paks", "ue4ss_mod": "ue4ss_lua", "runeschema": "runeschema", "runeschema_mod": "runeschema"
 }
-CATEGORY_ORDER = ["paks", "ue4ss_lua", "runeschema"]
+CATEGORY_ORDER = ["paks", "ue4ss_lua", "runeschema", "win64"]
 _UE4SS_CORE_HINTS = ("ue4ss", "dwmapi")
 _DISTRIBUTABLE_EXTENSIONS = {".pak", ".lua"}
 
@@ -405,7 +409,7 @@ def compute_mod_badges(units: list["ModUnit"]) -> list[str]:
     present.discard(None)
     if not present:
         return ["VANILLA"]
-    labels = {"paks": "PAKS", "ue4ss_lua": "UE4SS", "runeschema": "RUNESCHEMA"}
+    labels = {"paks": "PAKS", "ue4ss_lua": "UE4SS", "runeschema": "RUNESCHEMA", "win64": "WIN64"}
     return [labels[c] for c in CATEGORY_ORDER if c in present]
 
 
@@ -535,6 +539,17 @@ class ModUnit:
 
     def iter_files(self):
         base = GROUP_DEST_BASE[self.group]
+        if self.group == "win64_mod":
+            from win64_mods import payload_files, validate_relative
+            if self.source_dir is not None:
+                for relative, source in payload_files(self.source_dir, prefix=self.name):
+                    yield f"{base}/{validate_relative(self.name + '/' + relative)}", source
+            else:
+                for source in self.source_files:
+                    if source.is_symlink() or source.is_junction():
+                        raise ValueError('Win64 payload must not be a filesystem link')
+                    yield f"{base}/{validate_relative(source.name)}", source
+            return
         if self.source_dir is not None:
             for root, dirs, files in os.walk(self.source_dir):
                 if Path(root) == self.source_dir and self.exclude_top_level_dirs:
@@ -593,6 +608,7 @@ class ModUnit:
         file_count, size, content_hash = self.content_summary()
         return {
             "key": self.key, "name": self.name, "group": self.group,
+            "deployment_target": GROUP_DEST_BASE[self.group],
             "section": UNIT_GROUP_SECTION.get(self.group, ("other", ""))[0],
             "subsection": UNIT_GROUP_SECTION.get(self.group, ("other", ""))[1],
             "classification": self.classification, "category": self.category,
@@ -722,6 +738,9 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
         _order, clean_stem = _strip_pak_load_prefix(stem)
         add(clean_stem, "pak_mod", source_files=files)
 
+    # Win64 content is always explicitly staged by the profile, not inferred
+    # from unrelated files in the live game binary directory.
+    units.extend(u for u in scan_profile_snapshot_units(profile_id) if u.group == "win64_mod")
     units.sort(key=lambda u: (overrides.get(u.key) or {}).get("order", 10**9))
     return units
 
@@ -733,6 +752,7 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     mods = profile_roots["ue4ss"]
     runeschema = profile_roots["runeschema"]
     paks = profile_roots["paks"]
+    win64 = profile_roots["win64"]
     profile = load_server_profile(profile_id)
     overrides = profile.get("unit_overrides") or {}
     units: list[ModUnit] = []
@@ -803,6 +823,12 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     for stem, files in grouped.items():
         _order, clean_stem = _strip_pak_load_prefix(stem)
         add(clean_stem, "pak_mod", source_files=files)
+
+    from win64_mods import payload_files
+    list(payload_files(win64))  # Validate the entire declaration before publishing any file.
+    for name, is_dir, path in _iter_top_level(win64):
+        add(name, "win64_mod", source_dir=path if is_dir else None,
+            source_files=[] if is_dir else [path])
 
     # UE4SS loader files are machine-level authoritative runtime files in the
     # current storage model and therefore are not duplicated into each inactive
@@ -1033,7 +1059,7 @@ def set_mod_classification_fast(profile_id: str, key: str, classification: str) 
     if classification not in {"player_required", "server_only"}:
         raise ValueError("classification must be player_required or server_only")
     group, separator, name = str(key or "").partition("::")
-    if separator != "::" or group not in {"ue4ss_mod", "runeschema_mod", "pak_mod"} or not name.strip():
+    if separator != "::" or group not in {"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"} or not name.strip():
         raise ValueError("A user-manageable mod key is required")
     if len(name) > 240 or name.casefold() in {"mods.txt", "dwmapi.dll"}:
         raise ValueError("Runtime/control infrastructure cannot be assigned a mod mode")
@@ -1122,6 +1148,7 @@ def bulk_set_classification(profile_id: str, game_root: str, section: str,
         "paks": {"pak_mod"},
         "ue4ss": {"ue4ss_core", "ue4ss_mod"},
         "runeschema": {"runeschema", "runeschema_mod"},
+        "win64": {"win64_mod"},
         "all": set(UNIT_GROUP_SECTION),
     }.get(section)
     if not groups:
@@ -2579,7 +2606,7 @@ class ShareServer:
                     "dragonlink_connect": STATE.manifest.get("dragonlink_connect") or {"enabled": False},
                     "runtime_stack": STATE.manifest.get("runtime_stack") or {},
                     "mod_badges": STATE.manifest.get("mod_badges") or ["VANILLA"],
-                    "mod_summary": [{key: row.get(key) for key in ("key", "name", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count") if row.get(key) not in (None, "")}
+                    "mod_summary": [{key: row.get(key) for key in ("key", "name", "group", "deployment_target", "kind", "loader", "section", "subsection", "category", "distribution", "classification", "client_required", "version", "author", "tags", "platforms", "file_count") if row.get(key) not in (None, "")}
                                     for row in (STATE.manifest.get("mod_summary") or []) if isinstance(row, dict)],
                     "tags": STATE.manifest.get("tags") or [],
                     "description": str(STATE.manifest.get("description") or "")[:300],
@@ -2655,7 +2682,9 @@ class ShareServer:
                 dest = PUBLISH_DIR / Path(*PurePosixPath(manifest_path).parts); _atomic_publish_copy(source, dest)
                 manifest_files.append({"path": manifest_path, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                        "category": unit.category, "kind": "file", "extract_to": "",
-                                       "platforms": unit_platforms})
+                                       "platforms": unit_platforms,
+                                       "mod_group": unit.group, "mod_name": unit.name,
+                                       "deployment_target": GROUP_DEST_BASE[unit.group]})
         # Selection is derived from the World. Whenever the resulting client set
         # contains UE4SS entries, publish its client-safe launcher-owned mods.txt
         # rather than asking each client to reconstruct it. An empty set is still
@@ -2714,7 +2743,9 @@ class ShareServer:
         summary = []
         for unit in visible_units:
             file_count, _, content_hash = unit.content_summary()
-            summary.append({"name": unit.name, "section": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[0],
+            summary.append({"name": unit.name, "group": unit.group,
+                            "deployment_target": GROUP_DEST_BASE[unit.group],
+                            "section": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[0],
                             "subsection": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[1],
                             "classification": unit.classification,
                             "distribution": "client_required" if unit.classification == "player_required" else "server_retained",

@@ -112,6 +112,12 @@ def _client_mod_roots(selected: Path) -> dict[str, Path]:
 
 def target_for_entry(selected: Path, entry: dict) -> Path:
     layout = resolve_client_layout(selected)
+    if entry.get("mod_group") == "win64_mod":
+        from win64_mods import safe_target
+        wire = str(entry.get("path") or "")
+        if not wire.startswith("Binaries/Win64/") or entry.get("target_path"):
+            raise ConnectionError('Invalid declared Win64 mod destination')
+        return safe_target(layout.win64_dir, wire[len("Binaries/Win64/"):])
     scope = str(entry.get("target_scope") or "game").lower()
     if scope == "client_config":
         return safe_path_under(layout.config_dir, str(entry.get("target_path") or Path(str(entry.get("path") or "")).name), "client config path")
@@ -381,6 +387,11 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
             target = managed_destination / Path(*PurePosixPath(relative).parts)
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
+            if include_mods and info.get("mod_group") == "win64_mod":
+                from win64_mods import safe_target
+                visible = safe_target(profile_roots["win64"], relative[len("Binaries/Win64/"):])
+                visible.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, visible)
     if layout.config_dir.exists():
         copy_tree(layout.config_dir, config_destination)
     state_path = game_root / LOCAL_STATE_DIR / STATE_FILE
@@ -492,6 +503,10 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
     copy_tree(profile_roots["ue4ss"], profile_live["ue4ss_mods"])
     copy_tree(profile_roots["runeschema"], profile_live["runeschema_mods"])
     copy_tree(profile_roots["paks"], profile_live["pak_mods"])
+    from win64_mods import deploy
+    deploy(profile_roots["win64"], layout.win64_dir,
+           game_root / LOCAL_STATE_DIR / "win64-profile-files.json",
+           APP_DATA_DIR / "Backups" / "DisplacedWin64Mods")
 
     cached_config = stored / "configs" / "game"
     if cached_config.exists():
@@ -1135,7 +1150,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         emit("installing", f"Removing {len(to_remove)} file(s) no longer present on the host", 76,
              changed_files=len(to_download), unchanged_files=len(up_to_date), removed_files=len(to_remove))
     for relative in to_remove:
-        if keep_core_persistent and is_core_persistent_path(relative):
+        if keep_core_persistent and is_core_persistent_path(relative) and (old_files.get(relative) or {}).get("mod_group") != "win64_mod":
             continue
         old = old_files.get(relative) or {}
         if old.get("kind") == "zip_bundle":
@@ -1158,6 +1173,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     new_files = {}
     for entry in manifest.get("files", []):
         info = {"sha256": entry.get("sha256"), "category": entry.get("category"),
+                "mod_group": entry.get("mod_group"), "mod_name": entry.get("mod_name"),
                 "target_scope": entry.get("target_scope") or "game", "target_path": entry.get("target_path") or "",
                 "component": component_key(entry), "baked_component": bool(entry.get("baked_component")),
                 "baseline_runtime": bool(entry.get("baseline_runtime")), "visibility": entry.get("visibility") or ""}

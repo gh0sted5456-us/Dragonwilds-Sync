@@ -2,6 +2,10 @@
 
 Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape: Dragonwilds. It manages Singleplayer, Co-Op, and Dedicated World profiles; UE4SS, RuneSchema, and PAK mods; authenticated host/client synchronization; character and RSDW-L tools; WebHost/Remote Admin; and public World-directory integration.
 
+Profiles also support an independent **Win64** mod folder for declared files
+that belong beside UE4SS. See [Win64 profile deployment](docs/WIN64_PROFILE_MODS.md)
+for staging, client distribution, destination labels, and safety boundaries.
+
 **Project website:** https://gh0sted5456-us.github.io/Dragonwilds-Sync-Web/  
 **Website source:** https://github.com/gh0sted5456-us/Dragonwilds-Sync-Web
 

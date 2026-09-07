@@ -22,8 +22,8 @@
       'rsdw-item-manifest': { display_name:'RSDW Item Manifest', enabled:true, type:'github-path', repository:'RSDWArchive/RSDWTools', branch:'main', path:'data/items/json/RSDragonwilds', parent:'rsdwtools' },
       'rsdw-toolkit': { display_name:'RSDW Dev Kit', enabled:true, type:'github-release', repository:'RSDWArchive/RSDWDevKit', release_url:'https://github.com/RSDWArchive/RSDWDevKit/releases', runtime_component:true, runtime_roles:['server','host'], icon:'assets/navigation/rsdw-l.webp', legacy_physical_names:['RSDWTools'], description:'Server/host-only UE4SS runtime tooling. Updated from the RSDWDevKit release channel and never sent to clients.' },
       dragonconnect: { display_name:'DragonConnect', enabled:true, type:'bundled-lua-core', bundled_fallback:'resources/NativeRuntimeMods/DragonConnect', runtime_component:true, runtime_roles:['client'], description:'Launcher-owned Lua client Core for one-time Direct Connect address/password handoff.' },
-      runeschema: { display_name:'RuneSchema', enabled:true, type:'github-release', repository:'UnskippableCutscene/RuneSchema', release_url:'https://github.com/UnskippableCutscene/RuneSchema/releases', bundled_fallback:'resources/RuneSchema-core-latest.zip', runtime_roles:['server','client'], description:'The packaged stable build is always retained. Official GitHub releases download into the local version library so they can be selected, repaired, or rolled back.' },
-      ue4ss: { display_name:'UE4SS', enabled:true, type:'github-release', repository:'UE4SS-RE/RE-UE4SS', release_url:'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest', bundled_fallback:'resources/DragonwildsServerRuntime/UE4SS-core-latest.zip', runtime_roles:['server','client'], description:'The packaged stable build is always retained. New upstream builds download into the local version library instead of replacing rollback history.' },
+      runeschema: { display_name:'RuneSchema', enabled:true, type:'github-release', repository:'gh0sted5456-us/RuneSchema', release_url:'https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E', bundled_fallback:'resources/RuneSchema-experimental-latest.zip', runtime_roles:['server','client'], description:'RuneSchema 0.6.1E is the packaged Experimental default and its matching GitHub release is the restoration source.' },
+      ue4ss: { display_name:'UE4SS', enabled:true, type:'github-release', repository:'gh0sted5456-us/RuneSchema', release_url:'https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E', bundled_fallback:'resources/DragonwildsServerRuntime/UE4SS-core-latest.zip', runtime_roles:['server','client'], description:'The supplied Dragonwilds-tested UE4SS package is the default baseline and its matching GitHub release is the restoration source.' },
       rsdwmodel: { display_name:'RSDWModel', enabled:true, type:'github-branch', repository:'RSDWArchive/RSDWModel', branch:'main' }
     }
   };
@@ -146,7 +146,7 @@
   }
 
   async function downloadRuneSchemaUpdate(host) {
-    const item=src('runeschema'); const url=String(item.release_url||item.download_url||'https://github.com/UnskippableCutscene/RuneSchema/releases').trim();
+    const item=src('runeschema'); const url=String(item.release_url||item.download_url||'https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E').trim();
     if(!url) throw new Error('RuneSchema has no downloadable GitHub release source.');
     setStatus(host,'Downloading RuneSchema update…');
     const result=await api.invoke('application.runeschema_repository.fetch_experimental',{source_url:url});

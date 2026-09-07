@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '4.0.3',
-  "name": "V4.0.3",
+  version: '4.0.4',
+  "name": "V4.0.4",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,14 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "4.0.4",
+      "title": "V4.0.4 · Dragonwilds Runtime Baselines",
+      "items": [
+        "Ships the supplied Dragonwilds-tested UE4SS package as the default baseline and RuneSchema 0.6.1E as the default Experimental runtime.",
+        "Pins repair and rollback to the matching managed RuneSchema GitHub release while retaining server-only loader boundaries and single-load mod activation."
+      ]
+    },
     {
       "version": "4.0.3",
       "title": "V4.0.3 · Single-Load Mod Activation",

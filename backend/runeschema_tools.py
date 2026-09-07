@@ -142,6 +142,14 @@ def detect_variant(runtime: dict, config_raw: str = "") -> dict:
     if config_raw.strip():
         try:
             data = _parse_jsonc(config_raw)
+            if isinstance(data, dict) and all(isinstance(data.get(key), dict) for key in (
+                "loadOrder", "notifications", "loaders", "spawnBehavior"
+            )):
+                return {
+                    "variant": "experimental",
+                    "version": "0.6.1E",
+                    "source": "config_shape",
+                }
             if isinstance(data, dict) and isinstance(data.get("tooling"), dict):
                 # The 0.6.3 launcher build adds identity override, spawn-safety,
                 # and per-schema generator menus. Retaining the older tooling

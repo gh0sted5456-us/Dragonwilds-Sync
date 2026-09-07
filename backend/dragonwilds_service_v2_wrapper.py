@@ -632,6 +632,12 @@ def _parse_runeschema_settings(raw: str) -> dict:
         return settings
     if not isinstance(data, dict):
         return settings
+    native_061e = all(isinstance(data.get(key), dict) for key in (
+        "loadOrder", "notifications", "loaders", "spawnBehavior"
+    ))
+    if native_061e:
+        settings["_configFormat"] = "0.6.1E"
+        settings["_nativeConfig"] = data
     for key in ("languageOverride", "enableAutoReload", "enableDebugLogging", "enableExperimentalDropScaling"):
         if key in data:
             settings[key] = data[key]
@@ -665,6 +671,15 @@ def _parse_runeschema_settings(raw: str) -> dict:
                         "journal", "raw", "recipes", "spawns", "strings"):
                 if key in schema_types:
                     settings["tooling"]["schemaTypes"][key] = schema_types[key]
+    if native_061e:
+        load_order = data.get("loadOrder", {})
+        for key in ("enabled", "autoCreate", "reconcileFolders", "preserveComments", "strictValues"):
+            if key in load_order:
+                settings["tooling"]["modsTxt"][key] = load_order[key]
+        loaders = data.get("loaders", {})
+        for key in settings["tooling"]["schemaTypes"]:
+            if key in loaders:
+                settings["tooling"]["schemaTypes"][key] = loaders[key]
     return settings
 
 
@@ -673,6 +688,22 @@ def _serialize_runeschema_settings(settings: dict) -> str:
     nested last) so a file saved from here reads identically to one saved by
     RuneSchema's own Settings tab."""
     import json as _json
+    if settings.get("_configFormat") == "0.6.1E" and isinstance(settings.get("_nativeConfig"), dict):
+        data = _json.loads(_json.dumps(settings["_nativeConfig"]))
+        for key in ("languageOverride", "enableAutoReload", "enableDebugLogging", "enableExperimentalDropScaling"):
+            if key in settings:
+                data[key] = settings[key]
+        load_order = data.setdefault("loadOrder", {})
+        mods_txt = settings.get("tooling", {}).get("modsTxt", {})
+        for key in ("enabled", "autoCreate", "reconcileFolders", "preserveComments", "strictValues"):
+            if key in mods_txt:
+                load_order[key] = bool(mods_txt[key])
+        loaders = data.setdefault("loaders", {})
+        schema_types = settings.get("tooling", {}).get("schemaTypes", {})
+        for key in ("assets", "blueprints", "buildings", "courses", "enums", "journal", "raw", "recipes", "spawns", "strings"):
+            if key in schema_types:
+                loaders[key] = bool(schema_types[key])
+        return _json.dumps(data, indent=3) + "\n"
     tooling = settings.get("tooling", {})
     mods_txt = tooling.get("modsTxt", {})
     reports = tooling.get("compatibilityReports", {})

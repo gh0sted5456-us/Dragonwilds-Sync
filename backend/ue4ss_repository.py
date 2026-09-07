@@ -19,8 +19,8 @@ from server_systems import BUNDLED_UE4SS_RESOURCE, DEFAULT_UE4SS_RELEASES_URL, _
 # or imported ZIP is retained by SHA-256 for rollback, repair, and comparison.
 BASELINE_ID = "baseline"
 # Identity follows the supplied archive name; do not infer an upstream commit.
-BASELINE_VERSION = "ue4ss_3.01_RSDragonwilds"
-BASELINE_SHA256 = "d2e93f803a58e86ca73b5f7bd4a68383b965d797410fc29a2ed1036a675312f3"
+BASELINE_VERSION = "UE4SS - RuneSchema · Dragonwilds Baseline"
+BASELINE_SHA256 = "b5f0a460ed99a95cfe6589e5565da98ab062584b401ae3dc782922f3bb063579"
 REPO_DIR_NAME = "UE4SSRepository"
 INDEX_FILE_NAME = "repository.json"
 

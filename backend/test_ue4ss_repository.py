@@ -65,8 +65,8 @@ def test_baseline_always_present_and_resolves_the_shipped_bundled_resource():
     with _sandbox():
         status = repo.list_versions()
         assert status["versions"][0]["id"] == repo.BASELINE_ID
-        assert status["versions"][0]["version"] == "ue4ss_3.01_RSDragonwilds"
-        assert status["versions"][0]["sha256"] == "d2e93f803a58e86ca73b5f7bd4a68383b965d797410fc29a2ed1036a675312f3"
+        assert status["versions"][0]["version"] == "UE4SS - RuneSchema · Dragonwilds Baseline"
+        assert status["versions"][0]["sha256"] == "b5f0a460ed99a95cfe6589e5565da98ab062584b401ae3dc782922f3bb063579"
         # resources/DragonwildsServerRuntime/UE4SS-core-latest.zip ships in
         # this checkout, so the baseline entry is real, not hypothetical.
         assert status["versions"][0]["available"] is True
@@ -81,11 +81,14 @@ def test_supplied_baseline_deploys_to_player_and_server_without_wrapper():
     archive = repo.resolve_archive(repo.BASELINE_ID)
     with zipfile.ZipFile(archive) as bundle:
         assert bundle.testzip() is None
-        wrapper = 'ue4ss_3.01_RSDragonwilds/'
+        wrapper = 'UE4SS - RuneSchema/'
         dll = bundle.read(wrapper + 'ue4ss/UE4SS.dll')
-        assert hashlib.sha256(dll).hexdigest() == 'fde02bade58eb015f8436beb8efe0fdfd3dc55f51b0c670953c26de714734b65'
-        settings = bundle.read(wrapper + 'ue4ss/UE4SS-settings.ini').decode('utf-8').replace('\r\n', '\n').strip()
+        assert hashlib.sha256(dll).hexdigest() == 'c75fe27b7904b8fba202c4fec65dd816a4f1ab35ed2f22969a5a7a3a00805c86'
+        settings = (Path(__file__).resolve().parents[1] / 'resources/DragonwildsServerRuntime/UE4SS-settings.ini').read_text(encoding='utf-8').replace('\r\n', '\n').strip()
         assert not any('/RuneSchema/' in name or '/RSDWTools/' in name for name in bundle.namelist())
+        assert not any(name.casefold().endswith('/version.dll') for name in bundle.namelist())
+        mods_txt = bundle.read(wrapper + 'ue4ss/Mods/mods.txt').decode('utf-8')
+        assert not any(line.strip().endswith(': 1') for line in mods_txt.splitlines())
     with tempfile.TemporaryDirectory(prefix='dws-baseline-layout-') as temporary:
         root = Path(temporary)
         player = root / 'Player' / 'RSDragonwilds'
@@ -100,8 +103,9 @@ def test_supplied_baseline_deploys_to_player_and_server_without_wrapper():
             assert (win64 / 'ue4ss/UE4SS.dll').read_bytes() == dll
             assert (win64 / 'dwmapi.dll').is_file()
             assert (win64 / 'ue4ss/Mods/BPModLoaderMod/Scripts/main.lua').is_file()
-            assert (win64 / 'ue4ss/UE4SS-settings.ini').read_text(encoding='utf-8').strip() == settings
-            assert not (win64 / 'ue4ss_3.01_RSDragonwilds').exists()
+            installed_settings = (win64 / 'ue4ss/UE4SS-settings.ini').read_text(encoding='utf-8').replace('\r\n', '\n').strip()
+            assert installed_settings == settings
+            assert not (win64 / 'UE4SS - RuneSchema').exists()
         assert not (player_win64 / 'version.dll').exists()
         assert (server_win64 / 'version.dll').read_bytes() == b'existing-server-loader'
 

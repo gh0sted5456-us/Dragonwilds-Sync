@@ -32,11 +32,11 @@ assert(registry.sources.dragonconnect.display_name === 'DragonConnect', 'The cli
 assert(registry.sources.dragonconnect.type === 'bundled-lua-core', 'DragonConnect must remain a bundled Lua Core.');
 assert(registry.sources.dragonconnect.bundled_fallback === 'resources/NativeRuntimeMods/DragonConnect', 'DragonConnect must resolve to the bundled Lua Core.');
 assert(!registry.sources.dragonconnect.legacy_physical_names, 'Obsolete connector aliases must not remain in the source registry.');
-assert(registry.sources.runeschema.repository === 'UnskippableCutscene/RuneSchema', 'RuneSchema updates must use the official upstream repository.');
-assert(registry.sources.runeschema.release_url === 'https://github.com/UnskippableCutscene/RuneSchema/releases', 'RuneSchema must resolve official GitHub releases.');
-assert(registry.sources.runeschema.bundled_fallback === 'resources/RuneSchema-core-latest.zip', 'RuneSchema must retain the packaged Stable Build.');
-assert(registry.sources.ue4ss.repository === 'UE4SS-RE/RE-UE4SS', 'UE4SS updates must use the upstream RE-UE4SS repository.');
-assert(registry.sources.ue4ss.release_url === 'https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest', 'UE4SS must resolve the Dragonwilds-compatible upstream channel.');
+assert(registry.sources.runeschema.repository === 'gh0sted5456-us/RuneSchema', 'RuneSchema restoration must use the managed fork.');
+assert(registry.sources.runeschema.release_url === 'https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E', 'RuneSchema must resolve the pinned Experimental restoration release.');
+assert(registry.sources.runeschema.bundled_fallback === 'resources/RuneSchema-experimental-latest.zip', 'RuneSchema must retain the packaged Experimental build.');
+assert(registry.sources.ue4ss.repository === 'gh0sted5456-us/RuneSchema', 'UE4SS restoration must use the managed RuneSchema release.');
+assert(registry.sources.ue4ss.release_url === 'https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E', 'UE4SS must resolve the pinned Dragonwilds-compatible restoration release.');
 assert(registry.sources.ue4ss.bundled_fallback === 'resources/DragonwildsServerRuntime/UE4SS-core-latest.zip', 'UE4SS must retain the packaged Stable Build.');
 
 const forbidden = new Set(['command', 'postinstall', 'post_install', 'script', 'powershell', 'shell', 'exec']);

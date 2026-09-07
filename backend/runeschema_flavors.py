@@ -13,7 +13,7 @@ import runeschema_repository
 
 
 OFFICIAL = {"id": runeschema_repository.BASELINE_ID, "name": "Stable Packaged Build", "kind": "baseline"}
-EXPERIMENTAL = {"id": "experimental", "name": "Experimental · Legacy latest", "kind": "experimental"}
+EXPERIMENTAL = {"id": "experimental", "name": "Experimental · RuneSchema 0.6.1E", "kind": "experimental"}
 MANAGED_IDS = {OFFICIAL["id"], EXPERIMENTAL["id"]}
 
 

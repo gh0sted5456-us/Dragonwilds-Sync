@@ -51,10 +51,10 @@ def test_github_release_pages_resolve_real_assets_via_api() -> None:
     def fake_urlopen(request, timeout=0):
         url = str(getattr(request, "full_url", request))
         seen.append((url, timeout))
-        if "RE-UE4SS" in url:
-            return Response({"tag_name": "experimental-latest", "assets": [
-                {"name": "zDEV-UE4SS_v9.zip", "browser_download_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/zdev.zip"},
-                {"name": "UE4SS_v9.zip", "browser_download_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/download/experimental-latest/UE4SS_v9.zip"},
+        if "gh0sted5456-us/RuneSchema" in url:
+            return Response({"tag_name": "0.6.1E", "assets": [
+                {"name": "RuneSchema-experimental-latest.zip", "browser_download_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/download/0.6.1E/RuneSchema-experimental-latest.zip"},
+                {"name": "UE4SS-core-latest.zip", "browser_download_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/download/0.6.1E/UE4SS-core-latest.zip"},
             ]})
         return Response({"tag_name": "v2", "assets": [
             {"name": "RuneSchema-v2.zip", "browser_download_url": "https://github.com/UnskippableCutscene/RuneSchema/releases/download/v2/RuneSchema-v2.zip"},
@@ -65,9 +65,9 @@ def test_github_release_pages_resolve_real_assets_via_api() -> None:
         ue = managed_updates.server_systems.check_ue4ss_update(managed_updates.DEFAULT_UE4SS_SOURCE)
         rune = managed_updates.server_systems.resolve_runtime_zip_source(
             managed_updates.RUNESCHEMA_RELEASES_URL, prefer_contains=("runeschema",))
-        assert ue["filename"] == "UE4SS_v9.zip" and ue["resolver"] == "github-api"
+        assert ue["filename"] == "UE4SS-core-latest.zip" and ue["resolver"] == "github-api"
         assert rune["filename"] == "RuneSchema-v2.zip" and rune["resolver"] == "github-api"
-        assert any("/releases/tags/experimental-latest" in url for url, _ in seen)
+        assert any("/releases/tags/0.6.1E" in url for url, _ in seen)
         assert any("/releases/latest" in url and "RuneSchema" in url for url, _ in seen)
     finally:
         managed_updates.server_systems.urllib.request.urlopen = old_urlopen

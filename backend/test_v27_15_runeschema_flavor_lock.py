@@ -13,9 +13,9 @@ from server_layout import resolve_server_layout
 
 def main() -> None:
     shipped = Path(__file__).parent.parent / "resources" / "RuneSchema-experimental-latest.zip"
-    assert hashlib.sha256(shipped.read_bytes()).hexdigest() == "fa4e8062d7aff4d9a8c61baf6e87219302a24aea7c3389464bd7ad21d93f391d"
+    assert hashlib.sha256(shipped.read_bytes()).hexdigest() == "3608e61b215c17b08fa445983188323452b8908695fa174623c392f9a88a96f6"
     with zipfile.ZipFile(shipped) as archive:
-        assert hashlib.sha256(archive.read("RuneSchema/dlls/main.dll")).hexdigest() == "6820e79e282a757ec5587fa39f1fd98a87afcfa57c525ff6498f81544ffd9142"
+        assert hashlib.sha256(archive.read("RuneSchema/dlls/main.dll")).hexdigest() == "0506a9cafe0276972a0dcf62b97e3ad867e21204d2f710b2494841e8a728d183"
 
     with tempfile.TemporaryDirectory() as td:
         game_root = Path(td) / "server"

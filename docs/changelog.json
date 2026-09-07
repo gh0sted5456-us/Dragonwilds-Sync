@@ -48,6 +48,18 @@
   ],
   "releases": [
     {
+      "version": "4.0.4",
+      "title": "V4",
+      "date": "2026-09-07",
+      "status": "stable",
+      "summary": "Updates the packaged Dragonwilds UE4SS and RuneSchema runtime baselines with pinned restoration assets.",
+      "highlights": [
+        "The supplied Dragonwilds-tested UE4SS package is now the default baseline.",
+        "RuneSchema 0.6.1E is now the default Experimental runtime for new World profiles.",
+        "Both recovery archives are pinned to the managed RuneSchema 0.6.1E GitHub release, with duplicate activation removed and server-only version.dll kept outside client delivery."
+      ]
+    },
+    {
       "version": "4.0.3",
       "title": "V4",
       "date": "2026-09-07",

@@ -10,7 +10,7 @@ from runtime_versions import server_runtime_stack
 
 
 RUNESCHEMA_CHECK_SECONDS = 15 * 60
-DEFAULT_UE4SS_SOURCE = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
+DEFAULT_UE4SS_SOURCE = "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E"
 RUNESCHEMA_REPOSITORY_URL = "https://github.com/UnskippableCutscene/RuneSchema"
 RUNESCHEMA_RELEASES_URL = f"{RUNESCHEMA_REPOSITORY_URL}/releases"
 RUNESCHEMA_EXPERIMENTAL_REPOSITORY_URL = "https://github.com/gh0sted5456-us/RuneSchema"

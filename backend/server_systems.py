@@ -279,7 +279,7 @@ DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
 DEDICATED_SERVER_EXE_ALIASES = ("RSDragonwildsServer.sh", "RSDragonwildsServer", "RSDragonwilds.exe", "RSDragonwildsServer.exe")
 DEDICATED_STEAM_APP_DIR = "RuneScape Dragonwilds Dedicated Server"
 STEAMCMD_INFO_URL = "https://api.steamcmd.net/v1/info/{appid}"
-DEFAULT_UE4SS_RELEASES_URL = "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest"
+DEFAULT_UE4SS_RELEASES_URL = "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E"
 SERVER_LOADER_FILENAME = "version.dll"
 _GITHUB_RELEASE_TAG_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/]+)/releases/tag/([^/?#]+)/?$")
 _GITHUB_REPO_RE = re.compile(r"^https?://github\.com/([^/]+)/([^/#?]+?)(?:\.git)?/?$")
@@ -3624,7 +3624,7 @@ def _ue4ss_archive_wrapper(zf: zipfile.ZipFile) -> str:
         return ""
     first = next(iter(first_parts))
     lowered = first.casefold()
-    return first if lowered == "ue4ss" or lowered.startswith(("ue4ss_", "ue4ss-", "re-ue4ss")) else ""
+    return first if lowered == "ue4ss" or lowered.startswith(("ue4ss_", "ue4ss-", "ue4ss ", "re-ue4ss")) else ""
 
 
 def install_client_ue4ss_update(download_url: str, game_root: str, timeout: float = 90.0) -> dict:

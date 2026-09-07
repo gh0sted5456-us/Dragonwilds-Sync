@@ -633,8 +633,8 @@ def _restore_managed_runeschema_once(game_root: str, variant: str, *, approved: 
         managed = dict(install.get("runeschema_managed_variant_roots") or {})
         managed[root_key] = selected
         install["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
-        install["runeschema_source_url"] = EXPERIMENTAL_RUNESCHEMA_REPOSITORY + "/releases"
-        install["runeschema_source_name"] = "Experimental · Built-in 0.6.3 V3 baseline"
+        install["runeschema_source_url"] = EXPERIMENTAL_RUNESCHEMA_REPOSITORY + "/releases/tag/0.6.1E"
+        install["runeschema_source_name"] = "Experimental · RuneSchema 0.6.1E"
         install["runeschema_installed_at"] = time.time()
         install["official_runeschema_restored_roots"] = [
             item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
@@ -781,7 +781,7 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
         profile = load_server_profile(profile_id)
         profile.pop("runeschema_selection_pending", None)
         profile.pop("runeschema_flavor_applied_sha256", None)
-        profile["runeschema_source_name"] = ("Experimental · Dragonwilds Sync" if selected_id == "experimental" else "Official · UnskippableCutscene")
+        profile["runeschema_source_name"] = ("Experimental · RuneSchema 0.6.1E" if selected_id == "experimental" else "Official · UnskippableCutscene")
         save_server_profile(profile_id, profile)
         return result
     status = list_runeschema_flavors(profile_id)

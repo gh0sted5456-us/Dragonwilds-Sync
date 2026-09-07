@@ -21,20 +21,20 @@ def main() -> None:
 
     detected = runeschema_tools.detect_variant({}, raw)
     assert detected["variant"] == "experimental"
-    assert detected["version"] == "0.6.3 Experimental"
+    assert detected["version"] == "0.6.1E"
 
     parsed = service._parse_runeschema_settings(raw)
     assert set(parsed["tooling"]["schemaTypes"]) == EXPECTED_SCHEMA_TYPES
+    assert parsed["_configFormat"] == "0.6.1E"
     parsed["tooling"]["schemaTypes"]["buildings"] = False
     parsed["tooling"]["schemaTypes"]["spawns"] = False
 
     serialized = json.loads(service._serialize_runeschema_settings(parsed))
-    assert set(serialized["tooling"]["schemaTypes"]) == EXPECTED_SCHEMA_TYPES
-    assert serialized["tooling"]["schemaTypes"]["buildings"] is False
-    assert serialized["tooling"]["schemaTypes"]["spawns"] is False
-    assert serialized["identityOverrides"] == parsed["identityOverrides"]
-    assert serialized["spawnSafety"] == parsed["spawnSafety"]
-    print("RuneSchema 0.6.3 Experimental Console function/config round-trip passed")
+    assert serialized["loaders"]["buildings"] is False
+    assert serialized["loaders"]["spawns"] is False
+    assert serialized["notifications"] == parsed["_nativeConfig"]["notifications"]
+    assert serialized["spawnBehavior"] == parsed["_nativeConfig"]["spawnBehavior"]
+    print("RuneSchema 0.6.1E Experimental Console function/config round-trip passed")
 
 
 if __name__ == "__main__":

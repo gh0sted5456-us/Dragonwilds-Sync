@@ -68,24 +68,24 @@
       "display_name": "RuneSchema",
       "enabled": true,
       "type": "github-release",
-      "repository": "UnskippableCutscene/RuneSchema",
-      "release_url": "https://github.com/UnskippableCutscene/RuneSchema/releases",
-      "bundled_fallback": "resources/RuneSchema-core-latest.zip",
+      "repository": "gh0sted5456-us/RuneSchema",
+      "release_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E",
+      "bundled_fallback": "resources/RuneSchema-experimental-latest.zip",
       "runtime_component": true,
       "runtime_roles": ["server", "client"],
       "update_owner": "Dragonwilds Sync version library",
-      "description": "The packaged RuneSchema core is the permanent Stable Packaged Build. Official GitHub releases are resolved through the release API, validated, and stored as separate local versions so a host can update, repair, switch, or roll back without losing previous builds."
+      "description": "RuneSchema 0.6.1E is the packaged Experimental default. The matching GitHub release is the validated restoration source and downloaded builds remain selectable for rollback."
     },
     "ue4ss": {
       "display_name": "UE4SS",
       "enabled": true,
       "type": "github-release",
-      "repository": "UE4SS-RE/RE-UE4SS",
-      "release_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest",
+      "repository": "gh0sted5456-us/RuneSchema",
+      "release_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E",
       "bundled_fallback": "resources/DragonwildsServerRuntime/UE4SS-core-latest.zip",
       "runtime_roles": ["server", "client"],
       "update_owner": "Dragonwilds Sync version library",
-      "description": "The Dragonwilds-tested packaged UE4SS archive is the permanent Stable Packaged Build. Upstream UE4SS releases are validated and stored as distinct local versions before selection, preserving rollback and repair history. Upstream version.dll files remain excluded from the client runtime boundary."
+      "description": "The supplied Dragonwilds-tested UE4SS archive is the default packaged baseline. Its matching GitHub release is the restoration source; version.dll remains dedicated-server-only."
     },
     "rsdwmodel": {
       "display_name": "RSDWModel",

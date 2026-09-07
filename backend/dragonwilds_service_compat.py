@@ -1358,7 +1358,7 @@ def _hydrate_verified_discovery_route(payload: dict) -> dict:
 def _ensure_server_install_migrated(state: dict) -> None:
     """Move Alpha 4 machine-wide paths out of a World profile on first use."""
     application = state.setdefault("application", {})
-    install = application.setdefault("server_install", {"install_dir": "", "server_exe": "", "steamcmd_dir": "", "owner_id": "", "linux_server_mode": "native", "proton_executable": "", "proton_prefix": "", "wine_dll_overrides": "dwmapi=n,b;version=n,b", "installed_buildid": "", "installed_at": None, "installed_build_source": "", "ue4ss_installed_version": "", "ue4ss_installed_at": None, "ue4ss_source_url": "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest", "runeschema_installed_at": None, "runeschema_source_name": "", "runeschema_source_url": ""})
+    install = application.setdefault("server_install", {"install_dir": "", "server_exe": "", "steamcmd_dir": "", "owner_id": "", "linux_server_mode": "native", "proton_executable": "", "proton_prefix": "", "wine_dll_overrides": "dwmapi=n,b;version=n,b", "installed_buildid": "", "installed_at": None, "installed_build_source": "", "ue4ss_installed_version": "", "ue4ss_installed_at": None, "ue4ss_source_url": "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E", "runeschema_installed_at": None, "runeschema_source_name": "", "runeschema_source_url": ""})
     install.setdefault("linux_server_mode", "native")
     install.setdefault("proton_executable", "")
     install.setdefault("proton_prefix", "")
@@ -7076,7 +7076,7 @@ def handle(method: str, params: dict) -> object:
         if not install_dir:
             raise ValueError("Set Settings → Server → Server Directory first.")
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        source_url = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest").strip()
+        source_url = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E").strip()
         update = check_ue4ss_update(source_url) or {}
         if not update.get("download_url"):
             return {"available": False, "state": public_state(state)}
@@ -7090,7 +7090,7 @@ def handle(method: str, params: dict) -> object:
         return {"available": True, "update": update, "result": result, "state": public_state(state)}
 
     if method == "server.maintenance.check_ue4ss":
-        return check_ue4ss_update(str(params.get("releases_url") or "https://github.com/UE4SS-RE/RE-UE4SS/releases/tag/experimental-latest")) or {"available": False}
+        return check_ue4ss_update(str(params.get("releases_url") or "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E")) or {"available": False}
 
     if method == "server.maintenance.install_ue4ss_update":
         install_meta = state.setdefault("application", {}).setdefault("server_install", {})

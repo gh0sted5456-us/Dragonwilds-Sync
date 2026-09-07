@@ -181,6 +181,39 @@ def test_read_only_legacy_mod_snapshot_can_be_replaced():
             server_engine.SERVER_PROFILES_DIR = old_profiles
 
 
+def test_nested_read_only_snapshot_preserves_cores_without_overlay():
+    old_profiles = server_engine.SERVER_PROFILES_DIR
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        server_engine.SERVER_PROFILES_DIR = root / "profiles"
+        try:
+            stored = server_engine.ensure_profile_mod_roots(root / "profiles/world/mods")
+            old = stored["ue4ss"] / "DragonwildsSyncGameBridge/config.ini"
+            old.parent.mkdir(parents=True)
+            old.write_bytes(b"old config")
+            old.chmod(stat.S_IREAD)
+            obsolete = stored["ue4ss"] / "RemovedMod/main.lua"
+            obsolete.parent.mkdir(parents=True)
+            obsolete.write_bytes(b"removed")
+            cores = [stored["win64"] / "LootMenu/plugin.dll",
+                     stored["ue4ss"] / "mods.txt",
+                     stored["ue4ss"].parent / "UE4SS.dll",
+                     stored["runeschema"].parent / "runtime/core.dll"]
+            for core in cores:
+                core.parent.mkdir(parents=True, exist_ok=True)
+                core.write_bytes(b"keep core")
+            game = root / "game"
+            live = game / "Binaries/Win64/ue4ss/Mods/DragonwildsSyncGameBridge/config.ini"
+            live.parent.mkdir(parents=True)
+            live.write_bytes(b"new config")
+            assert server_engine.snapshot_profile_mods("world", game) == 1
+            assert old.read_bytes() == b"new config"
+            assert not obsolete.exists()
+            assert all(core.read_bytes() == b"keep core" for core in cores)
+        finally:
+            server_engine.SERVER_PROFILES_DIR = old_profiles
+
+
 def test_read_only_publish_cache_can_be_replaced():
     with tempfile.TemporaryDirectory() as td:
         cache = Path(td) / "published" / "_client_config"
@@ -282,6 +315,7 @@ def main():
     test_client_baseline_excludes_server_loader()
     test_current_runeschema_inventory_slots_are_hydrated()
     test_read_only_legacy_mod_snapshot_can_be_replaced()
+    test_nested_read_only_snapshot_preserves_cores_without_overlay()
     test_read_only_publish_cache_can_be_replaced()
     test_ui_contract()
     print("Release 1.4 consolidated Worlds / in-app dialogs / runtime / UI regression tests passed")

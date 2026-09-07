@@ -336,8 +336,20 @@ def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     if staging.exists():
         _remove_path(staging)
     staged = ensure_profile_mod_roots(staging)
-    # Explicit Win64 declarations must survive captures of the other lanes.
-    _copy_children(current["win64"], staged["win64"], exclude_names=LANE_NOTES)
+    # Win64 now contains the UE4SS and RuneSchema lanes. Preserve each core
+    # separately, not the old mod children: copying those first both resurrects
+    # deleted mods and makes the subsequent overlay fail on read-only files.
+    _copy_children(current["win64"], staged["win64"], exclude_names=LANE_NOTES | {"ue4ss"})
+    _copy_children(current["ue4ss"].parent, staged["ue4ss"].parent,
+                   exclude_names=LANE_NOTES | {"mods"})
+    # Preserve staged loader activation/defaults, but never copy RuneSchema's
+    # child-mod lane here; it is captured independently below.
+    _copy_children(current["ue4ss"], staged["ue4ss"], exclude_names={
+        child.name for child in current["ue4ss"].iterdir()
+        if child.name.casefold() not in SERVER_INFRASTRUCTURE_UE4SS
+    } | LANE_NOTES | {"runeschema"})
+    _copy_children(current["runeschema"].parent, staged["runeschema"].parent,
+                   exclude_names=LANE_NOTES | {"mods"})
     copied = _copy_children(live_roots["ue4ss"], staged["ue4ss"],
                             exclude_names=SERVER_INFRASTRUCTURE_UE4SS | LANE_NOTES)
     if live_roots["runeschema"].exists():
@@ -1721,7 +1733,8 @@ class ServerEngine:
         units = scan_mod_units(profile_id, root)
         if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generate_server_mods_txt(profile_id, root, units=units)
-        snapshot_profile_mods(profile_id, Path(root))
+        if not profile.get("mods_profile_initialized"):
+            snapshot_profile_mods(profile_id, Path(root))
         self._event(f"Scanned {len(units)} mod unit(s) for {profile.get('name') or profile_id}.")
         return {"units": [u.public(SHARE.live_keys) for u in units], "badges": compute_mod_badges(units)}
 
@@ -1749,7 +1762,9 @@ class ServerEngine:
         if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
             generated = generate_server_mods_txt(profile_id, root, units=units)
             self._event(f"Generated server UE4SS mods.txt with {generated.get('count', 0)} enabled mod(s).")
-        if capture_snapshot:
+        # Publishing/launching an established profile must not re-adopt the
+        # installation (including launcher-generated bridge files) into staging.
+        if capture_snapshot and not profile.get("mods_profile_initialized"):
             snapshot_profile_mods(profile_id, Path(root))
         sync = profile.setdefault("sync_config", {})
         password = str(sync.get("password") or ""); key = str(sync.get("server_key") or "")

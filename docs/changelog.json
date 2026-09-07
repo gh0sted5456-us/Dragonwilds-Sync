@@ -1,6 +1,6 @@
 {
   "schema": "dragonwilds-sync-changelog/v1",
-  "updated_at": "2026-09-05T00:00:00Z",
+  "updated_at": "2026-09-07T00:00:00Z",
   "name": "V4",
   "consolidated_from": [
     "3.1.0",
@@ -47,6 +47,18 @@
     "2.0.0"
   ],
   "releases": [
+    {
+      "version": "4.0.2",
+      "title": "V4.0.2",
+      "date": "2026-09-07",
+      "status": "stable",
+      "summary": "Promotes the profile runtime, connected-world synchronization, pathing, and packaged UX reliability fixes.",
+      "highlights": [
+        "Profile-owned runtime and mod staging is safer, with removable defaults and corrected protected-content handling.",
+        "Connected worlds report server-authoritative mod inventories and complete synchronization and launch handoff more reliably.",
+        "Player and server destination mapping, update behavior, startup, dialogs, and release packaging receive follow-up reliability fixes."
+      ]
+    },
     {
       "version": "4.0.1",
       "title": "V4",

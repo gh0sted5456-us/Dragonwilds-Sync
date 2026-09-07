@@ -1,6 +1,6 @@
 window.DWSYNC_RELEASE_META = Object.freeze({
-  version: '4.0.1',
-  "name": "V4.0.1",
+  version: '4.0.2',
+  "name": "V4.0.2",
   "rsdwlVersion": 3,
   "attributions": [
     [
@@ -21,6 +21,14 @@ window.DWSYNC_RELEASE_META = Object.freeze({
     ]
   ],
   "changelog": [
+    {
+      "version": "4.0.2",
+      "title": "V4.0.2 · Profile Runtime Reliability",
+      "items": [
+        "Makes profile-owned runtime and mod staging safer, including removable defaults and corrected protected-content handling.",
+        "Improves connected-world synchronization, mod inventory reporting, path mapping, launch handoff, and packaged UX reliability."
+      ]
+    },
     {
       "version": "4.0.1",
       "title": "V4.0.1 · Release Build Repair",

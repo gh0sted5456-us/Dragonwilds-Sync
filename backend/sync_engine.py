@@ -35,6 +35,7 @@ from sync_manifest import (build_client_meta, component_fingerprints, component_
 CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "connected"
 LEGACY_CLIENT_WORLDS_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 LOCAL_STATE_DIR = ".dwsync"
+CLIENT_STATE_NAMESPACE = Path("profiles") / "world" / "client-state"
 STATE_FILE = "state.json"
 META_FILE = "manifest-meta.json"
 SNAPSHOT_MARKER = ".snapshot-ready"
@@ -55,6 +56,80 @@ SERVER_ONLY_SYNC_UE4SS_MODS = frozenset({
     "rsdwtools", "rsdwtoolkit", "rsdw toolkit", "rsdw tool kit",
     "rsdwdevkit", "rsdw-devkit", "rsdw devkit",
 })
+
+_CLIENT_STATE_MIGRATION_LOCK = threading.RLock()
+
+
+def _client_installation_key(selected_root: Path) -> str:
+    """Return a stable, non-identifying key for one client installation."""
+    game_root = resolve_client_layout(selected_root).game_root.resolve(strict=False)
+    normalized = os.path.normcase(str(game_root)).replace("\\", "/")
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:24]
+
+
+def _verify_copied_file(source: Path, destination: Path) -> None:
+    if not destination.is_file() or source.stat().st_size != destination.stat().st_size:
+        raise OSError(f"Client sync-state migration verification failed for {source.name}")
+    if sha256_file(source) != sha256_file(destination):
+        raise OSError(f"Client sync-state migration hash mismatch for {source.name}")
+
+
+def _migrate_legacy_client_state(selected_root: Path, destination: Path) -> None:
+    """Move legacy ``<game>/.dwsync`` bookkeeping into LocalAppData safely.
+
+    A clean first migration is staged and verified before promotion. If a newer
+    build has already created the destination, missing legacy files are merged
+    and conflicting legacy versions are retained under Backups before the game
+    directory copy is removed. Any failure leaves the legacy tree in place.
+    """
+    game_root = resolve_client_layout(selected_root).game_root
+    legacy = game_root / LOCAL_STATE_DIR
+    if not legacy.is_dir():
+        return
+    with _CLIENT_STATE_MIGRATION_LOCK:
+        if not legacy.is_dir():
+            return
+        files = [path for path in legacy.rglob("*") if path.is_file()]
+        if any(path.is_symlink() for path in legacy.rglob("*")):
+            raise OSError(f"Refusing to migrate linked client sync state from {legacy}")
+        if not destination.exists():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            staging = destination.with_name(destination.name + f".migrating-{time.time_ns()}")
+            try:
+                shutil.copytree(legacy, staging)
+                for source in files:
+                    _verify_copied_file(source, staging / source.relative_to(legacy))
+                os.replace(staging, destination)
+            finally:
+                if staging.exists():
+                    shutil.rmtree(staging, ignore_errors=True)
+        else:
+            conflict_root: Path | None = None
+            for source in files:
+                relative = source.relative_to(legacy)
+                target = destination / relative
+                if target.is_file() and sha256_file(source) == sha256_file(target):
+                    continue
+                if target.exists():
+                    if conflict_root is None:
+                        conflict_root = (APP_DATA_DIR / "Backups" / "LegacyClientSyncState"
+                                         / f"{_client_installation_key(selected_root)}-{time.time_ns()}")
+                    preserved = conflict_root / relative
+                    preserved.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, preserved)
+                    _verify_copied_file(source, preserved)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                _verify_copied_file(source, target)
+        shutil.rmtree(legacy)
+
+
+def client_state_dir(selected_root: Path) -> Path:
+    """Return AppData-owned bookkeeping for one client game installation."""
+    destination = APP_DATA_DIR / CLIENT_STATE_NAMESPACE / _client_installation_key(selected_root)
+    _migrate_legacy_client_state(selected_root, destination)
+    return destination
 
 
 
@@ -162,14 +237,15 @@ def safe_extract_zip(zip_path: Path, destination: Path) -> int:
 
 
 def load_local_state(install_dir: Path) -> dict:
-    path = install_dir / LOCAL_STATE_DIR / STATE_FILE
+    root = client_state_dir(install_dir)
+    path = root / STATE_FILE
     try:
         state = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         state = {"profile_id": None, "applied_version": None, "files": {}}
     # manifest-meta.json is intentionally a small, inspectable mirror. Older
     # clients only have state.json, so merge metadata opportunistically.
-    meta_path = install_dir / LOCAL_STATE_DIR / META_FILE
+    meta_path = root / META_FILE
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         if isinstance(meta, dict):
@@ -182,7 +258,7 @@ def load_local_state(install_dir: Path) -> dict:
 
 
 def save_local_state(install_dir: Path, state: dict) -> None:
-    root = install_dir / LOCAL_STATE_DIR
+    root = client_state_dir(install_dir)
     root.mkdir(parents=True, exist_ok=True)
     path = root / STATE_FILE
     pending = path.with_suffix(path.suffix + ".tmp")
@@ -404,7 +480,7 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
     state = load_local_state(game_root)
     for relative, info in state.get("files", {}).items():
         if include_mods and info.get('kind') == 'zip_bundle':
-            receipt = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
+            receipt = client_state_dir(game_root) / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
             if receipt.is_file():
                 records = json.loads(receipt.read_text(encoding='utf-8'))
                 extract_to = str(info.get('extract_to') or '')
@@ -437,7 +513,7 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
                 _copy_snapshot_file(source, visible)
     if layout.config_dir.exists():
         copy_tree(layout.config_dir, config_destination)
-    state_path = game_root / LOCAL_STATE_DIR / STATE_FILE
+    state_path = client_state_dir(game_root) / STATE_FILE
     if state_path.exists():
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(state_path, destination / STATE_FILE)
@@ -527,14 +603,14 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         (profile_roots['ue4ss'], profile_live['ue4ss_mods'], LAUNCHER_LOCAL_UE4SS_MODS | {'runeschema'}),
         (profile_roots['runeschema'], profile_live['runeschema_mods'], RUNESCHEMA_CORE_NAMES),
         (profile_roots['paks'], profile_live['pak_mods'], set()),
-    ], game_root / LOCAL_STATE_DIR / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
+    ], client_state_dir(game_root) / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
     from win64_mods import deploy
     deploy(profile_roots["win64"], layout.win64_dir,
-           game_root / LOCAL_STATE_DIR / "win64-profile-files.json",
+           client_state_dir(game_root) / "win64-profile-files.json",
            APP_DATA_DIR / "Backups" / "DisplacedWin64Mods")
     from mod_deployment_cleanup import deploy_staged_loaders
     deploy_staged_loaders(profile_roots, layout.win64_dir, layout.runeschema_root,
-        game_root / LOCAL_STATE_DIR / 'profile-loader-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedLoaders')
+        client_state_dir(game_root) / 'profile-loader-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedLoaders')
 
     cached_config = stored / "configs" / "game"
     if cached_config.exists():
@@ -569,13 +645,14 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
             shutil.copy2(cached, target)
             if str(info.get("target_scope") or "game").lower() in {"client_config", "client_mods_txt"}:
                 _set_managed_readonly(target, False)
-    live_state = game_root / LOCAL_STATE_DIR / STATE_FILE
+    state_root = client_state_dir(game_root)
+    live_state = state_root / STATE_FILE
     live_state.parent.mkdir(parents=True, exist_ok=True)
     if cached_state.exists():
         save_local_state(game_root, incoming_state)
     else:
         live_state.unlink(missing_ok=True)
-        (game_root / LOCAL_STATE_DIR / META_FILE).unlink(missing_ok=True)
+        (state_root / META_FILE).unlink(missing_ok=True)
 
 
 def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
@@ -670,9 +747,10 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
             (Path(empty), roots['ue4ss_mods'], LAUNCHER_LOCAL_UE4SS_MODS | {'runeschema'}),
             (Path(empty), roots['runeschema_mods'], RUNESCHEMA_CORE_NAMES),
             (Path(empty), roots['pak_mods'], set()),
-        ], layout.game_root / LOCAL_STATE_DIR / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
-    (layout.game_root / LOCAL_STATE_DIR / STATE_FILE).unlink(missing_ok=True)
-    (layout.game_root / LOCAL_STATE_DIR / META_FILE).unlink(missing_ok=True)
+        ], client_state_dir(layout.game_root) / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
+    state_root = client_state_dir(layout.game_root)
+    (state_root / STATE_FILE).unlink(missing_ok=True)
+    (state_root / META_FILE).unlink(missing_ok=True)
     remove_active_world(layout.game_root)
     return {"profile_id": profile_id, "snapshot": str(client_world_dir(profile_id)),
             "mods_removed": removed_mods, "managed_files_removed": removed_managed,
@@ -737,7 +815,7 @@ def reset_client_managed_payload_for_resync(selected_root: Path, replacement_man
                 return
             target = safe_game_path(game_root, extract_to)
             from mod_deployment_cleanup import deploy_profile_lanes
-            bundle_ledger = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
+            bundle_ledger = client_state_dir(game_root) / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
             with tempfile.TemporaryDirectory(prefix='dws-reset-') as empty:
                 deploy_profile_lanes([(Path(empty), target, set())], bundle_ledger, APP_DATA_DIR / 'Backups' / 'DisplacedMods')
             return
@@ -768,7 +846,7 @@ def reset_client_managed_payload_for_resync(selected_root: Path, replacement_man
 
     # Orphans are not owned. Only explicit Back up & migrate may move them.
 
-    state_root = game_root / LOCAL_STATE_DIR
+    state_root = client_state_dir(game_root)
     (state_root / STATE_FILE).unlink(missing_ok=True)
     (state_root / META_FILE).unlink(missing_ok=True)
     downloads = state_root / "downloads"
@@ -1105,7 +1183,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
                  current_file_bytes=max(0, current_file_bytes), current_file_total=max(0, expected_file_bytes),
                  total_bytes=total_download_bytes)
         if entry.get("kind", "file") == "zip_bundle":
-            temp = game_root / LOCAL_STATE_DIR / "downloads" / (Path(entry["path"]).name + ".download")
+            temp = client_state_dir(game_root) / "downloads" / (Path(entry["path"]).name + ".download")
             download_entry(base_url, token, entry, temp, client_platform, transfer_progress,
                            mirror_urls.get(str(entry.get("path") or ""), ""))
             review_download(temp, entry["path"])
@@ -1114,7 +1192,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
             emit("installing", f"Installing {entry['path']}", min(72, transfer_percent + 2), current_file=entry["path"],
                  current=index, changed_files=len(to_download), unchanged_files=len(up_to_date))
             from mod_deployment_cleanup import deploy_profile_lanes
-            bundle_ledger = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(entry['path'].encode()).hexdigest() + '.json')
+            bundle_ledger = client_state_dir(game_root) / 'bundle-files' / (hashlib.sha256(entry['path'].encode()).hexdigest() + '.json')
             with tempfile.TemporaryDirectory(prefix='dws-bundle-') as extracted:
                 safe_extract_zip(temp, Path(extracted))
                 for payload in Path(extracted).rglob('*'):
@@ -1164,7 +1242,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
             folder = safe_game_path(game_root, extract_to)
             if folder.exists() and not nested_active:
                 from mod_deployment_cleanup import deploy_profile_lanes
-                bundle_ledger = game_root / LOCAL_STATE_DIR / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
+                bundle_ledger = client_state_dir(game_root) / 'bundle-files' / (hashlib.sha256(relative.encode()).hexdigest() + '.json')
                 with tempfile.TemporaryDirectory(prefix='dws-empty-') as empty:
                     deploy_profile_lanes([(Path(empty), folder, set())], bundle_ledger,
                                          APP_DATA_DIR / 'Backups' / 'DisplacedMods')

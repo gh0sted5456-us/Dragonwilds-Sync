@@ -220,7 +220,7 @@ def _install_incremental_file_adapters(server_engine_module) -> None:
                 _tree_signature(layout.runeschema_mods_dir),
                 _tree_signature(roots["pak_mods"]),
                 _tree_signature(layout.config_dir),
-                _tree_signature(layout.game_root / sync_engine.LOCAL_STATE_DIR),
+                _tree_signature(sync_engine.client_state_dir(layout.game_root)),
             )
             return signature if include_mods else signature[-2:]
 

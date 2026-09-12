@@ -43,6 +43,13 @@ deployment records only its declared files and retains displaced file copies
 under application `Backups/DisplacedWin64Mods`; connected sync uses its managed
 file ledger. Update both host and client for the new lifecycle metadata.
 
+Connected-client ledgers, bundle receipts, downloads, and rollback bookkeeping
+live under application LocalAppData at
+`profiles/world/client-state/<installation-key>`. Older `<game>/.dwsync` trees
+are copied and hash-verified there on first access, then removed from the game
+directory. If current AppData state already exists, it remains authoritative;
+conflicting legacy files are retained under `Backups/LegacyClientSyncState`.
+
 This does not auto-detect a new archive format or certify that a mod works on
 native Linux. Follow the mod author's layout and platform instructions.
 

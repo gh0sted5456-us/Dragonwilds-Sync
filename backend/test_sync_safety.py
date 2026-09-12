@@ -53,6 +53,41 @@ def main():
         assert not list(root.glob('.snapshot-*'))
     source_code = Path(sync_engine.__file__).read_text(encoding='utf-8')
     assert source_code.index('emit("profile", "Saving the verified World profile snapshot"') < source_code.index('snapshot_client_world(world["id"], install_dir)')
+
+    # Legacy client bookkeeping is verified into installation-scoped AppData
+    # and removed from the game tree so mod scanners never walk its backups.
+    with TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        old_app_data = sync_engine.APP_DATA_DIR
+        sync_engine.APP_DATA_DIR = root / "LocalAppData" / "DragonwildsSync"
+        try:
+            game = root / "RSDragonwilds"
+            (game / "Binaries" / "Win64").mkdir(parents=True)
+            legacy = game / sync_engine.LOCAL_STATE_DIR
+            (legacy / "rollback" / "old").mkdir(parents=True)
+            (legacy / sync_engine.STATE_FILE).write_text(
+                json.dumps({"profile_id": "legacy", "files": {}}), encoding="utf-8")
+            (legacy / "rollback" / "old" / "receipt.json").write_text("preserved", encoding="utf-8")
+            migrated = sync_engine.load_local_state(game)
+            state_root = sync_engine.client_state_dir(game)
+            assert migrated["profile_id"] == "legacy"
+            assert (state_root / "rollback" / "old" / "receipt.json").read_text(encoding="utf-8") == "preserved"
+            assert not legacy.exists()
+            sync_engine.save_local_state(game, {"profile_id": "current", "files": {}})
+            assert not legacy.exists(), "Normal writes must never recreate <game>/.dwsync"
+
+            # A stale build may recreate legacy state after migration. Keep the
+            # current AppData ledger authoritative and archive the conflict.
+            legacy.mkdir(parents=True)
+            (legacy / sync_engine.STATE_FILE).write_text(
+                json.dumps({"profile_id": "stale", "files": {}}), encoding="utf-8")
+            sync_engine.client_state_dir(game)
+            assert sync_engine.load_local_state(game)["profile_id"] == "current"
+            archived = list((sync_engine.APP_DATA_DIR / "Backups" / "LegacyClientSyncState").rglob(sync_engine.STATE_FILE))
+            assert len(archived) == 1 and json.loads(archived[0].read_text(encoding="utf-8"))["profile_id"] == "stale"
+            assert not legacy.exists()
+        finally:
+            sync_engine.APP_DATA_DIR = old_app_data
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
         assert safe_game_path(root, "Binaries/Win64/test.dll") == (root / "Binaries" / "Win64" / "test.dll").resolve()
@@ -67,6 +102,8 @@ def main():
     # hidden baseline infrastructure and must survive every profile swap.
     with TemporaryDirectory() as tmp:
         base = Path(tmp)
+        old_app_data = sync_engine.APP_DATA_DIR
+        sync_engine.APP_DATA_DIR = base / "sync-appdata"
         selected = base / "game"
         # Client saves/configuration correctly live in LOCALAPPDATA in production.
         # Redirect that root for this destructive swap test so it can never touch
@@ -134,11 +171,14 @@ def main():
         finally:
             sync_engine.CLIENT_WORLDS_DIR = old_worlds
             client_layout.LOCAL_APPDATA = old_local_appdata
+            sync_engine.APP_DATA_DIR = old_app_data
 
     # Force Complete Resync clears both tracked and orphaned World payloads,
     # while preserving the client's loader/core and baked connector files.
     with TemporaryDirectory() as tmp:
         game = Path(tmp) / "RSDragonwilds"
+        old_app_data = sync_engine.APP_DATA_DIR
+        sync_engine.APP_DATA_DIR = Path(tmp) / "sync-appdata"
         (game / "Content" / "Paks").mkdir(parents=True)
         (game / "Binaries" / "Win64").mkdir(parents=True)
         layout = sync_engine.resolve_client_layout(game)
@@ -174,12 +214,16 @@ def main():
         assert (rune_core / "main.dll").is_file()
         assert rune_child.exists() and orphan.exists()
         assert layout.paks_mods_dir.exists() and not tracked_config.exists()
-        assert not (game / sync_engine.LOCAL_STATE_DIR / sync_engine.STATE_FILE).exists()
+        assert not (sync_engine.client_state_dir(game) / sync_engine.STATE_FILE).exists()
+        assert not (game / sync_engine.LOCAL_STATE_DIR).exists()
+        sync_engine.APP_DATA_DIR = old_app_data
 
     # A tagged replacement manifest makes Reset & Resync delete the identified
     # runtime cores too; the subsequent sync must therefore restore them.
     with TemporaryDirectory() as tmp:
         game = Path(tmp) / "RSDragonwilds"
+        old_app_data = sync_engine.APP_DATA_DIR
+        sync_engine.APP_DATA_DIR = Path(tmp) / "sync-appdata"
         layout = sync_engine.resolve_client_layout(game)
         ue4ss = layout.win64_dir / "ue4ss" / "UE4SS.dll"
         ue4ss.parent.mkdir(parents=True)
@@ -198,6 +242,7 @@ def main():
         assert reset["tagged_targets"] == 2
         assert not ue4ss.exists() and rune.exists(), 'No bundle receipt means no authority to sweep the RuneSchema tree'
         assert "runtime:baseline" in reset["runtime_components_to_restore"]
+        sync_engine.APP_DATA_DIR = old_app_data
     print("sync safety tests passed")
 
 

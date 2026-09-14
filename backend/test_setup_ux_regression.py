@@ -71,8 +71,9 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert 'data-landing-update-status' in app
     assert ".fantasy-loading::before{display:block!important}" in styles
     assert ".fantasy-loading::before{display:none!important}" not in styles
-    assert app.count("Scan Profile Folder") >= 2
-    assert "Profile → scan → deploy" in app
+    assert "Scan Profile Folder" in app
+    assert "Scan Staging" in app
+    assert "Stage → scan → deploy" in app
 
     # Settings exposes Player paths/loaders first; Server stays an optional
     # feature and appears only after the operator enables it.

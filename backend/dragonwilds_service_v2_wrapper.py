@@ -775,6 +775,24 @@ def handle(method: str, params: dict) -> object:
     state = _legacy.load_state()
     _trash_settings(state)
 
+    if (method == "server.world.ue4ss_version.select"
+            or method.startswith("server.world.runtime_client_selection.")):
+        raise ValueError(
+            "Dedicated runtime selection was removed. The World's staged runtime is authoritative.")
+    if method == "application.core_mod.update" and str(params.get("target") or "server").casefold() == "server":
+        raise ValueError(
+            "Dedicated runtime management was removed. Place the complete runtime in the World's staged folder.")
+    if method == "application.reset.install" and str(params.get("target") or "client").casefold() == "server":
+        raise ValueError(
+            "Dedicated overlay reset was removed. Edit the World staging folder, then reactivate the profile.")
+    if method == "server.install.rsdwdevkit_update":
+        raise ValueError(
+            "Dedicated mod management was removed. Place server mod files in the World's staged folder.")
+    if (method == "application.rsdw.refresh"
+            and str(params.get("runtime_target") or "data").casefold() in {"server", "both"}):
+        raise ValueError(
+            "Dedicated mod management was removed. Place RSDW server files in the World's staged folder.")
+
     if method == "client.background.tick":
         result = _legacy_handle(method, params)
         refreshed = _legacy.load_state()
@@ -853,9 +871,10 @@ def handle(method: str, params: dict) -> object:
     if method in {"server.runtime.version", "server.runtime.getVersionStatus"}:
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
         profile = _legacy.load_server_profile(profile_id) if profile_id else {}
-        stack = _managed_updates.refresh_server_runtime_cache(state, profile or {}, force_runeschema=bool(params.get("remote", False)))
-        _sync_update_notifications(state)
-        _legacy.save_state(state)
+        # Runtime files and their versions are owned by staging. This endpoint
+        # remains a local status viewer and never checks or updates loader cores.
+        stack = _managed_updates.server_runtime_stack(
+            state.setdefault("application", {}), profile or {}, remote=False)
         return {"profile_id": profile_id, "runtime_stack": stack, "status": RUNTIME.get_status(),
                 "updates": dict((state.get("application") or {}).get("update_status") or {})}
 

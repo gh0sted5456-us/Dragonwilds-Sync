@@ -62,7 +62,7 @@ def test_save_snapshot_is_delta_and_does_not_duplicate_backups():
             _write_backup_zip=lambda profile_id, source, retention: backups.append((profile_id, retention)),
             _live_savegames_dir=lambda _exe: live,
             _profile_savegame_dir=lambda _profile: profile_save,
-            _profile_server_config_dir=lambda _profile: root / "profile-config",
+            _profile_server_config_dir=lambda _profile, _platform="WindowsServer": root / "profile-config",
             resolve_server_layout=lambda _root: layout,
         )
         old_state_root = phase4.STATE_ROOT
@@ -149,6 +149,7 @@ def _fake_server_module(root: Path):
         ServerEngine=FakeEngine, SHARE=share, STATE=SimpleNamespace(active_profile_id="world-a"),
         SERVER_INFRASTRUCTURE_UE4SS={"runeschema", "mods.txt"},
         ensure_base_runtimes=runtime, scan_mod_units=scan, generate_server_mods_txt=generate,
+        scan_profile_snapshot_units=lambda profile_id: scan(profile_id, str(root)),
         _assert_profile_runtime_selection=lambda *_args: (
             counts.__setitem__("runtime_assert", counts["runtime_assert"] + 1)
             or {"ue4ss": {"changed": False}, "runeschema": {"changed": False}, "cache_warning": ""}
@@ -184,16 +185,19 @@ def test_prepare_preserves_live_save_for_current_profile_and_publish_reuses_scan
             prepared = engine.prepare_start("world-a")
             assert prepared["materialization_mode"] == "already_materialized"
             assert counts["restore_save"] == 0, "same-profile Start overwrote the live save"
-            assert counts["runtime"] == counts["scan"] == counts["generate"] == 1
-            assert counts["runtime_assert"] == 1, "optimized Start skipped the selected runtime guard"
+            assert counts["runtime"] == counts["generate"] == 0
+            assert counts["scan"] == 1
+            assert counts["runtime_assert"] == 0, "staging pipeline invoked retired runtime selection"
 
             published = engine.publish("world-a")
             assert published["prepared_scan_reused"] is True
-            assert counts["runtime"] == counts["scan"] == counts["generate"] == 1, "publish repeated prepared discovery"
+            assert counts["runtime"] == counts["generate"] == 1
+            assert counts["scan"] == 2
 
             share.serving = False
             engine.publish("world-a")
-            assert counts["runtime"] == counts["scan"] == counts["generate"] == 2, "prepared cache survived its one-use publish"
+            assert counts["runtime"] == counts["generate"] == 2
+            assert counts["scan"] == 3, "each publish should perform its own profile scan"
         finally:
             if old_maintenance is None:
                 sys.modules.pop("world_maintenance", None)

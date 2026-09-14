@@ -7,8 +7,9 @@ def main():
     with tempfile.TemporaryDirectory() as td:
         root=Path(td)
         profile='test-profile'
-        old_root=se.SERVER_PROFILES_DIR
+        old_root, old_appdata=se.SERVER_PROFILES_DIR, se.APP_DATA_DIR
         se.SERVER_PROFILES_DIR=root/'profiles'
+        se.APP_DATA_DIR=root/'appdata'
         try:
             se.SERVER_PROFILES_DIR.mkdir(parents=True)
             (se.SERVER_PROFILES_DIR/profile).mkdir()
@@ -23,7 +24,7 @@ def main():
             assert mod.read_bytes()==b'abc'
             print('server engine tests passed')
         finally:
-            se.SERVER_PROFILES_DIR=old_root
+            se.SERVER_PROFILES_DIR, se.APP_DATA_DIR=old_root, old_appdata
 
 if __name__=='__main__':
     main()

@@ -31,8 +31,9 @@ def server_install(base: Path) -> Path:
 def main() -> None:
     with tempfile.TemporaryDirectory() as td:
         base = Path(td)
-        old_profiles = se.SERVER_PROFILES_DIR
+        old_profiles, old_appdata = se.SERVER_PROFILES_DIR, se.APP_DATA_DIR
         se.SERVER_PROFILES_DIR = base / "profiles"
+        se.APP_DATA_DIR = base / "appdata"
         profile = "guard-world"
         try:
             (se.SERVER_PROFILES_DIR / profile).mkdir(parents=True)
@@ -94,7 +95,13 @@ def main() -> None:
             (rs / "enabled.txt").write_text("")
             mods = ensure_runeschema_mods_dir(rs)
             assert mods.is_dir() and (mods / "README.txt").is_file()
-            assert not any("README" in unit.name for unit in scan_profile_snapshot_units(profile))
+            import server_systems as systems
+            old_system_profiles = systems.SERVER_PROFILES_DIR
+            systems.SERVER_PROFILES_DIR = se.SERVER_PROFILES_DIR
+            try:
+                assert not any("README" in unit.name for unit in scan_profile_snapshot_units(profile))
+            finally:
+                systems.SERVER_PROFILES_DIR = old_system_profiles
             se.restore_profile_mods(profile, game)
             assert (rs / "dlls" / "main.dll").is_file()
             assert (rs / "config" / "config.json").is_file()
@@ -128,7 +135,7 @@ def main() -> None:
                     assert Path(local_desc[lane]).is_dir()
 
                 server_desc = smr.describe_profile_mods_root("dedicated", "guard-world")
-                assert Path(server_desc["mods_root"]) == smr.SERVER_PROFILES_DIR / "guard-world" / "mods"
+                assert Path(server_desc["mods_root"]) == smr.SERVER_PROFILES_DIR / "guard-world" / "staged"
                 assert server_desc["resolved_kind"] == "server"
                 for lane in ("ue4ss", "runeschema", "paks"):
                     assert Path(server_desc[lane]).is_dir()
@@ -151,7 +158,7 @@ def main() -> None:
 
             print("curated profile/mod path guards: PASS")
         finally:
-            se.SERVER_PROFILES_DIR = old_profiles
+            se.SERVER_PROFILES_DIR, se.APP_DATA_DIR = old_profiles, old_appdata
 
 
 if __name__ == "__main__":

@@ -4,6 +4,26 @@ This document is the review contract for the `revamp/executable-save-paths` work
 
 ## Final architecture summary
 
+> **Dedicated World overlay update:** Each dedicated World now owns one
+> `staged/` directory whose contents mirror paths beneath the game directory.
+> Steam-owned game files remain shared and are never copied into profiles.
+> The allowed overlay branches are `Binaries/Win64`, `Binaries/Linux`,
+> `Content/Paks/~mods`, and `Saved`; base executables and unrelated game paths
+> are rejected. Platform configuration and SaveGames are routed to their
+> resolved live destinations.
+> UE4SS and RuneSchema are no longer installed, selected, repaired, enabled, or
+> otherwise materialized by dedicated-World activation. Server managers place
+> any loader and mod files directly at their game-relative paths in `staged/`.
+> Activation deploys the entire overlay generically; switching or unloading
+> removes only files named by the AppData installation receipt. The older
+> Runtime Manager/profile-lane rules below describe client compatibility and
+> historical releases, and do not override this dedicated-server contract.
+>
+> Client publication is narrower: staged `dwmapi.dll` + `ue4ss/UE4SS.dll`
+> declare the World's UE4SS baseline, and staged RuneSchema `dlls/` declares
+> its RuneSchema baseline. Those runtime files are published first, followed
+> only by recognized mod units whose classification is **Client Required**.
+
 Nothing below is "derived only" — every layer states explicitly what is machine-authored, what is executable-derived, and what is profile-authored.
 
 - **Machine** — the exact Player/Server executable, the exact Saved directory, and the mapped UE4SS/RuneSchema/PAK deployment destinations for this installation. Destinations default from the executable but are individually overrideable and persist across restarts.
@@ -76,19 +96,24 @@ runtime_architecture:
 
 ### Profile-owned mod storage
 
-Each World/Profile owns a visible Mods root:
+Each dedicated World owns a visible game-ready staging root:
 
 ```text
 Profile/
-└── Mods/
-    ├── UE4SS/
-    ├── RuneSchema/
-    └── PAKs/
+└── staged/
+    ├── Binaries/Win64/
+    │   └── ue4ss/Mods/RuneSchema/mods/
+    ├── Binaries/Linux/
+    ├── Content/Paks/~mods/
+    └── Saved/
+        ├── Config/{WindowsServer,LinuxServer}/
+        └── SaveGames/
 ```
 
-These folders are the authoritative source for that profile's mod content.
+This complete overlay is the authoritative source for that profile's mod and
+loader content. It contains no Steam-owned base-game files.
 
-- **Browse Mods** opens this profile `Mods` root.
+- **Open World Staging** opens this profile `staged` root.
 - Browse is side-effect free. It does not silently scan before opening and does not silently rescan when Explorer regains focus.
 - Users/operators may add, replace, or delete mods directly in these folders.
 - **Refresh/Rescan** is the explicit reconciliation boundary.
@@ -113,10 +138,10 @@ The configured installation destinations are where the selected profile is plant
 Profile switching is one-way for ordinary operation:
 
 ```text
-Profile A source folders -> configured live destinations
+Profile A staged overlay -> shared game directory
 switch
-clear only profile-owned live content
-Profile B source folders -> configured live destinations
+remove only receipt-owned files
+Profile B staged overlay -> shared game directory
 ```
 
 Routine A -> B switching must not snapshot the live game directory back over A before the switch.

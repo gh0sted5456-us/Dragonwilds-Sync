@@ -14,7 +14,7 @@ from sync_manifest import component_key
 def main():
     with TemporaryDirectory() as directory:
         root = Path(directory)
-        lanes = ensure_profile_mod_roots(root / 'profiles' / 'test' / 'mods')
+        lanes = ensure_profile_mod_roots(root / 'profiles' / 'test' / 'staged')
         loot = lanes['win64'] / 'LootMenu'
         loot.mkdir()
         (loot / 'LootMenu.dll').write_bytes(b'new mod')

@@ -82,7 +82,9 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
         current = []
         for item in source.rglob('*') if source.exists() else ():
             rel = item.relative_to(source)
-            if rel.parts[0].casefold() in excluded or any(p.startswith('.') for p in rel.parts):
+            if (rel.parts[0].casefold() in excluded
+                    or rel.name.casefold() == 'readme.txt'
+                    or any(p.startswith('.') for p in rel.parts)):
                 continue
             if item.is_symlink() or item.is_junction():
                 raise ValueError('Linked profile payload')
@@ -156,6 +158,43 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
                 target.unlink(missing_ok=True)
         raise
     return len(incoming)
+
+
+def deploy_game_overlay(source, game_root, ledger, recovery_root):
+    """Materialize one complete profile-owned tree relative to a game root.
+
+    This intentionally has no UE4SS/RuneSchema knowledge. Loader DLLs, configs,
+    child mods, PAKs, and any future mod directory are ordinary staged files.
+    File-level receipts ensure a later profile removes only the prior overlay;
+    Steam-owned files that were never in a receipt are never swept.
+    """
+    source = Path(source)
+    allowed = (
+        ("binaries", "win64"), ("binaries", "linux"),
+        ("content", "paks", "~mods"), ("saved",),
+    )
+    protected_names = {
+        "rsdragonwildsserver.exe", "rsdragonwilds-win64-shipping.exe",
+        "rsdragonwilds.exe", "rsdragonwildsserver", "rsdragonwildsserver.sh",
+    }
+    for item in source.rglob('*') if source.exists() else ():
+        if not item.is_file():
+            continue
+        parts = tuple(part.casefold() for part in item.relative_to(source).parts)
+        if not any(parts[:len(prefix)] == prefix for prefix in allowed):
+            raise ValueError(
+                "Dedicated World overlays may contain only Binaries/Win64, Binaries/Linux, Content/Paks/~mods, and Saved files")
+        if item.name.casefold() in protected_names:
+            raise ValueError("A staged overlay cannot replace a Steam-owned game executable")
+    return deploy_profile_lanes(
+        # Config and SaveGames are materialized by platform/save routers because
+        # their actual destinations may differ from the inner game root. Other
+        # staged Saved content still retains ordinary game-relative semantics.
+        [
+            (source, Path(game_root), {"saved"}),
+            (source / "Saved", Path(game_root) / "Saved", {"config", "savegames"}),
+        ],
+        Path(ledger), Path(recovery_root))
 
 
 def deploy_staged_loaders(stored, win64, runeschema, ledger, recovery, *, ue_enabled=True, rs_enabled=True):

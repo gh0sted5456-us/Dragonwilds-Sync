@@ -170,14 +170,17 @@ def _install_incremental_file_adapters(server_engine_module) -> None:
 
     def snapshot_config(profile_id: str, game_root: str | Path) -> int:
         layout = server_engine_module.resolve_server_layout(game_root)
-        result = _sync_tree(layout.config_dir, server_engine_module._profile_server_config_dir(profile_id))
+        result = _sync_tree(
+            layout.config_dir,
+            server_engine_module._profile_server_config_dir(profile_id, layout.config_dir.name),
+        )
         return int(result["changed"])
 
     def restore_config(profile_id: str, game_root: str | Path) -> int:
-        source = server_engine_module._profile_server_config_dir(profile_id)
+        layout = server_engine_module.resolve_server_layout(game_root)
+        source = server_engine_module._profile_server_config_dir(profile_id, layout.config_dir.name)
         if not source.exists():
             return 0
-        layout = server_engine_module.resolve_server_layout(game_root)
         return int(_sync_tree(source, layout.config_dir)["changed"])
 
     def snapshot_save(profile_id: str, exe_path: str, retention_count: int = 10) -> bool:
@@ -277,31 +280,6 @@ def _install_server_pipeline(server_engine_module) -> None:
     engine_type._DWS_PHASE4_START_PIPELINE = True
 
     original_publish = engine_type.publish
-    original_runtime = server_engine_module.ensure_base_runtimes
-    original_scan = server_engine_module.scan_mod_units
-    original_generate = server_engine_module.generate_server_mods_txt
-
-    def cached_runtime(root, *args, **kwargs):
-        ctx = getattr(_PUBLISH_CONTEXT, "value", None)
-        if ctx and str(Path(root).resolve(strict=False)) == str(Path(ctx.get("root") or "").resolve(strict=False)):
-            return dict(ctx.get("runtime") or {})
-        return original_runtime(root, *args, **kwargs)
-
-    def cached_scan(profile_id, root, *args, **kwargs):
-        ctx = getattr(_PUBLISH_CONTEXT, "value", None)
-        if ctx and str(ctx.get("profile_id") or "") == str(profile_id or ""):
-            return list(ctx.get("units") or [])
-        return original_scan(profile_id, root, *args, **kwargs)
-
-    def cached_generate(profile_id, root, units=None, *args, **kwargs):
-        ctx = getattr(_PUBLISH_CONTEXT, "value", None)
-        if ctx and str(ctx.get("profile_id") or "") == str(profile_id or ""):
-            return dict(ctx.get("mods_txt") or {})
-        return original_generate(profile_id, root, units=units, *args, **kwargs)
-
-    server_engine_module.ensure_base_runtimes = cached_runtime
-    server_engine_module.scan_mod_units = cached_scan
-    server_engine_module.generate_server_mods_txt = cached_generate
 
     def process_probe(self, profile_id: str = "", exe_path: str = "") -> dict:
         prepared = getattr(self, "_dws_phase4_prepared", {}) if isinstance(getattr(self, "_dws_phase4_prepared", {}), dict) else {}
@@ -368,40 +346,13 @@ def _install_server_pipeline(server_engine_module) -> None:
                 materialized["save_action"] = "deferred_no_server_exe"
         elif marker_id and marker_id != profile_id:
             mode = "unknown_owner_preserved"
-            server_engine_module.snapshot_profile_server_config(profile_id, root)
-        elif not marker_id:
-            server_engine_module.snapshot_profile_server_config(profile_id, root)
 
         # Replant even on same-profile activation: untracked live mods must
         # not survive merely because the active marker already matches.
         if mode != "profile_switch":
             materialized["mods"] = server_engine_module.restore_profile_mods(profile_id, Path(root))
 
-        runtime = original_runtime(root)
-        if not runtime.get("ok"):
-            raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
-        if runtime.get("repaired"):
-            self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        selected = server_engine_module._assert_profile_runtime_selection(profile_id, profile, root)
-        if selected["ue4ss"].get("changed"):
-            self._event(f"Applied the selected UE4SS build ({selected['ue4ss'].get('source') or 'repository build'}).", "ok")
-        if selected["runeschema"].get("changed"):
-            self._event(f"Applied the selected RuneSchema flavor ({selected['runeschema'].get('source') or 'selected flavor'}).", "ok")
-        if selected.get("cache_warning"):
-            self._event(selected["cache_warning"], "warn")
-        profile = server_engine_module.load_server_profile(profile_id) or profile
-
-        # Optional gameplay/observation components are profile-owned and are
-        # materialized only after the selected UE4SS runtime is final. This
-        # keeps profile switching deterministic and prevents a machine-wide
-        # baseline from silently enabling gameplay changes for every World.
-        from managed_runtime_mods import apply_profile_components
-        managed_runtime = apply_profile_components(layout.ue4ss_mods_dir, profile)
-        if managed_runtime.get("changed"):
-            names = [row.get("name") for row in managed_runtime.get("components", {}).values() if row.get("changed")]
-            self._event("Applied profile runtime components: " + ", ".join(filter(None, names)), "ok")
-        for warning in managed_runtime.get("warnings") or []:
-            self._event(str(warning), "warn")
+        runtime = {"ok": True, "managed": False, "source": "world-staging-profile", "repaired": []}
 
         cfg = profile.setdefault("dedicated_config", {})
         launch_ready = False
@@ -432,10 +383,8 @@ def _install_server_pipeline(server_engine_module) -> None:
         except Exception as exc:
             self._event(f"Writable config hydration needs attention: {type(exc).__name__}: {exc}", "warn")
 
-        units = original_scan(profile_id, root)
+        units = server_engine_module.scan_profile_snapshot_units(profile_id)
         mods_txt = {}
-        if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            mods_txt = original_generate(profile_id, root, units=units)
         # Runtime preparation is not permission to adopt unrelated live mods.
         # Explicit import/adoption owns writes back into profile staging.
         self.active_profile_id = profile_id
@@ -444,7 +393,6 @@ def _install_server_pipeline(server_engine_module) -> None:
         prepared = {
             "profile_id": profile_id, "profile": profile, "root": root, "exe": exe,
             "runtime": dict(runtime), "units": list(units), "mods_txt": dict(mods_txt or {}),
-            "managed_runtime": managed_runtime,
             "materialization": materialized,
             "materialization_mode": mode, "managed_configs_locked": locked,
             "mod_signature": _server_mod_signature(server_engine_module, root),
@@ -520,9 +468,7 @@ def _install_server_pipeline(server_engine_module) -> None:
         return result
 
     def publish(self, profile_id: str) -> dict:
-        prepared = getattr(self, "_dws_phase4_prepared", None)
         reusable = _prepared_matches(server_engine_module, self, profile_id, verify_mods=True)
-        _PUBLISH_CONTEXT.value = prepared if reusable else None
         try:
             result = original_publish(self, profile_id)
             if isinstance(result, dict):
@@ -530,7 +476,6 @@ def _install_server_pipeline(server_engine_module) -> None:
                 result["prepared_scan_reused"] = bool(reusable)
             return result
         finally:
-            _PUBLISH_CONTEXT.value = None
             self._dws_phase4_prepared = None
 
     engine_type.process_probe = process_probe

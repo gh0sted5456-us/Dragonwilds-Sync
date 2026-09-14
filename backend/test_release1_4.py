@@ -176,7 +176,7 @@ def test_read_only_legacy_mod_snapshot_can_be_replaced():
             # First access migrates/removes the old internal lane and writes
             # the replacement into the visible profile-owned UE4SS folder.
             assert not legacy.exists()
-            assert (server_engine.SERVER_PROFILES_DIR / "world" / "mods" / "Binaries/Win64/ue4ss/Mods" / "WorldMod" / "Scripts" / "main.lua").is_file()
+            assert (server_engine.SERVER_PROFILES_DIR / "world" / "staged" / "Binaries/Win64/ue4ss/Mods" / "WorldMod" / "Scripts" / "main.lua").is_file()
         finally:
             server_engine.SERVER_PROFILES_DIR = old_profiles
 
@@ -187,7 +187,7 @@ def test_nested_read_only_snapshot_preserves_cores_without_overlay():
         root = Path(td)
         server_engine.SERVER_PROFILES_DIR = root / "profiles"
         try:
-            stored = server_engine.ensure_profile_mod_roots(root / "profiles/world/mods")
+            stored = server_engine.ensure_profile_mod_roots(root / "profiles/world/staged")
             old = stored["ue4ss"] / "ProfileHelper/config.ini"
             old.parent.mkdir(parents=True)
             old.write_bytes(b"old config")
@@ -208,7 +208,9 @@ def test_nested_read_only_snapshot_preserves_cores_without_overlay():
             live.write_bytes(b"new config")
             assert server_engine.snapshot_profile_mods("world", game) == 1
             assert old.read_bytes() == b"new config"
-            assert not obsolete.exists()
+            # Explicit staged content remains authoritative; adoption overlays
+            # live files without silently deleting profile-only loose files.
+            assert obsolete.exists()
             assert all(core.read_bytes() == b"keep core" for core in cores)
         finally:
             server_engine.SERVER_PROFILES_DIR = old_profiles

@@ -9,6 +9,7 @@ import profile_store
 import server_engine as se
 import server_systems as ss
 import sync_engine
+import client_layout
 from sync_engine import sync_world
 
 
@@ -64,17 +65,31 @@ def main() -> None:
         client_game = client_install / "RSDragonwilds"
 
         old_profile_paths = (profile_store.SERVER_PROFILES_DIR, ss.SERVER_PROFILES_DIR, se.SERVER_PROFILES_DIR)
+        old_state_paths = (
+            profile_store.APP_DATA_DIR, profile_store.LEGACY_SETTINGS_PATH,
+            profile_store.V2_SETTINGS_PATH, profile_store.APPLICATION_USER_ID_PATH,
+        )
+        old_engine_appdata = se.APP_DATA_DIR
         old_publish = ss.PUBLISH_DIR
         old_client_worlds = sync_engine.CLIENT_WORLDS_DIR
+        old_sync_appdata = sync_engine.APP_DATA_DIR
+        old_client_local_appdata = client_layout.LOCAL_APPDATA
         old_runtime_dirs = (ss.UE4SS_RUNTIME_DIR, ss.RUNESCHEMA_RUNTIME_DIR)
         try:
             profile_store.SERVER_PROFILES_DIR = profiles
+            profile_store.APP_DATA_DIR = root / "state"
+            profile_store.LEGACY_SETTINGS_PATH = profile_store.APP_DATA_DIR / "settings.json"
+            profile_store.V2_SETTINGS_PATH = profile_store.APP_DATA_DIR / "launcher_v2.json"
+            profile_store.APPLICATION_USER_ID_PATH = profile_store.APP_DATA_DIR / "application-user-id.sha256"
             ss.SERVER_PROFILES_DIR = profiles
             se.SERVER_PROFILES_DIR = profiles
+            se.APP_DATA_DIR = root / "appdata"
             ss.PUBLISH_DIR = root / "published"
             ss.UE4SS_RUNTIME_DIR = root / "runtime_library" / "ue4ss"
             ss.RUNESCHEMA_RUNTIME_DIR = root / "runtime_library" / "runeschema"
             sync_engine.CLIENT_WORLDS_DIR = root / "client_profiles"
+            sync_engine.APP_DATA_DIR = root / "client_appdata"
+            client_layout.LOCAL_APPDATA = root / "localappdata"
             ss.SHARE.stop()
 
             # Persistent launcher-managed runtime core. World profile swaps must
@@ -208,9 +223,14 @@ def main() -> None:
         finally:
             ss.SHARE.stop()
             profile_store.SERVER_PROFILES_DIR, ss.SERVER_PROFILES_DIR, se.SERVER_PROFILES_DIR = old_profile_paths
+            (profile_store.APP_DATA_DIR, profile_store.LEGACY_SETTINGS_PATH,
+             profile_store.V2_SETTINGS_PATH, profile_store.APPLICATION_USER_ID_PATH) = old_state_paths
+            se.APP_DATA_DIR = old_engine_appdata
             ss.PUBLISH_DIR = old_publish
             ss.UE4SS_RUNTIME_DIR, ss.RUNESCHEMA_RUNTIME_DIR = old_runtime_dirs
             sync_engine.CLIENT_WORLDS_DIR = old_client_worlds
+            sync_engine.APP_DATA_DIR = old_sync_appdata
+            client_layout.LOCAL_APPDATA = old_client_local_appdata
 
 
 if __name__ == "__main__":

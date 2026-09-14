@@ -12,7 +12,8 @@ from pathlib import Path
 from integrations import normalize_mod_source
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS, preview_identity_consolidation, consolidate_identity_files
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, read_json, write_json
-from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
+from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_staging_root,
+                                ensure_profile_mod_roots)
 
 
 REPOSITORY_ROOT = APP_DATA_DIR / "mod_repository"
@@ -61,14 +62,14 @@ def _profile_file(kind: str, profile_id: str) -> Path:
 
 def _mods_root(kind: str, profile_id: str) -> Path:
     root = _profile_dir(kind, profile_id)
-    return root / ("snapshot/mods" if kind == "local" else "mods")
+    return root / "snapshot/mods" if kind == "local" else dedicated_profile_staging_root(root)
 
 
 def mods_root_for_profile(kind: str, profile_id: str) -> Path:
     """Public seam for callers (RPC layer) that need the authoritative profile
     mods root without reaching into this module's private layout helpers.
 
-    This is the one place the local ``snapshot/mods`` vs dedicated ``mods``
+    This is the one place the local ``snapshot/mods`` vs dedicated ``staged``
     layout distinction is decided; callers (including the renderer, via the
     RPC that wraps this) must never re-derive it from AppData/server-root
     string concatenation.

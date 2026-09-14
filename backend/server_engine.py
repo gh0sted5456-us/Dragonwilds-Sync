@@ -21,7 +21,8 @@ from computer_profiles import apply_process_priority, resolve_computer_profile, 
 from health_model import apply_detected_hardware_references
 from server_layout import (NATIVE_LINUX, looks_like_retail_client, resolve_server_layout,
                            resolve_server_layout_from_exe)
-from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
+from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_staging_root,
+                                ensure_profile_mod_roots)
 from profile_mod_destinations import resolve_mod_install_paths
 from machine_paths import server_save_paths
 from active_world import write_active_world, remove_active_world
@@ -31,11 +32,11 @@ from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
 from secret_store import SecretStore, is_reference
 from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
-                            ensure_base_runtimes, runtime_prerequisite_status, capture_authoritative_runtimes,
+                            runtime_prerequisite_status, capture_authoritative_runtimes,
                             ensure_server_runtime_writable, gather_server_hardware_stats, RUNTIME_MUTATION_LOCK,
                             install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
                             install_runeschema_zip, install_ue4ss_zip, local_ip_guess, detect_public_ip,
-                            scan_mod_units, generate_server_mods_txt, normalize_server_ue4ss_activation,
+                            scan_profile_snapshot_units,
                             refresh_live_profile_metadata,
                             _bundled_app_resource, BUNDLED_UE4SS_RESOURCE,
                             BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE)
@@ -65,13 +66,66 @@ RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods.txt",
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
 
-def _profile_mods_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "mods"
+def _profile_mods_dir(profile_id: str) -> Path:
+    """Compatibility name for the dedicated World's complete staged overlay."""
+    return dedicated_profile_staging_root(_profile_dir(profile_id))
 
-def _profile_savegame_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "savegame"
+
+def _overlay_ledger(game_root: str | Path) -> Path:
+    identity = str(Path(game_root).resolve(strict=False)).casefold().encode("utf-8")
+    key = hashlib.sha256(identity).hexdigest()[:24]
+    return APP_DATA_DIR / "State" / "server-installations" / key / "overlay-files.json"
+
+
+def _retire_legacy_game_receipts(game_root: str | Path) -> None:
+    """Clean old lane deployments before moving authority into AppData."""
+    layout = resolve_server_layout(game_root)
+    legacy = layout.game_root / ".dragonwilds-sync"
+    from mod_deployment_cleanup import deploy_profile_lanes
+    with tempfile.TemporaryDirectory(prefix="dws-overlay-migration-") as empty:
+        source = Path(empty)
+        for name in ("profile-mod-files.json", "profile-loader-files.json"):
+            receipt = legacy / name
+            if not receipt.is_file():
+                continue
+            records = json.loads(receipt.read_text(encoding="utf-8"))
+            if not isinstance(records, dict):
+                raise ValueError(f"Invalid legacy deployment receipt: {receipt}")
+            lanes = []
+            for key in sorted(records, key=lambda value: int(value)):
+                destination = str((records.get(key) or {}).get("destination") or "").strip()
+                if not destination:
+                    raise ValueError(f"Invalid legacy deployment destination: {receipt}")
+                target = Path(destination).resolve(strict=False)
+                game = layout.game_root.resolve(strict=False)
+                if target == game or not target.is_relative_to(game):
+                    raise ValueError(f"Legacy deployment destination escapes the game directory: {receipt}")
+                lanes.append((source, target, set()))
+            deploy_profile_lanes(lanes, receipt, APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
+            receipt.unlink(missing_ok=True)
+        win64_receipt = legacy / "win64-profile-files.json"
+        if win64_receipt.is_file():
+            from win64_mods import deploy
+            deploy(source, layout.win64_dir, win64_receipt,
+                   APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
+            win64_receipt.unlink(missing_ok=True)
+    try:
+        legacy.rmdir()
+    except OSError:
+        pass
+
+def _profile_savegame_dir(profile_id: str) -> Path:
+    return _profile_mods_dir(profile_id) / "Saved" / "SaveGames"
 
 def _profile_backups_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "backups"
 
-def _profile_server_config_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "server_config"
+def _profile_server_config_dir(profile_id: str, platform_name: str = "WindowsServer") -> Path:
+    """Return the live-platform configuration lane inside profile staging."""
+    if platform_name not in {"WindowsServer", "LinuxServer"}:
+        raise ValueError("Unsupported dedicated server configuration platform")
+    target = _profile_mods_dir(profile_id) / "Saved" / "Config" / platform_name
+    target.mkdir(parents=True, exist_ok=True)
+    return target
 
 def _player_history_path(profile_id: str) -> Path:
     return _profile_dir(profile_id) / "player_history.json"
@@ -315,7 +369,7 @@ def _tree_inventory(root: Path, *, exclude_names: set[str] | None = None) -> tup
 
 
 def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Adopt/capture live World mods into the profile's three visible lanes.
+    """Adopt live mod/loader files into the World's staged overlay.
 
     Routine profile switching no longer calls this function.  Profile storage
     is authoritative after adoption; normal activation only materializes from
@@ -323,39 +377,26 @@ def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
     """
     assert_dedicated_target(game_root, action="capture World mods from")
     layout = resolve_server_layout(game_root)
-    live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
     destination = _profile_mods_dir(profile_id)
     current = ensure_profile_mod_roots(destination)
-    if (
-        _tree_inventory(live_roots["ue4ss"], exclude_names=SERVER_INFRASTRUCTURE_UE4SS) == _tree_inventory(current["ue4ss"])
-        and _tree_inventory(live_roots["runeschema"]) == _tree_inventory(current["runeschema"])
-        and _tree_inventory(live_roots["paks"]) == _tree_inventory(current["paks"])
-    ):
-        return 0
     staging = destination.with_name(destination.name + ".staging")
     if staging.exists():
         _remove_path(staging)
     staged = ensure_profile_mod_roots(staging)
-    # Win64 now contains the UE4SS and RuneSchema lanes. Preserve each core
-    # separately, not the old mod children: copying those first both resurrects
-    # deleted mods and makes the subsequent overlay fail on read-only files.
-    _copy_children(current["win64"], staged["win64"], exclude_names=LANE_NOTES | {"ue4ss"})
-    _copy_children(current["ue4ss"].parent, staged["ue4ss"].parent,
-                   exclude_names=LANE_NOTES | {"mods"})
-    # Preserve staged loader activation/defaults, but never copy RuneSchema's
-    # child-mod lane here; it is captured independently below.
-    _copy_children(current["ue4ss"], staged["ue4ss"], exclude_names={
-        child.name for child in current["ue4ss"].iterdir()
-        if child.name.casefold() not in SERVER_INFRASTRUCTURE_UE4SS
-    } | LANE_NOTES | {"runeschema"})
-    _copy_children(current["runeschema"].parent, staged["runeschema"].parent,
-                   exclude_names=LANE_NOTES | {"mods"})
-    copied = _copy_children(live_roots["ue4ss"], staged["ue4ss"],
-                            exclude_names=SERVER_INFRASTRUCTURE_UE4SS | LANE_NOTES)
-    if live_roots["runeschema"].exists():
-        copied += _copy_children(live_roots["runeschema"], staged["runeschema"],
-                                 exclude_names=RUNESCHEMA_CORE_NAMES | LANE_NOTES)
-    copied += _copy_children(live_roots["paks"], staged["paks"], exclude_names=LANE_NOTES)
+    # Existing staged files remain authoritative. Adoption adds live loader and
+    # mod trees but deliberately never clones the Steam-owned executable.
+    _copy_children(current["root"], staged["root"], exclude_names=LANE_NOTES)
+    for staged_file in staged["root"].rglob("*"):
+        if staged_file.is_file():
+            staged_file.chmod(staged_file.stat().st_mode | stat.S_IWUSR)
+    copied = _copy_children(layout.win64_dir / "ue4ss", staged["win64"] / "ue4ss",
+                            exclude_names=LANE_NOTES)
+    for shim_name in ("dwmapi.dll", "version.dll"):
+        shim = layout.win64_dir / shim_name
+        if shim.is_file():
+            shutil.copy2(shim, staged["win64"] / shim_name)
+            copied += 1
+    copied += _copy_children(layout.paks_mods_dir, staged["paks"], exclude_names=LANE_NOTES)
     if destination.exists():
         _remove_path(destination)
     staging.replace(destination)
@@ -392,27 +433,34 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
 
 
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Plant one profile's mod lanes into the configured server installation."""
+    """Materialize one World's complete game-ready overlay."""
     assert_dedicated_target(game_root, action="plant World mods into")
+    _retire_legacy_game_receipts(game_root)
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
-    layout = resolve_server_layout(game_root)
-    live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
     stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
-    copied = 0
+    from mod_deployment_cleanup import deploy_game_overlay
+    return deploy_game_overlay(
+        stored["root"], resolve_server_layout(game_root).game_root,
+        _overlay_ledger(game_root), APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
 
-    from mod_deployment_cleanup import deploy_profile_lanes
-    copied += deploy_profile_lanes([
-        (stored['ue4ss'], live_roots['ue4ss'], SERVER_INFRASTRUCTURE_UE4SS | {'runeschema'}),
-        (stored['runeschema'], live_roots['runeschema'], RUNESCHEMA_CORE_NAMES),
-        (stored['paks'], live_roots['paks'], set()),
-    ], game_root / '.dragonwilds-sync' / 'profile-mod-files.json',
-        APP_DATA_DIR / 'Backups' / 'DisplacedMods')
-    from win64_mods import deploy
-    copied += deploy(stored["win64"], layout.game_root / "Binaries" / "Win64",
-                     layout.game_root / ".dragonwilds-sync" / "win64-profile-files.json",
-                     APP_DATA_DIR / "Backups" / "DisplacedWin64Mods")
-    return copied
+
+def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_path: str) -> bool:
+    """Mirror one app-edited live file back to the authoritative staging tree."""
+    parts = str(relative_path or "").replace("\\", "/").split("/")
+    if not parts or any(part in {"", ".", ".."} or ":" in part for part in parts):
+        raise ValueError("Staged file path must stay beneath the game root")
+    live_root = resolve_server_layout(game_root).game_root.resolve(strict=False)
+    source = live_root.joinpath(*parts).resolve(strict=False)
+    if source == live_root or not source.is_relative_to(live_root):
+        raise ValueError("Staged file path escaped the game root")
+    target = _profile_mods_dir(profile_id).joinpath(*parts)
+    if source.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        return True
+    target.unlink(missing_ok=True)
+    return False
 
 
 def snapshot_profile_server_config(profile_id: str, game_root: str | Path) -> int:
@@ -423,7 +471,7 @@ def snapshot_profile_server_config(profile_id: str, game_root: str | Path) -> in
     into APPDATA before a profile swap or existing-install adoption.
     """
     layout = resolve_server_layout(game_root)
-    destination = _profile_server_config_dir(profile_id)
+    destination = _profile_server_config_dir(profile_id, layout.config_dir.name)
     staging = destination.with_name(destination.name + ".staging")
     if staging.exists(): _remove_path(staging)
     staging.mkdir(parents=True, exist_ok=True)
@@ -435,7 +483,7 @@ def snapshot_profile_server_config(profile_id: str, game_root: str | Path) -> in
 
 def restore_profile_server_config(profile_id: str, game_root: str | Path) -> int:
     layout = resolve_server_layout(game_root)
-    stored = _profile_server_config_dir(profile_id)
+    stored = _profile_server_config_dir(profile_id, layout.config_dir.name)
     if not stored.exists():
         return 0
     _clear_children(layout.config_dir)
@@ -821,97 +869,13 @@ def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) ->
 
 
 def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root: str) -> dict:
-    """Reassert the World's runtime choices after any generic self-heal.
-
-    UE4SS is applied first because a complete UE4SS deployment can carry a
-    RuneSchema baseline. RuneSchema is deliberately last, making the World's
-    named flavor authoritative. Once both live installs are proven, refresh
-    the app-owned repair libraries so a later self-heal cannot resurrect an
-    older machine-wide flavor.
-    """
-    from profile_mod_layout import restore_profile_spares
-    restore_profile_spares(_profile_mods_dir(profile_id))
-    components = profile.get("runtime_components") if isinstance(profile.get("runtime_components"), dict) else {}
-    ue4ss_enabled = bool(components.get("ue4ss", True))
-    runeschema_enabled = bool(components.get("runeschema", True))
-
-    layout = resolve_server_layout(game_root)
-    runtime_paths = profile.get("runtime_paths") if isinstance(profile.get("runtime_paths"), dict) else {}
-    server_paths = runtime_paths.get("server") if isinstance(runtime_paths.get("server"), dict) else {}
-
-    def owned_root(value: object, fallback: Path, label: str) -> Path:
-        text = str(value or "").strip()
-        if not text:
-            return fallback
-        candidate = Path(text).expanduser().resolve(strict=False)
-        game = layout.game_root.resolve(strict=False)
-        if candidate != game and game not in candidate.parents:
-            raise ValueError(f"{label} must stay inside this profile's verified server game directory: {game}")
-        return candidate
-
-    ue4ss_root = owned_root(server_paths.get("ue4ss_root"), layout.win64_dir, "UE4SS root")
-    runeschema_root = owned_root(server_paths.get("runeschema_root"), layout.runeschema_root, "RuneSchema root")
-
-    def set_runtime_marker(path: Path, enabled: bool, *, create_when_enabled: bool = False) -> str:
-        parked = path.with_name(path.name + ".dragonwilds-profile-disabled")
-        if enabled:
-            if parked.is_file() and not path.exists():
-                os.replace(parked, path)
-                return f"restored {path.name}"
-            if create_when_enabled and not path.exists():
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("", encoding="utf-8")
-                return f"enabled {path.name}"
-            return "unchanged"
-        if path.is_file():
-            parked.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(path, parked)
-            return f"parked {path.name}"
-        return "unchanged"
-
-    with RUNTIME_MUTATION_LOCK:
-        activation = {
-            "ue4ss_server_loader": set_runtime_marker(layout.server_loader, ue4ss_enabled),
-            "ue4ss_bootstrap": set_runtime_marker(ue4ss_root / "dwmapi.dll", ue4ss_enabled),
-            "runeschema": set_runtime_marker(
-                runeschema_root / "enabled.txt", runeschema_enabled,
-                create_when_enabled=runeschema_enabled and (runeschema_root / "dlls").is_dir()),
-        }
-        # A standalone RuneSchema root supersedes the historical UE4SS-nested
-        # root. Park the old self-enable marker so only the selected profile
-        # path participates in this server launch.
-        if runeschema_root.resolve(strict=False) != layout.runeschema_root.resolve(strict=False):
-            activation["canonical_runeschema"] = set_runtime_marker(
-                layout.runeschema_enabled_file, False)
-        ue4ss = (_apply_profile_ue4ss(profile_id, profile, game_root) if ue4ss_enabled
-                 else {"ok": True, "changed": False, "enabled": False, "source": "profile-disabled"})
-        current = load_server_profile(profile_id) or profile
-        runeschema = (_apply_profile_runeschema(profile_id, current, game_root) if runeschema_enabled
-                      else {"ok": True, "changed": False, "enabled": False, "source": "profile-disabled"})
-        from mod_deployment_cleanup import deploy_staged_loaders
-        staged_count = deploy_staged_loaders(ensure_profile_mod_roots(_profile_mods_dir(profile_id)),
-            ue4ss_root, runeschema_root, Path(game_root) / '.dragonwilds-sync' / 'profile-loader-files.json',
-            APP_DATA_DIR / 'Backups' / 'DisplacedLoaders', ue_enabled=ue4ss_enabled, rs_enabled=runeschema_enabled)
-        if staged_count:
-            ue4ss['staged_files'] = staged_count
-        cache_warning = ""
-        try:
-            capture_authoritative_runtimes(
-                game_root,
-                # UE4SS is much larger than RuneSchema. Rebuild its repair
-                # copy only when this assertion actually changed the selected
-                # UE4SS build; RuneSchema is refreshed every time because the
-                # historical stale-flavor cache had no trustworthy identity.
-                refresh_ue4ss=bool(ue4ss.get("changed")),
-                refresh_runeschema=True if runeschema_enabled else False,
-            )
-        except OSError as exc:
-            # The live selected runtimes are already verified at this point. A
-            # transient cache-write collision must not invalidate that safe live
-            # install; the next stopped-server assertion will retry the refresh.
-            cache_warning = f"Runtime repair-library refresh deferred: {type(exc).__name__}: {exc}"
-    return {"ue4ss": ue4ss, "runeschema": runeschema, "activation": activation,
-            "cache_warning": cache_warning}
+    """Compatibility seam: staged overlay deployment owns all runtime files."""
+    return {
+        "ue4ss": {"ok": True, "changed": False, "source": "world-staging-profile"},
+        "runeschema": {"ok": True, "changed": False, "source": "world-staging-profile"},
+        "activation": {},
+        "cache_warning": "",
+    }
 
 
 def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
@@ -1487,46 +1451,8 @@ class ServerEngine:
         return restored
 
     def _maybe_schedule_runtime_check(self, running_pid: int | None) -> None:
-        # Contract tests use disposable server trees.  A daemon repair/update
-        # worker can otherwise race TemporaryDirectory cleanup and recreate
-        # files after the test has completed.
-        if os.getenv("DWSYNC_TEST_MODE") == "1":
-            return
-        if running_pid is not None or not self.active_profile_id:
-            return
-        if self._runtime_check_thread and self._runtime_check_thread.is_alive():
-            return
-        now = time.time()
-        if now - self._last_runtime_check < 6 * 60 * 60:
-            return
-        profile = load_server_profile(self.active_profile_id)
-        if not profile or not profile.get("auto_ue4ss", True):
-            self._last_runtime_check = now
-            return
-        root = self._profile_root(profile)
-        if not root or not Path(root).exists():
-            return
-        profile_id = self.active_profile_id
-        self._last_runtime_check = now
-        self._runtime_check_thread = threading.Thread(
-            target=self._runtime_check_worker, args=(profile_id,), daemon=True, name="Dragonwilds-UE4SS-Check")
-        self._runtime_check_thread.start()
-
-    def _runtime_check_worker(self, profile_id: str) -> None:
-        # Background checks are advisory only. Installation remains an explicit
-        # Settings action, regardless of legacy auto_ue4ss flags.
-        try:
-            info = check_ue4ss_update() or {}
-            profile = load_server_profile(profile_id)
-            version = str(info.get("filename") or "")
-            if profile and version and version != str(profile.get("ue4ss_installed_version") or ""):
-                self._event(f"UE4SS {version} is available. Review and install it in Settings; no runtime files were changed.")
-                from runtime_update_notice import record_notice
-                state = load_state()
-                if record_notice(state, "UE4SS", version, profile_id):
-                    save_state(state)
-        except Exception as exc:
-            self._event(f"Runtime update check failed: {exc}", "warn")
+        # Dedicated runtimes are operator-owned files in the active World's
+        # staged overlay. The launcher neither selects nor updates them.
         return
 
 
@@ -1646,12 +1572,6 @@ class ServerEngine:
         if marker_root:
             remove_active_world(marker_root)
         incoming_exe = server_exe or find_dedicated_server_exe(incoming)
-        if incoming_root and Path(incoming_root).exists():
-            preflight = ensure_base_runtimes(incoming_root, auto_rsdwtools=bool(incoming.get("auto_rsdwtools", True)))
-            if not preflight.get("ok"):
-                raise RuntimeError("Base runtime validation failed before World swap: " + "; ".join(preflight.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
-            if preflight.get("repaired"):
-                self._event("Base runtime preflight: " + "; ".join(preflight.get("repaired") or []), "ok")
         if outgoing_id and outgoing_id != incoming_id:
             outgoing = load_server_profile(outgoing_id)
             outgoing_root = self._profile_root(outgoing) or incoming_root; outgoing_exe = find_dedicated_server_exe(outgoing) or incoming_exe
@@ -1660,14 +1580,6 @@ class ServerEngine:
             if outgoing_exe: snapshot_profile_savegame(outgoing_id, outgoing_exe)
         mods = restore_profile_mods(incoming_id, Path(incoming_root)) if incoming_root and Path(incoming_root).exists() else 0
         configs = restore_profile_server_config(incoming_id, incoming_root) if incoming_root and Path(incoming_root).exists() else 0
-        runtime = ensure_base_runtimes(incoming_root, auto_rsdwtools=bool(incoming.get("auto_rsdwtools", True))) if incoming_root and Path(incoming_root).exists() else {"ok": False, "errors": ["Dedicated server root is unavailable."]}
-        if not runtime.get("ok"):
-            raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
-        if runtime.get("repaired"):
-            self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        selected = _assert_profile_runtime_selection(incoming_id, incoming, incoming_root)
-        if selected.get("cache_warning"):
-            self._event(selected["cache_warning"], "warn")
         save = restore_profile_savegame(incoming_id, incoming_exe) if incoming_exe else False
         self.active_profile_id = incoming_id; STATE.active_profile_id = incoming_id
         if marker_root:
@@ -1683,7 +1595,7 @@ class ServerEngine:
         return {"mods_restored": mods, "configs_restored": configs, "save_restored": save, "managed_configs_locked": locked}
 
     def unload_world(self, profile_id: str, game_root: str = "", server_exe: str = "") -> dict:
-        """Capture the active hosted World and leave only shared runtime cores."""
+        """Capture mutable World state and remove its staged overlay."""
         self.assert_stopped()
         profile = load_server_profile(profile_id)
         if not profile: raise KeyError("Server World not found")
@@ -1697,44 +1609,26 @@ class ServerEngine:
         configs = snapshot_profile_server_config(profile_id, root)
         save = snapshot_profile_savegame(profile_id, executable) if executable else False
         layout = resolve_server_layout(root)
-        from mod_deployment_cleanup import deploy_profile_lanes
-        targets = resolve_mod_install_paths(load_state(), 'server', Path(root))
+        from mod_deployment_cleanup import deploy_game_overlay
         with tempfile.TemporaryDirectory(prefix='dws-unload-') as empty:
-            deploy_profile_lanes([
-                (Path(empty), targets['ue4ss'], SERVER_INFRASTRUCTURE_UE4SS | {'runeschema'}),
-                (Path(empty), targets['runeschema'], RUNESCHEMA_CORE_NAMES),
-                (Path(empty), targets['paks'], set()),
-            ], layout.game_root / '.dragonwilds-sync' / 'profile-mod-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedMods')
+            deploy_game_overlay(Path(empty), layout.game_root, _overlay_ledger(root),
+                                APP_DATA_DIR / 'Backups' / 'DisplacedWorldOverlays')
         _clear_children(layout.config_dir)
         live_save = _live_savegames_dir(executable) if executable else None
         if live_save is not None and live_save.exists():
             _clear_children(live_save)
         remove_active_world(layout.game_root)
-        runtime = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
-        if not runtime.get("ok"):
-            raise RuntimeError("Core runtime validation failed after unload: " + "; ".join(runtime.get("errors") or []))
         self.active_profile_id = None; STATE.active_profile_id = None
-        self._event(f"Unloaded hosted World {profile.get('name') or profile_id}; profile changes captured and the shared directory returned to core state.", "ok")
+        self._event(f"Unloaded hosted World {profile.get('name') or profile_id}; profile changes captured and its staged overlay removed.", "ok")
         return {"profile_id": profile_id, "mods_captured": mods, "configs_captured": configs,
-                "save_captured": save, "core_preserved": True, "runtime": runtime}
+                "save_captured": save, "overlay_removed": True}
 
     def scan_mods(self, profile_id: str) -> dict:
         profile = load_server_profile(profile_id); root = self._profile_root(profile)
         if not root: raise ValueError("Set the machine-wide Server Directory under Settings → Server before scanning mods.")
-        runtime = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
-        if not runtime.get("ok"):
-            raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
-        if runtime.get("repaired"):
-            self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        selected = _assert_profile_runtime_selection(profile_id, profile, root)
-        if selected.get("cache_warning"):
-            self._event(selected["cache_warning"], "warn")
-        profile = load_server_profile(profile_id) or profile
-        units = scan_mod_units(profile_id, root)
-        if str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            generate_server_mods_txt(profile_id, root, units=units)
         if not profile.get("mods_profile_initialized"):
             snapshot_profile_mods(profile_id, Path(root))
+        units = scan_profile_snapshot_units(profile_id)
         self._event(f"Scanned {len(units)} mod unit(s) for {profile.get('name') or profile_id}.")
         return {"units": [u.public(SHARE.live_keys) for u in units], "badges": compute_mod_badges(units)}
 
@@ -1743,29 +1637,11 @@ class ServerEngine:
         if not profile: raise KeyError("Server World not found")
         root = self._profile_root(profile)
         if not root: raise ValueError("Set the machine-wide Server Directory under Settings → Server before publishing mods.")
-        runtime = ensure_base_runtimes(root, auto_rsdwtools=bool(profile.get("auto_rsdwtools", True)))
-        if not runtime.get("ok"):
-            raise RuntimeError("Base runtime validation failed: " + "; ".join(runtime.get("errors") or ["UE4SS / RuneSchema is incomplete."]))
-        if runtime.get("repaired"):
-            self._event("Base runtime self-heal: " + "; ".join(runtime.get("repaired") or []), "ok")
-        selected = _assert_profile_runtime_selection(profile_id, profile, root)
-        ue4ss_applied = selected["ue4ss"]
-        if ue4ss_applied.get("changed"):
-            self._event(f"Applied the selected UE4SS build ({ue4ss_applied.get('source') or 'repository build'}).", "ok")
-        official = selected["runeschema"]
-        if official.get("changed"):
-            self._event(f"Applied the complete RuneSchema core ({official.get('source') or official.get('filename') or 'selected flavor'}).", "ok")
-        if selected.get("cache_warning"):
-            self._event(selected["cache_warning"], "warn")
-        profile = load_server_profile(profile_id) or profile
-        units = scan_mod_units(profile_id, root)
-        if regenerate_mods_txt and str(profile.get("mods_txt_mode") or "auto").lower() == "auto":
-            generated = generate_server_mods_txt(profile_id, root, units=units)
-            self._event(f"Generated server UE4SS mods.txt with {generated.get('count', 0)} enabled mod(s).")
         # Publishing/launching an established profile must not re-adopt the
         # installation (including launcher-generated bridge files) into staging.
         if capture_snapshot and not profile.get("mods_profile_initialized"):
             snapshot_profile_mods(profile_id, Path(root))
+        units = scan_profile_snapshot_units(profile_id)
         sync = profile.setdefault("sync_config", {})
         password = str(sync.get("password") or ""); key = str(sync.get("server_key") or "")
         # Sync transfer is a separate TCP service. Falling back to the gameplay
@@ -1888,31 +1764,11 @@ class ServerEngine:
         exe = find_dedicated_server_exe(profile)
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
         cfg = profile.setdefault("dedicated_config", {})
-        selected = _assert_profile_runtime_selection(profile_id, profile, self._profile_root(profile))
-        if selected["ue4ss"].get("changed"):
-            self._event(f"Applied the selected UE4SS build ({selected['ue4ss'].get('source') or 'repository build'}).", "ok")
-        if selected["runeschema"].get("changed"):
-            self._event(f"Applied the complete RuneSchema core ({selected['runeschema'].get('source') or selected['runeschema'].get('filename') or 'selected flavor'}).", "ok")
-        if selected.get("cache_warning"):
-            self._event(selected["cache_warning"], "warn")
-        profile = load_server_profile(profile_id) or profile
         # Profile storage is authoritative even when this World is already
-        # selected. Always materialize its UE4SS/RuneSchema/PAK payloads before
-        # launch; runtime cores remain protected by restore_profile_mods().
+        # selected. Always materialize its complete staged overlay before launch.
         restored_mod_files = restore_profile_mods(profile_id, Path(self._profile_root(profile)))
-        self._event(f"Materialized {restored_mod_files} profile mod file(s) before dedicated launch.", "ok")
+        self._event(f"Materialized {restored_mod_files} staged overlay file(s) before dedicated launch.", "ok")
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
-        # Direct Start Dedicated must enforce the same runtime-role boundary as
-        # unified Start World/Publish.  Client-only enabled.txt markers otherwise
-        # bypass mods.txt and can initialize ImGui inside the headless server.
-        runtime_units = scan_mod_units(profile_id, self._profile_root(profile))
-        activation = normalize_server_ue4ss_activation(runtime_units)
-        if activation.get("retired"):
-            self._event("Kept client-only UE4SS mod(s) out of the dedicated runtime: "
-                        + ", ".join(activation["retired"]), "ok")
-        if activation.get("warnings"):
-            self._event("Could not fully normalize dedicated mod activation: "
-                        + "; ".join(activation["warnings"]), "warn")
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;
         # SteamCMD still downloads the dedicated-server app anonymously.

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-"""Canonical on-disk contract for World/Profile-owned mod payloads.
+"""Canonical on-disk contract for World/Profile-owned mod overlays.
 
 A profile mirrors the game beneath its Mods root: Binaries/Win64 and
 Content/Paks/~mods. UE4SS mods nest under ue4ss/Mods; RuneSchema child mods
@@ -21,6 +21,59 @@ import threading
 from pathlib import Path, PureWindowsPath
 
 _SPARE_LOCK = threading.RLock()
+
+
+def dedicated_profile_staging_root(profile_dir: str | Path) -> Path:
+    """Return (and migrate) a dedicated World's game-ready overlay root.
+
+    Every file below ``staged`` has a path relative to the shared game
+    directory. Older releases called the same tree ``mods``.
+    """
+    owner = Path(profile_dir)
+    staged = owner / "staged"
+    legacy = owner / "mods"
+    _validate_storage_tree(owner)
+    if legacy.is_dir():
+        if not staged.exists():
+            legacy.replace(staged)
+        else:
+            backup = _backup_legacy(staged, [legacy])
+            _merge_tree(legacy, staged)
+            if legacy.exists() and backup:
+                conflict = backup / "unmerged" / legacy.name
+                conflict.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(legacy), str(conflict))
+    # Fold the two remaining historical World-state silos into the same
+    # browsable staging tree. Their live destinations are routed separately
+    # because SaveGames may live outside the Steam installation.
+    for old_name, relative in (
+        ("savegame", "Saved/SaveGames"),
+        ("server_config", "Saved/Config/WindowsServer"),
+    ):
+        old = owner / old_name
+        target = staged / Path(relative)
+        if not old.is_dir():
+            continue
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            old.replace(target)
+            continue
+        backup = _backup_legacy(staged, [old])
+        _merge_tree(old, target)
+        if old.exists() and backup:
+            conflict = backup / "unmerged" / old.name
+            conflict.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(old), str(conflict))
+    for relative in (
+        "Binaries/Win64",
+        "Binaries/Linux",
+        "Content/Paks/~mods",
+        "Saved/Config/WindowsServer",
+        "Saved/Config/LinuxServer",
+        "Saved/SaveGames",
+    ):
+        (staged / Path(relative)).mkdir(parents=True, exist_ok=True)
+    return staged
 
 
 def _spare_path(root: Path, relative: str) -> Path:
@@ -146,18 +199,16 @@ CANONICAL_FOLDER_NAMES = {
 }
 SUPPORTED_OVERRIDE_GROUPS = frozenset({"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"})
 
-# Browse Mods is intentionally human-editable. These notes keep the three lanes
-# self-describing and also keep empty lanes present in copied/zipped profiles.
+# Browse Staged is intentionally human-editable. These notes keep common mod
+# locations self-describing. They are profile furniture and are never deployed.
 LANE_README = "README.txt"
 LANE_NOTE_NAMES = frozenset({LANE_README.casefold()})
 _LANE_README_TEXT = {
     "win64": (
-        "Profile-owned Win64 mods.\n\n"
-        "Place the mod's Win64 contents here with the same folder layout.\n"
-        "For example Binaries/Win64/LootMenu/... deploys to the same game path.\n"
-        "beside ue4ss. Refresh the profile and select Client Required to publish.\n"
-        "Do not copy game executables. Stage complete loader builds at their\n"
-        "normal paths; runtime files remain separate from ordinary mod units.\n"
+        "World-owned game overlay.\n\n"
+        "Place loose Win64 mod and loader files at their normal game-relative\n"
+        "paths. The launcher does not supply UE4SS or RuneSchema for this World.\n"
+        "Do not copy Steam-owned base-game executables into this overlay.\n"
     ),
     "ue4ss": (
         "UE4SS mods for this World.\n\n"
@@ -167,15 +218,12 @@ _LANE_README_TEXT = {
         "the refreshed profile into the configured game installation. Deleting a\n"
         "mod here removes it from Mod Management on Refresh and from the live game\n"
         "when this profile is next activated/deployed.\n\n"
-        "RuneSchema lives here with child mods inside RuneSchema/mods. mods.txt is\n"
-        "generated control state and does not belong in this folder.\n"
+        "RuneSchema may live here with child mods inside RuneSchema/mods.\n"
     ),
     "runeschema": (
         "RuneSchema child mods for this World.\n\n"
-        "One folder per child mod. Do not place RuneSchema's dlls/, config/, or\n"
-        "enabled.txt here; those are machine runtime. Drop child mods here, then\n"
-        "press Refresh to rebuild this profile's inventory. Activation/deployment\n"
-        "copies the refreshed lane into RuneSchema/mods.\n"
+        "One folder per child mod. RuneSchema core files belong one directory up\n"
+        "at their normal game-relative paths in this same staged overlay.\n"
     ),
     "paks": (
         "PAK mods for this World.\n\n"

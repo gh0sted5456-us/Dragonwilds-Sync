@@ -29,7 +29,9 @@ from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                            server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
-                           _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status)
+                           _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status,
+                           restore_profile_mods, restore_profile_server_config, restore_profile_savegame,
+                           mirror_live_overlay_file)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
                                    PAYLOAD_ROOT, list_repository_files, open_repository_file, save_repository_file, mod_identity_contract,
                                    delete_repository_entry, remove_profile_entry, describe_profile_mods_root)
@@ -1528,9 +1530,7 @@ def _run_server_update_job(job_id: str, install_dir: str, steamcmd_dir: str) -> 
         if installed.get("server_exe"): install["server_exe"] = installed["server_exe"]
         if (latest or {}).get("buildid"): install["installed_buildid"] = str(latest.get("buildid"))
         save_state(state)
-        progress({"phase": "runtimes", "message": "Checking shared server runtimes", "percent": 98})
-        runtime_root = str(install.get("runtime_game_root") or install_dir)
-        runtime = ensure_base_runtimes(runtime_root, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
+        runtime = {"managed": False, "source": "world-staging-profile"}
         _set_server_update_job(job_id, status="complete", phase="complete", message="Dedicated server update complete", percent=100, result={"latest": latest, "installed": installed, "runtime": runtime})
     except Exception as exc:
         _set_server_update_job(job_id, status="failed", phase="failed", message=str(exc), error=str(exc))
@@ -1571,7 +1571,7 @@ def _run_complete_server_reinstall_job(job_id: str, install_dir: str, steamcmd_d
         progress({"phase": "steamcmd", "message": "Reinstalling RSDragonwilds Dedicated Server with SteamCMD", "percent": 28, "backup": backup})
         latest = check_steam_build() or {}
         installed = install_dedicated_server(install_dir, steamcmd_dir, progress=progress)
-        progress({"phase": "runtimes", "message": "Installing the selected UE4SS and RuneSchema runtime baselines", "percent": 96, "backup": backup})
+        progress({"phase": "staging", "message": "Reapplying the active World staging overlay", "percent": 96, "backup": backup})
         current = load_state()
         install = current.setdefault("application", {}).setdefault("server_install", {})
         install.update({
@@ -1585,17 +1585,18 @@ def _run_complete_server_reinstall_job(job_id: str, install_dir: str, steamcmd_d
         if latest.get("buildid"):
             install["installed_buildid"] = str(latest.get("buildid"))
         runtime_root = str(install.get("runtime_game_root") or install_dir)
-        runtime = ensure_base_runtimes(
-            runtime_root,
-            ue4ss_source_url=str(install.get("ue4ss_source_url") or ""),
-            runeschema_source_url=str(install.get("runeschema_source_url") or ""),
-        )
+        runtime = {"managed": False, "source": "world-staging-profile"}
         profile_id = str(current.setdefault("server", {}).get("active_world_id") or "")
         profile = load_server_profile(profile_id) if profile_id else {}
         config_file = ""
+        staging = {"overlay_files": 0, "config_files": 0, "save_restored": False}
         if profile:
             dedicated = profile.setdefault("dedicated_config", {})
             dedicated["server_exe"] = str(installed.get("server_exe") or install.get("server_exe") or "")
+            staging["overlay_files"] = restore_profile_mods(profile_id, Path(runtime_root))
+            staging["config_files"] = restore_profile_server_config(profile_id, runtime_root)
+            if dedicated["server_exe"]:
+                staging["save_restored"] = restore_profile_savegame(profile_id, dedicated["server_exe"])
             config_file = str(write_dedicated_config(dedicated, install_dir))
             save_server_profile(profile_id, profile)
         save_state(current)
@@ -1606,6 +1607,7 @@ def _run_complete_server_reinstall_job(job_id: str, install_dir: str, steamcmd_d
             "installed": installed,
             "latest": latest,
             "runtime": runtime,
+            "staging": staging,
             "config_file": config_file,
         }
         _set_server_update_job(
@@ -1613,7 +1615,7 @@ def _run_complete_server_reinstall_job(job_id: str, install_dir: str, steamcmd_d
             status="complete",
             operation="complete-reinstall",
             phase="complete",
-            message="RSDragonwilds reinstall and runtime restoration complete",
+            message="RSDragonwilds reinstall and staged World restoration complete",
             percent=100,
             result=result,
             backup=backup,
@@ -2803,12 +2805,8 @@ def handle(method: str, params: dict) -> object:
         runtime_updates = state.setdefault("application", {}).setdefault("runtime_updates", {})
         if "ue4ss" in params:
             runtime_updates["ue4ss"] = bool(params.get("ue4ss"))
-            for profile in state.setdefault("server", {}).setdefault("profiles", []):
-                profile["auto_ue4ss"] = runtime_updates["ue4ss"]
         if "runeschema" in params:
             runtime_updates["runeschema"] = bool(params.get("runeschema"))
-            for profile in state.setdefault("server", {}).setdefault("profiles", []):
-                profile["auto_runeschema"] = runtime_updates["runeschema"]
         save_state(state)
         return public_state(state)
 
@@ -4705,11 +4703,9 @@ def handle(method: str, params: dict) -> object:
             install["owner_id"] = owner_id
             _propagate_machine_owner_id(owner_id)
             application["server_mode_enabled"] = True
-            # Linking an existing dedicated-server directory is an adoption
-            # operation, not merely a path save. Inspect/capture any valid
-            # existing UE4SS + Dragonwilds server loader + RuneSchema first,
-            # then self-heal only the missing baseline pieces. version.dll is
-            # server-only and is never part of client runtime delivery.
+            # Linking an existing dedicated-server directory is an explicit
+            # adoption operation. Capture its World-owned files into staging;
+            # do not install, select, or repair a dedicated runtime.
             if result.get("mode") == "existing":
                 install_root = str(result["layout"]["install_root"])
                 adopted_profile_id = str(install.get("adopted_profile_id") or "")
@@ -4725,13 +4721,6 @@ def handle(method: str, params: dict) -> object:
                 install["last_adoption"] = adoption
                 state.setdefault("server", {})["active_world_id"] = adopted_profile_id
                 ENGINE.active_profile_id = adopted_profile_id
-                runtime = ensure_base_runtimes(
-                    result["layout"]["install_root"],
-                    ue4ss_source_url=str(install.get("ue4ss_source_url") or ""),
-                    runeschema_source_url=str(install.get("runeschema_source_url") or ""),
-                )
-                if not runtime.get("ok"):
-                    _record_notification(state, "Server runtime needs attention", " ".join(runtime.get("errors") or []), "warning", key="server-runtime-link")
                 _record_notification(
                     state, "Existing server adopted",
                     f"{adoption.get('profile_name') or 'Hosted World'} · save {'captured' if adoption.get('save_captured') else 'not present'} · {adoption.get('mod_files_captured', 0)} mod file(s) · {adoption.get('config_files_captured', 0)} setting file(s).",
@@ -5461,55 +5450,7 @@ def handle(method: str, params: dict) -> object:
             profile["hosting"] = normalize_hosting({**profile, "hosting": {**normalize_hosting(profile), **params["hosting"]}})
             if profile["hosting"]["mode"] == EXTERNAL_BROADCAST and not profile["hosting"]["gameEndpoint"]["host"]:
                 raise ValueError("Broadcast-only mode requires the external game server hostname or IP address.")
-        if "auto_ue4ss" in params:
-            profile["auto_ue4ss"] = bool(params.get("auto_ue4ss"))
-        if "auto_runeschema" in params:
-            profile["auto_runeschema"] = bool(params.get("auto_runeschema"))
-        if "auto_rsdwtools" in params:
-            profile["auto_rsdwtools"] = bool(params.get("auto_rsdwtools"))
-        if "runtime_components" in params and isinstance(params.get("runtime_components"), dict):
-            requested_components = params.get("runtime_components") or {}
-            profile["runtime_components"] = {
-                "ue4ss": bool(requested_components.get("ue4ss", True)),
-                "runeschema": bool(requested_components.get("runeschema", True)),
-            }
-        if "runtime_paths" in params and isinstance(params.get("runtime_paths"), dict):
-            requested_paths = params.get("runtime_paths") or {}
-            server_paths = requested_paths.get("server") if isinstance(requested_paths.get("server"), dict) else {}
-            client_paths = requested_paths.get("client") if isinstance(requested_paths.get("client"), dict) else {}
-
-            def clean_server_runtime_path(value):
-                text = str(value or "").strip()
-                return str(Path(text).expanduser().resolve(strict=False)) if text else ""
-
-            def clean_client_runtime_path(value, fallback):
-                text = str(value or fallback).replace("\\", "/").strip().strip("/")
-                pure = PurePosixPath(text)
-                if not text or pure.is_absolute() or ".." in pure.parts or any(":" in part for part in pure.parts):
-                    raise ValueError("Client runtime destinations must be safe paths relative to the Dragonwilds game root.")
-                return pure.as_posix()
-
-            profile["runtime_paths"] = {
-                "server": {
-                    "ue4ss_root": clean_server_runtime_path(server_paths.get("ue4ss_root")),
-                    "runeschema_root": clean_server_runtime_path(server_paths.get("runeschema_root")),
-                },
-                "client": {
-                    "ue4ss_root": clean_client_runtime_path(client_paths.get("ue4ss_root"), "Binaries/Win64"),
-                    "runeschema_root": clean_client_runtime_path(client_paths.get("runeschema_root"), "Binaries/Win64/ue4ss/Mods/RuneSchema"),
-                },
-            }
         profile.pop("runeschema_variant", None)
-        if "mods_txt_mode" in params:
-            mode = str(params.get("mods_txt_mode") or "auto").casefold()
-            if mode not in {"auto", "manual"}:
-                raise ValueError("mods.txt selection mode must be auto or manual")
-            profile["mods_txt_mode"] = mode
-        if "mods_txt_writer" in params:
-            writer = str(params.get("mods_txt_writer") or "client_generate").casefold()
-            if writer not in {"client_generate", "server_push"}:
-                raise ValueError("mods.txt writer must be client_generate or server_push")
-            profile["mods_txt_writer"] = writer
         if "health_config" in params:
             profile["health_config"] = normalize_health_config(params.get("health_config"))
         if "mod_management" in params and isinstance(params.get("mod_management"), dict):
@@ -6831,6 +6772,21 @@ def handle(method: str, params: dict) -> object:
         save_state(state)
         return {**detected, "profile_id": profile_id, "files_captured": files, "state": public_state(state)}
 
+    retired_runtime_management = {
+        "server.install.ensure_runtimes",
+        "server.world.runeschema_flavors.list", "server.world.runeschema_flavors.import",
+        "server.world.runeschema_flavors.select", "server.world.runeschema_flavors.delete",
+        "server.install.runeschema_core", "server.install.ue4ss_zip",
+        "server.install.runeschema_update", "server.install.ue4ss_update",
+        "server.maintenance.check_ue4ss", "server.maintenance.install_ue4ss_update",
+        "server.maintenance.install_ue4ss_zip", "server.maintenance.install_runeschema_zip",
+        "server.install.rsdwdevkit_update",
+        "server.world.mods_txt.regenerate",
+    }
+    if method in retired_runtime_management:
+        raise ValueError(
+            "Dedicated runtime management was removed. Place the complete runtime in this World's staged folder.")
+
     if method in ("server.install.full_setup", "server.maintenance.full_setup"):
         ENGINE.assert_stopped()
         install_cfg = state.setdefault("application", {}).setdefault("server_install", {})
@@ -6869,8 +6825,6 @@ def handle(method: str, params: dict) -> object:
         dedicated.setdefault("world_pass", "")
         dedicated.setdefault("port", 7777)
         dedicated["server_exe"] = str(installed.get("server_exe") or install.get("server_exe") or "")
-        runtime_root = str(install.get("runtime_game_root") or install_dir)
-        runtime = ensure_base_runtimes(runtime_root, ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
         config_file = write_dedicated_config(dedicated, install_dir)
         if profile_id and profile:
             save_server_profile(profile_id, profile)
@@ -6879,7 +6833,9 @@ def handle(method: str, params: dict) -> object:
             "ok": True, "managed": False, "platform": "linux", "sync_ports": sync_ports, "game_ports": game_ports,
             "message": "Open the listed TCP Sync ports, host-wide UDP 8422 Direct Connect discovery port, and UDP game ports in the host firewall/router; the unprivileged launcher does not alter Linux firewall policy.",
         }
-        return {"ok": bool(runtime.get("ok")), "installed": installed, "firewall": firewall, "latest": latest, "runtime": runtime, "config_file": str(config_file), "state": public_state(state)}
+        return {"ok": True, "installed": installed, "firewall": firewall, "latest": latest,
+                "runtime": {"managed": False, "source": "world-staging-profile"},
+                "config_file": str(config_file), "state": public_state(state)}
 
     if method == "server.install.update.start":
         ENGINE.assert_stopped()
@@ -6920,7 +6876,6 @@ def handle(method: str, params: dict) -> object:
         install["installed_at"] = time.time()
         install["installed_build_source"] = "steamcmd_app_update_validate"
         save_state(state)
-        runtime = ensure_base_runtimes(_server_runtime_root(state), ue4ss_source_url=str(install.get("ue4ss_source_url") or ""), runeschema_source_url=str(install.get("runeschema_source_url") or ""))
         rsdw_refresh = None
         cache_cfg = state.setdefault("application", {}).setdefault("rsdw_cache", {})
         if bool(cache_cfg.get("refresh_after_updates", True)):
@@ -6931,7 +6886,9 @@ def handle(method: str, params: dict) -> object:
                 rsdw_refresh = {"ok": False, "error": str(exc)}
                 _record_notification(state, "RSDW cache refresh needs attention", str(exc), "warning", key="rsdw-server-update")
             save_state(state)
-        return {"ok": True, "latest": latest, "installed": installed, "runtime": runtime, "rsdw_cache": rsdw_refresh, "state": public_state(state)}
+        return {"ok": True, "latest": latest, "installed": installed,
+                "runtime": {"managed": False, "source": "world-staging-profile"},
+                "rsdw_cache": rsdw_refresh, "state": public_state(state)}
 
     if method == "server.install.ensure_runtimes":
         ENGINE.assert_stopped()
@@ -7309,6 +7266,7 @@ def handle(method: str, params: dict) -> object:
             raise KeyError("Server World not found")
         active = state.setdefault("server", {}).get("active_world_id") == profile_id
         result = save_world_config(profile_id, server_root_for_profile(profile), str(params.get("relative_path") or ""), str(params.get("content") or ""), active)
+        mirror_live_overlay_file(profile_id, server_root_for_profile(profile), str(result.get("relative_path") or ""))
         if result.get("special") == "mods_txt":
             profile = load_server_profile(profile_id); profile["mods_txt_mode"] = "manual"; save_server_profile(profile_id, profile)
         unit_key = str(result.get("unit_key") or "")
@@ -7342,6 +7300,7 @@ def handle(method: str, params: dict) -> object:
         active = state.setdefault("server", {}).get("active_world_id") == profile_id
         operation = copy_world_config if method.endswith(".copy") else delete_world_config
         result = operation(profile_id, server_root_for_profile(profile), str(params.get("relative_path") or ""), active)
+        mirror_live_overlay_file(profile_id, server_root_for_profile(profile), str(result.get("relative_path") or ""))
         ENGINE.scan_mods(profile_id)
         if SHARE.status().get("serving"):
             ENGINE.publish(profile_id)
@@ -7433,29 +7392,8 @@ def handle(method: str, params: dict) -> object:
 
 
 def _startup_runtime_repair() -> None:
-    """Background base-runtime validation for an already-configured host.
-
-    This runs without blocking the Electron splash/entry screen. UE4SS can be
-    fetched from its official release channel; RuneSchema repairs from the
-    launcher-owned cached core/library once the maintainer has supplied it once.
-    """
-    try:
-        state = load_state()
-        _ensure_server_install_migrated(state)
-        install_dir, _, _ = _server_install_paths(state)
-        if not install_dir:
-            return
-        runtime_root = _server_runtime_root(state)
-        layout = resolve_server_layout(runtime_root)
-        if not layout.game_root.exists():
-            return
-        result = ensure_base_runtimes(runtime_root, allow_ue4ss_download=True)
-        if result.get("repaired"):
-            ENGINE._event("Startup base runtime self-heal: " + "; ".join(result.get("repaired") or []), "ok")
-        if result.get("errors"):
-            ENGINE._event("Startup base runtime attention required: " + "; ".join(result.get("errors") or []), "warn")
-    except Exception as exc:
-        ENGINE._event(f"Startup base runtime check failed: {type(exc).__name__}: {exc}", "warn")
+    """Retained as a no-op compatibility seam for older importers."""
+    return
 
 
 def _startup_world_directory() -> None:
@@ -7779,7 +7717,7 @@ def _directory_remote_state(profile_id: str) -> dict:
                     "fingerprint": str(sync.get("fingerprint") or profile.get("fingerprint") or ""), "game_port": int(dedicated.get("port") or 7777),
                     "sync_port": int(sync.get("port") or 27051), "internal_route": str(runtime.get("internal_ip") or "Local network route advertised at runtime"),
                     "external_route": str(runtime.get("external_ip") or "Public route advertised at runtime"), "password_required": bool(dedicated.get("world_pass")),
-                    "auto_ue4ss": bool(profile.get("auto_ue4ss", True)), "auto_runeschema": bool(profile.get("auto_runeschema", True)),
+                    "runtime_source": "World staging profile",
                     "community": {"discord_invite": str((profile.get("community") or {}).get("discord_invite") or "")[:300],
                                   "discord_guild_id": str((profile.get("community") or {}).get("discord_guild_id") or "")[:24]},
                     "icon_b64": str(profile.get("icon_b64") or ""), "banner_b64": str(profile.get("banner_b64") or ""),
@@ -7930,7 +7868,6 @@ def main() -> int:
     DIRECTORY_HOST.set_settings_callback(_persist_directory_web_settings)
     DIRECTORY_HOST.set_public_worlds_provider(_directory_public_worlds)
     DIRECTORY_HOST.set_remote_admin_callbacks(authenticate=_directory_remote_authenticate, state=_directory_remote_state, action=_directory_remote_action, profiles=_directory_remote_profiles)
-    threading.Thread(target=_startup_runtime_repair, daemon=True, name="Dragonwilds-Base-Runtime-Repair").start()
     threading.Thread(target=_startup_world_directory, daemon=True, name="Dragonwilds-World-Directory-Startup").start()
     # Newline-delimited JSON-RPC over stdio. Electron owns the service
     # process; this keeps the transport private/local and avoids another

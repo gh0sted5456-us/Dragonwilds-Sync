@@ -669,6 +669,10 @@ def list_server_profiles() -> list[dict]:
         meta = load_server_profile(folder.name)
         if not meta:
             continue
+        # Profile inventory is the migration boundary for the dedicated
+        # game-ready overlay, so every visible World has staged/ immediately.
+        from profile_mod_layout import dedicated_profile_staging_root, ensure_profile_mod_roots
+        ensure_profile_mod_roots(dedicated_profile_staging_root(folder))
         result.append({
             "id": folder.name,
             "name": meta.get("name") or folder.name,
@@ -684,17 +688,7 @@ def list_server_profiles() -> list[dict]:
             "icon_b64": meta.get("icon_b64") or "",
             "banner_b64": meta.get("banner_b64") or "",
             "metadata_cache": meta.get("metadata_cache") if isinstance(meta.get("metadata_cache"), dict) else {},
-            "auto_ue4ss": bool(meta.get("auto_ue4ss", True)),
-            "auto_runeschema": bool(meta.get("auto_runeschema", True)),
-            "auto_rsdwtools": bool(meta.get("auto_rsdwtools", True)),
-            "runtime_components": meta.get("runtime_components") or {"ue4ss": True, "runeschema": True},
-            "runtime_paths": meta.get("runtime_paths") or {
-                "server": {"ue4ss_root": "", "runeschema_root": ""},
-                "client": {"ue4ss_root": "Binaries/Win64", "runeschema_root": "Binaries/Win64/ue4ss/Mods/RuneSchema"},
-            },
             "mod_management": meta.get("mod_management") or {"nexus_auto_check": False, "nexus_auto_apply": False},
-            "mods_txt_mode": str(meta.get("mods_txt_mode") or "auto"),
-            "mods_txt_writer": str(meta.get("mods_txt_writer") or "client_generate"),
             "hierarchy": meta.get("hierarchy") or {},
             "health_config": normalize_health_config(meta.get("health_config")),
             "hw_stats": meta.get("hw_stats") or {},
@@ -710,9 +704,6 @@ def list_server_profiles() -> list[dict]:
             "operations_schedule": meta.get("operations_schedule") or {"enabled": False, "action": "restart", "interval_minutes": 1440, "next_run_at": None, "warning_minutes": [30,10,5,1], "backup_retention_count": 10},
             "service_notice": meta.get("service_notice") or {},
             "player_map": {**(meta.get("player_map") or {}), "calibration": {"world_min_x": -11075.0, "world_max_x": 408925.0, "world_min_y": -117685.0, "world_max_y": 302315.0, "invert_y": False, **((meta.get("player_map") or {}).get("calibration") or {})}},
-            "runeschema_flavors": meta.get("runeschema_flavors") or [{"id": "experimental", "name": "Experimental · RuneSchema 0.6.1E", "kind": "experimental"}],
-            "runeschema_flavor_id": str(meta.get("runeschema_flavor_id") or "experimental"),
-            "ue4ss_active_version_id": str(meta.get("ue4ss_active_version_id") or "baseline"),
             "manifest_version": int(meta.get("manifest_version") or 0),
             "hosting": normalize_hosting(meta),
         })
@@ -818,19 +809,8 @@ def create_server_profile(name: str) -> str:
         "character_sharing": {"enabled": False, "allow_submissions": False, "request_backups": True},
         "community": {"discord_invite": "", "discord_guild_id": ""},
         "unit_overrides": {}, "feedback": [], "rating_average": 0.0, "rating_count": 0,
-        "auto_ue4ss": True, "auto_runeschema": True, "auto_rsdwtools": True,
-        "runtime_components": {"ue4ss": True, "runeschema": True},
-        "runtime_paths": {
-            "server": {"ue4ss_root": "", "runeschema_root": ""},
-            "client": {"ue4ss_root": "Binaries/Win64", "runeschema_root": "Binaries/Win64/ue4ss/Mods/RuneSchema"},
-        },
-        "mods_txt_mode": "auto",
-        "mods_txt_writer": "client_generate",
+        "mods_profile_initialized": True,
         "hierarchy": {"provider": "shrug.games", "confirmed": False, "confirmed_at": None, "confirmed_by": ""},
-        "ue4ss_installed_version": "", "ue4ss_installed_at": None,
-        "runeschema_installed_at": None, "runeschema_source_name": "",
-        "runeschema_flavors": [{"id": "experimental", "name": "Experimental · RuneSchema 0.6.1E", "kind": "experimental"}],
-        "runeschema_flavor_id": "experimental",
         "mod_management": {"nexus_auto_check": False, "nexus_auto_apply": False},
         "health_config": default_health_config(),
         "hw_stats": {},
@@ -851,6 +831,8 @@ def create_server_profile(name: str) -> str:
         "manifest_version": 0,
         "created_ts": datetime.now(timezone.utc).timestamp(),
     })
+    from profile_mod_layout import dedicated_profile_staging_root, ensure_profile_mod_roots
+    ensure_profile_mod_roots(dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id))
     return profile_id
 
 

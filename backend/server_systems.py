@@ -40,7 +40,8 @@ from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
 from machine_paths import server_save_paths
 from client_layout import resolve_client_layout
-from profile_mod_layout import LANE_NOTE_NAMES, ensure_profile_mod_roots
+from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_staging_root,
+                                ensure_profile_mod_roots)
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
 from server_scheduler import normalize_notice
 from player_tracker import PLAYER_SERVICE
@@ -750,7 +751,7 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
 
 def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     """Scan an inactive World's APPDATA-owned mod snapshot without touching live files."""
-    stored = SERVER_PROFILES_DIR / profile_id / "mods"
+    stored = dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id)
     profile_roots = ensure_profile_mod_roots(stored)
     mods = profile_roots["ue4ss"]
     runeschema = profile_roots["runeschema"]
@@ -2272,7 +2273,7 @@ def _atomic_publish_copy(source: Path, destination: Path) -> None:
 
 
 def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict], profile: dict | None = None) -> dict:
-    """Publish the machine-level client runtime baseline for a World.
+    """Publish the exact staged client runtime baseline for a dedicated World.
 
     Every connected client receives the UE4SS core and RuneSchema core through
     the ordinary verified Sync manifest so profile switching is deterministic.
@@ -2286,6 +2287,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     component_policy = profile.get("runtime_components") if isinstance(profile.get("runtime_components"), dict) else {}
     ue4ss_enabled = bool(component_policy.get("ue4ss", True))
     runeschema_enabled = bool(component_policy.get("runeschema", True))
+    staged_runtime = False
     runtime_paths = profile.get("runtime_paths") if isinstance(profile.get("runtime_paths"), dict) else {}
     server_paths = runtime_paths.get("server") if isinstance(runtime_paths.get("server"), dict) else {}
     client_paths = runtime_paths.get("client") if isinstance(runtime_paths.get("client"), dict) else {}
@@ -2322,11 +2324,19 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         server_paths.get("runeschema_root"), layout.runeschema_root if layout else RUNESCHEMA_RUNTIME_DIR, "RuneSchema root")
     profile_id = str((profile or {}).get('id') or '')
     if profile_id and profile_id not in {'.', '..'} and not any(c in profile_id for c in '/\\:'):
-        staged = ensure_profile_mod_roots(SERVER_PROFILES_DIR / profile_id / 'mods')
-        if (staged['win64'] / 'ue4ss' / 'UE4SS.dll').is_file():
-            ue4ss_server_root = staged['win64']
-        if any((staged['runeschema'].parent / 'dlls').glob('*')):
-            runeschema_server_root = staged['runeschema'].parent
+        staged = ensure_profile_mod_roots(dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id))
+        staged_runtime = True
+        ue4ss_server_root = staged['win64']
+        runeschema_server_root = staged['runeschema'].parent
+        ue4ss_client_root = "Binaries/Win64"
+        runeschema_client_root = "Binaries/Win64/ue4ss/Mods/RuneSchema"
+        # For a dedicated World, staged contents—not launcher runtime settings—
+        # specify the exact client baseline. Presence is the declaration.
+        ue4ss_enabled = (
+            (ue4ss_server_root / 'dwmapi.dll').is_file()
+            and (ue4ss_server_root / 'ue4ss' / 'UE4SS.dll').is_file())
+        dlls_root = runeschema_server_root / 'dlls'
+        runeschema_enabled = dlls_root.is_dir() and any(path.is_file() for path in dlls_root.rglob('*'))
     # A World owns its complete client-compatible loader baseline. Operators
     # choose the UE4SS/RuneSchema build, but may not publish a partial build:
     # every eligible file is sent so LAN and remote clients run the exact same
@@ -2420,11 +2430,15 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
     configured_bootstrap = ue4ss_server_root / "dwmapi.dll"
     configured_core = ue4ss_server_root / "ue4ss"
     layout_bootstrap = layout.ue4ss_bootstrap if layout else Path()
-    bootstrap = configured_bootstrap if configured_bootstrap.is_file() else (layout_bootstrap if layout and layout_bootstrap.is_file() else UE4SS_RUNTIME_DIR / "dwmapi.dll")
+    bootstrap = (configured_bootstrap if staged_runtime else
+                 (configured_bootstrap if configured_bootstrap.is_file() else
+                  (layout_bootstrap if layout and layout_bootstrap.is_file() else UE4SS_RUNTIME_DIR / "dwmapi.dll")))
     if ue4ss_enabled and bootstrap.is_file() and stage_file(bootstrap, f"{ue4ss_client_root}/dwmapi.dll", "ue4ss_baseline"):
         stats["ue4ss_files"] += 1
     layout_core = layout.ue4ss_core_dir if layout else Path()
-    live_core = configured_core if configured_core.is_dir() else (layout_core if layout and layout_core.is_dir() else UE4SS_RUNTIME_DIR / "ue4ss")
+    live_core = (configured_core if staged_runtime else
+                 (configured_core if configured_core.is_dir() else
+                  (layout_core if layout and layout_core.is_dir() else UE4SS_RUNTIME_DIR / "ue4ss")))
     if ue4ss_enabled and live_core.is_dir():
         for source in live_core.rglob("*"):
             if not source.is_file():
@@ -2442,11 +2456,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             stats["ue4ss_files"] += 1
             if rel.parts and rel.parts[0].casefold() == "mods":
                 stats["ue4ss_baked_mod_files"] += 1
-    if ue4ss_enabled and not stats["ue4ss_files"]:
+    if ue4ss_enabled and not stats["ue4ss_files"] and not staged_runtime:
         stage_ue4ss_bundle(_bundled_app_resource(*BUNDLED_UE4SS_RESOURCE))
 
     layout_runeschema = layout.runeschema_root if layout else Path()
-    rs_root = runeschema_server_root if runeschema_server_root.is_dir() else (layout_runeschema if layout and layout_runeschema.is_dir() else RUNESCHEMA_RUNTIME_DIR)
+    rs_root = (runeschema_server_root if staged_runtime else
+               (runeschema_server_root if runeschema_server_root.is_dir() else
+                (layout_runeschema if layout and layout_runeschema.is_dir() else RUNESCHEMA_RUNTIME_DIR)))
     rs_bundle = None
     if runeschema_enabled and rs_root.is_dir():
         wire = "_baseline/RuneSchema-core.zip"
@@ -2491,7 +2507,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             })
         else:
             temporary.unlink(missing_ok=True)
-    elif runeschema_enabled:
+    elif runeschema_enabled and not staged_runtime:
         rs_bundle = RUNESCHEMA_CORE_CACHE_ZIP if RUNESCHEMA_CORE_CACHE_ZIP.is_file() else _bundled_app_resource("RuneSchema-core-latest.zip")
         if rs_bundle.is_file():
             wire = "_baseline/RuneSchema-core.zip"
@@ -2641,7 +2657,7 @@ class ShareServer:
         if not profile: raise KeyError("World profile not found")
         if persist_profile and profile.get('mods_profile_initialized'):
             from profile_mod_layout import restore_profile_spares
-            restore_profile_spares(SERVER_PROFILES_DIR / profile_id / 'mods')
+            restore_profile_spares(dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id))
             mod_groups = {'ue4ss_mod', 'runeschema_mod', 'pak_mod', 'win64_mod'}
             staged_units = scan_profile_snapshot_units(profile_id)
             units = [unit for unit in units if unit.group not in mod_groups]
@@ -4690,7 +4706,7 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
         layout = resolve_server_layout(game_root)
         ue4ss_root, paks_root, rs_mods_root = layout.ue4ss_mods_dir, layout.paks_mods_dir, layout.runeschema_mods_dir
     else:
-        stored = SERVER_PROFILES_DIR / profile_id / "mods"
+        stored = dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id)
         profile_roots = ensure_profile_mod_roots(stored)
         ue4ss_root, paks_root, rs_mods_root = profile_roots["ue4ss"], profile_roots["paks"], profile_roots["runeschema"]
     for managed_root in (ue4ss_root, paks_root, rs_mods_root):

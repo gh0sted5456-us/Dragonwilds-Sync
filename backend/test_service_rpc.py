@@ -82,11 +82,16 @@ def main():
 
             first = rpc(proc, "server.world.create", {"name": "World One"}, 2)
             first_id = first["id"]
+            # Dedicated Worlds are profile-first: the manager places loose mod
+            # files in staged/, rather than inventory adopting the live install.
+            import server_engine
+            first_paks = server_engine.ensure_profile_mod_roots(
+                server_engine._profile_mods_dir(first_id))["paks"]
+            (first_paks / "WorldOne.pak").write_bytes(b"one")
             rpc(proc, "application.update", {"server_install": {"install_dir": str(game), "server_exe": "", "steamcmd_dir": str(root / "steamcmd")}}, 3)
             # This contract exercises profile isolation, not GitHub release
             # availability. Treat the complete temporary RuneSchema core above
             # as an explicit manual runtime so CI never reaches the network.
-            import server_engine
             state = server_engine.load_state()
             install = state.setdefault("application", {}).setdefault("server_install", {})
             install["runeschema_manual_override_roots"] = [
@@ -132,7 +137,8 @@ def main():
             # Explorer-managed changes are made in the selected World profile,
             # not in the shared live dedicated-server directory. A cached read
             # remains stable until the user explicitly selects Rescan.
-            profile_pak_root = server_engine._profile_mods_dir(second_id) / "pak_mods"
+            profile_pak_root = server_engine.ensure_profile_mod_roots(
+                server_engine._profile_mods_dir(second_id))["paks"]
             profile_pak_root.mkdir(parents=True, exist_ok=True)
             (profile_pak_root / "WorldTwo.pak").write_bytes(b"two")
             assert not (pak_root / "WorldTwo.pak").exists()

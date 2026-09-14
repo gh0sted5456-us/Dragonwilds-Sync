@@ -188,7 +188,7 @@ requireText(directoryWeb, 'CL status', 'WebGUI management CL status');
 // Dedicated profile/sync workflow remains real-file based.
 requireText(serverSystems, 'def scan_mod_units', 'dedicated mod scanner');
 requireText(serverEngine, 'restore_profile_mods', 'physical server profile swap');
-requireText(serverEngine, 'scan_mod_units', 'live dedicated rescan');
+requireText(serverEngine, 'scan_profile_snapshot_units', 'staged dedicated rescan');
 requireText(syncEngine, '.partial', 'client partial download');
 requireText(syncEngine, 'sha256', 'client transfer hash verification');
 

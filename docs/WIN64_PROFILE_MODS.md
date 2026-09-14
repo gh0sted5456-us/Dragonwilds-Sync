@@ -1,15 +1,19 @@
-# Profile-owned Win64 mods
+# Profile-owned game-ready overlays
 
 Profiles mirror the game directory. Win64 mods remain independent of UE4SS;
 Win64 is a destination, not a loader version.
 
 ```text
-mods/
+staged/
   Binaries/Win64/
     dwmapi.dll
     ue4ss/Mods/RuneSchema/mods/
     LootMenu/
+  Binaries/Linux/
   Content/Paks/~mods/
+  Saved/Config/WindowsServer/
+  Saved/Config/LinuxServer/
+  Saved/SaveGames/
 ```
 
 Legacy flat folders are SHA-256 backed up to the profile's sibling
@@ -17,11 +21,11 @@ Legacy flat folders are SHA-256 backed up to the profile's sibling
 collisions; unmerged legacy files stay in that recovery directory.
 
 For a mod that belongs beside the `ue4ss` directory, put its files in the
-profile's `mods/Binaries/Win64` folder with the layout required by the mod author:
+profile's `staged/Binaries/Win64` folder with the layout required by the mod author:
 
 ```text
-Profile/mods/Binaries/Win64/LootMenu/... -> Game/Binaries/Win64/LootMenu/...
-Profile/mods/Binaries/Win64/Example.dll -> Game/Binaries/Win64/Example.dll
+Profile/staged/Binaries/Win64/LootMenu/... -> Game/Binaries/Win64/LootMenu/...
+Profile/staged/Binaries/Win64/Example.dll -> Game/Binaries/Win64/Example.dll
 ```
 
 Refresh Mod Management. Mark content **Client Required** to deliver it to
@@ -36,12 +40,12 @@ follows the selected installation, not the UE4SS Mods override. Additional
 named locations in Data Management remain folder references, not arbitrary
 deployment permissions.
 
-Game executables and the managed UE4SS/bootstrap paths are protected. Traversal,
-drive-qualified paths, alternate streams, linked destinations and linked
-payloads are rejected. Deployment does not clear the Win64 directory. Local
-deployment records only its declared files and retains displaced file copies
-under application `Backups/DisplacedWin64Mods`; connected sync uses its managed
-file ledger. Update both host and client for the new lifecycle metadata.
+Steam-owned game files are protected because deployment removes only paths in
+its AppData receipt. Traversal, drive-qualified paths, alternate streams,
+linked destinations and linked payloads are rejected. Dedicated activation
+does not install or repair UE4SS/RuneSchema; complete loader files may instead
+be placed directly in this overlay. Displaced files are retained beneath
+application `Backups/DisplacedWorldOverlays`.
 
 Connected-client ledgers, bundle receipts, downloads, and rollback bookkeeping
 live under application LocalAppData at

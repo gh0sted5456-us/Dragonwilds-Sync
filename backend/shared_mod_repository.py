@@ -12,7 +12,8 @@ from pathlib import Path
 from integrations import normalize_mod_source
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS, preview_identity_consolidation, consolidate_identity_files
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, read_json, write_json
-from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_staging_root,
+from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_layout,
+                                dedicated_profile_mod_roots,
                                 ensure_profile_mod_roots)
 
 
@@ -43,7 +44,7 @@ def _safe_component(value: str, label: str) -> str:
 
 def _clean_pak_name(path: Path) -> str:
     stem = path.stem if path.is_file() else path.name
-    match = _PREFIX.match(stem)
+    match = _PREFIX.match(stem) if path.is_file() else None
     return (match.group(1) if match else stem).casefold()
 
 
@@ -62,7 +63,7 @@ def _profile_file(kind: str, profile_id: str) -> Path:
 
 def _mods_root(kind: str, profile_id: str) -> Path:
     root = _profile_dir(kind, profile_id)
-    return root / "snapshot/mods" if kind == "local" else dedicated_profile_staging_root(root)
+    return root / "snapshot/mods" if kind == "local" else dedicated_profile_layout(root)["mods"]
 
 
 def mods_root_for_profile(kind: str, profile_id: str) -> Path:
@@ -98,18 +99,28 @@ def describe_profile_mods_root(kind: str, profile_id: str) -> dict:
     the renderer's "Open Mod Folder" action never has to guess a path from
     AppData or server-root string concatenation.
     """
-    from profile_mod_layout import describe_profile_mod_roots
     resolved_kind = _resolve_existing_profile_kind(kind, profile_id)
     root = mods_root_for_profile(resolved_kind, profile_id)
+    if resolved_kind == "dedicated":
+        roots = dedicated_profile_mod_roots(_profile_dir(resolved_kind, profile_id))
+        description = {
+            "mods_root": str(roots["root"]), "ue4ss": str(roots["ue4ss"]),
+            "runeschema": str(roots["runeschema"]), "paks": str(roots["paks"]),
+            "win64": str(roots["win64"]), "authority": "profile-folder",
+        }
+    else:
+        from profile_mod_layout import describe_profile_mod_roots
+        description = describe_profile_mod_roots(root)
     return {
-        **describe_profile_mod_roots(root),
+        **description,
         "profile_id": _safe_component(profile_id, "Profile ID"),
         "resolved_kind": "server" if resolved_kind == "dedicated" else "local",
     }
 
 
 def _group_root(kind: str, profile_id: str, group: str) -> Path:
-    roots = ensure_profile_mod_roots(_mods_root(kind, profile_id))
+    roots = (dedicated_profile_mod_roots(_profile_dir(kind, profile_id))
+             if kind == "dedicated" else ensure_profile_mod_roots(_mods_root(kind, profile_id)))
     if group == "ue4ss_mod":
         return roots["ue4ss"]
     if group == "runeschema_mod":

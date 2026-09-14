@@ -12,7 +12,7 @@ from profile_store import SERVER_PROFILES_DIR, load_server_profile
 from server_engine import dedicated_savegames_paths_from_exe
 from server_layout import resolve_server_layout
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
-from profile_mod_layout import dedicated_profile_staging_root, ensure_profile_mod_roots
+from profile_mod_layout import dedicated_profile_mod_roots, ensure_profile_mod_roots
 
 CONFIG_EXTENSIONS = {".json", ".jsonc", ".lua", ".ini", ".cfg", ".txt"}
 MAX_CONFIG_BYTES = 2 * 1024 * 1024
@@ -109,7 +109,7 @@ def _server_mod_paths(profile_id: str, server_root: str, key: str, active: bool)
             "pak_mod": layout.paks_mods_dir,
         }[group].resolve()
     else:
-        profile_roots = ensure_profile_mod_roots(dedicated_profile_staging_root(_profile_dir(profile_id)))
+        profile_roots = dedicated_profile_mod_roots(_profile_dir(profile_id))
         group_root = {
             "ue4ss_mod": profile_roots["ue4ss"],
             "runeschema_mod": profile_roots["runeschema"],
@@ -123,7 +123,7 @@ def _server_mod_paths(profile_id: str, server_root: str, key: str, active: bool)
     if group_root.is_dir():
         for child in group_root.iterdir():
             clean = child.stem if child.is_file() else child.name
-            if len(clean) > 3 and clean[:2].isdigit() and clean[2] == "_":
+            if child.is_file() and len(clean) > 3 and clean[:2].isdigit() and clean[2] == "_":
                 clean = clean[3:]
             if clean.casefold() == wanted:
                 matches.append(child.resolve())

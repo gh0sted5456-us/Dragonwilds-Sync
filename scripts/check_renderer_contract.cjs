@@ -196,11 +196,12 @@ assert(source.includes('function openConnectToWorld') && source.includes('Unifie
   source.includes('Array.isArray(info.worlds)?info.worlds:Array.isArray(info.worlds?.worlds)?info.worlds.worlds'),
   'Local, LAN, direct, RSDWL, and hosted World entry points must share one connection workspace.');
 assert(source.includes('World Staging Profile') && source.includes('complete source of truth for the World') &&
-  source.includes('Saved/Config/WindowsServer') && source.includes('Saved/SaveGames') &&
+  source.includes('loaders/ue4ss') && source.includes('loaders/runeschema') &&
+  source.includes('mods/paks/BetterBuilding') && source.includes('Content/Paks/~mods/BetterBuilding') &&
   !source.includes('openRuntimeBuildManager') &&
   !source.includes('server.world.runeschema_flavors.select') &&
   !source.includes('server.world.ue4ss_version.select'),
-  'Dedicated Worlds must expose one simple staging overlay without launcher-managed runtime selectors.');
+  'Dedicated Worlds must expose layered staging and preserved mod folders without runtime selectors.');
 assert(source.includes("comparison=incomingRevision>localRevision?'newer':'local-newer'") &&
   source.includes("comparison=incomingTime>localTime?'newer':'local-newer'") &&
   source.includes("canonical?'v3.exchange.import':'profile.package.import'") &&

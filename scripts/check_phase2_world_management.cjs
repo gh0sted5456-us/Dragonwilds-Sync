@@ -41,7 +41,13 @@ for (const token of [
   'Publish / stored date',
   'manage-runeschema-builds',
   'manage-ue4ss-builds',
-]) requireText(appV2, token, `shared runtime version manager ${token}`);
+]) forbidText(appV2, token, `retired shared runtime version manager ${token}`);
+for (const token of [
+  "['UE4SSLoader','UE4SS Loader']",
+  "['RuneSchemaLoader','RuneSchema Loader']",
+  'loaders/ue4ss',
+  'loaders/runeschema',
+]) requireText(appV2, token, `World-owned runtime staging ${token}`);
 forbidText(appV2, 'id="runeschema-flavor-select"', 'legacy inline RuneSchema selector');
 forbidText(appV2, 'id="ue4ss-version-select"', 'legacy inline UE4SS selector');
 

@@ -1,8 +1,6 @@
 """Spec section 13 -- README_PROFILE_MOD_PATHING.md must describe the final
-architecture accurately, and must never be rewritten to "save paths are
-derived only". This is a golden-string lock on that instruction plus the
-six required concepts (Machine / Profile / World / DragonConnect / Runtime
-Manager / Profile Manager).
+architecture accurately and must never be rewritten to "save paths are
+derived only". It also locks the staging-first hosted-runtime contract.
 """
 
 from pathlib import Path
@@ -16,18 +14,16 @@ def _read() -> str:
 
 def test_readme_exists_and_is_nontrivial() -> None:
     assert README.is_file()
-    assert len(_read()) > 4000
+    assert len(_read()) > 3500
 
 
-def test_readme_documents_all_six_required_concepts() -> None:
+def test_readme_documents_profile_ownership_concepts() -> None:
     source = _read()
     for concept in (
         "**Machine**",
         "**Profile**",
         "**World**",
         "**DragonConnect**",
-        "**Runtime Manager**",
-        "**Profile Manager**",
     ):
         assert concept in source, f"README must document {concept}"
 
@@ -54,6 +50,14 @@ def test_readme_documents_runtime_architecture_declaration_model() -> None:
     assert "required" in source and "forbidden" in source and "standalone" in source
 
 
+def test_readme_retires_hosted_runtime_management() -> None:
+    source = _read()
+    assert "does not choose, download, repair, or reset dedicated UE4SS" in source
+    assert "there is no per-file runtime selector" in source
+    assert "staged/loaders/ue4ss" in source
+    assert "staged/loaders/runeschema" in source
+
+
 def test_readme_documents_chat_bridge_removal() -> None:
     source = _read()
     assert "removed entirely" in source
@@ -62,8 +66,7 @@ def test_readme_documents_chat_bridge_removal() -> None:
 
 def test_readme_branch_rule_matches_the_actual_working_branch() -> None:
     source = _read()
-    assert "revamp/executable-save-paths" in source
-    assert "Do not modify or merge into `experimental`" in source or "do not modify or merge into `experimental`" in source.casefold()
+    assert "push target for this work is `experimental`" in source
 
 
 def main() -> None:

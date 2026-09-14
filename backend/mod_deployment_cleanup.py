@@ -197,6 +197,70 @@ def deploy_game_overlay(source, game_root, ledger, recovery_root):
         Path(ledger), Path(recovery_root))
 
 
+def deploy_layered_world_profile(profile, game_root, ledger, recovery_root):
+    """Compose a World from independent overlay, loader, and mod entities."""
+    game_root = Path(game_root)
+    overlay = Path(profile["overlay"])
+    ue4ss_loader = Path(profile["ue4ss_loader"])
+    runeschema_loader = Path(profile["runeschema_loader"])
+    ue4ss_mods = Path(profile["ue4ss"])
+    runeschema_mods = Path(profile["runeschema"])
+    pak_mods = Path(profile["paks"])
+    saved = Path(profile["saved"])
+
+    protected_names = {
+        "rsdragonwildsserver.exe", "rsdragonwilds-win64-shipping.exe",
+        "rsdragonwilds.exe", "rsdragonwildsserver", "rsdragonwildsserver.sh",
+    }
+    for source in (overlay, ue4ss_loader, runeschema_loader, ue4ss_mods, runeschema_mods, pak_mods, saved):
+        for item in source.rglob('*') if source.exists() else ():
+            if item.is_file() and item.name.casefold() in protected_names:
+                raise ValueError("A staged profile cannot replace a Steam-owned game executable")
+
+    for item in overlay.rglob('*') if overlay.exists() else ():
+        if not item.is_file():
+            continue
+        parts = tuple(value.casefold() for value in item.relative_to(overlay).parts)
+        if not (parts[:2] in {("binaries", "win64"), ("binaries", "linux")}
+                or parts[:1] == ("content",)):
+            raise ValueError("The general overlay may contain only Binaries or Content paths")
+        if parts[:3] in {("binaries", "win64", "ue4ss"), ("content", "paks", "~mods")}:
+            raise ValueError("Loader and recognized mod paths must use their dedicated staging lanes")
+        if parts == ("binaries", "win64", "dwmapi.dll") or parts == ("binaries", "win64", "version.dll"):
+            raise ValueError("UE4SS bootstrap files must use loaders/ue4ss")
+
+    for source, required, forbidden in (
+        (ue4ss_loader, ("binaries", "win64"), ("binaries", "win64", "ue4ss", "mods")),
+        (runeschema_loader, ("binaries", "win64", "ue4ss", "mods", "runeschema"),
+         ("binaries", "win64", "ue4ss", "mods", "runeschema", "mods")),
+    ):
+        for item in source.rglob('*') if source.exists() else ():
+            if not item.is_file():
+                continue
+            parts = tuple(value.casefold() for value in item.relative_to(source).parts)
+            if parts[:len(required)] != required or parts[:len(forbidden)] == forbidden:
+                raise ValueError("Loader folders must contain their complete game-relative runtime path without mod payloads")
+
+    for lane in (ue4ss_mods, runeschema_mods, pak_mods):
+        for child in lane.iterdir() if lane.exists() else ():
+            if child.name.casefold() == "readme.txt" or child.name.startswith('.'):
+                continue
+            if not child.is_dir() or child.is_symlink() or child.is_junction():
+                raise ValueError("Every recognized mod must be contained in its own folder")
+            if lane == ue4ss_mods and child.name.casefold() == "runeschema":
+                raise ValueError("RuneSchema runtime and child mods must use their dedicated staging lanes")
+
+    return deploy_profile_lanes([
+        (overlay, game_root, set()),
+        (ue4ss_loader, game_root, set()),
+        (runeschema_loader, game_root, set()),
+        (ue4ss_mods, game_root / "Binaries/Win64/ue4ss/Mods", set()),
+        (runeschema_mods, game_root / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods", set()),
+        (pak_mods, game_root / "Content/Paks/~mods", set()),
+        (saved, game_root / "Saved", {"config", "savegames"}),
+    ], Path(ledger), Path(recovery_root))
+
+
 def deploy_staged_loaders(stored, win64, runeschema, ledger, recovery, *, ue_enabled=True, rs_enabled=True):
     """Explicit staged cores override runtime-library defaults, not ordinary mods."""
     win_source = stored['win64']

@@ -14,24 +14,22 @@ from sync_manifest import component_key
 def main():
     with TemporaryDirectory() as directory:
         root = Path(directory)
-        lanes = ensure_profile_mod_roots(root / 'profiles' / 'test' / 'staged')
+        lanes = ensure_profile_mod_roots(root / 'profiles' / 'test' / 'snapshot' / 'mods')
         loot = lanes['win64'] / 'LootMenu'
         loot.mkdir()
         (loot / 'LootMenu.dll').write_bytes(b'new mod')
-        with patch.object(ss, 'SERVER_PROFILES_DIR', root / 'profiles'), patch.object(ss, 'load_server_profile', return_value={}):
-            units = ss.scan_profile_snapshot_units('test')
-        unit = next(u for u in units if u.group == 'win64_mod')
+        with patch.object(local_world, '_snapshot_roots', return_value=lanes), patch.object(local_world, '_live_roots', return_value=lanes), patch.object(local_world, 'load_profile', return_value={}):
+            local_units = local_world.distribution_units(str(root), 'test')
+            assert any(u.group == 'win64_mod' and u.name == 'LootMenu' for u in local_units)
+        unit = next(u for u in local_units if u.group == 'win64_mod')
         wire, source = next(unit.iter_files())
         assert wire == 'Binaries/Win64/LootMenu/LootMenu.dll'
         assert unit.public()['deployment_target'] == 'Binaries/Win64'
         assert unit.public()['section'] == 'win64'
         assert ss.compute_mod_badges([unit]) == ['WIN64']
-        with patch.object(local_world, '_snapshot_roots', return_value=lanes), patch.object(local_world, '_live_roots', return_value=lanes), patch.object(local_world, 'load_profile', return_value={}):
-            local_units = local_world.distribution_units(str(root), 'test')
-            assert any(u.group == 'win64_mod' and u.name == 'LootMenu' for u in local_units)
         unit.classification = 'player_required'
         share = ss.ShareServer()
-        with patch.object(ss, 'PUBLISH_DIR', root / 'published'), patch.object(share, '_start_listener'), patch.object(ss, '_publish_baseline_client_runtimes', return_value={}):
+        with patch.object(ss, 'PUBLISH_DIR', root / 'published'), patch.object(share, '_start_listener'), patch.object(ss, '_publish_baseline_client_runtimes', return_value={}), patch.object(ss, 'load_state', return_value={'application': {}}):
             share.publish('test', [unit], 'test-password', '', 27051, broadcast=False,
                           profile_override={'id': 'test', 'name': 'Test'}, persist_profile=False)
             published = next(row for row in ss.STATE.manifest['files'] if row.get('mod_group') == 'win64_mod')

@@ -254,8 +254,8 @@ def test_reset_is_backup_first_and_path_guarded():
             server_systems.APP_DATA_DIR = original
 
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
-    assert 'id="reset-client-install"' in renderer and 'id="reset-server-install"' in renderer
-    assert "RESET DRAGONWILDS" in renderer and "RESET SERVER" in renderer
+    assert 'id="reset-client-install"' in renderer and 'id="reset-server-install"' not in renderer
+    assert "RESET DRAGONWILDS" in renderer and "RESET SERVER" not in renderer
 
 
 def test_exact_executable_and_saved_root_replace_parent_search():

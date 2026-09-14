@@ -1,7 +1,6 @@
 from pathlib import Path
 import tempfile
 import zipfile
-from unittest.mock import patch
 from rsdw_asset_safety import extract_archive, validate_url
 from runtime_update_notice import record_notice
 
@@ -31,14 +30,7 @@ def main():
     assert record_notice(state, 'UE4SS', 'test')
     assert not record_notice(state, 'UE4SS', 'test')
     import server_engine
-    with patch.object(server_engine, 'check_ue4ss_update', return_value={'filename':'new.zip','download_url':'https://example.test/new.zip'}), \
-         patch.object(server_engine, 'load_server_profile', return_value={'ue4ss_installed_version':'old.zip'}), \
-         patch.object(server_engine, 'load_state', return_value={}), \
-         patch.object(server_engine, 'save_state'), \
-         patch.object(server_engine, 'install_authoritative_ue4ss_update', side_effect=AssertionError('automatic install')) as install:
-        engine = type('Engine', (), {'_event':lambda *args: None})()
-        server_engine.ServerEngine._runtime_check_worker(engine, 'world')
-        install.assert_not_called()
+    assert not hasattr(server_engine.ServerEngine, '_runtime_check_worker')
     from runtime_versions import server_runtime_stack
     stack = server_runtime_stack({'server_install':{'ue4ss_installed_version':'wrong-machine-version'},
         'ue4ss_repository':[{'id':'chosen','version':'profile-1'}]},

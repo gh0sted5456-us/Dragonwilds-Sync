@@ -114,8 +114,10 @@ def main() -> None:
     phase4 = (Path(__file__).parent / "phase4_runtime_startup.py").read_text(encoding="utf-8")
     assert "No live RuneSchema files were changed." in systems
     assert "def _assert_profile_runtime_selection" in engine
-    assert "refresh_runeschema=True" in engine
-    assert "_assert_profile_runtime_selection(profile_id, profile, root)" in phase4
+    assert "refresh_runeschema=True" not in engine
+    assert 'profile["runeschema_loader"]' in engine
+    assert "_assert_profile_runtime_selection(profile_id, profile, root)" not in phase4
+    assert '"source": "world-staging-profile"' in phase4
 
     # Tracker/pawn rows are authoritative once coordinates arrive. Different
     # account names from the game log remain available as identity evidence but

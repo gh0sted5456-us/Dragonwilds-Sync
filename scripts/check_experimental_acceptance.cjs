@@ -156,16 +156,15 @@ requireText(compatService, 'handle("server.runtime.restart"', 'remote restart ro
 requireText(compatService, '"server.runtime.update_restart" if action == "update_restart" else "server.runtime.update"', 'remote update routes to runtime manager');
 for (const action of ['"start"', '"stop"', '"restart"', '"update"', '"update_restart"']) requireText(remoteLifecycleTest, action, `authenticated WebGUI action ${action}`);
 
-// Central update state includes launcher, retail game, server, UE4SS and RuneSchema.
+// Central update state includes launcher, retail game, server, and client runtimes.
 for (const token of ['updates["game"]', 'updates["server"]', 'updates["core_mod"]', 'updates["runeschema"]', 'updates["launcher"]']) requireText(service, token, `central update state ${token}`);
 requireText(managedUpdates, 'def runeschema_status', 'RuneSchema managed update evidence');
 requireText(managedUpdates, 'managed-release-asset-name', 'RuneSchema version basis');
 requireText(service, 'if method == "application.core_mod.update"', 'managed core update RPC');
 requireText(service, 'component not in {"ue4ss", "runeschema"}', 'managed core component allowlist');
-requireText(service, '_legacy_handle("server.install.ue4ss_update"', 'UE4SS server managed update');
-requireText(service, '_legacy_handle("server.install.runeschema_update"', 'RuneSchema server managed update');
-requireText(service, 'RUNTIME.update(profile_id, installer, restart=restart, component=label)', 'core server update lifecycle serialization');
-requireText(service, 'without SteamCMD', 'core update notification distinguishes managed runtime path');
+forbidText(service, '_legacy_handle("server.install.ue4ss_update"', 'retired UE4SS server managed update');
+forbidText(service, '_legacy_handle("server.install.runeschema_update"', 'retired RuneSchema server managed update');
+requireText(service, 'Dedicated runtime management was removed.', 'hosted runtime staging boundary');
 requireText(service, 'Close RuneScape: Dragonwilds before updating a managed client core runtime.', 'safe client core update gate');
 requireText(managedUpdates, 'def install_client_core', 'client UE4SS/RuneSchema managed update');
 requireText(unifiedUpdateTest, 'RuneSchema Core Update', 'RuneSchema notification regression');

@@ -22,15 +22,17 @@ def main():
 
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for marker in (
-        "server-ue4ss-source-url", "settings-update-ue4ss", "settings-import-ue4ss-core", "settings-ue4ss-dropzone",
-        "settings-update-runeschema", "github.com/UnskippableCutscene/RuneSchema",
-        "settings-update-runeschema-experimental", "github.com/gh0sted5456-us/RuneSchema",
+        "['UE4SSLoader','UE4SS Loader']", "['RuneSchemaLoader','RuneSchema Loader']",
+        "loaders/ue4ss", "loaders/runeschema",
     ):
         assert marker in renderer, marker
-    for retired in ("server-runeschema-source-url", "settings-import-runeschema-core", "settings-runeschema-dropzone"):
+    for retired in (
+        "server-ue4ss-source-url", "settings-update-ue4ss", "settings-import-ue4ss-core", "settings-ue4ss-dropzone",
+        "settings-update-runeschema", "settings-update-runeschema-experimental", "server-runeschema-source-url",
+        "settings-import-runeschema-core", "settings-runeschema-dropzone",
+        "settings-import-runeschema-override", "settings-runeschema-override-dropzone",
+    ):
         assert retired not in renderer, retired
-    assert "settings-import-runeschema-override" in renderer
-    assert "settings-runeschema-override-dropzone" in renderer
 
     # A launcher-bundled RuneSchema core is an offline Server Setup source.
     with tempfile.TemporaryDirectory() as td:

@@ -24,6 +24,10 @@ def component_key(entry: dict) -> str:
     path = _clean_path(entry.get("path"))
     extract_to = _clean_path(entry.get("extract_to"))
     generated = str(entry.get("generated") or "").strip().casefold()
+    entity_key = str(entry.get("entity_key") or "").strip()
+
+    if entity_key:
+        return entity_key
 
     if scope == "client_mods_txt":
         return "settings:mods.txt"

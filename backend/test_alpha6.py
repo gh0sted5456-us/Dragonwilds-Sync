@@ -87,11 +87,11 @@ def main():
             live_pak_files = wm.list_server_mod_files("world-a", str(install), "pak_mod::Example", True, include_all=True)
             assert live_pak_files["root"] == str(outer.paks_mods_dir.resolve())
             assert [(row["name"], row["editable"]) for row in live_pak_files["files"]] == [("Example.pak", False)]
-            snapshot_root = profiles / "world-a" / "mods"
-            (snapshot_root / "pak_mods").mkdir(parents=True)
-            (snapshot_root / "pak_mods/03_ProfileOnly.pak").write_bytes(b"profile-pak")
-            (snapshot_root / "ue4ss_mods/ProfileLua").mkdir(parents=True)
-            (snapshot_root / "ue4ss_mods/ProfileLua/config.json").write_text('{"profile":true}', encoding="utf-8")
+            snapshot_root = profiles / "world-a" / "staged/mods"
+            (snapshot_root / "paks/ProfileOnly").mkdir(parents=True)
+            (snapshot_root / "paks/ProfileOnly/03_ProfileOnly.pak").write_bytes(b"profile-pak")
+            (snapshot_root / "ue4ss/ProfileLua").mkdir(parents=True)
+            (snapshot_root / "ue4ss/ProfileLua/config.json").write_text('{"profile":true}', encoding="utf-8")
             stored_pak_files = wm.list_server_mod_files("world-a", str(install), "pak_mod::ProfileOnly", False, include_all=True)
             assert [row["name"] for row in stored_pak_files["files"]] == ["03_ProfileOnly.pak"]
             stored_text = wm.open_server_mod_file("world-a", str(install), "ue4ss_mod::ProfileLua", "config.json", False)

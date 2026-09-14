@@ -137,14 +137,14 @@ def main() -> None:
             se.restore_profile_mods("world-a", game)
             assert (game / "Binaries/Win64/ue4ss/Mods/AlphaLua/main.lua").is_file()
             assert (game / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods/AlphaSchema/config.json").is_file()
-            assert (game / "Content/Paks/~mods/AlphaPack.pak").is_file()
+            assert (game / "Content/Paks/~mods/AlphaPack/AlphaPack.pak").is_file()
             assert (game / "Binaries/Win64/ue4ss/Mods/BetaLua").exists(), 'Undeclared live files are not swept'
             assert (rs_core / "dlls" / "main.dll").read_bytes() == b"runtime-core"
 
             se.restore_profile_mods("world-b", game)
             assert (game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta'"
             assert (game / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods/BetaSchema/config.json").is_file()
-            assert (game / "Content/Paks/~mods/BetaPack.pak").read_bytes() == b"Beta-pak"
+            assert (game / "Content/Paks/~mods/BetaPack/BetaPack.pak").read_bytes() == b"Beta-pak"
             assert not (game / "Binaries/Win64/ue4ss/Mods/AlphaLua/main.lua").exists()
             assert (rs_core / "dlls" / "main.dll").read_bytes() == b"runtime-core"
 
@@ -195,7 +195,7 @@ def main() -> None:
             assert synced["ok"] is True and synced["launch_ready"] is True
             assert synced["transfer_gate"] == "verified"
             assert (client_game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta'"
-            assert (client_game / "Content/Paks/~mods/BetaPack.pak").read_bytes() == b"Beta-pak"
+            assert (client_game / "Content/Paks/~mods/BetaPack/BetaPack.pak").read_bytes() == b"Beta-pak"
             assert not (client_game / "Binaries/Win64/ue4ss/Mods/AlphaLua").exists()
             assert stray.read_text() == 'client-owned', 'Unmanaged client files survive sync'
 

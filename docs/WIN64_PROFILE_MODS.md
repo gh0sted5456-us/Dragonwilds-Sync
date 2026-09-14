@@ -1,39 +1,43 @@
-# Profile-owned game-ready overlays
+# Layered dedicated World staging
 
-Profiles mirror the game directory. Win64 mods remain independent of UE4SS;
-Win64 is a destination, not a loader version.
+Dedicated profiles keep general content, exact loaders, and recognized mods as
+independent hashable entities.
 
 ```text
 staged/
-  Binaries/Win64/
-    dwmapi.dll
-    ue4ss/Mods/RuneSchema/mods/
-    LootMenu/
-  Binaries/Linux/
-  Content/Paks/~mods/
+  overlay/
+  loaders/ue4ss/Binaries/Win64/...
+  loaders/runeschema/Binaries/Win64/ue4ss/Mods/RuneSchema/...
+  mods/ue4ss/<ModName>/...
+  mods/runeschema/<ModName>/...
+  mods/paks/<ModName>/...
   Saved/Config/WindowsServer/
   Saved/Config/LinuxServer/
   Saved/SaveGames/
+backups/
 ```
+
+`Saved/SaveGames` accepts an existing world save before first launch. The
+platform config templates are generated when a World is created and refreshed
+whenever its server name, world name, passwords, owner ID, or port changes.
+The sibling `backups` directory holds that World's recovery snapshots and is
+never deployed or synchronized as game content.
 
 Legacy flat folders are SHA-256 backed up to the profile's sibling
 `staging-migration-backups` directory before migration. New-layout files win
 collisions; unmerged legacy files stay in that recovery directory.
 
-For a mod that belongs beside the `ue4ss` directory, put its files in the
-profile's `staged/Binaries/Win64` folder with the layout required by the mod author:
+PAK mod folders retain their identity at the destination:
 
 ```text
-Profile/staged/Binaries/Win64/LootMenu/... -> Game/Binaries/Win64/LootMenu/...
-Profile/staged/Binaries/Win64/Example.dll -> Game/Binaries/Win64/Example.dll
+Profile/staged/mods/paks/BetterBuilding/...
+  -> Game/Content/Paks/~mods/BetterBuilding/...
 ```
 
-Refresh Mod Management. Mark content **Client Required** to deliver it to
-connected players; **Server Retained** advertises the inventory without
-transferring those files. Publish again after changing staged content.
-Win64 has its own badge/category and client inventory displays its destination.
-Only profile-declared files enter the manifest: copying something into the
-server's live binary directory does not implicitly publish it.
+Refresh Mod Management after changing a lane. Mark a recognized mod **Client
+Required** to deliver it; **Server Retained** keeps it on the host. Overlay,
+UE4SS, RuneSchema, and each recognized mod have independent component hashes.
+A client with a matching component hash transfers zero bytes for that entity.
 
 Game Connection and Sync Hosting display the derived Win64 destination. It
 follows the selected installation, not the UE4SS Mods override. Additional
@@ -43,9 +47,9 @@ deployment permissions.
 Steam-owned game files are protected because deployment removes only paths in
 its AppData receipt. Traversal, drive-qualified paths, alternate streams,
 linked destinations and linked payloads are rejected. Dedicated activation
-does not install or repair UE4SS/RuneSchema; complete loader files may instead
-be placed directly in this overlay. Displaced files are retained beneath
-application `Backups/DisplacedWorldOverlays`.
+does not install or repair UE4SS/RuneSchema; complete game-relative loader
+trees belong in their respective `loaders` folders. Displaced files are
+retained beneath application `Backups/DisplacedWorldOverlays`.
 
 Connected-client ledgers, bundle receipts, downloads, and rollback bookkeeping
 live under application LocalAppData at

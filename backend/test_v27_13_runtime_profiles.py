@@ -113,11 +113,8 @@ def main() -> None:
     server_source = (ROOT / "backend/server_systems.py").read_text(encoding="utf-8")
     service_source = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     for token in (
-        "RuneSchema Build",
-        "Update Official",
-        "Fetch Latest Experimental",
         'data-profile-mod-folder-note="local"',
-        "Folder-managed + Nexus-linked inventory",
+        "Stage → scan → deploy",
         "Manual mod archive import retired",
         "Core Configuration",
         "api.invoke('profile.package.inspect'",
@@ -137,10 +134,13 @@ def main() -> None:
     assert "openedProfile" not in overlay
     assert "window.addEventListener('focus'" not in overlay
     assert 'ensure_profile_mod_roots(_world_cache(profile_id) / "mods")' in local_source
-    assert 'profile_roots = ensure_profile_mod_roots(stored)' in server_source
+    assert 'profile_roots = dedicated_profile_mod_roots(SERVER_PROFILES_DIR / profile_id)' in server_source
     assert renderer.count("api.invoke('singleplayer.mod.install'") >= 2
     assert renderer.count("api.invoke('server.world.mod.install'") >= 2
     for retired in (
+        "RuneSchema Build",
+        "Update Official",
+        "Fetch Latest Experimental",
         "openSmartModImport",
         "installSinglePlayerZip",
         "installServerZip",

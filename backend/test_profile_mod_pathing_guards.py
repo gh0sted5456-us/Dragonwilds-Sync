@@ -135,7 +135,7 @@ def main() -> None:
                     assert Path(local_desc[lane]).is_dir()
 
                 server_desc = smr.describe_profile_mods_root("dedicated", "guard-world")
-                assert Path(server_desc["mods_root"]) == smr.SERVER_PROFILES_DIR / "guard-world" / "staged"
+                assert Path(server_desc["mods_root"]) == smr.SERVER_PROFILES_DIR / "guard-world" / "staged" / "mods"
                 assert server_desc["resolved_kind"] == "server"
                 for lane in ("ue4ss", "runeschema", "paks"):
                     assert Path(server_desc[lane]).is_dir()

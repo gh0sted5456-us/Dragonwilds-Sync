@@ -240,43 +240,20 @@ def test_rpc_dispatch_import_select_and_deferred_apply():
             listed = service.handle("application.ue4ss_repository.list", {})
             assert any(v["id"] == version_id for v in listed["versions"])
 
-            # Not the active World -- selection is recorded but application is deferred.
+            # Runtime selection and per-file client selectors are retired;
+            # the World's staged UE4SS directory is authoritative.
             legacy.ENGINE = SimpleNamespace(status=lambda: {"running": False, "active_profile_id": None},
                                             assert_stopped=lambda: None, active_profile_id=None, public_ip=None)
-            selected = service.handle("server.world.ue4ss_version.select", {"id": "world-c", "version_id": version_id})
-            assert selected["applied"]["deferred"] is True
-            reloaded = profile_store.load_server_profile("world-c")
-            assert reloaded["ue4ss_active_version_id"] == version_id
-
-            inventory = service.handle("server.world.runtime_client_selection.get", {
-                "id": "world-c", "kind": "ue4ss", "build_id": version_id,
-            })
-            targets = inventory["inventory"]["default_targets"]
-            assert "Binaries/Win64/dwmapi.dll" in targets
-            saved = service.handle("server.world.runtime_client_selection.set", {
-                "id": "world-c", "kind": "ue4ss", "build_id": version_id,
-                "targets": ["Binaries/Win64/ue4ss/UE4SS.dll"],
-            })
-            assert saved["selected_count"] == 1
-            cleared = service.handle("server.world.runtime_client_selection.set", {
-                "id": "world-c", "kind": "ue4ss", "build_id": version_id, "targets": [],
-            })
-            assert cleared["selected_count"] == 0
-            reread = service.handle("server.world.runtime_client_selection.get", {
-                "id": "world-c", "kind": "ue4ss", "build_id": version_id,
-            })
-            assert reread["selected_count"] == 0
-
-            # Refuses while the dedicated server is running.
-            def _refuse():
-                raise RuntimeError("Stop the dedicated server before switching or deleting Worlds.")
-            legacy.ENGINE = SimpleNamespace(status=lambda: {"running": True}, assert_stopped=_refuse,
-                                            active_profile_id=None, public_ip=None)
-            try:
-                service.handle("server.world.ue4ss_version.select", {"id": "world-c", "version_id": repo.BASELINE_ID})
-                raise AssertionError("expected selection to be refused while the server is running")
-            except RuntimeError:
-                pass
+            for method, params in (
+                ("server.world.ue4ss_version.select", {"id": "world-c", "version_id": version_id}),
+                ("server.world.runtime_client_selection.get", {"id": "world-c", "kind": "ue4ss", "build_id": version_id}),
+                ("server.world.runtime_client_selection.set", {"id": "world-c", "kind": "ue4ss", "build_id": version_id, "targets": []}),
+            ):
+                try:
+                    service.handle(method, params)
+                    raise AssertionError(f"retired runtime selector accepted: {method}")
+                except ValueError as error:
+                    assert "staged runtime is authoritative" in str(error)
         finally:
             legacy.ENGINE = old_engine
 

@@ -671,8 +671,8 @@ def list_server_profiles() -> list[dict]:
             continue
         # Profile inventory is the migration boundary for the dedicated
         # game-ready overlay, so every visible World has staged/ immediately.
-        from profile_mod_layout import dedicated_profile_staging_root, ensure_profile_mod_roots
-        ensure_profile_mod_roots(dedicated_profile_staging_root(folder))
+        from profile_mod_layout import dedicated_profile_layout
+        dedicated_profile_layout(folder)
         result.append({
             "id": folder.name,
             "name": meta.get("name") or folder.name,
@@ -831,8 +831,13 @@ def create_server_profile(name: str) -> str:
         "manifest_version": 0,
         "created_ts": datetime.now(timezone.utc).timestamp(),
     })
-    from profile_mod_layout import dedicated_profile_staging_root, ensure_profile_mod_roots
-    ensure_profile_mod_roots(dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id))
+    from profile_mod_layout import dedicated_profile_layout
+    dedicated_profile_layout(SERVER_PROFILES_DIR / profile_id)
+    # New Worlds are immediately browsable and game-config ready, even before
+    # a dedicated installation has been selected or launched.
+    from server_engine import write_staged_dedicated_config_templates
+    write_staged_dedicated_config_templates(
+        profile_id, load_server_profile(profile_id).get("dedicated_config") or {})
     return profile_id
 
 

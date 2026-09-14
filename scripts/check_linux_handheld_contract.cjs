@@ -16,8 +16,11 @@ const requireText = (source, text, message) => {
   if (!source.includes(text)) throw new Error(message);
 };
 
-requireText(app, "id=\"server-native-ue4ss-source\"", 'Native Linux UE4SS source control is missing.');
-requireText(app, "id=\"server-native-runeschema-source\"", 'Native Linux RuneSchema source control is missing.');
+requireText(app, "['UE4SSLoader','UE4SS Loader']", 'World-owned UE4SS loader staging control is missing.');
+requireText(app, "['RuneSchemaLoader','RuneSchema Loader']", 'World-owned RuneSchema loader staging control is missing.');
+if (app.includes('id="server-native-ue4ss-source"') || app.includes('id="server-native-runeschema-source"')) {
+  throw new Error('Retired machine-level runtime source controls are still exposed.');
+}
 requireText(app, 'linux_server_mode:', 'Linux server mode is not persisted.');
 requireText(app, "id=\"save-window-preferences\"", 'Window preference controls are missing.');
 requireText(app, "id=\"window-custom-width\"", 'Custom persistent window width is missing.');
@@ -44,7 +47,11 @@ requireText(systems, '"runtime_scope": "client_required"', 'Published Win64 base
 requireText(systems, 'dedicated_runtime_contract', 'Sync manifests do not expose the host/client runtime boundary.');
 requireText(archivePolicy, 'inspect_runtime_archive', 'Runtime ZIP entries are not inventoried.');
 requireText(archivePolicy, 'validate_client_targets', 'Runtime client selectors are not policy validated.');
-requireText(app, 'data-runtime-client-files', 'Runtime build rows do not expose client file selectors.');
+if (app.includes('data-runtime-client-files')) {
+  throw new Error('Retired per-file runtime selectors are still exposed.');
+}
+requireText(app, 'Each direct mod folder is hashed and synchronized independently.',
+  'Layered runtime and mod entity sync guidance is missing.');
 requireText(app, 'function gameModeBadgesMarkup', 'Shared world mode badge renderer is missing.');
 requireText(app, "hardmode: 'hard'", 'Hard mode metadata aliases are not normalized.');
 requireText(app, 'gameModeBadgesMarkup(world,server)', 'World mode badges are not shared by placards and horizontal rows.');

@@ -40,7 +40,8 @@ from runtime_versions import normalize_cl_version, server_runtime_stack
 from server_layout import resolve_server_layout
 from machine_paths import server_save_paths
 from client_layout import resolve_client_layout
-from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_staging_root,
+from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_layout,
+                                dedicated_profile_mod_roots,
                                 ensure_profile_mod_roots)
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
 from server_scheduler import normalize_notice
@@ -736,27 +737,21 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
     paks = layout.paks_mods_dir
     dirs, grouped = _group_pak_siblings(_iter_top_level(paks))
     for name, path in dirs:
-        _order, clean_name = _strip_pak_load_prefix(name)
-        add(clean_name, "pak_mod", source_dir=path)
+        add(name, "pak_mod", source_dir=path)
     for stem, files in grouped.items():
         _order, clean_stem = _strip_pak_load_prefix(stem)
         add(clean_stem, "pak_mod", source_files=files)
 
-    # Win64 content is always explicitly staged by the profile, not inferred
-    # from unrelated files in the live game binary directory.
-    units.extend(u for u in scan_profile_snapshot_units(profile_id) if u.group == "win64_mod")
     units.sort(key=lambda u: (overrides.get(u.key) or {}).get("order", 10**9))
     return units
 
 
 def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
     """Scan an inactive World's APPDATA-owned mod snapshot without touching live files."""
-    stored = dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id)
-    profile_roots = ensure_profile_mod_roots(stored)
+    profile_roots = dedicated_profile_mod_roots(SERVER_PROFILES_DIR / profile_id)
     mods = profile_roots["ue4ss"]
     runeschema = profile_roots["runeschema"]
     paks = profile_roots["paks"]
-    win64 = profile_roots["win64"]
     profile = load_server_profile(profile_id)
     overrides = profile.get("unit_overrides") or {}
     units: list[ModUnit] = []
@@ -806,11 +801,8 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
         if is_dir and lower in UE4SS_BAKED_IN_DEFAULT_MODS:
             continue
         if is_dir and lower == "runeschema":
-            if any(p.is_file() and p.relative_to(path).parts[0].casefold() not in {'mods', 'diagnostics'} for p in path.rglob('*')):
-                add(name, "runeschema", source_dir=path, exclude={"mods", "diagnostics"})
-            for sub_name, sub_is_dir, sub_path in _iter_top_level(path / "mods"):
-                add(sub_name, "runeschema_mod", source_dir=sub_path if sub_is_dir else None,
-                    source_files=[] if sub_is_dir else [sub_path])
+            _LAST_SCAN_WARNINGS.append(
+                'Skipped UE4SS mod folder "RuneSchema": use loaders/runeschema and mods/runeschema.')
         elif is_dir:
             add(name, "ue4ss_mod", source_dir=path)
         else:
@@ -823,23 +815,13 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
         add(name, "runeschema_mod", source_dir=path if is_dir else None,
             source_files=[] if is_dir else [path])
 
-    dirs, grouped = _group_pak_siblings(_iter_top_level(paks))
-    for name, path in dirs:
-        _order, clean_name = _strip_pak_load_prefix(name)
-        add(clean_name, "pak_mod", source_dir=path)
-    for stem, files in grouped.items():
-        _order, clean_stem = _strip_pak_load_prefix(stem)
-        add(clean_stem, "pak_mod", source_files=files)
+    for name, is_dir, path in _iter_top_level(paks):
+        if not is_dir:
+            _LAST_SCAN_WARNINGS.append(
+                f'Skipped PAK payload "{name}": place every PAK mod inside its own folder.')
+            continue
+        add(name, "pak_mod", source_dir=path)
 
-    from win64_mods import payload_files, payload_entries
-    list(payload_files(win64))  # Validate the entire declaration before publishing any file.
-    for path in payload_entries(win64):
-        add(path.name, "win64_mod", source_dir=path if path.is_dir() else None,
-            source_files=[] if path.is_dir() else [path])
-
-    # UE4SS loader files are machine-level authoritative runtime files in the
-    # current storage model and therefore are not duplicated into each inactive
-    # World snapshot. Their saved classification/order remains in profile.json.
     units.sort(key=lambda u: (overrides.get(u.key) or {}).get("order", 10**9))
     return units
 
@@ -2272,6 +2254,37 @@ def _atomic_publish_copy(source: Path, destination: Path) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def _publish_client_overlay(profile: dict, manifest_files: list[dict]) -> int:
+    """Publish the complete client-safe general overlay before loader entities."""
+    profile_id = str((profile or {}).get("id") or "")
+    if not profile_id or profile_id in {".", ".."} or any(c in profile_id for c in "/\\:"):
+        return 0
+    overlay = dedicated_profile_layout(SERVER_PROFILES_DIR / profile_id)["overlay"]
+    copied = 0
+    for source in sorted(overlay.rglob("*"), key=lambda path: path.as_posix().casefold()):
+        if not source.is_file():
+            continue
+        rel = source.relative_to(overlay)
+        lowered = [part.casefold() for part in rel.parts]
+        if (not rel.parts or any(part.startswith(".") for part in rel.parts)
+                or rel.name.casefold() == "readme.txt"
+                or lowered[:2] == ["binaries", "linux"]
+                or rel.name.casefold() in {SERVER_LOADER_FILENAME.casefold(), "rsdragonwilds-win64-shipping.exe"}):
+            continue
+        wire = rel.as_posix()
+        dest = PUBLISH_DIR / Path(*rel.parts)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        _atomic_publish_copy(source, dest)
+        manifest_files.append({
+            "path": wire, "sha256": sha256_of(dest), "size": dest.stat().st_size,
+            "category": "permanent", "kind": "file", "extract_to": "",
+            "generated": "profile_overlay", "entity_key": "profile:overlay",
+            "platforms": list(ALL_CLIENT_PLATFORMS),
+        })
+        copied += 1
+    return copied
+
+
 def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict], profile: dict | None = None) -> dict:
     """Publish the exact staged client runtime baseline for a dedicated World.
 
@@ -2324,10 +2337,13 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
         server_paths.get("runeschema_root"), layout.runeschema_root if layout else RUNESCHEMA_RUNTIME_DIR, "RuneSchema root")
     profile_id = str((profile or {}).get('id') or '')
     if profile_id and profile_id not in {'.', '..'} and not any(c in profile_id for c in '/\\:'):
-        staged = ensure_profile_mod_roots(dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id))
+        profile_layout = dedicated_profile_layout(SERVER_PROFILES_DIR / profile_id)
+        staged = dedicated_profile_mod_roots(SERVER_PROFILES_DIR / profile_id)
         staged_runtime = True
-        ue4ss_server_root = staged['win64']
-        runeschema_server_root = staged['runeschema'].parent
+        ue4ss_server_root = profile_layout['ue4ss_loader'] / 'Binaries/Win64'
+        runeschema_server_root = (
+            profile_layout['runeschema_loader'] /
+            'Binaries/Win64/ue4ss/Mods/RuneSchema')
         ue4ss_client_root = "Binaries/Win64"
         runeschema_client_root = "Binaries/Win64/ue4ss/Mods/RuneSchema"
         # For a dedicated World, staged contents—not launcher runtime settings—
@@ -2381,6 +2397,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
             "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
             "runtime_scope": "client_required", "distribution": "sync_manifest",
             "selection_policy": "authoritative_full_runtime",
+            "entity_key": "runtime:ue4ss",
             "source_archive_entry": pure.as_posix(),
         })
         return True
@@ -2419,6 +2436,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                     "runtime_scope": "client_required", "distribution": "sync_manifest",
                     "selection_policy": "authoritative_full_runtime",
+                    "entity_key": "runtime:ue4ss",
                     "source_archive_entry": PurePosixPath(*parts).as_posix(),
                 })
                 stats["ue4ss_files"] += 1
@@ -2486,7 +2504,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 zf.write(source, rel.as_posix())
                 stats["runeschema_files"] += 1
                 selected_count += 1
-            if not wrote_enabled and runeschema_targets is None:
+            if not wrote_enabled and runeschema_targets is None and not staged_runtime:
                 enabled_info = zipfile.ZipInfo("enabled.txt", date_time=(1980, 1, 1, 0, 0, 0))
                 enabled_info.compress_type = zipfile.ZIP_DEFLATED
                 enabled_info.external_attr = 0o100644 << 16
@@ -2503,6 +2521,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                 "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                 "runtime_scope": "client_required", "distribution": "sync_manifest",
                 "selection_policy": "authoritative_full_runtime",
+                "entity_key": "runtime:runeschema",
                 "selected_files": sorted(runeschema_targets or []),
             })
         else:
@@ -2543,6 +2562,7 @@ def _publish_baseline_client_runtimes(game_root: str, manifest_files: list[dict]
                     "platforms": list(WIN64_RUNTIME_PLATFORMS), "game_abi": "windows-pe-x64",
                     "runtime_scope": "client_required", "distribution": "sync_manifest",
                     "selection_policy": "authoritative_full_runtime",
+                    "entity_key": "runtime:runeschema",
                     "selected_files": sorted(runeschema_targets or []),
                 })
             else:
@@ -2657,7 +2677,7 @@ class ShareServer:
         if not profile: raise KeyError("World profile not found")
         if persist_profile and profile.get('mods_profile_initialized'):
             from profile_mod_layout import restore_profile_spares
-            restore_profile_spares(dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id))
+            restore_profile_spares(dedicated_profile_layout(SERVER_PROFILES_DIR / profile_id)['mods'])
             mod_groups = {'ue4ss_mod', 'runeschema_mod', 'pak_mod', 'win64_mod'}
             staged_units = scan_profile_snapshot_units(profile_id)
             units = [unit for unit in units if unit.group not in mod_groups]
@@ -2700,6 +2720,7 @@ class ShareServer:
         # require the exact launcher-owned UE4SS/RuneSchema baseline selected by
         # this World profile. The publisher therefore falls back to its verified
         # runtime library instead of silently omitting mandatory files.
+        _overlay_file_count = _publish_client_overlay(profile, manifest_files) if persist_profile else 0
         baseline_runtime = _publish_baseline_client_runtimes(game_root, manifest_files, profile)
         source_mods_txt = ""
         if game_root:
@@ -4706,8 +4727,7 @@ def install_world_mod_zip(profile_id: str, game_root: str, zip_path: str, *, act
         layout = resolve_server_layout(game_root)
         ue4ss_root, paks_root, rs_mods_root = layout.ue4ss_mods_dir, layout.paks_mods_dir, layout.runeschema_mods_dir
     else:
-        stored = dedicated_profile_staging_root(SERVER_PROFILES_DIR / profile_id)
-        profile_roots = ensure_profile_mod_roots(stored)
+        profile_roots = dedicated_profile_mod_roots(SERVER_PROFILES_DIR / profile_id)
         ue4ss_root, paks_root, rs_mods_root = profile_roots["ue4ss"], profile_roots["paks"], profile_roots["runeschema"]
     for managed_root in (ue4ss_root, paks_root, rs_mods_root):
         _set_runtime_tree_writable(managed_root, True)

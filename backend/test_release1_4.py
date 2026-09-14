@@ -176,7 +176,7 @@ def test_read_only_legacy_mod_snapshot_can_be_replaced():
             # First access migrates/removes the old internal lane and writes
             # the replacement into the visible profile-owned UE4SS folder.
             assert not legacy.exists()
-            assert (server_engine.SERVER_PROFILES_DIR / "world" / "staged" / "Binaries/Win64/ue4ss/Mods" / "WorldMod" / "Scripts" / "main.lua").is_file()
+            assert (server_engine.SERVER_PROFILES_DIR / "world" / "staged" / "mods/ue4ss" / "WorldMod" / "Scripts" / "main.lua").is_file()
         finally:
             server_engine.SERVER_PROFILES_DIR = old_profiles
 
@@ -187,7 +187,9 @@ def test_nested_read_only_snapshot_preserves_cores_without_overlay():
         root = Path(td)
         server_engine.SERVER_PROFILES_DIR = root / "profiles"
         try:
-            stored = server_engine.ensure_profile_mod_roots(root / "profiles/world/staged")
+            from profile_mod_layout import dedicated_profile_layout, dedicated_profile_mod_roots
+            profile_layout = dedicated_profile_layout(root / "profiles/world")
+            stored = dedicated_profile_mod_roots(root / "profiles/world")
             old = stored["ue4ss"] / "ProfileHelper/config.ini"
             old.parent.mkdir(parents=True)
             old.write_bytes(b"old config")
@@ -195,10 +197,10 @@ def test_nested_read_only_snapshot_preserves_cores_without_overlay():
             obsolete = stored["ue4ss"] / "RemovedMod/main.lua"
             obsolete.parent.mkdir(parents=True)
             obsolete.write_bytes(b"removed")
-            cores = [stored["win64"] / "LootMenu/plugin.dll",
+            cores = [profile_layout["overlay"] / "Binaries/Win64/LootMenu/plugin.dll",
                      stored["ue4ss"] / "mods.txt",
-                     stored["ue4ss"].parent / "UE4SS.dll",
-                     stored["runeschema"].parent / "runtime/core.dll"]
+                     profile_layout["ue4ss_loader"] / "Binaries/Win64/ue4ss/UE4SS.dll",
+                     profile_layout["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema/runtime/core.dll"]
             for core in cores:
                 core.parent.mkdir(parents=True, exist_ok=True)
                 core.write_bytes(b"keep core")

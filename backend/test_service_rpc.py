@@ -87,7 +87,8 @@ def main():
             import server_engine
             first_paks = server_engine.ensure_profile_mod_roots(
                 server_engine._profile_mods_dir(first_id))["paks"]
-            (first_paks / "WorldOne.pak").write_bytes(b"one")
+            (first_paks / "WorldOne").mkdir()
+            (first_paks / "WorldOne/WorldOne.pak").write_bytes(b"one")
             rpc(proc, "application.update", {"server_install": {"install_dir": str(game), "server_exe": "", "steamcmd_dir": str(root / "steamcmd")}}, 3)
             # This contract exercises profile isolation, not GitHub release
             # availability. Treat the complete temporary RuneSchema core above
@@ -100,9 +101,15 @@ def main():
             server_engine.save_state(state)
             rpc(proc, "server.world.update", {
                 "id": first_id,
-                "dedicated_config": {"port": 7777},
+                "dedicated_config": {"port": 7777, "world_pass": "pw1", "admin_pass": "admin1", "owner_id": "owner1"},
                 "sync_config": {"password": "pw1", "server_key": "key1"},
             }, 4)
+            staged_config = (server_engine.SERVER_PROFILES_DIR / first_id /
+                             "staged/Saved/Config/WindowsServer/DedicatedServer.ini")
+            staged_text = staged_config.read_text(encoding="utf-8")
+            for expected in ("ServerName=World One", "DefaultWorldName=World One",
+                             "WorldPassword=pw1", "AdminPassword=admin1", "OwnerId=owner1", "Port=7777"):
+                assert expected in staged_text
             inv1 = rpc(proc, "server.world.inventory", {"id": first_id}, 5)
             assert any(u["key"] == "pak_mod::WorldOne" for u in inv1["units"])
 
@@ -140,7 +147,8 @@ def main():
             profile_pak_root = server_engine.ensure_profile_mod_roots(
                 server_engine._profile_mods_dir(second_id))["paks"]
             profile_pak_root.mkdir(parents=True, exist_ok=True)
-            (profile_pak_root / "WorldTwo.pak").write_bytes(b"two")
+            (profile_pak_root / "WorldTwo").mkdir()
+            (profile_pak_root / "WorldTwo/WorldTwo.pak").write_bytes(b"two")
             assert not (pak_root / "WorldTwo.pak").exists()
             cached_before_rescan = rpc(proc, "server.world.inventory", {"id": second_id}, 9)
             assert not any(u["key"] == "pak_mod::WorldTwo" for u in cached_before_rescan["units"])
@@ -151,15 +159,16 @@ def main():
             # edit with the older live tree. Returning to the profile must then
             # hydrate the live runtime from its preserved profile snapshot.
             rpc(proc, "server.world.activate", {"id": first_id}, 10)
-            assert (pak_root / "WorldOne.pak").read_bytes() == b"one"
-            assert not (pak_root / "WorldTwo.pak").exists()
+            assert (pak_root / "WorldOne/WorldOne.pak").read_bytes() == b"one"
+            assert not (pak_root / "WorldTwo").exists()
             inv2_after = rpc(proc, "server.world.inventory", {"id": second_id}, 11)
             assert any(u["key"] == "pak_mod::WorldTwo" for u in inv2_after["units"])
             assert not any(u["key"] == "pak_mod::WorldOne" for u in inv2_after["units"])
 
             rpc(proc, "server.world.activate", {"id": second_id}, 12)
-            assert (pak_root / "WorldTwo.pak").read_bytes() == b"two"
-            assert not (pak_root / "WorldOne.pak").exists()
+            assert (pak_root / "WorldTwo/WorldTwo.pak").read_bytes() == b"two"
+            assert not (pak_root / "WorldOne").exists()
+            assert (pak_root / "WorldOne.pak").exists(), 'Unmanaged flat PAK remains untouched'
 
             # Profile artwork is persisted as data URLs, not just held in the
             # edit modal's renderer state.

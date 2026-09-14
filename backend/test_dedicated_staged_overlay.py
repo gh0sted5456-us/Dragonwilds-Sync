@@ -4,7 +4,8 @@ from pathlib import Path
 import server_engine as engine
 import server_systems as systems
 import profile_store
-from profile_mod_layout import dedicated_profile_staging_root, ensure_profile_mod_roots
+from profile_mod_layout import dedicated_profile_layout, dedicated_profile_mod_roots
+from sync_manifest import component_fingerprints
 
 
 def _server_install(base: Path) -> Path:
@@ -42,20 +43,28 @@ def main() -> None:
             (legacy / "Binaries/Win64/LooseServerMod/settings.json").write_text("a")
             (legacy / "Saved/ModState/state.json").parent.mkdir(parents=True)
             (legacy / "Saved/ModState/state.json").write_text("staged state")
+            (legacy / "Content/Paks/~mods/LegacyPack.pak").parent.mkdir(parents=True)
+            (legacy / "Content/Paks/~mods/LegacyPack.pak").write_bytes(b"legacy pak")
+            (legacy / "Content/Paks/~mods/LegacyPack.pak.sig").write_bytes(b"legacy signature")
             old_save = engine.SERVER_PROFILES_DIR / "world-a" / "savegame"
             old_save.mkdir()
             (old_save / "World.sav").write_bytes(b"world")
             old_config = engine.SERVER_PROFILES_DIR / "world-a" / "server_config"
             old_config.mkdir()
             (old_config / "DedicatedServer.ini").write_text("[ServerSettings]")
-            staged_a = dedicated_profile_staging_root(engine.SERVER_PROFILES_DIR / "world-a")
+            layout_a = dedicated_profile_layout(engine.SERVER_PROFILES_DIR / "world-a")
+            staged_a = layout_a["root"]
             assert staged_a.name == "staged" and not legacy.exists()
-            assert (staged_a / "Saved/SaveGames/World.sav").is_file()
-            assert (staged_a / "Saved/Config/WindowsServer/DedicatedServer.ini").is_file()
+            assert (layout_a["saved"] / "SaveGames/World.sav").is_file()
+            assert (layout_a["saved"] / "Config/WindowsServer/DedicatedServer.ini").is_file()
+            assert (layout_a["ue4ss_loader"] / "Binaries/Win64/dwmapi.dll").is_file()
+            assert (layout_a["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema/dlls/main.dll").is_file()
+            assert (layout_a["paks"] / "LegacyPack/LegacyPack.pak").is_file()
+            assert (layout_a["paks"] / "LegacyPack/LegacyPack.pak.sig").is_file()
 
-            roots_b = ensure_profile_mod_roots(
-                dedicated_profile_staging_root(engine.SERVER_PROFILES_DIR / "world-b"))
-            (roots_b["paks"] / "WorldB.pak").write_bytes(b"pak")
+            roots_b = dedicated_profile_mod_roots(engine.SERVER_PROFILES_DIR / "world-b")
+            (roots_b["paks"] / "WorldB").mkdir()
+            (roots_b["paks"] / "WorldB/WorldB.pak").write_bytes(b"pak")
 
             old_mod = game / "Content/Paks/~mods/OldWorld.pak"
             old_mod.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +88,7 @@ def main() -> None:
             assert not (game / "Binaries/Win64/ue4ss/UE4SS.dll").exists()
             assert not (game / "Binaries/Win64/LooseServerMod/settings.json").exists()
             assert not (game / "Saved/ModState/state.json").exists()
-            assert (game / "Content/Paks/~mods/WorldB.pak").is_file()
+            assert (game / "Content/Paks/~mods/WorldB/WorldB.pak").is_file()
             assert (game / "Binaries/Win64/RSDragonwildsServer.exe").is_file()
 
             assert not (game / ".dragonwilds-sync").exists()
@@ -89,28 +98,34 @@ def main() -> None:
             systems.SERVER_PROFILES_DIR = engine.SERVER_PROFILES_DIR
             systems.PUBLISH_DIR = base / "published"
             try:
+                shared = layout_a["overlay"] / "Content/ClientShared/table.bin"
+                shared.parent.mkdir(parents=True)
+                shared.write_bytes(b"overlay")
                 manifest = []
+                assert systems._publish_client_overlay({"id": "world-a"}, manifest) >= 1
                 runtime = systems._publish_baseline_client_runtimes(
                     str(game_root), manifest,
                     {"id": "world-a", "runtime_components": {"ue4ss": False, "runeschema": False}})
                 assert runtime["components"] == {"ue4ss": True, "runeschema": True}
-                assert manifest[0]["generated"] == "ue4ss_baseline"
+                assert manifest[0]["generated"] == "profile_overlay"
+                assert next(row for row in manifest if row["generated"] == "ue4ss_baseline")
                 assert any(row["generated"] == "runeschema_baseline" for row in manifest)
-                assert all(row.get("baseline_runtime") for row in manifest)
+                fingerprints = component_fingerprints({"files": manifest})
+                assert {"profile:overlay", "runtime:ue4ss", "runtime:runeschema"}.issubset(fingerprints)
             finally:
                 systems.SERVER_PROFILES_DIR, systems.PUBLISH_DIR = old_system_profiles, old_publish
 
-            forbidden = staged_a / "RSDragonwildsServer.exe"
+            forbidden = layout_a["overlay"] / "RSDragonwildsServer.exe"
             forbidden.write_bytes(b"not steam")
             try:
                 engine.restore_profile_mods("world-a", game_root)
             except ValueError as exc:
-                assert "only Binaries/Win64" in str(exc)
+                assert "Steam-owned game executable" in str(exc)
             else:
                 raise AssertionError("overlay accepted a file outside mod-bearing directories")
             forbidden.unlink()
 
-            protected = staged_a / "Binaries/Win64/RSDragonwildsServer.exe"
+            protected = layout_a["ue4ss_loader"] / "Binaries/Win64/RSDragonwildsServer.exe"
             protected.write_bytes(b"not steam")
             try:
                 engine.restore_profile_mods("world-a", game_root)
@@ -124,11 +139,11 @@ def main() -> None:
             live_config.write_text("[ServerSettings]\nServerName=Edited")
             assert engine.mirror_live_overlay_file(
                 "world-a", game_root, "Saved/Config/WindowsServer/DedicatedServer.ini")
-            assert (staged_a / "Saved/Config/WindowsServer/DedicatedServer.ini").read_text().endswith("ServerName=Edited")
+            assert (layout_a["saved"] / "Config/WindowsServer/DedicatedServer.ini").read_text().endswith("ServerName=Edited")
             live_config.unlink()
             assert not engine.mirror_live_overlay_file(
                 "world-a", game_root, "Saved/Config/WindowsServer/DedicatedServer.ini")
-            assert not (staged_a / "Saved/Config/WindowsServer/DedicatedServer.ini").exists()
+            assert not (layout_a["saved"] / "Config/WindowsServer/DedicatedServer.ini").exists()
 
             old_store_profiles = profile_store.SERVER_PROFILES_DIR
             profile_store.SERVER_PROFILES_DIR = engine.SERVER_PROFILES_DIR
@@ -137,11 +152,18 @@ def main() -> None:
                 created = profile_store.load_server_profile(created_id)
                 created_root = engine.SERVER_PROFILES_DIR / created_id / "staged"
                 for relative in (
-                    "Binaries/Win64", "Binaries/Linux", "Content/Paks/~mods",
-                    "Saved/Config/WindowsServer", "Saved/Config/LinuxServer",
-                    "Saved/SaveGames",
+                    "overlay", "loaders/ue4ss", "loaders/runeschema",
+                    "mods/ue4ss", "mods/runeschema", "mods/paks",
+                    "Saved/Config/WindowsServer", "Saved/Config/LinuxServer", "Saved/SaveGames",
                 ):
                     assert (created_root / relative).is_dir()
+                assert (engine.SERVER_PROFILES_DIR / created_id / "backups").is_dir()
+                for platform in ("WindowsServer", "LinuxServer"):
+                    template = created_root / "Saved/Config" / platform / "DedicatedServer.ini"
+                    text = template.read_text(encoding="utf-8")
+                    assert "ServerName=Staged World" in text
+                    assert "DefaultWorldName=Staged World" in text
+                    assert "Port=7777" in text
                 assert not {
                     "auto_ue4ss", "auto_runeschema", "runtime_components",
                     "runtime_paths", "runeschema_flavors", "runeschema_flavor_id",

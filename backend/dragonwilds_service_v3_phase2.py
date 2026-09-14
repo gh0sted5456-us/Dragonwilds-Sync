@@ -17,7 +17,7 @@ from dragonwilds_service_v2_wrapper import *  # noqa: F401,F403
 from network_service import DirectoryNetworkService
 from network_config import DRAGONWILDS_SYNC_NETWORK_URL
 from profile_store import APP_DATA_DIR
-from profile_mod_layout import dedicated_profile_staging_root
+from profile_mod_layout import dedicated_profile_layout
 import profile_settings as _profile_settings
 from server_scheduler import normalize_notice
 from save_management import (inventory as save_inventory, mutate_entry,
@@ -149,8 +149,8 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
     icon_b64 = str(presentation.get("icon_b64") or profile.get("icon_b64") or "")
     banner_b64 = str(presentation.get("banner_b64") or profile.get("banner_b64") or "")
     if kind == "dedicated":
-        mods_path = str(dedicated_profile_staging_root(
-            _profile_settings.profile_root("dedicated", profile_id)))
+        mods_path = str(dedicated_profile_layout(
+            _profile_settings.profile_root("dedicated", profile_id))["mods"])
     elif kind == "local":
         mods_path = str(_profile_settings.profile_root("local", profile_id) / "snapshot")
     else:

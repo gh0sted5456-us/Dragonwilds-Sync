@@ -92,19 +92,19 @@ def main() -> None:
         finally:
             sync_engine.CLIENT_WORLDS_DIR = original_client_worlds
 
-        server_profile_root = root / "server-profile"
-        original_profile_dir = server_engine._profile_mods_dir
-        server_engine._profile_mods_dir = lambda _profile_id: server_profile_root / "mods"
+        original_profile_dir = server_engine.SERVER_PROFILES_DIR
+        server_engine.SERVER_PROFILES_DIR = root / "server-profiles"
         try:
-            server_snapshot_beta = server_profile_root / "mods" / "Binaries/Win64/ue4ss/Mods" / "Beta" / "main.lua"
+            server_profile_root = server_engine.SERVER_PROFILES_DIR / "world-a"
+            server_snapshot_beta = server_profile_root / "staged/mods/ue4ss" / "Beta" / "main.lua"
             server_snapshot_beta.parent.mkdir(parents=True)
             server_snapshot_beta.write_bytes(b"server-beta-sentinel")
             server_beta_before = file_sha(server_snapshot_beta)
             server_engine.snapshot_profile_mod_unit("world-a", game, "ue4ss_mod::Alpha")
             assert file_sha(server_snapshot_beta) == server_beta_before
-            assert (server_profile_root / "mods" / "Binaries/Win64/ue4ss/Mods" / "Alpha" / "main.lua").read_text(encoding="utf-8") == "return 'alpha-v2'\n"
+            assert (server_profile_root / "staged/mods/ue4ss" / "Alpha" / "main.lua").read_text(encoding="utf-8") == "return 'alpha-v2'\n"
         finally:
-            server_engine._profile_mods_dir = original_profile_dir
+            server_engine.SERVER_PROFILES_DIR = original_profile_dir
             local_world.LOCAL_PROFILE_DIR = original_local_profile_dir
             local_world.PRIVATE_PROFILES_DIR = original_private_profiles_dir
 

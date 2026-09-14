@@ -21,7 +21,7 @@ def main():
             assert se.snapshot_profile_mods(profile, game)==1
             mod.unlink()
             assert se.restore_profile_mods(profile, game)==1
-            assert mod.read_bytes()==b'abc'
+            assert (mod.parent/'Test'/'Test.pak').read_bytes()==b'abc'
             print('server engine tests passed')
         finally:
             se.SERVER_PROFILES_DIR, se.APP_DATA_DIR=old_root, old_appdata

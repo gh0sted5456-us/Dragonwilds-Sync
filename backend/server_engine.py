@@ -21,7 +21,8 @@ from computer_profiles import apply_process_priority, resolve_computer_profile, 
 from health_model import apply_detected_hardware_references
 from server_layout import (NATIVE_LINUX, looks_like_retail_client, resolve_server_layout,
                            resolve_server_layout_from_exe)
-from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_staging_root,
+from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_layout,
+                                dedicated_profile_mod_roots,
                                 ensure_profile_mod_roots)
 from profile_mod_destinations import resolve_mod_install_paths
 from machine_paths import server_save_paths
@@ -31,17 +32,12 @@ from networking import DEFAULT_SYNC_DISCOVERY_PORT
 from player_tracker import PLAYER_SERVICE, PLAYER_BRIDGE
 from runtime_versions import cl_version_status
 from secret_store import SecretStore, is_reference
-from server_systems import (SHARE, STATE, PlayerLogMonitor, check_ue4ss_update, compute_mod_badges,
-                            runtime_prerequisite_status, capture_authoritative_runtimes,
-                            ensure_server_runtime_writable, gather_server_hardware_stats, RUNTIME_MUTATION_LOCK,
-                            install_authoritative_ue4ss_update, install_authoritative_runeschema_update,
-                            install_runeschema_zip, install_ue4ss_zip, local_ip_guess, detect_public_ip,
+from server_systems import (SHARE, STATE, PlayerLogMonitor, compute_mod_badges,
+                            runtime_prerequisite_status,
+                            ensure_server_runtime_writable, gather_server_hardware_stats,
+                            local_ip_guess, detect_public_ip,
                             scan_profile_snapshot_units,
-                            refresh_live_profile_metadata,
-                            _bundled_app_resource, BUNDLED_UE4SS_RESOURCE,
-                            BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE)
-from runeschema_flavors import list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
-import ue4ss_repository
+                            refresh_live_profile_metadata)
 
 DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
 DEDICATED_SERVER_EXE_ALIASES = ("RSDragonwildsServer.sh", "RSDragonwildsServer", "RSDragonwilds.exe", "RSDragonwildsServer.exe")
@@ -52,23 +48,15 @@ DEDICATED_SAVEGAMES_DIR = LOCAL_APPDATA / "RSDragonwilds" / "Saved" / "SaveGames
 PROFILE_MOD_SLOTS = ("UE4SS", "RuneSchema", "PAKs")
 SERVER_INFRASTRUCTURE_UE4SS = {"runeschema", "mods.txt", *UE4SS_BAKED_IN_DEFAULT_MODS}
 RUNTIME_SECRET_STORE = SecretStore(APP_DATA_DIR / "State" / "Secrets")
-OFFICIAL_RUNESCHEMA_REPOSITORY = "https://github.com/UnskippableCutscene/RuneSchema"
-EXPERIMENTAL_RUNESCHEMA_REPOSITORY = "https://github.com/gh0sted5456-us/RuneSchema"
-RUNESCHEMA_FLAVOR_MARKER = ".dragonwilds-sync-flavor.json"
-UE4SS_VERSION_MARKER = ".dragonwilds-sync-ue4ss.json"
 # Lane notes are profile furniture, never live mod content.
 LANE_NOTES = set(LANE_NOTE_NAMES)
-# RuneSchema core files survive every profile swap even if a malformed/missing
-# mods/ directory makes a resolver fall back to the core root.
-RUNESCHEMA_CORE_NAMES = {"config", "dlls", "enabled.txt", "mods.txt",
-                         RUNESCHEMA_FLAVOR_MARKER, UE4SS_VERSION_MARKER}
 
 
 def _profile_dir(profile_id: str) -> Path: return SERVER_PROFILES_DIR / profile_id
 
 def _profile_mods_dir(profile_id: str) -> Path:
-    """Compatibility name for the dedicated World's complete staged overlay."""
-    return dedicated_profile_staging_root(_profile_dir(profile_id))
+    """Compatibility name for the dedicated World's recognized mod lanes."""
+    return dedicated_profile_layout(_profile_dir(profile_id))["mods"]
 
 
 def _overlay_ledger(game_root: str | Path) -> Path:
@@ -115,7 +103,7 @@ def _retire_legacy_game_receipts(game_root: str | Path) -> None:
         pass
 
 def _profile_savegame_dir(profile_id: str) -> Path:
-    return _profile_mods_dir(profile_id) / "Saved" / "SaveGames"
+    return dedicated_profile_layout(_profile_dir(profile_id))["saved"] / "SaveGames"
 
 def _profile_backups_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "backups"
 
@@ -123,7 +111,7 @@ def _profile_server_config_dir(profile_id: str, platform_name: str = "WindowsSer
     """Return the live-platform configuration lane inside profile staging."""
     if platform_name not in {"WindowsServer", "LinuxServer"}:
         raise ValueError("Unsupported dedicated server configuration platform")
-    target = _profile_mods_dir(profile_id) / "Saved" / "Config" / platform_name
+    target = dedicated_profile_layout(_profile_dir(profile_id))["saved"] / "Config" / platform_name
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -369,37 +357,55 @@ def _tree_inventory(root: Path, *, exclude_names: set[str] | None = None) -> tup
 
 
 def snapshot_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Adopt live mod/loader files into the World's staged overlay.
+    """Adopt live loader and recognized mod entities into World staging.
 
     Routine profile switching no longer calls this function.  Profile storage
     is authoritative after adoption; normal activation only materializes from
     profile -> installation.
     """
     assert_dedicated_target(game_root, action="capture World mods from")
-    layout = resolve_server_layout(game_root)
-    destination = _profile_mods_dir(profile_id)
-    current = ensure_profile_mod_roots(destination)
-    staging = destination.with_name(destination.name + ".staging")
-    if staging.exists():
-        _remove_path(staging)
-    staged = ensure_profile_mod_roots(staging)
-    # Existing staged files remain authoritative. Adoption adds live loader and
-    # mod trees but deliberately never clones the Steam-owned executable.
-    _copy_children(current["root"], staged["root"], exclude_names=LANE_NOTES)
-    for staged_file in staged["root"].rglob("*"):
-        if staged_file.is_file():
-            staged_file.chmod(staged_file.stat().st_mode | stat.S_IWUSR)
-    copied = _copy_children(layout.win64_dir / "ue4ss", staged["win64"] / "ue4ss",
-                            exclude_names=LANE_NOTES)
+    live = resolve_server_layout(game_root)
+    profile = dedicated_profile_layout(_profile_dir(profile_id))
+    mods = dedicated_profile_mod_roots(_profile_dir(profile_id))
+    # Profile snapshots are operator-editable storage. Clear inherited
+    # read-only attributes before refreshing an existing entity in place.
+    for root in (profile["ue4ss_loader"], profile["runeschema_loader"],
+                 mods["ue4ss"], mods["runeschema"], mods["paks"]):
+        for path in root.rglob("*") if root.exists() else ():
+            if path.is_file():
+                path.chmod(path.stat().st_mode | stat.S_IWUSR)
+    copied = _copy_children(
+        live.win64_dir / "ue4ss",
+        profile["ue4ss_loader"] / "Binaries/Win64/ue4ss",
+        exclude_names={"Mods", *LANE_NOTES})
     for shim_name in ("dwmapi.dll", "version.dll"):
-        shim = layout.win64_dir / shim_name
+        shim = live.win64_dir / shim_name
         if shim.is_file():
-            shutil.copy2(shim, staged["win64"] / shim_name)
+            target = profile["ue4ss_loader"] / "Binaries/Win64" / shim_name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(shim, target)
             copied += 1
-    copied += _copy_children(layout.paks_mods_dir, staged["paks"], exclude_names=LANE_NOTES)
-    if destination.exists():
-        _remove_path(destination)
-    staging.replace(destination)
+    copied += _copy_children(
+        live.runeschema_root,
+        profile["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema",
+        exclude_names={"mods", *LANE_NOTES})
+    copied += _copy_children(live.ue4ss_mods_dir, mods["ue4ss"],
+                            exclude_names={"RuneSchema", "mods.txt", *LANE_NOTES})
+    copied += _copy_children(live.runeschema_mods_dir, mods["runeschema"],
+                            exclude_names=LANE_NOTES)
+    for child in live.paks_mods_dir.iterdir() if live.paks_mods_dir.exists() else ():
+        if child.name.casefold() in LANE_NOTES:
+            continue
+        entity_name = (child.name if child.is_dir() else
+                       (child.name[:-8] if child.name.casefold().endswith(".pak.sig") else child.stem))
+        entity = mods["paks"] / entity_name
+        entity.mkdir(parents=True, exist_ok=True)
+        if child.is_dir() and not child.is_symlink():
+            shutil.copytree(child, entity, dirs_exist_ok=True)
+            copied += sum(1 for path in child.rglob("*") if path.is_file())
+        elif child.is_file():
+            shutil.copy2(child, entity / child.name)
+            copied += 1
     return copied
 
 
@@ -410,7 +416,7 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
         raise ValueError("Invalid mod key.")
     layout = resolve_server_layout(game_root)
     live_roots = resolve_mod_install_paths(load_state(), "server", game_root)
-    stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
+    stored = dedicated_profile_mod_roots(_profile_dir(profile_id))
     if group == "ue4ss_mod":
         if name.casefold() in SERVER_INFRASTRUCTURE_UE4SS:
             raise ValueError("Runtime infrastructure is not a World-owned mod unit.")
@@ -438,10 +444,10 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     _retire_legacy_game_receipts(game_root)
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
-    stored = ensure_profile_mod_roots(_profile_mods_dir(profile_id))
-    from mod_deployment_cleanup import deploy_game_overlay
-    return deploy_game_overlay(
-        stored["root"], resolve_server_layout(game_root).game_root,
+    stored = dedicated_profile_layout(_profile_dir(profile_id))
+    from mod_deployment_cleanup import deploy_layered_world_profile
+    return deploy_layered_world_profile(
+        stored, resolve_server_layout(game_root).game_root,
         _overlay_ledger(game_root), APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
 
 
@@ -454,7 +460,27 @@ def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_pa
     source = live_root.joinpath(*parts).resolve(strict=False)
     if source == live_root or not source.is_relative_to(live_root):
         raise ValueError("Staged file path escaped the game root")
-    target = _profile_mods_dir(profile_id).joinpath(*parts)
+    relative = "/".join(parts)
+    lowered = relative.casefold()
+    profile = dedicated_profile_layout(_profile_dir(profile_id))
+    prefixes = (
+        ("binaries/win64/ue4ss/mods/runeschema/mods/", profile["runeschema"]),
+        ("binaries/win64/ue4ss/mods/runeschema/",
+         profile["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema"),
+        ("binaries/win64/ue4ss/mods/", profile["ue4ss"]),
+        ("content/paks/~mods/", profile["paks"]),
+        ("saved/", profile["saved"]),
+        ("binaries/win64/ue4ss/", profile["ue4ss_loader"] / "Binaries/Win64/ue4ss"),
+    )
+    target = None
+    for prefix, destination in prefixes:
+        if lowered.startswith(prefix):
+            target = destination.joinpath(*parts[len(prefix.rstrip('/').split('/')):])
+            break
+    if target is None and lowered in {"binaries/win64/dwmapi.dll", "binaries/win64/version.dll"}:
+        target = profile["ue4ss_loader"].joinpath(*parts)
+    if target is None:
+        target = profile["overlay"].joinpath(*parts)
     if source.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
@@ -625,317 +651,79 @@ def _runtime_secret(value: object, label: str) -> str:
     return resolved
 
 
-def _restore_official_runeschema_once(game_root: str, *, approved: bool = False) -> dict:
-    """Replace retired launcher variants with one complete official GitHub core."""
-    if not str(game_root or "").strip():
-        raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
-    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-    state = load_state()
-    install = state.setdefault("application", {}).setdefault("server_install", {})
-    if approved:
-        result = install_authoritative_runeschema_update(OFFICIAL_RUNESCHEMA_REPOSITORY, game_root)
-        return {**result, "ok": True, "changed": True}
-    manual = [str(item) for item in (install.get("runeschema_manual_override_roots") or []) if str(item)]
-    if root_key in manual:
-        return {"ok": True, "changed": False, "manual_override": True, "source": "manual override"}
-    restored = [str(item) for item in (install.get("official_runeschema_restored_roots") or []) if str(item)]
-    if root_key in restored:
-        return {"ok": True, "changed": False, "source": OFFICIAL_RUNESCHEMA_REPOSITORY}
-    if _runeschema_main_dll(resolve_server_layout(game_root).runeschema_root):
-        return {"ok": True, "changed": False, "approval_required": True, "source": "installed runtime"}
-    raise RuntimeError("RuneSchema installation requires approval. Choose a version in Settings before launching.")
-
-
-def _restore_managed_runeschema_once(game_root: str, variant: str, *, approved: bool = False) -> dict:
-    """Materialize the selected managed RuneSchema channel once per server root."""
-    selected = str(variant or "official").strip().casefold()
-    if selected not in {"official", "experimental"}:
-        raise ValueError("Managed RuneSchema variant must be official or experimental.")
-    if selected == "official":
-        return _restore_official_runeschema_once(game_root, approved=approved)
-    if not str(game_root or "").strip():
-        raise ValueError("Set Settings → Server → Server Directory before restoring RuneSchema.")
-    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-    # Experimental is a versioned launcher payload, not a sticky channel name.
-    # Verify the exact archive and live DLL hashes on every preflight so an old
-    # cached experimental build cannot be mistaken for the selected one.
-    bundled = _bundled_app_resource(*BUNDLED_RUNESCHEMA_EXPERIMENTAL_RESOURCE)
-    if bundled.is_file():
-        digest = hashlib.sha256(bundled.read_bytes()).hexdigest()
-        if _installed_flavor_matches(game_root, "experimental", digest):
-            return {"ok": True, "changed": False, "source": bundled.name,
-                    "variant": selected, "verified": True, "archive_sha256": digest}
-        live_root = resolve_server_layout(game_root).runeschema_root
+def _write_dedicated_config_file(config_file: Path, managed: dict) -> None:
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    previous_mode = config_file.stat().st_mode if config_file.exists() else None
+    if previous_mode is not None:
         try:
-            same_archive = json.loads((live_root / RUNESCHEMA_FLAVOR_MARKER).read_text(encoding="utf-8")).get("archive_sha256") == digest
-        except (OSError, ValueError):
-            same_archive = False
-        if _runeschema_main_dll(live_root) and not (approved or same_archive):
-            return {"ok": True, "changed": False, "approval_required": True, "source": "installed runtime"}
-        result = install_runeschema_zip(str(bundled), game_root)
-        if str(result.get("kind") or "") != "core":
-            raise RuntimeError("The bundled Experimental RuneSchema is not a complete core runtime.")
-        _write_installed_flavor_marker(game_root, "experimental", digest)
-        state = load_state()
-        install = state.setdefault("application", {}).setdefault("server_install", {})
-        managed = dict(install.get("runeschema_managed_variant_roots") or {})
-        managed[root_key] = selected
-        install["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
-        install["runeschema_source_url"] = EXPERIMENTAL_RUNESCHEMA_REPOSITORY + "/releases/tag/0.6.1E"
-        install["runeschema_source_name"] = "Experimental · RuneSchema 0.6.1E"
-        install["runeschema_installed_at"] = time.time()
-        install["official_runeschema_restored_roots"] = [
-            item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
-        save_state(state)
-        return {**result, "ok": True, "changed": True, "source": bundled.name,
-                "variant": selected, "archive_sha256": digest}
-    state = load_state()
-    install = state.setdefault("application", {}).setdefault("server_install", {})
-    managed = dict(install.get("runeschema_managed_variant_roots") or {})
-    if managed.get(root_key) == selected and _runeschema_main_dll(resolve_server_layout(game_root).runeschema_root):
-        return {"ok": True, "changed": False, "source": EXPERIMENTAL_RUNESCHEMA_REPOSITORY, "variant": selected}
-    raise RuntimeError("RuneSchema installation requires approval. Choose a version in Settings before launching.")
-
-
-def _file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _runeschema_main_dll(root: Path) -> Path | None:
-    dll_dir = root / "dlls"
-    if not dll_dir.is_dir():
-        return None
-    return next((path for path in dll_dir.iterdir()
-                 if path.is_file() and path.name.casefold() == "main.dll"), None)
-
-
-def _installed_flavor_matches(game_root: str, flavor_id: str, archive_sha256: str) -> bool:
-    """Prove that the selected flavor, including its native DLL, is live."""
-    root = resolve_server_layout(game_root).runeschema_root
-    marker = root / RUNESCHEMA_FLAVOR_MARKER
-    main_dll = _runeschema_main_dll(root)
-    if not marker.is_file() or main_dll is None:
-        return False
+            config_file.chmod(previous_mode | stat.S_IWUSR)
+        except OSError:
+            pass
+    preserved: list[str] = []
+    if config_file.is_file():
+        try:
+            previous = config_file.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            previous = ""
+        in_canonical = False
+        for line in previous.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_canonical = stripped.casefold() == "[/script/dominion.dedicatedserversettings]"
+                continue
+            if not in_canonical or not stripped or stripped.startswith((";", "#")):
+                continue
+            key = stripped.split("=", 1)[0].strip().casefold() if "=" in stripped else ""
+            if key not in managed:
+                preserved.append(line)
+    content = (";METADATA=(Diff=true, UseCommands=true)\n[SectionsToSave]\nbCanSaveAllSections=true\n\n"
+               "[/Script/Dominion.DedicatedServerSettings]\n"
+               + "\n".join(f"{key}={value}" for key, value in managed.values()) + "\n"
+               + (("\n".join(preserved) + "\n") if preserved else ""))
+    tmp = config_file.with_suffix(config_file.suffix + ".dragonwilds.tmp")
     try:
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-        return (
-            str(payload.get("flavor_id") or "") == str(flavor_id)
-            and str(payload.get("archive_sha256") or "") == str(archive_sha256)
-            and str(payload.get("main_dll_sha256") or "") == _file_sha256(main_dll)
-        )
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return False
-
-
-def _write_installed_ue4ss_marker(game_root: str, version_id: str, archive_sha256: str) -> None:
-    core = resolve_server_layout(game_root).ue4ss_core_dir
-    main_dll = core / "UE4SS.dll"
-    if not main_dll.is_file():
-        raise RuntimeError("The selected UE4SS build did not install UE4SS.dll.")
-    marker = core / UE4SS_VERSION_MARKER
-    temporary = marker.with_suffix(marker.suffix + ".tmp")
-    temporary.write_text(json.dumps({
-        "schema": 1, "version_id": str(version_id), "archive_sha256": str(archive_sha256),
-        "main_dll_sha256": _file_sha256(main_dll), "installed_at": time.time(),
-    }, indent=2), encoding="utf-8")
-    os.replace(temporary, marker)
-
-
-def _installed_ue4ss_matches(game_root: str, version_id: str, archive_sha256: str) -> bool:
-    """Prove that the selected UE4SS build, including its native DLL, is live."""
-    core = resolve_server_layout(game_root).ue4ss_core_dir
-    marker = core / UE4SS_VERSION_MARKER
-    main_dll = core / "UE4SS.dll"
-    if not marker.is_file() or not main_dll.is_file():
-        return False
+        tmp.write_text(content, encoding="utf-8")
+        os.replace(tmp, config_file)
+    finally:
+        tmp.unlink(missing_ok=True)
     try:
-        payload = json.loads(marker.read_text(encoding="utf-8"))
-        return (
-            str(payload.get("version_id") or "") == str(version_id)
-            and str(payload.get("archive_sha256") or "") == str(archive_sha256)
-            and str(payload.get("main_dll_sha256") or "") == _file_sha256(main_dll)
-        )
-    except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return False
+        config_file.chmod(config_file.stat().st_mode | stat.S_IWUSR)
+    except OSError:
+        pass
 
 
-def _apply_profile_ue4ss(profile_id: str, profile: dict, game_root: str) -> dict:
-    """Materialize the World profile's selected UE4SS build (baseline /
-    downloaded-experimental / imported -- see ue4ss_repository.py) without
-    touching anything else already installed under Mods/. install_ue4ss_zip
-    already excludes RuneSchema's own child-mod folder, and none of these
-    source ZIPs (bundled baseline, GitHub releases, user imports) ever
-    contain a World's *other* installed mods in the first place, so a normal
-    extraction only ever overwrites UE4SS's own engine files and its own
-    baked-in default Mods -- mirrors _apply_profile_runeschema's skip-if-
-    unchanged shape via a installed-version marker keyed on the live DLL hash."""
-    selected_id = str(profile.get("ue4ss_active_version_id") or ue4ss_repository.BASELINE_ID)
-    try:
-        archive = ue4ss_repository.resolve_archive(selected_id)
-    except (KeyError, FileNotFoundError):
-        # A deleted/renamed repository entry, or a build shipped without the
-        # bundled baseline resource, must not block launch -- keep whatever
-        # is already installed and let the operator pick a build again.
-        return {"ok": True, "changed": False, "source": selected_id, "fallback": True}
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    if _installed_ue4ss_matches(game_root, selected_id, digest):
-        return {"ok": True, "changed": False, "source": selected_id, "verified": True}
-    if selected_id == ue4ss_repository.BASELINE_ID and not profile.get("ue4ss_selection_pending") and (resolve_server_layout(game_root).win64_dir / "ue4ss" / "UE4SS.dll").is_file():
-        return {"ok": True, "changed": False, "source": "installed runtime", "approval_required": True}
-    result = install_ue4ss_zip(str(archive), str(resolve_server_layout(game_root).win64_dir))
-    _write_installed_ue4ss_marker(game_root, selected_id, digest)
-    profile = load_server_profile(profile_id)
-    profile["ue4ss_active_version_id"] = selected_id
-    profile.pop("ue4ss_selection_pending", None)
-    profile["ue4ss_installed_at"] = time.time()
-    save_server_profile(profile_id, profile)
-    return {**result, "changed": True, "source": selected_id}
-
-
-def _write_installed_flavor_marker(game_root: str, flavor_id: str, archive_sha256: str) -> None:
-    root = resolve_server_layout(game_root).runeschema_root
-    main_dll = _runeschema_main_dll(root)
-    if main_dll is None:
-        raise RuntimeError("The selected RuneSchema flavor did not install dlls/main.dll.")
-    marker = root / RUNESCHEMA_FLAVOR_MARKER
-    temporary = marker.with_suffix(marker.suffix + ".tmp")
-    temporary.write_text(json.dumps({
-        "schema": 1,
-        "flavor_id": str(flavor_id),
-        "archive_sha256": str(archive_sha256),
-        "main_dll_sha256": _file_sha256(main_dll),
-        "installed_at": time.time(),
-    }, indent=2), encoding="utf-8")
-    os.replace(temporary, marker)
-
-
-def _apply_profile_runeschema(profile_id: str, profile: dict, game_root: str) -> dict:
-    """Materialize the World profile's selected core without mixing releases."""
-    selected_id = str(profile.get("runeschema_flavor_id") or "official")
-    if selected_id in {"official", "experimental"}:
-        if profile.get("runeschema_flavor_applied_sha256"):
-            root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-            state = load_state()
-            install = state.setdefault("application", {}).setdefault("server_install", {})
-            install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
-            save_state(state)
-        result = _restore_managed_runeschema_once(game_root, selected_id, approved=bool(profile.get("runeschema_selection_pending")))
-        if result.get("approval_required"):
-            return result
-        profile = load_server_profile(profile_id)
-        profile.pop("runeschema_selection_pending", None)
-        profile.pop("runeschema_flavor_applied_sha256", None)
-        profile["runeschema_source_name"] = ("Experimental · RuneSchema 0.6.1E" if selected_id == "experimental" else "Official · UnskippableCutscene")
-        save_server_profile(profile_id, profile)
-        return result
-    status = list_runeschema_flavors(profile_id)
-    selected = next((row for row in status["flavors"] if str(row.get("id")) == selected_id), None)
-    if not selected:
-        raise RuntimeError("The selected RuneSchema flavor is missing from this World profile.")
-    digest = str(selected.get("sha256") or "")
-    # The marker includes the live native DLL hash, so it proves that repair did
-    # not replace the selected flavor. Avoid rewriting a loaded main.dll on every
-    # launch or manifest publish.
-    if digest and _installed_flavor_matches(game_root, selected_id, digest):
-        return {"ok": True, "changed": False, "source": selected.get("name"),
-                "verified_flavor": True}
-    _, archive = select_runeschema_flavor(profile_id, selected_id)
-    result = install_runeschema_zip(str(archive), game_root)
-    if str(result.get("kind") or "") != "core":
-        raise RuntimeError("The saved RuneSchema flavor is not a complete core runtime.")
-    _write_installed_flavor_marker(game_root, selected_id, digest)
-    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-    state = load_state()
-    install = state.setdefault("application", {}).setdefault("server_install", {})
-    managed = dict(install.get("runeschema_managed_variant_roots") or {})
-    managed.pop(root_key, None)
-    install["runeschema_managed_variant_roots"] = managed
-    save_state(state)
-    profile = load_server_profile(profile_id)
-    profile["runeschema_flavor_applied_sha256"] = digest
-    profile["runeschema_source_name"] = str(selected.get("name") or "Custom RuneSchema")
-    profile["runeschema_installed_at"] = time.time()
-    save_server_profile(profile_id, profile)
-    root_key = os.path.normcase(str(resolve_server_layout(game_root).game_root.resolve(strict=False)))
-    state = load_state()
-    install = state.setdefault("application", {}).setdefault("server_install", {})
-    install["official_runeschema_restored_roots"] = [item for item in (install.get("official_runeschema_restored_roots") or []) if str(item) != root_key]
-    save_state(state)
-    return {**result, "changed": True, "source": selected.get("name")}
-
-
-def _assert_profile_runtime_selection(profile_id: str, profile: dict, game_root: str) -> dict:
-    """Compatibility seam: staged overlay deployment owns all runtime files."""
-    return {
-        "ue4ss": {"ok": True, "changed": False, "source": "world-staging-profile"},
-        "runeschema": {"ok": True, "changed": False, "source": "world-staging-profile"},
-        "activation": {},
-        "cache_warning": "",
-    }
-
-
-def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
+def _dedicated_config_values(cfg: dict) -> dict:
     owner_id = str(cfg.get("owner_id", "")).strip(); server_name = str(cfg.get("server_name", "")).strip(); world_name = str(cfg.get("world_name", "")).strip()
     admin_pass = _runtime_secret(cfg.get("admin_pass", ""), "admin password")
     world_pass = _runtime_secret(cfg.get("world_pass", ""), "World password")
     port = str(cfg.get("port", "7777")).strip() or "7777"
-    managed = {
+    return {
         "adminpassword": ("AdminPassword", admin_pass), "ownerid": ("OwnerId", owner_id),
         "worldpassword": ("WorldPassword", world_pass), "servername": ("ServerName", server_name),
         "defaultworldname": ("DefaultWorldName", world_name), "port": ("Port", port),
     }
+
+
+def write_staged_dedicated_config_templates(profile_id: str, cfg: dict) -> list[Path]:
+    """Hydrate both browsable platform templates from the World settings."""
+    saved = dedicated_profile_layout(_profile_dir(profile_id))["saved"]
+    managed = _dedicated_config_values(cfg)
+    targets = [saved / "Config" / platform / "DedicatedServer.ini"
+               for platform in ("WindowsServer", "LinuxServer")]
+    for target in targets:
+        _write_dedicated_config_file(target, managed)
+    return targets
+
+
+def write_dedicated_config(cfg: dict, server_root: str = "") -> Path:
+    managed = _dedicated_config_values(cfg)
     targets = dedicated_config_targets(cfg, server_root)
     if not targets:
         raise RuntimeError("Could not resolve a DedicatedServer.ini target.")
     for config_file in targets:
-        config_file.parent.mkdir(parents=True, exist_ok=True)
-        previous_mode = config_file.stat().st_mode if config_file.exists() else None
-        if previous_mode is not None:
-            try:
-                config_file.chmod(previous_mode | stat.S_IWUSR)
-            except OSError:
-                pass
-        # Dragonwilds adds identity and roster fields (for example ServerGuid
-        # and KnownPlayerList) to this section. Preserve every engine-owned
-        # line while replacing each launcher-owned key exactly once.
-        preserved: list[str] = []
-        if config_file.is_file():
-            try:
-                previous = config_file.read_text(encoding="utf-8-sig", errors="replace")
-            except OSError:
-                previous = ""
-            in_canonical = False
-            for line in previous.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    in_canonical = stripped.casefold() == "[/script/dominion.dedicatedserversettings]"
-                    continue
-                if not in_canonical or not stripped or stripped.startswith((";", "#")):
-                    continue
-                key = stripped.split("=", 1)[0].strip().casefold() if "=" in stripped else ""
-                if key not in managed:
-                    preserved.append(line)
-        content = (";METADATA=(Diff=true, UseCommands=true)\n[SectionsToSave]\nbCanSaveAllSections=true\n\n"
-                   "[/Script/Dominion.DedicatedServerSettings]\n"
-                   + "\n".join(f"{key}={value}" for key, value in managed.values()) + "\n"
-                   + (("\n".join(preserved) + "\n") if preserved else ""))
-        tmp = config_file.with_suffix(config_file.suffix + ".dragonwilds.tmp")
-        try:
-            tmp.write_text(content, encoding="utf-8")
-            os.replace(tmp, config_file)
-        finally:
-            tmp.unlink(missing_ok=True)
-        # The dedicated process must be able to persist ServerGuid and its
-        # KnownPlayerList. The launcher owns the managed values, not the file.
-        try:
-            mode = config_file.stat().st_mode
-            config_file.chmod(mode | stat.S_IWUSR)
-        except OSError:
-            pass
+        # Preserve engine-owned ServerGuid/KnownPlayerList lines while
+        # refreshing only launcher-owned settings.
+        _write_dedicated_config_file(config_file, managed)
     for save_dir in {target.parent.parent.parent / "SaveGames" for target in targets}:
         try:
             save_dir.mkdir(parents=True, exist_ok=True)
@@ -1302,9 +1090,6 @@ class ServerEngine:
         self.events: list[dict] = []; self.monitor = PlayerLogMonitor(); self.hw_stats: dict = {}; self.public_ip: str | None = None
         self.process_output: list[dict] = []
         self.network_setup: dict = {"pending": False, "game": {}, "sync": {}, "public_ip": ""}
-        self._last_runtime_check = 0.0
-        self._runtime_check_thread: threading.Thread | None = None
-        self._runtime_update_in_progress = False
         self.metric_history: list[dict] = []
         self._metric_prev_net: tuple[float, int, int] | None = None
         self._metric_proc_cpu: dict[int, object] = {}
@@ -1450,12 +1235,6 @@ class ServerEngine:
             self._event(f"Windows power-plan restoration needs attention: {restored['error']}", "warn")
         return restored
 
-    def _maybe_schedule_runtime_check(self, running_pid: int | None) -> None:
-        # Dedicated runtimes are operator-owned files in the active World's
-        # staged overlay. The launcher neither selects nor updates them.
-        return
-
-
     def _sample_metrics(self, pid: int | None) -> dict:
         now = time.time()
         sample = {"ts": now, "cpu_percent": 0.0, "process_cpu_percent": 0.0, "process_ram_bytes": 0,
@@ -1501,7 +1280,6 @@ class ServerEngine:
         if pid is not None:
             PLAYER_BRIDGE.demand(18.0)
         if pid is None: self.started_at = None
-        self._maybe_schedule_runtime_check(pid)
         profile = load_server_profile(self.active_profile_id) if self.active_profile_id else {}
         reported_cl = str(monitor.get("reported_cl") or profile.get("last_reported_cl") or "")
         if self.active_profile_id and reported_cl and reported_cl != str(profile.get("last_reported_cl") or ""):
@@ -1553,7 +1331,7 @@ class ServerEngine:
                 "active_profile_id": self.active_profile_id, "players": [p.get("name") for p in merged_players.get("players", [])], "player_details": merged_players.get("players", []), "player_count": merged_players.get("player_count", monitor.get("player_count", 0)),
                 "player_tracker": {"connected": merged_players.get("tracker_connected", False), "last_update": merged_players.get("last_tracker_update")},
                 "share": SHARE.status(), "hw_stats": self.hw_stats, "lan_ip": local_ip_guess(), "public_ip": self.public_ip,
-                "runtime_prerequisites": prereq, "runtime_update_in_progress": self._runtime_update_in_progress,
+                "runtime_prerequisites": prereq,
                 "cl_version": cl_version, "reported_cl": cl_version.get("reported_cl") or "",
                 "network_setup": dict(self.network_setup), "game_root": root, "process_output": diagnostic_output,
                 "metrics": metrics, "metric_history": list(self.metric_history), "computer_profile": ({**self._resolved_computer_profile(), **self._computer_profile_status}), "events": (persistent_events or self.events)[-150:]}
@@ -1609,10 +1387,14 @@ class ServerEngine:
         configs = snapshot_profile_server_config(profile_id, root)
         save = snapshot_profile_savegame(profile_id, executable) if executable else False
         layout = resolve_server_layout(root)
-        from mod_deployment_cleanup import deploy_game_overlay
+        from mod_deployment_cleanup import deploy_layered_world_profile
         with tempfile.TemporaryDirectory(prefix='dws-unload-') as empty:
-            deploy_game_overlay(Path(empty), layout.game_root, _overlay_ledger(root),
-                                APP_DATA_DIR / 'Backups' / 'DisplacedWorldOverlays')
+            empty_root = Path(empty)
+            empty_profile = {key: empty_root / key for key in (
+                'overlay', 'ue4ss_loader', 'runeschema_loader', 'ue4ss',
+                'runeschema', 'paks', 'saved')}
+            deploy_layered_world_profile(empty_profile, layout.game_root, _overlay_ledger(root),
+                                         APP_DATA_DIR / 'Backups' / 'DisplacedWorldOverlays')
         _clear_children(layout.config_dir)
         live_save = _live_savegames_dir(executable) if executable else None
         if live_save is not None and live_save.exists():
@@ -1826,8 +1608,6 @@ class ServerEngine:
 
     def start_world(self, profile_id: str) -> dict:
         """Canonical Start World: publish/share first, then launch the game server."""
-        if self._runtime_update_in_progress:
-            raise RuntimeError("An automatic UE4SS runtime update is being installed. Start World again after it finishes.")
         published = self.publish(profile_id)
         try: runtime = self.start_dedicated(profile_id)
         except Exception:

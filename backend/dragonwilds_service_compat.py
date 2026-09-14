@@ -28,8 +28,9 @@ from sync_engine import _running_game_pid, activate_or_adopt_client_world_profil
 from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR, application_user_id, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
-                           server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
-                           _apply_profile_runeschema, apply_ue4ss_console_policy, ue4ss_console_policy_status,
+                             server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
+                             write_staged_dedicated_config_templates,
+                           apply_ue4ss_console_policy, ue4ss_console_policy_status,
                            restore_profile_mods, restore_profile_server_config, restore_profile_savegame,
                            mirror_live_overlay_file)
 from shared_mod_repository import (public_index as cached_mod_repository, refresh_repository, publish_from_profile, deploy_entry,
@@ -83,10 +84,10 @@ from server_engine import player_history_payload
 from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
 
 from server_systems import (
-    SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, check_ue4ss_update, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
+    SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
     delete_dedicated_server_files, delete_rsdragonwilds_appdata, delete_verified_game_install, detect_mod_zip_kind, detect_public_ip, local_ip_guess,
-    download_steamcmd, install_authoritative_ue4ss_update, install_authoritative_ue4ss_zip, install_authoritative_runeschema_update, install_dedicated_server, install_runeschema_zip,
-    ensure_base_runtimes, ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, generate_server_mods_txt, inspect_world_mod_zip, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, world_sync_fingerprint, RUNESCHEMA_RUNTIME_DIR,
+    download_steamcmd, install_dedicated_server,
+    ensure_client_base_runtimes, ensure_rsdwtools_baseline, runtime_prerequisite_status, inspect_world_mod_zip, install_world_mod_zip, list_profile_backups, move_mod_unit, persist_unit_overrides, set_mod_classification_fast, refresh_live_profile_metadata, scan_for_servers, probe_server_address, scan_mod_units, scan_profile_snapshot_units, gather_server_hardware_stats, user_visible_mod_unit, wipe_install_after_backup, world_sync_fingerprint, RUNESCHEMA_RUNTIME_DIR,
     rsdragonwilds_appdata_root, pop_scan_warnings as pop_server_scan_warnings,
 )
 from public_worlds import discover_public_worlds, augment_with_sync_directory, fetch_lobbysup_history
@@ -113,7 +114,6 @@ from world_maintenance import (
     update_world_config_policy, world_save_status, list_server_mod_files, open_server_mod_file,
     save_server_mod_file, create_server_mod_file, copy_server_mod_file, delete_server_mod_file, remove_server_mod,
 )
-from runeschema_flavors import delete_flavor as delete_runeschema_flavor, import_flavor as import_runeschema_flavor, list_flavors as list_runeschema_flavors, select_flavor as select_runeschema_flavor
 
 
 def now_iso() -> str:
@@ -4622,7 +4622,10 @@ def handle(method: str, params: dict) -> object:
         phrase = str(params.get("confirmation") or "").strip()
         if target not in {"client", "server"}:
             raise ValueError("Reset target must be client or server.")
-        expected = "RESET DRAGONWILDS" if target == "client" else "RESET SERVER"
+        if target == "server":
+            raise ValueError(
+                "Dedicated overlay reset was removed. Edit the World staging folder, then reactivate the profile.")
+        expected = "RESET DRAGONWILDS"
         if phrase != expected:
             raise ValueError(f"Destructive reset requires the exact confirmation phrase: {expected}")
 
@@ -4651,23 +4654,6 @@ def handle(method: str, params: dict) -> object:
             return {"ok": bool(runtime.get("status", {}).get("ok")), "target": target, "backup": backup,
                     "ownership_reset": ownership_reset, "removed": removed,
                     "runtime": runtime, "steam_uri": "", "next": "Managed runtimes were repaired without deleting Steam/EOS files."}
-
-        ENGINE.assert_stopped()
-        install_dir, steamcmd_dir, _server_exe = _server_install_paths(state)
-        if not install_dir:
-            raise ValueError("Set Settings → Servers → Server Directory first.")
-        if not steamcmd_dir:
-            steamcmd_dir = str(steamcmd_root_for_install(install_dir))
-        backup = backup_install_for_reset(install_dir, label="server")
-        removed = wipe_install_after_backup(install_dir)
-        install_cfg = application.setdefault("server_install", {})
-        install_cfg.update({"install_dir": install_dir, "steamcmd_dir": steamcmd_dir,
-                            "installed_at": time.time(), "installed_build_source": "managed_mod_reset_preserve_steam_eos"})
-        runtime = ensure_base_runtimes(_server_runtime_root(state), ue4ss_source_url=str(install_cfg.get("ue4ss_source_url") or ""),
-                                       runeschema_source_url=str(install_cfg.get("runeschema_source_url") or ""))
-        save_state(state)
-        return {"ok": bool(runtime.get("ok")), "target": target, "backup": backup, "removed": removed,
-                "installed": {"preserved": True}, "runtime": runtime, "state": public_state(state)}
 
     if method == "application.reset.repair_client":
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
@@ -5334,6 +5320,7 @@ def handle(method: str, params: dict) -> object:
             if isinstance(params.get("classification"), dict):
                 profile["classification"] = normalize_world_classification(params.get("classification"), tags=profile.get("tags") or [], host_type="dedicated", visibility="public")
             save_server_profile(profile_id, profile)
+            write_staged_dedicated_config_templates(profile_id, profile.get("dedicated_config") or {})
         if not state.setdefault("server", {}).get("active_world_id"):
             state["server"]["active_world_id"] = profile_id
             ENGINE.active_profile_id = profile_id
@@ -5537,6 +5524,7 @@ def handle(method: str, params: dict) -> object:
             # Every gameplay-setting save hydrates the actual server file. A
             # password-only edit must not update Sync while leaving
             # DedicatedServer.ini on the previous value until another launch.
+            write_staged_dedicated_config_templates(profile_id, dedicated)
             live_root = server_root_for_profile(profile)
             if live_root and Path(live_root).exists():
                 write_dedicated_config(dedicated, live_root)
@@ -6890,115 +6878,6 @@ def handle(method: str, params: dict) -> object:
                 "runtime": {"managed": False, "source": "world-staging-profile"},
                 "rsdw_cache": rsdw_refresh, "state": public_state(state)}
 
-    if method == "server.install.ensure_runtimes":
-        ENGINE.assert_stopped()
-        install_dir, _, _ = _server_install_paths(state)
-        if not install_dir:
-            raise ValueError("Set Settings → Server → Server Directory first.")
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        result = ensure_base_runtimes(_server_runtime_root(state), ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
-        return {"result": result, "state": public_state(state)}
-
-    if method == "server.world.runeschema_flavors.list":
-        return list_runeschema_flavors(str(params.get("id") or ""))
-
-    if method == "server.world.runeschema_flavors.import":
-        profile_id = str(params.get("id") or "")
-        result = import_runeschema_flavor(profile_id, str(params.get("zip_path") or ""), str(params.get("name") or ""))
-        return {**result, "state": public_state(state)}
-
-    if method == "server.world.runeschema_flavors.select":
-        ENGINE.assert_stopped()
-        profile_id = str(params.get("id") or "")
-        result, _archive = select_runeschema_flavor(profile_id, str(params.get("flavor_id") or "official"))
-        profile = load_server_profile(profile_id)
-        profile["runeschema_selection_pending"] = True
-        save_server_profile(profile_id, profile)
-        if state.setdefault("server", {}).get("active_world_id") == profile_id:
-            root = server_root_for_profile(profile)
-            applied = _apply_profile_runeschema(profile_id, profile, root)
-            ENGINE.scan_mods(profile_id)
-        else:
-            applied = {"deferred": True, "message": "Flavor saved; activate this World to apply it to the shared server runtime."}
-        return {**result, "applied": applied, "state": public_state(state)}
-
-    if method == "server.world.runeschema_flavors.delete":
-        result = delete_runeschema_flavor(str(params.get("id") or ""), str(params.get("flavor_id") or ""))
-        return {**result, "state": public_state(state)}
-
-    if method == "server.install.runeschema_core":
-        ENGINE.assert_stopped()
-        install_dir, _, _ = _server_install_paths(state)
-        if not install_dir:
-            raise ValueError("Set Settings → Server → Server Directory first.")
-        zip_path = str(params.get("zip_path") or "").strip()
-        if not zip_path:
-            raise ValueError("Choose a RuneSchema core ZIP first.")
-        runtime_root = _server_runtime_root(state)
-        result = install_runeschema_zip(zip_path, runtime_root)
-        if str((result or {}).get("kind") or "").lower() != "core":
-            raise ValueError("The selected ZIP was not recognized as a RuneSchema core package (expected a core package containing a mods/ directory).")
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        install_meta["runeschema_installed_at"] = time.time()
-        install_meta["runeschema_source_name"] = "Manual override · " + Path(zip_path).name
-        root_key = os.path.normcase(str(resolve_server_layout(runtime_root).game_root.resolve(strict=False)))
-        overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
-        restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
-        install_meta["runeschema_manual_override_roots"] = [*([item for item in overrides if item != root_key][-7:]), root_key]
-        install_meta["official_runeschema_restored_roots"] = [item for item in restored if item != root_key]
-        save_state(state)
-        repaired = ensure_base_runtimes(runtime_root, allow_ue4ss_download=True)
-        return {"result": result, "runtime": repaired, "state": public_state(state)}
-
-    if method == "server.install.ue4ss_zip":
-        ENGINE.assert_stopped()
-        install_dir, _, _ = _server_install_paths(state)
-        if not install_dir:
-            raise ValueError("Set Settings → Server → Server Directory first.")
-        zip_path = str(params.get("zip_path") or "").strip()
-        if not zip_path:
-            raise ValueError("Choose a UE4SS ZIP first.")
-        runtime_root = _server_runtime_root(state)
-        result = install_authoritative_ue4ss_zip(zip_path, runtime_root)
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        install_meta["ue4ss_installed_version"] = Path(zip_path).name
-        install_meta["ue4ss_installed_at"] = time.time()
-        save_state(state)
-        repaired = ensure_base_runtimes(runtime_root, allow_ue4ss_download=False, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=str(install_meta.get("runeschema_source_url") or ""))
-        return {"result": result, "runtime": repaired, "state": public_state(state)}
-
-    if method == "server.install.runeschema_update":
-        ENGINE.assert_stopped()
-        install_dir, _, _ = _server_install_paths(state)
-        if not install_dir:
-            raise ValueError("Set Settings → Server → Server Directory first.")
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        variant = str(params.get("variant") or "official").strip().casefold()
-        if variant not in {"official", "experimental"}:
-            raise ValueError("RuneSchema variant must be official or experimental.")
-        source_url = ("https://github.com/gh0sted5456-us/RuneSchema" if variant == "experimental"
-                      else "https://github.com/UnskippableCutscene/RuneSchema")
-        runtime_root = _server_runtime_root(state)
-        result = install_authoritative_runeschema_update(source_url, runtime_root)
-        install_meta["runeschema_source_url"] = source_url + "/releases"
-        install_meta["runeschema_installed_at"] = time.time()
-        source_name = str(result.get("filename") or result.get("source") or source_url)
-        install_meta["runeschema_source_name"] = (f"Experimental · {source_name}" if variant == "experimental" else source_name)
-        root_key = os.path.normcase(str(resolve_server_layout(runtime_root).game_root.resolve(strict=False)))
-        overrides = [str(item) for item in (install_meta.get("runeschema_manual_override_roots") or []) if str(item)]
-        restored = [str(item) for item in (install_meta.get("official_runeschema_restored_roots") or []) if str(item)]
-        install_meta["runeschema_manual_override_roots"] = [item for item in overrides if item != root_key]
-        managed = dict(install_meta.get("runeschema_managed_variant_roots") or {})
-        managed[root_key] = variant
-        install_meta["runeschema_managed_variant_roots"] = dict(list(managed.items())[-8:])
-        install_meta["official_runeschema_restored_roots"] = (
-            [*([item for item in restored if item != root_key][-7:]), root_key]
-            if variant == "official" else [item for item in restored if item != root_key]
-        )
-        save_state(state)
-        repaired = ensure_base_runtimes(runtime_root, allow_ue4ss_download=True, ue4ss_source_url=str(install_meta.get("ue4ss_source_url") or ""), runeschema_source_url=source_url)
-        return {"result": result, "runtime": repaired, "state": public_state(state)}
-
     if method == "server.maintenance.download_steamcmd":
         return download_steamcmd(str(params.get("steamcmd_dir") or _server_install_paths(state)[1] or ""))
 
@@ -7027,86 +6906,8 @@ def handle(method: str, params: dict) -> object:
     if method in ("server.install.check_update", "server.maintenance.check_game_update"):
         return check_steam_build() or {"available": False}
 
-    if method == "server.install.ue4ss_update":
-        ENGINE.assert_stopped()
-        install_dir, _, _ = _server_install_paths(state)
-        if not install_dir:
-            raise ValueError("Set Settings → Server → Server Directory first.")
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        source_url = str(params.get("releases_url") or install_meta.get("ue4ss_source_url") or "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E").strip()
-        update = check_ue4ss_update(source_url) or {}
-        if not update.get("download_url"):
-            return {"available": False, "state": public_state(state)}
-        result = install_authoritative_ue4ss_update(str(update.get("download_url")), install_dir)
-        install_meta["ue4ss_installed_version"] = str(update.get("filename") or "experimental-latest")
-        install_meta["ue4ss_installed_at"] = time.time()
-        save_state(state)
-        active_id = state.setdefault("server", {}).get("active_world_id")
-        if active_id and SHARE.status().get("serving"):
-            ENGINE.publish(active_id)
-        return {"available": True, "update": update, "result": result, "state": public_state(state)}
-
-    if method == "server.maintenance.check_ue4ss":
-        return check_ue4ss_update(str(params.get("releases_url") or "https://github.com/gh0sted5456-us/RuneSchema/releases/tag/0.6.1E")) or {"available": False}
-
-    if method == "server.maintenance.install_ue4ss_update":
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        profile_id = str(params.get("id") or "")
-        if not profile_id or state.setdefault("server", {}).get("active_world_id") != profile_id:
-            raise RuntimeError("Activate this World before changing its live runtime files.")
-        profile = load_server_profile(profile_id)
-        root = server_root_for_profile(profile)
-        result = install_authoritative_ue4ss_update(str(params.get("download_url") or ""), root)
-        profile = load_server_profile(profile_id)
-        profile["ue4ss_installed_version"] = str(params.get("filename") or str(params.get("download_url") or "").rsplit("/", 1)[-1])
-        profile["ue4ss_installed_at"] = time.time()
-        save_server_profile(profile_id, profile)
-        install_meta["ue4ss_installed_version"] = profile["ue4ss_installed_version"]
-        install_meta["ue4ss_installed_at"] = profile["ue4ss_installed_at"]
-        save_state(state)
-        ENGINE.scan_mods(profile_id)
-        return result
-
-    if method == "server.maintenance.install_ue4ss_zip":
-        install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-        profile_id = str(params.get("id") or "")
-        if not profile_id or state.setdefault("server", {}).get("active_world_id") != profile_id:
-            raise RuntimeError("Activate this World before changing its live runtime files.")
-        profile = load_server_profile(profile_id)
-        root = server_root_for_profile(profile)
-        zip_path = str(params.get("zip_path") or "")
-        result = install_authoritative_ue4ss_zip(zip_path, root)
-        profile = load_server_profile(profile_id)
-        profile["ue4ss_installed_version"] = Path(zip_path).name
-        profile["ue4ss_installed_at"] = time.time()
-        save_server_profile(profile_id, profile)
-        install_meta["ue4ss_installed_version"] = profile["ue4ss_installed_version"]
-        install_meta["ue4ss_installed_at"] = profile["ue4ss_installed_at"]
-        save_state(state)
-        ENGINE.scan_mods(profile_id)
-        return result
-
     if method == "server.maintenance.detect_mod_zip":
         return inspect_world_mod_zip(str(params.get("zip_path") or ""))
-
-    if method == "server.maintenance.install_runeschema_zip":
-        profile_id = str(params.get("id") or "")
-        if not profile_id or state.setdefault("server", {}).get("active_world_id") != profile_id:
-            raise RuntimeError("Activate this World before changing its live mod files.")
-        profile = load_server_profile(profile_id)
-        zip_path = str(params.get("zip_path") or "")
-        result = install_runeschema_zip(zip_path, server_root_for_profile(profile))
-        if str((result or {}).get("kind") or "").lower() == "core":
-            profile = load_server_profile(profile_id)
-            profile["runeschema_installed_at"] = time.time()
-            profile["runeschema_source_name"] = Path(zip_path).name
-            save_server_profile(profile_id, profile)
-            install_meta = state.setdefault("application", {}).setdefault("server_install", {})
-            install_meta["runeschema_installed_at"] = profile["runeschema_installed_at"]
-            install_meta["runeschema_source_name"] = profile["runeschema_source_name"]
-            save_state(state)
-        ENGINE.scan_mods(profile_id)
-        return result
 
     if method == "server.runtime.versions.refresh":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
@@ -7318,17 +7119,6 @@ def handle(method: str, params: dict) -> object:
         if result.get("client_sync") and SHARE.status().get("serving"):
             ENGINE.publish(profile_id)
         return result
-
-    if method == "server.world.mods_txt.regenerate":
-        profile_id = str(params.get("id") or "")
-        profile = load_server_profile(profile_id)
-        if not profile: raise KeyError("Server World not found")
-        if state.setdefault("server", {}).get("active_world_id") != profile_id:
-            raise RuntimeError("Activate this World before regenerating mods.txt.")
-        profile["mods_txt_mode"] = "auto"; save_server_profile(profile_id, profile)
-        result = generate_server_mods_txt(profile_id, server_root_for_profile(profile))
-        if SHARE.status().get("serving"): ENGINE.publish(profile_id)
-        return {**result, "state": public_state(state)}
 
     if method == "server.world.files.delete":
         ENGINE.assert_stopped()

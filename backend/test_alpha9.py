@@ -128,7 +128,7 @@ def main():
     assert 'mods_txt_writer = "server_push" if client_ue4ss_mods else "client_generate"' in source
     assert '"target_scope": "client_mods_txt"' in source
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
-    assert "automatically pushes this hidden control file" in renderer
+    assert "Matching client hashes are not downloaded again." in renderer
     assert "Client Generates Last" not in renderer and "Server Pushes File" not in renderer
     # V2 split the RPC surface: dragonwilds_service.py wraps the retained
     # dragonwilds_service_compat.py engine, so contract tokens may live in either.

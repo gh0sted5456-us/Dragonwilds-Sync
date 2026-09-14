@@ -92,7 +92,7 @@ def test_profile_server_runtime_roots_cannot_escape_the_game_directory():
             raise AssertionError("A profile server runtime root escaped the game directory.")
 
 
-def test_disabled_profile_loaders_are_parked_and_reenabled_reversibly():
+def test_legacy_runtime_selection_cannot_disable_world_owned_loaders():
     with TemporaryDirectory() as temp:
         root = Path(temp)
         game, _ = _runtime_tree(root)
@@ -107,12 +107,13 @@ def test_disabled_profile_loaders_are_parked_and_reenabled_reversibly():
         try:
             disabled = server_engine._assert_profile_runtime_selection(
                 "profile", {"runtime_components": {"ue4ss": False, "runeschema": False}}, str(game))
-            assert disabled["ue4ss"]["enabled"] is False
-            assert not (win64 / "version.dll").exists()
-            assert not (win64 / "dwmapi.dll").exists()
-            assert not (runeschema / "enabled.txt").exists()
-            assert (win64 / "version.dll.dragonwilds-profile-disabled").is_file()
-            assert (runeschema / "enabled.txt.dragonwilds-profile-disabled").is_file()
+            assert disabled["ue4ss"]["source"] == "world-staging-profile"
+            assert disabled["runeschema"]["source"] == "world-staging-profile"
+            assert (win64 / "version.dll").is_file()
+            assert (win64 / "dwmapi.dll").is_file()
+            assert (runeschema / "enabled.txt").is_file()
+            assert not (win64 / "version.dll.dragonwilds-profile-disabled").exists()
+            assert not (runeschema / "enabled.txt.dragonwilds-profile-disabled").exists()
         finally:
             server_engine.capture_authoritative_runtimes = original_capture
 
@@ -121,5 +122,5 @@ if __name__ == "__main__":
     test_profile_can_publish_runeschema_without_ue4ss_to_its_own_path()
     test_profile_can_publish_ue4ss_without_runeschema_to_its_own_path()
     test_profile_server_runtime_roots_cannot_escape_the_game_directory()
-    test_disabled_profile_loaders_are_parked_and_reenabled_reversibly()
+    test_legacy_runtime_selection_cannot_disable_world_owned_loaders()
     print("profile runtime path tests passed")

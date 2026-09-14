@@ -1,266 +1,157 @@
-# Dragonwilds Sync — Profile Mod + Machine Path Contract
+# World profile staging and mod paths
 
-This document is the review contract for the `revamp/executable-save-paths` workstream (executable + Saved-directory machine config, mod destination mapping, runtime architecture negotiation, DragonConnect repositioning, and Chat Bridge removal). It is intentionally written so another reviewer (including Claude/Codex) can audit the implementation without relying on historical assumptions.
+Dragonwilds Sync keeps the installed game files shared and clean. A Dedicated
+World profile stores only the complete game-ready overlay that belongs to that
+World. Activating the profile composes that overlay into the configured game
+root; unloading it captures changes and removes only files owned by that
+profile.
 
-## Final architecture summary
+The launcher does not choose, download, repair, or reset dedicated UE4SS or
+RuneSchema builds. Server managers place complete runtime trees in the World
+profile. Client-only runtime repair remains available for local/private play.
 
-> **Dedicated World overlay update:** Each dedicated World now owns one
-> `staged/` directory whose contents mirror paths beneath the game directory.
-> Steam-owned game files remain shared and are never copied into profiles.
-> The allowed overlay branches are `Binaries/Win64`, `Binaries/Linux`,
-> `Content/Paks/~mods`, and `Saved`; base executables and unrelated game paths
-> are rejected. Platform configuration and SaveGames are routed to their
-> resolved live destinations.
-> UE4SS and RuneSchema are no longer installed, selected, repaired, enabled, or
-> otherwise materialized by dedicated-World activation. Server managers place
-> any loader and mod files directly at their game-relative paths in `staged/`.
-> Activation deploys the entire overlay generically; switching or unloading
-> removes only files named by the AppData installation receipt. The older
-> Runtime Manager/profile-lane rules below describe client compatibility and
-> historical releases, and do not override this dedicated-server contract.
->
-> Client publication is narrower: staged `dwmapi.dll` + `ue4ss/UE4SS.dll`
-> declare the World's UE4SS baseline, and staged RuneSchema `dlls/` declares
-> its RuneSchema baseline. Those runtime files are published first, followed
-> only by recognized mod units whose classification is **Client Required**.
+## Ownership model
 
-Nothing below is "derived only" — every layer states explicitly what is machine-authored, what is executable-derived, and what is profile-authored.
+- **Machine** — the exact Player or Server executable, the exact Saved
+  directory, and the derived game root. These paths are selected explicitly;
+  the Saved path is a directory, never an individual `.sav` file.
+- **Profile** — one World's staged overlay, loader trees, recognized mods,
+  Saved content, generated configuration templates, and backup bank.
+- **World** — the identity, connection settings, server settings, sync policy,
+  and hashes associated with that profile.
+- **DragonConnect** — optional connection autofill and authenticated sync. It
+  does not own loader installation or mod placement.
 
-- **Machine** — the exact Player/Server executable, the exact Saved directory, and the mapped UE4SS/RuneSchema/PAK deployment destinations for this installation. Destinations default from the executable but are individually overrideable and persist across restarts.
-- **Profile** — isolated mod content (`Mods/UE4SS`, `Mods/RuneSchema`, `Mods/PAKs`) for one World. Profiles own *what* mods belong to a World; they never own *where* those mods land on disk.
-- **World** — runtime architecture requirements: which loader components (UE4SS, RuneSchema) this World declares `required`/`optional`/`forbidden`/`standalone`. See "World-owned runtime architecture" below.
-- **DragonConnect** — connection/runtime metadata infrastructure (the Lua direct-connect helper and its manifest fields). Not a chat system; Chat has been removed entirely. See "DragonConnect" below.
-- **Runtime Manager** materializes the required runtime architecture (UE4SS core, RuneSchema core) into the machine's mapped destinations. **Profile Manager** materializes a World's profile-owned mod content into those same destinations. They operate on the same destination folders but own disjoint content: Runtime Manager never touches profile-owned mod units, and Profile Manager never touches runtime/core files (enforced by the exclude-lists in `server_engine.py`'s `restore_profile_mods()`/`_clear_children()`).
+There is no dedicated **Runtime Manager** or separate **Profile Manager** in
+the hosted flow. The profile folder is the single source of truth.
 
-## Core ownership model
-
-Dragonwilds Sync separates **machine paths**, **runtime/core**, **profile-owned mods**, and **save associations**.
-
-### Machine-owned settings
-
-A Player machine supplies only:
-
-1. **Dragonwilds executable** — the actual `RSDragonwilds.exe` selected by the user.
-2. **Dragonwilds Save Directory** — the `Saved` directory containing the game's save subdirectories.
-
-A Server machine supplies only:
-
-1. **Dedicated Server executable** — the actual dedicated-server executable selected by the operator.
-2. **Dedicated Server Save Directory** — the server `Saved` directory.
-
-The application derives installation/game roots and runtime destinations from the executable. It derives World/Character/config/log save locations from the configured Save Directory.
-
-Normal operation must **not recursively search Steam libraries, parent trees, drives, or arbitrary ancestors** to guess the user's intended installation.
-
-### Derived installation destinations
-
-The executable determines the live game tree. From that tree Sync derives the normal destinations for:
-
-- UE4SS core and `ue4ss/Mods`
-- RuneSchema core and RuneSchema child-mod directory
-- `Content/Paks/~mods`
-- generated `mods.txt`
-- other runtime/core files
-
-### Mapped mod destinations
-
-The executable determines the *default* UE4SS/RuneSchema/PAK destinations, but those defaults are not a hard architectural assumption. Each of the three lanes is individually overrideable per machine role (Player, Server):
-
-- Overrides are persisted under `application.machine_mod_paths.<role>.<lane>` (`backend/machine_paths.py`'s `_apply_mod_mapping()`), validated to stay inside the resolved installation (`_validate_mod_mapping()` — an override cannot equal or escape the game root), and read back on every `application.machine_paths.status` call as `mod_overrides`/`mod_defaults`/`<lane>` (the effective, resolved value).
-- The renderer's Installation Mod Mapping panel (`renderer/release-machine-mod-mapping.js`) is where an operator edits these. It tracks unsaved edits explicitly (typed, pasted, dropped, or Browse-picked) so a background UI refresh elsewhere in the app can never silently discard an unsaved mapped path before Save is clicked — see the "renderer persistence" note in that file.
-- Deployment code (`profile_mod_destinations.py`'s `resolve_mod_install_paths()`/`default_mod_install_paths()`, and every caller that plants profile mods into a live destination) always consumes the *effective* mapped value, never re-derives its own guess.
-- Mapped destinations are deployment targets only — they are never profile storage, and switching machine mappings never moves or duplicates a profile's own `Mods/` content.
-
-### Runtime/core ownership
-
-UE4SS and RuneSchema **cores are machine runtime**, not profile mods.
-
-They survive World/profile swaps. Connected clients can receive required runtime/core updates quietly as part of synchronization.
-
-A profile swap must never delete RuneSchema DLL/config/enable files or the UE4SS core/bootstrap simply because a different profile is activated.
-
-### World-owned runtime architecture
-
-RuneSchema currently depends on UE4SS, but that dependency is not assumed forever. A World declares its loader/runtime requirements independently of today's default pairing, via `sync_config.runtime_architecture` (`backend/runtime_architecture.py`):
+## Dedicated profile layout
 
 ```text
-runtime_architecture:
-  ue4ss:      required | optional | forbidden
-  runeschema: required | optional | forbidden | standalone
+profiles/world/dedicated/<WorldId>/
+├── profile.json
+├── staged/
+│   ├── overlay/
+│   │   └── <any client-safe game-relative files>
+│   ├── loaders/
+│   │   ├── ue4ss/
+│   │   │   └── Binaries/Win64/...
+│   │   └── runeschema/
+│   │       └── Binaries/Win64/ue4ss/Mods/RuneSchema/...
+│   ├── mods/
+│   │   ├── ue4ss/<ModName>/...
+│   │   ├── runeschema/<ModName>/...
+│   │   └── paks/<ModName>/...
+│   └── Saved/
+│       ├── Config/WindowsServer/DedicatedServer.ini
+│       ├── Config/LinuxServer/DedicatedServer.ini
+│       └── SaveGames/
+└── backups/
 ```
 
-- `normalize_runtime_architecture()` is the single seam every reader/writer goes through; anything missing or invalid falls back to today's `{ue4ss: required, runeschema: required}` default, so an existing World that never declared an architecture reconciles exactly as it always has.
-- The World-save RPC (`dragonwilds_service_compat.py`) normalizes an incoming declaration before persisting it. Both manifest-building call sites in `server_systems.py` publish the normalized declaration alongside `dragonlink_connect`, and Quick-mode status for a linked World surfaces it as `advertised_runtime_architecture`.
-- `reconcile_local_runtime()` is a read-only report (declared vs. locally present, per component) that a client can act on. It does not install, remove, or migrate anything by itself — that stays a deliberate, separately-reviewed follow-up once a real standalone-RuneSchema build exists, matching how `managed_runtime_mods.py` already handles the retired DragonLink native runtime.
-- This is a declaration/reconciliation model only. It does not change today's UE4SS+RuneSchema-required behavior, and it is not a speculative migration engine.
+`backups/` is deliberately outside `staged/`. It is retained for server
+recovery and is never published to clients.
 
-### Profile-owned mod storage
+## Simple server flow
 
-Each dedicated World owns a visible game-ready staging root:
+1. Create a Dedicated World.
+2. Choose the dedicated executable and Saved directory.
+3. Open the World's staging folder.
+4. Drop the complete UE4SS runtime into `staged/loaders/ue4ss`.
+5. Drop the complete RuneSchema runtime into
+   `staged/loaders/runeschema`.
+6. Put each mod in its matching lane under `staged/mods`.
+7. Optionally drop an existing World save into `staged/Saved/SaveGames`.
+8. Enter World/server settings and start the World.
+
+Creation pre-fills the folder structure and both platform config templates.
+Changing the World name, server name, owner/user ID, admin password, World
+password, or port refreshes those templates. Engine-owned or hand-authored
+lines not managed by Dragonwilds Sync are preserved.
+
+## Deterministic deployment
+
+Activation writes layers in this order:
+
+1. `staged/overlay` to the game root
+2. `staged/loaders/ue4ss` to the game root
+3. `staged/loaders/runeschema` to the game root
+4. recognized UE4SS, RuneSchema, and PAK mods to their fixed destinations
+5. `staged/Saved` to the configured server Saved directory
+
+The base game remains installed normally. The staged overlay is not a copy of
+the whole game and may not replace protected Steam executables.
+
+## Mod lanes and exact destinations
+
+- `mods/ue4ss/<ModName>` deploys to
+  `Binaries/Win64/ue4ss/Mods/<ModName>`.
+- `mods/runeschema/<ModName>` deploys to
+  `Binaries/Win64/ue4ss/Mods/RuneSchema/mods/<ModName>`.
+- `mods/paks/<ModName>` deploys as the complete wrapper folder
+  `Content/Paks/~mods/<ModName>`.
+
+For example:
 
 ```text
-Profile/
-└── staged/
-    ├── Binaries/Win64/
-    │   └── ue4ss/Mods/RuneSchema/mods/
-    ├── Binaries/Linux/
-    ├── Content/Paks/~mods/
-    └── Saved/
-        ├── Config/{WindowsServer,LinuxServer}/
-        └── SaveGames/
+staged/mods/paks/BetterBuilding/BetterBuilding.pak
+staged/mods/paks/BetterBuilding/BetterBuilding.utoc
+staged/mods/paks/BetterBuilding/BetterBuilding.ucas
 ```
 
-This complete overlay is the authoritative source for that profile's mod and
-loader content. It contains no Steam-owned base-game files.
-
-- **Open World Staging** opens this profile `staged` root.
-- Browse is side-effect free. It does not silently scan before opening and does not silently rescan when Explorer regains focus.
-- Users/operators may add, replace, or delete mods directly in these folders.
-- **Refresh/Rescan** is the explicit reconciliation boundary.
-
-### Refresh semantics
-
-Explicit Refresh scans the selected profile's `Mods/UE4SS`, `Mods/RuneSchema`, and `Mods/PAKs` folders only.
-
-Refresh must:
-
-- discover newly added mods;
-- detect changed mods;
-- retain metadata for surviving matching mods where possible;
-- remove deleted files/mod units from Mod Management;
-- prune stale metadata for deleted units;
-- never adopt unrelated live-installation files back into profile storage.
-
-The configured installation destinations are where the selected profile is planted/materialized. They are not the source of truth.
-
-### Profile switching
-
-Profile switching is one-way for ordinary operation:
+becomes:
 
 ```text
-Profile A staged overlay -> shared game directory
-switch
-remove only receipt-owned files
-Profile B staged overlay -> shared game directory
+Content/Paks/~mods/BetterBuilding/BetterBuilding.pak
+Content/Paks/~mods/BetterBuilding/BetterBuilding.utoc
+Content/Paks/~mods/BetterBuilding/BetterBuilding.ucas
 ```
 
-Routine A -> B switching must not snapshot the live game directory back over A before the switch.
+Loose PAK assets are migrated into a wrapper during legacy conversion. Loader
+files are rejected from mod lanes so a misfiled runtime cannot be advertised as
+a gameplay mod.
 
-Any explicit editor operation that intentionally writes an active mod can perform a targeted profile writeback, but that is not normal switch behavior.
+## Sync contract
 
-### Generated control files
+The client-safe general overlay is published first, followed by the exact
+UE4SS loader entity, the exact RuneSchema loader entity, and then only
+recognized mods marked Client Required. Each entity has an independent content
+hash. A client that already has the matching entity hash does not download it
+again.
 
-`mods.txt` is generated launcher/runtime control state. It is not profile-authored content and must not be stored as a user mod in `Mods/UE4SS`.
+World saves, server-only configuration, backup archives, server executables,
+and server-only helper files are not client mod payloads. Runtime entity hashes
+identify complete staged trees; there is no per-file runtime selector.
 
-### Legacy profile migration
+`sync_config.runtime_architecture` may still describe compatibility requirements
+(`required`, `optional`, `forbidden`, or RuneSchema `standalone`) to clients.
+It is declaration metadata, not permission for the launcher to fetch or mutate
+a hosted runtime.
 
-Old profile storage names such as `ue4ss_mods`, `runeschema_mods`, and `pak_mods` may be migrated once into the visible three-lane structure.
+## Path overrides and migration
 
-After migration, normal operation uses the new visible structure. Historical internal folder names must not remain the active authority model.
+Executable and Saved-directory selection remain machine authority. Derived mod
+destinations can still be inspected and compatibility `mod_overrides` remain
+readable for older profiles, but new Dedicated profiles always use the fixed
+staging lanes above.
 
-## Save-directory contract
+Legacy monolithic staged trees are backed up before conversion. Recognized
+runtime content and mods are split into their new loader/mod lanes, legacy
+`savegame` and `server_config` content moves under `staged/Saved`, and the
+migration marker prevents repeat work.
 
-The user/operator selects a **directory**, never an individual `.sav` file.
+The obsolete native chat bridge was removed entirely. Chat is not installed,
+published, or treated as a required runtime component.
 
-For Player installs, Sync discovers and classifies the appropriate Character and World files beneath the configured save root. For Dedicated Server installs, Sync discovers the server World/save material beneath the configured server save root.
+## Regression boundaries
 
-Profiles store associations/identities, not a user-entered hard-coded path to one particular Character save.
+- Never write `.dwsync` into the game directory; sync metadata belongs in
+  application data.
+- Never publish `staged/Saved` or `backups` as client-required mod content.
+- Never flatten a PAK mod wrapper into `Content/Paks/~mods`.
+- Never combine UE4SS mods, RuneSchema mods, and runtime cores into one lane.
+- Never restore launcher-selected server runtime versions; the staged loader
+  trees are authoritative.
+- Never delete unowned game files during profile unload or switching.
 
-## Character/player-save editing safety
-
-Character editing must remain backup-first and identity-based.
-
-Expected write flow:
-
-1. Resolve the selected Character identity to its current save file.
-2. Re-read/hash current disk content.
-3. Refuse to overwrite if the file changed since the editor loaded it.
-4. Create a **unique backup for every Apply**, including multiple writes inside the same clock tick.
-5. Validate the edited document before replacement.
-6. Replace atomically.
-7. Re-read and verify the result.
-8. Restore the backup if post-write verification fails.
-9. Preserve unsupported/binary-only saves byte-for-byte; never claim they are editable when they cannot be safely parsed.
-
-The Character identity should survive a rediscovery/filename change where the application can safely correlate the same save; UI state must not depend on a stale user-entered filename.
-
-## Runtime/package validation
-
-Current UE4SS/RuneSchema packages must be validated by required runtime payload, not by obsolete optional files or a single historical wrapper depth.
-
-Known compatibility requirements already found during this workstream:
-
-- current UE4SS layouts may place most files under `ue4ss/`;
-- `imgui.ini` is not a mandatory UE4SS completeness marker;
-- RuneSchema release wrappers may contain nested core roots;
-- RuneSchema child mods may use the current `RuneSchema/mods` layout;
-- existing direct-root RuneSchema child-mod layouts remain readable during migration/compatibility handling.
-
-## DragonConnect and the removed Chat Bridge
-
-DragonConnect is connection/runtime metadata infrastructure, not a chat feature. Its current role:
-
-- The Lua direct-connect helper (`resources/NativeRuntimeMods/DragonConnect/Scripts/main.lua`) and the one-time Direct Connect handoff it performs.
-- A carrier for future connection metadata, potentially including server-declared runtime architecture information (see "World-owned runtime architecture" above).
-- `core_components.py`'s `"dragonconnect"` entry is typed `"Direct Connect Client Core"` with `capabilities: ["direct_connect"]` — it has never carried, and must not be given, a chat capability.
-
-The DragonLink Chat Bridge has been removed entirely — not hidden behind a flag, physically removed:
-
-- No native `DragonLink-Chat.dll`/`native/ue4ss-mods/DragonLink-Chat/` build target.
-- No Chat toggle, Chat feed, or chat-send RPC (`quick.chat.send` and its handler are gone) anywhere in the renderer or backend.
-- No `server_chat` capability, no `chat` runtime-console log source, no build check expecting a Chat DLL.
-- Compatibility code that must keep *reading* old, retired config fields without acting on them (see `docs/DEPRECATED_CODE_CLEANUP.md`) is intentionally retained — that is migration-safety code, not a live Chat surface, and it must stay retained rather than being deleted.
-- DragonConnect's own direct-connect behavior is unaffected by the Chat removal; the two were always separate capabilities and are now separate in code as well as in name.
-
-## RSDW cache behavior
-
-RSDW cache refresh should fail **degraded, not empty**. A heavyweight toolkit/archive failure must not erase an existing good cache or make canonical item data unavailable when the lightweight canonical catalog can still be refreshed.
-
-## Review checklist
-
-A reviewer should reject the implementation if any of these fail:
-
-- Player setup still asks for a generic game/install directory instead of the executable.
-- Server setup still asks for a generic server/install directory instead of the server executable.
-- Player or Server setup requires selecting individual save files.
-- Normal setup recursively searches drives/Steam libraries to guess an installation after an explicit executable was supplied.
-- Browse Mods opens the live game mod directory instead of the selected profile's Mods root.
-- Browse Mods triggers hidden reconciliation.
-- Refresh adopts arbitrary live mods rather than reading the selected profile folders as truth.
-- Deleting a file from a profile folder leaves the deleted unit in Mod Management after Refresh.
-- Profile switching writes the outgoing live mod tree back into the outgoing profile automatically.
-- Switching profiles removes UE4SS/RuneSchema core runtime files.
-- RuneSchema child mods are scanned as ordinary UE4SS mods.
-- `mods.txt` becomes user/profile content.
-- Character Apply can overwrite a newer on-disk save without detecting the change.
-- Two rapid Character Apply operations can resolve to the same backup path.
-- A failed edited-save verification leaves the bad write in place.
-- A pasted, typed, or Browse-picked mapped mod destination reverts on its own (without the operator changing it) before Save is clicked.
-- A saved mapped mod destination does not survive an app restart, or deployment code plants mods somewhere other than the exact saved value.
-- Player or Server executable selection accepts a bare folder in place of the exact executable.
-- Setup progress shows a step as complete when its prerequisite has not actually been met, or advances on a timer rather than real state.
-- A World's `runtime_architecture` declaration is lost on save, or an existing World without one reconciles any differently than `{ue4ss: required, runeschema: required}`.
-- Any Chat toggle, Chat feed, or Chat RPC is reachable from the UI, or a build check still expects a Chat DLL.
-- DragonConnect's core metadata describes a chat capability.
-- A mod-management RPC can delete or edit a path outside the resolved profile/live mod lane via a crafted key (path traversal).
-- A server-install-deletion RPC removes a directory that was never positively verified to contain a dedicated-server executable.
-
-## Manual acceptance test
-
-1. Configure Player executable + Player Save Directory.
-2. Configure Server executable + Server Save Directory.
-3. Confirm derived UE4SS, RuneSchema, and PAK destinations are correct.
-4. Create Profile A and Profile B.
-5. Browse Profile A Mods and add one UE4SS mod, one RuneSchema mod, and one PAK mod.
-6. Refresh and verify all three appear.
-7. Delete the RuneSchema mod in Explorer, Refresh, and verify it disappears from Mod Management.
-8. Activate Profile A and verify its remaining content is planted into the configured live destinations.
-9. Activate Profile B and verify Profile A content is removed while UE4SS/RuneSchema cores remain intact.
-10. Switch back to A and verify A's profile folder was not overwritten by the live tree during the earlier switch.
-11. Open Character management and verify Characters are discovered from the configured Save Directory.
-12. Perform two rapid valid Character Apply operations and verify two distinct backups exist.
-13. Confirm the launcher/game taskbar lifecycle remains unchanged.
-
-## Branch/promotion rule
-
-Perform this work on `revamp/executable-save-paths` (or a successor test branch) first. **Do not modify or merge into `experimental`.** Commit only to the revamp branch; `experimental` stays completely untouched until a maintainer explicitly decides to promote this work, and only after the focused contracts, regression suite, Windows portable build, and manual acceptance checks (sections A–F, including the runtime-architecture scenario) are green.
+The active development and push target for this work is `experimental`.

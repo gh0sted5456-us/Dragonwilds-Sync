@@ -29,7 +29,9 @@ import dragonwilds_service_v3_phase2 as _base
 from dragonwilds_service_v3_phase2 import *  # noqa: F401,F403
 from client_layout import resolve_client_layout
 from profile_mod_destinations import mod_destination_status
-from machine_paths import player_save_paths, save_mod_paths as save_machine_mod_paths, save_role as save_machine_role, status as machine_path_status
+from machine_paths import (player_save_paths, save_install_root as save_machine_install_root,
+                           save_mod_paths as save_machine_mod_paths,
+                           save_role as save_machine_role, status as machine_path_status)
 import profile_store
 from runtime_worker_bridge import install as install_runtime_worker_bridge
 from system_process_catalog import process_catalog
@@ -326,7 +328,10 @@ def handle(method: str, params: dict) -> object:
         return {"role": role, "machine": result, "state": public}
     if method == "application.machine_paths.save":
         role = str(params.get("role") or "").strip().casefold()
-        result = save_machine_role(state, role, params.get("executable"), params.get("save_dir"))
+        if str(params.get("install_root") or "").strip():
+            result = save_machine_install_root(state, role, params.get("install_root"))
+        else:
+            result = save_machine_role(state, role, params.get("executable"), params.get("save_dir"))
         _legacy.save_state(state)
         public = _legacy.public_state(state)
         public.setdefault("application", {})["machine_paths"] = machine_path_status(state)

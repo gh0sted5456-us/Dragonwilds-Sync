@@ -29,7 +29,8 @@ def main():
     assert "navButton('rsdw-toolkit'" not in renderer
     assert "User Profile" in renderer and "Profile</div><h1>Characters" in renderer
     assert "data-profile-tab=\"characters\"" in renderer
-    assert "rsdw-avatar-webview" in renderer and "data-rsdw-tool" in renderer
+    assert "rsdw-avatar-webview" not in renderer and "data-rsdw-tool" in renderer
+    assert "Lightweight · save-backed appearance" in renderer
 
     # Worlds has an explicit renderer branch so clicking the sidebar cannot fall through.
     assert "else if (state.route === 'worlds') page = renderWorldGallery()" in renderer

@@ -496,31 +496,6 @@ try {
     if (-not ($asarListing | Where-Object { $_.TrimStart('/') -eq 'renderer/vendor/monaco/vs/base/worker/workerMain.js' })) { Fail-Build 'Packaged Monaco worker runtime is missing from app.asar.' }
     Write-BuildLine '[OK] Packaged Monaco Editor runtime is present.'
 
-    $threeRoot = Join-Path $unpacked 'resources\rsdw-viewer\three'
-    $requiredThreeFiles = @(
-        'build\three.module.js',
-        'examples\jsm\loaders\GLTFLoader.js',
-        'examples\jsm\loaders\DRACOLoader.js',
-        'examples\jsm\controls\OrbitControls.js',
-        'examples\jsm\environments\RoomEnvironment.js',
-        'examples\jsm\exporters\GLTFExporter.js',
-        'examples\jsm\exporters\STLExporter.js',
-        'examples\jsm\utils\SkeletonUtils.js',
-        'examples\jsm\utils\BufferGeometryUtils.js',
-        'examples\jsm\libs\draco\draco_decoder.js',
-        'examples\jsm\libs\draco\draco_wasm_wrapper.js',
-        'examples\jsm\libs\draco\draco_decoder.wasm'
-    )
-    foreach ($relativeThreeFile in $requiredThreeFiles) {
-        $packedThreeFile = Join-Path $threeRoot $relativeThreeFile
-        if (-not (Test-Path -LiteralPath $packedThreeFile -PathType Leaf)) { Fail-Build "Packaged Character Preview dependency missing: $relativeThreeFile" }
-    }
-    $unexpectedThreeFiles = @(Get-ChildItem -LiteralPath $threeRoot -Recurse -File | Where-Object {
-        $_.Name -match 'three\.(cjs|core|webgpu)' -or $_.Name -match 'draco_encoder'
-    })
-    if ($unexpectedThreeFiles.Count -gt 0) { Fail-Build 'The packaged Character Preview contains unused Three.js/WebGPU/Draco encoder payloads.' }
-    Write-BuildLine '[OK] Character Preview carries only its explicit Three.js + Draco dependency closure.'
-
     $packedRecommendations = Join-Path $unpacked 'resources\resources\recommended-mods.json'
     if (-not (Test-Path -LiteralPath $packedRecommendations -PathType Leaf)) { Fail-Build "Packaged launcher resource missing: $packedRecommendations" }
     Write-BuildLine '[OK] Packaged creator recommendation fallback is present; no third-party mod archive is bundled.'

@@ -68,7 +68,7 @@ APPLICATION_IDENTITIES = {
     },
     "characters": {
         "label": "Characters",
-        "subapps": ["character-creator", "character-3d", "appearance", "inventory", "modded-item-repository"],
+        "subapps": ["character-creator", "appearance", "inventory", "modded-item-repository"],
         "domains": ["save-studio", "mod-library"],
     },
     "rsdw-l": {

@@ -80,7 +80,9 @@ def main():
     renderer = (Path(__file__).parents[1] / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     assert "wm-game-dir" not in renderer
     assert "wm-server-runtime-root" not in renderer
-    assert "wm-game-save-dir" in renderer and "wm-server-save-dir" in renderer
+    assert "wm-game-save-dir" not in renderer and "wm-server-save-dir" not in renderer
+    assert "wm-game-install-root" in renderer and "wm-server-install-root" in renderer
+    assert "install_root:installRoot" in renderer
     assert "application.machine_paths.save" in renderer
     assert "choose a Steam library, game folder" not in renderer.casefold()
     service = (Path(__file__).parents[1] / "backend" / "dragonwilds_service.py").read_text(encoding="utf-8")
@@ -93,7 +95,7 @@ def main():
     assert 'server_save_paths(machine_state)["worlds"]' in server_systems
     overlay = (Path(__file__).parents[1] / "renderer" / "release-profile-mod-folders.js").read_text(encoding="utf-8")
     assert "Save destinations" not in overlay and "data-mod-destination-save" not in overlay
-    print("exact executable + Saved directory machine path contract: PASS")
+    print("single install-root machine path contract: PASS")
 
 
 if __name__ == "__main__":

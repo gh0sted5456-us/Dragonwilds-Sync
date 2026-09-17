@@ -74,7 +74,7 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
     records = {}
     for index, (source, destination, excluded) in enumerate(lanes):
         source, destination = Path(source), Path(destination)
-        excluded = {n.casefold() for n in excluded} | {'readme.txt'}
+        excluded = {str(n).replace('\\', '/').strip('/').casefold() for n in excluded} | {'readme.txt'}
         if any(p.is_symlink() or p.is_junction() for p in (source, *source.parents, destination, *destination.parents)):
             raise ValueError('Linked profile source or destination')
         if source.resolve() == destination.resolve() or source.resolve().is_relative_to(destination.resolve()) or destination.resolve().is_relative_to(source.resolve()):
@@ -82,7 +82,9 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
         current = []
         for item in source.rglob('*') if source.exists() else ():
             rel = item.relative_to(source)
-            if (rel.parts[0].casefold() in excluded
+            relative_key = rel.as_posix().casefold()
+            if ((rel.parts[0].casefold() in excluded
+                    or any('/' in value and (relative_key == value or relative_key.startswith(value + '/')) for value in excluded))
                     or rel.name.casefold() == 'readme.txt'
                     or any(p.startswith('.') for p in rel.parts)):
                 continue
@@ -207,6 +209,7 @@ def deploy_layered_world_profile(profile, game_root, ledger, recovery_root):
     runeschema_mods = Path(profile["runeschema"])
     pak_mods = Path(profile["paks"])
     saved = Path(profile["saved"])
+    server_excluded = profile.get("server_excluded") if isinstance(profile.get("server_excluded"), dict) else {}
 
     protected_names = {
         "rsdragonwildsserver.exe", "rsdragonwilds-win64-shipping.exe",
@@ -251,12 +254,12 @@ def deploy_layered_world_profile(profile, game_root, ledger, recovery_root):
                 raise ValueError("RuneSchema runtime and child mods must use their dedicated staging lanes")
 
     return deploy_profile_lanes([
-        (overlay, game_root, set()),
+        (overlay, game_root, set(server_excluded.get("overlay") or [])),
         (ue4ss_loader, game_root, set()),
         (runeschema_loader, game_root, set()),
-        (ue4ss_mods, game_root / "Binaries/Win64/ue4ss/Mods", set()),
-        (runeschema_mods, game_root / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods", set()),
-        (pak_mods, game_root / "Content/Paks/~mods", set()),
+        (ue4ss_mods, game_root / "Binaries/Win64/ue4ss/Mods", set(server_excluded.get("ue4ss") or [])),
+        (runeschema_mods, game_root / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods", set(server_excluded.get("runeschema") or [])),
+        (pak_mods, game_root / "Content/Paks/~mods", set(server_excluded.get("paks") or [])),
         (saved, game_root / "Saved", {"config", "savegames"}),
     ], Path(ledger), Path(recovery_root))
 

@@ -54,11 +54,11 @@ def main():
     assert "settingsNav('mods','▦','Mod Management')" not in renderer
     assert "data-v3p4-page-status>Page 1 / 2" in renderer
     assert "}else if(standaloneRemote){" not in renderer
-    assert "characterBackdropDataUrl" in renderer and "canvas.toDataURL('image/png')" in renderer
-    assert "readRendererAsset" in renderer and "canvas.style.zIndex='9999'" in renderer
-    assert "dragonwilds:read-renderer-asset" in (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
+    assert "Save-backed character summary" in renderer
+    assert "characterBackdropDataUrl" not in renderer and "rsdw-avatar-webview" not in renderer
+    assert "dragonwilds:read-renderer-asset" not in (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
     assert "data-world-management-tab=\"connected\"" in renderer and "revealConnectedWorld" in renderer
-    print("Connected World identity, conversion, and embedded character backdrop contracts passed")
+    print("Connected World identity, conversion, and lightweight character editor contracts passed")
 
 
 if __name__ == "__main__":

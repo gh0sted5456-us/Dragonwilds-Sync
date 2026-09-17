@@ -32,7 +32,6 @@ def main() -> None:
             assert app_id in worker["consumers"], (app_id, domain, worker)
     assert apps["shell"]["subappParents"]["quick-launch"] == "quick-renderer"
     assert apps["shell"]["subappParents"]["in-app-windows"] == "managed-dialog-renderer"
-    assert apps["characters"]["subappParents"]["character-3d"] == "rsdw-viewer-renderer"
     for component_id, component in components.items():
         assert component["owner"] in apps, component
         if component["parent"] is not None:

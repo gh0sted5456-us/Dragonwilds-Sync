@@ -62,8 +62,10 @@ def main():
     connect_lua = (ROOT / "resources/NativeRuntimeMods/DragonConnect/Scripts/main.lua").read_text(encoding="utf-8")
     assert "Sync Transfer Port (TCP)" in renderer
     assert "Direct Connect discovery uses the fixed host-wide UDP port 8422" in renderer
-    assert 'id="toggle-runtime-ue4ss"' in renderer
-    assert 'id="toggle-runtime-runeschema"' in renderer
+    assert 'id="toggle-runtime-ue4ss"' not in renderer
+    assert 'id="toggle-runtime-runeschema"' not in renderer
+    assert "Profile Runtime Staging" in renderer
+    assert "The active profile is authoritative" in renderer
     assert "navButton('worlds'" not in renderer
     assert "'worlds'].includes(state.route)" in renderer
     assert 'data-webhost-tab="home">Server Directory' not in renderer
@@ -82,8 +84,7 @@ def main():
 
     assert "assets/platforms/ue4ss.webp" in renderer
     assert "assets/platforms/runeschema.webp" in renderer
-    assert "Stable Baseline" in renderer
-    assert "runtime-stability" in renderer
+    assert "Exact staged runtime" in renderer
     assert "World Broadcast" in renderer and "Publish / Repair Broadcast" in renderer
     assert "Offer one-time in-game Direct Connect autofill" in renderer
     assert "World connection details" in receipt

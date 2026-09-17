@@ -164,7 +164,7 @@ def main():
         assert saved_obj["PlayerName"] == "Toolkit Edited"
         assert saved_obj["Customization"]["CustomizationData"]["HairPreset"]["rowName"] == "Preset18"
         rehydrated = cp.read_character_for_toolkit(str(game), cid)
-        assert "Hair_Preset18" in rehydrated["avatar"]["params"]["hair"], "saved appearance must immediately round-trip into the 3D preview"
+        assert "Hair_Preset18" in rehydrated["avatar"]["params"]["hair"], "saved appearance must immediately round-trip into the save-backed editor state"
         try:
             cp.write_character_from_toolkit(str(game), cid, json.dumps(edited), expected_sha256="0" * 64)
             raise AssertionError("stale SHA should have blocked writeback")
@@ -194,7 +194,7 @@ def main():
     assert "function prepareDesktopWindow(win, options={})" in renderer and "options.native===false" in renderer
     assert "desktop-window-control minimize" in renderer and "desktop-window-control maximize" in renderer
     assert "if(!detachedMode&&!host)" in renderer and "if(!detachedMode)render();await openCustomItemRepository" in renderer
-    assert "ResizeObserver" in renderer and "syncAvatarHostSize" in renderer
+    assert "syncAvatarHostSize" not in renderer, "the retired 3D avatar resize loop must stay unloaded"
     assert "appearance-editor" not in renderer
     assert "Editing dialogs stay inside Dragonwilds Sync" in renderer and "function prepareDesktopWindow" in renderer
     assert "if(event.channel==='rsdw-content-size')return" in renderer
@@ -202,23 +202,18 @@ def main():
     assert "openCharacterEditor" not in renderer
     assert all((ROOT / "renderer/assets/rsdw-toolkit" / name).is_file() for name in ("character-editor.webp","item-editor.webp","spell-editor.webp","recipe-unlocker.webp","quest-editor.webp"))
 
-    preload = (ROOT / "electron/rsdw_webview_preload.cjs").read_text(encoding="utf-8")
-    assert "hydrate-rsdw-character" in preload and "rsdw-save" in preload and "rsdw-preview" in preload
-    assert "document.documentElement?.scrollHeight" not in preload
-    assert "overflow-y:auto!important" in preload
     main_js = (ROOT / "electron/main-v2.cjs").read_text(encoding="utf-8")
     assert "startRsdwToolkitServer" in main_js and "127.0.0.1" in main_js and "will-attach-webview" in main_js
     assert "rsdwToolkitServer?.listening" in main_js and "relative === '__health'" in main_js
-    assert "__rsdwmodel/vendor/three/" in main_js and "application/wasm" in main_js
+    assert "__rsdwmodel/vendor/three/" not in main_js and "capture-webview" not in main_js
     # rsdw_cache.py is the V2 item-facing wrapper; the retained RSDW website /
     # RSDWModel behaviour lives in rsdw_cache_legacy.py.
     cache_backend = ((ROOT / "backend/rsdw_cache.py").read_text(encoding="utf-8")
                      + (ROOT / "backend/rsdw_cache_legacy.py").read_text(encoding="utf-8"))
     assert "Unsafe path in RSDW archive" in cache_backend and "member_path.parents" in cache_backend
-    assert "Avatar/avatar.js" in cache_backend and "animation-index.json" in cache_backend
-    assert "/__rsdwmodel/vendor/three/examples/jsm/libs/draco/" in cache_backend
+    assert "animation-index.json" in cache_backend and "Avatar/avatar.js" not in cache_backend
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["dependencies"]["three"] == "0.184.0"
+    assert "three" not in package["dependencies"]
     license_text = (ROOT / "LICENSE.txt").read_text(encoding="utf-8")
     assert ".rsdwl" in license_text and "mandatory payment" in license_text
     assert (ROOT / "docs/archive/RELEASE1_2_RSDW_TOOLKIT.md").is_file()

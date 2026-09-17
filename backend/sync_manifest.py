@@ -120,6 +120,8 @@ def canonical_entry(entry: dict) -> dict:
         "target_scope": str(entry.get("target_scope") or "game").casefold(),
         "target_path": _clean_path(entry.get("target_path")),
         "platforms": sorted(str(value).casefold() for value in (entry.get("platforms") or []) if str(value).strip()),
+        "entity_key": str(entry.get("entity_key") or ""),
+        "distribution": str(entry.get("distribution") or "BOTH").upper(),
         "delivery_metadata": delivery_metadata(entry, existing_metadata.get("profile_id")),
     }
 
@@ -162,5 +164,7 @@ def build_client_meta(manifest: dict) -> dict:
         "manifest_version": manifest.get("version"),
         "manifest_fingerprint": manifest_fingerprint(manifest),
         "components": components,
+        "owned_entities": sorted({str(row.get("entity_key") or component_key(row))
+                                  for row in (manifest.get("files") or []) if isinstance(row, dict)}),
         "file_count": sum(1 for row in (manifest.get("files") or []) if isinstance(row, dict) and row.get("path")),
     }

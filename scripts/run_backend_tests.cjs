@@ -14,6 +14,7 @@ function findPython(){for(const candidate of candidates){const probe=spawnSync(c
 const python=findPython(); if(!python){console.error('[ERROR] Python 3 was not found (tried py/python/python3).');process.exit(1);}
 const crossPlatformTests = [
   'backend/test_dedicated_staged_overlay.py',
+  'backend/test_staging_profile_contract.py',
   'backend/test_win64_profile_mods.py',
   'backend/test_save_delivery.py',
   'backend/test_runtime_update_policy.py',

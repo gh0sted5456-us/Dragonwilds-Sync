@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Resolver seams are module-level so focused tests and callers can substitute them.
 from client_layout import resolve_client_layout
-from server_layout import resolve_server_layout_from_exe
+from server_layout import resolve_server_layout, resolve_server_layout_from_exe
 
 CLIENT_EXE_NAMES = {"rsdragonwilds.exe", "rsdragonwilds-win64-shipping.exe"}
 SERVER_EXE_NAMES = {"rsdragonwilds.exe", "rsdragonwildsserver.exe", "rsdragonwildsserver", "rsdragonwildsserver.sh"}
@@ -266,6 +266,24 @@ def save_role(state: dict, role: str, executable: object, save_dir: object, mod_
     root[role] = {lane: str(mapping.get(lane) or "").strip() for lane in MOD_LANES}
     application.pop("mod_install_paths", None)
     return {"ready": True, **_public(paths)}
+
+
+def save_install_root(state: dict, role: str, install_root: object, mod_paths: object = None) -> dict:
+    """Persist one install directory and derive every executable/save/mod path."""
+    selected = str(install_root or "").strip()
+    if not selected:
+        raise ValueError("Choose the Dragonwilds installation directory.")
+    if role == "player":
+        layout = resolve_client_layout(selected)
+        if not layout.game_exe.is_file() or not (layout.game_root / "Content/Paks").is_dir():
+            raise ValueError("The selected folder is not a complete Dragonwilds installation.")
+        return save_role(state, role, layout.game_exe, layout.savegames_dir.parent, mod_paths)
+    if role == "server":
+        layout = resolve_server_layout(selected)
+        if not layout.server_exe.is_file() or not (layout.game_root / "Content/Paks").is_dir():
+            raise ValueError("The selected folder is not a complete Dragonwilds Dedicated Server installation.")
+        return save_role(state, role, layout.server_exe, layout.savegames_dir.parent, mod_paths)
+    raise ValueError("Machine path role must be player or server.")
 
 
 def player_save_paths(state: dict, *, fallback_game_dir: object = "") -> dict[str, Path]:

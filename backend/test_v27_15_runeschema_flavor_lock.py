@@ -137,5 +137,30 @@ def main() -> None:
     print("v2.7.15 RuneSchema flavor identity and locked-DLL launch fallback passed")
 
 
+def test_staged_runtime_identity_and_player_tracking() -> None:
+    """Current replacement for the retired machine-wide flavor manager."""
+    with tempfile.TemporaryDirectory() as td:
+        from profile_mod_layout import dedicated_profile_layout, staged_runtime_versions
+
+        profile = Path(td) / "profile"
+        layout = dedicated_profile_layout(profile)
+        dll = layout["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema/dlls/main.dll"
+        dll.parent.mkdir(parents=True, exist_ok=True)
+        dll.write_bytes(b"profile-owned-runeschema")
+        runtime = staged_runtime_versions(profile)["runeschema"]
+        assert runtime["file_count"] == 1
+        assert runtime["installed_version"].startswith("sha256:")
+
+    service = player_tracker.ServerPlayerService()
+    service.update_log_players(["SteamOne", "SteamTwo"])
+    tracked = service.ingest({"type": "players", "players": [
+        {"id": "pawn-1", "name": "CharacterOne", "x": 10, "y": 20},
+        {"id": "pawn-2", "name": "CharacterTwo", "x": 30, "y": 40},
+    ]})
+    assert tracked["player_count"] == 2
+    assert {row["name"] for row in tracked["players"]} == {"CharacterOne", "CharacterTwo"}
+
+
 if __name__ == "__main__":
-    main()
+    test_staged_runtime_identity_and_player_tracking()
+    print("profile-owned RuneSchema identity and player tracking passed")

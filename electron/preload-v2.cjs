@@ -286,7 +286,6 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   restartAsAdmin: () => ipcRenderer.invoke('dragonwilds:restart-admin'),
   restartApplication: () => ipcRenderer.invoke('dragonwilds:restart-application'),
   pickImage: () => ipcRenderer.invoke('dragonwilds:pick-image'),
-  readRendererAsset: (relativePath) => ipcRenderer.invoke('dragonwilds:read-renderer-asset', String(relativePath || '')),
   pickLoadingArt: () => ipcRenderer.invoke('dragonwilds:pick-loading-art'),
   pickDirectory: () => ipcRenderer.invoke('dragonwilds:pick-directory'),
   pickExecutable: () => ipcRenderer.invoke('dragonwilds:pick-executable'),
@@ -307,7 +306,6 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   fileSha256: (target) => ipcRenderer.invoke('dragonwilds:file-sha256', target),
   openExternal: (target) => ipcRenderer.invoke('dragonwilds:open-external', target),
   openInAppBrowser: (target) => ipcRenderer.invoke('dragonwilds:open-in-app-browser', target),
-  captureWebview: (payload = {}) => ipcRenderer.invoke('dragonwilds:capture-webview', payload),
   // Application dialogs intentionally remain renderer-owned. app.js already
   // falls back to its in-app desktop/modal surface when no native managed
   // dialog bridge is exposed. Genuine website content continues through the
@@ -322,7 +320,6 @@ contextBridge.exposeInMainWorld('dragonwilds', {
   appUpdateApply: (opts = {}) => ipcRenderer.invoke('dragonwilds:app-update-apply', opts),
   appUpdateResult: () => ipcRenderer.invoke('dragonwilds:app-update-result'),
   appUpdateDismissResult: () => ipcRenderer.invoke('dragonwilds:app-update-dismiss-result'),
-  rsdwWebviewPreload: () => ipcRenderer.invoke('dragonwilds:rsdw-webview-preload'),
   legalText: () => ipcRenderer.invoke('dragonwilds:legal-text'),
   configureRsdwToolkitRoot: (root) => ipcRenderer.invoke('dragonwilds:rsdw-toolkit-root', root),
   openDetachedWindow: (payload = {}) => ipcRenderer.invoke('dragonwilds:detached-open', payload),

@@ -4,17 +4,12 @@ const crypto = require('node:crypto');
 
 const root = path.join(__dirname, '..');
 const source = fs.readFileSync(path.join(root, 'renderer', 'app-v2.js'), 'utf8');
-const avatarPreload = fs.readFileSync(path.join(root, 'electron', 'rsdw_webview_preload.cjs'), 'utf8');
 const placardWindows = fs.readFileSync(path.join(root, 'renderer', 'release-phase5-placard-window.js'), 'utf8');
 const responsiveCss = fs.readFileSync(path.join(root, 'renderer', 'release-responsiveness.css'), 'utf8');
 const baseCss = fs.readFileSync(path.join(root, 'renderer', 'styles.css'), 'utf8');
 const releaseNavigation = fs.readFileSync(path.join(root, 'renderer', 'release-navigation.js'), 'utf8');
 const releasePolish = fs.readFileSync(path.join(root, 'renderer', 'release-polish.js'), 'utf8');
 const performanceCss = fs.readFileSync(path.join(root, 'renderer', 'release-performance.css'), 'utf8');
-const characterLayout = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout.js'), 'utf8');
-const characterLayoutCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout.css'), 'utf8');
-const characterLayoutHotfixCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-layout-hotfix.css'), 'utf8');
-const characterTabsCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-tabs.css'), 'utf8');
 const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-menu.css'), 'utf8');
 const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
 const popupSafety = fs.readFileSync(path.join(root, 'renderer', 'release-popup-safety.js'), 'utf8');
@@ -48,17 +43,13 @@ assert(![source,electronMain,publicServers,liveHelp,liveHelpMedia,releasePolish]
   text.includes('Dragonwilds-Sync/main/help/')),
   'Runtime application sources must not retain the retired website or Help paths.');
 
-assert(characterLayout.includes("/^background$/i") && characterLayout.includes('backgroundPanel.appendChild(background)') &&
-  characterTabsCss.includes('grid-template-columns:repeat(4,minmax(100px,1fr))!important'),
-  'Character Background must be the fourth tab after Pose without recreating its live control.');
-assert(characterLayout.includes('character-hotbar-dock') && characterLayout.includes('dock.appendChild(hotbar)') &&
-  characterLayoutCss.includes('justify-content:center') && characterLayoutCss.includes('width:max-content'),
-  'The character hotbar must occupy its own centered row directly beneath the preview.');
-assert(characterLayoutHotfixCss.includes('grid-column:4!important') && characterLayoutHotfixCss.includes('grid-template-columns:repeat(8,64px)!important') &&
-  characterLayoutHotfixCss.includes('width:64px!important') && characterLayoutHotfixCss.includes('height:64px!important'),
-  'Background must remain beside Pose and the centered hotbar must retain eight compact square slots.');
-assert(characterLayout.includes('character-item-menu-filters') && characterLayout.includes('browse all compatible items/i') && characterMenuCss.includes('.character-hotbar-context-menu'),
-  'Equipment and hotbar item selection must use the filtered right-click flow instead of a left-click repository shortcut.');
+assert(source.includes('Save-backed character summary') &&
+  !fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8').includes('release-character-layout.js'),
+  'The lightweight Character Editor must not load the retired mutation-observer layout shim.');
+assert(source.includes('Array.from({length:8}') && baseCss.includes('grid-template-columns:repeat(8'),
+  'The save-backed Character Editor must retain its eight-slot action bar.');
+assert(source.includes('character-equipment-context-menu') && characterMenuCss.includes('.character-hotbar-context-menu'),
+  'Equipment and hotbar item selection must retain the bounded right-click flow.');
 assert(localProfileSync.includes('profile.local_sync.configure') && localProfileSync.includes('profile.local_sync.run') &&
   localProfileSync.includes('pickDirectory') && localProfileSync.includes('45000'),
   'Optional OneDrive/Google Drive profile sync must use a selected local folder and bounded automatic refresh.');
@@ -73,11 +64,10 @@ assert(source.includes('recommended-mod-card recommended-mod-placard has-placard
   'Recommended mods must use local placard artwork, a faded provider watermark, and an Open Nexus action.');
 
 assert(source.includes("if (next === 'webhost' && state.route !== 'webhost') state.webhostTab = 'settings'") &&
-  source.includes("syncTabLabels={settings:'Website &amp; Directory',manifest:'Manifest &amp; Heartbeats',remote:'Server Management',live:'WebGUI Preview'}") &&
+  source.includes("syncTabLabels={settings:'Hosting',manifest:'Directory Sources',remote:'Remote Access'}") &&
   source.includes("syncTab('settings')") && source.includes("syncTab('manifest')") &&
-  source.includes("syncTab('remote')") && source.includes("syncTab('live')") &&
-  source.includes("state.webhostTab==='live'&&!(webhostFeatureEnabled||remoteFeatureEnabled)"),
-  'The V3 Sync entry must retain configuration, heartbeat, Server Management, and preview tabs.');
+  source.includes("syncTab('remote')") && !source.includes("syncTab('live')"),
+  'The Hosting entry must retain configuration, directory sources, and remote access without an embedded preview webview.');
 assert(source.includes('Broadcast World') && source.includes('No World currently broadcast') &&
   source.includes("state.data?.server?.runtime?.active_profile_id") &&
   !source.includes('data-webhost-tab="home">Server Directory') && !source.includes('SYNC_HOME_URL'),
@@ -103,29 +93,18 @@ assert(baseCss.includes('.studio-appearance-swatches{grid-column:1/-1;min-width:
   'Character Editor color swatches must span the appearance panel with readable, wrapping choices.');
 assert(source.includes('native-pastel-picker') && source.includes('native-pastel-wheel') && baseCss.includes('.native-pastel-wheel'),
   'Character color controls must expose the styled radial painter palette.');
-assert(source.includes('id="rsdw-see-changes"') && source.includes('queueRsdwAvatarPreview'),
-  '3D appearance changes must remain queued until See changes is selected.');
-assert(source.includes('rsdwPreviewRefreshAuthorized') && source.includes('applyPendingWeaponChanges') && source.includes('will appear after See changes'),
-  'Equipment, weapon, and toolkit preview changes must not alter the mounted 3D view before See changes.');
-assert(source.includes('avatarCssInserted') && source.includes('avatarPreparePromise') && source.includes('avatarPollDelay'),
-  '3D preview readiness must deduplicate CSS injection and use adaptive polling.');
-assert(avatarPreload.includes('__DWS_PREVIEW_PIXEL_RATIO__') && avatarPreload.includes('Math.min(nativeRatio,1.25)'),
-  'The embedded Character Preview must cap excessive 3D pixel density before WebGL initializes.');
+assert(source.includes('Save-backed character summary') && source.includes('Lightweight · save-backed appearance') &&
+  !source.includes('<webview id="rsdw-avatar-webview"'),
+  'Character editing must stay save-backed without instantiating a 3D webview.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),
   'Sync Networking must independently expose Remote Server Access.');
-assert(source.includes("const profileDistribution=u.classification==='server_only'?'PROFILE RETAINED':'PROFILE ACTIVE'") &&
+assert(source.includes('option value="SERVER"') && source.includes('option value="CLIENT"') && source.includes('option value="BOTH"') &&
   source.includes('${modCategoryIcon(section,true)}<strong title=') && source.includes('· SHA-256 ${escapeHtml(fingerprint)}'),
   'Private and Singleplayer mod lists must retain server-grade family icons, lifecycle, distribution, and fingerprints.');
 assert(!source.includes("if(routedWebhost) state.webhostTab='live'"),
   'The routed WebHost workspace must not reset the selected tab during render.');
-assert(avatarPreload.includes('main>*:not(.avatar-layout):not(#avatar-stage)') &&
-  avatarPreload.includes('.avatar-layout>*:not(.avatar-viewer-panel):not(#avatar-stage)') &&
-  avatarPreload.includes('.avatar-viewer-panel>*:not(#avatar-stage)'),
-  'The embedded RSDWModel viewport must preserve every ancestor of #avatar-stage.');
-assert(!avatarPreload.includes('main>*:not(#avatar-stage),#rsdw-header-mount'),
-  'The embedded RSDWModel viewport must not hide the avatar-stage parent layout.');
 assert(placardWindows.includes("event.target.closest?.('[data-phase5-placard-close],[data-phase5-placard-min],[data-phase5-placard-max]')") &&
   placardWindows.includes("if (event.key !== 'Escape') return"),
   'Placard windows must expose capture-safe titlebar controls and Escape-to-close.');
@@ -172,8 +151,8 @@ assert(source.includes('function hostingFocusActive()') &&
   source.includes('computer-profile-mode') &&
   source.includes('save-computer-profile'),
   'Computer Profiles must expose settings and defer nonessential Appy work only while verified hosting is active.');
-assert(source.includes('Pause 3D previews') && source.includes('hosting-focus-placeholder'),
-  'Hosting Focus must avoid instantiating the live 3D webview when visual suspension is enabled.');
+assert(!electronMain.includes('capture-webview') && !electronMain.includes('vendor/three'),
+  'The desktop process must not retain the removed 3D capture or Three.js server surface.');
 assert(!source.includes('characters.native.tools.read') &&
   source.includes("if(state.rsdwTool!=='character-editor')setTimeout(()=>hydrateNativeRsdwTool(state.rsdwTool),0)"),
   'Character Studio must parse only the selected subsystem instead of every editor at once.');

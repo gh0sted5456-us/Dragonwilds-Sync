@@ -19,7 +19,7 @@ const requireOrder = (text, needles, label) => {
   }
 };
 
-const app = read('renderer/app.js');
+const app = read('renderer/app-v2.js');
 const quick = read('renderer/release-v3-phase2.js');
 const css = read('renderer/release-overrides.css');
 const responsiveCss = read('renderer/release-responsiveness.css');

@@ -18,6 +18,7 @@ import hashlib
 import uuid
 import json
 import threading
+import re
 from pathlib import Path, PureWindowsPath
 
 _SPARE_LOCK = threading.RLock()
@@ -131,6 +132,8 @@ def dedicated_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
         "runeschema": staged / "mods/runeschema",
         "paks": staged / "mods/paks",
         "saved": staged / "Saved",
+        "appdata": staged / "AppData",
+        "manifests": owner / "manifests",
         "backups": owner / "backups",
     }
     for path in paths.values():
@@ -151,6 +154,17 @@ def dedicated_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
             shutil.move(str(old), str(conflict))
     for relative in ("Config/WindowsServer", "Config/LinuxServer", "SaveGames"):
         (paths["saved"] / relative).mkdir(parents=True, exist_ok=True)
+    # A new profile is a blank, game-relative overlay rather than a copy of
+    # Steam-owned binaries. These empty roots make every supported destination
+    # obvious to an operator while the dedicated lanes remain authoritative.
+    for relative in ("Binaries/Win64", "Binaries/Linux", "Content/Paks"):
+        (paths["overlay"] / relative).mkdir(parents=True, exist_ok=True)
+    # Saves live in LocalAppData on a player machine and may live at an
+    # operator-selected location on a server. Keep them beside (not inside)
+    # the game overlay so deployment can route them without pretending they
+    # belong under the Steam install.
+    for relative in ("Saved/SaveGames/Worlds", "Saved/SaveGames/Players", "Backups"):
+        (paths["appdata"] / relative).mkdir(parents=True, exist_ok=True)
     marker = staged / ".layered-profile-v1"
     if not marker.is_file():
         marker.write_text("DragonwildsSync layered World staging v1\n", encoding="utf-8")
@@ -159,6 +173,64 @@ def dedicated_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
 
 def dedicated_profile_staging_root(profile_dir: str | Path) -> Path:
     return dedicated_profile_layout(profile_dir)["root"]
+
+
+def connected_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
+    """Return the player-side staging lanes for one connected World.
+
+    The existing ``snapshot`` directory remains the restorable mod overlay.
+    Requested World/player saves are retained beside it in an AppData-shaped
+    lane so profile data can be inspected or exported without mixing it into
+    the Steam installation.
+    """
+    owner = Path(profile_dir)
+    staged = owner / "staged"
+    paths = {
+        "root": staged,
+        "overlay": staged / "overlay",
+        "appdata": staged / "AppData",
+        "world_saves": staged / "AppData/Saved/SaveGames/Worlds",
+        "player_saves": staged / "AppData/Saved/SaveGames/Players",
+        "backups": staged / "AppData/Backups",
+        "manifests": owner / "manifests",
+    }
+    for path in paths.values():
+        path.mkdir(parents=True, exist_ok=True)
+    for relative in ("Binaries/Win64", "Content/Paks"):
+        (paths["overlay"] / relative).mkdir(parents=True, exist_ok=True)
+    return paths
+
+
+def staged_runtime_versions(profile_dir: str | Path) -> dict[str, dict]:
+    """Identify user-supplied loader trees by marker or stable content hash."""
+    layout = dedicated_profile_layout(profile_dir)
+
+    def inspect(root: Path) -> dict:
+        files = sorted((item for item in root.rglob("*") if item.is_file()),
+                       key=lambda item: item.relative_to(root).as_posix().casefold())
+        digest = hashlib.sha256()
+        version = ""
+        for item in files:
+            relative = item.relative_to(root).as_posix()
+            digest.update(relative.encode("utf-8")); digest.update(b"\0")
+            try:
+                with item.open("rb") as stream:
+                    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                if not version and ("version" in item.name.casefold() or item.suffix.casefold() in {".json", ".ini"}):
+                    marker = item.read_text(encoding="utf-8", errors="ignore")[:4096]
+                    match = re.search(r"(?i)(?:version\s*[:=]?\s*)?[v]?([0-9]+(?:\.[0-9A-Za-z_-]+)+)", marker)
+                    if match:
+                        version = match.group(1)
+            except OSError:
+                continue
+        content_hash = digest.hexdigest() if files else ""
+        return {"installed_version": version or (f"sha256:{content_hash[:12]}" if content_hash else "Not staged"),
+                "content_hash": content_hash, "file_count": len(files), "staging_path": str(root),
+                "source_name": "Profile staging", "version_basis": "marker" if version else "content-hash"}
+
+    return {"ue4ss": inspect(layout["ue4ss_loader"]),
+            "runeschema": inspect(layout["runeschema_loader"])}
 
 
 def dedicated_profile_mod_roots(profile_dir: str | Path) -> dict[str, Path]:

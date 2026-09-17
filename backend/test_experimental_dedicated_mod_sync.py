@@ -161,9 +161,9 @@ def main() -> None:
             )
             assert published["serving"] is True and published["manifest_file_count"] > 0
             fingerprints = published.get("component_fingerprints") or {}
-            assert "ue4ss:BetaLua" in fingerprints
-            assert "runeschema:BetaSchema" in fingerprints
-            assert "pak:BetaPack" in fingerprints
+            assert "ue4ss_mod::BetaLua" in fingerprints
+            assert "runeschema_mod::BetaSchema" in fingerprints
+            assert "pak_mod::BetaPack" in fingerprints
 
             (client_game / "Content" / "Paks").mkdir(parents=True, exist_ok=True)
             (client_game / "Binaries" / "Win64").mkdir(parents=True, exist_ok=True)
@@ -212,11 +212,11 @@ def main() -> None:
                 "world-b", changed_units, "pw", "server-key", port,
                 {"os": "test"}, 7777, broadcast=False, game_root=str(game),
             )
-            assert republished["component_fingerprints"]["ue4ss:BetaLua"] != fingerprints["ue4ss:BetaLua"]
+            assert republished["component_fingerprints"]["ue4ss_mod::BetaLua"] != fingerprints["ue4ss_mod::BetaLua"]
             delta = sync_world(world, client_install, "integration-client")
             assert delta["downloaded"] == 1
-            assert "pak:BetaPack" in delta["component_fast_matches"]
-            assert "runeschema:BetaSchema" in delta["component_fast_matches"]
+            assert "pak_mod::BetaPack" in delta["component_fast_matches"]
+            assert "runeschema_mod::BetaSchema" in delta["component_fast_matches"]
             assert (client_game / "Binaries/Win64/ue4ss/Mods/BetaLua/main.lua").read_text(encoding="utf-8") == "return 'Beta-v2'"
 
             print("experimental dedicated mod scan/profile swap/host transfer tests passed")

@@ -42,7 +42,7 @@ from machine_paths import server_save_paths
 from client_layout import resolve_client_layout
 from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_layout,
                                 dedicated_profile_mod_roots,
-                                ensure_profile_mod_roots)
+                                ensure_profile_mod_roots, staged_runtime_versions)
 from world_save_distribution import build_worldsave_zip, record_download, status_for_ip
 from server_scheduler import normalize_notice
 from player_tracker import PLAYER_SERVICE
@@ -58,6 +58,8 @@ from runtime_platforms import (ALL_CLIENT_PLATFORMS, WIN64_RUNTIME_PLATFORMS, de
                                normalize_client_platform, runtime_variant_catalog)
 from sync_manifest import build_client_meta
 from world_classification import normalize_world_classification
+from mod_distribution import (BOTH, SERVER, legacy_classification,
+                              normalize_distribution, require_distribution, ships_to_client)
 from operator_identity import sign_world_identity
 from networking import (DEFAULT_SYNC_PORT, DEFAULT_SYNC_DISCOVERY_PORT, apply_firewall_spec, backend_program,
                         firewall_spec)
@@ -523,6 +525,7 @@ class ModUnit:
     source_files: list[Path] = field(default_factory=list)
     exclude_top_level_dirs: set[str] = field(default_factory=set)
     classification: str = "player_required"
+    distribution_mode: str = ""
     category: str = "permanent"
     manual: bool = False
     source: dict = field(default_factory=lambda: normalize_mod_source({}))
@@ -530,6 +533,10 @@ class ModUnit:
     tags: list[str] = field(default_factory=list)
     identity: dict | None = None
     _content_cache: tuple[int, int, str] | None = field(default=None, init=False, repr=False)
+
+    @property
+    def distribution(self) -> str:
+        return normalize_distribution(self.distribution_mode or self.classification)
 
     @property
     def key(self) -> str:
@@ -613,8 +620,8 @@ class ModUnit:
             "deployment_target": GROUP_DEST_BASE[self.group],
             "section": UNIT_GROUP_SECTION.get(self.group, ("other", ""))[0],
             "subsection": UNIT_GROUP_SECTION.get(self.group, ("other", ""))[1],
-            "classification": self.classification, "category": self.category,
-            "distribution": "client_required" if self.classification == "player_required" else "server_retained",
+            "classification": legacy_classification(self.distribution), "category": self.category,
+            "distribution": self.distribution,
             "file_count": file_count, "size": size, "content_hash": content_hash, "manual": self.manual,
             "source": normalize_mod_source(self.source),
             "hotload_capable": bool(self.hotload_capable),
@@ -681,10 +688,12 @@ def scan_mod_units(profile_id: str, game_root: str) -> list[ModUnit]:
                            source_files=list(source_files or []), exclude_top_level_dirs=set(exclude or []),
                            classification=_suggested_classification(name, manual), manual=manual)
             override = overrides.get(key) or {}
-            if override.get("classification") in ("player_required", "server_only"):
-                unit.classification = override["classification"]
+            if override.get("distribution") or override.get("classification"):
+                unit.distribution_mode = normalize_distribution(override.get("distribution") or override.get("classification"))
+                unit.classification = legacy_classification(unit.distribution_mode)
             if group == "ue4ss_mod" and name.casefold() in SERVER_ONLY_UE4SS_MOD_NAMES:
                 unit.classification = "server_only"
+                unit.distribution_mode = SERVER
             if override.get("category") in ("permanent", "temporary"):
                 unit.category = override["category"]
             unit.source = normalize_mod_source(override.get("source"))
@@ -771,10 +780,12 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
                            source_files=list(source_files or []), exclude_top_level_dirs=set(exclude or []),
                            classification=_suggested_classification(name, manual), manual=manual)
             override = overrides.get(key) or {}
-            if override.get("classification") in ("player_required", "server_only"):
-                unit.classification = override["classification"]
+            if override.get("distribution") or override.get("classification"):
+                unit.distribution_mode = normalize_distribution(override.get("distribution") or override.get("classification"))
+                unit.classification = legacy_classification(unit.distribution_mode)
             if group == "ue4ss_mod" and name.casefold() in SERVER_ONLY_UE4SS_MOD_NAMES:
                 unit.classification = "server_only"
+                unit.distribution_mode = SERVER
             if override.get("category") in ("permanent", "temporary"):
                 unit.category = override["category"]
             unit.source = normalize_mod_source(override.get("source"))
@@ -1030,11 +1041,71 @@ def persist_unit_overrides(profile_id: str, units: list[ModUnit]) -> None:
     overrides = profile.setdefault("unit_overrides", {})
     for order, unit in enumerate(units):
         current = dict(overrides.get(unit.key) or {})
-        current.update({"classification": unit.classification, "category": unit.category, "order": order,
+        current.update({"distribution": unit.distribution,
+                        "classification": legacy_classification(unit.distribution),
+                        "category": unit.category, "order": order,
                         "source": normalize_mod_source(unit.source), "hotload_capable": bool(getattr(unit, "hotload_capable", False)),
                         "tags": list(getattr(unit, "tags", []) or [])[:24]})
         overrides[unit.key] = current
     save_server_profile(profile_id, profile)
+    write_profile_mod_manifests(profile_id, units)
+
+
+def write_profile_mod_manifests(profile_id: str, units: list[ModUnit]) -> dict:
+    """Write inspectable, non-deployed ownership manifests beside staging.
+
+    The manifests never enter the game directory. They are the source receipt
+    used to publish client payloads and complement the client's installed-file
+    ledger, which remains the only cleanup authority on that machine.
+    """
+    layout = dedicated_profile_layout(SERVER_PROFILES_DIR / profile_id)
+    root = layout["manifests"]
+    root.mkdir(parents=True, exist_ok=True)
+    entities = []
+    live_names = set()
+    for unit in units:
+        if not user_visible_mod_unit(unit):
+            continue
+        safe_name = hashlib.sha256(unit.key.encode("utf-8")).hexdigest()[:20] + ".json"
+        live_names.add(safe_name)
+        files = []
+        for target, source in unit.iter_files():
+            try:
+                files.append({"path": str(target).replace("\\", "/"),
+                              "sha256": sha256_of(source), "size": source.stat().st_size})
+            except OSError:
+                continue
+        entity = {
+            "schema": "DragonwildsSync.ProfileMod.v1",
+            "profile_id": profile_id,
+            "entity_key": unit.key,
+            "name": unit.name,
+            "group": unit.group,
+            "distribution": unit.distribution,
+            "deployment_target": GROUP_DEST_BASE[unit.group],
+            "files": sorted(files, key=lambda row: row["path"].casefold()),
+        }
+        pending = root / (safe_name + ".tmp")
+        pending.write_text(json.dumps(entity, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(pending, root / safe_name)
+        entities.append({key: entity[key] for key in ("entity_key", "name", "group", "distribution", "deployment_target")}
+                        | {"manifest": safe_name, "file_count": len(files)})
+    for stale in root.glob("*.json"):
+        if stale.name != "profile-manifest.json" and stale.name not in live_names:
+            stale.unlink(missing_ok=True)
+    profile_manifest = {
+        "schema": "DragonwildsSync.StagingProfile.v1",
+        "profile_id": profile_id,
+        "staging_root": str(layout["root"]),
+        "game_overlay": str(layout["overlay"]),
+        "appdata_staging": str(layout["appdata"]),
+        "runtimes": staged_runtime_versions(SERVER_PROFILES_DIR / profile_id),
+        "entities": entities,
+    }
+    pending = root / "profile-manifest.json.tmp"
+    pending.write_text(json.dumps(profile_manifest, indent=2, sort_keys=True), encoding="utf-8")
+    os.replace(pending, root / "profile-manifest.json")
+    return profile_manifest
 
 
 def set_mod_classification_fast(profile_id: str, key: str, classification: str) -> dict:
@@ -1045,8 +1116,7 @@ def set_mod_classification_fast(profile_id: str, key: str, classification: str) 
     the click needlessly expensive. Publish & Push performs the authoritative
     rescan before exposing the new manifest.
     """
-    if classification not in {"player_required", "server_only"}:
-        raise ValueError("classification must be player_required or server_only")
+    distribution = require_distribution(classification)
     group, separator, name = str(key or "").partition("::")
     if separator != "::" or group not in {"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"} or not name.strip():
         raise ValueError("A user-manageable mod key is required")
@@ -1057,10 +1127,12 @@ def set_mod_classification_fast(profile_id: str, key: str, classification: str) 
         raise KeyError("Server World not found")
     overrides = profile.setdefault("unit_overrides", {})
     current = dict(overrides.get(key) or {})
-    current["classification"] = classification
+    current["distribution"] = distribution
+    current["classification"] = legacy_classification(distribution)
     overrides[key] = current
     save_server_profile(profile_id, profile)
-    return {"key": key, "classification": classification, "pending_publish": True}
+    return {"key": key, "classification": current["classification"],
+            "distribution": distribution, "pending_publish": True}
 
 
 def apply_unit_update(profile_id: str, game_root: str, key: str, classification: str | None = None,
@@ -1070,9 +1142,8 @@ def apply_unit_update(profile_id: str, game_root: str, key: str, classification:
     if unit is None:
         raise KeyError("Mod unit not found")
     if classification is not None:
-        if classification not in ("player_required", "server_only"):
-            raise ValueError("classification must be player_required or server_only")
-        unit.classification = classification
+        unit.distribution_mode = require_distribution(classification)
+        unit.classification = legacy_classification(unit.distribution_mode)
     if category is not None:
         if category not in ("permanent", "temporary"):
             raise ValueError("category must be permanent or temporary")
@@ -1130,8 +1201,7 @@ def move_mod_unit(profile_id: str, game_root: str, key: str, direction: int = 0,
 
 def bulk_set_classification(profile_id: str, game_root: str, section: str,
                             classification: str = "player_required") -> list[ModUnit]:
-    if classification not in ("player_required", "server_only"):
-        raise ValueError("classification must be player_required or server_only")
+    distribution = require_distribution(classification)
     section = str(section or "").strip().lower()
     groups = {
         "paks": {"pak_mod"},
@@ -1147,7 +1217,8 @@ def bulk_set_classification(profile_id: str, game_root: str, section: str,
     if not matched:
         raise ValueError(f"No {section} mod units are installed for this World.")
     for unit in matched:
-        unit.classification = classification
+        unit.distribution_mode = distribution
+        unit.classification = legacy_classification(distribution)
     persist_unit_overrides(profile_id, units)
     return units
 
@@ -2682,6 +2753,8 @@ class ShareServer:
             staged_units = scan_profile_snapshot_units(profile_id)
             units = [unit for unit in units if unit.group not in mod_groups]
             units.extend(unit for unit in staged_units if unit.group in mod_groups)
+        if persist_profile:
+            write_profile_mod_manifests(profile_id, units)
         hosting = normalize_hosting(profile)
         if hosting["mode"] == EXTERNAL_BROADCAST:
             endpoint = hosting["gameEndpoint"]
@@ -2708,7 +2781,7 @@ class ShareServer:
             cert_path, key_path, tls_cert_fingerprint = _sync_tls_material(
                 profile_id, [local_ip_guess(), str(public_ip or profile.get("public_ip") or "")])
         required = [u for u in units
-                    if u.classification == "player_required" and client_distribution_allowed_unit(u)]
+                    if ships_to_client(u.distribution) and client_distribution_allowed_unit(u)]
         security_reviews = []
         PUBLISH_DIR.mkdir(parents=True, exist_ok=True)
         # Do not wipe the live transfer tree. Clients can legitimately still be
@@ -2741,6 +2814,7 @@ class ShareServer:
                                        "category": unit.category, "kind": "file", "extract_to": "",
                                        "platforms": unit_platforms,
                                        "mod_group": unit.group, "mod_name": unit.name,
+                                       "entity_key": unit.key, "distribution": unit.distribution,
                                        "deployment_target": GROUP_DEST_BASE[unit.group]})
         # Selection is derived from the World. Whenever the resulting client set
         # contains UE4SS entries, publish its client-safe launcher-owned mods.txt
@@ -2791,6 +2865,9 @@ class ShareServer:
             os.replace(temporary, dest)
             manifest_files.append({"path": rel, "sha256": sha256_of(dest), "size": dest.stat().st_size,
                                    "category": unit.category, "kind": "zip_bundle", "extract_to": unit_root,
+                                   "mod_group": unit.group, "mod_name": unit.name,
+                                   "entity_key": unit.key, "distribution": unit.distribution,
+                                   "deployment_target": GROUP_DEST_BASE[unit.group],
                                    "platforms": list(WIN64_RUNTIME_PLATFORMS)})
         # Client presentation intentionally omits runtime plumbing. Core UE4SS
         # loader files (including dwmapi.dll), mods.txt, and the RuneSchema core
@@ -2804,8 +2881,8 @@ class ShareServer:
                             "deployment_target": GROUP_DEST_BASE[unit.group],
                             "section": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[0],
                             "subsection": UNIT_GROUP_SECTION.get(unit.group, ("other", ""))[1],
-                            "classification": unit.classification,
-                            "distribution": "client_required" if unit.classification == "player_required" else "server_retained",
+                            "classification": legacy_classification(unit.distribution),
+                            "distribution": unit.distribution,
                             "category": unit.category, "file_count": file_count, "content_hash": content_hash,
                             "source": normalize_mod_source(unit.source), "hotload_capable": bool(unit.hotload_capable),
                             "tags": list(unit.tags)})
@@ -2822,12 +2899,15 @@ class ShareServer:
         broadcast_health_config = public_health_config(full_health_config)
         consolidated_tags = []
         seen_tags = set()
-        for tag in list(profile.get("tags") or []) + [t for u in visible_units if u.classification == "player_required" for t in (u.tags or [])]:
+        for tag in list(profile.get("tags") or []) + [t for u in visible_units if ships_to_client(u.distribution) for t in (u.tags or [])]:
             value = str(tag).strip()[:40]
             if value and value.casefold() not in seen_tags:
                 consolidated_tags.append(value); seen_tags.add(value.casefold())
             if len(consolidated_tags) >= 24: break
         runtime_stack = server_runtime_stack(load_state().get("application") or {}, profile, runeschema_runtime_dir=RUNESCHEMA_RUNTIME_DIR, remote=True)
+        staged_runtimes = staged_runtime_versions(SERVER_PROFILES_DIR / profile_id)
+        runtime_stack["ue4ss"].update(staged_runtimes["ue4ss"])
+        runtime_stack["runeschema"].update(staged_runtimes["runeschema"])
         classification = content_aware_world_classification(profile, units, tags=consolidated_tags)
         character_sharing = profile.get("character_sharing") if isinstance(profile.get("character_sharing"), dict) else {}
         dragonlink_enabled = bool((profile.get("sync_config") or {}).get("dragonlink_connect_enabled", False))
@@ -3246,7 +3326,7 @@ def install_dedicated_server(install_dir: str, steamcmd_dir: str, progress=None)
             for candidate in ("preallocating", "downloading", "verifying", "committing"):
                 if candidate in lowered: phase = candidate; break
             match = re.search(r"progress:\s*([0-9]+(?:\.[0-9]+)?)\s*\(([0-9]+)\s*/\s*([0-9]+)\)", line, re.I)
-            update = {"phase": phase, "message": line[-500:]}
+            update = {"phase": phase, "message": line[-500:], "console_line": line[-1000:]}
             if match:
                 update.update({"percent": float(match.group(1)), "downloaded_bytes": int(match.group(2)), "total_bytes": int(match.group(3))})
             if progress: progress(update)

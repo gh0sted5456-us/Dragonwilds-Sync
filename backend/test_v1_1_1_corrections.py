@@ -10,30 +10,14 @@ from profile_bundle import _clean_world, _hydrate_imported_world
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_packaged_three_examples_are_explicit_resources():
+def test_character_editor_does_not_package_three_runtime():
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["version"] == DRAGONWILDS_SYNC_VERSION
     resources = package["build"]["extraResources"]
-    three = next(row for row in resources if row.get("to") == "rsdw-viewer/three")
-    assert three["from"] == "node_modules/three"
-    required = {
-        "build/three.module.js",
-        "examples/jsm/loaders/GLTFLoader.js",
-        "examples/jsm/loaders/DRACOLoader.js",
-        "examples/jsm/controls/OrbitControls.js",
-        "examples/jsm/environments/RoomEnvironment.js",
-        "examples/jsm/exporters/GLTFExporter.js",
-        "examples/jsm/exporters/STLExporter.js",
-        "examples/jsm/utils/SkeletonUtils.js",
-        "examples/jsm/utils/BufferGeometryUtils.js",
-        "examples/jsm/libs/draco/draco_decoder.js",
-        "examples/jsm/libs/draco/draco_wasm_wrapper.js",
-        "examples/jsm/libs/draco/draco_decoder.wasm",
-    }
-    assert set(three["filter"]) == required
-    assert not any("three.webgpu" in path or "draco_encoder" in path for path in three["filter"])
-    main = (ROOT / "electron" / "main.cjs").read_text(encoding="utf-8")
-    assert "rsdw-viewer" in main and "vendor/three" in main
+    assert not any(row.get("to") == "rsdw-viewer/three" for row in resources)
+    assert "three" not in package.get("dependencies", {})
+    main = (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
+    assert "vendor/three" not in main and "capture-webview" not in main
 
 
 def test_spell_wheel_assignment_requires_unlock_and_keeps_unlock_state():

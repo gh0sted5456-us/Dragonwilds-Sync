@@ -4,7 +4,6 @@ const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
-const { pathToFileURL } = require('url');
 const { DiscordRichPresence } = require('./discord_rpc.cjs');
 const { checkForUpdates, stageAndApply, detectMode, readAppliedUpdate, dismissAppliedUpdate } = require('./app_updater.cjs');
 const { NexusAdapter } = require('./nexus_adapter.cjs');
@@ -82,7 +81,6 @@ if(startupPerformance.renderer_memory_mb)app.commandLine.appendSwitch('js-flags'
 let rsdwToolkitRoot = '';
 let rsdwToolkitServer = null;
 let rsdwToolkitBaseUrl = '';
-const rsdwGuestPreload = path.join(__dirname, 'rsdw_webview_preload.cjs');
 
 function allowedToolkitNavigation(value) {
   try {
@@ -138,7 +136,7 @@ function secureAttachedWebview(event, webPreferences, params) {
     return;
   }
   if (!allowedToolkitNavigation(params.src)) { event.preventDefault(); return; }
-  webPreferences.nodeIntegration=false; webPreferences.contextIsolation=true; webPreferences.sandbox=true; webPreferences.preload=rsdwGuestPreload;
+  event.preventDefault();
 }
 
 
@@ -402,12 +400,7 @@ function startRsdwToolkitServer(rootDir) {
         }
         if (!relative) relative = 'index.html';
         let servingRoot = rsdwToolkitRoot;
-        if (relative.startsWith('__rsdwmodel/vendor/three/')) {
-          servingRoot = app.isPackaged
-            ? path.resolve(process.resourcesPath, 'rsdw-viewer', 'three')
-            : path.resolve(projectRoot(), 'node_modules', 'three');
-          relative = relative.slice('__rsdwmodel/vendor/three/'.length);
-        } else if (relative.startsWith('__rsdwmodel/')) {
+        if (relative.startsWith('__rsdwmodel/')) {
           servingRoot = path.resolve(path.dirname(rsdwToolkitRoot), 'model');
           relative = relative.slice('__rsdwmodel/'.length) || 'Avatar/index.html';
         }
@@ -615,7 +608,7 @@ function createWindow({ show = true } = {}) {
         await click('[data-world-management-tab="manifest"]');await shot('45-sync-files.png');
         await click('[data-world-management-tab="game-setup"]');await shot('46-game-connection.png');
         await click('[data-world-management-tab="server-setup"]');await shot('47-sync-hosting.png');
-        await click('[data-route="characters-app"]');await assertAppyNavigation(); await shot('48-characters.png'); await scrollTo('.native-avatar-section'); await waitFor('.native-avatar-section .avatar-ready'); await shot('49-character-preview.png');
+        await click('[data-route="characters-app"]');await assertAppyNavigation(); await shot('48-characters.png'); await scrollTo('#rsdw-native-character-editor'); await waitFor('#rsdw-native-character-editor .character-preview-paused'); await shot('49-character-editor.png');
         await click('[data-route="mods-app"]');await assertAppyNavigation(); await wait(1200); await shot('50-mod-repository.png');
         if(await click('[data-release-open-mods]',{optional:true})){
           if(!await waitFor('[data-private-tab="mods"].active,[data-server-tab="mods"].active',40))throw new Error('Manage Mods did not open the selected profile Mods tab.');
@@ -905,31 +898,6 @@ ipcMain.handle('dragonwilds:invoke', (_event, method, params, meta) => {
 ipcMain.handle('dragonwilds:admin-status', () => runtimePlatformStatus());
 ipcMain.handle('dragonwilds:restart-admin', () => restartElevated());
 ipcMain.handle('dragonwilds:restart-application', () => restartApplication());
-ipcMain.handle('dragonwilds:read-renderer-asset', async (_event, relativePath) => {
-  const requested = String(relativePath || '').replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!requested || requested.includes('..') || !/^assets\/[A-Za-z0-9._\/-]+$/.test(requested)) {
-    throw new Error('Only bundled renderer assets can be read.');
-  }
-  const assetsRoot = path.join(projectRoot(), 'renderer', 'assets');
-  const target = path.resolve(projectRoot(), 'renderer', requested);
-  if (target !== assetsRoot && !target.startsWith(assetsRoot + path.sep)) {
-    throw new Error('Only bundled renderer assets can be read.');
-  }
-  let image = nativeImage.createFromPath(target);
-  if (image.isEmpty()) throw new Error('That bundled asset could not be decoded.');
-  const size = image.getSize();
-  const scale = Math.min(1, 1920 / Math.max(1, size.width), 1080 / Math.max(1, size.height));
-  if (scale < 1) image = image.resize({
-    width: Math.max(1, Math.round(size.width * scale)),
-    height: Math.max(1, Math.round(size.height * scale)),
-    quality: 'best',
-  });
-  let bytes = image.toJPEG(86);
-  if (bytes.length > 6 * 1024 * 1024) bytes = image.toJPEG(70);
-  const finalSize = image.getSize();
-  return { dataUrl: `data:image/jpeg;base64,${bytes.toString('base64')}`,
-    width: finalSize.width, height: finalSize.height, bytes: bytes.length };
-});
 ipcMain.handle('dragonwilds:pick-image', async () => {
   const r=await dialog.showOpenDialog(mainWindow,{title:'Choose image',properties:['openFile'],filters:[{name:'Images',extensions:['png','jpg','jpeg','webp','ico']}]});
   if(r.canceled||!r.filePaths[0])return null;
@@ -994,26 +962,6 @@ ipcMain.handle('dragonwilds:detached-restore', (_event, id) => { const entry=det
 ipcMain.handle('dragonwilds:detached-close', (_event, id) => { const entry=detachedWindows.get(String(id||'')); if(!entry||entry.window.isDestroyed())return false; entry.window.close(); return true; });
 
 
-ipcMain.handle('dragonwilds:capture-webview', async (_event, payload={}) => {
-  const id = Number(payload.webContentsId || 0);
-  const wc = webContents.fromId(id);
-  if (!wc || wc.isDestroyed()) throw new Error('The 3D Avatar surface is not available.');
-  let rect = null;
-  try {
-    rect = await wc.executeJavaScript(`(() => { const c=document.querySelector('canvas'); if(!c)return null; const r=c.getBoundingClientRect(); return {x:Math.max(0,Math.floor(r.x)),y:Math.max(0,Math.floor(r.y)),width:Math.max(1,Math.floor(r.width)),height:Math.max(1,Math.floor(r.height))}; })()`, true);
-  } catch (_) {}
-  let image = await wc.capturePage(rect && rect.width > 10 && rect.height > 10 ? rect : undefined);
-  if (String(payload.mode || '') === 'portrait') {
-    const size=image.getSize();
-    const side=Math.max(1,Math.min(size.width,size.height));
-    const x=Math.max(0,Math.floor((size.width-side)/2));
-    // Bias slightly upward for a face-card while retaining upper torso/armour.
-    const y=Math.max(0,Math.min(size.height-side,Math.floor((size.height-side)*0.18)));
-    image=image.crop({x,y,width:side,height:side}).resize({width:768,height:768,quality:'best'});
-  }
-  const size=image.getSize();
-  return { dataUrl:image.toDataURL(), width:size.width, height:size.height };
-});
 ipcMain.handle('dragonwilds:managed-dialog-open', (event, payload={}) => createManagedDialog(event.sender, payload));
 ipcMain.handle('dragonwilds:managed-dialog-content', (event, id) => {
   const entry=managedDialogs.get(String(id||''));
@@ -1056,7 +1004,6 @@ ipcMain.handle('dragonwilds:app-update-apply', async (_event, opts={}) => stageA
 ipcMain.handle('dragonwilds:app-update-result', () => readAppliedUpdate(app));
 ipcMain.handle('dragonwilds:app-update-dismiss-result', () => dismissAppliedUpdate(app));
 
-ipcMain.handle('dragonwilds:rsdw-webview-preload', () => pathToFileURL(rsdwGuestPreload).toString());
 ipcMain.handle('dragonwilds:legal-text', () => { try { return fs.readFileSync(path.join(projectRoot(), 'LICENSE.txt'), 'utf8'); } catch (_) { return ''; } });
 ipcMain.handle('dragonwilds:rsdw-toolkit-root', async (_event, incoming) => {
   const candidate = path.resolve(String(incoming || ''));

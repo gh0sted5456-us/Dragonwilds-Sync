@@ -86,5 +86,23 @@ def main():
     print("Official RuneSchema core replacement tests passed")
 
 
+def test_profile_owned_runeschema_runtime() -> None:
+    from profile_mod_layout import dedicated_profile_layout, staged_runtime_versions
+
+    with tempfile.TemporaryDirectory() as tmp:
+        profile = Path(tmp) / "profile"
+        layout = dedicated_profile_layout(profile)
+        runtime = layout["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema"
+        (runtime / "dlls").mkdir(parents=True)
+        (runtime / "config").mkdir(parents=True)
+        (runtime / "dlls/main.dll").write_bytes(b"operator-selected-runtime")
+        (runtime / "config/config.json").write_text('{"profile_owned":true}', encoding="utf-8")
+        evidence = staged_runtime_versions(profile)["runeschema"]
+        assert evidence["file_count"] == 2
+        assert evidence["content_hash"]
+        assert evidence["source_name"] == "Profile staging"
+
+
 if __name__ == "__main__":
-    main()
+    test_profile_owned_runeschema_runtime()
+    print("Profile-owned RuneSchema runtime contract passed")

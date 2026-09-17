@@ -38,6 +38,7 @@ from server_systems import (SHARE, STATE, PlayerLogMonitor, compute_mod_badges,
                             local_ip_guess, detect_public_ip,
                             scan_profile_snapshot_units,
                             refresh_live_profile_metadata)
+from mod_distribution import runs_on_server
 
 DEDICATED_SERVER_EXE = "RSDragonwilds.exe"
 DEDICATED_SERVER_EXE_ALIASES = ("RSDragonwildsServer.sh", "RSDragonwildsServer", "RSDragonwilds.exe", "RSDragonwildsServer.exe")
@@ -445,6 +446,21 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
     stored = dedicated_profile_layout(_profile_dir(profile_id))
+    excluded = {"overlay": set(), "ue4ss": set(), "runeschema": set(), "paks": set()}
+    profile = load_server_profile(profile_id) or {}
+    for key, override in (profile.get("unit_overrides") or {}).items():
+        group, separator, name = str(key).partition("::")
+        if not separator or not name or runs_on_server((override or {}).get("distribution") or (override or {}).get("classification")):
+            continue
+        if group == "ue4ss_mod":
+            excluded["ue4ss"].add(name)
+        elif group == "runeschema_mod":
+            excluded["runeschema"].add(name)
+        elif group == "pak_mod":
+            excluded["paks"].add(name)
+        elif group == "win64_mod":
+            excluded["overlay"].add(f"Binaries/Win64/{name}")
+    stored["server_excluded"] = excluded
     from mod_deployment_cleanup import deploy_layered_world_profile
     return deploy_layered_world_profile(
         stored, resolve_server_layout(game_root).game_root,

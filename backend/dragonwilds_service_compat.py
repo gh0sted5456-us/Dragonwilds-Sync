@@ -95,6 +95,8 @@ from world_directory import (discover_sync_worlds, remember_heartbeats, publish_
                              normalize_directory_sources, FINGERPRINT_RE, PROTOCOL as WORLD_SYNC_PROTOCOL)
 from directory_host import DIRECTORY_HOST, REMOTE_PERMISSION_DEFAULTS, normalize_host_config, try_upnp_mapping
 from world_classification import normalize_world_classification
+from mod_distribution import legacy_classification, require_distribution
+from profile_mod_layout import connected_profile_layout
 from world_identity import normalize_endpoint
 from recommendation_feeds import OFFICIAL_FEED_URL, NEXUS_ACTIVITY_URL, builtin_recommendations, refresh_recommendations
 from operator_identity import public_operator_status, verify_world_identity
@@ -1513,6 +1515,11 @@ _WORLD_SYNC_LOCK = threading.RLock()
 def _set_server_update_job(job_id: str, **patch) -> None:
     with _SERVER_UPDATE_LOCK:
         job = _SERVER_UPDATE_JOBS.setdefault(job_id, {"id": job_id, "status": "queued", "phase": "queued", "percent": 0})
+        console_line = str(patch.pop("console_line", "") or "").strip()
+        if console_line:
+            lines = list(job.get("output_lines") or [])
+            lines.append(console_line[-1000:])
+            job["output_lines"] = lines[-240:]
         job.update(patch); job["updated_at"] = time.time()
 
 
@@ -5150,7 +5157,8 @@ def handle(method: str, params: dict) -> object:
                 world.setdefault("status", {})["world_save_download"] = access
                 if access.get("allowed"):
                     safe_world_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", world_id).strip("._") or "connected-world"
-                    retained_path = WORLD_PROFILES_DIR / "local" / safe_world_id / "worldsaves" / "world-save-latest.zip"
+                    profile_layout = connected_profile_layout(WORLD_PROFILES_DIR / "connected" / safe_world_id)
+                    retained_path = profile_layout["world_saves"] / "world-save-latest.zip"
                     snapshot = download_worldsave(world, str(retained_path))
                     world["retained_world_save"] = {**snapshot, "retained_at": now_iso(), "purpose": "conversion_continuity"}
                     result["retained_world_save"] = deepcopy(world["retained_world_save"])
@@ -5732,18 +5740,17 @@ def handle(method: str, params: dict) -> object:
         client_profile_id = _application_user_id(state)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         if not game_dir: raise ValueError("Set the Dragonwilds game folder before restoring a player save.")
-        target = APP_DATA_DIR / "incoming_player_backups" / f"{world_id}-{secrets.token_hex(6)}.rsdwl"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            download = download_latest_player_backup(world, target, client_profile_id)
-            inspected = inspect_character_package(target)
-            restored = import_character_package(target, game_dir, overwrite=bool(params.get("overwrite", True)))
-        finally:
-            target.unlink(missing_ok=True)
+        safe_world_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", world_id).strip("._") or "connected-world"
+        profile_layout = connected_profile_layout(WORLD_PROFILES_DIR / "connected" / safe_world_id)
+        target = profile_layout["player_saves"] / "player-save-latest.rsdwl"
+        download = download_latest_player_backup(world, target, client_profile_id)
+        inspected = inspect_character_package(target)
+        restored = import_character_package(target, game_dir, overwrite=bool(params.get("overwrite", True)))
         world.setdefault("player_backup", {})["last_restored_at"] = now_iso()
         _record_notification(state, "Player save restored", f"Restored {restored.get('file_name') or inspected.get('save_name') or 'the retained character save'}; any replaced local file was backed up first.", "success", world_id=world_id, key=f"character-restore:{world_id}")
         save_state(state)
-        return {"result": {"download": download, "restore": restored}, "state": public_state(state)}
+        return {"result": {"download": download, "restore": restored,
+                            "staged_path": str(target)}, "state": public_state(state)}
 
     if method == "server.world.broadcast":
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
@@ -5951,11 +5958,10 @@ def handle(method: str, params: dict) -> object:
         unit = next((u for u in units if u.key == str(params.get("key") or "")), None)
         if unit is None:
             raise KeyError("Mod unit not found")
-        if params.get("classification") is not None:
-            value = str(params.get("classification"))
-            if value not in ("player_required", "server_only"):
-                raise ValueError("classification must be player_required or server_only")
-            unit.classification = value
+        requested_distribution = params.get("distribution", params.get("classification"))
+        if requested_distribution is not None:
+            unit.distribution_mode = require_distribution(requested_distribution)
+            unit.classification = legacy_classification(unit.distribution_mode)
         if params.get("category") is not None:
             value = str(params.get("category"))
             if value not in ("permanent", "temporary"):
@@ -6002,12 +6008,14 @@ def handle(method: str, params: dict) -> object:
 
     if method == "server.world.mod.classify":
         profile_id = str(params.get("id") or "")
-        result = set_mod_classification_fast(profile_id, str(params.get("key") or ""), str(params.get("classification") or ""))
+        result = set_mod_classification_fast(
+            profile_id, str(params.get("key") or ""),
+            str(params.get("distribution", params.get("classification")) or ""))
         profile = load_server_profile(profile_id)
         cache = _inventory_cache(profile or {})
         if cache["updated_at"]:
             cache["mods"] = [{**row, "classification": result["classification"],
-                              "distribution": "client_required" if result["classification"] == "player_required" else "server_retained"}
+                              "distribution": result["distribution"]}
                              if str(row.get("key") or "") == result["key"] else row for row in cache["mods"]]
             profile["metadata_cache"] = {**cache, "updated_at": now_iso(), "source": "apply"}
             save_server_profile(profile_id, profile)
@@ -6471,7 +6479,8 @@ def handle(method: str, params: dict) -> object:
         if world is None: raise KeyError("World not found")
         world_id = str(world.get("id") or params.get("id") or "connected-world")
         safe_world_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", world_id).strip("._") or "connected-world"
-        retained_path = WORLD_PROFILES_DIR / "local" / safe_world_id / "worldsaves" / "world-save-latest.zip"
+        profile_layout = connected_profile_layout(WORLD_PROFILES_DIR / "connected" / safe_world_id)
+        retained_path = profile_layout["world_saves"] / "world-save-latest.zip"
         result = download_worldsave(world, str(retained_path))
         destination = str(params.get("destination") or "").strip()
         if destination:
@@ -6492,8 +6501,19 @@ def handle(method: str, params: dict) -> object:
         world = find_world(state, str(params.get("id") or ""))
         if world is None: raise KeyError("World not found")
         destination = str(params.get("destination") or "").strip()
-        if not destination: raise ValueError("Choose where to save this World backup.")
-        return {"result": download_worldsave_backup(world, str(params.get("name") or ""), destination)}
+        world_id = str(world.get("id") or params.get("id") or "connected-world")
+        safe_world_id = re.sub(r"[^A-Za-z0-9_.-]+", "_", world_id).strip("._") or "connected-world"
+        backup_name = Path(str(params.get("name") or "world-backup.zip")).name
+        profile_layout = connected_profile_layout(WORLD_PROFILES_DIR / "connected" / safe_world_id)
+        staged = profile_layout["backups"] / backup_name
+        result = download_worldsave_backup(world, str(params.get("name") or ""), str(staged))
+        if destination:
+            exported = Path(destination)
+            exported.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(staged, exported)
+            result["exported_path"] = str(exported)
+        result["staged_path"] = str(staged)
+        return {"result": result}
 
     if method == "world.feedback.submit":
         world_id = str(params.get("id") or "")

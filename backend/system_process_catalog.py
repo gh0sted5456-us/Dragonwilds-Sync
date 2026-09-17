@@ -32,7 +32,6 @@ APPLICATION_PARENT_COMPONENTS = {
 SUBAPP_PARENT_OVERRIDES = {
     ("shell", "in-app-windows"): "managed-dialog-renderer",
     ("shell", "quick-launch"): "quick-renderer",
-    ("characters", "character-3d"): "rsdw-viewer-renderer",
 }
 
 
@@ -65,7 +64,6 @@ SYSTEM_COMPONENTS = {
     "managed-dialog-renderer": _entry("renderer-process", "shell", "electron-main", "window", "Theme-shared detachable in-app editor/dialog host"),
     "internal-route-frame": _entry("renderer-surface", "shell", "main-renderer", "workspace", "Cached same-origin route workspace sharing the parent preload bridge"),
     "external-browser-renderer": _entry("sandboxed-renderer-process", "shell", "electron-main", "window", "Untrusted HTTPS/Nexus browser with no launcher bridge", optional=True),
-    "rsdw-viewer-renderer": _entry("sandboxed-renderer-process", "rsdw-l", "main-renderer", "subapp", "Renderer-only character preview", optional=True, consumers=["characters", "rsdw-l"]),
 
     # Disposable compute isolation. One authenticated process per active domain.
     **{

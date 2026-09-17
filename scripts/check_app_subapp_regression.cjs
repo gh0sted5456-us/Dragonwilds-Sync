@@ -27,7 +27,7 @@ function subappsFor(application) {
 const expected = {
   shell: ['navigation', 'settings', 'help', 'in-app-windows', 'quick-launch'],
   worlds: ['placards', 'private-worlds', 'hosted-worlds', 'world-save-editor', 'manifests', 'world-map'],
-  characters: ['character-creator', 'character-3d', 'appearance', 'inventory', 'modded-item-repository'],
+  characters: ['character-creator', 'appearance', 'inventory', 'modded-item-repository'],
   'rsdw-l': ['character-editor', 'item-editor', 'spell-editor', 'recipe-unlocker', 'quest-editor', 'live-map', 'spawner', 'console'],
   mods: ['found-mods', 'mod-explorer', 'monaco-mod-editor', 'shared-mod-repository', 'load-order', 'runtime-metadata'],
   rsdragonwilds: ['singleplayer', 'co-op', 'dedicated-server'],
@@ -44,7 +44,7 @@ const evidence = {
   placards: ['placardFrontClassificationMarkup'], 'private-worlds': ['privateWorldById'],
   'hosted-worlds': ['serverWorlds()'], 'world-save-editor': ['world.save.editor.write'],
   manifests: ['sync_manifest'], 'world-map': ['ensureAshenfallMap'],
-  'character-creator': ['character-editor-redesign'], 'character-3d': ['rsdw-avatar-webview'],
+  'character-creator': ['character-editor-redesign'],
   appearance: ['nativeAppearanceField'], inventory: ['nativeItemEditorMarkup'],
   'modded-item-repository': ['openCustomItemRepository'],
   'character-editor': ['nativeCharacterEditorMarkup'], 'item-editor': ['characters.native.tool.preview'],

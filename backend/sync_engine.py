@@ -21,7 +21,7 @@ from profile_mod_destinations import resolve_mod_install_paths
 from security_scanner import defender_scan, defender_status
 from world_identity import candidate_endpoints, normalize_endpoint, positive_world_identity
 from client_layout import resolve_client_layout
-from profile_mod_layout import ensure_profile_mod_roots
+from profile_mod_layout import connected_profile_layout, ensure_profile_mod_roots
 from runtime_platforms import detect_client_platform, entry_allowed_for_platform
 from active_world import write_active_world, remove_active_world
 from mod_tags import UE4SS_BAKED_IN_DEFAULT_MODS
@@ -270,6 +270,7 @@ def save_local_state(install_dir: Path, state: dict) -> None:
         "manifest_version": state.get("applied_version"),
         "manifest_fingerprint": state.get("manifest_fingerprint") or "",
         "components": dict(state.get("components") or {}),
+        "owned_entities": list(state.get("owned_entities") or []),
         "file_count": len(state.get("files") or {}),
         "synced_at": state.get("synced_at"),
     }
@@ -457,6 +458,7 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
     mods_destination = destination / "mods"
     managed_destination = destination / "managed_files"
     config_destination = destination / "configs" / "game"
+    staged = connected_profile_layout(destination.parent)
     if include_mods:
         _remove_launcher_managed_tree(mods_destination)
         profile_roots = ensure_profile_mod_roots(mods_destination)
@@ -513,6 +515,15 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
                 _copy_snapshot_file(source, visible)
     if layout.config_dir.exists():
         copy_tree(layout.config_dir, config_destination)
+    # Keep a profile-local, AppData-shaped save bank. This is never deployed
+    # into the Steam tree and gives the player an inspectable/restorable copy
+    # of the saves that were active when this World profile was snapshotted.
+    _remove_launcher_managed_tree(staged["world_saves"])
+    _remove_launcher_managed_tree(staged["player_saves"])
+    if layout.savegames_dir.exists():
+        copy_tree(layout.savegames_dir, staged["world_saves"])
+    if layout.character_dir.exists():
+        copy_tree(layout.character_dir, staged["player_saves"])
     state_path = client_state_dir(game_root) / STATE_FILE
     if state_path.exists():
         destination.mkdir(parents=True, exist_ok=True)
@@ -1256,6 +1267,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
     for entry in manifest.get("files", []):
         info = {"sha256": entry.get("sha256"), "category": entry.get("category"),
                 "mod_group": entry.get("mod_group"), "mod_name": entry.get("mod_name"),
+                "entity_key": entry.get("entity_key"), "distribution": entry.get("distribution") or "BOTH",
                 "target_scope": entry.get("target_scope") or "game", "target_path": entry.get("target_path") or "",
                 "component": component_key(entry), "baked_component": bool(entry.get("baked_component")),
                 "baseline_runtime": bool(entry.get("baseline_runtime")), "visibility": entry.get("visibility") or ""}
@@ -1295,6 +1307,7 @@ def _sync_world_once(world: dict, install_dir: Path, client_id: str, keep_core_p
         "applied_version": manifest.get("version"),
         "manifest_fingerprint": meta["manifest_fingerprint"],
         "components": meta["components"],
+        "owned_entities": meta["owned_entities"],
         "synced_at": time.time(),
         "files": new_files,
     })

@@ -46,29 +46,22 @@ need(app.includes("state.rsdwTool='character-editor'") && app.includes('await en
 need(responsive.includes('.profile-character-save{') && responsive.includes('.profile-character-worlds{'), 'Profile Character saves must have responsive layout and World chips');
 
 for (const token of [
-  'character-editor-redesign', "[['appearance','Appearance'],['pose','Pose'],['background','Background']]",
+  'character-editor-redesign', 'data-character-editor-active-tab="appearance"',
   "nativeAppearanceSelector(editor,'Head','Face')", "nativeAppearanceSelector(editor,'HairPreset','Hair')",
   "nativeAppearanceSelector(editor,'FacialHairPreset','Beard')", 'characterEquipmentSurface(liveAvatar)',
   'Array.from({length:8}', 'data-character-save', 'data-character-export',
-  'data-character-undo', 'data-character-redo', 'data-avatar-upstream-select="avatar-animation-select"',
-  'data-character-tab-popover="pose"', 'data-character-tab-popover="background"',
-  'data-character-pose-filter', 'data-character-background-choice',
-  "file:'placards/6.webp'", "file:'placards/8.webp'", "file:'placards/5.webp'",
-  "file:'placards/9.webp'", "file:'placards/7.webp'",
+  'data-character-undo', 'data-character-redo', 'Save-backed character summary',
   'characterEquipmentCompatible(row, slot)', 'character-equipment-context-menu',
   'openStudioEquipmentMenu(socket,event)', 'data-character-equip-item',
   "action:'remove',section:'loadout'", "slot==='Hotbar'", "section:'inventory'",
 ]) need(app.includes(token), `Character Editor redesign contract missing ${token}`);
-need(app.includes('nativeCharacterEditor.querySelectorAll(\'[data-character-editor-tab]\')') && app.includes('panel.classList.toggle(\'active\''), 'Character Editor tabs must swap panels in place without recreating the live preview');
-const tabSwapStart = app.indexOf('const setCharacterEditorTab=');
-const tabSwap = app.slice(tabSwapStart, app.indexOf("nativeCharacterEditor.querySelectorAll('[data-native-step]')", tabSwapStart));
-need(tabSwap.includes("panel.classList.toggle('active'") && !tabSwap.includes('render('), 'Character Editor tab swaps must only toggle mounted panels');
+need(!app.includes('<webview id="rsdw-avatar-webview"') && app.includes('data-character-editor-active-tab="appearance"'), 'Character Editor must remain save-backed without a 3D renderer');
 const equipmentApply = app.slice(app.indexOf('const applyStudioContextItem='), app.indexOf('const openStudioEquipmentMenu='));
 need(equipmentApply.includes('refreshStudioEquipmentSocket(') && !equipmentApply.includes('render();'), 'equipping or clearing a quick-select item must update its mounted socket without repainting the Character Editor');
 need(app.includes('Object.values(editor.tabs||{}).flatMap((tab)=>tab.items||[])'), 'Quick Equip must merge every Item Editor tab, including Modded Items');
 need(!app.includes('data-studio-native-meta') && !app.includes('data-studio-native-customization') && !app.includes('data-studio-native-value'), 'superseded pre-redesign appearance facade must stay removed');
 need(!styles.includes('.character-equipment-studio') && !styles.includes('.character-equipment-groups'), 'superseded pre-redesign equipment layout CSS must stay removed');
-need(app.includes("target&&!target.matches('[data-native-meta], [data-native-customization]"), 'preview-only camera, background, and Pose controls must not dirty the save');
+need(app.includes("target&&!target.matches('[data-native-meta], [data-native-customization]"), 'non-save controls must not dirty the character save');
 need(styles.includes('grid-template-columns:minmax(320px,370px) minmax(480px,1fr) minmax(340px,400px)'), 'Character Editor desktop layout must preserve controls, dominant preview, and equipped columns');
 need(styles.includes('.character-action-bar{') && styles.includes('grid-template-columns:repeat(8'), 'Character Editor must render the exact eight-slot action bar');
 need(styles.includes('.character-equipment-context-menu{') && styles.includes('.character-equipment-menu-items{'), 'right-click equipment selection must retain a bounded searchable context-menu layout');

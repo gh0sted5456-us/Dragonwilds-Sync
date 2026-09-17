@@ -154,7 +154,7 @@ def main():
     assert "backend\\local_world.py" in text
     assert "electron/discord_rpc.cjs" in package["scripts"]["check:renderer"]
     assert "electron/app_updater.cjs" in package["scripts"]["check:renderer"]
-    assert "electron/rsdw_webview_preload.cjs" in package["scripts"]["check:renderer"]
+    assert "electron/rsdw_webview_preload.cjs" not in package["scripts"]["check:renderer"]
     assert "electron/preload-v2.cjs" in package["scripts"]["check:renderer"]
     assert "renderer/release-meta.js" in package["scripts"]["check:renderer"]
     assert package["build"]["win"]["target"] == ["portable"]

@@ -271,9 +271,9 @@ def test_ui_contract():
     live_renderer = renderer.replace("managedConfirm(", "").replace("managedPrompt(", "")
     assert "confirm(" not in live_renderer and "prompt(" not in live_renderer
 
-    # Character/Avatar sizing + face capture + RSDW hydration.
-    assert "capture-webview" in main and "Capture Face Card" in renderer
-    assert "scrollIntoView" in renderer and "rsdw-avatar-webview" in styles and "rsdw-tool-webview" in styles
+    # Character editing remains save-backed without a second 3D renderer.
+    assert "capture-webview" not in main and "Save-backed character summary" in renderer
+    assert "rsdw-avatar-webview" not in renderer
     assert "height:calc(100vh" in styles and "min-width:0" in styles
     assert "options.native===false" in renderer and "function prepareDesktopWindow" in renderer
     for label in ("Character Editor", "Item Editor", "Spell Editor", "Recipe Unlocker", "Quest Editor"):

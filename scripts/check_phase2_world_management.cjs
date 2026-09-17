@@ -18,6 +18,9 @@ const appV2 = read('renderer/app-v2.js');
 const profileSettings = read('backend/profile_settings.py') + '\n' + read('backend/profile_settings_v1.py');
 const routing = read('backend/v2_remote_routing.py');
 const runner = read('scripts/run_backend_tests.cjs');
+const loaderRepository = read('backend/loader_repository.py');
+const deployment = read('backend/mod_deployment_cleanup.py');
+const syncEngine = read('backend/sync_engine.py');
 
 requireText(index, 'release-phase2.css', 'Phase 2 stylesheet');
 requireText(index, 'release-phase2.js', 'Phase 2 renderer');
@@ -48,6 +51,17 @@ for (const token of [
   'loaders/ue4ss',
   'loaders/runeschema',
 ]) requireText(appV2, token, `World-owned runtime staging ${token}`);
+for (const token of ['Edit Mod Loaders', 'Install Verified Loaders', 'profile.loaders.install', 'dws:manage-profile-loaders']) {
+  requireText(appV2, token, `profile loader workflow ${token}`);
+}
+for (const token of ['PACKAGE_SCHEMA', 'SHA256=', 'safe path', 'loader_repository']) {
+  requireText(loaderRepository, token, `verified loader repository ${token}`);
+}
+requireText(deployment, "(ue4ss_loader, game_root, {'id.txt'})", 'UE4SS loader-first deployment');
+requireText(deployment, "(runeschema_loader, game_root, {'id.txt'})", 'RuneSchema loader-first deployment');
+if (syncEngine.indexOf('deploy_staged_loaders(profile_roots') > syncEngine.indexOf("(profile_roots['ue4ss']")) {
+  throw new Error('Client profile restore must deploy loader entities before mod entities');
+}
 forbidText(appV2, 'id="runeschema-flavor-select"', 'legacy inline RuneSchema selector');
 forbidText(appV2, 'id="ue4ss-version-select"', 'legacy inline UE4SS selector');
 

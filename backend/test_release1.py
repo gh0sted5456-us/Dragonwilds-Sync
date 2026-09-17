@@ -35,7 +35,7 @@ def main():
     assert "https://github.com/gh0sted5456-us/Dragonwilds-Sync" in renderer
     assert "character-studio-tabs" not in renderer
     assert '<webview id="rsdw-avatar-webview"' not in renderer_v2
-    assert 'Save-backed character summary' in renderer_v2
+    assert 'class="character-editor-preview"' not in renderer_v2
     assert 'rsdw-native-character-editor' in renderer_v2
     assert "splash-update-now" in renderer and "splash-changelog-dismiss" in renderer
     assert "World Discovery" in renderer and "toggle-multiple-servers" in renderer

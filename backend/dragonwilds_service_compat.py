@@ -27,6 +27,8 @@ from network_client import download_latest_player_backup, download_starter_chara
 from sync_engine import _running_game_pid, activate_or_adopt_client_world_profile, client_world_has_snapshot, delete_client_world_profile, launch_game, reset_client_managed_payload_for_resync, restore_client_world, snapshot_client_mod_unit, snapshot_client_world, switch_client_world_profile, unload_client_world_profile, sync_world, write_client_mods_txt
 from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR, application_user_id, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
+from loader_repository import ensure_repository as ensure_loader_repository, install_package as install_loader_package, profile_loader_status
+from shared_save_backup import configure as configure_shared_save_backup, run as run_shared_save_backup, status as shared_save_backup_status
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                              server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
                              write_staged_dedicated_config_templates,
@@ -933,6 +935,9 @@ def public_state(state: dict) -> dict:
     if isinstance(local_sync, dict):
         local_sync["password_configured"] = bool(local_sync.get("vault_password"))
         local_sync.pop("vault_password", None)
+    shared_backup = clone.setdefault("application", {}).get("shared_save_backup")
+    if isinstance(shared_backup, dict):
+        shared_backup.pop("last_fingerprint", None)
     recommendations = clone.setdefault("application", {}).setdefault("recommended_mods", {})
     if not recommendations.get("mods"):
         builtin = builtin_recommendations()
@@ -3068,6 +3073,37 @@ def handle(method: str, params: dict) -> object:
         public_link["password_configured"] = bool(retained_password)
         return {"link": public_link, "state": public_state(state)}
 
+    if method == "profile.loaders.status":
+        kind = str(params.get("kind") or "").strip().lower()
+        profile_id = str(params.get("id") or "").strip()
+        return {"repository": ensure_loader_repository(),
+                "profile": profile_loader_status(kind, profile_id)}
+
+    if method == "profile.loaders.install":
+        kind = str(params.get("kind") or "").strip().lower()
+        profile_id = str(params.get("id") or "").strip()
+        result = install_loader_package(kind, profile_id, str(params.get("package_id") or ""))
+        return {"result": result, "repository": ensure_loader_repository(),
+                "profile": profile_loader_status(kind, profile_id)}
+
+    if method == "save.shared.status":
+        return shared_save_backup_status(state)
+
+    if method == "save.shared.configure":
+        result = configure_shared_save_backup(
+            state, provider=str(params.get("provider") or "shared-folder"),
+            folder=str(params.get("folder") or ""), enabled=bool(params.get("enabled")),
+            include_players=bool(params.get("include_players", True)),
+            include_worlds=bool(params.get("include_worlds", True)),
+            retention=int(params.get("retention") or 10))
+        save_state(state)
+        return {"config": result, "state": public_state(state)}
+
+    if method == "save.shared.run":
+        result = run_shared_save_backup(state)
+        save_state(state)
+        return {"result": result, "state": public_state(state)}
+
     if method == "profile.local_sync.run":
         application = state.setdefault("application", {})
         link = application.get("profile_local_sync") if isinstance(application.get("profile_local_sync"), dict) else {}
@@ -3640,10 +3676,10 @@ def handle(method: str, params: dict) -> object:
                                    state.setdefault("player_profile", {}).get("character_worlds") or {},
                                    client_state.get("world_character_selection") or {},
                                    state.setdefault("player_profile", {}).get("character_profiles") or {})
-        activation = activate_or_adopt_client_world_profile(live_world_id or None, profile_id, install_dir)
+        activation = activate_or_adopt_client_world_profile(live_world_id or None, profile_id, install_dir, profile_kind="local")
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
         direct_connect = clear_direct_connect_config(game_dir)
-        snapshot_client_world(profile_id, install_dir)
+        snapshot_client_world(profile_id, install_dir, profile_kind="local")
         profile = load_singleplayer_profile(profile_id)
         mode = "coop" if bool((profile.get("status") or {}).get("broadcasting")) else "singleplayer"
         marker = write_active_world(resolve_client_layout(game_dir).game_root, profile_id, mode)
@@ -3663,7 +3699,7 @@ def handle(method: str, params: dict) -> object:
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         if not game_dir or not Path(game_dir).exists():
             raise ValueError("The configured Dragonwilds game folder is unavailable")
-        result = unload_client_world_profile(profile_id, Path(game_dir))
+        result = unload_client_world_profile(profile_id, Path(game_dir), profile_kind="local")
         result["direct_connect"] = clear_direct_connect_config(game_dir)
         client_state["live_world_id"] = ""; client_state["active_private_world_id"] = ""
         _record_notification(state, "World profile unloaded", f"{load_singleplayer_profile(profile_id).get('name') or profile_id} captured; the client directory is back to core state.", "success", world_id=profile_id, key=f"profile-unloaded:{profile_id}")
@@ -3676,7 +3712,7 @@ def handle(method: str, params: dict) -> object:
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         local_active = str(state.setdefault("client", {}).get("live_world_id") or "").strip()
         if local_active and game_dir and Path(game_dir).exists():
-            snapshot_client_world(local_active, Path(game_dir))
+            snapshot_client_world(local_active, Path(game_dir), profile_kind="local")
         server_active = str(state.setdefault("server", {}).get("active_world_id") or "").strip()
         if server_active:
             profile = load_server_profile(server_active)
@@ -3691,7 +3727,7 @@ def handle(method: str, params: dict) -> object:
         if kind == "local":
             game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
             if state.setdefault("client", {}).get("live_world_id") == profile_id and game_dir:
-                snapshot_client_world(profile_id, Path(game_dir))
+                snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
         elif kind == "dedicated":
             profile = load_server_profile(profile_id); root = server_root_for_profile(profile) if profile else ""
             if state.setdefault("server", {}).get("active_world_id") == profile_id and root:
@@ -3774,7 +3810,7 @@ def handle(method: str, params: dict) -> object:
         # binds the selected Private World to that live set. Subsequent Worlds
         # continue to use normal isolated A→B profile swaps.
         if not live_world_id and game_dir and Path(game_dir).exists():
-            snapshot_client_world(profile_id, Path(game_dir))
+            snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
             client_state["live_world_id"] = profile_id
             save_state(state)
             live_world_id = profile_id
@@ -3809,7 +3845,7 @@ def handle(method: str, params: dict) -> object:
                                               payload_root=str(params.get("payload_root") or ""),
                                               payload_name=str(params.get("payload_name") or ""))
         if live:
-            snapshot_client_world(profile_id, Path(game_dir))
+            snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
             result["mods_txt"] = write_singleplayer_mods_txt(game_dir, profile_id)
         units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
         _cache_local_inventory(profile_id, units, live=live, source="apply")
@@ -3830,9 +3866,9 @@ def handle(method: str, params: dict) -> object:
             units = update_singleplayer_mod(game_dir, key, live=live, hotload_capable=params.get("hotload_capable"), tags=params.get("tags") if "tags" in params else None, source=params.get("source"), profile_id=profile_id)
         if live:
             if content_only:
-                snapshot_client_mod_unit(profile_id, Path(game_dir), key)
+                snapshot_client_mod_unit(profile_id, Path(game_dir), key, profile_kind="local")
             else:
-                write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
+                write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             local = load_singleplayer_profile(profile_id); cfg = local.get("broadcast_config") or {}
             distribution = singleplayer_distribution_units(game_dir, profile_id)
@@ -3850,7 +3886,7 @@ def handle(method: str, params: dict) -> object:
         units = move_singleplayer_mod(
             game_dir, str(params.get("key") or ""), int(params.get("direction") or 0),
             target_index=None if target_index is None else int(target_index), live=live, profile_id=profile_id)
-        if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
+        if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
         _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"units": units, "state": public_state(state)}
 
@@ -3859,7 +3895,7 @@ def handle(method: str, params: dict) -> object:
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
         result = remove_singleplayer_mod(game_dir, str(params.get("key") or ""), live=live, profile_id=profile_id)
-        if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir))
+        if live: write_singleplayer_mods_txt(game_dir, profile_id); snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
         units = scan_singleplayer_inventory(game_dir, live=live, profile_id=profile_id)
         _cache_local_inventory(profile_id, units, live=live, source="apply")
         return {"result": result, "units": units, "state": public_state(state)}
@@ -3887,7 +3923,7 @@ def handle(method: str, params: dict) -> object:
         profile_id = _private_profile_id(state, params)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         result = save_singleplayer_core_config(game_dir, str(params.get("relative_path") or ""), str(params.get("content") or ""))
-        if state.setdefault("client", {}).get("live_world_id") == profile_id: snapshot_client_world(profile_id, Path(game_dir))
+        if state.setdefault("client", {}).get("live_world_id") == profile_id: snapshot_client_world(profile_id, Path(game_dir), profile_kind="local")
         return {"result": result, "state": public_state(state)}
 
     if method == "singleplayer.mod.file.open":
@@ -3902,7 +3938,7 @@ def handle(method: str, params: dict) -> object:
         live = state.setdefault("client", {}).get("live_world_id") == profile_id
         result = save_singleplayer_mod_file(game_dir, str(params.get("key") or ""), str(params.get("relative_path") or ""), str(params.get("content") or ""), live=live, profile_id=profile_id)
         if live and not (STATE.active_profile_id == profile_id and SHARE.status().get("serving")):
-            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""))
+            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""), profile_kind="local")
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             # Reuse the canonical metadata refresh/publish path so an atomic
             # co-op config write immediately becomes the next client manifest.
@@ -3917,7 +3953,7 @@ def handle(method: str, params: dict) -> object:
             game_dir, str(params.get("key") or ""), str(params.get("relative_path") or ""),
             str(params.get("content") or ""), live=live, profile_id=profile_id)
         if live and not (STATE.active_profile_id == profile_id and SHARE.status().get("serving")):
-            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""))
+            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""), profile_kind="local")
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or ""), "content_only": True, "content_hash": result.get("content_hash")})
         state.setdefault("notifications", []).append({"time": now_iso(), "title": "Mod file added", "detail": result["relative_path"]})
@@ -3932,7 +3968,7 @@ def handle(method: str, params: dict) -> object:
         result = operation(game_dir, str(params.get("key") or ""), str(params.get("relative_path") or ""),
                            live=live, profile_id=profile_id)
         if live and not (STATE.active_profile_id == profile_id and SHARE.status().get("serving")):
-            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""))
+            snapshot_client_mod_unit(profile_id, Path(game_dir), str(params.get("key") or ""), profile_kind="local")
         if STATE.active_profile_id == profile_id and SHARE.status().get("serving"):
             handle("singleplayer.mod.update", {"profile_id": profile_id, "key": str(params.get("key") or ""), "content_only": True, "content_hash": result.get("content_hash")})
         action = "copied" if method.endswith(".copy") else "deleted"
@@ -3955,10 +3991,10 @@ def handle(method: str, params: dict) -> object:
                                state.setdefault("client", {}).get("world_character_selection") or {},
                                state.setdefault("player_profile", {}).get("character_profiles") or {})
         if live_world_id != profile_id:
-            activate_or_adopt_client_world_profile(live_world_id, profile_id, install_dir)
+            activate_or_adopt_client_world_profile(live_world_id, profile_id, install_dir, profile_kind="local")
             state["client"]["live_world_id"] = profile_id
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
-        snapshot_client_world(profile_id, install_dir)
+        snapshot_client_world(profile_id, install_dir, profile_kind="local")
         write_active_world(resolve_client_layout(game_dir).game_root, profile_id, "singleplayer")
         exe = str(application.get("game_exe") or "").strip()
         if not exe:
@@ -5652,7 +5688,7 @@ def handle(method: str, params: dict) -> object:
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         if not game_dir or not Path(game_dir).exists():
             raise ValueError("The configured Dragonwilds game folder is unavailable")
-        if not client_world_has_snapshot(profile_id):
+        if not client_world_has_snapshot(profile_id, "local"):
             raise RuntimeError("This Private World does not have a saved launcher profile snapshot to reload yet")
         live_world_id = str(client_state.get("live_world_id") or "").strip()
         if live_world_id and live_world_id != profile_id:
@@ -5662,11 +5698,11 @@ def handle(method: str, params: dict) -> object:
                 state.setdefault("player_profile", {}).get("character_worlds") or {},
                 client_state.get("world_character_selection") or {},
                 state.setdefault("player_profile", {}).get("character_profiles") or {})
-            activation = switch_client_world_profile(live_world_id, profile_id, Path(game_dir))
+            activation = switch_client_world_profile(live_world_id, profile_id, Path(game_dir), profile_kind="local")
             reset = {"removed_files": 0, "core_preserved": True, "activated_from_snapshot": True}
         else:
             reset = reset_client_managed_payload_for_resync(Path(game_dir))
-            restore_client_world(profile_id, Path(game_dir))
+            restore_client_world(profile_id, Path(game_dir), "local")
             activation = {"profile_id": profile_id, "clean": True, "reloaded": True}
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
         direct_connect = clear_direct_connect_config(game_dir)

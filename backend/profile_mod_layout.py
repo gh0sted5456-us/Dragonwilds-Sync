@@ -504,10 +504,13 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
         lanes = {
             "ue4ss": root / "ue4ss", "runeschema": root / "runeschema",
             "paks": root / "paks", "win64": root.parent / "overlay/Binaries/Win64",
+            "ue4ss_loader": root.parent / "loaders/ue4ss",
+            "runeschema_loader": root.parent / "loaders/runeschema",
         }
         for key, target in lanes.items():
             target.mkdir(parents=True, exist_ok=True)
-            _write_lane_readme(target, key)
+            if key in {"ue4ss", "runeschema", "paks", "win64"}:
+                _write_lane_readme(target, key)
         return {"root": root, **lanes}
     previous = {key: root / name for key, name in {
         'ue4ss': 'UE4SS', 'runeschema': 'RuneSchema', 'paks': 'PAKs', 'win64': 'Win64'}.items()}
@@ -516,10 +519,14 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     ue4ss = root / CANONICAL_FOLDER_NAMES["ue4ss"]
     runeschema = root / CANONICAL_FOLDER_NAMES["runeschema"]
     paks = root / CANONICAL_FOLDER_NAMES["paks"]
-    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks, "win64": root / CANONICAL_FOLDER_NAMES['win64']}
+    lanes = {"ue4ss": ue4ss, "runeschema": runeschema, "paks": paks,
+             "win64": root / CANONICAL_FOLDER_NAMES['win64'],
+             "ue4ss_loader": root.parent / "loaders/ue4ss",
+             "runeschema_loader": root.parent / "loaders/runeschema"}
     for key, target in lanes.items():
         target.mkdir(parents=True, exist_ok=True)
-        _write_lane_readme(target, key)
+        if key in {"ue4ss", "runeschema", "paks", "win64"}:
+            _write_lane_readme(target, key)
     for key, source in previous.items():
         _merge_tree(source, lanes[key], exclude_names={LANE_README})
         if source.is_dir():

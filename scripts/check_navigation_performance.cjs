@@ -52,8 +52,8 @@ must(navigationJs.includes('function matchingNodes') && navigationJs.includes('f
 must(navigationJs.includes("observe(document.documentElement, { childList: true, subtree: true })"),
   'noncritical release enhancement may retain the coordinated broad observer');
 
-for (const token of ['Data Management', 'Profile Runtime Staging', 'id="machine-paths-card"', "data-application-settings-tab=\"runtimes\""]) {
-  must(appV2.includes(token), `coherent Data Management controls must retain ${token}`);
+for (const token of ['Profiles &amp; Data', 'Profile Runtime Staging', 'id="machine-paths-card"', "data-application-settings-tab=\"runtimes\""]) {
+  must(appV2.includes(token), `coherent profile data controls must retain ${token}`);
 }
 must(!appV2.includes('update-client-ue4ss') && !appV2.includes('update-client-runeschema'),
   'machine-wide runtime update controls must stay retired in favor of profile staging');

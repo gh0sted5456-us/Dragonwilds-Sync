@@ -308,8 +308,12 @@ def _migrate_legacy_client_world_dir(world_id: str) -> None:
         pass
 
 
-def client_world_dir(world_id: str) -> Path:
+def client_world_dir(world_id: str, profile_kind: str = "connected") -> Path:
     profile_id = _safe_client_world_id(world_id)
+    if profile_kind == "local":
+        return LEGACY_CLIENT_WORLDS_DIR / profile_id / "snapshot"
+    if profile_kind != "connected":
+        raise ValueError("Client profile kind must be local or connected")
     _migrate_legacy_client_world_dir(profile_id)
     return CLIENT_WORLDS_DIR / profile_id / "snapshot"
 
@@ -358,8 +362,8 @@ def delete_client_world_profile(world_id: str) -> dict:
     return {"profile_id": profile_id, "removed": removed}
 
 
-def client_world_has_snapshot(world_id: str) -> bool:
-    root = client_world_dir(str(world_id or "").strip())
+def client_world_has_snapshot(world_id: str, profile_kind: str = "connected") -> bool:
+    root = client_world_dir(str(world_id or "").strip(), profile_kind)
     if not root.is_dir():
         return False
     if (root / SNAPSHOT_MARKER).is_file():
@@ -442,7 +446,8 @@ def _copy_snapshot_file(source: Path, target: Path) -> None:
             staged.unlink()
 
 
-def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: bool = True) -> None:
+def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: bool = True,
+                          profile_kind: str = "connected") -> None:
     """Capture profile state; mod capture is adoption-only after folder authority.
 
     Once a profile has its own Browse Mods tree, routine A -> B switching never
@@ -454,7 +459,7 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
     layout = resolve_client_layout(selected_root)
     profile_live = _client_mod_roots(selected_root)
     game_root = layout.game_root
-    destination = client_world_dir(world_id)
+    destination = client_world_dir(world_id, profile_kind)
     mods_destination = destination / "mods"
     managed_destination = destination / "managed_files"
     config_destination = destination / "configs" / "game"
@@ -533,27 +538,28 @@ def snapshot_client_world(world_id: str, selected_root: Path, *, include_mods: b
 
 
 def activate_or_adopt_client_world_profile(outgoing_world_id: str | None, incoming_world_id: str,
-                                           selected_root: Path) -> dict:
+                                           selected_root: Path, *, profile_kind: str = "connected") -> dict:
     """Materialize an existing snapshot, or adopt the live install for a new profile."""
     outgoing = str(outgoing_world_id or "").strip()
     incoming = str(incoming_world_id or "").strip()
     if not incoming:
         raise ValueError("Incoming World profile is required")
     if outgoing == incoming:
-        report = switch_client_world_profile(outgoing, incoming, selected_root)
+        report = switch_client_world_profile(outgoing, incoming, selected_root, profile_kind=profile_kind)
         return {**report, "adopted": False, "already_active": True}
-    if not outgoing and not client_world_has_snapshot(incoming):
-        snapshot_client_world(incoming, selected_root)
-        report = audit_client_world_profile(incoming, selected_root)
+    if not outgoing and not client_world_has_snapshot(incoming, profile_kind):
+        snapshot_client_world(incoming, selected_root, profile_kind=profile_kind)
+        report = audit_client_world_profile(incoming, selected_root, profile_kind=profile_kind)
         if not report["clean"]:
             raise ConnectionError(f"Profile adoption cleanliness check failed: {report['slots']}")
         write_active_world(resolve_client_layout(selected_root).game_root, incoming, "singleplayer")
         return {**report, "adopted": True, "already_active": False}
-    report = switch_client_world_profile(outgoing or None, incoming, selected_root)
+    report = switch_client_world_profile(outgoing or None, incoming, selected_root, profile_kind=profile_kind)
     return {**report, "adopted": False, "already_active": False}
 
 
-def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> dict:
+def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str,
+                             profile_kind: str = "connected") -> dict:
     """Capture one explicit active-editor change into authoritative profile storage."""
     group, separator, name = str(key or "").partition("::")
     if not separator or not name or name in {".", ".."} or any(token in name for token in ("/", "\\")):
@@ -562,7 +568,7 @@ def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> di
         raise ValueError("Only UE4SS and RuneSchema mod units support targeted live snapshots.")
     layout = resolve_client_layout(selected_root)
     profile_live = _client_mod_roots(selected_root)
-    stored = ensure_profile_mod_roots(client_world_dir(world_id) / "mods")
+    stored = ensure_profile_mod_roots(client_world_dir(world_id, profile_kind) / "mods")
     if group == "ue4ss_mod":
         if name.casefold() in LAUNCHER_LOCAL_UE4SS_MODS:
             raise ValueError("Runtime infrastructure is not a World-owned mod unit.")
@@ -583,11 +589,11 @@ def snapshot_client_mod_unit(world_id: str, selected_root: Path, key: str) -> di
     return {"key": key, "copied": copied, "removed": not source.exists(), "snapshot_path": str(destination)}
 
 
-def restore_client_world(world_id: str, selected_root: Path) -> None:
+def restore_client_world(world_id: str, selected_root: Path, profile_kind: str = "connected") -> None:
     if not world_id:
         return
     from profile_mod_layout import restore_profile_spares
-    restore_profile_spares(client_world_dir(world_id) / 'mods')
+    restore_profile_spares(client_world_dir(world_id, profile_kind) / 'mods')
     layout = resolve_client_layout(selected_root)
     profile_live = _client_mod_roots(selected_root)
     game_root = layout.game_root
@@ -597,7 +603,7 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         (layout.win64_dir / "ue4ss" / "UE4SS-settings.ini").resolve(),
         (layout.win64_dir / "ue4ss" / "imgui.ini").resolve(),
     }
-    stored = client_world_dir(world_id)
+    stored = client_world_dir(world_id, profile_kind)
     outgoing = load_local_state(game_root)
     for relative, info in outgoing.get("files", {}).items():
         if info.get("kind", "file") == "file":
@@ -609,6 +615,9 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
                 target.unlink()
 
     profile_roots = ensure_profile_mod_roots(stored / "mods")
+    from mod_deployment_cleanup import deploy_staged_loaders
+    deploy_staged_loaders(profile_roots, layout.win64_dir, layout.runeschema_root,
+        client_state_dir(game_root) / 'profile-loader-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedLoaders')
     from mod_deployment_cleanup import deploy_profile_lanes
     deploy_profile_lanes([
         (profile_roots['ue4ss'], profile_live['ue4ss_mods'], LAUNCHER_LOCAL_UE4SS_MODS | {'runeschema'}),
@@ -619,10 +628,6 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
     deploy(profile_roots["win64"], layout.win64_dir,
            client_state_dir(game_root) / "win64-profile-files.json",
            APP_DATA_DIR / "Backups" / "DisplacedWin64Mods")
-    from mod_deployment_cleanup import deploy_staged_loaders
-    deploy_staged_loaders(profile_roots, layout.win64_dir, layout.runeschema_root,
-        client_state_dir(game_root) / 'profile-loader-files.json', APP_DATA_DIR / 'Backups' / 'DisplacedLoaders')
-
     cached_config = stored / "configs" / "game"
     if cached_config.exists():
         if layout.config_dir.exists():
@@ -666,10 +671,11 @@ def restore_client_world(world_id: str, selected_root: Path) -> None:
         (state_root / META_FILE).unlink(missing_ok=True)
 
 
-def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
+def audit_client_world_profile(world_id: str, selected_root: Path,
+                               profile_kind: str = "connected") -> dict:
     """Compare the three configured live destinations to profile storage."""
     layout = resolve_client_layout(selected_root)
-    stored = ensure_profile_mod_roots(client_world_dir(world_id) / "mods")
+    stored = ensure_profile_mod_roots(client_world_dir(world_id, profile_kind) / "mods")
     result = {"profile_id": world_id, "clean": True, "slots": {}}
 
     live_ue = {p.name.casefold() for p in layout.ue4ss_mods_dir.iterdir()} if layout.ue4ss_mods_dir.exists() else set()
@@ -700,7 +706,7 @@ def audit_client_world_profile(world_id: str, selected_root: Path) -> dict:
 
 
 def switch_client_world_profile(outgoing_world_id: str | None, incoming_world_id: str,
-                                selected_root: Path) -> dict:
+                                selected_root: Path, *, profile_kind: str = "connected") -> dict:
     """Activate a client World profile transactionally with rollback and audit."""
     if not incoming_world_id:
         raise ValueError("Incoming World profile is required")
@@ -708,11 +714,11 @@ def switch_client_world_profile(outgoing_world_id: str | None, incoming_world_id
     incoming = str(incoming_world_id).strip()
     game_root = resolve_client_layout(selected_root).game_root
     if outgoing:
-        snapshot_client_world(outgoing, selected_root, include_mods=False)
+        snapshot_client_world(outgoing, selected_root, include_mods=False, profile_kind=profile_kind)
     remove_active_world(game_root)
     try:
-        restore_client_world(incoming, selected_root)
-        report = audit_client_world_profile(incoming, selected_root)
+        restore_client_world(incoming, selected_root, profile_kind)
+        report = audit_client_world_profile(incoming, selected_root, profile_kind)
         if not report["clean"]:
             raise ConnectionError(f"Profile activation cleanliness check failed: {report['slots']}")
         write_active_world(game_root, incoming, "singleplayer")
@@ -720,7 +726,7 @@ def switch_client_world_profile(outgoing_world_id: str | None, incoming_world_id
     except Exception as activation_error:
         if outgoing and outgoing != incoming:
             try:
-                restore_client_world(outgoing, selected_root)
+                restore_client_world(outgoing, selected_root, profile_kind)
                 write_active_world(game_root, outgoing, "singleplayer")
             except Exception as rollback_error:
                 raise ConnectionError(
@@ -728,7 +734,8 @@ def switch_client_world_profile(outgoing_world_id: str | None, incoming_world_id
         raise
 
 
-def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
+def unload_client_world_profile(world_id: str, selected_root: Path,
+                                profile_kind: str = "connected") -> dict:
     """Capture the active profile, then return the client install to core state.
 
     Shared UE4SS/RuneSchema runtime files and account/save data remain in place.
@@ -739,7 +746,7 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
     if not profile_id:
         raise ValueError("An active client World is required")
     layout = resolve_client_layout(selected_root)
-    snapshot_client_world(profile_id, selected_root)
+    snapshot_client_world(profile_id, selected_root, profile_kind=profile_kind)
     state = load_local_state(layout.game_root)
     removed_managed = 0
     for relative, info in (state.get("files") or {}).items():
@@ -763,7 +770,7 @@ def unload_client_world_profile(world_id: str, selected_root: Path) -> dict:
     (state_root / STATE_FILE).unlink(missing_ok=True)
     (state_root / META_FILE).unlink(missing_ok=True)
     remove_active_world(layout.game_root)
-    return {"profile_id": profile_id, "snapshot": str(client_world_dir(profile_id)),
+    return {"profile_id": profile_id, "snapshot": str(client_world_dir(profile_id, profile_kind)),
             "mods_removed": removed_mods, "managed_files_removed": removed_managed,
             "core_preserved": True}
 

@@ -48,9 +48,9 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     app = _read("app-v2.js")
     styles = _read("styles.css")
 
-    # The release panel must have an actual host in the Data Management page.
+    # The release panel must have an actual host in the streamlined profile-data page.
     assert 'id="machine-paths-card"' in app
-    assert '>Data Management</button>' in app
+    assert '>Profiles &amp; Data</button>' in app
 
     # Fixed live deployment lanes stay obvious while operators can add named
     # locations for future tools without silently deploying into them.
@@ -75,10 +75,11 @@ def test_data_management_is_visible_extensible_and_clear() -> None:
     assert "Scan Staging" in app
     assert "Stage → scan → deploy" in app
 
-    # Settings exposes Player paths/loaders first; Server stays an optional
-    # feature and appears only after the operator enables it.
-    assert "settingsNav('player','♙','Player')" in app
-    assert "serverEnabled?settingsNav('server','▣','Server'):''" in app
+    # Settings no longer duplicates Player, Server, or Sync workspaces.
+    assert "settingsNav('player','♙','Player')" not in app
+    assert "settingsNav('server','▣','Server')" not in app
+    assert "settingsNav('sync','↻','Connections')" not in app
+    assert "settingsNav('application','⚙','General')" in app
     assert '<details class="machine-runtime-paths">' in mapping
     assert '<summary>View detected loader paths</summary>' in mapping
     assert "ue4ss_bootstrap" in mapping and "server_loader" in mapping

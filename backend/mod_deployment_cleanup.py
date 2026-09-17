@@ -241,6 +241,8 @@ def deploy_layered_world_profile(profile, game_root, ledger, recovery_root):
             if not item.is_file():
                 continue
             parts = tuple(value.casefold() for value in item.relative_to(source).parts)
+            if len(parts) == 1 and parts[0] in {'id.txt', 'readme.txt'}:
+                continue
             if parts[:len(required)] != required or parts[:len(forbidden)] == forbidden:
                 raise ValueError("Loader folders must contain their complete game-relative runtime path without mod payloads")
 
@@ -255,8 +257,8 @@ def deploy_layered_world_profile(profile, game_root, ledger, recovery_root):
 
     return deploy_profile_lanes([
         (overlay, game_root, set(server_excluded.get("overlay") or [])),
-        (ue4ss_loader, game_root, set()),
-        (runeschema_loader, game_root, set()),
+        (ue4ss_loader, game_root, {'id.txt'}),
+        (runeschema_loader, game_root, {'id.txt'}),
         (ue4ss_mods, game_root / "Binaries/Win64/ue4ss/Mods", set(server_excluded.get("ue4ss") or [])),
         (runeschema_mods, game_root / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods", set(server_excluded.get("runeschema") or [])),
         (pak_mods, game_root / "Content/Paks/~mods", set(server_excluded.get("paks") or [])),
@@ -266,14 +268,28 @@ def deploy_layered_world_profile(profile, game_root, ledger, recovery_root):
 
 def deploy_staged_loaders(stored, win64, runeschema, ledger, recovery, *, ue_enabled=True, rs_enabled=True):
     """Explicit staged cores override runtime-library defaults, not ordinary mods."""
+    explicit_ue = Path(stored.get('ue4ss_loader', '')) if stored.get('ue4ss_loader') else None
+    explicit_rs = Path(stored.get('runeschema_loader', '')) if stored.get('runeschema_loader') else None
+    game_root = Path(win64).parents[1]
+    lanes = []
+    explicit_ue_used = bool(ue_enabled and explicit_ue and any(
+        path.is_file() and path.name.casefold() not in {'id.txt', 'readme.txt'} for path in explicit_ue.rglob('*')))
+    explicit_rs_used = bool(rs_enabled and explicit_rs and any(
+        path.is_file() and path.name.casefold() not in {'id.txt', 'readme.txt'} for path in explicit_rs.rglob('*')))
+    if explicit_ue_used:
+        lanes.append((explicit_ue, game_root, {'id.txt'}))
+    if explicit_rs_used:
+        lanes.append((explicit_rs, game_root, {'id.txt'}))
+
+    # Backward-compatible support for profiles created before loaders became
+    # independent game-relative staging entities.
     win_source = stored['win64']
     core = win_source / 'ue4ss'
     rune = stored['runeschema'].parent
-    lanes = []
-    if ue_enabled and (core / 'UE4SS.dll').is_file():
+    if ue_enabled and not explicit_ue_used and (core / 'UE4SS.dll').is_file():
         excluded = {p.name for p in win_source.iterdir() if p.name.casefold() not in {'dwmapi.dll', 'version.dll'}}
         lanes.extend([(win_source, Path(win64), excluded), (core, Path(win64) / 'ue4ss', {'mods'})])
-    if rs_enabled and any((rune / 'dlls').glob('*')):
+    if rs_enabled and not explicit_rs_used and any((rune / 'dlls').glob('*')):
         lanes.append((rune, Path(runeschema), {'mods', 'diagnostics'}))
     if not lanes:
         return 0

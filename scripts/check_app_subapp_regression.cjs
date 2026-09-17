@@ -27,8 +27,7 @@ function subappsFor(application) {
 const expected = {
   shell: ['navigation', 'settings', 'help', 'in-app-windows', 'quick-launch'],
   worlds: ['placards', 'private-worlds', 'hosted-worlds', 'world-save-editor', 'manifests', 'world-map'],
-  characters: ['character-creator', 'appearance', 'inventory', 'modded-item-repository'],
-  'rsdw-l': ['character-editor', 'item-editor', 'spell-editor', 'recipe-unlocker', 'quest-editor', 'live-map', 'spawner', 'console'],
+  characters: ['character-creator', 'appearance', 'inventory', 'modded-item-repository', 'character-editor', 'item-editor', 'spell-editor', 'recipe-unlocker', 'quest-editor'],
   mods: ['found-mods', 'mod-explorer', 'monaco-mod-editor', 'shared-mod-repository', 'load-order', 'runtime-metadata'],
   rsdragonwilds: ['singleplayer', 'co-op', 'dedicated-server'],
   sync: ['heartbeat', 'p2p-transfer', 'mod-sync', 'directory'],

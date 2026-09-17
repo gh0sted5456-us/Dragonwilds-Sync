@@ -43,9 +43,9 @@ assert(![source,electronMain,publicServers,liveHelp,liveHelpMedia,releasePolish]
   text.includes('Dragonwilds-Sync/main/help/')),
   'Runtime application sources must not retain the retired website or Help paths.');
 
-assert(source.includes('Save-backed character summary') &&
+assert(!source.includes('class="character-editor-preview"') &&
   !fs.readFileSync(path.join(root, 'renderer', 'index.html'), 'utf8').includes('release-character-layout.js'),
-  'The lightweight Character Editor must not load the retired mutation-observer layout shim.');
+  'The lightweight Character Editor must not load the retired center preview or mutation-observer layout shim.');
 assert(source.includes('Array.from({length:8}') && baseCss.includes('grid-template-columns:repeat(8'),
   'The save-backed Character Editor must retain its eight-slot action bar.');
 assert(source.includes('character-equipment-context-menu') && characterMenuCss.includes('.character-hotbar-context-menu'),
@@ -53,6 +53,9 @@ assert(source.includes('character-equipment-context-menu') && characterMenuCss.i
 assert(localProfileSync.includes('profile.local_sync.configure') && localProfileSync.includes('profile.local_sync.run') &&
   localProfileSync.includes('pickDirectory') && localProfileSync.includes('45000'),
   'Optional OneDrive/Google Drive profile sync must use a selected local folder and bounded automatic refresh.');
+assert(localProfileSync.includes('save.shared.configure') && localProfileSync.includes('save.shared.run') &&
+  localProfileSync.includes('Shared player &amp; World saves') && localProfileSync.includes('60000'),
+  'Shared player and World save backups must use a selected provider folder and bounded automatic snapshots.');
 assert(popupSafety.includes("event.key!=='Escape'") && popupSafety.includes('data-popup-safety-close') &&
   popupSafety.includes('closeModPopup') && popupSafety.includes('event.target===popup'),
   'Every modal popup must support a close control, Escape, backdrop dismissal, and placard-specific cleanup.');
@@ -81,7 +84,7 @@ assert(source.includes('TCP 27051 + instance offset') && source.includes('UDP 84
   'Sync must identify TCP transfer separately from host-wide Direct Connect discovery UDP 8422.');
 assert(!source.includes('passwordFailure=!local') && !source.includes('The host rejected the saved World Password'),
   'Sync Play must not add a launcher password retry gateway before Dragonwilds validates the World Password.');
-assert(source.includes("navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.webp')") &&
+assert(!source.includes("navButton('rsdw-launcher'") &&
   source.includes("navButton('world-management',navIconAsset('assets/navigation/dragonwilds.webp'),'Dragonwilds'") &&
   source.includes("navButton('mods-app',navIconAsset('assets/navigation/mods.webp'),'Mods'") &&
   !source.includes("navButton('rsdragonwilds-app'") &&
@@ -91,11 +94,12 @@ assert(baseCss.includes('.studio-appearance-swatches{grid-column:1/-1;min-width:
   baseCss.includes('.studio-appearance-swatches>div{display:flex;flex-wrap:wrap;gap:6px') &&
   baseCss.includes('.studio-appearance-swatches button{flex:0 0 26px;width:26px'),
   'Character Editor color swatches must span the appearance panel with readable, wrapping choices.');
-assert(source.includes('native-pastel-picker') && source.includes('native-pastel-wheel') && baseCss.includes('.native-pastel-wheel'),
-  'Character color controls must expose the styled radial painter palette.');
-assert(source.includes('Save-backed character summary') && source.includes('Lightweight · save-backed appearance') &&
-  !source.includes('<webview id="rsdw-avatar-webview"'),
-  'Character editing must stay save-backed without instantiating a 3D webview.');
+assert(source.includes('native-pastel-picker') && source.includes('data-native-color-picker') && baseCss.includes('.native-pastel-wheel'),
+  'Character color controls must expose the accessible painter palette.');
+assert(!source.includes('class="character-editor-preview"') && !source.includes('<webview id="rsdw-avatar-webview"'),
+  'Character editing must stay save-backed without a center preview or 3D webview.');
+assert(source.includes('rsdwToolMutationQueue') && source.includes('await rsdwToolMutationQueue.catch'),
+  'Recipe and spell changes must serialize before character writeback.');
 assert(!source.includes("navButton('remote-server'"),
   'Remote Server must not create a second Host navigation item.');
 assert(source.includes('id="toggle-webhost-remote-admin"'),
@@ -147,7 +151,7 @@ assert(source.includes('Reset & Resync World') && source.includes("runWorldSyncJ
   'Every saved Connected World and Private World placard must expose the correct protected reset workflow.');
 assert(source.includes('function hostingFocusActive()') &&
   source.includes('document.body.dataset.hostingFocus') &&
-  source.includes("['characters','mods','rsdw-l'].includes(value)") &&
+  source.includes("['characters','mods'].includes(value)") &&
   source.includes('computer-profile-mode') &&
   source.includes('save-computer-profile'),
   'Computer Profiles must expose settings and defer nonessential Appy work only while verified hosting is active.');

@@ -272,7 +272,7 @@ def test_ui_contract():
     assert "confirm(" not in live_renderer and "prompt(" not in live_renderer
 
     # Character editing remains save-backed without a second 3D renderer.
-    assert "capture-webview" not in main and "Save-backed character summary" in renderer
+    assert "capture-webview" not in main and 'class="character-editor-preview"' not in renderer
     assert "rsdw-avatar-webview" not in renderer
     assert "height:calc(100vh" in styles and "min-width:0" in styles
     assert "options.native===false" in renderer and "function prepareDesktopWindow" in renderer

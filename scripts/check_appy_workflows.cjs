@@ -14,7 +14,7 @@ const responsive = read('renderer/release-responsiveness.css');
 const capture = read('electron/main-v2.cjs');
 const helpManifest = JSON.parse(read('help/manifest.json'));
 
-const navRoutes = ['world-management', 'characters-app', 'mods-app', 'rsdw-launcher', 'webhost', 'help', 'settings'];
+const navRoutes = ['world-management', 'characters-app', 'mods-app', 'webhost', 'help', 'settings'];
 for (const route of navRoutes) need(app.includes(`navButton('${route}'`), `${route} must remain a first-class navigation entry`);
 need(app.includes("event.target?.closest?.('[data-route]')") && app.includes('handleRouteNavigation(el.dataset.route)'), 'all Appy buttons must use the persistent delegated route handler');
 need(!app.includes("navButton('rsdragonwilds-app'"), 'Dragonwilds/Hosting must not reappear as a duplicate navigation item');
@@ -22,14 +22,13 @@ need(app.includes("navButton('world-management',navIconAsset('assets/navigation/
 for (const token of [
   "navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.webp')",
   "navButton('mods-app',navIconAsset('assets/navigation/mods.webp')",
-  "navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.webp')",
   "navButton('webhost',navIconAsset('assets/navigation/sync.svg')",
   "navButton('help',navIconAsset('assets/navigation/help.svg')",
   "navButton('settings',navIconAsset('assets/navigation/settings.svg')",
 ]) need(app.includes(token), `navigation icon contract missing ${token}`);
 for (const relative of [
   'renderer/assets/dragonwilds_icon.ico', 'renderer/assets/rsdw-toolkit/character-editor.webp',
-  'renderer/assets/rsdw-toolkit/modded-items.svg', 'renderer/assets/navigation/rsdw-l.webp',
+  'renderer/assets/rsdw-toolkit/modded-items.svg',
   'renderer/assets/navigation/sync.svg', 'renderer/assets/navigation/help.svg',
   'renderer/assets/navigation/settings.svg',
 ]) need(fs.existsSync(path.join(root, relative)) && fs.statSync(path.join(root, relative)).size > 0, `${relative} must be a packaged non-empty navigation icon`);
@@ -48,9 +47,9 @@ need(responsive.includes('.profile-character-save{') && responsive.includes('.pr
 for (const token of [
   'character-editor-redesign', 'data-character-editor-active-tab="appearance"',
   "nativeAppearanceSelector(editor,'Head','Face')", "nativeAppearanceSelector(editor,'HairPreset','Hair')",
-  "nativeAppearanceSelector(editor,'FacialHairPreset','Beard')", 'characterEquipmentSurface(liveAvatar)',
+  "nativeAppearanceSelector(editor,'FacialHairPreset','Beard')", 'characterEquipmentSurface()',
   'Array.from({length:8}', 'data-character-save', 'data-character-export',
-  'data-character-undo', 'data-character-redo', 'Save-backed character summary',
+  'data-character-undo', 'data-character-redo',
   'characterEquipmentCompatible(row, slot)', 'character-equipment-context-menu',
   'openStudioEquipmentMenu(socket,event)', 'data-character-equip-item',
   "action:'remove',section:'loadout'", "slot==='Hotbar'", "section:'inventory'",
@@ -62,7 +61,9 @@ need(app.includes('Object.values(editor.tabs||{}).flatMap((tab)=>tab.items||[])'
 need(!app.includes('data-studio-native-meta') && !app.includes('data-studio-native-customization') && !app.includes('data-studio-native-value'), 'superseded pre-redesign appearance facade must stay removed');
 need(!styles.includes('.character-equipment-studio') && !styles.includes('.character-equipment-groups'), 'superseded pre-redesign equipment layout CSS must stay removed');
 need(app.includes("target&&!target.matches('[data-native-meta], [data-native-customization]"), 'non-save controls must not dirty the character save');
-need(styles.includes('grid-template-columns:minmax(320px,370px) minmax(480px,1fr) minmax(340px,400px)'), 'Character Editor desktop layout must preserve controls, dominant preview, and equipped columns');
+need(styles.includes('grid-template-columns:minmax(360px,1fr) minmax(340px,420px)'), 'Character Editor desktop layout must preserve the controls and equipped columns without a center preview');
+need(!app.includes("navButton('rsdw-launcher'") && !app.includes('function renderRsdwLauncher()'), 'the separate RSDW-L navigation and launcher layer must stay removed');
+need(app.includes('rsdwToolMutationQueue') && app.includes('await rsdwToolMutationQueue.catch'), 'save-backed tool changes must serialize and Save must wait for recipe/spell previews');
 need(styles.includes('.character-action-bar{') && styles.includes('grid-template-columns:repeat(8'), 'Character Editor must render the exact eight-slot action bar');
 need(styles.includes('.character-equipment-context-menu{') && styles.includes('.character-equipment-menu-items{'), 'right-click equipment selection must retain a bounded searchable context-menu layout');
 

@@ -1031,7 +1031,6 @@
     if (state.route === 'world-management') setDiscordPresence('Managing Worlds', null);
     else if (state.route === 'characters-app') setDiscordPresence('Editing Characters', null, { state: state.characterSelectedId ? 'Character Editor' : 'Character Library' });
     else if (state.route === 'mods-app') setDiscordPresence('Managing Mods', null, { state: `${state.modExplorerScope === 'server' ? 'Server' : 'Player'} Mod Repository` });
-    else if (state.route === 'rsdw-launcher') setDiscordPresence('Using RSDW-L', null, { state: 'Dragonwilds Toolkit' });
     else if (state.route === 'webhost') setDiscordPresence('Managing Sync', null, { state: 'Web Hosting' });
     else if (state.route === 'profile') setDiscordPresence('Viewing Profile', null, { state: 'Dragonwilds Sync' });
     else if (state.route === 'servers') setDiscordPresence('Managing Servers', null);
@@ -1959,12 +1958,13 @@
   const appyWarmPromises=new Map();
   const appyWarmTimers=new Map();
   let characterStudioWarmPromise=null;
+  let rsdwToolMutationQueue=Promise.resolve();
 
   function appyForRoute(route=state.route) {
     const value=String(route||'').toLowerCase();
     if(value==='characters-app'||value==='profile'&&state.profileTab==='characters')return 'characters';
     if(value==='mods-app'||value==='settings'&&state.settingsTab==='mods')return 'mods';
-    if(value==='rsdw-launcher'||value==='rsdw-toolkit'||value==='rsdw-editor')return 'rsdw-l';
+    if(value==='rsdw-toolkit'||value==='rsdw-editor')return 'characters';
     if(['servers','server-detail','rsdragonwilds-app','world-management','world-detail'].includes(value))return 'worlds';
     if(['webhost','remote-server'].includes(value))return 'sync';
     if(value==='help')return 'shell';
@@ -2001,7 +2001,6 @@
     const value=String(appy||'worlds');
     if(value==='characters')return ['characters'];
     if(value==='mods')return ['mods'];
-    if(value==='rsdw-l')return ['rsdw-l'];
     if(value==='rsdragonwilds')return ['worlds','rsdragonwilds'];
     if(value==='sync')return ['sync','webgui'];
     if(value==='system')return ['shell','system'];
@@ -2012,13 +2011,12 @@
   function warmAppy(appy,{reason='idle'}={}) {
     const value=String(appy||'worlds');
     const profile=activeComputerProfile();
-    if(hostingFocusActive()&&profile.reduce_background_work!==false&&['characters','mods','rsdw-l'].includes(value))return Promise.resolve({appy:value,ready:false,deferred:true});
+    if(hostingFocusActive()&&profile.reduce_background_work!==false&&['characters','mods'].includes(value))return Promise.resolve({appy:value,ready:false,deferred:true});
     if(appyWarmPromises.has(value))return appyWarmPromises.get(value);
     const promise=(async()=>{
       const tasks=[api.invoke('feature.worker.prepare',{owner:`appy-${value}-${reason}`,applications:appyApplications(value),eager_only:false})];
       if(['worlds','rsdragonwilds'].includes(value))tasks.push(window.dragonwilds.prewarm?.(selectedInventoryWarmRequests()));
       if(value==='characters')tasks.push(ensureCharacterStudioWarm(),configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null));
-      if(value==='rsdw-l')tasks.push(configureRsdwToolkitSource(state.data?.application?.rsdw_cache_status||null));
       await Promise.allSettled(tasks.filter(Boolean));
       return {appy:value,ready:true};
     })();
@@ -2266,7 +2264,6 @@
     const dragonwildsActive=['world-management','world-detail','server-detail','servers','rsdragonwilds-app','worlds'].includes(state.route);
     const charactersActive=state.route==='profile'&&state.profileTab==='characters';
     const modsActive=state.route==='mods-app'||(state.route==='settings'&&state.settingsTab==='mods');
-    const rsdwLauncherActive=state.route==='rsdw-launcher';
     const systemSettingsActive=state.route==='settings'&&!modsActive;
     return `
       <aside class="sidebar">
@@ -2278,7 +2275,6 @@
         ${navButton('world-management',navIconAsset('assets/navigation/dragonwilds.webp'),'Dragonwilds',{appy:'worlds',tone:'worlds',active:dragonwildsActive,subapps:'Singleplayer · Co-Op · Dedicated · connect'})}
         ${navButton('characters-app',navIconAsset('assets/rsdw-toolkit/character-editor.webp'),'Characters',{appy:'characters',tone:'characters',active:charactersActive,subapps:'Saves · identity · appearance'})}
         ${navButton('mods-app',navIconAsset('assets/navigation/mods.webp'),'Mods',{appy:'mods',tone:'mods',active:modsActive,subapps:'Repository · editor · load order'})}
-        ${navButton('rsdw-launcher',navIconAsset('assets/navigation/rsdw-l.webp'),'RSDW-L',{appy:'rsdw-l',tone:'characters',active:rsdwLauncherActive,subapps:'Editors · map · spawner · console'})}
         <div class="nav-label">Host &amp; Connect</div>
         ${navButton('webhost',navIconAsset('assets/navigation/sync.svg'),'Sync',{appy:'sync',tone:'sync',subapps:'Directory · transfer · remote'})}
         <div class="nav-label">${t('system')}</div>
@@ -2366,7 +2362,6 @@
       'world-management':['world-management','world-detail','server-detail','servers','rsdragonwilds-app','worlds'].includes(state.route),
       'characters-app':state.route==='profile'&&state.profileTab==='characters',
       'mods-app':state.route==='mods-app'||(state.route==='settings'&&state.settingsTab==='mods'),
-      'rsdw-launcher':state.route==='rsdw-launcher',
       webhost:state.route==='webhost'||state.route==='remote-server',
       help:state.route==='help',
       settings:state.route==='settings'&&state.settingsTab!=='mods',
@@ -2626,22 +2621,24 @@
   }
 
   async function previewRsdwToolChange(tool, change, { paint = true } = {}) {
-    const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
-    const loaded=state.rsdwCharacterPayload;
-    if(!selected?.editable||!loaded?.text)throw new Error('Select an editable character first.');
-    const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
-    const response=await api.invoke('characters.native.tool.preview',{text:baseText,tool,change});
-    if(tool==='item-editor')rememberRsdwCharacterSnapshot();
-    state.rsdwNativeDraft={...response,characterId:selected.id};
-    if(response.native_tool)state.rsdwNativeTools[tool]=response.native_tool;
-    if(tool==='item-editor'){
+    const operation=rsdwToolMutationQueue.catch(()=>{}).then(async()=>{
+      const selected=state.characters.find((character)=>character.id===state.characterSelectedId);
+      const loaded=state.rsdwCharacterPayload;
+      if(!selected?.editable||!loaded?.text)throw new Error('Select an editable character first.');
+      const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
+      const response=await api.invoke('characters.native.tool.preview',{text:baseText,tool,change});
+      if(tool==='item-editor')rememberRsdwCharacterSnapshot();
+      state.rsdwNativeDraft={...response,characterId:selected.id};
+      if(response.native_tool)state.rsdwNativeTools[tool]=response.native_tool;
       root?.querySelectorAll?.('#rsdw-save-character, [data-character-save]').forEach((button)=>{button.disabled=false;});
       const dirty=root?.querySelector?.('[data-character-dirty]');if(dirty){dirty.classList.add('dirty');dirty.textContent='Unsaved changes';}
-      const status=root?.querySelector?.('#rsdw-editor-status');if(status)status.textContent='Unsaved equipment · ready to write with backup';
+      const status=root?.querySelector?.('#rsdw-editor-status');if(status)status.textContent='Unsaved changes · ready to write with backup';
       const dot=root?.querySelector?.('#rsdw-editor-status-dot');if(dot)dot.className='dirty';
-    }
-    if(paint)render();
-    return response;
+      if(paint)render();
+      return response;
+    });
+    rsdwToolMutationQueue=operation;
+    return operation;
   }
 
   async function applyRsdwDraft() {
@@ -2818,7 +2815,7 @@
     const current=editor?.customization?.[key]||'';
     const choices=editor?.catalog?.[key]||[];
     const selected=choices.find((row)=>String(row.value||'')===String(current))||choices[0]||{color:'#888',label:current||label};
-    return `<details class="native-pastel-picker"><summary title="Choose ${escapeHtml(label)} color"><span>${escapeHtml(label)}</span><i style="--native-swatch:${escapeHtml(selected.color||'#888')}"></i><small>${escapeHtml(selected.label||selected.value||'Choose')}</small></summary><div class="native-pastel-wheel" role="listbox" aria-label="${escapeHtml(label)} colors">${choices.map((row,index)=>`<label class="native-color-choice ${String(row.value||'')===String(current)?'selected':''}" style="--i:${index};--count:${Math.max(1,choices.length)}" title="${escapeHtml(row.label||row.value||'')}"><input type="radio" name="native-${escapeHtml(key)}" data-native-customization="${escapeHtml(key)}" value="${escapeHtml(row.value||'')}" ${String(row.value||'')===String(current)?'checked':''}/><i style="--native-swatch:${escapeHtml(row.color||'#888')}"></i><span>${escapeHtml(row.label||row.value||'')}</span></label>`).join('')}<b class="native-pastel-thumb" aria-hidden="true">✦</b></div></details>`;
+    return `<details class="native-pastel-picker" data-native-color-picker><summary title="Choose ${escapeHtml(label)} color"><span>${escapeHtml(label)}</span><i style="--native-swatch:${escapeHtml(selected.color||'#888')}"></i><small>${escapeHtml(selected.label||selected.value||'Choose')}</small></summary><div class="native-pastel-wheel" role="listbox" aria-label="${escapeHtml(label)} colors">${choices.map((row)=>`<label class="native-color-choice ${String(row.value||'')===String(current)?'selected':''}" title="${escapeHtml(row.label||row.value||'')}"><input type="radio" name="native-${escapeHtml(key)}" data-native-customization="${escapeHtml(key)}" value="${escapeHtml(row.value||'')}" ${String(row.value||'')===String(current)?'checked':''}/><i style="--native-swatch:${escapeHtml(row.color||'#888')}"></i><span>${escapeHtml(row.label||row.value||'')}</span></label>`).join('')}</div></details>`;
   }
 
   function nativeAppearanceSelector(editor, key, label) {
@@ -2838,15 +2835,13 @@
     return String(row?.equipment||'')===String(slot||'');
   }
 
-  function characterEquipmentSurface(liveAvatar) {
+  function characterEquipmentSurface() {
     const itemEditor=state.rsdwNativeTools['item-editor']||{};
-    const repositoryItems=Object.values(itemEditor.tabs||{}).flatMap((tab)=>tab.items||[]);
     const loadout=new Map((itemEditor.sections?.loadout||[]).map((row)=>[Number(row.slot),row]));
     const inventory=new Map((itemEditor.sections?.inventory||[]).map((row)=>[Number(row.slot),row]));
-    const socket=(equipment,index)=>{const row=loadout.get(index);const hiddenKey={Head:'helmet',Body:'torso',Legs:'legs',Cape:'cape'}[equipment]||'';const hidden=hiddenKey&&state.rsdwPreviewHidden.has(hiddenKey);return `<button class="studio-equipment-socket character-equipped-row ${row?'occupied':'empty'} ${hidden?'hidden-preview':''}" data-studio-equipment-slot="${escapeHtml(equipment)}" data-studio-equipment-index="${index}" data-studio-equipped-item="${escapeHtml(row?.item_data||'')}" aria-label="${escapeHtml(equipment)} equipment slot · ${escapeHtml(row?.name||'Empty')}" title="Click to browse · Right-click to quick equip ${escapeHtml(equipment)} items">${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/>`:`<span class="studio-socket-glyph">${escapeHtml(equipment.slice(0,1))}</span>`}<span><strong>${escapeHtml(equipment)}</strong><small>${escapeHtml(row?.name||'Empty slot')}</small><i>${hidden?'Hidden in preview':'Save-backed'}</i></span>${hiddenKey?`<b class="studio-socket-eye ${hidden?'hidden':''}" data-rsdw-socket-eye="${hiddenKey}" title="${hidden?'Show':'Hide'} ${escapeHtml(equipment)} in preview">◉</b>`:''}<em aria-hidden="true">⌕</em></button>`;};
-    const hand=(label,slot,upstreamId)=>{const model=liveAvatar?.params?.[slot]||'';const hidden=state.rsdwPreviewHidden.has(slot);const chosen=state.rsdwPreviewWeaponItems?.[slot]||null;const row=chosen||repositoryItems.find((item)=>String(item.item_data||'')===String(model)||(String(item.internal_name||item.name||'')&&String(model).toLowerCase().includes(String(item.internal_name||item.name||'').toLowerCase())));const occupied=!!(model||row);const media=row?.icon?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/>`:`<span class="studio-socket-glyph">${label==='Main Hand'?'⚔':'◈'}</span>`;return `<button class="studio-equipment-socket character-equipped-row preview-hand ${occupied?'occupied':'empty'} ${hidden?'hidden-preview':''}" data-studio-equipment-slot="${escapeHtml(label)}" data-avatar-hand-slot="${escapeHtml(upstreamId)}" data-studio-equipped-item="${escapeHtml(row?.item_data||model)}" aria-label="${escapeHtml(label)} slot · ${escapeHtml(row?.name||model||'Empty')}" title="Click to browse · Right-click to change or remove ${escapeHtml(label)} items">${media}<span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(row?.name||(model?String(model).split('/').pop():'Choose preview item'))}</small><i>RSDWModel preview mapping</i></span><b class="studio-socket-eye ${hidden?'hidden':''}" data-rsdw-socket-eye="${slot}" title="${hidden?'Show':'Hide'} ${escapeHtml(label)}">◉</b><em aria-hidden="true">⌕</em></button>`;};
+    const socket=(equipment,index)=>{const row=loadout.get(index);return `<button class="studio-equipment-socket character-equipped-row ${row?'occupied':'empty'}" data-studio-equipment-slot="${escapeHtml(equipment)}" data-studio-equipment-index="${index}" data-studio-equipped-item="${escapeHtml(row?.item_data||'')}" aria-label="${escapeHtml(equipment)} equipment slot · ${escapeHtml(row?.name||'Empty')}" title="Click to browse · Right-click to quick equip ${escapeHtml(equipment)} items">${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/>`:`<span class="studio-socket-glyph">${escapeHtml(equipment.slice(0,1))}</span>`}<span><strong>${escapeHtml(equipment)}</strong><small>${escapeHtml(row?.name||'Empty slot')}</small><i>Save-backed</i></span><em aria-hidden="true">⌕</em></button>`;};
     const hotbar=Array.from({length:8},(_,index)=>{const row=inventory.get(index);return `<button type="button" class="character-action-slot ${row?'occupied':''}" data-character-action-slot="${index}" data-studio-equipped-item="${escapeHtml(row?.item_data||'')}" title="${escapeHtml(row?`${row.name||row.item_data} · quantity ${Number(row.count||1)}`:`Action slot ${index+1} · empty`)}"><b>${index+1}</b>${row?`<img src="${escapeHtml(rsdwAssetUrl(row.icon))}" alt="" loading="lazy"/><span>${Number(row.count||1)>1?escapeHtml(row.count):''}</span>`:'<i aria-hidden="true">＋</i>'}</button>`;}).join('');
-    return {right:`<aside class="character-editor-equipped" aria-label="Equipped items"><div class="character-equipped-title"><div><span>Equipped</span><strong>${itemEditor.sections?'Item repository ready':'Loading item repository…'}</strong></div><button type="button" class="btn ghost compact-btn" data-open-item-editor title="Open the full Item Editor">Manage</button></div><section><h4>Armour</h4>${socket('Head',0)}${socket('Body',1)}${socket('Legs',2)}</section><section><h4>Attachments</h4>${socket('Cape',3)}${socket('Jewellery',4)}</section><section><h4>Weapons <small>preview mapped</small></h4>${hand('Main Hand','rightHand','slot-rightHand')}${hand('Off Hand','leftHand','slot-leftHand')}</section></aside>`,hotbar};
+    return {right:`<aside class="character-editor-equipped" aria-label="Equipped items"><div class="character-equipped-title"><div><span>Equipped</span><strong>${itemEditor.sections?'Item repository ready':'Loading item repository…'}</strong></div><button type="button" class="btn ghost compact-btn" data-open-item-editor title="Open the full Item Editor">Manage</button></div><section><h4>Armour</h4>${socket('Head',0)}${socket('Body',1)}${socket('Legs',2)}</section><section><h4>Attachments</h4>${socket('Cape',3)}${socket('Jewellery',4)}</section></aside>`,hotbar};
   }
 
   function nativeCharacterEditorMarkup(payload) {
@@ -2857,9 +2852,7 @@
     const mounts=editor.mounts||[];
     const vendors=editor.vendors||[];
     const equipped=editor.equipped_mount||'None';
-    const liveAvatar=state.rsdwPreviewAvatar||payload?.avatar||{};
-    const avatarMarkup=`<div class="character-preview-paused"><strong>Save-backed character summary</strong><p>The editor now works directly against appearance, progression, equipment, and inventory data without starting a separate renderer.</p><dl><dt>Head</dt><dd>${escapeHtml(String(editor.appearance?.Head||'Default'))}</dd><dt>Hair</dt><dd>${escapeHtml(String(editor.appearance?.HairPreset||'Default'))}</dd><dt>Body</dt><dd>${escapeHtml(String(editor.appearance?.BodyType||'Default'))}</dd></dl></div>`;
-    const equipment=characterEquipmentSurface(liveAvatar);
+    const equipment=characterEquipmentSurface();
     const dirty=state.rsdwNativeDraft?.characterId===state.characterSelectedId;
     const activeTab='appearance';
     return `<div class="rsdw-native-character-editor character-editor-redesign" id="rsdw-native-character-editor" data-character-editor-active-tab="appearance">
@@ -2868,7 +2861,6 @@
         <aside class="character-editor-controls">
           <div class="character-editor-tab-panel ${activeTab==='appearance'?'active':''}" data-character-tab-panel="appearance"><label class="character-name-field"><span>Name</span><input class="field" data-native-meta="player_name" maxlength="128" value="${escapeHtml(meta.player_name||'')}"/></label><div class="character-nickname-row"><span>Asset nicknames remain secondary to raw save names.</span><button type="button" disabled title="Nickname metadata is not available in the current save schema">Edit</button></div>${nativeAppearanceSelector(editor,'Head','Face')}${nativeAppearanceSelector(editor,'HairPreset','Hair')}${nativeAppearanceSelector(editor,'FacialHairPreset','Beard')}<div class="character-body-type">${nativeAppearanceField(editor,'BodyType',et('bodyType'))}</div><div class="character-color-rows">${nativeColorField(editor,'SkinTone','Skin')}${nativeColorField(editor,'EyeColor','Eyes')}${nativeColorField(editor,'HairColor','Hair')}${nativeColorField(editor,'EyebrowColor','Beard')}</div></div>
         </aside>
-        <main class="character-editor-preview" aria-label="Character summary"><div class="character-preview-label"><span>Character summary</span><strong>Lightweight · save-backed appearance</strong></div>${avatarMarkup}</main>
         ${equipment.right}
       </div>
       <footer class="character-editor-footer"><div class="character-action-bar" aria-label="Eight-slot character action bar">${equipment.hotbar}</div><div class="character-editor-footer-actions"><button type="button" class="btn ghost" data-character-undo ${state.rsdwCharacterHistory.length?'':'disabled'}>↶ Undo</button><button type="button" class="btn ghost" data-character-redo ${state.rsdwCharacterFuture.length?'':'disabled'}>↷ Redo</button><button type="button" class="btn primary character-save-button" data-character-save ${dirty?'':'disabled'}>▣ Save Character</button><button type="button" class="btn ghost" data-character-export>↥ Export</button></div></footer>
@@ -4904,7 +4896,7 @@
     const routedMods = state.route === 'mods-app';
     const standaloneHostWorkspace = routedRemote;
     let topTab = routedMods ? 'mods' : (routedServers ? 'server' : ((routedWebhost || routedRemote) ? 'webhost' : (state.settingsTab || 'application')));
-    if(!routedWebhost&&!standaloneHostWorkspace&&!routedServers&&!routedMods&&!['application','player','server','sync','advanced','integrations','about'].includes(topTab))topTab='application';
+    if(!routedWebhost&&!standaloneHostWorkspace&&!routedServers&&!routedMods&&!['application','advanced','integrations','about'].includes(topTab))topTab='application';
     if(topTab==='server'&&!serverEnabled)topTab='advanced';
     const externalSettingsTab = state.externalDeclarationTab || 'overview';
     const externalSettings = topTab === 'external';
@@ -5249,8 +5241,8 @@
           <div class="page-header"><div><div class="eyebrow">${routedMods?'Content &amp; load order':(standaloneHostWorkspace?'Authenticated access':(routedWebhost?'Host &amp; Connect':(routedServers?'Advanced Hosting':'System')))}</div><h1>${routedMods?'Mods':(routedServers?t('servers'):(standaloneHostWorkspace?'Server Management':(routedWebhost?'Sync':'Settings')))}</h1><div class="page-subtitle">${routedMods?'Search, inspect, edit, and publish profile-owned UE4SS, RuneSchema, and PAK mods.':(routedServers?'Configure the shared dedicated-server installation, staged World destinations, network benchmark, firewall, and global access policy.':(standaloneHostWorkspace?'Sign in to the currently broadcast hosted World with its World Name, username, and password.':(routedWebhost?'Configure continuous World discovery, transfer, heartbeat, and optional WebGUI services.':'Application, Advanced, Integrations, and About are separated. Player identity and Characters live under Profile Management.')))}</div></div><div class="header-actions"><button class="btn ghost" id="detach-settings">${detachedMode?'↙ Return to Application':'↗ Open in Window'}</button></div></div>
         ${routedServers?'<nav class="settings-subnav server-workspace-tabs"><button data-servers-tab="worlds">Worlds</button><button class="active" data-servers-tab="settings">Server Setup</button></nav>':''}
         <div class="settings-layout ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'webhost-layout':''}">
-          ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav">${settingsNav('application','⚙','Application & Data')}${settingsNav('player','♙','Player')}${serverEnabled?settingsNav('server','▣','Server'):''}${settingsNav('sync','↻','Connections')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('advanced','◇','Advanced')}${settingsNav('about','ⓘ',t('about'))}</nav>`}
-          <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">${t('application')}</button><button class="${appSub==='runtimes'?'active':''}" data-application-settings-tab="runtimes">Data Management</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}${standaloneHostWorkspace?'':'<div class="settings-page-note">Changes save to the launcher profile immediately.</div>'}${content}</div>
+          ${routedWebhost||standaloneHostWorkspace||routedServers||routedMods?'':`<nav class="settings-nav streamlined-settings-nav">${settingsNav('application','⚙','General')}${settingsNav('integrations','⊕',t('integrations'))}${settingsNav('advanced','◇','Advanced')}${settingsNav('about','ⓘ',t('about'))}</nav>`}
+          <div>${topTab === 'application' ? `<div class="settings-subnav"><button class="${appSub==='application'?'active':''}" data-application-settings-tab="application">General</button><button class="${appSub==='runtimes'?'active':''}" data-application-settings-tab="runtimes">Profiles &amp; Data</button><button class="${appSub==='network'?'active':''}" data-application-settings-tab="network">${t('network')}</button><button class="${appSub==='storage'?'active':''}" data-application-settings-tab="storage">${t('storage')}</button></div>` : ''}${standaloneHostWorkspace?'':'<div class="settings-page-note">Identity lives in Profile, Worlds and servers live in Dragonwilds, and transfer controls live in Sync.</div>'}${content}</div>
         </div>
       </div>`;
   }
@@ -5313,40 +5305,6 @@
     `;
   }
 
-  function embeddedAvatarCss() {
-    return `
-      *, *::before, *::after { box-sizing:border-box !important; min-width:0; }
-      html,body { margin:0 !important; width:100% !important; max-width:none !important; min-width:0 !important; height:100% !important; overflow:hidden !important; background:#050708 !important; }
-      header, .site-header, footer, .site-footer { display:none !important; }
-      main, .main, .content, .container, .wrapper, [class*="container"], [class*="wrapper"] { width:100% !important; max-width:none !important; min-width:0 !important; margin-left:0 !important; margin-right:0 !important; }
-      #avatar-stage { position:fixed !important; inset:0 !important; width:100vw !important; height:100vh !important; min-height:100vh !important; margin:0 !important; z-index:9999 !important; background:#050708 !important; }
-      canvas { display:block !important; width:100vw !important; height:100vh !important; max-width:none !important; min-height:100vh !important; }
-      #viewer, #viewport, #canvas-container, .viewer, .viewport, .model-viewer, [class*="viewer"], [class*="viewport"] { width:100% !important; height:100% !important; max-width:none !important; min-width:0 !important; }
-      select, input, button { max-width:100% !important; }
-      @media (max-width:900px) { canvas { min-height:100vh !important; } }
-    `;
-  }
-
-  function renderRsdwLauncher() {
-    const hosted=activeServerWorld()||serverWorlds()[0]||null;
-    const catalog=state.data?.application?.system_process_catalog||{};
-    const appy=catalog.applications?.['rsdw-l']||{};
-    const bridge=Object.values(catalog.components||{}).filter((row)=>row?.owner==='rsdw-l');
-    const tool=(id,title,description,icon,disabled=false)=>`<button class="rsdwl-tool-card" data-rsdwl-tool="${id}" ${disabled?'disabled':''}><span>${icon}</span><div><strong>${escapeHtml(title)}</strong><small>${escapeHtml(description)}</small></div><b>Open →</b></button>`;
-    return `<div class="content rsdwl-home"><div class="page-header"><div><div class="eyebrow">RSDW Toolkit · Launcher Integration</div><h1>RSDW-L</h1><div class="page-subtitle">One cached launcher Appy for save editors, live telemetry, spawning, and the audited game console.</div></div><div class="header-actions"><button class="btn ghost" id="rsdwl-refresh">Refresh Toolkit</button><span class="status-pill ${hosted?'online':'unknown'}">${hosted?escapeHtml(hosted.name||'WORLD READY'):'NO HOSTED WORLD'}</span></div></div>
-      <section class="rsdwl-ownership-strip"><div><strong>Core keeps authority</strong><span>RSDW-L never owns profiles, permissions, runtime lifecycle, or durable state.</span></div><div><strong>${bridge.length} bounded runtime surfaces</strong><span>${escapeHtml(appy.subapps?.join(' · ')||'Editors · map · spawner · console')}</span></div></section>
-      <div class="rsdwl-tool-grid">
-        ${tool('character','Character Creator','Identity, appearance, progression and save-backed fields.','◉')}
-        ${tool('inventory','Inventory & Items','Equipment, action bar, personal storage and the modded item repository.','▦')}
-        ${tool('spells','Spells, Recipes & Quests','Cached RSDW catalogs with backup-first writeback.','✦')}
-        ${tool('map','Live Map','Roster-backed coordinates and Ashenfall overlays for the selected hosted World.','⌖',!hosted)}
-        ${tool('spawner','Spawner','Permission-gated item and enemy commands through the active game bridge.','✣',!hosted)}
-        ${tool('console','Unified Console','Server lifecycle, Sync, RSDW commands, acknowledgements and failures in one timeline.','>_',!hosted)}
-      </div>
-      <section class="panel"><div class="panel-header"><div><h2>Runtime ownership</h2><span class="panel-subtitle">${escapeHtml(appy.authority||'Core-owned policy')}</span></div></div><div class="panel-body"><div class="activity-list">${bridge.map((row)=>`<div class="activity-row"><span class="activity-level ok">${escapeHtml(String(row.kind||'service').replace(/-/g,' '))}</span><div><strong>${escapeHtml(row.id||'RSDW-L surface')}</strong><small>${escapeHtml(row.purpose||'')} · ${escapeHtml(row.lifecycle||'on demand')}</small></div></div>`).join('')||'<div class="empty-state compact">Process catalog is still hydrating.</div>'}</div></div></section>
-    </div>`;
-  }
-
   function renderUnsafe() {
     if (!state.data) return;
     if(privateWorldById(state.selectedWorldId)&&Array.isArray(state.singleplayerInventory))state.privateInventory[state.selectedWorldId]=state.singleplayerInventory;
@@ -5395,7 +5353,6 @@
     else if (state.route === 'worlds') page = renderWorldGallery();
     else if (state.route === 'servers') { state.route='world-management'; state.worldManagementTab='server-setup'; page = renderWorldManagement(); }
     else if (state.route === 'server-detail' && activeServerWorld()) page = renderServerDetail(activeServerWorld());
-    else if (state.route === 'rsdw-launcher') page = renderRsdwLauncher();
     else if (state.route === 'rsdw-toolkit') { state.route='profile'; state.profileTab='characters'; page = renderProfile(); }
     else if (state.route === 'profile') page = renderProfile();
     else if (state.route === 'rsdw-editor' && detachedMode) page = renderRsdwEditorWindow();
@@ -5591,26 +5548,6 @@
     bindPersistentOnce(root.querySelector('#player-chip'),'click','profile',async()=>{pushNavigation();state.route='profile';state.profileTab='user';stopPlayerPolling();render();try{const response=await api.invoke('characters.list',{});state.characters=response.characters||[];state.rsdwWorlds=response.worlds||[];if(state.route==='profile')render();}catch(_){} });
     root.querySelector('#rsdwl-refresh')?.addEventListener('click',async()=>{try{const response=await api.invoke('application.rsdw.refresh',{force:true});if(response?.state)setData(response.state);toast('RSDW-L refreshed','Toolkit catalogs and launcher caches are current.','success');render();}catch(error){toast('RSDW-L refresh failed',error.message,'error');}});
     root.querySelector('#refresh-integration-status')?.addEventListener('click',async()=>{try{await hydrateIntegrations({force:true});toast('Integration status refreshed','RSDW, Discord, and Nexus status checks completed.','success');}catch(error){toast('Integration refresh failed',error.message,'error');}});
-    root.querySelectorAll('[data-rsdwl-tool]').forEach((button)=>button.addEventListener('click',async()=>{
-      const tool=button.dataset.rsdwlTool||'character';
-      if(state.rsdwlToolLoading)return;
-      const label=button.querySelector('b');const original=label?.textContent||'Open →';state.rsdwlToolLoading=tool;button.disabled=true;if(label)label.textContent='Loading…';
-      try{
-        if(['character','inventory','spells'].includes(tool)){
-          state.rsdwTool=tool==='inventory'?'item-editor':tool==='spells'?'spell-editor':'character-editor';
-          await enterRsdwToolkit();
-          if(tool!=='character')await hydrateNativeRsdwTool(state.rsdwTool);
-          return;
-        }
-        const world=activeServerWorld()||serverWorlds()[0];
-        if(!world)throw new Error(`${tool} uses a running or configured hosted World.`);
-        state.selectedServerWorldId=world.id;
-        await prepareRsdwlServerTool(tool,world);
-        pushNavigation();state.route='server-detail';state.serverTab=tool;render();
-        if(tool==='map')startPlayerPolling(world);
-      }catch(error){toast(tool==='map'?'Map unavailable':tool==='console'?'Console unavailable':'RSDW-L tool unavailable',error.message,'error');}
-      finally{state.rsdwlToolLoading='';if(button.isConnected){button.disabled=false;if(label)label.textContent=original;}}
-    }));
     root.querySelectorAll('[data-profile-tab]').forEach((button)=>button.addEventListener('click',async()=>{const nextTab=button.dataset.profileTab||'user';if(nextTab==='characters'){state.characterProfileTab='overview';await enterRsdwToolkit();return;}if(state.route!=='profile'||state.profileTab!==nextTab)pushNavigation();state.profileTab=nextTab;state.route='profile';stopPlayerPolling();render();}));
     root.querySelectorAll('[data-profile-character-editor]').forEach((button)=>button.addEventListener('click',async()=>{
       const characterId=button.dataset.profileCharacterEditor||'';
@@ -5782,6 +5719,7 @@
       nativeCharacterEditor.querySelectorAll('[data-open-item-editor]').forEach((button)=>button.addEventListener('click',()=>{state.rsdwTool='item-editor';state.rsdwToolSearch='';state.rsdwToolPage=0;render();if(!state.rsdwNativeTools['item-editor'])setTimeout(()=>hydrateNativeRsdwTool('item-editor'),0);}));
       nativeCharacterEditor.addEventListener('input',scheduleNativePreview);
       nativeCharacterEditor.addEventListener('change',scheduleNativePreview);
+      nativeCharacterEditor.querySelectorAll('[data-native-color-picker] input').forEach((input)=>input.addEventListener('change',()=>{const picker=input.closest('[data-native-color-picker]');if(picker)setTimeout(()=>{picker.open=false;},0);}));
       nativeCharacterEditor.addEventListener('keydown',(event)=>{if((event.ctrlKey||event.metaKey)&&String(event.key).toLowerCase()==='s'){event.preventDefault();saveButton?.click();}});
       if(state.rsdwNativeDraft?.characterId===selected?.id)setNativeStatus('Unsaved changes','dirty');
       saveButton?.addEventListener('click',async()=>{
@@ -5811,13 +5749,9 @@
       const setToolStatus=(message,type='')=>{if(statusLabel)statusLabel.textContent=message;if(statusDot)statusDot.className=type;if(saveButton)saveButton.disabled=type!=='dirty';};
       const applyToolChange=async(change)=>{
         if(!selected||!loaded?.text)return;
-        const baseText=state.rsdwNativeDraft?.characterId===selected.id&&state.rsdwNativeDraft?.text?state.rsdwNativeDraft.text:loaded.text;
         setToolStatus('Validating RSDW save change…','saving');
         try{
-          const response=await api.invoke('characters.native.tool.preview',{text:baseText,tool,change});
-          state.rsdwNativeDraft={...response,characterId:selected.id};
-          state.rsdwNativeTools[tool]=response.native_tool;
-          render();
+          await previewRsdwToolChange(tool,change);
         }catch(error){toast(`${(RSDW_TOOLS.find((row)=>row.id===tool)||{}).label||'RSDW editor'} change blocked`,error.message,'error');render();}
       };
       if(!state.rsdwNativeTools[tool]&&!state.rsdwNativeToolBusy)setTimeout(()=>hydrateNativeRsdwTool(tool),0);
@@ -5925,6 +5859,7 @@
         root.addEventListener('click',hideContext);
       }
       saveButton?.addEventListener('click',async()=>{
+        await rsdwToolMutationQueue.catch(()=>{});
         const draft=state.rsdwNativeDraft;
         if(!draft?.text||draft.characterId!==selected?.id||!loaded)return;
         setToolStatus('Creating backup and verifying writeback…','saving');
@@ -6958,7 +6893,17 @@
   function profileModStorageActions(kind, id) {
     const dedicated=kind==='server';
     const lanes=dedicated?[['Overlay','Overlay'],['UE4SSLoader','UE4SS Loader'],['RuneSchemaLoader','RuneSchema Loader'],['UE4SS','UE4SS Mods'],['RuneSchema','RuneSchema Mods'],['PAKs','PAK Mods'],['Saves','Config & Saves']]:[['Win64','Win64'],['UE4SS','UE4SS'],['RuneSchema','RuneSchema'],['PAKs','PAKs']];
-    return `<section class="identity-box profile-storage-destinations"><strong>${dedicated?'World staging · layered entities':'Profile staging · game folder layout'}</strong><p>${dedicated?'Overlay, UE4SS, RuneSchema, and every recognized mod are independent. Matching client hashes are not downloaded again.':'Stage files under Binaries/Win64 or Content/Paks/~mods, just as they belong in the game. Then scan the profile and choose Client Required or Server Retained.'}</p><div class="header-actions">${lanes.map(([lane,label])=>`<button type="button" class="btn ghost" data-open-profile-mod-lane="${lane}" data-profile-kind="${kind}" data-profile-id="${escapeHtml(id||'')}">Open ${label}</button>`).join('')}</div><small>${dedicated?'PAK example: mods/paks/BetterBuilding deploys to Content/Paks/~mods/BetterBuilding. Each direct mod folder is hashed and synchronized independently.':'UE4SS: Binaries/Win64/ue4ss/Mods · RuneSchema: ue4ss/Mods/RuneSchema/mods · PAKs: Content/Paks/~mods.'}</small></section>`;
+    return `<section class="identity-box profile-storage-destinations"><strong>${dedicated?'World staging · layered entities':'Profile staging · game folder layout'}</strong><p>${dedicated?'Overlay, verified loader runtimes, and every recognized mod are independent. Matching client hashes are not downloaded again.':'Stage files exactly where they belong in the game overlay. Loader runtimes remain separate from mods and deploy first.'}</p><div class="header-actions"><button type="button" class="btn ghost" data-open-profile-mod-lane="Loaders" data-profile-kind="${kind}" data-profile-id="${escapeHtml(id||'')}">Edit Mod Loaders</button><button type="button" class="btn ghost" data-manage-profile-loaders data-profile-kind="${kind}" data-profile-id="${escapeHtml(id||'')}">Install Verified Loaders</button>${lanes.map(([lane,label])=>`<button type="button" class="btn ghost" data-open-profile-mod-lane="${lane}" data-profile-kind="${kind}" data-profile-id="${escapeHtml(id||'')}">Open ${label}</button>`).join('')}</div><small>${dedicated?'Deploy order: overlay → UE4SS → RuneSchema → mods → generated load order. PAK example: mods/paks/BetterBuilding → Content/Paks/~mods/BetterBuilding. Each direct mod folder is hashed and synchronized independently.':'Deploy order: UE4SS → RuneSchema → UE4SS/RuneSchema/PAK mods. ID.txt identifies verified runtime packages.'}</small></section>`;
+  }
+
+  async function openProfileLoaderManager(kind,id){
+    try{
+      const value=await api.invoke('profile.loaders.status',{kind,id});
+      const packages=value.repository?.packages||[],installed=value.profile?.loaders||{};
+      const modal=showModal(`<div class="modal-header"><div><div class="eyebrow">PROFILE LOADERS</div><h2>Verified Mod Loaders</h2><p>Install immutable bundled packages into this profile. Manual game-relative loader trees remain supported.</p></div><button class="modal-close" data-close-modal>×</button></div><div class="modal-body"><div class="identity-box"><strong>Loader-first composition</strong><p>Sync deploys UE4SS, then RuneSchema, then recognized mods. Each package receipt records its ID and SHA-256; matching client content is retained.</p></div><div class="activity-list">${packages.map(pkg=>{const current=installed[pkg.family]||{},active=current.id===pkg.id;return `<div class="activity-row"><span class="activity-level ${active?'ok':'info'}">${active?'ACTIVE':escapeHtml(String(pkg.channel||'').toUpperCase())}</span><div><strong>${escapeHtml(pkg.family==='ue4ss'?'UE4SS':'RuneSchema')} · ${escapeHtml(pkg.id)}</strong><small>${escapeHtml(pkg.sha256.slice(0,16))}… · ${formatBytes(pkg.size||0)}${current.id&&!active?` · staged: ${escapeHtml(current.id)}`:''}</small></div><button class="btn ${active?'ghost':'primary'}" data-install-loader-package="${escapeHtml(pkg.id)}" ${active?'disabled':''}>${active?'Installed':'Install'}</button></div>`;}).join('')||'<div class="empty-state">No bundled loader packages were found in this build.</div>'}</div></div><div class="modal-footer"><button class="btn ghost" data-open-loader-staging>Open Loader Staging</button><button class="btn primary" data-close-modal>Done</button></div>`);
+      modal.querySelector('[data-open-loader-staging]')?.addEventListener('click',()=>window.dragonwilds.openProfileMods(kind,id,'Loaders'));
+      modal.querySelectorAll('[data-install-loader-package]').forEach(button=>button.addEventListener('click',async()=>{button.disabled=true;button.textContent='Verifying…';try{await api.invoke('profile.loaders.install',{kind,id,package_id:button.dataset.installLoaderPackage});toast('Loader staged','Verified package installed. It will deploy before profile mods.','success');closeModal();await openProfileLoaderManager(kind,id);}catch(error){button.disabled=false;button.textContent='Install';toast('Loader install failed',error.message,'error');}}));
+    }catch(error){toast('Loader repository unavailable',error.message,'error');}
   }
 
   // Shared reference|editable dual-pane JSON/text editor body -- the left
@@ -7750,7 +7695,6 @@
   window.__DWSYNC_SEND_PROFILE_TO_DESKTOP__=sendProfileToDesktop;
 
   const launcherCommands = [
-    ['open rsdw-l','Open the RSDW-L editor, map, spawner, and unified-console hub'],
     ['open characters','Open the cached Character Creator and inventory workspace'],
     ['open mods','Open the profile-aware Mod Studio and editor'],
     ['open sync','Open Sync directory, transfer, broadcast, and remote access'],
@@ -7768,7 +7712,6 @@
   async function executeLauncherCommand(rawCommand) {
     const command=String(rawCommand||'').trim().toLowerCase().replace(/\s+/g,' ');
     if(!command || command==='help'){openLauncherConsole();return;}
-    if(command==='open rsdw-l'){navigateTo('rsdw-launcher');return;}
     if(command==='open characters'){await enterRsdwToolkit();return;}
     if(command==='open mods'){await handleRouteNavigation('mods-app');return;}
     if(command==='open sync'){navigateTo('webhost',{webhostTab:'settings'});return;}
@@ -8099,10 +8042,10 @@
     const menu = document.createElement('div'); menu.className = 'context-menu world-context-menu'; menu.setAttribute('role','menu'); menu.setAttribute('aria-label','World actions'); menu.style.left = `${Math.min(x, innerWidth - 220)}px`; menu.style.top = `${Math.min(y, innerHeight - 230)}px`;
     if(server){
       const runtime=state.data?.server?.runtime||{};const running=!!runtime.running&&String(runtime.active_profile_id||'')===String(id||'');const loaded=String(state.data?.server?.active_world_id||'')===String(id||'');
-      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="profile-mod-storage">Open World Staging</button>${running?'<button role="menuitem" data-action="stop">Stop Server</button><button role="menuitem" data-action="restart">Restart Server</button>':'<button role="menuitem" data-action="start">Start Server</button>'}${loaded&&!running?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="update">Update Server</button><button role="menuitem" data-action="saves">View Save Backups</button><button role="menuitem" data-action="convert">Convert to Singleplayer / Co-Op</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="profile-mod-storage">Open World Staging</button><button role="menuitem" data-action="edit-mod-loaders">Edit Mod Loaders</button>${running?'<button role="menuitem" data-action="stop">Stop Server</button><button role="menuitem" data-action="restart">Restart Server</button>':'<button role="menuitem" data-action="start">Start Server</button>'}${loaded&&!running?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="update">Update Server</button><button role="menuitem" data-action="saves">View Save Backups</button><button role="menuitem" data-action="convert">Convert to Singleplayer / Co-Op</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
     }else if(privateWorld){
       const loaded=String(state.data?.client?.live_world_id||'')===String(id||'');
-      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="profile-mod-storage">Open Profile Mod Storage</button><button role="menuitem" data-action="activate">Make Active Profile</button><button role="menuitem" data-action="reset-reload">Reset & Reload Profile</button>${loaded?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="coop">${privateWorld.status?.broadcasting?'Stop Co-Op':'Start Co-Op'}</button><button role="menuitem" data-action="saves">View Save Backups</button><button role="menuitem" data-action="convert">Convert to Dedicated Server</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
+      menu.innerHTML = `<button role="menuitem" data-action="open">Manage World</button><button role="menuitem" data-action="profile-mod-storage">Open Profile Mod Storage</button><button role="menuitem" data-action="edit-mod-loaders">Edit Mod Loaders</button><button role="menuitem" data-action="activate">Make Active Profile</button><button role="menuitem" data-action="reset-reload">Reset & Reload Profile</button>${loaded?'<button role="menuitem" data-action="unload">Unload Profile</button>':''}<button role="menuitem" data-action="coop">${privateWorld.status?.broadcasting?'Stop Co-Op':'Start Co-Op'}</button><button role="menuitem" data-action="saves">View Save Backups</button><button role="menuitem" data-action="convert">Convert to Dedicated Server</button><button role="menuitem" data-action="backup">Backup World</button><button role="menuitem" data-action="desktop">Send to Desktop</button><button role="menuitem" class="danger" data-action="delete">Delete World</button>`;
     }else{
       const favorite=(state.data?.client?.favorites||[]).map(String).includes(String(id));
       const saved=worlds().some((world)=>String(world.id)===String(id));
@@ -8139,6 +8082,7 @@
         const world = serverWorlds().find((w) => w.id === id); if (!world) return;
         if (action === 'open') { stopPlayerPolling();pushNavigation(); state.selectedServerWorldId = id; state.serverTab='overview';state.route = 'server-detail'; render();requestAnimationFrame(()=>refreshServerRuntime(true).catch(()=>{})); }
         if (action === 'profile-mod-storage') { const result=await window.dragonwilds.openProfileMods('server',id);if(!result?.ok)toast('Could not open World Staging',result?.error||'Windows Explorer could not open the folder.','error'); }
+        if (action === 'edit-mod-loaders') { const result=await window.dragonwilds.openProfileMods('server',id,'Loaders');if(!result?.ok)toast('Could not open Mod Loaders',result?.error||'Windows Explorer could not open the folder.','error'); }
         if (action === 'saves') { await openSaveManagement(world,'server'); }
         if (action === 'start') { launchRuntimeConsoleForWorld(world);try { const response=await runServerStartOperation(world,()=>api.invoke('server.runtime.start',{id:world.id}));if(!response.result?.running)throw new Error('Dragonwilds did not report a running dedicated process.');setData(response.state);toast('Server started',`PID ${response.result?.pid||'—'} · Sync fingerprint active`,'success'); } catch(error){toast('Start failed',error.message,'error');} }
         if (action === 'stop' && await managedConfirm(`Stop ${world.name||'this hosted World'}?`,'Stop Server')) { try { const response=await api.invoke('server.world.stop',{});if(!response.result?.stop_verified||response.result?.running)throw new Error('The dedicated process did not report a verified stop.');setData(response.state);toast('Server stopped',`PID ${response.result?.stopped_pid||'—'}`,'success'); } catch(error){toast('Stop failed',error.message,'error');} }
@@ -8154,6 +8098,7 @@
       if(privateWorld){
         if(action==='open') return managePrivateWorld(privateWorld);
         if(action==='profile-mod-storage'){const result=await window.dragonwilds.openProfileMods('local',id);if(!result?.ok)toast('Could not open Profile Mod Storage',result?.error||'Windows Explorer could not open the folder.','error');return;}
+        if(action==='edit-mod-loaders'){const result=await window.dragonwilds.openProfileMods('local',id,'Loaders');if(!result?.ok)toast('Could not open Mod Loaders',result?.error||'Windows Explorer could not open the folder.','error');return;}
         if(action==='saves'){await openSaveManagement(privateWorld,'coop');return;}
         if(action==='activate'){try{await activatePrivateWorldProfile(privateWorld,false);render();}catch(error){toast('Profile activation failed',error.message,'error');}return;}
         if(action==='reset-reload'&&await managedConfirm(`Reset and reload “${privateWorld.name||'this Private World'}”?\n\nLauncher-managed UE4SS mods, RuneSchema child mods, PAK mods, and managed configuration are cleared from the game directory, then restored from this profile snapshot. UE4SS, RuneSchema core, DragonLink-Connect, saves, and the Steam installation are preserved.`,'Reset & Reload Profile')){try{const response=await runOperation('Reset & Reload Profile','Clearing World-owned game files and rematerializing the saved local profile.',()=>api.invoke('singleplayer.profile.reset_reload',{profile_id:id,id}));if(response.state)setData(response.state);render();toast('Private World reloaded',`${response.result?.reset?.removed_files||0} stale file(s) cleared; the saved profile is active.`,'success');}catch(error){toast('Profile reload failed',error.message,'error');}return;}
@@ -8742,6 +8687,10 @@
     const cached=state.privateInventory[world.id]||cachedProfileMods(world);
     state.singleplayerInventory=Array.isArray(cached)?cached:[];
     state.privateTab='mods';render();
+  });
+  document.addEventListener('dws:manage-profile-loaders',(event)=>{
+    const id=String(event.detail?.id||''),kind=event.detail?.kind==='server'?'server':'local';
+    if(id)void openProfileLoaderManager(kind,id);
   });
   document.addEventListener('keydown',(event)=>{
     if(event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey)return;

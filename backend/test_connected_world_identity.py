@@ -54,7 +54,7 @@ def main():
     assert "settingsNav('mods','▦','Mod Management')" not in renderer
     assert "data-v3p4-page-status>Page 1 / 2" in renderer
     assert "}else if(standaloneRemote){" not in renderer
-    assert "Save-backed character summary" in renderer
+    assert 'class="character-editor-preview"' not in renderer
     assert "characterBackdropDataUrl" not in renderer and "rsdw-avatar-webview" not in renderer
     assert "dragonwilds:read-renderer-asset" not in (ROOT / "electron" / "main-v2.cjs").read_text(encoding="utf-8")
     assert "data-world-management-tab=\"connected\"" in renderer and "revealConnectedWorld" in renderer

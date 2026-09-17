@@ -68,15 +68,10 @@ APPLICATION_IDENTITIES = {
     },
     "characters": {
         "label": "Characters",
-        "subapps": ["character-creator", "appearance", "inventory", "modded-item-repository"],
+        "description": "Save-backed character, item, spell, recipe and quest editing",
+        "subapps": ["character-creator", "appearance", "inventory", "modded-item-repository", "character-editor", "item-editor", "spell-editor", "recipe-unlocker", "quest-editor"],
         "domains": ["save-studio", "mod-library"],
-    },
-    "rsdw-l": {
-        "label": "RSDW-L",
-        "description": "Launcher-owned surfaces powered by the replaceable RSDW Toolkit module",
-        "subapps": ["character-editor", "item-editor", "spell-editor", "recipe-unlocker", "quest-editor", "live-map", "spawner", "console"],
-        "domains": ["save-studio", "directory-map"],
-        "authority": "Core validates writes, permissions and runtime commands; RSDW-L supplies bounded tooling",
+        "authority": "Core validates every preview and write; Characters owns the unified editing workspace",
     },
     "mods": {
         "label": "Mod Studio",

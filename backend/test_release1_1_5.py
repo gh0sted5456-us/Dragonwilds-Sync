@@ -35,7 +35,7 @@ def test_character_and_world_ui_contract():
     assert renderer.index("studio-character-summary") < renderer.index("studio-combat-card")
     assert "character-studio-tabs" not in renderer
     assert '<webview id="rsdw-avatar-webview"' not in renderer and 'rsdw-native-character-editor' in renderer
-    assert 'Save-backed character summary' in renderer
+    assert 'class="character-editor-preview"' not in renderer
     assert "resize:both" in styles and ".desktop-window.minimized { display:none !important; }" in styles
 
 

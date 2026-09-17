@@ -260,6 +260,12 @@
   }
 
   document.addEventListener('click', (event) => {
+    const loaders=event.target?.closest?.('[data-manage-profile-loaders]');
+    if(loaders){
+      event.preventDefault();event.stopImmediatePropagation();
+      document.dispatchEvent(new CustomEvent('dws:manage-profile-loaders',{detail:{kind:loaders.dataset.profileKind,id:loaders.dataset.profileId}}));
+      return;
+    }
     const spare=event.target?.closest?.('[data-profile-spare-action]');
     if(spare){
       event.preventDefault();event.stopImmediatePropagation();

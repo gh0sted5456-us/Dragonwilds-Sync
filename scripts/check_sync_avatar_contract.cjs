@@ -15,7 +15,7 @@ for (const stale of ['>Website Management</button>', '>Remote Management</button
 }
 if (!loader.includes('app-v2.js?v=3.5.0-shortcuts-windows')) throw new Error('app-v2 cache key was not advanced.');
 if (!index.includes('app.js?v=3.5.0-shortcuts-windows')) throw new Error('app loader cache key was not advanced.');
-if (!app.includes('Save-backed character summary')) throw new Error('The lightweight save-backed Character Editor summary is missing.');
+if (app.includes('class="character-editor-preview"')) throw new Error('The retired Character Editor center pane returned.');
 if (app.includes('<webview id="rsdw-avatar-webview"')) throw new Error('The removed 3D avatar webview returned.');
 if (!app.includes("world.kind === 'connected' || world.credentials?.source === 'manual'")) throw new Error('Connected placards must have an explicit host-manifest data path.');
 if (!app.includes("mergedModSummary(presentation.mod_summary,world.manifest_cache?.mod_summary)")) throw new Error('Connected placards must derive mod badges from host presentation/manifest data.');

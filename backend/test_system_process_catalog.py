@@ -8,8 +8,9 @@ def main() -> None:
     assert catalog["schema"] == CATALOG_SCHEMA
     apps = catalog["applications"]
     components = catalog["components"]
-    assert {"shell", "worlds", "characters", "mods", "rsdw-l", "rsdragonwilds", "sync", "webgui", "system"} <= set(apps)
-    assert {"live-map", "spawner", "console"} <= set(apps["rsdw-l"]["subapps"])
+    assert {"shell", "worlds", "characters", "mods", "rsdragonwilds", "sync", "webgui", "system"} <= set(apps)
+    assert {"character-editor", "item-editor", "spell-editor", "recipe-unlocker", "quest-editor"} <= set(apps["characters"]["subapps"])
+    assert "rsdw-l" not in apps
     assert "mod-explorer" in apps["mods"]["subapps"]
     assert "mod-explorer" not in apps["rsdragonwilds"]["subapps"]
     assert apps["rsdragonwilds"]["attachments"]["singleplayer"] == []
@@ -20,7 +21,7 @@ def main() -> None:
     assert components["world-runtime-worker"]["parent"] == "control-service"
     assert components["dedicated-server"]["parent"] == "world-runtime-worker"
     assert components["sync-share-http"]["owner"] == "sync"
-    assert components["rsdw-game-bridge"]["owner"] == "rsdw-l"
+    assert components["rsdw-game-bridge"]["owner"] == "rsdragonwilds"
     assert components["external-browser-renderer"]["kind"] == "sandboxed-renderer-process"
     for app_id, application in apps.items():
         assert application["parentProcess"] in components, application

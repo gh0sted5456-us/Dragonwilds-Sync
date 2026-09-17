@@ -17,7 +17,7 @@ def main() -> None:
             {"id": 2, "method": "v3.phase4.platforms.registry", "params": {}},
             {"id": 3, "method": "feature.worker.prepare", "params": {
                 "owner": "subprocess-test", "eager_only": True,
-                "applications": ["shell", "worlds", "characters", "mods", "rsdw-l", "rsdragonwilds", "sync", "webgui", "system"],
+                "applications": ["shell", "worlds", "characters", "mods", "rsdragonwilds", "sync", "webgui", "system"],
             }},
             {"id": 4, "method": "application.shutdown", "params": {}},
         )

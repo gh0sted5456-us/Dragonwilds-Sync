@@ -104,7 +104,7 @@ def _retire_legacy_game_receipts(game_root: str | Path) -> None:
         pass
 
 def _profile_savegame_dir(profile_id: str) -> Path:
-    return dedicated_profile_layout(_profile_dir(profile_id))["saves"]
+    return dedicated_profile_layout(_profile_dir(profile_id))["saves"] / "Worlds"
 
 def _profile_backups_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "backups"
 
@@ -469,7 +469,10 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     from mod_deployment_cleanup import deploy_profile_lanes
     live_root = resolve_server_layout(game_root).game_root
     return deploy_profile_lanes(
-        [(stored["mods"], live_root, excluded)],
+        [
+            (stored["mods"], live_root, excluded),
+            (stored["saves"] / "Runtime", live_root / "Saved", {"Config", "SaveGames"}),
+        ],
         _overlay_ledger(game_root),
         APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
 
@@ -491,7 +494,7 @@ def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_pa
     elif lowered[:2] == ["saved", "savegames"]:
         target = profile["saves"].joinpath(*parts[2:])
     elif lowered[:1] == ["saved"]:
-        target = profile["saves"].joinpath(*parts[1:])
+        target = (profile["saves"] / "Runtime").joinpath(*parts[1:])
     else:
         target = profile["mods"].joinpath(*parts)
 

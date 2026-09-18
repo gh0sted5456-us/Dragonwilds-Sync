@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: c6465463d2e02effbeffdc68a7e209b42e81a37a
+          ref: 27a8620d864d99797e3efe6e3e9904cc79754236
           persist-credentials: false
       - name: Archive tracked source only
         run: |

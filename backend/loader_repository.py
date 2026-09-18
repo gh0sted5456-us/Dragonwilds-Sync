@@ -107,13 +107,10 @@ def loader_staging_root(kind: str, profile_id: str) -> Path:
     if str(kind or "").strip().lower() == "server":
         from profile_mod_layout import dedicated_profile_layout
         return dedicated_profile_layout(profile)["mods"]
-    root = profile / "Profile/Mods"
-    # Local profiles are migrating toward the same visible contract. Preserve
-    # existing snapshot payload by folding it forward once.
-    legacy = profile / "snapshot/mods"
-    if legacy.is_dir() and not root.exists():
-        root.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(legacy, root, dirs_exist_ok=True)
+    # Local/private profiles still use the established snapshot transaction
+    # boundary. The loader library is central; only its materialized files live
+    # with the local snapshot until that profile format receives its own migration.
+    root = profile / "snapshot/mods"
     root.mkdir(parents=True, exist_ok=True)
     return root
 

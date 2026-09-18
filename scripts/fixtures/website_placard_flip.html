@@ -42,6 +42,7 @@
       if(!loaded('.world-card-banner'))errors.push('face banner missing');
       if(!loaded('.world-icon'))errors.push('face icon missing');
       const detail=errors.length?`FAIL · ${errors.join(' · ')}`:'PASS · true 3D flip · both faces inherit placard, banner, and icon';
+      document.documentElement.dataset.validation=errors.length?'fail':'pass';
       document.querySelector('#validation-result').textContent=detail;
       fetch(`/__validation?case=${encodeURIComponent(params.get('case')||'flip')}&status=${errors.length?'fail':'pass'}&detail=${encodeURIComponent(detail)}`).catch(()=>{});
     },700);});

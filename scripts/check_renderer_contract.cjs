@@ -12,6 +12,8 @@ const releasePolish = fs.readFileSync(path.join(root, 'renderer', 'release-polis
 const performanceCss = fs.readFileSync(path.join(root, 'renderer', 'release-performance.css'), 'utf8');
 const characterMenuCss = fs.readFileSync(path.join(root, 'renderer', 'release-character-menu.css'), 'utf8');
 const localProfileSync = fs.readFileSync(path.join(root, 'renderer', 'release-local-profile-sync.js'), 'utf8');
+const profileFolders = fs.readFileSync(path.join(root, 'renderer', 'release-profile-mod-folders.js'), 'utf8');
+const profileLayout = fs.readFileSync(path.join(root, 'backend', 'profile_mod_layout.py'), 'utf8');
 const popupSafety = fs.readFileSync(path.join(root, 'renderer', 'release-popup-safety.js'), 'utf8');
 const recommendedPlacardsCss = fs.readFileSync(path.join(root, 'renderer', 'release-recommended-placards.css'), 'utf8');
 const electronMain = fs.readFileSync(path.join(root, 'electron', 'main-v2.cjs'), 'utf8');
@@ -178,13 +180,17 @@ assert(source.includes('function openConnectToWorld') && source.includes('Unifie
   source.includes("['saved','lan','direct','import','host']") && source.includes('incomingRsdwlWorldRows') &&
   source.includes('Array.isArray(info.worlds)?info.worlds:Array.isArray(info.worlds?.worlds)?info.worlds.worlds'),
   'Local, LAN, direct, RSDWL, and hosted World entry points must share one connection workspace.');
-assert(source.includes('World Staging Profile') && source.includes('complete source of truth for the World') &&
-  source.includes('loaders/ue4ss') && source.includes('loaders/runeschema') &&
-  source.includes('mods/paks/BetterBuilding') && source.includes('Content/Paks/~mods/BetterBuilding') &&
+assert(profileLayout.includes('profile_root = owner / "Profile"') &&
+  profileLayout.includes('profile_root / "Mods"') &&
+  profileLayout.includes('profile_root / "Saves"') &&
+  profileLayout.includes('profile_root / "Config"') &&
+  profileFolders.includes('Profile is authoritative: Mods mirrors Binaries/Content') &&
+  !profileFolders.includes('data-profile-spare-panel') &&
+  !profileFolders.includes('data-profile-runtime-choice') &&
   !source.includes('openRuntimeBuildManager') &&
   !source.includes('server.world.runeschema_flavors.select') &&
   !source.includes('server.world.ue4ss_version.select'),
-  'Dedicated Worlds must expose layered staging and preserved mod folders without runtime selectors.');
+  'Dedicated Worlds must expose the simple Profile/Mods, Saves, Config contract without per-profile runtime path selectors.');
 assert(source.includes("comparison=incomingRevision>localRevision?'newer':'local-newer'") &&
   source.includes("comparison=incomingTime>localTime?'newer':'local-newer'") &&
   source.includes("canonical?'v3.exchange.import':'profile.package.import'") &&

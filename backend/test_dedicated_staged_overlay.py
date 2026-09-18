@@ -32,7 +32,7 @@ def main() -> None:
             for profile_id in ("world-a", "world-b"):
                 (engine.SERVER_PROFILES_DIR / profile_id).mkdir(parents=True)
 
-            # Legacy profiles migrate from mods/ to the canonical staged/ tree.
+            # Legacy profiles migrate from mods/ to the canonical Profile tree.
             legacy = engine.SERVER_PROFILES_DIR / "world-a" / "mods"
             (legacy / "Binaries/Win64/ue4ss").mkdir(parents=True)
             (legacy / "Binaries/Win64/dwmapi.dll").write_bytes(b"a shim")
@@ -54,13 +54,13 @@ def main() -> None:
             (old_config / "DedicatedServer.ini").write_text("[ServerSettings]")
             layout_a = dedicated_profile_layout(engine.SERVER_PROFILES_DIR / "world-a")
             staged_a = layout_a["root"]
-            assert staged_a.name == "staged" and not legacy.exists()
-            assert (layout_a["saved"] / "SaveGames/World.sav").is_file()
-            assert (layout_a["saved"] / "Config/WindowsServer/DedicatedServer.ini").is_file()
-            assert (layout_a["ue4ss_loader"] / "Binaries/Win64/dwmapi.dll").is_file()
-            assert (layout_a["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema/dlls/main.dll").is_file()
-            assert (layout_a["paks"] / "LegacyPack/LegacyPack.pak").is_file()
-            assert (layout_a["paks"] / "LegacyPack/LegacyPack.pak.sig").is_file()
+            assert staged_a.name == "Profile" and not legacy.exists()
+            assert (layout_a["saves"] / "Worlds/World.sav").is_file()
+            assert (layout_a["config"] / "WindowsServer/DedicatedServer.ini").is_file()
+            assert (layout_a["mods"] / "Binaries/Win64/dwmapi.dll").is_file()
+            assert (layout_a["mods"] / "Binaries/Win64/ue4ss/Mods/RuneSchema/dlls/main.dll").is_file()
+            assert (layout_a["paks"] / "LegacyPack.pak").is_file()
+            assert (layout_a["paks"] / "LegacyPack.pak.sig").is_file()
 
             roots_b = dedicated_profile_mod_roots(engine.SERVER_PROFILES_DIR / "world-b")
             (roots_b["paks"] / "WorldB").mkdir()
@@ -139,27 +139,28 @@ def main() -> None:
             live_config.write_text("[ServerSettings]\nServerName=Edited")
             assert engine.mirror_live_overlay_file(
                 "world-a", game_root, "Saved/Config/WindowsServer/DedicatedServer.ini")
-            assert (layout_a["saved"] / "Config/WindowsServer/DedicatedServer.ini").read_text().endswith("ServerName=Edited")
+            assert (layout_a["config"] / "WindowsServer/DedicatedServer.ini").read_text().endswith("ServerName=Edited")
             live_config.unlink()
             assert not engine.mirror_live_overlay_file(
                 "world-a", game_root, "Saved/Config/WindowsServer/DedicatedServer.ini")
-            assert not (layout_a["saved"] / "Config/WindowsServer/DedicatedServer.ini").exists()
+            assert not (layout_a["config"] / "WindowsServer/DedicatedServer.ini").exists()
 
             old_store_profiles = profile_store.SERVER_PROFILES_DIR
             profile_store.SERVER_PROFILES_DIR = engine.SERVER_PROFILES_DIR
             try:
                 created_id = profile_store.create_server_profile("Staged World")
                 created = profile_store.load_server_profile(created_id)
-                created_root = engine.SERVER_PROFILES_DIR / created_id / "staged"
+                created_root = engine.SERVER_PROFILES_DIR / created_id / "Profile"
                 for relative in (
-                    "overlay", "loaders/ue4ss", "loaders/runeschema",
-                    "mods/ue4ss", "mods/runeschema", "mods/paks",
-                    "Saved/Config/WindowsServer", "Saved/Config/LinuxServer", "Saved/SaveGames",
+                    "Mods/Binaries/Win64", "Mods/Content/Paks/~mods",
+                    "Saves/Worlds", "Saves/Runtime",
+                    "Config/WindowsServer", "Config/LinuxServer",
                 ):
                     assert (created_root / relative).is_dir()
+                assert not (engine.SERVER_PROFILES_DIR / created_id / "staged").exists()
                 assert (engine.SERVER_PROFILES_DIR / created_id / "backups").is_dir()
                 for platform in ("WindowsServer", "LinuxServer"):
-                    template = created_root / "Saved/Config" / platform / "DedicatedServer.ini"
+                    template = created_root / "Config" / platform / "DedicatedServer.ini"
                     text = template.read_text(encoding="utf-8")
                     assert "ServerName=Staged World" in text
                     assert "DefaultWorldName=Staged World" in text

@@ -196,10 +196,6 @@
       }
     });
     document.querySelectorAll('[data-profile-spare-panel],[data-profile-runtime-choice]').forEach((node) => node.remove());
-    document.querySelectorAll('[data-manage-profile-loaders]').forEach((button) => {
-      button.textContent = 'Manage Loaders';
-      button.title = 'Choose a verified UE4SS or RuneSchema package from the central Loaders library.';
-    });
     document.querySelectorAll('.profile-storage-destinations').forEach((host) => {
       if (host.querySelector('[data-simple-profile-note]')) return;
       const note = document.createElement('p');
@@ -224,12 +220,6 @@
   }
 
   document.addEventListener('click', (event) => {
-    const loaders=event.target?.closest?.('[data-manage-profile-loaders]');
-    if(loaders){
-      event.preventDefault();event.stopImmediatePropagation();
-      document.dispatchEvent(new CustomEvent('dws:manage-profile-loaders',{detail:{kind:loaders.dataset.profileKind,id:loaders.dataset.profileId}}));
-      return;
-    }
     const folder=event.target?.closest?.('[data-open-profile-mod-lane]');
     if(folder){
       event.preventDefault();event.stopImmediatePropagation();

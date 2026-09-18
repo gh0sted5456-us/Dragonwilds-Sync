@@ -17,9 +17,19 @@ from profile_mod_layout import (LANE_NOTE_NAMES, dedicated_profile_layout,
                                 ensure_profile_mod_roots)
 
 
-REPOSITORY_ROOT = APP_DATA_DIR / "mod_repository"
+LEGACY_REPOSITORY_ROOT = APP_DATA_DIR / "mod_repository"
+REPOSITORY_ROOT = APP_DATA_DIR / "Mods"
 PAYLOAD_ROOT = REPOSITORY_ROOT / "payloads"
 INDEX_PATH = REPOSITORY_ROOT / "index.json"
+
+
+def _ensure_repository_root() -> None:
+    """Migrate the old internal repository name to the user-facing master Mods directory."""
+    if REPOSITORY_ROOT.exists() or not LEGACY_REPOSITORY_ROOT.exists():
+        REPOSITORY_ROOT.mkdir(parents=True, exist_ok=True)
+        return
+    REPOSITORY_ROOT.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(LEGACY_REPOSITORY_ROOT, REPOSITORY_ROOT)
 LOCAL_PROFILES_DIR = APP_DATA_DIR / "profiles" / "world" / "local"
 SUPPORTED_GROUPS = {"ue4ss_mod", "runeschema_mod", "pak_mod", "win64_mod"}
 EDITABLE_EXTENSIONS = {".lua", ".json", ".jsonc", ".ini", ".cfg", ".txt"}
@@ -177,6 +187,7 @@ def _entry_id(group: str, name: str, source: dict) -> str:
 
 
 def _load_index() -> dict:
+    _ensure_repository_root()
     value = read_json(INDEX_PATH, {"version": 3, "entries": {}})
     if not isinstance(value, dict):
         value = {"version": 3, "entries": {}}
@@ -185,7 +196,7 @@ def _load_index() -> dict:
 
 
 def _copy_payload(paths: list[Path], destination: Path) -> None:
-    REPOSITORY_ROOT.mkdir(parents=True, exist_ok=True)
+    _ensure_repository_root()
     staging = Path(tempfile.mkdtemp(prefix="dwsync-mod-repository-", dir=str(REPOSITORY_ROOT)))
     try:
         for source in paths:
@@ -251,7 +262,7 @@ def _physical_keys(kind: str, profile_id: str) -> set[str]:
 
 
 def refresh_repository() -> dict:
-    REPOSITORY_ROOT.mkdir(parents=True, exist_ok=True)
+    _ensure_repository_root()
     index = _load_index()
     previous = index.get("entries") or {}
     deleted_entries = index.get("deleted_entries") if isinstance(index.get("deleted_entries"), dict) else {}

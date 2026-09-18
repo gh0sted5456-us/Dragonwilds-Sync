@@ -1,0 +1,34 @@
+name: Experimental Overhaul Validation
+
+on:
+  push:
+    branches:
+      - fix/experimental-overhaul-completion-20260918
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-snapshot:
+    name: Reproducible tracked source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - name: Archive tracked source only
+        run: |
+          git archive --format=zip --output=experimental-source.zip HEAD
+          git rev-parse HEAD > source-commit.txt
+          sha256sum experimental-source.zip > source-checksum.txt
+      - uses: actions/upload-artifact@v6
+        with:
+          name: experimental-overhaul-source
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            experimental-source.zip
+            source-commit.txt
+            source-checksum.txt

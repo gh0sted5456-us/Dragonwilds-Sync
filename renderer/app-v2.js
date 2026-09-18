@@ -8692,10 +8692,6 @@
     state.singleplayerInventory=Array.isArray(cached)?cached:[];
     state.privateTab='mods';render();
   });
-  document.addEventListener('dws:manage-profile-loaders',(event)=>{
-    const id=String(event.detail?.id||''),kind=event.detail?.kind==='server'?'server':'local';
-    if(id)void openApplicationLoaderManager(kind,id);
-  });
   document.addEventListener('keydown',(event)=>{
     if(event.defaultPrevented||event.ctrlKey||event.altKey||event.metaKey)return;
     if(event.key!=='`'&&event.key!=='~')return;

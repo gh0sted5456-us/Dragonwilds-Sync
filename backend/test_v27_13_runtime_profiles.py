@@ -99,7 +99,8 @@ def main() -> None:
 
     compat = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     assert "dws.admin.item.v1" not in compat
-    assert 'spawn_command("item"' in compat
+    assert "server.spawner." not in compat
+    assert "spawner_catalog" not in compat
     assert "dragoncore" not in {name.casefold() for name in world_maintenance.UE4SS_BAKED_IN_DEFAULT_MODS}
     for archive in (ROOT / "resources").rglob("*.zip"):
         with zipfile.ZipFile(archive) as zf:
@@ -114,7 +115,7 @@ def main() -> None:
     service_source = (ROOT / "backend/dragonwilds_service_compat.py").read_text(encoding="utf-8")
     for token in (
         'data-profile-mod-folder-note="local"',
-        "Stage → scan → deploy",
+        "Profile → scan → deploy",
         "Manual mod archive import retired",
         "Core Configuration",
         "api.invoke('profile.package.inspect'",
@@ -175,8 +176,10 @@ def main() -> None:
     assert "ipcMain.handle('dragonwilds:open-profile-mods'" in electron_main
     assert "const error=await shell.openPath(value)" in electron_main
     assert "path.join(process.env.WINDIR||'C:\\\\Windows','explorer.exe')" in electron_main
-    assert "Content/Paks/~mods" in electron_main and "Binaries/Win64/ue4ss/Mods" in electron_main
-    assert "path.join(activeProgramDataRoot(),'profiles','world'" in electron_main
+    assert "serviceInvoke('application.profile.mods_root'" in electron_main
+    assert "description?.resolved_kind" in electron_main
+    folder_handler = electron_main.split("ipcMain.handle('dragonwilds:open-profile-mods'", 1)[1].split("ipcMain.handle('dragonwilds:reveal-path'", 1)[0]
+    assert "mkdirSync" not in folder_handler and "activeProgramDataRoot()" not in folder_handler
     assert "scan_singleplayer_inventory(game_dir, live=False, profile_id=profile_id)" in service_source
     assert "units = scan_profile_snapshot_units(profile_id)" in service_source
     assert 'profile["mods_profile_initialized"] = True' in service_source

@@ -61,7 +61,7 @@ def backup_installation(game_root, recovery_root, extra_roots=()):
     return backup
 
 
-def deploy_profile_lanes(lanes, ledger, recovery_root):
+def deploy_profile_lanes(lanes, ledger, recovery_root, *, previous_records=None):
     """Deploy (source, destination, excluded top names) with file-level ownership.
 
     Unknown files are never swept. Existing colliding files are backed up and
@@ -69,7 +69,8 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
     authority to delete from the old absolute destination.
     """
     ledger = Path(ledger)
-    previous = json.loads(ledger.read_text(encoding='utf-8')) if ledger.exists() else {}
+    previous = (previous_records if previous_records is not None else
+                json.loads(ledger.read_text(encoding='utf-8')) if ledger.exists() else {})
     if not isinstance(previous, dict):
         raise ValueError('Invalid profile deployment manifest')
     incoming, removal = {}, set()

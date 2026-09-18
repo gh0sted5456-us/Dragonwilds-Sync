@@ -25,6 +25,8 @@ class LoaderRepositoryTests(unittest.TestCase):
                 archive.writestr("RuneSchema/enabled.txt", "1")
                 archive.writestr("RuneSchema/dlls/RuneSchema.dll", b"rs")
                 archive.writestr("RuneSchema/mods/ShouldNotShip/file.json", "{}")
+            (root / "profiles/world-a").mkdir(parents=True)
+            (root / "profiles/world-a/profile.json").write_text('{"id":"world-a","name":"World A"}', encoding="utf-8")
             sources = [("ue4ss", "stable", ue), ("runeschema", "stable", rune)]
             with patch.object(loaders, "REPOSITORY_ROOT", root / "repository"), \
                  patch.object(loaders, "SERVER_PROFILES_DIR", root / "profiles"), \

@@ -9,7 +9,7 @@ README = Path(__file__).resolve().parents[1] / "README_PROFILE_MOD_PATHING.md"
 
 
 def _read() -> str:
-    return README.read_text(encoding="utf-8")
+    return " ".join(README.read_text(encoding="utf-8").split())
 
 
 def test_readme_exists_and_is_nontrivial() -> None:

@@ -105,7 +105,7 @@ def main():
                 "sync_config": {"password": "pw1", "server_key": "key1"},
             }, 4)
             staged_config = (server_engine.SERVER_PROFILES_DIR / first_id /
-                             "staged/Saved/Config/WindowsServer/DedicatedServer.ini")
+                             "Profile/Config/WindowsServer/DedicatedServer.ini")
             staged_text = staged_config.read_text(encoding="utf-8")
             for expected in ("ServerName=World One", "DefaultWorldName=World One",
                              "WorldPassword=pw1", "AdminPassword=admin1", "OwnerId=owner1", "Port=7777"):

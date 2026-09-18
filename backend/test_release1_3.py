@@ -27,7 +27,7 @@ def main():
     assert "navButton('profile'" not in renderer
     assert "id=\"player-chip\"" in renderer and "state.route='profile'" in renderer
     assert "navButton('rsdw-toolkit'" not in renderer
-    assert "User Profile" in renderer and "Profile</div><h1>Characters" in renderer
+    assert "User Profile" in renderer and "Profile</div><h1>Character Editor" in renderer
     assert "data-profile-tab=\"characters\"" in renderer
     assert "rsdw-avatar-webview" not in renderer and "data-rsdw-tool" in renderer
     assert 'class="character-editor-preview"' not in renderer

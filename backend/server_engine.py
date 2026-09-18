@@ -66,92 +66,85 @@ def _overlay_ledger(game_root: str | Path) -> Path:
     return APP_DATA_DIR / "State" / "server-installations" / key / "overlay-files.json"
 
 
-def _retire_legacy_game_receipts(game_root: str | Path) -> None:
-    """Clean old lane deployments before moving authority into AppData."""
-    layout = resolve_server_layout(game_root)
-    legacy = layout.game_root / ".dragonwilds-sync"
-    from mod_deployment_cleanup import deploy_profile_lanes
-    with tempfile.TemporaryDirectory(prefix="dws-overlay-migration-") as empty:
-        source = Path(empty)
-        for name in ("profile-mod-files.json", "profile-loader-files.json"):
-            receipt = legacy / name
-            if not receipt.is_file():
-                continue
-            records = json.loads(receipt.read_text(encoding="utf-8"))
-            if not isinstance(records, dict):
-                raise ValueError(f"Invalid legacy deployment receipt: {receipt}")
-            lanes = []
-            for key in sorted(records, key=lambda value: int(value)):
-                destination = str((records.get(key) or {}).get("destination") or "").strip()
-                if not destination:
-                    raise ValueError(f"Invalid legacy deployment destination: {receipt}")
-                target = Path(destination).resolve(strict=False)
-                game = layout.game_root.resolve(strict=False)
-                if target == game or not target.is_relative_to(game):
-                    raise ValueError(f"Legacy deployment destination escapes the game directory: {receipt}")
-                lanes.append((source, target, set()))
-            deploy_profile_lanes(lanes, receipt, APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
-            receipt.unlink(missing_ok=True)
-        win64_receipt = legacy / "win64-profile-files.json"
-        if win64_receipt.is_file():
-            from win64_mods import deploy
-            deploy(source, layout.win64_dir, win64_receipt,
-                   APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
-            win64_receipt.unlink(missing_ok=True)
-    try:
-        legacy.rmdir()
-    except OSError:
-        pass
+def _profile_deployment_records(game_root: str | Path) -> tuple[dict, list[Path]]:
+    """Normalize old ownership receipts without touching the installed payload.
 
-
-def _retire_layered_appdata_overlay_ledger(game_root: str | Path) -> None:
-    """Retire the Sept-17 multi-lane deployment receipt before simple Profile use.
-
-    The old experimental layout wrote several lane destinations into AppData.
-    They are safe to retire only when every recorded destination remains inside
-    this dedicated game's project root. A current simple receipt has exactly
-    Profile/Mods -> game root and Profile/Saves/Runtime -> game/Saved.
+    The actual deployment transaction removes obsolete files only after every
+    incoming path is validated and a verified recovery copy exists. Old receipts
+    remain in place if copying or writing the new receipt fails.
     """
-    ledger = _overlay_ledger(game_root)
-    if not ledger.is_file():
-        return
-    try:
-        previous = json.loads(ledger.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise ValueError(f"Invalid profile deployment manifest: {ledger}") from exc
-    if not isinstance(previous, dict):
-        raise ValueError(f"Invalid profile deployment manifest: {ledger}")
+    from pathlib import PureWindowsPath
+    layout = resolve_server_layout(game_root)
+    game = layout.game_root.resolve(strict=False)
+    legacy = game / ".dragonwilds-sync"
+    receipts = [(_overlay_ledger(game_root), False),
+                (legacy / "profile-mod-files.json", True),
+                (legacy / "profile-loader-files.json", True)]
+    records = {"0": {"destination": str(game), "files": set()},
+               "1": {"destination": str(game / "Saved"), "files": set()}}
+    retired = []
+    protected = {"rsdragonwilds.exe", "rsdragonwildsserver.exe",
+                 "rsdragonwilds-win64-shipping.exe", "rsdragonwildsserver",
+                 "rsdragonwildsserver.sh"}
 
-    live = resolve_server_layout(game_root).game_root.resolve(strict=False)
-    expected = {
-        "0": live,
-        "1": (live / "Saved").resolve(strict=False),
-    }
-    current = len(previous) <= 2 and all(
-        key in expected
-        and os.path.normcase(os.path.normpath(str(Path((row or {}).get("destination") or "").resolve(strict=False))))
-            == os.path.normcase(os.path.normpath(str(expected[key])))
-        for key, row in previous.items()
-    )
-    if current:
-        return
+    def check_links(path):
+        if any(part.is_symlink() or part.is_junction() for part in (path, *path.parents)):
+            raise ValueError("Deployment receipt must not traverse filesystem links")
 
-    from mod_deployment_cleanup import deploy_profile_lanes
-    with tempfile.TemporaryDirectory(prefix="dws-simple-profile-migration-") as empty:
-        source = Path(empty)
-        lanes = []
-        for key in sorted(previous, key=lambda value: int(value) if str(value).isdigit() else 10**9):
-            row = previous.get(key) if isinstance(previous.get(key), dict) else {}
-            raw = str(row.get("destination") or "").strip()
-            if not raw:
-                raise ValueError(f"Invalid legacy profile deployment destination: {ledger}")
-            destination = Path(raw).resolve(strict=False)
-            if destination != live and not destination.is_relative_to(live):
-                raise ValueError(f"Legacy profile deployment destination escapes the game directory: {destination}")
-            lanes.append((source, destination, set()))
-        deploy_profile_lanes(
-            lanes, ledger, APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
-    ledger.unlink(missing_ok=True)
+    def add(destination, files):
+        if not isinstance(destination, str) or not destination.strip() or not isinstance(files, list):
+            raise ValueError("Invalid profile deployment receipt")
+        parent = Path(destination).resolve(strict=False)
+        check_links(Path(destination))
+        if parent != game and not parent.is_relative_to(game):
+            raise ValueError("Legacy deployment destination escapes the game directory")
+        for relative in files:
+            if not isinstance(relative, str):
+                raise ValueError("Invalid profile deployment file")
+            parts = relative.replace("\\", "/").split("/")
+            if PureWindowsPath(relative).drive or any(
+                    part in {"", ".", ".."} or part.endswith((" ", "."))
+                    or any(char in part for char in ':<>"|?*') for part in parts):
+                raise ValueError("Unsafe deployment receipt path")
+            target = parent.joinpath(*parts)
+            check_links(target)
+            if target.name.casefold() in protected:
+                raise ValueError("A deployment receipt cannot own a Steam-owned game executable")
+            relative_game = target.relative_to(game)
+            lower = tuple(part.casefold() for part in relative_game.parts)
+            if lower[:1] == ("saved",):
+                # These two namespaces belong to the explicit machine Config
+                # and save routers, never to the ordinary mod transaction.
+                if len(lower) < 2 or lower[1] in {"config", "savegames"}:
+                    continue
+                records["1"]["files"].add(Path(*relative_game.parts[1:]).as_posix())
+            elif lower[:1] in {("binaries",), ("content",)}:
+                records["0"]["files"].add(relative_game.as_posix())
+            else:
+                raise ValueError("Deployment receipt claims a non-mod path")
+
+    for receipt, old in receipts:
+        check_links(receipt)
+        if not receipt.is_file():
+            continue
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"Invalid deployment receipt: {receipt}")
+        for row in payload.values():
+            if not isinstance(row, dict):
+                raise ValueError(f"Invalid deployment receipt: {receipt}")
+            add(row.get("destination"), row.get("files"))
+        if old:
+            retired.append(receipt)
+    receipt = legacy / "win64-profile-files.json"
+    check_links(receipt)
+    if receipt.is_file():
+        add(str(layout.win64_dir), json.loads(receipt.read_text(encoding="utf-8")))
+        retired.append(receipt)
+    for row in records.values():
+        row["files"] = sorted(row["files"])
+    return records, retired
+
 
 def _profile_savegame_dir(profile_id: str) -> Path:
     return dedicated_profile_layout(_profile_dir(profile_id))["saves"] / "Worlds"
@@ -492,8 +485,6 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     """Materialize the selected Profile/Mods tree into the dedicated game."""
     assert_dedicated_target(game_root, action="plant World mods into")
-    _retire_legacy_game_receipts(game_root)
-    _retire_layered_appdata_overlay_ledger(game_root)
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
     stored = dedicated_profile_layout(_profile_dir(profile_id))
@@ -533,13 +524,27 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
 
     from mod_deployment_cleanup import deploy_profile_lanes
     live_root = resolve_server_layout(game_root).game_root
-    return deploy_profile_lanes(
+    previous, retired = _profile_deployment_records(game_root)
+    copied = deploy_profile_lanes(
         [
             (stored["mods"], live_root, excluded),
             (stored["saves"] / "Runtime", live_root / "Saved", {"Config", "SaveGames"}),
         ],
         _overlay_ledger(game_root),
-        APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
+        APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays",
+        previous_records=previous)
+    for receipt in retired:
+        try:
+            receipt.unlink(missing_ok=True)
+        except OSError as error:
+            # The new transaction committed; do not report a failed install for
+            # a stale receipt which can safely be reconciled on the next run.
+            print(f"Could not retire deployment receipt {receipt}: {error}", file=sys.stderr)
+    try:
+        (live_root / ".dragonwilds-sync").rmdir()
+    except OSError:
+        pass
+    return copied
 
 
 def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_path: str) -> bool:
@@ -557,7 +562,7 @@ def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_pa
     if lowered[:2] == ["saved", "config"]:
         target = profile["config"].joinpath(*parts[2:])
     elif lowered[:2] == ["saved", "savegames"]:
-        target = profile["saves"].joinpath(*parts[2:])
+        target = (profile["saves"] / "Worlds").joinpath(*parts[2:])
     elif lowered[:1] == ["saved"]:
         target = (profile["saves"] / "Runtime").joinpath(*parts[1:])
     else:

@@ -3072,6 +3072,12 @@ def handle(method: str, params: dict) -> object:
         public_link["password_configured"] = bool(retained_password)
         return {"link": public_link, "state": public_state(state)}
 
+    if method == "application.loaders.download":
+        from loader_repository import download_package
+        result = download_package(str(params.get("family") or "").strip().lower(),
+                                  str(params.get("channel") or "stable").strip().lower())
+        return {"result": result, "repository": ensure_loader_repository()}
+
     if method in {"application.loaders.status", "profile.loaders.status"}:
         kind = str(params.get("kind") or "").strip().lower()
         profile_id = str(params.get("id") or params.get("profile_id") or "").strip()

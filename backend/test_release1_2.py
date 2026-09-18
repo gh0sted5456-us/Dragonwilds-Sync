@@ -179,7 +179,7 @@ def main():
 
     renderer = (ROOT / "renderer/app-v2.js").read_text(encoding="utf-8")
     assert "RSDW Toolkit" in renderer
-    assert "User Profile" in renderer and "<h1>Characters</h1>" in renderer and "Live Map & Tracking" in renderer
+    assert "User Profile" in renderer and "<h1>Character Editor</h1>" in renderer and "Live Map & Tracking" in renderer
     assert "playerMapPanelMarkup" in renderer
     assert "Hi im Tat" in renderer and "RSDW Modding Community" in renderer
     assert "characters.toolkit.write" in renderer

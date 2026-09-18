@@ -1037,43 +1037,32 @@ async function openDesktopPath(target) {
 ipcMain.handle('dragonwilds:open-path', async (_event,target) => openDesktopPath(target));
 ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id,lane = '') => {
   try {
-    const profileKind=String(kind||'').trim().toLowerCase();
+    const requestedKind=String(kind||'').trim().toLowerCase();
     const profileId=String(id||'').trim();
-    if(!['local','server'].includes(profileKind))throw new Error('The profile type is invalid.');
+    if(!['local','server','dedicated'].includes(requestedKind))throw new Error('The profile type is invalid.');
     if(!profileId||profileId==='.'||profileId==='..'||/[\\/:*?"<>|]/.test(profileId))throw new Error('The profile id is invalid.');
-
-    const serverFolders={
-      Profile:'', Mods:'Mods', Binaries:'Mods/Binaries', Content:'Mods/Content',
-      Saves:'Saves', Config:'Config',
-      // Compatibility aliases from the retired layered staging UI.
-      Loaders:'Mods', Overlay:'Mods',
-      UE4SSLoader:'Mods/Binaries/Win64',
-      RuneSchemaLoader:'Mods/Binaries/Win64/ue4ss/Mods/RuneSchema',
-      UE4SS:'Mods/Binaries/Win64/ue4ss/Mods',
-      RuneSchema:'Mods/Binaries/Win64/ue4ss/Mods/RuneSchema/mods',
-      PAKs:'Mods/Content/Paks/~mods', Win64:'Mods/Binaries/Win64',
-    };
-    const localFolders={
-      Profile:'', Mods:'mods', UE4SS:'mods/Binaries/Win64/ue4ss/Mods',
-      RuneSchema:'mods/Binaries/Win64/ue4ss/Mods/RuneSchema/mods',
-      PAKs:'mods/Content/Paks/~mods', Win64:'mods/Binaries/Win64',
-    };
-    const folders=profileKind==='server'?serverFolders:localFolders;
+    const resolved=await serviceInvoke('application.profile.mods_root',{kind:requestedKind,id:profileId});
+    const description=resolved?.result||resolved;
+    const modsRoot=String(description?.mods_root||'');
+    const profileKind=String(description?.resolved_kind||'');
+    if(!path.isAbsolute(modsRoot)||!['local','server'].includes(profileKind))throw new Error('The profile folder could not be resolved.');
+    const root=path.dirname(modsRoot);
+    const folders={Profile:root,Mods:modsRoot,Loaders:modsRoot,Overlay:modsRoot,
+      Binaries:path.join(modsRoot,'Binaries'),Content:path.join(modsRoot,'Content'),
+      UE4SS:description.ue4ss,RuneSchema:description.runeschema,PAKs:description.paks,
+      Win64:description.win64,UE4SSLoader:description.win64,
+      RuneSchemaLoader:description.runeschema?path.dirname(description.runeschema):''};
+    if(profileKind==='server'){folders.Saves=path.join(root,'Saves');folders.Config=path.join(root,'Config');}
     const selectedLane=String(lane||'Profile');
-    if(!Object.prototype.hasOwnProperty.call(folders,selectedLane))throw new Error('Unknown profile folder.');
-
-    const profileBase=path.join(activeProgramDataRoot(),'profiles','world',profileKind==='server'?'dedicated':'local',profileId);
-    const target=profileKind==='server'?path.join(profileBase,'Profile'):path.join(profileBase,'snapshot');
-    const essentials=profileKind==='server'
-      ? ['Mods/Binaries','Mods/Content','Saves','Config']
-      : ['mods/Binaries','mods/Content'];
-    for(const folder of essentials)fs.mkdirSync(path.join(target,folder),{recursive:true});
-    const selected=path.join(target,folders[selectedLane]);
+    const selected=Object.prototype.hasOwnProperty.call(folders,selectedLane)?folders[selectedLane]:'';
+    if(!selected||!path.isAbsolute(selected))throw new Error('Unknown profile folder.');
+    const relative=path.relative(root,selected);
+    if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('The folder escaped its Profile.');
     const ok=await openDesktopPath(selected);
-    if(!ok)throw new Error(`Windows could not open ${selected}`);
+    if(!ok)throw new Error(`Could not open ${selected}`);
     return {ok:true,path:selected,resolved_kind:profileKind,lane:selectedLane};
   } catch (error) {
-    return {ok:false,error:String(error?.message||error||'Could not open the profile staging folder.')};
+    return {ok:false,error:String(error?.message||error||'Could not open the Profile folder.')};
   }
 });
 ipcMain.handle('dragonwilds:reveal-path', (_event,target) => { const value=String(target||'').trim(); if(!value||!fs.existsSync(value))return false; shell.showItemInFolder(value); return true; });

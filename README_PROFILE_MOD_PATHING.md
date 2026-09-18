@@ -120,8 +120,8 @@ pre-fills WindowsServer and LinuxServer `DedicatedServer.ini` templates.
 Changing launcher-owned server settings refreshes those templates while
 preserving unrelated engine-authored lines where supported.
 
-Machine save locations remain explicit and overrideable. Do not rewrite this
-architecture to claim that save paths are derived only.
+Machine save locations remain explicit and overrideable. The selected machine save directory remains explicit; it is not inferred solely
+from an installation path.
 
 ## Deployment
 

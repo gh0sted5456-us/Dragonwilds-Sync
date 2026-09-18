@@ -391,6 +391,11 @@ def _assign_package(kind: str, profile_id: str, profile: Path, package: dict) ->
         staged = Path(temporary)
         _normalize_archive(package, staged)
         incoming = {p.relative_to(staged).as_posix(): p for p in staged.rglob("*") if p.is_file()}
+        if kind == "local" and family == "ue4ss":
+            # version.dll belongs to the dedicated-server runtime. Retail
+            # clients receive the ordinary bootstrap, never this server shim.
+            incoming = {rel: source for rel, source in incoming.items()
+                        if rel.casefold() != "binaries/win64/version.dll"}
         old_files = previous.get("files", [])
         if not incoming or any(not isinstance(p, str) or not _owned_by(family, p) for p in [*old_files, *incoming]):
             raise ValueError("Loader receipt or package claims files outside its runtime core")

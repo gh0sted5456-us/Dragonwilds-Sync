@@ -16,6 +16,7 @@ const crossPlatformTests = [
   'backend/test_dedicated_staged_overlay.py',
   'backend/test_loader_repository_shared_saves.py',
   'backend/test_loader_assignments.py',
+  'backend/test_overhaul_completion.py',
   'backend/test_simple_profile_migration.py',
   'backend/test_staging_profile_contract.py',
   'backend/test_win64_profile_mods.py',

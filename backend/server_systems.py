@@ -2326,7 +2326,7 @@ def _atomic_publish_copy(source: Path, destination: Path) -> None:
 
 
 def _publish_client_overlay(profile: dict, manifest_files: list[dict]) -> int:
-    """Publish the complete client-safe general overlay before loader entities."""
+    """Publish general content; Win64 mods use the role-aware unit publisher."""
     profile_id = str((profile or {}).get("id") or "")
     if not profile_id or profile_id in {".", ".."} or any(c in profile_id for c in "/\\:"):
         return 0
@@ -2340,7 +2340,7 @@ def _publish_client_overlay(profile: dict, manifest_files: list[dict]) -> int:
         if (not rel.parts or any(part.startswith(".") for part in rel.parts)
                 or rel.name.casefold() == "readme.txt"
                 or lowered[:2] == ["binaries", "linux"]
-                or lowered[:3] == ["binaries", "win64", "ue4ss"]
+                or lowered[:2] == ["binaries", "win64"]
                 or lowered[:3] == ["content", "paks", "~mods"]
                 or lowered == ["binaries", "win64", "dwmapi.dll"]
                 or lowered == ["binaries", "win64", "version.dll"]

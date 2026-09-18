@@ -7285,10 +7285,7 @@ def _directory_remote_profiles() -> list[dict]:
     } for profile in list_server_profiles() if str(profile.get("id") or "")]
 
 
-_REMOTE_ITEM_ICON_CACHE: dict[str, dict] = {}
-_REMOTE_ITEM_ICON_LOCK = threading.RLock()
-_REMOTE_ITEM_ICON_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
-def _directory_remote_state(profile_id: str) -> dict:def _directory_remote_state(profile_id: str) -> dict:
+def _directory_remote_state(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile: raise KeyError("The linked Server World no longer exists")
     state = load_state(); active_id = str((state.get("server") or {}).get("active_world_id") or ENGINE.active_profile_id or "")

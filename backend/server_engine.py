@@ -448,6 +448,20 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     stored = dedicated_profile_layout(_profile_dir(profile_id))
     profile = load_server_profile(profile_id) or {}
 
+    protected_names = {
+        "rsdragonwildsserver.exe", "rsdragonwilds-win64-shipping.exe",
+        "rsdragonwilds.exe", "rsdragonwildsserver", "rsdragonwildsserver.sh",
+    }
+    for item in stored["mods"].rglob("*") if stored["mods"].exists() else ():
+        if not item.is_file():
+            continue
+        relative = item.relative_to(stored["mods"])
+        parts = tuple(part.casefold() for part in relative.parts)
+        if parts[:1] not in {("binaries",), ("content",)}:
+            raise ValueError("Profile/Mods may contain only Binaries and Content paths")
+        if item.name.casefold() in protected_names:
+            raise ValueError("A Profile cannot replace a Steam-owned game executable")
+
     # Distribution remains metadata-driven, but physical storage stays simple:
     # one game-relative Mods tree per Profile. Client-only units are excluded
     # from the server materialization without moving them into another lane.

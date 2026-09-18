@@ -185,8 +185,9 @@ assert(profileLayout.includes('profile_root = owner / "Profile"') &&
   profileLayout.includes('profile_root / "Saves"') &&
   profileLayout.includes('profile_root / "Config"') &&
   profileFolders.includes('Profile is authoritative: Mods mirrors Binaries/Content') &&
-  !profileFolders.includes('data-profile-spare-panel') &&
-  !profileFolders.includes('data-profile-runtime-choice') &&
+  profileFolders.includes("querySelectorAll('[data-profile-spare-panel],[data-profile-runtime-choice]')") &&
+  !profileFolders.includes('data-profile-spare-action') &&
+  !profileFolders.includes('refreshRuntimeLocationChoices') &&
   !source.includes('openRuntimeBuildManager') &&
   !source.includes('server.world.runeschema_flavors.select') &&
   !source.includes('server.world.ue4ss_version.select'),

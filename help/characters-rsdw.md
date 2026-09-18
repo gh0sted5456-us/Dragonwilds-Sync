@@ -1,34 +1,52 @@
-# Characters & RSDW Toolkit
+# Character Editor
 
-Profile → Characters uses the selected character as the hydration source for the integrated RSDW tools and Avatar preview.
+Profile → Characters opens one save-backed Character Editor. RSDWTools supplies
+reference data and save-field knowledge; Dragonwilds Sync owns the UI,
+backup-first writeback, World associations, import/export, and validation.
 
-![Character save workspace](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/29-character-studio.png) "Choose the exact save from Profile and open it directly in the RSDW-L Character Editor."
+![Character save workspace](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/29-character-studio.png) "Choose the exact character save from Profile and open it in the integrated Character Editor."
 
 ## Safe editing
 
-- Load the character through Dragonwilds Sync.
-- Make supported edits in the integrated Character, Item, Spell, Recipe, or Quest tools.
-- Save through Sync so the current checksum is checked first.
-- Sync creates a backup and refuses stale writeback if the character changed on disk after loading.
+- Select the exact character save you want to edit.
+- Use the **Character**, **Items**, **Spells**, **Recipes**, or **Quests** section.
+- Changes share one guarded draft instead of opening separate editor applications.
+- Save through Sync so the source checksum is checked first.
+- Sync creates a recovery backup, writes the save, reparses it, and refuses stale
+  writeback if the character changed on disk after loading.
 
-![Current Character Editor](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/04-character-editor.png) "The selected save stays visible while the Character, Item, Spell, Recipe, and Quest tools share one guarded draft."
+![Current Character Editor](https://raw.githubusercontent.com/gh0sted5456-us/Dragonwilds-Sync-Web/main/renderer/assets/help/04-character-editor.png) "Character, Items, Spells, Recipes, and Quests are sections of one backup-first editor."
 
-## Character Editor preview
+## Character and appearance
 
-The preview workspace now keeps the working character in one stable three-column editor:
+The Character section keeps the save-backed controls together:
 
-- **Appearance** places Name, Face, Hair, Beard, body type, and save-backed color swatches in the left rail. Raw RSDW asset names remain visible so aliases never hide the value written to the save.
-- The center is the persistent live RSDWModel preview. Full, Face, rotate, zoom, and background controls affect the preview without marking the save dirty.
-- **Equipped** on the right groups Armour, Attachments, and Weapons. Armour and attachments use the authoritative Item Editor loadout. Weapon rows clearly identify preview mappings. Click a slot for the full repository, or right-click it for a searchable Quick Equip menu with compatible items, Browse All, and Unequip/Clear actions.
-- The bottom bar mirrors exactly eight current action slots. Select a slot or **Manage** to continue in the full Item Editor.
-- **Equipment** and **Pose** switch their left-side controls without rebuilding the 3D preview. Pose and camera changes are preview-only.
+- identity and name;
+- body, face, hair, facial hair, and color choices;
+- survival/upkeep values;
+- skill and progression values;
+- mounts, reputation, and supported World fields;
+- current equipment and the exact eight-slot action bar.
 
-Use **Undo**, **Redo**, or **Revert** before **Save Character**. Save still validates the draft, creates a recovery backup, checks the source checksum, writes the save, and reparses it before reporting success. **Export** uses the existing portable character export flow.
+Appearance changes write save data. There is no embedded 3D/model viewer in the
+current editor. User-selected character images remain profile artwork and do not
+pretend to be a live game render.
 
-## Item Editor
+Use **Undo**, **Redo**, or **Revert** before **Save Character** where those
+controls are available. Export continues to use the portable character flow.
 
-The item browser uses the current RSDW item catalog for canonical Dragonwilds items. Launcher/server-defined custom items appear under **Modded Items** and carry their own display name, in-game/internal name, PersistenceID, icon, category, and stack metadata.
+## Items
 
-## Character images
+The Items section uses the current RSDW item catalog for canonical Dragonwilds
+items. Mod-defined items may appear under **Modded Items** with their own display
+name, internal identity, PersistenceID/ItemData, icon, category, equipment slot,
+and stack metadata.
 
-The Avatar surface is the source for full-body and face-card captures when available. A user-selected image remains a valid fallback profile image.
+Item data is used for character editing and reference. Dragonwilds Sync no
+longer exposes Item or Enemy Spawner controls.
+
+## Reference-data updates
+
+Use **Refresh Character Data** when the cached RSDW reference revision needs to
+be updated. This refreshes editor/reference data; it does not replace the
+Character save and does not create a second RSDW-L application inside Sync.

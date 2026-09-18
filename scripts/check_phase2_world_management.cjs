@@ -63,9 +63,12 @@ for (const token of [
   'Manage Loader Library',
   'application.loaders.install',
 ]) requireText(appV2, token, `simple Profile / central Loader Library ${token}`);
-for (const token of ['PACKAGE_SCHEMA', 'SHA256=', 'safe path', 'REPOSITORY_ROOT = APP_DATA_DIR / "Loaders"', '"files": incoming']) {
+for (const token of ['PACKAGE_SCHEMA', 'SHA256=', 'def _parts(', 'def _no_links(', 'def _safe_zip_members(', 'REPOSITORY_ROOT = APP_DATA_DIR / "Loaders"', '"file_sha256": hashes', 'def _read_loader_manifest(', 'def _owned_by(', 'def _profile_lock(']) {
   requireText(loaderRepository, token, `verified central loader repository ${token}`);
 }
+// These source seams are exercised by failure-injection and archive-path tests;
+// do not couple safety coverage to the wording of a user-facing exception.
+requireText(runner, 'backend/test_loader_assignments.py', 'loader safety and rollback regressions');
 requireText(deployment, 'def deploy_profile_lanes', 'owned-file deployment/recovery seam');
 requireText(serverEngine, '(stored["mods"], live_root, excluded)', 'single Profile/Mods deployment');
 requireText(serverEngine, 'stored["saves"] / "Runtime"', 'Profile/Saves runtime deployment');

@@ -1,0 +1,28 @@
+name: Profile Source Checkout
+on:
+  pull_request:
+    branches: [experimental]
+    paths: ['.github/workflows/profile-source-checkout.yml']
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'gh0sted5456-us/Dragonwilds-Sync' && github.head_ref == 'overhaul/simple-profile-contract'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Archive tracked source only
+        run: |
+          git rev-parse HEAD > SOURCE_HEAD.txt
+          git archive --format=zip -o profile-source.zip HEAD
+      - uses: actions/upload-artifact@v6
+        with:
+          name: profile-source-checkout
+          path: |
+            profile-source.zip
+            SOURCE_HEAD.txt
+          retention-days: 1

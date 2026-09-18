@@ -6328,9 +6328,6 @@ def handle(method: str, params: dict) -> object:
         # Test adapter entry point; production data arrives through RSDWTools_SharedLine_v1.
         return PLAYER_SERVICE.ingest(params.get("snapshot") if isinstance(params.get("snapshot"), dict) else params)
 
-    if method == "server.spawner.catalog":
-        raise ValueError("Spawner tools were removed from Dragonwilds Sync.")
-
     if method == "server.console.catalog":
         profile_id = str(params.get("id") or "")
         profile = load_server_profile(profile_id)
@@ -6388,9 +6385,6 @@ def handle(method: str, params: dict) -> object:
             record_rsdw_event(profile_id, source=str(params.get("source") or "desktop"), actor=str(params.get("actor") or "owner"),
                               command=checked["line"], ok=False, ack=str(exc))
             raise
-
-    if method == "server.spawner.spawn":
-        raise ValueError("Spawner tools were removed from Dragonwilds Sync.")
 
     if method == "server.world.map.update":
         profile_id = str(params.get("id") or "")
@@ -7461,8 +7455,6 @@ def _directory_remote_action(profile_id: str, action: str, payload: dict | None 
     if action == "maintenance_update":
         schedule = normalize_schedule(payload.get("schedule") if isinstance(payload.get("schedule"), dict) else {})
         return handle("server.world.schedule.update", {"id": profile_id, "schedule": schedule})
-    if action in {"spawner_catalog", "spawner_icon", "spawner_item"}:
-        raise ValueError("Spawner tools were removed from Dragonwilds Sync.")
     if action == "console_execute":
         return handle("server.console.execute", {"id": profile_id, "command": str(payload.get("command") or ""),
                                                   "confirmed": True, "source": "web", "actor": str(payload.get("username") or "remote-admin")})

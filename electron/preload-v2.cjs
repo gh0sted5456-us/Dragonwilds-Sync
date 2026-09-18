@@ -46,7 +46,6 @@ const READ_POLICIES = Object.freeze({
   'server.world.character_submissions.list': { ttl: 30000, stale: 120000 },
   'server.feedback.list': { ttl: 15000, stale: 60000 },
   'server.access.connections': { ttl: 5000, stale: 15000 },
-  'server.spawner.catalog': { ttl: 30000, stale: 120000 },
   'server.console.catalog': { ttl: 3000, stale: 10000 },
   'application.map.status': { ttl: 30000, stale: 120000 },
   'application.map.overlays': { ttl: 60000, stale: 300000 },

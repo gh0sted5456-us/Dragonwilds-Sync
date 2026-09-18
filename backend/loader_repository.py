@@ -20,8 +20,17 @@ from pathlib import Path, PurePosixPath
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, WORLD_PROFILES_DIR
 from server_systems import BUNDLED_UE4SS_RESOURCE, _bundled_app_resource
 
-REPOSITORY_ROOT = APP_DATA_DIR / "loader_repository"
+LEGACY_REPOSITORY_ROOT = APP_DATA_DIR / "loader_repository"
+REPOSITORY_ROOT = APP_DATA_DIR / "Loaders"
 ID_FILE = "ID.txt"
+
+
+def _ensure_repository_root() -> None:
+    if REPOSITORY_ROOT.exists() or not LEGACY_REPOSITORY_ROOT.exists():
+        REPOSITORY_ROOT.mkdir(parents=True, exist_ok=True)
+        return
+    REPOSITORY_ROOT.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(LEGACY_REPOSITORY_ROOT, REPOSITORY_ROOT)
 PACKAGE_SCHEMA = "DragonwildsSync.LoaderPackage.v1"
 _FAMILIES = {"ue4ss", "runeschema"}
 
@@ -54,6 +63,7 @@ def _safe_zip_members(archive: zipfile.ZipFile) -> None:
 
 
 def ensure_repository() -> dict:
+    _ensure_repository_root()
     packages = []
     for family, channel, source in _bundled_sources():
         if not source.is_file():

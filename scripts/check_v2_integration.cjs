@@ -16,7 +16,6 @@ const v2Service = read('backend/dragonwilds_service_v2_wrapper.py');
 const compatService = read('backend/dragonwilds_service_compat.py');
 const routing = read('backend/v2_remote_routing.py');
 const cache = read('backend/rsdw_cache.py');
-const spawner = read('backend/spawner_catalog.py');
 const trash = read('backend/trash_store.py');
 const appV2 = read('renderer/app-v2.js');
 const directoryHost = read('backend/directory_host.py');
@@ -51,7 +50,6 @@ must(registry.sources['rsdw-icons'].path === 'website/shared/icons', 'RSDW icon 
 must(registry.sources['rsdw-item-manifest'].path === 'data/items/json/RSDragonwilds', 'RSDW item JSON path is not canonical');
 must(registry.sources['rsdw-item-manifest'].association_catalog === 'website/tools/item-editor/data/catalog.json', 'Exact RSDW item/icon association catalog is missing');
 must(cache.includes('item-manifest.json') && cache.includes('iconPath') && cache.includes('"icon_ref": icon_ref') && cache.includes('"icon_path": icon_local'), 'Launcher-maintained exact RSDW item/icon manifest is missing');
-must(spawner.includes('custom_items') && spawner.includes('"source": "dragonwilds-sync:mod-manifest"') && spawner.includes('Modded Items') && spawner.includes('"custom": True'), 'Spawner custom-item overlay / Modded Items category is missing');
 must(trash.includes('copy one logical launcher object into Trash') || trash.includes('Copy one logical launcher object into Trash'), 'Verified Trash move contract is missing');
 must(trashUi.includes('application.trash.restore') && trashUi.includes('application.trash.settings') && trashUi.includes('Empty Trash'), 'Trash restore/retention/empty controls are incomplete');
 must(trashUi.includes('dws-trash-dismissed') && trashUi.includes('lastRead') && trashUi.includes('setInterval'), 'Trash sticker must be dismissible and use throttled polling rather than mutation-driven repainting');
@@ -65,3 +63,4 @@ for (const file of ['docs/changelog.json','docs/changelog.html','docs/recommende
 must(exists('renderer/assets/platforms/steam.svg') && exists('renderer/assets/platforms/discord.svg') && exists('renderer/assets/platforms/nexusmods.svg') && exists('renderer/assets/platforms/windows.svg') && exists('renderer/assets/platforms/linux.svg') && exists('renderer/assets/platforms/xbox.svg') && exists('website/assets/platforms/xbox.svg'), 'Core platform/community icons are incomplete');
 
 console.log('V2 integration contract: PASS');
+

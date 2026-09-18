@@ -26,11 +26,14 @@ def main() -> None:
         root = Path(td)
         profile = root / "profiles" / "world-a"
         layout = dedicated_profile_layout(profile)
-        for relative in ("Binaries/Win64", "Binaries/Linux", "Content/Paks"):
-            assert (layout["overlay"] / relative).is_dir()
-        assert (layout["appdata"] / "Saved/SaveGames/Worlds").is_dir()
-        assert (layout["appdata"] / "Saved/SaveGames/Players").is_dir()
-        assert (layout["appdata"] / "Backups").is_dir()
+        assert layout["root"].name == "Profile"
+        for relative in (
+            "Mods/Binaries/Win64", "Mods/Content/Paks/~mods",
+            "Saves/Worlds", "Saves/Runtime",
+            "Config/WindowsServer", "Config/LinuxServer",
+        ):
+            assert (layout["root"] / relative).is_dir()
+        assert not (profile / "staged").exists()
 
         mod = layout["ue4ss"] / "ExampleMod"
         mod.mkdir(parents=True)

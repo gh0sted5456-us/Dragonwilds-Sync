@@ -856,10 +856,10 @@ class DirectoryHost:
         grants = set(device.get("permissions") or [])
         role_map = {
             "view_overview": "overview", "view_map": "overview", "view_maintenance": "overview",
-            "view_mods": "sync", "view_config": "dragonlink", "view_spawner": "dragonlink",
+            "view_mods": "sync", "view_config": "dragonlink",
             "view_console": "logs", "view_audit": "logs", "send_announcements": "dragonlink",
             "write_maintenance": "sync", "write_mods": "sync", "write_config": "dragonlink",
-            "use_spawner": "dragonlink", "use_console": "dragonlink", "start": "sync",
+            "use_console": "dragonlink", "start": "sync",
             "stop": "sync", "restart": "sync", "update": "sync", "refresh": "overview",
         }
         now = time.time(); world_id = str(device.get("worldId") or "")
@@ -886,7 +886,6 @@ class DirectoryHost:
         if not permissions.get("view_maintenance"): payload.pop("maintenance", None)
         if not permissions.get("view_mods"): payload.pop("mods", None)
         if not permissions.get("view_config"): payload.pop("configs", None)
-        if not permissions.get("view_spawner"): payload.pop("spawner", None)
         if not permissions.get("view_console"): payload.pop("console", None)
         return {**payload, "session": {key: session.get(key) for key in ("world_id", "world_name", "username", "role", "created_at", "expires_at")},
                 "permissions": permissions, "csrf": session.get("csrf"),
@@ -1294,25 +1293,6 @@ class DirectoryHost:
                     session = self._remote_session()
                     if not session: self._json({"error": "Server Admin session required"}, 401, cors=False); return
                     try: self._json(controller.remote_payload(session), cors=False)
-                    except Exception as exc: self._json({"error": str(exc)}, 400, cors=False)
-                    return
-                if path.startswith("/api/v1/admin/item-icon/"):
-                    session = self._remote_session()
-                    if not session: self._json({"error": "Server Admin session required"}, 401, cors=False); return
-                    try:
-                        token = path.rsplit("/", 1)[-1]
-                        result = controller.remote_action(session, "spawner_icon", {"token": token})
-                        blob = __import__("base64").b64decode(str(result.get("data_b64") or ""), validate=True)
-                        etag = f'"{result.get("etag") or token}"'
-                        if str(self.headers.get("If-None-Match") or "").strip() == etag:
-                            self.send_response(304)
-                            self.send_header("Cache-Control", "private, max-age=86400, immutable")
-                            self.send_header("ETag", etag)
-                            self.end_headers()
-                            return
-                        self._send(blob, str(result.get("mime") or "application/octet-stream"), cors=False,
-                                   extra_headers={"Cache-Control": "private, max-age=86400, immutable", "ETag": etag})
-                    except FileNotFoundError as exc: self._json({"error": str(exc)}, 404, cors=False)
                     except Exception as exc: self._json({"error": str(exc)}, 400, cors=False)
                     return
                 if path == "/admin/api/state":

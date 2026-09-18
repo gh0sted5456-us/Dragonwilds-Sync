@@ -12,7 +12,7 @@ This file defines every system that must be covered by the authoritative test ma
 | `STATE` | Global/profile persistence and migrations | Python Core | `profile_store.py`, `profile_settings.py`, migration modules |
 | `SECRETS` | Credentials and signing material | Python Core | `secret_store.py`, `crypto_runtime.py`, identity modules |
 | `WORLDS` | Singleplayer/Co-Op/Dedicated profile model | Python Core | `local_world.py`, `server_layout.py`, `client_layout.py`, profile modules |
-| `RUNTIME` | Dedicated lifecycle authority | Runtime Manager | `runtime_manager.py`, `server_engine.py`, startup/update modules |
+| `RUNTIME` | Dedicated lifecycle authority | Python Core + World Runtime Worker | `runtime_manager.py`, `server_engine.py`, startup/update modules |
 | `WORLD_WORKER` | Hosted World live execution | World Runtime Worker | `runtime_worker*.py`, `worker_supervisor.py`, worker bridge |
 | `FEATURE_WORKERS` | Disposable heavy-operation execution | Feature Worker Supervisor | `feature_worker*.py`, `feature_worker_supervisor.py` |
 | `MODS` | User mods, Core components, ordering, editing | Python Core + Mod Appy | mod/tag/repository/server-system modules and Mod renderer |
@@ -25,8 +25,8 @@ This file defines every system that must be covered by the authoritative test ma
 | `DIRECTORY` | Federation and public World aggregation | Python Core + Cloudflare | world/public directory modules and `cloudflare/**` |
 | `WEBSITE` | GitHub Pages public experience and World Builder | Static website | `website/**`, Pages workflows, fallback snapshot scripts |
 | `CHARACTERS` | Character lifecycle and writeback | Python Core + Character Appy | character modules, save distribution, renderer Character Studio |
-| `RSDW_L` | RSDW cache/toolkit/viewer integrations | Python Core + renderer | `rsdw_cache.py`, `rsdw_toolkit.py`, local mirror/viewer bridge |
-| `ITEMS` | Item registry/editor/spawner catalog | Python Core + RSDW-L | item registry, custom-item, spawner, admin-tool paths |
+| `RSDW_L` | RSDW reference/cache integration (stable legacy system ID) | Python Core + Character Editor | `rsdw_cache.py`, character/reference-data adapters |
+| `ITEMS` | Item registry and Character Editor item data | Python Core + Character Editor | item registry, custom-item, catalog/reference paths |
 | `MAP_TELEMETRY` | Map, players, console, live telemetry | Python Core/feature worker | map/player/console/network runtime modules |
 | `MAINTENANCE` | Backup, restore, schedule, update/restart | Python Core | maintenance, scheduler, managed-update, trash modules |
 | `SECURITY` | Policy, scanning, authorization, audit | Python Core | security, VPN, identity, WebHost permission modules |
@@ -50,7 +50,7 @@ Feature workers handle bounded expensive domains such as map/directory, save stu
 
 ### Appy and subapp parents
 
-Appys are workspaces inside `main-renderer`; they are not independent lifecycle authorities. `application.process_catalog` publishes a `parentProcess`, a complete `subappParents` map, and all linked `components` for every Appy. Quick Launch is parented by `quick-renderer`, detached in-app windows by `managed-dialog-renderer`, and the Character 3D preview by `rsdw-viewer-renderer`. Shared feature workers remain children of `control-service` and list every consuming Appy instead of claiming the first consumer as their owner.
+Appys are workspaces inside `main-renderer`; they are not independent lifecycle authorities. `application.process_catalog` publishes a `parentProcess`, a complete `subappParents` map, and all linked `components` for every Appy. Quick Launch is parented by `quick-renderer` and detached in-app windows by `managed-dialog-renderer`. The retired Character 3D viewer has no process owner because it is no longer part of the application. Shared feature workers remain children of `control-service` and list every consuming Appy instead of claiming the first consumer as their owner.
 
 Every component parent, owner, consumer, Appy parent, subapp parent, and feature-domain consumer link is checked by `backend/test_system_process_catalog.py`. Source/build liveness is checked by `npm run check:ownership`.
 

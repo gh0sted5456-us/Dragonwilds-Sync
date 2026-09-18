@@ -238,8 +238,8 @@
       host = document.createElement('section');
       host.id = 'dws-unified-console';
       host.className = 'panel dws-unified-console';
-      const intro = workspace.querySelector('.spawner-intro');
-      (intro || workspace.firstElementChild)?.insertAdjacentElement('afterend', host);
+      const intro = workspace.firstElementChild;
+      intro?.insertAdjacentElement('afterend', host);
       [...workspace.querySelectorAll('.panel')].find((panel) => panel.querySelector('h2')?.textContent?.trim() === 'Console activity')?.classList.add('dws-legacy-console-activity');
     }
     const rows = (payload?.entries || []).filter((row) => consoleFilter === 'all' || row.source === consoleFilter);

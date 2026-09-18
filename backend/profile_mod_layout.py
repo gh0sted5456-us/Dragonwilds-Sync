@@ -124,7 +124,8 @@ def _migrate_simple_dedicated_profile(owner: Path, profile_root: Path) -> None:
     mods = profile_root / "Mods"
     saves = profile_root / "Saves"
     config = profile_root / "Config"
-    for path in (mods / "Binaries/Win64", mods / "Content/Paks/~mods", saves, config):
+    for path in (mods / "Binaries/Win64", mods / "Content/Paks/~mods",
+                 saves / "Worlds", saves / "Runtime", config):
         path.mkdir(parents=True, exist_ok=True)
 
     legacy_roots = [p for p in (
@@ -158,8 +159,9 @@ def _migrate_simple_dedicated_profile(owner: Path, profile_root: Path) -> None:
                     exclude_names={LANE_README})
 
         # Config and saves are independent top-level profile authorities.
-        _merge_tree(staged / "Saved/SaveGames", saves)
+        _merge_tree(staged / "Saved/SaveGames", saves / "Worlds")
         _merge_tree(staged / "Saved/Config", config)
+        _merge_tree(staged / "Saved", saves / "Runtime", exclude_names={"SaveGames", "Config"})
         _merge_tree(staged / "AppData/Saved/SaveGames/Worlds", saves / "Worlds")
         _merge_tree(staged / "AppData/Saved/SaveGames/Players", saves / "Players")
 
@@ -174,8 +176,12 @@ def _migrate_simple_dedicated_profile(owner: Path, profile_root: Path) -> None:
                     exclude_names={LANE_README})
         _merge_tree(old_mods / "PAKs", mods / "Content/Paks/~mods",
                     exclude_names={LANE_README})
+        _merge_tree(old_mods / "Saved", saves / "Runtime",
+                    exclude_names={"SaveGames", "Config"})
+        _merge_tree(old_mods / "Saved/SaveGames", saves / "Worlds")
+        _merge_tree(old_mods / "Saved/Config", config)
 
-    _merge_tree(owner / "savegame", saves)
+    _merge_tree(owner / "savegame", saves / "Worlds")
     _merge_tree(owner / "server_config", config / "WindowsServer")
 
     for legacy in legacy_roots:
@@ -216,6 +222,8 @@ def dedicated_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
         path.mkdir(parents=True, exist_ok=True)
     for relative in ("Binaries/Win64", "Content/Paks/~mods"):
         (mods / relative).mkdir(parents=True, exist_ok=True)
+    (saves / "Worlds").mkdir(parents=True, exist_ok=True)
+    (saves / "Runtime").mkdir(parents=True, exist_ok=True)
     for platform in ("WindowsServer", "LinuxServer"):
         (config / platform).mkdir(parents=True, exist_ok=True)
     return paths

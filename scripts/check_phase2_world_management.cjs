@@ -20,7 +20,7 @@ const routing = read('backend/v2_remote_routing.py');
 const runner = read('scripts/run_backend_tests.cjs');
 const loaderRepository = read('backend/loader_repository.py');
 const deployment = read('backend/mod_deployment_cleanup.py');
-const syncEngine = read('backend/sync_engine.py');
+const serverEngine = read('backend/server_engine.py');
 
 requireText(index, 'release-phase2.css', 'Phase 2 stylesheet');
 requireText(index, 'release-phase2.js', 'Phase 2 renderer');
@@ -50,18 +50,26 @@ for (const token of [
   "['RuneSchemaLoader','RuneSchema Loader']",
   'loaders/ue4ss',
   'loaders/runeschema',
-]) requireText(appV2, token, `World-owned runtime staging ${token}`);
-for (const token of ['Edit Mod Loaders', 'Install Verified Loaders', 'profile.loaders.install', 'dws:manage-profile-loaders']) {
-  requireText(appV2, token, `profile loader workflow ${token}`);
+  'Edit Mod Loaders',
+  'Install Verified Loaders',
+  'profile.loaders.install',
+]) forbidText(appV2, token, `retired per-Profile loader staging ${token}`);
+for (const token of [
+  "['Profile','Profile']",
+  "['Mods','Mods']",
+  "['Saves','Saves']",
+  "['Config','Config']",
+  'AppData/Loaders',
+  'Manage Loader Library',
+  'application.loaders.install',
+]) requireText(appV2, token, `simple Profile / central Loader Library ${token}`);
+for (const token of ['PACKAGE_SCHEMA', 'SHA256=', 'safe path', 'REPOSITORY_ROOT = APP_DATA_DIR / "Loaders"', '"files": incoming']) {
+  requireText(loaderRepository, token, `verified central loader repository ${token}`);
 }
-for (const token of ['PACKAGE_SCHEMA', 'SHA256=', 'safe path', 'loader_repository']) {
-  requireText(loaderRepository, token, `verified loader repository ${token}`);
-}
-requireText(deployment, "(ue4ss_loader, game_root, {'id.txt'})", 'UE4SS loader-first deployment');
-requireText(deployment, "(runeschema_loader, game_root, {'id.txt'})", 'RuneSchema loader-first deployment');
-if (syncEngine.indexOf('deploy_staged_loaders(profile_roots') > syncEngine.indexOf("(profile_roots['ue4ss']")) {
-  throw new Error('Client profile restore must deploy loader entities before mod entities');
-}
+requireText(deployment, 'def deploy_profile_lanes', 'owned-file deployment/recovery seam');
+requireText(serverEngine, '(stored["mods"], live_root, excluded)', 'single Profile/Mods deployment');
+requireText(serverEngine, 'stored["saves"] / "Runtime"', 'Profile/Saves runtime deployment');
+requireText(serverEngine, 'A Profile cannot replace a Steam-owned game executable', 'protected executable boundary');
 forbidText(appV2, 'id="runeschema-flavor-select"', 'legacy inline RuneSchema selector');
 forbidText(appV2, 'id="ue4ss-version-select"', 'legacy inline UE4SS selector');
 

@@ -3072,15 +3072,18 @@ def handle(method: str, params: dict) -> object:
         public_link["password_configured"] = bool(retained_password)
         return {"link": public_link, "state": public_state(state)}
 
-    if method == "profile.loaders.status":
+    if method in {"application.loaders.status", "profile.loaders.status"}:
         kind = str(params.get("kind") or "").strip().lower()
-        profile_id = str(params.get("id") or "").strip()
-        return {"repository": ensure_loader_repository(),
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+        repository = ensure_loader_repository()
+        if not kind and not profile_id:
+            return {"repository": repository, "profile": None}
+        return {"repository": repository,
                 "profile": profile_loader_status(kind, profile_id)}
 
-    if method == "profile.loaders.install":
+    if method in {"application.loaders.install", "profile.loaders.install"}:
         kind = str(params.get("kind") or "").strip().lower()
-        profile_id = str(params.get("id") or "").strip()
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
         result = install_loader_package(kind, profile_id, str(params.get("package_id") or ""))
         return {"result": result, "repository": ensure_loader_repository(),
                 "profile": profile_loader_status(kind, profile_id)}

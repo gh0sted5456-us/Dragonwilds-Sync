@@ -39,7 +39,7 @@ COUNTRY_CACHE_PATH = APP_DATA_DIR / "world_ip_country_cache.json"
 DEFAULT_PORT = DEFAULT_WEBHOST_PORT
 REMOTE_PERMISSION_DEFAULTS = {
     "view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
-    "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False,
+    "view_config": True, "write_config": False,
     "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False,
     "start": True, "stop": True, "restart": True, "update": True, "refresh": True,
 }
@@ -906,7 +906,7 @@ class DirectoryHost:
                           "mod_update": "write_mods", "mod_files": "view_mods", "mod_file_open": "view_mods",
                           "mod_file_save": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
-                          "spawner_catalog": "view_spawner", "spawner_icon": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",
+                          "console_execute": "use_console",
                           }
         required = permission_for.get(action)
         if not required: raise ValueError("This remote command is not allowed")
@@ -917,9 +917,8 @@ class DirectoryHost:
         if not self.remote_action_handler: raise RuntimeError("Remote commands are unavailable")
         try:
             result = self.remote_action_handler(str(session.get("world_id") or ""), action, dict(payload or {})) or {}
-            if action != "spawner_icon":
-                self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
-                                   remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")
+            self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
+                               remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")
             return result
         except Exception as exc:
             self._remote_audit(action, ok=False, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),

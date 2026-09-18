@@ -1,14 +1,7 @@
-"""Spec section 7 (executable selection UX) and section 8 (Player/Server
-setup progress UX) regressions.
-
-These are renderer-only changes (no Python execution path), so -- matching
-the established pattern in this repo (see test_v27_13_runtime_profiles.py,
-test_dragonlink_contracts.py) -- this is a golden-string regression test
-over the renderer sources: it locks in the specific fix, not just "the file
-still exists".
-"""
+"""Regression coverage for setup, Profile actions, and editable machine paths."""
 
 from pathlib import Path
+import subprocess
 
 RENDERER = Path(__file__).resolve().parents[1] / "renderer"
 
@@ -19,63 +12,68 @@ def _read(name: str) -> str:
 
 def test_machine_mod_mapping_preserves_unsaved_edits_across_rebuilds() -> None:
     source = _read("release-machine-mod-mapping.js")
-
-    # The reported bug: the panel is rebuilt from stale statusCache on *any*
-    # DOM mutation anywhere in the app (the MutationObserver below watches
-    # the whole document), which silently discarded a pasted-but-unsaved
-    # destination path before Save was ever clicked. Guard against
-    # regressing back to an unconditional innerHTML rebuild.
     assert "const dirty = new Set()" in source
     assert "preserved[key] = input.value" in source
     assert "if (input && !input.disabled) input.value = value;" in source
-
-    # Typing/pasting/browsing/"use detected defaults" must all mark a field
-    # dirty -- every path that can put an unsaved value into one of these
-    # inputs has to be tracked, not just manual typing.
-    assert "dirty.add(dirtyKey(role, lane))" in source
-    assert source.count("dirty.add(dirtyKey(role, lane))") >= 3  # input, browse, defaults
-
-    # A successful save is what actually clears the unsaved-edit tracking.
+    assert source.count("dirty.add(dirtyKey(role, lane))") >= 3
     assert "dirty.delete(dirtyKey(role, lane))" in source
-
-    # The MutationObserver itself must remain (that's not the bug -- the
-    # blind rebuild it triggered was), so this stays a live panel.
     assert "new MutationObserver(() => void render())" in source
+
+
+def test_profile_storage_controls_render_the_correct_destinations() -> None:
+    # Execute the actual pure renderer function. A renamed button must not hide
+    # a missing destination, leak an ID into markup, or restore loader lanes.
+    script = r'''
+const fs = require('node:fs');
+const assert = require('node:assert/strict');
+const vm = require('node:vm');
+const source = fs.readFileSync('renderer/app-v2.js', 'utf8');
+const start = source.indexOf('  function profileModStorageActions(');
+const end = source.indexOf('  async function openApplicationLoaderManager(', start);
+assert(start >= 0 && end > start, 'Profile action renderer must be independently testable');
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const context = vm.createContext({ escapeHtml });
+vm.runInContext(source.slice(start, end), context, { timeout: 1000 });
+for (const [kind, expected] of [['server', ['Profile','Mods','Saves','Config']], ['local', ['Profile','Mods']]]) {
+  const html = context.profileModStorageActions(kind, 'world-<&"');
+  const lanes = [...html.matchAll(/data-open-profile-mod-lane="([^"]+)"/g)].map(match => match[1]);
+  assert.deepEqual(lanes, expected, `${kind}: every Profile destination must be reachable`);
+  assert(html.includes(`data-profile-kind="${kind}"`));
+  assert(html.includes('data-profile-id="world-&lt;&amp;&quot;"'));
+  assert(!html.includes('data-manage-profile-loaders'), 'Loader management belongs in Settings');
+  for (const lane of expected) assert(html.includes(`Open ${lane}</button>`));
+}
+console.log('Profile folder buttons: server/local destinations and escaping PASS');
+'''
+    subprocess.run(["node", "-e", script], cwd=RENDERER.parent, check=True)
 
 
 def test_data_management_is_visible_extensible_and_clear() -> None:
     mapping = _read("release-machine-mod-mapping.js")
     app = _read("app-v2.js")
     styles = _read("styles.css")
-
-    # The release panel must have an actual host in the streamlined profile-data page.
     assert 'id="machine-paths-card"' in app
     assert '>Profiles &amp; Data</button>' in app
-
-    # Fixed live deployment lanes stay obvious while operators can add named
-    # locations for future tools without silently deploying into them.
     assert "data-machine-custom-add" in mapping
     assert "data-machine-custom-save" in mapping
     assert "machine_custom_paths" in mapping
     assert "are not treated as mod deployment lanes" in mapping
 
-    # Mod Management should name the profile folder and the scan action by
-    # their actual effects instead of presenting several ambiguous verbs.
-    assert app.count("Open Profile Mod Storage") >= 2
+    assert "profileModStorageActions('local',world.id)" in app
+    assert "profileModStorageActions('server',world.id)" in app
     assert 'id="sp-open-mods-folder"' not in app
     assert 'id="server-open-mods-folder"' not in app
     assert app.count('data-action="profile-mod-storage"') >= 2
     assert 'fantasy-loading flat-loading' not in app
     assert 'fantasy-entry dark-pad-entry' not in app
-    assert "startupSplashStartedAt" not in app  # persistent landing, no artificial delay
+    assert "startupSplashStartedAt" not in app
     assert 'data-landing-update-status' in app
     assert ".fantasy-loading::before{display:block!important}" in styles
     assert ".fantasy-loading::before{display:none!important}" not in styles
     assert "Scan Profile Folder" in app
-    assert "Scan Staging" in app
-    assert "Stage → scan → deploy" in app
+    assert ">Scan Profile</button>" in app
+    assert "Profile → scan → deploy" in app
 
-    # Settings no longer duplicates Player, Server, or Sync workspaces.
     assert "settingsNav('player','♙','Player')" not in app
     assert "settingsNav('server','▣','Server')" not in app
     assert "settingsNav('sync','↻','Connections')" not in app
@@ -114,20 +112,11 @@ def test_only_dark_and_light_themes_are_user_selectable() -> None:
 
 def test_player_server_setup_progress_reflects_real_state() -> None:
     source = _read("app-v2.js")
-
     assert "function setupProgressMarkup(role" in source
-    # Every step must be gated by real, already-loaded state -- never a
-    # hardcoded index or a timer. These are the exact signals passed in.
     for signal in ("hasExecutable", "hasSaveDir", "machineReady", "hasProfiles"):
         assert signal in source
-
-    # Both the Player (game-setup) and Server (server-setup) tabs must
-    # render the progress strip, not just define it unused.
     assert "setupProgressMarkup('player'," in source
     assert "setupProgressMarkup('server'," in source
-
-    # A step that is not confirmed done must never render as done: once a
-    # step is not done, every step after it is blocked, not fabricated.
     assert "const complete = !blocked && done;" in source
     assert "if (!complete) blocked = true;" in source
     assert "${complete ? '✓'" in source
@@ -155,7 +144,7 @@ def main() -> None:
     tests = [value for name, value in list(globals().items()) if name.startswith("test_") and callable(value)]
     for test in tests:
         test()
-    print(f"setup UX regression (sections 7 & 8): PASS ({len(tests)} checks)")
+    print(f"setup UX regression: PASS ({len(tests)} checks)")
 
 
 if __name__ == "__main__":

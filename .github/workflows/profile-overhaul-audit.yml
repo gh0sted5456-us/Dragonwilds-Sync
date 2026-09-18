@@ -1,0 +1,104 @@
+name: Profile Overhaul Audit
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [experimental]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: profile-overhaul-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    if: github.repository == 'gh0sted5456-us/Dragonwilds-Sync' && github.head_ref == 'overhaul/simple-profile-contract'
+    runs-on: windows-2025
+    timeout-minutes: 50
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      AUDIT_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install test dependencies
+        shell: pwsh
+        run: |
+          python -m pip install -r backend/requirements-build.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm ci --include=dev --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run prepare:monaco
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run every listed backend test, including isolated preflights
+        shell: python
+        run: |
+          import json, os, pathlib, subprocess, sys, tempfile, time
+          output = pathlib.Path('test-results/overhaul-audit')
+          output.mkdir(parents=True, exist_ok=True)
+          env = {**os.environ, 'GITHUB_ACTIONS': 'false', 'DRAGONWILDS_SYNC_PYTHON': sys.executable}
+          listed = subprocess.run(['node', 'scripts/run_backend_tests.cjs', '--list'], env=env, text=True, capture_output=True, check=True)
+          tests = json.loads(listed.stdout)
+          results = []
+          for test in tests:
+              started = time.monotonic()
+              log_path = output / (pathlib.Path(test).stem + '.log')
+              with tempfile.TemporaryDirectory(prefix='dws-full-matrix-') as temporary:
+                  root = pathlib.Path(temporary)
+                  for name in ('LocalAppData', 'RoamingAppData'):
+                      (root / name).mkdir()
+                  isolated = {**os.environ, 'DRAGONWILDS_SYNC_APPDATA': str(root), 'LOCALAPPDATA': str(root/'LocalAppData'), 'APPDATA': str(root/'RoamingAppData'), 'PYTHONUTF8':'1', 'PYTHONIOENCODING':'utf-8'}
+                  with log_path.open('w', encoding='utf-8') as log:
+                      process = subprocess.Popen([sys.executable, 'scripts/v3_backend_test_runner.py', test], env=isolated, stdout=log, stderr=subprocess.STDOUT)
+                      try:
+                          code = process.wait(timeout=180)
+                      except subprocess.TimeoutExpired:
+                          subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], capture_output=True)
+                          process.wait(timeout=30)
+                          code = 124
+                          log.write('\nTEST TIMEOUT: 180 seconds\n')
+              row = {'test':test, 'exit_code':code, 'seconds':round(time.monotonic()-started,2), 'log':log_path.name}
+              results.append(row)
+              print(('PASS' if code == 0 else 'FAIL') + ' ' + test + ' ' + str(row['seconds']) + 's', flush=True)
+              (output/'summary.json').write_text(json.dumps({'source_sha':os.environ.get('AUDIT_SOURCE_SHA'), 'results':results}, indent=2), encoding='utf-8')
+          failures = [row for row in results if row['exit_code']]
+          print('\nCOMPLETE MATRIX:', len(results)-len(failures), 'passed;', len(failures), 'failed;', len(results), 'executed. No preflights skipped.')
+          for row in failures:
+              print('\n===== FAILURE:', row['test'], '=====')
+              print((output/row['log']).read_text(encoding='utf-8', errors='replace')[-14000:])
+          sys.exit(1 if failures else 0)
+      - name: Inspect remaining runtime and Profile source references
+        if: always()
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+          targets = {
+              'renderer/app-v2.js': r'server\.spawner|serverSpawner|function.*[Ss]pawn|model_valid|rsdwAvatarUrl|rsdwmodel\.com|open-profile-mods',
+              'backend/server_engine.py': r'dedicated_profile_layout|\[.saved.\]|\[.saves.\]|SaveGames|def .*config|def .*savegame',
+              'backend/profile_bundle.py': r'staged|snapshot|savegame|server_config|Profile|manifest',
+              'backend/rsdw_cache.py': r'model|MODEL|^def ',
+              'backend/ue4ss_repository.py': r'^def |REPOSITORY|GITHUB|source_url',
+              'backend/runeschema_repository.py': r'^def |REPOSITORY|source_url',
+          }
+          for name, pattern in targets.items():
+              print('\n===== SOURCE AUDIT:', name, '=====')
+              for number, line in enumerate(Path(name).read_text(encoding='utf-8').splitlines(), 1):
+                  if re.search(pattern, line):
+                      print(f'{number}: {line[:2200]}')
+      - name: Upload full regression evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: profile-overhaul-full-matrix
+          path: test-results/overhaul-audit/
+          if-no-files-found: warn

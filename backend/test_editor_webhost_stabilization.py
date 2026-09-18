@@ -105,9 +105,9 @@ def main() -> None:
     assert b"function workspaceSignature" in portal and b"load('changed')" in portal
     assert b'/assets/platforms/ue4ss.webp' in portal
     assert b'/assets/platforms/runeschema.webp' in portal
-    assert b"grid-template-rows:82px minmax(30px,auto) 16px" in portal
-    assert b"grid-template-columns:repeat(auto-fill,minmax(126px,1fr))" in portal
-    assert b"@media(max-width:1180px)" in portal
+    assert b"Item Builder" not in portal and b"Item Spawner" not in portal
+    assert b"dws-remote-unified-console-script" in portal
+    assert b"dws-current-map" in portal
 
     host = directory_host.DirectoryHost()
     cfg = directory_host.default_host_config()

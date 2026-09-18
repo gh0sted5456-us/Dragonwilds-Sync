@@ -136,10 +136,19 @@
       button.title='Open an application-owned placard window without reloading Dragonwilds Sync';
     });
 
-    matchingNodes(root, 'button, [role="tab"], .settings-nav button, .tabs button').forEach((node) => {
+    matchingNodes(root, 'button, [role="tab"], .settings-nav button, .tabs button, [data-nav-route], [data-route]').forEach((node) => {
       const text = normalize(node.textContent);
       if ((text === 'webhost' || text === 'web hosting') && node.textContent !== 'Website & Directory') node.textContent = 'Website & Directory';
       if ((text === 'remote server' || text === 'remote server admin') && node.textContent !== 'Remote Users & Access') node.textContent = 'Remote Users & Access';
+
+      // One Character Editor owns save editing and the external RSDW character
+      // reference. The retired RSDWL/Characters split is no longer navigable.
+      if (text === 'characters' || text === 'character studio') node.textContent = 'Character Editor';
+      if (['rsdwl','rsdw-l','rsdwl toolkit','rsdwl editor'].includes(text)) hideLegacyEntry(node);
+
+      // Spawning gameplay entities from the desktop application is retired.
+      if (text === 'spawner' || text === 'item spawner' || text === 'enemy spawner'
+          || text === 'spawn items' || text === 'spawn enemies') hideLegacyEntry(node);
     });
 
     matchingNodes(root, '[data-nexus-account], [data-nexus-login], #nexus-account-panel, #nexus-auth-panel, .nexus-account-settings').forEach(hideLegacyEntry);
@@ -154,6 +163,33 @@
 
     void enhanceRecommendedMods(root);
   }
+
+  function selectedProfileForFolder(node) {
+    const explicit = node?.closest?.('[data-profile-kind][data-profile-id]');
+    const context = explicit ? {kind:explicit.dataset.profileKind, id:explicit.dataset.profileId}
+      : window.__DWSYNC_PROFILE_CONTEXT__;
+    if (context?.id && ['server','local'].includes(context.kind)) return context;
+    // A global Profiles tab is ambiguous when both scopes exist. Do not pick
+    // the hosted server just because it happens to be running.
+    const root = window.__DWSYNC_STATE__ || {};
+    const selection = window.__DWSYNC_PROFILE_SELECTION__ || {};
+    const candidates = [
+      {kind:'server', id:String(selection.server || root?.server?.active_world_id || '').trim()},
+      {kind:'local', id:String(selection.local || root?.client?.active_private_world_id || root?.client?.live_world_id || '').trim()},
+    ].filter(row => row.id);
+    return candidates.length === 1 ? candidates[0] : null;
+  }
+
+  document.addEventListener('contextmenu', (event) => {
+    const node = event.target?.closest?.('button,[role="tab"],[data-tab],[data-route],[data-nav-route]');
+    const label = normalize(node?.textContent);
+    if (!node || !(label === 'profiles' || label === 'profiles & saves' || label === 'world profiles')) return;
+    const selected = selectedProfileForFolder(node);
+    if (!selected || !window.dragonwilds?.openProfileMods) return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.dragonwilds.openProfileMods(selected.kind, selected.id, 'Profile').catch(() => {});
+  }, true);
 
   // Critical menu structure gets a targeted observer. release-performance.js
   // only defers documentElement-wide observers, so this callback is delivered

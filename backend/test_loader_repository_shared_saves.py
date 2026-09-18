@@ -25,6 +25,8 @@ class LoaderRepositoryTests(unittest.TestCase):
                 archive.writestr("RuneSchema/enabled.txt", "1")
                 archive.writestr("RuneSchema/dlls/RuneSchema.dll", b"rs")
                 archive.writestr("RuneSchema/mods/ShouldNotShip/file.json", "{}")
+            (root / "profiles/world-a").mkdir(parents=True)
+            (root / "profiles/world-a/profile.json").write_text('{"id":"world-a","name":"World A"}', encoding="utf-8")
             sources = [("ue4ss", "stable", ue), ("runeschema", "stable", rune)]
             with patch.object(loaders, "REPOSITORY_ROOT", root / "repository"), \
                  patch.object(loaders, "SERVER_PROFILES_DIR", root / "profiles"), \
@@ -32,12 +34,13 @@ class LoaderRepositoryTests(unittest.TestCase):
                 repository = loaders.ensure_repository()
                 for package in repository["packages"]:
                     loaders.install_package("server", "world-a", package["id"])
-                staged = root / "profiles/world-a/staged/loaders"
-                self.assertTrue((staged / "ue4ss/Binaries/Win64/ue4ss/UE4SS.dll").is_file())
-                self.assertFalse((staged / "ue4ss/Binaries/Win64/ue4ss/Mods").exists())
-                self.assertTrue((staged / "runeschema/Binaries/Win64/ue4ss/Mods/RuneSchema/dlls/RuneSchema.dll").is_file())
-                self.assertFalse((staged / "runeschema/Binaries/Win64/ue4ss/Mods/RuneSchema/mods").exists())
-                self.assertIn("SHA256=", (staged / "ue4ss/ID.txt").read_text(encoding="utf-8"))
+                staged = root / "profiles/world-a/Profile/Mods"
+                self.assertTrue((staged / "Binaries/Win64/ue4ss/UE4SS.dll").is_file())
+                self.assertFalse((staged / "Binaries/Win64/ue4ss/Mods/ShouldNotShip").exists())
+                self.assertTrue((staged / "Binaries/Win64/ue4ss/Mods/RuneSchema/dlls/RuneSchema.dll").is_file())
+                self.assertFalse((staged / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods/ShouldNotShip").exists())
+                identity = root / "profiles/world-a/manifests/loaders/ue4ss.txt"
+                self.assertIn("SHA256=", identity.read_text(encoding="utf-8"))
 
 
 class SharedSaveBackupTests(unittest.TestCase):

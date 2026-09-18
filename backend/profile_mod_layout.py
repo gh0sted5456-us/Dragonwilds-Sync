@@ -24,152 +24,145 @@ from pathlib import Path, PureWindowsPath
 _SPARE_LOCK = threading.RLock()
 
 
-def _copy_without(source: Path, destination: Path, excluded=()) -> None:
-    excluded = {str(value).casefold() for value in excluded}
-    if not source.is_dir():
+def _migrate_simple_dedicated_profile(owner: Path, profile_root: Path) -> None:
+    """Collapse legacy dedicated staging into the human-facing Profile contract.
+
+    The visible Profile folder has exactly three authorities:
+    Mods/   - game-relative Binaries and Content payload
+    Saves/  - World/player save payload
+    Config/ - dedicated server configuration
+
+    Legacy layered staging is copied into those authorities once, with verified
+    recovery copies retained outside Profile before the old tree is retired.
+    """
+    marker = profile_root / ".simple-profile-v2"
+    if marker.is_file():
         return
-    for child in source.iterdir():
-        if child.name.casefold() in excluded or child.name.casefold() in LANE_NOTE_NAMES:
-            continue
-        target = destination / child.name
-        if child.is_dir() and not child.is_symlink():
-            shutil.copytree(child, target, dirs_exist_ok=True)
-        elif child.is_file():
+
+    mods = profile_root / "Mods"
+    saves = profile_root / "Saves"
+    config = profile_root / "Config"
+    for path in (mods / "Binaries/Win64", mods / "Content/Paks/~mods",
+                 saves / "Worlds", saves / "Runtime", config):
+        path.mkdir(parents=True, exist_ok=True)
+
+    legacy_roots = [p for p in (
+        owner / "staged", owner / "mods", owner / "savegame", owner / "server_config"
+    ) if p.exists()]
+    backup = _backup_legacy(profile_root, legacy_roots) if legacy_roots else None
+
+    staged = owner / "staged"
+    if staged.is_dir():
+        # Former general overlay and loader lanes were already game-relative.
+        for source, destination in (
+            (staged / "overlay/Binaries", mods / "Binaries"),
+            (staged / "overlay/Content", mods / "Content"),
+            (staged / "loaders/ue4ss/Binaries", mods / "Binaries"),
+            (staged / "loaders/runeschema/Binaries", mods / "Binaries"),
+            (staged / "Binaries", mods / "Binaries"),
+            (staged / "Content", mods / "Content"),
+        ):
+            _merge_tree(source, destination, exclude_names={LANE_README})
+
+        # Former typed mod lanes become their normal game paths.
+        _merge_tree(staged / "mods/ue4ss",
+                    mods / "Binaries/Win64/ue4ss/Mods",
+                    exclude_names={LANE_README, "RuneSchema", "mods.txt"})
+        _merge_tree(staged / "mods/runeschema",
+                    mods / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods",
+                    exclude_names={LANE_README})
+        _merge_tree(staged / "mods/paks",
+                    mods / "Content/Paks/~mods",
+                    exclude_names={LANE_README})
+
+        # Config and saves are independent top-level profile authorities.
+        _merge_tree(staged / "Saved/SaveGames", saves / "Worlds")
+        _merge_tree(staged / "Saved/Config", config)
+        _merge_tree(staged / "Saved", saves / "Runtime", exclude_names={"SaveGames", "Config"})
+        _merge_tree(staged / "AppData/Saved/SaveGames/Worlds", saves / "Worlds")
+        _merge_tree(staged / "AppData/Saved/SaveGames/Players", saves / "Players")
+
+    old_mods = owner / "mods"
+    if old_mods.is_dir():
+        _merge_tree(old_mods / "Binaries", mods / "Binaries")
+        _merge_tree(old_mods / "Content", mods / "Content")
+        _merge_tree(old_mods / "UE4SS", mods / "Binaries/Win64/ue4ss/Mods",
+                    exclude_names={LANE_README, "RuneSchema", "mods.txt"})
+        _merge_tree(old_mods / "RuneSchema",
+                    mods / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods",
+                    exclude_names={LANE_README})
+        _merge_tree(old_mods / "PAKs", mods / "Content/Paks/~mods",
+                    exclude_names={LANE_README})
+        _merge_tree(old_mods / "Saved", saves / "Runtime",
+                    exclude_names={"SaveGames", "Config"})
+        _merge_tree(old_mods / "Saved/SaveGames", saves / "Worlds")
+        _merge_tree(old_mods / "Saved/Config", config)
+
+    # Older releases used internal *_mods directories. Fold their cores and
+    # child mods into normal game paths without discarding readonly files.
+    for source in (old_mods / "ue4ss_mods", old_mods / "UE4SS"):
+        nested = source / "RuneSchema"
+        if nested.is_dir():
+            _merge_tree(nested, mods / "Binaries/Win64/ue4ss/Mods/RuneSchema")
+        _merge_tree(source, mods / "Binaries/Win64/ue4ss/Mods",
+                    exclude_names={"RuneSchema", "mods.txt", LANE_README})
+    _merge_tree(old_mods / "runeschema_mods",
+                mods / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods")
+    _merge_tree(old_mods / "pak_mods", mods / "Content/Paks/~mods")
+    _merge_tree(old_mods / "Win64", mods / "Binaries/Win64")
+
+    _merge_tree(owner / "savegame", saves / "Worlds")
+    _merge_tree(owner / "server_config", config / "WindowsServer")
+
+    for legacy in legacy_roots:
+        _remove_empty(legacy)
+        if legacy.exists() and backup:
+            # A canonical file wins a collision. Keep the old file outside the
+            # active Profile so reopening it cannot repeat a partial migration.
+            target = backup / "unmerged" / legacy.name
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(child, target)
+            shutil.move(str(legacy), str(target))
 
-
-def _migrate_dedicated_staging(owner: Path, staged: Path) -> None:
-    """Split the former monolithic game-relative tree into explicit layers."""
-    marker = staged / ".layered-profile-v1"
-    if marker.is_file() or not staged.exists():
-        return
-    if any((staged / name).exists() for name in ("overlay", "loaders", "mods")):
-        marker.write_text("DragonwildsSync layered World staging v1\n", encoding="utf-8")
-        return
-    legacy_roots = (staged / "Binaries", staged / "Content", staged / "Saved")
-    if not any(path.exists() for path in legacy_roots):
-        return
-    _backup_legacy(staged, [staged])
-    temporary = owner / (".staged-layering-" + uuid.uuid4().hex)
-    overlay = temporary / "overlay"
-    shutil.copytree(staged, overlay)
-
-    saved = overlay / "Saved"
-    if saved.exists():
-        shutil.move(str(saved), str(temporary / "Saved"))
-
-    legacy_paks = overlay / "Content/Paks/~mods"
-    if legacy_paks.is_dir():
-        pak_root = temporary / "mods/paks"
-        pak_root.mkdir(parents=True, exist_ok=True)
-        for child in list(legacy_paks.iterdir()):
-            if child.name.casefold() in LANE_NOTE_NAMES:
-                continue
-            if child.is_dir():
-                shutil.move(str(child), str(pak_root / child.name))
-            elif child.is_file():
-                # Old flat PAK sets become a folder entity without changing
-                # their filenames. New profiles require one folder per mod.
-                entity_name = child.name[:-8] if child.name.casefold().endswith(".pak.sig") else child.stem
-                entity = pak_root / entity_name
-                entity.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(child), str(entity / child.name))
-
-    win64 = overlay / "Binaries/Win64"
-    ue4ss = win64 / "ue4ss"
-    rune = ue4ss / "Mods/RuneSchema"
-    rune_mods = rune / "mods"
-    _copy_without(rune_mods, temporary / "mods/runeschema")
-    _copy_without(ue4ss / "Mods", temporary / "mods/ue4ss", {"RuneSchema", "mods.txt"})
-    if rune.is_dir():
-        target = temporary / "loaders/runeschema/Binaries/Win64/ue4ss/Mods/RuneSchema"
-        shutil.copytree(rune, target, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("mods", "README.txt"))
-    if ue4ss.is_dir():
-        target = temporary / "loaders/ue4ss/Binaries/Win64/ue4ss"
-        shutil.copytree(ue4ss, target, dirs_exist_ok=True,
-                        ignore=shutil.ignore_patterns("Mods", "README.txt"))
-    for shim in ("dwmapi.dll", "version.dll"):
-        source = win64 / shim
-        if source.is_file():
-            target = temporary / "loaders/ue4ss/Binaries/Win64" / shim
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
-    shutil.rmtree(overlay / "Binaries/Win64/ue4ss", ignore_errors=True)
-    for shim in ("dwmapi.dll", "version.dll"):
-        (overlay / "Binaries/Win64" / shim).unlink(missing_ok=True)
-    shutil.rmtree(legacy_paks, ignore_errors=True)
-    marker_target = temporary / marker.name
-    marker_target.write_text("DragonwildsSync layered World staging v1\n", encoding="utf-8")
-    shutil.rmtree(staged)
-    temporary.replace(staged)
+    marker.write_text("DragonwildsSync simple Profile layout v2\n", encoding="utf-8")
 
 
 def dedicated_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
-    """Return the explicit overlay, loader, mod, configuration, and save lanes."""
+    """Return the simplified, operator-facing dedicated Profile contract."""
     owner = Path(profile_dir)
-    staged = owner / "staged"
-    legacy = owner / "mods"
     _validate_storage_tree(owner)
-    if legacy.is_dir() and not staged.exists():
-        legacy.replace(staged)
-    elif legacy.is_dir():
-        backup = _backup_legacy(staged, [legacy])
-        _merge_tree(legacy, staged)
-        if legacy.exists() and backup:
-            conflict = backup / "unmerged" / legacy.name
-            conflict.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(legacy), str(conflict))
-    _migrate_dedicated_staging(owner, staged)
+    profile_root = owner / "Profile"
+    _migrate_simple_dedicated_profile(owner, profile_root)
+
+    mods = profile_root / "Mods"
+    saves = profile_root / "Saves"
+    config = profile_root / "Config"
+    runtime_state = owner / "runtime"
     paths = {
-        "root": staged,
-        "overlay": staged / "overlay",
-        "ue4ss_loader": staged / "loaders/ue4ss",
-        "runeschema_loader": staged / "loaders/runeschema",
-        "mods": staged / "mods",
-        "ue4ss": staged / "mods/ue4ss",
-        "runeschema": staged / "mods/runeschema",
-        "paks": staged / "mods/paks",
-        "saved": staged / "Saved",
-        "appdata": staged / "AppData",
+        "root": profile_root,
+        "profile": profile_root,
+        "mods": mods,
+        "overlay": mods,  # compatibility: Mods is the complete game-relative overlay.
+        "ue4ss_loader": mods,
+        "runeschema_loader": mods,
+        "ue4ss": mods / "Binaries/Win64/ue4ss/Mods",
+        "runeschema": mods / "Binaries/Win64/ue4ss/Mods/RuneSchema/mods",
+        "paks": mods / "Content/Paks/~mods",
+        "saved": saves,
+        "saves": saves,
+        "config": config,
+        "appdata": runtime_state,
         "manifests": owner / "manifests",
         "backups": owner / "backups",
     }
     for path in paths.values():
         path.mkdir(parents=True, exist_ok=True)
-    for old_name, relative in (
-        ("savegame", "SaveGames"),
-        ("server_config", "Config/WindowsServer"),
-    ):
-        old = owner / old_name
-        target = paths["saved"] / relative
-        if not old.is_dir():
-            continue
-        backup = _backup_legacy(staged, [old])
-        _merge_tree(old, target)
-        if old.exists() and backup:
-            conflict = backup / "unmerged" / old.name
-            conflict.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(old), str(conflict))
-    for relative in ("Config/WindowsServer", "Config/LinuxServer", "SaveGames"):
-        (paths["saved"] / relative).mkdir(parents=True, exist_ok=True)
-    # A new profile is a blank, game-relative overlay rather than a copy of
-    # Steam-owned binaries. These empty roots make every supported destination
-    # obvious to an operator while the dedicated lanes remain authoritative.
-    for relative in ("Binaries/Win64", "Binaries/Linux", "Content/Paks"):
-        (paths["overlay"] / relative).mkdir(parents=True, exist_ok=True)
-    # Saves live in LocalAppData on a player machine and may live at an
-    # operator-selected location on a server. Keep them beside (not inside)
-    # the game overlay so deployment can route them without pretending they
-    # belong under the Steam install.
-    for relative in ("Saved/SaveGames/Worlds", "Saved/SaveGames/Players", "Backups"):
-        (paths["appdata"] / relative).mkdir(parents=True, exist_ok=True)
-    marker = staged / ".layered-profile-v1"
-    if not marker.is_file():
-        marker.write_text("DragonwildsSync layered World staging v1\n", encoding="utf-8")
+    for relative in ("Binaries/Win64", "Content/Paks/~mods"):
+        (mods / relative).mkdir(parents=True, exist_ok=True)
+    (saves / "Worlds").mkdir(parents=True, exist_ok=True)
+    (saves / "Runtime").mkdir(parents=True, exist_ok=True)
+    for platform in ("WindowsServer", "LinuxServer"):
+        (config / platform).mkdir(parents=True, exist_ok=True)
     return paths
-
 
 def dedicated_profile_staging_root(profile_dir: str | Path) -> Path:
     return dedicated_profile_layout(profile_dir)["root"]
@@ -202,12 +195,21 @@ def connected_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
 
 
 def staged_runtime_versions(profile_dir: str | Path) -> dict[str, dict]:
-    """Identify user-supplied loader trees by marker or stable content hash."""
+    """Identify loader cores from their normal paths inside Profile/Mods."""
     layout = dedicated_profile_layout(profile_dir)
+    mods = layout["mods"]
 
-    def inspect(root: Path) -> dict:
-        files = sorted((item for item in root.rglob("*") if item.is_file()),
-                       key=lambda item: item.relative_to(root).as_posix().casefold())
+    def inspect(root: Path, excluded_prefixes=()) -> dict:
+        excluded = tuple(tuple(part.casefold() for part in prefix.split("/")) for prefix in excluded_prefixes)
+        files = []
+        for item in root.rglob("*") if root.exists() else ():
+            if not item.is_file() or item.name.casefold() in LANE_NOTE_NAMES:
+                continue
+            rel_parts = tuple(part.casefold() for part in item.relative_to(root).parts)
+            if any(rel_parts[:len(prefix)] == prefix for prefix in excluded):
+                continue
+            files.append(item)
+        files.sort(key=lambda item: item.relative_to(root).as_posix().casefold())
         digest = hashlib.sha256()
         version = ""
         for item in files:
@@ -225,13 +227,21 @@ def staged_runtime_versions(profile_dir: str | Path) -> dict[str, dict]:
             except OSError:
                 continue
         content_hash = digest.hexdigest() if files else ""
-        return {"installed_version": version or (f"sha256:{content_hash[:12]}" if content_hash else "Not staged"),
-                "content_hash": content_hash, "file_count": len(files), "staging_path": str(root),
-                "source_name": "Profile staging", "version_basis": "marker" if version else "content-hash"}
+        return {
+            "installed_version": version or (f"sha256:{content_hash[:12]}" if content_hash else "Not staged"),
+            "content_hash": content_hash,
+            "file_count": len(files),
+            "staging_path": str(root),
+            "source_name": "Profile/Mods",
+            "version_basis": "marker" if version else "content-hash",
+        }
 
-    return {"ue4ss": inspect(layout["ue4ss_loader"]),
-            "runeschema": inspect(layout["runeschema_loader"])}
-
+    win64 = mods / "Binaries/Win64"
+    rune = win64 / "ue4ss/Mods/RuneSchema"
+    return {
+        "ue4ss": inspect(win64, ("ue4ss/Mods",)),
+        "runeschema": inspect(rune, ("mods",)),
+    }
 
 def dedicated_profile_mod_roots(profile_dir: str | Path) -> dict[str, Path]:
     """Return recognized mod lanes without folding loaders into mod inventory."""
@@ -263,7 +273,7 @@ def _spare_path(root: Path, relative: str) -> Path:
 def _spare_state(mods_root: Path):
     if mods_root.parent.name.casefold() == 'snapshot':
         owner = mods_root.parent.parent
-    elif mods_root.name.casefold() == 'mods' and mods_root.parent.name.casefold() == 'staged':
+    elif mods_root.name.casefold() == 'mods' and mods_root.parent.name.casefold() in {'staged', 'profile'}:
         owner = mods_root.parent.parent
     else:
         owner = mods_root.parent
@@ -383,7 +393,7 @@ _LANE_README_TEXT = {
     "win64": (
         "World-owned game overlay.\n\n"
         "Place loose Win64 mod and loader files at their normal game-relative\n"
-        "paths. The launcher does not supply UE4SS or RuneSchema for this World.\n"
+        "paths. Assign UE4SS or RuneSchema through the central Loader Library in Settings.\n"
         "Do not copy Steam-owned base-game executables into this overlay.\n"
     ),
     "ue4ss": (
@@ -401,7 +411,7 @@ _LANE_README_TEXT = {
     "runeschema": (
         "RuneSchema child mods for this World.\n\n"
         "One folder per child mod. This lane deploys to RuneSchema/mods.\n"
-        "RuneSchema core files belong in loaders/runeschema.\n"
+        "RuneSchema core files belong beside its mods folder, under RuneSchema/dlls.\n"
     ),
     "paks": (
         "PAK mods for this World.\n\n"
@@ -500,12 +510,14 @@ def ensure_profile_mod_roots(mods_root: str | Path) -> dict[str, Path]:
     root = Path(mods_root)
     _validate_storage_tree(root)
     root.mkdir(parents=True, exist_ok=True)
-    if root.name.casefold() == "mods" and root.parent.name.casefold() == "staged":
+    if root.name.casefold() == "mods" and root.parent.name.casefold() == "profile":
         lanes = {
-            "ue4ss": root / "ue4ss", "runeschema": root / "runeschema",
-            "paks": root / "paks", "win64": root.parent / "overlay/Binaries/Win64",
-            "ue4ss_loader": root.parent / "loaders/ue4ss",
-            "runeschema_loader": root.parent / "loaders/runeschema",
+            "ue4ss": root / CANONICAL_FOLDER_NAMES["ue4ss"],
+            "runeschema": root / CANONICAL_FOLDER_NAMES["runeschema"],
+            "paks": root / CANONICAL_FOLDER_NAMES["paks"],
+            "win64": root / CANONICAL_FOLDER_NAMES["win64"],
+            "ue4ss_loader": root,
+            "runeschema_loader": root,
         }
         for key, target in lanes.items():
             target.mkdir(parents=True, exist_ok=True)

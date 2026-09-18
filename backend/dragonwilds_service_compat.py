@@ -66,7 +66,6 @@ from guided_setup import validate_client_path, validate_server_path, probe_setup
 from world_save_distribution import normalize_policy as normalize_worldsave_policy, set_policy as set_worldsave_policy
 from server_scheduler import arm_schedule, normalize_notice, normalize_schedule, tick_schedule
 from player_tracker import PLAYER_BRIDGE, PLAYER_SERVICE, world_to_map
-from spawner_catalog import catalog as spawner_catalog, refresh_spawn_catalog, spawn_command
 from rsdw_toolkit import command_catalog as rsdw_command_catalog, history as rsdw_console_history, record_event as record_rsdw_event, status as rsdw_toolkit_status, suppress_roster_poll_logging, validate_command as validate_rsdw_command
 from health_model import apply_detected_hardware_references, normalize_health_config, normalize_network_evidence
 from runtime_versions import cl_version_status, client_runtime_status, server_runtime_stack
@@ -3073,15 +3072,24 @@ def handle(method: str, params: dict) -> object:
         public_link["password_configured"] = bool(retained_password)
         return {"link": public_link, "state": public_state(state)}
 
-    if method == "profile.loaders.status":
+    if method == "application.loaders.download":
+        from loader_repository import download_package
+        result = download_package(str(params.get("family") or "").strip().lower(),
+                                  str(params.get("channel") or "stable").strip().lower())
+        return {"result": result, "repository": ensure_loader_repository()}
+
+    if method in {"application.loaders.status", "profile.loaders.status"}:
         kind = str(params.get("kind") or "").strip().lower()
-        profile_id = str(params.get("id") or "").strip()
-        return {"repository": ensure_loader_repository(),
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+        repository = ensure_loader_repository()
+        if not kind and not profile_id:
+            return {"repository": repository, "profile": None}
+        return {"repository": repository,
                 "profile": profile_loader_status(kind, profile_id)}
 
-    if method == "profile.loaders.install":
+    if method in {"application.loaders.install", "profile.loaders.install"}:
         kind = str(params.get("kind") or "").strip().lower()
-        profile_id = str(params.get("id") or "").strip()
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
         result = install_loader_package(kind, profile_id, str(params.get("package_id") or ""))
         return {"result": result, "repository": ensure_loader_repository(),
                 "profile": profile_loader_status(kind, profile_id)}
@@ -6329,33 +6337,6 @@ def handle(method: str, params: dict) -> object:
         # Test adapter entry point; production data arrives through RSDWTools_SharedLine_v1.
         return PLAYER_SERVICE.ingest(params.get("snapshot") if isinstance(params.get("snapshot"), dict) else params)
 
-    if method == "server.spawner.catalog":
-        profile_id = str(params.get("id") or "")
-        profile = load_server_profile(profile_id)
-        if not profile:
-            raise KeyError("Server World not found")
-        refreshed = None
-        if bool(params.get("refresh")):
-            refreshed = refresh_spawn_catalog(repo=str(params.get("repo") or "RSDWArchive/RSDWDevKit"),
-                                               ref=str(params.get("ref") or "main"))
-        result = spawner_catalog(server_root_for_profile(profile), kind=str(params.get("kind") or "enemy"),
-                                 query=str(params.get("query") or ""), category=str(params.get("category") or ""),
-                                 limit=int(params.get("limit") or 250), custom_items=list((state.get("application") or {}).get("custom_items") or []))
-        result["refreshed"] = refreshed
-        result["bridge"] = PLAYER_BRIDGE.status()
-        declared = rsdw_command_catalog(server_root_for_profile(profile))
-        verbs = {str(row.get("verb") or "").casefold() for row in (declared.get("commands") or [])}
-        required = ["give.item"] if result.get("kind") == "item" else ["world.spawn.safe", "world.spawn.transform"]
-        missing = [verb for verb in required if verb not in verbs]
-        result["commands"] = {"available": not missing, "required": required, "missing": missing,
-                              "source": declared.get("source") or ""}
-        runtime = ENGINE.status()
-        result["runtime"] = {"running": bool(runtime.get("running")),
-                             "active": str(runtime.get("active_profile_id") or "") == profile_id}
-        live = PLAYER_SERVICE.status().get("players") or []
-        result["local_player_available"] = any(bool(row.get("is_local")) for row in live)
-        return result
-
     if method == "server.console.catalog":
         profile_id = str(params.get("id") or "")
         profile = load_server_profile(profile_id)
@@ -6413,57 +6394,6 @@ def handle(method: str, params: dict) -> object:
             record_rsdw_event(profile_id, source=str(params.get("source") or "desktop"), actor=str(params.get("actor") or "owner"),
                               command=checked["line"], ok=False, ack=str(exc))
             raise
-
-    if method == "server.spawner.spawn":
-        profile_id = str(params.get("id") or "")
-        profile = load_server_profile(profile_id)
-        if not profile:
-            raise KeyError("Server World not found")
-        if params.get("confirmed") is not True:
-            raise PermissionError("Spawner commands require explicit administrator confirmation")
-        runtime = ENGINE.status()
-        if not runtime.get("running") or str(runtime.get("active_profile_id") or "") != profile_id:
-            raise RuntimeError("Launch this Server World before using the Spawner")
-        bridge = PLAYER_BRIDGE.status()
-        if not bridge.get("available"):
-            raise RuntimeError("The running server has not exposed the RSDWTools shared-memory bridge")
-        target = dict(params.get("target") or {})
-        kind = str(params.get("kind") or "enemy").casefold()
-        selected_player = None
-        if str(target.get("kind") or "").casefold() == "player":
-            wanted = str(target.get("player_id") or "")
-            live = PLAYER_SERVICE.status().get("players") or []
-            player = next((row for row in live if str(row.get("id") or row.get("tracker_id") or "") == wanted), None)
-            if player is None:
-                raise KeyError("The selected player is no longer online")
-            selected_player = player
-            if kind != "item" and player.get("position_2d"):
-                raise RuntimeError("RSDWTools supplied only X/Y for this player; a verified Z coordinate is required before spawning at their location")
-            elif kind != "item":
-                position = player.get("position") or {}
-                target = {"kind": "coordinates", "x": position.get("x"), "y": position.get("y"), "z": position.get("z"),
-                          "yaw": player.get("yaw") or 0}
-        if kind == "item":
-            if selected_player is None:
-                live = PLAYER_SERVICE.status().get("players") or []
-                selected_player = next((row for row in live if bool(row.get("is_local"))), None)
-            if selected_player is None:
-                raise RuntimeError("Select a connected player before giving an item")
-            target = ({"kind": "local"} if bool(selected_player.get("is_local")) else
-                      {"kind": "player", "player_id": str(selected_player.get("id") or selected_player.get("tracker_id") or "")})
-            command = spawn_command("item", str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
-        else:
-            command = spawn_command(kind, str(params.get("runtime_path") or ""), target, int(params.get("count") or 1))
-        checked = validate_rsdw_command(server_root_for_profile(profile), command)
-        ack = PLAYER_BRIDGE.command(checked["line"], timeout=8.0)
-        if str(ack).casefold().startswith("err") or " failed:" in str(ack).casefold():
-            raise RuntimeError(str(ack))
-        record_rsdw_event(profile_id, source="spawner", actor="owner", command=checked["line"], ok=True, ack=ack)
-        _record_notification(state, profile.get("name") or "Hosted World", "Spawner command completed.", "success",
-                             world_id=profile_id, key=f"spawner:{profile_id}:{time.time()}")
-        save_state(state)
-        return {"ok": True, "ack": ack, "command_kind": kind, "command": checked,
-                "state": public_state(state)}
 
     if method == "server.world.map.update":
         profile_id = str(params.get("id") or "")
@@ -7364,125 +7294,6 @@ def _directory_remote_profiles() -> list[dict]:
     } for profile in list_server_profiles() if str(profile.get("id") or "")]
 
 
-_REMOTE_ITEM_ICON_CACHE: dict[str, dict] = {}
-_REMOTE_ITEM_ICON_LOCK = threading.RLock()
-_REMOTE_ITEM_ICON_MIME = {"image/png", "image/jpeg", "image/webp", "image/gif"}
-_RSDW_ICON_REPOSITORY_BASE = (
-    "https://raw.githubusercontent.com/RSDWArchive/RSDWTools/main/website/shared/icons/"
-)
-
-
-def _public_rsdw_icon_url(icon_ref: str) -> str:
-    """Resolve only canonical RSDW artwork to its public repository URL."""
-    normalized = str(icon_ref or "").replace("\\", "/").strip()
-    prefix = "/shared/icons/"
-    if not normalized.startswith(prefix):
-        return ""
-    relative = normalized[len(prefix):].lstrip("/")
-    parts = [part for part in relative.split("/") if part]
-    if not parts or any(part in {".", ".."} for part in parts):
-        return ""
-    if Path(parts[-1]).suffix.casefold() not in {".png", ".jpg", ".jpeg", ".webp", ".gif"}:
-        return ""
-    return _RSDW_ICON_REPOSITORY_BASE + urllib.parse.quote("/".join(parts), safe="/-_.")
-
-
-def _register_remote_item_icon(profile_id: str, item: dict) -> tuple[str, str]:
-    """Return an authenticated WebGUI URL for an RSDW or portable mod icon."""
-    icon_path = str(item.get("icon_path") or "").strip()
-    source = ""
-    entry: dict = {"profile_id": str(profile_id), "touched_at": time.time()}
-    if icon_path.startswith("data:image/"):
-        match = re.fullmatch(r"data:([^;,]+);base64,([A-Za-z0-9+/=\r\n]+)", icon_path)
-        if not match or match.group(1).casefold() not in _REMOTE_ITEM_ICON_MIME:
-            return "", ""
-        try:
-            blob = base64.b64decode(match.group(2), validate=True)
-        except (ValueError, TypeError):
-            return "", ""
-        if not blob or len(blob) > 3_000_000:
-            return "", ""
-        entry.update({"blob": blob, "mime": match.group(1).casefold()})
-        source = "custom-broadcast"
-        identity = hashlib.sha256(blob).hexdigest()
-    else:
-        path = Path(icon_path) if icon_path else None
-        if not path or not path.is_file():
-            return "", ""
-        else:
-            try:
-                size = path.stat().st_size
-            except OSError:
-                return "", ""
-            if size <= 0 or size > 3_000_000:
-                return "", ""
-            mime = (mimetypes.guess_type(path.name)[0] or "").casefold()
-            if mime not in _REMOTE_ITEM_ICON_MIME:
-                return "", ""
-            resolved = path.resolve()
-            entry.update({"path": str(resolved), "mime": mime})
-            source = "rsdw-installed" if "rsdwtools" in str(resolved).casefold() else "rsdw-cache"
-            identity = hashlib.sha256(f"{resolved}|{size}|{path.stat().st_mtime_ns}".encode("utf-8")).hexdigest()
-    token = hashlib.sha256(f"{profile_id}|{identity}".encode("utf-8")).hexdigest()[:40]
-    with _REMOTE_ITEM_ICON_LOCK:
-        _REMOTE_ITEM_ICON_CACHE[token] = entry
-        if len(_REMOTE_ITEM_ICON_CACHE) > 6000:
-            oldest = sorted(_REMOTE_ITEM_ICON_CACHE, key=lambda key: float(_REMOTE_ITEM_ICON_CACHE[key].get("touched_at") or 0))[:1000]
-            for key in oldest:
-                _REMOTE_ITEM_ICON_CACHE.pop(key, None)
-    return f"/api/v1/admin/item-icon/{token}", source
-
-
-def _remote_item_icon(profile_id: str, token: str) -> dict:
-    if not re.fullmatch(r"[a-f0-9]{40}", str(token or "")):
-        raise ValueError("Invalid item image token")
-    with _REMOTE_ITEM_ICON_LOCK:
-        entry = dict(_REMOTE_ITEM_ICON_CACHE.get(token) or {})
-        if entry and secrets.compare_digest(str(entry.get("profile_id") or ""), str(profile_id or "")):
-            _REMOTE_ITEM_ICON_CACHE[token]["touched_at"] = time.time()
-    if not entry or not secrets.compare_digest(str(entry.get("profile_id") or ""), str(profile_id or "")):
-        raise FileNotFoundError("Item image is no longer available; refresh the repository")
-    blob = entry.get("blob")
-    if not isinstance(blob, bytes):
-        path = Path(str(entry.get("path") or ""))
-        if not path.is_file() or path.stat().st_size > 3_000_000:
-            raise FileNotFoundError("Item image is unavailable")
-        blob = path.read_bytes()
-    mime = str(entry.get("mime") or "").casefold()
-    if mime not in _REMOTE_ITEM_ICON_MIME:
-        raise ValueError("Unsupported item image type")
-    return {"data_b64": base64.b64encode(blob).decode("ascii"), "mime": mime,
-            "etag": hashlib.sha256(blob).hexdigest()}
-
-
-def _directory_remote_item_catalog(profile: dict, state: dict) -> dict:
-    try:
-        catalog = spawner_catalog(server_root_for_profile(profile), kind="item", query="", category="", limit=2500,
-                                  custom_items=list((state.get("application") or {}).get("custom_items") or []))
-    except Exception as exc:
-        catalog = {"items": [], "categories": [], "error": str(exc)}
-    profile_id = str(profile.get("id") or "")
-    for item in catalog.get("items") or []:
-        repository_url = _public_rsdw_icon_url(str(item.get("icon_ref") or ""))
-        local_url, local_source = _register_remote_item_icon(profile_id, item)
-        if repository_url:
-            item["icon_url"] = repository_url
-            # Reuse the presentational RSDW label while the URL itself remains
-            # repository-backed and therefore costs the host no image traffic.
-            item["icon_source"] = "rsdw-cache"
-            if local_url:
-                item["icon_fallback_url"] = local_url
-        elif local_url:
-            item["icon_url"] = local_url
-            item["icon_source"] = local_source
-        # Never place a local filesystem path or multi-megabyte data URI in
-        # the authenticated catalog JSON. Images travel through their own
-        # session-scoped endpoint instead.
-        item.pop("icon_path", None)
-    return {"items": list(catalog.get("items") or [])[:2500], "categories": list(catalog.get("categories") or []),
-            "error": str(catalog.get("error") or "")[:300], "loaded": True}
-
-
 def _directory_remote_state(profile_id: str) -> dict:
     profile = load_server_profile(profile_id)
     if not profile: raise KeyError("The linked Server World no longer exists")
@@ -7592,8 +7403,6 @@ def _directory_remote_state(profile_id: str) -> dict:
                         "cl_version": cl_version,
                         "update_status": dict(((state.get("application") or {}).get("update_status") or {})),
                         "update_available": game_version.get("server_current") is False},
-        "spawner": {"items": [], "categories": [], "players": live_players[:100], "bridge": PLAYER_BRIDGE.status(),
-                    "error": "", "loaded": False},
         "console": {"toolkit": rsdw_toolkit_status(server_root_for_profile(profile)),
                     "catalog": rsdw_command_catalog(server_root_for_profile(profile)),
                     "history": rsdw_console_history(profile_id, 200), "bridge": PLAYER_BRIDGE.status()},
@@ -7652,18 +7461,6 @@ def _directory_remote_action(profile_id: str, action: str, payload: dict | None 
     if action == "maintenance_update":
         schedule = normalize_schedule(payload.get("schedule") if isinstance(payload.get("schedule"), dict) else {})
         return handle("server.world.schedule.update", {"id": profile_id, "schedule": schedule})
-    if action == "spawner_catalog":
-        return _directory_remote_item_catalog(profile, load_state())
-    if action == "spawner_icon":
-        return _remote_item_icon(profile_id, str(payload.get("token") or ""))
-    if action == "spawner_item":
-        player_id = str(payload.get("player_id") or "")[:128]
-        runtime_path = str(payload.get("runtime_path") or "")[:1000]
-        count = max(1, min(int(payload.get("count") or 1), 9999))
-        if not player_id or not runtime_path:
-            raise ValueError("Select an online player and ItemData entry")
-        return handle("server.spawner.spawn", {"id": profile_id, "kind": "item", "runtime_path": runtime_path,
-                                               "count": count, "target": {"kind": "player", "player_id": player_id}, "confirmed": True})
     if action == "console_execute":
         return handle("server.console.execute", {"id": profile_id, "command": str(payload.get("command") or ""),
                                                   "confirmed": True, "source": "web", "actor": str(payload.get("username") or "remote-admin")})

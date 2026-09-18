@@ -26,8 +26,11 @@ on:
       - 'scripts/check_phase3_responsiveness.cjs'
       - 'scripts/check_navigation_performance.cjs'
       - 'scripts/validate_world_cards_headless.cjs'
+      - 'scripts/test_headless_capture.cjs'
       - 'scripts/fixtures/**'
       - '.github/workflows/window-surface-gate.yml'
+  pull_request:
+    branches: [experimental]
   workflow_dispatch:
 
 permissions:
@@ -51,7 +54,15 @@ jobs:
           node scripts/check_phase2_world_management.cjs
           node scripts/check_phase3_responsiveness.cjs
           node scripts/check_navigation_performance.cjs
+          node --test scripts/test_headless_capture.cjs
           node scripts/validate_world_cards_headless.cjs
+      - name: Upload measured layout captures
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: overhaul-layout-captures
+          if-no-files-found: warn
+          path: Codex Outputs/GUI Validation/
 
   ubuntu-window-surfaces:
     runs-on: ubuntu-24.04

@@ -54,6 +54,7 @@
       "electron/**/*",
       "renderer/**/*",
       "!renderer/assets/help/**/*",
+      "!renderer/assets/enemies/**/*",
       "!renderer/assets/theme/animated-splash.gif",
       "package.json",
       "LICENSE.txt"

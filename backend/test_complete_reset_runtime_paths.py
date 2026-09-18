@@ -79,7 +79,7 @@ def test_quick_status_carries_profile_artwork() -> None:
     ):
         result = phase2._quick_status(state, "art-world", "server")
     assert result["presentation"] == profile["presentation"]
-    assert result["controls"]["spawner"] is True
+    assert "spawner" not in result["controls"]
 
 
 def test_renderer_entrypoint_is_current() -> None:

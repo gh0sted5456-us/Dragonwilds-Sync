@@ -27,7 +27,7 @@ def test_password_hash_and_world_scoped_permissions() -> None:
     other_password = "different-user-password-34"
     other_digest = hashlib.pbkdf2_hmac("sha256", other_password.encode("utf-8"), bytes.fromhex(other_salt), 240_000).hex()
     other_user = {"username": "operator", "world_id": "world-a", "password_salt": other_salt,
-                  "password_hash": other_digest, "permissions": {**permissions, "use_spawner": True,
+                  "password_hash": other_digest, "permissions": {**permissions, "use_console": True,
                   "send_announcements": True}, "enabled": True}
     old_load_state, old_profiles = service.load_state, service.list_server_profiles
     service.load_state = lambda: {"application": {"world_directory_host": {"remote_admin": {"enabled": True, "users": [user, other_user]}}}}
@@ -39,7 +39,7 @@ def test_password_hash_and_world_scoped_permissions() -> None:
         assert service._directory_remote_authenticate("Effing Fixture", "tester", "wrong-password")["ok"] is False
         assert service._directory_remote_authenticate("Effing Fixture", "tester", other_password)["ok"] is False
         operator = service._directory_remote_authenticate("Effing Fixture", "operator", other_password)
-        assert operator["ok"] is True and operator["permissions"]["use_spawner"] is True
+        assert operator["ok"] is True and operator["permissions"]["use_console"] is True
         assert operator["permissions"]["send_announcements"] is True
         assert service._directory_remote_authenticate("Wrong World", "tester", password)["ok"] is False
         assert password not in repr(user)
@@ -72,14 +72,14 @@ def test_desktop_user_lifecycle_and_permission_assignment() -> None:
     try:
         service.handle("application.world_directory_host.user.create", {
             "username": "tester", "password": "fixture-password-12", "world_id": "world-a",
-            "permissions": {"view_overview": True, "view_map": True, "view_spawner": True,
-                            "use_spawner": True, "send_announcements": True,
+            "permissions": {"view_overview": True, "view_map": True, "view_console": True,
+                            "use_console": True, "send_announcements": True,
                             "start": False, "write_config": False},
         })
         user = state["application"]["world_directory_host"]["remote_admin"]["users"][0]
         assert user["world_id"] == "world-a" and user["permissions"]["view_map"] is True
         assert user["permissions"]["start"] is False and user["password_hash"] != "fixture-password-12"
-        assert user["permissions"]["view_spawner"] is True and user["permissions"]["use_spawner"] is True
+        assert user["permissions"]["view_console"] is True and user["permissions"]["use_console"] is True
         assert user["permissions"]["send_announcements"] is True
         assert "fixture-password-12" not in repr(state)
 
@@ -131,7 +131,7 @@ def test_created_user_logs_in_through_remote_http_api() -> None:
             service.handle("application.world_directory_host.user.create", {
                 "username": "test", "password": "fixture-password-12", "world_id": "world-a",
                 "permissions": {"view_overview": True, "view_map": True, "view_mods": False,
-                                "view_spawner": True, "use_spawner": True, "send_announcements": False,
+                                "view_console": True, "use_console": True, "send_announcements": False,
                                 "start": False, "stop": False, "restart": False},
             })
             controller.set_remote_admin_callbacks(
@@ -159,8 +159,8 @@ def test_created_user_logs_in_through_remote_http_api() -> None:
             assert session["session"]["world_id"] == "world-a"
             assert session["permissions"]["view_map"] is True
             assert session["permissions"]["view_mods"] is False
-            assert session["permissions"]["view_spawner"] is True
-            assert session["permissions"]["use_spawner"] is True
+            assert session["permissions"]["view_console"] is True
+            assert session["permissions"]["use_console"] is True
             assert session["permissions"]["send_announcements"] is False
             assert session["permissions"]["start"] is False
         finally:

@@ -66,45 +66,88 @@ def _overlay_ledger(game_root: str | Path) -> Path:
     return APP_DATA_DIR / "State" / "server-installations" / key / "overlay-files.json"
 
 
-def _retire_legacy_game_receipts(game_root: str | Path) -> None:
-    """Clean old lane deployments before moving authority into AppData."""
+def _profile_deployment_records(game_root: str | Path) -> tuple[dict, list[Path]]:
+    """Normalize old ownership receipts without touching the installed payload.
+
+    The actual deployment transaction removes obsolete files only after every
+    incoming path is validated and a verified recovery copy exists. Old receipts
+    remain in place if copying or writing the new receipt fails.
+    """
+    from pathlib import PureWindowsPath
     layout = resolve_server_layout(game_root)
-    legacy = layout.game_root / ".dragonwilds-sync"
-    from mod_deployment_cleanup import deploy_profile_lanes
-    with tempfile.TemporaryDirectory(prefix="dws-overlay-migration-") as empty:
-        source = Path(empty)
-        for name in ("profile-mod-files.json", "profile-loader-files.json"):
-            receipt = legacy / name
-            if not receipt.is_file():
-                continue
-            records = json.loads(receipt.read_text(encoding="utf-8"))
-            if not isinstance(records, dict):
-                raise ValueError(f"Invalid legacy deployment receipt: {receipt}")
-            lanes = []
-            for key in sorted(records, key=lambda value: int(value)):
-                destination = str((records.get(key) or {}).get("destination") or "").strip()
-                if not destination:
-                    raise ValueError(f"Invalid legacy deployment destination: {receipt}")
-                target = Path(destination).resolve(strict=False)
-                game = layout.game_root.resolve(strict=False)
-                if target == game or not target.is_relative_to(game):
-                    raise ValueError(f"Legacy deployment destination escapes the game directory: {receipt}")
-                lanes.append((source, target, set()))
-            deploy_profile_lanes(lanes, receipt, APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
-            receipt.unlink(missing_ok=True)
-        win64_receipt = legacy / "win64-profile-files.json"
-        if win64_receipt.is_file():
-            from win64_mods import deploy
-            deploy(source, layout.win64_dir, win64_receipt,
-                   APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
-            win64_receipt.unlink(missing_ok=True)
-    try:
-        legacy.rmdir()
-    except OSError:
-        pass
+    game = layout.game_root.resolve(strict=False)
+    legacy = game / ".dragonwilds-sync"
+    receipts = [(_overlay_ledger(game_root), False),
+                (legacy / "profile-mod-files.json", True),
+                (legacy / "profile-loader-files.json", True)]
+    records = {"0": {"destination": str(game), "files": set()},
+               "1": {"destination": str(game / "Saved"), "files": set()}}
+    retired = []
+    protected = {"rsdragonwilds.exe", "rsdragonwildsserver.exe",
+                 "rsdragonwilds-win64-shipping.exe", "rsdragonwildsserver",
+                 "rsdragonwildsserver.sh"}
+
+    def check_links(path):
+        if any(part.is_symlink() or part.is_junction() for part in (path, *path.parents)):
+            raise ValueError("Deployment receipt must not traverse filesystem links")
+
+    def add(destination, files):
+        if not isinstance(destination, str) or not destination.strip() or not isinstance(files, list):
+            raise ValueError("Invalid profile deployment receipt")
+        parent = Path(destination).resolve(strict=False)
+        check_links(Path(destination))
+        if parent != game and not parent.is_relative_to(game):
+            raise ValueError("Legacy deployment destination escapes the game directory")
+        for relative in files:
+            if not isinstance(relative, str):
+                raise ValueError("Invalid profile deployment file")
+            parts = relative.replace("\\", "/").split("/")
+            if PureWindowsPath(relative).drive or any(
+                    part in {"", ".", ".."} or part.endswith((" ", "."))
+                    or any(char in part for char in ':<>"|?*') for part in parts):
+                raise ValueError("Unsafe deployment receipt path")
+            target = parent.joinpath(*parts)
+            check_links(target)
+            if target.name.casefold() in protected:
+                raise ValueError("A deployment receipt cannot own a Steam-owned game executable")
+            relative_game = target.relative_to(game)
+            lower = tuple(part.casefold() for part in relative_game.parts)
+            if lower[:1] == ("saved",):
+                # These two namespaces belong to the explicit machine Config
+                # and save routers, never to the ordinary mod transaction.
+                if len(lower) < 2 or lower[1] in {"config", "savegames"}:
+                    continue
+                records["1"]["files"].add(Path(*relative_game.parts[1:]).as_posix())
+            elif lower[:1] in {("binaries",), ("content",)}:
+                records["0"]["files"].add(relative_game.as_posix())
+            else:
+                raise ValueError("Deployment receipt claims a non-mod path")
+
+    for receipt, old in receipts:
+        check_links(receipt)
+        if not receipt.is_file():
+            continue
+        payload = json.loads(receipt.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError(f"Invalid deployment receipt: {receipt}")
+        for row in payload.values():
+            if not isinstance(row, dict):
+                raise ValueError(f"Invalid deployment receipt: {receipt}")
+            add(row.get("destination"), row.get("files"))
+        if old:
+            retired.append(receipt)
+    receipt = legacy / "win64-profile-files.json"
+    check_links(receipt)
+    if receipt.is_file():
+        add(str(layout.win64_dir), json.loads(receipt.read_text(encoding="utf-8")))
+        retired.append(receipt)
+    for row in records.values():
+        row["files"] = sorted(row["files"])
+    return records, retired
+
 
 def _profile_savegame_dir(profile_id: str) -> Path:
-    return dedicated_profile_layout(_profile_dir(profile_id))["saved"] / "SaveGames"
+    return dedicated_profile_layout(_profile_dir(profile_id))["saves"] / "Worlds"
 
 def _profile_backups_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "backups"
 
@@ -112,7 +155,7 @@ def _profile_server_config_dir(profile_id: str, platform_name: str = "WindowsSer
     """Return the live-platform configuration lane inside profile staging."""
     if platform_name not in {"WindowsServer", "LinuxServer"}:
         raise ValueError("Unsupported dedicated server configuration platform")
-    target = dedicated_profile_layout(_profile_dir(profile_id))["saved"] / "Config" / platform_name
+    target = dedicated_profile_layout(_profile_dir(profile_id))["config"] / platform_name
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -440,70 +483,97 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
 
 
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Materialize one World's complete game-ready overlay."""
+    """Materialize the selected Profile/Mods tree into the dedicated game."""
     assert_dedicated_target(game_root, action="plant World mods into")
-    _retire_legacy_game_receipts(game_root)
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
     stored = dedicated_profile_layout(_profile_dir(profile_id))
-    excluded = {"overlay": set(), "ue4ss": set(), "runeschema": set(), "paks": set()}
     profile = load_server_profile(profile_id) or {}
+
+    protected_names = {
+        "rsdragonwildsserver.exe", "rsdragonwilds-win64-shipping.exe",
+        "rsdragonwilds.exe", "rsdragonwildsserver", "rsdragonwildsserver.sh",
+    }
+    for item in stored["mods"].rglob("*") if stored["mods"].exists() else ():
+        if not item.is_file():
+            continue
+        relative = item.relative_to(stored["mods"])
+        parts = tuple(part.casefold() for part in relative.parts)
+        if item.name.casefold() in protected_names:
+            raise ValueError("A Profile cannot replace a Steam-owned game executable")
+        if parts[:1] not in {("binaries",), ("content",)}:
+            raise ValueError("Profile/Mods may contain only Binaries and Content paths")
+
+    # Distribution remains metadata-driven, but physical storage stays simple:
+    # one game-relative Mods tree per Profile. Client-only units are excluded
+    # from the server materialization without moving them into another lane.
+    excluded = set()
     for key, override in (profile.get("unit_overrides") or {}).items():
         group, separator, name = str(key).partition("::")
-        if not separator or not name or runs_on_server((override or {}).get("distribution") or (override or {}).get("classification")):
+        if not separator or not name or runs_on_server(
+                (override or {}).get("distribution") or (override or {}).get("classification")):
             continue
         if group == "ue4ss_mod":
-            excluded["ue4ss"].add(name)
+            excluded.add(f"Binaries/Win64/ue4ss/Mods/{name}")
         elif group == "runeschema_mod":
-            excluded["runeschema"].add(name)
+            excluded.add(f"Binaries/Win64/ue4ss/Mods/RuneSchema/mods/{name}")
         elif group == "pak_mod":
-            excluded["paks"].add(name)
+            excluded.add(f"Content/Paks/~mods/{name}")
         elif group == "win64_mod":
-            excluded["overlay"].add(f"Binaries/Win64/{name}")
-    stored["server_excluded"] = excluded
-    from mod_deployment_cleanup import deploy_layered_world_profile
-    return deploy_layered_world_profile(
-        stored, resolve_server_layout(game_root).game_root,
-        _overlay_ledger(game_root), APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
+            excluded.add(f"Binaries/Win64/{name}")
+
+    from mod_deployment_cleanup import deploy_profile_lanes
+    live_root = resolve_server_layout(game_root).game_root
+    previous, retired = _profile_deployment_records(game_root)
+    copied = deploy_profile_lanes(
+        [
+            (stored["mods"], live_root, excluded),
+            (stored["saves"] / "Runtime", live_root / "Saved", {"Config", "SaveGames"}),
+        ],
+        _overlay_ledger(game_root),
+        APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays",
+        previous_records=previous)
+    for receipt in retired:
+        try:
+            receipt.unlink(missing_ok=True)
+        except OSError as error:
+            # The new transaction committed; do not report a failed install for
+            # a stale receipt which can safely be reconciled on the next run.
+            print(f"Could not retire deployment receipt {receipt}: {error}", file=sys.stderr)
+    try:
+        (live_root / ".dragonwilds-sync").rmdir()
+    except OSError:
+        pass
+    return copied
 
 
 def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_path: str) -> bool:
-    """Mirror one app-edited live file back to the authoritative staging tree."""
+    """Mirror one app-edited live file back to Profile/Mods or Profile/Config."""
     parts = str(relative_path or "").replace("\\", "/").split("/")
     if not parts or any(part in {"", ".", ".."} or ":" in part for part in parts):
-        raise ValueError("Staged file path must stay beneath the game root")
+        raise ValueError("Profile file path must stay beneath the game root")
     live_root = resolve_server_layout(game_root).game_root.resolve(strict=False)
     source = live_root.joinpath(*parts).resolve(strict=False)
     if source == live_root or not source.is_relative_to(live_root):
-        raise ValueError("Staged file path escaped the game root")
-    relative = "/".join(parts)
-    lowered = relative.casefold()
+        raise ValueError("Profile file path escaped the game root")
+
     profile = dedicated_profile_layout(_profile_dir(profile_id))
-    prefixes = (
-        ("binaries/win64/ue4ss/mods/runeschema/mods/", profile["runeschema"]),
-        ("binaries/win64/ue4ss/mods/runeschema/",
-         profile["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema"),
-        ("binaries/win64/ue4ss/mods/", profile["ue4ss"]),
-        ("content/paks/~mods/", profile["paks"]),
-        ("saved/", profile["saved"]),
-        ("binaries/win64/ue4ss/", profile["ue4ss_loader"] / "Binaries/Win64/ue4ss"),
-    )
-    target = None
-    for prefix, destination in prefixes:
-        if lowered.startswith(prefix):
-            target = destination.joinpath(*parts[len(prefix.rstrip('/').split('/')):])
-            break
-    if target is None and lowered in {"binaries/win64/dwmapi.dll", "binaries/win64/version.dll"}:
-        target = profile["ue4ss_loader"].joinpath(*parts)
-    if target is None:
-        target = profile["overlay"].joinpath(*parts)
+    lowered = [part.casefold() for part in parts]
+    if lowered[:2] == ["saved", "config"]:
+        target = profile["config"].joinpath(*parts[2:])
+    elif lowered[:2] == ["saved", "savegames"]:
+        target = (profile["saves"] / "Worlds").joinpath(*parts[2:])
+    elif lowered[:1] == ["saved"]:
+        target = (profile["saves"] / "Runtime").joinpath(*parts[1:])
+    else:
+        target = profile["mods"].joinpath(*parts)
+
     if source.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         return True
     target.unlink(missing_ok=True)
     return False
-
 
 def snapshot_profile_server_config(profile_id: str, game_root: str | Path) -> int:
     """Capture mutable server settings into the World profile.
@@ -722,9 +792,9 @@ def _dedicated_config_values(cfg: dict) -> dict:
 
 def write_staged_dedicated_config_templates(profile_id: str, cfg: dict) -> list[Path]:
     """Hydrate both browsable platform templates from the World settings."""
-    saved = dedicated_profile_layout(_profile_dir(profile_id))["saved"]
+    config = dedicated_profile_layout(_profile_dir(profile_id))["config"]
     managed = _dedicated_config_values(cfg)
-    targets = [saved / "Config" / platform / "DedicatedServer.ini"
+    targets = [config / platform / "DedicatedServer.ini"
                for platform in ("WindowsServer", "LinuxServer")]
     for target in targets:
         _write_dedicated_config_file(target, managed)

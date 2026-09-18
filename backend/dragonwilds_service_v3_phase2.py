@@ -183,7 +183,7 @@ def _quick_status(state: dict, profile_id: str, mode: str) -> dict:
         "controls": {
             "play": mode == "player", "host": mode == "coop", "start": mode == "server",
             "stop": mode in {"coop", "server"}, "restart": mode == "server", "update_restart": mode == "server",
-            "console": True, "spawner": mode == "server", "saves": True,
+            "console": True, "saves": True,
             "broadcast_message": mode in {"coop", "server"},
         },
     }

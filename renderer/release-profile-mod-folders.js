@@ -16,8 +16,6 @@
 
   let rewritePending = false;
   let rescanBusy = false;
-  let machinePaths = null;
-  let machinePathsPending = null;
   const selection = (window.__DWSYNC_PROFILE_SELECTION__ ||= { local: '', server: '' });
 
   const text = (value) => String(value ?? '').trim();
@@ -188,70 +186,32 @@
     });
   }
 
+  function simplifyProfileStorageUi() {
+    const retiredLanes = new Set(['Loaders','Overlay','UE4SSLoader','RuneSchemaLoader','UE4SS','RuneSchema','PAKs','Win64']);
+    document.querySelectorAll('[data-open-profile-mod-lane]').forEach((button) => {
+      const lane = text(button.dataset.openProfileModLane);
+      if (retiredLanes.has(lane)) {
+        button.hidden = true;
+        button.setAttribute('aria-hidden', 'true');
+      }
+    });
+    document.querySelectorAll('[data-profile-spare-panel],[data-profile-runtime-choice]').forEach((node) => node.remove());
+    document.querySelectorAll('.profile-storage-destinations').forEach((host) => {
+      if (host.querySelector('[data-simple-profile-note]')) return;
+      const note = document.createElement('p');
+      note.dataset.simpleProfileNote = '1';
+      note.className = 'muted';
+      note.textContent = 'Profile is authoritative: Mods mirrors Binaries/Content, Saves holds World data, and Config holds server settings.';
+      host.append(note);
+    });
+  }
+
   function rewriteUi() {
     rewritePending = false;
     hardenRuntimeBaselineUi();
     refreshFolderHelpCopy();
-    document.querySelectorAll('.profile-storage-destinations').forEach((host)=>{
-      if(host.querySelector('[data-profile-spare-panel]'))return;
-      const panel=document.createElement('details');panel.dataset.profileSparePanel='1';
-      panel.innerHTML='<summary>Protect a staged folder · spare backup</summary><p>Restore missing files before deployment. Existing or edited files are never overwritten. Saving again explicitly refreshes the spare copy.</p><label>Folder relative to profile staging<input class="input" data-profile-spare-path placeholder="Binaries/Win64/ue4ss"></label><div class="header-actions"><button type="button" class="btn primary" data-profile-spare-action="protect">Save spare backup</button><button type="button" class="btn ghost" data-profile-spare-action="list">Show protected folders</button><button type="button" class="btn ghost" data-profile-spare-action="unprotect">Stop protecting entered folder</button></div><p role="status" data-profile-spare-status></p>';
-      host.append(panel);
-    });
-    void refreshRuntimeLocationChoices();
+    simplifyProfileStorageUi();
   }
-
-  async function refreshRuntimeLocationChoices() {
-    const definitions = [
-      ['edit-private-ue4ss-root','player',true], ['edit-private-runeschema-root','player',true],
-      ['se-server-ue4ss-root','server',false], ['se-server-runeschema-root','server',false],
-      ['se-client-ue4ss-root','server',true], ['se-client-runeschema-root','server',true],
-    ];
-    if (!definitions.some(([id]) => document.getElementById(id))) return;
-    try {
-      if (!machinePaths) {
-        machinePathsPending ||= bridge.invoke('application.machine_paths.get', {}).finally(()=>{machinePathsPending=null;});
-        machinePaths = await machinePathsPending;
-      }
-      for (const [id, role, relative] of definitions) {
-        const input = document.getElementById(id);
-        if (!input) continue;
-        const choices = machinePaths?.[role]?.runtime_locations || (relative ? [
-          {label:'Win64',game_relative:'Binaries/Win64',eligible:true},
-          {label:'RuneSchema',game_relative:'Binaries/Win64/ue4ss/Mods/RuneSchema',eligible:true},
-        ] : []);
-        let picker = input.parentElement.querySelector(`[data-profile-runtime-choice="${id}"]`);
-        if (!picker) {
-          picker = document.createElement('select');
-          picker.className = 'select';
-          picker.dataset.profileRuntimeChoice = id;
-          picker.setAttribute('aria-label','Choose a saved location for '+id.replaceAll('-',' '));
-          picker.title='Choose a saved location, or type directly in the path field. Save the profile to apply.';
-          input.insertAdjacentElement('afterend',picker);
-        }
-        const signature = JSON.stringify([choices,relative]);
-        if (picker.dataset.locationSignature === signature || picker === document.activeElement) continue;
-        picker.dataset.locationSignature = signature;
-        picker.innerHTML = '<option value="">Choose Win64 or a saved location…</option>' + choices.map((row)=>{
-          const value = relative ? row.game_relative : row.path;
-          return `<option value="${esc(value||'')}" ${row.eligible?'':'disabled'}>${esc(row.label)} — ${esc(row.eligible?value:row.reason)}</option>`;
-        }).join('');
-      }
-    } catch (error) { console.warn('Saved profile locations unavailable',error); }
-  }
-
-  document.addEventListener('change',(event)=>{
-    const picker=event.target.closest?.('[data-profile-runtime-choice]');
-    if(!picker||!picker.value)return;
-    const root=picker.closest('.modal')||document;
-    const input=root.querySelector('#'+picker.dataset.profileRuntimeChoice);
-    if(!input)return;
-    input.value=picker.value;
-    input.dataset.userEdited='1';
-    input.dispatchEvent(new Event('input',{bubbles:true}));
-    input.dispatchEvent(new Event('change',{bubbles:true}));
-    picker.value='';
-  },true);
 
   function scheduleRewrite() {
     if (rewritePending) return;
@@ -260,24 +220,6 @@
   }
 
   document.addEventListener('click', (event) => {
-    const loaders=event.target?.closest?.('[data-manage-profile-loaders]');
-    if(loaders){
-      event.preventDefault();event.stopImmediatePropagation();
-      document.dispatchEvent(new CustomEvent('dws:manage-profile-loaders',{detail:{kind:loaders.dataset.profileKind,id:loaders.dataset.profileId}}));
-      return;
-    }
-    const spare=event.target?.closest?.('[data-profile-spare-action]');
-    if(spare){
-      event.preventDefault();event.stopImmediatePropagation();
-      const host=spare.closest('.profile-storage-destinations');
-      const identity=host.querySelector('[data-open-profile-mod-lane]');
-      const note=host.querySelector('[data-profile-spare-status]');
-      spare.disabled=true;note.textContent='Working…';
-      bridge.invoke('application.profile.protection',{kind:identity.dataset.profileKind,id:identity.dataset.profileId,action:spare.dataset.profileSpareAction,path:host.querySelector('[data-profile-spare-path]').value.trim()}).then(result=>{
-        note.textContent=(spare.dataset.profileSpareAction==='unprotect'?'Protection removed; spare copies retained. ':'')+(result.folders?.length?result.folders.map(row=>`${row.path} (${row.file_count} files)`).join(' · '):'No protected folders.');
-      }).catch(error=>{note.textContent=error.message||String(error);}).finally(()=>{spare.disabled=false;});
-      return;
-    }
     const folder=event.target?.closest?.('[data-open-profile-mod-lane]');
     if(folder){
       event.preventDefault();event.stopImmediatePropagation();
@@ -314,7 +256,7 @@
 
   const observer = new MutationObserver(scheduleRewrite);
   observer.observe(document.documentElement, { childList: true, subtree: true });
-  window.addEventListener('dragonwilds:state-updated', () => {machinePaths=null;scheduleRewrite();});
+  window.addEventListener('dragonwilds:state-updated', scheduleRewrite);
   window.addEventListener('DOMContentLoaded', scheduleRewrite, { once: true });
   scheduleRewrite();
 })();

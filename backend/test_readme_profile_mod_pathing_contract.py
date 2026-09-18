@@ -9,7 +9,7 @@ README = Path(__file__).resolve().parents[1] / "README_PROFILE_MOD_PATHING.md"
 
 
 def _read() -> str:
-    return README.read_text(encoding="utf-8")
+    return " ".join(README.read_text(encoding="utf-8").split())
 
 
 def test_readme_exists_and_is_nontrivial() -> None:
@@ -52,10 +52,11 @@ def test_readme_documents_runtime_architecture_declaration_model() -> None:
 
 def test_readme_retires_hosted_runtime_management() -> None:
     source = _read()
-    assert "does not choose, download, repair, or reset dedicated UE4SS" in source
-    assert "there is no per-file runtime selector" in source
+    assert "no per-file runtime selector" in source
+    assert "<AppData>/Loaders" in source
+    assert "Profile/Mods" in source
     assert "staged/loaders/ue4ss" in source
-    assert "staged/loaders/runeschema" in source
+    assert "never reintroduce" in source.casefold()
 
 
 def test_readme_documents_chat_bridge_removal() -> None:

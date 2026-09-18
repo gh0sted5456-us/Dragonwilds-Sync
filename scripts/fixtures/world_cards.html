@@ -58,7 +58,7 @@
     const contrast=(foreground,background)=>{const high=Math.max(luminance(foreground),luminance(background));const low=Math.min(luminance(foreground),luminance(background));return (high+.05)/(low+.05);};
     // Headless Chromium can suspend animation frames; font readiness and
     // synchronous layout reads provide the actual prerequisite for this check.
-    document.fonts.ready.then(()=>{
+    Promise.all([document.fonts.ready, new Promise(resolve=>{if(document.readyState==='complete')resolve();else window.addEventListener('load',resolve,{once:true});})]).then(()=>{
       const card=document.querySelector('#validation-placard');
       const body=rect(card.querySelector('.world-card-body'));
       const footer=rect(card.querySelector('.card-footer'));

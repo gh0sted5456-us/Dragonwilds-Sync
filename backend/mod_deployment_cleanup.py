@@ -5,7 +5,22 @@ import shutil
 import uuid
 import hashlib
 import os
+import threading
+
+_DEPLOYMENT_LOCK = threading.RLock()
 from pathlib import PureWindowsPath
+
+
+def _path_key(value):
+    """Return a platform-normalized absolute path key for deployment receipts."""
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    try:
+        resolved = Path(raw).expanduser().resolve(strict=False)
+    except Exception:
+        resolved = Path(raw)
+    return os.path.normcase(os.path.normpath(str(resolved)))
 
 
 def backup_installation(game_root, recovery_root, extra_roots=()):
@@ -49,116 +64,192 @@ def backup_installation(game_root, recovery_root, extra_roots=()):
     return backup
 
 
-def deploy_profile_lanes(lanes, ledger, recovery_root):
-    """Deploy (source, destination, excluded top names) with file-level ownership.
+def _same_destination(left, right):
+    """Receipt paths are filesystem identities, not case-sensitive strings."""
+    return _path_key(left) == _path_key(right)
 
-    Unknown files are never swept. Existing colliding files are backed up and
-    verified before any replacement. A changed manual destination never grants
-    authority to delete from the old absolute destination.
+
+def _file_hash(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def deploy_profile_lanes(lanes, ledger, recovery_root, *, preserve_modified=False,
+                         previous_records=None, metadata=None):
+    """Replace only receipted files; verify backups and roll back failed writes.
+
+    All incoming files are staged and verified before the first replacement.
+    Recovery copies survive both successful deployment and a failed rollback.
+    Unknown, non-colliding files are never swept from a destination.
     """
+    with _DEPLOYMENT_LOCK:
+        return _deploy_profile_lanes(lanes, ledger, recovery_root,
+                                     preserve_modified=preserve_modified,
+                                     previous_records=previous_records, metadata=metadata)
+
+
+def _deploy_profile_lanes(lanes, ledger, recovery_root, *, preserve_modified=False,
+                          previous_records=None, metadata=None):
+    lanes = [(Path(source), Path(destination), excluded) for source, destination, excluded in lanes]
     ledger = Path(ledger)
-    previous = json.loads(ledger.read_text(encoding='utf-8')) if ledger.exists() else {}
+    previous = (previous_records if previous_records is not None else
+                json.loads(ledger.read_text(encoding='utf-8')) if ledger.exists() else {})
     if not isinstance(previous, dict):
         raise ValueError('Invalid profile deployment manifest')
-    incoming, removal = {}, set()
+    incoming, removal, records = {}, set(), {}
+
+    def linked(path):
+        return any(p.is_symlink() or p.is_junction() for p in (path, *path.parents))
+
     def checked(root, relative):
         parts = str(relative).replace('\\', '/').split('/')
         if PureWindowsPath(str(relative)).drive or any(p in {'', '.', '..'} or any(c in p for c in ':<>"|?*') or p.endswith((' ', '.')) for p in parts):
             raise ValueError('Unsafe deployment manifest path')
         target = root.joinpath(*parts)
-        if any(p.is_symlink() or p.is_junction() for p in (target, *target.parents)):
+        if linked(target):
             raise ValueError('Deployment must not traverse filesystem links')
         if target.exists() and not target.is_file():
             raise ValueError('Deployment file collides with a directory')
         return target
-    records = {}
+
+    def ignored(relative, excluded):
+        parts = relative.replace('\\', '/').casefold().split('/')
+        key = '/'.join(parts)
+        return (parts[0] in excluded or parts[-1] == 'readme.txt'
+                or any(part.startswith('.') for part in parts)
+                or any('/' in entry and (key == entry or key.startswith(entry + '/')) for entry in excluded))
+
     for index, (source, destination, excluded) in enumerate(lanes):
-        source, destination = Path(source), Path(destination)
         excluded = {str(n).replace('\\', '/').strip('/').casefold() for n in excluded} | {'readme.txt'}
-        if any(p.is_symlink() or p.is_junction() for p in (source, *source.parents, destination, *destination.parents)):
+        if linked(source) or linked(destination) or linked(ledger):
             raise ValueError('Linked profile source or destination')
         if source.resolve() == destination.resolve() or source.resolve().is_relative_to(destination.resolve()) or destination.resolve().is_relative_to(source.resolve()):
             raise ValueError('Profile storage overlaps installation')
-        current = []
+        current, hashes = [], {}
         for item in source.rglob('*') if source.exists() else ():
-            rel = item.relative_to(source)
-            relative_key = rel.as_posix().casefold()
-            if ((rel.parts[0].casefold() in excluded
-                    or any('/' in value and (relative_key == value or relative_key.startswith(value + '/')) for value in excluded))
-                    or rel.name.casefold() == 'readme.txt'
-                    or any(p.startswith('.') for p in rel.parts)):
+            rel = item.relative_to(source).as_posix()
+            if ignored(rel, excluded):
                 continue
             if item.is_symlink() or item.is_junction():
                 raise ValueError('Linked profile payload')
-            if item.is_file():
-                target = checked(destination, rel.as_posix())
-                if target in incoming:
-                    raise ValueError('Overlapping profile mod destinations')
-                incoming[target] = item
-                current.append(rel.as_posix())
-        old = previous.get(str(index), {})
-        if old.get('destination') == str(destination.resolve()):
-            for rel in old.get('files', []):
-                if str(rel).replace('\\', '/').split('/')[0].casefold() in excluded:
-                    # Older layouts/loader selections can have recorded files
-                    # now owned by another protected lane. Retire that stale
-                    # claim, never delete the file or block unrelated mods.
+            if not item.is_file():
+                continue
+            target = checked(destination, rel)
+            if target in incoming:
+                raise ValueError('Overlapping profile mod destinations')
+            digest = _file_hash(item)
+            incoming[target] = (item, digest)
+            current.append(rel)
+            hashes[rel] = digest
+        # Match by resolved destination rather than lane number. This retains
+        # cleanup ownership when loader lanes are reordered or consolidated.
+        for record_key, old in previous.items():
+            if record_key == "_metadata":
+                continue
+            if not isinstance(old, dict) or not isinstance(old.get('files', []), list):
+                raise ValueError('Invalid profile deployment manifest record')
+            old_destination = str(old.get('destination') or '')
+            if not old_destination or not _same_destination(old_destination, destination):
+                continue
+            old_hashes = old.get('sha256') if isinstance(old.get('sha256'), dict) else {}
+            for relative in old.get('files', []):
+                if not isinstance(relative, str):
+                    raise ValueError('Invalid profile deployment manifest path')
+                target = checked(destination, relative)
+                if ignored(relative, excluded) or relative in current:
                     continue
-                if rel not in current:
-                    removal.add(checked(destination, rel))
-        records[str(index)] = {'destination': str(destination.resolve()), 'files': sorted(current)}
+                if preserve_modified and target.is_file():
+                    expected = old_hashes.get(relative)
+                    if not expected or _file_hash(target) != expected:
+                        continue  # An edited/manual stale loader file is not ours to delete.
+                removal.add(target)
+        records[str(index)] = {'destination': str(destination.resolve()),
+                               'files': sorted(current), 'sha256': hashes}
+    if metadata is not None:
+        records['_metadata'] = dict(metadata)
     removal -= incoming.keys()
-    backup = Path(recovery_root) / uuid.uuid4().hex
-    saved = {}
-    for index, target in enumerate(sorted(set(incoming) | removal)):
-        if target.is_file():
-            copy = backup / str(index)
-            copy.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(target, copy)
-            with target.open('rb') as a, copy.open('rb') as b:
-                if hashlib.file_digest(a, 'sha256').digest() != hashlib.file_digest(b, 'sha256').digest():
-                    raise OSError('Deployment backup verification failed')
-            saved[str(target)] = str(copy)
-    if saved:
-        (backup / 'manifest.json').write_text(json.dumps(saved, indent=2), encoding='utf-8')
-    changed = []
+    recovery = Path(recovery_root)
+    if linked(recovery):
+        raise ValueError('Deployment recovery must not traverse filesystem links')
+    if any(recovery.resolve().is_relative_to(destination.resolve())
+           or recovery.resolve().is_relative_to(source.resolve()) for source, destination, _ in lanes):
+        raise ValueError('Deployment recovery overlaps source or installation')
+    backup = recovery / uuid.uuid4().hex
+    saved, temporary, changed = {}, {}, []
+    ledger_temporary = ledger.with_name(ledger.name + '.' + uuid.uuid4().hex + '.tmp')
     try:
-        for target, source in incoming.items():
+        # Back up all affected manual/owned files before any payload write.
+        for index, target in enumerate(sorted(set(incoming) | removal)):
+            if target.is_file():
+                copy = backup / str(index)
+                copy.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, copy)
+                if _file_hash(target) != _file_hash(copy):
+                    raise OSError('Deployment backup verification failed; live files are unchanged')
+                saved[str(target)] = str(copy)
+        if saved:
+            (backup / 'manifest.json').write_text(json.dumps(saved, indent=2), encoding='utf-8')
+        for target, (source, expected) in incoming.items():
             target.parent.mkdir(parents=True, exist_ok=True)
             temp = target.with_name(target.name + '.' + uuid.uuid4().hex + '.deploying')
-            try:
-                shutil.copy2(source, temp)
+            temporary[target] = temp
+            shutil.copy2(source, temp)
+            if _file_hash(temp) != expected:
+                raise OSError('Deployment payload verification failed; live files are unchanged')
+        # Prepare the receipt before touching files. It becomes authoritative
+        # only after every replacement/removal succeeds.
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger_temporary.write_text(json.dumps(records, indent=2), encoding='utf-8')
+        try:
+            for target, temp in temporary.items():
+                changed.append(target)
                 if target.exists():
                     target.chmod(target.stat().st_mode | 0o222)
                 os.replace(temp, target)
-                changed.append(target)
-            finally:
-                temp.unlink(missing_ok=True)
-        for target in removal:
-            if target.exists():
-                target.chmod(target.stat().st_mode | 0o222)
-            target.unlink(missing_ok=True)
-            changed.append(target)
-            boundaries = [Path(destination) for _, destination, _ in lanes]
-            for parent in target.parents:
-                if parent in boundaries or not any(parent.is_relative_to(root) for root in boundaries):
-                    break
+            for target in removal:
+                if target.exists():
+                    changed.append(target)
+                    target.chmod(target.stat().st_mode | 0o222)
+                    target.unlink()
+            ledger_temporary.replace(ledger)
+        except Exception as error:
+            rollback_errors = []
+            for target in reversed(changed):
                 try:
-                    parent.rmdir()
-                except OSError:
-                    break
-        ledger.parent.mkdir(parents=True, exist_ok=True)
-        temp = ledger.with_suffix('.tmp')
-        temp.write_text(json.dumps(records, indent=2), encoding='utf-8')
-        temp.replace(ledger)
-    except Exception:
-        for target in reversed(changed):
-            if str(target) in saved:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(saved[str(target)], target)
-            else:
-                target.unlink(missing_ok=True)
-        raise
+                    if str(target) in saved:
+                        restore = target.with_name(target.name + '.' + uuid.uuid4().hex + '.restoring')
+                        try:
+                            shutil.copy2(saved[str(target)], restore)
+                            if _file_hash(restore) != _file_hash(saved[str(target)]):
+                                raise OSError('Rollback copy verification failed')
+                            if target.exists():
+                                target.chmod(target.stat().st_mode | 0o222)
+                            os.replace(restore, target)
+                        finally:
+                            restore.unlink(missing_ok=True)
+                    else:
+                        target.unlink(missing_ok=True)
+                except OSError as failure:
+                    rollback_errors.append(f'{target}: {failure}')
+            if rollback_errors:
+                raise RuntimeError('Deployment failed and rollback needs recovery from '
+                                   + str(backup) + ': ' + '; '.join(rollback_errors)) from error
+            raise
+    finally:
+        for temp in [*temporary.values(), ledger_temporary]:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass  # Never turn a committed deployment into a false failure.
+    boundaries = [destination for _, destination, _ in lanes]
+    for target in removal:
+        for parent in target.parents:
+            if parent in boundaries or not any(parent.is_relative_to(root) for root in boundaries):
+                break
+            try:
+                parent.rmdir()
+            except OSError:
+                break
     return len(incoming)
 
 

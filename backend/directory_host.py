@@ -39,7 +39,7 @@ COUNTRY_CACHE_PATH = APP_DATA_DIR / "world_ip_country_cache.json"
 DEFAULT_PORT = DEFAULT_WEBHOST_PORT
 REMOTE_PERMISSION_DEFAULTS = {
     "view_overview": True, "view_map": True, "view_maintenance": True, "write_maintenance": False, "view_mods": True, "write_mods": False,
-    "view_config": True, "write_config": False, "view_spawner": True, "use_spawner": False,
+    "view_config": True, "write_config": False,
     "view_console": True, "use_console": False, "view_audit": True, "send_announcements": False,
     "start": True, "stop": True, "restart": True, "update": True, "refresh": True,
 }
@@ -856,10 +856,10 @@ class DirectoryHost:
         grants = set(device.get("permissions") or [])
         role_map = {
             "view_overview": "overview", "view_map": "overview", "view_maintenance": "overview",
-            "view_mods": "sync", "view_config": "dragonlink", "view_spawner": "dragonlink",
+            "view_mods": "sync", "view_config": "dragonlink",
             "view_console": "logs", "view_audit": "logs", "send_announcements": "dragonlink",
             "write_maintenance": "sync", "write_mods": "sync", "write_config": "dragonlink",
-            "use_spawner": "dragonlink", "use_console": "dragonlink", "start": "sync",
+            "use_console": "dragonlink", "start": "sync",
             "stop": "sync", "restart": "sync", "update": "sync", "refresh": "overview",
         }
         now = time.time(); world_id = str(device.get("worldId") or "")
@@ -886,7 +886,6 @@ class DirectoryHost:
         if not permissions.get("view_maintenance"): payload.pop("maintenance", None)
         if not permissions.get("view_mods"): payload.pop("mods", None)
         if not permissions.get("view_config"): payload.pop("configs", None)
-        if not permissions.get("view_spawner"): payload.pop("spawner", None)
         if not permissions.get("view_console"): payload.pop("console", None)
         return {**payload, "session": {key: session.get(key) for key in ("world_id", "world_name", "username", "role", "created_at", "expires_at")},
                 "permissions": permissions, "csrf": session.get("csrf"),
@@ -906,7 +905,7 @@ class DirectoryHost:
                           "mod_update": "write_mods", "mod_files": "view_mods", "mod_file_open": "view_mods",
                           "mod_file_save": "write_mods", "config_open": "view_config", "config_save": "write_config",
                           "announcement_send": "send_announcements", "maintenance_update": "write_maintenance",
-                          "spawner_catalog": "view_spawner", "spawner_icon": "view_spawner", "spawner_item": "use_spawner", "console_execute": "use_console",
+                          "console_execute": "use_console",
                           }
         required = permission_for.get(action)
         if not required: raise ValueError("This remote command is not allowed")
@@ -917,9 +916,8 @@ class DirectoryHost:
         if not self.remote_action_handler: raise RuntimeError("Remote commands are unavailable")
         try:
             result = self.remote_action_handler(str(session.get("world_id") or ""), action, dict(payload or {})) or {}
-            if action != "spawner_icon":
-                self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
-                                   remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")
+            self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
+                               remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")
             return result
         except Exception as exc:
             self._remote_audit(action, ok=False, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
@@ -1295,25 +1293,6 @@ class DirectoryHost:
                     session = self._remote_session()
                     if not session: self._json({"error": "Server Admin session required"}, 401, cors=False); return
                     try: self._json(controller.remote_payload(session), cors=False)
-                    except Exception as exc: self._json({"error": str(exc)}, 400, cors=False)
-                    return
-                if path.startswith("/api/v1/admin/item-icon/"):
-                    session = self._remote_session()
-                    if not session: self._json({"error": "Server Admin session required"}, 401, cors=False); return
-                    try:
-                        token = path.rsplit("/", 1)[-1]
-                        result = controller.remote_action(session, "spawner_icon", {"token": token})
-                        blob = __import__("base64").b64decode(str(result.get("data_b64") or ""), validate=True)
-                        etag = f'"{result.get("etag") or token}"'
-                        if str(self.headers.get("If-None-Match") or "").strip() == etag:
-                            self.send_response(304)
-                            self.send_header("Cache-Control", "private, max-age=86400, immutable")
-                            self.send_header("ETag", etag)
-                            self.end_headers()
-                            return
-                        self._send(blob, str(result.get("mime") or "application/octet-stream"), cors=False,
-                                   extra_headers={"Cache-Control": "private, max-age=86400, immutable", "ETag": etag})
-                    except FileNotFoundError as exc: self._json({"error": str(exc)}, 404, cors=False)
                     except Exception as exc: self._json({"error": str(exc)}, 400, cors=False)
                     return
                 if path == "/admin/api/state":

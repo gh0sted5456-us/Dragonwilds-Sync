@@ -1,4 +1,4 @@
-# Mods, Items & Spawner
+# Mods & Items
 
 Dragonwilds Sync keeps mod placement and item metadata profile-aware so a hosted or private World can carry the correct client/server content without turning custom data into global vanilla data.
 
@@ -15,7 +15,7 @@ Dragonwilds Sync keeps mod placement and item metadata profile-aware so a hosted
 
 ## Canonical items
 
-RSDWTools supplies the canonical Dragonwilds item catalog and item artwork. Sync maintains a local cache so Item Editor and Spawner can share the same item identity, display name, icon, category, stack metadata, and source revision.
+RSDWTools supplies the canonical Dragonwilds item catalog and item artwork. Sync maintains a local cache so Character Editor item sections use one item identity, display name, icon, category, stack metadata, and source revision.
 
 ## Modded Items
 
@@ -31,6 +31,7 @@ Custom or runtime-discovered items belong under **Modded Items**. A definition c
 
 Server-provided custom definitions are scoped to the World that supplied them rather than leaking into unrelated profiles.
 
-## Spawner
 
-The Spawner should use the same catalog record shown by Item Editor. Review the selected item card and target before issuing a spawn command. Runtime-only item discovery providers may enrich Modded Items when they expose a stable compatibility interface.
+## Gameplay spawning
+
+Item and Enemy Spawner tools were retired from Dragonwilds Sync. Item metadata remains available for Character Editor and mod/reference workflows, but the launcher no longer issues gameplay spawn or give commands.

@@ -36,7 +36,7 @@ def test_public_catalog_remote_login_audit_and_structured_action():
              "description": "Hydrated World", "source": "manifest"},
         ])
         controller.set_remote_admin_callbacks(
-            authenticate=lambda name, username, password: {"ok": name == "Ashen Home" and not username and password == "admin-secret", "world_id": "profile-1", "world_name": "Ashen Home", "username": "owner", "role": "owner", "permissions": {**directory_host.REMOTE_PERMISSION_DEFAULTS, "write_config": False, "use_spawner": True, "send_announcements": True}},
+            authenticate=lambda name, username, password: {"ok": name == "Ashen Home" and not username and password == "admin-secret", "world_id": "profile-1", "world_name": "Ashen Home", "username": "owner", "role": "owner", "permissions": {**directory_host.REMOTE_PERMISSION_DEFAULTS, "write_config": False, "use_console": True, "send_announcements": True}},
             state=lambda _world_id: {"profile": {"world_name": "Ashen Home"}, "runtime": {"running": False},
                                      "map": {"tracker_connected": True, "players": [{"name": "Test", "map_point": {"x": .5, "y": .5}}]}},
             action=lambda world_id, action, payload: actions.append((world_id, action, payload)) or {"accepted": True},
@@ -98,16 +98,15 @@ def test_public_catalog_remote_login_audit_and_structured_action():
             assert b'/assets/platforms/windows.svg' in portal and b'/assets/platforms/linux.svg' in portal
             assert b'https://github.com/gh0sted5456-us/Dragonwilds-Sync' in portal
             assert b'https://www.paypal.me/luke0494' in portal
-            assert b'data-tab="items"' in portal and b"Item Spawner" in portal
+            assert b'data-tab="items"' not in portal and b"Item Spawner" not in portal
             assert b'data-tab="announcements"' in portal and b"Broadcast Messages" in portal
-            assert b"spawner_catalog" in portal and b"spawner_item" in portal and b"announcement_send" in portal
+            assert b"spawner_catalog" not in portal and b"spawner_item" not in portal and b"announcement_send" in portal
             assert b'data-tab="console"' in portal
             assert b'dws-remote-workspace-script' in portal
             assert b'Server retained' in portal and b'Pushed to clients' in portal
             assert b'/assets/platforms/ue4ss.webp' in portal and b'/assets/platforms/runeschema.webp' in portal
             assert b'mod_files' in portal and b'mod_file_open' in portal and b'mod_file_save' in portal
-            assert b'Item Builder' in portal and b'dws-item-categories' in portal
-            assert b'/api/v1/admin/item-icon/' in directory_host.Path(directory_host.__file__).with_name('dragonwilds_service_compat.py').read_bytes()
+            assert b'Item Builder' not in portal and b'dws-item-categories' not in portal
             assert b'dws-current-map' in portal and b'background-size:contain' in portal
             assert b"action==='start'&&running" in portal and b"['stop','restart','update_restart'].includes(action)&&!running" in portal
             assert b'id="web-language"' in portal and b"Browser language" in portal
@@ -140,15 +139,11 @@ def test_public_catalog_remote_login_audit_and_structured_action():
                 assert result["ok"] is True
 
             remote_action("refresh")
-            remote_action("spawner_catalog")
-            remote_action("spawner_item", {"player_id": "player-1", "runtime_path": "/Game/Items/ITEM_Log.ITEM_Log", "count": 2})
             remote_action("announcement_send", {"title": "Restart", "message": "Restart in five minutes", "level": "warning", "duration_seconds": 300})
             for lifecycle_action in ("start", "stop", "restart", "update", "update_restart"):
                 remote_action(lifecycle_action)
             assert actions == [
                 ("profile-1", "refresh", {}),
-                ("profile-1", "spawner_catalog", {}),
-                ("profile-1", "spawner_item", {"player_id": "player-1", "runtime_path": "/Game/Items/ITEM_Log.ITEM_Log", "count": 2}),
                 ("profile-1", "announcement_send", {"title": "Restart", "message": "Restart in five minutes", "level": "warning", "duration_seconds": 300}),
                 ("profile-1", "start", {}),
                 ("profile-1", "stop", {}),

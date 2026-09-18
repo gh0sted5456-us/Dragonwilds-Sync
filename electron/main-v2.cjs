@@ -86,7 +86,7 @@ function allowedToolkitNavigation(value) {
   try {
     const u = new URL(String(value || ''));
     if (u.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(u.hostname.toLowerCase())) return true;
-    return u.protocol === 'https:' && ['rsdwtools.com', 'www.rsdwtools.com', 'rsdwmodel.com', 'www.rsdwmodel.com'].includes(u.hostname.toLowerCase());
+    return u.protocol === 'https:' && ['rsdwtools.com', 'www.rsdwtools.com'].includes(u.hostname.toLowerCase());
   } catch (_) { return false; }
 }
 
@@ -378,7 +378,7 @@ function attachRendererDurability(win) {
 
 function mimeFor(file) {
   const ext = path.extname(file).toLowerCase();
-  return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ico':'image/x-icon','.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.wasm':'application/wasm','.glb':'model/gltf-binary','.gltf':'model/gltf+json','.uemodel':'application/octet-stream'})[ext] || 'application/octet-stream';
+  return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ico':'image/x-icon','.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.wasm':'application/wasm'})[ext] || 'application/octet-stream';
 }
 function stopRsdwToolkitServer() {
   if (rsdwToolkitServer) { try { rsdwToolkitServer.close(); } catch (_) {} }
@@ -399,11 +399,7 @@ function startRsdwToolkitServer(rootDir) {
           return res.end(JSON.stringify({ ok:true, service:'dragonwilds-rsdw-localhost' }));
         }
         if (!relative) relative = 'index.html';
-        let servingRoot = rsdwToolkitRoot;
-        if (relative.startsWith('__rsdwmodel/')) {
-          servingRoot = path.resolve(path.dirname(rsdwToolkitRoot), 'model');
-          relative = relative.slice('__rsdwmodel/'.length) || 'Avatar/index.html';
-        }
+        const servingRoot = rsdwToolkitRoot;
         let target = path.resolve(servingRoot, relative);
         const rootWithSep = servingRoot.endsWith(path.sep) ? servingRoot : servingRoot + path.sep;
         if (target !== servingRoot && !target.startsWith(rootWithSep)) { res.writeHead(403); return res.end('Blocked'); }
@@ -1041,27 +1037,32 @@ async function openDesktopPath(target) {
 ipcMain.handle('dragonwilds:open-path', async (_event,target) => openDesktopPath(target));
 ipcMain.handle('dragonwilds:open-profile-mods', async (_event,kind,id,lane = '') => {
   try {
-    const profileKind=String(kind||'').trim().toLowerCase();
+    const requestedKind=String(kind||'').trim().toLowerCase();
     const profileId=String(id||'').trim();
-    if(!['local','server'].includes(profileKind))throw new Error('The profile type is invalid.');
+    if(!['local','server','dedicated'].includes(requestedKind))throw new Error('The profile type is invalid.');
     if(!profileId||profileId==='.'||profileId==='..'||/[\\/:*?"<>|]/.test(profileId))throw new Error('The profile id is invalid.');
-    const folders=profileKind==='server'
-      ? {Loaders:'loaders',Overlay:'overlay',UE4SSLoader:'loaders/ue4ss',RuneSchemaLoader:'loaders/runeschema',UE4SS:'mods/ue4ss',RuneSchema:'mods/runeschema',PAKs:'mods/paks',Saves:'Saved'}
-      : {Loaders:'loaders',UE4SS:'mods/Binaries/Win64/ue4ss/Mods',RuneSchema:'mods/Binaries/Win64/ue4ss/Mods/RuneSchema/mods',PAKs:'mods/Content/Paks/~mods',Win64:'mods/Binaries/Win64'};
-    const lanes=Object.keys(folders);
-    const selectedLane=String(lane||'');
-    if(selectedLane&&!lanes.includes(selectedLane))throw new Error('Unknown profile mod folder.');
-    // Resolve this directly from the application's active AppData root. Opening
-    // profile storage must not depend on the backend process being responsive.
-    const profileBase=path.join(activeProgramDataRoot(),'profiles','world',profileKind==='server'?'dedicated':'local',profileId);
-    const target=path.join(profileBase,...(profileKind==='server'?['staged']:['snapshot']));
-    for(const folder of Object.values(folders))fs.mkdirSync(path.join(target,folder),{recursive:true});
-    const selected=selectedLane?path.join(target,folders[selectedLane]):path.join(target,profileKind==='server'?'':'mods');
+    const resolved=await serviceInvoke('application.profile.mods_root',{kind:requestedKind,id:profileId});
+    const description=resolved?.result||resolved;
+    const modsRoot=String(description?.mods_root||'');
+    const profileKind=String(description?.resolved_kind||'');
+    if(!path.isAbsolute(modsRoot)||!['local','server'].includes(profileKind))throw new Error('The profile folder could not be resolved.');
+    const root=path.dirname(modsRoot);
+    const folders={Profile:root,Mods:modsRoot,Loaders:modsRoot,Overlay:modsRoot,
+      Binaries:path.join(modsRoot,'Binaries'),Content:path.join(modsRoot,'Content'),
+      UE4SS:description.ue4ss,RuneSchema:description.runeschema,PAKs:description.paks,
+      Win64:description.win64,UE4SSLoader:description.win64,
+      RuneSchemaLoader:description.runeschema?path.dirname(description.runeschema):''};
+    if(profileKind==='server'){folders.Saves=path.join(root,'Saves');folders.Config=path.join(root,'Config');}
+    const selectedLane=String(lane||'Profile');
+    const selected=Object.prototype.hasOwnProperty.call(folders,selectedLane)?folders[selectedLane]:'';
+    if(!selected||!path.isAbsolute(selected))throw new Error('Unknown profile folder.');
+    const relative=path.relative(root,selected);
+    if(relative==='..'||relative.startsWith('..'+path.sep)||path.isAbsolute(relative))throw new Error('The folder escaped its Profile.');
     const ok=await openDesktopPath(selected);
-    if(!ok)throw new Error(`Windows could not open ${selected}`);
-    return {ok:true,path:selected,resolved_kind:profileKind};
+    if(!ok)throw new Error(`Could not open ${selected}`);
+    return {ok:true,path:selected,resolved_kind:profileKind,lane:selectedLane};
   } catch (error) {
-    return {ok:false,error:String(error?.message||error||'Could not open the profile Mods folder.')};
+    return {ok:false,error:String(error?.message||error||'Could not open the Profile folder.')};
   }
 });
 ipcMain.handle('dragonwilds:reveal-path', (_event,target) => { const value=String(target||'').trim(); if(!value||!fs.existsSync(value))return false; shell.showItemInFolder(value); return true; });

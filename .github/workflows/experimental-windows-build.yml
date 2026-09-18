@@ -34,8 +34,6 @@ jobs:
         run: |
           python backend\test_dragonlink_contracts.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python backend\test_release1_4_spawner.py
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python backend\test_hybrid_external_mod_delivery.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check renderer\external-mod-hosting.js

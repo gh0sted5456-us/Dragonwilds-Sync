@@ -22,8 +22,8 @@ def main():
 
     renderer = (ROOT / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     for marker in (
-        "['UE4SSLoader','UE4SS Loader']", "['RuneSchemaLoader','RuneSchema Loader']",
-        "loaders/ue4ss", "loaders/runeschema",
+        "['Mods','Mods']", "['Config','Config']",
+        "application.loaders.status", "application.loaders.install",
     ):
         assert marker in renderer, marker
     for retired in (

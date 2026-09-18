@@ -5,7 +5,6 @@ import tempfile
 from pathlib import Path
 
 import shared_mod_repository as repository
-import spawner_catalog
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -82,36 +81,7 @@ def main() -> None:
         repository.deploy_entry(entry_id, "local", "world-b")
         assert target.joinpath("schema.json").read_text(encoding="utf-8") == '"master"'
 
-    # Character Item Editor, server Spawner, and WebGUI consume one normalized
-    # item identity. Custom/mod-manifest rows must preserve all four gameplay
-    # fields and remain searchable by ITEM_NAME as well as display name/ID.
-    original_search = spawner_catalog.search_items
-    try:
-        spawner_catalog.search_items = lambda query="", limit=250: {"items": [], "count": 0, "cache": {}}
-        custom = spawner_catalog.catalog("", kind="item", query="ITEM_Custom_Sword", custom_items=[{
-            "persistence_id": "/Game/Mods/Test/ITEM_Custom_Sword.ITEM_Custom_Sword",
-            "display_name": "Test Sword", "internal_name": "ITEM_Custom_Sword",
-            "max_stack": 7, "icon_ref": "custom-sword.png",
-        }])
-        assert custom["count"] == 1
-        row = custom["items"][0]
-        assert row["display_name"] == "Test Sword"
-        assert row["internal_name"] == row["item_name"] == "ITEM_Custom_Sword"
-        assert row["persistence_id"].endswith("ITEM_Custom_Sword.ITEM_Custom_Sword")
-        assert row["max_stack"] == 7 and row["runtime_path"].startswith("/Game/Mods/Test/")
-        by_name = spawner_catalog.catalog("", kind="item", query="ITEM_GUID_Sword", custom_items=[{
-            "persistence_id": "mod-save-guid-123", "display_name": "GUID Sword",
-            "internal_name": "ITEM_GUID_Sword", "max_stack": 2,
-        }])
-        assert by_name["count"] == 1 and by_name["items"][0]["runtime_path"] == "ITEM_GUID_Sword"
-        aliases = spawner_catalog.catalog("", kind="item", query="Alias Axe", custom_items=[{
-            "PersistenceID": "mod-alias-axe", "name": "Alias Axe", "item_name": "ITEM_Alias_Axe",
-            "runtimePath": "/Alias/Items/ITEM_Alias_Axe.ITEM_Alias_Axe",
-        }])
-        assert aliases["count"] == 1 and aliases["custom_count"] == 1
-    finally:
-        spawner_catalog.search_items = original_search
-
+    # Shared Mod Repository remains the canonical cross-profile mod authority.
     project = Path(__file__).resolve().parents[1]
     renderer = ((project / "renderer" / "app.js").read_text(encoding="utf-8")
                 + (project / "renderer" / "app-v2.js").read_text(encoding="utf-8"))

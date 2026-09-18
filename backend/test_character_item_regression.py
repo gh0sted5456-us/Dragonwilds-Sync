@@ -9,7 +9,6 @@ import character_profiles as characters
 import client_layout
 import dragonwilds_service as service
 import rsdw_cache
-import spawner_catalog
 
 
 def _expect_error(operation, text: str) -> None:
@@ -101,7 +100,6 @@ def main() -> None:
         save.write_text(json.dumps(document), encoding="utf-8")
 
         original_manifest = rsdw_cache.item_manifest
-        original_search = spawner_catalog.search_items
         original_tool_json = characters._read_rsdw_tool_json
         try:
             # Source and packaged launches must share this fallback.  The
@@ -298,14 +296,11 @@ def main() -> None:
             assert equipped_custom["recognized"] is True and equipped_custom["custom"] is True
             assert equipped_custom["equipment"] == "Body" and equipped_custom["name"] == "Custom Regression Item Refined"
 
-            spawner_catalog.search_items = lambda query="", limit=250: {"items": [], "count": 0, "cache": {}}
-            spawner = spawner_catalog.catalog("", kind="item", query="ITEM_Custom", custom_items=[restored])
-            assert spawner["count"] == 1
-            assert spawner["items"][0]["runtime_path"].startswith("/Game/Mods/Regression/")
-            assert spawner["items"][0]["display_name"] == "Custom Regression Item Refined"
+            assert restored["persistence_id"].startswith("/Game/Mods/Regression/")
+            assert restored["display_name"] == "Custom Regression Item Refined"
+            assert restored["internal_name"].startswith("ITEM_")
         finally:
             rsdw_cache.item_manifest = original_manifest
-            spawner_catalog.search_items = original_search
             characters._read_rsdw_tool_json = original_tool_json
 
     print("Current Character Editor + full Item Repository/refinement regression: PASS")

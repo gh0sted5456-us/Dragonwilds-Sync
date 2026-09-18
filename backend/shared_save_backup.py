@@ -59,28 +59,45 @@ def _safe_source(root: Path) -> None:
 def _source_roots(state: dict, config: dict) -> list[tuple[str, Path]]:
     roots: list[tuple[str, Path]] = []
     saves = player_save_paths(state)
-    if config.get("include_players", True):
+    players = bool(config.get("include_players", True))
+    worlds = bool(config.get("include_worlds", True))
+    if players:
         roots.append(("Players", saves["characters"]))
-    if config.get("include_worlds", True):
+    if worlds:
         roots.append(("Worlds", saves["worlds"]))
-        for profile in SERVER_PROFILES_DIR.iterdir() if SERVER_PROFILES_DIR.exists() else ():
-            if not profile.is_dir() or profile.is_symlink():
+    for profile in SERVER_PROFILES_DIR.iterdir() if SERVER_PROFILES_DIR.exists() else ():
+        if not profile.is_dir():
+            continue
+        _safe_source(profile)
+        safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", profile.name)
+        canonical = profile / "Profile/Saves"
+        if canonical.is_dir():
+            if worlds:
+                roots.append((f"Dedicated/{safe_id}/Worlds", canonical / "Worlds"))
+            if players:
+                roots.append((f"Dedicated/{safe_id}/Players", canonical / "Players"))
+        else:
+            # Unmigrated profiles are still recoverable. Do not migrate or
+            # back up the Runtime/config tree as a side effect of a backup.
+            for label, relative in (("Saved", "staged/Saved/SaveGames"),
+                                    ("AppData", "staged/AppData/Saved/SaveGames")):
+                legacy = profile / relative
+                if worlds:
+                    roots.append((f"Dedicated/{safe_id}/{label}", legacy))
+                elif players:
+                    roots.append((f"Dedicated/{safe_id}/{label}/Players", legacy / "Players"))
+    for namespace in ("local", "connected"):
+        parent = WORLD_PROFILES_DIR / namespace
+        for profile in parent.iterdir() if parent.exists() else ():
+            if not profile.is_dir():
                 continue
+            _safe_source(profile)
             safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", profile.name)
-            roots.extend([
-                (f"Dedicated/{safe_id}/Saved", profile / "staged/Saved/SaveGames"),
-                (f"Dedicated/{safe_id}/AppData", profile / "staged/AppData/Saved/SaveGames"),
-            ])
-        for namespace in ("local", "connected"):
-            parent = WORLD_PROFILES_DIR / namespace
-            for profile in parent.iterdir() if parent.exists() else ():
-                if not profile.is_dir() or profile.is_symlink():
-                    continue
-                safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", profile.name)
-                roots.extend([
-                    (f"Profiles/{namespace}/{safe_id}/Worlds", profile / "staged/AppData/Saved/SaveGames/Worlds"),
-                    (f"Profiles/{namespace}/{safe_id}/Players", profile / "staged/AppData/Saved/SaveGames/Players"),
-                ])
+            staged = profile / "staged/AppData/Saved/SaveGames"
+            if worlds:
+                roots.append((f"Profiles/{namespace}/{safe_id}/Worlds", staged / "Worlds"))
+            if players:
+                roots.append((f"Profiles/{namespace}/{safe_id}/Players", staged / "Players"))
     return roots
 
 
@@ -92,6 +109,8 @@ def _files(state: dict, config: dict) -> list[tuple[str, Path, str]]:
             if source.is_symlink() or (hasattr(source, "is_junction") and source.is_junction()):
                 raise ValueError("Save backup sources must not contain filesystem links")
             if not source.is_file():
+                continue
+            if not config.get("include_players", True) and "players" in {p.casefold() for p in source.relative_to(root).parts[:-1]}:
                 continue
             relative = f"{prefix}/{source.relative_to(root).as_posix()}"
             digest = hashlib.sha256()
@@ -146,6 +165,11 @@ def run(state: dict) -> dict:
         with zipfile.ZipFile(temporary) as archive:
             if archive.testzip() is not None:
                 raise OSError("Shared save snapshot verification failed")
+            for relative, _source, expected in records:
+                with archive.open(relative) as stream:
+                    actual = hashlib.file_digest(stream, "sha256").hexdigest()
+                if actual != expected:
+                    raise OSError("Save changed during backup; snapshot was not committed")
         os.replace(temporary, target)
     finally:
         temporary.unlink(missing_ok=True)

@@ -100,7 +100,7 @@ def test_profile_owned_runeschema_runtime() -> None:
         evidence = staged_runtime_versions(profile)["runeschema"]
         assert evidence["file_count"] == 2
         assert evidence["content_hash"]
-        assert evidence["source_name"] == "Profile staging"
+        assert evidence["source_name"] == "Profile/Mods"
 
 
 if __name__ == "__main__":

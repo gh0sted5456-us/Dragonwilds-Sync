@@ -58,13 +58,13 @@ def main() -> None:
     renderer = (Path(__file__).resolve().parent.parent / "renderer" / "app-v2.js").read_text(encoding="utf-8")
     compat = (Path(__file__).resolve().parent / "dragonwilds_service_compat.py").read_text(encoding="utf-8")
     engine = (Path(__file__).resolve().parent / "server_engine.py").read_text(encoding="utf-8")
-    assert "['UE4SSLoader','UE4SS Loader']" in renderer
-    assert "['RuneSchemaLoader','RuneSchema Loader']" in renderer
+    assert "['Mods','Mods']" in renderer
+    assert "['Config','Config']" in renderer
     assert compat.count('"server.install.ensure_runtimes"') == 1  # rejection allowlist only
     assert 'if method == "server.install.runeschema_core"' not in compat
     assert "def _apply_profile_ue4ss" not in engine
     assert "def _apply_profile_runeschema" not in engine
-    print("alpha 7 layered staging tests passed")
+    print("profile-owned runtime adoption tests passed")
 
 
 if __name__ == "__main__":

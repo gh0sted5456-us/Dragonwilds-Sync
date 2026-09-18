@@ -25,8 +25,11 @@ in the test matrix evidence.
 - Host/client authentication, manifest, hash, role-correct materialization, Direct Connect, and join.
 - Router/NAT and offline/timeout/partial-directory failure recovery.
 - Real backup restore and `.rsdwl` conflict/writeback flows.
-- Real Character Editor/RSDWModel hydration, repeated Apply, game reload, and backup restore using disposable saves.
-- Full refreshed item-catalog category/search coverage plus vanilla and modded item refinement verified after game reload and through Spawner/WebGUI.
+- Dedicated Profile migration with existing mods, saves, and custom server configuration.
+- Central loader replacement across an actual host/client pair, including rollback and preservation of unowned mods.
+- Broadcast and map-sync behavior with actual connected players.
+- Real Character Editor appearance editing, external RSDW preview handoff, repeated Apply, game reload, and backup restore using disposable saves.
+- Full refreshed Character Editor item-catalog category/search coverage plus vanilla and modded item refinement verified after game reload. Embedded character 3D preview and item/enemy spawning are retired, not pending acceptance.
 - Public responses and diagnostics contain no secret or private state.
 
 ## Linux/Proton

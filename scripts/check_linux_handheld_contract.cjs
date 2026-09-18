@@ -16,8 +16,12 @@ const requireText = (source, text, message) => {
   if (!source.includes(text)) throw new Error(message);
 };
 
-requireText(app, "['UE4SSLoader','UE4SS Loader']", 'World-owned UE4SS loader staging control is missing.');
-requireText(app, "['RuneSchemaLoader','RuneSchema Loader']", 'World-owned RuneSchema loader staging control is missing.');
+requireText(app, 'AppData/Loaders', 'Central Loader Library ownership is missing.');
+requireText(app, 'application.loaders.status', 'Application-level Loader Library status control is missing.');
+requireText(app, 'application.loaders.install', 'Application-level Loader Library assignment control is missing.');
+if (app.includes("['UE4SSLoader','UE4SS Loader']") || app.includes("['RuneSchemaLoader','RuneSchema Loader']")) {
+  throw new Error('Retired per-Profile loader staging controls returned.');
+}
 if (app.includes('id="server-native-ue4ss-source"') || app.includes('id="server-native-runeschema-source"')) {
   throw new Error('Retired machine-level runtime source controls are still exposed.');
 }
@@ -50,8 +54,8 @@ requireText(archivePolicy, 'validate_client_targets', 'Runtime client selectors 
 if (app.includes('data-runtime-client-files')) {
   throw new Error('Retired per-file runtime selectors are still exposed.');
 }
-requireText(app, 'Each direct mod folder is hashed and synchronized independently.',
-  'Layered runtime and mod entity sync guidance is missing.');
+requireText(app, 'Client/server distribution is metadata, not another folder hierarchy.',
+  'Simple Profile distribution guidance is missing.');
 requireText(app, 'function gameModeBadgesMarkup', 'Shared world mode badge renderer is missing.');
 requireText(app, "hardmode: 'hard'", 'Hard mode metadata aliases are not normalized.');
 requireText(app, 'gameModeBadgesMarkup(world,server)', 'World mode badges are not shared by placards and horizontal rows.');

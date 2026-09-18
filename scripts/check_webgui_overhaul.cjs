@@ -26,7 +26,6 @@ requireText(index, "img-src 'self' data: file: http://127.0.0.1:* https:;", 'rem
 requireText(release, 'dws-recommended-media', 'recommended-mod artwork cards');
 requireText(release, 'Direct Download', 'curator-provided direct-download action');
 requireText(release, 'dws-native-context-detail', 'Item Editor rich context card');
-requireText(release, 'Right-click for full item details', 'Spawner item inspector');
 requireText(release, 'server.console.unified', 'unified console polling');
 requireText(release, "data-dws-console-filter=\"game\"", 'game console filter');
 requireText(release, "data-dws-console-filter=\"ue4ss\"", 'UE4SS console filter');
@@ -69,12 +68,14 @@ requireText(recommendations, '"download_url"', 'direct download feed field');
 requireText(rsdwCache, 'data/items/json/RSDragonwilds', 'canonical RSDW item JSON source');
 requireText(rsdwCache, '/shared/icons/', 'canonical RSDW shared icon source');
 requireText(rsdwCache, 'persistence_id', 'canonical persistence identity');
-requireText(compatService, 'custom_items=list((state.get("application") or {}).get("custom_items") or [])', 'custom items merged into server catalog');
-requireText(compatService, '"custom-broadcast"', 'server-broadcast custom item icons');
-requireText(compatService, '/api/v1/admin/item-icon/', 'authenticated item image endpoint');
-requireText(directoryHost, 'action != "spawner_icon"', 'thumbnail requests excluded from audit flood');
-requireText(compatService, 'if action == "spawner_catalog":', 'lazy authenticated WebGUI item catalog');
-requireText(compatService, '"spawner": {"items": [], "categories": []', 'lightweight remote viewer bootstrap');
+if (compatService.includes('server.spawner.') || compatService.includes('spawner_catalog') ||
+    compatService.includes('"spawner": {"items": [], "categories": []')) {
+  throw new Error('Retired Spawner service routes returned.');
+}
+if (directoryHost.includes('view_spawner') || directoryHost.includes('use_spawner') ||
+    directoryWeb.includes('Item Spawner') || release.includes('server.spawner.')) {
+  throw new Error('Retired Spawner presentation or permissions returned.');
+}
 
 // The original WebHost platform icon packaging bug must remain permanently
 // covered both in PyInstaller data collection and the source/one-file resolver.

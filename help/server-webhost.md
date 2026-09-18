@@ -35,4 +35,4 @@ The public browser may show World name, description, artwork, badges, tags, play
 
 ## Remote administration
 
-Remote management is separate from public discovery and uses an authenticated paired session plus explicit permissions for actions such as start, stop, config editing, Spawner, and console access.
+Remote management is separate from public discovery and uses an authenticated paired session plus explicit permissions for actions such as start, stop, update/restart, configuration editing, mod inspection/editing, broadcasts, and console access. Gameplay Spawner controls are not exposed.

@@ -89,7 +89,7 @@ SYSTEM_COMPONENTS = {
     "webhost-tunnel": _entry("external-helper-process", "webgui", "control-service", "explicit-toggle", "Optional public tunnel transport", optional=True),
     "discord-presence": _entry("integration-service", "system", "electron-main", "explicit-toggle", "Discord rich presence", optional=True),
     "rsdw-localhost": _entry("service-thread", "characters", "electron-main", "on-demand", "Loopback-only character toolkit asset service", optional=True),
-    "rsdw-game-bridge": _entry("runtime-module", "rsdragonwilds", "dedicated-server", "world-runtime", "Permission-gated roster, map, spawner and console bridge", authority="game-telemetry-and-command-transport", optional=True),
+    "rsdw-game-bridge": _entry("runtime-module", "rsdragonwilds", "dedicated-server", "world-runtime", "Permission-gated roster, map and console bridge", authority="game-telemetry-and-command-transport", optional=True),
 
     # Bounded tools are never persistent application parents.
     "steamcmd": _entry("bounded-helper-process", "system", "control-service", "update-operation", "Dedicated-server installation/update and post-verification"),

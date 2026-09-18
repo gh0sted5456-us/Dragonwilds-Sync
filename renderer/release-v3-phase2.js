@@ -28,7 +28,6 @@
   let verifiedPlayReady = false;
   let quickFollowTail = true;
   let quickSection = 'overview';
-  let quickSpawner = {loaded:false,loading:false,items:[],players:[],query:'',page:0,selectedPath:'',selectedName:'',playerId:'',count:1,error:''};
   let quickSaves = {loaded:false,loading:false,data:null,error:''};
   let quickSavePlayer = '';
   let quickConsoleScrollTop = 0;
@@ -194,22 +193,6 @@
     </section>`;
   }
 
-  async function loadQuickSpawner({force=false}={}) {
-    if(mode!=='server'||quickSpawner.loading)return;
-    quickSpawner={...quickSpawner,loading:true,error:''};renderQuick();
-    try {
-      const id=quickState?.profile_id||profileId;
-      const [catalog,roster]=await Promise.all([
-        api.invoke('server.spawner.catalog',{id,kind:'item',query:quickSpawner.query||'',limit:2000,refresh:force}),
-        api.invoke('server.players.get',{id}),
-      ]);
-      const players=roster?.players?.players||roster?.players||[];
-      quickSpawner={...quickSpawner,loaded:true,loading:false,items:Array.isArray(catalog?.items)?catalog.items:[],players:Array.isArray(players)?players.filter((row)=>row?.connected!==false):[],bridge:catalog?.bridge||{},runtime:catalog?.runtime||{},localPlayerAvailable:!!catalog?.local_player_available,error:''};
-      if(!quickSpawner.playerId&&quickSpawner.players.length)quickSpawner.playerId=String(quickSpawner.players[0].id||quickSpawner.players[0].tracker_id||'');
-    } catch(error) { quickSpawner={...quickSpawner,loaded:true,loading:false,error:error?.message||String(error)}; }
-    renderQuick();
-  }
-
   function quickDragonLink() {
     const status=quickState?.dragonlink||{};
     const config=status.config?.dragonlink||{};
@@ -264,28 +247,6 @@
     document.body.appendChild(overlay);bindSaveActions(overlay);overlay.querySelector('[data-v3q-history-close]')?.addEventListener('click',()=>overlay.remove());overlay.addEventListener('click',(event)=>{if(event.target===overlay)overlay.remove();});
   }
 
-  function quickItemSpawner() {
-    const items=Array.isArray(quickSpawner.items)?quickSpawner.items:[];
-    const pageSize=30;
-    const pageCount=Math.max(1,Math.ceil(items.length/pageSize));
-    const page=Math.max(0,Math.min(Number(quickSpawner.page||0),pageCount-1));
-    const visibleItems=items.slice(page*pageSize,(page+1)*pageSize);
-    const pageIndexes=[...new Set([0,1,page-2,page-1,page,page+1,page+2,pageCount-2,pageCount-1])].filter((index)=>index>=0&&index<pageCount).sort((a,b)=>a-b);
-    const players=Array.isArray(quickSpawner.players)?quickSpawner.players:[];
-    const bridgeReady=!!quickSpawner.bridge?.available;
-    const runtimeReady=!!quickSpawner.runtime?.running&&quickSpawner.runtime?.active!==false;
-    const canGive=!!quickSpawner.selectedPath&&!!quickSpawner.playerId&&bridgeReady&&runtimeReady&&quickState?.active;
-    const selected=items.find((item)=>String(item.runtime_path||'')===String(quickSpawner.selectedPath||''))||null;
-    const selectedIcon=selected?localFileUrl(selected.icon_path||selected.icon_url||''):'';
-    return `<section class="v3q-panel v3q-item-service">
-      <div class="v3q-panel-head"><div><b>Summon Items for Players</b><small>Uses the bounded RSDW item service; no arbitrary command or full editor is loaded</small></div><div class="v3q-item-status"><span class="v3q-live-chip ${runtimeReady?'ok':'muted'}"><i></i>${runtimeReady?'WORLD LIVE':'WORLD STOPPED'}</span><span class="v3q-live-chip ${bridgeReady?'ok':'bad'}"><i></i>${bridgeReady?'BRIDGE READY':'BRIDGE OFFLINE'}</span></div></div>
-      <form class="v3q-item-search" data-v3q-item-search><input name="query" value="${esc(quickSpawner.query)}" placeholder="Search item name, ID, category, or mod…"/><button class="v3q-btn primary" type="submit" ${quickSpawner.loading?'disabled':''}>${quickSpawner.loading?'Loading…':'Search'}</button><button class="v3q-btn ghost" type="button" data-v3q-items-refresh ${quickSpawner.loading?'disabled':''}>Refresh Catalog</button></form>
-      ${quickSpawner.error?`<div class="v3q-error">${esc(quickSpawner.error)}</div>`:''}
-      <div class="v3q-item-layout"><div><div class="v3q-item-grid">${quickSpawner.loading&&!quickSpawner.loaded?'<div class="empty"><span>Loading the server item repository…</span></div>':items.length?visibleItems.map((item)=>{const path=String(item.runtime_path||'');const icon=localFileUrl(item.icon_path||item.icon_url||'');return `<button class="v3q-item ${quickSpawner.selectedPath===path?'selected':''}" data-v3q-item-path="${esc(path)}" data-v3q-item-name="${esc(item.display_name||item.name||'Item')}" title="${esc(path)}">${icon?`<img src="${esc(icon)}" alt="" loading="lazy"/>`:'<span>◇</span>'}<strong>${esc(item.display_name||item.name||'Unknown Item')}</strong><small>${esc(item.category||item.mod_name||'Item')}</small></button>`;}).join(''):'<div class="empty"><span>No matching items were found.</span></div>'}</div>${items.length?`<nav class="v3q-item-pagination" aria-label="Item catalog pages"><button class="v3q-btn ghost" data-v3q-item-page="${page-1}" ${page<=0?'disabled':''}>← Previous</button><div>${pageIndexes.map((index)=>`<button class="v3q-btn ${index===page?'primary':'ghost'}" data-v3q-item-page="${index}">${index+1}</button>`).join('')}</div><button class="v3q-btn ghost" data-v3q-item-page="${page+1}" ${page>=pageCount-1?'disabled':''}>Next →</button><span>${visibleItems.length} of ${items.length} · page ${page+1} / ${pageCount}</span></nav>`:''}</div>
-        <aside class="v3q-item-give"><small>SELECTED ITEM</small>${selectedIcon?`<img class="v3q-selected-item-icon" src="${esc(selectedIcon)}" alt=""/>`:''}<strong data-v3q-selected-item>${esc(selected?.display_name||selected?.name||'Choose an item')}</strong>${selected?`<p class="v3q-item-description">${esc(selected.description||'No item description is published in the current RSDW catalog.')}</p><dl class="v3q-item-facts"><div><dt>Category</dt><dd>${esc(selected.category||'Item')}</dd></div><div><dt>Internal name</dt><dd>${esc(selected.internal_name||selected.item_name||'—')}</dd></div><div><dt>Persistence ID</dt><dd>${esc(selected.persistence_id||selected.item_data||'—')}</dd></div><div><dt>Maximum stack</dt><dd>${esc(selected.max_stack||1)}</dd></div><div><dt>Equipment</dt><dd>${esc(selected.equipment||'Not equipped')}</dd></div><div><dt>Source / mod</dt><dd>${esc(selected.source_mod||selected.source||'RSDW baseline')}</dd></div></dl>`:''}<code>${esc(quickSpawner.selectedPath||'No item selected')}</code><label><span>Player</span><select data-v3q-item-player ${players.length?'':'disabled'}>${players.map((player)=>{const id=String(player.id||player.tracker_id||'');return `<option value="${esc(id)}" ${quickSpawner.playerId===id?'selected':''}>${esc(player.name||player.player_name||'Player')}</option>`;}).join('')}</select></label><label><span>Quantity</span><input data-v3q-item-count type="number" min="1" max="9999" value="${Math.max(1,Number(quickSpawner.count||1))}"/></label><button class="v3q-btn primary big" data-v3q-give-item ${canGive?'':'disabled'}>Give Item</button><p>${players.length?`${players.length} connected player${players.length===1?'':'s'} available.`:'No connected players are currently available.'}</p></aside></div>
-    </section>`;
-  }
-
   function renderQuick() {
     if (!quickEnabled) return;
     const root = document.getElementById('app');
@@ -325,8 +286,8 @@
         </div>
         <div class="v3q-secondary-actions"><button class="v3q-btn ghost" data-v3q-mods>View Mods</button>${quickState?.controls?.console?`<button class="v3q-btn ghost" data-v3q-console-toggle>${consoleOpen?'Hide Console':'Open Console'}</button>`:''}</div>
       </section>
-      <nav class="v3q-section-tabs" aria-label="Quick Launch tools"><button class="v3q-btn ${quickSection==='overview'?'primary':'ghost'}" data-v3q-section="overview">Overview &amp; Console</button><button class="v3q-btn ${quickSection==='dragonlink'?'primary':'ghost'}" data-v3q-section="dragonlink">DragonLink</button>${mode==='server'?`<button class="v3q-btn ${quickSection==='items'?'primary':'ghost'}" data-v3q-section="items">Summon Items</button>`:''}<button class="v3q-btn ${quickSection==='saves'?'primary':'ghost'}" data-v3q-section="saves">Save Manager</button></nav>
-      ${quickSection==='dragonlink'?quickDragonLink():quickSection==='saves'?quickSaveManager():mode==='server'&&quickSection==='items'?quickItemSpawner():`<div class="v3q-quick-overview"><div class="v3q-columns">
+      <nav class="v3q-section-tabs" aria-label="Quick Launch tools"><button class="v3q-btn ${quickSection==='overview'?'primary':'ghost'}" data-v3q-section="overview">Overview &amp; Console</button><button class="v3q-btn ${quickSection==='dragonlink'?'primary':'ghost'}" data-v3q-section="dragonlink">DragonLink</button><button class="v3q-btn ${quickSection==='saves'?'primary':'ghost'}" data-v3q-section="saves">Save Manager</button></nav>
+      ${quickSection==='dragonlink'?quickDragonLink():quickSection==='saves'?quickSaveManager():`<div class="v3q-quick-overview"><div class="v3q-columns">
         <section class="v3q-panel">
           <div class="v3q-panel-head"><div><b>World & Network</b><small>Presence and World publication are independent</small></div></div>
           <div class="v3q-world-meta"><span>Profile ID</span><code>${esc(quickState?.profile_id || profileId)}</code></div>
@@ -403,20 +364,13 @@
       api.openMainWindow?.();
     });
     root.querySelector('[data-v3q-console-toggle]')?.addEventListener('click',async()=>{consoleOpen=!consoleOpen;if(consoleOpen)await refresh({consoleToo:true});else renderQuick();});
-    root.querySelectorAll('[data-v3q-section]').forEach((button)=>button.addEventListener('click',()=>{quickSection=button.dataset.v3qSection||'overview';renderQuick();if(quickSection==='items'&&!quickSpawner.loaded)void loadQuickSpawner();if(quickSection==='saves'&&!quickSaves.loaded)void loadQuickSaves();}));
+    root.querySelectorAll('[data-v3q-section]').forEach((button)=>button.addEventListener('click',()=>{quickSection=button.dataset.v3qSection||'overview';renderQuick();if(quickSection==='saves'&&!quickSaves.loaded)void loadQuickSaves();}));
     root.querySelectorAll('[data-v3q-player-group]').forEach((button)=>button.addEventListener('click',()=>openQuickPlayerHistory(button.dataset.v3qPlayerGroup||'')));
     bindSaveActions(root);
     root.querySelector('[data-v3q-saves-refresh]')?.addEventListener('click',()=>void loadQuickSaves());
     root.querySelector('[data-v3q-world-backup]')?.addEventListener('click',async()=>{if(!confirm('Create a verified World save recovery point now? Running servers briefly stop and restart so the save cannot be captured mid-write.'))return;try{await invoke('save.management.world.backup',{profile_id:quickState?.profile_id||profileId,mode});toast('World backup created','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}});
     root.querySelector('[data-v3q-world-import]')?.addEventListener('click',async()=>{const path=await api.pickFile?.('zip');if(!path||!confirm('Import and swap to this World save ZIP?\n\nThe current World is backed up first. A running server will stop and restart.'))return;try{await invoke('save.management.world.import',{profile_id:quickState?.profile_id||profileId,mode,path});toast('World save imported and swapped','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}});
     root.querySelectorAll('[data-v3q-world-restore]').forEach((button)=>button.addEventListener('click',async()=>{const revision=button.dataset.v3qWorldRestore;if(!confirm(`Restore ${revision}?\n\nThe current save is backed up first. A running server will stop, swap the save, and restart.`))return;try{await invoke('save.management.world.restore',{profile_id:quickState?.profile_id||profileId,mode,revision_id:revision});toast('World save restored','success');quickSaves.loaded=false;await loadQuickSaves();}catch(error){toast(error?.message||String(error),'error');}}));
-    root.querySelector('[data-v3q-item-search]')?.addEventListener('submit',(event)=>{event.preventDefault();quickSpawner.query=String(event.currentTarget.elements.query?.value||'').trim();quickSpawner.page=0;void loadQuickSpawner();});
-    root.querySelector('[data-v3q-items-refresh]')?.addEventListener('click',()=>{quickSpawner.page=0;void loadQuickSpawner({force:true});});
-    root.querySelectorAll('[data-v3q-item-page]').forEach((button)=>button.addEventListener('click',()=>{quickSpawner.page=Math.max(0,Number(button.dataset.v3qItemPage||0));renderQuick();document.querySelector('.v3q-item-service')?.scrollIntoView({block:'start'});}));
-    root.querySelectorAll('[data-v3q-item-path]').forEach((button)=>button.addEventListener('click',()=>{quickSpawner.selectedPath=button.dataset.v3qItemPath||'';quickSpawner.selectedName=button.dataset.v3qItemName||'Item';renderQuick();}));
-    root.querySelector('[data-v3q-item-player]')?.addEventListener('change',(event)=>{quickSpawner.playerId=event.currentTarget.value||'';});
-    root.querySelector('[data-v3q-item-count]')?.addEventListener('change',(event)=>{quickSpawner.count=Math.max(1,Math.min(9999,Number(event.currentTarget.value||1)));event.currentTarget.value=String(quickSpawner.count);});
-    root.querySelector('[data-v3q-give-item]')?.addEventListener('click',async()=>{const button=root.querySelector('[data-v3q-give-item]');if(!quickSpawner.selectedPath||!quickSpawner.playerId||button?.disabled)return;button.disabled=true;try{const result=await api.invoke('server.spawner.spawn',{id:quickState?.profile_id||profileId,kind:'item',runtime_path:quickSpawner.selectedPath,count:Math.max(1,Math.min(9999,Number(quickSpawner.count||1))),target:{kind:'player',player_id:quickSpawner.playerId},confirmed:true});toast(result?.ack||`${quickSpawner.selectedName} given to player`,'success');}catch(error){toast(error?.message||String(error),'error');}finally{button.disabled=false;}});
     root.querySelector('[data-v3q-dragonlink-save]')?.addEventListener('click',async()=>{const config={};root.querySelectorAll('[data-v3q-dragonlink-setting]').forEach((input)=>{config[input.dataset.v3qDragonlinkSetting]=!!input.checked;});root.querySelectorAll('[data-v3q-dragonlink-number]').forEach((input)=>{config[input.dataset.v3qDragonlinkNumber]=Number(input.value);});try{await invoke('quick.dragonlink.update',{profile_id:quickState?.profile_id||profileId,mode,config:{dragonlink:config}});toast('DragonLink settings saved',quickState?.active?'Proximity Loot tuning hot-reloaded.':'Native modules will use this profile configuration on the next start.','success');await refresh({consoleToo:false});}catch(error){toast(error?.message||String(error),'error');}});
     root.querySelectorAll('[data-v3q-console-filter]').forEach((button)=>button.addEventListener('click',()=>{consoleFilter=button.dataset.v3qConsoleFilter||'all';renderQuick();}));
     root.querySelectorAll('[data-v3q-console-color-key]').forEach((button)=>button.addEventListener('contextmenu',(event)=>{event.preventDefault();chooseConsoleColor(button.dataset.v3qConsoleColorKey,String(button.textContent||'source').replace(/\d+\s*$/,'').trim());}));
@@ -515,3 +469,4 @@
     document.addEventListener('DOMContentLoaded',()=>{enhanceShortcuts();enhanceNetworkSettings();},{once:true});
   }
 })();
+

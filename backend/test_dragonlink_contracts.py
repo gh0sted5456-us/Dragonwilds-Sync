@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import spawner_catalog
-
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -47,17 +45,6 @@ def main() -> None:
     assert "Password status unavailable" in receipt
     assert "World Type" in receipt and "Game Mode" in receipt
     assert "Lua ready" not in receipt and "LUA READY" not in receipt
-
-    # Current RSDWTools exposes local-player item giving through
-    # `world.items.give <ITEM_AssetName> [count]`.
-    assert spawner_catalog.spawn_command("item", "/Game/Items/ITEM_Log.ITEM_Log", {"kind": "local"}, 25) == "world.items.give ITEM_Log 25"
-    assert spawner_catalog.spawn_command("item", "ITEM_Log", {"kind": "local"}, 1) == "world.items.give ITEM_Log 1"
-    try:
-        spawner_catalog.spawn_command("item", "ITEM_Log", {"kind": "player", "id": "someone"}, 1)
-    except ValueError as exc:
-        assert "local player" in str(exc).casefold()
-    else:
-        raise AssertionError("Remote item give must remain blocked until RSDWTools exposes a supported target verb")
 
     print("DragonConnect/RSDW contracts: PASS")
 

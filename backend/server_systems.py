@@ -813,7 +813,7 @@ def scan_profile_snapshot_units(profile_id: str) -> list[ModUnit]:
             continue
         if is_dir and lower == "runeschema":
             _LAST_SCAN_WARNINGS.append(
-                'Skipped UE4SS mod folder "RuneSchema": use loaders/runeschema and mods/runeschema.')
+                'Skipped UE4SS mod folder "RuneSchema": use the normal RuneSchema paths under Profile/Mods.')
         elif is_dir:
             add(name, "ue4ss_mod", source_dir=path)
         else:
@@ -2340,6 +2340,10 @@ def _publish_client_overlay(profile: dict, manifest_files: list[dict]) -> int:
         if (not rel.parts or any(part.startswith(".") for part in rel.parts)
                 or rel.name.casefold() == "readme.txt"
                 or lowered[:2] == ["binaries", "linux"]
+                or lowered[:3] == ["binaries", "win64", "ue4ss"]
+                or lowered[:3] == ["content", "paks", "~mods"]
+                or lowered == ["binaries", "win64", "dwmapi.dll"]
+                or lowered == ["binaries", "win64", "version.dll"]
                 or rel.name.casefold() in {SERVER_LOADER_FILENAME.casefold(), "rsdragonwilds-win64-shipping.exe"}):
             continue
         wire = rel.as_posix()

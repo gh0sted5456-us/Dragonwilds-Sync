@@ -8,6 +8,18 @@ import os
 from pathlib import PureWindowsPath
 
 
+def _path_key(value):
+    """Return a platform-normalized absolute path key for deployment receipts."""
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    try:
+        resolved = Path(raw).expanduser().resolve(strict=False)
+    except Exception:
+        resolved = Path(raw)
+    return os.path.normcase(os.path.normpath(str(resolved)))
+
+
 def backup_installation(game_root, recovery_root, extra_roots=()):
     """Verified recovery copy; excludes base-game Paks files, never follows links."""
     game = Path(game_root).resolve()
@@ -97,7 +109,7 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
                 incoming[target] = item
                 current.append(rel.as_posix())
         old = previous.get(str(index), {})
-        if old.get('destination') == str(destination.resolve()):
+        if _path_key(old.get('destination')) == _path_key(destination):
             for rel in old.get('files', []):
                 if str(rel).replace('\\', '/').split('/')[0].casefold() in excluded:
                     # Older layouts/loader selections can have recorded files

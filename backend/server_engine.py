@@ -103,6 +103,56 @@ def _retire_legacy_game_receipts(game_root: str | Path) -> None:
     except OSError:
         pass
 
+
+def _retire_layered_appdata_overlay_ledger(game_root: str | Path) -> None:
+    """Retire the Sept-17 multi-lane deployment receipt before simple Profile use.
+
+    The old experimental layout wrote several lane destinations into AppData.
+    They are safe to retire only when every recorded destination remains inside
+    this dedicated game's project root. A current simple receipt has exactly
+    Profile/Mods -> game root and Profile/Saves/Runtime -> game/Saved.
+    """
+    ledger = _overlay_ledger(game_root)
+    if not ledger.is_file():
+        return
+    try:
+        previous = json.loads(ledger.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError(f"Invalid profile deployment manifest: {ledger}") from exc
+    if not isinstance(previous, dict):
+        raise ValueError(f"Invalid profile deployment manifest: {ledger}")
+
+    live = resolve_server_layout(game_root).game_root.resolve(strict=False)
+    expected = {
+        "0": live,
+        "1": (live / "Saved").resolve(strict=False),
+    }
+    current = len(previous) <= 2 and all(
+        key in expected
+        and os.path.normcase(os.path.normpath(str(Path((row or {}).get("destination") or "").resolve(strict=False))))
+            == os.path.normcase(os.path.normpath(str(expected[key])))
+        for key, row in previous.items()
+    )
+    if current:
+        return
+
+    from mod_deployment_cleanup import deploy_profile_lanes
+    with tempfile.TemporaryDirectory(prefix="dws-simple-profile-migration-") as empty:
+        source = Path(empty)
+        lanes = []
+        for key in sorted(previous, key=lambda value: int(value) if str(value).isdigit() else 10**9):
+            row = previous.get(key) if isinstance(previous.get(key), dict) else {}
+            raw = str(row.get("destination") or "").strip()
+            if not raw:
+                raise ValueError(f"Invalid legacy profile deployment destination: {ledger}")
+            destination = Path(raw).resolve(strict=False)
+            if destination != live and not destination.is_relative_to(live):
+                raise ValueError(f"Legacy profile deployment destination escapes the game directory: {destination}")
+            lanes.append((source, destination, set()))
+        deploy_profile_lanes(
+            lanes, ledger, APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
+    ledger.unlink(missing_ok=True)
+
 def _profile_savegame_dir(profile_id: str) -> Path:
     return dedicated_profile_layout(_profile_dir(profile_id))["saves"] / "Worlds"
 
@@ -443,6 +493,7 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
     """Materialize the selected Profile/Mods tree into the dedicated game."""
     assert_dedicated_target(game_root, action="plant World mods into")
     _retire_legacy_game_receipts(game_root)
+    _retire_layered_appdata_overlay_ledger(game_root)
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
     stored = dedicated_profile_layout(_profile_dir(profile_id))

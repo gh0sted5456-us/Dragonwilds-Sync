@@ -508,10 +508,10 @@ def restore_profile_mods(profile_id: str, game_root: Path) -> int:
             continue
         relative = item.relative_to(stored["mods"])
         parts = tuple(part.casefold() for part in relative.parts)
-        if parts[:1] not in {("binaries",), ("content",)}:
-            raise ValueError("Profile/Mods may contain only Binaries and Content paths")
         if item.name.casefold() in protected_names:
             raise ValueError("A Profile cannot replace a Steam-owned game executable")
+        if parts[:1] not in {("binaries",), ("content",)}:
+            raise ValueError("Profile/Mods may contain only Binaries and Content paths")
 
     # Distribution remains metadata-driven, but physical storage stays simple:
     # one game-relative Mods tree per Profile. Client-only units are excluded

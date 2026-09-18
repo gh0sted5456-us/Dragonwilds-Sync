@@ -92,8 +92,27 @@ def _profile_root(kind: str, profile_id: str) -> Path:
 
 
 def loader_staging_root(kind: str, profile_id: str) -> Path:
+    """Return the game-relative Mods authority that receives loader files."""
     profile = _profile_root(kind, profile_id)
-    return profile / ("staged/loaders" if kind == "server" else "snapshot/loaders")
+    if str(kind or "").strip().lower() == "server":
+        from profile_mod_layout import dedicated_profile_layout
+        return dedicated_profile_layout(profile)["mods"]
+    root = profile / "Profile/Mods"
+    # Local profiles are migrating toward the same visible contract. Preserve
+    # existing snapshot payload by folding it forward once.
+    legacy = profile / "snapshot/mods"
+    if legacy.is_dir() and not root.exists():
+        root.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(legacy, root, dirs_exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _loader_manifest_path(kind: str, profile_id: str, family: str) -> Path:
+    profile = _profile_root(kind, profile_id)
+    target = profile / "manifests" / "loaders" / f"{family}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return target
 
 
 def _write_id(target: Path, package: dict) -> None:
@@ -136,52 +155,109 @@ def _normalize_archive(package: dict, destination: Path) -> None:
                                 ignore=shutil.ignore_patterns("mods"))
 
 
+def _read_loader_manifest(kind: str, profile_id: str, family: str) -> dict:
+    path = _loader_manifest_path(kind, profile_id, family)
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _safe_profile_file(root: Path, relative: str) -> Path:
+    rel = PurePosixPath(str(relative or "").replace("\\", "/"))
+    if rel.is_absolute() or not rel.parts or any(part in {"", ".", ".."} or ":" in part for part in rel.parts):
+        raise ValueError("Invalid loader receipt path")
+    target = root.joinpath(*rel.parts).resolve(strict=False)
+    resolved_root = root.resolve(strict=False)
+    if target == resolved_root or not target.is_relative_to(resolved_root):
+        raise ValueError("Loader receipt escaped Profile/Mods")
+    return target
+
+
 def install_package(kind: str, profile_id: str, package_id: str) -> dict:
+    """Replace one loader from the central verified repository into Profile/Mods."""
     repository = ensure_repository()
     package = next((row for row in repository["packages"] if row["id"] == package_id), None)
     if not package:
         raise ValueError("Unknown loader package ID")
     if _sha256(Path(package["archive"])) != package["sha256"]:
         raise OSError("The loader repository package failed SHA-256 verification")
+
     root = loader_staging_root(kind, profile_id)
-    target = root / package["family"]
-    root.mkdir(parents=True, exist_ok=True)
-    staging = root / f".{package['family']}-{time.time_ns()}.staging"
-    backup = _profile_root(kind, profile_id) / "backups/loaders" / f"{int(time.time())}-{package['family']}"
-    try:
-        staging.mkdir(parents=True)
-        _normalize_archive(package, staging)
-        _write_id(staging / ID_FILE, package)
-        if target.exists() and any(target.iterdir()):
-            backup.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copytree(target, backup)
-        old = root / f".{package['family']}.previous"
-        shutil.rmtree(old, ignore_errors=True)
-        if target.exists():
-            os.replace(target, old)
-        os.replace(staging, target)
-        shutil.rmtree(old, ignore_errors=True)
-    except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
-        raise
-    return {"ok": True, "package": package, "staging_path": str(target),
-            "backup": str(backup) if backup.exists() else ""}
+    profile = _profile_root(kind, profile_id)
+    family = package["family"]
+    manifest_path = _loader_manifest_path(kind, profile_id, family)
+    previous = _read_loader_manifest(kind, profile_id, family)
+    backup = profile / "backups/loaders" / f"{int(time.time())}-{family}"
+
+    with tempfile.TemporaryDirectory(prefix=f"dws-{family}-profile-") as temporary:
+        staged = Path(temporary)
+        _normalize_archive(package, staged)
+        incoming = sorted(
+            item.relative_to(staged).as_posix()
+            for item in staged.rglob("*") if item.is_file()
+        )
+        old_files = [str(value) for value in (previous.get("files") or []) if str(value).strip()]
+
+        # Back up only files this loader previously owned before replacement.
+        existing = []
+        for relative in old_files:
+            target = _safe_profile_file(root, relative)
+            if target.is_file():
+                existing.append((relative, target))
+        if existing:
+            for relative, target in existing:
+                destination = backup.joinpath(*PurePosixPath(relative).parts)
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, destination)
+
+        for relative in old_files:
+            _safe_profile_file(root, relative).unlink(missing_ok=True)
+
+        for relative in incoming:
+            source = staged.joinpath(*PurePosixPath(relative).parts)
+            target = _safe_profile_file(root, relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            temporary_target = target.with_name(target.name + ".dwsync.tmp")
+            shutil.copy2(source, temporary_target)
+            os.replace(temporary_target, target)
+
+    record = {
+        **package,
+        "files": incoming,
+        "installed_at": time.time(),
+        "profile_id": str(profile_id),
+        "profile_kind": str(kind),
+        "profile_mods_root": str(root),
+    }
+    temp_manifest = manifest_path.with_suffix(".tmp")
+    temp_manifest.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    os.replace(temp_manifest, manifest_path)
+    _write_id(manifest_path.with_suffix(".txt"), package)
+    return {
+        "ok": True,
+        "package": package,
+        "staging_path": str(root),
+        "files": len(incoming),
+        "backup": str(backup) if backup.exists() else "",
+    }
 
 
 def profile_loader_status(kind: str, profile_id: str) -> dict:
     root = loader_staging_root(kind, profile_id)
     result = {"root": str(root), "loaders": {}}
     for family in sorted(_FAMILIES):
-        lane = root / family
-        identity = {}
-        marker = lane / ID_FILE
-        if marker.is_file():
-            for line in marker.read_text(encoding="utf-8", errors="ignore").splitlines():
-                key, separator, value = line.partition("=")
-                if separator:
-                    identity[key.strip().lower()] = value.strip()
-        files = [path for path in lane.rglob("*") if path.is_file() and path.name != ID_FILE] if lane.exists() else []
-        result["loaders"][family] = {"id": identity.get("id", "manual" if files else ""),
-            "sha256": identity.get("sha256", ""), "files": len(files), "path": str(lane)}
+        identity = _read_loader_manifest(kind, profile_id, family)
+        files = [str(value) for value in (identity.get("files") or []) if str(value).strip()]
+        present = sum(1 for relative in files if _safe_profile_file(root, relative).is_file())
+        result["loaders"][family] = {
+            "id": str(identity.get("id") or ""),
+            "sha256": str(identity.get("sha256") or ""),
+            "files": present,
+            "expected_files": len(files),
+            "path": str(root),
+            "channel": str(identity.get("channel") or ""),
+        }
     return result
 

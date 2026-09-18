@@ -86,7 +86,7 @@ function allowedToolkitNavigation(value) {
   try {
     const u = new URL(String(value || ''));
     if (u.protocol === 'http:' && ['127.0.0.1', 'localhost'].includes(u.hostname.toLowerCase())) return true;
-    return u.protocol === 'https:' && ['rsdwtools.com', 'www.rsdwtools.com', 'rsdwmodel.com', 'www.rsdwmodel.com'].includes(u.hostname.toLowerCase());
+    return u.protocol === 'https:' && ['rsdwtools.com', 'www.rsdwtools.com'].includes(u.hostname.toLowerCase());
   } catch (_) { return false; }
 }
 
@@ -378,7 +378,7 @@ function attachRendererDurability(win) {
 
 function mimeFor(file) {
   const ext = path.extname(file).toLowerCase();
-  return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ico':'image/x-icon','.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.wasm':'application/wasm','.glb':'model/gltf-binary','.gltf':'model/gltf+json','.uemodel':'application/octet-stream'})[ext] || 'application/octet-stream';
+  return ({'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml','.ico':'image/x-icon','.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.wasm':'application/wasm'})[ext] || 'application/octet-stream';
 }
 function stopRsdwToolkitServer() {
   if (rsdwToolkitServer) { try { rsdwToolkitServer.close(); } catch (_) {} }
@@ -399,11 +399,7 @@ function startRsdwToolkitServer(rootDir) {
           return res.end(JSON.stringify({ ok:true, service:'dragonwilds-rsdw-localhost' }));
         }
         if (!relative) relative = 'index.html';
-        let servingRoot = rsdwToolkitRoot;
-        if (relative.startsWith('__rsdwmodel/')) {
-          servingRoot = path.resolve(path.dirname(rsdwToolkitRoot), 'model');
-          relative = relative.slice('__rsdwmodel/'.length) || 'Avatar/index.html';
-        }
+        const servingRoot = rsdwToolkitRoot;
         let target = path.resolve(servingRoot, relative);
         const rootWithSep = servingRoot.endsWith(path.sep) ? servingRoot : servingRoot + path.sep;
         if (target !== servingRoot && !target.startsWith(rootWithSep)) { res.writeHead(403); return res.end('Blocked'); }

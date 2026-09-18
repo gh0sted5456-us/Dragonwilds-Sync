@@ -1,6 +1,6 @@
 # Dragonwilds Sync
 
-Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape: Dragonwilds. It manages Singleplayer, Co-Op, and Dedicated World profiles; UE4SS, RuneSchema, and PAK mods; authenticated host/client synchronization; character and RSDW-L tools; WebHost/Remote Admin; and public World-directory integration.
+Dragonwilds Sync is a desktop launcher and World-management suite for RuneScape: Dragonwilds. It manages Singleplayer, Co-Op, and Dedicated World profiles; UE4SS, RuneSchema, and PAK mods; authenticated host/client synchronization; the unified Character Editor; WebHost/Remote Admin; and public World-directory integration.
 
 Profiles also support an independent **Win64** mod folder for declared files
 that belong beside UE4SS. See [Win64 profile deployment](docs/WIN64_PROFILE_MODS.md)
@@ -13,13 +13,13 @@ The standalone website is the public home for downloads, setup instructions, the
 
 ## Current build authority
 
-- `main` is the stable/default branch.
-- `testing-branch` is the staged implementation, verification, and package-candidate branch.
-- The current stable source and packaged application metadata are `3.1.0`.
-- [`docs/changelog.json`](docs/changelog.json) is the single canonical V3 changelog; the launcher mirrors that same V3 record in `renderer/release-meta.js` for offline display.
-- A historical green result applies only to the exact commit and artifact recorded with it.
+- `main` is the stable/default branch; this overhaul does not change the stable release.
+- `experimental` is the integration target for the profile overhaul in PR #22 (`overhaul/simple-profile-contract`).
+- `package.json` is the application version authority. Check the commit and artifact attached to a build rather than assuming an older green run covers current source.
+- [`docs/OVERHAUL.md`](docs/OVERHAUL.md) describes the simplified profile layout, central libraries, removed tools, migration, and verification boundaries.
+- [`docs/changelog.json`](docs/changelog.json) retains the canonical V3 release history; it is not evidence that an unreleased overhaul passed physical acceptance.
 
-A `testing-branch` candidate is promoted to `main` only after its applicable automated and package workflows pass. Real Dragonwilds, Steam/SteamCMD, cross-machine Sync, Windows packaging, Linux/Proton, router, and production Cloudflare behavior remain governed by the physical gates in [Testing](docs/TESTING.md).
+A candidate requires the applicable automated and packaged checks before integration. Real Dragonwilds, Steam/SteamCMD, cross-machine Sync, clean-machine installs, Linux/Proton, router, and production Cloudflare behavior still require the physical gates in [Testing](docs/TESTING.md).
 
 ## Architecture
 

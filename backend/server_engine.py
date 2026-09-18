@@ -104,7 +104,7 @@ def _retire_legacy_game_receipts(game_root: str | Path) -> None:
         pass
 
 def _profile_savegame_dir(profile_id: str) -> Path:
-    return dedicated_profile_layout(_profile_dir(profile_id))["saved"] / "SaveGames"
+    return dedicated_profile_layout(_profile_dir(profile_id))["saves"]
 
 def _profile_backups_dir(profile_id: str) -> Path: return _profile_dir(profile_id) / "backups"
 
@@ -112,7 +112,7 @@ def _profile_server_config_dir(profile_id: str, platform_name: str = "WindowsSer
     """Return the live-platform configuration lane inside profile staging."""
     if platform_name not in {"WindowsServer", "LinuxServer"}:
         raise ValueError("Unsupported dedicated server configuration platform")
-    target = dedicated_profile_layout(_profile_dir(profile_id))["saved"] / "Config" / platform_name
+    target = dedicated_profile_layout(_profile_dir(profile_id))["config"] / platform_name
     target.mkdir(parents=True, exist_ok=True)
     return target
 
@@ -440,70 +440,67 @@ def snapshot_profile_mod_unit(profile_id: str, game_root: Path, key: str) -> int
 
 
 def restore_profile_mods(profile_id: str, game_root: Path) -> int:
-    """Materialize one World's complete game-ready overlay."""
+    """Materialize the selected Profile/Mods tree into the dedicated game."""
     assert_dedicated_target(game_root, action="plant World mods into")
     _retire_legacy_game_receipts(game_root)
     from profile_mod_layout import restore_profile_spares
     restore_profile_spares(_profile_mods_dir(profile_id))
     stored = dedicated_profile_layout(_profile_dir(profile_id))
-    excluded = {"overlay": set(), "ue4ss": set(), "runeschema": set(), "paks": set()}
     profile = load_server_profile(profile_id) or {}
+
+    # Distribution remains metadata-driven, but physical storage stays simple:
+    # one game-relative Mods tree per Profile. Client-only units are excluded
+    # from the server materialization without moving them into another lane.
+    excluded = set()
     for key, override in (profile.get("unit_overrides") or {}).items():
         group, separator, name = str(key).partition("::")
-        if not separator or not name or runs_on_server((override or {}).get("distribution") or (override or {}).get("classification")):
+        if not separator or not name or runs_on_server(
+                (override or {}).get("distribution") or (override or {}).get("classification")):
             continue
         if group == "ue4ss_mod":
-            excluded["ue4ss"].add(name)
+            excluded.add(f"Binaries/Win64/ue4ss/Mods/{name}")
         elif group == "runeschema_mod":
-            excluded["runeschema"].add(name)
+            excluded.add(f"Binaries/Win64/ue4ss/Mods/RuneSchema/mods/{name}")
         elif group == "pak_mod":
-            excluded["paks"].add(name)
+            excluded.add(f"Content/Paks/~mods/{name}")
         elif group == "win64_mod":
-            excluded["overlay"].add(f"Binaries/Win64/{name}")
-    stored["server_excluded"] = excluded
-    from mod_deployment_cleanup import deploy_layered_world_profile
-    return deploy_layered_world_profile(
-        stored, resolve_server_layout(game_root).game_root,
-        _overlay_ledger(game_root), APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
+            excluded.add(f"Binaries/Win64/{name}")
+
+    from mod_deployment_cleanup import deploy_profile_lanes
+    live_root = resolve_server_layout(game_root).game_root
+    return deploy_profile_lanes(
+        [(stored["mods"], live_root, excluded)],
+        _overlay_ledger(game_root),
+        APP_DATA_DIR / "Backups" / "DisplacedWorldOverlays")
 
 
 def mirror_live_overlay_file(profile_id: str, game_root: str | Path, relative_path: str) -> bool:
-    """Mirror one app-edited live file back to the authoritative staging tree."""
+    """Mirror one app-edited live file back to Profile/Mods or Profile/Config."""
     parts = str(relative_path or "").replace("\\", "/").split("/")
     if not parts or any(part in {"", ".", ".."} or ":" in part for part in parts):
-        raise ValueError("Staged file path must stay beneath the game root")
+        raise ValueError("Profile file path must stay beneath the game root")
     live_root = resolve_server_layout(game_root).game_root.resolve(strict=False)
     source = live_root.joinpath(*parts).resolve(strict=False)
     if source == live_root or not source.is_relative_to(live_root):
-        raise ValueError("Staged file path escaped the game root")
-    relative = "/".join(parts)
-    lowered = relative.casefold()
+        raise ValueError("Profile file path escaped the game root")
+
     profile = dedicated_profile_layout(_profile_dir(profile_id))
-    prefixes = (
-        ("binaries/win64/ue4ss/mods/runeschema/mods/", profile["runeschema"]),
-        ("binaries/win64/ue4ss/mods/runeschema/",
-         profile["runeschema_loader"] / "Binaries/Win64/ue4ss/Mods/RuneSchema"),
-        ("binaries/win64/ue4ss/mods/", profile["ue4ss"]),
-        ("content/paks/~mods/", profile["paks"]),
-        ("saved/", profile["saved"]),
-        ("binaries/win64/ue4ss/", profile["ue4ss_loader"] / "Binaries/Win64/ue4ss"),
-    )
-    target = None
-    for prefix, destination in prefixes:
-        if lowered.startswith(prefix):
-            target = destination.joinpath(*parts[len(prefix.rstrip('/').split('/')):])
-            break
-    if target is None and lowered in {"binaries/win64/dwmapi.dll", "binaries/win64/version.dll"}:
-        target = profile["ue4ss_loader"].joinpath(*parts)
-    if target is None:
-        target = profile["overlay"].joinpath(*parts)
+    lowered = [part.casefold() for part in parts]
+    if lowered[:2] == ["saved", "config"]:
+        target = profile["config"].joinpath(*parts[2:])
+    elif lowered[:2] == ["saved", "savegames"]:
+        target = profile["saves"].joinpath(*parts[2:])
+    elif lowered[:1] == ["saved"]:
+        target = profile["saves"].joinpath(*parts[1:])
+    else:
+        target = profile["mods"].joinpath(*parts)
+
     if source.is_file():
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
         return True
     target.unlink(missing_ok=True)
     return False
-
 
 def snapshot_profile_server_config(profile_id: str, game_root: str | Path) -> int:
     """Capture mutable server settings into the World profile.
@@ -722,9 +719,9 @@ def _dedicated_config_values(cfg: dict) -> dict:
 
 def write_staged_dedicated_config_templates(profile_id: str, cfg: dict) -> list[Path]:
     """Hydrate both browsable platform templates from the World settings."""
-    saved = dedicated_profile_layout(_profile_dir(profile_id))["saved"]
+    config = dedicated_profile_layout(_profile_dir(profile_id))["config"]
     managed = _dedicated_config_values(cfg)
-    targets = [saved / "Config" / platform / "DedicatedServer.ini"
+    targets = [config / platform / "DedicatedServer.ini"
                for platform in ("WindowsServer", "LinuxServer")]
     for target in targets:
         _write_dedicated_config_file(target, managed)

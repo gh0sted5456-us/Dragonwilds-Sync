@@ -17,7 +17,6 @@
   let appState = null;
   let appStateAt = 0;
   let recommendationByUrl = new Map();
-  let itemCatalogCache = { worldId: '', at: 0, items: [] };
   let lastNativeContextTarget = null;
   let consoleFilter = 'all';
   let consolePaused = false;
@@ -134,25 +133,9 @@
     return text(row?.runtime_path || row?.item_data || row?.persistence_id || row?.id).toLowerCase();
   }
 
-  async function allSpawnerItems(worldId, force = false) {
-    if (!worldId) return [];
-    if (!force && itemCatalogCache.worldId === worldId && Date.now() - itemCatalogCache.at < 30000) return itemCatalogCache.items;
-    const payload = await invoke('server.spawner.catalog', { id: worldId, kind: 'item', query: '', category: '', limit: 2500 });
-    itemCatalogCache = { worldId, at: Date.now(), items: payload?.items || [] };
-    return itemCatalogCache.items;
-  }
-
   async function resolveItemById(id, worldId = '') {
     const wanted = text(id).toLowerCase();
     if (!wanted) return null;
-    if (worldId) {
-      try {
-        const rows = await allSpawnerItems(worldId);
-        const found = rows.find((row) => [row.runtime_path, row.item_data, row.persistence_id, row.id, row.internal_name]
-          .some((value) => text(value).toLowerCase() === wanted));
-        if (found) return found;
-      } catch (_) {}
-    }
     try {
       const canonical = await invoke('application.rsdw.items.search', { query: id, limit: 40 });
       const found = (canonical?.items || []).find((row) => [row.item_data, row.persistence_id, row.id, row.internal_name]
@@ -205,40 +188,6 @@
     backdrop.addEventListener('click', (event) => { if (event.target === backdrop) closeItemInspector(); });
     backdrop.querySelector('.dws-item-inspector-close')?.addEventListener('click', closeItemInspector);
     document.body.appendChild(backdrop);
-  }
-
-  async function enhanceSelectedSpawnerItem() {
-    const card = document.querySelector('.spawner-page .selected-spawn-card');
-    if (!card || !document.querySelector('.spawner-page [data-spawner-kind="item"].active')) return;
-    const path = text(card.querySelector('code')?.textContent);
-    if (!path || path.startsWith('Choose an entry')) return;
-    if (card.dataset.dwsItemDetail === path) return;
-    card.dataset.dwsItemDetail = path;
-    try {
-      const state = await stateSnapshot();
-      const row = await resolveItemById(path, activeServerId(state));
-      if (!row || card.dataset.dwsItemDetail !== path) return;
-      card.querySelector('.dws-selected-item-detail')?.remove();
-      const detail = document.createElement('div');
-      detail.className = 'dws-selected-item-detail';
-      detail.innerHTML = itemDetailMarkup(row, true);
-      card.appendChild(detail);
-    } catch (_) {}
-  }
-
-  function attachSpawnerInspectors() {
-    document.querySelectorAll('.spawner-page [data-spawn-path][draggable="true"]:not([data-dws-inspector-ready])').forEach((node) => {
-      node.dataset.dwsInspectorReady = '1';
-      node.title = `${node.title || text(node.dataset.spawnName)} · Right-click for full item details`;
-      node.addEventListener('contextmenu', async (event) => {
-        event.preventDefault(); event.stopPropagation();
-        try {
-          const state = await stateSnapshot();
-          const row = await resolveItemById(node.dataset.spawnPath, activeServerId(state));
-          if (row) showItemInspector(row);
-        } catch (_) {}
-      });
-    });
   }
 
   async function enrichNativeContextMenu() {
@@ -325,8 +274,6 @@
 
   async function enhance() {
     await enhanceRecommendations();
-    attachSpawnerInspectors();
-    await enhanceSelectedSpawnerItem();
     if (document.querySelector('.console-workspace') && !consolePaused) refreshUnifiedConsole();
   }
 

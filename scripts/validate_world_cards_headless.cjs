@@ -11,7 +11,7 @@ const outputDir = path.join(root, 'Codex Outputs', 'GUI Validation');
 const candidates = process.platform === 'win32'
   ? [process.env['ProgramFiles(x86)'] && path.join(process.env['ProgramFiles(x86)'], 'Microsoft/Edge/Application/msedge.exe'),
      process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, 'Microsoft/Edge/Application/msedge.exe')]
-  : ['/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome'];
+  : ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'];
 const browser = candidates.filter(Boolean).find(candidate => fs.existsSync(candidate));
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 const types = {'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.webp':'image/webp','.svg':'image/svg+xml'};
@@ -59,10 +59,10 @@ function connect(child) {
       else request.resolve(message.result);
     }
   });
-  return (method, params = {}, sessionId) => new Promise((resolve, reject) => {
+  return (method, params = {}, sessionId, timeoutMs = 10000) => new Promise((resolve, reject) => {
     if (stopped) { reject(new Error('Browser connection is closed')); return; }
     const id = ++nextId;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Browser command timed out: ${method}`)); }, 10000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Browser command timed out: ${method}`)); }, timeoutMs);
     pending.set(id, {resolve, reject, timer});
     child.stdio[3].write(JSON.stringify({id, method, params, ...(sessionId ? {sessionId} : {})}) + '\0');
   });
@@ -81,7 +81,12 @@ async function runCase(testCase, port) {
   const closed = new Promise(resolve => { child.once('exit', () => { exited = true; resolve(); }); child.once('error', () => { exited = true; resolve(); }); });
   const send = connect(child);
   try {
-    const {targetId} = await send('Target.createTarget', {url:'about:blank'});
+    // Cold CI browser startup is separate from the bounded page-validation budget.
+    const version = await send('Browser.getVersion', {}, undefined, 45000);
+    console.log(`[BROWSER] ${browser} · ${version.product}`);
+    const {targetInfos} = await send('Target.getTargets');
+    const blank = targetInfos.find(target => target.type === 'page' && target.url === 'about:blank');
+    const {targetId} = blank || await send('Target.createTarget', {url:'about:blank'}, undefined, 30000);
     const {sessionId} = await send('Target.attachToTarget', {targetId, flatten:true});
     await send('Emulation.setDeviceMetricsOverride', {width:testCase.width, height:testCase.height, deviceScaleFactor:1, mobile:false}, sessionId);
     await send('Page.enable', {}, sessionId);

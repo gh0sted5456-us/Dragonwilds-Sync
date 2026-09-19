@@ -15,10 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
+
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: npm
+          cache: pnpm
 
       - uses: actions/setup-python@v6
         with:
@@ -31,7 +36,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Install pinned Node build dependencies
-        run: npm ci --include=dev --no-audit --no-fund
+        run: pnpm install --frozen-lockfile
 
       # NOTE: this branch's source is already fully materialized (the older
       # scripts\apply_*.py / update_*.py / finalize_*.py codemods this step used
@@ -52,13 +57,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify runtime and bundled data contracts
-        run: npm run check:runtime
+        run: pnpm run check:runtime
 
       - name: Prepare renderer dependencies
-        run: npm run prepare:monaco
+        run: pnpm run prepare:monaco
 
       - name: Verify renderer and source contracts
-        run: npm run test:systems:source
+        run: pnpm run test:systems:source
 
       - name: Verify remote permission hashing
         env:

@@ -15,7 +15,7 @@ VENV="$ROOT/.venv-build"
 rm -rf build-service dist-service release
 "$VENV/bin/pyinstaller" --noconfirm --clean --distpath dist-service --workpath build-service backend/DragonwildsSync.Service.spec
 test -x dist-service/DragonwildsSync.Service
-npm ci --include=dev
+pnpm install --frozen-lockfile
 # Materialize Electron before its CI preload smoke test. The smoke BrowserWindow
 # retains renderer sandboxing and context isolation; its script bypasses only
 # the hosted runner's outer SUID sandbox, which can stall before app readiness.
@@ -25,22 +25,22 @@ if [[ "${CI:-}" == "true" ]]; then
   sudo -n chown root:root node_modules/electron/dist/chrome-sandbox
   sudo -n chmod 4755 node_modules/electron/dist/chrome-sandbox
 fi
-npm run verify
+pnpm run verify
 if command -v xvfb-run >/dev/null 2>&1; then
   # Hosted runners can inherit a synthetic DBUS_SESSION_BUS_ADDRESS that
   # Chromium cannot parse. Give the sandboxed preload test a real private
   # session bus when available; otherwise remove the invalid inherited value.
   if command -v dbus-run-session >/dev/null 2>&1; then
-    dbus-run-session -- xvfb-run -a npm run test:preload
+    dbus-run-session -- xvfb-run -a pnpm run test:preload
   else
-    env -u DBUS_SESSION_BUS_ADDRESS xvfb-run -a npm run test:preload
+    env -u DBUS_SESSION_BUS_ADDRESS xvfb-run -a pnpm run test:preload
   fi
 else
   echo "[WARN] xvfb-run is unavailable; sandbox preload bridge smoke test was not run."
 fi
 # GitHub Actions sets CI, which otherwise makes electron-builder attempt an
 # actual GitHub release. RC packaging is artifact-only and requires no token.
-npx electron-builder --linux AppImage --publish never
+pnpm exec electron-builder --linux AppImage --publish never
 VERSION="$(node -p "require('./package.json').version")"
 HEADLESS_NAME="Dragonwilds Sync Headless"
 HEADLESS_RELEASE="release/${HEADLESS_NAME}"

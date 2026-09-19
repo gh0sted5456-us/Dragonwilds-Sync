@@ -24,10 +24,14 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: npm
+          cache: pnpm
       - name: Stamp tag version into package metadata
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -35,8 +39,8 @@ jobs:
       - name: Confirm Node toolchain
         run: |
           node --version
-          npm --version
-          npm run check:runtime
+          pnpm --version
+          pnpm run check:runtime
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -74,10 +78,14 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+          run_install: false
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.nvmrc'
-          cache: npm
+          cache: pnpm
       - name: Stamp tag version into package metadata
         if: startsWith(github.ref, 'refs/tags/v')
         shell: powershell
@@ -89,8 +97,8 @@ jobs:
         shell: powershell
         run: |
           node --version
-          npm --version
-          npm run check:runtime
+          pnpm --version
+          pnpm run check:runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/setup-python@v6
         with:
@@ -145,7 +153,7 @@ jobs:
             'PASS  V3 Phase 1 contract',
             'PASS  V3 Phase 2 contract',
             'PASS  V3 Phase 3 contract',
-            'PASS  npm run verify (build gate)',
+            'PASS  pnpm run verify (build gate)',
             'PASS  sandboxed Electron preload bridge (build gate)',
             'PASS  Packaged service JSON-RPC stdio (build gate)',
             'PASS  Standalone Headless CLI profile/terminal probe (build gate)',

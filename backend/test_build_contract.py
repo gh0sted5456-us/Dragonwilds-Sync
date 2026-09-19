@@ -197,8 +197,9 @@ def main():
     linux_text = linux_script.read_text(encoding="utf-8")
     assert "Ubuntu is the supported baseline" in linux_text
     assert "backend/DragonwildsSync.Service.spec" in linux_text
-    assert "npm run verify" in linux_text
-    assert "xvfb-run -a npm run test:preload" in linux_text
+    assert "pnpm install --frozen-lockfile" in linux_text
+    assert "pnpm run verify" in linux_text
+    assert "xvfb-run -a pnpm run test:preload" in linux_text
     assert linux_text.index("node node_modules/electron/install.js") < linux_text.index("chown root:root node_modules/electron/dist/chrome-sandbox")
     assert "chown root:root node_modules/electron/dist/chrome-sandbox" in linux_text
     assert "chmod 4755 node_modules/electron/dist/chrome-sandbox" in linux_text

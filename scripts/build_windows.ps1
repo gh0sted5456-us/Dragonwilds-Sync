@@ -274,7 +274,13 @@ try {
         }
     }
     if (-not $nodeDependenciesMatch) {
-        Invoke-Native $packageExe @('install', '--include=dev', '--no-audit', '--no-fund') 'Installing the pinned Node build dependencies (Electron, builder, Monaco, ASAR)...'
+        $packageLeaf = [IO.Path]::GetFileNameWithoutExtension($packageExe).ToLowerInvariant()
+        $installArgs = if ($packageLeaf -eq 'pnpm') {
+            @('install', '--frozen-lockfile')
+        } else {
+            @('ci', '--include=dev', '--no-audit', '--no-fund')
+        }
+        Invoke-Native $packageExe $installArgs 'Installing the pinned Node build dependencies (Electron, builder, Monaco, ASAR)...'
     }
 
     # Do not assume the package manager repaired a stale dependency tree. Re-read all pinned

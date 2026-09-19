@@ -97,7 +97,8 @@ def deploy_profile_lanes(lanes, ledger, recovery_root):
                 incoming[target] = item
                 current.append(rel.as_posix())
         old = previous.get(str(index), {})
-        if old.get('destination') == str(destination.resolve()):
+        old_destination = str(old.get('destination') or '').strip()
+        if old_destination and Path(old_destination).resolve(strict=False) == destination.resolve(strict=False):
             for rel in old.get('files', []):
                 if str(rel).replace('\\', '/').split('/')[0].casefold() in excluded:
                     # Older layouts/loader selections can have recorded files

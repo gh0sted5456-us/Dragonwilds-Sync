@@ -72,7 +72,9 @@ def main() -> None:
             old_receipt = game / ".dragonwilds-sync/profile-mod-files.json"
             old_receipt.parent.mkdir(parents=True)
             old_receipt.write_text(
-                '{"0":{"destination":"' + str(old_mod.parent).replace('\\', '\\\\')
+                # Receipts may preserve a non-canonical spelling (including
+                # Windows runner temp aliases); cleanup compares resolved paths.
+                '{"0":{"destination":"' + str(old_mod.parent / "unused" / "..").replace('\\', '\\\\')
                 + '","files":["OldWorld.pak"]}}')
 
             engine.restore_profile_mods("world-a", game_root)

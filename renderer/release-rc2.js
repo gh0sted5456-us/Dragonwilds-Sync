@@ -27,5 +27,5 @@
   let scheduled=false;const schedule=()=>{if(scheduled)return;scheduled=true;requestAnimationFrame(()=>{scheduled=false;enhance()})};
   document.addEventListener('click',e=>{if(e.target.closest('[data-settings-tab],[data-route]')){cache=null;setTimeout(schedule,20)}},true);
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
-  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  window.DragonwildsDOMLifecycle.register(schedule);
 })();

@@ -28,12 +28,24 @@ def _dpapi(data: bytes, *, protect: bool) -> bytes:
     output = _DataBlob()
     crypt32 = ctypes.windll.crypt32
     kernel32 = ctypes.windll.kernel32
+    crypt32.CryptProtectData.argtypes = [
+        ctypes.POINTER(_DataBlob), wintypes.LPCWSTR, ctypes.POINTER(_DataBlob),
+        ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_DataBlob),
+    ]
+    crypt32.CryptProtectData.restype = wintypes.BOOL
+    crypt32.CryptUnprotectData.argtypes = [
+        ctypes.POINTER(_DataBlob), ctypes.POINTER(wintypes.LPWSTR), ctypes.POINTER(_DataBlob),
+        ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(_DataBlob),
+    ]
+    crypt32.CryptUnprotectData.restype = wintypes.BOOL
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
     flags = 0x01  # CRYPTPROTECT_UI_FORBIDDEN
     if protect:
         ok = crypt32.CryptProtectData(ctypes.byref(source), "Dragonwilds Sync operator identity", None, None, None,
                                       flags, ctypes.byref(output))
     else:
-        description = ctypes.c_wchar_p()
+        description = wintypes.LPWSTR()
         ok = crypt32.CryptUnprotectData(ctypes.byref(source), ctypes.byref(description), None, None, None,
                                         flags, ctypes.byref(output))
     _ = source_buffer
@@ -43,10 +55,17 @@ def _dpapi(data: bytes, *, protect: bool) -> bytes:
         return ctypes.string_at(output.pbData, output.cbData)
     finally:
         kernel32.LocalFree(output.pbData)
+        if not protect and description:
+            kernel32.LocalFree(description)
 
 
 def protect_private_key(raw: bytes) -> dict:
     """Return a JSON-safe private-key record using the strongest local store available."""
+    if os.environ.get("DRAGONWILDS_SYNC_TEST_KEYSTORE") == "1":
+        return {
+            "protection": "test-only-file",
+            "blob": base64.b64encode(raw).decode("ascii"),
+        }
     if os.name == "nt":
         return {
             "protection": "windows-dpapi-current-user",
@@ -66,6 +85,8 @@ def unprotect_private_key(record: dict) -> bytes:
     blob = base64.b64decode((record or {}).get("blob") or "", validate=True)
     if protection == "windows-dpapi-current-user":
         return _dpapi(blob, protect=False)
+    if protection == "test-only-file" and os.environ.get("DRAGONWILDS_SYNC_TEST_KEYSTORE") == "1":
+        return blob
     if protection == "owner-only-file" and os.name != "nt":
         return blob
     raise ValueError("operator private-key protection does not match this operating system")

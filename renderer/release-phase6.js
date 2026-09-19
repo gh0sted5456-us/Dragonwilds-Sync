@@ -165,6 +165,5 @@
   };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', schedule, { once:true });
   else schedule();
-  const appRoot=document.getElementById('app');
-  if(appRoot)new MutationObserver(schedule).observe(appRoot, { childList:true, subtree:true });
+  window.DragonwildsDOMLifecycle.register(schedule);
 })();

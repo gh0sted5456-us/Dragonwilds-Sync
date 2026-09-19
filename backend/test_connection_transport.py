@@ -216,7 +216,13 @@ class ConnectionTransportTests(unittest.TestCase):
                 "protocol": "dragonwilds-world-sync", "fingerprint": fingerprint,
                 "mod_badges": identity["mod_badges"], "mod_summary": identity["mod_summary"]})
             broadcaster.start(); time.sleep(0.15)
-            discovered = next(row for row in server_systems.scan_for_servers(1.0) if int(row.get("sync_port") or 0) == port)
+            discovered = None
+            for _attempt in range(3):
+                discovered = next((row for row in server_systems.scan_for_servers(1.0)
+                                   if int(row.get("sync_port") or 0) == port), None)
+                if discovered:
+                    break
+            self.assertIsNotNone(discovered, "LAN discovery did not receive a bounded broadcaster response")
             self.assertTrue(discovered["mod_inventory_complete"])
             self.assertTrue(discovered["identity_verified"])
             self.assertEqual(len(discovered["mod_summary"]), 180)

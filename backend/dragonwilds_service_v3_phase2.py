@@ -29,10 +29,6 @@ from server_layout import resolve_server_layout
 from world_operations import ARCHIVE_ROOT, CLIENT_SAVEGAMES, archive_private, import_worldsave_archive, restore_archive
 from v3_migration import update_stage
 
-# Regression-source anchors retained for historical tests that prove the former
-# wrapper did not recurse: `_legacy_handle = _legacy.handle`,
-# `return _legacy_handle(method, params)`, `remote_server_choice_made`.
-
 _base_handle = _base.handle
 _legacy = _base._legacy
 RUNTIME = _base.RUNTIME

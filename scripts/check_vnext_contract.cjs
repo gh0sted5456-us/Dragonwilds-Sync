@@ -36,7 +36,7 @@ for (const page of manifest.pages) {
   must(page.id && page.title && page.summary && Array.isArray(page.sections) && page.sections.length, `Help page entry is incomplete: ${JSON.stringify(page)}`);
   must(page.sections.every((section) => section.title && (section.body || (Array.isArray(section.steps) && section.steps.length))), `Help page section is incomplete: ${page.id}`);
 }
-must(web.includes('directory_web_legacy') && web.includes('_legacy_public_browser_html'), 'Public WebGUI wrapper must preserve the prior implementation');
+must(web.includes('directory_web_compat') && web.includes('_base_public_browser_html'), 'Public WebGUI must extend the canonical page implementation');
 must(web.includes('data-filter=\\"declared\\"') || web.includes('data-filter="declared"'), 'Public Declared filter is missing');
 must(web.includes('/api/v1/worlds?active=sync') && web.includes('directory_verified') && web.includes('fingerprint_claimed'), 'Public Declared projection must use verified Sync heartbeat rows');
 must(web.includes('horizontalCard') && web.includes('profileBadges'), 'Public horizontal/profile badge parity is missing');

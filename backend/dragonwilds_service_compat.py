@@ -28,6 +28,7 @@ from sync_engine import _running_game_pid, activate_or_adopt_client_world_profil
 from profile_store import (APP_DATA_DIR, WORLD_PROFILES_DIR, SERVER_PROFILES_DIR, application_user_id, create_server_profile, delete_server_profile, list_server_profiles, load_server_profile,
                            load_state, save_server_profile, save_state, sanitize_world_for_renderer)
 from loader_repository import ensure_repository as ensure_loader_repository, install_package as install_loader_package, profile_loader_status
+from server_profile_setup import create as create_server_profile_v5, readiness as server_profile_readiness
 from shared_save_backup import configure as configure_shared_save_backup, run as run_shared_save_backup, status as shared_save_backup_status
 from server_engine import (ENGINE, adopt_existing_server_install, find_dedicated_server_exe, snapshot_profile_mod_unit, snapshot_profile_mods,
                              server_root_for_profile, server_install_config, write_dedicated_config, verify_dedicated_config,
@@ -67,6 +68,7 @@ from world_save_distribution import normalize_policy as normalize_worldsave_poli
 from server_scheduler import arm_schedule, normalize_notice, normalize_schedule, tick_schedule
 from player_tracker import PLAYER_BRIDGE, PLAYER_SERVICE, world_to_map
 from spawner_catalog import catalog as spawner_catalog, refresh_spawn_catalog, spawn_command
+from runeschema_profile_index import refresh as refresh_runeschema_profile_items
 from rsdw_toolkit import command_catalog as rsdw_command_catalog, history as rsdw_console_history, record_event as record_rsdw_event, status as rsdw_toolkit_status, suppress_roster_poll_logging, validate_command as validate_rsdw_command
 from health_model import apply_detected_hardware_references, normalize_health_config, normalize_network_evidence
 from runtime_versions import cl_version_status, client_runtime_status, server_runtime_stack
@@ -1529,8 +1531,29 @@ def _set_server_update_job(job_id: str, **patch) -> None:
 
 
 def _run_server_update_job(job_id: str, install_dir: str, steamcmd_dir: str) -> None:
+    last_percent = 0.0
+
     def progress(update: dict) -> None:
-        _set_server_update_job(job_id, status="running", **dict(update or {}))
+        nonlocal last_percent
+        update = dict(update or {})
+        phase = str(update.get("phase") or "steamcmd")
+        raw = update.get("percent")
+        if raw is not None:
+            raw = max(0.0, min(100.0, float(raw)))
+            update["phase_percent"] = raw
+            ranges = {
+                "steamcmd-download": (0.0, 15.0),
+                "preallocating": (15.0, 25.0),
+                "steamcmd": (15.0, 25.0),
+                "downloading": (25.0, 80.0),
+                "verifying": (80.0, 95.0),
+                "committing": (95.0, 99.0),
+            }
+            start, end = ranges.get(phase, (last_percent, 99.0))
+            update["percent"] = start + ((end - start) * raw / 100.0)
+        update["percent"] = max(last_percent, float(update.get("percent") or last_percent))
+        last_percent = update["percent"]
+        _set_server_update_job(job_id, status="running", **update)
     try:
         progress({"phase": "preparing", "message": "Preparing SteamCMD and server folders", "percent": 0})
         if not _steamcmd_executable(steamcmd_dir).exists():
@@ -2038,6 +2061,9 @@ def handle(method: str, params: dict) -> object:
         save_state(state)
         return migrate_program_data(APP_DATA_DIR, parent_dir=params.get("parent_dir"),
                                     use_default=bool(params.get("use_default", False)))
+
+    if method == "application.runeschema_items.index":
+        return refresh_runeschema_profile_items(force=bool(params.get("refresh")))
 
     if method.startswith("application.custom_items."):
         application = state.setdefault("application", {})
@@ -3085,6 +3111,9 @@ def handle(method: str, params: dict) -> object:
         result = install_loader_package(kind, profile_id, str(params.get("package_id") or ""))
         return {"result": result, "repository": ensure_loader_repository(),
                 "profile": profile_loader_status(kind, profile_id)}
+
+    if method == "server.profile.readiness":
+        return server_profile_readiness(str(params.get("id") or ""))
 
     if method == "save.shared.status":
         return shared_save_backup_status(state)
@@ -5356,20 +5385,19 @@ def handle(method: str, params: dict) -> object:
         return {"events": delivery_events, "state": public_state(state)}
 
     if method == "server.world.create":
-        name = str(params.get("name") or "New World").strip() or "New World"
-        profile_id = create_server_profile(name)
-        profile = load_server_profile(profile_id)
-        if profile:
-            profile.setdefault("dedicated_config", {})["owner_id"] = str(((state.get("application") or {}).get("server_install") or {}).get("owner_id") or "").strip()
-            if isinstance(params.get("classification"), dict):
-                profile["classification"] = normalize_world_classification(params.get("classification"), tags=profile.get("tags") or [], host_type="dedicated", visibility="public")
-            save_server_profile(profile_id, profile)
-            write_staged_dedicated_config_templates(profile_id, profile.get("dedicated_config") or {})
+        setup = create_server_profile_v5(
+            name=str(params.get("name") or ""),
+            classification=params.get("classification") if isinstance(params.get("classification"), dict) else {},
+            owner_id=str(((state.get("application") or {}).get("server_install") or {}).get("owner_id") or ""),
+            install_ue4ss=bool(params.get("install_ue4ss")),
+            runeschema_channel=str(params.get("runeschema_channel") or ""),
+        )
+        profile_id = setup["id"]
         if not state.setdefault("server", {}).get("active_world_id"):
             state["server"]["active_world_id"] = profile_id
             ENGINE.active_profile_id = profile_id
             save_state(state)
-        return {"id": profile_id, "state": public_state(state)}
+        return {**setup, "state": public_state(state)}
 
     if method == "hosting.providers.list":
         registry = load_provider_registry()
@@ -7462,7 +7490,16 @@ def _directory_remote_item_catalog(profile: dict, state: dict) -> dict:
     except Exception as exc:
         catalog = {"items": [], "categories": [], "error": str(exc)}
     profile_id = str(profile.get("id") or "")
-    for item in catalog.get("items") or []:
+    public_items = []
+    for source_item in catalog.get("items") or []:
+        item = dict(source_item)
+        if item.get("profile_discovered"):
+            allowed_sources = [dict(source) for source in (item.get("sources") or [])
+                               if str(source.get("profile_kind") or "") == "server"
+                               and secrets.compare_digest(str(source.get("profile_id") or ""), profile_id)]
+            if not allowed_sources:
+                continue
+            item["sources"] = allowed_sources
         repository_url = _public_rsdw_icon_url(str(item.get("icon_ref") or ""))
         local_url, local_source = _register_remote_item_icon(profile_id, item)
         if repository_url:
@@ -7479,7 +7516,9 @@ def _directory_remote_item_catalog(profile: dict, state: dict) -> dict:
         # the authenticated catalog JSON. Images travel through their own
         # session-scoped endpoint instead.
         item.pop("icon_path", None)
-    return {"items": list(catalog.get("items") or [])[:2500], "categories": list(catalog.get("categories") or []),
+        item.pop("source_path", None)
+        public_items.append(item)
+    return {"items": public_items[:2500], "categories": list(catalog.get("categories") or []),
             "error": str(catalog.get("error") or "")[:300], "loaded": True}
 
 

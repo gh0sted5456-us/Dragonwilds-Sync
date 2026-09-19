@@ -8,7 +8,7 @@ goto start_app
 
 :install_deps
 echo Installing/updating Electron and launcher UI dependencies...
-call npm install --no-audit --no-fund
+call pnpm install
 if errorlevel 1 (
   echo.
   echo Development dependency install failed.
@@ -17,7 +17,7 @@ if errorlevel 1 (
 )
 
 :start_app
-call npm start
+call pnpm start
 if errorlevel 1 (
   echo.
   echo Dragonwilds Sync exited with an error.

@@ -32,5 +32,5 @@
   function scheduleAutomaticSync(){const link=state()?.application?.profile_local_sync||{};if(!link.enabled||!link.folder||!link.password_configured)return;clearTimeout(syncTimer);syncTimer=setTimeout(()=>api.invoke('profile.local_sync.run',{}).catch(()=>{}),45000);}
   function scheduleSaveBackup(){const config=state()?.application?.shared_save_backup||{};clearTimeout(saveTimer);if(!config.enabled||!config.folder)return;saveTimer=setTimeout(()=>api.invoke('save.shared.run',{}).catch(()=>{}),60000);}
   function injectAll(){inject();injectSaveBackup();}
-  new MutationObserver(()=>requestAnimationFrame(injectAll)).observe(document.documentElement,{childList:true,subtree:true});window.addEventListener('dragonwilds:state-updated',()=>{injectAll();scheduleAutomaticSync();scheduleSaveBackup();});requestAnimationFrame(injectAll);
+  window.DragonwildsDOMLifecycle.register(()=>requestAnimationFrame(injectAll));window.addEventListener('dragonwilds:state-updated',()=>{injectAll();scheduleAutomaticSync();scheduleSaveBackup();});requestAnimationFrame(injectAll);
 })();

@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-"""Additive V2 public WebGUI presentation layer.
+"""Public WebGUI presentation layer."""
 
-The proven WebGUI remains in ``directory_web_legacy``. This wrapper adds the
-shared placard/horizontal contract, Declared projection, smooth artwork/icons,
-the WebHost-as-router Remote Server handoff, and the shared unified console
-presentation used by authenticated server management.
-"""
-
-from directory_web_legacy import *  # noqa: F401,F403
-from directory_web_legacy import admin_login_html as _legacy_admin_login_html
-from directory_web_legacy import detail_html as _legacy_detail_html
-from directory_web_legacy import public_browser_html as _legacy_public_browser_html
-from directory_web_legacy import remote_admin_html as _legacy_remote_admin_html
+from directory_web_compat import *  # noqa: F401,F403
+from directory_web_compat import admin_login_html as _base_admin_login_html
+from directory_web_compat import detail_html as _base_detail_html
+from directory_web_compat import public_browser_html as _base_public_browser_html
+from directory_web_compat import remote_admin_html as _base_remote_admin_html
 
 
 _OFFICIAL_SYNC_THEME = b'''<style id="dws-official-sync-theme">
@@ -134,7 +128,7 @@ _REMOTE_ADMIN_WORKSPACE_EXTENSION = r'''
 
 
 def public_browser_html(*, remote_admin_enabled: bool = False) -> bytes:
-    page = _legacy_public_browser_html(remote_admin_enabled=remote_admin_enabled)
+    page = _base_public_browser_html(remote_admin_enabled=remote_admin_enabled)
     marker = b"</body>"
     extension = _public_extension(remote_admin_enabled).encode("utf-8")
     page = page.replace(marker, extension + marker, 1) if marker in page else page + extension
@@ -142,7 +136,7 @@ def public_browser_html(*, remote_admin_enabled: bool = False) -> bytes:
 
 
 def admin_login_html() -> bytes:
-    page = _legacy_admin_login_html()
+    page = _base_admin_login_html()
     page = page.replace(b'class="login-intro"><img src="/assets/icon.webp"', b'class="login-intro"><img src="/assets/platforms/remote-login.svg"', 1)
     page = page.replace(
         b'<label>World Name<input class="field" id="world" autocomplete="organization" required></label>',
@@ -161,7 +155,7 @@ def admin_login_html() -> bytes:
 
 
 def remote_admin_html() -> bytes:
-    page = _legacy_remote_admin_html()
+    page = _base_remote_admin_html()
     marker = b"</body>"
     extension = _remote_admin_extension() + _REMOTE_ADMIN_WORKSPACE_EXTENSION
     page = page.replace(marker, extension + marker, 1) if marker in page else page + extension
@@ -169,7 +163,7 @@ def remote_admin_html() -> bytes:
 
 
 def detail_html(world_id: str) -> bytes:
-    page = _legacy_detail_html(world_id)
+    page = _base_detail_html(world_id)
     # Public specs/network evidence remain useful. Raw debug dumps/buttons do not.
     cleanup = b'''<style>.all-world-metadata{display:none!important}.detail-actions a[href^="/api/v1/worlds/"]{display:none!important}</style>'''
     return _official_theme(page.replace(b"</head>", cleanup + b"</head>", 1))

@@ -10,6 +10,7 @@ const must = (condition, message) => { if (!condition) fail(message); };
 const index = read('renderer/index.html');
 const performanceJs = read('renderer/release-performance.js');
 const navigationJs = read('renderer/release-navigation.js');
+const lifecycleJs = read('renderer/dom-lifecycle.js');
 const performanceCss = read('renderer/release-performance.css');
 const preload = read('electron/preload-v2.cjs');
 const phase3 = read('renderer/release-phase3.js');
@@ -23,12 +24,12 @@ must(appPos >= 0 && perfPos > appPos && navigationPos > perfPos,
   'performance coordinator must load after app.js but before historical release enhancers');
 must(index.includes('release-performance.css?'), 'performance CSS must be packaged by the renderer entrypoint');
 
-must(performanceJs.includes('target === document.documentElement') && performanceJs.includes('broadSubscribers'),
-  'document-wide historical MutationObservers must be coordinated through one scheduler');
-must(performanceJs.includes('requestIdleCallback') && performanceJs.includes('requestAnimationFrame(runBroadSubscribers)'),
-  'performance coordinator must retain idle + frame scheduling');
+must(lifecycleJs.includes('const callbacks = new Set()') && lifecycleJs.includes('observer = new MutationObserver'),
+  'document-wide renderer updates must share one lifecycle observer');
 must(performanceJs.includes("document.addEventListener('wheel'") && performanceJs.includes("document.addEventListener('scroll'"),
   'scroll/navigation interaction must take priority over presentation enhancement work');
+must(!performanceJs.includes('window.MutationObserver ='),
+  'performance diagnostics must not replace the browser MutationObserver implementation');
 must(performanceCss.includes('content-visibility: auto'), 'long off-screen UI rows must use Chromium content visibility');
 must(performanceCss.includes('overscroll-behavior: contain'), 'main scroll surface must use bounded overscroll behavior');
 must(appV2.includes('function renderPersistentShell(page)') && appV2.includes("root.dataset.persistentShell='1'"),
@@ -45,12 +46,12 @@ must(navigationJs.includes('function applyNavigationCritical') && navigationJs.i
   'navigation-critical cleanup must be separated from decorative presentation work');
 must(navigationJs.includes("const appRoot = document.getElementById('app')"),
   'navigation-critical cleanup must target the app root');
-must(navigationJs.includes("observe(appRoot, { childList: true, subtree: true })"),
-  'app-root navigation observer must run as a targeted native microtask before paint');
+must(navigationJs.includes('window.DragonwildsDOMLifecycle.register((records)'),
+  'navigation cleanup must subscribe to the shared lifecycle');
 must(navigationJs.includes('function matchingNodes') && navigationJs.includes('for (const node of record.addedNodes'),
   'navigation cleanup must inspect only newly inserted subtrees instead of rescanning the app root');
-must(navigationJs.includes("observe(document.documentElement, { childList: true, subtree: true })"),
-  'noncritical release enhancement may retain the coordinated broad observer');
+must(navigationJs.includes('window.DragonwildsDOMLifecycle.register(scheduleEnhancements)'),
+  'noncritical navigation enhancements must use the shared lifecycle');
 
 for (const token of ['Profiles &amp; Data', 'Profile Runtime Staging', 'id="machine-paths-card"', "data-application-settings-tab=\"runtimes\""]) {
   must(appV2.includes(token), `coherent profile data controls must retain ${token}`);

@@ -142,7 +142,14 @@ try {
         Write-BuildLine "Using explicit build Python from DRAGONWILDS_SYNC_PYTHON: $pythonExe"
     }
     else {
-        $pythonExe = Resolve-NativeCommand @('py.exe', 'py', 'python.exe', 'python', 'python3.exe', 'python3')
+        $workspacePython = Join-Path $ProjectRoot '.venv-build\Scripts\python.exe'
+        if (Test-Path -LiteralPath $workspacePython -PathType Leaf) {
+            $pythonExe = (Resolve-Path -LiteralPath $workspacePython).Path
+            Write-BuildLine "Using workspace build Python: $pythonExe"
+        }
+        else {
+            $pythonExe = Resolve-NativeCommand @('py.exe', 'py', 'python.exe', 'python', 'python3.exe', 'python3')
+        }
     }
     if (-not $pythonExe) { Fail-Build 'Python 3 was not found. Install Python 3 and make either py or python available.' }
 
@@ -154,13 +161,13 @@ try {
     $nodeExe = Resolve-NativeCommand @('node.exe', 'node')
     if (-not $nodeExe) { Fail-Build 'Node.js was not found.' }
 
-    $npmExe = Resolve-NativeCommand @('npm.cmd', 'npm.exe', 'npm')
-    if (-not $npmExe) { Fail-Build 'npm was not found.' }
+    $packageExe = Resolve-NativeCommand @('pnpm.cmd', 'pnpm.exe', 'pnpm', 'npm.cmd', 'npm.exe', 'npm')
+    if (-not $packageExe) { Fail-Build 'Neither pnpm nor npm was found.' }
 
     Write-BuildLine '[1/7] Toolchain check'
     Invoke-Native $pythonExe ($pythonPrefix + @('--version'))
     Invoke-Native $nodeExe @('--version')
-    Invoke-Native $npmExe @('--version')
+    Invoke-Native $packageExe @('--version')
     Write-BuildLine ''
 
     Write-BuildLine '[2/7] Required files'
@@ -263,14 +270,14 @@ try {
             }
         }
         catch {
-            Write-BuildLine '[WARN] Could not read installed Node dependency versions; npm install will repair them.'
+            Write-BuildLine '[WARN] Could not read installed Node dependency versions; the package-manager install will repair them.'
         }
     }
     if (-not $nodeDependenciesMatch) {
-        Invoke-Native $npmExe @('install', '--include=dev', '--no-audit', '--no-fund') 'Installing the pinned Node build dependencies (Electron, builder, Monaco, ASAR)...'
+        Invoke-Native $packageExe @('install', '--include=dev', '--no-audit', '--no-fund') 'Installing the pinned Node build dependencies (Electron, builder, Monaco, ASAR)...'
     }
 
-    # Do not assume npm repaired a stale dependency tree.  Re-read all pinned
+    # Do not assume the package manager repaired a stale dependency tree. Re-read all pinned
     # versions after install so Monaco/Electron packaging failures are caught
     # here with a useful message instead of later during prepare/package.
     foreach ($requiredNodePackage in @($electronPackage, $builderPackage, $monacoPackage, $asarPackage)) {
@@ -282,24 +289,24 @@ try {
     $installedBuilder = [string]((Get-Content -LiteralPath $builderPackage -Raw | ConvertFrom-Json).version)
     $installedMonaco = [string]((Get-Content -LiteralPath $monacoPackage -Raw | ConvertFrom-Json).version)
     $installedAsar = [string]((Get-Content -LiteralPath $asarPackage -Raw | ConvertFrom-Json).version)
-    if ($installedElectron -ne $expectedElectron) { Fail-Build "Electron version mismatch after npm install: found $installedElectron, expected $expectedElectron" }
-    if ($installedBuilder -ne $expectedBuilder) { Fail-Build "electron-builder version mismatch after npm install: found $installedBuilder, expected $expectedBuilder" }
-    if ($installedMonaco -ne $expectedMonaco) { Fail-Build "Monaco Editor version mismatch after npm install: found $installedMonaco, expected $expectedMonaco" }
-    if ($installedAsar -ne $expectedAsar) { Fail-Build "@electron/asar version mismatch after npm install: found $installedAsar, expected $expectedAsar" }
+    if ($installedElectron -ne $expectedElectron) { Fail-Build "Electron version mismatch after dependency install: found $installedElectron, expected $expectedElectron" }
+    if ($installedBuilder -ne $expectedBuilder) { Fail-Build "electron-builder version mismatch after dependency install: found $installedBuilder, expected $expectedBuilder" }
+    if ($installedMonaco -ne $expectedMonaco) { Fail-Build "Monaco Editor version mismatch after dependency install: found $installedMonaco, expected $expectedMonaco" }
+    if ($installedAsar -ne $expectedAsar) { Fail-Build "@electron/asar version mismatch after dependency install: found $installedAsar, expected $expectedAsar" }
     Write-BuildLine "[OK] Pinned Node dependency versions verified after install (Electron $installedElectron, electron-builder $installedBuilder, Monaco $installedMonaco, ASAR $installedAsar)."
     Write-BuildLine ''
 
     Write-BuildLine '[4/7] Verification'
-    Invoke-Native $npmExe @('run', 'check:runtime')
-    Invoke-Native $npmExe @('run', 'prepare:monaco')
-    Invoke-Native $npmExe @('run', 'test:systems:source')
+    Invoke-Native $packageExe @('run', 'check:runtime')
+    Invoke-Native $packageExe @('run', 'prepare:monaco')
+    Invoke-Native $packageExe @('run', 'test:systems:source')
     # Run the 145-file backend matrix directly so every child process streams
     # to the build log. Wrapping it inside run_system_tests.py buffers a second
     # process tree and can report a healthy child as a nonzero nested process.
     if ($env:DWS_BACKEND_MATRIX_VERIFIED -ne '1') {
-        Invoke-Native $npmExe @('run', 'test:backend')
+        Invoke-Native $packageExe @('run', 'test:backend')
     }
-    Invoke-Native $npmExe @('run', 'test:preload') 'Testing the sandboxed Electron preload bridge...'
+    Invoke-Native $packageExe @('run', 'test:preload') 'Testing the sandboxed Electron preload bridge...'
     Invoke-Native $pythonExe ($pythonPrefix + @('-m', 'py_compile',
         'backend\dragonwilds_service.py',
         'backend\server_engine.py',

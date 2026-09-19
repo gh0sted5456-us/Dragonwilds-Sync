@@ -163,5 +163,5 @@
   const schedule=()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;enhance();});};
   document.addEventListener('click',(event)=>{if(event.target.closest('[data-settings-tab]')){cachedState=null;setTimeout(schedule,30);}});
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
-  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  window.DragonwildsDOMLifecycle.register(schedule);
 })();

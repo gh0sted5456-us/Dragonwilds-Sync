@@ -56,7 +56,7 @@ inspect(registry);
 assert(renderer.includes('const FETCH_TIMEOUT_MS = 3500'), 'Upstream registry network reads must have a bounded timeout.');
 assert(renderer.includes('function primeRegistryFromLocal()'), 'Settings must have a local-first registry bootstrap.');
 assert(renderer.includes('function refreshRegistryInBackground(page, section)'), 'Remote registry refresh must be background work.');
-assert(renderer.includes("const observationRoot=document.getElementById('app')||document.documentElement"), 'Source-panel mutation work must target the app root when available.');
+assert(renderer.includes('window.DragonwildsDOMLifecycle.register(schedule)'), 'Source-panel updates must use the shared DOM lifecycle.');
 const renderStart = renderer.indexOf('async function renderPanel(page, options = {})');
 const renderEnd = renderer.indexOf('\n  function enhance()', renderStart);
 assert(renderStart >= 0 && renderEnd > renderStart, 'Could not inspect the Settings source-panel renderer.');

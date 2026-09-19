@@ -8,6 +8,7 @@ from pathlib import Path
 
 from profile_store import APP_DATA_DIR
 from rsdw_cache import search_items
+from runeschema_profile_index import refresh as refresh_profile_items
 from server_layout import resolve_server_layout
 
 SPAWNER_ROOT = APP_DATA_DIR / "rsdw_spawner"
@@ -215,6 +216,13 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
         merged = {str(row.get("item_data") or row.get("persistence_id") or "").casefold(): dict(row)
                   for row in (source.get("items") or []) if str(row.get("item_data") or row.get("persistence_id") or "").strip()}
         custom_count = 0
+        profile_index = refresh_profile_items()
+        for raw in profile_index.get("items") or []:
+            identity = str(raw.get("item_data") or raw.get("persistence_id") or raw.get("runtime_path") or "").strip()
+            if identity:
+                current = merged.get(identity.casefold(), {})
+                merged[identity.casefold()] = {**raw, **current,
+                    "sources": list(raw.get("sources") or []) + list(current.get("sources") or [])}
         for raw in custom_items or []:
             if not isinstance(raw, dict): continue
             persistence_id = str(raw.get("persistence_id") or raw.get("PersistenceID") or raw.get("ItemId") or raw.get("item_data") or raw.get("logical_key") or "").strip()
@@ -268,7 +276,8 @@ def catalog(game_root: str, *, kind: str = "enemy", query: str = "", category: s
                 break
         return {"kind": kind, "items": rows, "count": len(rows), "categories": all_categories,
                 "source": source.get("cache") or {}, "loot_menu_detected": loot_menu,
-                "custom_count": custom_count,
+                "custom_count": custom_count, "profile_item_count": int(profile_index.get("count") or 0),
+                "profile_index": {key: profile_index.get(key) for key in ("schema", "updated_at", "profile_count", "file_count", "count", "cached")},
                 "live_modded_catalog": bool(installed_rows),
                 "message": "Installed RSDWTools item and icon catalog ready." if installed_rows else
                            ("RSDW item catalog ready. LootMenu is detected but exposes no supported catalog API." if loot_menu else "RSDW item catalog ready.")}

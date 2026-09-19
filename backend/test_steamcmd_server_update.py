@@ -6,6 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import server_systems as ss
+import dragonwilds_service_legacy as service
 
 
 def _steam_name() -> str:
@@ -114,10 +115,42 @@ def test_failed_steamcmd_update_surfaces_output() -> None:
         assert ss.CLIENT_STEAM_APP_ID not in calls[0]
 
 
+def test_update_job_reports_monotonic_overall_progress() -> None:
+    events = []
+    old_set = service._set_server_update_job
+    old_download = service.download_steamcmd
+    old_install = service.install_dedicated_server
+    old_check = service.check_steam_build
+    old_load, old_save = service.load_state, service.save_state
+    service._set_server_update_job = lambda _job_id, **update: events.append(dict(update))
+    service.download_steamcmd = lambda _root, progress=None: progress({"phase": "steamcmd-download", "percent": 100, "message": "SteamCMD downloaded"}) or {"ok": True}
+    def fake_install(_install, _steam, progress=None):
+        progress({"phase": "downloading", "percent": 10, "downloaded_bytes": 10, "total_bytes": 100, "console_line": "Update state downloading"})
+        progress({"phase": "verifying", "percent": 50, "console_line": "Update state verifying"})
+        return {"ok": True, "server_exe": "server.exe"}
+    service.install_dedicated_server = fake_install
+    service.check_steam_build = lambda: {"buildid": "123"}
+    service.load_state = lambda: {"application": {"server_install": {}}}
+    service.save_state = lambda _state: None
+    try:
+        service._run_server_update_job("job", "install", "missing-steamcmd")
+    finally:
+        service._set_server_update_job = old_set
+        service.download_steamcmd = old_download
+        service.install_dedicated_server = old_install
+        service.check_steam_build = old_check
+        service.load_state, service.save_state = old_load, old_save
+    percentages = [float(row["percent"]) for row in events if row.get("percent") is not None]
+    assert percentages == sorted(percentages)
+    assert any(row.get("phase_percent") == 10 for row in events)
+    assert events[-1]["status"] == "complete" and events[-1]["percent"] == 100
+
+
 def main() -> None:
     test_successful_server_only_steamcmd_update()
     test_steamcmd_code_7_retries_once()
     test_failed_steamcmd_update_surfaces_output()
+    test_update_job_reports_monotonic_overall_progress()
     print("server-only SteamCMD update contract: PASS")
 
 

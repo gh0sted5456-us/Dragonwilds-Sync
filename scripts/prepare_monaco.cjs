@@ -8,7 +8,7 @@ const source = path.join(root, 'node_modules', 'monaco-editor', 'min', 'vs');
 const target = path.join(root, 'renderer', 'vendor', 'monaco', 'vs');
 
 if (!fs.existsSync(packagePath)) {
-  console.error(`Monaco Editor ${expectedVersion} is not installed. Run npm install first.`);
+  console.error(`Monaco Editor ${expectedVersion} is not installed. Run pnpm install first.`);
   process.exit(2);
 }
 
@@ -25,7 +25,7 @@ try {
 // 0.52.x line until the renderer is deliberately migrated to ESM.
 if (installedVersion !== expectedVersion) {
   console.error(`Incompatible Monaco Editor version: found ${installedVersion || 'unknown'}, expected ${expectedVersion}.`);
-  console.error('Run npm install so package.json can restore the pinned AMD-compatible runtime.');
+  console.error('Run pnpm install so package.json can restore the pinned AMD-compatible runtime.');
   process.exit(2);
 }
 

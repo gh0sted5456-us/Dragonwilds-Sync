@@ -429,7 +429,7 @@
   });
 
   window.addEventListener('dragonwilds:state-updated',()=>requestAnimationFrame(decorateAll));
-  new MutationObserver(()=>requestAnimationFrame(decorateAll)).observe(document.documentElement,{childList:true,subtree:true});
+  window.DragonwildsDOMLifecycle.register(()=>requestAnimationFrame(decorateAll));
 
   function refreshHeartbeats() {
     document.querySelectorAll('[data-world-id]').forEach((node)=>{const id=text(node.dataset.worldId);if(id)requestHeartbeat(id,node.dataset.serverCard==='1'?'dedicated':'local',true);});

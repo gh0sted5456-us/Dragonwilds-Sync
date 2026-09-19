@@ -340,10 +340,7 @@
     });
   };
 
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
-  setInterval(() => {
-    if (document.querySelector('.console-workspace')) refreshUnifiedConsole();
-    if (document.querySelector('.recommended-mod-card:not([data-dws-recommendation-enhanced="1"])')) schedule();
-  }, 2200);
+  window.DragonwildsDOMLifecycle.register(schedule);
+  window.addEventListener('dragonwilds:state-updated', schedule);
   schedule();
 })();

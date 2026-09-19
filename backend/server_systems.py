@@ -2200,7 +2200,9 @@ def scan_for_servers(timeout: float = 3.0) -> list[dict]:
         active = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         active.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         active.bind(("", 0)); active.settimeout(0.25)
-        active.sendto(json.dumps({"app": DISCOVERY_MAGIC, "discover": True}).encode(), ("255.255.255.255", DISCOVERY_QUERY_PORT))
+        query_payload = json.dumps({"app": DISCOVERY_MAGIC, "discover": True}).encode()
+        active.sendto(query_payload, ("255.255.255.255", DISCOVERY_QUERY_PORT))
+        active.sendto(query_payload, ("127.0.0.1", DISCOVERY_QUERY_PORT))
         sockets.append(active)
     except OSError:
         pass

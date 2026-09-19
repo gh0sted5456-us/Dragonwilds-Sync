@@ -126,5 +126,5 @@
 
   document.addEventListener('change', event=>{const file=event.target.closest('[data-field="icon"]'); if(!file?.files?.[0])return; const host=file.closest('.v3p4-manager-overlay'); normalizePng(file.files[0]).then(data=>{host.querySelector('.v3p4-badge-preview').innerHTML=`<img src="${esc(data)}" alt="Badge preview">`;}).catch(e=>{host.querySelector('[data-v3p4-manager-status]').textContent=String(e?.message||e);});});
 
-  const observer=new MutationObserver(()=>{enablePlatformLinks();injectBadgeButtons();}); observer.observe(document.documentElement,{childList:true,subtree:true}); enablePlatformLinks(); injectBadgeButtons();
+  window.DragonwildsDOMLifecycle.register(()=>{enablePlatformLinks();injectBadgeButtons();}); enablePlatformLinks(); injectBadgeButtons();
 })();

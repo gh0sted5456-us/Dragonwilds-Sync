@@ -18,6 +18,7 @@ from pathlib import Path
 
 from process_utils import run_hidden
 from profile_store import APP_DATA_DIR
+from remote_scope import require_world_scope, scoped_payload
 from server_systems import detect_public_ip
 from world_directory import normalize_heartbeat, probe_heartbeat, FINGERPRINT_RE
 from directory_web import admin_login_html, api_index_html, detail_html, public_browser_html, remote_admin_html
@@ -877,7 +878,8 @@ class DirectoryHost:
 
     def remote_payload(self, session: dict) -> dict:
         if not self.remote_state_provider: raise RuntimeError("Remote Server Admin state is unavailable")
-        payload = self.remote_state_provider(str(session.get("world_id") or "")) or {}
+        world_id = require_world_scope(session)
+        payload = self.remote_state_provider(world_id) or {}
         permissions = dict(session.get("permissions") or {})
         if not permissions.get("view_overview"):
             payload["profile"] = {"world_name": str((payload.get("profile") or {}).get("world_name") or session.get("world_name") or "World")}
@@ -890,16 +892,18 @@ class DirectoryHost:
         if not permissions.get("view_console"): payload.pop("console", None)
         return {**payload, "session": {key: session.get(key) for key in ("world_id", "world_name", "username", "role", "created_at", "expires_at")},
                 "permissions": permissions, "csrf": session.get("csrf"),
-                "audit": self.remote_audit(str(session.get("world_id") or "")) if permissions.get("view_audit") else []}
+                "audit": self.remote_audit(world_id) if permissions.get("view_audit") else []}
 
     def remote_action(self, session: dict, action: str, payload: dict | None = None) -> dict:
         action = str(action or "").casefold()
+        world_id = require_world_scope(session)
+        payload = scoped_payload(session, payload)
         if action == "permission_request":
-            permission = str((payload or {}).get("permission") or "")
+            permission = str(payload.get("permission") or "")
             if permission not in REMOTE_PERMISSION_DEFAULTS: raise ValueError("Unknown permission category")
             if bool((session.get("permissions") or {}).get(permission)): return {"already_granted": True}
             if not self.remote_action_handler: raise RuntimeError("Remote commands are unavailable")
-            result = self.remote_action_handler(str(session.get("world_id") or ""), action, {"permission": permission, "username": session.get("username")}) or {}
+            result = self.remote_action_handler(world_id, action, {"permission": permission, "username": session.get("username")}) or {}
             self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""), remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail=f"{session.get('username')} requested {permission}")
             return result
         permission_for = {"start": "start", "stop": "stop", "restart": "restart", "update": "update", "update_restart": "update", "refresh": "refresh",
@@ -916,7 +920,7 @@ class DirectoryHost:
             raise PermissionError(f"The desktop WebHost authority has not granted {required.replace('_', ' ')}")
         if not self.remote_action_handler: raise RuntimeError("Remote commands are unavailable")
         try:
-            result = self.remote_action_handler(str(session.get("world_id") or ""), action, dict(payload or {})) or {}
+            result = self.remote_action_handler(world_id, action, payload) or {}
             if action != "spawner_icon":
                 self._remote_audit(action, ok=True, world_id=session.get("world_id", ""), world_name=session.get("world_name", ""),
                                    remote_ip=session.get("remote_ip", ""), user_agent=session.get("user_agent", ""), detail="Structured command completed")

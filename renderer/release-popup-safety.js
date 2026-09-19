@@ -55,6 +55,6 @@
   document.addEventListener('keydown',(event)=>{
     if(event.key!=='Escape')return;const popups=[...document.querySelectorAll(popupSelector)].filter(visible);const popup=popups.at(-1);if(!popup)return;event.preventDefault();event.stopPropagation();closePopup(popup);
   },true);
-  new MutationObserver((records)=>{for(const record of records)for(const node of record.addedNodes){if(node.nodeType!==1)continue;if(node.matches?.(popupSelector))prepare(node);prepareAll(node);}}).observe(document.documentElement,{childList:true,subtree:true});
+  window.DragonwildsDOMLifecycle.register((records)=>{for(const record of records)for(const node of record.addedNodes){if(node.nodeType!==1)continue;if(node.matches?.(popupSelector))prepare(node);prepareAll(node);}});
   prepareAll();
 })();

@@ -155,18 +155,15 @@
     void enhanceRecommendedMods(root);
   }
 
-  // Critical menu structure gets a targeted observer. release-performance.js
-  // only defers documentElement-wide observers, so this callback is delivered
-  // as a native MutationObserver microtask before the next browser paint.
   const appRoot = document.getElementById('app');
   if (appRoot) {
-    new MutationObserver((records) => {
+    window.DragonwildsDOMLifecycle.register((records) => {
       const added = new Set();
       for (const record of records) {
         for (const node of record.addedNodes || []) if (node.nodeType === Node.ELEMENT_NODE) added.add(node);
       }
       for (const node of added) applyNavigationCritical(node);
-    }).observe(appRoot, { childList: true, subtree: true });
+    });
     applyNavigationCritical(appRoot);
   }
 
@@ -183,7 +180,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', scheduleEnhancements, { once: true });
   else scheduleEnhancements();
 
-  // Noncritical presentation remains on the coordinated broad observer so large
-  // editor/mod DOM updates do not trigger several whole-document scans per frame.
-  new MutationObserver(scheduleEnhancements).observe(document.documentElement, { childList: true, subtree: true });
+  window.DragonwildsDOMLifecycle.register(scheduleEnhancements);
 })();

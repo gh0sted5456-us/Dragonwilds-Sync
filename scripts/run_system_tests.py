@@ -10,6 +10,7 @@ import os
 import platform
 import re
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -91,7 +92,7 @@ def git_value(*args):
 def command_for_platform(command):
     values = [sys.executable if value == "{python}" else value for value in command]
     if os.name == "nt" and values[0] == "npm":
-        values[0] = "npm.cmd"
+        values[0] = "npm.cmd" if shutil.which("npm.cmd") else "pnpm.cmd"
     return values
 
 

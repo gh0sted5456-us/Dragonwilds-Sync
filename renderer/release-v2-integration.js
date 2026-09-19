@@ -80,5 +80,5 @@
 
   window.addEventListener('dragonwilds:icon-mode',event=>{const mode=String(event.detail?.mode||'');if(!['color','adaptive','black','white'].includes(mode))return;try{localStorage.setItem('dragonwilds-sync-icon-mode',mode);}catch(_){}applyIconMode();});
   window.addEventListener('dragonwilds:state-updated',(event)=>{cachedState=event.detail||window.__DWSYNC_STATE__||cachedState;fetchedAt=Date.now();schedule();});
-  applyIconMode();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  applyIconMode();if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();window.DragonwildsDOMLifecycle.register(schedule);
 })();

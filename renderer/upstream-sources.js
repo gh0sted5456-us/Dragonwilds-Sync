@@ -253,6 +253,5 @@
   }
   let pending=false; const schedule=()=>{if(pending)return;pending=true;requestAnimationFrame(()=>{pending=false;enhance();});};
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
-  const observationRoot=document.getElementById('app')||document.documentElement;
-  new MutationObserver(schedule).observe(observationRoot,{childList:true,subtree:true});
+  window.DragonwildsDOMLifecycle.register(schedule);
 })();

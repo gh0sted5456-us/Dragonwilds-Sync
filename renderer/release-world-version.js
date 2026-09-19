@@ -37,5 +37,5 @@
   }
   function schedule(){ if(pending)return; pending=true; requestAnimationFrame(enhance); }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',schedule,{once:true});else schedule();
-  new MutationObserver(schedule).observe(document.documentElement,{childList:true,subtree:true});
+  window.DragonwildsDOMLifecycle.register(schedule);
 })();

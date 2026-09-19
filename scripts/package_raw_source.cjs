@@ -30,6 +30,7 @@ const sourceFiles = [
   'LICENSE.txt',
   'package-lock.json',
   'package.json',
+  'pnpm-lock.yaml',
   'README.md',
   'RELEASE.txt',
 ];
@@ -40,6 +41,8 @@ const excludedDirectoryNames = new Set([
   '.venv',
   '.test-venv',
   '.venv-linux-build',
+  '.pnpm-store',
+  '.tmp-test-home',
   'node_modules',
   'release',
   'release-linux',

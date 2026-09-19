@@ -510,8 +510,7 @@
     document.addEventListener('DOMContentLoaded',async()=>{await refresh();scheduleRefresh();},{once:true});
     window.addEventListener('beforeunload',()=>{if(refreshTimer)clearTimeout(refreshTimer);});
   } else {
-    const observer=new MutationObserver(()=>{enhanceShortcuts();enhanceNetworkSettings();});
-    observer.observe(document.documentElement,{subtree:true,childList:true});
+    window.DragonwildsDOMLifecycle.register(()=>{enhanceShortcuts();enhanceNetworkSettings();});
     document.addEventListener('DOMContentLoaded',()=>{enhanceShortcuts();enhanceNetworkSettings();},{once:true});
   }
 })();

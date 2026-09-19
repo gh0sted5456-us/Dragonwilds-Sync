@@ -15,6 +15,7 @@ const python=findPython(); if(!python){console.error('[ERROR] Python 3 was not f
 const crossPlatformTests = [
   'backend/test_dedicated_staged_overlay.py',
   'backend/test_loader_repository_shared_saves.py',
+  'backend/test_v5_profile_remote_scope.py',
   'backend/test_staging_profile_contract.py',
   'backend/test_win64_profile_mods.py',
   'backend/test_save_delivery.py',
@@ -51,6 +52,7 @@ const crossPlatformTests = [
   'backend/test_v27_14_final_cleanup.py',
   'backend/test_v27_15_runeschema_flavor_lock.py',
   'backend/test_runeschema_repository.py',
+  'backend/test_runeschema_profile_index.py',
   'backend/test_runtime_version_archive.py',
   'backend/test_runeschema_063_console.py',
   'backend/test_connection_transport.py',
@@ -86,7 +88,7 @@ async function runIsolatedTest(test, runner){
  fs.mkdirSync(localAppData,{recursive:true});fs.mkdirSync(roamingAppData,{recursive:true});
  try{
   return await new Promise(resolve=>{
-   const child=spawn(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData,LOCALAPPDATA:localAppData,APPDATA:roamingAppData}});
+   const child=spawn(python.command,[...python.prefix,runner,test],{stdio:'inherit',shell:false,env:{...process.env,DRAGONWILDS_SYNC_APPDATA:isolatedAppData,DRAGONWILDS_SYNC_TEST_KEYSTORE:'1',LOCALAPPDATA:localAppData,APPDATA:roamingAppData}});
    child.once('error',error=>resolve({error,status:null}));
    child.once('close',status=>resolve({error:null,status}));
   });

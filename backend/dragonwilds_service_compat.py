@@ -83,6 +83,7 @@ from world_save_editor import newest_save, parse_world_save, write_world_save
 from world_sharing import export_world_package, inspect_world_package, world_from_package
 from profile_bundle import export_profile_bundle, import_profile_bundle, inspect_profile_bundle
 from profile_vault import decrypt_profile as decrypt_profile_vault, write_encrypted_profile, vault_id as profile_vault_id
+from profile_importer import build_import_plan, import_into_profile
 from data_root import data_root_status, migrate_program_data
 from server_engine import player_history_payload
 from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
@@ -6843,6 +6844,39 @@ def handle(method: str, params: dict) -> object:
         _record_notification(state, "Existing server mods imported", f"{detected['count']} mod group(s) · {files} file(s) copied into the selected World Profile.", "success", key=f"server-mod-import:{profile_id}")
         save_state(state)
         return {**detected, "profile_id": profile_id, "files_captured": files, "state": public_state(state)}
+
+    if method in {"server.world.import.preview", "server.world.import.execute"}:
+        profile_id = str(params.get("profile_id") or params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
+        profile = load_server_profile(profile_id)
+        if not profile:
+            raise ValueError("Choose an existing hosted World as the import destination.")
+        selected = str(params.get("path") or "").strip()
+        if not selected:
+            raise ValueError("Choose a profile staging folder or Dragonwilds server directory to import.")
+        profile_dir = SERVER_PROFILES_DIR / profile_id
+        if method == "server.world.import.preview":
+            return build_import_plan(profile_dir, selected)
+        ENGINE.assert_stopped()
+        receipt = import_into_profile(
+            profile_dir, selected,
+            cleanup_source=bool(params.get("cleanup_source", True)),
+            replace_conflicts=bool(params.get("replace_conflicts", False)),
+        )
+        profile["mods_profile_initialized"] = True
+        profile["last_verified_import"] = {
+            "completed_at": receipt["completed_at"], "source_kind": receipt["source_kind"],
+            "files": receipt["file_count"], "bytes": receipt["bytes"],
+            "cleaned": receipt["cleaned"], "recovery": receipt["recovery"],
+        }
+        save_server_profile(profile_id, profile)
+        refresh_runeschema_profile_items(force=True)
+        _record_notification(
+            state, "Profile files imported",
+            f"{receipt['file_count']} verified file(s) staged; {receipt['cleaned']} source file(s) moved to recovery.",
+            "success", key=f"profile-import:{profile_id}", details={"recovery": receipt["recovery"]},
+        )
+        save_state(state)
+        return {"receipt": receipt, "state": public_state(state)}
 
     retired_runtime_management = {
         "server.install.ensure_runtimes",

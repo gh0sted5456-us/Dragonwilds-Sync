@@ -189,6 +189,9 @@ def main():
     # Ubuntu is an additional release-candidate path; Windows portable remains
     # the production baseline and keeps all of the assertions above.
     assert package["scripts"]["build:linux"] == "bash scripts/build_linux.sh"
+    pnpm_workspace = (ROOT / "pnpm-workspace.yaml").read_text(encoding="utf-8")
+    assert "allowBuilds:" in pnpm_workspace
+    assert "electron-winstaller: true" in pnpm_workspace
     assert package["build"]["linux"]["target"] == ["AppImage"]
     assert package["build"]["linux"]["artifactName"] == "Dragonwilds Sync.${ext}"
     assert package["build"]["linux"]["extraResources"][0]["from"] == "dist-service/DragonwildsSync.Service"

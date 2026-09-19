@@ -31,6 +31,7 @@ const sourceFiles = [
   'package-lock.json',
   'package.json',
   'pnpm-lock.yaml',
+  'pnpm-workspace.yaml',
   'README.md',
   'RELEASE.txt',
 ];

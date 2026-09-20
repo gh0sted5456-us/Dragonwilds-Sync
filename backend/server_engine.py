@@ -15,6 +15,7 @@ import tempfile
 from pathlib import Path
 
 from profile_store import APP_DATA_DIR, SERVER_PROFILES_DIR, load_server_profile, load_state, save_server_profile, save_state
+from native_invite_codes import begin as begin_native_invite, clear as clear_native_invite, observe as observe_native_invite, scan_logs as scan_native_invite_logs, public_status as public_native_invite_status
 from backup_naming import profile_naming, render_backup_name
 from process_utils import check_output_hidden, popen_game_server, popen_hidden, run_hidden
 from computer_profiles import apply_process_priority, resolve_computer_profile, begin_power_session, restore_power_session
@@ -1144,6 +1145,9 @@ class ServerEngine:
                 with self._event_lock:
                     self.process_output.append({"ts": time.time(), "source": "game", "level": level, "message": message[:4000]})
                     self.process_output = self.process_output[-1200:]
+                if self.active_profile_id:
+                    observe_native_invite(self.active_profile_id, "dedicated", message, source="dedicated:stdout",
+                                          session_started_at=float(self.started_at or 0))
         except (OSError, ValueError):
             pass
         finally:
@@ -1343,6 +1347,10 @@ class ServerEngine:
         diagnostic_output = list(self.process_output)
         if exit_code is not None and not diagnostic_output:
             diagnostic_output = self._runtime_log_tail(root, self.started_at)
+        invite = {}
+        if self.active_profile_id and root:
+            invite = scan_native_invite_logs(self.active_profile_id, "dedicated", resolve_server_layout(root).logs_dir,
+                                             session_started_at=float(self.started_at or 0))
         return {"running": pid is not None, "pid": pid, "exit_code": exit_code, "uptime_seconds": monitor.get("uptime_seconds"),
                 "active_profile_id": self.active_profile_id, "players": [p.get("name") for p in merged_players.get("players", [])], "player_details": merged_players.get("players", []), "player_count": merged_players.get("player_count", monitor.get("player_count", 0)),
                 "player_tracker": {"connected": merged_players.get("tracker_connected", False), "last_update": merged_players.get("last_tracker_update")},
@@ -1350,6 +1358,7 @@ class ServerEngine:
                 "runtime_prerequisites": prereq,
                 "cl_version": cl_version, "reported_cl": cl_version.get("reported_cl") or "",
                 "network_setup": dict(self.network_setup), "game_root": root, "process_output": diagnostic_output,
+                "native_invite": public_native_invite_status(invite, hosting=pid is not None),
                 "metrics": metrics, "metric_history": list(self.metric_history), "computer_profile": ({**self._resolved_computer_profile(), **self._computer_profile_status}), "events": (persistent_events or self.events)[-150:]}
 
     def assert_stopped(self):
@@ -1561,6 +1570,7 @@ class ServerEngine:
         if not profile: raise KeyError("Server World not found")
         exe = find_dedicated_server_exe(profile)
         if not exe: raise ValueError("Dedicated server executable is not configured or could not be found for this World.")
+        invite_started_at = begin_native_invite(profile_id, "dedicated", resolve_server_layout(self._profile_root(profile)).logs_dir)
         cfg = profile.setdefault("dedicated_config", {})
         # Profile storage is authoritative even when this World is already
         # selected. Always materialize its complete staged overlay before launch.
@@ -1616,7 +1626,7 @@ class ServerEngine:
         # taskbar without letting its console steal focus. Sync captures the
         # same stdout continuously; its own console window is an independent
         # user preference in Application settings.
-        self.proc = popen_game_server(command, minimize_console=True, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = time.time(); self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
+        self.proc = popen_game_server(command, minimize_console=True, cwd=str(Path(exe).parent), env=launch_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1); self.started_at = invite_started_at; self.monitor.start_ts = self.started_at; self.active_profile_id = profile_id; STATE.active_profile_id = profile_id
         if self.proc.stdout is not None:
             threading.Thread(target=self._capture_process_output, args=(self.proc.stdout,), daemon=True, name="Dragonwilds-Dedicated-Console").start()
         self._apply_computer_profile(self.proc.pid, exe, profile_id)
@@ -1632,8 +1642,11 @@ class ServerEngine:
         return {**runtime, "published": published}
 
     def stop_dedicated(self) -> dict:
+        invite_profile_id = str(self.active_profile_id or "")
         pid = self.status()["pid"]
         if pid is None:
+            if invite_profile_id:
+                clear_native_invite(invite_profile_id, "dedicated")
             PLAYER_BRIDGE.stop(); PLAYER_SERVICE.reset_session()
             self._restore_computer_profile(); result = self.status(); result["stop_verified"] = True; result["stop_method"] = "already-stopped"; return result
         self._event(f"Explicit launcher stop requested for dedicated server PID {pid}.", "warn")
@@ -1642,6 +1655,8 @@ class ServerEngine:
             try: self.proc.wait(timeout=1)
             except (subprocess.TimeoutExpired, OSError): pass
         self.proc = None; self.started_at = None
+        if invite_profile_id:
+            clear_native_invite(invite_profile_id, "dedicated")
         verification = self.status()
         if verification.get("running") and int(verification.get("pid") or 0) == int(pid):
             raise RuntimeError(f"Dedicated server PID {pid} is still running after the stop request.")

@@ -87,6 +87,7 @@ from profile_importer import build_import_plan, import_into_profile
 from data_root import data_root_status, migrate_program_data
 from server_engine import player_history_payload
 from persistent_direct_connect import ensure_installed as ensure_direct_connect_mod, write_profile_config as write_direct_connect_config, clear_profile_config as clear_direct_connect_config
+from native_invite_codes import begin as begin_native_invite, clear as clear_native_invite, scan_logs as scan_native_invite_logs, public_status as public_native_invite_status
 
 from server_systems import (
     SHARE, STATE, apply_unit_update, backup_dedicated_savegames, backup_install_for_reset, bulk_set_classification, check_steam_build, clear_server_mods, configure_shared_firewall, configure_server_firewall_ports, configure_firewall_services,
@@ -3473,6 +3474,8 @@ def handle(method: str, params: dict) -> object:
             raise RuntimeError("Start Dragonwilds and load this World before enabling Co-Op Sync. Singleplayer Worlds never broadcast on their own.")
         local = load_singleplayer_profile(profile_id)
         cfg = local.setdefault("broadcast_config", {})
+        invite_started_at = begin_native_invite(profile_id, "coop", resolve_client_layout(game_dir).logs_dir)
+        cfg["native_invite_session_started_at"] = invite_started_at
         if "password" in params:
             cfg["password"] = str(params.get("password") or "")[:512]
         if "sync_port" in params:
@@ -3522,7 +3525,10 @@ def handle(method: str, params: dict) -> object:
         _private_profile_world(state, profile_id).setdefault("status", {})["broadcasting"] = True
         save_state(state)
         handle("world.discovery.heartbeat", {})
-        return {"result": {**result, "host_type": "private_coop", "gameplay_hosting": "managed-in-game"}, "state": public_state(state)}
+        invite = scan_native_invite_logs(profile_id, "coop", resolve_client_layout(game_dir).logs_dir,
+                                         session_started_at=invite_started_at)
+        return {"result": {**result, "host_type": "private_coop", "gameplay_hosting": "managed-in-game",
+                           "native_invite": public_native_invite_status(invite, hosting=True)}, "state": public_state(state)}
 
     if method == "singleplayer.broadcast.stop":
         profile_id = _private_profile_id(state, params)
@@ -3530,6 +3536,7 @@ def handle(method: str, params: dict) -> object:
             SHARE.stop()
             with STATE.lock:
                 STATE.server_online = False; STATE.server_start_ts = None; STATE.active_profile_id = None
+        clear_native_invite(profile_id, "coop")
         local = load_singleplayer_profile(profile_id); local["broadcasting"] = False; save_singleplayer_profile(local, profile_id)
         game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
         if game_dir:
@@ -3537,6 +3544,21 @@ def handle(method: str, params: dict) -> object:
         ensure_singleplayer_state(state); _private_profile_world(state, profile_id).setdefault("status", {})["broadcasting"] = False
         save_state(state)
         return {"result": SHARE.status(), "state": public_state(state)}
+
+    if method == "hosting.native_invite.status":
+        host_type = "dedicated" if str(params.get("kind") or "").lower() == "server" else "coop"
+        profile_id = str(params.get("id") or params.get("profile_id") or "")
+        if host_type == "dedicated":
+            runtime = ENGINE.status()
+            hosting = bool(runtime.get("running") and str(runtime.get("active_profile_id") or "") == profile_id)
+            return runtime.get("native_invite") if hosting else public_native_invite_status({}, hosting=False)
+        local = load_singleplayer_profile(profile_id)
+        hosting = bool(local.get("broadcasting"))
+        game_dir = str((state.get("application") or {}).get("game_dir") or "").strip()
+        started_at = float((local.get("broadcast_config") or {}).get("native_invite_session_started_at") or 0)
+        record = scan_native_invite_logs(profile_id, "coop", resolve_client_layout(game_dir).logs_dir,
+                                         session_started_at=started_at) if hosting and game_dir else {}
+        return public_native_invite_status(record, hosting=hosting)
 
     if method == "singleplayer.players.get":
         profile_id = _private_profile_id(state, params)

@@ -830,6 +830,14 @@ def handle(method: str, params: dict) -> object:
         })
         return {"state": public, "runtime": runtime, "lifecycle": lifecycle}
 
+    if method == "hosting.native_invite.status" and str(params.get("kind") or "").lower() == "server":
+        profile_id = str(params.get("id") or params.get("profile_id") or "")
+        lifecycle = RUNTIME.get_status()
+        runtime = dict(lifecycle.get("runtime") or {})
+        hosting = bool(runtime.get("running") and str(runtime.get("active_profile_id") or "") == profile_id)
+        value = runtime.get("native_invite") if isinstance(runtime.get("native_invite"), dict) else {}
+        return value if hosting else _legacy.public_native_invite_status({}, hosting=False)
+
     if method in {"server.world.start", "server.runtime.start"}:
         profile_id = str(params.get("id") or state.setdefault("server", {}).get("active_world_id") or "")
         if not profile_id:

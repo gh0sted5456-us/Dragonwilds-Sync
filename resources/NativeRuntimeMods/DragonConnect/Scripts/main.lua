@@ -16,8 +16,56 @@ local world_type = string.lower(tostring(config.world_type or "normal"))
 local auto_navigate = config.auto_navigate ~= false
 local auto_submit = config.auto_submit ~= false
 
+-- Dragonwilds 1.0 issues its native invite code only after an online lobby is
+-- registered.  Observe the pause-menu text without clicking or changing it;
+-- the launcher accepts the line only for the currently active host session.
+local captured_invite_code = ""
+local function invite_text(widget)
+    local value = ""
+    pcall(function()
+        local text = widget:GetText()
+        value = text and text:ToString() or ""
+    end)
+    return tostring(value or "")
+end
+
+local function scan_native_invite()
+    local ok, widgets = pcall(FindAllOf, "TextBlock")
+    if not ok or not widgets then return end
+    for _, widget in pairs(widgets) do
+        local valid = false
+        pcall(function() valid = widget:IsValid() end)
+        if valid then
+            local name = ""
+            pcall(function() name = tostring(widget:GetFullName() or "") end)
+            local combined = string.upper(name .. " " .. invite_text(widget))
+            local code = string.match(combined, "INVITE%s*CODE[^A-Z0-9]*([A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]%-[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9])")
+            if code and code ~= captured_invite_code then
+                captured_invite_code = code
+                print(string.format("[DragonConnect] Native Invite Code: %s\n", code))
+                return
+            end
+        end
+    end
+end
+
+local function schedule_invite_scan(delay_ms)
+    if type(ExecuteInGameThreadWithDelay) == "function" then
+        ExecuteInGameThreadWithDelay(delay_ms, scan_native_invite)
+    elseif type(ExecuteWithDelay) == "function" then
+        ExecuteWithDelay(delay_ms, scan_native_invite)
+    end
+end
+
+schedule_invite_scan(1500)
+pcall(function()
+    RegisterHook("/Script/UMG.UserWidget:Construct", function()
+        schedule_invite_scan(500)
+    end)
+end)
+
 if not enabled or address == "" then
-    print("[DragonConnect] No active World connection is configured.\n")
+    print("[DragonConnect] Native invite observer active; no Direct Connect handoff is configured.\n")
     return
 end
 

@@ -13,6 +13,7 @@ const candidates = [
 function findPython(){for(const candidate of candidates){const probe=spawnSync(candidate.command,[...candidate.prefix,'--version'],{stdio:'ignore',shell:false});if(!probe.error&&probe.status===0)return candidate;}return null;}
 const python=findPython(); if(!python){console.error('[ERROR] Python 3 was not found (tried py/python/python3).');process.exit(1);}
 const crossPlatformTests = [
+  'backend/test_native_invite_codes.py',
   'backend/test_profile_importer.py',
   'backend/test_dedicated_staged_overlay.py',
   'backend/test_loader_repository_shared_saves.py',

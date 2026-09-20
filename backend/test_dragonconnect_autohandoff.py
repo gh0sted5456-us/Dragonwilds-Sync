@@ -32,6 +32,8 @@ def test_bundled_dragonconnect_has_bounded_verified_auto_handoff_contract() -> N
     assert 'if not submit_complete then later(1000) end' in text
     assert 'ExecuteInGameThreadWithDelay(delay_ms, scheduled_scan)' in text
     assert 'if not auto_submit and type_ready then submit_complete = true end' in text
+    assert 'Native Invite Code:' in text
+    assert 'FindAllOf, "TextBlock"' in text
     assert 'for _, delay in ipairs({' not in text
 
     # Non-default World modes must be resolved before final submission.

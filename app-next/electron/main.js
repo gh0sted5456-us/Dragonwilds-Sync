@@ -26,10 +26,12 @@ const fs = require("fs");
 const os = require("os");
 const { spawn } = require("child_process");
 const http = require("http");
+const net = require("net");
 const crypto = require("crypto");
 
 const isDev = process.env.NODE_ENV === "development";
-const PORT = 4317;
+let PORT = 4317;
+const INSTANCE_TOKEN = crypto.randomBytes(24).toString("hex");
 
 // Per-launch secret proving a request is the trusted desktop app rather than a Remote
 // Access guest (lib/remoteauth). Passed to the server as env and pre-set as an HttpOnly
@@ -243,6 +245,21 @@ function launchRoute(argv = process.argv) {
   return `/profiles/${encodeURIComponent(id)}/${role}`;
 }
 
+function portAvailable(port) {
+  return new Promise((resolve) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", () => resolve(false));
+    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+  });
+}
+
+async function choosePrivatePort() {
+  if (isDev) return 4317;
+  for (let candidate = 4317; candidate < 4417; candidate++) if (await portAvailable(candidate)) return candidate;
+  throw new Error("No available local application port was found.");
+}
+
 function showWindow(worldId, route) {
   if (!serverReady) return;
   if (!mainWindow) createWindow();
@@ -329,6 +346,8 @@ function startNextServer() {
     APP_MANAGER_DATA_DIR: dataDir(),
     // Expose the installed app version to the server so the UI can check for updates.
     APP_MANAGER_APP_VERSION: app.getVersion(),
+    APP_MANAGER_PORT: String(PORT),
+    APP_MANAGER_INSTANCE_TOKEN: INSTANCE_TOKEN,
     // CRITICAL: make the Electron binary behave as plain Node for this child,
     // so it can run the Next standalone server.js.
     ELECTRON_RUN_AS_NODE: "1",
@@ -375,7 +394,14 @@ async function restartNextServer() {
 
 function pingServer(url) {
   return new Promise((resolve) => {
-    const req = http.get(url, (res) => { res.destroy(); resolve(true); });
+    const req = http.get(`${url}/api/app/instance`, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => {
+        try { resolve(isDev ? res.statusCode === 200 : JSON.parse(body).token === INSTANCE_TOKEN); }
+        catch { resolve(false); }
+      });
+    });
     req.on("error", () => resolve(false));
     req.setTimeout(1000, () => { req.destroy(); resolve(false); });
   });
@@ -456,7 +482,10 @@ function createWindow() {
 
   // Don't auto-show when we launched straight to the tray — the window is built so a
   // tray click has something to reveal, but it stays hidden until asked for.
-  mainWindow.once("ready-to-show", () => { if (!launchedHidden) mainWindow.show(); });
+  mainWindow.once("ready-to-show", () => {
+    logToFile(`Window ready (hidden=${launchedHidden})`);
+    if (!launchedHidden) { mainWindow.show(); mainWindow.focus(); }
+  });
 
   // Close-to-tray: unless a real quit is underway (or the pref is off, or there's no
   // tray to hide into), the close button hides the window and leaves the app running.
@@ -503,10 +532,9 @@ function main() {
     // Did we launch at login (autostart-to-tray) rather than by hand? The .desktop /
     // login-item pass --hidden; Windows also reports it via getLoginItemSettings.
     launchedHidden = process.argv.includes("--hidden");
-    try {
-      const li = app.getLoginItemSettings();
-      if (li.wasOpenedAtLogin || li.wasOpenedAsHidden) launchedHidden = true;
-    } catch {}
+
+    try { PORT = await choosePrivatePort(); logToFile(`Selected local port ${PORT}`); }
+    catch (e) { showErrorWindow(e.message); return; }
 
     startNextServer();
     const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;

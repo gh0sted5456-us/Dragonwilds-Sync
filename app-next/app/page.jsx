@@ -9,6 +9,7 @@ const ACTION_TOAST = { start: "toast.worldStarted", stop: "toast.worldStopped", 
 
 export default function WorldsPage() {
   const { t } = useTranslation();
+  const [mode, setMode] = useState("player");
   const [worlds, setWorlds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -54,6 +55,12 @@ export default function WorldsPage() {
 
   return (
     <div>
+      <div className="panel" style={{ display: "flex", gap: 8, padding: 6, marginBottom: "1.2rem" }}>
+        <ModeTab active={mode === "player"} onClick={() => setMode("player")} icon="users" label="Player" detail="Find, sync & launch" />
+        <ModeTab active={mode === "server"} onClick={() => setMode("server")} icon="terminal" label="Server" detail="Host & manage worlds" />
+      </div>
+
+      {mode === "player" ? <PlayerHub /> : <>
       <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "1.2rem", flexWrap: "wrap", gap: "1rem" }}>
         <div>
           <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>{t("worlds.title")}</h1>
@@ -86,9 +93,89 @@ export default function WorldsPage() {
       {showCreate && (
         <CreateWorldModal onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); load(); }} />
       )}
+      </>}
     </div>
   );
 }
+
+function ModeTab({ active, onClick, icon, label, detail }) {
+  return <button onClick={onClick} style={{ flex: 1, border: 0, borderRadius: 8, padding: "0.8rem 1rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: active ? "var(--accent)" : "transparent", color: active ? "#fff" : "var(--ink)" }}>
+    <Icon name={icon} size={22} />
+    <span style={{ textAlign: "left" }}><strong style={{ display: "block", fontSize: "1rem" }}>{label}</strong><small style={{ opacity: .78 }}>{detail}</small></span>
+  </button>;
+}
+
+function PlayerHub() {
+  const [profiles, setProfiles] = useState([]);
+  const [results, setResults] = useState([]);
+  const [address, setAddress] = useState("255.255.255.255");
+  const [install, setInstall] = useState("");
+  const [finding, setFinding] = useState(false);
+
+  const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
+  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+
+  const chooseInstall = async () => {
+    if (!window.desktop?.pickDirectory) return toast("Folder selection is available in the desktop app.", "error");
+    const selected = await window.desktop.pickDirectory();
+    if (selected) setInstall(selected);
+  };
+  const find = async () => {
+    setFinding(true); setResults([]);
+    try {
+      const r = await api("/api/sync/discover", { method: "POST", body: { address: address.trim() || "255.255.255.255" } });
+      setResults(r.worlds || []);
+      if (!r.worlds?.length) toast("No broadcasting Dragonwilds worlds replied.", "error");
+    } catch (e) { toast(e.message, "error"); } finally { setFinding(false); }
+  };
+  const add = async (world) => {
+    try {
+      await api("/api/profiles", { method: "POST", body: {
+        display_name: world.name || "Dragonwilds World",
+        server_world_id: world.worldId,
+        client_install: install || null,
+        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId },
+      }});
+      toast(`${world.name || "World"} added to Player profiles.`, "success");
+      loadProfiles();
+    } catch (e) { toast(e.message, "error"); }
+  };
+  const remove = async (profile) => {
+    try { await api(`/api/profiles/${profile.profile_id}`, { method: "DELETE" }); loadProfiles(); }
+    catch (e) { toast(e.message, "error"); }
+  };
+
+  return <div>
+    <header style={{ marginBottom: "1rem" }}><h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Player Worlds</h1><p className="subtle" style={{ fontWeight: 700 }}>Save as many servers as you want. Each profile remembers its endpoint and verifies that world&apos;s mods before launch.</p></header>
+    <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
+      <h2 className="heading" style={{ margin: "0 0 .7rem", fontSize: "1.1rem" }}>Find or add a server</h2>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
+        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Server IP, or 255.255.255.255 for LAN" style={fieldStyle} />
+        <button className="btn btn-primary" disabled={finding} onClick={find}><Icon name="refresh" /> {finding ? "Searching…" : "Find Worlds"}</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8 }}>
+        <input value={install} onChange={(e) => setInstall(e.target.value)} placeholder="Dragonwilds Steam install folder" style={fieldStyle} />
+        <button className="btn btn-ghost" onClick={chooseInstall}><Icon name="folder" /> Select Steam Install</button>
+      </div>
+      {results.length > 0 && <div style={{ display: "grid", gap: 8, marginTop: 12 }}>{results.map((world) => {
+        const exists = profiles.some((p) => p.server_world_id === world.worldId && (p.connection?.address === world.queriedIp || p.connection?.internalIp === world.queriedIp));
+        return <div className="panel-inset" key={`${world.worldId}:${world.queriedIp}:${world.syncPort}`} style={{ padding: 12, display: "flex", alignItems: "center", gap: 12 }}>
+          <Icon name="globe" /><div style={{ flex: 1 }}><strong>{world.name}</strong><div className="subtle" style={{ fontSize: ".78rem" }}>{world.queriedIp}:{world.syncPort} · {world.modCount} mod unit(s) · {world.modBadges?.join(", ") || "vanilla"}</div></div>
+          <button className="btn btn-primary" disabled={exists} onClick={() => add(world)}>{exists ? "Added" : "Add Server"}</button>
+        </div>;
+      })}</div>}
+    </div>
+    {profiles.length === 0 ? <div className="panel" style={{ padding: "2.2rem", textAlign: "center" }}><Icon name="users" size={34} /><h2 className="heading">No player servers yet</h2><p className="subtle">Broadcast on the LAN or enter a server IP above, then add every world you play on.</p></div> :
+      <div style={{ display: "grid", gap: 10 }}>{profiles.map((p) => <div className="panel" key={p.profile_id} style={{ padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ width: 42, height: 42, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><Icon name="globe" /></div>
+        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose Steam install"}</div></div>
+        <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Sync / Launch</Link>
+        <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
+      </div>)}</div>}
+  </div>;
+}
+
+const fieldStyle = { width: "100%", boxSizing: "border-box", border: "1px solid var(--line-strong)", borderRadius: 8, background: "var(--card-2)", color: "var(--ink)", padding: ".7rem .8rem", font: "inherit" };
 
 function WorldRow({ w, busy, onAction }) {
   const { t } = useTranslation();

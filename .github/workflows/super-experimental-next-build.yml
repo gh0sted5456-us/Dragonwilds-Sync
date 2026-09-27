@@ -1,0 +1,86 @@
+name: Super Experimental Next Windows Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/super-experimental
+    paths:
+      - app-next/**
+      - .github/workflows/super-experimental-next-build.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build portable test artifact
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app-next
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: app-next/package-lock.json
+
+      - name: Install pinned dependencies
+        run: npm ci
+
+      - name: Validate Node entry points
+        shell: powershell
+        run: |
+          node --check electron\main.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check electron\preload.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check lib\sync\manifest.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check lib\sync\discovery.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Next application
+        run: npm run build:next
+
+      - name: Assemble standalone runtime
+        run: npm run prepare:standalone
+
+      - name: Build Windows portable executable
+        run: npx electron-builder --win portable --publish never
+
+      - name: Verify portable output
+        shell: powershell
+        run: |
+          $artifact = Get-ChildItem -LiteralPath release -Filter '*portable.exe' | Select-Object -First 1
+          if (-not $artifact) { throw 'Portable Windows executable was not produced.' }
+          $hash = Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256
+          "File=$($artifact.Name)" | Set-Content -LiteralPath release\BUILD-INFO.txt
+          "Commit=${{ github.sha }}" | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "SHA256=$($hash.Hash)" | Add-Content -LiteralPath release\BUILD-INFO.txt
+
+      - name: Upload portable test build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dragonwilds-Sync-Super-Experimental-Windows-${{ github.run_number }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            app-next/release/*portable.exe
+            app-next/release/BUILD-INFO.txt
+
+      - name: Upload build diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dragonwilds-Sync-Super-Experimental-Failure-${{ github.run_number }}
+          if-no-files-found: ignore
+          path: |
+            app-next/release/builder-debug.yml
+            app-next/release/builder-effective-config.yaml
+            app-next/.next/trace

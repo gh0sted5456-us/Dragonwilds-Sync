@@ -33,8 +33,9 @@ export default function WorldsPage() {
   const doAction = async (id, action) => {
     setBusy((b) => ({ ...b, [id]: action }));
     try {
-      await api(`/api/worlds/${id}/action`, { method: "POST", body: { action } });
-      toast(t(ACTION_TOAST[action] || "toast.worldStarted"), "success");
+      if (action === "update") await api(`/api/worlds/${id}/update`, { method: "POST" });
+      else await api(`/api/worlds/${id}/action`, { method: "POST", body: { action } });
+      toast(action === "update" ? "Server update queued." : t(ACTION_TOAST[action] || "toast.worldStarted"), "success");
       setTimeout(load, 600);
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy((b) => ({ ...b, [id]: null })); }
@@ -110,6 +111,7 @@ function PlayerHub() {
   const [results, setResults] = useState([]);
   const [address, setAddress] = useState("255.255.255.255");
   const [install, setInstall] = useState("");
+  const [platform, setPlatform] = useState("steam");
   const [finding, setFinding] = useState(false);
 
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
@@ -134,7 +136,7 @@ function PlayerHub() {
         display_name: world.name || "Dragonwilds World",
         server_world_id: world.worldId,
         client_install: install || null,
-        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
+        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, platform, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
       }});
       toast(`${world.name || "World"} added to Player profiles.`, "success");
       loadProfiles();
@@ -154,8 +156,13 @@ function PlayerHub() {
         <button className="btn btn-primary" disabled={finding} onClick={find}><Icon name="refresh" /> {finding ? "Searching…" : "Find Worlds"}</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8 }}>
-        <input value={install} onChange={(e) => setInstall(e.target.value)} placeholder="Dragonwilds Steam install folder" style={fieldStyle} />
-        <button className="btn btn-ghost" onClick={chooseInstall}><Icon name="folder" /> Select Steam Install</button>
+        <input value={install} onChange={(e) => setInstall(e.target.value)} placeholder="Dragonwilds game install folder" style={fieldStyle} />
+        <button className="btn btn-ghost" onClick={chooseInstall}><Icon name="folder" /> Select Game Install</button>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <span className="subtle" style={{ alignSelf: "center", fontWeight: 700 }}>Launch with</span>
+        <button className={`btn ${platform === "steam" ? "btn-primary" : "btn-ghost"}`} onClick={() => setPlatform("steam")}>Steam</button>
+        <button className={`btn ${platform === "gamepass" ? "btn-primary" : "btn-ghost"}`} onClick={() => setPlatform("gamepass")}>PC Game Pass</button>
       </div>
       {results.length > 0 && <div style={{ display: "grid", gap: 8, marginTop: 12 }}>{results.map((world) => {
         const exists = profiles.some((p) => p.server_world_id === world.worldId && (p.connection?.address === world.queriedIp || p.connection?.internalIp === world.queriedIp));
@@ -240,6 +247,9 @@ function WorldRow({ w, busy, onAction }) {
       </div>
 
       <div style={{ position: "relative", zIndex: 1, display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+        <button className="btn btn-ghost" disabled={isBusy || w.running} onClick={() => onAction(w.world_id, "update")} title="Update server build">
+          <Icon name="download" /> Update
+        </button>
         {w.running ? (
           <>
             <button className="btn btn-ghost" disabled={isBusy} onClick={() => onAction(w.world_id, "restart")} title={t("common.restart")}>

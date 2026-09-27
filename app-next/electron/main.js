@@ -603,7 +603,9 @@ ipcMain.handle("get-system-locale", () => app.getLocale() || "en");
 ipcMain.handle("open-path", (_e, p) => shell.openPath(p));
 ipcMain.handle("open-external", (_e, value) => {
   const target = String(value || "");
-  if (!/^steam:\/\/run\/1374490$/i.test(target)) throw new Error("External target is not allowed");
+  const allowed = /^steam:\/\/run\/1374490$/i.test(target)
+    || /^ms-windows-store:\/\/launch\?productId=9P402RWR63H4$/i.test(target);
+  if (!allowed) throw new Error("External target is not allowed");
   return shell.openExternal(target);
 });
 ipcMain.handle("create-profile-shortcut", (_e, profile) => {

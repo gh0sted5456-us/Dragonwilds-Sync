@@ -148,6 +148,18 @@ function migrate(d) {
       value TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS world_profiles (
+      profile_id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      server_world_id TEXT,
+      connection_json TEXT NOT NULL DEFAULT '{}',
+      client_install TEXT,
+      host_fingerprint TEXT,
+      last_manifest_revision TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS ini_versions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       world_id TEXT NOT NULL,
@@ -404,6 +416,29 @@ function setSetting(key, value) {
     "INSERT INTO app_settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
   ).run(key, JSON.stringify(value));
 }
+
+function listProfiles() { return db().prepare("SELECT * FROM world_profiles ORDER BY updated_at DESC").all(); }
+function getProfile(id) { return db().prepare("SELECT * FROM world_profiles WHERE profile_id=?").get(String(id || "")); }
+function upsertProfile(profile) {
+  const now = Date.now();
+  const existing = getProfile(profile.profile_id);
+  const row = {
+    profile_id: String(profile.profile_id),
+    display_name: String(profile.display_name || existing?.display_name || "Dragonwilds World"),
+    server_world_id: profile.server_world_id ?? existing?.server_world_id ?? null,
+    connection_json: typeof profile.connection_json === "string" ? profile.connection_json : JSON.stringify(profile.connection || (existing ? JSON.parse(existing.connection_json || "{}") : {})),
+    client_install: profile.client_install ?? existing?.client_install ?? null,
+    host_fingerprint: profile.host_fingerprint ?? existing?.host_fingerprint ?? null,
+    last_manifest_revision: profile.last_manifest_revision ?? existing?.last_manifest_revision ?? null,
+    created_at: existing?.created_at || now,
+    updated_at: now,
+  };
+  db().prepare(`INSERT INTO world_profiles(profile_id,display_name,server_world_id,connection_json,client_install,host_fingerprint,last_manifest_revision,created_at,updated_at)
+    VALUES(@profile_id,@display_name,@server_world_id,@connection_json,@client_install,@host_fingerprint,@last_manifest_revision,@created_at,@updated_at)
+    ON CONFLICT(profile_id) DO UPDATE SET display_name=excluded.display_name,server_world_id=excluded.server_world_id,connection_json=excluded.connection_json,client_install=excluded.client_install,host_fingerprint=excluded.host_fingerprint,last_manifest_revision=excluded.last_manifest_revision,updated_at=excluded.updated_at`).run(row);
+  return getProfile(row.profile_id);
+}
+function deleteProfile(id) { return db().prepare("DELETE FROM world_profiles WHERE profile_id=?").run(String(id || "")); }
 
 // ---- worlds ----
 function listWorlds() {
@@ -761,6 +796,7 @@ function listRemoteAudit(codeId, limit = 200) {
 
 module.exports = {
   db, getSetting, setSetting,
+  listProfiles, getProfile, upsertProfile, deleteProfile,
   listWorlds, getWorld, insertWorld, updateWorld, deleteWorld,
   logEvent, listEvents,
   logDiscordAction, listDiscordActions, listDiscordActors,

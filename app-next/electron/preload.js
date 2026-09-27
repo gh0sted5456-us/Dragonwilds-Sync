@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld("desktop", {
   getSystemTheme: () => ipcRenderer.invoke("get-theme"),
   getSystemLocale: () => ipcRenderer.invoke("get-system-locale"),
   openPath: (p) => ipcRenderer.invoke("open-path", p),
+  openExternal: (value) => ipcRenderer.invoke("open-external", value),
+  createProfileShortcut: (profile) => ipcRenderer.invoke("create-profile-shortcut", profile),
   getAutoLaunch: () => ipcRenderer.invoke("get-auto-launch"),
   setAutoLaunch: (enabled) => ipcRenderer.invoke("set-auto-launch", enabled),
   getCloseToTray: () => ipcRenderer.invoke("get-close-to-tray"),

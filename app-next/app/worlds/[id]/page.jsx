@@ -87,6 +87,14 @@ export default function WorldDetail() {
     finally { setBusy(null); }
   };
 
+  const sendServerToDesktop = async () => {
+    try {
+      await api("/api/profiles", { method: "POST", body: { profile_id: id, display_name: data.world.display_name, server_world_id: id } });
+      const shortcut = await window.desktop.createProfileShortcut({ id, role: "server", name: data.world.display_name });
+      toast(`Server shortcut created: ${shortcut}`, "success");
+    } catch (e) { toast(e.message, "error"); }
+  };
+
 
   if (!data) return <div className="subtle" style={{ fontWeight: 700 }}>{t("common.loading")}</div>;
   const { world, live, events, sessions, schedules, backups } = data;
@@ -128,6 +136,7 @@ export default function WorldDetail() {
             </div>
           </div>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            {typeof window !== "undefined" && window.desktop?.createProfileShortcut && <button className="btn btn-ghost" onClick={sendServerToDesktop}><Icon name="download" /> Send Server to Desktop</button>}
             <button className="btn btn-ghost" onClick={() => setCustomizing(true)} title={t("world.customize")}><Icon name="image" /> {t("world.customize")}</button>
             {running ? (
               <>

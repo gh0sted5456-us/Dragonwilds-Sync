@@ -73,10 +73,10 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
   app.quit();
 } else {
-  app.on("second-instance", () => {
+  app.on("second-instance", (_event, argv) => {
     // A second launch (e.g. clicking the shortcut again) reveals the running app,
     // creating the window if it started to the tray.
-    showWindow();
+    showWindow(null, launchRoute(argv));
   });
   main();
 }
@@ -234,22 +234,31 @@ function fetchWorlds() {
 
 // Show the main window (creating it if the app started to the tray), optionally
 // navigating to a specific world first.
-function showWindow(worldId) {
+function launchRoute(argv = process.argv) {
+  const profileArg = argv.find((arg) => String(arg).startsWith("--profile="));
+  const roleArg = argv.find((arg) => String(arg).startsWith("--role="));
+  if (!profileArg) return null;
+  const id = profileArg.slice("--profile=".length);
+  const role = roleArg?.slice("--role=".length) === "server" ? "server" : "player";
+  return `/profiles/${encodeURIComponent(id)}/${role}`;
+}
+
+function showWindow(worldId, route) {
   if (!serverReady) return;
   if (!mainWindow) createWindow();
   const win = mainWindow;
   if (!win) return;
   const go = () => {
-    if (worldId) {
+    if (worldId || route) {
       const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
-      win.loadURL(`${base}/worlds/${encodeURIComponent(worldId)}`);
+      win.loadURL(worldId ? `${base}/worlds/${encodeURIComponent(worldId)}` : `${base}${route}`);
     }
     if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
   };
   // A window created just now isn't ready to navigate yet; wait for first paint.
-  if (win.webContents.isLoading() && worldId) win.webContents.once("did-finish-load", go);
+  if (win.webContents.isLoading() && (worldId || route)) win.webContents.once("did-finish-load", go);
   else go();
 }
 
@@ -520,7 +529,11 @@ function main() {
     // Show a window on a normal launch. On a hidden (login) launch, stay in the tray —
     // but only if we actually have a tray to live in; without one, fall back to showing
     // the window so the app is never both invisible and unreachable.
-    if (!launchedHidden || !hasTray) createWindow();
+    if (!launchedHidden || !hasTray) {
+      createWindow();
+      const route = launchRoute();
+      if (route) showWindow(null, route);
+    }
 
     // On macOS, re-create the window when the dock icon is clicked — but ONLY
     // if there truly is no window AND the server is up. This is the guarded
@@ -560,6 +573,27 @@ ipcMain.handle("pick-zip", async () => {
 ipcMain.handle("get-theme", () => (nativeTheme.shouldUseDarkColors ? "dark" : "light"));
 ipcMain.handle("get-system-locale", () => app.getLocale() || "en");
 ipcMain.handle("open-path", (_e, p) => shell.openPath(p));
+ipcMain.handle("open-external", (_e, value) => {
+  const target = String(value || "");
+  if (!/^steam:\/\/run\/1374490$/i.test(target)) throw new Error("External target is not allowed");
+  return shell.openExternal(target);
+});
+ipcMain.handle("create-profile-shortcut", (_e, profile) => {
+  const id = String(profile?.id || "").trim();
+  const role = profile?.role === "server" ? "server" : "player";
+  if (!id) throw new Error("Profile id is required");
+  const safeName = String(profile?.name || "Dragonwilds World").replace(/[<>:"/\\|?*]/g, "_").trim();
+  const label = `${safeName} - ${role === "server" ? "Server" : "Play"}`;
+  if (process.platform === "win32") {
+    const shortcutPath = path.join(app.getPath("desktop"), `${label}.lnk`);
+    const ok = shell.writeShortcutLink(shortcutPath, "create", { target: process.execPath, args: `--profile=${id} --role=${role}`, cwd: path.dirname(process.execPath), description: `Open ${safeName} in Dragonwilds Sync ${role} mode`, icon: process.execPath, iconIndex: 0 });
+    if (!ok) throw new Error("Windows could not create the desktop shortcut");
+    return shortcutPath;
+  }
+  const shortcutPath = path.join(app.getPath("desktop"), `${label}.desktop`);
+  fs.writeFileSync(shortcutPath, `[Desktop Entry]\nType=Application\nName=${label}\nExec="${process.execPath}" --profile=${id} --role=${role}\nTerminal=false\n`, { mode: 0o755 });
+  return shortcutPath;
+});
 ipcMain.handle("get-auto-launch", () => {
   const v = readAutostartPref();
   return v === null ? true : v;

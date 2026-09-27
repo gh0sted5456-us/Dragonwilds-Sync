@@ -7,7 +7,7 @@ oracle; it is not the destination architecture.
 
 ## Product model
 
-One application supports two complementary roles:
+One application supports two complementary roles projected from the same World profile:
 
 1. **Host** — owns a Dragonwilds World, dedicated-server process, retained mod
    selection, backups, schedules, and an authenticated synchronization endpoint.
@@ -17,6 +17,12 @@ One application supports two complementary roles:
 
 The roles share one World identity and one manifest format. Hosting does not
 create a second representation of the same World.
+
+Each profile can create two role-specific desktop shortcuts. A Server shortcut
+opens that profile's operational dashboard. A Player shortcut resolves the saved
+host, verifies and synchronizes the required manifest, and launches Steam app
+1374490 only after the local client is current. Shortcut arguments contain only
+the profile id and role; credentials remain in the local profile database.
 
 ## Four bounded subsystems
 

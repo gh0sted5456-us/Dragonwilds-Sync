@@ -7,6 +7,7 @@ const steamlib = require("../steamlibrary");
 
 const PROTOCOL = "dragonwilds-world-sync";
 const PROTOCOL_VERSION = 2;
+const prerequisiteKey = (worldId) => `syncPrerequisites:${worldId}`;
 
 function sha256File(file) {
   const hash = crypto.createHash("sha256");
@@ -94,8 +95,43 @@ function buildWorldManifest(worldId) {
     world: { id: world.world_id, name: world.display_name, gamePort: world.game_port },
     revision: revisionHash.digest("hex"),
     generatedAt: new Date().toISOString(),
+    prerequisites: getPrerequisites(worldId),
     units,
   };
+}
+
+function getPrerequisites(worldId) {
+  const saved = dbm.getSetting(prerequisiteKey(worldId), {});
+  return {
+    ue4ss: String(saved?.ue4ss || "").trim() || null,
+    runeSchema: String(saved?.runeSchema || "").trim() || null,
+    managedByClient: false,
+  };
+}
+
+function setPrerequisites(worldId, value = {}) {
+  if (!dbm.getWorld(worldId)) throw new Error("World not found");
+  const prerequisites = {
+    ue4ss: String(value.ue4ss || "").trim() || null,
+    runeSchema: String(value.runeSchema || "").trim() || null,
+  };
+  dbm.setSetting(prerequisiteKey(worldId), prerequisites);
+  return prerequisites;
+}
+
+function resolveWorldFile(worldId, requestedTarget) {
+  const target = String(requestedTarget || "").replace(/\\/g, "/");
+  const world = dbm.getWorld(worldId);
+  if (!world) throw new Error("World not found");
+  const install = mods.getSteamLibraryOverride() || steamlib.discoverGameInstalls()[0];
+  if (!install) throw new Error("Select the RuneScape: Dragonwilds Steam installation first.");
+  const selected = new Set(mods.getSyncSelection(worldId));
+  const inventory = steamlib.scanGameMods(install).mods.filter((mod) => mod.syncEligible && selected.has(mod.key));
+  for (const mod of inventory) {
+    const match = filesForMod(mod).find((file) => file.target === target);
+    if (match) return match;
+  }
+  throw new Error("Mod file is not declared by this World");
 }
 
 function compareManifest(manifest, gameInstall) {
@@ -118,4 +154,4 @@ function compareManifest(manifest, gameInstall) {
   return { revision: manifest.revision, current: changes.length === 0, changes };
 }
 
-module.exports = { PROTOCOL, PROTOCOL_VERSION, buildWorldManifest, compareManifest, sha256File };
+module.exports = { PROTOCOL, PROTOCOL_VERSION, buildWorldManifest, compareManifest, sha256File, resolveWorldFile, getPrerequisites, setPrerequisites };

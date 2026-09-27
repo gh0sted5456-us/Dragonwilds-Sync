@@ -56,8 +56,8 @@ export default function WorldsPage() {
   return (
     <div>
       <div className="panel" style={{ display: "flex", gap: 8, padding: 6, marginBottom: "1.2rem" }}>
-        <ModeTab active={mode === "player"} onClick={() => setMode("player")} icon="users" label="Player" detail="Find, sync & launch" />
-        <ModeTab active={mode === "server"} onClick={() => setMode("server")} icon="terminal" label="Server" detail="Host & manage worlds" />
+        <ModeTab active={mode === "player"} onClick={() => setMode("player")} icon="users" label="My Worlds" detail="Find, connect & resync" />
+        <ModeTab active={mode === "server"} onClick={() => setMode("server")} icon="terminal" label="Declarations" detail="Publish hosted Worlds" />
       </div>
 
       {mode === "player" ? <PlayerHub /> : <>
@@ -146,7 +146,7 @@ function PlayerHub() {
   };
 
   return <div>
-    <header style={{ marginBottom: "1rem" }}><h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Player Worlds</h1><p className="subtle" style={{ fontWeight: 700 }}>Save as many servers as you want. Each profile remembers its endpoint and verifies that world&apos;s mods before launch.</p></header>
+    <header style={{ marginBottom: "1rem" }}><h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1><p className="subtle" style={{ fontWeight: 700 }}>Keep as many Worlds as you like. Connect to compare, restore removed mods, update changed mods, and remove obsolete managed files.</p></header>
     <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
       <h2 className="heading" style={{ margin: "0 0 .7rem", fontSize: "1.1rem" }}>Find or add a server</h2>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
@@ -170,7 +170,7 @@ function PlayerHub() {
         <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url('/rsdw/placards/${index % 9 + 1}.webp') center/cover`, opacity: .48 }} />
         <img src={portraitFor(p.profile_id)} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
         <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose Steam install"}</div></div>
-        <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Sync / Launch</Link>
+        <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Connect / Sync</Link>
         <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
       </div>)}</div>}
   </div>;

@@ -15,6 +15,7 @@ export default function ModsPanel({ worldId, running }) {
   const [checking, setChecking] = useState(false);
   // The mod awaiting a force-enable confirmation, if any.
   const [forcing, setForcing] = useState(null);
+  const [prerequisites, setPrerequisites] = useState({ ue4ss: "", runeSchema: "" });
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
 
   const load = useCallback(async () => {
@@ -22,7 +23,18 @@ export default function ModsPanel({ worldId, running }) {
     catch (e) { toast(e.message, "error"); }
   }, [worldId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    api(`/api/worlds/${worldId}/sync/manifest`).then((r) => setPrerequisites({ ue4ss: r.manifest?.prerequisites?.ue4ss || "", runeSchema: r.manifest?.prerequisites?.runeSchema || "" })).catch(() => {});
+  }, [load, worldId]);
+
+  const savePrerequisites = async () => {
+    setBusy(true);
+    try {
+      await api(`/api/worlds/${worldId}/sync/manifest`, { method: "PATCH", body: { prerequisites } });
+      toast("Client prerequisites published with this World.", "success");
+    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
+  };
 
   const toggleGlobal = async (on) => {
     setBusy(true);
@@ -150,6 +162,15 @@ export default function ModsPanel({ worldId, running }) {
 
   return (
     <div>
+      <div className="panel-inset" style={{ padding: "0.9rem 1rem", marginBottom: "1rem" }}>
+        <div className="heading" style={{ fontSize: "0.95rem" }}>Declared client prerequisites</div>
+        <div className="subtle" style={{ fontSize: "0.76rem", margin: "3px 0 10px" }}>Tell friends which runtimes this World expects. RSDW Sync displays these versions but does not install or modify either runtime.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
+          <input className="input" placeholder="UE4SS version (example: 3.0.1)" value={prerequisites.ue4ss} onChange={(e) => setPrerequisites((p) => ({ ...p, ue4ss: e.target.value }))} />
+          <input className="input" placeholder="RuneSchema version" value={prerequisites.runeSchema} onChange={(e) => setPrerequisites((p) => ({ ...p, runeSchema: e.target.value }))} />
+          <button className="btn btn-primary" disabled={busy} onClick={savePrerequisites}>Publish</button>
+        </div>
+      </div>
       {/* platform + restart notices */}
       {data.windowsOnlyWarning && (
         <Notice color="var(--yellow)">

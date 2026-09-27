@@ -1,0 +1,9 @@
+node_modules/
+.next/
+release/
+dist-standalone/
+.data/
+*.log
+.DS_Store
+.claude/
+/.vs

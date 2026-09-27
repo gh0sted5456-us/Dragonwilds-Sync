@@ -18,6 +18,13 @@ __pycache__/
 *.pyc
 Codex Outputs/
 test-results/
+app-next/.next/
+app-next/node_modules/
+app-next/release/
+app-next/dist-standalone/
+app-next/.data/
+app-next/Obietek-DragonWilds-Setup/
+app-next/preview/
 
 # Cloudflare local state and development secrets
 .wrangler/

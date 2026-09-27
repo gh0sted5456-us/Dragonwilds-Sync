@@ -1,0 +1,295 @@
+"use client";
+import { useState } from "react";
+import { useTranslation, Trans } from "react-i18next";
+import { api, Icon, toast } from "@/components/ui";
+
+function stripWrappingQuotes(value) {
+  const text = value == null ? "" : String(value);
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+
+export default function AdminPanel({ world, running, onChange }) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(world.display_name);
+  const [password, setPassword] = useState(world.admin_password);
+  const [serverPassword, setServerPassword] = useState(stripWrappingQuotes(world.server_password));
+  const [extraArgs, setExtraArgs] = useState(world.extra_args || "");
+  const [envVars, setEnvVars] = useState(envObjectToText(world.env_vars));
+  const [wineBinary, setWineBinary] = useState(world.wine_binary || "wine");
+  const [winePrefix, setWinePrefix] = useState(world.wine_prefix || "");
+  const [wineLaunchFlags, setWineLaunchFlags] = useState(world.wine_launch_flags || "");
+  const [autostart, setAutostart] = useState(!!world.autostart);
+  const [crashGuard, setCrashGuard] = useState(!!world.crash_guard);
+  const [community, setCommunity] = useState(!!world.community_server);
+  const [legacyPerf, setLegacyPerf] = useState(world.legacy_perf_flags !== 0);
+  const [saving, setSaving] = useState(false);
+  const [installDir, setInstallDir] = useState(world.install_dir || "");
+  const [ownerId, setOwnerId] = useState(world.owner_id || "");
+  const [defaultWorldName, setDefaultWorldName] = useState(world.default_world_name || "");
+  // No-op: touch file for dependency tracking.
+  const [movingDir, setMovingDir] = useState(false);
+  const [ports, setPorts] = useState({ game_port: world.game_port, query_port: world.query_port, rest_api_port: world.rest_api_port });
+  const [savingPorts, setSavingPorts] = useState(false);
+  const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
+  const portsChanged = ["game_port", "query_port", "rest_api_port"].some((k) => Number(ports[k]) !== Number(world[k]));
+
+  const savePorts = async () => {
+    if (running) return toast(t("admin.stopBeforePorts"), "error");
+    setSavingPorts(true);
+    try {
+      await api(`/api/worlds/${world.world_id}`, { method: "PATCH", body: ports });
+      toast(t("admin.portsUpdated"), "success");
+      onChange();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setSavingPorts(false); }
+  };
+
+  const pickDir = async () => {
+    if (isElectron) { const p = await window.desktop.pickDirectory(); if (p) setInstallDir(p); }
+    else toast(t("create.typePathToast"));
+  };
+
+  const changeInstallDir = async () => {
+    const target = installDir.trim();
+    if (!target || target === world.install_dir) return;
+    if (running) return toast(t("admin.stopBeforeFolder"), "error");
+    setMovingDir(true);
+    try {
+      await api(`/api/worlds/${world.world_id}`, { method: "PATCH", body: { install_dir: target } });
+      toast(t("admin.installFolderUpdated"), "success");
+      onChange();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setMovingDir(false); }
+  };
+
+  const saveProfile = async () => {
+    setSaving(true);
+    try {
+      await api(`/api/worlds/${world.world_id}`, {
+        method: "PATCH",
+        body: {
+          display_name: name, admin_password: password, server_password: stripWrappingQuotes(serverPassword),
+          extra_args: extraArgs, env_vars: envTextToObject(envVars),
+                autostart: autostart ? 1 : 0, crash_guard: crashGuard ? 1 : 0, community_server: community ? 1 : 0,
+                legacy_perf_flags: legacyPerf ? 1 : 0,
+                owner_id: ownerId || null, default_world_name: defaultWorldName || null,
+        },
+      });
+      toast(t("admin.profileSaved"), "success");
+      onChange();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  const saveWine = async () => {
+    if (running) return toast(t("admin.stopBeforeWine"), "error");
+    setSaving(true);
+    try {
+      await api(`/api/worlds/${world.world_id}`, {
+        method: "PATCH",
+        body: {
+          wine_binary: wineBinary.trim() || "wine",
+                wine_prefix: winePrefix.trim() || null,
+                wine_launch_flags: wineLaunchFlags.trim(),
+        },
+      });
+      toast(t("admin.profileSaved"), "success");
+      onChange();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ display: "grid", gap: "1.6rem" }}>
+      <section>
+        <h3 className="heading" style={{ fontSize: "1rem" }}>{t("admin.worldProfile")}</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.8rem" }}>
+          <div>
+            <label className="label">{t("admin.displayName")}</label>
+            <input className="input" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <label className="label">{t("admin.adminPasswordRest")}</label>
+            <input className="input" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label className="label">{t("admin.serverPassword")}</label>
+            <input className="input" value={serverPassword} onChange={(e) => setServerPassword(e.target.value)} placeholder={t("admin.serverPasswordPlaceholder")} />
+            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.74rem", marginTop: 4 }}>
+              <Trans i18nKey="admin.serverPasswordHint" components={{ code: <code /> }} />
+            </p>
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label className="label">{t("admin.extraArgs")}</label>
+            <input className="input" value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="e.g. -NoAsyncLoadingThread" />
+          </div>
+          <div>
+            <label className="label">OwnerId</label>
+            <input className="input" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="Owner's Player ID (required)" />
+          </div>
+          <div>
+            <label className="label">Default world name</label>
+            <input className="input" value={defaultWorldName} onChange={(e) => setDefaultWorldName(e.target.value)} placeholder="DefaultWorldName" />
+          </div>
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label className="label">{t("admin.envVars")}</label>
+            <textarea className="input" rows={3} style={{ fontFamily: "monospace", resize: "vertical" }}
+              value={envVars} onChange={(e) => setEnvVars(e.target.value)}
+              placeholder={"WINEDEBUG=-all\nSOME_VAR=value"} />
+            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.74rem", marginTop: 4 }}>{t("admin.envVarsHint")}</p>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "0.8rem", marginTop: "0.9rem", flexWrap: "wrap" }}>
+          <Toggle label={t("admin.autostart")} on={autostart} onClick={() => setAutostart((v) => !v)} />
+          <Toggle label={t("admin.crashGuard")} on={crashGuard} onClick={() => setCrashGuard((v) => !v)} />
+        </div>
+
+        {world.platform === "windows" && (
+          <div className="panel-inset" style={{ padding: "0.9rem 1.1rem", marginTop: "0.9rem" }}>
+            <div className="heading" style={{ fontSize: "0.92rem" }}>{t("admin.wineTitle")}</div>
+            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem", marginTop: 2 }}>{t("admin.wineDesc")}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.8rem", marginTop: "0.6rem" }}>
+              <div>
+                <label className="label">{t("admin.wineBinary")}</label>
+                <input className="input" value={wineBinary} onChange={(e) => setWineBinary(e.target.value)} disabled={running} placeholder="wine" />
+              </div>
+              <div>
+                <label className="label">{t("admin.winePrefix")}</label>
+                <input className="input" value={winePrefix} onChange={(e) => setWinePrefix(e.target.value)} disabled={running} placeholder={t("admin.winePrefixPlaceholder")} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label className="label">{t("admin.wineLaunchFlags")}</label>
+                <input className="input" value={wineLaunchFlags} onChange={(e) => setWineLaunchFlags(e.target.value)} disabled={running} placeholder={t("admin.wineLaunchFlagsPlaceholder")} />
+                <p className="subtle" style={{ fontWeight: 600, fontSize: "0.74rem", marginTop: 4 }}>
+                  {t("admin.wineLaunchFlagsHint")}
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.7rem" }}>
+              <button className="btn btn-ghost" onClick={saveWine} disabled={saving || running}>
+                {saving ? t("common.saving") : t("common.save")}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="panel-inset" style={{ padding: "0.9rem 1.1rem", marginTop: "0.9rem", borderLeft: `3px solid ${community ? "var(--green-bright)" : "var(--line-strong)"}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 240, flex: 1 }}>
+              <div className="heading" style={{ fontSize: "0.92rem" }}>{t("admin.communityTitle")}</div>
+              <div className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem", marginTop: 2 }}>
+                <Trans i18nKey="admin.communityDesc" components={{ b: <b />, code: <code /> }} />
+              </div>
+            </div>
+            <Toggle label={community ? t("admin.public") : t("admin.private")} on={community} onClick={() => setCommunity((v) => !v)} />
+          </div>
+          <div className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", marginTop: 8 }}>
+            {t("admin.communityNote")}
+          </div>
+        </div>
+
+        <div className="panel-inset" style={{ padding: "0.9rem 1.1rem", marginTop: "0.9rem", borderLeft: `3px solid ${legacyPerf ? "var(--green-bright)" : "var(--line-strong)"}` }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+            <div style={{ minWidth: 240, flex: 1 }}>
+              <div className="heading" style={{ fontSize: "0.92rem" }}>{t("admin.legacyPerfTitle")}</div>
+              <div className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem", marginTop: 2 }}>
+                <Trans i18nKey="admin.legacyPerfDesc" components={{ code: <code /> }} />
+              </div>
+            </div>
+            <Toggle label={legacyPerf ? t("common.on") : t("common.off")} on={legacyPerf} onClick={() => setLegacyPerf((v) => !v)} />
+          </div>
+          <div className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", marginTop: 8 }}>
+            {t("admin.legacyPerfNote")}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
+          <button className="btn btn-primary" onClick={saveProfile} disabled={saving}><Icon name="download" /> {saving ? t("common.saving") : t("admin.saveProfile")}</button>
+        </div>
+        {world.crash_count > 0 && (
+          <p className="subtle" style={{ fontWeight: 700, fontSize: "0.76rem", marginTop: "0.6rem" }}>
+            {t("admin.crashRestarted", { count: world.crash_count })}
+          </p>
+        )}
+      </section>
+
+      <section>
+        <h3 className="heading" style={{ fontSize: "1rem" }}>{t("admin.installFolder")}</h3>
+        <p className="subtle" style={{ fontWeight: 600, fontSize: "0.8rem", marginTop: 0, marginBottom: "0.6rem" }}>
+          <Trans i18nKey="admin.installFolderDesc" components={{ code: <code /> }} />
+        </p>
+        <div style={{ display: "flex", gap: "0.5rem" }}>
+          <input className="input" value={installDir} onChange={(e) => setInstallDir(e.target.value)}
+            disabled={running || movingDir}
+            placeholder={isElectron ? t("create.browseFolderPlaceholder") : "e.g. D:\\SteamLibrary\\steamapps\\common\\GameServer"} />
+          <button className="btn btn-ghost" onClick={pickDir} disabled={running || movingDir}><Icon name="folder" /> {t("common.browse")}</button>
+          <button className="btn btn-primary" onClick={changeInstallDir}
+            disabled={running || movingDir || !installDir.trim() || installDir.trim() === world.install_dir}>
+            {movingDir ? t("common.checking") : t("common.change")}
+          </button>
+        </div>
+        {running && <p className="subtle" style={{ fontWeight: 700, fontSize: "0.74rem", marginTop: 4 }}>{t("admin.stopToChangeFolder")}</p>}
+      </section>
+
+      <section>
+        <h3 className="heading" style={{ fontSize: "1rem" }}>{t("admin.connection")}</h3>
+        <div className="panel-inset" style={{ padding: "0.8rem 1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: "0.6rem" }}>
+          <PortField label={t("admin.portGameUdp")} value={ports.game_port} disabled={running} onChange={(v) => setPorts((p) => ({ ...p, game_port: v }))} />
+          <PortField label={t("admin.portQuery")} value={ports.query_port} disabled={running} onChange={(v) => setPorts((p) => ({ ...p, query_port: v }))} />
+          <PortField label={t("admin.portRest")} value={ports.rest_api_port} disabled={running} onChange={(v) => setPorts((p) => ({ ...p, rest_api_port: v }))} />
+        </div>
+        <p className="subtle" style={{ fontWeight: 700, fontSize: "0.74rem", marginTop: "0.5rem" }}>
+          {t("admin.portsHint")}
+          {running ? t("admin.portsHintStop") : t("admin.portsHintNext")}
+        </p>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.6rem" }}>
+          <button className="btn btn-primary" onClick={savePorts} disabled={running || savingPorts || !portsChanged}>
+            {savingPorts ? t("common.saving") : t("admin.savePorts")}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PortField({ label, value, onChange, disabled }) {
+  return (
+    <div>
+      <label className="label" style={{ fontSize: "0.7rem" }}>{label}</label>
+      <input className="input" type="number" value={value} disabled={disabled}
+        onChange={(e) => onChange(parseInt(e.target.value || "0", 10))} />
+    </div>
+  );
+}
+
+function Toggle({ label, on, onClick }) {
+  return (
+    <button className={`btn ${on ? "btn-primary" : "btn-ghost"}`} onClick={onClick}>
+      <span className="statdot" style={{ background: on ? "var(--accent-ink)" : "var(--ink-soft)" }} /> {label}
+    </button>
+  );
+}
+
+// worlds.env_vars is stored as a JSON object; the UI edits it as plain
+// "KEY=value" lines, one per line, "#" for comments.
+function envObjectToText(json) {
+  try {
+    const obj = JSON.parse(json || "{}");
+    return Object.entries(obj).map(([k, v]) => `${k}=${v}`).join("\n");
+  } catch { return ""; }
+}
+function envTextToObject(text) {
+  const out = {};
+  for (const raw of String(text).split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const i = line.indexOf("=");
+    if (i === -1) continue;
+    const k = line.slice(0, i).trim();
+    if (k) out[k] = line.slice(i + 1).trim();
+  }
+  return out;
+}

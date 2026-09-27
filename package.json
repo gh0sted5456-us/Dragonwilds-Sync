@@ -30,7 +30,10 @@
     "build:win": "build.bat",
     "build:linux": "bash scripts/build_linux.sh",
     "package:raw": "node scripts/package_raw_source.cjs",
-    "prepare:monaco": "node scripts/prepare_monaco.cjs"
+    "prepare:monaco": "node scripts/prepare_monaco.cjs",
+    "next:install": "npm --prefix app-next install",
+    "next:dev": "npm --prefix app-next run dev",
+    "next:build": "npm --prefix app-next run build:next"
   },
   "devDependencies": {
     "@electron/asar": "4.2.1",

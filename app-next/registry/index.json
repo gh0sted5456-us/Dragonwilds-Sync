@@ -1,0 +1,78 @@
+{
+  "schema": 1,
+  "updatedAt": "2026-08-05T18:00:00Z",
+  "packs": [
+    {
+      "code": "de",
+      "name": "German",
+      "nativeName": "Deutsch",
+      "dir": "ltr",
+      "authors": [
+        "@Mululu - Github"
+      ],
+      "url": "https://raw.githubusercontent.com/PrakashMandal-IV/palworld-server-manager/main/registry/packs/de.json",
+      "updatedAt": "2026-07-30T18:00:00Z",
+      "completeness": 100
+    },
+    {
+      "code": "es",
+      "name": "Spanish",
+      "nativeName": "Español",
+      "dir": "ltr",
+      "authors": [
+        "Runescape Dragonwilds Server Manager"
+      ],
+      "url": "https://raw.githubusercontent.com/PrakashMandal-IV/palworld-server-manager/main/registry/packs/es.json",
+      "updatedAt": "2026-07-30T18:00:00Z",
+      "completeness": 100
+    },
+    {
+      "code": "fr",
+      "name": "French",
+      "nativeName": "Français",
+      "dir": "ltr",
+      "authors": [
+        "@MrDDream - Github"
+      ],
+      "url": "https://raw.githubusercontent.com/PrakashMandal-IV/palworld-server-manager/main/registry/packs/fr.json",
+      "updatedAt": "2026-08-01T18:00:00Z",
+      "completeness": 100
+    },
+    {
+      "code": "ja",
+      "name": "Japanese",
+      "nativeName": "日本語",
+      "dir": "ltr",
+      "authors": [
+        "Runescape Dragonwilds Server Manager"
+      ],
+      "url": "https://raw.githubusercontent.com/PrakashMandal-IV/palworld-server-manager/main/registry/packs/ja.json",
+      "updatedAt": "2026-07-30T18:00:00Z",
+      "completeness": 100
+    },
+    {
+      "code": "pt-BR",
+      "name": "Portuguese (Brazil)",
+      "nativeName": "Português (Brasil)",
+      "dir": "ltr",
+      "authors": [
+        "@oSuperTheus - Github"
+      ],
+      "url": "https://raw.githubusercontent.com/PrakashMandal-IV/palworld-server-manager/main/registry/packs/pt-BR.json",
+      "updatedAt": "2026-08-05T18:00:00Z",
+      "completeness": 100
+    },
+    {
+      "code": "zh",
+      "name": "Chinese (Simplified)",
+      "nativeName": "简体中文",
+      "dir": "ltr",
+      "authors": [
+        "Runescape Dragonwilds Server Manager"
+      ],
+      "url": "https://raw.githubusercontent.com/PrakashMandal-IV/palworld-server-manager/main/registry/packs/zh.json",
+      "updatedAt": "2026-07-30T18:00:00Z",
+      "completeness": 100
+    }
+  ]
+}

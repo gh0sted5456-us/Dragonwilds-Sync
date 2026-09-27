@@ -1,0 +1,875 @@
+# Changelog
+
+All notable changes to Runescape Dragonwilds Server Manager are documented here.
+This project adheres to [Semantic Versioning](https://semver.org/).
+
+## [1.0.0] — initial Dragonwilds fork
+
+Initial forked release for Runescape: Dragonwilds Server Manager. This version resets the
+public changelog to 1.0.0 and removes Palworld-specific release history; see the repo history
+for prior Pal-focused changes retained in this codebase.
+
+## [2.8.11] — 2026-08-09
+
+### Fixed
+- **Linux AppImage runs out of the box again.** On Ubuntu Server (and other locked-down or
+  run-as-root Linux hosts) the AppImage aborted with *"The SUID sandbox helper binary … is not
+  configured correctly"* — the AppImage mounts read-only so its `chrome-sandbox` can't be
+  setuid-root, and servers often restrict user namespaces. The app now launches without Chromium's
+  sandbox on Linux, which is safe here because the window only loads the app's own local UI. No more
+  extracting the AppImage and `chmod`-ing `chrome-sandbox` by hand. (Reported in #32.)
+
+## [2.8.10] — 2026-08-09
+
+### Added
+- **Keep RCON on without it being reset.** The **Admin** tab has a new **Enable RCON (legacy)**
+  toggle. The game's RCON is off by default here and the manager rewrites `RCONEnabled` on every
+  start, so anyone who set `RCONEnabled=true` by hand kept losing it (the workaround was making
+  `DragonwildsSettings.ini` read-only). Turn this on and the manager writes `RCONEnabled=True` plus the
+  RCON port for you and stops resetting it — needed by tools like PalDefender that still rely on
+  RCON. It stays deprecated by Pocketpair, but works today. (Reported in #17.)
+
+### Fixed
+- **Join and leave entries now use the same (in-game) name.** On connect, Palworld briefly
+  reports a player under their platform account name (Steam/Xbox/PS5) until their character loads,
+  so a join was logged/announced under the account name while the matching leave used the in-game
+  name — confusing in the log, the Discord posts, and Player Activity. Joins are now held for a
+  short grace window and recorded once the in-game name has loaded, so both entries match. Players
+  who disconnect within that window (never fully loaded in) no longer produce a stray join/leave
+  pair. (Reported on Nexus.)
+- **No more FPS drop when the manager is minimized.** The hosted game server follows Windows'
+  system-wide timer resolution, which a foreground window keeps high — so minimizing the manager
+  used to let the timer fall back and roughly halve server FPS (fine when focused or hidden to the
+  tray, bad only when minimized). The app now disables background timer/renderer throttling and
+  holds a power-save blocker, so the server runs full-speed regardless of window state. (Reported
+  in #29.)
+- **The Stop button is instant-graceful again.** In 2.8.9 the top-right **Stop** button started
+  running the full player-warning countdown (up to your *warn lead*, e.g. 10–15 minutes) before
+  shutting down, so a hands-on "Stop" turned into "shut down later." It now goes straight to a
+  graceful (~15s native) shutdown as it did in 2.7.0 and earlier — and, thanks to the save fix
+  below, saves the world first. Player warnings still apply to **scheduled** stops and to the
+  **Restart** button; **Force-stop** is still the immediate kill. (Reported on Nexus.)
+- **No more save-loss on a scheduled restart or stop.** A graceful stop or restart now forces the
+  server to save the world *before* it shuts down, instead of trusting the exit-time save to finish
+  in time. Populated servers were rolling back 5–10 minutes on every scheduled restart because the
+  process could go away before that save completed. Managed settings are preserved across the stop
+  as before. (Reported in #18.)
+
+### Changed
+- **Anti-cheat note on the performance flags.** The **Legacy performance flags** setting now spells
+  out that PalDefender and similar anti-cheat mods need `-NoAsyncLoadingThread` left on to avoid
+  heap-corruption crashes — it's on by default, but worth knowing before turning it off. (Raised
+  in #24.)
+
+## [2.8.9] — 2026-08-05
+
+### Added
+- **Live status board for the Discord bot.** Under a world's **Discord Bot** tab, a new
+  **Live status board** section lets you pin a status card to a channel: pick a channel, hit
+  **Send status card**, and the bot posts one embed and then keeps *that same message* updated —
+  online/offline, in-game day, player count and who's on — instead of posting a fresh `/status`
+  each time. Add as many as you like across channels or servers (up to 10). The card refreshes
+  on a timer and flips instantly when the server starts, stops or restarts, but only edits the
+  message when something a viewer would actually notice changes (uptime alone won't trigger an
+  edit), so it stays well inside Discord's rate limits. It respects the same `/status` field
+  toggles, drops itself automatically if the message is deleted in Discord, and explains clearly
+  if the bot lacks permission to post in the chosen channel.
+- **Message templates for server start and stop.** The per-world **Discord → Message templates**
+  editor now covers **Server started** and **Server stopped** as well, so every routed event —
+  not just joins, deaths, backups and the rest — can have custom text (with `{world}` / `{time}`
+  placeholders). Leaving a template blank keeps the existing built-in message.
+- **Schedule a stop.** The **Schedule** tab has a new **Stop** job alongside Restart, so you can
+  schedule a shutdown — e.g. a nightly stop or a one-off for maintenance — on any interval, minutes
+  or daily-at-a-time cadence. It runs the same courtesy path as a scheduled restart: a safety
+  backup, the configured player warning countdown, then a graceful shutdown (the world stays down).
+  A stop scheduled while the server is already off is simply skipped. (Requested in #26.)
+- **Brazilian Portuguese (Português do Brasil).** Added a community-contributed **pt-BR** language
+  pack to the downloadable catalog under **Settings → Language packs**, courtesy of
+  [@oSuperTheus](https://github.com/oSuperTheus). (Requested in #27.)
+
+### Changed
+- **Player warnings now cover shutdowns, not just restarts/updates.** With **Warn players** enabled,
+  pressing **Stop** (or a scheduled Stop) now runs the same in-game countdown a restart does before
+  the server goes down, instead of stopping immediately. **Force-stop** still skips the warning for
+  when you need it down now. The setting is renamed to *Warn players before stop / restart / update*
+  to match.
+- **Update failures now say *why*.** When a SteamCMD update genuinely fails, the error no longer
+  reads just `SteamCMD failed (code 8)` — it now includes SteamCMD's own reason (e.g. *Disk write
+  failure*) plus a plain-language next step (check free disk space, antivirus/permissions, or a
+  locked install folder). Codes 7/8 that verify fine on disk are still treated as success as before.
+
+## [2.7.0] — 2026-08-01
+
+### Added
+- **Remote Access — hand out scoped control with a code.** A new **Remote Access** sidebar page
+  lets you open the manager to other people from their own device. Turn it on, optionally allow
+  **same-network (LAN)** access (which rebinds the local server to your network and restarts it),
+  and share the shown `http://…/remote` URL — tunnels like playit.gg / Cloudflare Tunnel work too,
+  and cross-origin requests are handled. Create **5-digit codes**, each scoped to either the
+  **whole app (all worlds)** or a **single world**, with a per-tab allow-list (everything except
+  the **Admin** tab by default). Visitors open `/remote`, enter their code, and get exactly the
+  tabs you granted — with their own **language and theme** that never touch your settings. You can
+  **edit a code's access live**, see **active/inactive** devices, read a **per-code activity log**
+  of everything done, and **disable or delete** a code to cut access instantly. The desktop app
+  stays the trusted admin via a per-launch token (never by IP, so a tunnel can't impersonate it),
+  and every world action is enforced server-side, so a code can never reach beyond its scope.
+- **Login streaks synced with the DailyLoginRewards mod.** The Players tab can now show the
+  streak numbers straight from the DailyLoginRewards mod's own `players.json`, so the GUI and
+  the mod agree instead of counting streaks differently (the mod uses a rolling 24/48-hour
+  window from each player's last login; the app's own leaderboard uses calendar days). The app
+  **auto-detects** the file under the world's UE4SS `Mods` folder and re-reads it live each time
+  the tab opens. If the server lives on another machine, open **Players → Configure** to point
+  it at a file path or **upload the `players.json`** directly. Matching players get a 🎁 login-
+  streak column shown next to the app's own streak, and players the mod tracks but the app hasn't
+  seen yet are listed too. No setup is needed when the mod is installed locally.
+- **Skip the next scheduled run.** Each schedule (restart, backup, update, message…) now has a
+  **Skip next** toggle that cancels just its next occurrence and then resumes on its normal
+  cadence — so you can hold off one restart without disabling and re-arming the whole schedule.
+
+### Fixed
+- **Discord webhook now fires for bot-driven start/stop/restart.** Starting, stopping or
+  restarting a world through the Discord bot posted nothing to the configured webhook channel;
+  those actions now send their notification like the in-app ones already did.
+
+## [2.6.1] — 2026-07-26
+
+### Fixed
+- **Death tracking could crash the dedicated server.** The death relay's killer-attribution
+  hook fired on every instance of a player taking damage and read the attacker actor —
+  which is null for environmental damage and not-yet-valid for a just-joined player. Reading
+  a field off that invalid object raised a **native access violation inside UE4SS** (not
+  catchable by the mod's Lua error handling), taking the whole server down — seen with two
+  players actively playing. The relay no longer installs that hook: it now uses only the
+  once-per-death event and validity-checks every game object before touching it. **Deaths and
+  their cause are still tracked; the automatic "killed by <creature>" name is no longer shown.**
+  If you had death tracking enabled, **re-install the relay** (world → Deaths → Remove, then
+  Install) after updating so the server picks up the fixed mod.
+
+## [2.6.0] — 2026-07-26
+
+### At a glance
+- On a fresh Windows machine, the app now **detects the missing Visual C++ / DirectX
+  runtimes** the server needs and installs them for you in one click — no more silent
+  "server won't start".
+- The **Players tab shows a login-streak leaderboard**: who plays, when they were last on,
+  and their current and longest daily streaks — built from history the app already keeps.
+- New **Deaths tab and death notifications**: see who died, how, and which creature (e.g. Depresso)
+  or player killed them — in the Overview log and as its own customizable Discord message.
+- **Discord notifications are now customizable** — write your own message for each event
+  with placeholders like `{player}` and `{world}`.
+- **Creature names in death messages are editable** — rename any creature globally or per-world, with
+  search, and new Pals are detected automatically.
+- **Settings is now a tidy categorized menu** — pick a category to drill in, instead of one
+  long scroll.
+- The **ini editor gains Ctrl+F search** (and Ctrl+H replace), plus an open-in-external-editor
+  button.
+- **German** is now a built-in language.
+- Fixed: **starting at login now truly runs in the background** — autostart worlds come up
+  and the Discord bot connects without you having to open the window first.
+- Fixed: creating a world on Windows no longer defaults the platform to "Linux".
+
+### Added
+- **Detect & install missing Windows runtimes.** On a fresh Windows machine the Palworld
+  server needs the Microsoft Visual C++ and DirectX runtimes; without them it exits the
+  instant it starts. The app now detects when they're missing, shows a warning on the
+  world's Overview with a one-click **Install prerequisites** button (downloads Microsoft's
+  VC++ redistributable and runs Epic's bundled prerequisite installer, elevated), and — if
+  a server dies at launch for this reason — says so specifically instead of "exited
+  unexpectedly".
+
+- **Player login streaks.** The Players tab now shows a roster of everyone who has joined a
+  world, ranked by login streak, with their last-seen time, current streak, longest streak
+  and total logins. It's derived entirely from the join history the app already records, so
+  it needs no setup and works even while the world is stopped.
+
+- **Customizable Discord notification messages.** The Discord tab gains a **Message
+  templates** section: write your own multiline text for join, leave, crash, restart,
+  update and backup events, with click-to-insert placeholders like `{world}`, `{player}`,
+  `{code}` and `{build}`. Leave one blank to keep the built-in default.
+
+- **Player death tracking.** A new **Deaths** tab installs a bundled UE4SS mod
+  (`PSMDeathRelay`) that reads player deaths straight from the running server. Each death is
+  recorded with its cause (Attack, Falling, Drown, Burn, …) and, for combat deaths, the
+  killer — a friendly creature name (internal `NegativeKoala` → **Depresso**) or the other player
+  for PvP. Deaths show live in the tab (with a "most deaths" leaderboard), land in the
+  Overview log, and route to Discord as a new **death** action with three separately
+  customizable templates — killed by a Pal, killed by a player, and environmental — with
+  `{player}`, `{pal}`, `{killer}` and `{cause}` placeholders and the names in **bold**.
+
+-- **Editable creature name mapping.** The friendly names shown for a killer in death messages
+  are now yours to change — globally in **Settings → Creature display names** and per-world in the
+  **Deaths** tab — with a searchable list of every built-in creature and NPC. Names resolve
+  world-override → global-override → built-in default, and renaming one re-labels past
+  deaths in the feed. Pals seen in-game that the app doesn't have a name for yet are
+  **detected automatically** and pinned to the top of the list for you to name.
+
+- **Search in the ini editor.** The raw `PalWorldSettings.ini` editor now has a Notepad-style
+  **Ctrl+F** find bar (match count, next/prev, match-case) with **Ctrl+H** find-and-replace,
+  plus an **Open in editor** button to edit the file in your system's default editor.
+
+- **German language pack.** German (`de`) is now bundled as a built-in language and is also
+  available from the in-app community language catalog.
+
+### Changed
+- **Settings page reorganized into categories.** The Settings screen is now a clickable list
+  of categories — Appearance, Language, In-game features, Server updates, Backups, Desktop app
+  and System — each opening its own page with a back button, so related options are grouped
+  instead of stacked on one long scroll.
+
+### Fixed
+- **Autostart-at-login now actually starts your servers.** When the app launched straight
+  to the system tray at login, worlds flagged to auto-start stayed stopped and the Discord
+  bot stayed offline until you manually opened the window — defeating the point of starting
+  at login. The background engines now boot the moment the local server is ready, with no
+  window required, so autostart worlds come up and the Discord bot connects on their own.
+- **Create-world platform default on Windows.** Creating a world on a Windows machine
+  defaulted the target platform to "Linux"; it now correctly detects and defaults to the
+  host platform.
+
+## [2.5.0] — 2026-07-19
+
+### At a glance
+- The app now lives in the **system tray**. Closing its window tucks it away instead of
+  quitting, so your servers keep running in the background — reopen it, or quit for real,
+  from the tray icon. There's a Settings switch if you'd rather the close button quit.
+- **Starting at login now opens straight to the tray**, out of your way. The tray menu
+  lists your worlds; click one and the app opens right on that world.
+- A new **"Stop when empty" scheduled job** shuts a world down once nobody has been online
+  for a set time, freeing the machine when everyone's logged off. A player joining resets
+  the timer, and — if the world has a Discord webhook or bot — players get a one-minute
+  warning before it goes down.
+- Run a **Windows** Palworld server on a **Linux** host through Wine — the way to get
+  Windows-only mods working while self-hosting on Linux.
+- Pick a world's target platform (Windows or Linux) when you create it, independent of
+  the machine you're running on.
+-- **Schema mod support (removed)** — historical note: PalSchema support was previously available but has been removed for Dragonwilds targets.
+  data-table/blueprint mods (the kind published on Nexus) straight from the Mods tab.
+- Fixed: the chat mod could show every message twice in the Chat tab and Discord relay.
+
+### Added
+- **Minimize to the system tray.** A tray icon now sits with your other background apps.
+  Closing the window hides it there and leaves your servers running; open it again with a
+  click, or right-click for a menu that opens the app, jumps to a specific world, or quits
+  for good. A new **Settings → "Close to system tray"** switch (on by default) lets you go
+  back to the old behaviour where the close button quits. On Linux the tray needs a
+  StatusNotifier host (most desktops have one); if none is available the app quietly runs
+  without a tray rather than failing to start.
+
+- **Start to the tray, with world shortcuts.** When the app starts itself at login it now
+  opens straight to the tray with no window, so a machine that boots into your servers
+  doesn't shove the manager in your face. The tray's menu lists every world by name with a
+  dot showing whether it's running; picking one opens the app already on that world.
+
+- **Stop a world when nobody's on it.** A new **"Stop when empty"** job on the Schedule tab
+  stops a world once it's had no players for however long you set (minutes or hours) —
+  handy for freeing the PC after your friends log off. Any player joining resets the
+  countdown, so it only ever fires on a truly empty server. If the world has a Discord
+  webhook or bot set up, it posts a one-minute heads-up first (webhook preferred, bot
+  otherwise); with neither, it just shuts the server down. It reads who's online through
+  the REST API, so that needs to be on.
+
+- **A channel for the bot to warn in.** So the Discord bot can deliver that idle-shutdown
+  warning, the **Discord Bot** tab gains a channel picker — the bot posts the heads-up
+  there when the world has no webhook. It's optional, and the bot still only ever posts
+  what you've asked it to.
+
+- **Cross-platform provisioning.** SteamCMD can now fetch the Windows *or* Linux server
+  files regardless of the host OS (`@sSteamCmdForcePlatformType`), so a Linux machine can
+  install a Windows-target server. A platform picker appears when creating a world, and
+  adopting an existing install detects its platform automatically.
+
+- **Run Windows servers on Linux via Wine.** A Windows-target world on a Linux host is
+  launched through Wine, with a per-world **Wine binary**, **WINEPREFIX** (auto-managed
+  per world by default), and **Wine launch flags** in the Admin tab. This is what makes
+  Windows-only UE4SS mods runnable on a Linux host. Custom per-world **environment
+  variables** are applied to the server process on launch too. The server config path
+  (`WindowsServer` vs `LinuxServer`) now follows the world's target platform rather than
+  the host OS, fixing settings resolution for cross-platform worlds.
+
+-- **PalSchema mods.** (Historical) The Mods tab previously supported PalSchema; this feature has been removed.
+  framework (downloaded from GitHub, or from a zip you provide) and import, enable/disable,
+  and remove its content mods — the JSON mods that edit Palworld's data tables and
+  blueprints, common on Nexus. Mods land in `ue4ss/Mods/PalSchema/mods`, PalSchema is
+  wired into `mods.txt` automatically, and disabling a mod parks it rather than deleting
+  it. Requires UE4SS (installed in the same tab) and a Windows-target world — which, with
+  the Wine support above, can be hosted on Linux too. Mods that also ship packaged assets
+  (`.pak`) are flagged, since PalSchema loads only the JSON part.
+
+### Fixed
+- **Chat showing every message twice.** With the chat mod installed, each in-game message
+  could appear twice in the Chat tab and be relayed to Discord twice, while in-game chat
+  itself was fine. Some server/UE4SS builds now echo chat to the server console as well as
+  to the chat mod's file, and the app was capturing from both. It now treats the chat
+  mod's file as the single source when it's present, and only reads chat from the console
+  as a fallback when the mod isn't in use.
+
+### Notes
+- A Linux-target world still can't run on a Windows host — there's no reverse Wine path,
+  so that combination is rejected with a clear message.
+- Wine cross-platform hosting requires Wine installed on the Linux machine.
+
+_Wine cross-platform provisioning contributed by Ralebrig ([#12](https://github.com/PrakashMandal-IV/palworld-server-manager/pull/12))._
+
+## [2.4.0] — 2026-07-18
+
+### At a glance
+- Run a world from Discord with your own bot: start, stop, restart, broadcast, back up,
+  check status, kick someone, and see where players are on the live map — with a say
+  over who may do which.
+- Optional automatic server updates: opt in and a server updates itself when a new build
+  ships, warning players first. The app itself is only ever shown updates, never
+  auto-updated.
+- Deleting a server, mod, or save now sends the old files to the Recycle Bin (Windows)
+  or Trash (Linux) instead of erasing them.
+- Servers now start without the black command window — no more clutter next to the app.
+- The app can now start itself when you log in to Windows or Linux — on by default.
+- A per-world toggle for the legacy `-useperfthreads` launch flags, on by default.
+- The Live Map now uses the current, icon-free world map at a higher resolution.
+- Fixed: deleting a server could delete the folder above it, taking other servers with it.
+- Fixed: a server could get stuck with an empty admin password, spamming REST "Unauthorized" and hiding live info.
+
+### Added
+- **Run a world from Discord.** A new **Discord Bot** tab on each world sets up your own
+  bot in four steps, giving you `/start`, `/stop`, `/restart`, `/broadcast`, `/backup`,
+  `/status` and `/kick` in your Discord server. The Info page has a step-by-step guide to
+  making the bot itself.
+
+  It's your bot, not ours. You create it in Discord's developer portal and paste its
+  token, which stays on this computer: it's never displayed again, never sent anywhere
+  else, and you can revoke it from Discord whenever you like. The invite link asks for
+  **no permissions at all** — the bot can't read messages and can't post on its own, it
+  only ever answers its own commands. Everything runs from this app, so the commands work
+  while it's open and stop when it closes.
+
+  A Discord server is linked to a world with `/authorize`, which asks for the world's
+  admin password in a private box only you can see. A slash command's options are shown
+  to the whole channel, so a password could never be one of them. Five wrong tries locks
+  that person out for fifteen minutes, and the bot only ever works in the one server you
+  linked it to.
+
+- **A say over who can do what.** Nobody can use the bot until you name them — an empty
+  list means nobody, not everybody. Pick roles and people out of your Discord server's
+  own lists, with their icons, avatars and display names, then tick per command: someone
+  can be allowed to take a backup without being allowed to stop the server. Whoever runs
+  `/authorize` gets everything, so a fresh setup is usable straight away.
+
+  Listing people needs the **Server Members Intent** switched on for your bot; the panel
+  says so and links to how, and you can always add someone by ID instead.
+
+- **An activity log.** Every command anyone runs from Discord is recorded — including
+  the ones that were refused, because "who tried to stop the server at 3am" is the
+  question a log like this exists to answer. Filter it by date, person, command or
+  outcome.
+
+- **`/status`, for the whole channel.** "Is the server up?" is a question the channel
+  has, so its answer goes to the channel rather than just whoever asked: a card with the
+  world's name, whether it's up, the in-game day, uptime, player count and who's on, plus
+  the server's name and the address people connect on from Settings → Server Identity.
+  The gear on its column in the access grid picks which of those it gives away. The
+  address appears once a Public IP is set there — left blank, the server works its own
+  out and the app can't see what it lands on.
+
+- **`/kick`, without hunting for an ID.** Pick whoever's playing from a list Discord
+  fills in as you type, and see who's left afterwards. Only people allowed to kick can
+  see that list.
+
+- **`/player-location`, on the live map.** Posts the world map to your channel with a
+  dot for each online player, each labelled with their name — the same map the app's
+  Live Map tab shows. A menu under it filters the map down to just the players you pick
+  (choose several at once). Like the other commands it's permission-gated, and it needs
+  the world's REST API switched on so the server can report positions.
+
+- **Starts with Windows or Linux.** The app now offers to launch itself when you log
+  in, so a server can come back up without you having to open the app first. It's on
+  by default for new installs and for anyone updating from an earlier version;
+  Settings → **Start automatically at login** turns it off. Windows registers this
+  through its normal sign-in apps list; Linux drops a standard autostart entry for
+  your desktop environment to pick up.
+
+- **A toggle for the legacy multithreading launch flags.** Reported in
+  [#11](https://github.com/PrakashMandal-IV/palworld-server-manager/issues/11): every
+  world has always launched with `-useperfthreads`, `-NoAsyncLoadingThread`, and
+  `-UseMultithreadForDS`, with no way to turn them off. Palworld's engine has handled
+  multithreading on its own since 1.0, so these can now hurt more than help on some
+  setups. Each world's **Admin** tab has a new **Legacy performance flags** toggle —
+  on by default, so nothing changes for any existing or new world unless you switch
+  it off.
+
+- **Servers start without a console window.** The black command window that opened
+  beside the app is gone. It's on by default; if you read that window (it's the only
+  place Palworld's raw server output shows up), Settings → **Hide the server console
+  window** turns it back on.
+
+  The window never came from how the app launched the server. Palworld ships the
+  dedicated server as three programs: `PalServer.exe` is a small launcher, and the
+  server itself is built twice — once as a windowed program and once as a console one.
+  The launcher started the console build, and Windows gives a console program without a
+  console of its own a real window. That window belonged to a program the app never
+  launched directly, so no amount of "hide this window" on the app's side could reach
+  it. Now the app just starts the windowed build itself. It's the same server — same
+  ports, same REST API, same save data, and it still keeps running if you close the
+  app. Servers whose folder doesn't have that build fall back to the launcher and start
+  as before.
+
+- **Automatic server updates, if you want them.**
+  ([#8](https://github.com/PrakashMandal-IV/palworld-server-manager/issues/8)) Off by
+  default. Turn it on in Settings and the app updates any server that's fallen behind the
+  latest public build on its own: players get an in-game warning every minute for five
+  minutes, then the server is stopped, a safety backup is taken, SteamCMD updates it, and
+  it's brought back up. The build check runs on its own schedule (every 30 minutes by
+  default, and configurable) so the **update available** badges stay accurate whether or
+  not automatic updates are on. New versions of the app itself are only ever surfaced —
+  the packaged app is never updated for you.
+
+- **Deletions go to the Recycle Bin, not the void.** Deleting a server's files, removing
+  a mod, or restoring a backup over the live save now moves the old files to the Recycle
+  Bin on Windows or the Trash on Linux, so a mistake stays recoverable. If the move can't
+  be done it stops and says why, rather than falling back to erasing anything.
+
+### Changed
+- **A cleaner, sharper Live Map.** The bundled world map is now the current
+  post-Feybreak render (Palpagos + Sakurajima + Feybreak) at 2048×2048, with no
+  marker icons cluttering the terrain — just the map, with player dots on top.
+  It's framed identically to the previous image, so existing calibration and any
+  player positions you've calibrated stay accurate — nothing to redo.
+
+### Fixed
+- **Deleting a server could wipe a whole folder of servers.** Reported in
+  [#9](https://github.com/PrakashMandal-IV/palworld-server-manager/issues/9): a user
+  with `PalworldServers\Main Server` and `PalworldServers\Testing Server` deleted the
+  testing one and lost `PalworldServers` entirely — including the main server.
+
+  This happened when a server was added with the **parent** folder picked as its
+  install folder (easy to do — the Browse dialog opens on the parent, and SteamCMD
+  installs into whatever folder you give it). That server's recorded folder was then
+  `PalworldServers` itself, so deleting it with **also delete files** removed
+  everything underneath, siblings included. Nothing checked the folder first.
+
+  Two things changed. Deleting files is now refused when the folder holds another
+  registered server, is a drive root, contains the app's own data or backups, or
+  doesn't look like a Palworld server folder at all — the error names what's at risk,
+  and deleting the profile alone still works. Separately, a folder that overlaps
+  another server's is now rejected when you add or move a server, so the bad state
+  can't be created in the first place. Existing servers already pointing at a parent
+  folder are protected by the delete check.
+- **A failed file delete no longer passes silently.** The profile used to disappear
+  while the files stayed behind (e.g. locked by another process), with no error and no
+  way to find them again. The delete now reports what went wrong and keeps the profile.
+- **Servers stuck with an empty admin password.** A world could get stuck logging
+  `REST accessed endpoint / Unauthorized (AdminPassword is empty)` on repeat, with no
+  live player or status info — and setting the password in the Admin tab didn't help.
+  Palworld only reads the admin password at boot and rewrites its config on shutdown,
+  so a blank password it had once loaded kept coming back on every restart. The app now
+  re-applies the world's admin password and REST settings into the config right before
+  each launch (generating one if it's somehow missing), so REST authentication works
+  from the first start and stays fixed across restarts.
+
+## [2.3.0] — 2026-07-15
+
+### At a glance
+- Live player map — see everyone online on the real Palworld map, no mod needed.
+- Workshop mods: check for updates, update one or all, and see their thumbnails.
+- Open any mod's folder in one click, with Workshop IDs shown next to package names.
+- Force-enable mods published without server install rules.
+- Schedule system messages and on-screen notices to players.
+- New schedule triggers: every N minutes, or when a player joins (with a delay).
+- Discord can now announce players joining and leaving.
+- Update is only offered when there's actually a newer server build.
+- Fixed: scheduled backups ran with the server stopped, evicting real backups.
+- Fixed: upgrading to 2.1.0 silently switched Discord notifications back on.
+- Fixed: the Update available badge never showed on a world's own page.
+
+### Added
+- **Live player map.** A new **Map** tab plots everyone online on the real Palworld
+  world map (the current post-Feybreak one, bundled with the app — nothing to
+  download). Scroll to zoom, drag to pan, and hover a player for their in-game
+  coordinates. It works with the server's own REST API, so no game mod is needed. The
+  map ships pre-calibrated; if you want to fine-tune it for yourself, calibrating from
+  the Map tab changes only your install, and **Reset to default** puts it back.
+- **Workshop mod update checks.** The Mods tab has a **Check for updates** button that
+  compares each installed mod's `Info.json` version against Steam's copy of the same
+  Workshop item. Anything out of date gets a badge showing the new version, plus an
+  **Update** button per mod and an **Update all** for the lot — no more copying mod
+  folders over by hand to keep up.
+- **Workshop mod thumbnails.** Mods that ship preview art now show it in the list
+  instead of the generic shield icon.
+- **Jump to a mod's folder.** Every mod row has a button that opens its folder, and
+  the panel has one for the Workshop root. Workshop mods also show their item ID next
+  to the package name, so matching a folder to a mod no longer takes guesswork.
+- **Force-enable mods that skip `IsServer`.** Some mods run fine on a dedicated server
+  but were published without server install rules, which used to mean wiring them up
+  manually. You can now enable them anyway after a confirmation that says what to
+  expect: Lua mods get bridged into UE4SS and should just work, while Pak-only mods
+  depend on Palworld's own deploy step and may not.
+- **Scheduled messages to players.** The Schedule tab has two new job types beyond
+  restart/backup/update: **System message** (posts as a System announcement in the
+  in-game chat feed) and **On-screen notice** (pops on every player's screen through
+  the broadcast mod, falling back to chat if the mod isn't set up). Each carries your
+  own custom message.
+- **More ways to time a schedule.** Alongside *Every N hours* and *Daily at time*,
+  schedules can now run **Every N minutes**, and messages can fire **When a player
+  joins**. The join trigger takes an optional player-name filter (blank = anyone), and
+  you can drop `{player}` into the message to insert the joining player's name. It also
+  takes a **Delay (s)** — wait a few seconds after someone joins so your welcome lands
+  once they're actually in the world rather than on the loading screen. A delayed
+  message is dropped if the player leaves, the server stops, or you remove the
+  schedule before it fires.
+- **On-screen setup nudge.** Picking *On-screen notice* without the broadcast mod
+  installed now shows a clear notice with a one-click jump to the Broadcast tab to set
+  it up (the notice still sends via chat until then).
+- **Discord notifications when players join or leave.** The Discord tab's event list
+  now includes **Player joined** and **Player left**, each routable to any of your
+  webhook channels (or *Don't send*). They're off by default, so existing setups get
+  no new noise. Join/leave is tracked by a background watcher, so the notifications
+  fire even when the app window isn't open on that world.
+
+### Changed
+- **Update is only offered when there's an update.** Worlds now check Steam for a
+  newer server build on their own (every six hours, plus whenever you press *Check for
+  updates*). The **Update available** badge shows the moment one lands, and the Update
+  button is hidden while your build is already current. If Steam can't be reached the
+  button stays available rather than leaving you unable to update.
+- **Clearer name for the supply drop setting.** *Supply drop interval (s)* in
+  **Settings → World & Loot** is now **Meteor/Supply drop interval (s)**, matching what
+  players actually see fall out of the sky.
+
+### Fixed
+- **Scheduled backups ran even with the server stopped.** A backup schedule fired on
+  its interval whether or not the world was running, and a stopped world's save data
+  can't change — so those backups were identical copies. Worse, since only the newest
+  few backups are kept, a stopped server left running overnight would quietly evict
+  every real backup you had. Scheduled backups now skip while a world is stopped (noted
+  in its event log) and take the backup they owed you as soon as it's running again.
+  Manual backups still work whether or not the server is up.
+- **Upgrading to 2.1.0 silently switched Discord notifications back on.** Events you'd
+  turned off before 2.1.0 were dropped when the old per-event switches became webhook
+  routing, so notifications you'd deliberately silenced — a backup announcement every
+  hour, say — started arriving again. Those switches are now carried across the
+  upgrade. If you've already upgraded and are seeing this, set the event to *Don't
+  send* on the world's Discord tab; that sticks.
+- The **Update available** badge never appeared on a world's own page — the page was
+  never told whether an update existed, so the badge could not render regardless of
+  what Steam reported.
+
+## [2.2.0] — 2026-07-14
+
+### Added
+- **The app now speaks your language.** Every screen, label, tab, and toast can be
+  shown in a language other than English, chosen from **Settings → Language** and
+  applied instantly (no restart). English ships built in; **Spanish, Japanese, and
+  Chinese (Simplified)** are available as ready-made translations.
+- **Community language packs, installed from inside the app.** Settings → Language
+  lists translation packs hosted on the project's GitHub and lets you **install,
+  update, and remove** each one with a single click — no files to download by hand and
+  no visit to GitHub required. The list shows which packs are already installed and
+  flags when a newer version is available.
+- **Bring your own translation.** A new **Language packs** guide page (opened from the
+  *Make your own* button on the language settings) explains the simple pack format,
+  offers the English strings as a downloadable template, and lets you add your own pack
+  by importing a `.json` file or pasting a link. Any label you don't translate falls
+  back to English, so even a partial translation works. Untrusted packs are validated
+  before they're saved.
+
+## [2.1.0] — 2026-07-13
+
+### Added
+- **Portable Windows build (no installation).** The release now ships a portable
+  `.exe` alongside the installer. It runs with no install and keeps everything it
+  writes — the worlds database, backups, SteamCMD, and logs — in a `PSM-Data` folder
+  created right next to the executable, so nothing is left in `%AppData%`. Copy the
+  `.exe` together with its `PSM-Data` folder to a USB stick or another PC and your
+  whole setup travels with it. The installer build is unchanged and still stores its
+  data in `%AppData%` as before.
+- **Send different Discord events to different channels.** The Discord tab previously
+  had a single webhook, so every notification went to one channel. You can now add
+  several named webhook **channels** and route each event to whichever one you want —
+  e.g. a **Status** channel for start/stop/restart/crash/update, a separate **Backup**
+  channel, and a **Chat** channel for the in-game chat relay. Each event has a
+  drop-down to pick its channel (or *Don't send* to mute it), and every channel has
+  its own **Test** button. Upgrading is seamless: if you were already using the single
+  Discord webhook, it's migrated to one channel named **Default Channel** with every
+  event routed to it (and chat only if you had the relay on), so your notifications
+  keep working with no reconfiguration. Worlds with no webhook are left untouched.
+
+### Fixed
+- **Player join/leave notices no longer flood the chat log and Discord (often in
+  Japanese).** Palworld announces logins/logouts through the in-game chat channel with
+  a synthetic **SYSTEM** sender, localized to the server's game language — so they
+  appeared in the GUI chat log and were relayed to Discord as lines like
+  `PlayerNameがログインしました。` ("… logged in"). These system broadcasts aren't real player
+  chat and just duplicate the app's own Join/Leave history, so they're now filtered
+  out of both the chat feed and the Discord relay. This takes effect for existing
+  servers as soon as the app updates — no need to reinstall the chat relay mod — and
+  the bundled mod was updated too so fresh installs never emit them.
+- **Backups and crashes now actually post to Discord.** The Discord tab's *Notify
+  on* list offered **backup** and **crash** toggles, but nothing was ever sent for
+  those two events — creating a backup and a server crash both posted nothing, while
+  start/stop/restart/update worked. Both are now wired up: manual and scheduled
+  backups post a message (internal safety snapshots taken right before a
+  restart/update/restore stay silent so they don't spam the channel), and an
+  unexpected server exit posts a crash notice. Both still respect their *Notify on*
+  toggles.
+- **The manager no longer becomes unresponsive after a long session.** After the app
+  had been running for an extended period, every action could start failing with
+  "Request failed (500)" repeating every few seconds, with no button working until
+  the app was force-closed. The packaged app's WASM SQLite backend keeps each
+  prepared statement in memory until it is explicitly finalized, but the database
+  layer created a fresh statement on every query and never released it — so routine
+  background polling leaked statements until the database ran out of memory and every
+  request failed. Prepared statements are now cached and reused for the life of the
+  connection (and finalized on shutdown), keeping memory flat no matter how long the
+  app runs. Your worlds and save data were never at risk from this — it only affected
+  the manager's own bookkeeping database.
+
+## [2.0.1] — 2026-07-12
+
+### Fixed
+- **The connect address now shows your real network IP, not just `127.0.0.1`.** The
+  Overview showed only `127.0.0.1:<port>`, which works *only* from the PC running the
+  server — leading some to think the app forced the server to bind to loopback. It
+  never did: the server listens on every network adapter. The panel now leads with
+  your **Same network (LAN)** address (e.g. `192.168.31.243:8211`) that other PCs on
+  your network use, clearly marks `127.0.0.1` as **This PC only**, lists your other
+  adapters, and spells out that reaching it over the internet is a router
+  port-forward/tunnel step. Local network adapters are ranked so your real
+  Ethernet/Wi-Fi wins over virtual ones (Hyper-V, WSL, VPNs).
+- **Ports could not be changed after a world was created.** The Admin tab showed a
+  world's Game/Query/REST API/RCON ports as plain text — there was no way to give a
+  world custom ports once it existed, even though the app supported it internally.
+  These are now editable fields with a **Save ports** button (world must be stopped).
+  Saving now also rejects invalid port numbers, a port already used by another
+  world, and two of a world's own ports being set to the same value — previously
+  these were accepted silently and could produce a broken configuration.
+
+## [2.0.0] — 2026-07-12
+
+### Added
+- **Steam Workshop mods on any drive.** DWSM now auto-detects every Steam library on
+  the machine — reading the Steam registry entries and each `libraryfolders.vdf` — so
+  a Workshop mod you've subscribed to is found no matter which drive Steam is
+  installed on, not just `C:`. The Mods tab gained a **Steam library location**
+  control that lists the detected libraries and lets you point at a specific folder
+  (with a picker) if your setup is unusual.
+- **Workshop ID help.** An **info** button next to *Add* opens a short guide: how to
+  find a mod's Workshop ID (the number in its Steam URL), that the mod must be
+  subscribed/downloaded in Steam first, and to use *Import mod (.zip)* otherwise.
+- **Choose where backups are stored.** Settings → Backups now shows the exact folder
+  backups are written to and lets you point them at any drive/folder (with a picker),
+  or reset to the default. Existing backups stay put; only new ones use the new
+  location. A world's **Backups** tab shows that world's backup folder and an **Open
+  backup folder** button, so it's easy to find your saved snapshots. (Backups are ZIP
+  copies of each world's *Saved* folder, kept outside the server install where a game
+  update can't touch them.)
+
+### Fixed
+- **Workshop server mods are now correctly detected.** A mod's `Info.json`
+  `InstallRule` is an array of per-target rules, but PSM read it as a single object —
+  so every mod was wrongly flagged **"not a server mod"** and its enable toggle was
+  locked. Any rule with `IsServer: true` now correctly marks a mod as server-side,
+  and the mod's real `ModName` is shown.
+- **Enabling a mod no longer corrupts `PalModSettings.ini`.** The reader matched
+  `WorkshopRootDir` across line breaks, so an empty value swallowed the following
+  line (e.g. `ConfigVersion=1.0`) and wrote a malformed file on the next save.
+  Parsing is now strictly line-based and `ConfigVersion` is preserved.
+- **Workshop *Lua* mods now actually load.** Palworld deploys Workshop Lua mods to
+  `Mods/NativeMods/UE4SS/Mods`, which the bundled UE4SS (at
+  `Pal/Binaries/Win64/ue4ss`) never scans — so most Workshop mods silently did
+  nothing even after being enabled and deployed. Enabling a Lua-type Workshop mod now
+  bridges its scripts into the running UE4SS mods folder (and tears them down on
+  disable/remove), so it loads on the next server restart. Pak-only mods are
+  unaffected.
+
+## [1.5.0] — 2026-07-10
+
+### Added
+- **Broadcast section.** A new **Broadcast** tab lets you message everyone on the
+  server: send an announcement immediately, or schedule messages for later. Each
+  pending schedule shows a live **hh:mm:ss countdown** to when it fires; edit or
+  delete them, and they're removed automatically once they fire. Schedules persist
+  across app and system restarts, so one set for tomorrow still fires as long as the
+  app is open when the time comes. If the app was closed through the scheduled time,
+  the broadcast isn't fired late or lost — it's kept and flagged **Missed**, with
+  one-click **Send now** and **Reschedule** actions. For a true on-screen message, install the bundled
+  **PSMBroadcast** UE4SS mod from the tab — broadcasts then appear on every player's
+  screen via the game's on-screen server notice (BroadcastServerNotice). Without the
+  mod, delivery falls back to Palworld's REST announce, which shows in the chat feed. (The red pre-shutdown
+  countdown look is exclusive to actual shutdowns and can't be triggered for a
+  normal message.)
+- **Pre-shutdown warning countdown.** Each world can now warn players in-game
+  before a restart or update — scheduled *or* manual. Configure it in the
+  **Schedule** tab: how many minutes ahead to start, how often to repeat, and a
+  custom message with `{minutes}` / `{seconds}` placeholders (e.g. *"The server
+  will restart in {minutes} minute(s)"*). The notices go to everyone on the server —
+  on-screen via the PSMBroadcast mod when it's installed, otherwise as a chat-feed
+  announce — then hand off to Palworld's native red shutdown countdown for the final
+  minute. Manual restarts with a warning run in the background so the app stays
+  responsive during the countdown.
+- **In-app INI editor with version history.** A **.ini Editor** button in the
+  Settings tab opens `PalWorldSettings.ini` in a full-screen editor so you can
+  tweak raw settings directly. Every save and restore snapshots the file, so you
+  can view any past version and roll back to it in one click. Closing or
+  restoring with unsaved edits prompts you to discard first, and edits are
+  reflected back into the Settings form (both read the same file).
+- **Player join password.** You can now set a **Server password** in the Admin
+  tab — the password players type on Palworld's join screen (separate from the
+  admin password). Leave it blank for an open server.
+- **Palworld 1.0 settings.** Added the new 1.0 server options, including a
+  **Voice Chat** group (enable proximity voice chat and tune its full-volume /
+  silence distances), plus *Ranch Pal work speed* and *Show builder on
+  structures*.
+- **Public IP / port for tunnels.** Server Identity now has editable **Public IP**
+  and **Public port** fields — the address advertised in the community server
+  browser. Set them to your tunnel's public IP and port (e.g. playit.gg) so
+  friends, including console/PS5 players, can find and join a server that has no
+  real public IP. They default to auto-detect / the game port, and a routine
+  profile save no longer overwrites a custom tunnel port.
+
+### Fixed
+- **Updating an adopted server no longer fails when SteamCMD is missing.** Worlds
+  added from an existing install never ran provisioning, so SteamCMD wasn't
+  present and updates errored out. Updates now install SteamCMD automatically
+  first if it isn't already there.
+- **App logo/favicon no longer breaks.** Two copies of the icon both claimed the
+  `/icon.png` URL, which made the sidebar logo and favicon fail to load. Resolved
+  the collision so the icon shows reliably.
+
+## [1.4.1] — 2026-07-10
+
+### Fixed
+- **Chat messages no longer show up as "left" in Join/Leave history.** Typing an
+  in-game message used to write a bogus entry into the presence log, which the
+  history rendered as the player leaving. Chat is no longer recorded as a
+  presence event, and existing stray rows are filtered out — no reinstall needed.
+- **System join/leave broadcasts stay out of the chat feed.** Palworld's own
+  "player joined" notices travel through the chat hook with no sender and are
+  localized to the server's game language (often Japanese), so they showed up as
+  garbled chat and relayed to Discord. These sender-less broadcasts are now
+  dropped both in the app and in the PSMChatRelay mod, leaving only real player
+  chat. Join/leave is still tracked in the dedicated Join/Leave history.
+
+## [1.4.0] — 2026-07-09
+
+### Changed
+- **Discord webhooks are now per world.** The single global webhook in Settings
+  moved into a dedicated **Discord** tab on each world, so every server can post
+  start/stop/restart/update alerts and chat relay to its own channel. Each world
+  carries its own webhook, event toggles, and chat-relay switch, with a clear
+  **unsaved-changes** bar so edits are never lost by forgetting to save. The old
+  global Discord setting (and any webhook stored in it) is cleared automatically;
+  Settings now points you to the per-world location.
+- **Safer world deletion.** Deleting a world now opens a dialog that separates
+  *delete profile only* (default — server files kept) from *delete profile +
+  server files on disk*. The destructive option requires typing the world's name
+  to confirm, GitHub-style, so a full on-disk wipe can't happen by accident.
+- **Mod & chat changes require a stopped world.** Adding, enabling/disabling, or
+  removing Steam Workshop mods, UE4SS Lua mods, and the chat relay mod are now
+  disabled while a world is running, with a prompt to stop it first — these only
+  take effect at boot anyway.
+- **Rebranded the sidebar** to the app icon and **PSM** wordmark.
+
+### Fixed
+- **Modals no longer close when selecting text with the mouse.** Dragging a
+  selection inside a dialog (New world, Customize, Delete) and releasing the
+  button outside it used to dismiss the dialog. Backdrop clicks now only close a
+  modal when the press both starts and ends on the backdrop.
+
+### Added
+- **Usage section — live CPU & memory monitoring.** A new **Usage** entry in the
+  sidebar graphs real-time CPU and memory for every running world. View all
+  running worlds together (aggregate CPU/memory line charts over time plus
+  per-world comparison bars) or pick a single world from the scope selector to
+  drill into its own CPU and memory graphs with current and peak stats. Usage is
+  sampled across each server's full process tree, so it reflects the real
+  shipping binary the launcher spawns — not just the launcher process. The
+  sampler stays idle while no world is running.
+- **In-game chat capture & Discord relay.** The **Chat** tab now shows live
+  in-game player chat while a world runs. Palworld never exposes chat to the
+  server console or REST API, so the app ships its own small UE4SS Lua mod
+  (PSMChatRelay) that you install into a world with one click; it captures chat
+  to a file the app tails in real time. Chat can optionally be relayed to a
+  Discord webhook for a Palworld→Discord feed. The mod installs into the folder
+  the running UE4SS build actually scans (`ue4ss\Mods` on UE4SS 3.x, `Mods` on
+  2.x) and reads only the chat fields that are safe to touch, so it won't crash
+  the dedicated server.
+- **Guided chat setup with a full off-switch.** If UE4SS isn't installed on a
+  world, the Chat tab links straight to the UE4SS installer; once UE4SS is
+  present it offers the one-click relay-mod install. A global **In-game chat
+  capture** toggle in Settings and a per-world **Remove chat mod** button let you
+  disable the feature entirely and take the mod off a server — an easy way to
+  back it out if a future Palworld update ever makes the mod misbehave.
+
+## [1.3.0] — 2026-07-09
+
+### Added
+- **Global Downloads & updates center.** Installs and server updates no longer
+  live in a modal you can accidentally lose. A permanent **Downloads** entry in
+  the sidebar shows a live count and progress while work runs, and opens a full
+  Downloads page listing every active job — with per-job progress bars, phase
+  labels, and expandable SteamCMD logs — plus a history of completed and failed
+  runs. World updates are now tracked jobs too, so an update finally shows real
+  progress instead of a silent spinner.
+
+### Fixed
+- **SteamCMD "exited with code 7" no longer fails good installs.** SteamCMD very
+  often exits non-zero after a fully successful run (most often when it updates
+  itself mid-run and re-execs). Success is now judged by the install on disk
+  (the server binary plus a readable build id), with an automatic single retry
+  for the self-update case, instead of trusting the exit code alone.
+- **Progress bar no longer sticks at 100% mid-update.** SteamCMD reports the
+  bootstrapper self-update and the actual multi-GB server download in two
+  different formats; only the first was understood, so the bar froze at 100%
+  while the real download ran invisibly. Both formats are now parsed, the bar
+  resets between phases, and each phase is labelled (Updating SteamCMD →
+  Downloading server files → Verifying → Installing).
+
+## [1.2.0] — 2026-07-09
+
+### Added
+- **App version + update check in the sidebar.** The footer now shows the app
+  name and version (replacing the old "Admin / local" placeholder). The app checks
+  its GitHub releases and, when a newer version is published, shows an "Update
+  available" button that opens the latest release page to download the new build.
+- **Full UE4SS support** for Lua mods (the kind most Palworld mods on Nexus use),
+  managed separately from Steam Workshop mods in the Mods tab:
+  - Install UE4SS into a world from a user-provided release zip; the app extracts it
+    into `Pal\Binaries\Win64` and forces `GuiConsoleVisible=0` (a visible console
+    crashes a dedicated server on launch).
+  - Detect whether UE4SS is installed and whether its console setting is server-safe,
+    with a one-click fix.
+  - Import, enable/disable (via `mods.txt` + `enabled.txt`), and remove Lua mods.
+
+## [1.1.0] — 2026-07-08
+
+### Added
+- **Change a world's install folder** from the Admin tab. Point a world at the
+  correct `PalServer` folder on any drive without removing and re-adding it — the
+  new path is validated as a real Palworld install, and mods, saves, and settings
+  are then read from the right place. The world must be stopped to change it.
+- **"Send test" button** for Discord notifications in Settings. Sends a test
+  message to the entered webhook URL (before saving) and reports whether Discord
+  accepted it, so you can verify the webhook without having to start or stop a
+  world.
+
+### Fixed
+- **Build version now shows correctly** in the world list and on the world page
+  instead of always displaying "—". Adopted Steam installs and worlds that
+  missed capture at install time now have their build detected automatically,
+  with a fallback to the running server's game version.
+
+## [1.0.0]
+
+Initial public release.
+
+- Provision new Palworld dedicated servers via SteamCMD, or adopt an existing
+  install.
+- Start / stop / restart / update each world, with a crash guardian for
+  automatic restarts.
+- Full `PalWorldSettings.ini` editor (100+ settings) with search, per-field
+  reset, presets, and minimal-diff writes.
+- Players panel (kick / ban / unban via the official REST API), live console,
+  backups (take / restore / schedule), scheduler, and mod import/toggle.
+- Per-world customization (icon, banner, accent color) and settings/profile
+  export & import.
+- Multiple worlds side by side with auto-assigned ports.
+- Discord webhook notifications for server events.
+- Windows installer and Linux AppImage, built and published via GitHub Actions.

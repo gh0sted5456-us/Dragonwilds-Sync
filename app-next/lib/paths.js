@@ -1,0 +1,53 @@
+// lib/paths.js
+// Centralizes where the app stores its data. In Electron the userData dir is
+// injected via APP_MANAGER_DATA_DIR; in plain dev it falls back to ./.data.
+const os = require("os");
+const path = require("path");
+const fs = require("fs");
+
+function dataDir() {
+  const injected = process.env.APP_MANAGER_DATA_DIR || process.env.PALWORLD_MANAGER_DATA_DIR;
+  const base = injected || path.join(process.cwd(), ".data");
+  ensure(base);
+  return base;
+}
+
+function ensure(dir) {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+// Backups can be redirected to a user-chosen folder (Settings → Backups). The
+// override is stored as an app setting and passed in by lib/backups.js — paths.js
+// stays free of a db dependency (which would be circular, since the db lives under
+// dataDir()). A falsy base always falls back to the default under the data dir.
+function backupsBase(custom) {
+  return custom ? path.resolve(custom) : path.join(dataDir(), "backups");
+}
+
+const P = {
+  data: () => dataDir(),
+  db: () => path.join(dataDir(), "registry.sqlite"),
+  steamcmd: () => ensure(path.join(dataDir(), "steamcmd")),
+  logs: () => ensure(path.join(dataDir(), "logs")),
+  backups: (custom) => ensure(backupsBase(custom)),
+  defaultBackupsBase: () => path.join(dataDir(), "backups"),
+  staging: () => ensure(path.join(dataDir(), "staging")),
+  // Writable dir for user-imported / downloaded translation packs (*.json). Inbuilt
+  // packs live read-only under <appRoot>/public/locales; see lib/i18n/loader.js.
+  languagePacks: () => ensure(path.join(dataDir(), "languagepacks")),
+  // Where a manually-uploaded DailyLoginRewards players.json is parked when the mod
+  // folder isn't locally reachable (lib/loginrewards.js upload fallback).
+  loginRewards: () => ensure(path.join(dataDir(), "loginrewards")),
+  // Tiny marker file recording the host the Next server should bind to. Written by the
+  // Remote Access config route, read by electron/main.js at server (re)start to choose
+  // between loopback (127.0.0.1) and LAN-reachable (0.0.0.0). See lib/remoteauth.js.
+  remoteBind: () => path.join(dataDir(), "remote-bind.json"),
+  worldLogDir: (worldId) => ensure(path.join(dataDir(), "logs", worldId)),
+  worldBackupDir: (worldId, custom) => ensure(path.join(backupsBase(custom), worldId)),
+  // Default WINEPREFIX for a Windows-targeted world run via Wine on Linux.
+  // Only created/used when actually needed (see supervisor.js).
+  worldWinePrefix: (worldId) => path.join(dataDir(), "wine-prefixes", worldId),
+};
+
+module.exports = { P, ensure, platform: os.platform() };

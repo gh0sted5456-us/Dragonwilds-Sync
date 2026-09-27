@@ -99,7 +99,7 @@
       ],
       "icon": "public/icon.png"
     },
-    "compression": "maximum",
+    "compression": "normal",
     "electronLanguages": [
       "en-US"
     ]

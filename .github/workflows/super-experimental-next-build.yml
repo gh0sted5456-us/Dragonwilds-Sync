@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build-windows:
-    name: Build portable test artifact
+    name: Build launch-ready Windows app
     runs-on: windows-2025
     timeout-minutes: 45
     defaults:
@@ -51,27 +51,32 @@ jobs:
       - name: Assemble standalone runtime
         run: npm run prepare:standalone
 
-      - name: Build Windows portable executable
-        run: npx electron-builder --win portable --publish never
+      # The NSIS "portable" target is a self-extracting archive. With Electron and the
+      # standalone Next runtime it can sit at 100% CPU for minutes before any window
+      # appears. Ship the unpacked application instead: GitHub already wraps it in a ZIP,
+      # and the executable launches immediately after that ZIP is extracted once.
+      - name: Build launch-ready Windows directory
+        run: npx electron-builder --win dir --publish never
 
-      - name: Verify portable output
+      - name: Verify Windows output
         shell: powershell
         run: |
-          $artifact = Get-ChildItem -LiteralPath release -Filter '*portable.exe' | Select-Object -First 1
-          if (-not $artifact) { throw 'Portable Windows executable was not produced.' }
+          $artifact = Get-ChildItem -LiteralPath release\win-unpacked -Filter '*.exe' | Where-Object Name -NotMatch 'elevate' | Select-Object -First 1
+          if (-not $artifact) { throw 'Launch-ready Windows executable was not produced.' }
           $hash = Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256
           "File=$($artifact.Name)" | Set-Content -LiteralPath release\BUILD-INFO.txt
           "Commit=${{ github.sha }}" | Add-Content -LiteralPath release\BUILD-INFO.txt
           "SHA256=$($hash.Hash)" | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "Launch=Extract this artifact, then run RSDW Sync Experimental.exe" | Add-Content -LiteralPath release\BUILD-INFO.txt
 
-      - name: Upload portable test build
+      - name: Upload launch-ready test build
         uses: actions/upload-artifact@v4
         with:
-          name: Dragonwilds-Sync-Super-Experimental-Windows-${{ github.run_number }}
+          name: RSDW-Sync-Super-Experimental-Windows-${{ github.run_number }}
           if-no-files-found: error
           retention-days: 14
           path: |
-            app-next/release/*portable.exe
+            app-next/release/win-unpacked/**
             app-next/release/BUILD-INFO.txt
 
       - name: Upload build diagnostics

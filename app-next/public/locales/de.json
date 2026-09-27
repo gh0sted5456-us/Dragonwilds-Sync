@@ -5,7 +5,7 @@
     "nativeName": "Deutsch",
     "dir": "ltr",
     "schema": 1,
-    "authors": [ "Runescape Dragonwilds Server Manager" ]
+    "authors": [ "RSDW Sync" ]
   },
   "strings": {
     "nav.worlds": "Welten",
@@ -14,7 +14,7 @@
     "nav.info": "Info",
     "nav.downloads": "Downloads",
     "sidebar.management": "Verwaltung",
-    "app.name": "Runescape Dragonwilds Server Manager",
+    "app.name": "RSDW Sync",
     "app.updateAvailable": "Update verfügbar — v{{version}}",
     "app.upToDate": "aktuell",
     "action.toggleTheme": "Design wechseln",
@@ -86,7 +86,7 @@
     "packGuide.addBody": "Importiere die .json-Datei von deinem Computer oder füge einen direkten https-Link dazu ein. Sie wird vor dem Speichern genauso validiert wie eine Kataloginstallation.",
     "packGuide.addedHint": "{{name}} hinzugefügt — wähle es unter Einstellungen → Sprache aus, um es anzuwenden.",
     "packGuide.goToSettings": "Zu Einstellungen → Sprache",
-    "wizard.title": "Willkommen beim Runescape Dragonwilds Server Manager",
+    "wizard.title": "Willkommen beim RSDW Sync",
     "wizard.subtitle": "Wähle deine Sprache, um loszulegen.",
     "wizard.help": "Du kannst dies später in den Einstellungen ändern.",
     "wizard.continue": "Loslegen",

@@ -6,7 +6,7 @@
     "dir": "ltr",
     "schema": 1,
     "authors": [
-      "Runescape Dragonwilds Server Manager"
+      "RSDW Sync"
     ]
   },
   "strings": {
@@ -76,7 +76,7 @@
     "remote.accessEnded": "Your access has ended.",
     "remote.noTabs": "This code has no sections enabled.",
     "sidebar.management": "Management",
-    "app.name": "Runescape Dragonwilds Server Manager",
+    "app.name": "RSDW Sync",
     "app.updateAvailable": "Update available — v{{version}}",
     "app.upToDate": "up to date",
     "action.toggleTheme": "Toggle theme",
@@ -148,7 +148,7 @@
     "packGuide.addBody": "Import the .json file from your computer, or paste a direct https link to it. It's validated the same way as a catalog install before it's saved.",
     "packGuide.addedHint": "Added {{name}} — pick it in Settings → Language to apply it.",
     "packGuide.goToSettings": "Go to Settings → Language",
-    "wizard.title": "Welcome to Runescape Dragonwilds Server Manager",
+    "wizard.title": "Welcome to RSDW Sync",
     "wizard.subtitle": "Choose your language to get started.",
     "wizard.help": "You can change this later in Settings.",
     "wizard.continue": "Get started",
@@ -363,7 +363,7 @@
     "bot.cmdBroadcast": "show a message to everyone playing",
     "bot.cmdBackup": "take a backup right away",
     "bot.cmdKick": "remove someone who's playing — pick them from a list of who's online",
-    "bot.appMustRun": "These only work while RSDW Server Manager is open — the bot listens from this app.",
+    "bot.appMustRun": "These only work while RSDW Sync is open — the bot listens from this app.",
     "world.tab.admin": "Admin",
     "world.tab.map": "Map",
     "world.lanLabel": "Same network (LAN)",

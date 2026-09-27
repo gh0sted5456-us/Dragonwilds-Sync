@@ -6,7 +6,7 @@
     "dir": "ltr",
     "schema": 1,
     "authors": [
-      "Runescape Dragonwilds Server Manager"
+      "RSDW Sync"
     ]
   },
   "strings": {
@@ -16,7 +16,7 @@
     "nav.info": "Info",
     "nav.downloads": "Downloads",
     "sidebar.management": "Verwaltung",
-    "app.name": "Runescape Dragonwilds Server Manager",
+    "app.name": "RSDW Sync",
     "app.updateAvailable": "Update verfügbar — v{{version}}",
     "app.upToDate": "aktuell",
     "action.toggleTheme": "Design wechseln",

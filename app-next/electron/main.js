@@ -154,7 +154,7 @@ function applyAutostart(enabled) {
         const entry = [
           "[Desktop Entry]",
           "Type=Application",
-          "Name=Runescape Dragonwilds Server Manager",
+          "Name=RSDW Sync",
           `Exec="${exe}" --hidden`,
           "X-GNOME-Autostart-enabled=true",
           "",
@@ -290,7 +290,7 @@ async function refreshTrayMenu() {
     : [{ label: "No worlds yet", enabled: false }];
 
   const menu = Menu.buildFromTemplate([
-    { label: "Open RSDW Server Manager", click: () => showWindow() },
+    { label: "Open RSDW Sync", click: () => showWindow() },
     { type: "separator" },
     { label: "Worlds", enabled: false },
     ...worldItems,
@@ -310,7 +310,7 @@ function createTray() {
     if (img.isEmpty()) img = nativeImage.createFromPath(path.join(__dirname, "..", "public", process.platform === "win32" ? "icon.ico" : "icon.png"));
     if (img.isEmpty()) img = nativeImage.createEmpty();
     tray = new Tray(img);
-  tray.setToolTip("RSDW Server Manager");
+  tray.setToolTip("RSDW Sync");
     // Left-click opens the app (Windows/Linux convention); the menu is right-click.
     tray.on("click", () => showWindow());
     refreshTrayMenu();
@@ -450,7 +450,7 @@ function createWindow() {
     minWidth: 940,
     minHeight: 640,
     backgroundColor: "#1e1f22",
-    title: "RSDW Server Manager",
+    title: "RSDW Sync",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
     icon: isDev
       ? path.join(__dirname, "..", "public", process.platform === "win32" ? "icon.ico" : "icon.png")
@@ -507,7 +507,7 @@ function showErrorWindow(message) {
   if (mainWindow) return;
   mainWindow = new BrowserWindow({
     width: 720, height: 420, backgroundColor: "#1e1f22",
-    autoHideMenuBar: true, title: "Runescape: Dragonwilds Server Manager",
+    autoHideMenuBar: true, title: "RSDW Sync",
   });
   Menu.setApplicationMenu(null);
   const html = `<!doctype html><html><body style="font-family:Segoe UI,system-ui,sans-serif;background:#1e1f22;color:#f2f3f5;padding:40px;line-height:1.6">
@@ -614,7 +614,7 @@ ipcMain.handle("create-profile-shortcut", (_e, profile) => {
   const label = `${safeName} - ${role === "server" ? "Server" : "Play"}`;
   if (process.platform === "win32") {
     const shortcutPath = path.join(app.getPath("desktop"), `${label}.lnk`);
-    const ok = shell.writeShortcutLink(shortcutPath, "create", { target: process.execPath, args: `--profile=${id} --role=${role}`, cwd: path.dirname(process.execPath), description: `Open ${safeName} in Dragonwilds Sync ${role} mode`, icon: process.execPath, iconIndex: 0 });
+    const ok = shell.writeShortcutLink(shortcutPath, "create", { target: process.execPath, args: `--profile=${id} --role=${role}`, cwd: path.dirname(process.execPath), description: `Open ${safeName} in RSDW Sync ${role} mode`, icon: process.execPath, iconIndex: 0 });
     if (!ok) throw new Error("Windows could not create the desktop shortcut");
     return shortcutPath;
   }

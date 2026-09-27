@@ -44,7 +44,7 @@
   },
   "build": {
     "appId": "com.dragonwilds.sync.next",
-    "productName": "Dragonwilds Sync Experimental",
+    "productName": "RSDW Sync Experimental",
     "files": [
       "electron/**/*",
       "package.json"
@@ -84,7 +84,7 @@
       "installerHeaderIcon": "public/icon-build.png"
     },
     "portable": {
-      "artifactName": "DragonwildsSync-Experimental-${version}-portable.exe"
+      "artifactName": "RSDW-Sync-Experimental-${version}-portable.exe"
     },
     "linux": {
       "target": [

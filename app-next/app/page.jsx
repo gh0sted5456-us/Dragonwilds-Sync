@@ -134,7 +134,7 @@ function PlayerHub() {
         display_name: world.name || "Dragonwilds World",
         server_world_id: world.worldId,
         client_install: install || null,
-        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId },
+        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
       }});
       toast(`${world.name || "World"} added to Player profiles.`, "success");
       loadProfiles();
@@ -166,9 +166,10 @@ function PlayerHub() {
       })}</div>}
     </div>
     {profiles.length === 0 ? <div className="panel" style={{ padding: "2.2rem", textAlign: "center" }}><Icon name="users" size={34} /><h2 className="heading">No player servers yet</h2><p className="subtle">Broadcast on the LAN or enter a server IP above, then add every world you play on.</p></div> :
-      <div style={{ display: "grid", gap: 10 }}>{profiles.map((p) => <div className="panel" key={p.profile_id} style={{ padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ width: 42, height: 42, borderRadius: 9, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center" }}><Icon name="globe" /></div>
-        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose Steam install"}</div></div>
+      <div style={{ display: "grid", gap: 10 }}>{profiles.map((p, index) => <div className="panel" key={p.profile_id} style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76 }}>
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url('/rsdw/placards/${index % 9 + 1}.webp') center/cover`, opacity: .48 }} />
+        <img src={portraitFor(p.profile_id)} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
+        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose Steam install"}</div></div>
         <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Sync / Launch</Link>
         <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
       </div>)}</div>}
@@ -177,12 +178,17 @@ function PlayerHub() {
 
 const fieldStyle = { width: "100%", boxSizing: "border-box", border: "1px solid var(--line-strong)", borderRadius: 8, background: "var(--card-2)", color: "var(--ink)", padding: ".7rem .8rem", font: "inherit" };
 
+const portraits = ["female_auburn_ponytail.webp", "female_cobalt_warrior_ponytail.webp", "female_dark_curls.webp", "female_teal_battlemage_braids.webp", "male_blond_undercut.webp", "male_dark_curls.webp", "male_forest_ranger_dreadlocks.webp", "androgynous_burgundy_battlemage.webp"];
+function portraitFor(value = "") { let hash = 0; for (const c of value) hash = ((hash << 5) - hash + c.charCodeAt(0)) | 0; return `/rsdw/portraits/${portraits[Math.abs(hash) % portraits.length]}`; }
+function RsdwBadge({ label }) { return <span style={{ display: "inline-flex", alignItems: "center", minHeight: 19, padding: "2px 7px", border: "1px solid color-mix(in srgb,var(--yellow) 45%,var(--line))", borderRadius: 999, background: "color-mix(in srgb,var(--yellow) 9%,var(--card))", color: "var(--yellow)", fontSize: ".62rem", fontWeight: 900, letterSpacing: ".045em" }}>{label}</span>; }
+
 function WorldRow({ w, busy, onAction }) {
   const { t } = useTranslation();
   const isBusy = !!busy;
   const accent = w.accent_color || "var(--accent)";
   return (
     <div className="panel world-card animate-floatUp" style={{ position: "relative", padding: "1rem 1.1rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap", overflow: "hidden", borderLeft: `3px solid ${accent}` }}>
+      {!w.banner_data && <div aria-hidden style={{ position: "absolute", inset: 0, background: `linear-gradient(90deg,var(--card) 20%,transparent),url('/rsdw/placards/${Math.abs(String(w.world_id).length % 9) + 1}.webp') center/cover`, opacity: .28 }} />}
       {/* banner: sits on the right, fades toward the center (|||| |  |) */}
       {w.banner_data && (
         <>
@@ -204,7 +210,7 @@ function WorldRow({ w, busy, onAction }) {
       )}
 
       <div style={{ position: "relative", zIndex: 1, width: 46, height: 46, borderRadius: 10, background: w.icon_data ? "transparent" : accent, border: `1px solid ${w.icon_data ? "transparent" : "var(--line)"}`, display: "grid", placeItems: "center", flexShrink: 0, overflow: "hidden", boxShadow: w.icon_data ? "0 2px 8px rgba(0,0,0,0.3)" : "none" }}>
-        {w.icon_data ? <img src={w.icon_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon name="globe" size={24} />}
+        {w.icon_data ? <img src={w.icon_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <img src="/rsdw/navigation/dragonwilds.webp" alt="" style={{ width: "76%", height: "76%", objectFit: "contain" }} />}
       </div>
 
       <div style={{ position: "relative", zIndex: 1, flex: 1, minWidth: 200 }}>

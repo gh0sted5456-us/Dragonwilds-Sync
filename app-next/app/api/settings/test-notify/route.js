@@ -24,7 +24,7 @@ export async function POST(req) {
   }
 
   const payload = JSON.stringify({
-    content: "**[test]** ✅ Server Manager can reach this channel.",
+    content: "**[RSDW Sync test]** ✅ Your World channel is connected.",
   });
 
   const result = await new Promise((resolve) => {

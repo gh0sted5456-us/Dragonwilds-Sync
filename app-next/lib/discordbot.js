@@ -243,7 +243,7 @@ function statusCard(world, { online, days, uptime, players, who, note, identity 
     title: world.display_name,
     description: online ? "🟢 **Online**" : "⚫ **Offline**",
     color: online ? COLOR_ONLINE : COLOR_OFFLINE,
-    footer: { text: "Runescape Dragonwilds Server Manager" },
+    footer: { text: "RSDW Sync" },
     timestamp: new Date().toISOString(),
   };
   const fields = [];
@@ -589,7 +589,7 @@ function gate(cfg, interaction, action) {
     // they *can* do, which turns a dead end into a useful answer.
     const can = cfgLib.actionsFor(cfg, interaction.user.id, roleIdsOf(interaction));
     if (can.length) return `You're not allowed to use \`/${action}\`. You can use: ${can.map((a) => `\`/${a}\``).join(", ")}.`;
-    return "You're not allowed to use this bot. Ask whoever set it up to grant your role or account in the Server Manager → the world → Discord Bot.";
+    return "You don't have access to this World. Ask its host to grant your role or account in RSDW Sync → World → Discord.";
   }
   return null;
 }

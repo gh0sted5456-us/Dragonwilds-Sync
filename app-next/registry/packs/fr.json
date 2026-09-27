@@ -76,7 +76,7 @@
     "remote.accessEnded": "Votre accès a pris fin.",
     "remote.noTabs": "Ce code n'a aucune section activée.",
     "sidebar.management": "Gestion",
-    "app.name": "Runescape Dragonwilds Server Manager",
+    "app.name": "RSDW Sync",
     "app.updateAvailable": "Mise à jour disponible — v{{version}}",
     "app.upToDate": "à jour",
     "action.toggleTheme": "Changer le thème",

@@ -11,11 +11,11 @@ import { useJobsPoll, summarize, ProgressBar } from "@/components/jobsClient";
 // labelKey resolves through t() at render time — NAV is a module-level const, so it
 // can't call the translation hook itself.
 const NAV = [
-  { href: "/", icon: "grid", labelKey: "nav.worlds", match: (p) => p === "/" || p.startsWith("/worlds") },
-  { href: "/usage", icon: "activity", labelKey: "nav.usage", match: (p) => p.startsWith("/usage") },
-  { href: "/remote-access", icon: "share", labelKey: "nav.remoteAccess", match: (p) => p.startsWith("/remote-access") },
-  { href: "/settings", icon: "settings", labelKey: "nav.settings", match: (p) => p.startsWith("/settings") },
-  { href: "/info", icon: "info", labelKey: "nav.info", match: (p) => p.startsWith("/info") },
+  { href: "/", asset: "/rsdw/navigation/dragonwilds.webp", label: "Worlds", match: (p) => p === "/" || p.startsWith("/worlds") || p.startsWith("/profiles") },
+  { href: "/remote-access", asset: "/rsdw/navigation/sync.svg", label: "Sync", match: (p) => p.startsWith("/remote-access") },
+  { href: "/usage", asset: "/rsdw/navigation/rsdw.webp", label: "Activity", match: (p) => p.startsWith("/usage") },
+  { href: "/settings", asset: "/rsdw/navigation/settings.svg", label: "Settings", match: (p) => p.startsWith("/settings") },
+  { href: "/info", asset: "/rsdw/navigation/help.svg", label: "Help", match: (p) => p.startsWith("/info") },
 ];
 
 export default function Shell({ children }) {
@@ -77,7 +77,7 @@ export default function Shell({ children }) {
           {!collapsed && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <img src="/icon.png" alt="DWSM" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src="/rsdw/app-icon.webp" alt="RSDW" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
               <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "0.92rem", whiteSpace: "nowrap" }}>RSDW</span>
             </div>
@@ -98,7 +98,7 @@ export default function Shell({ children }) {
             </div>
           )}
           {NAV.map((n) => (
-            <NavItem key={n.href} {...n} label={t(n.labelKey)} active={n.match(path)} collapsed={collapsed} />
+            <NavItem key={n.href} {...n} active={n.match(path)} collapsed={collapsed} />
           ))}
           <DownloadsNavItem active={path.startsWith("/downloads")} collapsed={collapsed} summary={jobSummary} label={t("nav.downloads")} />
         </div>
@@ -122,7 +122,7 @@ export default function Shell({ children }) {
             {!collapsed && (
               <div style={{ lineHeight: 1.1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: "0.78rem", whiteSpace: "nowrap" }}>
-                  RSDW Server Manager
+                  RSDW Sync
                 </div>
                 <div className="subtle" style={{ fontSize: "0.68rem" }}>
                   v1.0.0{ver && !ver.updateAvailable && ver.checked ? ` · ${t("app.upToDate")}` : ""}
@@ -168,7 +168,7 @@ export default function Shell({ children }) {
   );
 }
 
-function NavItem({ href, icon, label, active, collapsed }) {
+function NavItem({ href, icon, asset, label, active, collapsed }) {
   return (
     <Link href={href} title={collapsed ? label : undefined}
       style={{
@@ -184,7 +184,7 @@ function NavItem({ href, icon, label, active, collapsed }) {
       onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-2)"; e.currentTarget.style.color = "var(--ink)"; } }}
       onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-soft)"; } }}
     >
-      <Icon name={icon} size={20} />
+      {asset ? <img src={asset} alt="" style={{ width: 24, height: 24, objectFit: "contain", filter: active ? "brightness(0) invert(1)" : "none" }} /> : <Icon name={icon} size={20} />}
       {!collapsed && <span style={{ whiteSpace: "nowrap" }}>{label}</span>}
     </Link>
   );
@@ -212,7 +212,7 @@ function DownloadsNavItem({ active, collapsed, summary, label }) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", justifyContent: collapsed ? "center" : "flex-start", position: "relative" }}>
         <span style={{ position: "relative", display: "grid", placeItems: "center" }}>
-          <Icon name="download" size={20} />
+          <img src="/rsdw/navigation/mods.webp" alt="" style={{ width: 24, height: 24, objectFit: "contain", filter: active ? "brightness(0) invert(1)" : "none" }} />
           {busy && (
             <span className="animate-pulseDot" style={{ position: "absolute", top: -3, right: -4, width: 8, height: 8, borderRadius: 999, background: dotColor, border: "1.5px solid var(--sidebar)" }} />
           )}

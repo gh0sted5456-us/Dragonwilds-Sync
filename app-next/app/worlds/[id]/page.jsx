@@ -13,7 +13,6 @@ import BackupsPanel from "@/components/BackupsPanel";
 import SchedulePanel from "@/components/SchedulePanel";
 import MapPanel from "@/components/MapPanel";
 import ModsPanel from "@/components/ModsPanel";
-import Ue4ssPanel from "@/components/Ue4ssPanel";
 import PrereqsNotice from "@/components/PrereqsNotice";
 import AdminPanel from "@/components/AdminPanel";
 import ChatPanel from "@/components/ChatPanel";
@@ -206,9 +205,6 @@ export default function WorldDetail() {
             <div>
               <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
               <ModsPanel worldId={id} running={running} />
-            </div>
-            <div style={{ borderTop: "1px solid var(--line)", paddingTop: "1.4rem" }}>
-            <Ue4ssPanel worldId={id} running={running} />
             </div>
           </div>
         )}

@@ -95,7 +95,16 @@ function buildWorldManifest(worldId, options = {}) {
   return {
     protocol: PROTOCOL,
     protocolVersion: PROTOCOL_VERSION,
-    world: { id: world.world_id, name: world.display_name, gamePort: world.game_port },
+    world: {
+      id: world.world_id,
+      name: world.display_name,
+      gamePort: world.game_port,
+      identity: {
+        iconData: world.icon_data || null,
+        bannerData: world.banner_data || null,
+        accentColor: world.accent_color || null,
+      },
+    },
     revision: revisionHash.digest("hex"),
     generatedAt: new Date().toISOString(),
     prerequisites: getPrerequisites(worldId),

@@ -127,7 +127,12 @@ function install(worldId, component, zipPath) {
         fs.mkdirSync(path.dirname(target), { recursive: true });
         const temp = target + ".rsdw-runtime";
         fs.copyFileSync(source, temp);
-        fs.renameSync(temp, target);
+        try {
+          fs.renameSync(temp, target);
+        } catch {
+          fs.rmSync(target, { force: true });
+          fs.renameSync(temp, target);
+        }
       }
     }
 

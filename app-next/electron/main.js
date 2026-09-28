@@ -230,7 +230,8 @@ function launchRoute(argv = process.argv) {
   if (!profileArg) return null;
   const id = profileArg.slice("--profile=".length);
   const role = roleArg?.slice("--role=".length) === "server" ? "server" : "player";
-  return `/profiles/${encodeURIComponent(id)}/${role}`;
+  const autoplay = argv.includes("--autoplay") && role === "player";
+  return `/profiles/${encodeURIComponent(id)}/${role}${autoplay ? "?autoplay=1" : ""}`;
 }
 
 function portAvailable(port) {
@@ -608,20 +609,50 @@ ipcMain.handle("open-external", (_e, value) => {
   if (!allowed) throw new Error("External target is not allowed");
   return shell.openExternal(target);
 });
+function writeShortcutIcon(profile) {
+  const data = String(profile?.iconData || "");
+  const match = data.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
+  if (!match) return null;
+  try {
+    const dir = path.join(dataDir(), "profile-shortcut-icons");
+    fs.mkdirSync(dir, { recursive: true });
+    const ext = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
+    const safeId = String(profile?.id || "profile").replace(/[^a-zA-Z0-9_.-]/g, "_");
+    const file = path.join(dir, `${safeId}.${ext}`);
+    fs.writeFileSync(file, Buffer.from(match[2], "base64"));
+    return file;
+  } catch (e) {
+    logToFile(`Profile shortcut icon write failed: ${e.message}`);
+    return null;
+  }
+}
+
 ipcMain.handle("create-profile-shortcut", (_e, profile) => {
   const id = String(profile?.id || "").trim();
   const role = profile?.role === "server" ? "server" : "player";
   if (!id) throw new Error("Profile id is required");
   const safeName = String(profile?.name || "Dragonwilds World").replace(/[<>:"/\\|?*]/g, "_").trim();
-  const label = `${safeName} - ${role === "server" ? "Server" : "Play"}`;
+  const label = role === "server" ? `${safeName} - Server` : safeName;
+  const args = `--profile=${id} --role=${role}${role === "player" ? " --autoplay" : ""}`;
+  const profileIcon = writeShortcutIcon(profile);
   if (process.platform === "win32") {
     const shortcutPath = path.join(app.getPath("desktop"), `${label}.lnk`);
-    const ok = shell.writeShortcutLink(shortcutPath, "create", { target: process.execPath, args: `--profile=${id} --role=${role}`, cwd: path.dirname(process.execPath), description: `Open ${safeName} in RSDW Sync ${role} mode`, icon: process.execPath, iconIndex: 0 });
+    const ok = shell.writeShortcutLink(shortcutPath, "create", {
+      target: process.execPath,
+      args,
+      cwd: path.dirname(process.execPath),
+      description: role === "player"
+        ? `Authenticate, sync, confirm and launch ${safeName}`
+        : `Open ${safeName} in RSDW Sync server mode`,
+      icon: profileIcon || process.execPath,
+      iconIndex: 0,
+    });
     if (!ok) throw new Error("Windows could not create the desktop shortcut");
     return shortcutPath;
   }
   const shortcutPath = path.join(app.getPath("desktop"), `${label}.desktop`);
-  fs.writeFileSync(shortcutPath, `[Desktop Entry]\nType=Application\nName=${label}\nExec="${process.execPath}" --profile=${id} --role=${role}\nTerminal=false\n`, { mode: 0o755 });
+  const iconLine = profileIcon ? `Icon=${profileIcon}\n` : "";
+  fs.writeFileSync(shortcutPath, `[Desktop Entry]\nType=Application\nName=${label}\nExec="${process.execPath}" ${args}\n${iconLine}Terminal=false\n`, { mode: 0o755 });
   return shortcutPath;
 });
 ipcMain.handle("get-auto-launch", () => {

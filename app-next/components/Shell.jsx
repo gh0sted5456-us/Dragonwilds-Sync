@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslation } from "react-i18next";
-import { useTheme } from "@/components/ThemeProvider";
 import { Icon, registerToast } from "@/components/ui";
 import { useJobsPoll, summarize, ProgressBar } from "@/components/jobsClient";
 
@@ -31,7 +30,6 @@ function MaterialNavIcon({ name, size = 22 }) {
 }
 
 export default function Shell({ children }) {
-  const { theme, toggle } = useTheme();
   const { t } = useTranslation();
   const path = usePathname();
   const [toasts, setToasts] = useState([]);
@@ -153,12 +151,7 @@ export default function Shell({ children }) {
                 <Icon name="download" size={18} />
               </button>
             ) : (
-              <button onClick={toggle} title={t("action.toggleTheme")}
-                style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--ink-soft)", padding: 7, borderRadius: 8, display: "grid", placeItems: "center", transition: "background 0.15s" }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--line)")}
-                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
-                <Icon name={theme === "dark" ? "sun" : "moon"} size={18} />
-              </button>
+              <span title="RSDW Dark" style={{ width: 18, height: 18, borderRadius: 999, border: "1px solid var(--line-strong)", background: "var(--card-2)", display: "inline-block" }} />
             )}
           </div>
         </div>

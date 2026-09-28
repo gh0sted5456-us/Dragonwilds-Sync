@@ -3,7 +3,6 @@ const dbm = require("@/lib/db");
 const rest = require("@/lib/restclient");
 const sup = require("@/lib/supervisor");
 const steam = require("@/lib/steamcmd");
-const { boot } = require("@/lib/bootstrap");
 const ra = require("@/lib/remoteauth");
 
 export const dynamic = "force-dynamic";
@@ -26,7 +25,6 @@ function ensureBuildId(w) {
 export async function GET(req) {
   const gate = ra.authorize(req, {});
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.reason }, { status: gate.status });
-  boot();
   let worlds = dbm.listWorlds().map(ensureBuildId);
   // A per-world code only ever sees its own world in the list.
   if (!gate.admin && gate.code && gate.code.scope === "world") {

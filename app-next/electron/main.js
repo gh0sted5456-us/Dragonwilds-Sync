@@ -12,7 +12,7 @@ if (process.platform === "linux") app.commandLine.appendSwitch("no-sandbox");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 const http = require("http");
 const net = require("net");
 const crypto = require("crypto");
@@ -611,16 +611,39 @@ ipcMain.handle("open-external", (_e, value) => {
 });
 function writeShortcutIcon(profile) {
   const data = String(profile?.iconData || "");
-  const match = data.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
-  if (!match) return null;
+  if (!/^data:image\/(png|jpeg|jpg|webp);base64,/i.test(data)) return null;
   try {
+    const image = nativeImage.createFromDataURL(data);
+    if (image.isEmpty()) return null;
     const dir = path.join(dataDir(), "profile-shortcut-icons");
     fs.mkdirSync(dir, { recursive: true });
-    const ext = match[1].toLowerCase() === "jpeg" ? "jpg" : match[1].toLowerCase();
     const safeId = String(profile?.id || "profile").replace(/[^a-zA-Z0-9_.-]/g, "_");
-    const file = path.join(dir, `${safeId}.${ext}`);
-    fs.writeFileSync(file, Buffer.from(match[2], "base64"));
-    return file;
+    const pngPath = path.join(dir, `${safeId}.png`);
+    fs.writeFileSync(pngPath, image.resize({ width: 128, height: 128, quality: "best" }).toPNG());
+
+    if (process.platform !== "win32") return pngPath;
+
+    // Explorer shortcut icons are most reliable as real ICO files. Convert the
+    // synced profile image out-of-process so no image codec work can destabilize
+    // the Electron UI process.
+    const icoPath = path.join(dir, `${safeId}.ico`);
+    const script = [
+      "param([string]$src,[string]$dst)",
+      "Add-Type -AssemblyName System.Drawing",
+      "$bmp = New-Object System.Drawing.Bitmap($src)",
+      "$icon = [System.Drawing.Icon]::FromHandle($bmp.GetHicon())",
+      "$fs = [System.IO.File]::Create($dst)",
+      "$icon.Save($fs)",
+      "$fs.Close(); $icon.Dispose(); $bmp.Dispose()",
+    ].join("; ");
+    const ps = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script, pngPath, icoPath], {
+      windowsHide: true,
+      timeout: 10000,
+      stdio: "ignore",
+    });
+    if (ps.status === 0 && fs.existsSync(icoPath)) return icoPath;
+    logToFile("Profile shortcut ICO conversion failed; using application icon fallback.");
+    return null;
   } catch (e) {
     logToFile(`Profile shortcut icon write failed: ${e.message}`);
     return null;

@@ -2,13 +2,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useTranslation, Trans } from "react-i18next";
-import { useTheme } from "@/components/ThemeProvider";
 import { switchLanguage } from "@/lib/i18n/client";
 import { api, Icon, toast } from "@/components/ui";
 // Pal name mapping removed for RSDW — Pals are not a thing in Dragonwilds.
 
 export default function SettingsPage() {
-  const { theme, setTheme } = useTheme();
   const { t, i18n } = useTranslation();
   const [s, setS] = useState(null);
   const [steam, setSteam] = useState(null);
@@ -192,9 +190,12 @@ export default function SettingsPage() {
       <div className="panel" style={{ padding: "1.3rem", marginBottom: "1rem" }}>
         <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>{t("settings.appearance")}</h3>
         <label className="label">{t("settings.theme")}</label>
-        <div style={{ display: "flex", gap: "0.6rem" }}>
-          <button className={`btn ${theme === "light" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTheme("light")}><Icon name="sun" /> {t("settings.light")}</button>
-          <button className={`btn ${theme === "dark" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTheme("dark")}><Icon name="moon" /> {t("settings.dark")}</button>
+        <div className="panel-inset" style={{ padding: "0.8rem 0.9rem", display: "flex", alignItems: "center", gap: "0.7rem", borderColor: "var(--line-strong)" }}>
+          <Icon name="moon" />
+          <div>
+            <div style={{ fontWeight: 850 }}>RSDW Dark</div>
+            <div className="subtle" style={{ fontSize: "0.75rem", fontWeight: 600 }}>Matte black surfaces with muted gold borders and controls.</div>
+          </div>
         </div>
       </div>
       )}

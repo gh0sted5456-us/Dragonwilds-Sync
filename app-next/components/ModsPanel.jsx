@@ -16,6 +16,7 @@ export default function ModsPanel({ worldId, running }) {
   const [activeLane, setActiveLane] = useState("server");
   const [browser, setBrowser] = useState(null);
   const [prerequisites, setPrerequisites] = useState({ ue4ss: "", runeSchema: "" });
+  const [runtimePackages, setRuntimePackages] = useState(null);
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
 
   const load = useCallback(async () => {
@@ -29,11 +30,28 @@ export default function ModsPanel({ worldId, running }) {
       ue4ss: result.manifest?.prerequisites?.ue4ss || "",
       runeSchema: result.manifest?.prerequisites?.runeSchema || "",
     })).catch(() => {});
+    api(`/api/worlds/${worldId}/runtime`).then((result) => setRuntimePackages(result.packages || null)).catch(() => {});
   }, [load, worldId]);
 
   const lanes = data?.modLanes || [];
   const lane = lanes.find((item) => item.id === activeLane) || lanes[0];
   const selected = useMemo(() => new Set(data?.modLaneSelections || []), [data]);
+
+  async function uploadRuntime(component) {
+    if (!isElectron) return toast("Runtime ZIP selection is available in the desktop app.", "error");
+    if (running) return toast("Stop the active server before replacing a runtime.", "error");
+    const zipPath = await window.desktop.pickZip();
+    if (!zipPath) return;
+    setBusy(true);
+    try {
+      const result = await api(`/api/worlds/${worldId}/runtime`, { method: "POST", body: { component, zipPath } });
+      setRuntimePackages(result.packages || null);
+      const label = component === "ue4ss" ? "UE4SS" : "RuneSchema";
+      toast(`${label} staged for the host and verified client Sync.`, "success");
+      await load();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
 
   async function savePrerequisites() {
     setBusy(true);
@@ -83,15 +101,41 @@ export default function ModsPanel({ worldId, running }) {
   return (
     <div style={{ display: "grid", gap: "1rem" }}>
       <section className="panel-inset" style={{ padding: "0.95rem 1rem" }}>
-        <div className="heading" style={{ fontSize: "0.96rem" }}>Runtime contract</div>
+        <div className="heading" style={{ fontSize: "0.96rem" }}>World runtimes</div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "4px 0 10px" }}>
-          Publish the versions friends need. RSDW Sync detects UE4SS and RuneSchema, but keeps their installation under the player’s control.
+          Upload complete UE4SS and RuneSchema ZIPs for this World. RSDW Sync installs them on the host, publishes only client-compatible files, verifies hashes, and places them into the connected player’s Steam or PC Game Pass install automatically.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) minmax(150px, 1fr) auto", gap: 8 }}>
-          <input className="input" placeholder="UE4SS version" value={prerequisites.ue4ss} onChange={(e) => setPrerequisites((value) => ({ ...value, ue4ss: e.target.value }))} />
-          <input className="input" placeholder="RuneSchema version" value={prerequisites.runeSchema} onChange={(e) => setPrerequisites((value) => ({ ...value, runeSchema: e.target.value }))} />
-          <button className="btn btn-primary" disabled={busy} onClick={savePrerequisites}>Publish</button>
+        <div className="runtime-package-grid">
+          {["ue4ss","runeschema"].map((component) => {
+            const row = runtimePackages?.[component] || {};
+            const label = component === "ue4ss" ? "UE4SS" : "RuneSchema";
+            return <div key={component} className="panel" style={{ padding: "0.9rem 1rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <img src={component === "ue4ss" ? "/rsdw/platforms/ue4ss.webp" : "/rsdw/platforms/runeschema.webp"} alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 850 }}>{label}</div>
+                  <div className="subtle" style={{ fontSize: "0.68rem", overflowWrap: "anywhere" }}>
+                    {row.installed ? `${row.archive} · ${row.clientFiles} client files` : "No managed runtime ZIP"}
+                  </div>
+                </div>
+                <span className="chip" style={{ background: row.installed ? "var(--green)" : "var(--line)" }}>{row.installed ? "MANAGED" : "OPTIONAL"}</span>
+              </div>
+              <button className="btn btn-ghost" style={{ marginTop: 10, width: "100%" }} disabled={busy || running} onClick={() => uploadRuntime(component)}>
+                <Icon name="upload" size={14} /> {row.installed ? `Replace ${label} ZIP` : `Upload ${label} ZIP`}
+              </button>
+            </div>;
+          })}
         </div>
+        {running && <Notice>Runtime ZIPs are optional and never gate launch. Stop this World only when you want to replace one.</Notice>}
+        <details style={{ marginTop: 10 }}>
+          <summary className="subtle" style={{ cursor: "pointer", fontWeight: 750 }}>Optional version labels</summary>
+          <p className="subtle" style={{ fontSize: "0.72rem" }}>Labels are informational; the uploaded files and their hashes are the actual Sync contract.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) minmax(150px, 1fr) auto", gap: 8 }}>
+            <input className="input" placeholder="UE4SS version label" value={prerequisites.ue4ss} onChange={(e) => setPrerequisites((value) => ({ ...value, ue4ss: e.target.value }))} />
+            <input className="input" placeholder="RuneSchema version label" value={prerequisites.runeSchema} onChange={(e) => setPrerequisites((value) => ({ ...value, runeSchema: e.target.value }))} />
+            <button className="btn btn-primary" disabled={busy} onClick={savePrerequisites}>Save labels</button>
+          </div>
+        </details>
       </section>
 
       <section>

@@ -425,12 +425,10 @@ async function waitForServer(url, maxMs = 60000) {
   return false;
 }
 
-// Kick the server's background engines (world autostart, scheduler, Discord bots, …)
-// as soon as it's up, WITHOUT needing a window. On a normal launch the loaded page does
-// this by hitting an API route; but an autostart-to-tray launch shows no window, so
-// nothing would ever boot — autostart worlds would stay stopped and the Discord bot
-// offline until the user opened the app by hand. Hitting /api/boot here fixes that.
-// Retries a few times in case the DB is briefly locked at startup; boot() is idempotent.
+// Kick the non-launch background engines (scheduler, metrics, presence, Discord bots)
+// as soon as the local app server is up. boot() deliberately does NOT start a
+// Dragonwilds Server; Server process creation now requires an explicit user action.
+// Retries a few times in case the DB is briefly locked; boot() is idempotent.
 function triggerBoot(base, attempt = 1) {
   const req = http.get(`${base}/api/boot`, (res) => {
     let data = "";
@@ -586,10 +584,8 @@ function main() {
       return;
     }
 
-    // Boot the background engines now the server answers — do this regardless of whether
-    // a window is about to open, so an autostart-to-tray launch still starts worlds and
-    // connects Discord bots. Fire-and-forget: it retries internally and must never block
-    // window/tray creation.
+    // Boot non-launch background engines now the local server answers. This does
+    // not start a Dragonwilds Server. Fire-and-forget; it must never block the UI.
     triggerBoot(url);
 
     const hasTray = createTray();

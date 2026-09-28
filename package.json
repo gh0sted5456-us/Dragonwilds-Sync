@@ -81,7 +81,7 @@
       }
     ],
     "win": {
-      "icon": "renderer/assets/rsdwl-icon.ico",
+      "icon": "build-assets/rsdwl-icon.png",
       "extraResources": [
         {
           "from": "dist-service/DragonwildsSync.Service.exe",
@@ -94,7 +94,7 @@
     },
     "linux": {
       "category": "Game",
-      "icon": "build-assets/application-icon.png",
+      "icon": "build-assets/rsdwl-icon.png",
       "extraResources": [
         {
           "from": "dist-service/DragonwildsSync.Service",

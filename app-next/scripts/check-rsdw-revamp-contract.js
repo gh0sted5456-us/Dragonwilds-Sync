@@ -54,8 +54,9 @@ function contains(rel, needle, message) {
   contains("app/page.jsx", "Connect to World");
   contains("app/info/page.jsx", "/api/helpy/helpy.html?embed=1&theme=dark");
   contains("app/globals.css", "--accent: #bd9139");
-  contains("lib/component-updates.js", "UE4SS\\s+5\\.6\\s+Xbox");
-  contains("lib/component-updates.js", "UE4SS\\s+Steam");
+  contains("lib/component-updates.js", "latestNexusVersions");
+  contains("lib/component-updates.js", "Xbox");
+  contains("lib/component-updates.js", "Steam");
 }
 
 // Desktop autostart is opt-in and owned Servers receive a graceful quit request.

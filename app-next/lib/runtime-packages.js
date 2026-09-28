@@ -5,7 +5,7 @@ const AdmZip = require("adm-zip");
 const dbm = require("./db");
 const { P } = require("./paths");
 
-const COMPONENTS = new Set(["ue4ss", "runeschema"]);
+const COMPONENTS = new Set(["ue4ss-steam", "ue4ss-gamepass", "runeschema"]);
 
 function sha256File(file) {
   const hash = crypto.createHash("sha256");
@@ -28,14 +28,15 @@ function serverGameRoot(installDir) {
 }
 function normalizeRuntimePath(component, parts) {
   const lower = parts.map((p) => p.toLowerCase());
-  if (component === "ue4ss") {
+  if (component.startsWith("ue4ss-")) {
     if (lower.includes("linux") || /\.(so|elf)$/i.test(parts[parts.length - 1])) return null;
+    const platformDir = component === "ue4ss-gamepass" ? "WinGDK" : "Win64";
     let rel = parts;
-    if (lower[0] === "binaries" && lower[1] === "win64") rel = parts.slice(2);
-    else if (lower[0] === "win64") rel = parts.slice(1);
+    if (lower[0] === "binaries" && ["win64","wingdk"].includes(lower[1])) rel = parts.slice(2);
+    else if (["win64","wingdk"].includes(lower[0])) rel = parts.slice(1);
     const relLower = rel.map((p) => p.toLowerCase());
     if (relLower[0] === "ue4ss" && relLower[1] === "mods") return null;
-    return ["Binaries", "Win64", ...rel];
+    return ["Binaries", platformDir, ...rel];
   }
   const marker = lower.lastIndexOf("runeschema");
   const core = marker >= 0 ? parts.slice(marker + 1) : parts;
@@ -64,7 +65,7 @@ function removeEmptyParents(file, stop) {
 }
 function install(worldId, component, zipPath) {
   const kind = String(component || "").trim().toLowerCase();
-  if (!COMPONENTS.has(kind)) throw new Error("Runtime component must be UE4SS or RuneSchema.");
+  if (!COMPONENTS.has(kind)) throw new Error("Runtime component must be UE4SS Steam, UE4SS Game Pass, or RuneSchema.");
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   if (!zipPath || path.extname(zipPath).toLowerCase() !== ".zip" || !fs.existsSync(zipPath)) throw new Error("Choose a readable runtime ZIP.");
@@ -91,10 +92,13 @@ function install(worldId, component, zipPath) {
       const output = localTarget(candidate, relative);
       fs.mkdirSync(path.dirname(output), { recursive: true });
       fs.writeFileSync(output, entries[i].getData());
-      records.push({ relative, size: fs.statSync(output).size, sha256: sha256File(output), clientEligible: !(kind === "ue4ss" && filename.toLowerCase() === "version.dll") });
+      records.push({ relative, size: fs.statSync(output).size, sha256: sha256File(output), clientEligible: !(kind.startsWith("ue4ss-") && filename.toLowerCase() === "version.dll") });
     }
-    if (kind === "ue4ss" && !records.some((r) => r.relative.toLowerCase() === "binaries/win64/ue4ss/ue4ss.dll")) {
-      throw new Error("This is not a complete UE4SS ZIP: ue4ss/UE4SS.dll was not found.");
+    if (kind.startsWith("ue4ss-")) {
+      const platformDir = kind === "ue4ss-gamepass" ? "wingdk" : "win64";
+      if (!records.some((r) => r.relative.toLowerCase() === `binaries/${platformDir}/ue4ss/ue4ss.dll`)) {
+        throw new Error("This is not a complete UE4SS ZIP: ue4ss/UE4SS.dll was not found.");
+      }
     }
     if (kind === "runeschema" && !records.some((r) => r.relative.toLowerCase() === "binaries/win64/ue4ss/mods/runeschema/dlls/main.dll")) {
       throw new Error("This is not a complete RuneSchema ZIP: dlls/main.dll was not found.");
@@ -108,20 +112,23 @@ function install(worldId, component, zipPath) {
     }
 
     const gameRoot = serverGameRoot(world.install_dir);
+    const deployToHost = kind !== "ue4ss-gamepass";
     const previous = readManifest(worldId, kind);
     const nextSet = new Set(records.map((r) => r.relative.toLowerCase()));
-    for (const old of previous?.files || []) {
-      if (nextSet.has(String(old.relative).toLowerCase())) continue;
-      const target = localTarget(gameRoot, old.relative);
-      try { if (fs.existsSync(target) && fs.statSync(target).isFile()) fs.unlinkSync(target); removeEmptyParents(target, gameRoot); } catch {}
-    }
-    for (const record of records) {
-      const source = localTarget(candidate, record.relative);
-      const target = localTarget(gameRoot, record.relative);
-      fs.mkdirSync(path.dirname(target), { recursive: true });
-      const temp = target + ".rsdw-runtime";
-      fs.copyFileSync(source, temp);
-      fs.renameSync(temp, target);
+    if (deployToHost) {
+      for (const old of previous?.files || []) {
+        if (nextSet.has(String(old.relative).toLowerCase())) continue;
+        const target = localTarget(gameRoot, old.relative);
+        try { if (fs.existsSync(target) && fs.statSync(target).isFile()) fs.unlinkSync(target); removeEmptyParents(target, gameRoot); } catch {}
+      }
+      for (const record of records) {
+        const source = localTarget(candidate, record.relative);
+        const target = localTarget(gameRoot, record.relative);
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        const temp = target + ".rsdw-runtime";
+        fs.copyFileSync(source, temp);
+        fs.renameSync(temp, target);
+      }
     }
 
     const permanent = filesRoot(worldId, kind);
@@ -155,19 +162,31 @@ function packageStatus(worldId, component) {
   };
 }
 function status(worldId) {
-  return { ue4ss: packageStatus(worldId, "ue4ss"), runeschema: packageStatus(worldId, "runeschema") };
+  return {
+    ue4ssSteam: packageStatus(worldId, "ue4ss-steam"),
+    ue4ssGamepass: packageStatus(worldId, "ue4ss-gamepass"),
+    runeschema: packageStatus(worldId, "runeschema"),
+  };
 }
-function syncFiles(worldId) {
+function syncFiles(worldId, platform = "steam") {
+  const selectedPlatform = platform === "gamepass" ? "gamepass" : "steam";
   const out = [];
-  for (const component of ["ue4ss", "runeschema"]) {
+  const components = selectedPlatform === "gamepass"
+    ? ["ue4ss-gamepass", "runeschema"]
+    : ["ue4ss-steam", "runeschema"];
+  for (const component of components) {
     const meta = readManifest(worldId, component);
     for (const file of meta?.files || []) {
       if (!file.clientEligible) continue;
       const source = localTarget(filesRoot(worldId, component), file.relative);
       if (!fs.existsSync(source)) continue;
+      let relative = file.relative.replace(/\\/g, "/");
+      if (selectedPlatform === "gamepass" && component === "runeschema") {
+        relative = relative.replace(/^Binaries\/Win64\//i, "Binaries/WinGDK/");
+      }
       out.push({
         component,
-        target: "RSDragonwilds/" + file.relative.replace(/\\/g, "/"),
+        target: "RSDragonwilds/" + relative,
         size: file.size,
         sha256: file.sha256,
         source,
@@ -176,9 +195,9 @@ function syncFiles(worldId) {
   }
   return out;
 }
-function syncUnits(worldId) {
+function syncUnits(worldId, platform = "steam") {
   const grouped = new Map();
-  for (const file of syncFiles(worldId)) {
+  for (const file of syncFiles(worldId, platform)) {
     if (!grouped.has(file.component)) grouped.set(file.component, []);
     grouped.get(file.component).push(file);
   }
@@ -187,7 +206,7 @@ function syncUnits(worldId) {
     for (const file of files) identity.update(`${file.target}\0${file.size}\0${file.sha256}\n`);
     return {
       key: "runtime:" + component,
-      name: component === "ue4ss" ? "UE4SS Runtime" : "RuneSchema Runtime",
+      name: component.startsWith("ue4ss-") ? `UE4SS Runtime · ${component === "ue4ss-gamepass" ? "PC Game Pass" : "Steam"}` : "RuneSchema Runtime",
       type: "runtime",
       runtimeComponent: component,
       contentHash: identity.digest("hex"),
@@ -197,8 +216,8 @@ function syncUnits(worldId) {
     };
   });
 }
-function resolveSyncFile(worldId, target) {
-  return syncFiles(worldId).find((file) => file.target === target) || null;
+function resolveSyncFile(worldId, target, platform = "steam") {
+  return syncFiles(worldId, platform).find((file) => file.target === target) || null;
 }
 
 module.exports = { install, status, syncFiles, syncUnits, resolveSyncFile };

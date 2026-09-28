@@ -285,7 +285,7 @@
       if(!bridge.pickFile){if(status)status.textContent='Runtime ZIP selection is unavailable in this build.';return;}
       runtimeZip.disabled=true;
       if(status)status.textContent='Choose a complete '+(component==='ue4ss'?'UE4SS':'RuneSchema')+' ZIP…';
-      Promise.resolve(bridge.pickFile('zip')).then((zipPath)=>{
+      Promise.resolve(bridge.pickFile('runtimezip')).then((zipPath)=>{
         if(!zipPath){if(status)status.textContent='No runtime ZIP selected.';return null;}
         if(status)status.textContent='Validating and staging '+zipPath.split(/[\\/]/).pop()+'…';
         return bridge.invoke('server.world.runtime_zip.install',{id:profileId,component,zip_path:zipPath});

@@ -73,15 +73,15 @@
           ]
         }
       ],
-      "icon": "public/icon-build.png"
+      "icon": "public/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "installerIcon": "public/icon-build.png",
-      "uninstallerIcon": "public/icon-build.png",
-      "installerHeaderIcon": "public/icon-build.png"
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico"
     },
     "portable": {
       "artifactName": "RSDW-Sync-Experimental-${version}-portable.exe"

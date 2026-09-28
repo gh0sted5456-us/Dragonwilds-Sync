@@ -167,7 +167,12 @@ export default function SettingsPage() {
                 <Icon name={c.icon} size={19} />
               </span>
               <span style={{ flex: 1, minWidth: 0 }}>
-                <span style={{ display: "block", fontWeight: 800, fontSize: "0.98rem" }}>{t(`settings.cat.${c.id}`)}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: "0.45rem", fontWeight: 800, fontSize: "0.98rem" }}>
+                  {t(`settings.cat.${c.id}`)}
+                  {c.id === "updates" && componentUpdates?.updateAvailable && (
+                    <span className="chip" style={{ background: "var(--yellow)", color: "#161108", fontSize: "0.62rem" }}>UPDATE</span>
+                  )}
+                </span>
                 <span className="subtle" style={{ display: "block", fontWeight: 600, fontSize: "0.78rem", marginTop: 2 }}>{t(`settings.cat.${c.id}Desc`)}</span>
               </span>
               <Icon name="chevronRight" size={18} />

@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server";
 const fs = require("fs");
 const syncManifest = require("@/lib/sync/manifest");
+const { authorizeWorldRequest } = require("@/lib/sync/auth");
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(req, { params }) {
   try {
+    const auth = authorizeWorldRequest(params.id, req);
+    if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
     const target = new URL(req.url).searchParams.get("target");
     const file = syncManifest.resolveWorldFile(params.id, target);
     return new NextResponse(fs.readFileSync(file.source), {

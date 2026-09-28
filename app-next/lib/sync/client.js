@@ -15,11 +15,11 @@ function safeLocal(install, target) {
   return local;
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, password) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
   try {
-    const response = await fetch(url, { cache: "no-store", signal: controller.signal });
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal, headers: { "X-RSDW-World-Password": String(password || "") } });
     const data = await response.json();
     if (!response.ok || !data.manifest) throw new Error(data.error || "World did not return a mod manifest");
     return data.manifest;
@@ -33,10 +33,11 @@ async function synchronizeProfile(profileId) {
   const address = String(connection.address || connection.internalIp || connection.externalIp || "").trim();
   const worldId = String(connection.worldId || profile.server_world_id || "").trim();
   const port = Number(connection.syncPort || 4317);
-  const install = steamlib.normalizeGameInstall(profile.client_install);
+  const platform = connection.platform === "gamepass" ? "gamepass" : "steam";
+  const install = steamlib.normalizeGameInstall(platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall) || steamlib.normalizeGameInstall(profile.client_install);
   if (!address || !worldId || !install) throw new Error("This World needs a valid endpoint and Dragonwilds installation");
   const base = `http://${address}:${port}/api/sync/public/${encodeURIComponent(worldId)}`;
-  const manifest = await fetchJson(base);
+  const manifest = await fetchJson(base, connection.password);
   const comparison = manifestLib.compareManifest(manifest, install);
   const declared = new Set((manifest.units || []).flatMap((unit) => unit.files || []).map((file) => file.target));
   const oldLedger = dbm.getSetting(ledgerKey(profileId), { files: [] });
@@ -53,7 +54,7 @@ async function synchronizeProfile(profileId) {
   for (const change of comparison.changes) {
     const local = safeLocal(install, change.target);
     fs.mkdirSync(path.dirname(local), { recursive: true });
-    const response = await fetch(`${base}/file?target=${encodeURIComponent(change.target)}`, { cache: "no-store" });
+    const response = await fetch(`${base}/file?target=${encodeURIComponent(change.target)}`, { cache: "no-store", headers: { "X-RSDW-World-Password": String(connection.password || "") } });
     if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Could not download ${change.target}`); }
     const temp = `${local}.rsdw-sync-download`;
     fs.writeFileSync(temp, Buffer.from(await response.arrayBuffer()));

@@ -16,11 +16,13 @@ export async function POST(_req, { params }) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     let response;
-    try { response = await fetch(`http://${address}:${port}/api/sync/public/${encodeURIComponent(worldId)}`, { cache: "no-store", signal: controller.signal }); }
+    try { response = await fetch(`http://${address}:${port}/api/sync/public/${encodeURIComponent(worldId)}`, { cache: "no-store", signal: controller.signal, headers: { "X-RSDW-World-Password": String(connection.password || "") } }); }
     finally { clearTimeout(timeout); }
     const payload = await response.json();
     if (!response.ok || !payload.manifest) throw new Error(payload.error || "The World did not return a Sync manifest.");
-    const comparison = syncManifest.compareManifest(payload.manifest, profile.client_install);
+    const platform = connection.platform === "gamepass" ? "gamepass" : "steam";
+    const install = platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall;
+    const comparison = syncManifest.compareManifest(payload.manifest, install || profile.client_install);
     dbm.upsertProfile({ profile_id: profile.profile_id, last_manifest_revision: payload.manifest.revision });
     return NextResponse.json({ ok: true, manifest: payload.manifest, comparison });
   } catch (e) { return NextResponse.json({ ok: false, error: e.name === "AbortError" ? "The World did not respond in time." : e.message }, { status: 400 }); }

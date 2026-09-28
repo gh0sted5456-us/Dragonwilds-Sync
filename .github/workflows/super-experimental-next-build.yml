@@ -63,6 +63,8 @@ jobs:
         run: |
           $artifact = Get-ChildItem -LiteralPath release\win-unpacked -Filter '*.exe' | Where-Object Name -NotMatch 'elevate' | Select-Object -First 1
           if (-not $artifact) { throw 'Launch-ready Windows executable was not produced.' }
+          $buildId = 'release\win-unpacked\resources\app\.next\BUILD_ID'
+          if (-not (Test-Path -LiteralPath $buildId)) { throw 'Packaged Next runtime is incomplete: resources/app/.next/BUILD_ID is missing.' }
           $hash = Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256
           "File=$($artifact.Name)" | Set-Content -LiteralPath release\BUILD-INFO.txt
           "Commit=${{ github.sha }}" | Add-Content -LiteralPath release\BUILD-INFO.txt
@@ -74,6 +76,7 @@ jobs:
         with:
           name: RSDW-Sync-Super-Experimental-Windows-${{ github.run_number }}
           if-no-files-found: error
+          include-hidden-files: true
           retention-days: 14
           path: |
             app-next/release/win-unpacked/**

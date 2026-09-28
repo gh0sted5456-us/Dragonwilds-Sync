@@ -6,7 +6,21 @@ export default function PlayerProfile({ params }) {
   const [profile, setProfile] = useState(null);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
-  useEffect(() => { api(`/api/profiles/${params.id}`).then((r) => setProfile(r.profile)).catch((e) => toast(e.message, "error")); }, [params.id]);
+  useEffect(() => {
+    Promise.all([api(`/api/profiles/${params.id}`), api("/api/client-installs")]).then(async ([profileResponse, installsResponse]) => {
+      const current = profileResponse.profile;
+      const connection = {
+        ...current.connection,
+        steamInstall: current.connection?.steamInstall || installsResponse.installs?.steam || null,
+        gamepassInstall: current.connection?.gamepassInstall || installsResponse.installs?.gamepass || null,
+      };
+      const activeInstall = (connection.platform || "steam") === "gamepass" ? connection.gamepassInstall : connection.steamInstall;
+      if (JSON.stringify(connection) !== JSON.stringify(current.connection) || activeInstall !== current.client_install) {
+        const updated = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection, client_install: activeInstall } });
+        setProfile(updated.profile);
+      } else setProfile(current);
+    }).catch((e) => toast(e.message, "error"));
+  }, [params.id]);
 
   const connect = async () => {
     setChecking(true); setResult(null);
@@ -25,17 +39,22 @@ export default function PlayerProfile({ params }) {
       toast(`World synchronized: ${installed.length} installed or updated, ${removed.length} removed.`, "success");
     } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
   };
-  const chooseInstall = async () => {
+  const chooseInstall = async (kind) => {
     try {
       const selected = await window.desktop?.pickDirectory?.();
       if (!selected) return;
-      const response = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { client_install: selected } });
+      const saved = await api("/api/client-installs", { method: "POST", body: { [kind]: selected } });
+      const normalized = saved.installs[kind];
+      const connection = { ...profile.connection, [`${kind}Install`]: normalized };
+      const active = (connection.platform || "steam") === kind;
+      const response = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection, ...(active ? { client_install: normalized } : {}) } });
       setProfile(response.profile);
     } catch (e) { toast(e.message, "error"); }
   };
   const setPlatform = async (platform) => {
     try {
-      const response = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection: { ...profile.connection, platform } } });
+      const connection = { ...profile.connection, platform };
+      const response = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection, client_install: platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall } });
       setProfile(response.profile);
       setResult(null);
     } catch (e) { toast(e.message, "error"); }
@@ -57,20 +76,25 @@ export default function PlayerProfile({ params }) {
     catch (e) { toast(e.message, "error"); }
   };
   if (!profile) return <main style={{ padding: 32 }}>Loading World profile…</main>;
+  const selectedInstall = (profile.connection?.platform || "steam") === "gamepass" ? profile.connection?.gamepassInstall : profile.connection?.steamInstall;
   return <main style={{ maxWidth: 820, margin: "0 auto", padding: 32 }}>
     <div className="eyebrow">FRIEND WORLD</div><h1>{profile.display_name}</h1>
     <p className="subtle">Connect to compare this World&apos;s declared mods. Once synchronized, Join opens Dragonwilds through your selected platform.</p>
     <div className="panel" style={{ padding: 20, marginTop: 20 }}>
-      <div><b>Dragonwilds install</b><div className="subtle">{profile.client_install || "Not configured"}</div></div>
+      <div style={{ display: "grid", gap: 8 }}>
+        <div><b>Steam install</b><div className="subtle">{profile.connection?.steamInstall || "Not configured"}</div></div>
+        <div><b>PC Game Pass install</b><div className="subtle">{profile.connection?.gamepassInstall || "Not configured"}</div></div>
+      </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
         <b style={{ marginRight: 4 }}>Platform</b>
         <button className={`btn ${(profile.connection?.platform || "steam") === "steam" ? "btn-primary" : "btn-ghost"}`} onClick={() => setPlatform("steam")}>Steam</button>
         <button className={`btn ${profile.connection?.platform === "gamepass" ? "btn-primary" : "btn-ghost"}`} onClick={() => setPlatform("gamepass")}>PC Game Pass</button>
       </div>
       <div style={{ display: "flex", gap: 10, marginTop: 18, flexWrap: "wrap" }}>
-        <button className="btn btn-ghost" onClick={chooseInstall}>Select Game Install</button>
-        <button className="btn btn-ghost" disabled={checking || !profile.client_install} onClick={connect}>{checking ? "Connecting…" : "Connect"}</button>
-        {!result?.current && <button className="btn btn-primary" disabled={checking || !profile.client_install} onClick={sync}>{checking ? "Synchronizing…" : "Resync Mods"}</button>}
+        <button className="btn btn-ghost" onClick={() => chooseInstall("steam")}>Set Steam Path</button>
+        <button className="btn btn-ghost" onClick={() => chooseInstall("gamepass")}>Set Game Pass Path</button>
+        <button className="btn btn-ghost" disabled={checking || !selectedInstall} onClick={connect}>{checking ? "Connecting…" : "Connect"}</button>
+        {!result?.current && <button className="btn btn-primary" disabled={checking || !selectedInstall} onClick={sync}>{checking ? "Synchronizing…" : "Resync Mods"}</button>}
         <button className="btn btn-primary" disabled={checking || !result?.current} onClick={join}>Join</button>
         <button className="btn btn-ghost" disabled={typeof window === "undefined" || !window.desktop?.createProfileShortcut} onClick={sendToDesktop}>Pin World to Desktop</button>
       </div>

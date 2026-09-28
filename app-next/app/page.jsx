@@ -110,17 +110,28 @@ function PlayerHub() {
   const [profiles, setProfiles] = useState([]);
   const [results, setResults] = useState([]);
   const [address, setAddress] = useState("255.255.255.255");
-  const [install, setInstall] = useState("");
+  const [password, setPassword] = useState("");
+  const [installs, setInstalls] = useState({ steam: "", gamepass: "" });
   const [platform, setPlatform] = useState("steam");
   const [finding, setFinding] = useState(false);
 
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
-  useEffect(() => { loadProfiles(); }, [loadProfiles]);
+  useEffect(() => {
+    loadProfiles();
+    api("/api/client-installs").then((r) => setInstalls({ steam: r.installs?.steam || "", gamepass: r.installs?.gamepass || "" })).catch((e) => toast(e.message, "error"));
+  }, [loadProfiles]);
 
-  const chooseInstall = async () => {
+  const saveInstall = async (kind, selected = installs[kind]) => {
+    try {
+      const response = await api("/api/client-installs", { method: "POST", body: { [kind]: selected } });
+      setInstalls({ steam: response.installs?.steam || "", gamepass: response.installs?.gamepass || "" });
+      toast(`${kind === "steam" ? "Steam" : "PC Game Pass"} installation saved.`, "success");
+    } catch (e) { toast(e.message, "error"); }
+  };
+  const chooseInstall = async (kind) => {
     if (!window.desktop?.pickDirectory) return toast("Folder selection is available in the desktop app.", "error");
     const selected = await window.desktop.pickDirectory();
-    if (selected) setInstall(selected);
+    if (selected) await saveInstall(kind, selected);
   };
   const find = async () => {
     setFinding(true); setResults([]);
@@ -135,8 +146,8 @@ function PlayerHub() {
       await api("/api/profiles", { method: "POST", body: {
         display_name: world.name || "Dragonwilds World",
         server_world_id: world.worldId,
-        client_install: install || null,
-        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, platform, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
+        client_install: installs[platform] || null,
+        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, password, platform, steamInstall: installs.steam || null, gamepassInstall: installs.gamepass || null, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
       }});
       toast(`${world.name || "World"} added to Player profiles.`, "success");
       loadProfiles();
@@ -149,15 +160,24 @@ function PlayerHub() {
 
   return <div>
     <header style={{ marginBottom: "1rem" }}><h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1><p className="subtle" style={{ fontWeight: 700 }}>Keep as many Worlds as you like. Connect to compare, restore removed mods, update changed mods, and remove obsolete managed files.</p></header>
+    {!installs.steam && !installs.gamepass && <div className="panel" style={{ padding: "1rem", marginBottom: "1rem", border: "1px solid var(--yellow)" }}><h2 className="heading" style={{ margin: "0 0 .35rem" }}>Locate Dragonwilds</h2><p className="subtle">Choose Steam, PC Game Pass, or both. RSDW Sync stores these paths and never asks for UE4SS in its own program folder.</p></div>}
     <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
       <h2 className="heading" style={{ margin: "0 0 .7rem", fontSize: "1.1rem" }}>Find or add a server</h2>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
         <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Server IP, or 255.255.255.255 for LAN" style={fieldStyle} />
         <button className="btn btn-primary" disabled={finding} onClick={find}><Icon name="refresh" /> {finding ? "Searching…" : "Find Worlds"}</button>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8 }}>
-        <input value={install} onChange={(e) => setInstall(e.target.value)} placeholder="Dragonwilds game install folder" style={fieldStyle} />
-        <button className="btn btn-ghost" onClick={chooseInstall}><Icon name="folder" /> Select Game Install</button>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
+        <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="World password (same password used in game)" style={fieldStyle} />
+        <span />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "90px minmax(210px,1fr) auto auto", gap: 8, marginBottom: 8, alignItems: "center" }}>
+        <strong>Steam</strong><input value={installs.steam} onChange={(e) => setInstalls((v) => ({ ...v, steam: e.target.value }))} placeholder="Steam Dragonwilds folder" style={fieldStyle} />
+        <button className="btn btn-ghost" onClick={() => chooseInstall("steam")}><Icon name="folder" /> Browse</button><button className="btn btn-ghost" onClick={() => saveInstall("steam")}>Save</button>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "90px minmax(210px,1fr) auto auto", gap: 8, alignItems: "center" }}>
+        <strong>Game Pass</strong><input value={installs.gamepass} onChange={(e) => setInstalls((v) => ({ ...v, gamepass: e.target.value }))} placeholder="PC Game Pass Dragonwilds folder" style={fieldStyle} />
+        <button className="btn btn-ghost" onClick={() => chooseInstall("gamepass")}><Icon name="folder" /> Browse</button><button className="btn btn-ghost" onClick={() => saveInstall("gamepass")}>Save</button>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <span className="subtle" style={{ alignSelf: "center", fontWeight: 700 }}>Launch with</span>
@@ -176,7 +196,7 @@ function PlayerHub() {
       <div style={{ display: "grid", gap: 10 }}>{profiles.map((p, index) => <div className="panel" key={p.profile_id} style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76 }}>
         <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url('/rsdw/placards/${index % 9 + 1}.webp') center/cover`, opacity: .48 }} />
         <img src={portraitFor(p.profile_id)} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
-        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose Steam install"}</div></div>
+        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose a game installation"}</div></div>
         <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Connect / Sync</Link>
         <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
       </div>)}</div>}

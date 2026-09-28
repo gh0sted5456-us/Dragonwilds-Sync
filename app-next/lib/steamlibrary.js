@@ -162,7 +162,7 @@ function filesWithExtensions(dir, extensions) {
 // shown as one entry. UE4SS and RuneSchema mods are folder-based.
 function scanGameMods(input) {
   const installDir = normalizeGameInstall(input);
-  if (!installDir) throw new Error("Choose the RuneScape: Dragonwilds Steam game folder (the folder containing RSDragonwilds\\Binaries and RSDragonwilds\\Content).");
+  if (!installDir) throw new Error("Choose the RuneScape: Dragonwilds Steam or PC Game Pass folder containing RSDragonwilds\\Binaries and RSDragonwilds\\Content.");
   const project = path.join(installDir, "RSDragonwilds");
   const detected = [];
 

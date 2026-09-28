@@ -370,6 +370,14 @@ function startNextServer() {
   nextProc.on("exit", (code) => logToFile(`Next server exited: ${code}`));
 }
 
+function bundledRuntimeProblem() {
+  if (isDev) return null;
+  const base = resourcePath();
+  if (!fs.existsSync(path.join(base, "server.js"))) return "The packaged server.js file is missing.";
+  if (!fs.existsSync(path.join(base, ".next", "BUILD_ID"))) return "The packaged interface runtime is incomplete (.next/BUILD_ID is missing). Download a complete RSDW Sync build and extract the entire ZIP before running it.";
+  return null;
+}
+
 // Restart the Next child so a changed bind host (loopback ↔ 0.0.0.0) takes effect. Waits
 // for the old process to release the port before respawning, then re-boots the background
 // engines. No-op in dev (the dev server is run by the npm script, not us).
@@ -511,7 +519,7 @@ function showErrorWindow(message) {
   });
   Menu.setApplicationMenu(null);
   const html = `<!doctype html><html><body style="font-family:Segoe UI,system-ui,sans-serif;background:#1e1f22;color:#f2f3f5;padding:40px;line-height:1.6">
-    <h2 style="color:#f2a53c">The manager couldn't start its local server</h2>
+    <h2 style="color:#f2a53c">RSDW Sync couldn't start its interface</h2>
     <p>${message}</p>
     <p style="color:#949ba4;font-size:13px">A log was written to:<br><code>${path.join(dataDir(), "launcher.log")}</code></p>
     </body></html>`;
@@ -536,6 +544,8 @@ function main() {
     try { PORT = await choosePrivatePort(); logToFile(`Selected local port ${PORT}`); }
     catch (e) { showErrorWindow(e.message); return; }
 
+    const runtimeProblem = bundledRuntimeProblem();
+    if (runtimeProblem) { showErrorWindow(runtimeProblem); return; }
     startNextServer();
     const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
     serverReady = await waitForServer(url);

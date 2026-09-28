@@ -127,7 +127,7 @@ export default function Shell({ children }) {
             <button onClick={openRelease} title="Open the latest release to download"
               style={{
                 width: "100%", marginBottom: "0.5rem", padding: "0.45rem 0.6rem", borderRadius: 8,
-                background: "var(--accent)", color: "#fff", border: "none", cursor: "pointer",
+                background: "var(--accent)", color: "var(--accent-ink)", border: "none", cursor: "pointer",
                 display: "flex", alignItems: "center", gap: "0.45rem", fontWeight: 700, fontSize: "0.78rem",
               }}>
               <Icon name="download" size={15} />
@@ -149,7 +149,7 @@ export default function Shell({ children }) {
             )}
             {collapsed && ver?.updateAvailable ? (
               <button onClick={openRelease} title={t("app.updateAvailable", { version: ver.latest })}
-                style={{ background: "var(--accent)", border: "none", cursor: "pointer", color: "#fff", padding: 7, borderRadius: 8, display: "grid", placeItems: "center" }}>
+                style={{ background: "var(--accent)", border: "none", cursor: "pointer", color: "var(--accent-ink)", padding: 7, borderRadius: 8, display: "grid", placeItems: "center" }}>
                 <Icon name="download" size={18} />
               </button>
             ) : (
@@ -196,7 +196,7 @@ function NavItem({ href, icon, asset, material, label, active, collapsed, badge 
         textDecoration: "none", fontFamily: "var(--font-display)",
         fontWeight: 600, fontSize: "0.9rem", marginBottom: 3,
         background: active ? "var(--accent)" : "transparent",
-        color: active ? "#fff" : "var(--ink-soft)",
+        color: active ? "var(--accent-ink)" : "var(--ink-soft)",
         transition: "background 0.15s, color 0.15s",
       }}
       onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-2)"; e.currentTarget.style.color = "var(--ink)"; } }}
@@ -232,7 +232,7 @@ function DownloadsNavItem({ active, collapsed, summary, label }) {
         textDecoration: "none", fontFamily: "var(--font-display)", fontWeight: 600, fontSize: "0.9rem",
         marginBottom: 3, marginTop: 2,
         background: active ? "var(--accent)" : "transparent",
-        color: active ? "#fff" : "var(--ink-soft)",
+        color: active ? "var(--accent-ink)" : "var(--ink-soft)",
         transition: "background 0.15s, color 0.15s",
       }}
       onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-2)"; e.currentTarget.style.color = "var(--ink)"; } }}

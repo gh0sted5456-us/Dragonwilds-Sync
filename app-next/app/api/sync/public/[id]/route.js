@@ -8,7 +8,8 @@ export async function GET(req, { params }) {
   try {
     const auth = authorizeWorldRequest(params.id, req);
     if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
-    const manifest = syncManifest.buildWorldManifest(params.id);
+    const platform = req.headers.get("x-rsdw-client-platform") === "gamepass" ? "gamepass" : "steam";
+    const manifest = syncManifest.buildWorldManifest(params.id, { platform });
     return NextResponse.json({ ok: true, manifest });
   } catch (e) { return NextResponse.json({ ok: false, error: e.message }, { status: 404 }); }
 }

@@ -76,7 +76,7 @@ export async function PATCH(req, { params }) {
   const denied = ra.guardResponse(req, { worldId: params.id, tab: tabForWorldPatch(patch), action: "world.update", mutating: true });
   if (denied) return denied;
 
-  // Changing the install folder is special: validate it points at a real Palworld
+  // Changing the install folder is special: validate it points at a real Dragonwilds
   // server, refuse while running, and rebase this world's build id onto the new path.
   if ("install_dir" in patch && String(patch.install_dir).trim() !== w.install_dir) {
     if (sup.isRunning(w.world_id) || sup.pidAlive(w.process_id)) {
@@ -85,7 +85,7 @@ export async function PATCH(req, { params }) {
     const detect = require("@/lib/detect");
     const info = detect.inspect(String(patch.install_dir).trim());
     if (!info.valid) {
-      return NextResponse.json({ ok: false, error: info.reason || "Not a valid Palworld server install." }, { status: 400 });
+      return NextResponse.json({ ok: false, error: info.reason || "Not a valid Dragonwilds server install." }, { status: 400 });
     }
     const bad = guard.unusableTargetReason(info.installDir, { worlds: dbm.listWorlds(), selfWorldId: params.id });
     if (bad) return NextResponse.json({ ok: false, error: bad }, { status: 409 });
@@ -186,22 +186,32 @@ export async function PATCH(req, { params }) {
   // Crucially, editing an inactive profile must not mutate whichever profile is
   // currently materialized in the shared game tree.
   const syncPublicPort = "game_port" in clean;
+  let profile;
   try {
-    const profile = serverProfiles.settingsFor(updated);
+    profile = serverProfiles.settingsFor(updated);
     const values = ini.withWorldNetworkSettings(profile.values, updated, { syncPublicPort });
     serverProfiles.saveSettings(updated.world_id, values, {
       baseRaw: profile.content,
       syncPublicPort,
     });
-    if (serverProfiles.readActiveId() === updated.world_id && fs.existsSync(updated.install_dir)) {
-      serverProfiles.materialize(updated, { syncPublicPort });
-    }
   } catch (e) {
     dbm.logEvent(updated.world_id, "error", `Could not persist Server profile settings: ${e.message}`);
     return NextResponse.json({ ok: false, error: e.message, world: updated }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, world: updated });
+  // Saving the profile must not fail merely because the live server tree is
+  // currently read-only or locked. Launch performs the strict materialization
+  // and read-back gate; here we keep the durable Owner ID and report a warning.
+  let materializeWarning = null;
+  if (serverProfiles.readActiveId() === updated.world_id && fs.existsSync(updated.install_dir)) {
+    try { serverProfiles.materialize(updated, { syncPublicPort }); }
+    catch (e) {
+      materializeWarning = e.message;
+      dbm.logEvent(updated.world_id, "settings", `Saved profile; live DedicatedServer.ini will be retried at launch: ${e.message}`);
+    }
+  }
+
+  return NextResponse.json({ ok: true, world: updated, materializeWarning });
 }
 
 export async function DELETE(req, { params }) {

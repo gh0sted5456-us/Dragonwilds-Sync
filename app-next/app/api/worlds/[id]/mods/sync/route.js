@@ -9,6 +9,6 @@ export async function POST(req, { params }) {
   if (denied) return denied;
   try {
     const { keys } = await req.json();
-    return NextResponse.json({ ok: true, ...mods.syncDetectedMods(params.id, Array.isArray(keys) ? keys : []) });
+    return NextResponse.json({ ok: true, ...mods.syncLaneSelections(params.id, Array.isArray(keys) ? keys : []) });
   } catch (e) { return NextResponse.json({ ok: false, error: e.message }, { status: 400 }); }
 }

@@ -12,6 +12,9 @@ function markerPath(world) {
 function profileKey(worldId) {
   return PROFILE_PREFIX + String(worldId);
 }
+function liveSettingsPath(world) {
+  return world.install_dir ? ini.settingsIniPath(world.install_dir, world.platform) : null;
+}
 function readActiveId() {
   const id = String(dbm.getSetting(SETTING_KEY, "") || "").trim();
   return id && dbm.getWorld(id) ? id : null;
@@ -46,15 +49,17 @@ function settingsFor(worldOrId) {
   } else {
     // Lazy migration: capture the legacy live file once, then stop treating it
     // as this profile's source of truth.
-    const disk = ini.readRawSettings(world.install_dir, world.platform);
-    raw = disk.content || "";
-    existed = disk.exists;
+    if (world.install_dir) {
+      const disk = ini.readRawSettings(world.install_dir, world.platform);
+      raw = disk.content || "";
+      existed = disk.exists;
+    }
   }
 
   const normalized = normalizeRecord(world, raw);
   dbm.setSetting(profileKey(world.world_id), { schema: 1, raw: normalized.content });
   return {
-    path: ini.settingsIniPath(world.install_dir, world.platform),
+    path: liveSettingsPath(world),
     exists: existed || !!normalized.content,
     content: normalized.content,
     values: normalized.values,
@@ -76,7 +81,7 @@ function saveRawSettings(worldId, raw, { syncPublicPort = false } = {}) {
   const content = ini.patchRawSettings(raw, values);
   dbm.setSetting(profileKey(world.world_id), { schema: 1, raw: content });
   return {
-    path: ini.settingsIniPath(world.install_dir, world.platform),
+    path: liveSettingsPath(world),
     exists: true,
     content,
     values,

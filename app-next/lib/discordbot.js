@@ -107,10 +107,10 @@ async function validateToken(token) {
 // and options are public.
 function commandDefs() {
   return [
-    { name: "authorize", description: "Link this server to your Palworld world (asks for the admin password privately)", type: 1 },
-    { name: "start", description: "Start the Palworld server", type: 1 },
-    { name: "stop", description: "Stop the Palworld server", type: 1 },
-    { name: "restart", description: "Restart the Palworld server", type: 1 },
+    { name: "authorize", description: "Link this server to your Dragonwilds World (asks for the admin password privately)", type: 1 },
+    { name: "start", description: "Start the Dragonwilds server", type: 1 },
+    { name: "stop", description: "Stop the Dragonwilds server", type: 1 },
+    { name: "restart", description: "Restart the Dragonwilds server", type: 1 },
     { name: "backup", description: "Take a backup right now", type: 1 },
     { name: "status", description: "Is the server up? In-game day, uptime and who's on", type: 1 },
     {

@@ -233,7 +233,7 @@ function relayChatToDiscord(worldId, entry) {
     if (!url) return;
     const name = entry.channel ? `${entry.name} [${entry.channel}]` : entry.name;
     notify.post(url, {
-      username: `${name} (Palworld)`,
+      username: `${name} (Dragonwilds)`,
       content: entry.message,
       allowed_mentions: { parse: [] },
     });

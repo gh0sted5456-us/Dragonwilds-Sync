@@ -59,7 +59,11 @@ function contains(rel, needle, message) {
 {
   contains("app/page.jsx", "Connect to World");
   contains("app/info/page.jsx", "/api/helpy/helpy.html?embed=1&theme=dark");
-  contains("app/globals.css", "--accent: #bd9139");
+  contains("app/globals.css", "--accent: #a9823f");
+  const modsPanel = contains("components/ModsPanel.jsx", "Install lanes");
+  assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
+  const lanes = contains("lib/mod-lanes.js", 'const LANES = ["server", "steam", "gamepass"]');
+  assert(lanes.includes("Steam Player") && lanes.includes("PC Game Pass Player"), "player mod lanes missing");
   contains("lib/component-updates.js", "latestNexusVersions");
   contains("lib/component-updates.js", "Xbox");
   contains("lib/component-updates.js", "Steam");

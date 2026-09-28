@@ -381,7 +381,7 @@ async function runAutoUpdates() {
       if (w.build_id === w.latest_known_build_id) continue;  // already current
       if (ST.updating.has(w.world_id)) continue;             // update already in flight
       dbm.logEvent(w.world_id, "update", `Auto-update: new build ${w.latest_known_build_id} detected — warning players for 5 minutes, then updating`);
-      try { await notify(w.world_id, "update", `${w.display_name}: a new Palworld build is out — auto-updating in 5 minutes`); } catch {}
+      try { await notify(w.world_id, "update", `${w.display_name}: a new Dragonwilds server build is out — auto-updating in 5 minutes`); } catch {}
       try {
         await updateWorld(w.world_id, () => {}, null, { warn: AUTO_UPDATE_WARN });
       } catch (e) {

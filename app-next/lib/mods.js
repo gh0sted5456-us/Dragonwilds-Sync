@@ -24,6 +24,7 @@ const AdmZip = require("adm-zip");
 const dbm = require("./db");
 const steamlib = require("./steamlibrary");
 const { trashPath } = require("./trash");
+const modLanes = require("./mod-lanes");
 
 // Persisted machine-wide Dragonwilds client install. Keep the historical setting
 // key so existing users are migrated in place, but store the normalized game
@@ -154,63 +155,12 @@ function scanWorkshop(installDir) {
   return found;
 }
 
-// Combined view: what's on disk (Workshop) reconciled with the active list.
+// The active RSDW view is route-based. Legacy importer helpers remain below only
+// for profile migration; the GUI and API no longer expose Workshop semantics.
 function status(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const settings = readModSettings(world.install_dir);
-  const onDisk = scanWorkshop(world.install_dir);
-  const activeSet = new Set(settings.activeMods);
-  const windowsOnlyWarning = os.platform() !== "win32";
-
-  const mods = onDisk.map((m) => ({
-    folder: m.folder,
-    packageName: m.packageName,
-    displayName: m.displayName || m.packageName || m.folder,
-    version: m.version,
-    isServer: m.isServer,
-    workshopId: workshopIdOf(m),
-    enabled: m.packageName ? activeSet.has(m.packageName) : false,
-    infoError: m.error || null,
-    // UI extras: preview image, this mod's own folder, and whether it carries Lua
-    // scripts (the only kind we can force-run for a mod that skipped IsServer).
-    hasThumbnail: !!m.thumbnail,
-    dir: m.dir,
-    hasLua: luaTargets(m.raw).length > 0,
-  }));
-
-  // active packages with no matching folder on disk (dangling)
-  const diskPkgs = new Set(onDisk.map((m) => m.packageName).filter(Boolean));
-  const dangling = settings.activeMods.filter((p) => !diskPkgs.has(p));
-
-  const savedInstall = getSteamLibraryOverride();
-  const detectedInstalls = steamlib.discoverGameInstalls(savedInstall);
-  const selectedInstall = savedInstall || detectedInstalls[0] || null;
-  let sourceMods = [], sourceScanError = null;
-  if (selectedInstall) {
-    try { sourceMods = steamlib.scanGameMods(selectedInstall).mods; }
-    catch (e) { sourceScanError = e.message; }
-  }
-  const syncSelection = getSyncSelection(worldId);
-  sourceMods = sourceMods.map((mod) => ({ ...mod, selected: syncSelection.includes(mod.key) }));
-
-  return {
-    globalEnable: settings.globalEnable,
-    modsSettingsExists: settings.exists,
-    workshopDir: workshopDir(world.install_dir),
-    windowsOnlyWarning,
-    mods,
-    dangling,
-    // Where we'll look for Steam Workshop content: the saved override (if any) and
-    // the Steam libraries we auto-detected. Lets the UI show/clear the path.
-    steamLibraryPath: savedInstall,
-    steamLibrariesDetected: detectedInstalls,
-    steamGameInstall: selectedInstall,
-    steamDetectedMods: sourceMods,
-    steamDetectedModCount: sourceMods.length,
-    steamScanError: sourceScanError,
-    syncedModKeys: syncSelection,
-  };
+  return modLanes.status(worldId);
 }
 
 const syncSelectionKey = (worldId) => `dragonwildsSyncSelection:${worldId}`;
@@ -642,4 +592,6 @@ module.exports = {
   checkWorkshopUpdates, updateWorkshopMod, modThumbnailPath,
   getSteamLibraryOverride, setSteamLibraryOverride,
   getSyncSelection, syncDetectedMods, reapplySyncedMods,
+  syncLaneSelections: modLanes.setSelections,
+  selectedLaneMods: modLanes.selectedMods,
 };

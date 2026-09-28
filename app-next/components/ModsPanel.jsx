@@ -1,20 +1,20 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { useTranslation, Trans } from "react-i18next";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, Icon, toast } from "@/components/ui";
 
+const GROUPS = [
+  ["runeschema", "RuneSchema mods"],
+  ["ue4ss", "UE4SS mods"],
+  ["pak", "PAK mods"],
+  ["framework", "Detected runtimes"],
+];
+
 export default function ModsPanel({ worldId, running }) {
-  const { t } = useTranslation();
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [wsId, setWsId] = useState("");
-  const [showWsHelp, setShowWsHelp] = useState(false);
-  // Workshop update state, keyed by mod folder. null = never checked (we don't claim
-  // anything about a mod until the user asks us to look).
-  const [updates, setUpdates] = useState(null);
-  const [checking, setChecking] = useState(false);
-  // The mod awaiting a force-enable confirmation, if any.
-  const [forcing, setForcing] = useState(null);
+  const [activeLane, setActiveLane] = useState("server");
+  const [browser, setBrowser] = useState(null);
   const [prerequisites, setPrerequisites] = useState({ ue4ss: "", runeSchema: "" });
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
 
@@ -25,446 +25,162 @@ export default function ModsPanel({ worldId, running }) {
 
   useEffect(() => {
     load();
-    api(`/api/worlds/${worldId}/sync/manifest`).then((r) => setPrerequisites({ ue4ss: r.manifest?.prerequisites?.ue4ss || "", runeSchema: r.manifest?.prerequisites?.runeSchema || "" })).catch(() => {});
+    api(`/api/worlds/${worldId}/sync/manifest`).then((result) => setPrerequisites({
+      ue4ss: result.manifest?.prerequisites?.ue4ss || "",
+      runeSchema: result.manifest?.prerequisites?.runeSchema || "",
+    })).catch(() => {});
   }, [load, worldId]);
 
-  const savePrerequisites = async () => {
+  const lanes = data?.modLanes || [];
+  const lane = lanes.find((item) => item.id === activeLane) || lanes[0];
+  const selected = useMemo(() => new Set(data?.modLaneSelections || []), [data]);
+
+  async function savePrerequisites() {
     setBusy(true);
     try {
       await api(`/api/worlds/${worldId}/sync/manifest`, { method: "PATCH", body: { prerequisites } });
-      toast("Client prerequisites published with this World.", "success");
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
+      toast("Runtime requirements published for this World.", "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
 
-  const toggleGlobal = async (on) => {
-    setBusy(true);
-    try { setData(await api(`/api/worlds/${worldId}/mods/toggle`, { method: "POST", body: { global: on } })); toast(on ? t("mods.toggledOn") : t("mods.toggledOff"), "success"); }
-    catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  const toggleMod = async (packageName, enabled, force = false) => {
-    setBusy(true);
-    try { setData(await api(`/api/worlds/${worldId}/mods/toggle`, { method: "POST", body: { packageName, enabled, force } })); }
-    catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  // Enabling a mod that never declared IsServer is a deliberate override, so make the
-  // user say so once — then it behaves like any other enable.
-  const onEnableClick = (m) => {
-    if (m.enabled || m.isServer) return toggleMod(m.packageName, !m.enabled);
-    setForcing(m);
-  };
-
-  const importZip = async () => {
-    if (!isElectron) return toast(t("common.pickerDesktop"));
-    const zipPath = await window.desktop.pickZip();
-    if (!zipPath) return;
+  async function chooseInstall(targetLane) {
+    if (!isElectron) return toast("Folder selection is available in the desktop app.", "error");
+    const install = await window.desktop.pickDirectory();
+    if (!install) return;
     setBusy(true);
     try {
-      const { result } = await api(`/api/worlds/${worldId}/mods/import`, { method: "POST", body: { zipPath } });
-      toast(result.isServer ? t("mods.imported", { name: result.packageName }) : t("mods.importedNotServer", { name: result.packageName }), result.isServer ? "success" : "error");
-      load();
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
+      if (targetLane === "server") await api(`/api/worlds/${worldId}`, { method: "PATCH", body: { install_dir: install } });
+      else await api("/api/client-installs", { method: "POST", body: { [targetLane]: install } });
+      await load();
+      toast(`${targetLane === "server" ? "Server" : targetLane === "steam" ? "Steam" : "PC Game Pass"} install routed.`, "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
 
-  const addWorkshop = async () => {
-    if (!wsId.trim()) return;
+  async function toggleFolder(mod) {
+    if (!mod.syncEligible || running) return;
+    const keys = new Set(selected);
+    if (keys.has(mod.selectionKey)) keys.delete(mod.selectionKey); else keys.add(mod.selectionKey);
     setBusy(true);
     try {
-      const { result } = await api(`/api/worlds/${worldId}/mods/import`, { method: "POST", body: { workshopId: wsId.trim() } });
-      toast(t("mods.addedWorkshop", { name: result.packageName || wsId }), "success");
-      setWsId(""); load();
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
+      const result = await api(`/api/worlds/${worldId}/mods/sync`, { method: "POST", body: { keys: [...keys] } });
+      setData((current) => ({ ...current, ...result }));
+      toast("Selected mod folders saved and synchronized.", "success");
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy(false); }
+  }
 
-  // Compare every installed mod's Info.json Version against Steam's copy of the same
-  // Workshop item. Read-only — nothing is copied until the user hits Update.
-  const checkForUpdates = async () => {
-    setChecking(true);
+  async function browse(relative = "") {
     try {
-      const r = await api(`/api/worlds/${worldId}/mods/updates`);
-      const byFolder = {};
-      for (const u of r.updates) byFolder[u.folder] = u;
-      setUpdates(byFolder);
-      const n = r.updates.filter((u) => u.updateAvailable).length;
-      toast(n ? t("mods.updatesFound", { count: n }) : t("mods.updatesNone"), n ? "success" : "info");
-    } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
-  };
+      const result = await api(`/api/worlds/${worldId}/mods/explorer?lane=${encodeURIComponent(activeLane)}&path=${encodeURIComponent(relative)}`);
+      setBrowser(result);
+    } catch (e) { toast(e.message, "error"); }
+  }
 
-  const updateMod = async (folder) => {
-    setBusy(true);
-    try {
-      const r = await api(`/api/worlds/${worldId}/mods/updates`, { method: "POST", body: { folder } });
-      setData(r);
-      const res = r.results[0] || {};
-      toast(t("mods.modUpdated", { name: res.packageName || folder, from: res.from || "?", to: res.to || "?" }), "success");
-      setUpdates((u) => ({ ...u, [folder]: { ...(u?.[folder] || {}), updateAvailable: false, installedVersion: res.to } }));
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  const updateAllMods = async () => {
-    setBusy(true);
-    try {
-      const r = await api(`/api/worlds/${worldId}/mods/updates`, { method: "POST", body: {} });
-      setData(r);
-      const ok = r.results.filter((x) => x.ok !== false).length;
-      const failed = r.results.filter((x) => x.ok === false);
-      // Report the partial result honestly rather than a blanket success.
-      if (failed.length) toast(t("mods.updateAllPartial", { ok, failed: failed.length, error: failed[0].error }), "error");
-      else toast(t("mods.updateAllDone", { count: ok }), "success");
-      checkForUpdates();
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  const openFolder = async (p) => {
-    if (!isElectron) return toast(t("mods.openFolderDesktop"));
-    try { await window.desktop.openPath(p); }
-    catch (e) { toast(e.message, "error"); }
-  };
-
-  // Point DWSM at the retail Dragonwilds install. The API normalizes selections
-  // made at the install root or anywhere under RSDragonwilds/Binaries/Content.
-  const setSteamLibrary = async (path) => {
-    setBusy(true);
-    try {
-      setData(await api(`/api/worlds/${worldId}/mods/steam-library`, { method: "POST", body: { path: path || null } }));
-      toast(path ? t("mods.steamLibrarySaved") : t("mods.steamLibraryReset"), "success");
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  const pickSteamLibrary = async () => {
-    if (!isElectron) return toast(t("common.folderPickerDesktop"));
-    const dir = await window.desktop.pickDirectory();
-    if (dir) setSteamLibrary(dir);
-  };
-
-  const toggleSyncSelection = async (mod) => {
-    if (!mod.syncEligible) return;
-    const selected = new Set(data.syncedModKeys || []);
-    if (selected.has(mod.key)) selected.delete(mod.key); else selected.add(mod.key);
-    setBusy(true);
-    try {
-      setData(await api(`/api/worlds/${worldId}/mods/sync`, { method: "POST", body: { keys: [...selected] } }));
-      toast(t("mods.syncSelectionSaved"), "success");
-    } catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  const removeMod = async (pkg) => {
-    if (!confirm(t("mods.confirmRemove", { pkg }))) return;
-    setBusy(true);
-    try { setData(await api(`/api/worlds/${worldId}/mods?pkg=${encodeURIComponent(pkg)}`, { method: "DELETE" })); toast(t("mods.removed"), "success"); }
-    catch (e) { toast(e.message, "error"); } finally { setBusy(false); }
-  };
-
-  if (!data) return <p className="subtle" style={{ fontWeight: 600 }}>{t("mods.loading")}</p>;
-
-  const pendingCount = updates ? Object.values(updates).filter((u) => u.updateAvailable).length : 0;
+  if (!data) return <p className="subtle">Detecting routed installs and mods…</p>;
 
   return (
-    <div>
-      <div className="panel-inset" style={{ padding: "0.9rem 1rem", marginBottom: "1rem" }}>
-        <div className="heading" style={{ fontSize: "0.95rem" }}>Declared client prerequisites</div>
-        <div className="subtle" style={{ fontSize: "0.76rem", margin: "3px 0 10px" }}>Tell friends which runtimes this World expects. RSDW Sync displays these versions but does not install or modify either runtime.</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 8 }}>
-          <input className="input" placeholder="UE4SS version (example: 3.0.1)" value={prerequisites.ue4ss} onChange={(e) => setPrerequisites((p) => ({ ...p, ue4ss: e.target.value }))} />
-          <input className="input" placeholder="RuneSchema version" value={prerequisites.runeSchema} onChange={(e) => setPrerequisites((p) => ({ ...p, runeSchema: e.target.value }))} />
+    <div style={{ display: "grid", gap: "1rem" }}>
+      <section className="panel-inset" style={{ padding: "0.95rem 1rem" }}>
+        <div className="heading" style={{ fontSize: "0.96rem" }}>Runtime contract</div>
+        <p className="subtle" style={{ fontSize: "0.76rem", margin: "4px 0 10px" }}>
+          Publish the versions friends need. RSDW Sync detects UE4SS and RuneSchema, but keeps their installation under the player’s control.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(150px, 1fr) minmax(150px, 1fr) auto", gap: 8 }}>
+          <input className="input" placeholder="UE4SS version" value={prerequisites.ue4ss} onChange={(e) => setPrerequisites((value) => ({ ...value, ue4ss: e.target.value }))} />
+          <input className="input" placeholder="RuneSchema version" value={prerequisites.runeSchema} onChange={(e) => setPrerequisites((value) => ({ ...value, runeSchema: e.target.value }))} />
           <button className="btn btn-primary" disabled={busy} onClick={savePrerequisites}>Publish</button>
         </div>
-      </div>
-      {/* platform + restart notices */}
-      {data.windowsOnlyWarning && (
-        <Notice color="var(--yellow)">
-          <Trans i18nKey="mods.windowsOnly" components={{ b: <b /> }} />
-        </Notice>
-      )}
-      {running ? (
-        <Notice color="var(--red)">
-          <Trans i18nKey="mods.runningNotice" components={{ b: <b /> }} />
-        </Notice>
-      ) : (
-        <Notice color="var(--accent)">
-          <Trans i18nKey="mods.bootNotice" components={{ b: <b /> }} />
-        </Notice>
-      )}
+      </section>
 
-      {/* global switch + import controls */}
-      <div className="panel-inset" style={{ padding: "0.9rem 1rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-        <div>
-          <div className="heading" style={{ fontSize: "0.95rem" }}>{t("mods.globalTitle")}</div>
-          <div className="subtle" style={{ fontSize: "0.78rem", fontWeight: 600 }}>
-            {data.globalEnable ? t("mods.globalEnabled") : t("mods.globalDisabled")}
-          </div>
-        </div>
-        <button className={`btn ${data.globalEnable ? "btn-primary" : "btn-ghost"}`} disabled={busy || running} onClick={() => toggleGlobal(!data.globalEnable)}>
-          {data.globalEnable ? t("common.on") : t("common.off")}
-        </button>
-      </div>
-
-      <div style={{ display: "flex", gap: "0.6rem", marginBottom: "1.2rem", flexWrap: "wrap" }}>
-        <button className="btn btn-primary" disabled={busy || running} onClick={importZip}><Icon name="upload" /> {t("mods.importZip")}</button>
-        <div style={{ display: "flex", gap: "0.4rem", flex: 1, minWidth: 240, alignItems: "center" }}>
-          <input className="input" placeholder={t("mods.workshopPlaceholder")} value={wsId} onChange={(e) => setWsId(e.target.value)} disabled={running} />
-          <button className="btn btn-subtle" disabled={busy || running} onClick={addWorkshop}>{t("mods.add")}</button>
-          <button className="btn btn-ghost" style={{ padding: "0.4rem 0.5rem" }} title={t("mods.workshopHelpAria")} aria-label={t("mods.workshopHelpAria")} onClick={() => setShowWsHelp(true)}>
-            <Icon name="info" size={16} />
-          </button>
-        </div>
-      </div>
-
-      {/* Workshop update check + a shortcut to the Mods folder on disk. Steam refreshes
-          its own copy of a subscribed item, but this world runs PSM's copy — so the two
-          drift apart until we re-copy. */}
-      {data.mods.length > 0 && (
-        <div className="panel-inset" style={{ padding: "0.8rem 0.95rem", marginBottom: "1.2rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-          <div style={{ minWidth: 200, flex: 1 }}>
-            <div className="heading" style={{ fontSize: "0.9rem" }}>{t("mods.updatesTitle")}</div>
-            <div className="subtle" style={{ fontSize: "0.76rem", fontWeight: 600 }}>
-              {!updates ? t("mods.updatesNeverChecked")
-                : pendingCount ? t("mods.updatesPending", { count: pendingCount })
-                  : t("mods.updatesAllCurrent")}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "0.4rem", flexWrap: "wrap" }}>
-            <button className="btn btn-ghost" disabled={busy || checking} onClick={checkForUpdates}>
-              <Icon name="refresh" size={14} /> {checking ? t("common.checking") : t("mods.checkUpdates")}
-            </button>
-            {pendingCount > 0 && (
-              <button className="btn btn-amber" disabled={busy || running} onClick={updateAllMods}>
-                <Icon name="download" size={14} /> {t("mods.updateAll", { count: pendingCount })}
-              </button>
-            )}
-            <button className="btn btn-ghost" disabled={busy} onClick={() => openFolder(data.workshopDir)} title={data.workshopDir}>
-              <Icon name="folder" size={14} /> {t("mods.openModsFolder")}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {showWsHelp && <WorkshopHelpModal onClose={() => setShowWsHelp(false)} />}
-      {forcing && (
-        <ForceEnableModal
-          mod={forcing}
-          onClose={() => setForcing(null)}
-          onConfirm={() => { const m = forcing; setForcing(null); toggleMod(m.packageName, true, true); }}
-        />
-      )}
-
-      {/* Retail game install — scan the layouts used by Dragonwilds mod authors. */}
-      <div className="panel-inset" style={{ padding: "0.8rem 0.95rem", marginBottom: "1.2rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-          <div style={{ minWidth: 200, flex: 1 }}>
-            <div className="heading" style={{ fontSize: "0.9rem" }}>{t("mods.steamLibraryTitle")}</div>
-            <div className="subtle" style={{ fontSize: "0.76rem", fontWeight: 600, wordBreak: "break-all" }}>
-              {data.steamLibraryPath
-                ? <Trans i18nKey="mods.usingSavedFolder" values={{ path: data.steamLibraryPath }} components={{ code: <code /> }} />
-                : data.steamLibrariesDetected?.length
-                  ? t("mods.autoDetected", { count: data.steamLibrariesDetected.length })
-                  : t("mods.noSteamDetected")}
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: "0.4rem" }}>
-            <button className="btn btn-ghost" disabled={busy} onClick={pickSteamLibrary}><Icon name="folder" size={14} /> {data.steamLibraryPath ? t("mods.change") : t("mods.setFolder")}</button>
-            {data.steamLibraryPath && <button className="btn btn-subtle" disabled={busy} onClick={() => setSteamLibrary(null)}>{t("common.reset")}</button>}
-          </div>
-        </div>
-        {data.steamLibrariesDetected?.length > 0 && (
-          <details style={{ marginTop: "0.5rem" }}>
-            <summary className="subtle" style={{ fontSize: "0.72rem", fontWeight: 700, cursor: "pointer" }}>{t("mods.detectedLibraries")}</summary>
-            <ul style={{ margin: "0.4rem 0 0", paddingLeft: "1.1rem" }}>
-              {data.steamLibrariesDetected.map((p) => (
-                <li key={p} className="subtle" style={{ fontSize: "0.72rem", fontWeight: 600, wordBreak: "break-all" }}><code>{p}</code></li>
-              ))}
-            </ul>
-          </details>
-        )}
-        {data.steamScanError && <div className="subtle" style={{ marginTop: "0.65rem", color: "var(--red)", fontSize: "0.76rem", fontWeight: 650 }}>{data.steamScanError}</div>}
-        {data.steamGameInstall && (
-          <div style={{ marginTop: "0.8rem" }}>
-            <div className="heading" style={{ fontSize: "0.82rem", marginBottom: "0.45rem" }}>
-              {t("mods.detectedGameMods", { count: data.steamDetectedModCount || 0 })}
-            </div>
-            {data.steamDetectedMods?.length ? (
-              <div style={{ display: "grid", gap: "0.35rem" }}>
-                {data.steamDetectedMods.map((m, index) => (
-                  <div key={`${m.type}:${m.path}:${index}`} className="panel-inset" style={{ padding: "0.45rem 0.65rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "0.75rem" }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "0.8rem", fontWeight: 700 }}>{m.name}</div>
-                      <div className="subtle" style={{ fontSize: "0.68rem", wordBreak: "break-all" }}>{m.path}</div>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", flexShrink: 0 }}>
-                      <span className="chip">{String(m.type).toUpperCase()}</span>
-                      {m.syncEligible ? (
-                        <button className={`btn ${m.selected ? "btn-primary" : "btn-ghost"}`} style={{ padding: "0.3rem 0.55rem" }} disabled={busy || running} onClick={() => toggleSyncSelection(m)}>
-                          {m.selected ? t("mods.retained") : t("mods.retain")}
-                        </button>
-                      ) : <span className="subtle" style={{ fontSize: "0.68rem" }}>{t("mods.detectOnly")}</span>}
-                    </div>
-                  </div>
-                ))}
+      <section>
+        <div className="heading" style={{ fontSize: "0.96rem", marginBottom: 4 }}>Install lanes</div>
+        <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
+          Route the host, Steam, and PC Game Pass installs once. Each lane is scanned through PAKs, UE4SS, RuneSchema, and nested mod folders.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+          {lanes.map((item) => (
+            <button key={item.id} className={`panel-inset ${activeLane === item.id ? "lane-active" : ""}`} onClick={() => { setActiveLane(item.id); setBrowser(null); }} style={{ padding: "0.85rem", textAlign: "left", cursor: "pointer", color: "inherit" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                <strong>{item.label}</strong><span className="chip">{item.ready ? `${item.mods.length} found` : "Not routed"}</span>
               </div>
-            ) : <div className="subtle" style={{ fontSize: "0.75rem", fontWeight: 600 }}>{t("mods.noGameModsDetected")}</div>}
-          </div>
-        )}
-      </div>
-
-      {/* installed mods list */}
-      {data.mods.length === 0 ? (
-        <div className="panel-inset" style={{ padding: "2rem", textAlign: "center" }}>
-          <div className="subtle" style={{ fontWeight: 600 }}>
-            {t("mods.empty")}
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "grid", gap: "0.5rem" }}>
-          {data.mods.map((m) => (
-            <ModRow
-              key={m.folder} m={m} worldId={worldId} update={updates?.[m.folder]}
-              busy={busy} running={running}
-              onToggle={() => onEnableClick(m)}
-              onUpdate={() => updateMod(m.folder)}
-              onOpenFolder={() => openFolder(m.dir)}
-              onRemove={() => removeMod(m.packageName || m.folder)}
-            />
+              <div className="subtle" style={{ fontSize: "0.68rem", marginTop: 6, wordBreak: "break-all" }}>{item.root || item.error}</div>
+            </button>
           ))}
         </div>
-      )}
+      </section>
 
-      {data.dangling?.length > 0 && (
-        <Notice color="var(--yellow)">
-          {t("mods.danglingNotice", { list: data.dangling.join(", ") })}
-        </Notice>
-      )}
-    </div>
-  );
-}
-
-function ModRow({ m, worldId, update, busy, running, onToggle, onUpdate, onOpenFolder, onRemove }) {
-  const { t } = useTranslation();
-  // Mods ship their own preview art; fall back to the shield if the file is missing
-  // or unreadable. Keyed by version so a freshly updated mod re-fetches its art.
-  const [artOk, setArtOk] = useState(true);
-  const src = `/api/worlds/${worldId}/mods/thumbnail?folder=${encodeURIComponent(m.folder)}&v=${encodeURIComponent(m.version || "")}`;
-  const pending = !!update?.updateAvailable;
-
-  return (
-    <div className="panel-inset" style={{ padding: "0.7rem 0.9rem", display: "flex", alignItems: "center", gap: "0.8rem", flexWrap: "wrap", borderLeft: pending ? "3px solid var(--yellow)" : undefined }}>
-      <div style={{ width: 36, height: 36, borderRadius: 6, background: "var(--card-2)", display: "grid", placeItems: "center", flexShrink: 0, overflow: "hidden" }}>
-        {m.hasThumbnail && artOk
-          ? <img src={src} alt="" onError={() => setArtOk(false)} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          : <Icon name="shield" size={18} />}
-      </div>
-      <div style={{ flex: 1, minWidth: 160 }}>
-        <div style={{ fontWeight: 700, fontSize: "0.9rem", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          {m.displayName}
-          {m.version && <span className="subtle" style={{ fontSize: "0.72rem", fontWeight: 600 }}>v{m.version}</span>}
-          {pending && (
-            <span className="chip" style={{ background: "var(--yellow)", color: "#1e1f22" }}>
-              {t("mods.updateChip", { version: update.availableVersion })}
-            </span>
-          )}
-          {!m.isServer && <span className="chip" style={{ background: "var(--yellow)", color: "#1e1f22" }} title={t("mods.notServerModTip")}>{t("mods.notServerMod")}</span>}
-          {m.infoError && <span className="chip" style={{ background: "var(--red)", color: "#fff" }}>{t("mods.badInfoJson")}</span>}
-        </div>
-        <div className="subtle" style={{ fontSize: "0.72rem", fontWeight: 600, display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <span>{m.packageName || m.folder}</span>
-          {/* The folder name is the Workshop id for mods added by id — showing it here
-              is how you find the mod on disk (and on the Workshop) without digging. */}
-          {m.workshopId && <span title={t("mods.workshopIdTip")}>· {m.workshopId}</span>}
-        </div>
-      </div>
-
-      {pending && (
-        <button className="btn btn-amber" style={{ padding: "0.35rem 0.7rem" }} disabled={busy || running} onClick={onUpdate}>
-          <Icon name="download" size={14} /> {t("mods.updateBtn")}
-        </button>
-      )}
-      <button className={`btn ${m.enabled ? "btn-primary" : "btn-ghost"}`} style={{ padding: "0.35rem 0.7rem" }}
-        disabled={busy || running || !m.packageName}
-        title={!m.isServer && !m.enabled ? t("mods.forceEnableTip") : undefined}
-        onClick={onToggle}>
-        {m.enabled ? t("mods.enabledBtn") : t("mods.disabledBtn")}
-      </button>
-      <button className="btn btn-ghost" style={{ padding: "0.35rem 0.6rem" }} disabled={busy} onClick={onOpenFolder}
-        title={t("mods.openFolderTip", { dir: m.dir })} aria-label={t("mods.openFolderTip", { dir: m.dir })}>
-        <Icon name="folder" size={14} />
-      </button>
-      <button className="btn btn-danger" style={{ padding: "0.35rem 0.6rem" }} disabled={busy || running} onClick={onRemove}>
-        <Icon name="trash" size={14} />
-      </button>
-    </div>
-  );
-}
-
-function Notice({ color, children }) {
-  return (
-    <div className="panel-inset" style={{ padding: "0.7rem 0.9rem", borderLeft: `3px solid ${color}`, marginBottom: "1rem", fontWeight: 600, fontSize: "0.84rem" }}>
-      {children}
-    </div>
-  );
-}
-
-// Confirmation for enabling a mod whose Info.json never opted into dedicated servers.
-// Plenty of them run fine — the author just didn't write server install rules — but
-// Palworld's own deploy skips them, so what happens next depends on the mod's type:
-// a Lua mod we can bridge into UE4SS ourselves; a Pak-only one we can't.
-function ForceEnableModal({ mod, onClose, onConfirm }) {
-  const { t } = useTranslation();
-  return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="panel animate-floatUp" style={{ width: 500, maxWidth: "94vw", padding: "1.4rem 1.5rem" }}>
-        <div className="heading" style={{ fontSize: "1.05rem", marginBottom: "0.8rem", display: "flex", alignItems: "center", gap: 8 }}>
-          <Icon name="shield" size={18} /> {t("mods.forceTitle", { name: mod.displayName })}
-        </div>
-        <p style={{ fontSize: "0.86rem", fontWeight: 600, lineHeight: 1.5, marginTop: 0 }}>
-          <Trans i18nKey="mods.forceIntro" components={{ b: <b />, code: <code /> }} />
-        </p>
-        <div className="panel-inset" style={{ padding: "0.7rem 0.9rem", borderLeft: `3px solid ${mod.hasLua ? "var(--accent)" : "var(--yellow)"}`, fontSize: "0.82rem", fontWeight: 600, lineHeight: 1.5 }}>
-          {mod.hasLua
-            ? <Trans i18nKey="mods.forceLua" components={{ b: <b /> }} />
-            : <Trans i18nKey="mods.forcePakOnly" components={{ b: <b /> }} />}
-        </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.5rem", marginTop: "1.1rem" }}>
-          <button className="btn btn-ghost" onClick={onClose}>{t("common.cancel")}</button>
-          <button className="btn btn-amber" onClick={onConfirm}>{t("mods.forceConfirm")}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// How-to for the Workshop ID field: getting an item's numeric id, and the fact that
-// PSM can only add mods Steam has already downloaded (subscribe first) — otherwise
-// use the .zip import instead.
-function WorkshopHelpModal({ onClose }) {
-  const { t } = useTranslation();
-  return (
-    <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="panel animate-floatUp" style={{ width: 520, maxWidth: "94vw", maxHeight: "90vh", overflow: "auto", padding: "1.4rem 1.5rem" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.9rem" }}>
-          <div className="heading" style={{ fontSize: "1.05rem", display: "flex", alignItems: "center", gap: 8 }}>
-            <Icon name="info" size={18} /> {t("mods.wsModalTitle")}
+      {lane && <section className="panel-inset" style={{ padding: "1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div>
+            <div className="heading" style={{ fontSize: "0.94rem" }}>{lane.label}</div>
+            <div className="subtle" style={{ fontSize: "0.72rem", wordBreak: "break-all" }}>{lane.root || lane.error}</div>
           </div>
-          <button className="btn btn-ghost" style={{ padding: "0.35rem 0.5rem" }} onClick={onClose} aria-label={t("common.dismiss")}><Icon name="x" size={16} /></button>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="btn btn-ghost" disabled={busy || running} onClick={() => chooseInstall(lane.id)}><Icon name="folder" size={14} /> Choose install</button>
+            {lane.ready && <button className="btn btn-ghost" disabled={busy} onClick={() => browse("")}><Icon name="folder" size={14} /> Explore</button>}
+            <button className="btn btn-subtle" disabled={busy} onClick={load}><Icon name="refresh" size={14} /> Rescan</button>
+          </div>
         </div>
 
-        <p style={{ fontSize: "0.86rem", fontWeight: 600, marginBottom: "0.9rem", lineHeight: 1.5 }}>
-          <Trans i18nKey="mods.wsModalIntro" components={{ b: <b /> }} />
-        </p>
+        {running && <Notice>Stop the active server before changing synchronized folders.</Notice>}
+        {!lane.ready ? <Notice>{lane.error || "Choose an install to begin detection."}</Notice> : (
+          <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+            {GROUPS.map(([type, title]) => {
+              const items = lane.mods.filter((mod) => type === "framework" ? !mod.syncEligible : mod.type === type && mod.syncEligible);
+              if (!items.length) return null;
+              return <div key={type}>
+                <div className="subtle" style={{ fontSize: "0.7rem", fontWeight: 750, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 5 }}>{title}</div>
+                <div style={{ display: "grid", gap: 5 }}>
+                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selected={selected.has(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} />)}
+                </div>
+              </div>;
+            })}
+            {!lane.mods.length && <Notice>No supported mod folders were detected in this install.</Notice>}
+          </div>
+        )}
+      </section>}
 
-        <ol style={{ margin: "0 0 1rem", paddingLeft: "1.2rem", display: "grid", gap: "0.55rem", fontSize: "0.84rem", fontWeight: 600, lineHeight: 1.5 }}>
-          <li><Trans i18nKey="mods.wsStep1" components={{ b: <b /> }} /></li>
-          <li><Trans i18nKey="mods.wsStep2" components={{ b: <b />, code: <code style={{ wordBreak: "break-all" }} /> }} /></li>
-          <li><Trans i18nKey="mods.wsStep3" components={{ b: <b /> }} /></li>
-        </ol>
-
-        <div className="panel-inset" style={{ padding: "0.7rem 0.9rem", borderLeft: "3px solid var(--accent)", fontSize: "0.82rem", fontWeight: 600, lineHeight: 1.5 }}>
-          <Trans i18nKey="mods.wsModalNote" components={{ b: <b />, code: <code /> }} />
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.1rem" }}>
-          <button className="btn btn-primary" onClick={onClose}>{t("mods.gotIt")}</button>
-        </div>
-      </div>
+      {browser && <FolderExplorer data={browser} onBrowse={browse} onClose={() => setBrowser(null)} />}
     </div>
   );
+}
+
+function ModFolder({ mod, selected, busy, onToggle }) {
+  return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: "0.82rem", fontWeight: 720 }}>{mod.name}</div>
+      <div className="subtle" style={{ fontSize: "0.67rem", wordBreak: "break-all" }}>{mod.path}</div>
+    </div>
+    {mod.syncEligible
+      ? <button className={`btn ${selected ? "btn-primary" : "btn-ghost"}`} disabled={busy} onClick={onToggle}>{selected ? "Selected" : "Select folder"}</button>
+      : <span className="chip">Detected only</span>}
+  </div>;
+}
+
+function FolderExplorer({ data, onBrowse, onClose }) {
+  const parent = data.relative.split("/").filter(Boolean).slice(0, -1).join("/");
+  return <section className="panel-inset" style={{ padding: "1rem" }}>
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+      <div>
+        <div className="heading" style={{ fontSize: "0.92rem" }}>Install explorer</div>
+        <div className="subtle" style={{ fontSize: "0.68rem", wordBreak: "break-all" }}>{data.current}</div>
+      </div>
+      <button className="btn btn-ghost" onClick={onClose}>Close</button>
+    </div>
+    <div style={{ display: "flex", gap: 5, margin: "10px 0", flexWrap: "wrap" }}>
+      <button className="btn btn-subtle" onClick={() => onBrowse("")}>Install</button>
+      {data.breadcrumbs.map((crumb) => <button key={crumb.relative} className="btn btn-subtle" onClick={() => onBrowse(crumb.relative)}>{crumb.name}</button>)}
+    </div>
+    <div style={{ display: "grid", gap: 5 }}>
+      {data.relative && <button className="btn btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => onBrowse(parent)}>← Parent folder</button>}
+      {data.directories.map((folder) => <button key={folder.relative} className="btn btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => onBrowse(folder.relative)}><Icon name="folder" size={14} /> {folder.name}</button>)}
+      {!data.directories.length && <div className="subtle" style={{ fontSize: "0.75rem" }}>No child folders.</div>}
+    </div>
+  </section>;
+}
+
+function Notice({ children }) {
+  return <div className="panel-inset" style={{ padding: "0.7rem 0.85rem", marginTop: 10, borderLeft: "3px solid var(--line-strong)", fontSize: "0.78rem", fontWeight: 620 }}>{children}</div>;
 }

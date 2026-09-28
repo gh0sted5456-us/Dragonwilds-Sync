@@ -85,10 +85,20 @@ function readSettings(installDir, platform) {
 
 function writeVerifiedFile(target, content) {
   fs.mkdirSync(path.dirname(target), { recursive: true });
+  // A previous server process or migrated install can leave the INI read-only.
+  // Restore owner-write permission before replacing it, as the legacy Sync did.
+  try { if (fs.existsSync(target)) fs.chmodSync(target, 0o666); } catch {}
   const temporary = `${target}.${process.pid}.rsdw-sync.tmp`;
   try {
     fs.writeFileSync(temporary, content, { encoding: "utf8", flush: true });
-    fs.renameSync(temporary, target);
+    try {
+      fs.renameSync(temporary, target);
+    } catch (e) {
+      // Windows may refuse replace-by-rename while security software briefly has
+      // the destination open. A flushed in-place write is the safe fallback.
+      if (!['EACCES', 'EPERM', 'EEXIST'].includes(e.code)) throw e;
+      fs.writeFileSync(target, content, { encoding: "utf8", flush: true });
+    }
   } finally {
     try { fs.rmSync(temporary, { force: true }); } catch {}
   }

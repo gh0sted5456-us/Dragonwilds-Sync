@@ -69,16 +69,13 @@ function publicFile(file) {
 function buildWorldManifest(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const install = mods.getSteamLibraryOverride() || steamlib.discoverGameInstalls()[0];
-  if (!install) throw new Error("Select the RuneScape: Dragonwilds Steam installation first.");
-  const selected = new Set(mods.getSyncSelection(worldId));
-  const inventory = steamlib.scanGameMods(install).mods.filter((mod) => mod.syncEligible && selected.has(mod.key));
+  const inventory = mods.selectedLaneMods(worldId);
   const units = inventory.map((mod) => {
     const files = filesForMod(mod);
     const identity = crypto.createHash("sha256");
     for (const file of files) identity.update(`${file.target}\0${file.size}\0${file.sha256}\n`);
     return {
-      key: mod.key,
+      key: mod.selectionKey || mod.key,
       name: mod.name,
       type: mod.type,
       contentHash: identity.digest("hex"),
@@ -123,10 +120,7 @@ function resolveWorldFile(worldId, requestedTarget) {
   const target = String(requestedTarget || "").replace(/\\/g, "/");
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const install = mods.getSteamLibraryOverride() || steamlib.discoverGameInstalls()[0];
-  if (!install) throw new Error("Select the RuneScape: Dragonwilds Steam installation first.");
-  const selected = new Set(mods.getSyncSelection(worldId));
-  const inventory = steamlib.scanGameMods(install).mods.filter((mod) => mod.syncEligible && selected.has(mod.key));
+  const inventory = mods.selectedLaneMods(worldId);
   for (const mod of inventory) {
     const match = filesForMod(mod).find((file) => file.target === target);
     if (match) return match;

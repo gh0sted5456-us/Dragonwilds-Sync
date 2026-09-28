@@ -15,17 +15,17 @@
   --ink: #f3efe7;
   --ink-soft: #c8bfad;
   --ink-muted: #918879;
-  --line: #3f321d;
-  --line-strong: #8e6c2f;
-  --border: #3f321d;
-  --accent: #bd9139;
-  --accent-hover: #d2aa50;
+  --line: #302a20;
+  --line-strong: #6f5a35;
+  --border: #302a20;
+  --accent: #a9823f;
+  --accent-hover: #b99655;
   --accent-ink: #130f08;
   --green: #2f7b50;
   --green-bright: #43a36d;
-  --yellow: #d4a13d;
-  --red: #b94b4b;
-  --red-hover: #d05b5b;
+  --yellow: #ae8745;
+  --red: #985151;
+  --red-hover: #ad6262;
   --font-display: "Inter", "gg sans", system-ui, sans-serif;
   --font-body: "Inter", "Nunito", system-ui, sans-serif;
   --radius: 5px;
@@ -41,17 +41,17 @@
   --ink: #f3efe7;
   --ink-soft: #c8bfad;
   --ink-muted: #918879;
-  --line: #3f321d;
-  --line-strong: #8e6c2f;
-  --border: #3f321d;
-  --accent: #bd9139;
-  --accent-hover: #d2aa50;
+  --line: #302a20;
+  --line-strong: #6f5a35;
+  --border: #302a20;
+  --accent: #a9823f;
+  --accent-hover: #b99655;
   --accent-ink: #130f08;
   --green: #2f7b50;
   --green-bright: #43a36d;
-  --yellow: #d4a13d;
-  --red: #b94b4b;
-  --red-hover: #d05b5b;
+  --yellow: #ae8745;
+  --red: #985151;
+  --red-hover: #ad6262;
   --radius: 5px;
 }
 
@@ -78,6 +78,7 @@ body {
     border: 1px solid var(--line);
     border-radius: var(--radius);
   }
+  .lane-active { border-color: var(--line-strong); background: var(--card); }
   .heading {
     font-family: var(--font-display);
     font-weight: 700;

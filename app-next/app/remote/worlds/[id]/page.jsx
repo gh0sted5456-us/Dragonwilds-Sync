@@ -175,7 +175,7 @@ export default function RemoteWorldDetail() {
         {tab === "mods" && (
           <div style={{ display: "grid", gap: "1.8rem" }}>
             <div>
-              <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>{t("world.modsWorkshop")}</h3>
+              <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
               <ModsPanel worldId={id} running={running} />
             </div>
             <div style={{ borderTop: "1px solid var(--line)", paddingTop: "1.4rem" }}>

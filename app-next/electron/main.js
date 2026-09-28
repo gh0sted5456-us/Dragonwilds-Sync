@@ -1,17 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, Tray, nativeImage, powerSaveBlocker } = require("electron");
-
-// Keep background work full-speed when the window is minimized (issue #29).
-// PalServer's tick loop follows the *system-wide* timer resolution. A foreground
-// Chromium app pins that high (~1ms); when minimized, Chromium's background
-// throttling releases it, the timer falls back to ~15.6ms, and the (hidden,
-// console-less) server's frame rate roughly halves. These switches stop Chromium
-// from throttling timers/renderers while backgrounded, so the server keeps full
-// FPS whether the manager is focused, minimized, or hidden to the tray. Must be
-// set before app is ready.
-app.commandLine.appendSwitch("disable-background-timer-throttling");
-app.commandLine.appendSwitch("disable-renderer-backgrounding");
-app.commandLine.appendSwitch("disable-backgrounding-occluded-windows");
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, Tray, nativeImage } = require("electron");
 
 // Run without Chromium's sandbox on Linux (issue #32). The AppImage mounts read-only,
 // so its bundled chrome-sandbox can't be setuid-root, and server distros often restrict
@@ -378,9 +366,9 @@ function bundledRuntimeProblem() {
   return null;
 }
 
-// Restart the Next child so a changed bind host (loopback ↔ 0.0.0.0) takes effect. Waits
-// for the old process to release the port before respawning, then re-boots the background
-// engines. No-op in dev (the dev server is run by the npm script, not us).
+// Restart only the local UI server so a changed bind host (loopback ↔ 0.0.0.0)
+ // takes effect. This never boots schedulers, game servers, runtime managers, or
+ // any other background engine.
 async function restartNextServer() {
   if (isDev) return false;
   await new Promise((resolve) => {
@@ -396,7 +384,6 @@ async function restartNextServer() {
   startNextServer();
   const base = `http://127.0.0.1:${PORT}`;
   const up = await waitForServer(base, 30000);
-  if (up) triggerBoot(base);
   return up;
 }
 
@@ -422,29 +409,6 @@ async function waitForServer(url, maxMs = 60000) {
     await new Promise((r) => setTimeout(r, 400));
   }
   return false;
-}
-
-// Kick the non-launch background engines (scheduler, metrics, presence, Discord bots)
-// as soon as the local app server is up. boot() deliberately does NOT start a
-// Dragonwilds Server; Server process creation now requires an explicit user action.
-// Retries a few times in case the DB is briefly locked; boot() is idempotent.
-function triggerBoot(base, attempt = 1) {
-  const req = http.get(`${base}/api/boot`, (res) => {
-    let data = "";
-    res.on("data", (d) => (data += d));
-    res.on("end", () => {
-      let ok = false;
-      try { ok = JSON.parse(data).ok === true; } catch {}
-      if (ok) { logToFile("Background engines boot triggered"); return; }
-      if (attempt < 5) setTimeout(() => triggerBoot(base, attempt + 1), 2000);
-      else logToFile("Boot trigger did not confirm after retries");
-    });
-  });
-  req.on("error", (e) => {
-    if (attempt < 5) setTimeout(() => triggerBoot(base, attempt + 1), 2000);
-    else logToFile(`Boot trigger failed: ${e.message}`);
-  });
-  req.setTimeout(5000, () => { req.destroy(); });
 }
 
 function requestManagedServerShutdown() {
@@ -557,10 +521,6 @@ function main() {
   app.whenReady().then(async () => {
     // Ensures Windows uses our icon (not the default Electron one) in the taskbar.
   if (process.platform === "win32") app.setAppUserModelId("com.dwsm.servermanager");
-    // Keep the OS from suspending this process (and starving the game server it hosts)
-    // while the manager sits minimized or in the tray (issue #29). 'prevent-app-suspension'
-    // keeps the system active but still lets the display sleep. Best-effort.
-    try { powerSaveBlocker.start("prevent-app-suspension"); } catch {}
     initAutostart();
 
     // Did we launch at login (autostart-to-tray) rather than by hand? The .desktop /
@@ -583,9 +543,6 @@ function main() {
       return;
     }
 
-    // Boot non-launch background engines now the local server answers. This does
-    // not start a Dragonwilds Server. Fire-and-forget; it must never block the UI.
-    triggerBoot(url);
 
     const hasTray = createTray();
     // Show a window on a normal launch. On a hidden (login) launch, stay in the tray —

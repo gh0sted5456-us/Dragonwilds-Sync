@@ -19,13 +19,12 @@ function boot() {
     // Reconnect any world's Discord bot. Wrapped because a bot that won't connect —
     // revoked token, no internet — must never stop the app from booting.
     try { ensureBots(); } catch (e) { console.error("discord bot boot", e && e.message); }
-    // autostart worlds flagged for it
+    // Startup is observational only. A Server is launched only by an explicit
+    // Start/Restart action in this app session; opening RSDW Sync must never
+    // resurrect a World because an old autostart bit or stale crash state survived.
     for (const w of dbm.listWorlds()) {
-      if (w.autostart) {
-        sup.startWorld(w.world_id).catch(() => {});
-      } else if (w.status === "running") {
-        // stale status from a previous run where the process is gone
-        if (!sup.pidAlive(w.process_id)) dbm.updateWorld(w.world_id, { status: "stopped", process_id: null });
+      if (w.status === "running" && !sup.pidAlive(w.process_id)) {
+        dbm.updateWorld(w.world_id, { status: "stopped", process_id: null });
       }
     }
     // Only mark booted after we successfully read the registry. If the DB was

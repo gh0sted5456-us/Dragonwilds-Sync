@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const sup = require("@/lib/supervisor");
-const ue4ss = require("@/lib/ue4ss");
+const runtimePackages = require("@/lib/runtime-packages");
 const ra = require("@/lib/remoteauth");
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -13,8 +13,8 @@ export async function GET(req, { params }) {
   if (denied) return denied;
   const w = dbm.getWorld(params.id);
   const modInstalled = w ? sup.chatModInstalled(w.install_dir) : false;
-  let ue4ssInstalled = false;
-  try { ue4ssInstalled = w ? ue4ss.detect(w.install_dir).installed : false; } catch {}
+  const runtimeStatus = w ? runtimePackages.status(params.id) : null;
+  const ue4ssInstalled = !!(runtimeStatus?.ue4ssSteam?.installed || runtimeStatus?.ue4ssGamepass?.installed);
   return NextResponse.json({
     ok: true,
     chat: sup.getChat(params.id),

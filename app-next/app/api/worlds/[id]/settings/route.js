@@ -8,11 +8,10 @@ const ra = require("@/lib/remoteauth");
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-// Keys the app manages itself — never surfaced to the editor, always re-applied
-// from the world record so the editor can't break the world's identity.
-// PublicIP and PublicPort are intentionally NOT managed here — they're the address
-// advertised to the community browser and are user-editable in Server Identity (so
-// a tunnel like playit.gg can be pointed to). Everything else stays app-controlled.
+// Identity/auth keys are stored in the World record and mirrored into each
+// profile-owned DedicatedServer.ini. They are editable here, but their durable
+// source of truth is the World profile rather than whichever INI is live on disk.
+// PublicIP/PublicPort remain ordinary INI values so tunnel overrides survive.
 const MANAGED = new Set([
   "RESTAPIPort", "RESTAPIEnabled",
   "AdminPassword", "WorldPassword", "OwnerId", "ServerName", "DefaultWorldName",
@@ -26,7 +25,7 @@ export async function GET(req, { params }) {
   const s = active.settingsFor(w);
   // Report which keys are actually present in the ini so the editor can show
   // "set" vs "default (not written)" and only save real changes.
-  const presentKeys = Object.keys(s.values).filter((k) => !MANAGED.has(k));
+  const presentKeys = Object.keys(s.values);
   return NextResponse.json({
     ok: true, path: s.path, exists: s.exists,
     options: s.values, presentKeys, groups: GROUPS,

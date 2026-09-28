@@ -4,6 +4,7 @@ const dbm = require("@/lib/db");
 const sup = require("@/lib/supervisor");
 const rest = require("@/lib/restclient");
 const ini = require("@/lib/ini");
+const serverProfiles = require("@/lib/active-server-profile");
 const steam = require("@/lib/steamcmd");
 const { conflictsInRegistry } = require("@/lib/ports");
 const guard = require("@/lib/installdir");
@@ -88,12 +89,13 @@ export async function PATCH(req, { params }) {
     }
     const bad = guard.unusableTargetReason(info.installDir, { worlds: dbm.listWorlds(), selfWorldId: params.id });
     if (bad) return NextResponse.json({ ok: false, error: bad }, { status: 409 });
-    const rebased = dbm.updateWorld(params.id, {
+    dbm.updateWorld(params.id, {
       install_dir: info.installDir,
       build_id: info.buildId || null,
     });
-    // re-apply this world's ports/password into the newly pointed install
-    try { ini.applyWorldNetworkSettings(info.installDir, rebased, { syncPublicPort: true }); } catch {}
+    // Do not adopt the newly-pointed live INI as profile truth. The selected
+    // World already owns a durable settings snapshot and will materialize that
+    // snapshot into the new installation when activated/launched.
     dbm.logEvent(params.id, "settings", `Install folder changed to ${info.installDir}`);
   }
 
@@ -178,12 +180,25 @@ export async function PATCH(req, { params }) {
   }
 
   const updated = dbm.updateWorld(params.id, clean);
-  // if network fields changed and install exists, re-apply ini. Only re-sync the
-  // advertised PublicPort when the game port itself changed, so a routine profile
-  // save doesn't overwrite a custom tunnel port set in Server Identity.
-  if (fs.existsSync(updated.install_dir)) {
-    try { ini.applyWorldNetworkSettings(updated.install_dir, updated, { syncPublicPort: "game_port" in clean }); } catch {}
+
+  // Keep the profile snapshot synchronized with DB-owned identity/network fields.
+  // Crucially, editing an inactive profile must not mutate whichever profile is
+  // currently materialized in the shared game tree.
+  const syncPublicPort = "game_port" in clean;
+  try {
+    const profile = serverProfiles.settingsFor(updated);
+    const values = ini.withWorldNetworkSettings(profile.values, updated, { syncPublicPort });
+    serverProfiles.saveSettings(updated.world_id, values, {
+      baseRaw: profile.content,
+      syncPublicPort,
+    });
+    if (serverProfiles.readActiveId() === updated.world_id && fs.existsSync(updated.install_dir)) {
+      serverProfiles.materialize(updated, { syncPublicPort });
+    }
+  } catch (e) {
+    dbm.logEvent(updated.world_id, "settings", `Profile settings sync warning: ${e.message}`);
   }
+
   return NextResponse.json({ ok: true, world: updated });
 }
 

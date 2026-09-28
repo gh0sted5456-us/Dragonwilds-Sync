@@ -45,8 +45,14 @@ function contains(rel, needle, message) {
 {
   contains("lib/active-server-profile.js", 'const PROFILE_PREFIX = "serverProfileIni:"');
   contains("lib/active-server-profile.js", "function materialize(");
-  contains("app/api/worlds/[id]/settings/route.js", "active.settingsFor(");
+  const settingsRoute = contains("app/api/worlds/[id]/settings/route.js", "active.settingsFor(");
+  assert(settingsRoute.includes("worldUpdates.owner_id"), "OwnerId is not persisted to the World profile");
+  assert(settingsRoute.includes("worldUpdates.display_name"), "ServerName is not persisted to the World profile");
+  assert(settingsRoute.includes("worldUpdates.default_world_name"), "DefaultWorldName is not persisted to the World profile");
   contains("app/api/worlds/[id]/ini/route.js", "active.saveRawSettings(");
+
+  const worldRoute = contains("app/api/worlds/[id]/route.js", "serverProfiles.settingsFor(updated)");
+  assert(!worldRoute.includes("ini.applyWorldNetworkSettings(updated.install_dir"), "inactive profile edits still write directly into the live INI");
 }
 
 // UX contract: explicit Connect action, live Helpy, dark shell and update tracking.
@@ -64,6 +70,8 @@ function contains(rel, needle, message) {
   const main = contains("electron/main.js", "requestManagedServerShutdown");
   assert(main.includes("enabled = false;"), "desktop autostart must default off");
   assert(main.includes('path: "/api/app/shutdown"'), "desktop shutdown bridge missing");
+  const admin = read("components/AdminPanel.jsx");
+  assert(!admin.includes("setAutostart"), "Server profile UI still exposes an automatic launch switch");
 }
 
 console.log("RSDW revamp contract: OK");

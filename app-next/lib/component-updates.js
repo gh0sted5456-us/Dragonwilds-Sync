@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 const dbm = require("./db");
 
-const NEXUS_URL = "https://www.nexusmods.com/runescapedragonwilds/mods/4";
+const NEXUS_URL = "https://www.nexusmods.com/runescapedragonwilds/mods/4?tab=files";
 const RUNESCHEMA_API = "https://api.github.com/repos/gh0sted5456-us/RuneSchema/releases/latest";
 const RUNESCHEMA_URL = "https://github.com/gh0sted5456-us/RuneSchema";
 const CACHE_MS = 10 * 60 * 1000;
@@ -72,20 +72,53 @@ async function fetchText(url, accept = "text/html") {
   }
 }
 
-async function latestNexusVersion() {
-  const html = await fetchText(NEXUS_URL);
-  // Prefer the visible Nexus "Version" field and UE4SS-style build IDs.
-  // Avoid generic site JSON "version" keys: Nexus embeds unrelated application
-  // versions in the page and those must never trigger a false amber update.
-  const patterns = [
-    /\bVersion\b[\s\S]{0,350}?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z._-]+)?)/i,
-    /\b(\d+\.\d+\.\d+-g?[0-9a-f]{7,})\b/i,
-  ];
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
+function visibleText(html) {
+  return String(html || "")
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/\s+/g, " ");
+}
+
+function versionAfterLabel(text, labels) {
+  for (const label of labels) {
+    const pattern = new RegExp(
+      label + "[\\s\\S]{0,900}?\\bVersion\\b[\\s\\S]{0,120}?(\\d+\\.\\d+\\.\\d+(?:[-+][0-9A-Za-z._-]+)?)",
+      "i"
+    );
+    const match = text.match(pattern);
     if (match) return cleanVersion(match[1]);
   }
-  throw new Error("Nexus page did not expose a UE4SS version");
+  return null;
+}
+
+async function latestNexusVersions() {
+  const html = await fetchText(NEXUS_URL);
+  const text = visibleText(html);
+
+  const gamepass = versionAfterLabel(text, [
+    "UE4SS\\s+5\\.6\\s+Xbox",
+    "UE4SS[^.]{0,80}GAMEPASS",
+  ]);
+  const steam = versionAfterLabel(text, [
+    "UE4SS\\s+Steam\\s*\\(latest\\)",
+    "UE4SS[^.]{0,80}Steam[^.]{0,40}latest",
+  ]);
+
+  const overallMatch = text.match(
+    /UE4SS\s+for\s+RSDragonwilds[\s\S]{0,900}?\bVersion\b[\s\S]{0,120}?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z._-]+)?)/i
+  );
+  const overall = overallMatch ? cleanVersion(overallMatch[1]) : null;
+
+  if (!steam && !gamepass && !overall) {
+    throw new Error("Nexus page did not expose UE4SS file versions");
+  }
+  return {
+    steam: steam || overall,
+    gamepass: gamepass || overall,
+  };
 }
 async function latestRuneSchemaVersion() {
   const raw = await fetchText(RUNESCHEMA_API, "application/vnd.github+json");
@@ -114,10 +147,12 @@ async function getStatus({ force = false } = {}) {
   const gamepass = localVersions(gamepassRoot, "gamepass");
 
   const [nexusResult, runeResult] = await Promise.allSettled([
-    latestNexusVersion(),
+    latestNexusVersions(),
     latestRuneSchemaVersion(),
   ]);
-  const nexusLatest = nexusResult.status === "fulfilled" ? nexusResult.value : null;
+  const nexusLatest = nexusResult.status === "fulfilled"
+    ? nexusResult.value
+    : { steam: null, gamepass: null };
   const runeLatest = runeResult.status === "fulfilled" ? runeResult.value : null;
   const localRune = maxRuneSchema(steam, gamepass);
 
@@ -130,8 +165,8 @@ async function getStatus({ force = false } = {}) {
       url: NEXUS_URL,
       installed: steam.installed,
       installedVersion: steam.ue4ss,
-      latestVersion: nexusLatest,
-      updateAvailable: different(steam.ue4ss, nexusLatest),
+      latestVersion: nexusLatest.steam,
+      updateAvailable: different(steam.ue4ss, nexusLatest.steam),
       error: nexusResult.status === "rejected" ? nexusResult.reason?.message || "Nexus check failed" : null,
     },
     {
@@ -142,8 +177,8 @@ async function getStatus({ force = false } = {}) {
       url: NEXUS_URL,
       installed: gamepass.installed,
       installedVersion: gamepass.ue4ss,
-      latestVersion: nexusLatest,
-      updateAvailable: different(gamepass.ue4ss, nexusLatest),
+      latestVersion: nexusLatest.gamepass,
+      updateAvailable: different(gamepass.ue4ss, nexusLatest.gamepass),
       error: nexusResult.status === "rejected" ? nexusResult.reason?.message || "Nexus check failed" : null,
     },
     {

@@ -179,7 +179,7 @@ function PlayerHub() {
         <p className="subtle" style={{ fontWeight: 700, marginBottom: 0 }}>Keep as many Worlds as you like. Connect, compare and resync only when you need to.</p>
       </div>
       <button className="btn btn-primary" onClick={() => setConnectOpen((open) => !open)}>
-        <Icon name={connectOpen ? "x" : "globe"} /> {connectOpen ? "Close" : "Connect to World"}
+        {connectOpen ? <span aria-hidden style={{ fontSize: "1.25rem", lineHeight: 1 }}>×</span> : <Icon name="globe" />} {connectOpen ? "Close" : "Connect to World"}
       </button>
     </header>
     {connectOpen && <>

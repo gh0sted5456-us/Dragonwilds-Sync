@@ -924,6 +924,41 @@ def handle(method: str, params: dict) -> object:
         _legacy.save_state(refreshed)
         return {"result": result, "state": _legacy.public_state(refreshed)}
 
+    if method == "server.world.runtime_zip.install":
+        profile_id = str(params.get("id") or params.get("profile_id") or "").strip()
+        component = str(params.get("component") or "").strip().casefold()
+        zip_path = str(params.get("zip_path") or "").strip()
+        if component not in {"ue4ss", "runeschema"}:
+            raise ValueError("Runtime ZIP component must be UE4SS or RuneSchema.")
+        profile = _legacy.load_server_profile(profile_id)
+        if not profile:
+            raise KeyError("Server World not found")
+        runtime_status = _legacy.ENGINE.status()
+        if (runtime_status.get("running")
+                and str(_legacy.ENGINE.active_profile_id or "") == profile_id):
+            raise RuntimeError("Stop this World before replacing its UE4SS or RuneSchema runtime ZIP.")
+        from profile_mod_layout import install_profile_runtime_zip
+        result = install_profile_runtime_zip(SERVER_PROFILES_DIR / profile_id, component, zip_path)
+        profile = _legacy.load_server_profile(profile_id) or profile
+        profile.setdefault("runtime_packages", {})[component] = {
+            "archive": result.get("archive") or Path(zip_path).name,
+            "sha256": result.get("sha256") or "",
+            "imported_at": time.time(),
+            "client_eligible_files": int(result.get("client_eligible_files") or 0),
+            "server_only_files": int(result.get("server_only_files") or 0),
+        }
+        _legacy.save_server_profile(profile_id, profile)
+        refreshed = _legacy.load_state()
+        _legacy._record_notification(
+            refreshed,
+            f"{'UE4SS' if component == 'ue4ss' else 'RuneSchema'} runtime staged",
+            f"{result.get('archive') or 'Runtime ZIP'} is now this World's runtime source. Connected clients receive only the compatible runtime files through verified Sync.",
+            "success", world_id=profile_id,
+            key=f"runtime-zip:{profile_id}:{component}:{result.get('sha256') or int(time.time())}",
+        )
+        _legacy.save_state(refreshed)
+        return {"result": result, "state": _legacy.public_state(refreshed)}
+
     if method == "application.core_mod.delete":
         component = str(params.get("component") or "").strip().casefold().replace("_", "")
         if component not in {"ue4ss", "runeschema"}:

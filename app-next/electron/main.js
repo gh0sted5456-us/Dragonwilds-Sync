@@ -486,7 +486,7 @@ function createWindow() {
     height: 840,
     minWidth: 940,
     minHeight: 640,
-    backgroundColor: "#1e1f22",
+    backgroundColor: "#0e0e0e",
     title: "RSDW Sync",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
     icon: isDev
@@ -543,14 +543,14 @@ function createWindow() {
 function showErrorWindow(message) {
   if (mainWindow) return;
   mainWindow = new BrowserWindow({
-    width: 720, height: 420, backgroundColor: "#1e1f22",
+    width: 720, height: 420, backgroundColor: "#0e0e0e",
     autoHideMenuBar: true, title: "RSDW Sync",
   });
   Menu.setApplicationMenu(null);
-  const html = `<!doctype html><html><body style="font-family:Segoe UI,system-ui,sans-serif;background:#1e1f22;color:#f2f3f5;padding:40px;line-height:1.6">
-    <h2 style="color:#f2a53c">RSDW Sync couldn't start its interface</h2>
+  const html = `<!doctype html><html><body style="font-family:Segoe UI,system-ui,sans-serif;background:#0e0e0e;color:#f3efe7;padding:40px;line-height:1.6">
+    <h2 style="color:#d4a13d">RSDW Sync couldn't start its interface</h2>
     <p>${message}</p>
-    <p style="color:#949ba4;font-size:13px">A log was written to:<br><code>${path.join(dataDir(), "launcher.log")}</code></p>
+    <p style="color:#918879;font-size:13px">A log was written to:<br><code>${path.join(dataDir(), "launcher.log")}</code></p>
     </body></html>`;
   mainWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
   mainWindow.on("closed", () => (mainWindow = null));

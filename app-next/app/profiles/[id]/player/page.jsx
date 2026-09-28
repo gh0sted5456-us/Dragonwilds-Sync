@@ -1,11 +1,17 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { api, toast } from "@/components/ui";
 
 export default function PlayerProfile({ params }) {
+  const searchParams = useSearchParams();
+  const autoplay = searchParams.get("autoplay") === "1";
+  const autoStarted = useRef(false);
   const [profile, setProfile] = useState(null);
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
+  const [flowStep, setFlowStep] = useState(null);
+  const [launchReady, setLaunchReady] = useState(false);
   useEffect(() => {
     Promise.all([api(`/api/profiles/${params.id}`), api("/api/client-installs")]).then(async ([profileResponse, installsResponse]) => {
       const current = profileResponse.profile;
@@ -72,14 +78,59 @@ export default function PlayerProfile({ params }) {
     } catch (e) { toast(e.message, "error"); }
   };
   const sendToDesktop = async () => {
-    try { const path = await window.desktop.createProfileShortcut({ id: params.id, role: "player", name: profile.display_name }); toast(`Shortcut created: ${path}`, "success"); }
-    catch (e) { toast(e.message, "error"); }
+    try {
+      const identity = profile.connection?.worldIdentity || {};
+      const path = await window.desktop.createProfileShortcut({ id: params.id, role: "player", name: profile.display_name, iconData: identity.iconData || null });
+      toast(`Shortcut created: ${path}`, "success");
+    } catch (e) { toast(e.message, "error"); }
   };
+
+  useEffect(() => {
+    if (!autoplay || !profile || autoStarted.current) return;
+    autoStarted.current = true;
+    (async () => {
+      setChecking(true);
+      setLaunchReady(false);
+      try {
+        setFlowStep("Authenticating with World…");
+        const verified = await api(`/api/profiles/${params.id}/verify`, { method: "POST", body: {} });
+        setResult({ ...verified.comparison, prerequisites: verified.manifest.prerequisites });
+        if (!verified.comparison.current) {
+          setFlowStep(`Synchronizing ${verified.comparison.changes.length} managed file(s)…`);
+          const synced = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
+          setResult({ current: true, changes: [], prerequisites: synced.result.manifest.prerequisites });
+        }
+        setFlowStep("Authenticated and synchronized.");
+        setLaunchReady(true);
+      } catch (e) {
+        setFlowStep("Connection could not be completed.");
+        toast(e.message, "error");
+      } finally {
+        setChecking(false);
+      }
+    })();
+  }, [autoplay, profile, params.id]);
+
   if (!profile) return <main style={{ padding: 32 }}>Loading World profile…</main>;
   const selectedInstall = (profile.connection?.platform || "steam") === "gamepass" ? profile.connection?.gamepassInstall : profile.connection?.steamInstall;
+  const identity = profile.connection?.worldIdentity || {};
   return <main style={{ maxWidth: 820, margin: "0 auto", padding: 32 }}>
-    <div className="eyebrow">FRIEND WORLD</div><h1>{profile.display_name}</h1>
-    <p className="subtle">Connect to compare this World&apos;s declared mods. Once synchronized, Join opens Dragonwilds through your selected platform.</p>
+    <div style={{ position: "relative", minHeight: 112, marginBottom: 18, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-strong)", background: "var(--card)" }}>
+      {identity.bannerData && <img src={identity.bannerData} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", opacity: .5 }} />}
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,var(--card) 18%,transparent 80%)" }} />
+      <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, padding: 18 }}>
+        <img src={identity.iconData || "/rsdw/rsdwl-icon.webp"} alt="" style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
+        <div><div className="eyebrow">FRIEND WORLD</div><h1 style={{ margin: 0 }}>{profile.display_name}</h1></div>
+      </div>
+    </div>
+    <p className="subtle">Connect to authenticate and compare this World&apos;s declared files. Once synchronized, Join opens Dragonwilds through your selected platform.</p>
+    {autoplay && <div className="panel" style={{ padding: 16, marginTop: 18, borderColor: launchReady ? "var(--accent)" : "var(--line-strong)" }}>
+      <strong>{flowStep || "Preparing World connection…"}</strong>
+      <div className="subtle" style={{ marginTop: 5 }}>
+        Desktop launch checks authentication and managed files first. Dragonwilds only opens after this confirmation.
+      </div>
+      {launchReady && <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={join}>Confirm &amp; Launch Dragonwilds</button>}
+    </div>}
     <div className="panel" style={{ padding: 20, marginTop: 20 }}>
       <div style={{ display: "grid", gap: 8 }}>
         <div><b>Steam install</b><div className="subtle">{profile.connection?.steamInstall || "Not configured"}</div></div>

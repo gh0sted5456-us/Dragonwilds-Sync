@@ -85,6 +85,17 @@ export default function PlayerProfile({ params }) {
       toast(`Opening Dragonwilds with ${platform === "gamepass" ? "PC Game Pass" : "Steam"}.`, "success");
     } catch (e) { toast(e.message, "error"); }
   };
+  const copyValue = async (label, value) => {
+    const text = String(value || "");
+    if (!text) return toast(`${label} is not available.`, "error");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(`${label} copied.`, "success");
+    } catch {
+      toast(`Could not copy ${label}.`, "error");
+    }
+  };
+
   const sendToDesktop = async () => {
     try {
       const identity = profile.connection?.worldIdentity || {};
@@ -139,7 +150,15 @@ export default function PlayerProfile({ params }) {
       <div className="subtle" style={{ marginTop: 5 }}>
         Desktop launch checks authentication and managed files first. Dragonwilds only opens after this confirmation.
       </div>
-      {launchReady && <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={join}>Confirm &amp; Launch Dragonwilds</button>}
+      {launchReady && <>
+        <div className="panel-inset" style={{ marginTop: 14, padding: 12, display: "grid", gap: 8 }}>
+          <CopyField label="World Name" value={profile.display_name} onCopy={copyValue} />
+          <CopyField label="IP Address" value={profile.connection?.address || profile.connection?.internalIp || profile.connection?.externalIp || ""} onCopy={copyValue} />
+          <CopyField label="World Password" value={profile.connection?.password || ""} onCopy={copyValue} secret />
+          <CopyField label="World Type" value={profile.connection?.worldType || "Private"} onCopy={copyValue} />
+        </div>
+        <button className="btn btn-primary" style={{ marginTop: 12 }} onClick={join}>Confirm &amp; Launch Dragonwilds</button>
+      </>}
     </div>}
     <div className="panel" style={{ padding: 20, marginTop: 20 }}>
       <div style={{ display: "grid", gap: 8 }}>
@@ -165,4 +184,16 @@ export default function PlayerProfile({ params }) {
       </div>}
     </div>
   </main>;
+}
+
+
+function CopyField({ label, value, onCopy, secret = false }) {
+  const shown = value || "Not available";
+  return <div style={{ display: "grid", gridTemplateColumns: "120px minmax(0,1fr) auto", gap: 8, alignItems: "center" }}>
+    <strong style={{ fontSize: ".78rem" }}>{label}</strong>
+    <div className="panel" style={{ padding: ".55rem .7rem", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "ui-monospace, SFMono-Regular, Consolas, monospace" }}>
+      {secret && value ? "••••••••" : shown}
+    </div>
+    <button className="btn btn-ghost" disabled={!value} onClick={() => onCopy(label, value)}>Copy</button>
+  </div>;
 }

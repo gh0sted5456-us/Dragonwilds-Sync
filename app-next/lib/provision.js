@@ -7,6 +7,7 @@ const { P } = require("./paths");
 const dbm = require("./db");
 const steam = require("./steamcmd");
 const ini = require("./ini");
+const serverProfiles = require("./active-server-profile");
 const jobs = require("./jobs");
 const { suggestPorts } = require("./ports");
 const { createBackup } = require("./backups");
@@ -78,6 +79,8 @@ async function provisionWorld(jobId, worldId) {
     jobs.setPhase(jobId, "settings", "Writing server settings…");
     log("Writing server settings (ports, admin password, REST API)...");
     ini.applyWorldNetworkSettings(world.install_dir, dbm.getWorld(worldId), { syncPublicPort: true });
+    const initialIni = ini.readRawSettings(world.install_dir, dbm.getWorld(worldId).platform);
+    serverProfiles.saveRawSettings(worldId, initialIni.content, { syncPublicPort: true });
 
     try { syncedMods.reapplySyncedMods(worldId); log("Reapplied retained mod selection."); }
     catch (e) { log(`Retained mod warning: ${e.message}`); }
@@ -123,8 +126,16 @@ function adoptExistingInstall({ display_name, install_dir, ports, admin_password
 
   if (info.buildId) dbm.updateWorld(world.world_id, { build_id: info.buildId });
 
-  // Apply this world's network identity into the existing ini (idempotent).
-  try { ini.applyWorldNetworkSettings(info.installDir, dbm.getWorld(world.world_id)); } catch {}
+  // Apply this world's network identity and immediately capture a profile-owned
+  // snapshot. The shared live INI is never allowed to be the only durable copy.
+  try {
+    const adopted = dbm.getWorld(world.world_id);
+    ini.applyWorldNetworkSettings(info.installDir, adopted);
+    serverProfiles.saveRawSettings(
+      world.world_id,
+      ini.readRawSettings(info.installDir, adopted.platform).content
+    );
+  } catch {}
 
   dbm.logEvent(world.world_id, "provision", `Adopted existing install (build ${info.buildId || "unknown"})`);
   return { world: dbm.getWorld(world.world_id), info };
@@ -170,8 +181,14 @@ async function importSave(worldId, zipPath, { backupFirst = true } = {}) {
   copyDir(savedRoot, saved);
   fs.rmSync(stage, { recursive: true, force: true });
 
-  // re-apply this world's own network settings (spec §3 step 6)
+  // Re-apply identity, then make the imported settings the selected profile's
+  // durable snapshot before another Server profile can be materialized.
   ini.applyWorldNetworkSettings(world.install_dir, world, { syncPublicPort: true });
+  serverProfiles.saveRawSettings(
+    worldId,
+    ini.readRawSettings(world.install_dir, world.platform).content,
+    { syncPublicPort: true }
+  );
   dbm.logEvent(worldId, "import", `Imported save (${check.playerCount} players, guid ${check.worldGuid || "?"})`);
   return check;
 }

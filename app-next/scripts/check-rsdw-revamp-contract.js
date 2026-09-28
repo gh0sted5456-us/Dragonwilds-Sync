@@ -88,6 +88,8 @@ function contains(rel, needle, message) {
   contains("components/ModsPanel.jsx", "Routed to Win64 or WinGDK automatically");
   const worldPage = read("app/worlds/[id]/page.jsx");
   assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
+  const shell = read("components/Shell.jsx");
+  assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");
   contains("electron/main.js", '"icon.png"');
   contains("package.json", '"icon": "public/icon.png"');
   contains("app/globals.css", "--radius: 12px");

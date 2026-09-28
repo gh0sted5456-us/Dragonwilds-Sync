@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const ini = require("@/lib/ini");
+const active = require("@/lib/active-server-profile");
 const { GROUPS } = require("@/lib/palfields");
 const ra = require("@/lib/remoteauth");
 
@@ -22,13 +23,14 @@ export async function GET(req, { params }) {
   if (!w) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "settings" });
   if (denied) return denied;
-  const s = ini.readSettings(w.install_dir, w.platform);
+  const s = active.settingsFor(w);
   // Report which keys are actually present in the ini so the editor can show
   // "set" vs "default (not written)" and only save real changes.
-  const presentKeys = Object.keys(s.options).filter((k) => !MANAGED.has(k));
+  const presentKeys = Object.keys(s.values).filter((k) => !MANAGED.has(k));
   return NextResponse.json({
     ok: true, path: s.path, exists: s.exists,
-    options: s.options, presentKeys, groups: GROUPS,
+    options: s.values, presentKeys, groups: GROUPS,
+    active: active.readActiveId() === w.world_id,
   });
 }
 
@@ -68,27 +70,31 @@ export async function POST(req, { params }) {
     if ("server_password" in worldUpdates) w.server_password = worldUpdates.server_password;
   }
 
-  const cur = ini.readSettings(w.install_dir, w.platform).options; // real current ini (source of truth)
-  const merged = { ...cur };
+  const freshWorld = dbm.getWorld(params.id);
+  const profile = active.settingsFor(freshWorld);
+  const merged = { ...profile.values };
 
-  // apply only changed, non-managed keys
   for (const [k, v] of Object.entries(changed)) {
-    if (MANAGED.has(k)) continue;
-    if (v === undefined || v === null) continue;
+    if (MANAGED.has(k) || v === undefined || v === null) continue;
     merged[k] = v;
   }
 
-  // re-apply managed network/auth identity from the world record. PublicPort/
-  // PublicIP are deliberately left to whatever the editor set (see MANAGED above).
-  merged.RESTAPIPort = String(w.rest_api_port);
-  merged.RESTAPIEnabled = w.rest_api_enabled ? "True" : "False";
-  merged.AdminPassword = w.admin_password || "";
-  merged.WorldPassword = w.server_password || "";
-  merged.OwnerId = w.owner_id || "";
-  merged.ServerName = w.display_name || "";
-  merged.DefaultWorldName = w.default_world_name || "";
-  const path = ini.writeSettings(w.install_dir, merged, w.platform);
-  const running = require("@/lib/supervisor").isAlive(w.world_id);
-  dbm.logEvent(w.world_id, "settings", `Saved ${Object.keys(changed).length} change(s) to DedicatedServer.ini${running ? " (restart to apply)" : ""}`);
-  return NextResponse.json({ ok: true, path, written: Object.keys(merged).length, running });
+  const normalized = ini.withWorldNetworkSettings(merged, freshWorld);
+  const saved = active.saveSettings(freshWorld.world_id, normalized, { baseRaw: profile.content });
+  const isActive = active.readActiveId() === freshWorld.world_id;
+  if (isActive) active.materialize(freshWorld);
+
+  const running = require("@/lib/supervisor").isAlive(freshWorld.world_id);
+  dbm.logEvent(
+    freshWorld.world_id,
+    "settings",
+    `Saved ${Object.keys(changed).length} change(s) to Server profile${running ? " (restart to apply)" : ""}`
+  );
+  return NextResponse.json({
+    ok: true,
+    path: saved.path,
+    written: Object.keys(normalized).length,
+    running,
+    active: isActive,
+  });
 }

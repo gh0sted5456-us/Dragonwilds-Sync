@@ -21,7 +21,6 @@ export default function AdminPanel({ world, running, onChange }) {
   const [wineBinary, setWineBinary] = useState(world.wine_binary || "wine");
   const [winePrefix, setWinePrefix] = useState(world.wine_prefix || "");
   const [wineLaunchFlags, setWineLaunchFlags] = useState(world.wine_launch_flags || "");
-  const [autostart, setAutostart] = useState(!!world.autostart);
   const [crashGuard, setCrashGuard] = useState(!!world.crash_guard);
   const [community, setCommunity] = useState(!!world.community_server);
   const [legacyPerf, setLegacyPerf] = useState(world.legacy_perf_flags !== 0);
@@ -73,7 +72,7 @@ export default function AdminPanel({ world, running, onChange }) {
         body: {
           display_name: name, admin_password: password, server_password: stripWrappingQuotes(serverPassword),
           extra_args: extraArgs, env_vars: envTextToObject(envVars),
-                autostart: autostart ? 1 : 0, crash_guard: crashGuard ? 1 : 0, community_server: community ? 1 : 0,
+                crash_guard: crashGuard ? 1 : 0, community_server: community ? 1 : 0,
                 legacy_perf_flags: legacyPerf ? 1 : 0,
                 owner_id: ownerId || null, default_world_name: defaultWorldName || null,
         },
@@ -143,7 +142,6 @@ export default function AdminPanel({ world, running, onChange }) {
           </div>
         </div>
         <div style={{ display: "flex", gap: "0.8rem", marginTop: "0.9rem", flexWrap: "wrap" }}>
-          <Toggle label={t("admin.autostart")} on={autostart} onClick={() => setAutostart((v) => !v)} />
           <Toggle label={t("admin.crashGuard")} on={crashGuard} onClick={() => setCrashGuard((v) => !v)} />
         </div>
 

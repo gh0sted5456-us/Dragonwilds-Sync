@@ -55,8 +55,10 @@ export async function POST(req, { params }) {
     return text;
   };
 
-  // Persist password changes to the world record first, so managed re-apply
-  // below uses the latest saved values instead of stale DB values.
+  // Managed fields live in the World record. The old editor only persisted
+  // the two passwords, so OwnerId / ServerName / DefaultWorldName appeared to
+  // save and then vanished at launch. Persist every managed field before the
+  // profile snapshot is normalized.
   const worldUpdates = {};
   if (Object.prototype.hasOwnProperty.call(changed, "AdminPassword")) {
     worldUpdates.admin_password = unquote(changed.AdminPassword);
@@ -64,10 +66,21 @@ export async function POST(req, { params }) {
   if (Object.prototype.hasOwnProperty.call(changed, "WorldPassword")) {
     worldUpdates.server_password = unquote(changed.WorldPassword);
   }
+  if (Object.prototype.hasOwnProperty.call(changed, "OwnerId")) {
+    worldUpdates.owner_id = unquote(changed.OwnerId).trim() || null;
+  }
+  if (Object.prototype.hasOwnProperty.call(changed, "ServerName")) {
+    const name = unquote(changed.ServerName).trim();
+    if (!name) {
+      return NextResponse.json({ ok: false, error: "Server name cannot be blank." }, { status: 400 });
+    }
+    worldUpdates.display_name = name;
+  }
+  if (Object.prototype.hasOwnProperty.call(changed, "DefaultWorldName")) {
+    worldUpdates.default_world_name = unquote(changed.DefaultWorldName).trim() || null;
+  }
   if (Object.keys(worldUpdates).length) {
     dbm.updateWorld(params.id, worldUpdates);
-    if ("admin_password" in worldUpdates) w.admin_password = worldUpdates.admin_password;
-    if ("server_password" in worldUpdates) w.server_password = worldUpdates.server_password;
   }
 
   const freshWorld = dbm.getWorld(params.id);

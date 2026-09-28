@@ -123,9 +123,10 @@ export async function PATCH(req, { params }) {
   if ("admin_password" in clean && typeof clean.admin_password === "string") clean.admin_password = clean.admin_password.replace(/^(["'])(.*)\1$/, "$2");
   if ("server_password" in clean && typeof clean.server_password === "string") clean.server_password = clean.server_password.replace(/^(["'])(.*)\1$/, "$2");
 
-  // Owner and default world name are saved directly as text fields
-  if ("owner_id" in patch) clean.owner_id = patch.owner_id;
-  if ("default_world_name" in patch) clean.default_world_name = patch.default_world_name;
+  // Normalize identity fields before either SQLite or DedicatedServer.ini sees
+  // them. Copy/paste whitespace is common with the in-game Player ID display.
+  if ("owner_id" in patch) clean.owner_id = String(patch.owner_id || "").trim() || null;
+  if ("default_world_name" in patch) clean.default_world_name = String(patch.default_world_name || "").trim() || null;
   // (running-state guard, following the existing convention used for ports/install_dir):
   // reject changing wine_prefix or wine_binary while the world is running, since that's a live-only setting
   // that wouldn't apply until restart anyway and could confuse the running process's state
@@ -196,7 +197,8 @@ export async function PATCH(req, { params }) {
       serverProfiles.materialize(updated, { syncPublicPort });
     }
   } catch (e) {
-    dbm.logEvent(updated.world_id, "settings", `Profile settings sync warning: ${e.message}`);
+    dbm.logEvent(updated.world_id, "error", `Could not persist Server profile settings: ${e.message}`);
+    return NextResponse.json({ ok: false, error: e.message, world: updated }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, world: updated });

@@ -87,7 +87,7 @@ export default function Shell({ children }) {
           {!collapsed && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <img src="/rsdw/rsdwl-icon.webp" alt="RSDW" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src="/icon-dark.png" alt="RSDW Sync" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
               <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "0.92rem", whiteSpace: "nowrap" }}>RSDW</span>
             </div>

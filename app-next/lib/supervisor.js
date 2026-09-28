@@ -767,9 +767,10 @@ async function startWorld(worldId) {
     world = dbm.updateWorld(worldId, { admin_password: pw });
     dbm.logEvent(worldId, "settings", "Generated a missing admin password (REST API needs one)");
   }
-  if (fs.existsSync(world.install_dir)) {
-    try { ini.applyWorldNetworkSettings(world.install_dir, world); } catch {}
-  }
+  if (!fs.existsSync(world.install_dir)) throw new Error(`Server install folder missing: ${world.install_dir}`);
+  // Activation already wrote the profile once. Re-apply after any generated REST
+  // password and require a successful read-back before spawning the server.
+  ini.applyWorldNetworkSettings(world.install_dir, world);
 
   // Start the dedicated server directly as an app-owned subprocess. The desktop
   // lifecycle now shuts owned servers down cleanly instead of detaching them.

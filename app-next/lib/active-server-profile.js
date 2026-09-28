@@ -89,11 +89,20 @@ function saveRawSettings(worldId, raw, { syncPublicPort = false } = {}) {
 // World identity and settings.
 function materialize(worldOrId, opts = {}) {
   const world = worldOf(worldOrId);
+  const ownerId = String(world.owner_id || "").trim();
+  if (!ownerId) {
+    throw new Error("Owner ID is required before this Server profile can start. Copy your Player ID from Dragonwilds Settings and save it in the Server profile.");
+  }
   const current = settingsFor(world);
   const values = ini.withWorldNetworkSettings(current.values, world, opts);
   const content = ini.patchRawSettings(current.content, values);
   dbm.setSetting(profileKey(world.world_id), { schema: 1, raw: content });
   ini.writeRawSettings(world.install_dir, content, world.platform);
+  const persisted = ini.readSettings(world.install_dir, world.platform).options;
+  const savedOwnerId = Object.entries(persisted).find(([key]) => key.toLowerCase() === "ownerid")?.[1] ?? "";
+  if (savedOwnerId !== ownerId) {
+    throw new Error(`Owner ID could not be verified in ${ini.settingsIniPath(world.install_dir, world.platform)}. Check folder permissions or security software, then try again.`);
+  }
   return {
     path: ini.settingsIniPath(world.install_dir, world.platform),
     content,
@@ -117,6 +126,9 @@ function writeMarker(world) {
 
 function activate(worldId) {
   const world = worldOf(worldId);
+  if (!String(world.owner_id || "").trim()) {
+    throw new Error("Owner ID is required before this Server profile can start. Copy your Player ID from Dragonwilds Settings and save it in the Server profile.");
+  }
   const sup = require("./supervisor");
   const runningOther = dbm.listWorlds().find((candidate) =>
     candidate.world_id !== world.world_id &&

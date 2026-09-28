@@ -74,7 +74,7 @@ export default function AdminPanel({ world, running, onChange }) {
           extra_args: extraArgs, env_vars: envTextToObject(envVars),
                 crash_guard: crashGuard ? 1 : 0, community_server: community ? 1 : 0,
                 legacy_perf_flags: legacyPerf ? 1 : 0,
-                owner_id: ownerId || null, default_world_name: defaultWorldName || null,
+                owner_id: ownerId.trim() || null, default_world_name: defaultWorldName.trim() || null,
         },
       });
       toast(t("admin.profileSaved"), "success");
@@ -126,7 +126,7 @@ export default function AdminPanel({ world, running, onChange }) {
             <input className="input" value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="e.g. -NoAsyncLoadingThread" />
           </div>
           <div>
-            <label className="label">OwnerId</label>
+            <label className="label">Owner ID</label>
             <input className="input" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} placeholder="Owner's Player ID (required)" />
           </div>
           <div>

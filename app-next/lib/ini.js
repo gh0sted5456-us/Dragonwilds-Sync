@@ -83,11 +83,23 @@ function readSettings(installDir, platform) {
   return { path: p, exists: true, options: parseOptionSettings(raw) };
 }
 
+function writeVerifiedFile(target, content) {
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  const temporary = `${target}.${process.pid}.rsdw-sync.tmp`;
+  try {
+    fs.writeFileSync(temporary, content, { encoding: "utf8", flush: true });
+    fs.renameSync(temporary, target);
+  } finally {
+    try { fs.rmSync(temporary, { force: true }); } catch {}
+  }
+  const persisted = fs.readFileSync(target, "utf8");
+  if (persisted !== content) throw new Error(`Dedicated server settings did not persist to ${target}`);
+  return target;
+}
+
 function writeSettings(installDir, options, platform) {
   const p = settingsIniPath(installDir, platform);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, serializeOptionSettings(options), "utf8");
-  return p;
+  return writeVerifiedFile(p, serializeOptionSettings(options));
 }
 
 // Raw file access for the in-app text editor. Returns the exact bytes on disk
@@ -102,9 +114,7 @@ function readRawSettings(installDir, platform) {
 }
 function writeRawSettings(installDir, content, platform) {
   const p = settingsIniPath(installDir, platform);
-  fs.mkdirSync(path.dirname(p), { recursive: true });
-  fs.writeFileSync(p, content, "utf8");
-  return p;
+  return writeVerifiedFile(p, String(content || ""));
 }
 
 // Re-apply this world's own ports + password (spec §2 step 7, §3 step 6).
@@ -124,7 +134,7 @@ function withWorldNetworkSettings(options, world, { syncPublicPort = false } = {
   } else {
     next.RCONEnabled = "False";
   }
-  next.OwnerId = world.owner_id || "";
+  next.OwnerId = String(world.owner_id || "").trim();
   next.ServerName = world.display_name || "";
   next.DefaultWorldName = world.default_world_name || "";
   next.AdminPassword = world.admin_password || "";

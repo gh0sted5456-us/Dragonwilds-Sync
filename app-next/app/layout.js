@@ -9,9 +9,7 @@ const { loadResources, languageMeta } = require("@/lib/i18n/loader");
 export const metadata = {
   title: "RSDW Sync",
   description: "Your Dragonwilds worlds, mods, players, and dedicated servers in one RSDW workspace.",
-  // Serve the favicon from public/icon.png. (Not via the app/icon.png convention,
-  // which would collide with public/icon.png for the /icon.png URL and 500.)
-  icons: { icon: "/icon.png" },
+  icons: { icon: "/icon-dark.png" },
 };
 
 export default function RootLayout({ children }) {

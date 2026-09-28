@@ -44,6 +44,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check lib\sync\discovery.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node scripts\check-rsdw-revamp-contract.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build Next application
         run: npm run build:next

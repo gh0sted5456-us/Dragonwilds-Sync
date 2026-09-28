@@ -11,11 +11,24 @@ import { useJobsPoll, summarize, ProgressBar } from "@/components/jobsClient";
 // can't call the translation hook itself.
 const NAV = [
   { href: "/", asset: "/rsdw/navigation/dragonwilds.webp", label: "Worlds", match: (p) => p === "/" || p.startsWith("/worlds") || p.startsWith("/profiles") },
-  { href: "/remote-access", asset: "/rsdw/navigation/sync.svg", label: "Sync", match: (p) => p.startsWith("/remote-access") },
-  { href: "/usage", asset: "/rsdw/navigation/rsdw.webp", label: "Activity", match: (p) => p.startsWith("/usage") },
-  { href: "/settings", asset: "/rsdw/navigation/settings.svg", label: "Settings", match: (p) => p.startsWith("/settings") },
-  { href: "/info", asset: "/rsdw/navigation/help.svg", label: "Helpy", match: (p) => p.startsWith("/info") },
+  { href: "/remote-access", material: "sync", label: "Sync", match: (p) => p.startsWith("/remote-access") },
+  { href: "/usage", material: "activity", label: "Activity", match: (p) => p.startsWith("/usage") },
+  { href: "/settings", material: "settings", label: "Settings", match: (p) => p.startsWith("/settings") },
+  { href: "/info", material: "help", label: "Helpy", match: (p) => p.startsWith("/info") },
 ];
+
+const MATERIAL_NAV = {
+  sync: "M7.41 13.41 6 12l-4 4 4 4 1.41-1.41L5.83 17H13v-2H5.83l1.58-1.59zM16.59 10.59 18 12l4-4-4-4-1.41 1.41L18.17 7H11v2h7.17l-1.58 1.59z",
+  activity: "M3.5 18.49l6-6.01 4 4L22 6.92l-1.41-1.41-7.09 7.97-4-4L2 16.99z",
+  settings: "M19.43 12.98c.04-.32.07-.65.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.37-.31-.6-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98L14.5 2.42C14.47 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42L9.13 5.07c-.61.25-1.17.58-1.69.98l-2.49-1c-.23-.09-.48 0-.6.22l-2 3.46c-.12.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19.15-.24.42-.12.64l2 3.46c.12.22.37.31.6.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.48 0 .6-.22l2-3.46c.12-.22.07-.49-.12-.64zM12 15.5A3.5 3.5 0 1 1 12 8a3.5 3.5 0 0 1 0 7.5z",
+  help: "M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18a8 8 0 1 1 0-16 8 8 0 0 1 0 16zm0-14c-2.21 0-4 1.79-4 4h2a2 2 0 1 1 3.41 1.41c-.82.82-1.41 1.48-1.41 3.59h2c0-1.37.37-1.75 1.12-2.5A4 4 0 0 0 12 6z",
+  downloads: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+};
+
+function MaterialNavIcon({ name, size = 22 }) {
+  const d = MATERIAL_NAV[name];
+  return <svg aria-hidden viewBox="0 0 24 24" width={size} height={size} fill="currentColor"><path d={d} /></svg>;
+}
 
 export default function Shell({ children }) {
   const { theme, toggle } = useTheme();
@@ -24,15 +37,16 @@ export default function Shell({ children }) {
   const [toasts, setToasts] = useState([]);
   const [collapsed, setCollapsed] = useState(false);
   const [ver, setVer] = useState(null);
+  const [componentUpdates, setComponentUpdates] = useState(null);
   const jobs = useJobsPoll();
   const jobSummary = summarize(jobs);
 
   useEffect(() => {
     const load = () => fetch("/api/app/version").then((r) => r.json()).then(setVer).catch(() => {});
+    const loadComponents = () => fetch("/api/component-updates").then((r) => r.json()).then(setComponentUpdates).catch(() => {});
     load();
-    // Re-check every 30 min so an open window keeps the update badge current. The
-    // server caches the GitHub lookup on the same cadence, so this stays cheap.
-    const id = setInterval(load, 30 * 60 * 1000);
+    loadComponents();
+    const id = setInterval(() => { load(); loadComponents(); }, 30 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 
@@ -75,7 +89,7 @@ export default function Shell({ children }) {
           {!collapsed && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <img src="/rsdw/app-icon.webp" alt="RSDW" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src="/rsdw/rsdwl-icon.webp" alt="RSDW" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               </div>
               <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "0.92rem", whiteSpace: "nowrap" }}>RSDW</span>
             </div>
@@ -96,7 +110,13 @@ export default function Shell({ children }) {
             </div>
           )}
           {NAV.map((n) => (
-            <NavItem key={n.href} {...n} active={n.match(path)} collapsed={collapsed} />
+            <NavItem
+              key={n.href}
+              {...n}
+              active={n.match(path)}
+              collapsed={collapsed}
+              badge={n.href === "/settings" && componentUpdates?.updateAvailable}
+            />
           ))}
           <DownloadsNavItem active={path.startsWith("/downloads")} collapsed={collapsed} summary={jobSummary} label={t("nav.downloads")} />
         </div>
@@ -166,7 +186,7 @@ export default function Shell({ children }) {
   );
 }
 
-function NavItem({ href, icon, asset, label, active, collapsed }) {
+function NavItem({ href, icon, asset, material, label, active, collapsed, badge }) {
   return (
     <Link href={href} title={collapsed ? label : undefined}
       style={{
@@ -182,7 +202,17 @@ function NavItem({ href, icon, asset, label, active, collapsed }) {
       onMouseEnter={(e) => { if (!active) { e.currentTarget.style.background = "var(--card-2)"; e.currentTarget.style.color = "var(--ink)"; } }}
       onMouseLeave={(e) => { if (!active) { e.currentTarget.style.background = "transparent"; e.currentTarget.style.color = "var(--ink-soft)"; } }}
     >
-      {asset ? <img src={asset} alt="" style={{ width: 24, height: 24, objectFit: "contain", filter: active ? "brightness(0) invert(1)" : "none" }} /> : <Icon name={icon} size={20} />}
+      <span style={{ position: "relative", width: 24, height: 24, display: "grid", placeItems: "center", flexShrink: 0 }}>
+        {asset
+          ? <img src={asset} alt="" style={{ width: 24, height: 24, objectFit: "contain" }} />
+          : material
+            ? <MaterialNavIcon name={material} size={22} />
+            : <Icon name={icon} size={20} />}
+        {badge && <span title="Framework update available" style={{
+          position: "absolute", top: -3, right: -4, width: 8, height: 8, borderRadius: 999,
+          background: "var(--yellow)", border: "1.5px solid var(--sidebar)",
+        }} />}
+      </span>
       {!collapsed && <span style={{ whiteSpace: "nowrap" }}>{label}</span>}
     </Link>
   );
@@ -210,7 +240,7 @@ function DownloadsNavItem({ active, collapsed, summary, label }) {
     >
       <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", justifyContent: collapsed ? "center" : "flex-start", position: "relative" }}>
         <span style={{ position: "relative", display: "grid", placeItems: "center" }}>
-          <img src="/rsdw/navigation/mods.webp" alt="" style={{ width: 24, height: 24, objectFit: "contain", filter: active ? "brightness(0) invert(1)" : "none" }} />
+          <MaterialNavIcon name="downloads" size={22} />
           {busy && (
             <span className="animate-pulseDot" style={{ position: "absolute", top: -3, right: -4, width: 8, height: 8, borderRadius: 999, background: dotColor, border: "1.5px solid var(--sidebar)" }} />
           )}

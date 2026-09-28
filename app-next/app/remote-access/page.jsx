@@ -4,15 +4,11 @@ import { useTranslation } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 
 // The world tabs a code can be granted, in display order. Labels reuse the existing
-// world.tab.* strings. New codes default to everything except Admin.
+// world.tab.* strings. Remote guests get an operational view only.
 const TAB_DEFS = [
-  ["overview", "world.tab.overview"], ["players", "world.tab.players"], ["deaths", "world.tab.deaths"],
-  ["map", "world.tab.map"], ["broadcast", "world.tab.broadcast"], ["chat", "world.tab.chat"],
-  ["console", "world.tab.console"], ["settings", "world.tab.settings"], ["backups", "world.tab.backups"],
-  ["schedule", "world.tab.schedule"], ["mods", "world.tab.mods"], ["discord", "world.tab.discord"],
-  ["discordbot", "world.tab.discordBot"], ["admin", "world.tab.admin"],
+  ["overview", "world.tab.overview"], ["players", "world.tab.players"],
 ];
-const DEFAULT_TABS = TAB_DEFS.map(([id]) => id).filter((id) => id !== "admin");
+const DEFAULT_TABS = TAB_DEFS.map(([id]) => id);
 
 export default function RemoteAccessPage() {
   const { t } = useTranslation();
@@ -134,6 +130,9 @@ export default function RemoteAccessPage() {
           <div className="panel-inset" style={{ padding: "0.7rem 0.9rem", marginTop: "0.9rem", fontSize: "0.78rem", fontWeight: 600 }}>
             <Icon name="info" size={14} /> {t("remote.tunnelHint")}
           </div>
+          <div className="panel-inset" style={{ padding: "0.8rem 0.9rem", marginTop: "0.7rem", fontSize: "0.78rem", fontWeight: 600 }}>
+            <strong>Self-hosting:</strong> forward TCP port <code>{cfg.port}</code> to this computer for the website. Forward the active World&apos;s UDP game port separately for game traffic. Keep the dedicated REST port private.
+          </div>
         </div>
       )}
 
@@ -216,6 +215,7 @@ function UrlRow({ label, url, accent }) {
       <button className="btn btn-ghost" style={{ marginLeft: "auto", padding: "0.35rem 0.7rem", fontSize: "0.78rem" }} onClick={copy}>
         {copied ? t("common.copied") : t("common.copy")}
       </button>
+      <button className="btn btn-primary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.78rem" }} onClick={() => window.open(url, "_blank", "noopener")}>Open</button>
     </div>
   );
 }

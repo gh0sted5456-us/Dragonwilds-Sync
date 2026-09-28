@@ -4,6 +4,7 @@ const warn = require("@/lib/warn");
 const { notify } = require("@/lib/notify");
 const dbm = require("@/lib/db");
 const ra = require("@/lib/remoteauth");
+const activeProfile = require("@/lib/active-server-profile");
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,6 +25,7 @@ export async function POST(req, { params }) {
     // (below) is the immediate SIGKILL escape hatch.
     else if (action === "stop") { result = await sup.stopWorld(params.id, { graceful: true }); notify(params.id, "stop", `${w.display_name} stopped`); }
     else if (action === "restart") {
+      activeProfile.activate(params.id);
       // If this world warns players before shutdown, the countdown can run for
       // several minutes — don't block the HTTP request on it. Kick the warned
       // restart off in the background and return immediately.

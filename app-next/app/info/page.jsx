@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { Icon } from "@/components/ui";
+import Link from "next/link";
 
 const GUIDES = [
   { id: "internet", titleKey: "info.guideInternetTitle", subtitleKey: "info.guideInternetSubtitle", icon: "globe" },
@@ -14,8 +15,12 @@ export default function InfoPage() {
   const [open, setOpen] = useState("internet");
   return (
     <div>
-      <h1 className="heading" style={{ fontSize: "1.8rem", marginBottom: "0.3rem" }}>{t("info.title")}</h1>
-      <p className="subtle" style={{ fontWeight: 600, marginBottom: "1.4rem" }}>{t("info.subtitle")}</p>
+      <h1 className="heading" style={{ fontSize: "1.8rem", marginBottom: "0.3rem" }}>Helpy</h1>
+      <p className="subtle" style={{ fontWeight: 600, marginBottom: "1rem" }}>Guided setup for friend Worlds, self-hosted Sync broadcast, port forwarding, and remote access.</p>
+      <div className="panel" style={{ padding: "1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <Icon name="share" size={22} /><div style={{ flex: 1, minWidth: 220 }}><strong className="heading">Broadcast & remote website</strong><div className="subtle" style={{ fontSize: ".8rem" }}>Enable LAN/self-hosting, copy the server website link, and see exactly which TCP and UDP ports to forward.</div></div>
+        <Link href="/remote-access" className="btn btn-primary">Open broadcast controls</Link>
+      </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "0.7rem" }}>
         {GUIDES.map((g) => (

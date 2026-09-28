@@ -15,11 +15,13 @@ export default function WorldsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [busy, setBusy] = useState({});
   const [checking, setChecking] = useState(false);
+  const [activeServerId, setActiveServerId] = useState(null);
 
   const load = useCallback(async () => {
     try {
-      const { worlds } = await api("/api/worlds");
+      const [{ worlds }, active] = await Promise.all([api("/api/worlds"), api("/api/server-profile")]);
       setWorlds(worlds);
+      setActiveServerId(active.activeId || null);
     } catch (e) { toast(e.message, "error"); }
     finally { setLoading(false); }
   }, []);
@@ -37,6 +39,17 @@ export default function WorldsPage() {
       else await api(`/api/worlds/${id}/action`, { method: "POST", body: { action } });
       toast(action === "update" ? "Server update queued." : t(ACTION_TOAST[action] || "toast.worldStarted"), "success");
       setTimeout(load, 600);
+    } catch (e) { toast(e.message, "error"); }
+    finally { setBusy((b) => ({ ...b, [id]: null })); }
+  };
+
+  const activateServer = async (id) => {
+    setBusy((b) => ({ ...b, [id]: "activate" }));
+    try {
+      await api("/api/server-profile", { method: "POST", body: { worldId: id } });
+      setActiveServerId(id);
+      toast("Server profile activated. Its settings will be used for Start and Restart.", "success");
+      load();
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy((b) => ({ ...b, [id]: null })); }
   };
@@ -86,7 +99,7 @@ export default function WorldsPage() {
       ) : (
         <div style={{ display: "grid", gap: "0.9rem" }}>
           {worlds.map((w) => (
-            <WorldRow key={w.world_id} w={w} busy={busy[w.world_id]} onAction={doAction} />
+            <WorldRow key={w.world_id} w={w} active={activeServerId === w.world_id} busy={busy[w.world_id]} onAction={doAction} onActivate={activateServer} />
           ))}
         </div>
       )}
@@ -209,7 +222,7 @@ const portraits = ["female_auburn_ponytail.webp", "female_cobalt_warrior_ponytai
 function portraitFor(value = "") { let hash = 0; for (const c of value) hash = ((hash << 5) - hash + c.charCodeAt(0)) | 0; return `/rsdw/portraits/${portraits[Math.abs(hash) % portraits.length]}`; }
 function RsdwBadge({ label }) { return <span style={{ display: "inline-flex", alignItems: "center", minHeight: 19, padding: "2px 7px", border: "1px solid color-mix(in srgb,var(--yellow) 45%,var(--line))", borderRadius: 999, background: "color-mix(in srgb,var(--yellow) 9%,var(--card))", color: "var(--yellow)", fontSize: ".62rem", fontWeight: 900, letterSpacing: ".045em" }}>{label}</span>; }
 
-function WorldRow({ w, busy, onAction }) {
+function WorldRow({ w, active, busy, onAction, onActivate }) {
   const { t } = useTranslation();
   const isBusy = !!busy;
   const accent = w.accent_color || "var(--accent)";
@@ -246,6 +259,7 @@ function WorldRow({ w, busy, onAction }) {
             {w.display_name}
           </Link>
           <StatusChip status={w.status} running={w.running} />
+          {active && <RsdwBadge label="ACTIVE SERVER PROFILE" />}
           {w.community_server ? (
             <span className="chip" style={{ background: "var(--green-bright)", color: "#0b3d1a" }} title={t("worlds.communityTip")}>{t("worlds.community")}</span>
           ) : (
@@ -267,6 +281,7 @@ function WorldRow({ w, busy, onAction }) {
       </div>
 
       <div style={{ position: "relative", zIndex: 1, display: "flex", gap: "0.5rem", flexShrink: 0 }}>
+        {!active && <button className="btn btn-ghost" disabled={isBusy || w.running} onClick={() => onActivate(w.world_id)} title="Load this profile's dedicated server settings"><Icon name="check" /> Activate</button>}
         <button className="btn btn-ghost" disabled={isBusy || w.running} onClick={() => onAction(w.world_id, "update")} title="Update server build">
           <Icon name="download" /> Update
         </button>

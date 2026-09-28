@@ -14,7 +14,7 @@ const NAV = [
   { href: "/remote-access", asset: "/rsdw/navigation/sync.svg", label: "Sync", match: (p) => p.startsWith("/remote-access") },
   { href: "/usage", asset: "/rsdw/navigation/rsdw.webp", label: "Activity", match: (p) => p.startsWith("/usage") },
   { href: "/settings", asset: "/rsdw/navigation/settings.svg", label: "Settings", match: (p) => p.startsWith("/settings") },
-  { href: "/info", asset: "/rsdw/navigation/help.svg", label: "Help", match: (p) => p.startsWith("/info") },
+  { href: "/info", asset: "/rsdw/navigation/help.svg", label: "Helpy", match: (p) => p.startsWith("/info") },
 ];
 
 export default function Shell({ children }) {

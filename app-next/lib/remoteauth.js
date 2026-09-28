@@ -27,12 +27,11 @@ const S_LANBIND = "remoteAccess.lanBind";
 const S_ADMIN_TOKEN = "remoteAccess.adminToken";
 
 // The world tabs a code can be granted. Mirrors the TABS in app/worlds/[id]/page.jsx.
-const ALL_TABS = [
-  "overview", "players", "deaths", "map", "broadcast", "chat", "console",
-  "settings", "backups", "schedule", "mods", "discord", "discordbot", "admin",
-];
-// New codes default to everything except the Admin tab (ports, passwords, install dir).
-const DEFAULT_TABS = ALL_TABS.filter((t) => t !== "admin");
+// Community remote access is deliberately operational, not administrative.
+// Guests can see the overview/update notices and player list; lifecycle controls
+// remain guarded by the overview permission. Configuration and files stay local.
+const ALL_TABS = ["overview", "players"];
+const DEFAULT_TABS = [...ALL_TABS];
 
 // ---- feature flags ----
 function isEnabled() { return !!dbm.getSetting(S_ENABLED, false); }
@@ -83,7 +82,7 @@ function isTrustedAdmin(req) {
 
 // ---- codes ----
 function tabsOf(code) {
-  try { const a = JSON.parse(code.tabs || "[]"); return Array.isArray(a) ? a : []; }
+  try { const a = JSON.parse(code.tabs || "[]"); return Array.isArray(a) ? ALL_TABS.filter((tab) => a.includes(tab)) : []; }
   catch { return []; }
 }
 function generateCode() {

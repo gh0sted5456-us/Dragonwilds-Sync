@@ -726,6 +726,11 @@ async function startWorld(worldId) {
   if (!world) throw new Error("World not found");
   if (isRunning(worldId)) return { started: false, reason: "already running" };
 
+  // Scheduled, remote and shortcut starts must obey the same active-profile
+  // contract as the GUI. This loads that profile's settings and marker first.
+  require("./active-server-profile").activate(worldId);
+  world = dbm.getWorld(worldId);
+
   const plat = world.platform || hostPlatform();
   if (plat === "linux" && hostPlatform() === "win32") {
     throw new Error(

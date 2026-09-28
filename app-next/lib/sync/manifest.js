@@ -4,6 +4,7 @@ const crypto = require("crypto");
 const dbm = require("../db");
 const mods = require("../mods");
 const steamlib = require("../steamlibrary");
+const runtimePackages = require("../runtime-packages");
 
 const PROTOCOL = "dragonwilds-world-sync";
 const PROTOCOL_VERSION = 2;
@@ -70,7 +71,8 @@ function buildWorldManifest(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   const inventory = mods.selectedLaneMods(worldId);
-  const units = inventory.map((mod) => {
+  const runtimeUnits = runtimePackages.syncUnits(worldId);
+  const modUnits = inventory.map((mod) => {
     const files = filesForMod(mod);
     const identity = crypto.createHash("sha256");
     for (const file of files) identity.update(`${file.target}\0${file.size}\0${file.sha256}\n`);
@@ -84,6 +86,10 @@ function buildWorldManifest(worldId) {
       files: files.map(publicFile),
     };
   });
+  const units = [
+    ...runtimeUnits.map((unit) => ({ ...unit, files: unit.files.map(publicFile) })),
+    ...modUnits,
+  ];
   const revisionHash = crypto.createHash("sha256");
   for (const unit of units) revisionHash.update(`${unit.key}\0${unit.contentHash}\n`);
   return {
@@ -102,7 +108,7 @@ function getPrerequisites(worldId) {
   return {
     ue4ss: String(saved?.ue4ss || "").trim() || null,
     runeSchema: String(saved?.runeSchema || "").trim() || null,
-    managedByClient: false,
+    managedByClient: runtimePackages.syncUnits(worldId).length > 0,
   };
 }
 
@@ -120,6 +126,8 @@ function resolveWorldFile(worldId, requestedTarget) {
   const target = String(requestedTarget || "").replace(/\\/g, "/");
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
+  const runtimeFile = runtimePackages.resolveSyncFile(worldId, target);
+  if (runtimeFile) return runtimeFile;
   const inventory = mods.selectedLaneMods(worldId);
   for (const mod of inventory) {
     const match = filesForMod(mod).find((file) => file.target === target);

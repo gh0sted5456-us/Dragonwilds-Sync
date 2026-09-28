@@ -15,7 +15,6 @@ import BackupsPanel from "@/components/BackupsPanel";
 import SchedulePanel from "@/components/SchedulePanel";
 import MapPanel from "@/components/MapPanel";
 import ModsPanel from "@/components/ModsPanel";
-import Ue4ssPanel from "@/components/Ue4ssPanel";
 // PalSchemaPanel removed: reference deleted
 import AdminPanel from "@/components/AdminPanel";
 // Chat remote view disabled for Dragonwilds
@@ -173,14 +172,9 @@ export default function RemoteWorldDetail() {
         {tab === "backups" && <BackupsPanel worldId={id} backups={backups} running={running} onChange={load} />}
         {tab === "schedule" && <SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} onGoToBroadcast={() => goTo("broadcast")} />}
         {tab === "mods" && (
-          <div style={{ display: "grid", gap: "1.8rem" }}>
-            <div>
-              <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
-              <ModsPanel worldId={id} running={running} />
-            </div>
-            <div style={{ borderTop: "1px solid var(--line)", paddingTop: "1.4rem" }}>
-            <Ue4ssPanel worldId={id} running={running} />
-            </div>
+          <div>
+            <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
+            <ModsPanel worldId={id} running={running} />
           </div>
         )}
         {tab === "discord" && <DiscordPanel world={world} onChange={load} />}

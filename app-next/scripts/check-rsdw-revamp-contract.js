@@ -31,14 +31,26 @@ function contains(rel, needle, message) {
   assert(patched.includes('WorldPassword="two words"'), "New INI value was not appended/quoted");
 }
 
-// Server startup must be explicit; the app only owns processes it launches.
+// Desktop startup must be GUI-only. Background/server engines begin only from
+// explicit feature actions, never because Electron opened or the Worlds list loaded.
 {
-  const bootstrap = read("lib/bootstrap.js");
-  assert(!bootstrap.includes("sup.startWorld("), "bootstrap must not implicitly launch a Server");
+  const main = read("electron/main.js");
+  assert(!main.includes("triggerBoot("), "desktop startup must not trigger background engines");
+  assert(!main.includes("/api/boot"), "desktop startup must not call a boot endpoint");
+  const worldsRoute = read("app/api/worlds/route.js");
+  assert(!worldsRoute.includes("boot()"), "listing Worlds must remain observational");
+  assert(!fs.existsSync(path.join(root, "lib", "bootstrap.js")), "obsolete bootstrap engine must stay deleted");
+  assert(!fs.existsSync(path.join(root, "app", "api", "boot", "route.js")), "obsolete boot API must stay deleted");
+  assert(!fs.existsSync(path.join(root, "lib", "ue4ss.js")), "legacy Palworld UE4SS manager must stay deleted");
+  assert(!fs.existsSync(path.join(root, "components", "Ue4ssPanel.jsx")), "legacy UE4SS panel must stay deleted");
+
   const supervisor = contains("lib/supervisor.js", "owned: new Set()", "supervisor ownership registry missing");
   assert(!supervisor.includes("spawnOpts.detached"), "Server subprocess must not be detached");
+  assert(supervisor.includes("spawn(bin, args, spawnOpts)"), "Server must launch as an explicit subprocess");
   assert(supervisor.includes("stopManagedWorlds"), "owned subprocess shutdown path missing");
   assert(supervisor.includes("3 restart attempts in 10 minutes"), "crash-loop guard missing");
+  contains("lib/steamcmd.js", "spawn(bin, args");
+  contains("electron/main.js", "spawn(process.execPath, [serverPath]");
 }
 
 // Dedicated settings must be profile-scoped and launch materialization must exist.

@@ -1605,11 +1605,10 @@ class ServerEngine:
             raise RuntimeError("DedicatedServer.ini verification failed for the executable-resolved path: "
                                + str(verification.get("exact_path") or "unresolved") + detail)
         save_server_profile(profile_id, profile)
-        # Console visibility is an explicit operator preference. Starting a
-        # World must never rewrite UE4SS-settings.ini or appear to close a
-        # native console; the server.console.policy action owns that mutation.
-        console_policy = ue4ss_console_policy_status(profile_id)
-        self._event("Preserved the installed UE4SS console settings for launch; use Runtime Console → Settings to change them.", "ok")
+        # UE4SS is optional for dedicated hosting. Start must never probe for,
+        # validate, repair, or require a UE4SS installation. Runtime Console
+        # actions own UE4SS-specific inspection when an operator explicitly
+        # chooses to use that runtime.
         try:
             from world_maintenance import hydrate_world_configs
             hydrate_world_configs(profile_id, profile_root)

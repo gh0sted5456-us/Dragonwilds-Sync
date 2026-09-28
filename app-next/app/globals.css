@@ -6,21 +6,21 @@
 :root {
   /* RSDW dark is the application palette. Keep :root dark as well so there is
      no white flash before React hydrates. */
-  --rail: #070707;
-  --sidebar: #0b0b0b;
-  --bg: #0e0e0e;
-  --bg-2: #101010;
-  --card: #141414;
-  --card-2: #0a0a0a;
+  --rail: #181b1e;
+  --sidebar: #1d2124;
+  --bg: #202427;
+  --bg-2: #252a2e;
+  --card: #2b3034;
+  --card-2: #24282c;
   --ink: #f3efe7;
-  --ink-soft: #c8bfad;
-  --ink-muted: #918879;
-  --line: #302a20;
-  --line-strong: #6f5a35;
-  --border: #302a20;
-  --accent: #a9823f;
-  --accent-hover: #b99655;
-  --accent-ink: #130f08;
+  --ink-soft: #d0c9bb;
+  --ink-muted: #aaa397;
+  --line: #494238;
+  --line-strong: #766746;
+  --border: #494238;
+  --accent: #c1a56d;
+  --accent-hover: #d0b47a;
+  --accent-ink: #1d1a14;
   --green: #2f7b50;
   --green-bright: #43a36d;
   --yellow: #ae8745;
@@ -28,31 +28,31 @@
   --red-hover: #ad6262;
   --font-display: "Inter", "gg sans", system-ui, sans-serif;
   --font-body: "Inter", "Nunito", system-ui, sans-serif;
-  --radius: 5px;
+  --radius: 12px;
 }
 .dark {
   /* RSDW matte black + muted gold */
-  --rail: #070707;
-  --sidebar: #0b0b0b;
-  --bg: #0e0e0e;
-  --bg-2: #101010;
-  --card: #141414;
-  --card-2: #0a0a0a;
+  --rail: #181b1e;
+  --sidebar: #1d2124;
+  --bg: #202427;
+  --bg-2: #252a2e;
+  --card: #2b3034;
+  --card-2: #24282c;
   --ink: #f3efe7;
-  --ink-soft: #c8bfad;
-  --ink-muted: #918879;
-  --line: #302a20;
-  --line-strong: #6f5a35;
-  --border: #302a20;
-  --accent: #a9823f;
-  --accent-hover: #b99655;
-  --accent-ink: #130f08;
+  --ink-soft: #d0c9bb;
+  --ink-muted: #aaa397;
+  --line: #494238;
+  --line-strong: #766746;
+  --border: #494238;
+  --accent: #c1a56d;
+  --accent-hover: #d0b47a;
+  --accent-ink: #1d1a14;
   --green: #2f7b50;
   --green-bright: #43a36d;
   --yellow: #ae8745;
   --red: #985151;
   --red-hover: #ad6262;
-  --radius: 5px;
+  --radius: 12px;
 }
 
 * { box-sizing: border-box; }
@@ -90,7 +90,7 @@ body {
   .btn {
     display: inline-flex; align-items: center; justify-content: center; gap: 0.4rem;
     font-family: var(--font-display); font-weight: 600; font-size: 0.9rem;
-    padding: 0.5rem 1rem; border-radius: var(--radius);
+    min-height: 40px; padding: 0.62rem 1.05rem; border-radius: var(--radius);
     border: none; cursor: pointer;
     transition: background 0.15s ease, color 0.15s ease;
     user-select: none; white-space: nowrap; line-height: 1.2;
@@ -116,7 +116,7 @@ body {
   .input {
     width: 100%; background: var(--card-2); color: var(--ink);
     border: 1px solid var(--line-strong); border-radius: var(--radius);
-    padding: 0.55rem 0.7rem; font-family: var(--font-body); font-weight: 500;
+    min-height: 40px; padding: 0.62rem 0.8rem; font-family: var(--font-body); font-weight: 500;
     outline: none; font-size: 0.9rem;
   }
   .input:focus { border-color: var(--accent); }
@@ -190,3 +190,12 @@ body {
 /* fade+slide for tab content */
 @keyframes tabIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 .tab-content { animation: tabIn 0.2s ease-out; }
+
+.runtime-package-grid {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:.75rem;
+}
+@media (max-width:760px) {
+  .runtime-package-grid { grid-template-columns:1fr; }
+}

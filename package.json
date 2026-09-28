@@ -81,7 +81,7 @@
       }
     ],
     "win": {
-      "icon": "renderer/assets/dragonwilds_icon.ico",
+      "icon": "renderer/assets/rsdwl-icon.ico",
       "extraResources": [
         {
           "from": "dist-service/DragonwildsSync.Service.exe",

@@ -117,4 +117,30 @@ function contains(rel, needle, message) {
   assert(!admin.includes("setAutostart"), "Server profile UI still exposes an automatic launch switch");
 }
 
+
+function walkSource(dir) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkSource(full));
+    else if (/\.(js|jsx)$/.test(entry.name)) out.push(full);
+  }
+  return out;
+}
+
+// Deleted legacy modules must have zero live imports anywhere in app-next.
+{
+  const legacyRefs = ["@/lib/bootstrap", "@/lib/ue4ss", "Ue4ssPanel"];
+  for (const file of [
+    ...walkSource(path.join(root, "app")),
+    ...walkSource(path.join(root, "components")),
+    ...walkSource(path.join(root, "lib")),
+  ]) {
+    const source = fs.readFileSync(file, "utf8");
+    for (const needle of legacyRefs) {
+      assert(!source.includes(needle), `${path.relative(root, file)} still references deleted legacy module ${needle}`);
+    }
+  }
+}
+
 console.log("RSDW revamp contract: OK");

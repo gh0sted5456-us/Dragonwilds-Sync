@@ -128,12 +128,34 @@ function PlayerHub() {
   const [platform, setPlatform] = useState("steam");
   const [finding, setFinding] = useState(false);
   const [connectOpen, setConnectOpen] = useState(false);
+  const [contextMenu, setContextMenu] = useState(null);
 
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
   useEffect(() => {
     loadProfiles();
     api("/api/client-installs").then((r) => setInstalls({ steam: r.installs?.steam || "", gamepass: r.installs?.gamepass || "" })).catch((e) => toast(e.message, "error"));
   }, [loadProfiles]);
+
+  useEffect(() => {
+    const close = () => setContextMenu(null);
+    window.addEventListener("click", close);
+    window.addEventListener("blur", close);
+    return () => { window.removeEventListener("click", close); window.removeEventListener("blur", close); };
+  }, []);
+
+  const sendProfileToDesktop = async (profile) => {
+    try {
+      if (!window.desktop?.createProfileShortcut) throw new Error("Desktop shortcuts are available in the desktop app.");
+      const identity = profile.connection?.worldIdentity || {};
+      const shortcut = await window.desktop.createProfileShortcut({
+        id: profile.profile_id,
+        role: "player",
+        name: profile.display_name,
+        iconData: identity.iconData || null,
+      });
+      toast(`Desktop launcher created: ${shortcut}`, "success");
+    } catch (e) { toast(e.message, "error"); }
+  };
 
   const saveInstall = async (kind, selected = installs[kind]) => {
     try {
@@ -217,13 +239,27 @@ function PlayerHub() {
     </div>
     </>}
     {profiles.length === 0 ? <div className="panel" style={{ padding: "2.2rem", textAlign: "center" }}><Icon name="users" size={34} /><h2 className="heading">No player servers yet</h2><p className="subtle">Choose Connect to World to discover a LAN broadcast or enter a server IP, then keep the Worlds you play on here.</p></div> :
-      <div style={{ display: "grid", gap: 10 }}>{profiles.map((p, index) => <div className="panel" key={p.profile_id} style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76 }}>
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url('/rsdw/placards/${index % 9 + 1}.webp') center/cover`, opacity: .48 }} />
-        <img src={portraitFor(p.profile_id)} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
+      <div style={{ display: "grid", gap: 10 }}>{profiles.map((p, index) => {
+        const identity = p.connection?.worldIdentity || {};
+        const banner = identity.bannerData || `/rsdw/placards/${index % 9 + 1}.webp`;
+        const icon = identity.iconData || portraitFor(p.profile_id);
+        return <div className="panel" key={p.profile_id}
+          onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, profile: p }); }}
+          title="Right-click for World actions"
+          style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76, borderColor: identity.accentColor || undefined }}>
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url("${banner}") center/cover`, opacity: .48 }} />
+        <img src={icon} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
         <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose a game installation"}</div></div>
         <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Connect / Sync</Link>
         <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
-      </div>)}</div>}
+      </div>})}</div>}
+
+    {contextMenu && <div className="panel" style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 200, padding: 6, minWidth: 190, boxShadow: "0 10px 28px rgba(0,0,0,.35)" }}>
+      <button className="btn btn-ghost" style={{ width: "100%", justifyContent: "flex-start" }}
+        onClick={() => { const p = contextMenu.profile; setContextMenu(null); sendProfileToDesktop(p); }}>
+        <Icon name="download" size={16} /> Send to Desktop
+      </button>
+    </div>}
   </div>;
 }
 

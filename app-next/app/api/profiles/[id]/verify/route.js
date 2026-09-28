@@ -23,7 +23,21 @@ export async function POST(_req, { params }) {
     const platform = connection.platform === "gamepass" ? "gamepass" : "steam";
     const install = platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall;
     const comparison = syncManifest.compareManifest(payload.manifest, install || profile.client_install);
-    dbm.upsertProfile({ profile_id: profile.profile_id, last_manifest_revision: payload.manifest.revision });
+    const identity = payload.manifest.world?.identity || {};
+    const nextConnection = {
+      ...connection,
+      worldIdentity: {
+        iconData: identity.iconData || null,
+        bannerData: identity.bannerData || null,
+        accentColor: identity.accentColor || null,
+      },
+    };
+    dbm.upsertProfile({
+      profile_id: profile.profile_id,
+      display_name: payload.manifest.world?.name || profile.display_name,
+      connection: nextConnection,
+      last_manifest_revision: payload.manifest.revision,
+    });
     return NextResponse.json({ ok: true, manifest: payload.manifest, comparison });
   } catch (e) { return NextResponse.json({ ok: false, error: e.name === "AbortError" ? "The World did not respond in time." : e.message }, { status: 400 }); }
 }

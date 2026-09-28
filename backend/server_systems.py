@@ -3312,8 +3312,15 @@ def download_steamcmd(steamcmd_dir: str, progress=None) -> dict:
 def install_dedicated_server(install_dir: str, steamcmd_dir: str, progress=None) -> dict:
     install = Path(install_dir)
     steam_name = "steamcmd.sh" if sys.platform.startswith("linux") else "steamcmd.exe"
-    steam = Path(steamcmd_dir) / steam_name
-    if not steam.exists(): raise FileNotFoundError(f"{steam_name} not found")
+    steam_root = Path(steamcmd_dir)
+    steam = steam_root / steam_name
+    # SteamCMD is launcher infrastructure, not a prerequisite the operator must
+    # install by hand. If it is absent (or a cleaned install removed it), pull
+    # Valve's official package and then run the dedicated-server update.
+    if not steam.is_file():
+        download_steamcmd(str(steam_root), progress=progress)
+    if not steam.is_file():
+        raise FileNotFoundError(f"SteamCMD bootstrap did not produce {steam_name} in {steam_root}")
     install.mkdir(parents=True, exist_ok=True)
     cmd = [str(steam), "+force_install_dir", str(install), "+login", "anonymous", "+app_update", DEDICATED_STEAM_APP_ID, "validate", "+quit"]
     def execute():

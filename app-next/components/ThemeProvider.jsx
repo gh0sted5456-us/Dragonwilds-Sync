@@ -1,34 +1,22 @@
 "use client";
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useCallback } from "react";
 
 const ThemeCtx = createContext({ theme: "dark", setTheme: () => {}, toggle: () => {} });
-
 export function useTheme() { return useContext(ThemeCtx); }
 
 export default function ThemeProvider({ children }) {
-  const [theme, setThemeState] = useState("dark");
-
   useEffect(() => {
-    let t = "dark";
-    try { t = localStorage.getItem("pal-theme") || "dark"; } catch {}
-    setThemeState(t);
-    apply(t);
+    document.documentElement.classList.add("dark");
+    try { localStorage.setItem("pal-theme", "dark"); } catch {}
   }, []);
 
-  const apply = (t) => {
-    const root = document.documentElement;
-    if (t === "dark") root.classList.add("dark");
-    else root.classList.remove("dark");
-  };
-
-  const setTheme = useCallback((t) => {
-    setThemeState(t);
-    apply(t);
-    try { localStorage.setItem("pal-theme", t); } catch {}
-    fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ theme: t }) }).catch(() => {});
+  // RSDW Sync now has one deliberate application theme. Keep this compatibility
+  // API so older components do not crash, but all theme requests resolve to dark.
+  const setTheme = useCallback(() => {
+    document.documentElement.classList.add("dark");
+    try { localStorage.setItem("pal-theme", "dark"); } catch {}
   }, []);
+  const toggle = setTheme;
 
-  const toggle = useCallback(() => setTheme(theme === "dark" ? "light" : "dark"), [theme, setTheme]);
-
-  return <ThemeCtx.Provider value={{ theme, setTheme, toggle }}>{children}</ThemeCtx.Provider>;
+  return <ThemeCtx.Provider value={{ theme: "dark", setTheme, toggle }}>{children}</ThemeCtx.Provider>;
 }

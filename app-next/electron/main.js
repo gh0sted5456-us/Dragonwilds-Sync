@@ -214,7 +214,7 @@ function trayIconPath() {
   const base = isDev
     ? path.join(__dirname, "..", "public")
     : path.join(process.resourcesPath, "app", "public");
-  return path.join(base, "icon-dark.png");
+  return path.join(base, "icon.png");
 }
 
 // Pull the world list from the local server for the tray menu. DB-only endpoint, so
@@ -307,7 +307,7 @@ function createTray() {
     // those were replaced by the user in the repo's public/ folder they will be
     // used here when running from source; packaged apps use the embedded copy.
     let img = nativeImage.createFromPath(trayIconPath());
-    if (img.isEmpty()) img = nativeImage.createFromPath(path.join(__dirname, "..", "public", "icon-dark.png"));
+    if (img.isEmpty()) img = nativeImage.createFromPath(path.join(__dirname, "..", "public", "icon.png"));
     if (img.isEmpty()) img = nativeImage.createEmpty();
     tray = new Tray(img);
   tray.setToolTip("RSDW Sync");
@@ -483,12 +483,12 @@ function createWindow() {
     height: 840,
     minWidth: 940,
     minHeight: 640,
-    backgroundColor: "#0e0e0e",
+    backgroundColor: "#202427",
     title: "RSDW Sync",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
     icon: isDev
-      ? path.join(__dirname, "..", "public", "icon-dark.png")
-      : path.join(process.resourcesPath, "app", "public", "icon-dark.png"),
+      ? path.join(__dirname, "..", "public", "icon.png")
+      : path.join(process.resourcesPath, "app", "public", "icon.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -540,7 +540,7 @@ function createWindow() {
 function showErrorWindow(message) {
   if (mainWindow) return;
   mainWindow = new BrowserWindow({
-    width: 720, height: 420, backgroundColor: "#0e0e0e",
+    width: 720, height: 420, backgroundColor: "#202427",
     autoHideMenuBar: true, title: "RSDW Sync",
   });
   Menu.setApplicationMenu(null);

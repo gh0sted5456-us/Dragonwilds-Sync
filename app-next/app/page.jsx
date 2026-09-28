@@ -127,6 +127,7 @@ function PlayerHub() {
   const [installs, setInstalls] = useState({ steam: "", gamepass: "" });
   const [platform, setPlatform] = useState("steam");
   const [finding, setFinding] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
 
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
   useEffect(() => {
@@ -172,7 +173,16 @@ function PlayerHub() {
   };
 
   return <div>
-    <header style={{ marginBottom: "1rem" }}><h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1><p className="subtle" style={{ fontWeight: 700 }}>Keep as many Worlds as you like. Connect to compare, restore removed mods, update changed mods, and remove obsolete managed files.</p></header>
+    <header style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+      <div style={{ minWidth: 240, flex: 1 }}>
+        <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1>
+        <p className="subtle" style={{ fontWeight: 700, marginBottom: 0 }}>Keep as many Worlds as you like. Connect, compare and resync only when you need to.</p>
+      </div>
+      <button className="btn btn-primary" onClick={() => setConnectOpen((open) => !open)}>
+        <Icon name={connectOpen ? "x" : "globe"} /> {connectOpen ? "Close" : "Connect to World"}
+      </button>
+    </header>
+    {connectOpen && <>
     {!installs.steam && !installs.gamepass && <div className="panel" style={{ padding: "1rem", marginBottom: "1rem", border: "1px solid var(--yellow)" }}><h2 className="heading" style={{ margin: "0 0 .35rem" }}>Locate Dragonwilds</h2><p className="subtle">Choose Steam, PC Game Pass, or both. RSDW Sync stores these paths and never asks for UE4SS in its own program folder.</p></div>}
     <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
       <h2 className="heading" style={{ margin: "0 0 .7rem", fontSize: "1.1rem" }}>Find or add a server</h2>
@@ -205,7 +215,8 @@ function PlayerHub() {
         </div>;
       })}</div>}
     </div>
-    {profiles.length === 0 ? <div className="panel" style={{ padding: "2.2rem", textAlign: "center" }}><Icon name="users" size={34} /><h2 className="heading">No player servers yet</h2><p className="subtle">Broadcast on the LAN or enter a server IP above, then add every world you play on.</p></div> :
+    </>}
+    {profiles.length === 0 ? <div className="panel" style={{ padding: "2.2rem", textAlign: "center" }}><Icon name="users" size={34} /><h2 className="heading">No player servers yet</h2><p className="subtle">Choose Connect to World to discover a LAN broadcast or enter a server IP, then keep the Worlds you play on here.</p></div> :
       <div style={{ display: "grid", gap: 10 }}>{profiles.map((p, index) => <div className="panel" key={p.profile_id} style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76 }}>
         <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url('/rsdw/placards/${index % 9 + 1}.webp') center/cover`, opacity: .48 }} />
         <img src={portraitFor(p.profile_id)} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />

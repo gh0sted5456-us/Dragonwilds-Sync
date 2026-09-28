@@ -193,6 +193,14 @@
     hardenRuntimeBaselineUi();
     refreshFolderHelpCopy();
     document.querySelectorAll('.profile-storage-destinations').forEach((host)=>{
+      const identity=host.querySelector('[data-open-profile-mod-lane]');
+      if(identity?.dataset?.profileKind==='server'&&!host.querySelector('[data-profile-runtime-zip-panel]')){
+        const runtime=document.createElement('details');
+        runtime.dataset.profileRuntimeZipPanel='1';
+        runtime.className='profile-runtime-zip-panel';
+        runtime.innerHTML='<summary>World runtime ZIPs</summary><p>Load a complete UE4SS or RuneSchema ZIP into this World. The host keeps the staged runtime as its source of truth; connected clients automatically receive and install only the compatible files during verified Sync.</p><div class="header-actions"><button type="button" class="btn ghost" data-profile-runtime-zip="ue4ss">Load UE4SS ZIP</button><button type="button" class="btn ghost" data-profile-runtime-zip="runeschema">Load RuneSchema ZIP</button></div><p role="status" data-profile-runtime-zip-status>Server-only loader files stay on the host.</p>';
+        host.append(runtime);
+      }
       if(host.querySelector('[data-profile-spare-panel]'))return;
       const panel=document.createElement('details');panel.dataset.profileSparePanel='1';
       panel.innerHTML='<summary>Protect a staged folder · spare backup</summary><p>Restore missing files before deployment. Existing or edited files are never overwritten. Saving again explicitly refreshes the spare copy.</p><label>Folder relative to profile staging<input class="input" data-profile-spare-path placeholder="Binaries/Win64/ue4ss"></label><div class="header-actions"><button type="button" class="btn primary" data-profile-spare-action="protect">Save spare backup</button><button type="button" class="btn ghost" data-profile-spare-action="list">Show protected folders</button><button type="button" class="btn ghost" data-profile-spare-action="unprotect">Stop protecting entered folder</button></div><p role="status" data-profile-spare-status></p>';
@@ -264,6 +272,35 @@
     if(loaders){
       event.preventDefault();event.stopImmediatePropagation();
       document.dispatchEvent(new CustomEvent('dws:manage-profile-loaders',{detail:{kind:loaders.dataset.profileKind,id:loaders.dataset.profileId}}));
+      return;
+    }
+    const runtimeZip=event.target?.closest?.('[data-profile-runtime-zip]');
+    if(runtimeZip){
+      event.preventDefault();event.stopImmediatePropagation();
+      const host=runtimeZip.closest('.profile-storage-destinations');
+      const identity=host?.querySelector('[data-open-profile-mod-lane]');
+      const status=host?.querySelector('[data-profile-runtime-zip-status]');
+      const component=text(runtimeZip.dataset.profileRuntimeZip);
+      const profileId=text(identity?.dataset?.profileId);
+      if(!bridge.pickFile){if(status)status.textContent='Runtime ZIP selection is unavailable in this build.';return;}
+      runtimeZip.disabled=true;
+      if(status)status.textContent='Choose a complete '+(component==='ue4ss'?'UE4SS':'RuneSchema')+' ZIP…';
+      Promise.resolve(bridge.pickFile('zip')).then((zipPath)=>{
+        if(!zipPath){if(status)status.textContent='No runtime ZIP selected.';return null;}
+        if(status)status.textContent='Validating and staging '+zipPath.split(/[\\/]/).pop()+'…';
+        return bridge.invoke('server.world.runtime_zip.install',{id:profileId,component,zip_path:zipPath});
+      }).then((response)=>{
+        if(!response)return;
+        if(response?.state&&typeof response.state==='object'){
+          window.__DWSYNC_STATE__=response.state;
+          window.dispatchEvent(new CustomEvent('dragonwilds:state-updated',{detail:response.state}));
+        }
+        const result=response?.result||response||{};
+        const label=component==='ue4ss'?'UE4SS':'RuneSchema';
+        if(status)status.textContent=label+' staged · '+Number(result.files_written||0)+' files · '+Number(result.client_eligible_files||0)+' client-compatible. Clients install them automatically on the next verified Sync.';
+      }).catch((error)=>{
+        if(status)status.textContent=text(error?.message||error||'Runtime ZIP could not be staged.');
+      }).finally(()=>{runtimeZip.disabled=false;});
       return;
     }
     const spare=event.target?.closest?.('[data-profile-spare-action]');

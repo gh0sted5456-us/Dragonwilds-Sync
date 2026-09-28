@@ -83,6 +83,14 @@ function contains(rel, needle, message) {
   contains("lib/runtime-packages.js", 'component === "ue4ss-gamepass" ? "WinGDK" : "Win64"');
   contains("lib/runtime-packages.js", 'clientEligible');
   contains("lib/sync/client.js", '"X-RSDW-Client-Platform"');
+  contains("lib/sync/manifest.js", "iconData: world.icon_data || null");
+  contains("lib/sync/manifest.js", "bannerData: world.banner_data || null");
+  contains("app/page.jsx", "Send to Desktop");
+  contains("app/page.jsx", "worldIdentity");
+  contains("app/profiles/[id]/player/page.jsx", 'searchParams.get("autoplay") === "1"');
+  contains("app/profiles/[id]/player/page.jsx", "Confirm &amp; Launch Dragonwilds");
+  contains("electron/main.js", '" --autoplay"');
+  contains("electron/main.js", "writeShortcutIcon");
   contains("components/ModsPanel.jsx", "UE4SS · Steam/server");
   contains("components/ModsPanel.jsx", "UE4SS · PC Game Pass");
   contains("components/ModsPanel.jsx", "Routed to Win64 or WinGDK automatically");

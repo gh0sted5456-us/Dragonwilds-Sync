@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const bot = require("@/lib/discordbot");
 const cfgLib = require("@/lib/discord-bot-config");
-const { boot } = require("@/lib/bootstrap");
 const ra = require("@/lib/remoteauth");
 
 export const dynamic = "force-dynamic";
@@ -11,7 +10,6 @@ export const runtime = "nodejs";
 // GET: everything the UI needs, minus the token. publicConfig() is the only shape that
 // ever crosses this line — the token goes in and never comes back out.
 export async function GET(req, { params }) {
-  boot();
   const w = dbm.getWorld(params.id);
   if (!w) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "discordbot" });
@@ -36,7 +34,6 @@ export async function GET(req, { params }) {
 
 // POST: save a token, toggle the bot, or edit the allowlist.
 export async function POST(req, { params }) {
-  boot();
   const w = dbm.getWorld(params.id);
   if (!w) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "discordbot", action: "discordbot.save", mutating: true });
@@ -151,7 +148,6 @@ export async function POST(req, { params }) {
 
 // DELETE: forget the bot entirely, token included.
 export async function DELETE(req, { params }) {
-  boot();
   const w = dbm.getWorld(params.id);
   if (!w) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "discordbot", action: "discordbot.remove", mutating: true });

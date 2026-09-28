@@ -413,6 +413,13 @@ export default function SettingsPage() {
             <div style={{ display: "grid", gap: "0.5rem" }}>
               {componentUpdates.items.map((item) => {
                 const amber = item.updateAvailable;
+                const stateLabel = amber
+                  ? "UPDATE"
+                  : item.installedVersion && item.latestVersion
+                    ? "CURRENT"
+                    : item.installed
+                      ? "VERSION UNKNOWN"
+                      : "NOT INSTALLED";
                 return (
                   <button key={item.id} className="panel-inset"
                     onClick={() => item.url && window.open(item.url, "_blank")}
@@ -437,7 +444,7 @@ export default function SettingsPage() {
                       color: amber ? "#161108" : "var(--ink-soft)",
                       fontWeight: 900, letterSpacing: ".035em",
                     }}>
-                      {amber ? "UPDATE" : item.latestVersion ? "CURRENT" : "CHECK"}
+                      {stateLabel}
                     </span>
                   </button>
                 );

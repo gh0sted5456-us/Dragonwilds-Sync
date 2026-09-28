@@ -67,11 +67,11 @@ function publicFile(file) {
   return { target: file.target, size: file.size, sha256: file.sha256 };
 }
 
-function buildWorldManifest(worldId) {
+function buildWorldManifest(worldId, options = {}) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   const inventory = mods.selectedLaneMods(worldId);
-  const runtimeUnits = runtimePackages.syncUnits(worldId);
+  const runtimeUnits = runtimePackages.syncUnits(worldId, options.platform);
   const modUnits = inventory.map((mod) => {
     const files = filesForMod(mod);
     const identity = crypto.createHash("sha256");
@@ -99,6 +99,7 @@ function buildWorldManifest(worldId) {
     revision: revisionHash.digest("hex"),
     generatedAt: new Date().toISOString(),
     prerequisites: getPrerequisites(worldId),
+    clientPlatform: options.platform === "gamepass" ? "gamepass" : "steam",
     units,
   };
 }
@@ -108,7 +109,7 @@ function getPrerequisites(worldId) {
   return {
     ue4ss: String(saved?.ue4ss || "").trim() || null,
     runeSchema: String(saved?.runeSchema || "").trim() || null,
-    managedByClient: runtimePackages.syncUnits(worldId).length > 0,
+    managedByClient: Object.values(runtimePackages.status(worldId)).some((item) => item.installed),
   };
 }
 
@@ -122,11 +123,11 @@ function setPrerequisites(worldId, value = {}) {
   return prerequisites;
 }
 
-function resolveWorldFile(worldId, requestedTarget) {
+function resolveWorldFile(worldId, requestedTarget, options = {}) {
   const target = String(requestedTarget || "").replace(/\\/g, "/");
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const runtimeFile = runtimePackages.resolveSyncFile(worldId, target);
+  const runtimeFile = runtimePackages.resolveSyncFile(worldId, target, options.platform);
   if (runtimeFile) return runtimeFile;
   const inventory = mods.selectedLaneMods(worldId);
   for (const mod of inventory) {

@@ -75,6 +75,7 @@ async function synchronizeProfile(profileId) {
         bannerData: identity.bannerData || null,
         accentColor: identity.accentColor || null,
       },
+      worldType: manifest.world?.type || connection.worldType || "Private",
     },
     last_manifest_revision: manifest.revision,
   });

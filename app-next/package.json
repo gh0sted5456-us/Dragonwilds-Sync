@@ -1,6 +1,6 @@
 {
   "name": "dragonwilds-sync-next",
-  "version": "0.1.0-super-experimental",
+  "version": "0.1.1-super-experimental",
   "description": "Dragonwilds world hosting, discovery, broadcast, and verified client synchronization",
   "author": "RSDW Modding Community",
   "main": "electron/main.js",

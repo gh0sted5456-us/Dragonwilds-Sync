@@ -40,11 +40,11 @@ export default function Shell({ children }) {
   const jobSummary = summarize(jobs);
 
   useEffect(() => {
+    // GUI startup is intentionally observational. Do not inspect game installs,
+    // UE4SS, RuneSchema, SteamCMD, or server runtime state from the shell.
     const load = () => fetch("/api/app/version").then((r) => r.json()).then(setVer).catch(() => {});
-    const loadComponents = () => fetch("/api/component-updates").then((r) => r.json()).then(setComponentUpdates).catch(() => {});
     load();
-    loadComponents();
-    const id = setInterval(() => { load(); loadComponents(); }, 30 * 60 * 1000);
+    const id = setInterval(load, 30 * 60 * 1000);
     return () => clearInterval(id);
   }, []);
 

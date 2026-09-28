@@ -10,7 +10,8 @@ export async function GET(req, { params }) {
     const auth = authorizeWorldRequest(params.id, req);
     if (!auth.ok) return NextResponse.json({ ok: false, error: auth.error }, { status: auth.status });
     const target = new URL(req.url).searchParams.get("target");
-    const file = syncManifest.resolveWorldFile(params.id, target);
+    const platform = req.headers.get("x-rsdw-client-platform") === "gamepass" ? "gamepass" : "steam";
+    const file = syncManifest.resolveWorldFile(params.id, target, { platform });
     return new NextResponse(fs.readFileSync(file.source), {
       headers: {
         "Content-Type": "application/octet-stream",

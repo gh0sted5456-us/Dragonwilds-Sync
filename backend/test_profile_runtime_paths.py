@@ -3,6 +3,7 @@ from tempfile import TemporaryDirectory
 import zipfile
 
 import server_systems
+from profile_mod_layout import dedicated_profile_layout, install_profile_runtime_zip
 
 
 def _runtime_tree(root: Path) -> tuple[Path, Path]:
@@ -72,6 +73,45 @@ def test_profile_can_publish_ue4ss_without_runeschema_to_its_own_path():
         assert stats["components"] == {"ue4ss": True, "runeschema": False}
 
 
+def test_world_ue4ss_zip_is_normalized_into_loader_lane():
+    with TemporaryDirectory() as temp:
+        root = Path(temp)
+        profile = root / "profile"
+        archive = root / "UE4SS-test.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("UE4SS-test/dwmapi.dll", b"bootstrap")
+            zf.writestr("UE4SS-test/version.dll", b"server-loader")
+            zf.writestr("UE4SS-test/ue4ss/UE4SS.dll", b"core")
+            zf.writestr("UE4SS-test/ue4ss/Mods/Example/Scripts/main.lua", b"ignored-mod")
+        result = install_profile_runtime_zip(profile, "ue4ss", archive)
+        lane = dedicated_profile_layout(profile)["ue4ss_loader"]
+        assert (lane / "Binaries/Win64/dwmapi.dll").is_file()
+        assert (lane / "Binaries/Win64/version.dll").is_file()
+        assert (lane / "Binaries/Win64/ue4ss/UE4SS.dll").is_file()
+        assert not (lane / "Binaries/Win64/ue4ss/Mods/Example/Scripts/main.lua").exists()
+        assert result["server_only_files"] == 1
+        assert result["client_eligible_files"] == 2
+
+
+def test_world_runeschema_zip_is_normalized_and_self_enabled():
+    with TemporaryDirectory() as temp:
+        root = Path(temp)
+        profile = root / "profile"
+        archive = root / "RuneSchema-test.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("RuneSchema-test/RuneSchema/dlls/main.dll", b"core")
+            zf.writestr("RuneSchema-test/RuneSchema/config/config.json", b"{}")
+            zf.writestr("RuneSchema-test/RuneSchema/mods/Example/mod.json", b"{}")
+        result = install_profile_runtime_zip(profile, "runeschema", archive)
+        lane = dedicated_profile_layout(profile)["runeschema_loader"]
+        runtime = lane / "Binaries/Win64/ue4ss/Mods/RuneSchema"
+        assert (runtime / "dlls/main.dll").is_file()
+        assert (runtime / "config/config.json").is_file()
+        assert (runtime / "enabled.txt").is_file()
+        assert not (runtime / "mods/Example/mod.json").exists()
+        assert result["client_eligible_files"] == 3
+
+
 def test_profile_server_runtime_roots_cannot_escape_the_game_directory():
     with TemporaryDirectory() as temp:
         root = Path(temp)
@@ -94,5 +134,7 @@ def test_profile_server_runtime_roots_cannot_escape_the_game_directory():
 if __name__ == "__main__":
     test_profile_can_publish_runeschema_without_ue4ss_to_its_own_path()
     test_profile_can_publish_ue4ss_without_runeschema_to_its_own_path()
+    test_world_ue4ss_zip_is_normalized_into_loader_lane()
+    test_world_runeschema_zip_is_normalized_and_self_enabled()
     test_profile_server_runtime_roots_cannot_escape_the_game_directory()
     print("profile runtime path tests passed")

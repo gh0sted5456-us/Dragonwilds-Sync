@@ -150,8 +150,10 @@ export default function IniEditor({ world, running, onClose }) {
   const save = async () => {
     setSaving(true);
     try {
-      await api(`/api/worlds/${worldId}/ini`, { method: "POST", body: { content } });
-      setOriginal(content);
+      const saved = await api(`/api/worlds/${worldId}/ini`, { method: "POST", body: { content } });
+      const normalized = saved.content ?? content;
+      setContent(normalized);
+      setOriginal(normalized);
       toast(running ? t("ini.savedRestart") : t("ini.saved"), "success");
       loadVersions();
     } catch (e) { toast(e.message, "error"); }

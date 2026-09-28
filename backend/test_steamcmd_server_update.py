@@ -53,6 +53,43 @@ def test_successful_server_only_steamcmd_update() -> None:
         assert "validate" in command and "+quit" in command
 
 
+def test_missing_steamcmd_is_bootstrapped() -> None:
+    old_download = ss.download_steamcmd
+    old_run = ss.run_hidden
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        install = root / "server"
+        steam_root = root / "steamcmd"
+        calls = []
+
+        def fake_download(path, progress=None):
+            target = Path(path)
+            target.mkdir(parents=True, exist_ok=True)
+            (target / _steam_name()).write_bytes(b"test")
+            calls.append(("download", str(target)))
+            return {"ok": True, "steamcmd_exe": str(target / _steam_name())}
+
+        def fake_run(command, **_kwargs):
+            calls.append(("run", list(command)))
+            install.mkdir(parents=True, exist_ok=True)
+            (install / _server_exe_name()).write_bytes(b"server")
+            return SimpleNamespace(returncode=0, stdout="Success", stderr="")
+
+        ss.download_steamcmd = fake_download
+        ss.run_hidden = fake_run
+        try:
+            result = ss.install_dedicated_server(str(install), str(steam_root))
+        finally:
+            ss.download_steamcmd = old_download
+            ss.run_hidden = old_run
+
+        assert result["ok"]
+        assert calls[0][0] == "download"
+        command = next(value for kind, value in calls if kind == "run")
+        assert command[0].endswith(_steam_name())
+        assert ss.DEDICATED_STEAM_APP_ID in command
+
+
 def test_steamcmd_code_7_retries_once() -> None:
     old_run = ss.run_hidden
     with tempfile.TemporaryDirectory() as td:
@@ -148,6 +185,7 @@ def test_update_job_reports_monotonic_overall_progress() -> None:
 
 def main() -> None:
     test_successful_server_only_steamcmd_update()
+    test_missing_steamcmd_is_bootstrapped()
     test_steamcmd_code_7_retries_once()
     test_failed_steamcmd_update_surfaces_output()
     test_update_job_reports_monotonic_overall_progress()

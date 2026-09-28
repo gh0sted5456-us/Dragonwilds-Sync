@@ -21,6 +21,8 @@ export default function SettingsPage() {
   const [busyCode, setBusyCode] = useState(""); // code currently installing/updating/deleting
   const [autoLaunch, setAutoLaunchState] = useState(null);
   const [closeToTray, setCloseToTrayState] = useState(null);
+  const [componentUpdates, setComponentUpdates] = useState(null);
+  const [componentChecking, setComponentChecking] = useState(false);
   const [section, setSection] = useState(null); // null = category list; otherwise the open category id
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
 
@@ -30,7 +32,8 @@ export default function SettingsPage() {
     api("/api/settings/backup-dir").then((r) => { setBackupLoc(r.backup); setBackupPath(r.backup.custom ? r.backup.path : ""); }).catch(() => {});
     api("/api/i18n/languages").then((r) => setLangs(r.languages || [])).catch(() => {});
     loadCatalog();
-    if (isElectron) window.desktop.getAutoLaunch().then(setAutoLaunchState).catch(() => setAutoLaunchState(true));
+    loadComponentUpdates(false);
+    if (isElectron) window.desktop.getAutoLaunch().then(setAutoLaunchState).catch(() => setAutoLaunchState(false));
     if (isElectron && window.desktop.getCloseToTray) window.desktop.getCloseToTray().then(setCloseToTrayState).catch(() => setCloseToTrayState(true));
   }, []);
 
@@ -38,6 +41,18 @@ export default function SettingsPage() {
     api(`/api/i18n/registry${force ? "?force=1" : ""}`)
       .then((r) => setCatalog({ checked: !!r.checked, packs: r.packs || [] }))
       .catch(() => setCatalog({ checked: false, packs: [] }));
+
+  const loadComponentUpdates = async (force = false) => {
+    setComponentChecking(true);
+    try {
+      const result = await api(`/api/component-updates${force ? "?force=1" : ""}`);
+      setComponentUpdates(result);
+    } catch (e) {
+      setComponentUpdates({ ok: false, updateAvailable: false, items: [], error: e.message });
+    } finally {
+      setComponentChecking(false);
+    }
+  };
 
   const chooseLanguage = async (code) => {
     if (code === i18n.language) return;
@@ -370,6 +385,63 @@ export default function SettingsPage() {
             <button className="btn btn-primary" onClick={() => save({ updateCheckIntervalMinutes: Math.max(5, Number(s.updateCheckIntervalMinutes) || 30) })} disabled={saving}>{t("common.save")}</button>
           </div>
           <p className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", margin: "0.5rem 0 0" }}>{t("settings.updateCheckIntervalHelp")}</p>
+        </div>
+
+        <div style={{ marginTop: "1.1rem", borderTop: "1px solid var(--line)", paddingTop: "1rem" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.7rem" }}>
+            <div>
+              <div className="heading" style={{ fontSize: "0.92rem" }}>Mod framework releases</div>
+              <div className="subtle" style={{ fontSize: "0.72rem", fontWeight: 600 }}>
+                UE4SS is checked against Nexus Mods for each installed client. RuneSchema is checked against GitHub releases.
+              </div>
+            </div>
+            <button className="btn btn-ghost" style={{ marginLeft: "auto", padding: "0.3rem 0.55rem" }}
+              disabled={componentChecking} onClick={() => loadComponentUpdates(true)}>
+              <Icon name="refresh" size={14} /> {componentChecking ? "Checking…" : "Check now"}
+            </button>
+          </div>
+
+          {!componentUpdates ? (
+            <div className="subtle" style={{ fontSize: "0.78rem", fontWeight: 700 }}>Checking framework releases…</div>
+          ) : componentUpdates.items?.length ? (
+            <div style={{ display: "grid", gap: "0.5rem" }}>
+              {componentUpdates.items.map((item) => {
+                const amber = item.updateAvailable;
+                return (
+                  <button key={item.id} className="panel-inset"
+                    onClick={() => item.url && window.open(item.url, "_blank")}
+                    style={{
+                      width: "100%", cursor: item.url ? "pointer" : "default", textAlign: "left",
+                      padding: "0.75rem 0.85rem", display: "grid", gridTemplateColumns: "minmax(150px,1fr) auto",
+                      gap: "0.75rem", alignItems: "center",
+                      border: `1px solid ${amber ? "var(--yellow)" : "var(--line)"}`,
+                      background: amber ? "color-mix(in srgb,var(--yellow) 8%,var(--card-2))" : "var(--card-2)",
+                      color: "var(--ink)",
+                    }}>
+                    <span>
+                      <span style={{ display: "block", fontWeight: 850, fontSize: "0.86rem" }}>{item.label}</span>
+                      <span className="subtle" style={{ display: "block", fontSize: "0.7rem", fontWeight: 650, marginTop: 2 }}>
+                        Installed: {item.installedVersion || (item.installed ? "detected · version unknown" : "not detected")}
+                        {" · "}Latest: {item.latestVersion || "unavailable"}
+                      </span>
+                      {item.error && <span style={{ display: "block", color: "var(--yellow)", fontSize: "0.68rem", marginTop: 2 }}>{item.error}</span>}
+                    </span>
+                    <span className="chip" style={{
+                      background: amber ? "var(--yellow)" : "var(--line)",
+                      color: amber ? "#161108" : "var(--ink-soft)",
+                      fontWeight: 900, letterSpacing: ".035em",
+                    }}>
+                      {amber ? "UPDATE" : item.latestVersion ? "CURRENT" : "CHECK"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="subtle" style={{ fontSize: "0.78rem", fontWeight: 700 }}>
+              Release status is unavailable right now.
+            </div>
+          )}
         </div>
       </div>
       )}

@@ -107,6 +107,25 @@ if (!backend.includes('MAX_CUSTOM_BADGE_BYTES')) failures.push('Custom badge PNG
 if (!badges.includes('temp.replace(target)')) failures.push('Badge cache writes must be atomic');
 if (badges.includes('preview_data') && read('backend/v3_phase4.py').includes('preview_data')) failures.push('Preview PNG data must never enter the heartbeat/publication helper');
 
+
+need('backend/profile_mod_layout.py', [
+  'install_profile_runtime_zip', 'Runtime ZIP component must be UE4SS or RuneSchema',
+  'client-compatible files are derived from this staged runtime'
+]);
+need('backend/dragonwilds_service_v2_wrapper.py', [
+  'server.world.runtime_zip.install', 'Stop this World before replacing its UE4SS or RuneSchema runtime ZIP'
+]);
+need('renderer/release-profile-mod-folders.js', [
+  'data-profile-runtime-zip="ue4ss"', 'data-profile-runtime-zip="runeschema"',
+  'Clients install them automatically on the next verified Sync'
+]);
+need('electron/main-v2.cjs', [
+  "build-assets', 'rsdwl-icon.png", "backgroundColor: '#171a1d'"
+]);
+need('renderer/release-final-cleanup.css', [
+  'Soft matte RSDW visual authority', '--bg:#171a1d', 'min-height:40px!important'
+]);
+
 if (failures.length) {
   console.error('[V3 Phase 4] FAIL');
   failures.forEach((failure) => console.error(` - ${failure}`));

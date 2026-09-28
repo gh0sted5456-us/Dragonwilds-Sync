@@ -48,6 +48,7 @@ const P = {
   // Default WINEPREFIX for a Windows-targeted world run via Wine on Linux.
   // Only created/used when actually needed (see supervisor.js).
   worldWinePrefix: (worldId) => path.join(dataDir(), "wine-prefixes", worldId),
+  worldRuntimeDir: (worldId, component) => ensure(path.join(dataDir(), "runtime-packages", String(worldId), String(component || "").toLowerCase())),
 };
 
 module.exports = { P, ensure, platform: os.platform() };

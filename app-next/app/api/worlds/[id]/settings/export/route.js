@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const ini = require("@/lib/ini");
+const active = require("@/lib/active-server-profile");
 const AdmZip = require("adm-zip");
 const ra = require("@/lib/remoteauth");
 export const dynamic = "force-dynamic";
@@ -11,11 +12,11 @@ export async function GET(req, { params }) {
   if (!w) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   const denied = ra.guardResponse(req, { worldId: params.id, tab: "settings" });
   if (denied) return denied;
-  const s = ini.readSettings(w.install_dir, w.platform);
+  const s = active.settingsFor(w);
   // strip managed/identity keys so shared settings are portable
   const MANAGED = new Set(["PublicPort","RESTAPIPort","RESTAPIEnabled","RCONPort","RCONEnabled","AdminPassword","WorldPassword","OwnerId","ServerName","DefaultWorldName","PublicIP"]);
   const portable = {};
-  for (const [k, v] of Object.entries(s.options)) if (!MANAGED.has(k)) portable[k] = v;
+  for (const [k, v] of Object.entries(s.values)) if (!MANAGED.has(k)) portable[k] = v;
   portable.AdminPassword = w.admin_password || "";
   portable.WorldPassword = w.server_password || "";
   portable.OwnerId = w.owner_id || "";

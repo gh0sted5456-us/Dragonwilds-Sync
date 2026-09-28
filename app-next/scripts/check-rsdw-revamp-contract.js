@@ -68,7 +68,7 @@ function contains(rel, needle, message) {
   contains("lib/component-updates.js", "Xbox");
   contains("lib/component-updates.js", "Steam");
   contains("lib/runtime-packages.js", 'const COMPONENTS = new Set(["ue4ss-steam", "ue4ss-gamepass", "runeschema"])');
-  contains("lib/runtime-packages.js", '"Binaries", "WinGDK"');
+  contains("lib/runtime-packages.js", 'component === "ue4ss-gamepass" ? "WinGDK" : "Win64"');
   contains("lib/runtime-packages.js", 'clientEligible');
   contains("lib/sync/client.js", '"X-RSDW-Client-Platform"');
   contains("components/ModsPanel.jsx", "UE4SS · Steam/server");

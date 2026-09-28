@@ -47,6 +47,8 @@ let tray = null;
 // Set the moment a real quit is requested (tray Quit, or before-quit) so the window's
 // close handler knows to actually close instead of hiding to the tray.
 let quitting = false;
+let quitCleanupStarted = false;
+let quitCleanupFinished = false;
 
 // True when the app was launched at login rather than opened by hand — used to start
 // straight to the tray without a window (feature: autostart to tray). Set in main().
@@ -112,10 +114,9 @@ function logToFile(msg) {
 }
 
 // ---------------------------------------------------------------------------
-// LAUNCH ON STARTUP — on by default, both for a fresh install and for anyone
-// upgrading from a version that predates this setting (no persisted choice
-// yet reads as "on"). Once the user picks a value in Settings it's persisted
-// here and sticks across restarts and future updates.
+// LAUNCH ON STARTUP — explicit opt-in. Fresh installs and upgrades that have
+// never chosen a value stay off; opening RSDW Sync must never surprise-launch
+// itself at Windows/Linux login.
 //
 // Windows uses Electron's own Run-key API. Linux has no Electron equivalent,
 // so we manage a .desktop file under ~/.config/autostart ourselves. (No macOS
@@ -175,8 +176,8 @@ function applyAutostart(enabled) {
 function initAutostart() {
   let enabled = readAutostartPref();
   if (enabled === null) {
-    enabled = true; // fresh install, or an upgrade that predates this setting
-    writeAutostartPref(enabled);
+    enabled = false;
+    writeAutostartPref(false);
   }
   applyAutostart(enabled);
 }
@@ -449,6 +450,34 @@ function triggerBoot(base, attempt = 1) {
   req.setTimeout(5000, () => { req.destroy(); });
 }
 
+function requestManagedServerShutdown() {
+  return new Promise((resolve) => {
+    if (!serverReady) return resolve(false);
+    const req = http.request({
+      hostname: "127.0.0.1",
+      port: PORT,
+      path: "/api/app/shutdown",
+      method: "POST",
+      headers: {
+        "x-rsdw-admin-token": ADMIN_TOKEN,
+        "content-length": "0",
+      },
+    }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res.statusCode >= 200 && res.statusCode < 300));
+    });
+    req.on("error", (e) => {
+      logToFile(`Managed server shutdown request failed: ${e.message}`);
+      resolve(false);
+    });
+    req.setTimeout(12000, () => {
+      req.destroy();
+      resolve(false);
+    });
+    req.end();
+  });
+}
+
 function createWindow() {
   if (mainWindow) { mainWindow.focus(); return; } // never create a second window
 
@@ -582,17 +611,26 @@ function main() {
   });
 
   app.on("window-all-closed", () => {
-    // With close-to-tray on, the window hides rather than closes, so this never fires
-    // and the app keeps running in the tray. It only fires when the window genuinely
-    // closes (close-to-tray off, or no tray) — which is a real quit.
-    if (nextProc) { try { nextProc.kill(); } catch {} }
+    // A real quit flows through before-quit so app-owned server subprocesses get
+    // one graceful save/shutdown attempt before the local Next process exits.
     app.quit();
   });
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
     quitting = true;
-    if (tray) { try { tray.destroy(); } catch {} tray = null; }
-    if (nextProc) { try { nextProc.kill(); } catch {} }
+    if (quitCleanupFinished) return;
+    event.preventDefault();
+    if (quitCleanupStarted) return;
+    quitCleanupStarted = true;
+
+    const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 14000));
+    Promise.race([requestManagedServerShutdown(), timeout]).finally(() => {
+      quitCleanupFinished = true;
+      if (tray) { try { tray.destroy(); } catch {} tray = null; }
+      if (nextProc) { try { nextProc.kill(); } catch {} nextProc = null; }
+      // Re-enter app.quit(); the finished flag lets this second before-quit pass.
+      setTimeout(() => app.quit(), 50);
+    });
   });
 }
 
@@ -636,7 +674,7 @@ ipcMain.handle("create-profile-shortcut", (_e, profile) => {
 });
 ipcMain.handle("get-auto-launch", () => {
   const v = readAutostartPref();
-  return v === null ? true : v;
+  return v === null ? false : v;
 });
 ipcMain.handle("set-auto-launch", (_e, enabled) => {
   writeAutostartPref(!!enabled);

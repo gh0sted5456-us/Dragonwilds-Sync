@@ -1,10 +1,11 @@
 # World profile staging and mod paths
 
-Dragonwilds Sync keeps the installed game files shared and clean. A Dedicated
-World profile stores only the complete game-ready overlay that belongs to that
-World. Activating the profile composes that overlay into the configured game
-root; unloading it captures changes and removes only files owned by that
-profile.
+Dragonwilds Sync keeps the installed game files shared and clean. A World
+profile is the durable source of truth for that World's staged mods and settings.
+Before a Player or Dedicated launch, Sync composes the selected profile into the
+configured game tree and Saved directory, then starts the game executable.
+Mutable settings and saves may be captured back after use; live installation
+mods are never allowed to silently replace the profile's staged mod source.
 
 The launcher does not choose, download, repair, or reset dedicated UE4SS or
 RuneSchema builds. Server managers place complete runtime trees in the World
@@ -68,6 +69,24 @@ Creation pre-fills the folder structure and both platform config templates.
 Changing the World name, server name, owner/user ID, admin password, World
 password, or port refreshes those templates. Engine-owned or hand-authored
 lines not managed by Dragonwilds Sync are preserved.
+
+## Launch contract
+
+Every launch is a materialization transaction.
+
+- **Player / local World** — reapply the selected profile's UE4SS, RuneSchema,
+  PAK, Win64, managed-file and game-config state; generate that profile's local
+  `mods.txt`; then launch the configured Dragonwilds executable.
+- **Dedicated World** — reapply the selected profile's staged overlay and mod
+  lanes, restore its saved server `Saved/Config` tree, regenerate the
+  launcher-owned `DedicatedServer.ini` values, retain that final config back
+  in the profile, and only then start the dedicated executable.
+- **Stop / switch** — capture mutable server config and save state back into the
+  owning profile after the process is stopped. Profile-owned mod lanes remain
+  authoritative and are not adopted from whatever happens to be live.
+
+This contract is shared by Full, Quick, Headless, and worker-backed dedicated
+launches so those entry points cannot produce different World contents.
 
 ## Deterministic deployment
 

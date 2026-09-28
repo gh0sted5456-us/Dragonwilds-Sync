@@ -1131,11 +1131,18 @@ app.whenReady().then(async () => {
       if (/^https?:/i.test(url)) shell.openExternal(url).catch(()=>{});
     });
   });
-  startService(); await refreshBackgroundSettings();
+  // Present the launcher shell before touching the Python control plane. A broken
+  // or incomplete game/server runtime must never make the standalone manager
+  // appear not to launch. Backend state and background services hydrate after
+  // the first window is already available to the operator.
   const q=parseQuickArgs(process.argv);
   const startupJoin=pendingJoinRequest||parseJoinArgs(process.argv);
   if(startupJoin) deliverJoinRequest(startupJoin); else if(q.minimal&&q.worldId)createMinimalWindow(q.worldId,q.autoStart);else if(q.quick&&q.worldId) createQuickWindow(q.worldId,q.worldKind,q.autoStart); else createWindow({show:!backgroundSettings.start_minimized});
-  startBackgroundServices({full:!quickProcess,mode:quickProcessMode});
+
+  startService();
+  refreshBackgroundSettings()
+    .catch((error)=>console.warn('[startup] background settings unavailable:',error?.message||error))
+    .finally(()=>startBackgroundServices({full:!quickProcess,mode:quickProcessMode}));
   app.on('activate',()=>{ if(BrowserWindow.getAllWindows().length===0){if(quickProcess){const profile=process.env.DWS_V3_QUICK_PROFILE||'';if(quickProcessMode==='server')createMinimalWindow(profile,false);else createQuickWindow(profile,quickProcessMode==='coop'?'private':'world',false);}else promoteToFullApplication();} else if(mainWindow){mainWindow.show();mainWindow.focus();} });
 });
 app.on('window-all-closed',()=>{ if(process.platform==='darwin')return; if(!backgroundSettings.close_to_tray){forceQuit=true;app.quit();} });

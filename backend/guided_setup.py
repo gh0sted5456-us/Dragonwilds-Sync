@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 from machine_paths import player_machine_paths, server_machine_paths
+from server_layout import discover_server_layouts
 
 STEAM_PROBES = (("api.steamcmd.net", 443), ("steamcdn-a.akamaihd.net", 443))
 
@@ -41,18 +42,42 @@ def validate_client_path(selected: str | Path, save_dir: str | Path = "") -> dic
 
 def validate_server_path(selected: str | Path, save_dir: str | Path = "", *, allow_new: bool = False) -> dict:
     raw = Path(str(selected or "").strip()).expanduser()
-    # Full Setup may still choose a destination directory before an executable exists.
-    # That is installer input only; it is never persisted as runtime authority.
-    if allow_new and raw.exists() and raw.is_dir() and not save_dir:
+
+    # A server operator should be able to choose the dedicated executable, the
+    # installed game folder, a SteamCMD root, or a broader Steam/server parent.
+    # Reuse the bounded dedicated-server discovery before treating an existing
+    # directory as a brand-new Full Setup destination.
+    discovery = {"layouts": [], "directories_scanned": 0, "truncated": False}
+    if raw.exists() and raw.is_dir() and not save_dir:
+        discovery = discover_server_layouts(raw)
+        discovered = list(discovery.get("layouts") or [])
+        if len(discovered) == 1:
+            hit = discovered[0]
+            selected = str(hit.get("server_exe") or "")
+            save_dir = str(Path(str(hit.get("game_root") or "")) / "Saved")
+        elif len(discovered) > 1:
+            return {"ok": False, "mode": "discover", "selected": str(raw), "save_dir": "",
+                    "layout": {}, "checks": [], "discoveries": discovered,
+                    "directories_scanned": int(discovery.get("directories_scanned") or 0),
+                    "search_truncated": bool(discovery.get("truncated")),
+                    "message": "Multiple Dragonwilds Dedicated Server installs were found. Choose the server you want this profile to manage."}
+
+    # Full Setup may still choose a destination directory before an executable
+    # exists. This is installer input only; runtime authority is saved after the
+    # installed executable and Saved directory have been verified.
+    if allow_new and raw.exists() and raw.is_dir() and not save_dir and not discovery.get("layouts"):
         return {"ok": True, "mode": "build", "selected": str(raw), "save_dir": "", "layout": {"install_root": str(raw)},
                 "checks": [_check(raw, "Dedicated server install destination")], "discoveries": [],
-                "directories_scanned": 0, "search_truncated": False,
-                "message": "Location is valid for Full Setup. Select the installed server executable and Saved directory after installation."}
+                "directories_scanned": int(discovery.get("directories_scanned") or 0),
+                "search_truncated": bool(discovery.get("truncated")),
+                "message": "No existing dedicated server was found here. This location is ready for guided SteamCMD installation."}
     try:
         layout = server_machine_paths(selected, save_dir)
     except Exception as exc:
-        return {"ok": False, "mode": "existing", "selected": str(selected or ""), "save_dir": str(save_dir or ""),
-                "layout": {}, "checks": [], "discoveries": [], "directories_scanned": 0, "search_truncated": False,
+        return {"ok": False, "mode": "existing", "selected": str(selected or raw), "save_dir": str(save_dir or ""),
+                "layout": {}, "checks": [], "discoveries": list(discovery.get("layouts") or []),
+                "directories_scanned": int(discovery.get("directories_scanned") or 0),
+                "search_truncated": bool(discovery.get("truncated")),
                 "message": str(exc)}
     checks = [
         _check(Path(layout["executable"]), "Dedicated server executable"),
@@ -64,9 +89,12 @@ def validate_server_path(selected: str | Path, save_dir: str | Path = "", *, all
     public = {key: str(value) if isinstance(value, Path) else value for key, value in layout.items()}
     public["server_exe"] = public["executable"]
     public["paks_mods_dir"] = public["paks"]
+    discoveries = list(discovery.get("layouts") or [])
     return {"ok": True, "mode": "existing", "selected": str(selected), "save_dir": str(layout["save_root"]),
-            "layout": public, "checks": checks, "discoveries": [], "directories_scanned": 0, "search_truncated": False,
-            "message": "Exact Dedicated Server executable and Saved directory matched."}
+            "layout": public, "checks": checks, "discoveries": discoveries,
+            "directories_scanned": int(discovery.get("directories_scanned") or 0),
+            "search_truncated": bool(discovery.get("truncated")),
+            "message": "Dedicated Server installation detected and verified." if discoveries else "Exact Dedicated Server executable and Saved directory matched."}
 
 
 def probe_setup_network(hosts=None, timeout: float = 3.0) -> dict:

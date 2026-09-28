@@ -117,6 +117,15 @@ def main() -> None:
             switch = source[source.index("def activate_world("):source.index("def unload_world(")]
             assert "snapshot_profile_mods(outgoing_id" not in switch
 
+            # Local Play must treat profile storage as authoritative too:
+            # re-materialize on every launch and only capture non-mod state.
+            service_source = (Path(__file__).parent / "dragonwilds_service_compat.py").read_text(encoding="utf-8")
+            play = service_source[service_source.index('if method == "singleplayer.play"'):service_source.index('if method == "notifications.mark_all_read"')]
+            assert "activate_or_adopt_client_world_profile(" in play
+            assert "if live_world_id != profile_id" not in play
+            assert "include_mods=False" in play
+            assert play.index("activate_or_adopt_client_world_profile(") < play.index("launch_game(")
+
             # "Open Mod Folder" must resolve through the backend, never guess
             # a path from AppData/server-root string concatenation in the
             # renderer. describe_profile_mods_root() is that single seam.

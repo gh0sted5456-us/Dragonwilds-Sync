@@ -185,6 +185,9 @@ def test_prepare_preserves_live_save_for_current_profile_and_publish_reuses_scan
             prepared = engine.prepare_start("world-a")
             assert prepared["materialization_mode"] == "already_materialized"
             assert counts["restore_save"] == 0, "same-profile Start overwrote the live save"
+            assert counts["restore_mods"] == 1, "same-profile Start did not replant profile-owned mods"
+            assert counts["restore_config"] == 1, "same-profile Start did not restore profile-owned server settings"
+            assert counts["snap_config"] == 1, "launch-time server settings were not retained in the profile"
             assert counts["runtime"] == counts["generate"] == 0
             assert counts["scan"] == 1
             assert counts["runtime_assert"] == 0, "staging pipeline invoked retired runtime selection"

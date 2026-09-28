@@ -347,10 +347,13 @@ def _install_server_pipeline(server_engine_module) -> None:
         elif marker_id and marker_id != profile_id:
             mode = "unknown_owner_preserved"
 
-        # Replant even on same-profile activation: untracked live mods must
-        # not survive merely because the active marker already matches.
+        # Replant even on same-profile activation: profile storage is the
+        # authoritative World overlay, so untracked live mods must not survive
+        # merely because the active marker already matches. Server settings are
+        # likewise materialized on every activation/start before launch.
         if mode != "profile_switch":
             materialized["mods"] = server_engine_module.restore_profile_mods(profile_id, Path(root))
+            materialized["configs"] = server_engine_module.restore_profile_server_config(profile_id, root)
 
         runtime = {"ok": True, "managed": False, "source": "world-staging-profile", "repaired": []}
 
@@ -368,6 +371,10 @@ def _install_server_pipeline(server_engine_module) -> None:
                 raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
             server_engine_module.write_dedicated_config(cfg, root)
             server_engine_module.save_server_profile(profile_id, profile)
+            # Keep an exact profile-owned copy of the settings that will be
+            # presented to the dedicated executable. This also seeds a new
+            # profile that did not yet have a Saved/Config snapshot.
+            server_engine_module.snapshot_profile_server_config(profile_id, root)
             # The explicit Runtime Console setting owns UE4SS INI mutation.
             # Preparing/starting a World preserves the installed switches.
             console_status = getattr(server_engine_module, "ue4ss_console_policy_status", None)

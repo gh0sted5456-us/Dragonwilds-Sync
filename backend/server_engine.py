@@ -1574,8 +1574,12 @@ class ServerEngine:
         cfg = profile.setdefault("dedicated_config", {})
         # Profile storage is authoritative even when this World is already
         # selected. Always materialize its complete staged overlay before launch.
-        restored_mod_files = restore_profile_mods(profile_id, Path(self._profile_root(profile)))
-        self._event(f"Materialized {restored_mod_files} staged overlay file(s) before dedicated launch.", "ok")
+        profile_root = self._profile_root(profile)
+        restored_mod_files = restore_profile_mods(profile_id, Path(profile_root))
+        restored_config_files = restore_profile_server_config(profile_id, profile_root)
+        self._event(
+            f"Materialized {restored_mod_files} staged overlay file(s) and "
+            f"{restored_config_files} profile config change(s) before dedicated launch.", "ok")
         cfg.setdefault("server_name", profile.get("name") or "World"); cfg.setdefault("world_name", profile.get("name") or "World"); cfg.setdefault("port", 7777); cfg["server_exe"] = exe
         # The Dragonwilds Player ID is a machine/server setting, matching the
         # original DragonwildsSync behavior. It hydrates DedicatedServer.ini;
@@ -1585,8 +1589,14 @@ class ServerEngine:
             cfg["owner_id"] = machine_owner_id
         if not str(cfg.get("owner_id") or "").strip():
             raise ValueError("Owner ID is required before the dedicated server can start. Copy your Dragonwilds Player ID from the in-game Settings menu into Settings → Server.")
-        write_dedicated_config(cfg, self._profile_root(profile))
-        verification = verify_dedicated_config(cfg, self._profile_root(profile))
+        write_dedicated_config(cfg, profile_root)
+        # Persist the exact launch-time server configuration back into the
+        # profile after generated DedicatedServer.ini values are applied. This
+        # gives every Server profile a complete settings copy for the next
+        # activation/start instead of relying on whichever World last occupied
+        # the shared live Saved/Config directory.
+        snapshot_profile_server_config(profile_id, profile_root)
+        verification = verify_dedicated_config(cfg, profile_root)
         profile["dedicated_config_verification"] = verification
         if not verification.get("ok"):
             save_server_profile(profile_id, profile)
@@ -1602,7 +1612,7 @@ class ServerEngine:
         self._event("Preserved the installed UE4SS console settings for launch; use Runtime Console → Settings to change them.", "ok")
         try:
             from world_maintenance import hydrate_world_configs
-            hydrate_world_configs(profile_id, self._profile_root(profile))
+            hydrate_world_configs(profile_id, profile_root)
         except Exception as exc:
             self._event(f"Writable config hydration needs attention: {type(exc).__name__}: {exc}", "warn")
         # Unreal's documented -stdout route gives the launcher an owned pipe
@@ -1619,7 +1629,7 @@ class ServerEngine:
         PLAYER_SERVICE.reset_session()
         with self._event_lock:
             self.process_output = []
-        writable = ensure_server_runtime_writable(self._profile_root(profile))
+        writable = ensure_server_runtime_writable(profile_root)
         if writable.get("writable_repaired"):
             self._event(f"Cleared {writable['writable_repaired']} inherited read-only runtime attribute(s) before launch.", "ok")
         # Keep the original dedicated executable available on the Windows
@@ -1662,8 +1672,28 @@ class ServerEngine:
             raise RuntimeError(f"Dedicated server PID {pid} is still running after the stop request.")
         PLAYER_BRIDGE.stop(); PLAYER_SERVICE.reset_session()
         self._restore_computer_profile()
+
+        # Once the dedicated process is confirmed stopped, preserve mutable
+        # World state back into its profile. Mods are deliberately excluded:
+        # profile mod storage remains authoritative and is replanted on launch.
+        captured_config = 0
+        captured_save = False
+        if invite_profile_id:
+            profile = load_server_profile(invite_profile_id) or {}
+            profile_root = self._profile_root(profile)
+            profile_exe = find_dedicated_server_exe(profile)
+            try:
+                if profile_root and Path(profile_root).exists():
+                    captured_config = snapshot_profile_server_config(invite_profile_id, profile_root)
+                if profile_exe and Path(profile_exe).is_file():
+                    captured_save = snapshot_profile_savegame(invite_profile_id, profile_exe)
+            except (OSError, ValueError, RuntimeError) as exc:
+                self._event(f"Stopped server, but profile state capture needs attention: {exc}", "warn")
+
         result = self.status()
-        result.update({"stop_verified": True, "stop_method": method, "stopped_pid": int(pid)})
+        result.update({"stop_verified": True, "stop_method": method, "stopped_pid": int(pid),
+                       "profile_config_captured": int(captured_config or 0),
+                       "profile_save_captured": bool(captured_save)})
         self._event(f"Stopped dedicated server PID {pid} ({method}).", "ok")
         return result
 

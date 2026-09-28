@@ -4042,11 +4042,17 @@ def handle(method: str, params: dict) -> object:
                                state.setdefault("player_profile", {}).get("character_worlds") or {},
                                state.setdefault("client", {}).get("world_character_selection") or {},
                                state.setdefault("player_profile", {}).get("character_profiles") or {})
-        if live_world_id != profile_id:
-            activate_or_adopt_client_world_profile(live_world_id, profile_id, install_dir, profile_kind="local")
-            state["client"]["live_world_id"] = profile_id
+        # Profile storage is authoritative for World-owned mods/settings. Reapply
+        # it on every launch, even when this profile is already marked live, so
+        # edits made through Browse Mods/Profile Manager are staged before the
+        # game executable starts. Routine launch only snapshots non-mod state
+        # back into the profile; live installation mods never overwrite the
+        # profile's source tree.
+        activation = activate_or_adopt_client_world_profile(
+            live_world_id, profile_id, install_dir, profile_kind="local")
+        state["client"]["live_world_id"] = profile_id
         mods_txt = write_singleplayer_mods_txt(game_dir, profile_id)
-        snapshot_client_world(profile_id, install_dir, profile_kind="local")
+        snapshot_client_world(profile_id, install_dir, include_mods=False, profile_kind="local")
         write_active_world(resolve_client_layout(game_dir).game_root, profile_id, "singleplayer")
         exe = str(application.get("game_exe") or "").strip()
         if not exe:

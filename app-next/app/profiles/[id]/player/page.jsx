@@ -28,11 +28,18 @@ export default function PlayerProfile({ params }) {
     }).catch((e) => toast(e.message, "error"));
   }, [params.id]);
 
+  const refreshProfile = async () => {
+    const latest = await api(`/api/profiles/${params.id}`);
+    setProfile(latest.profile);
+    return latest.profile;
+  };
+
   const connect = async () => {
     setChecking(true); setResult(null);
     try {
       const response = await api(`/api/profiles/${params.id}/verify`, { method: "POST", body: {} });
       setResult({ ...response.comparison, prerequisites: response.manifest.prerequisites });
+      await refreshProfile();
       toast(response.comparison.current ? "Connected — your managed mods match this World." : `${response.comparison.changes.length} mod file(s) need synchronization.`, response.comparison.current ? "success" : "info");
     } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
   };
@@ -42,6 +49,7 @@ export default function PlayerProfile({ params }) {
       const response = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
       const { installed, removed, manifest } = response.result;
       setResult({ current: true, changes: [], prerequisites: manifest.prerequisites });
+      await refreshProfile();
       toast(`World synchronized: ${installed.length} installed or updated, ${removed.length} removed.`, "success");
     } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
   };
@@ -95,10 +103,12 @@ export default function PlayerProfile({ params }) {
         setFlowStep("Authenticating with World…");
         const verified = await api(`/api/profiles/${params.id}/verify`, { method: "POST", body: {} });
         setResult({ ...verified.comparison, prerequisites: verified.manifest.prerequisites });
+        await refreshProfile();
         if (!verified.comparison.current) {
           setFlowStep(`Synchronizing ${verified.comparison.changes.length} managed file(s)…`);
           const synced = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
           setResult({ current: true, changes: [], prerequisites: synced.result.manifest.prerequisites });
+          await refreshProfile();
         }
         setFlowStep("Authenticated and synchronized.");
         setLaunchReady(true);

@@ -31,6 +31,7 @@ export async function POST(_req, { params }) {
         bannerData: identity.bannerData || null,
         accentColor: identity.accentColor || null,
       },
+      worldType: payload.manifest.world?.type || connection.worldType || "Private",
     };
     dbm.upsertProfile({
       profile_id: profile.profile_id,

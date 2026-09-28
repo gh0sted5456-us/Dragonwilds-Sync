@@ -99,6 +99,7 @@ function buildWorldManifest(worldId, options = {}) {
       id: world.world_id,
       name: world.display_name,
       gamePort: world.game_port,
+      type: world.community_server ? "Community" : "Private",
       identity: {
         iconData: world.icon_data || null,
         bannerData: world.banner_data || null,

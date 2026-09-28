@@ -42,7 +42,7 @@ function ModeCard({ icon, title, desc, onClick }) {
       style={{ textAlign: "left", padding: "1rem", display: "flex", gap: "0.9rem", alignItems: "center", cursor: "pointer", border: "1px solid var(--line)" }}
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = "var(--accent)")}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = "var(--line)")}>
-      <div style={{ width: 42, height: 42, borderRadius: 8, background: "var(--accent)", color: "#fff", display: "grid", placeItems: "center", flexShrink: 0 }}>
+      <div style={{ width: 42, height: 42, borderRadius: 8, background: "var(--accent)", color: "var(--accent-ink)", display: "grid", placeItems: "center", flexShrink: 0 }}>
         <Icon name={icon} size={22} />
       </div>
       <div>

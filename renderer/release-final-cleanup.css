@@ -107,3 +107,78 @@ body[data-handheld-mode="1"] .sidebar .nav-icon,body[data-handheld-mode="1"] .si
 .fantasy-entry-card .splash-notice .header-actions { display:flex; flex-wrap:wrap; justify-content:center; }
 .fantasy-entry-card > #check-application-update { display:block; margin:14px auto 0; }
 .fantasy-entry-card > .entry-button { display:block; width:min(280px,100%); margin:12px auto; }
+
+
+/* Soft matte RSDW visual authority ---------------------------------------
+   Keep the application dark, but lift surfaces out of near-black and reduce
+   high-contrast gold. Controls use comfortable padding and a restrained radius. */
+:root{
+  --bg:#171a1d;
+  --bg-2:#1c2023;
+  --panel:rgba(34,38,41,.96);
+  --panel-2:rgba(42,47,51,.96);
+  --panel-3:rgba(51,57,61,.94);
+  --border:rgba(201,170,112,.16);
+  --border-strong:rgba(201,170,112,.28);
+  --text:#f3f0e9;
+  --muted:#b8bcba;
+  --gold:#c9aa70;
+  --gold-soft:#8b754c;
+  --shadow:0 16px 38px rgba(0,0,0,.24);
+  --radius:17px;
+  --radius-sm:12px;
+}
+html,body{background:var(--bg)}
+.app-shell{
+  background:
+    linear-gradient(90deg,rgba(23,26,29,.94),rgba(29,33,36,.90)),
+    url('assets/theme/dark-mode.webp') center/cover fixed!important;
+}
+.sidebar{
+  background:linear-gradient(180deg,rgba(27,30,33,.97),rgba(31,35,38,.96))!important;
+  box-shadow:10px 0 30px rgba(0,0,0,.16)!important;
+}
+.panel,.settings-section,.server-shell-card,.modal,.identity-box,
+.runtime-build-summary,.runtime-build-list,.profile-storage-destinations details{
+  box-shadow:0 8px 24px rgba(0,0,0,.12);
+}
+.btn,button.btn,.compact-btn{
+  min-height:40px!important;
+  padding:10px 17px!important;
+  border-radius:12px!important;
+  transition:background .16s ease,border-color .16s ease,transform .16s ease,box-shadow .16s ease!important;
+}
+.btn.compact-btn,.compact-btn{
+  min-height:35px!important;
+  padding:8px 13px!important;
+  border-radius:11px!important;
+}
+.btn:hover:not(:disabled){transform:translateY(-1px)}
+.btn.primary{
+  background:color-mix(in srgb,var(--gold) 72%,#6f6552 28%)!important;
+  color:#17191b!important;
+  border-color:color-mix(in srgb,var(--gold) 68%,transparent)!important;
+  box-shadow:0 5px 14px rgba(0,0,0,.15)!important;
+}
+.btn.ghost{
+  background:rgba(255,255,255,.045)!important;
+  border-color:rgba(255,255,255,.10)!important;
+}
+.btn.ghost:hover:not(:disabled){background:rgba(255,255,255,.075)!important;border-color:var(--border-strong)!important}
+.nav-button{padding:12px 14px!important;border-radius:12px!important}
+.nav-button:hover{background:rgba(255,255,255,.055)!important}
+.nav-button.active{
+  background:linear-gradient(90deg,rgba(201,170,112,.14),rgba(255,255,255,.025))!important;
+  border-color:rgba(201,170,112,.22)!important;
+}
+.field,.select,input.field,select.field,select.select,
+body input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+body textarea,body select{
+  min-height:40px;
+  padding:9px 12px;
+  border-radius:11px;
+}
+.profile-runtime-zip-panel{margin-top:12px;padding:13px 15px;border:1px solid var(--border);border-radius:13px;background:rgba(255,255,255,.025)}
+.profile-runtime-zip-panel summary{cursor:pointer;font-weight:750}
+.profile-runtime-zip-panel p{color:var(--muted);line-height:1.5}
+.profile-runtime-zip-panel .header-actions{justify-content:flex-start}

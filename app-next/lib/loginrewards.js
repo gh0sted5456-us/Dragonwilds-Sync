@@ -12,7 +12,6 @@
 const fs = require("fs");
 const path = require("path");
 const dbm = require("./db");
-const ue4ss = require("./ue4ss");
 const { P } = require("./paths");
 
 // A players.json is a tiny flat map; anything past this is not the file we expect and
@@ -38,8 +37,13 @@ function setPathOverride(worldId, p) {
 // look in the folder root and its Scripts subfolder — the two places UE4SS Lua mods
 // keep runtime state — and stop at the first match. Returns an absolute path or null.
 function autodetect(installDir) {
-  let modsRoot;
-  try { modsRoot = ue4ss.modsDir(installDir); } catch { return null; }
+  const gameRoot = fs.existsSync(path.join(installDir, "RSDragonwilds")) ? path.join(installDir, "RSDragonwilds") : installDir;
+  const candidates = [
+    path.join(gameRoot, "Binaries", "Win64", "ue4ss", "Mods"),
+    path.join(gameRoot, "Binaries", "WinGDK", "ue4ss", "Mods"),
+  ];
+  const modsRoot = candidates.find((candidate) => fs.existsSync(candidate));
+  if (!modsRoot) return null;
   let entries;
   try { entries = fs.readdirSync(modsRoot, { withFileTypes: true }); } catch { return null; }
   // Prefer a folder that looks like the reward mod, but fall back to any that has the file.

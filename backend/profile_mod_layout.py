@@ -19,7 +19,8 @@ import uuid
 import json
 import threading
 import re
-from pathlib import Path, PureWindowsPath
+import zipfile
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 _SPARE_LOCK = threading.RLock()
 
@@ -169,6 +170,153 @@ def dedicated_profile_layout(profile_dir: str | Path) -> dict[str, Path]:
     if not marker.is_file():
         marker.write_text("DragonwildsSync layered World staging v1\n", encoding="utf-8")
     return paths
+
+
+def install_profile_runtime_zip(profile_dir: str | Path, component: str, archive_path: str | Path) -> dict:
+    """Validate and stage a complete World-owned UE4SS or RuneSchema ZIP.
+
+    Runtime cores are kept in dedicated loader lanes rather than normal mod
+    folders.  The server materializes the staged lane verbatim; Sync later
+    derives the client-compatible subset from the same source of truth.
+    """
+    owner = Path(profile_dir)
+    source = Path(archive_path).expanduser().resolve(strict=False)
+    kind = str(component or "").strip().casefold()
+    if kind not in {"ue4ss", "runeschema"}:
+        raise ValueError("Runtime ZIP component must be UE4SS or RuneSchema.")
+    if not source.is_file() or source.suffix.casefold() != ".zip":
+        raise ValueError("Choose a readable .zip runtime package.")
+
+    layout = dedicated_profile_layout(owner)
+    target = layout["ue4ss_loader" if kind == "ue4ss" else "runeschema_loader"]
+    temporary_root = owner / (".runtime-import-" + uuid.uuid4().hex)
+    candidate = temporary_root / "payload"
+    candidate.mkdir(parents=True, exist_ok=False)
+
+    try:
+        with zipfile.ZipFile(source) as archive:
+            infos = [info for info in archive.infolist() if not info.is_dir()]
+            if not infos:
+                raise ValueError("The selected runtime ZIP is empty.")
+            if len(infos) > 5000:
+                raise ValueError("Runtime ZIP contains too many files.")
+            expanded = sum(max(0, int(info.file_size)) for info in infos)
+            if expanded > 1024 * 1024 * 1024:
+                raise ValueError("Runtime ZIP expands beyond the 1 GiB safety limit.")
+
+            raw_parts: list[list[str]] = []
+            for info in infos:
+                parts = list(PurePosixPath(info.filename.replace("\\", "/").strip("/")).parts)
+                if (not parts or any(part in {"", ".", ".."} for part in parts)
+                        or ((info.external_attr >> 16) & 0o170000) == 0o120000):
+                    raise ValueError(f"Runtime ZIP contains an unsafe path: {info.filename}")
+                raw_parts.append(parts)
+
+            # Release archives commonly wrap everything in one version-named
+            # directory. Strip that wrapper only when every file shares it.
+            normalized = raw_parts
+            if raw_parts and all(len(parts) > 1 and parts[0].casefold() == raw_parts[0][0].casefold()
+                                 for parts in raw_parts):
+                normalized = [parts[1:] for parts in raw_parts]
+
+            written = 0
+            ignored = 0
+            client_eligible = 0
+            server_only = 0
+            for info, parts in zip(infos, normalized):
+                lowered = [part.casefold() for part in parts]
+                if not parts:
+                    ignored += 1
+                    continue
+
+                if kind == "ue4ss":
+                    # Loader lanes are Win64 game-relative trees. Linux/native
+                    # runtime files and bundled child mods are separate concerns.
+                    if ("linux" in lowered or parts[-1].casefold().endswith((".so", ".elf"))):
+                        ignored += 1
+                        continue
+                    if len(lowered) >= 2 and lowered[:2] == ["binaries", "win64"]:
+                        final_parts = parts
+                    elif lowered[0] == "win64":
+                        final_parts = ["Binaries", "Win64", *parts[1:]]
+                    else:
+                        final_parts = ["Binaries", "Win64", *parts]
+                    folded_final = [part.casefold() for part in final_parts]
+                    if folded_final[:4] == ["binaries", "win64", "ue4ss", "mods"]:
+                        ignored += 1
+                        continue
+                    if final_parts[-1].casefold().startswith("rsdragonwilds") and final_parts[-1].casefold().endswith(".exe"):
+                        raise ValueError("A runtime ZIP may not contain a Dragonwilds game executable.")
+                    if final_parts[-1].casefold() == "version.dll":
+                        server_only += 1
+                    else:
+                        client_eligible += 1
+                else:
+                    # RuneSchema may be shipped as a bare core, inside a
+                    # RuneSchema wrapper, or at its complete game-relative path.
+                    marker = next((i for i, value in enumerate(lowered) if value == "runeschema"), None)
+                    core_parts = parts[marker + 1:] if marker is not None else parts
+                    if not core_parts:
+                        ignored += 1
+                        continue
+                    if core_parts[0].casefold() in {"mods", "diagnostics"}:
+                        ignored += 1
+                        continue
+                    final_parts = ["Binaries", "Win64", "ue4ss", "Mods", "RuneSchema", *core_parts]
+                    client_eligible += 1
+
+                destination = candidate.joinpath(*final_parts)
+                resolved = destination.resolve(strict=False)
+                candidate_resolved = candidate.resolve(strict=False)
+                if resolved != candidate_resolved and candidate_resolved not in resolved.parents:
+                    raise ValueError(f"Runtime ZIP path escapes its loader lane: {info.filename}")
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(info) as src, destination.open("wb") as out:
+                    shutil.copyfileobj(src, out)
+                written += 1
+
+        if kind == "ue4ss":
+            identity = candidate / "Binaries/Win64/ue4ss/UE4SS.dll"
+            if not identity.is_file():
+                raise ValueError("The selected ZIP is not a complete UE4SS runtime: UE4SS.dll was not found.")
+        else:
+            runtime_root = candidate / "Binaries/Win64/ue4ss/Mods/RuneSchema"
+            identity = runtime_root / "dlls/main.dll"
+            if not identity.is_file():
+                raise ValueError("The selected ZIP is not a complete RuneSchema core: dlls/main.dll was not found.")
+            enabled = runtime_root / "enabled.txt"
+            if not enabled.is_file():
+                enabled.write_bytes(b"")
+                written += 1
+                client_eligible += 1
+
+        backup_path = None
+        if target.exists() and any(item.is_file() for item in target.rglob("*")):
+            backup_path = layout["backups"] / ("runtime-" + kind + "-" + uuid.uuid4().hex)
+            shutil.copytree(target, backup_path)
+        shutil.rmtree(target, ignore_errors=True)
+        shutil.move(str(candidate), str(target))
+
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        versions = staged_runtime_versions(owner)
+        return {
+            "ok": True,
+            "component": kind,
+            "archive": source.name,
+            "sha256": digest,
+            "files_written": written,
+            "files_ignored": ignored,
+            "client_eligible_files": client_eligible,
+            "server_only_files": server_only,
+            "staging_path": str(target),
+            "backup_path": str(backup_path) if backup_path else "",
+            "runtime": versions.get(kind) or {},
+            "sync_policy": "client-compatible files are derived from this staged runtime",
+        }
+    except zipfile.BadZipFile as exc:
+        raise ValueError("The selected runtime package is not a valid ZIP archive.") from exc
+    finally:
+        shutil.rmtree(temporary_root, ignore_errors=True)
 
 
 def dedicated_profile_staging_root(profile_dir: str | Path) -> Path:

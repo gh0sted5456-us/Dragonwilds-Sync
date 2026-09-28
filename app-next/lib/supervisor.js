@@ -29,9 +29,14 @@ if (!g.__APP_SUP) {
     chatTails: new Map(),      // world_id -> { timer, offset } for the chat-file tailer
     deathTails: new Map(),     // world_id -> { timer, offset } for the death-file tailer
     guardTimer: null,
+    owned: new Set(),           // world_ids launched by this app process
+    restartAttempts: new Map(), // world_id -> crash-restart timestamps
   };
 }
 const S = g.__APP_SUP;
+// Hot reload can retain an older singleton shape.
+if (!S.owned) S.owned = new Set();
+if (!S.restartAttempts) S.restartAttempts = new Map();
 
 function hostPlatform() {
   return os.platform() === "win32" ? "windows" : "linux";
@@ -724,7 +729,17 @@ function isAlive(worldId) {
 async function startWorld(worldId) {
   let world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  if (isRunning(worldId)) return { started: false, reason: "already running" };
+  if (isRunning(worldId)) {
+    S.owned.add(worldId);
+    return { started: false, reason: "already running", pid: S.procs.get(worldId)?.pid || world.process_id || null };
+  }
+  // Never spawn a duplicate just because this Next process lost the ChildProcess
+  // handle. A PID left by an older build is still a live server and must be
+  // stopped/adopted before another launch.
+  if (pidAlive(world.process_id)) {
+    dbm.updateWorld(worldId, { status: "running" });
+    return { started: false, reason: "server process already alive", pid: world.process_id };
+  }
 
   // Scheduled, remote and shortcut starts must obey the same active-profile
   // contract as the GUI. This loads that profile's settings and marker first.
@@ -795,11 +810,6 @@ async function startWorld(worldId) {
     stdio: ["ignore", "pipe", "pipe"],
     env: { ...process.env, ...parseCustomEnv(world) },
   };
-  if (os.platform() === "win32") {
-    // detached keeps the server alive when the app closes or crashes, which isAlive()
-    // exists to pick back up. tree-kill still stops it, since that works by pid.
-    spawnOpts.detached = true;
-  }
   if (wine) {
     // WINEPREFIX/WINEDEBUG go in first so a user-supplied env var of the same
     // name (parseCustomEnv, merged above) can still override them deliberately.
@@ -811,6 +821,7 @@ async function startWorld(worldId) {
     ? spawn(wineBin, [...parseWineFlags(world), bin, ...args], spawnOpts)
     : spawn(bin, args, spawnOpts);
   S.procs.set(worldId, child);
+  S.owned.add(worldId);
   dbm.updateWorld(worldId, {
     status: "running",
     process_id: child.pid,
@@ -862,6 +873,10 @@ async function startWorld(worldId) {
 async function stopWorld(worldId, { graceful = true, waittime = 15 } = {}) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
+  // Removing ownership first makes a manual Stop authoritative: the crash
+  // guardian cannot race the shutdown and relaunch it behind the user's back.
+  S.owned.delete(worldId);
+  S.restartAttempts.delete(worldId);
   dbm.updateWorld(worldId, { status: "stopping" });
   dbm.logEvent(worldId, "stop", `Stopping ${world.display_name}`);
 
@@ -883,16 +898,34 @@ async function stopWorld(worldId, { graceful = true, waittime = 15 } = {}) {
     } catch { /* fall through to hard kill */ }
   }
   const child = S.procs.get(worldId);
+  const targetPid = child?.pid || world.process_id;
   await new Promise((resolve) => {
-    if (!child) return resolve();
     let done = false;
     const finish = () => { if (!done) { done = true; resolve(); } };
-    child.once("close", finish);
-    // hard timeout
+
+    if (child) child.once("close", finish);
+    if (!targetPid || !pidAlive(targetPid)) return finish();
+
+    // A server from an older detached build has no ChildProcess handle in this
+    // process. Kill by the persisted PID so Stop still means Stop.
+    const hardAfter = graceful ? (waittime + 5) * 1000 : 500;
     setTimeout(() => {
-      if (child.pid) kill(child.pid, "SIGKILL", () => {});
-      setTimeout(finish, 1500);
-    }, graceful ? (waittime + 5) * 1000 : 500);
+      if (!pidAlive(targetPid)) return finish();
+      kill(targetPid, "SIGKILL", () => setTimeout(finish, 500));
+      setTimeout(finish, 1800);
+    }, hardAfter);
+
+    // If REST shutdown already caused the external process to exit, detect that
+    // without waiting for the hard timeout.
+    if (!child) {
+      const poll = setInterval(() => {
+        if (!pidAlive(targetPid)) {
+          clearInterval(poll);
+          finish();
+        }
+      }, 250);
+      setTimeout(() => clearInterval(poll), hardAfter + 2000);
+    }
   });
   S.procs.delete(worldId);
   dbm.updateWorld(worldId, { status: "stopped", process_id: null });
@@ -938,33 +971,58 @@ function ensureGuardian() {
   if (S.guardTimer) return;
   S.guardTimer = setInterval(guardTick, 20000);
 }
+
+function allowCrashRestart(worldId) {
+  const now = Date.now();
+  const windowStart = now - 10 * 60 * 1000;
+  const attempts = (S.restartAttempts.get(worldId) || []).filter((at) => at >= windowStart);
+  if (attempts.length >= 3) {
+    S.owned.delete(worldId);
+    S.restartAttempts.delete(worldId);
+    dbm.logEvent(worldId, "guardian", "Crash guard paused after 3 restart attempts in 10 minutes; manual Start required");
+    return false;
+  }
+  attempts.push(now);
+  S.restartAttempts.set(worldId, attempts);
+  return true;
+}
+
 async function guardTick() {
   const worlds = dbm.listWorlds();
   for (const w of worlds) {
     if (!w.crash_guard) continue;
+
     if (w.status === "crashed") {
-      // auto-relaunch after a crash
+      // Only relaunch a process this app deliberately launched. Stale status,
+      // external processes and a previous app session never trigger surprise starts.
+      if (!S.owned.has(w.world_id) || !allowCrashRestart(w.world_id)) continue;
       dbm.updateWorld(w.world_id, { crash_count: (w.crash_count || 0) + 1 });
-      dbm.logEvent(w.world_id, "guardian", "Crash detected — auto-restarting");
-      try { await startWorld(w.world_id); } catch {}
+      dbm.logEvent(w.world_id, "guardian", "Owned server crashed — restarting");
+      try { await startWorld(w.world_id); } catch (e) {
+        dbm.logEvent(w.world_id, "guardian", `Restart failed: ${e.message}`);
+      }
       continue;
     }
+
     if (w.status === "running") {
       const alive = isRunning(w.world_id) || pidAlive(w.process_id);
       if (!alive) {
-        dbm.updateWorld(w.world_id, { status: "crashed" });
+        dbm.updateWorld(w.world_id, { status: "crashed", process_id: null });
         continue;
       }
-      // process alive but API frozen for extended period → treat as hang
+
+      // We can display/observe an older external PID, but we never restart it.
+      if (!S.owned.has(w.world_id)) continue;
+
       if (w.rest_api_enabled) {
         const ok = await rest.healthy(w).catch(() => false);
         if (!ok) {
           const hangs = (S.__hang ||= new Map());
           const n = (hangs.get(w.world_id) || 0) + 1;
           hangs.set(w.world_id, n);
-          if (n >= 6) { // ~2 min unresponsive
+          if (n >= 6) {
             hangs.set(w.world_id, 0);
-            dbm.logEvent(w.world_id, "guardian", "API unresponsive — force restarting (hang)");
+            dbm.logEvent(w.world_id, "guardian", "Owned server API unresponsive — restarting");
             try { await restartWorld(w.world_id); } catch {}
           }
         } else {
@@ -975,13 +1033,27 @@ async function guardTick() {
   }
 }
 
+async function stopManagedWorlds({ waittime = 5 } = {}) {
+  const ids = [...S.owned];
+  const results = [];
+  for (const worldId of ids) {
+    try {
+      await stopWorld(worldId, { graceful: true, waittime });
+      results.push({ worldId, stopped: true });
+    } catch (e) {
+      results.push({ worldId, stopped: false, error: e.message });
+    }
+  }
+  return results;
+}
+
 function splitLines(buf) {
   return buf.toString("utf8").split(/\r?\n/).filter((l) => l.length);
 }
 
 module.exports = {
   serverBinary, shippingBinary, hideConsoleEnabled, buildArgs, startWorld, stopWorld, restartWorld,
-  isRunning, isAlive, pidAlive, getLogs, subscribe, pushLog, ensureGuardian,
+  isRunning, isAlive, pidAlive, getLogs, subscribe, pushLog, ensureGuardian, stopManagedWorlds,
   getChat, subscribeChat, parseChatLine,
   chatModDir, chatModInstalled, chatFilePath, installChatMod, uninstallChatMod, bundledChatModDir,
   broadcastModDir, broadcastModInstalled, broadcastQueuePath, installBroadcastMod,

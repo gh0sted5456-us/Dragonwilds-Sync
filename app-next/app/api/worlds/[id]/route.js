@@ -9,7 +9,6 @@ const steam = require("@/lib/steamcmd");
 const { conflictsInRegistry } = require("@/lib/ports");
 const guard = require("@/lib/installdir");
 const trash = require("@/lib/trash");
-const { boot } = require("@/lib/bootstrap");
 const ra = require("@/lib/remoteauth");
 
 export const dynamic = "force-dynamic";
@@ -28,7 +27,6 @@ function tabForWorldPatch(patch) {
 }
 
 export async function GET(req, { params }) {
-  boot(); // make sure the background presence poller (join/leave) is running
   let w = dbm.getWorld(params.id);
   if (!w) return NextResponse.json({ ok: false, error: "not found" }, { status: 404 });
   // Base world read: any in-scope session may load it (needed to render anything); the

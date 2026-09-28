@@ -10,6 +10,12 @@ const GROUPS = [
   ["framework", "Detected runtimes"],
 ];
 
+const RUNTIME_PACKAGES = [
+  { component: "ue4ss-steam", stateKey: "ue4ssSteam", label: "UE4SS · Steam/server", icon: "/rsdw/platforms/ue4ss.webp", note: "Win64 · host + Steam clients" },
+  { component: "ue4ss-gamepass", stateKey: "ue4ssGamepass", label: "UE4SS · PC Game Pass", icon: "/rsdw/platforms/ue4ss.webp", note: "WinGDK · Game Pass clients" },
+  { component: "runeschema", stateKey: "runeschema", label: "RuneSchema", icon: "/rsdw/platforms/runeschema.webp", note: "Routed to Win64 or WinGDK automatically" },
+];
+
 export default function ModsPanel({ worldId, running }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -103,25 +109,24 @@ export default function ModsPanel({ worldId, running }) {
       <section className="panel-inset" style={{ padding: "0.95rem 1rem" }}>
         <div className="heading" style={{ fontSize: "0.96rem" }}>World runtimes</div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "4px 0 10px" }}>
-          Upload complete UE4SS and RuneSchema ZIPs for this World. RSDW Sync installs them on the host, publishes only client-compatible files, verifies hashes, and places them into the connected player’s Steam or PC Game Pass install automatically.
+          Upload the runtime ZIPs this World uses. Steam/server UE4SS is Win64, PC Game Pass UE4SS is WinGDK, and RuneSchema is routed to the correct client tree automatically. Sync publishes only client-compatible files and verifies every download by hash.
         </p>
         <div className="runtime-package-grid">
-          {["ue4ss","runeschema"].map((component) => {
-            const row = runtimePackages?.[component] || {};
-            const label = component === "ue4ss" ? "UE4SS" : "RuneSchema";
-            return <div key={component} className="panel" style={{ padding: "0.9rem 1rem" }}>
+          {RUNTIME_PACKAGES.map((pkg) => {
+            const row = runtimePackages?.[pkg.stateKey] || {};
+            return <div key={pkg.component} className="panel" style={{ padding: "0.9rem 1rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <img src={component === "ue4ss" ? "/rsdw/platforms/ue4ss.webp" : "/rsdw/platforms/runeschema.webp"} alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
+                <img src={pkg.icon} alt="" style={{ width: 28, height: 28, objectFit: "contain" }} />
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 850 }}>{label}</div>
+                  <div style={{ fontWeight: 850 }}>{pkg.label}</div>
                   <div className="subtle" style={{ fontSize: "0.68rem", overflowWrap: "anywhere" }}>
-                    {row.installed ? `${row.archive} · ${row.clientFiles} client files` : "No managed runtime ZIP"}
+                    {row.installed ? `${row.archive} · ${row.clientFiles} client files` : pkg.note}
                   </div>
                 </div>
                 <span className="chip" style={{ background: row.installed ? "var(--green)" : "var(--line)" }}>{row.installed ? "MANAGED" : "OPTIONAL"}</span>
               </div>
-              <button className="btn btn-ghost" style={{ marginTop: 10, width: "100%" }} disabled={busy || running} onClick={() => uploadRuntime(component)}>
-                <Icon name="upload" size={14} /> {row.installed ? `Replace ${label} ZIP` : `Upload ${label} ZIP`}
+              <button className="btn btn-ghost" style={{ marginTop: 10, width: "100%" }} disabled={busy || running} onClick={() => uploadRuntime(pkg.component)}>
+                <Icon name="upload" size={14} /> {row.installed ? `Replace ${pkg.label} ZIP` : `Upload ${pkg.label} ZIP`}
               </button>
             </div>;
           })}

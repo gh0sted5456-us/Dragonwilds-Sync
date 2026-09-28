@@ -74,10 +74,12 @@ async function fetchText(url, accept = "text/html") {
 
 async function latestNexusVersion() {
   const html = await fetchText(NEXUS_URL);
+  // Prefer the visible Nexus "Version" field and UE4SS-style build IDs.
+  // Avoid generic site JSON "version" keys: Nexus embeds unrelated application
+  // versions in the page and those must never trigger a false amber update.
   const patterns = [
-    /["']version["']\s*:\s*["'](\d+\.\d+\.\d+(?:[-+][0-9A-Za-z._-]+)?)["']/i,
     /\bVersion\b[\s\S]{0,350}?(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z._-]+)?)/i,
-    /\b(3\.0\.1-(?:g)?[0-9a-f]{7,})\b/i,
+    /\b(\d+\.\d+\.\d+-g?[0-9a-f]{7,})\b/i,
   ];
   for (const pattern of patterns) {
     const match = html.match(pattern);

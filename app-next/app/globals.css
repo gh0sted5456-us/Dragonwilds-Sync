@@ -1,4 +1,4 @@
-/* app/globals.css — Discord-inspired flat UI */
+/* app/globals.css — RSDW matte-black / gold UI */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -30,27 +30,28 @@
 }
 
 .dark {
-  /* DARK (Discord dark theme) */
-  --rail: #1e1f22;
-  --sidebar: #2b2d31;
-  --bg: #313338;
-  --bg-2: #2b2d31;
-  --card: #2b2d31;
-  --card-2: #1e1f22;
-  --ink: #f2f3f5;
-  --ink-soft: #b5bac1;
-  --ink-muted: #949ba4;
-  --line: #3f4147;
-  --line-strong: #232428;
-  --accent: #5865f2;
-  --accent-hover: #4752c4;
-  --accent-ink: #ffffff;
-  --green: #248046;
-  --green-bright: #23a55a;
-  --yellow: #f0b232;
-  --red: #da373c;
-  --red-hover: #a12828;
-  --radius: 4px;
+  /* RSDW matte black + muted gold */
+  --rail: #070707;
+  --sidebar: #0b0b0b;
+  --bg: #0e0e0e;
+  --bg-2: #101010;
+  --card: #141414;
+  --card-2: #0a0a0a;
+  --ink: #f3efe7;
+  --ink-soft: #c8bfad;
+  --ink-muted: #918879;
+  --line: #3f321d;
+  --line-strong: #8e6c2f;
+  --border: #3f321d;
+  --accent: #bd9139;
+  --accent-hover: #d2aa50;
+  --accent-ink: #130f08;
+  --green: #2f7b50;
+  --green-bright: #43a36d;
+  --yellow: #d4a13d;
+  --red: #b94b4b;
+  --red-hover: #d05b5b;
+  --radius: 5px;
 }
 
 * { box-sizing: border-box; }

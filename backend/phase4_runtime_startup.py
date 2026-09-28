@@ -375,12 +375,8 @@ def _install_server_pipeline(server_engine_module) -> None:
             # presented to the dedicated executable. This also seeds a new
             # profile that did not yet have a Saved/Config snapshot.
             server_engine_module.snapshot_profile_server_config(profile_id, root)
-            # The explicit Runtime Console setting owns UE4SS INI mutation.
-            # Preparing/starting a World preserves the installed switches.
-            console_status = getattr(server_engine_module, "ue4ss_console_policy_status", None)
-            if callable(console_status):
-                console_status(profile_id)
-                self._event("Preserved the installed UE4SS console settings for launch.", "ok")
+            # UE4SS is optional. Preparing/starting a World must not inspect
+            # UE4SS files or make loader presence part of launch readiness.
             launch_ready = True
 
         locked = 0

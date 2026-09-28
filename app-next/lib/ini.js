@@ -41,15 +41,36 @@ function parseOptionSettings(text) {
   return result;
 }
 
+function formatIniValue(value) {
+  const v = value == null ? "" : String(value);
+  return /\s/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
+}
+
 function serializeOptionSettings(obj) {
-  // Write a simple INI under the required header. Values will be quoted where
-  // they contain spaces.
   const lines = ["[/Script/Dominion.DedicatedServerSettings]"];
-  for (const [k, v] of Object.entries(obj)) {
-    const sval = typeof v === "string" && /\s/.test(v) ? `"${v}"` : String(v);
-    lines.push(`${k}=${sval}`);
-  }
+  for (const [k, v] of Object.entries(obj)) lines.push(`${k}=${formatIniValue(v)}`);
   return lines.join("\n") + "\n";
+}
+
+function patchRawSettings(raw, updates) {
+  const input = String(raw || "");
+  const newline = input.includes("\r\n") ? "\r\n" : "\n";
+  const lines = input ? input.split(/\r?\n/) : ["[/Script/Dominion.DedicatedServerSettings]"];
+  if (!lines.some((line) => /^\s*\[\/Script\/Dominion\.DedicatedServerSettings\]\s*$/i.test(line))) {
+    lines.unshift("[/Script/Dominion.DedicatedServerSettings]");
+  }
+  for (const [key, value] of Object.entries(updates || {})) {
+    let found = false;
+    for (let i = 0; i < lines.length; i++) {
+      const match = lines[i].match(/^(\s*)([^;#=][^=]*?)(\s*=\s*)(.*)$/);
+      if (!match || match[2].trim().toLowerCase() !== String(key).toLowerCase()) continue;
+      lines[i] = `${match[1]}${match[2]}${match[3]}${formatIniValue(value)}`;
+      found = true;
+    }
+    if (!found) lines.push(`${key}=${formatIniValue(value)}`);
+  }
+  while (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  return lines.join(newline) + newline;
 }
 
 function readSettings(installDir, platform) {
@@ -92,34 +113,35 @@ function writeRawSettings(installDir, content, platform) {
 // them in Settings → Server Identity (e.g. a playit.gg tunnel address), so we only
 // force PublicPort back to the game port on a fresh install or an explicit port
 // change (syncPublicPort) — otherwise a routine save would clobber a tunnel port.
-function applyWorldNetworkSettings(installDir, world, { syncPublicPort = false } = {}) {
-  const { options } = readSettings(installDir, world.platform);
-  if (syncPublicPort || options.PublicPort == null) options.PublicPort = String(world.game_port);
-  options.RESTAPIPort = String(world.rest_api_port);
-  options.RESTAPIEnabled = world.rest_api_enabled ? "True" : "False";
-  // RCON is deprecated by Pocketpair and scheduled to stop functioning. Off by
-  // default; only written when a world explicitly opts into legacy RCON.
+function withWorldNetworkSettings(options, world, { syncPublicPort = false } = {}) {
+  const next = { ...(options || {}) };
+  if (syncPublicPort || next.PublicPort == null || String(next.PublicPort).trim() === "") next.PublicPort = String(world.game_port);
+  next.RESTAPIPort = String(world.rest_api_port);
+  next.RESTAPIEnabled = world.rest_api_enabled ? "True" : "False";
   if (world.rcon_enabled) {
-    options.RCONPort = String(world.rcon_port);
-    options.RCONEnabled = "True";
+    next.RCONPort = String(world.rcon_port);
+    next.RCONEnabled = "True";
   } else {
-    options.RCONEnabled = "False";
+    next.RCONEnabled = "False";
   }
-  // Core Dragonwilds identity fields
-  options.OwnerId = world.owner_id || "";
-  options.ServerName = world.display_name || "";
-  options.DefaultWorldName = world.default_world_name || "";
-  // Admin and player join passwords. Empty string = open server (anyone can join).
-  options.AdminPassword = world.admin_password || "";
-  options.WorldPassword = world.server_password || "";
-  // Leave a user-set PublicIP alone; only seed a blank (auto-detect) default.
-  if (options.PublicIP == null) options.PublicIP = '""';
-  return writeSettings(installDir, options, world.platform);
+  next.OwnerId = world.owner_id || "";
+  next.ServerName = world.display_name || "";
+  next.DefaultWorldName = world.default_world_name || "";
+  next.AdminPassword = world.admin_password || "";
+  next.WorldPassword = world.server_password || "";
+  if (next.PublicIP == null) next.PublicIP = '""';
+  return next;
+}
+
+function applyWorldNetworkSettings(installDir, world, opts = {}) {
+  const current = readRawSettings(installDir, world.platform);
+  const options = withWorldNetworkSettings(parseOptionSettings(current.content), world, opts);
+  return writeRawSettings(installDir, patchRawSettings(current.content, options), world.platform);
 }
 
 module.exports = {
   serverConfigDir, settingsIniPath, defaultIniPath,
-  parseOptionSettings, serializeOptionSettings,
+  parseOptionSettings, serializeOptionSettings, patchRawSettings,
   readSettings, writeSettings, readRawSettings, writeRawSettings,
-  applyWorldNetworkSettings,
+  withWorldNetworkSettings, applyWorldNetworkSettings,
 };

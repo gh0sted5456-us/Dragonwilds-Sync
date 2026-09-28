@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 const dbm = require("@/lib/db");
 const ini = require("@/lib/ini");
+const active = require("@/lib/active-server-profile");
 const AdmZip = require("adm-zip");
 const ra = require("@/lib/remoteauth");
 export const dynamic = "force-dynamic";
@@ -36,24 +37,21 @@ export async function POST(req, { params }) {
     return text;
   };
 
-  // merge incoming (minus managed keys) onto current ini
-  const cur = ini.readSettings(w.install_dir, w.platform).options;
-  const merged = { ...cur };
+  const profile = active.settingsFor(w);
+  const merged = { ...profile.values };
   let applied = 0;
-  for (const [k, v] of Object.entries(incoming)) { if (!MANAGED.has(k)) { merged[k] = v; applied++; } }
-  // re-assert identity
-  merged.PublicPort = String(w.game_port);
-  merged.RESTAPIPort = String(w.rest_api_port);
-  merged.RESTAPIEnabled = w.rest_api_enabled ? "True" : "False";
-  merged.RCONPort = w.rcon_port != null ? String(w.rcon_port) : "";
-  merged.AdminPassword = unquote(w.admin_password);
-  merged.WorldPassword = unquote(w.server_password);
-  merged.OwnerId = w.owner_id || "";
-  merged.ServerName = w.display_name || "";
-  merged.DefaultWorldName = w.default_world_name || "";
-  merged.PublicIP = w.public_ip || "";
-  merged.RCONEnabled = w.rcon_enabled ? "True" : "False";
-  ini.writeSettings(w.install_dir, merged, w.platform);
-  dbm.logEvent(w.world_id, "settings", `Imported ${applied} settings (restart to apply)`);
-  return NextResponse.json({ ok: true, applied });
+  for (const [k, v] of Object.entries(incoming)) {
+    if (!MANAGED.has(k)) {
+      merged[k] = v;
+      applied++;
+    }
+  }
+
+  const normalized = ini.withWorldNetworkSettings(merged, w);
+  active.saveSettings(w.world_id, normalized, { baseRaw: profile.content });
+  const isActive = active.readActiveId() === w.world_id;
+  if (isActive) active.materialize(w);
+
+  dbm.logEvent(w.world_id, "settings", `Imported ${applied} settings into Server profile (restart to apply)`);
+  return NextResponse.json({ ok: true, applied, active: isActive });
 }

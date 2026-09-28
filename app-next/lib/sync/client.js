@@ -64,7 +64,20 @@ async function synchronizeProfile(profileId) {
   }
 
   dbm.setSetting(ledgerKey(profileId), { worldId, revision: manifest.revision, files: [...declared], syncedAt: Date.now() });
-  dbm.upsertProfile({ profile_id: profileId, last_manifest_revision: manifest.revision });
+  const identity = manifest.world?.identity || {};
+  dbm.upsertProfile({
+    profile_id: profileId,
+    display_name: manifest.world?.name || profile.display_name,
+    connection: {
+      ...connection,
+      worldIdentity: {
+        iconData: identity.iconData || null,
+        bannerData: identity.bannerData || null,
+        accentColor: identity.accentColor || null,
+      },
+    },
+    last_manifest_revision: manifest.revision,
+  });
   return { manifest, installed, removed, current: installed.length === 0 && removed.length === 0 };
 }
 

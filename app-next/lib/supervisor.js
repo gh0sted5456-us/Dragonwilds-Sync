@@ -771,9 +771,8 @@ async function startWorld(worldId) {
     try { ini.applyWorldNetworkSettings(world.install_dir, world); } catch {}
   }
 
-  // On by default: starting the GUI server directly costs nothing — same server, and it
-  // still outlives the app. Turn it off to go back through the launcher and get the
-  // console window, which is the only place raw server output is visible.
+  // Start the dedicated server directly as an app-owned subprocess. The desktop
+  // lifecycle now shuts owned servers down cleanly instead of detaching them.
   const bin = serverBinary(world, { hidden: hideConsoleEnabled() });
 
   if (!fs.existsSync(bin)) throw new Error(`Server binary missing: ${bin}`);
@@ -880,19 +879,11 @@ async function stopWorld(worldId, { graceful = true, waittime = 15 } = {}) {
   dbm.updateWorld(worldId, { status: "stopping" });
   dbm.logEvent(worldId, "stop", `Stopping ${world.display_name}`);
 
-  // Protect the user's intended settings across a graceful stop. Palworld saves the
-  // world on exit but also re-serializes its in-memory config back to
-  // DedicatedServer.ini — which is why we must NOT let that clobber managed keys.
-  // Capture the on-disk ini now and re-write it after the process fully exits.
-  let intendedIni = null;
   if (graceful && world.rest_api_enabled) {
-    try { intendedIni = fs.readFileSync(ini.settingsIniPath(world.install_dir, world.platform), "utf8"); } catch {}
     try {
-      // Force a world-data flush BEFORE asking the server to shut down (issue #18).
-      // Relying on shutdown() alone left populated worlds rolling back 5-10 minutes
-      // when the exit-time save didn't complete before the process went away. save()
-  // persists world data (level.sav); it does not write DedicatedServer.ini, and
-      // any ini rewrite on exit is undone by the re-apply below.
+      // Flush world data before shutdown. DedicatedServer.ini is NOT captured from
+      // disk here: the selected Server profile is the source of truth and is
+      // materialized again after the process exits.
       await rest.save(world).catch(() => {});
       await rest.shutdown(world, waittime, "Server shutting down.");
     } catch { /* fall through to hard kill */ }
@@ -929,40 +920,24 @@ async function stopWorld(worldId, { graceful = true, waittime = 15 } = {}) {
   });
   S.procs.delete(worldId);
   dbm.updateWorld(worldId, { status: "stopped", process_id: null });
-  // Give the OS a moment to flush the config file Palworld rewrites on exit,
-  // so a subsequent start reads the fully-written ini.
+  // Give Dragonwilds a moment to finish its exit-time writes, then put the
+  // persisted Server profile back on disk. This prevents the game's shutdown
+  // serialization from becoming the next launch's source of truth.
   await new Promise((r) => setTimeout(r, 800));
-  // Restore the settings the world launched with, in case Palworld's exit-time
-  // config write changed a managed key. Only when we captured them above.
-  if (intendedIni) {
-    try {
-      fs.writeFileSync(ini.settingsIniPath(world.install_dir, world.platform), intendedIni, "utf8");
-    } catch {}
-  }
+  try {
+    const profiles = require("./active-server-profile");
+    if (profiles.readActiveId() === worldId) {
+      profiles.materialize(dbm.getWorld(worldId) || world);
+      dbm.logEvent(worldId, "settings", "Re-materialized saved Server profile after shutdown");
+    }
+  } catch {}
   return { stopped: true };
 }
 
 async function restartWorld(worldId, { waittime = 5 } = {}) {
-  // Capture the user's intended settings BEFORE stopping, because Palworld
-  // rewrites DedicatedServer.ini on exit and would otherwise clobber edits.
-  const world = dbm.getWorld(worldId);
-  let intendedIni = null;
-  try {
-    if (world) intendedIni = fs.readFileSync(ini.settingsIniPath(world.install_dir, world.platform), "utf8");
-  } catch {}
-
   await stopWorld(worldId, { graceful: true, waittime });
-  await new Promise((r) => setTimeout(r, 1500));
-
-  // Re-write the intended settings now that the old process has fully exited and
-  // done its own exit-time config write. This makes edits actually persist.
-  try {
-    if (intendedIni && world) {
-      fs.writeFileSync(ini.settingsIniPath(world.install_dir, world.platform), intendedIni, "utf8");
-      dbm.logEvent(worldId, "settings", "Re-applied saved settings after shutdown");
-    }
-  } catch {}
-
+  await new Promise((r) => setTimeout(r, 700));
+  // startWorld activates + materializes the profile immediately before spawn.
   return startWorld(worldId);
 }
 

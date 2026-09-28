@@ -59,7 +59,7 @@ function contains(rel, needle, message) {
 {
   contains("app/page.jsx", "Connect to World");
   contains("app/info/page.jsx", "/api/helpy/helpy.html?embed=1&theme=dark");
-  contains("app/globals.css", "--accent: #a9823f");
+  contains("app/globals.css", "--accent: #c1a56d");
   const modsPanel = contains("components/ModsPanel.jsx", "Install lanes");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
   const lanes = contains("lib/mod-lanes.js", 'const LANES = ["server", "steam", "gamepass"]');
@@ -67,6 +67,18 @@ function contains(rel, needle, message) {
   contains("lib/component-updates.js", "latestNexusVersions");
   contains("lib/component-updates.js", "Xbox");
   contains("lib/component-updates.js", "Steam");
+  contains("lib/runtime-packages.js", 'const COMPONENTS = new Set(["ue4ss-steam", "ue4ss-gamepass", "runeschema"])');
+  contains("lib/runtime-packages.js", '"Binaries", "WinGDK"');
+  contains("lib/runtime-packages.js", 'clientEligible');
+  contains("lib/sync/client.js", '"X-RSDW-Client-Platform"');
+  contains("components/ModsPanel.jsx", "UE4SS · Steam/server");
+  contains("components/ModsPanel.jsx", "UE4SS · PC Game Pass");
+  contains("components/ModsPanel.jsx", "Routed to Win64 or WinGDK automatically");
+  const worldPage = read("app/worlds/[id]/page.jsx");
+  assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
+  contains("electron/main.js", '"icon.png"');
+  contains("package.json", '"icon": "public/icon.png"');
+  contains("app/globals.css", "--radius: 12px");
 }
 
 // Desktop autostart is opt-in and owned Servers receive a graceful quit request.

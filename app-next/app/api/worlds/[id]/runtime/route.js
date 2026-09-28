@@ -26,7 +26,8 @@ export async function POST(req, { params }) {
   const body = await req.json().catch(() => ({}));
   try {
     const packages = runtimes.install(params.id, body.component, body.zipPath);
-    const label = String(body.component || "").toLowerCase() === "ue4ss" ? "UE4SS" : "RuneSchema";
+    const kind = String(body.component || "").toLowerCase();
+    const label = kind === "ue4ss-gamepass" ? "UE4SS · PC Game Pass" : kind === "ue4ss-steam" ? "UE4SS · Steam/server" : "RuneSchema";
     dbm.logEvent(params.id, "mods", `Installed managed ${label} runtime package for host + client Sync`);
     return NextResponse.json({ ok: true, packages });
   } catch (e) {

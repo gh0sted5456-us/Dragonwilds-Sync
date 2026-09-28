@@ -12,6 +12,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: super-experimental-next-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows:
     name: Build launch-ready Windows app

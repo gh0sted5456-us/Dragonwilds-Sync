@@ -29,13 +29,6 @@ export async function POST(req, { params }) {
   const incoming = ini.parseOptionSettings(iniText);
   if (!Object.keys(incoming).length) return NextResponse.json({ ok: false, error: "No OptionSettings found" }, { status: 400 });
 
-  const unquote = (value) => {
-    const text = value == null ? "" : String(value);
-    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
-      return text.slice(1, -1);
-    }
-    return text;
-  };
 
   const profile = active.settingsFor(w);
   const merged = { ...profile.values };

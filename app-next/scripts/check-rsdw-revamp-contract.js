@@ -89,6 +89,11 @@ function contains(rel, needle, message) {
   contains("app/page.jsx", "worldIdentity");
   contains("app/profiles/[id]/player/page.jsx", 'searchParams.get("autoplay") === "1"');
   contains("app/profiles/[id]/player/page.jsx", "Confirm &amp; Launch Dragonwilds");
+  contains("app/profiles/[id]/player/page.jsx", "World Name");
+  contains("app/profiles/[id]/player/page.jsx", "IP Address");
+  contains("app/profiles/[id]/player/page.jsx", "World Password");
+  contains("app/profiles/[id]/player/page.jsx", "World Type");
+  contains("app/profiles/[id]/player/page.jsx", "navigator.clipboard.writeText");
   contains("electron/main.js", '" --autoplay"');
   contains("electron/main.js", "writeShortcutIcon");
   contains("components/ModsPanel.jsx", "UE4SS · Steam/server");

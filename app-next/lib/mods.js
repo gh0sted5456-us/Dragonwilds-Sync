@@ -275,9 +275,9 @@ function luaTargets(rawInfo) {
 }
 
 function bridgedLuaModDir(installDir, packageName) {
-  const ue4ss = require("./ue4ss"); // lazy: avoid any require cycle
+  const gameRoot = fs.existsSync(path.join(installDir, "RSDragonwilds")) ? path.join(installDir, "RSDragonwilds") : installDir;
   const safe = String(packageName).replace(/[^a-zA-Z0-9_.-]/g, "_");
-  return path.join(ue4ss.modsDir(installDir), safe);
+  return path.join(gameRoot, "Binaries", "Win64", "ue4ss", "Mods", safe);
 }
 
 // Copy a Lua-type mod's scripts into the UE4SS load path and force-load it. Returns

@@ -113,7 +113,7 @@ export default function WorldsPage() {
 }
 
 function ModeTab({ active, onClick, icon, label, detail }) {
-  return <button onClick={onClick} style={{ flex: 1, border: 0, borderRadius: 8, padding: "0.8rem 1rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: active ? "var(--accent)" : "transparent", color: active ? "#fff" : "var(--ink)" }}>
+  return <button onClick={onClick} style={{ flex: 1, border: 0, borderRadius: 8, padding: "0.8rem 1rem", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, background: active ? "var(--accent)" : "transparent", color: active ? "var(--accent-ink)" : "var(--ink)" }}>
     <Icon name={icon} size={22} />
     <span style={{ textAlign: "left" }}><strong style={{ display: "block", fontSize: "1rem" }}>{label}</strong><small style={{ opacity: .78 }}>{detail}</small></span>
   </button>;

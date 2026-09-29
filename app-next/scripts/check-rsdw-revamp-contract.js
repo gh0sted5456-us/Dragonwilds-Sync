@@ -118,6 +118,28 @@ function contains(rel, needle, message) {
 }
 
 
+// Application Setup owns machine-level Server / Steam / Game Pass lanes.
+// Profiles may select/use a lane but must not provision or cache independent installs.
+{
+  contains("app/setup/page.jsx", "Application Setup");
+  contains("app/setup/page.jsx", "Dedicated Server lane");
+  contains("app/setup/page.jsx", "Steam lane");
+  contains("app/setup/page.jsx", "PC Game Pass lane");
+  contains("app/api/application-setup/server/route.js", 'const DIR_KEY = "applicationSetup:serverDir"');
+  contains("app/api/application-setup/play/route.js", "clientInstall:");
+  const provisionRoute = read("app/api/provision/route.js");
+  assert(provisionRoute.includes("World creation is profile-only"), "World creation must remain profile-only");
+  assert(!provisionRoute.includes("installOrUpdate"), "World creation must not run SteamCMD");
+  const createWorld = read("components/CreateWorldModal.jsx");
+  assert(!createWorld.includes("installFolder"), "Server profile creation must not own an install folder");
+  assert(createWorld.includes("Application Setup"), "Server profile creation must point to Application Setup");
+  const syncClient = read("lib/sync/client.js");
+  assert(syncClient.includes("clientInstall:${platform}"), "Client sync must resolve the application Play lane");
+  const verifyRoute = read("app/api/profiles/[id]/verify/route.js");
+  assert(verifyRoute.includes("clientInstall:${platform}"), "Profile verify must resolve the application Play lane");
+  assert(!fs.existsSync(path.join(root, "app", "api", "provision", "status", "route.js")), "obsolete per-World provision status API must stay deleted");
+}
+
 function walkSource(dir) {
   const out = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

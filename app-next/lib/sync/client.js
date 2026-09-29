@@ -34,8 +34,9 @@ async function synchronizeProfile(profileId) {
   const worldId = String(connection.worldId || profile.server_world_id || "").trim();
   const port = Number(connection.syncPort || 4317);
   const platform = connection.platform === "gamepass" ? "gamepass" : "steam";
-  const install = steamlib.normalizeGameInstall(platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall) || steamlib.normalizeGameInstall(profile.client_install);
-  if (!address || !worldId || !install) throw new Error("This World needs a valid endpoint and Dragonwilds installation");
+  const install = steamlib.normalizeGameInstall(dbm.getSetting(`clientInstall:${platform}`, null));
+  if (!address || !worldId) throw new Error("This World needs a valid Sync endpoint");
+  if (!install) throw new Error(`Application Setup -> Play -> ${platform === "gamepass" ? "PC Game Pass" : "Steam"} is not configured.`);
   const base = `http://${address}:${port}/api/sync/public/${encodeURIComponent(worldId)}`;
   const manifest = await fetchJson(base, connection.password, platform);
   const comparison = manifestLib.compareManifest(manifest, install);

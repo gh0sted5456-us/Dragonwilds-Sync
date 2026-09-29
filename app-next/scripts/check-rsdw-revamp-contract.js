@@ -36,6 +36,10 @@ function contains(rel, needle, message) {
 {
   const main = read("electron/main.js");
   assert(!main.includes("triggerBoot("), "desktop startup must not trigger background engines");
+  assert(main.includes("if (!isDev) beginUiBootstrap();"), "local UI bootstrap must begin before Electron readiness");
+  assert(main.includes("loadAppIntoWindow(pendingRoute)"), "window must navigate independently of a health gate");
+  assert(main.includes("UI navigation retry"), "local UI navigation retry path missing");
+  assert(!main.includes("DWSM-Data"), "portable EXE must not bind userData beside itself");
   assert(!main.includes("/api/boot"), "desktop startup must not call a boot endpoint");
   const worldsRoute = read("app/api/worlds/route.js");
   assert(!worldsRoute.includes("boot()"), "listing Worlds must remain observational");
@@ -124,6 +128,7 @@ function contains(rel, needle, message) {
   contains("lib/sync/discovery.js", "APP_MANAGER_SHARE_PORT");
   contains("electron/main.js", '"icon.ico"');
   contains("package.json", '"icon": "public/icon.ico"');
+  contains("package.json", '"compression": "store"');
   contains("app/globals.css", "--radius: 12px");
 }
 

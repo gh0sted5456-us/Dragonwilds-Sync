@@ -10,6 +10,7 @@ import { useJobsPoll, summarize, ProgressBar } from "@/components/jobsClient";
 // can't call the translation hook itself.
 const NAV = [
   { href: "/", asset: "/rsdw/navigation/dragonwilds.webp", label: "Worlds", match: (p) => p === "/" || p.startsWith("/worlds") || p.startsWith("/profiles") },
+  { href: "/setup", material: "settings", label: "Application Setup", match: (p) => p.startsWith("/setup") },
   { href: "/remote-access", material: "sync", label: "Sync", match: (p) => p.startsWith("/remote-access") },
   { href: "/usage", material: "activity", label: "Activity", match: (p) => p.startsWith("/usage") },
   { href: "/settings", material: "settings", label: "Settings", match: (p) => p.startsWith("/settings") },

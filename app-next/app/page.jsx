@@ -173,8 +173,8 @@ function PlayerHub() {
       await api("/api/profiles", { method: "POST", body: {
         display_name: world.name || "Dragonwilds World",
         server_world_id: world.worldId,
-        client_install: installs[platform] || null,
-        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, password, platform, steamInstall: installs.steam || null, gamepassInstall: installs.gamepass || null, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
+        client_install: null,
+        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, password, platform, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
       }});
       toast(`${world.name || "World"} added to Player profiles.`, "success");
       loadProfiles();
@@ -241,7 +241,7 @@ function PlayerHub() {
           style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76, borderColor: identity.accentColor || undefined }}>
         <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url("${banner}") center/cover`, opacity: .48 }} />
         <img src={icon} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
-        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {p.client_install || "Choose a game installation"}</div></div>
+        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {installs[(p.connection?.platform || "steam")] || "Application Setup required"}</div></div>
         <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Connect / Sync</Link>
         <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
       </div>})}</div>}

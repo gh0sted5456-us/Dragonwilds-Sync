@@ -34,6 +34,8 @@ let shareProc = null;
 let serverReady = false;
 let pendingRoute = null;
 let tray = null;
+let startupPortsPromise = null;
+let startupServerPromise = null;
 
 // Set the moment a real quit is requested (tray Quit, or before-quit) so the window's
 // close handler knows to actually close instead of hiding to the tray.
@@ -323,7 +325,7 @@ function createTray() {
   tray.setToolTip("RSDW Sync");
     // Left-click opens the app (Windows/Linux convention); the menu is right-click.
     tray.on("click", () => showWindow());
-    refreshTrayMenu();
+    setImmediate(() => { refreshTrayMenu().catch(() => {}); });
     // Keep the world list (names, running dots) current without the window open.
     setInterval(() => { refreshTrayMenu().catch(() => {}); }, 20000);
     return true;
@@ -588,44 +590,77 @@ function showErrorWindow(message) {
   mainWindow.on("closed", () => (mainWindow = null));
 }
 
+function beginUiBootstrap() {
+  if (startupServerPromise) return startupServerPromise;
+  startupServerPromise = (async () => {
+    try {
+      startupPortsPromise ||= Promise.all([choosePrivatePort(), chooseSharePort()]);
+      const [uiPort, sharePort] = await startupPortsPromise;
+      PORT = uiPort;
+      SHARE_PORT = sharePort;
+      logToFile(`Selected local UI port ${PORT}; share port ${SHARE_PORT}`);
+
+      const runtimeProblem = bundledRuntimeProblem();
+      if (runtimeProblem) throw new Error(runtimeProblem);
+
+      startNextServer();
+      const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
+      const ready = await waitForServer(url, 20000);
+      if (!ready) throw new Error("The bundled interface server did not respond within 20 seconds.");
+      serverReady = true;
+      return true;
+    } catch (error) {
+      logToFile(`UI bootstrap failed: ${error.message}`);
+      return false;
+    }
+  })();
+  return startupServerPromise;
+}
+
+// Start the local UI bootstrap immediately. This overlaps the Next startup with
+// Electron/Chromium initialization instead of waiting for app.whenReady().
+if (!isDev) beginUiBootstrap();
+
 function main() {
   app.whenReady().then(async () => {
     // Ensures Windows uses our icon (not the default Electron one) in the taskbar.
   if (process.platform === "win32") app.setAppUserModelId("com.dwsm.servermanager");
-    initAutostart();
-
-    // Did we launch at login (autostart-to-tray) rather than by hand? The .desktop /
-    // login-item pass --hidden; Windows also reports it via getLoginItemSettings.
+    // Did we launch at login rather than by hand?
     launchedHidden = process.argv.includes("--hidden");
+    pendingRoute = launchRoute();
 
-    try {
-      PORT = await choosePrivatePort();
-      SHARE_PORT = await chooseSharePort();
-      logToFile(`Selected local UI port ${PORT}; share port ${SHARE_PORT}`);
-    } catch (e) { showErrorWindow(e.message); return; }
+    // The visual window is the first priority. Do not block it on tray population,
+    // autostart reconciliation, game discovery, sharing, or server runtimes.
+    if (!launchedHidden) createWindow();
 
-    const runtimeProblem = bundledRuntimeProblem();
-    if (runtimeProblem) { showErrorWindow(runtimeProblem); return; }
+    const ready = isDev
+      ? await (async () => {
+          try {
+            PORT = await choosePrivatePort();
+            serverReady = await waitForServer(process.env.ELECTRON_START_URL, 20000);
+            return serverReady;
+          } catch { return false; }
+        })()
+      : await beginUiBootstrap();
 
-    // Create the window first so a slow local backend never looks like a dead app.
-    const hasTray = createTray();
-    if (!launchedHidden || !hasTray) {
-      pendingRoute = launchRoute();
-      createWindow();
-    }
-
-    startNextServer();
-    const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
-    serverReady = await waitForServer(url, 30000);
-
-    if (!serverReady) {
+    if (!ready) {
       if (mainWindow) mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
-      else showErrorWindow("The bundled web server did not respond within 30 seconds.");
+      else showErrorWindow("The bundled interface server did not start.");
       return;
     }
 
     loadAppIntoWindow(pendingRoute);
-    startShareServer();
+
+    // Non-critical desktop integration happens after the UI is usable.
+    setImmediate(() => {
+      try { initAutostart(); } catch (e) { logToFile(`Autostart init failed: ${e.message}`); }
+      const hasTray = createTray();
+      if (launchedHidden && !hasTray && !mainWindow) {
+        createWindow();
+        loadAppIntoWindow(pendingRoute);
+      }
+      startShareServer();
+    });
 
     // On macOS, re-create the window when the dock icon is clicked — but ONLY
     // if there truly is no window AND the server is up. This is the guarded

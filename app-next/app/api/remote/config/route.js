@@ -21,12 +21,13 @@ function managerPort(req) {
 }
 
 function urls(req) {
-  const port = managerPort(req);
-  const local = `http://127.0.0.1:${port}/remote`;
+  const localPort = managerPort(req);
+  const sharePort = Number(process.env.APP_MANAGER_SHARE_PORT || localPort);
+  const local = `http://127.0.0.1:${localPort}/remote`;
   const lan = lanAddresses().map((a) => ({
-    address: a.address, primary: a.primary, url: `http://${a.address}:${port}/remote`,
+    address: a.address, primary: a.primary, url: `http://${a.address}:${sharePort}/remote`,
   }));
-  return { port, local, lan };
+  return { port: sharePort, local, lan };
 }
 
 // Mirror the LAN-bind choice into a marker file electron/main.js reads at (re)start to

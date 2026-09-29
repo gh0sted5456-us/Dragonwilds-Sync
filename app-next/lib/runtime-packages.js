@@ -5,7 +5,7 @@ const AdmZip = require("adm-zip");
 const dbm = require("./db");
 const { P } = require("./paths");
 
-const COMPONENTS = new Set(["ue4ss-steam", "ue4ss-gamepass", "runeschema"]);
+const COMPONENTS = new Set(["ue4ss-server", "ue4ss-steam", "ue4ss-gamepass", "runeschema"]);
 
 function sha256File(file) {
   const hash = crypto.createHash("sha256");
@@ -36,6 +36,12 @@ function normalizeRuntimePath(component, parts) {
     else if (["win64","wingdk"].includes(lower[0])) rel = parts.slice(1);
     const relLower = rel.map((p) => p.toLowerCase());
     if (relLower[0] === "ue4ss" && relLower[1] === "mods") return null;
+    const filename = rel[rel.length - 1]?.toLowerCase();
+    // Dedicated Dragonwilds servers use version.dll as the UE4SS bootstrap.
+    // Retail Steam clients use dwmapi.dll. Never allow one lane's bootstrap
+    // to bleed into the other.
+    if (component === "ue4ss-server" && filename === "dwmapi.dll") return null;
+    if (component !== "ue4ss-server" && filename === "version.dll") return null;
     return ["Binaries", platformDir, ...rel];
   }
   const marker = lower.lastIndexOf("runeschema");
@@ -65,7 +71,7 @@ function removeEmptyParents(file, stop) {
 }
 function install(worldId, component, zipPath) {
   const kind = String(component || "").trim().toLowerCase();
-  if (!COMPONENTS.has(kind)) throw new Error("Runtime component must be UE4SS Steam, UE4SS Game Pass, or RuneSchema.");
+  if (!COMPONENTS.has(kind)) throw new Error("Runtime component must be UE4SS Server, UE4SS Steam, UE4SS Game Pass, or RuneSchema.");
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   if (!zipPath || path.extname(zipPath).toLowerCase() !== ".zip" || !fs.existsSync(zipPath)) throw new Error("Choose a readable runtime ZIP.");
@@ -92,7 +98,12 @@ function install(worldId, component, zipPath) {
       const output = localTarget(candidate, relative);
       fs.mkdirSync(path.dirname(output), { recursive: true });
       fs.writeFileSync(output, entries[i].getData());
-      records.push({ relative, size: fs.statSync(output).size, sha256: sha256File(output), clientEligible: !(kind.startsWith("ue4ss-") && filename.toLowerCase() === "version.dll") });
+      records.push({
+        relative,
+        size: fs.statSync(output).size,
+        sha256: sha256File(output),
+        clientEligible: kind !== "ue4ss-server",
+      });
     }
     if (kind.startsWith("ue4ss-")) {
       const platformDir = kind === "ue4ss-gamepass" ? "wingdk" : "win64";
@@ -112,7 +123,7 @@ function install(worldId, component, zipPath) {
     }
 
     const gameRoot = serverGameRoot(world.install_dir);
-    const deployToHost = kind !== "ue4ss-gamepass";
+    const deployToHost = kind === "ue4ss-server" || kind === "runeschema";
     const previous = readManifest(worldId, kind);
     const nextSet = new Set(records.map((r) => r.relative.toLowerCase()));
     if (deployToHost) {
@@ -168,6 +179,7 @@ function packageStatus(worldId, component) {
 }
 function status(worldId) {
   return {
+    ue4ssServer: packageStatus(worldId, "ue4ss-server"),
     ue4ssSteam: packageStatus(worldId, "ue4ss-steam"),
     ue4ssGamepass: packageStatus(worldId, "ue4ss-gamepass"),
     runeschema: packageStatus(worldId, "runeschema"),
@@ -211,7 +223,9 @@ function syncUnits(worldId, platform = "steam") {
     for (const file of files) identity.update(`${file.target}\0${file.size}\0${file.sha256}\n`);
     return {
       key: "runtime:" + component,
-      name: component.startsWith("ue4ss-") ? `UE4SS Runtime · ${component === "ue4ss-gamepass" ? "PC Game Pass" : "Steam"}` : "RuneSchema Runtime",
+      name: component.startsWith("ue4ss-")
+        ? `UE4SS Runtime · ${component === "ue4ss-gamepass" ? "PC Game Pass" : component === "ue4ss-server" ? "Dedicated Server" : "Steam"}`
+        : "RuneSchema Runtime",
       type: "runtime",
       runtimeComponent: component,
       contentHash: identity.digest("hex"),

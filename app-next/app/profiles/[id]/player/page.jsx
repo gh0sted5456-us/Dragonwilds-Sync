@@ -8,23 +8,18 @@ export default function PlayerProfile({ params }) {
   const autoplay = searchParams.get("autoplay") === "1";
   const autoStarted = useRef(false);
   const [profile, setProfile] = useState(null);
+  const [playLanes, setPlayLanes] = useState({ steam: null, gamepass: null });
   const [checking, setChecking] = useState(false);
   const [result, setResult] = useState(null);
   const [flowStep, setFlowStep] = useState(null);
   const [launchReady, setLaunchReady] = useState(false);
   useEffect(() => {
-    Promise.all([api(`/api/profiles/${params.id}`), api("/api/application-setup/play")]).then(async ([profileResponse, installsResponse]) => {
-      const current = profileResponse.profile;
-      const connection = {
-        ...current.connection,
-        steamInstall: installsResponse.play?.steam?.installDir || current.connection?.steamInstall || null,
-        gamepassInstall: installsResponse.play?.gamepass?.installDir || current.connection?.gamepassInstall || null,
-      };
-      const activeInstall = (connection.platform || "steam") === "gamepass" ? connection.gamepassInstall : connection.steamInstall;
-      if (JSON.stringify(connection) !== JSON.stringify(current.connection) || activeInstall !== current.client_install) {
-        const updated = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection, client_install: activeInstall } });
-        setProfile(updated.profile);
-      } else setProfile(current);
+    Promise.all([api(`/api/profiles/${params.id}`), api("/api/application-setup/play")]).then(([profileResponse, installsResponse]) => {
+      setProfile(profileResponse.profile);
+      setPlayLanes({
+        steam: installsResponse.play?.steam?.installDir || null,
+        gamepass: installsResponse.play?.gamepass?.installDir || null,
+      });
     }).catch((e) => toast(e.message, "error"));
   }, [params.id]);
 
@@ -56,7 +51,9 @@ export default function PlayerProfile({ params }) {
   const setPlatform = async (platform) => {
     try {
       const connection = { ...profile.connection, platform };
-      const response = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection, client_install: platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall } });
+      delete connection.steamInstall;
+      delete connection.gamepassInstall;
+      const response = await api(`/api/profiles/${params.id}`, { method: "PATCH", body: { connection, client_install: null } });
       setProfile(response.profile);
       setResult(null);
     } catch (e) { toast(e.message, "error"); }
@@ -121,7 +118,7 @@ export default function PlayerProfile({ params }) {
   }, [autoplay, profile, params.id]);
 
   if (!profile) return <main style={{ padding: 32 }}>Loading World profile…</main>;
-  const selectedInstall = (profile.connection?.platform || "steam") === "gamepass" ? profile.connection?.gamepassInstall : profile.connection?.steamInstall;
+  const selectedInstall = (profile.connection?.platform || "steam") === "gamepass" ? playLanes.gamepass : playLanes.steam;
   const identity = profile.connection?.worldIdentity || {};
   return <main style={{ maxWidth: 820, margin: "0 auto", padding: 32 }}>
     <div style={{ position: "relative", minHeight: 112, marginBottom: 18, borderRadius: 14, overflow: "hidden", border: "1px solid var(--line-strong)", background: "var(--card)" }}>
@@ -150,8 +147,8 @@ export default function PlayerProfile({ params }) {
     </div>}
     <div className="panel" style={{ padding: 20, marginTop: 20 }}>
       <div style={{ display: "grid", gap: 8 }}>
-        <div><b>Steam install</b><div className="subtle">{profile.connection?.steamInstall || "Not configured"}</div></div>
-        <div><b>PC Game Pass install</b><div className="subtle">{profile.connection?.gamepassInstall || "Not configured"}</div></div>
+        <div><b>Steam lane</b><div className="subtle">{playLanes.steam || "Not configured in Application Setup"}</div></div>
+        <div><b>PC Game Pass lane</b><div className="subtle">{playLanes.gamepass || "Not configured in Application Setup"}</div></div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 12, alignItems: "center" }}>
         <b style={{ marginRight: 4 }}>Platform</b>

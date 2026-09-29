@@ -79,7 +79,13 @@ function contains(rel, needle, message) {
   contains("lib/component-updates.js", "latestNexusVersions");
   contains("lib/component-updates.js", "Xbox");
   contains("lib/component-updates.js", "Steam");
-  contains("lib/runtime-packages.js", 'const COMPONENTS = new Set(["ue4ss-steam", "ue4ss-gamepass", "runeschema"])');
+  contains("lib/runtime-packages.js", 'const COMPONENTS = new Set(["ue4ss-server", "ue4ss-steam", "ue4ss-gamepass", "runeschema"])');
+  contains("lib/runtime-packages.js", 'component === "ue4ss-server" && filename === "dwmapi.dll"');
+  contains("lib/runtime-packages.js", 'component !== "ue4ss-server" && filename === "version.dll"');
+  contains("lib/runtime-packages.js", 'Dedicated-server UE4SS requires version.dll');
+  contains("lib/runtime-packages.js", 'Steam UE4SS requires dwmapi.dll');
+  contains("lib/runtime-packages.js", "function materializeHost(worldId)");
+  contains("lib/supervisor.js", 'require("./runtime-packages").materializeHost(worldId)');
   contains("lib/runtime-packages.js", 'component === "ue4ss-gamepass" ? "WinGDK" : "Win64"');
   contains("lib/runtime-packages.js", 'clientEligible');
   contains("lib/sync/client.js", '"X-RSDW-Client-Platform"');
@@ -96,9 +102,11 @@ function contains(rel, needle, message) {
   contains("app/profiles/[id]/player/page.jsx", "navigator.clipboard.writeText");
   contains("electron/main.js", '" --autoplay"');
   contains("electron/main.js", "writeShortcutIcon");
-  contains("components/ModsPanel.jsx", "UE4SS · Steam/server");
+  contains("components/ModsPanel.jsx", "UE4SS · Dedicated Server");
+  contains("components/ModsPanel.jsx", "UE4SS · Steam");
   contains("components/ModsPanel.jsx", "UE4SS · PC Game Pass");
-  contains("components/ModsPanel.jsx", "Routed to Win64 or WinGDK automatically");
+  contains("components/ModsPanel.jsx", "server uses version.dll");
+  contains("components/ModsPanel.jsx", "Steam uses dwmapi.dll");
   const worldPage = read("app/worlds/[id]/page.jsx");
   assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
   const shell = read("components/Shell.jsx");

@@ -123,8 +123,9 @@ function contains(rel, needle, message) {
 {
   contains("app/setup/page.jsx", "Application Setup");
   contains("app/setup/page.jsx", "Dedicated Server lane");
-  contains("app/setup/page.jsx", "Steam lane");
-  contains("app/setup/page.jsx", "PC Game Pass lane");
+  contains("app/setup/page.jsx", 'label="Steam"');
+  contains("app/setup/page.jsx", 'label="PC Game Pass"');
+  contains("app/setup/page.jsx", "<PlayLane");
   contains("app/api/application-setup/server/route.js", 'const DIR_KEY = "applicationSetup:serverDir"');
   contains("app/api/application-setup/play/route.js", "clientInstall:");
   const provisionRoute = read("app/api/provision/route.js");

@@ -54,6 +54,9 @@ export async function POST(req) {
         if (!check.valid) throw new Error(check.reason || "Dedicated-server installation could not be verified.");
         dbm.setSetting(DIR_KEY, check.installDir);
         dbm.setSetting(PLATFORM_KEY, platform);
+        for (const world of dbm.listWorlds()) {
+          dbm.updateWorld(world.world_id, { install_dir: check.installDir, platform });
+        }
         jobs.finishJob(job.id, true, { installDir: check.installDir, buildId: check.buildId || result.buildId || null });
       } catch (e) {
         log(`ERROR: ${e.message}`);

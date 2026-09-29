@@ -36,6 +36,8 @@ let pendingRoute = null;
 let tray = null;
 let startupPortsPromise = null;
 let startupServerPromise = null;
+let uiLoadTimer = null;
+let uiLoadStartedAt = 0;
 
 // Set the moment a real quit is requested (tray Quit, or before-quit) so the window's
 // close handler knows to actually close instead of hiding to the tray.
@@ -284,11 +286,33 @@ function loadingPage(message = "Starting RSDW Sync…") {
 }
 
 function loadAppIntoWindow(route = null) {
-  if (!mainWindow || !serverReady) return;
+  if (!mainWindow) return;
   const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
   const target = route || pendingRoute || "";
-  pendingRoute = null;
-  mainWindow.loadURL(`${base}${target}`);
+  if (route) pendingRoute = route;
+  if (!uiLoadStartedAt) uiLoadStartedAt = Date.now();
+
+  if (uiLoadTimer) clearTimeout(uiLoadTimer);
+  const attempt = () => {
+    if (!mainWindow) return;
+    mainWindow.loadURL(`${base}${target}`).then(() => {
+      serverReady = true;
+      pendingRoute = null;
+      uiLoadStartedAt = 0;
+      if (uiLoadTimer) clearTimeout(uiLoadTimer);
+      uiLoadTimer = null;
+    }).catch((error) => {
+      logToFile(`UI navigation retry: ${error.message}`);
+      if (!mainWindow) return;
+      if (Date.now() - uiLoadStartedAt > 20000) {
+        mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
+        uiLoadTimer = null;
+        return;
+      }
+      uiLoadTimer = setTimeout(attempt, 180);
+    });
+  };
+  attempt();
 }
 
 async function refreshTrayMenu() {
@@ -547,8 +571,9 @@ function createWindow() {
     .catch(() => {})
     .finally(() => {
       if (!mainWindow) return;
-      if (serverReady) mainWindow.loadURL(url);
-      else mainWindow.loadURL(loadingPage());
+      mainWindow.loadURL(loadingPage()).finally(() => {
+        if (startupServerPromise || isDev) loadAppIntoWindow(pendingRoute);
+      });
     });
 
   // Don't auto-show when we launched straight to the tray — the window is built so a
@@ -604,10 +629,6 @@ function beginUiBootstrap() {
       if (runtimeProblem) throw new Error(runtimeProblem);
 
       startNextServer();
-      const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
-      const ready = await waitForServer(url, 20000);
-      if (!ready) throw new Error("The bundled interface server did not respond within 20 seconds.");
-      serverReady = true;
       return true;
     } catch (error) {
       logToFile(`UI bootstrap failed: ${error.message}`);
@@ -633,22 +654,23 @@ function main() {
     // autostart reconciliation, game discovery, sharing, or server runtimes.
     if (!launchedHidden) createWindow();
 
-    const ready = isDev
+    const started = isDev
       ? await (async () => {
           try {
             PORT = await choosePrivatePort();
-            serverReady = await waitForServer(process.env.ELECTRON_START_URL, 20000);
-            return serverReady;
+            return true;
           } catch { return false; }
         })()
       : await beginUiBootstrap();
 
-    if (!ready) {
+    if (!started) {
       if (mainWindow) mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
-      else showErrorWindow("The bundled interface server did not start.");
+      else showErrorWindow("The bundled interface server could not be started.");
       return;
     }
 
+    // Navigate now. loadAppIntoWindow owns short retries while Next finishes
+    // listening, so the renderer never waits behind a separate health gate.
     loadAppIntoWindow(pendingRoute);
 
     // Non-critical desktop integration happens after the UI is usable.
@@ -687,6 +709,7 @@ function main() {
     const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 14000));
     Promise.race([requestManagedServerShutdown(), timeout]).finally(() => {
       quitCleanupFinished = true;
+      if (uiLoadTimer) { clearTimeout(uiLoadTimer); uiLoadTimer = null; }
       if (tray) { try { tray.destroy(); } catch {} tray = null; }
       if (shareProc) { try { shareProc.kill(); } catch {} shareProc = null; }
       if (nextProc) { try { nextProc.kill(); } catch {} nextProc = null; }

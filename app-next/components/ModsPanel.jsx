@@ -11,9 +11,10 @@ const GROUPS = [
 ];
 
 const RUNTIME_PACKAGES = [
-  { component: "ue4ss-steam", stateKey: "ue4ssSteam", label: "UE4SS · Steam/server", icon: "/rsdw/platforms/ue4ss.webp", note: "Win64 · host + Steam clients" },
-  { component: "ue4ss-gamepass", stateKey: "ue4ssGamepass", label: "UE4SS · PC Game Pass", icon: "/rsdw/platforms/ue4ss.webp", note: "WinGDK · Game Pass clients" },
-  { component: "runeschema", stateKey: "runeschema", label: "RuneSchema", icon: "/rsdw/platforms/runeschema.webp", note: "Routed to Win64 or WinGDK automatically" },
+  { component: "ue4ss-server", stateKey: "ue4ssServer", label: "UE4SS · Dedicated Server", icon: "/rsdw/platforms/ue4ss.webp", note: "Win64 · server-only · version.dll loader" },
+  { component: "ue4ss-steam", stateKey: "ue4ssSteam", label: "UE4SS · Steam", icon: "/rsdw/platforms/ue4ss.webp", note: "Win64 client · dwmapi.dll loader" },
+  { component: "ue4ss-gamepass", stateKey: "ue4ssGamepass", label: "UE4SS · PC Game Pass", icon: "/rsdw/platforms/ue4ss.webp", note: "WinGDK client" },
+  { component: "runeschema", stateKey: "runeschema", label: "RuneSchema", icon: "/rsdw/platforms/runeschema.webp", note: "Routed to server / Win64 / WinGDK as applicable" },
 ];
 
 export default function ModsPanel({ worldId, running }) {
@@ -109,7 +110,7 @@ export default function ModsPanel({ worldId, running }) {
       <section className="panel-inset" style={{ padding: "0.95rem 1rem" }}>
         <div className="heading" style={{ fontSize: "0.96rem" }}>World runtimes</div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "4px 0 10px" }}>
-          Upload the runtime ZIPs this World uses. Steam/server UE4SS is Win64, PC Game Pass UE4SS is WinGDK, and RuneSchema is routed to the correct client tree automatically. Sync publishes only client-compatible files and verifies every download by hash.
+          Each World profile owns its runtime packages. Dedicated-server UE4SS is separate from client UE4SS: the server uses version.dll, Steam uses dwmapi.dll, and Game Pass uses its WinGDK lane. Sync publishes only client-compatible files and verifies every download by hash.
         </p>
         <div className="runtime-package-grid">
           {RUNTIME_PACKAGES.map((pkg) => {

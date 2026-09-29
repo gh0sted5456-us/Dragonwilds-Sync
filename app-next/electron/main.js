@@ -19,6 +19,7 @@ const crypto = require("crypto");
 
 const isDev = process.env.NODE_ENV === "development";
 let PORT = 4317;
+let SHARE_PORT = 4318;
 const INSTANCE_TOKEN = crypto.randomBytes(24).toString("hex");
 
 // Per-launch secret proving a request is the trusted desktop app rather than a Remote
@@ -29,7 +30,9 @@ const INSTANCE_TOKEN = crypto.randomBytes(24).toString("hex");
 const ADMIN_TOKEN = crypto.randomBytes(24).toString("hex");
 let mainWindow = null;
 let nextProc = null;
+let shareProc = null;
 let serverReady = false;
+let pendingRoute = null;
 let tray = null;
 
 // Set the moment a real quit is requested (tray Quit, or before-quit) so the window's
@@ -81,13 +84,12 @@ function dataDir() {
 // 0.0.0.0 once the user turns on same-network access in Remote Access. The choice is
 // mirrored into a tiny marker file by the /api/remote/config route (the DB is the source
 // of truth), so we can read it here without opening sqlite before the server is up.
-function readBindHost() {
+function sharingEnabled() {
   try {
     const raw = fs.readFileSync(path.join(dataDir(), "remote-bind.json"), "utf8");
-    const host = JSON.parse(raw).host;
-    if (host === "0.0.0.0") return "0.0.0.0";
+    return JSON.parse(raw).host === "0.0.0.0";
   } catch {}
-  return "127.0.0.1";
+  return false;
 }
 
 function resourcePath() {
@@ -249,23 +251,42 @@ async function choosePrivatePort() {
   throw new Error("No available local application port was found.");
 }
 
+async function chooseSharePort() {
+  if (isDev) return 4318;
+  for (let candidate = 4418; candidate < 4518; candidate++) {
+    if (candidate !== PORT && await portAvailable(candidate)) return candidate;
+  }
+  throw new Error("No available sharing port was found.");
+}
+
 function showWindow(worldId, route) {
-  if (!serverReady) return;
+  if (worldId) pendingRoute = `/worlds/${encodeURIComponent(worldId)}`;
+  else if (route) pendingRoute = route;
   if (!mainWindow) createWindow();
   const win = mainWindow;
   if (!win) return;
-  const go = () => {
-    if (worldId || route) {
-      const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
-      win.loadURL(worldId ? `${base}/worlds/${encodeURIComponent(worldId)}` : `${base}${route}`);
-    }
-    if (win.isMinimized()) win.restore();
-    win.show();
-    win.focus();
-  };
-  // A window created just now isn't ready to navigate yet; wait for first paint.
-  if (win.webContents.isLoading() && (worldId || route)) win.webContents.once("did-finish-load", go);
-  else go();
+  if (serverReady) loadAppIntoWindow(pendingRoute);
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function loadingPage(message = "Starting RSDW Sync…") {
+  const html = `<!doctype html><html><body style="margin:0;background:#202427;color:#eee;font-family:Segoe UI,system-ui,sans-serif;display:grid;place-items:center;height:100vh">
+    <div style="text-align:center">
+      <div style="font-size:28px;font-weight:700;margin-bottom:10px">RSDW Sync</div>
+      <div style="color:#c1a56d;font-size:14px">${message}</div>
+    </div>
+  </body></html>`;
+  return "data:text/html;charset=utf-8," + encodeURIComponent(html);
+}
+
+function loadAppIntoWindow(route = null) {
+  if (!mainWindow || !serverReady) return;
+  const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
+  const target = route || pendingRoute || "";
+  pendingRoute = null;
+  mainWindow.loadURL(`${base}${target}`);
 }
 
 async function refreshTrayMenu() {
@@ -327,8 +348,8 @@ function startNextServer() {
   const env = {
     ...process.env,
     PORT: String(PORT),
-    // Loopback unless the user enabled same-network (LAN) access in Remote Access.
-    HOSTNAME: readBindHost(),
+    // The desktop UI is always loopback-only. LAN sharing runs in its own subprocess.
+    HOSTNAME: "127.0.0.1",
     // The desktop app's proof-of-trust for Remote Access (see ADMIN_TOKEN above).
     DWSM_ADMIN_TOKEN: ADMIN_TOKEN,
     NODE_ENV: "production",
@@ -336,6 +357,7 @@ function startNextServer() {
     // Expose the installed app version to the server so the UI can check for updates.
     APP_MANAGER_APP_VERSION: app.getVersion(),
     APP_MANAGER_PORT: String(PORT),
+    APP_MANAGER_SHARE_PORT: String(SHARE_PORT),
     APP_MANAGER_INSTANCE_TOKEN: INSTANCE_TOKEN,
     // CRITICAL: make the Electron binary behave as plain Node for this child,
     // so it can run the Next standalone server.js.
@@ -357,6 +379,57 @@ function startNextServer() {
   nextProc.stderr.on("data", (d) => logToFile(`[next:err] ${d.toString().trim()}`));
   nextProc.on("error", (e) => logToFile(`Next server spawn error: ${e.message}`));
   nextProc.on("exit", (code) => logToFile(`Next server exited: ${code}`));
+}
+
+
+function startShareServer() {
+  if (isDev || shareProc || !sharingEnabled()) return;
+  const base = resourcePath();
+  const serverPath = path.join(base, "server.js");
+  if (!fs.existsSync(serverPath)) return;
+
+  const env = {
+    ...process.env,
+    PORT: String(SHARE_PORT),
+    HOSTNAME: "0.0.0.0",
+    DWSM_ADMIN_TOKEN: ADMIN_TOKEN,
+    NODE_ENV: "production",
+    APP_MANAGER_DATA_DIR: dataDir(),
+    APP_MANAGER_APP_VERSION: app.getVersion(),
+    APP_MANAGER_PORT: String(SHARE_PORT),
+    APP_MANAGER_SHARE_PORT: String(SHARE_PORT),
+    APP_MANAGER_INSTANCE_TOKEN: INSTANCE_TOKEN,
+    ELECTRON_RUN_AS_NODE: "1",
+    PSM_SQLITE_BACKEND: "wasm",
+    NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --no-warnings`.trim(),
+    RSDW_SHARE_PROCESS: "1",
+  };
+
+  shareProc = spawn(process.execPath, [serverPath], {
+    env,
+    cwd: base,
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  });
+  shareProc.stdout.on("data", (d) => logToFile(`[share] ${d.toString().trim()}`));
+  shareProc.stderr.on("data", (d) => logToFile(`[share:err] ${d.toString().trim()}`));
+  shareProc.on("error", (e) => logToFile(`Share server spawn error: ${e.message}`));
+  shareProc.on("exit", (code) => {
+    logToFile(`Share server exited: ${code}`);
+    shareProc = null;
+  });
+}
+
+async function stopShareServer() {
+  const proc = shareProc;
+  if (!proc) return true;
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => { if (!done) { done = true; shareProc = null; resolve(true); } };
+    proc.once("exit", finish);
+    try { proc.kill(); } catch { finish(); }
+    setTimeout(finish, 4000);
+  });
 }
 
 function bundledRuntimeProblem() {
@@ -477,7 +550,11 @@ function createWindow() {
   mainWindow.webContents.session.cookies
     .set({ url: `http://127.0.0.1:${PORT}`, name: "dwsm_admin", value: ADMIN_TOKEN, httpOnly: true, sameSite: "lax" })
     .catch(() => {})
-    .finally(() => { if (mainWindow) mainWindow.loadURL(url); });
+    .finally(() => {
+      if (!mainWindow) return;
+      if (serverReady) mainWindow.loadURL(url);
+      else mainWindow.loadURL(loadingPage());
+    });
 
   // Don't auto-show when we launched straight to the tray — the window is built so a
   // tray click has something to reveal, but it stays hidden until asked for.
@@ -528,38 +605,41 @@ function main() {
     // login-item pass --hidden; Windows also reports it via getLoginItemSettings.
     launchedHidden = process.argv.includes("--hidden");
 
-    try { PORT = await choosePrivatePort(); logToFile(`Selected local port ${PORT}`); }
-    catch (e) { showErrorWindow(e.message); return; }
+    try {
+      PORT = await choosePrivatePort();
+      SHARE_PORT = await chooseSharePort();
+      logToFile(`Selected local UI port ${PORT}; share port ${SHARE_PORT}`);
+    } catch (e) { showErrorWindow(e.message); return; }
 
     const runtimeProblem = bundledRuntimeProblem();
     if (runtimeProblem) { showErrorWindow(runtimeProblem); return; }
+
+    // Create the window first so a slow local backend never looks like a dead app.
+    const hasTray = createTray();
+    if (!launchedHidden || !hasTray) {
+      pendingRoute = launchRoute();
+      createWindow();
+    }
+
     startNextServer();
     const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
-    serverReady = await waitForServer(url);
+    serverReady = await waitForServer(url, 30000);
 
     if (!serverReady) {
-      // A broken server is worth surfacing even on a hidden launch — otherwise the app
-      // is silently dead in the tray.
-      showErrorWindow("The bundled web server did not respond within 60 seconds. This usually means a file is missing from the install or a security tool blocked it.");
+      if (mainWindow) mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
+      else showErrorWindow("The bundled web server did not respond within 30 seconds.");
       return;
     }
 
-
-    const hasTray = createTray();
-    // Show a window on a normal launch. On a hidden (login) launch, stay in the tray —
-    // but only if we actually have a tray to live in; without one, fall back to showing
-    // the window so the app is never both invisible and unreachable.
-    if (!launchedHidden || !hasTray) {
-      createWindow();
-      const route = launchRoute();
-      if (route) showWindow(null, route);
-    }
+    loadAppIntoWindow(pendingRoute);
+    startShareServer();
 
     // On macOS, re-create the window when the dock icon is clicked — but ONLY
     // if there truly is no window AND the server is up. This is the guarded
     // version that prevents the infinite-window cascade.
     app.on("activate", () => {
-      if (!mainWindow && serverReady) createWindow();
+      if (!mainWindow) createWindow();
+      if (serverReady) loadAppIntoWindow();
     });
   });
 
@@ -580,6 +660,7 @@ function main() {
     Promise.race([requestManagedServerShutdown(), timeout]).finally(() => {
       quitCleanupFinished = true;
       if (tray) { try { tray.destroy(); } catch {} tray = null; }
+      if (shareProc) { try { shareProc.kill(); } catch {} shareProc = null; }
       if (nextProc) { try { nextProc.kill(); } catch {} nextProc = null; }
       // Re-enter app.quit(); the finished flag lets this second before-quit pass.
       setTimeout(() => app.quit(), 50);
@@ -696,10 +777,11 @@ ipcMain.handle("set-close-to-tray", (_e, enabled) => {
 // Remote Access — same-network (LAN) bind toggle. The renderer writes the choice through
 // the API (which persists it + the marker file); this applies it by restarting the server
 // on the new host. Returns whether the server came back up.
-ipcMain.handle("remote-get-lanbind", () => readBindHost() === "0.0.0.0");
+ipcMain.handle("remote-get-lanbind", () => sharingEnabled());
 ipcMain.handle("remote-set-lanbind", async (_e, enabled) => {
   const host = enabled ? "0.0.0.0" : "127.0.0.1";
   try { fs.writeFileSync(path.join(dataDir(), "remote-bind.json"), JSON.stringify({ host }), "utf8"); } catch {}
-  const ok = await restartNextServer();
-  return { ok, host };
+  if (enabled) startShareServer();
+  else await stopShareServer();
+  return { ok: true, host, port: SHARE_PORT };
 });

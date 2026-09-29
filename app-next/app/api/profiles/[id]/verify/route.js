@@ -21,8 +21,9 @@ export async function POST(_req, { params }) {
     const payload = await response.json();
     if (!response.ok || !payload.manifest) throw new Error(payload.error || "The World did not return a Sync manifest.");
     const platform = connection.platform === "gamepass" ? "gamepass" : "steam";
-    const install = platform === "gamepass" ? connection.gamepassInstall : connection.steamInstall;
-    const comparison = syncManifest.compareManifest(payload.manifest, install || profile.client_install);
+    const install = dbm.getSetting(`clientInstall:${platform}`, null);
+    if (!install) throw new Error(`Application Setup -> Play -> ${platform === "gamepass" ? "PC Game Pass" : "Steam"} is not configured.`);
+    const comparison = syncManifest.compareManifest(payload.manifest, install);
     const identity = payload.manifest.world?.identity || {};
     const nextConnection = {
       ...connection,

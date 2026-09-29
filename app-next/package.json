@@ -84,7 +84,7 @@
       "installerHeaderIcon": "public/icon.png"
     },
     "portable": {
-      "artifactName": "RSDW-Sync-Experimental-${version}-portable.exe"
+      "artifactName": "RSDW-Sync-Super-Experimental-${version}-portable.exe"
     },
     "linux": {
       "target": [

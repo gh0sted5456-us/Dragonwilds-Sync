@@ -22,7 +22,7 @@ export default function InfoPage() {
         <iframe
           key={refreshKey}
           title="Helpy"
-          src={`/api/helpy/helpy.html?embed=1&theme=dark&r=${refreshKey}`}
+          src={`https://gh0sted5456-us.github.io/Dragonwilds-Sync/helpy.html?embed=1&theme=dark&r=${refreshKey}`}
           style={{ width: "100%", height: "100%", border: 0, display: "block", background: "#0e0e0e" }}
           sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
         />

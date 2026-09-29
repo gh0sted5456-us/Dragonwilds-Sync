@@ -384,38 +384,31 @@ function startNextServer() {
 
 function startShareServer() {
   if (isDev || shareProc || !sharingEnabled()) return;
-  const base = resourcePath();
-  const serverPath = path.join(base, "server.js");
-  if (!fs.existsSync(serverPath)) return;
+  const proxyPath = path.join(__dirname, "share-proxy.js");
+  if (!fs.existsSync(proxyPath)) {
+    logToFile(`Share proxy missing: ${proxyPath}`);
+    return;
+  }
 
   const env = {
     ...process.env,
-    PORT: String(SHARE_PORT),
-    HOSTNAME: "0.0.0.0",
-    DWSM_ADMIN_TOKEN: ADMIN_TOKEN,
-    NODE_ENV: "production",
-    APP_MANAGER_DATA_DIR: dataDir(),
-    APP_MANAGER_APP_VERSION: app.getVersion(),
-    APP_MANAGER_PORT: String(SHARE_PORT),
-    APP_MANAGER_SHARE_PORT: String(SHARE_PORT),
-    APP_MANAGER_INSTANCE_TOKEN: INSTANCE_TOKEN,
     ELECTRON_RUN_AS_NODE: "1",
-    PSM_SQLITE_BACKEND: "wasm",
+    RSDW_UI_PORT: String(PORT),
+    RSDW_SHARE_PORT: String(SHARE_PORT),
     NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --no-warnings`.trim(),
-    RSDW_SHARE_PROCESS: "1",
   };
 
-  shareProc = spawn(process.execPath, [serverPath], {
+  shareProc = spawn(process.execPath, [proxyPath], {
     env,
-    cwd: base,
+    cwd: __dirname,
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
   shareProc.stdout.on("data", (d) => logToFile(`[share] ${d.toString().trim()}`));
   shareProc.stderr.on("data", (d) => logToFile(`[share:err] ${d.toString().trim()}`));
-  shareProc.on("error", (e) => logToFile(`Share server spawn error: ${e.message}`));
+  shareProc.on("error", (e) => logToFile(`Share proxy spawn error: ${e.message}`));
   shareProc.on("exit", (code) => {
-    logToFile(`Share server exited: ${code}`);
+    logToFile(`Share proxy exited: ${code}`);
     shareProc = null;
   });
 }

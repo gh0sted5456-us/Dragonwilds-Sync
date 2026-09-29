@@ -744,6 +744,7 @@ async function startWorld(worldId) {
   // Scheduled, remote and shortcut starts must obey the same active-profile
   // contract as the GUI. This loads that profile's settings and marker first.
   require("./active-server-profile").activate(worldId);
+  require("./runtime-packages").materializeHost(worldId);
   world = dbm.getWorld(worldId);
 
   const plat = world.platform || hostPlatform();

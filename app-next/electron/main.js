@@ -204,7 +204,7 @@ function trayIconPath() {
   const base = isDev
     ? path.join(__dirname, "..", "public")
     : path.join(process.resourcesPath, "app", "public");
-  return path.join(base, "icon.png");
+  return path.join(base, process.platform === "win32" ? "icon.ico" : "icon.png");
 }
 
 // Pull the world list from the local server for the tray menu. DB-only endpoint, so
@@ -525,8 +525,8 @@ function createWindow() {
     title: "RSDW Sync",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
     icon: isDev
-      ? path.join(__dirname, "..", "public", "icon.png")
-      : path.join(process.resourcesPath, "app", "public", "icon.png"),
+      ? path.join(__dirname, "..", "public", process.platform === "win32" ? "icon.ico" : "icon.png")
+      : path.join(process.resourcesPath, "app", "public", process.platform === "win32" ? "icon.ico" : "icon.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),

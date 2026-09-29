@@ -111,8 +111,14 @@ function contains(rel, needle, message) {
   assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
   const shell = read("components/Shell.jsx");
   assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");
-  contains("electron/main.js", '"icon.png"');
-  contains("package.json", '"icon": "public/icon.png"');
+  contains("electron/main.js", "loadingPage(");
+  contains("electron/main.js", "startShareServer()");
+  contains("electron/main.js", 'HOSTNAME: "127.0.0.1"');
+  contains("electron/main.js", 'HOSTNAME: "0.0.0.0"');
+  contains("electron/main.js", "APP_MANAGER_SHARE_PORT");
+  contains("lib/sync/discovery.js", "APP_MANAGER_SHARE_PORT");
+  contains("electron/main.js", '"icon.ico"');
+  contains("package.json", '"icon": "public/icon.ico"');
   contains("app/globals.css", "--radius: 12px");
 }
 

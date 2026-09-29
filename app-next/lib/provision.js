@@ -5,23 +5,11 @@ const crypto = require("crypto");
 const AdmZip = require("adm-zip");
 const { P } = require("./paths");
 const dbm = require("./db");
-const steam = require("./steamcmd");
 const ini = require("./ini");
 const serverProfiles = require("./active-server-profile");
-const jobs = require("./jobs");
 const { suggestPorts } = require("./ports");
 const { createBackup } = require("./backups");
 const os = require("os");
-const syncedMods = require("./mods");
-
-// Job tracking is delegated to the shared registry (lib/jobs.js) so installs and
-// updates surface together in the downloads tray. These thin wrappers keep the
-// existing provision API (and /api/provision/status) working.
-function newJob(worldId = null, worldName = "") {
-  return jobs.createJob({ type: "install", worldId, worldName });
-}
-function jobLog(id, line) { jobs.logJob(id, line); }
-function getJob(id) { return jobs.getJob(id); }
 
 // Create a world profile record (no install yet).
 function createProfile({ display_name, install_dir, ports, admin_password, platform, owner_id, default_world_name, wine_binary, wine_prefix, wine_launch_flags }) {
@@ -54,46 +42,6 @@ function createProfile({ display_name, install_dir, ports, admin_password, platf
     created_at: Date.now(),
   };
   return dbm.insertWorld(world);
-}
-
-// Full provision: ensure steamcmd, install, bootstrap ini, capture build id.
-async function provisionWorld(jobId, worldId) {
-  const world = dbm.getWorld(worldId);
-  const log = (l) => jobLog(jobId, l);
-  try {
-    if (world.display_name) jobs.setPhase(jobId, "starting", `Installing ${world.display_name}`);
-    fs.mkdirSync(world.install_dir, { recursive: true });
-    dbm.updateWorld(worldId, { status: "updating" });
-    jobs.setProgress(jobId, null, "Preparing SteamCMD…");
-    await steam.ensureSteamCmd(log);
-    log(`Installing Dragonwilds Dedicated Server (app ${steam.DRAGONWILDS_APPID})...`);
-    jobs.setPhase(jobId, "steamcmd", "Downloading server…");
-    const res = await steam.installOrUpdate(world.install_dir, log, world.platform);
-    if (!res.ok) throw new Error(`SteamCMD failed (code ${res.code})${res.detail ? `: ${res.detail}` : ""}`);
-
-    // capture build id (verified install may already have it)
-    const bid = res.buildId || steam.readInstalledBuildId(world.install_dir);
-    if (bid) { dbm.updateWorld(worldId, { build_id: bid }); log(`Installed build ${bid}`); }
-
-    // bootstrap ini from the shipped default, then apply this world's ports/password
-    jobs.setPhase(jobId, "settings", "Writing server settings…");
-    log("Writing server settings (ports, admin password, REST API)...");
-    ini.applyWorldNetworkSettings(world.install_dir, dbm.getWorld(worldId), { syncPublicPort: true });
-    const initialIni = ini.readRawSettings(world.install_dir, dbm.getWorld(worldId).platform);
-    serverProfiles.saveRawSettings(worldId, initialIni.content, { syncPublicPort: true });
-
-    try { syncedMods.reapplySyncedMods(worldId); log("Reapplied retained mod selection."); }
-    catch (e) { log(`Retained mod warning: ${e.message}`); }
-
-    dbm.updateWorld(worldId, { status: "stopped" });
-    dbm.logEvent(worldId, "provision", "Install complete");
-    log("Done. World is ready to start.");
-    jobs.finishJob(jobId, true, { worldId });
-  } catch (e) {
-    log(`ERROR: ${e.message}`);
-    dbm.updateWorld(worldId, { status: "stopped" });
-    jobs.finishJob(jobId, false, { worldId, error: e.message });
-  }
 }
 
 // Register an already-installed server (no SteamCMD). Points a new profile at an
@@ -216,6 +164,6 @@ function copyDir(src, dst) {
 }
 
 module.exports = {
-  newJob, getJob, jobLog, createProfile, provisionWorld, adoptExistingInstall,
+  createProfile, adoptExistingInstall,
   validateSaveZip, importSave, copyDir,
 };

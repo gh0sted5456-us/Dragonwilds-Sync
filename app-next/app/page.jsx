@@ -133,7 +133,10 @@ function PlayerHub() {
   const loadProfiles = useCallback(() => api("/api/profiles").then((r) => setProfiles(r.profiles)).catch((e) => toast(e.message, "error")), []);
   useEffect(() => {
     loadProfiles();
-    api("/api/client-installs").then((r) => setInstalls({ steam: r.installs?.steam || "", gamepass: r.installs?.gamepass || "" })).catch((e) => toast(e.message, "error"));
+    api("/api/application-setup/play").then((r) => setInstalls({
+      steam: r.play?.steam?.installDir || "",
+      gamepass: r.play?.gamepass?.installDir || "",
+    })).catch((e) => toast(e.message, "error"));
   }, [loadProfiles]);
 
   useEffect(() => {
@@ -157,18 +160,6 @@ function PlayerHub() {
     } catch (e) { toast(e.message, "error"); }
   };
 
-  const saveInstall = async (kind, selected = installs[kind]) => {
-    try {
-      const response = await api("/api/client-installs", { method: "POST", body: { [kind]: selected } });
-      setInstalls({ steam: response.installs?.steam || "", gamepass: response.installs?.gamepass || "" });
-      toast(`${kind === "steam" ? "Steam" : "PC Game Pass"} installation saved.`, "success");
-    } catch (e) { toast(e.message, "error"); }
-  };
-  const chooseInstall = async (kind) => {
-    if (!window.desktop?.pickDirectory) return toast("Folder selection is available in the desktop app.", "error");
-    const selected = await window.desktop.pickDirectory();
-    if (selected) await saveInstall(kind, selected);
-  };
   const find = async () => {
     setFinding(true); setResults([]);
     try {
@@ -205,7 +196,11 @@ function PlayerHub() {
       </button>
     </header>
     {connectOpen && <>
-    {!installs.steam && !installs.gamepass && <div className="panel" style={{ padding: "1rem", marginBottom: "1rem", border: "1px solid var(--yellow)" }}><h2 className="heading" style={{ margin: "0 0 .35rem" }}>Locate Dragonwilds</h2><p className="subtle">Choose Steam, PC Game Pass, or both. RSDW Sync stores these paths and never asks for UE4SS in its own program folder.</p></div>}
+    {!installs.steam && !installs.gamepass && <div className="panel" style={{ padding: "1rem", marginBottom: "1rem", border: "1px solid var(--yellow)" }}>
+      <h2 className="heading" style={{ margin: "0 0 .35rem" }}>Play lanes are not configured</h2>
+      <p className="subtle">Prepare Steam, PC Game Pass, or both once under Application Setup. Player profiles only choose which prepared lane to use.</p>
+      <Link className="btn btn-primary" href="/setup"><Icon name="settings" /> Open Application Setup</Link>
+    </div>}
     <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
       <h2 className="heading" style={{ margin: "0 0 .7rem", fontSize: "1.1rem" }}>Find or add a server</h2>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
@@ -216,13 +211,10 @@ function PlayerHub() {
         <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="World password (same password used in game)" style={fieldStyle} />
         <span />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "90px minmax(210px,1fr) auto auto", gap: 8, marginBottom: 8, alignItems: "center" }}>
-        <strong>Steam</strong><input value={installs.steam} onChange={(e) => setInstalls((v) => ({ ...v, steam: e.target.value }))} placeholder="Steam Dragonwilds folder" style={fieldStyle} />
-        <button className="btn btn-ghost" onClick={() => chooseInstall("steam")}><Icon name="folder" /> Browse</button><button className="btn btn-ghost" onClick={() => saveInstall("steam")}>Save</button>
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "90px minmax(210px,1fr) auto auto", gap: 8, alignItems: "center" }}>
-        <strong>Game Pass</strong><input value={installs.gamepass} onChange={(e) => setInstalls((v) => ({ ...v, gamepass: e.target.value }))} placeholder="PC Game Pass Dragonwilds folder" style={fieldStyle} />
-        <button className="btn btn-ghost" onClick={() => chooseInstall("gamepass")}><Icon name="folder" /> Browse</button><button className="btn btn-ghost" onClick={() => saveInstall("gamepass")}>Save</button>
+      <div className="panel-inset" style={{ padding: 10, display: "grid", gap: 6, marginBottom: 8 }}>
+        <div><strong>Steam lane</strong> <span className="subtle">{installs.steam || "Not configured"}</span></div>
+        <div><strong>Game Pass lane</strong> <span className="subtle">{installs.gamepass || "Not configured"}</span></div>
+        <div><Link href="/setup" className="btn btn-ghost"><Icon name="settings" /> Application Setup</Link></div>
       </div>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <span className="subtle" style={{ alignSelf: "center", fontWeight: 700 }}>Launch with</span>

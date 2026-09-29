@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, Icon, toast } from "@/components/ui";
 
 export default function ApplicationSetupPage() {
-  const [tab, setTab] = useState("server");
+  const [tab, setTab] = useState("play");
   return <div>
     <header style={{ marginBottom: "1rem" }}>
       <h1 className="heading" style={{ margin: 0, fontSize: "1.8rem" }}>Application Setup</h1>
@@ -26,14 +26,19 @@ export default function ApplicationSetupPage() {
 function ServerSetup() {
   const [state, setState] = useState(null);
   const [dir, setDir] = useState("");
-  const [platform, setPlatform] = useState(typeof window !== "undefined" && window.desktop?.platform === "win32" ? "windows" : "linux");
+  const [platform, setPlatform] = useState("windows");
   const [busy, setBusy] = useState(false);
   const load = () => api("/api/application-setup/server").then((r) => {
     setState(r.server);
     if (r.server?.installDir) setDir(r.server.installDir);
     if (r.server?.platform) setPlatform(r.server.platform);
   }).catch((e) => toast(e.message, "error"));
-  useEffect(load, []);
+  useEffect(() => {
+    if (window.desktop?.platform && !state?.platform) {
+      setPlatform(window.desktop.platform === "win32" ? "windows" : "linux");
+    }
+    load();
+  }, []);
 
   const browse = async () => {
     const selected = await window.desktop?.pickDirectory?.();

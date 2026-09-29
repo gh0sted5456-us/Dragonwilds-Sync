@@ -30,9 +30,10 @@ export default function SettingsPage() {
     api("/api/settings/backup-dir").then((r) => { setBackupLoc(r.backup); setBackupPath(r.backup.custom ? r.backup.path : ""); }).catch(() => {});
     api("/api/i18n/languages").then((r) => setLangs(r.languages || [])).catch(() => {});
     loadCatalog();
-    loadComponentUpdates(false);
-    if (isElectron) window.desktop.getAutoLaunch().then(setAutoLaunchState).catch(() => setAutoLaunchState(false));
-    if (isElectron && window.desktop.getCloseToTray) window.desktop.getCloseToTray().then(setCloseToTrayState).catch(() => setCloseToTrayState(true));
+    if (isElectron && window.desktop?.getAutoLaunch) window.desktop.getAutoLaunch().then(setAutoLaunchState).catch(() => setAutoLaunchState(false));
+    else setAutoLaunchState(false);
+    if (isElectron && window.desktop?.getCloseToTray) window.desktop.getCloseToTray().then(setCloseToTrayState).catch(() => setCloseToTrayState(true));
+    else setCloseToTrayState(true);
   }, []);
 
   const loadCatalog = (force) =>
@@ -153,6 +154,10 @@ export default function SettingsPage() {
     { id: "system", icon: "cpu" },
   ];
   const cats = CATEGORIES.filter((c) => !c.electronOnly || isElectron);
+
+  useEffect(() => {
+    if (section === "updates" && !componentUpdates && !componentChecking) loadComponentUpdates(false);
+  }, [section]);
 
   // Landing: the category menu.
   if (!section) {

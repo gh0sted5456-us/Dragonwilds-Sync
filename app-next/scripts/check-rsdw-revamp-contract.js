@@ -70,7 +70,7 @@ function contains(rel, needle, message) {
 // UX contract: explicit Connect action, live Helpy, dark shell and update tracking.
 {
   contains("app/page.jsx", "Connect to World");
-  contains("app/info/page.jsx", "/api/helpy/helpy.html?embed=1&theme=dark");
+  contains("app/info/page.jsx", "https://gh0sted5456-us.github.io/Dragonwilds-Sync/helpy.html?embed=1&theme=dark");
   contains("app/globals.css", "--accent: #c1a56d");
   const modsPanel = contains("components/ModsPanel.jsx", "Install lanes");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
@@ -113,6 +113,10 @@ function contains(rel, needle, message) {
   assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");
   contains("electron/main.js", "loadingPage(");
   contains("electron/main.js", "startShareServer()");
+  contains("electron/main.js", 'path.join(__dirname, "share-proxy.js")');
+  contains("electron/share-proxy.js", 'http.createServer');
+  contains("electron/share-proxy.js", 'RSDW_UI_PORT');
+  contains("electron/share-proxy.js", 'RSDW_SHARE_PORT');
   contains("electron/main.js", 'HOSTNAME: "127.0.0.1"');
   contains("electron/main.js", 'HOSTNAME: "0.0.0.0"');
   contains("electron/main.js", "APP_MANAGER_SHARE_PORT");
@@ -153,6 +157,14 @@ function contains(rel, needle, message) {
   const verifyRoute = read("app/api/profiles/[id]/verify/route.js");
   assert(verifyRoute.includes("clientInstall:${platform}"), "Profile verify must resolve the application Play lane");
   assert(!fs.existsSync(path.join(root, "app", "api", "provision", "status", "route.js")), "obsolete per-World provision status API must stay deleted");
+
+  const setupPage = read("app/setup/page.jsx");
+  assert(setupPage.includes('useState("play")'), "Application Setup must open on Play by default");
+  assert(!setupPage.includes('useState(typeof window'), "Application Setup must not derive initial state from window during SSR");
+  const settingsPage = read("app/settings/page.jsx");
+  assert(settingsPage.includes("window.desktop?.getAutoLaunch"), "Settings must guard optional desktop bridges");
+  assert(!settingsPage.includes("loadComponentUpdates(false);\n    if (isElectron)"), "Settings must not probe framework updates just by mounting");
+
 }
 
 function walkSource(dir) {

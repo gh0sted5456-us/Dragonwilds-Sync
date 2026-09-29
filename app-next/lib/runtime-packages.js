@@ -110,6 +110,12 @@ function install(worldId, component, zipPath) {
       if (!records.some((r) => r.relative.toLowerCase() === `binaries/${platformDir}/ue4ss/ue4ss.dll`)) {
         throw new Error("This is not a complete UE4SS ZIP: ue4ss/UE4SS.dll was not found.");
       }
+      if (kind === "ue4ss-server" && !records.some((r) => r.relative.toLowerCase() === "binaries/win64/version.dll")) {
+        throw new Error("Dedicated-server UE4SS requires version.dll. The server does not use the client dwmapi.dll bootstrap.");
+      }
+      if (kind === "ue4ss-steam" && !records.some((r) => r.relative.toLowerCase() === "binaries/win64/dwmapi.dll")) {
+        throw new Error("Steam UE4SS requires dwmapi.dll. version.dll is reserved for the dedicated-server lane.");
+      }
     }
     if (kind === "runeschema" && !records.some((r) => r.relative.toLowerCase() === "binaries/win64/ue4ss/mods/runeschema/dlls/main.dll")) {
       throw new Error("This is not a complete RuneSchema ZIP: dlls/main.dll was not found.");
@@ -120,31 +126,6 @@ function install(worldId, component, zipPath) {
       fs.mkdirSync(path.dirname(output), { recursive: true });
       fs.writeFileSync(output, "");
       records.push({ relative, size: 0, sha256: sha256File(output), clientEligible: true });
-    }
-
-    const gameRoot = serverGameRoot(world.install_dir);
-    const deployToHost = kind === "ue4ss-server" || kind === "runeschema";
-    const previous = readManifest(worldId, kind);
-    const nextSet = new Set(records.map((r) => r.relative.toLowerCase()));
-    if (deployToHost) {
-      for (const old of previous?.files || []) {
-        if (nextSet.has(String(old.relative).toLowerCase())) continue;
-        const target = localTarget(gameRoot, old.relative);
-        try { if (fs.existsSync(target) && fs.statSync(target).isFile()) fs.unlinkSync(target); removeEmptyParents(target, gameRoot); } catch {}
-      }
-      for (const record of records) {
-        const source = localTarget(candidate, record.relative);
-        const target = localTarget(gameRoot, record.relative);
-        fs.mkdirSync(path.dirname(target), { recursive: true });
-        const temp = target + ".rsdw-runtime";
-        fs.copyFileSync(source, temp);
-        try {
-          fs.renameSync(temp, target);
-        } catch {
-          fs.rmSync(target, { force: true });
-          fs.renameSync(temp, target);
-        }
-      }
     }
 
     const permanent = filesRoot(worldId, kind);
@@ -164,6 +145,58 @@ function install(worldId, component, zipPath) {
     if (fs.existsSync(candidate)) fs.rmSync(candidate, { recursive: true, force: true });
   }
 }
+const HOST_LEDGER_KEY = "applicationSetup:activeServerRuntimeFiles";
+
+function materializeHost(worldId) {
+  const world = dbm.getWorld(worldId);
+  if (!world) throw new Error("World not found");
+  const gameRoot = serverGameRoot(world.install_dir);
+  const desired = [];
+
+  for (const component of ["ue4ss-server", "runeschema"]) {
+    const meta = readManifest(worldId, component);
+    for (const file of meta?.files || []) {
+      const source = localTarget(filesRoot(worldId, component), file.relative);
+      if (!fs.existsSync(source)) continue;
+      desired.push({ component, ...file, source });
+    }
+  }
+
+  const wanted = new Set(desired.map((file) => file.relative.toLowerCase()));
+  const previous = dbm.getSetting(HOST_LEDGER_KEY, { files: [] }) || { files: [] };
+
+  // Remove only runtime files previously materialized by RSDW Sync. Unrelated
+  // server files and user mods are never swept.
+  for (const relative of previous.files || []) {
+    if (wanted.has(String(relative).toLowerCase())) continue;
+    const target = localTarget(gameRoot, relative);
+    try {
+      if (fs.existsSync(target) && fs.statSync(target).isFile()) fs.unlinkSync(target);
+      removeEmptyParents(target, gameRoot);
+    } catch {}
+  }
+
+  for (const file of desired) {
+    const target = localTarget(gameRoot, file.relative);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const temp = target + ".rsdw-runtime";
+    fs.copyFileSync(file.source, temp);
+    try {
+      fs.renameSync(temp, target);
+    } catch {
+      fs.rmSync(target, { force: true });
+      fs.renameSync(temp, target);
+    }
+  }
+
+  dbm.setSetting(HOST_LEDGER_KEY, {
+    worldId,
+    files: desired.map((file) => file.relative),
+    materializedAt: Date.now(),
+  });
+  return { worldId, files: desired.length };
+}
+
 function packageStatus(worldId, component) {
   const meta = readManifest(worldId, component);
   if (!meta) return { component, installed: false, files: 0, clientFiles: 0 };
@@ -239,4 +272,4 @@ function resolveSyncFile(worldId, target, platform = "steam") {
   return syncFiles(worldId, platform).find((file) => file.target === target) || null;
 }
 
-module.exports = { install, status, syncFiles, syncUnits, resolveSyncFile };
+module.exports = { install, status, syncFiles, syncUnits, resolveSyncFile, materializeHost };

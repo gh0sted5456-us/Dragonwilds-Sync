@@ -16,7 +16,7 @@ function localAddresses() {
   return out;
 }
 
-function advertisement(worldId, syncPort = Number(process.env.APP_MANAGER_PORT || 4317)) {
+function advertisement(worldId, syncPort = Number(process.env.APP_MANAGER_SHARE_PORT || process.env.APP_MANAGER_PORT || 4317)) {
   const value = manifest.buildWorldManifest(worldId);
   return {
     magic: MAGIC,
@@ -42,7 +42,7 @@ function send(socket, payload, port, address) {
 function start(worldId, options = {}) {
   stop();
   const port = Number(options.discoveryPort || DISCOVERY_PORT);
-  const syncPort = Number(options.syncPort || process.env.APP_MANAGER_PORT || 4317);
+  const syncPort = Number(options.syncPort || process.env.APP_MANAGER_SHARE_PORT || process.env.APP_MANAGER_PORT || 4317);
   const socket = dgram.createSocket({ type: "udp4", reuseAddr: true });
   socket.on("message", (data, remote) => {
     try {

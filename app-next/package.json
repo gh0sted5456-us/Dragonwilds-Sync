@@ -73,15 +73,15 @@
           ]
         }
       ],
-      "icon": "public/icon.png"
+      "icon": "public/icon.ico"
     },
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false,
-      "installerIcon": "public/icon.png",
-      "uninstallerIcon": "public/icon.png",
-      "installerHeaderIcon": "public/icon.png"
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "installerHeaderIcon": "public/icon.ico"
     },
     "portable": {
       "artifactName": "RSDW-Sync-Super-Experimental-${version}-portable.exe"

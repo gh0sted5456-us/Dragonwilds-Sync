@@ -14,7 +14,7 @@ export async function GET(req, { params }) {
   const w = dbm.getWorld(params.id);
   const modInstalled = w ? sup.chatModInstalled(w.install_dir) : false;
   const runtimeStatus = w ? runtimePackages.status(params.id) : null;
-  const ue4ssInstalled = !!(runtimeStatus?.ue4ssSteam?.installed || runtimeStatus?.ue4ssGamepass?.installed);
+  const ue4ssInstalled = !!runtimeStatus?.ue4ssServer?.installed;
   return NextResponse.json({
     ok: true,
     chat: sup.getChat(params.id),

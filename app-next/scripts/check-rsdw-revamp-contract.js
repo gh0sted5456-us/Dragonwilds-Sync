@@ -118,7 +118,8 @@ function contains(rel, needle, message) {
   contains("electron/share-proxy.js", 'RSDW_UI_PORT');
   contains("electron/share-proxy.js", 'RSDW_SHARE_PORT');
   contains("electron/main.js", 'HOSTNAME: "127.0.0.1"');
-  contains("electron/main.js", 'HOSTNAME: "0.0.0.0"');
+  assert(!read("electron/main.js").includes('HOSTNAME: "0.0.0.0"'), "Main UI process must remain loopback-only");
+  contains("electron/share-proxy.js", 'const listenHost = "0.0.0.0"');
   contains("electron/main.js", "APP_MANAGER_SHARE_PORT");
   contains("lib/sync/discovery.js", "APP_MANAGER_SHARE_PORT");
   contains("electron/main.js", '"icon.ico"');

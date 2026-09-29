@@ -57,35 +57,42 @@ jobs:
       - name: Assemble standalone runtime
         run: npm run prepare:standalone
 
-      # The NSIS "portable" target is a self-extracting archive. With Electron and the
-      # standalone Next runtime it can sit at 100% CPU for minutes before any window
-      # appears. Ship the unpacked application instead: GitHub already wraps it in a ZIP,
-      # and the executable launches immediately after that ZIP is extracted once.
-      - name: Build launch-ready Windows directory
-        run: npx electron-builder --win dir --publish never
+      # Ship one self-extracting portable EXE. Electron runs from the portable
+      # target's isolated extraction directory instead of directly beside any
+      # Dragonwilds server-side proxy DLLs (version.dll / dwmapi.dll).
+      - name: Build isolated portable Windows executable
+        run: npx electron-builder --win portable --x64 --publish never
 
-      - name: Verify Windows output
+      - name: Verify portable Windows output
         shell: powershell
         run: |
-          $artifact = Get-ChildItem -LiteralPath release\win-unpacked -Filter '*.exe' | Where-Object Name -NotMatch 'elevate' | Select-Object -First 1
-          if (-not $artifact) { throw 'Launch-ready Windows executable was not produced.' }
-          $buildId = 'release\win-unpacked\resources\app\.next\BUILD_ID'
-          if (-not (Test-Path -LiteralPath $buildId)) { throw 'Packaged Next runtime is incomplete: resources/app/.next/BUILD_ID is missing.' }
+          $artifact = Get-ChildItem -LiteralPath release -Filter 'RSDW-Sync-Super-Experimental-*-portable.exe' | Select-Object -First 1
+          if (-not $artifact) { throw 'Portable Windows executable was not produced.' }
+
+          # The downloadable payload must be a single launcher EXE, never an
+          # unpacked Electron directory that can sit beside UE4SS proxy DLLs.
+          $forbidden = @('version.dll','dwmapi.dll','UE4SS.dll')
+          foreach ($name in $forbidden) {
+            if (Test-Path -LiteralPath (Join-Path $artifact.DirectoryName $name)) {
+              throw "Forbidden sidecar DLL found beside portable executable: $name"
+            }
+          }
+
           $hash = Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256
           "File=$($artifact.Name)" | Set-Content -LiteralPath release\BUILD-INFO.txt
           "Commit=${{ github.sha }}" | Add-Content -LiteralPath release\BUILD-INFO.txt
           "SHA256=$($hash.Hash)" | Add-Content -LiteralPath release\BUILD-INFO.txt
-          "Launch=Extract this artifact, then run RSDW Sync Experimental.exe" | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "Distribution=Single portable EXE; do not extract an Electron runtime beside the server." | Add-Content -LiteralPath release\BUILD-INFO.txt
+          "Launch=Run the portable EXE from any normal folder; it isolates its Electron runtime before startup." | Add-Content -LiteralPath release\BUILD-INFO.txt
 
-      - name: Upload launch-ready test build
+      - name: Upload portable test build
         uses: actions/upload-artifact@v4
         with:
-          name: RSDW-Sync-Super-Experimental-Windows-${{ github.run_number }}
+          name: RSDW-Sync-Super-Experimental-Portable-Windows-${{ github.run_number }}
           if-no-files-found: error
-          include-hidden-files: true
           retention-days: 14
           path: |
-            app-next/release/win-unpacked/**
+            app-next/release/RSDW-Sync-Super-Experimental-*-portable.exe
             app-next/release/BUILD-INFO.txt
 
       - name: Upload build diagnostics

@@ -9,8 +9,16 @@ const runtimePackages = require("../runtime-packages");
 const PROTOCOL = "dragonwilds-world-sync";
 const PROTOCOL_VERSION = 2;
 const prerequisiteKey = (worldId) => `syncPrerequisites:${worldId}`;
+const hashCache = globalThis.__DRAGONWILDS_SYNC_HASH_CACHE || (globalThis.__DRAGONWILDS_SYNC_HASH_CACHE = new Map());
+const MAX_MANIFEST_FILES = 50000;
+const MAX_MANIFEST_BYTES = 64 * 1024 * 1024 * 1024;
 
 function sha256File(file) {
+  const stat = fs.statSync(file);
+  const resolved = path.resolve(file);
+  const cacheKey = process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  const cached = hashCache.get(cacheKey);
+  if (cached && cached.size === stat.size && cached.mtimeMs === stat.mtimeMs) return cached.sha256;
   const hash = crypto.createHash("sha256");
   const fd = fs.openSync(file, "r");
   const buffer = Buffer.allocUnsafe(1024 * 1024);
@@ -18,7 +26,10 @@ function sha256File(file) {
     let read;
     while ((read = fs.readSync(fd, buffer, 0, buffer.length, null)) > 0) hash.update(buffer.subarray(0, read));
   } finally { fs.closeSync(fd); }
-  return hash.digest("hex");
+  const sha256 = hash.digest("hex");
+  hashCache.set(cacheKey, { size: stat.size, mtimeMs: stat.mtimeMs, sha256 });
+  if (hashCache.size > 4096) hashCache.delete(hashCache.keys().next().value);
+  return sha256;
 }
 
 function walkFiles(root) {
@@ -152,19 +163,33 @@ function compareManifest(manifest, gameInstall) {
   const install = steamlib.normalizeGameInstall(gameInstall);
   if (!install) throw new Error("Choose a valid RuneScape: Dragonwilds game installation.");
   const changes = [];
+  const targets = new Set();
+  let fileCount = 0;
+  let declaredBytes = 0;
   for (const unit of manifest.units || []) {
     for (const file of unit.files || []) {
+      fileCount += 1;
+      if (fileCount > MAX_MANIFEST_FILES) throw new Error("World manifest declares too many files");
       const relative = String(file.target || "").replace(/\\/g, "/");
       if (!relative.startsWith("RSDragonwilds/") || relative.split("/").some((part) => !part || part === "." || part === "..")) throw new Error("Manifest contains an unsafe target path");
+      const targetKey = relative.toLowerCase();
+      if (targets.has(targetKey)) throw new Error(`World manifest declares the same target more than once: ${relative}`);
+      targets.add(targetKey);
+      const size = Number(file.size);
+      if (!Number.isSafeInteger(size) || size < 0) throw new Error(`World manifest contains an invalid file size: ${relative}`);
+      declaredBytes += size;
+      if (declaredBytes > MAX_MANIFEST_BYTES) throw new Error("World manifest exceeds the 64 GiB synchronization limit");
+      const expectedHash = String(file.sha256 || "").toLowerCase();
+      if (!/^[a-f0-9]{64}$/.test(expectedHash)) throw new Error(`World manifest contains an invalid file hash: ${relative}`);
       const local = path.resolve(install, ...relative.split("/"));
       const root = path.resolve(install) + path.sep;
       if (!local.toLowerCase().startsWith(root.toLowerCase())) throw new Error("Manifest target escapes the game installation");
       let state = "missing";
-      if (fs.existsSync(local) && fs.statSync(local).isFile()) state = sha256File(local) === file.sha256 ? "current" : "changed";
-      if (state !== "current") changes.push({ unitKey: unit.key, target: relative, state, size: file.size, sha256: file.sha256 });
+      if (fs.existsSync(local) && fs.statSync(local).isFile()) state = sha256File(local) === expectedHash ? "current" : "changed";
+      if (state !== "current") changes.push({ unitKey: unit.key, target: relative, state, size, sha256: expectedHash });
     }
   }
-  return { revision: manifest.revision, current: changes.length === 0, changes };
+  return { revision: manifest.revision, current: changes.length === 0, fileCount, declaredBytes, changes };
 }
 
 module.exports = { PROTOCOL, PROTOCOL_VERSION, buildWorldManifest, compareManifest, sha256File, resolveWorldFile, getPrerequisites, setPrerequisites };

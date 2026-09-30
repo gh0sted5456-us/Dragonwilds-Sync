@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, Tray, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeTheme, Menu, Tray, nativeImage, utilityProcess } = require("electron");
 
 // Run without Chromium's sandbox on Linux (issue #32). The AppImage mounts read-only,
 // so its bundled chrome-sandbox can't be setuid-root, and server distros often restrict
@@ -12,7 +12,7 @@ if (process.platform === "linux") app.commandLine.appendSwitch("no-sandbox");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const { spawn, spawnSync } = require("child_process");
+const { spawnSync } = require("child_process");
 const http = require("http");
 const net = require("net");
 const crypto = require("crypto");
@@ -36,8 +36,8 @@ let pendingRoute = null;
 let tray = null;
 let startupPortsPromise = null;
 let startupServerPromise = null;
-let uiLoadTimer = null;
-let uiLoadStartedAt = 0;
+let nextExit = null;
+let startupFailure = "";
 
 // Set the moment a real quit is requested (tray Quit, or before-quit) so the window's
 // close handler knows to actually close instead of hiding to the tray.
@@ -89,6 +89,15 @@ function sharingEnabled() {
 function resourcePath() {
   // In a packaged app, the standalone server lives under resources/app.
   return path.join(process.resourcesPath, "app");
+}
+
+function bundledRuntime() {
+  const base = resourcePath();
+  const serverPath = path.join(base, "server.js");
+  const buildIdPath = path.join(base, ".next", "BUILD_ID");
+  if (!fs.existsSync(serverPath)) throw new Error(`The packaged interface entry point is missing (${serverPath}). Download the complete portable build; do not copy individual files out of it.`);
+  if (!fs.existsSync(buildIdPath)) throw new Error(`The packaged interface runtime is incomplete (${buildIdPath} is missing). Download a complete portable build.`);
+  return { base, serverPath };
 }
 
 function logToFile(msg) {
@@ -266,43 +275,29 @@ function showWindow(worldId, route) {
 }
 
 function loadingPage(message = "Starting RSDW Sync…") {
+  const safeMessage = escapeHtml(message);
   const html = `<!doctype html><html><body style="margin:0;background:#202427;color:#eee;font-family:Segoe UI,system-ui,sans-serif;display:grid;place-items:center;height:100vh">
     <div style="text-align:center">
       <div style="font-size:28px;font-weight:700;margin-bottom:10px">RSDW Sync</div>
-      <div style="color:#c1a56d;font-size:14px">${message}</div>
+      <div style="color:#c1a56d;font-size:14px">${safeMessage}</div>
     </div>
   </body></html>`;
   return "data:text/html;charset=utf-8," + encodeURIComponent(html);
 }
 
+function escapeHtml(value) {
+  return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
+}
+
 function loadAppIntoWindow(route = null) {
-  if (!mainWindow) return;
+  if (!mainWindow || !serverReady) return;
   const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
   const target = route || pendingRoute || "";
-  if (route) pendingRoute = route;
-  if (!uiLoadStartedAt) uiLoadStartedAt = Date.now();
-
-  if (uiLoadTimer) clearTimeout(uiLoadTimer);
-  const attempt = () => {
-    if (!mainWindow) return;
-    mainWindow.loadURL(`${base}${target}`).then(() => {
-      serverReady = true;
-      pendingRoute = null;
-      uiLoadStartedAt = 0;
-      if (uiLoadTimer) clearTimeout(uiLoadTimer);
-      uiLoadTimer = null;
-    }).catch((error) => {
-      logToFile(`UI navigation retry: ${error.message}`);
-      if (!mainWindow) return;
-      if (Date.now() - uiLoadStartedAt > 20000) {
-        mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
-        uiLoadTimer = null;
-        return;
-      }
-      uiLoadTimer = setTimeout(attempt, 180);
-    });
-  };
-  attempt();
+  pendingRoute = null;
+  mainWindow.loadURL(`${base}${target}`).catch((error) => {
+    logToFile(`UI navigation failed after readiness check: ${error.message}`);
+    if (mainWindow) mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
+  });
 }
 
 async function refreshTrayMenu() {
@@ -351,15 +346,9 @@ function createTray() {
 }
 
 function startNextServer() {
-  if (isDev) return; // dev uses `next dev` started by the npm script
+  if (isDev) return null; // dev uses `next dev` started by the npm script
 
-  const base = resourcePath();
-  const serverPath = path.join(base, "server.js");
-
-  if (!fs.existsSync(serverPath)) {
-    logToFile(`server.js NOT FOUND at ${serverPath}`);
-    return;
-  }
+  const { base, serverPath } = bundledRuntime();
 
   const env = {
     ...process.env,
@@ -375,9 +364,6 @@ function startNextServer() {
     APP_MANAGER_PORT: String(PORT),
     APP_MANAGER_SHARE_PORT: String(SHARE_PORT),
     APP_MANAGER_INSTANCE_TOKEN: INSTANCE_TOKEN,
-    // CRITICAL: make the Electron binary behave as plain Node for this child,
-    // so it can run the Next standalone server.js.
-    ELECTRON_RUN_AS_NODE: "1",
     // Use the pure-WASM SQLite backend, which needs no experimental flag and no
     // specific Node/Electron version — this is what makes the packaged app start
     // reliably regardless of the Electron-bundled Node version.
@@ -385,16 +371,27 @@ function startNextServer() {
     NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --no-warnings`.trim(),
   };
 
-  nextProc = spawn(process.execPath, [serverPath], {
+  // Use Electron's Node utility process instead of asking Windows to execute a
+  // .js file through process.execPath. This is independent of system JavaScript
+  // file associations and avoids relaunching the portable GUI executable.
+  nextExit = null;
+  const child = utilityProcess.fork(serverPath, [], {
     env,
     cwd: base,
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
+    stdio: "pipe",
+    serviceName: "RSDW Sync Interface",
   });
-  nextProc.stdout.on("data", (d) => logToFile(`[next] ${d.toString().trim()}`));
-  nextProc.stderr.on("data", (d) => logToFile(`[next:err] ${d.toString().trim()}`));
-  nextProc.on("error", (e) => logToFile(`Next server spawn error: ${e.message}`));
-  nextProc.on("exit", (code) => logToFile(`Next server exited: ${code}`));
+  nextProc = child;
+  child.stdout?.on("data", (d) => logToFile(`[next] ${d.toString().trim()}`));
+  child.stderr?.on("data", (d) => logToFile(`[next:err] ${d.toString().trim()}`));
+  child.on("spawn", () => logToFile(`Interface process started (pid=${child.pid || "unknown"})`));
+  child.on("exit", (code) => {
+    nextExit = { code, at: Date.now() };
+    if (nextProc === child) nextProc = null;
+    serverReady = false;
+    logToFile(`Interface process exited: ${code}`);
+  });
+  return child;
 }
 
 
@@ -408,24 +405,23 @@ function startShareServer() {
 
   const env = {
     ...process.env,
-    ELECTRON_RUN_AS_NODE: "1",
     RSDW_UI_PORT: String(PORT),
     RSDW_SHARE_PORT: String(SHARE_PORT),
     NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --no-warnings`.trim(),
   };
 
-  shareProc = spawn(process.execPath, [proxyPath], {
+  const child = utilityProcess.fork(proxyPath, [], {
     env,
     cwd: __dirname,
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
+    stdio: "pipe",
+    serviceName: "RSDW Sync LAN Proxy",
   });
-  shareProc.stdout.on("data", (d) => logToFile(`[share] ${d.toString().trim()}`));
-  shareProc.stderr.on("data", (d) => logToFile(`[share:err] ${d.toString().trim()}`));
-  shareProc.on("error", (e) => logToFile(`Share proxy spawn error: ${e.message}`));
-  shareProc.on("exit", (code) => {
+  shareProc = child;
+  child.stdout?.on("data", (d) => logToFile(`[share] ${d.toString().trim()}`));
+  child.stderr?.on("data", (d) => logToFile(`[share:err] ${d.toString().trim()}`));
+  child.on("exit", (code) => {
     logToFile(`Share proxy exited: ${code}`);
-    shareProc = null;
+    if (shareProc === child) shareProc = null;
   });
 }
 
@@ -443,10 +439,8 @@ async function stopShareServer() {
 
 function bundledRuntimeProblem() {
   if (isDev) return null;
-  const base = resourcePath();
-  if (!fs.existsSync(path.join(base, "server.js"))) return "The packaged server.js file is missing.";
-  if (!fs.existsSync(path.join(base, ".next", "BUILD_ID"))) return "The packaged interface runtime is incomplete (.next/BUILD_ID is missing). Download a complete RSDW Sync build and extract the entire ZIP before running it.";
-  return null;
+  try { bundledRuntime(); return null; }
+  catch (error) { return error.message; }
 }
 
 // Restart only the local UI server so a changed bind host (loopback ↔ 0.0.0.0)
@@ -467,6 +461,7 @@ async function restartNextServer() {
   startNextServer();
   const base = `http://127.0.0.1:${PORT}`;
   const up = await waitForServer(base, 30000);
+  serverReady = up;
   return up;
 }
 
@@ -489,7 +484,8 @@ async function waitForServer(url, maxMs = 60000) {
   const start = Date.now();
   while (Date.now() - start < maxMs) {
     if (await pingServer(url)) return true;
-    await new Promise((r) => setTimeout(r, 400));
+    if (!isDev && nextExit) return false;
+    await new Promise((r) => setTimeout(r, 150));
   }
   return false;
 }
@@ -551,7 +547,6 @@ function createWindow() {
   Menu.setApplicationMenu(null);
   mainWindow.setMenuBarVisibility(false);
 
-  const url = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
   // Pre-set the admin trust cookie on this window's session BEFORE the first navigation,
   // so the desktop app is recognised as the trusted admin from the very first request.
   // It's HttpOnly (invisible to page JS) and only ever lives in this Electron session —
@@ -561,9 +556,7 @@ function createWindow() {
     .catch(() => {})
     .finally(() => {
       if (!mainWindow) return;
-      mainWindow.loadURL(loadingPage()).finally(() => {
-        if (startupServerPromise || isDev) loadAppIntoWindow(pendingRoute);
-      });
+      mainWindow.loadURL(loadingPage());
     });
 
   // Don't auto-show when we launched straight to the tray — the window is built so a
@@ -584,7 +577,7 @@ function createWindow() {
   mainWindow.on("closed", () => (mainWindow = null));
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    if (/^https?:\/\//i.test(url)) shell.openExternal(url).catch(() => {});
     return { action: "deny" };
   });
 }
@@ -598,8 +591,8 @@ function showErrorWindow(message) {
   Menu.setApplicationMenu(null);
   const html = `<!doctype html><html><body style="font-family:Segoe UI,system-ui,sans-serif;background:#0e0e0e;color:#f3efe7;padding:40px;line-height:1.6">
     <h2 style="color:#d4a13d">RSDW Sync couldn't start its interface</h2>
-    <p>${message}</p>
-    <p style="color:#918879;font-size:13px">A log was written to:<br><code>${path.join(dataDir(), "launcher.log")}</code></p>
+    <p>${escapeHtml(message)}</p>
+    <p style="color:#918879;font-size:13px">A log was written to:<br><code>${escapeHtml(path.join(dataDir(), "launcher.log"))}</code></p>
     </body></html>`;
   mainWindow.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
   mainWindow.on("closed", () => (mainWindow = null));
@@ -619,8 +612,16 @@ function beginUiBootstrap() {
       if (runtimeProblem) throw new Error(runtimeProblem);
 
       startNextServer();
+      const base = `http://127.0.0.1:${PORT}`;
+      const ready = await waitForServer(base, 30000);
+      if (!ready) {
+        const suffix = nextExit ? ` (interface process exited with code ${nextExit.code})` : "";
+        throw new Error(`The bundled interface server did not become ready${suffix}.`);
+      }
+      serverReady = true;
       return true;
     } catch (error) {
+      startupFailure = error.message;
       logToFile(`UI bootstrap failed: ${error.message}`);
       return false;
     }
@@ -628,9 +629,15 @@ function beginUiBootstrap() {
   return startupServerPromise;
 }
 
-// Start the local UI bootstrap immediately. This overlaps the Next startup with
-// Electron/Chromium initialization instead of waiting for app.whenReady().
-if (!isDev) beginUiBootstrap();
+function devServerPort() {
+  try { return Number(new URL(process.env.ELECTRON_START_URL).port || 80); }
+  catch { return 4317; }
+}
+
+// Port selection can overlap Electron initialization. The actual Node utility
+// process starts only after ready, which is required by Electron and prevents a
+// packaged .js entry point from ever being handed to the operating system.
+if (!isDev) startupPortsPromise = Promise.all([choosePrivatePort(), chooseSharePort()]);
 
 function main() {
   app.whenReady().then(async () => {
@@ -640,27 +647,41 @@ function main() {
     launchedHidden = process.argv.includes("--hidden");
     pendingRoute = launchRoute();
 
-    // The visual window is the first priority. Do not block it on tray population,
-    // autostart reconciliation, game discovery, sharing, or server runtimes.
-    if (!launchedHidden) createWindow();
-
     const started = isDev
       ? await (async () => {
           try {
-            PORT = await choosePrivatePort();
-            return true;
+            PORT = devServerPort();
+            const ready = await waitForServer(process.env.ELECTRON_START_URL, 30000);
+            serverReady = ready;
+            return ready;
           } catch { return false; }
         })()
-      : await beginUiBootstrap();
+      : await (async () => {
+          try {
+            const [uiPort, sharePort] = await startupPortsPromise;
+            PORT = uiPort;
+            SHARE_PORT = sharePort;
+            // The cookie and first navigation must use the final selected port.
+            if (!launchedHidden) createWindow();
+            return await beginUiBootstrap();
+          } catch (error) {
+            startupFailure = error.message;
+            logToFile(`UI startup failed: ${error.message}`);
+            return false;
+          }
+        })();
+
+    if (isDev && !launchedHidden) createWindow();
 
     if (!started) {
-      if (mainWindow) mainWindow.loadURL(loadingPage("Interface startup failed — see launcher.log"));
-      else showErrorWindow("The bundled interface server could not be started.");
+      const message = startupFailure || "The bundled interface server could not be started.";
+      if (mainWindow) mainWindow.loadURL(loadingPage(`${message} See launcher.log for details.`));
+      else showErrorWindow(message);
       return;
     }
 
-    // Navigate now. loadAppIntoWindow owns short retries while Next finishes
-    // listening, so the renderer never waits behind a separate health gate.
+    // The loading window is already visible; navigate exactly once after the
+    // authenticated local server has answered its readiness endpoint.
     loadAppIntoWindow(pendingRoute);
 
     // Non-critical desktop integration happens after the UI is usable.
@@ -699,7 +720,6 @@ function main() {
     const timeout = new Promise((resolve) => setTimeout(() => resolve(false), 14000));
     Promise.race([requestManagedServerShutdown(), timeout]).finally(() => {
       quitCleanupFinished = true;
-      if (uiLoadTimer) { clearTimeout(uiLoadTimer); uiLoadTimer = null; }
       if (tray) { try { tray.destroy(); } catch {} tray = null; }
       if (shareProc) { try { shareProc.kill(); } catch {} shareProc = null; }
       if (nextProc) { try { nextProc.kill(); } catch {} nextProc = null; }

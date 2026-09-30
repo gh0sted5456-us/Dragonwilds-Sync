@@ -36,9 +36,11 @@ function contains(rel, needle, message) {
 {
   const main = read("electron/main.js");
   assert(!main.includes("triggerBoot("), "desktop startup must not trigger background engines");
-  assert(main.includes("if (!isDev) beginUiBootstrap();"), "local UI bootstrap must begin before Electron readiness");
-  assert(main.includes("loadAppIntoWindow(pendingRoute)"), "window must navigate independently of a health gate");
-  assert(main.includes("UI navigation retry"), "local UI navigation retry path missing");
+  assert(main.includes("startupPortsPromise = Promise.all"), "port selection must overlap Electron initialization");
+  assert(main.includes("utilityProcess.fork(serverPath"), "packaged interface must use Electron's Node utility process");
+  assert(!main.includes("spawn(process.execPath, [serverPath]"), "packaged interface must not relaunch the portable GUI executable for server.js");
+  assert(main.includes("waitForServer(base, 30000)"), "window navigation must wait for authenticated local readiness");
+  assert(main.includes("if (!mainWindow || !serverReady) return"), "window must not navigate before the local server is ready");
   assert(!main.includes("DWSM-Data"), "portable EXE must not bind userData beside itself");
   assert(!main.includes("/api/boot"), "desktop startup must not call a boot endpoint");
   const worldsRoute = read("app/api/worlds/route.js");
@@ -54,7 +56,7 @@ function contains(rel, needle, message) {
   assert(supervisor.includes("stopManagedWorlds"), "owned subprocess shutdown path missing");
   assert(supervisor.includes("3 restart attempts in 10 minutes"), "crash-loop guard missing");
   contains("lib/steamcmd.js", "spawn(bin, args");
-  contains("electron/main.js", "spawn(process.execPath, [serverPath]");
+  contains("electron/main.js", "utilityProcess.fork(serverPath");
 }
 
 // Dedicated settings must be profile-scoped and launch materialization must exist.
@@ -160,6 +162,12 @@ function contains(rel, needle, message) {
   assert(createWorld.includes("Application Setup"), "Server profile creation must point to Application Setup");
   const syncClient = read("lib/sync/client.js");
   assert(syncClient.includes("clientInstall:${platform}"), "Client sync must resolve the application Play lane");
+  assert(syncClient.includes("Promise.allSettled(workers)"), "Client sync must use bounded, settled parallel downloads");
+  assert(syncClient.includes("sync-recovery"), "Client sync must retain recoverable receipts and prior files");
+  assert(syncClient.includes('receipt.status = "rolled-back"'), "Client sync rollback path missing");
+  assert(syncClient.indexOf("await mapLimit(comparison.changes") < syncClient.indexOf("await fs.promises.rm(item.local"), "Client sync must stage every download before replacing live files");
+  const publicFileRoute = read("app/api/sync/public/[id]/file/route.js");
+  assert(publicFileRoute.includes("fs.createReadStream(file.source)"), "Host file delivery must stream instead of buffering whole mods in memory");
   const verifyRoute = read("app/api/profiles/[id]/verify/route.js");
   assert(verifyRoute.includes("clientInstall:${platform}"), "Profile verify must resolve the application Play lane");
   assert(!fs.existsSync(path.join(root, "app", "api", "provision", "status", "route.js")), "obsolete per-World provision status API must stay deleted");

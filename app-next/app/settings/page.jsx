@@ -139,6 +139,10 @@ export default function SettingsPage() {
     finally { setSaving(false); }
   };
 
+  useEffect(() => {
+    if (section === "updates" && !componentUpdates && !componentChecking) loadComponentUpdates(false);
+  }, [section]);
+
   if (!s) return <div className="subtle" style={{ fontWeight: 700 }}>{t("common.loading")}</div>;
 
   // Settings are grouped into categories. The landing view is a clickable list; picking
@@ -154,10 +158,6 @@ export default function SettingsPage() {
     { id: "system", icon: "cpu" },
   ];
   const cats = CATEGORIES.filter((c) => !c.electronOnly || isElectron);
-
-  useEffect(() => {
-    if (section === "updates" && !componentUpdates && !componentChecking) loadComponentUpdates(false);
-  }, [section]);
 
   // Landing: the category menu.
   if (!section) {

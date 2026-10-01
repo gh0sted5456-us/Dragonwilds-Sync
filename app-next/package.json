@@ -16,6 +16,7 @@
     "dist:win": "npm run build:next && npm run prepare:standalone && electron-builder --win",
     "dist:linux": "npm run build:next && npm run prepare:standalone && electron-builder --linux",
     "lint": "next lint",
+    "test:settings": "node scripts/check-settings-persistence.js",
     "prepare:standalone": "node scripts/prepare-standalone.js"
   },
   "dependencies": {

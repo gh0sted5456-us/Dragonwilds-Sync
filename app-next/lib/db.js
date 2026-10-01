@@ -499,6 +499,7 @@ function updateWorld(id, patch) {
     notify_events=@notify_events, discord_relay_chat=@discord_relay_chat,
     discord_webhooks=@discord_webhooks, discord_bot=@discord_bot,
     notify_templates=@notify_templates,
+    owner_id=@owner_id, default_world_name=@default_world_name,
     server_password=@server_password, warn_enabled=@warn_enabled,
     warn_lead_minutes=@warn_lead_minutes, warn_interval_minutes=@warn_interval_minutes,
     warn_message=@warn_message, platform=@platform, env_vars=@env_vars,

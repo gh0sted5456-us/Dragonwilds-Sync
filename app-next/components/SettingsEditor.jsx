@@ -87,6 +87,7 @@ export default function SettingsEditor({ worldId, world, running, onGoToAdmin })
       const restartHint = t("editor.restartToApply");
       const runningState = (typeof r.running === "boolean") ? r.running : r.runningCached;
       toast(runningState ? `${msg} — ${restartHint}` : msg, "success");
+      if (r.materializeWarning) toast(r.materializeWarning, "info");
       await load();
     } catch (e) { toast(e.message, "error"); }
     finally { setSaving(false); }
@@ -114,6 +115,7 @@ export default function SettingsEditor({ worldId, world, running, onGoToAdmin })
       const zipBase64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
       const r = await api(`/api/worlds/${worldId}/settings/import`, { method: "POST", body: { zipBase64 } });
       toast(t("editor.imported", { count: r.applied }), "success");
+      if (r.materializeWarning) toast(r.materializeWarning, "info");
       await load();
     } catch (err) { toast(err.message, "error"); }
     finally { e.target.value = ""; }

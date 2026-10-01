@@ -12,10 +12,7 @@ export const runtime = "nodejs";
 // profile-owned DedicatedServer.ini. They are editable here, but their durable
 // source of truth is the World profile rather than whichever INI is live on disk.
 // PublicIP/PublicPort remain ordinary INI values so tunnel overrides survive.
-const MANAGED = new Set([
-  "RESTAPIPort", "RESTAPIEnabled",
-  "AdminPassword", "WorldPassword", "OwnerId", "ServerName", "DefaultWorldName",
-]);
+const NETWORK_MANAGED = new Set(["RESTAPIPort", "RESTAPIEnabled"]);
 
 export async function GET(req, { params }) {
   const w = dbm.getWorld(params.id);
@@ -46,55 +43,28 @@ export async function POST(req, { params }) {
   const body = await req.json();
   const changed = body.changed || body.options || {};
 
-  const unquote = (value) => {
-    const text = value == null ? "" : String(value);
-    if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
-      return text.slice(1, -1);
-    }
-    return text;
-  };
-
   // Managed fields live in the World record. The old editor only persisted
   // the two passwords, so OwnerId / ServerName / DefaultWorldName appeared to
   // save and then vanished at launch. Persist every managed field before the
   // profile snapshot is normalized.
-  const worldUpdates = {};
-  if (Object.prototype.hasOwnProperty.call(changed, "AdminPassword")) {
-    worldUpdates.admin_password = unquote(changed.AdminPassword);
+  let freshWorld;
+  try {
+    freshWorld = active.updateWorldFromSettings(w, changed);
+  } catch (error) {
+    return NextResponse.json({ ok: false, error: error.message }, { status: error.statusCode || 400 });
   }
-  if (Object.prototype.hasOwnProperty.call(changed, "WorldPassword")) {
-    worldUpdates.server_password = unquote(changed.WorldPassword);
-  }
-  if (Object.prototype.hasOwnProperty.call(changed, "OwnerId")) {
-    worldUpdates.owner_id = unquote(changed.OwnerId).trim() || null;
-  }
-  if (Object.prototype.hasOwnProperty.call(changed, "ServerName")) {
-    const name = unquote(changed.ServerName).trim();
-    if (!name) {
-      return NextResponse.json({ ok: false, error: "Server name cannot be blank." }, { status: 400 });
-    }
-    worldUpdates.display_name = name;
-  }
-  if (Object.prototype.hasOwnProperty.call(changed, "DefaultWorldName")) {
-    worldUpdates.default_world_name = unquote(changed.DefaultWorldName).trim() || null;
-  }
-  if (Object.keys(worldUpdates).length) {
-    dbm.updateWorld(params.id, worldUpdates);
-  }
-
-  const freshWorld = dbm.getWorld(params.id);
   const profile = active.settingsFor(freshWorld);
   const merged = { ...profile.values };
 
   for (const [k, v] of Object.entries(changed)) {
-    if (MANAGED.has(k) || v === undefined || v === null) continue;
+    if (NETWORK_MANAGED.has(k) || active.isWorldManagedSetting(k) || v === undefined || v === null) continue;
     merged[k] = v;
   }
 
   const normalized = ini.withWorldNetworkSettings(merged, freshWorld);
   const saved = active.saveSettings(freshWorld.world_id, normalized, { baseRaw: profile.content });
-  const isActive = active.readActiveId() === freshWorld.world_id;
-  if (isActive) active.materialize(freshWorld);
+  const materialized = active.materializeActiveBestEffort(freshWorld);
+  if (materialized.warning) dbm.logEvent(freshWorld.world_id, "settings", materialized.warning);
 
   const running = require("@/lib/supervisor").isAlive(freshWorld.world_id);
   dbm.logEvent(
@@ -107,6 +77,7 @@ export async function POST(req, { params }) {
     path: saved.path,
     written: Object.keys(normalized).length,
     running,
-    active: isActive,
+    active: materialized.active,
+    materializeWarning: materialized.warning,
   });
 }

@@ -63,11 +63,16 @@ function contains(rel, needle, message) {
 {
   contains("lib/active-server-profile.js", 'const PROFILE_PREFIX = "serverProfileIni:"');
   contains("lib/active-server-profile.js", "function materialize(");
+  contains("lib/active-server-profile.js", "function materializeActiveBestEffort(");
+  const activeProfiles = contains("lib/active-server-profile.js", "function updateWorldFromSettings(");
+  assert(activeProfiles.includes('["OwnerId", "owner_id"]'), "OwnerId is not persisted to the World profile");
+  assert(activeProfiles.includes('["ServerName", "display_name"]'), "ServerName is not persisted to the World profile");
+  assert(activeProfiles.includes('["DefaultWorldName", "default_world_name"]'), "DefaultWorldName is not persisted to the World profile");
+  contains("lib/db.js", "owner_id=@owner_id, default_world_name=@default_world_name");
   const settingsRoute = contains("app/api/worlds/[id]/settings/route.js", "active.settingsFor(");
-  assert(settingsRoute.includes("worldUpdates.owner_id"), "OwnerId is not persisted to the World profile");
-  assert(settingsRoute.includes("worldUpdates.display_name"), "ServerName is not persisted to the World profile");
-  assert(settingsRoute.includes("worldUpdates.default_world_name"), "DefaultWorldName is not persisted to the World profile");
+  assert(settingsRoute.includes("active.updateWorldFromSettings"), "Settings route must persist DB-owned fields before normalization");
   contains("app/api/worlds/[id]/ini/route.js", "active.saveRawSettings(");
+  contains("app/api/worlds/[id]/ini/route.js", "active.updateWorldFromSettings(");
 
   const worldRoute = contains("app/api/worlds/[id]/route.js", "serverProfiles.settingsFor(updated)");
   assert(!worldRoute.includes("ini.applyWorldNetworkSettings(updated.install_dir"), "inactive profile edits still write directly into the live INI");

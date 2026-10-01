@@ -42,9 +42,9 @@ export async function POST(req, { params }) {
 
   const normalized = ini.withWorldNetworkSettings(merged, w);
   active.saveSettings(w.world_id, normalized, { baseRaw: profile.content });
-  const isActive = active.readActiveId() === w.world_id;
-  if (isActive) active.materialize(w);
+  const materialized = active.materializeActiveBestEffort(w);
+  if (materialized.warning) dbm.logEvent(w.world_id, "settings", materialized.warning);
 
   dbm.logEvent(w.world_id, "settings", `Imported ${applied} settings into Server profile (restart to apply)`);
-  return NextResponse.json({ ok: true, applied, active: isActive });
+  return NextResponse.json({ ok: true, applied, active: materialized.active, materializeWarning: materialized.warning });
 }

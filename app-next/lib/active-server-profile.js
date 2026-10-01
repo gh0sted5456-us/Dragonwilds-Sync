@@ -5,6 +5,13 @@ const ini = require("./ini");
 
 const SETTING_KEY = "activeServerWorldId";
 const PROFILE_PREFIX = "serverProfileIni:";
+const WORLD_SETTING_FIELDS = new Map([
+  ["AdminPassword", "admin_password"],
+  ["WorldPassword", "server_password"],
+  ["OwnerId", "owner_id"],
+  ["ServerName", "display_name"],
+  ["DefaultWorldName", "default_world_name"],
+]);
 
 function markerPath(world) {
   return path.join(world.install_dir, "RSDragonwilds", "activeworld.txt");
@@ -24,6 +31,38 @@ function worldOf(worldOrId) {
   const world = dbm.getWorld(String(worldOrId || ""));
   if (!world) throw new Error("Server profile not found");
   return world;
+}
+function unquote(value) {
+  const text = value == null ? "" : String(value);
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+    return text.slice(1, -1);
+  }
+  return text;
+}
+function isWorldManagedSetting(key) {
+  return WORLD_SETTING_FIELDS.has(String(key));
+}
+function updateWorldFromSettings(worldOrId, values) {
+  const world = worldOf(worldOrId);
+  const patch = {};
+  for (const [iniKey, column] of WORLD_SETTING_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(values || {}, iniKey)) continue;
+    const value = unquote(values[iniKey]);
+    if (iniKey === "ServerName") {
+      const name = value.trim();
+      if (!name) {
+        const error = new Error("Server name cannot be blank.");
+        error.statusCode = 400;
+        throw error;
+      }
+      patch[column] = name;
+    } else if (iniKey === "OwnerId" || iniKey === "DefaultWorldName") {
+      patch[column] = value.trim() || null;
+    } else {
+      patch[column] = value;
+    }
+  }
+  return Object.keys(patch).length ? dbm.updateWorld(world.world_id, patch) : world;
 }
 function normalizeRecord(world, raw, opts = {}) {
   const values = ini.withWorldNetworkSettings(ini.parseOptionSettings(raw), world, opts);
@@ -115,6 +154,30 @@ function materialize(worldOrId, opts = {}) {
   };
 }
 
+// Editing a profile is a durable database operation. Mirroring an active profile
+// into the shared game tree is best-effort here; launch performs the strict write
+// and read-back gate. A locked/missing install must never turn a successful profile
+// save into HTTP 500 or make the editor discard the user's content.
+function materializeActiveBestEffort(worldOrId, opts = {}) {
+  const world = worldOf(worldOrId);
+  if (readActiveId() !== world.world_id) return { active: false, warning: null };
+  if (!world.install_dir || !fs.existsSync(world.install_dir)) {
+    return {
+      active: true,
+      warning: "Profile saved. The server install folder is unavailable, so DedicatedServer.ini will be written at the next launch.",
+    };
+  }
+  try {
+    materialize(world, opts);
+    return { active: true, warning: null };
+  } catch (error) {
+    return {
+      active: true,
+      warning: `Profile saved, but the live DedicatedServer.ini could not be updated and will be retried at launch: ${error.message}`,
+    };
+  }
+}
+
 function writeMarker(world) {
   const target = markerPath(world);
   fs.mkdirSync(path.dirname(target), { recursive: true });
@@ -155,7 +218,10 @@ module.exports = {
   settingsFor,
   saveSettings,
   saveRawSettings,
+  isWorldManagedSetting,
+  updateWorldFromSettings,
   materialize,
+  materializeActiveBestEffort,
   activate,
   markerPath,
   profileKey,

@@ -155,6 +155,7 @@ export default function IniEditor({ world, running, onClose }) {
       setContent(normalized);
       setOriginal(normalized);
       toast(running ? t("ini.savedRestart") : t("ini.saved"), "success");
+      if (saved.materializeWarning) toast(saved.materializeWarning, "info");
       loadVersions();
     } catch (e) { toast(e.message, "error"); }
     finally { setSaving(false); }
@@ -170,6 +171,7 @@ export default function IniEditor({ world, running, onClose }) {
       const r = await api(`/api/worlds/${worldId}/ini/versions/${vid}/restore`, { method: "POST" });
       setContent(r.content); setOriginal(r.content); setPreview(null);
       toast(running ? t("ini.restoredRestart") : t("ini.restored"), "success");
+      if (r.materializeWarning) toast(r.materializeWarning, "info");
       loadVersions();
     } catch (e) { toast(e.message, "error"); }
   };

@@ -566,6 +566,15 @@ function createWindow() {
     if (!launchedHidden) { mainWindow.show(); mainWindow.focus(); }
   });
 
+  mainWindow.webContents.on("render-process-gone", (_event, details) => {
+    logToFile(`Renderer exited: reason=${details.reason || "unknown"} code=${details.exitCode ?? "unknown"}`);
+  });
+  mainWindow.webContents.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
+    if (isMainFrame) logToFile(`Window load failed: code=${code} description=${description} url=${url}`);
+  });
+  mainWindow.on("unresponsive", () => logToFile("Window became unresponsive"));
+  mainWindow.on("responsive", () => logToFile("Window became responsive again"));
+
   // Close-to-tray: unless a real quit is underway (or the pref is off, or there's no
   // tray to hide into), the close button hides the window and leaves the app running.
   mainWindow.on("close", (e) => {

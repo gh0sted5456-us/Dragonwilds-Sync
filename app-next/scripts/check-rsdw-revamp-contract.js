@@ -130,7 +130,7 @@ function contains(rel, needle, message) {
   contains("lib/sync/discovery.js", "APP_MANAGER_SHARE_PORT");
   contains("electron/main.js", '"icon.ico"');
   contains("package.json", '"icon": "public/icon.ico"');
-  contains("package.json", '"compression": "store"');
+  assert(JSON.parse(read("package.json")).build.compression !== "store", "portable build must compress the Electron runtime");
   contains("app/globals.css", "--radius: 12px");
 }
 
@@ -176,7 +176,7 @@ function contains(rel, needle, message) {
   assert(setupPage.includes('useState("play")'), "Application Setup must open on Play by default");
   assert(!setupPage.includes('useState(typeof window'), "Application Setup must not derive initial state from window during SSR");
   const settingsPage = read("app/settings/page.jsx");
-  assert(settingsPage.includes("window.desktop?.getAutoLaunch"), "Settings must guard optional desktop bridges");
+  assert(settingsPage.includes("window.desktop?.[method]") && settingsPage.includes('typeof fn === "function"'), "Settings must guard optional desktop bridges");
   assert(!settingsPage.includes("loadComponentUpdates(false);\n    if (isElectron)"), "Settings must not probe framework updates just by mounting");
 
 }

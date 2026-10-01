@@ -30,10 +30,16 @@ export default function SettingsPage() {
     api("/api/settings/backup-dir").then((r) => { setBackupLoc(r.backup); setBackupPath(r.backup.custom ? r.backup.path : ""); }).catch(() => {});
     api("/api/i18n/languages").then((r) => setLangs(r.languages || [])).catch(() => {});
     loadCatalog();
-    if (isElectron && window.desktop?.getAutoLaunch) window.desktop.getAutoLaunch().then(setAutoLaunchState).catch(() => setAutoLaunchState(false));
-    else setAutoLaunchState(false);
-    if (isElectron && window.desktop?.getCloseToTray) window.desktop.getCloseToTray().then(setCloseToTrayState).catch(() => setCloseToTrayState(true));
-    else setCloseToTrayState(true);
+    const readDesktopFlag = async (method, fallback, setter) => {
+      try {
+        const fn = window.desktop?.[method];
+        setter(isElectron && typeof fn === "function" ? !!(await fn()) : fallback);
+      } catch {
+        setter(fallback);
+      }
+    };
+    void readDesktopFlag("getAutoLaunch", false, setAutoLaunchState);
+    void readDesktopFlag("getCloseToTray", true, setCloseToTrayState);
   }, []);
 
   const loadCatalog = (force) =>

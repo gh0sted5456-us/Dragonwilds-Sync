@@ -4,9 +4,10 @@ const dbm = require("./db");
 const steamlib = require("./steamlibrary");
 const { trashPath } = require("./trash");
 
-const LANES = ["server", "steam", "gamepass"];
+const LANES = ["server", "required", "steam", "gamepass"];
 const selectionKey = (worldId) => `modLaneSelection:${worldId}`;
 const ledgerKey = (worldId) => `modLaneLedger:${worldId}`;
+const requiredSourceKey = (worldId) => `modRequiredSource:${worldId}`;
 
 function readList(key) {
   const value = dbm.getSetting(key, []);
@@ -18,11 +19,16 @@ function readList(key) {
 function roots(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  return { server: world.install_dir || null, steam: dbm.getSetting("clientInstall:steam", null), gamepass: dbm.getSetting("clientInstall:gamepass", null) };
+  return {
+    server: world.install_dir || null,
+    required: dbm.getSetting(requiredSourceKey(worldId), null),
+    steam: dbm.getSetting("clientInstall:steam", null),
+    gamepass: dbm.getSetting("clientInstall:gamepass", null),
+  };
 }
 
 function scanLane(lane, root, selected) {
-  const label = lane === "server" ? "Server Host" : lane === "steam" ? "Steam Player" : "PC Game Pass Player";
+  const label = lane === "server" ? "Server Host" : lane === "required" ? "Required Player Mods" : lane === "steam" ? "Steam Player" : "PC Game Pass Player";
   const base = { id: lane, label, root, ready: false, mods: [], error: null };
   if (!root) return { ...base, error: "Install folder has not been selected." };
   try {
@@ -117,6 +123,20 @@ function setSelections(worldId, requested) {
   return status(worldId);
 }
 
+function setRequiredSource(worldId, requestedPath) {
+  if (!dbm.getWorld(worldId)) throw new Error("World not found");
+  const raw = String(requestedPath || "").trim();
+  const normalized = raw ? steamlib.normalizeGameInstall(raw) : null;
+  if (raw && !normalized) throw new Error("Required mod source must be a Dragonwilds installation containing RSDragonwilds\\Binaries and RSDragonwilds\\Content.");
+
+  // Remove selections and server copies owned by the old source before switching.
+  const retained = readList(selectionKey(worldId)).filter((key) => !key.startsWith("required|"));
+  setSelections(worldId, retained);
+  dbm.setSetting(requiredSourceKey(worldId), normalized);
+  dbm.logEvent(worldId, "mod", normalized ? `Set required player mod source to ${normalized}` : "Cleared required player mod source");
+  return status(worldId);
+}
+
 function browse(worldId, lane, relative = "") {
   if (!LANES.includes(lane)) throw new Error("Unknown mod lane");
   const root = roots(worldId)[lane];
@@ -132,4 +152,4 @@ function browse(worldId, lane, relative = "") {
   return { lane, root: base, relative: parts.join("/"), current, breadcrumbs: parts.map((name, index) => ({ name, relative: parts.slice(0, index + 1).join("/") })), directories };
 }
 
-module.exports = { status, setSelections, selectedMods, browse };
+module.exports = { status, setSelections, selectedMods, browse, setRequiredSource };

@@ -17,6 +17,7 @@ import PrereqsNotice from "@/components/PrereqsNotice";
 import AdminPanel from "@/components/AdminPanel";
 import ChatPanel from "@/components/ChatPanel";
 import BroadcastPanel from "@/components/BroadcastPanel";
+import TabPanelBoundary from "@/components/TabPanelBoundary";
 // PalSchemaPanel removed: reference deleted
 // Discord integration removed for Dragonwilds (no chat relay / webhook support by default)
 // import DiscordPanel from "@/components/DiscordPanel";
@@ -49,6 +50,7 @@ export default function WorldDetail() {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("overview");
+  const [mountedTabs, setMountedTabs] = useState(() => new Set(["overview"]));
   const [busy, setBusy] = useState(null);
   const [customizing, setCustomizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -63,6 +65,14 @@ export default function WorldDetail() {
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Keep a panel mounted after its first visit. Rapid navigation used to tear down
+  // and recreate fetches, streams, and editors faster than their cleanup completed.
+  // Retaining visited panels makes switching instant and removes that race.
+  const selectTab = useCallback((next) => {
+    setMountedTabs((current) => current.has(next) ? current : new Set([...current, next]));
+    setTab(next);
+  }, []);
 
   const act = async (action) => {
     setBusy(action);
@@ -175,18 +185,18 @@ export default function WorldDetail() {
       {/* Tabs */}
       <div style={{ display: "flex", gap: "0.4rem", marginBottom: "1rem", flexWrap: "wrap" }}>
         {TABS.map((tb) => (
-          <button key={tb.id} className={`btn ${tab === tb.id ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab(tb.id)}>
+          <button type="button" key={tb.id} className={`btn ${tab === tb.id ? "btn-primary" : "btn-ghost"}`} onClick={() => selectTab(tb.id)}>
             <Icon name={tb.icon} size={16} /> {t(tb.labelKey)}
           </button>
         ))}
       </div>
 
       <div className="panel" style={{ padding: "1.3rem" }}>
-        {tab === "overview" && <Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} />}
+        {mountedTabs.has("overview") && <TabSlot id="overview" active={tab === "overview"}><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
         {/* Players tab removed for Dragonwilds; player management is in-game only */}
         {tab === "deaths" && <DeathsPanel worldId={id} running={running} onGoToUe4ss={() => setTab("mods")} onGoToDiscord={() => setTab("discord")} />}
-        {tab === "map" && <MapPanel players={live?.players} running={running} />}
-        {tab === "broadcast" && (
+        {mountedTabs.has("map") && <TabSlot id="map" active={tab === "map"}><MapPanel players={live?.players} running={running} /></TabSlot>}
+        {mountedTabs.has("broadcast") && <TabSlot id="broadcast" active={tab === "broadcast"}>
           <div className="panel-inset">
             <div style={{ fontWeight: 800, fontSize: "0.9rem" }}>Broadcasts unavailable</div>
             <p className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem" }}>
@@ -194,22 +204,22 @@ export default function WorldDetail() {
               is not bundled. This panel has been disabled to avoid offering unsupported functionality.
             </p>
           </div>
-        )}
+        </TabSlot>}
         {tab === "chat" && <ChatPanel worldId={id} running={running} onGoToUe4ss={() => setTab("mods")} />}
-        {tab === "console" && <LogsPanel worldId={id} />}
-        {tab === "settings" && <SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => setTab("admin")} />}
-        {tab === "backups" && <BackupsPanel worldId={id} backups={backups} running={running} onChange={load} />}
-        {tab === "schedule" && <SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} onGoToBroadcast={() => setTab("broadcast")} />}
-        {tab === "mods" && (
+        {mountedTabs.has("console") && <TabSlot id="console" active={tab === "console"}><LogsPanel worldId={id} /></TabSlot>}
+        {mountedTabs.has("settings") && <TabSlot id="settings" active={tab === "settings"}><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
+        {mountedTabs.has("backups") && <TabSlot id="backups" active={tab === "backups"}><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}
+        {mountedTabs.has("schedule") && <TabSlot id="schedule" active={tab === "schedule"}><SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} onGoToBroadcast={() => selectTab("broadcast")} /></TabSlot>}
+        {mountedTabs.has("mods") && <TabSlot id="mods" active={tab === "mods"}>
           <div style={{ display: "grid", gap: "1.8rem" }}>
             <div>
               <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
               <ModsPanel worldId={id} running={running} />
             </div>
           </div>
-        )}
+        </TabSlot>}
         {/* Discord integration removed for Dragonwilds; panels disabled */}
-        {tab === "admin" && <AdminPanel world={world} running={running} onChange={load} />}
+        {mountedTabs.has("admin") && <TabSlot id="admin" active={tab === "admin"}><AdminPanel world={world} running={running} onChange={load} /></TabSlot>}
       </div>
 
       {customizing && (
@@ -220,6 +230,14 @@ export default function WorldDetail() {
         <DeleteWorldModal world={world} onClose={() => setDeleting(false)} onDeleted={() => { toast(t("world.deleted"), "success"); router.push("/"); }} />
       )}
     </div>
+  );
+}
+
+function TabSlot({ id, active, children }) {
+  return (
+    <section hidden={!active} aria-hidden={!active} data-world-tab={id}>
+      <TabPanelBoundary tabId={id}>{children}</TabPanelBoundary>
+    </section>
   );
 }
 

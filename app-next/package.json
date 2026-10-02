@@ -17,6 +17,7 @@
     "dist:linux": "npm run build:next && npm run prepare:standalone && electron-builder --linux",
     "lint": "next lint",
     "test:settings": "node scripts/check-settings-persistence.js",
+    "test:mods": "node scripts/check-mod-sync-source.js",
     "prepare:standalone": "node scripts/prepare-standalone.js"
   },
   "dependencies": {

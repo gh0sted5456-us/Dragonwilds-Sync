@@ -76,9 +76,10 @@ export default function ModsPanel({ worldId, running }) {
     setBusy(true);
     try {
       if (targetLane === "server") await api(`/api/worlds/${worldId}`, { method: "PATCH", body: { install_dir: install } });
+      else if (targetLane === "required") await api(`/api/worlds/${worldId}/mods/source`, { method: "POST", body: { path: install } });
       else await api("/api/client-installs", { method: "POST", body: { [targetLane]: install } });
       await load();
-      toast(`${targetLane === "server" ? "Server" : targetLane === "steam" ? "Steam" : "PC Game Pass"} install routed.`, "success");
+      toast(`${targetLane === "server" ? "Server" : targetLane === "required" ? "Required player mods" : targetLane === "steam" ? "Steam" : "PC Game Pass"} install routed.`, "success");
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(false); }
   }
@@ -147,9 +148,9 @@ export default function ModsPanel({ worldId, running }) {
       <section>
         <div className="heading" style={{ fontSize: "0.96rem", marginBottom: 4 }}>Install lanes</div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
-          Route the host, Steam, and PC Game Pass installs once. Each lane is scanned through PAKs, UE4SS, RuneSchema, and nested mod folders.
+          Each server can point at its own Required Player Mods installation. Select folders from that lane to publish them in this server's Sync manifest; joining players download only those selected files. Steam and PC Game Pass lanes remain optional machine-wide sources.
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
           {lanes.map((item) => (
             <button key={item.id} className={`panel-inset ${activeLane === item.id ? "lane-active" : ""}`} onClick={() => { setActiveLane(item.id); setBrowser(null); }} style={{ padding: "0.85rem", textAlign: "left", cursor: "pointer", color: "inherit" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>

@@ -85,8 +85,10 @@ function contains(rel, needle, message) {
   contains("app/globals.css", "--accent: #c1a56d");
   const modsPanel = contains("components/ModsPanel.jsx", "Install lanes");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
-  const lanes = contains("lib/mod-lanes.js", 'const LANES = ["server", "steam", "gamepass"]');
-  assert(lanes.includes("Steam Player") && lanes.includes("PC Game Pass Player"), "player mod lanes missing");
+  const lanes = contains("lib/mod-lanes.js", 'const LANES = ["server", "required", "steam", "gamepass"]');
+  assert(lanes.includes("Required Player Mods") && lanes.includes("Steam Player") && lanes.includes("PC Game Pass Player"), "player mod lanes missing");
+  assert(lanes.includes("function setRequiredSource"), "per-World required mod source is missing");
+  contains("app/api/worlds/[id]/mods/source/route.js", "mods.setRequiredSource");
   contains("lib/component-updates.js", "latestNexusVersions");
   contains("lib/component-updates.js", "Xbox");
   contains("lib/component-updates.js", "Steam");
@@ -120,6 +122,7 @@ function contains(rel, needle, message) {
   contains("components/ModsPanel.jsx", "Steam uses dwmapi.dll");
   const worldPage = read("app/worlds/[id]/page.jsx");
   assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
+  assert(worldPage.includes("mountedTabs") && worldPage.includes("TabPanelBoundary"), "World tabs must retain and isolate visited panels");
   const shell = read("components/Shell.jsx");
   assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");
   contains("electron/main.js", "loadingPage(");

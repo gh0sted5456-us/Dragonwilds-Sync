@@ -83,8 +83,9 @@ function contains(rel, needle, message) {
   contains("app/page.jsx", "Connect to World");
   contains("app/info/page.jsx", "https://gh0sted5456-us.github.io/Dragonwilds-Sync/helpy.html?embed=1&theme=dark");
   contains("app/globals.css", "--accent: #c1a56d");
-  const modsPanel = contains("components/ModsPanel.jsx", "Install lanes");
+  const modsPanel = contains("components/ModsPanel.jsx", "Managed mods");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
+  assert(modsPanel.includes("Required for players") && modsPanel.includes("Server only"), "managed mod client requirement controls missing");
   const lanes = contains("lib/mod-lanes.js", 'const LANES = ["server", "required", "steam", "gamepass"]');
   assert(lanes.includes("Required Player Mods") && lanes.includes("Steam Player") && lanes.includes("PC Game Pass Player"), "player mod lanes missing");
   assert(lanes.includes("function setRequiredSource"), "per-World required mod source is missing");

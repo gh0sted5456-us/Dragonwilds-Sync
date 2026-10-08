@@ -54,7 +54,14 @@ async function downloadChange(base, connection, platform, install, change) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
-    const response = await fetch(`${base}/file?target=${encodeURIComponent(change.target)}`, {
+    let downloadUrl = `${base}/file?target=${encodeURIComponent(change.target)}`;
+    if (change.downloadUrl) {
+      const candidate = new URL(change.downloadUrl);
+      const expected = new URL(base);
+      if (!["http:", "https:"].includes(candidate.protocol) || candidate.username || candidate.password || candidate.origin !== expected.origin) throw new Error("World manifest contains an unsafe download URL");
+      downloadUrl = candidate.toString();
+    }
+    const response = await fetch(downloadUrl, {
       cache: "no-store",
       signal: controller.signal,
       headers: { "X-RSDW-World-Password": String(connection.password || ""), "X-RSDW-Client-Platform": platform },

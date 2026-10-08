@@ -18,4 +18,32 @@ function authorizeWorldRequest(worldId, request) {
     : { ok: false, status: 401, error: "The World password is incorrect" };
 }
 
-module.exports = { authorizeWorldRequest };
+function downloadSecret() {
+  let secret = String(dbm.getSetting("sync.downloadSecret", "") || "");
+  if (!/^[a-f0-9]{64}$/.test(secret)) {
+    secret = crypto.randomBytes(32).toString("hex");
+    dbm.setSetting("sync.downloadSecret", secret);
+  }
+  return secret;
+}
+
+function downloadSignature(worldId, target, sha256, expires) {
+  return crypto.createHmac("sha256", downloadSecret()).update(`${worldId}\0${target}\0${sha256}\0${expires}`).digest("hex");
+}
+
+function signWorldDownload(worldId, target, sha256, expires = Date.now() + 15 * 60 * 1000) {
+  return { expires, token: downloadSignature(worldId, target, sha256, expires) };
+}
+
+function authorizeWorldDownload(worldId, file, request) {
+  const passwordAuth = authorizeWorldRequest(worldId, request);
+  if (passwordAuth.ok) return passwordAuth;
+  const url = new URL(request.url);
+  const expires = Number(url.searchParams.get("expires"));
+  const token = url.searchParams.get("token") || "";
+  if (!Number.isSafeInteger(expires) || expires < Date.now() || expires > Date.now() + 20 * 60 * 1000) return { ok: false, status: 401, error: "The download link has expired" };
+  const expected = downloadSignature(worldId, file.target, file.sha256, expires);
+  return equal(expected, token) ? { ok: true, world: passwordAuth.world } : { ok: false, status: 401, error: "The download link is invalid" };
+}
+
+module.exports = { authorizeWorldRequest, authorizeWorldDownload, signWorldDownload };

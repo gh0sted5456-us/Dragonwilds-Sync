@@ -8,7 +8,7 @@ const rest = require("./restclient");
 const appver = require("./appversion");
 const { createBackup } = require("./backups");
 const { notify } = require("./notify");
-const syncedMods = require("./mods");
+const syncedMods = require("./mod-lanes");
 
 const g = globalThis;
 if (!g.__APP_SCHED) g.__APP_SCHED = { timer: null, bcastTimer: null, bcastBusy: false, updating: new Set(), joinTimers: new Set(), backupSkipped: new Set(), autoUpdating: false };
@@ -445,7 +445,7 @@ async function updateWorld(worldId, onLog = () => {}, jobId = null, opts = {}) {
     const bid = res.buildId || steam.readInstalledBuildId(w.install_dir);
     if (bid) dbm.updateWorld(worldId, { build_id: bid });
     dbm.updateWorld(worldId, { status: "stopped" });
-    try { syncedMods.reapplySyncedMods(worldId); emit("Reapplied retained mod selection."); }
+    try { syncedMods.reapplySelections(worldId); emit("Reapplied managed mod selection."); }
     catch (e) { emit(`Retained mod warning: ${e.message}`); dbm.logEvent(worldId, "mod", `Could not reapply retained mods after update: ${e.message}`); }
     if (wasRunning) { phase("finalizing", "Relaunching…"); emit("Relaunching..."); await sup.startWorld(worldId); }
     const updated = bid && (!prevBuild || String(bid) !== String(prevBuild));

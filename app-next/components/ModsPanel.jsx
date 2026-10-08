@@ -42,7 +42,8 @@ export default function ModsPanel({ worldId, running }) {
 
   const lanes = data?.modLanes || [];
   const lane = lanes.find((item) => item.id === activeLane) || lanes[0];
-  const selected = useMemo(() => new Set(data?.modLaneSelections || []), [data]);
+  const selections = useMemo(() => new Map((data?.modSelections || (data?.modLaneSelections || []).map((key) => ({ key, clientRequired: true }))).map((item) => [item.key, item])), [data]);
+  const requiredCount = useMemo(() => [...selections.values()].filter((item) => item.clientRequired !== false).length, [selections]);
 
   async function uploadRuntime(component) {
     if (!isElectron) return toast("Runtime ZIP selection is available in the desktop app.", "error");
@@ -86,13 +87,25 @@ export default function ModsPanel({ worldId, running }) {
 
   async function toggleFolder(mod) {
     if (!mod.syncEligible || running) return;
-    const keys = new Set(selected);
-    if (keys.has(mod.selectionKey)) keys.delete(mod.selectionKey); else keys.add(mod.selectionKey);
+    const next = new Map(selections);
+    if (next.has(mod.selectionKey)) next.delete(mod.selectionKey); else next.set(mod.selectionKey, { key: mod.selectionKey, clientRequired: true });
+    await saveSelections([...next.values()]);
+  }
+
+  async function toggleRequired(mod) {
+    if (running || !selections.has(mod.selectionKey)) return;
+    const next = new Map(selections);
+    const current = next.get(mod.selectionKey);
+    next.set(mod.selectionKey, { ...current, clientRequired: current.clientRequired === false });
+    await saveSelections([...next.values()]);
+  }
+
+  async function saveSelections(next) {
     setBusy(true);
     try {
-      const result = await api(`/api/worlds/${worldId}/mods/sync`, { method: "POST", body: { keys: [...keys] } });
+      const result = await api(`/api/worlds/${worldId}/mods/sync`, { method: "POST", body: { selections: next } });
       setData((current) => ({ ...current, ...result }));
-      toast("Selected mod folders saved and synchronized.", "success");
+      toast("Managed mods saved and synchronized.", "success");
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(false); }
   }
@@ -146,9 +159,12 @@ export default function ModsPanel({ worldId, running }) {
       </section>
 
       <section>
-        <div className="heading" style={{ fontSize: "0.96rem", marginBottom: 4 }}>Install lanes</div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div className="heading" style={{ fontSize: "0.96rem", marginBottom: 4 }}>Managed mods</div>
+          <div style={{ display: "flex", gap: 6 }}><span className="chip">{selections.size} managed</span><span className="chip">{requiredCount} required for players</span></div>
+        </div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
-          Each server can point at its own Required Player Mods installation. Select folders from that lane to publish them in this server's Sync manifest; joining players download only those selected files. Steam and PC Game Pass lanes remain optional machine-wide sources.
+          Manage mods exactly like this World profile: select a discovered mod, then choose whether joining players must install it. Server-only mods stay managed on the host but are never published to clients. Each server can use its own Required Player Mods source.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
           {lanes.map((item) => (
@@ -184,7 +200,7 @@ export default function ModsPanel({ worldId, running }) {
               return <div key={type}>
                 <div className="subtle" style={{ fontSize: "0.7rem", fontWeight: 750, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 5 }}>{title}</div>
                 <div style={{ display: "grid", gap: 5 }}>
-                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selected={selected.has(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} />)}
+                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onToggleRequired={() => toggleRequired(mod)} />)}
                 </div>
               </div>;
             })}
@@ -198,14 +214,19 @@ export default function ModsPanel({ worldId, running }) {
   );
 }
 
-function ModFolder({ mod, selected, busy, onToggle }) {
+function ModFolder({ mod, selection, busy, onToggle, onToggleRequired }) {
+  const selected = !!selection;
+  const clientRequired = selection?.clientRequired !== false;
   return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: "0.82rem", fontWeight: 720 }}>{mod.name}</div>
       <div className="subtle" style={{ fontSize: "0.67rem", wordBreak: "break-all" }}>{mod.path}</div>
     </div>
     {mod.syncEligible
-      ? <button className={`btn ${selected ? "btn-primary" : "btn-ghost"}`} disabled={busy} onClick={onToggle}>{selected ? "Selected" : "Select folder"}</button>
+      ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {selected && <button className={`btn ${clientRequired ? "btn-primary" : "btn-subtle"}`} disabled={busy} onClick={onToggleRequired}>{clientRequired ? "Required for players" : "Server only"}</button>}
+          <button className={`btn ${selected ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onToggle}>{selected ? "Remove" : "Manage mod"}</button>
+        </div>
       : <span className="chip">Detected only</span>}
   </div>;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-const mods = require("@/lib/mods");
+const mods = require("@/lib/mod-lanes");
 const ra = require("@/lib/remoteauth");
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

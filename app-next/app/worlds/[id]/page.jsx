@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, StatusChip, fmtUptime, fmtTime, toast } from "@/components/ui";
-// Players panel removed for Dragonwilds (no REST API for player management)
-// import PlayersPanel from "@/components/PlayersPanel";
 import LogsPanel from "@/components/LogsPanel";
 import CustomizeModal from "@/components/CustomizeModal";
 import SettingsEditor from "@/components/SettingsEditor";
@@ -15,30 +13,17 @@ import MapPanel from "@/components/MapPanel";
 import ModsPanel from "@/components/ModsPanel";
 import PrereqsNotice from "@/components/PrereqsNotice";
 import AdminPanel from "@/components/AdminPanel";
-import ChatPanel from "@/components/ChatPanel";
-import BroadcastPanel from "@/components/BroadcastPanel";
 import TabPanelBoundary from "@/components/TabPanelBoundary";
-// PalSchemaPanel removed: reference deleted
-// Discord integration removed for Dragonwilds (no chat relay / webhook support by default)
-// import DiscordPanel from "@/components/DiscordPanel";
-// import DiscordBotPanel from "@/components/DiscordBotPanel";
 
 const TABS = [
   { id: "overview", labelKey: "world.tab.overview", icon: "grid" },
-  // Players tab removed for Dragonwilds (no REST API for player management)
-  // { id: "players", labelKey: "world.tab.players", icon: "users" },
   { id: "map", labelKey: "world.tab.map", icon: "map" },
   { id: "broadcast", labelKey: "world.tab.broadcast", icon: "bell" },
-  // Chat tab removed for Dragonwilds (no API/mods for chat relay by default)
-  // { id: "chat", labelKey: "world.tab.chat", icon: "chat" },
   { id: "console", labelKey: "world.tab.console", icon: "terminal" },
   { id: "settings", labelKey: "world.tab.settings", icon: "settings" },
   { id: "backups", labelKey: "world.tab.backups", icon: "download" },
   { id: "schedule", labelKey: "world.tab.schedule", icon: "clock" },
   { id: "mods", labelKey: "world.tab.mods", icon: "shield" },
-  // Discord tabs removed for Dragonwilds
-  // { id: "discord", labelKey: "world.tab.discord", icon: "bell" },
-  // { id: "discordbot", labelKey: "world.tab.discordBot", icon: "chat" },
   { id: "admin", labelKey: "world.tab.admin", icon: "settings" },
 ];
 
@@ -194,7 +179,6 @@ export default function WorldDetail() {
       <div className="panel" style={{ padding: "1.3rem" }}>
         {mountedTabs.has("overview") && <TabSlot id="overview" active={tab === "overview"}><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
         {/* Players tab removed for Dragonwilds; player management is in-game only */}
-        {tab === "deaths" && <DeathsPanel worldId={id} running={running} onGoToUe4ss={() => setTab("mods")} onGoToDiscord={() => setTab("discord")} />}
         {mountedTabs.has("map") && <TabSlot id="map" active={tab === "map"}><MapPanel players={live?.players} running={running} /></TabSlot>}
         {mountedTabs.has("broadcast") && <TabSlot id="broadcast" active={tab === "broadcast"}>
           <div className="panel-inset">
@@ -205,7 +189,6 @@ export default function WorldDetail() {
             </p>
           </div>
         </TabSlot>}
-        {tab === "chat" && <ChatPanel worldId={id} running={running} onGoToUe4ss={() => setTab("mods")} />}
         {mountedTabs.has("console") && <TabSlot id="console" active={tab === "console"}><LogsPanel worldId={id} /></TabSlot>}
         {mountedTabs.has("settings") && <TabSlot id="settings" active={tab === "settings"}><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
         {mountedTabs.has("backups") && <TabSlot id="backups" active={tab === "backups"}><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}

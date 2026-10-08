@@ -43,7 +43,7 @@ export default function PlayerProfile({ params }) {
     try {
       const response = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
       const { installed, removed, manifest } = response.result;
-      setResult({ current: true, changes: [], prerequisites: manifest.prerequisites });
+      setResult({ current: true, changes: [], units: summarizeUnits(manifest), transport: manifest.transport, prerequisites: manifest.prerequisites });
       await refreshProfile();
       toast(`World synchronized: ${installed.length} installed or updated, ${removed.length} removed.`, "success");
     } catch (e) { toast(e.message, "error"); } finally { setChecking(false); }
@@ -103,7 +103,7 @@ export default function PlayerProfile({ params }) {
         if (!verified.comparison.current) {
           setFlowStep(`Synchronizing ${verified.comparison.changes.length} managed file(s)…`);
           const synced = await api(`/api/profiles/${params.id}/sync`, { method: "POST", body: {} });
-          setResult({ current: true, changes: [], prerequisites: synced.result.manifest.prerequisites });
+          setResult({ current: true, changes: [], units: summarizeUnits(synced.result.manifest), transport: synced.result.manifest.transport, prerequisites: synced.result.manifest.prerequisites });
           await refreshProfile();
         }
         setFlowStep("Authenticated and synchronized.");
@@ -164,10 +164,28 @@ export default function PlayerProfile({ params }) {
       </div>
       {result && <div className="panel-inset" style={{ marginTop: 18, padding: 14 }}>
         <strong>{result.current ? "Managed mods are synchronized." : `${result.changes.length} file(s) need synchronization.`}</strong>
+        {result.transport && <div className="subtle" style={{ marginTop: 6, fontSize: ".72rem" }}>Delivery: authenticated TCP connection with expiring direct-download links and SHA-256 verification.</div>}
+        {!!result.units?.length && <div style={{ display: "grid", gap: 6, marginTop: 12 }}>
+          {result.units.map((unit) => <div key={unit.key} className="panel" style={{ padding: ".65rem .75rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div><strong style={{ fontSize: ".78rem" }}>{unit.name || unit.key}</strong><div className="subtle" style={{ fontSize: ".67rem" }}>{unit.fileCount} file(s) · {formatBytes(unit.bytes)} · {unit.clientRequired === false ? "optional" : "required"}</div></div>
+            <span className="chip" style={{ background: unit.current ? "var(--green)" : "var(--line)" }}>{unit.current ? "CURRENT" : `${unit.changedFiles} TO SYNC`}</span>
+          </div>)}
+        </div>}
         {result.prerequisites && <div className="subtle" style={{ marginTop: 8 }}>Server prerequisites (install separately): UE4SS {result.prerequisites.ue4ss || "not declared"} · RuneSchema {result.prerequisites.runeSchema || "not declared"}</div>}
       </div>}
     </div>
   </main>;
+}
+
+function summarizeUnits(manifest) {
+  return (manifest?.units || []).map((unit) => ({ key: unit.key, name: unit.name, fileCount: unit.fileCount ?? unit.files?.length ?? 0, bytes: Number(unit.bytes || 0), clientRequired: unit.clientRequired !== false, current: true, changedFiles: 0 }));
+}
+
+function formatBytes(value) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 

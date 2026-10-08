@@ -27,20 +27,48 @@ function roots(worldId) {
   };
 }
 
+function normalizeSelections(value) {
+  let source = value;
+  if (typeof source === "string") {
+    try { source = JSON.parse(source); } catch { source = []; }
+  }
+  if (!Array.isArray(source)) source = [];
+  const unique = new Map();
+  for (const item of source) {
+    const key = String(typeof item === "string" ? item : item?.key || "").trim();
+    if (!key) continue;
+    unique.set(key, { key, clientRequired: typeof item === "string" ? true : item.clientRequired !== false });
+  }
+  return [...unique.values()];
+}
+
+function readSelections(worldId) {
+  return normalizeSelections(dbm.getSetting(selectionKey(worldId), []));
+}
+
 function scanLane(lane, root, selected) {
   const label = lane === "server" ? "Server Host" : lane === "required" ? "Required Player Mods" : lane === "steam" ? "Steam Player" : "PC Game Pass Player";
   const base = { id: lane, label, root, ready: false, mods: [], error: null };
   if (!root) return { ...base, error: "Install folder has not been selected." };
   try {
     const scanned = steamlib.scanGameMods(root);
-    return { ...base, root: scanned.installDir, ready: true, mods: scanned.mods.map((mod) => ({ ...mod, lane, selectionKey: `${lane}|${mod.key}`, selected: selected.has(`${lane}|${mod.key}`) })) };
+    return { ...base, root: scanned.installDir, ready: true, mods: scanned.mods.map((mod) => {
+      const key = `${lane}|${mod.key}`;
+      const managed = selected.get(key);
+      return { ...mod, lane, selectionKey: key, selected: !!managed, clientRequired: managed?.clientRequired !== false };
+    }) };
   } catch (e) { return { ...base, error: e.message }; }
 }
 
 function status(worldId) {
-  const selected = new Set(readList(selectionKey(worldId)));
+  const modSelections = readSelections(worldId);
+  const selected = new Map(modSelections.map((item) => [item.key, item]));
   const laneRoots = roots(worldId);
-  return { modLanes: LANES.map((lane) => scanLane(lane, laneRoots[lane], selected)), modLaneSelections: [...selected] };
+  return {
+    modLanes: LANES.map((lane) => scanLane(lane, laneRoots[lane], selected)),
+    modSelections,
+    modLaneSelections: modSelections.map((item) => item.key),
+  };
 }
 
 function serverGameRoot(installDir) { const nested = path.join(installDir, "RSDragonwilds"); return fs.existsSync(nested) ? nested : installDir; }
@@ -77,9 +105,13 @@ function copyMod(mod, destination) {
   return [destination];
 }
 
-function selectedMods(worldId) {
-  const snapshot = status(worldId), wanted = new Set(snapshot.modLaneSelections);
-  return snapshot.modLanes.flatMap((lane) => lane.mods.filter((mod) => wanted.has(mod.selectionKey) && mod.syncEligible));
+function selectedMods(worldId, { clientRequiredOnly = true } = {}) {
+  const snapshot = status(worldId);
+  const wanted = new Map(snapshot.modSelections.map((item) => [item.key, item]));
+  return snapshot.modLanes.flatMap((lane) => lane.mods
+    .filter((mod) => wanted.has(mod.selectionKey) && mod.syncEligible)
+    .map((mod) => ({ ...mod, clientRequired: wanted.get(mod.selectionKey).clientRequired !== false })))
+    .filter((mod) => !clientRequiredOnly || mod.clientRequired);
 }
 
 function setSelections(worldId, requested) {
@@ -87,7 +119,8 @@ function setSelections(worldId, requested) {
   if (!world) throw new Error("World not found");
   const snapshot = status(worldId);
   const available = new Map(snapshot.modLanes.flatMap((lane) => lane.mods.filter((mod) => mod.syncEligible).map((mod) => [mod.selectionKey, mod])));
-  const keys = [...new Set((requested || []).map(String))];
+  const selections = normalizeSelections(requested);
+  const keys = selections.map((item) => item.key);
   const missing = keys.filter((key) => !available.has(key));
   if (missing.length) throw new Error(`Selected mod folders are no longer present: ${missing.join(", ")}`);
   if (keys.some((key) => available.get(key).lane !== "server") && !world.install_dir) {
@@ -117,10 +150,22 @@ function setSelections(worldId, requested) {
   }
   const retained = new Set(copied.map((value) => path.resolve(value).toLowerCase()));
   for (const oldTarget of previous) if (!retained.has(path.resolve(oldTarget).toLowerCase()) && fs.existsSync(oldTarget)) trashPath(oldTarget);
-  dbm.setSetting(selectionKey(worldId), keys);
+  dbm.setSetting(selectionKey(worldId), selections);
   dbm.setSetting(ledgerKey(worldId), copied);
-  dbm.logEvent(worldId, "mod", `Saved ${keys.length} selected mod folder${keys.length === 1 ? "" : "s"} across the routed installs`);
+  const requiredCount = selections.filter((item) => item.clientRequired).length;
+  dbm.logEvent(worldId, "mod", `Saved ${keys.length} managed mod folder${keys.length === 1 ? "" : "s"}; ${requiredCount} required for players`);
   return status(worldId);
+}
+
+function reapplySelections(worldId) {
+  const selections = readSelections(worldId);
+  if (!selections.length) return status(worldId);
+  const snapshot = status(worldId);
+  const available = new Set(snapshot.modLanes.flatMap((lane) => lane.mods.filter((mod) => mod.syncEligible).map((mod) => mod.selectionKey)));
+  const retained = selections.filter((item) => available.has(item.key));
+  const missing = selections.filter((item) => !available.has(item.key));
+  if (missing.length) dbm.logEvent(worldId, "mod", `Dropped ${missing.length} managed mod selection${missing.length === 1 ? "" : "s"} that no longer exist after the server update`);
+  return setSelections(worldId, retained);
 }
 
 function setRequiredSource(worldId, requestedPath) {
@@ -130,7 +175,7 @@ function setRequiredSource(worldId, requestedPath) {
   if (raw && !normalized) throw new Error("Required mod source must be a Dragonwilds installation containing RSDragonwilds\\Binaries and RSDragonwilds\\Content.");
 
   // Remove selections and server copies owned by the old source before switching.
-  const retained = readList(selectionKey(worldId)).filter((key) => !key.startsWith("required|"));
+  const retained = readSelections(worldId).filter((item) => !item.key.startsWith("required|"));
   setSelections(worldId, retained);
   dbm.setSetting(requiredSourceKey(worldId), normalized);
   dbm.logEvent(worldId, "mod", normalized ? `Set required player mod source to ${normalized}` : "Cleared required player mod source");
@@ -152,4 +197,4 @@ function browse(worldId, lane, relative = "") {
   return { lane, root: base, relative: parts.join("/"), current, breadcrumbs: parts.map((name, index) => ({ name, relative: parts.slice(0, index + 1).join("/") })), directories };
 }
 
-module.exports = { status, setSelections, selectedMods, browse, setRequiredSource };
+module.exports = { status, setSelections, selectedMods, browse, setRequiredSource, reapplySelections, readSelections };

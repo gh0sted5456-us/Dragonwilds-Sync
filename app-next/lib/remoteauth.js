@@ -28,9 +28,9 @@ const S_ADMIN_TOKEN = "remoteAccess.adminToken";
 
 // The world tabs a code can be granted. Mirrors the TABS in app/worlds/[id]/page.jsx.
 // Community remote access is deliberately operational, not administrative.
-// Guests can see the overview/update notices and player list; lifecycle controls
-// remain guarded by the overview permission. Configuration and files stay local.
-const ALL_TABS = ["overview", "players"];
+// Guests can see the overview/update notices; lifecycle controls remain guarded
+// by the overview permission. Configuration and files stay local.
+const ALL_TABS = ["overview"];
 const DEFAULT_TABS = [...ALL_TABS];
 
 // ---- feature flags ----

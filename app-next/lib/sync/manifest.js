@@ -2,9 +2,10 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const dbm = require("../db");
-const mods = require("../mods");
+const mods = require("../mod-lanes");
 const steamlib = require("../steamlibrary");
 const runtimePackages = require("../runtime-packages");
+const { signWorldDownload } = require("./auth");
 
 const PROTOCOL = "dragonwilds-world-sync";
 const PROTOCOL_VERSION = 2;
@@ -81,7 +82,7 @@ function publicFile(file) {
 function buildWorldManifest(worldId, options = {}) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const inventory = mods.selectedLaneMods(worldId);
+  const inventory = mods.selectedMods(worldId);
   const runtimeUnits = runtimePackages.syncUnits(worldId, options.platform);
   const modUnits = inventory.map((mod) => {
     const files = filesForMod(mod);
@@ -91,6 +92,7 @@ function buildWorldManifest(worldId, options = {}) {
       key: mod.selectionKey || mod.key,
       name: mod.name,
       type: mod.type,
+      clientRequired: true,
       contentHash: identity.digest("hex"),
       fileCount: files.length,
       bytes: files.reduce((sum, file) => sum + file.size, 0),
@@ -125,6 +127,22 @@ function buildWorldManifest(worldId, options = {}) {
   };
 }
 
+function withDownloadUrls(worldId, manifest, baseUrl) {
+  const base = String(baseUrl || "").replace(/\/$/, "");
+  return {
+    ...manifest,
+    transport: { kind: "http-over-tcp", manifestUrl: base, supportsDirectDownloads: true },
+    units: (manifest.units || []).map((unit) => ({
+      ...unit,
+      files: (unit.files || []).map((file) => {
+        const signed = signWorldDownload(worldId, file.target, file.sha256);
+        const query = new URLSearchParams({ target: file.target, platform: manifest.clientPlatform || "steam", expires: String(signed.expires), token: signed.token });
+        return { ...file, downloadUrl: `${base}/file?${query}` };
+      }),
+    })),
+  };
+}
+
 function getPrerequisites(worldId) {
   const saved = dbm.getSetting(prerequisiteKey(worldId), {});
   return {
@@ -150,7 +168,7 @@ function resolveWorldFile(worldId, requestedTarget, options = {}) {
   if (!world) throw new Error("World not found");
   const runtimeFile = runtimePackages.resolveSyncFile(worldId, target, options.platform);
   if (runtimeFile) return runtimeFile;
-  const inventory = mods.selectedLaneMods(worldId);
+  const inventory = mods.selectedMods(worldId);
   for (const mod of inventory) {
     const match = filesForMod(mod).find((file) => file.target === target);
     if (match) return match;
@@ -166,7 +184,9 @@ function compareManifest(manifest, gameInstall) {
   const targets = new Set();
   let fileCount = 0;
   let declaredBytes = 0;
+  const units = [];
   for (const unit of manifest.units || []) {
+    const unitChanges = [];
     for (const file of unit.files || []) {
       fileCount += 1;
       if (fileCount > MAX_MANIFEST_FILES) throw new Error("World manifest declares too many files");
@@ -186,10 +206,15 @@ function compareManifest(manifest, gameInstall) {
       if (!local.toLowerCase().startsWith(root.toLowerCase())) throw new Error("Manifest target escapes the game installation");
       let state = "missing";
       if (fs.existsSync(local) && fs.statSync(local).isFile()) state = sha256File(local) === expectedHash ? "current" : "changed";
-      if (state !== "current") changes.push({ unitKey: unit.key, target: relative, state, size, sha256: expectedHash });
+      if (state !== "current") {
+        const change = { unitKey: unit.key, unitName: unit.name, unitType: unit.type, clientRequired: unit.clientRequired !== false, target: relative, state, size, sha256: expectedHash, downloadUrl: file.downloadUrl || null };
+        changes.push(change);
+        unitChanges.push(change);
+      }
     }
+    units.push({ key: unit.key, name: unit.name, type: unit.type, clientRequired: unit.clientRequired !== false, fileCount: (unit.files || []).length, bytes: Number(unit.bytes || 0), current: unitChanges.length === 0, changedFiles: unitChanges.length });
   }
-  return { revision: manifest.revision, current: changes.length === 0, fileCount, declaredBytes, changes };
+  return { revision: manifest.revision, current: changes.length === 0, fileCount, declaredBytes, changes, units, transport: manifest.transport || null };
 }
 
-module.exports = { PROTOCOL, PROTOCOL_VERSION, buildWorldManifest, compareManifest, sha256File, resolveWorldFile, getPrerequisites, setPrerequisites };
+module.exports = { PROTOCOL, PROTOCOL_VERSION, buildWorldManifest, withDownloadUrls, compareManifest, sha256File, resolveWorldFile, getPrerequisites, setPrerequisites };

@@ -7,39 +7,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useTranslation } from "react-i18next";
 import { api, Icon, StatusChip, fmtUptime, fmtTime, toast } from "@/components/ui";
-// Players remote view disabled for Dragonwilds (no remote player API)
-// import PlayersPanel from "@/components/PlayersPanel";
-import LogsPanel from "@/components/LogsPanel";
-import SettingsEditor from "@/components/SettingsEditor";
-import BackupsPanel from "@/components/BackupsPanel";
-import SchedulePanel from "@/components/SchedulePanel";
-import MapPanel from "@/components/MapPanel";
-import ModsPanel from "@/components/ModsPanel";
-// PalSchemaPanel removed: reference deleted
-import AdminPanel from "@/components/AdminPanel";
-// Chat remote view disabled for Dragonwilds
-// import ChatPanel from "@/components/ChatPanel";
-// DeathsPanel removed for Dragonwilds
-import BroadcastPanel from "@/components/BroadcastPanel";
-// Discord remote view disabled for Dragonwilds
-// import DiscordPanel from "@/components/DiscordPanel";
-// import DiscordBotPanel from "@/components/DiscordBotPanel";
-
 const ALL_TABS = [
   { id: "overview", labelKey: "world.tab.overview", icon: "grid" },
-  // Players and Deaths tabs removed for Dragonwilds (unsupported by the game)
-  { id: "map", labelKey: "world.tab.map", icon: "map" },
-  { id: "broadcast", labelKey: "world.tab.broadcast", icon: "bell" },
-  { id: "chat", labelKey: "world.tab.chat", icon: "chat" },
-  { id: "console", labelKey: "world.tab.console", icon: "terminal" },
-  { id: "settings", labelKey: "world.tab.settings", icon: "settings" },
-  { id: "backups", labelKey: "world.tab.backups", icon: "download" },
-  { id: "schedule", labelKey: "world.tab.schedule", icon: "clock" },
-  { id: "mods", labelKey: "world.tab.mods", icon: "shield" },
-  // Discord tabs removed for Dragonwilds
-  // { id: "discord", labelKey: "world.tab.discord", icon: "bell" },
-  // { id: "discordbot", labelKey: "world.tab.discordBot", icon: "chat" },
-  { id: "admin", labelKey: "world.tab.admin", icon: "settings" },
 ];
 const ACTION_TOAST = { start: "toast.worldStarted", stop: "toast.worldStopped", restart: "toast.worldRestarted" };
 
@@ -99,9 +68,8 @@ export default function RemoteWorldDetail() {
   if (allowed.length === 0) return <div className="subtle" style={{ fontWeight: 700 }}>{t("remote.noTabs")}</div>;
   if (!data) return <div className="subtle" style={{ fontWeight: 700 }}>{t("common.loading")}</div>;
 
-  const { world, live, events, sessions, schedules, backups } = data;
+  const { world, live, events, sessions } = data;
   const running = world.running;
-  const goTo = (tid) => { if (allowed.some((a) => a.id === tid)) setTab(tid); };
 
   return (
     <div>
@@ -154,32 +122,6 @@ export default function RemoteWorldDetail() {
 
       <div className="panel" style={{ padding: "1.3rem" }}>
         {tab === "overview" && <Overview t={t} events={events} sessions={sessions} />}
-        {tab === "players" && <PlayersPanel worldId={id} players={live?.players} onChange={load} />}
-        {tab === "deaths" && <DeathsPanel worldId={id} running={running} onGoToUe4ss={() => goTo("mods")} onGoToDiscord={() => goTo("discord")} />}
-        {tab === "map" && <MapPanel players={live?.players} running={running} />}
-        {tab === "broadcast" && (
-          <div className="panel-inset">
-            <div style={{ fontWeight: 800, fontSize: "0.9rem" }}>Broadcasts unavailable</div>
-            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem" }}>
-              The on-screen broadcast feature is Dragonwilds-specific and requires a community UE4SS mod which
-              is not bundled. This panel has been disabled to avoid offering unsupported functionality.
-            </p>
-          </div>
-        )}
-        {tab === "chat" && <ChatPanel worldId={id} running={running} onGoToUe4ss={() => goTo("mods")} />}
-        {tab === "console" && <LogsPanel worldId={id} />}
-        {tab === "settings" && <SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => goTo("admin")} />}
-        {tab === "backups" && <BackupsPanel worldId={id} backups={backups} running={running} onChange={load} />}
-        {tab === "schedule" && <SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} onGoToBroadcast={() => goTo("broadcast")} />}
-        {tab === "mods" && (
-          <div>
-            <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
-            <ModsPanel worldId={id} running={running} />
-          </div>
-        )}
-        {tab === "discord" && <DiscordPanel world={world} onChange={load} />}
-        {tab === "discordbot" && <DiscordBotPanel world={world} />}
-        {tab === "admin" && <AdminPanel world={world} running={running} onChange={load} />}
       </div>
     </div>
   );

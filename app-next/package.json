@@ -18,6 +18,7 @@
     "lint": "next lint",
     "test:settings": "node scripts/check-settings-persistence.js",
     "test:mods": "node scripts/check-mod-sync-source.js",
+    "test:lifecycle": "node scripts/check-lifecycle-guard.js",
     "prepare:standalone": "node scripts/prepare-standalone.js"
   },
   "dependencies": {

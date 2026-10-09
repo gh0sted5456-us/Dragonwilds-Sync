@@ -31,12 +31,33 @@ if (!g.__APP_SUP) {
     guardTimer: null,
     owned: new Set(),           // world_ids launched by this app process
     restartAttempts: new Map(), // world_id -> crash-restart timestamps
+    operations: new Map(),      // world_id -> serialized lifecycle promise
+    operationKinds: new Map(),  // world_id -> start | stop | restart
+    desired: new Map(),         // world_id -> "running" | "stopped"
   };
 }
 const S = g.__APP_SUP;
 // Hot reload can retain an older singleton shape.
 if (!S.owned) S.owned = new Set();
 if (!S.restartAttempts) S.restartAttempts = new Map();
+if (!S.operations) S.operations = new Map();
+if (!S.operationKinds) S.operationKinds = new Map();
+if (!S.desired) S.desired = new Map();
+
+function serializeLifecycle(worldId, kind, task) {
+  if (S.operationKinds.get(worldId) === kind && S.operations.has(worldId)) return S.operations.get(worldId);
+  const previous = S.operations.get(worldId) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(task);
+  S.operations.set(worldId, operation);
+  S.operationKinds.set(worldId, kind);
+  const cleanup = () => {
+    if (S.operations.get(worldId) !== operation) return;
+    S.operations.delete(worldId);
+    S.operationKinds.delete(worldId);
+  };
+  operation.then(cleanup, cleanup);
+  return operation;
+}
 
 function hostPlatform() {
   return os.platform() === "win32" ? "windows" : "linux";
@@ -726,7 +747,7 @@ function isAlive(worldId) {
   return !!(w && pidAlive(w.process_id));
 }
 
-async function startWorld(worldId) {
+async function startWorldUnlocked(worldId) {
   let world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   if (isRunning(worldId)) {
@@ -871,7 +892,7 @@ async function startWorld(worldId) {
   return { started: true, pid: child.pid };
 }
 
-async function stopWorld(worldId, { graceful = true, waittime = 15 } = {}) {
+async function stopWorldUnlocked(worldId, { graceful = true, waittime = 15 } = {}) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
   // Removing ownership first makes a manual Stop authoritative: the crash
@@ -936,11 +957,40 @@ async function stopWorld(worldId, { graceful = true, waittime = 15 } = {}) {
   return { stopped: true };
 }
 
-async function restartWorld(worldId, { waittime = 5 } = {}) {
-  await stopWorld(worldId, { graceful: true, waittime });
-  await new Promise((r) => setTimeout(r, 700));
-  // startWorld activates + materializes the profile immediately before spawn.
-  return startWorld(worldId);
+function startWorld(worldId, { automatic = false } = {}) {
+  if (automatic && (!S.owned.has(worldId) || S.desired.get(worldId) === "stopped")) {
+    return Promise.resolve({ started: false, reason: "automatic launch cancelled" });
+  }
+  if (!automatic || !S.desired.has(worldId)) S.desired.set(worldId, "running");
+  return serializeLifecycle(worldId, "start", () => {
+    if (S.desired.get(worldId) !== "running") return { started: false, reason: "launch cancelled by stop request" };
+    return startWorldUnlocked(worldId);
+  });
+}
+
+function stopWorld(worldId, options = {}) {
+  // Record the operator's intent before waiting for an active start/restart. Any
+  // queued automatic relaunch sees this immediately and becomes a no-op.
+  S.desired.set(worldId, "stopped");
+  S.owned.delete(worldId);
+  S.restartAttempts.delete(worldId);
+  return serializeLifecycle(worldId, "stop", () => stopWorldUnlocked(worldId, options));
+}
+
+function restartWorld(worldId, { waittime = 5, automatic = false } = {}) {
+  if (automatic && (!S.owned.has(worldId) || S.desired.get(worldId) === "stopped")) {
+    return Promise.resolve({ started: false, reason: "automatic restart cancelled" });
+  }
+  if (!automatic || !S.desired.has(worldId)) S.desired.set(worldId, "running");
+  return serializeLifecycle(worldId, "restart", async () => {
+    if (S.desired.get(worldId) !== "running") return { started: false, reason: "restart cancelled by stop request" };
+    await stopWorldUnlocked(worldId, { graceful: true, waittime });
+    if (S.desired.get(worldId) !== "running") return { started: false, reason: "restart cancelled by stop request" };
+    await new Promise((r) => setTimeout(r, 700));
+    if (S.desired.get(worldId) !== "running") return { started: false, reason: "restart cancelled by stop request" };
+    // The unlocked variant is safe here because this whole restart owns the queue.
+    return startWorldUnlocked(worldId);
+  });
 }
 
 // ---- Crash guardian (spec §9) ----
@@ -975,7 +1025,7 @@ async function guardTick() {
       if (!S.owned.has(w.world_id) || !allowCrashRestart(w.world_id)) continue;
       dbm.updateWorld(w.world_id, { crash_count: (w.crash_count || 0) + 1 });
       dbm.logEvent(w.world_id, "guardian", "Owned server crashed — restarting");
-      try { await startWorld(w.world_id); } catch (e) {
+      try { await startWorld(w.world_id, { automatic: true }); } catch (e) {
         dbm.logEvent(w.world_id, "guardian", `Restart failed: ${e.message}`);
       }
       continue;
@@ -991,21 +1041,9 @@ async function guardTick() {
       // We can display/observe an older external PID, but we never restart it.
       if (!S.owned.has(w.world_id)) continue;
 
-      if (w.rest_api_enabled) {
-        const ok = await rest.healthy(w).catch(() => false);
-        if (!ok) {
-          const hangs = (S.__hang ||= new Map());
-          const n = (hangs.get(w.world_id) || 0) + 1;
-          hangs.set(w.world_id, n);
-          if (n >= 6) {
-            hangs.set(w.world_id, 0);
-            dbm.logEvent(w.world_id, "guardian", "Owned server API unresponsive — restarting");
-            try { await restartWorld(w.world_id); } catch {}
-          }
-        } else {
-          (S.__hang ||= new Map()).set(w.world_id, 0);
-        }
-      }
+      // A slow, disabled, misconfigured, or still-booting REST API is not proof
+      // that the game process has crashed. Restart only after an actual process
+      // exit; otherwise a healthy dedicated server can be trapped in a loop.
     }
   }
 }
@@ -1037,4 +1075,5 @@ module.exports = {
   uninstallBroadcastMod, bundledBroadcastModDir, enqueueBroadcast,
   deathModDir, deathModInstalled, deathFilePath, installDeathMod, uninstallDeathMod,
   bundledDeathModDir, startDeathTail, stopDeathTail, ensureDeathTail,
+  __testing: { serializeLifecycle },
 };

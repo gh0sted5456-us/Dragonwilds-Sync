@@ -46,6 +46,7 @@ const { serializeLifecycle } = supervisor.__testing;
   const source = fs.readFileSync(path.join(__dirname, "..", "lib", "supervisor.js"), "utf8");
   assert(!source.includes("Owned server API unresponsive — restarting"), "REST health can still restart a live server");
   assert(source.includes("actual process"), "process-exit-only crash guard contract is missing");
+  assert(source.includes("server endpoint already active"), "untracked live-server port guard is missing");
   console.log("Lifecycle launch guard: OK");
 })().finally(() => {
   try { require("../lib/db").db().close(); } catch {}

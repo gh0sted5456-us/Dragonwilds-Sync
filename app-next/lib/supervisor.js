@@ -11,6 +11,7 @@ const dbm = require("./db");
 const rest = require("./restclient");
 const ini = require("./ini");
 const notify = require("./notify");
+const ports = require("./ports");
 // Death tracking remains supported if the bundled UE4SS mod is installed, but
 // Dragonwilds does not use a "Pal name" mapping; keep killer raw codenames as-is.
 const { webhookFor } = require("./discord-routing");
@@ -760,6 +761,14 @@ async function startWorldUnlocked(worldId) {
   if (pidAlive(world.process_id)) {
     dbm.updateWorld(worldId, { status: "running" });
     return { started: false, reason: "server process already alive", pid: world.process_id };
+  }
+  // A previous app/interface crash can lose the persisted PID while leaving the
+  // dedicated server behind. Its REST listener is an independent, OS-level guard:
+  // never spawn another copy onto an already-owned world endpoint.
+  if (world.rest_api_enabled && world.rest_api_port && !(await ports.isPortFree(world.rest_api_port))) {
+    dbm.updateWorld(worldId, { status: "running", process_id: null });
+    dbm.logEvent(worldId, "start", `Launch blocked: REST port ${world.rest_api_port} is already in use`);
+    return { started: false, reason: "server endpoint already active", port: world.rest_api_port };
   }
 
   // Scheduled, remote and shortcut starts must obey the same active-profile

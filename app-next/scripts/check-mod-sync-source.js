@@ -57,12 +57,16 @@ try {
   const mod = required.mods.find((item) => item.name === "RequiredExample");
   assert(mod?.syncEligible, "Required PAK was not detected");
 
-  lanes.setSelections(worldId, [{ key: mod.selectionKey, clientRequired: false }]);
+  lanes.setSelections(worldId, [{ key: mod.selectionKey, scope: "client" }]);
+  assert(!fs.existsSync(path.join(server, "RSDragonwilds", "Content", "Paks", "~mods", "RequiredExample.pak")), "Client-only mod was copied to the server");
+  assert(manifest.buildWorldManifest(worldId).units.some((unit) => unit.name === "RequiredExample"), "Client-only mod was not published to player Sync");
+
+  lanes.setSelections(worldId, [{ key: mod.selectionKey, scope: "server" }]);
   assert(fs.existsSync(path.join(server, "RSDragonwilds", "Content", "Paks", "~mods", "RequiredExample.pak")), "Required mod was not materialized into the server");
   const serverOnly = manifest.buildWorldManifest(worldId);
   assert(!serverOnly.units.some((unit) => unit.name === "RequiredExample"), "Server-only mod leaked into player Sync");
 
-  lanes.setSelections(worldId, [{ key: mod.selectionKey, clientRequired: true }]);
+  lanes.setSelections(worldId, [{ key: mod.selectionKey, scope: "both" }]);
   const published = manifest.buildWorldManifest(worldId);
   assert(published.units.some((unit) => unit.name === "RequiredExample" && unit.files.some((file) => file.target.endsWith("RequiredExample.pak"))), "Required mod was not published to player Sync");
   const linked = manifest.withDownloadUrls(worldId, published, "http://127.0.0.1:4317/api/sync/public/required-mod-source-test");

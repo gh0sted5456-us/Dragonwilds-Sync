@@ -14,7 +14,6 @@ const notify = require("./notify");
 const ports = require("./ports");
 // Death tracking remains supported if the bundled UE4SS mod is installed, but
 // Dragonwilds does not use a "Pal name" mapping; keep killer raw codenames as-is.
-const { webhookFor } = require("./discord-routing");
 
 const RING = 500; // lines kept in memory per world
 
@@ -25,9 +24,6 @@ if (!g.__APP_SUP) {
     procs: new Map(),          // world_id -> child process
     logs: new Map(),           // world_id -> string[] ring buffer
     listeners: new Map(),      // world_id -> Set(fn) for live log streaming
-    chat: new Map(),           // world_id -> chat entry[] ring buffer
-    chatListeners: new Map(),  // world_id -> Set(fn) for live chat streaming
-    chatTails: new Map(),      // world_id -> { timer, offset } for the chat-file tailer
     deathTails: new Map(),     // world_id -> { timer, offset } for the death-file tailer
     guardTimer: null,
     owned: new Set(),           // world_ids launched by this app process
@@ -165,109 +161,6 @@ function pushLog(worldId, line) {
   // live listeners (SSE)
   const set = S.listeners.get(worldId);
   if (set) for (const fn of set) { try { fn(stamped); } catch {} }
-  // chat detection — Palworld console emits: [<time>] [CHAT] <PlayerName> message.
-  // Only mine chat from stdout when the chat mod's file ISN'T the source for this world;
-  // otherwise a message that appears in both the file and the console gets recorded
-  // twice (duplicated in the GUI feed and the Discord relay). See startChatTail().
-  const ct = S.chatTails.get(worldId);
-  if (!(ct && ct.hasFile)) {
-    const chat = parseChatLine(line);
-    if (chat) recordChat(worldId, chat);
-  }
-}
-
-// Parse a Palworld console chat line into { name, message }.
-// Formats seen in the wild (with optional ANSI color codes and timestamps):
-//   [2026-07-07 13:55:48] [CHAT] <Frenzi> hello
-//   [CHAT] <Frenzi> hello
-//   [CHAT][Global] <Frenzi>: hello
-//   [CHAT][Global][Frenzi(steam_123456)] hello world
-//   [CHAT][Local][Frenzi] hello
-function parseChatLine(line) {
-  if (!line) return null;
-  // strip ANSI color codes
-  const clean = line.replace(/\x1b\[[0-9;]*m/g, "");
-  const idx = clean.indexOf("[CHAT]");
-  if (idx === -1) return null;
-  let rest = clean.slice(idx + 6).trim();
-
-  // optional channel tag like [Global] / [Local] / [Guild]
-  let channel = null;
-  const KNOWN_CHANNELS = ["Global", "Local", "Guild", "Whisper", "Party"];
-  const chan = rest.match(/^\[([^\]]+)\]\s*/);
-  if (chan && KNOWN_CHANNELS.includes(chan[1])) {
-    channel = chan[1];
-    rest = rest.slice(chan[0].length);
-  }
-
-  // Format A: <Name> message   or   <Name>: message
-  let m = rest.match(/^<([^>]+)>\s*:?\s*(.*)$/);
-  if (m) return { name: cleanName(m[1]), message: m[2].trim(), channel };
-
-  // Format B: [Name] message  or  [Name(steam_123)] message  or  [Name]: message
-  m = rest.match(/^\[([^\]]+)\]\s*:?\s*(.*)$/);
-  if (m) return { name: cleanName(m[1]), message: m[2].trim(), channel };
-
-  // Format C: Name: message   (last resort, only if there's a colon)
-  m = rest.match(/^([^:]{1,32}):\s+(.+)$/);
-  if (m) return { name: cleanName(m[1]), message: m[2].trim(), channel };
-
-  return null;
-}
-
-// Strip a trailing "(steam_12345)" or "(platform_id)" from a player name.
-function cleanName(name) {
-  return name.replace(/\s*\([^)]*\)\s*$/, "").trim();
-}
-
-// Palworld broadcasts player join/leave notices (and some admin messages) through the
-// chat channel with either no sender or a synthetic "SYSTEM" sender, and localizes the
-// text to the server's game language — so users see lines like "VIPΞRがログインしました。"
-// ("… logged in") in Japanese. These duplicate the app's own join/leave tracking and
-// aren't real player chat, so they're dropped from both the GUI feed and Discord relay.
-function isSystemSender(name) {
-  const n = String(name || "").trim().toLowerCase();
-  return n === "" || n === "system";
-}
-
-function recordChat(worldId, chat) {
-  if (isSystemSender(chat.name)) return; // skip Palworld's system/join-leave broadcasts
-  let buf = S.chat.get(worldId);
-  if (!buf) { buf = []; S.chat.set(worldId, buf); }
-  const entry = { ...chat, at: chat.at || Date.now() };
-  buf.push(entry);
-  if (buf.length > 300) buf.shift();
-  // notify chat listeners
-  const set = S.chatListeners.get(worldId);
-  if (set) for (const fn of set) { try { fn(entry); } catch {} }
-  // optional Discord relay (Palworld -> Discord cross-chat)
-  relayChatToDiscord(worldId, entry);
-}
-
-// Post a captured chat message to the Discord webhook this world routes chat to, if
-// any. Uses the player's name as the webhook username so it reads like a cross-chat
-// feed. Fire-and-forget; never throws into the tailer.
-function relayChatToDiscord(worldId, entry) {
-  try {
-    const world = dbm.getWorld(worldId);
-    if (!world) return;
-    const url = webhookFor(world, "chat");
-    if (!url) return;
-    const name = entry.channel ? `${entry.name} [${entry.channel}]` : entry.name;
-    notify.post(url, {
-      username: `${name} (Dragonwilds)`,
-      content: entry.message,
-      allowed_mentions: { parse: [] },
-    });
-  } catch {}
-}
-
-// ---- Chat-file tailer (spec: in-game chat capture) ----
-// The vanilla server never prints chat to stdout, so chat is captured by the bundled
-// PSMChatRelay UE4SS mod, which appends JSON lines to <install>/Pal/Saved/psm-chat.jsonl.
-// We tail that file while the world runs.
-function chatFilePath(installDir) {
-  return path.join(installDir, "Pal", "Saved", "psm-chat.jsonl");
 }
 
 // UE4SS ships in two layouts and each scans a different Mods folder:
@@ -286,94 +179,6 @@ function ue4ssModsRoot(installDir) {
   // layout, so default there — otherwise a chat mod installed *before* UE4SS would
   // be stranded in a folder 3.x never scans once UE4SS arrives.
   return path.join(win64, "ue4ss", "Mods");
-}
-
-// Every location a PSMChatRelay copy could live, newest layout first.
-function chatModCandidates(installDir) {
-  const win64 = path.join(installDir, "Pal", "Binaries", "Win64");
-  return [
-    path.join(win64, "ue4ss", "Mods", "PSMChatRelay"),
-    path.join(win64, "Mods", "PSMChatRelay"),
-  ];
-}
-
-// The bundled mod's install location inside a server (the scanned Mods root).
-function chatModDir(installDir) {
-  return path.join(ue4ssModsRoot(installDir), "PSMChatRelay");
-}
-// Installed if a copy with the Lua script exists in any known Mods location.
-function chatModInstalled(installDir) {
-  try {
-    return chatModCandidates(installDir).some((d) =>
-      fs.existsSync(path.join(d, "Scripts", "main.lua"))
-    );
-  } catch { return false; }
-}
-
-// Locate the bundled PSMChatRelay mod source, which differs between dev and packaged:
-//   dev:      <repo>/resources/mods/PSMChatRelay
-//   packaged: <resources/app>/psm-mods/PSMChatRelay  (assembled by prepare-standalone)
-function bundledChatModDir() {
-  const candidates = [
-    path.join(process.cwd(), "psm-mods", "PSMChatRelay"),
-    path.join(process.cwd(), "resources", "mods", "PSMChatRelay"),
-    path.join(__dirname, "..", "resources", "mods", "PSMChatRelay"),
-  ];
-  for (const c of candidates) {
-    try { if (fs.existsSync(path.join(c, "Scripts", "main.lua"))) return c; } catch {}
-  }
-  return null;
-}
-
-// Copy the bundled mod into a server's UE4SS Mods folder. Requires UE4SS to be
-// installed (Pal/Binaries/Win64); we create the Mods folder if missing.
-function installChatMod(installDir) {
-  const src = bundledChatModDir();
-  if (!src) throw new Error("Bundled chat relay mod not found in this build.");
-  const win64 = path.join(installDir, "Pal", "Binaries", "Win64");
-  if (!fs.existsSync(win64)) throw new Error("Server binaries folder not found (Pal/Binaries/Win64).");
-  const ue4ssPresent =
-    fs.existsSync(path.join(win64, "ue4ss")) ||
-    fs.existsSync(path.join(win64, "UE4SS.dll")) ||
-    fs.existsSync(path.join(win64, "dwmapi.dll")) ||
-    fs.existsSync(path.join(win64, "Mods"));
-  // Install into the Mods folder this UE4SS build actually scans.
-  const dst = chatModDir(installDir);
-  copyDirInto(src, dst);
-
-  // Bake an absolute output path into the mod so it doesn't depend on UE4SS's
-  // working directory (which differs between the 2.x and 3.x layouts).
-  const outPath = chatFilePath(installDir).replace(/\\/g, "/");
-  const scriptPath = path.join(dst, "Scripts", "main.lua");
-  try {
-    const lua = fs.readFileSync(scriptPath, "utf8");
-    fs.writeFileSync(scriptPath, lua.replace(/__PSM_OUT_PATH__/g, outPath), "utf8");
-  } catch {}
-
-  // Make sure the Saved dir the mod writes to exists (it may not until first run).
-  try { fs.mkdirSync(path.dirname(chatFilePath(installDir)), { recursive: true }); } catch {}
-
-  // Remove any stale copy left in a Mods folder this UE4SS build no longer scans,
-  // so there's exactly one active relay.
-  for (const cand of chatModCandidates(installDir)) {
-    if (path.resolve(cand) !== path.resolve(dst)) {
-      try { fs.rmSync(cand, { recursive: true, force: true }); } catch {}
-    }
-  }
-
-  return { installed: true, dir: dst, ue4ssDetected: ue4ssPresent };
-}
-
-// Remove the chat relay mod from every location it could live in a server, so a
-// future Palworld update that makes the mod crash the game can be fully backed out.
-function uninstallChatMod(installDir) {
-  let removed = false;
-  for (const cand of chatModCandidates(installDir)) {
-    try {
-      if (fs.existsSync(cand)) { fs.rmSync(cand, { recursive: true, force: true }); removed = true; }
-    } catch {}
-  }
-  return { removed };
 }
 
 function copyDirInto(src, dst) {
@@ -461,8 +266,7 @@ function uninstallDeathMod(installDir) {
 }
 
 // ---- Broadcast mod (PSMBroadcast) ----
-// The mirror of the chat relay: PSMChatRelay reads chat out of the game; PSMBroadcast
-// takes messages the app writes and shows them on-screen via the server's system
+// PSMBroadcast takes messages the app writes and shows them on-screen via the server's system
 // announce. The app appends one base64 JSON line per message to this queue file, which
 // the mod tails while the world runs.
 function broadcastQueuePath(installDir) {
@@ -551,67 +355,6 @@ function enqueueBroadcast(installDir, message) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const b64 = Buffer.from(String(message), "utf8").toString("base64");
   fs.appendFileSync(file, JSON.stringify({ b64, at: Date.now() }) + "\n", "utf8");
-}
-
-function startChatTail(worldId, installDir) {
-  stopChatTail(worldId);
-  const file = chatFilePath(installDir);
-  // Start reading from the current end of file so we don't replay old chat on restart.
-  let offset = 0;
-  try { offset = fs.existsSync(file) ? fs.statSync(file).size : 0; } catch { offset = 0; }
-  // hasFile marks that the chat mod's file exists for this world. While it does, the
-  // file is the single source of truth for chat and pushLog() must NOT also parse
-  // [CHAT] lines out of stdout — some server/UE4SS builds echo chat to the console as
-  // well, and capturing both double-posts every message to the GUI and Discord.
-  const state = { offset, hasFile: fs.existsSync(file) };
-  const tick = () => {
-    try {
-      if (!fs.existsSync(file)) return;
-      state.hasFile = true;
-      const size = fs.statSync(file).size;
-      if (size < state.offset) state.offset = 0; // file was truncated/rotated
-      if (size === state.offset) return;
-      const fd = fs.openSync(file, "r");
-      const len = size - state.offset;
-      const buf = Buffer.alloc(len);
-      fs.readSync(fd, buf, 0, len, state.offset);
-      fs.closeSync(fd);
-      state.offset = size;
-      for (const line of buf.toString("utf8").split(/\r?\n/)) {
-        const t = line.trim();
-        if (!t) continue;
-        const chat = parseChatEntry(t);
-        if (chat) recordChat(worldId, chat);
-      }
-    } catch {}
-  };
-  state.timer = setInterval(tick, 1000);
-  S.chatTails.set(worldId, state);
-}
-
-function stopChatTail(worldId) {
-  const state = S.chatTails.get(worldId);
-  if (state && state.timer) clearInterval(state.timer);
-  S.chatTails.delete(worldId);
-}
-
-// Parse one line from the chat file: prefer JSON (our mod), fall back to the legacy
-// text parser so third-party ChatLogger-style logs also work.
-function parseChatEntry(line) {
-  if (line[0] === "{") {
-    try {
-      const o = JSON.parse(line);
-      if (o && o.message) {
-        // System/server broadcasts (join/leave notices, admin announcements) arrive
-        // with no sender or a synthetic "SYSTEM" sender — see isSystemSender. Drop them
-        // here; recordChat also gates on this as a backstop for the stdout path.
-        const sender = String(o.name || "").trim();
-        if (isSystemSender(sender)) return null;
-        return { name: sender, message: String(o.message), channel: o.channel || null, at: o.at || Date.now() };
-      }
-    } catch {}
-  }
-  return parseChatLine(line);
 }
 
 // ---- Death-file tailer (player death tracking) ----
@@ -705,14 +448,6 @@ function recordDeath(worldId, death) {
   else if (killerDisplay) { nkind = "death_pal"; params = { player: victim, pal: killerDisplay, cause }; }
   else { nkind = "death_env"; params = { player: victim, cause }; }
   notify.notify(worldId, nkind, logText, params).catch(() => {});
-}
-
-function getChat(worldId) { return S.chat.get(worldId) || []; }
-function subscribeChat(worldId, fn) {
-  let set = S.chatListeners.get(worldId);
-  if (!set) { set = new Set(); S.chatListeners.set(worldId, set); }
-  set.add(fn);
-  return () => set.delete(fn);
 }
 
 function getLogs(worldId) {
@@ -861,16 +596,10 @@ async function startWorldUnlocked(worldId) {
 
   child.stdout.on("data", (d) => splitLines(d).forEach((l) => pushLog(worldId, l)));
   child.stderr.on("data", (d) => splitLines(d).forEach((l) => pushLog(worldId, l)));
-  // Tail the chat file produced by the PSMChatRelay mod (chat never hits stdout),
-  // unless the user has turned the chat-capture feature off globally.
-  if (dbm.getSetting("chatCaptureEnabled", true)) {
-    startChatTail(worldId, world.install_dir);
-  }
   // Tail the death file produced by the PSMDeathRelay mod (no-op until the file exists).
   startDeathTail(worldId, world.install_dir);
   child.on("close", (code) => {
     S.procs.delete(worldId);
-    stopChatTail(worldId);
     stopDeathTail(worldId);
     const w = dbm.getWorld(worldId);
     pushLog(worldId, `Process exited with code ${code}`);
@@ -1078,8 +807,6 @@ function splitLines(buf) {
 module.exports = {
   serverBinary, shippingBinary, hideConsoleEnabled, buildArgs, startWorld, stopWorld, restartWorld,
   isRunning, isAlive, pidAlive, getLogs, subscribe, pushLog, ensureGuardian, stopManagedWorlds,
-  getChat, subscribeChat, parseChatLine,
-  chatModDir, chatModInstalled, chatFilePath, installChatMod, uninstallChatMod, bundledChatModDir,
   broadcastModDir, broadcastModInstalled, broadcastQueuePath, installBroadcastMod,
   uninstallBroadcastMod, bundledBroadcastModDir, enqueueBroadcast,
   deathModDir, deathModInstalled, deathFilePath, installDeathMod, uninstallDeathMod,

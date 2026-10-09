@@ -126,7 +126,7 @@ export default function PlayerProfile({ params }) {
       <div style={{ position: "absolute", inset: 0, background: "linear-gradient(90deg,var(--card) 18%,transparent 80%)" }} />
       <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 14, padding: 18 }}>
         <img src={identity.iconData || "/rsdw/rsdwl-icon.webp"} alt="" style={{ width: 64, height: 64, borderRadius: 14, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
-        <div><div className="eyebrow">FRIEND WORLD</div><h1 style={{ margin: 0 }}>{profile.display_name}</h1></div>
+        <div><div className="eyebrow">FRIEND WORLD</div><h1 style={{ margin: 0 }}>{profile.display_name}</h1><div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}><span className="chip">{profile.connection?.rules?.access || profile.connection?.worldType || "Private"}</span>{profile.connection?.rules?.passwordRequired && <span className="chip">PASSWORD</span>}{(profile.connection?.modBadges || []).map((badge) => <span className="chip" key={badge}>{badge}</span>)}{profile.connection?.modCount > 0 && <span className="chip">{profile.connection.modCount} REQUIRED</span>}</div></div>
       </div>
     </div>
     <p className="subtle">Connect to authenticate and compare this World&apos;s declared files. Once synchronized, Join opens Dragonwilds through your selected platform.</p>

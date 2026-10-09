@@ -85,7 +85,7 @@ function contains(rel, needle, message) {
   contains("app/globals.css", "--accent: #c1a56d");
   const modsPanel = contains("components/ModsPanel.jsx", "Managed mods");
   assert(!/workshop/i.test(modsPanel), "Mods UI must not expose Steam Workshop controls");
-  assert(modsPanel.includes("Required for players") && modsPanel.includes("Server only"), "managed mod client requirement controls missing");
+  assert(modsPanel.includes('["client", "server", "both"]'), "managed mod Client / Server / Both controls missing");
   const lanes = contains("lib/mod-lanes.js", 'const LANES = ["server", "required", "steam", "gamepass"]');
   assert(lanes.includes("Required Player Mods") && lanes.includes("Steam Player") && lanes.includes("PC Game Pass Player"), "player mod lanes missing");
   assert(lanes.includes("function setRequiredSource"), "per-World required mod source is missing");
@@ -123,7 +123,9 @@ function contains(rel, needle, message) {
   contains("components/ModsPanel.jsx", "Steam uses dwmapi.dll");
   const worldPage = read("app/worlds/[id]/page.jsx");
   assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
-  assert(worldPage.includes("mountedTabs") && worldPage.includes("TabPanelBoundary"), "World tabs must retain and isolate visited panels");
+  assert(!worldPage.includes("mountedTabs"), "inactive world tabs must be unmounted to avoid overlapping requests and stale effects");
+  assert(worldPage.includes("TabPanelBoundary"), "active world tabs must remain isolated by an error boundary");
+  assert(!worldPage.includes("MapPanel") && !worldPage.includes('id: "broadcasts"'), "removed map and broadcast tabs must not return");
   const shell = read("components/Shell.jsx");
   assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");
   contains("electron/main.js", "loadingPage(");

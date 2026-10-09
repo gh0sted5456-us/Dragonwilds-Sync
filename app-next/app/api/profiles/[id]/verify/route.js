@@ -11,7 +11,7 @@ export async function POST(_req, { params }) {
     const connection = JSON.parse(profile.connection_json || "{}");
     const address = String(connection.address || connection.internalIp || connection.externalIp || "").trim();
     const worldId = String(connection.worldId || profile.server_world_id || "").trim();
-    const port = Number(connection.syncPort || 4317);
+    const port = Number(connection.syncPort || 4318);
     if (!address || !worldId || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error("This profile does not have a complete Sync endpoint.");
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
@@ -33,6 +33,9 @@ export async function POST(_req, { params }) {
         accentColor: identity.accentColor || null,
       },
       worldType: payload.manifest.world?.type || connection.worldType || "Private",
+      rules: payload.manifest.world?.rules || connection.rules || {},
+      modBadges: [...new Set((payload.manifest.units || []).map((unit) => String(unit.type || "mod").toUpperCase()))],
+      modCount: (payload.manifest.units || []).length,
     };
     dbm.upsertProfile({
       profile_id: profile.profile_id,

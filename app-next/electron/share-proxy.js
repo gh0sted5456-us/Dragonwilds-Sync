@@ -3,8 +3,16 @@ const http = require("http");
 const targetPort = Number(process.env.RSDW_UI_PORT || 4317);
 const listenPort = Number(process.env.RSDW_SHARE_PORT || 4418);
 const listenHost = "0.0.0.0";
+const remoteEnabled = process.env.RSDW_REMOTE_ENABLED === "1";
 
 const server = http.createServer((req, res) => {
+  const pathname = new URL(req.url || "/", "http://localhost").pathname;
+  const syncPublic = pathname === "/api/sync/public" || pathname.startsWith("/api/sync/public/");
+  if (!syncPublic && !remoteEnabled) {
+    res.writeHead(404, { "content-type": "application/json", "cache-control": "no-store" });
+    res.end(JSON.stringify({ ok: false, error: "Only public World Sync endpoints are enabled." }));
+    return;
+  }
   const headers = { ...req.headers };
   headers.host = `127.0.0.1:${targetPort}`;
   headers["x-forwarded-for"] = req.socket.remoteAddress || "";

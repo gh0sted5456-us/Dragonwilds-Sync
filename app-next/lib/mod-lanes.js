@@ -37,7 +37,10 @@ function normalizeSelections(value) {
   for (const item of source) {
     const key = String(typeof item === "string" ? item : item?.key || "").trim();
     if (!key) continue;
-    unique.set(key, { key, clientRequired: typeof item === "string" ? true : item.clientRequired !== false });
+    const legacyRequired = typeof item === "string" ? true : item.clientRequired !== false;
+    const requestedScope = typeof item === "object" ? String(item?.scope || "") : "";
+    const scope = ["client", "server", "both"].includes(requestedScope) ? requestedScope : (legacyRequired ? "both" : "server");
+    unique.set(key, { key, scope, clientRequired: scope !== "server" });
   }
   return [...unique.values()];
 }
@@ -55,7 +58,7 @@ function scanLane(lane, root, selected) {
     return { ...base, root: scanned.installDir, ready: true, mods: scanned.mods.map((mod) => {
       const key = `${lane}|${mod.key}`;
       const managed = selected.get(key);
-      return { ...mod, lane, selectionKey: key, selected: !!managed, clientRequired: managed?.clientRequired !== false };
+      return { ...mod, lane, selectionKey: key, selected: !!managed, scope: managed?.scope || "both", clientRequired: managed?.scope !== "server" };
     }) };
   } catch (e) { return { ...base, error: e.message }; }
 }
@@ -110,7 +113,7 @@ function selectedMods(worldId, { clientRequiredOnly = true } = {}) {
   const wanted = new Map(snapshot.modSelections.map((item) => [item.key, item]));
   return snapshot.modLanes.flatMap((lane) => lane.mods
     .filter((mod) => wanted.has(mod.selectionKey) && mod.syncEligible)
-    .map((mod) => ({ ...mod, clientRequired: wanted.get(mod.selectionKey).clientRequired !== false })))
+    .map((mod) => ({ ...mod, scope: wanted.get(mod.selectionKey).scope, clientRequired: wanted.get(mod.selectionKey).scope !== "server" })))
     .filter((mod) => !clientRequiredOnly || mod.clientRequired);
 }
 
@@ -129,6 +132,8 @@ function setSelections(worldId, requested) {
   const destinations = new Map();
   for (const key of keys) {
     const mod = available.get(key);
+    const selection = selections.find((item) => item.key === key);
+    if (selection.scope === "client") continue;
     const destination = destinationFor(world.install_dir, mod);
     const targets = mod.type === "pak"
       ? (mod.files || []).map((source) => path.join(destination, path.basename(source)))
@@ -144,7 +149,8 @@ function setSelections(worldId, requested) {
   const previous = readList(ledgerKey(worldId)), copied = [];
   for (const key of keys) {
     const mod = available.get(key);
-    if (mod.lane === "server") continue;
+    const selection = selections.find((item) => item.key === key);
+    if (mod.lane === "server" || selection.scope === "client") continue;
     const destination = destinationFor(world.install_dir, mod);
     if (destination) copied.push(...copyMod(mod, destination));
   }
@@ -152,8 +158,9 @@ function setSelections(worldId, requested) {
   for (const oldTarget of previous) if (!retained.has(path.resolve(oldTarget).toLowerCase()) && fs.existsSync(oldTarget)) trashPath(oldTarget);
   dbm.setSetting(selectionKey(worldId), selections);
   dbm.setSetting(ledgerKey(worldId), copied);
-  const requiredCount = selections.filter((item) => item.clientRequired).length;
-  dbm.logEvent(worldId, "mod", `Saved ${keys.length} managed mod folder${keys.length === 1 ? "" : "s"}; ${requiredCount} required for players`);
+  const clientCount = selections.filter((item) => item.scope !== "server").length;
+  const serverCount = selections.filter((item) => item.scope !== "client").length;
+  dbm.logEvent(worldId, "mod", `Saved ${keys.length} managed mod folder${keys.length === 1 ? "" : "s"}; ${clientCount} client / ${serverCount} server`);
   return status(worldId);
 }
 

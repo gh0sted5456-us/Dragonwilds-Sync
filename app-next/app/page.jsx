@@ -122,7 +122,7 @@ function ModeTab({ active, onClick, icon, label, detail }) {
 function PlayerHub() {
   const [profiles, setProfiles] = useState([]);
   const [results, setResults] = useState([]);
-  const [address, setAddress] = useState("255.255.255.255");
+  const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
   const [installs, setInstalls] = useState({ steam: "", gamepass: "" });
   const [platform, setPlatform] = useState("steam");
@@ -163,21 +163,16 @@ function PlayerHub() {
   const find = async () => {
     setFinding(true); setResults([]);
     try {
-      const r = await api("/api/sync/discover", { method: "POST", body: { address: address.trim() || "255.255.255.255" } });
+      const r = await api("/api/sync/discover", { method: "POST", body: { address: address.trim() } });
       setResults(r.worlds || []);
-      if (!r.worlds?.length) toast("No broadcasting Dragonwilds worlds replied.", "error");
+      if (!r.worlds?.length) toast("No RSDW Sync Worlds were published at that address.", "error");
     } catch (e) { toast(e.message, "error"); } finally { setFinding(false); }
   };
-  const add = async (world) => {
+  const downloadManifest = async (world) => {
     try {
-      await api("/api/profiles", { method: "POST", body: {
-        display_name: world.name || "Dragonwilds World",
-        server_world_id: world.worldId,
-        client_install: null,
-        connection: { address: world.queriedIp || world.addresses?.[0] || address, internalIp: world.queriedIp, syncPort: world.syncPort, worldId: world.worldId, password, platform, modBadges: world.modBadges || [], modCount: world.modCount || 0 },
-      }});
-      toast(`${world.name || "World"} added to Player profiles.`, "success");
-      loadProfiles();
+      await api("/api/sync/import", { method: "POST", body: { address: world.queriedIp || address.trim(), syncPort: world.syncPort, worldId: world.worldId, password, platform } });
+      toast(`${world.name || "World"} manifest downloaded.`, "success");
+      await loadProfiles();
     } catch (e) { toast(e.message, "error"); }
   };
   const remove = async (profile) => {
@@ -202,10 +197,11 @@ function PlayerHub() {
       <Link className="btn btn-primary" href="/setup"><Icon name="settings" /> Open Application Setup</Link>
     </div>}
     <div className="panel" style={{ padding: "1rem", marginBottom: "1rem" }}>
-      <h2 className="heading" style={{ margin: "0 0 .7rem", fontSize: "1.1rem" }}>Find or add a server</h2>
+      <h2 className="heading" style={{ margin: "0 0 .35rem", fontSize: "1.1rem" }}>Find a server</h2>
+      <p className="subtle" style={{ margin: "0 0 .7rem" }}>Enter the host IP. Add <code>:port</code> only when the host changed the default Sync port. Search reads the server directory; Download Manifest verifies the password and saves its identity, rules, and required mods.</p>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
-        <input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Server IP, or 255.255.255.255 for LAN" style={fieldStyle} />
-        <button className="btn btn-primary" disabled={finding} onClick={find}><Icon name="refresh" /> {finding ? "Searching…" : "Find Worlds"}</button>
+        <input value={address} onChange={(e) => setAddress(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && address.trim()) find(); }} placeholder="Server IP — for example 203.0.113.25" style={fieldStyle} />
+        <button className="btn btn-primary" disabled={finding || !address.trim()} onClick={find}><Icon name="refresh" /> {finding ? "Searching…" : "Search"}</button>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(210px,1fr) auto", gap: 8, marginBottom: 8 }}>
         <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" placeholder="World password (same password used in game)" style={fieldStyle} />
@@ -223,9 +219,10 @@ function PlayerHub() {
       </div>
       {results.length > 0 && <div style={{ display: "grid", gap: 8, marginTop: 12 }}>{results.map((world) => {
         const exists = profiles.some((p) => p.server_world_id === world.worldId && (p.connection?.address === world.queriedIp || p.connection?.internalIp === world.queriedIp));
-        return <div className="panel-inset" key={`${world.worldId}:${world.queriedIp}:${world.syncPort}`} style={{ padding: 12, display: "flex", alignItems: "center", gap: 12 }}>
-          <Icon name="globe" /><div style={{ flex: 1 }}><strong>{world.name}</strong><div className="subtle" style={{ fontSize: ".78rem" }}>{world.queriedIp}:{world.syncPort} · {world.modCount} mod unit(s) · {world.modBadges?.join(", ") || "vanilla"}</div></div>
-          <button className="btn btn-primary" disabled={exists} onClick={() => add(world)}>{exists ? "Added" : "Add Server"}</button>
+        return <div className="panel-inset" key={`${world.worldId}:${world.queriedIp}:${world.syncPort}`} style={{ padding: 12, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <img src={world.identity?.iconData || "/rsdw/rsdwl-icon.webp"} alt="" style={{ width: 44, height: 44, borderRadius: 9, objectFit: "cover" }} />
+          <div style={{ flex: 1, minWidth: 210 }}><strong>{world.name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label={world.rules?.access || "Private"} /><RsdwBadge label={world.rules?.passwordRequired ? "PASSWORD" : "OPEN"} />{(world.modBadges || []).map((badge) => <RsdwBadge key={badge} label={badge} />)}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{world.queriedIp}:{world.syncPort} · {world.modCount} required unit(s) · game port {world.rules?.gamePort || world.gamePort}</div></div>
+          <button className="btn btn-primary" disabled={exists} onClick={() => downloadManifest(world)}>{exists ? "Manifest saved" : "Download Manifest"}</button>
         </div>;
       })}</div>}
     </div>
@@ -241,8 +238,8 @@ function PlayerHub() {
           style={{ position: "relative", isolation: "isolate", overflow: "hidden", padding: "1rem", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", minHeight: 76, borderColor: identity.accentColor || undefined }}>
         <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: -2, background: `linear-gradient(90deg, color-mix(in srgb,var(--card) 94%,transparent) 35%, color-mix(in srgb,var(--card) 70%,transparent)), url("${banner}") center/cover`, opacity: .48 }} />
         <img src={icon} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: "cover", border: "1px solid var(--line-strong)" }} />
-        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="RSDW LINKED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} />{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4317} · {installs[(p.connection?.platform || "steam")] || "Application Setup required"}</div></div>
-        <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Connect / Sync</Link>
+        <div style={{ flex: 1, minWidth: 200 }}><strong className="heading">{p.display_name}</strong><div style={{ display: "flex", gap: 5, flexWrap: "wrap", margin: "4px 0" }}><RsdwBadge label="MANIFEST SAVED" /><RsdwBadge label={(p.connection?.platform || "steam") === "gamepass" ? "GAME PASS" : "STEAM"} /><RsdwBadge label={p.connection?.rules?.access || p.connection?.worldType || "Private"} />{p.connection?.rules?.passwordRequired && <RsdwBadge label="PASSWORD" />}{(p.connection?.modBadges || []).map((b) => <RsdwBadge key={b} label={b} />)}{p.connection?.modCount > 0 && <RsdwBadge label={`${p.connection.modCount} MODS`} />}</div><div className="subtle" style={{ fontSize: ".78rem" }}>{p.connection?.address || p.connection?.internalIp || "No address"}:{p.connection?.syncPort || 4318} · {installs[(p.connection?.platform || "steam")] || "Application Setup required"}</div></div>
+        <Link className="btn btn-primary" href={`/profiles/${p.profile_id}/player`}>Sync</Link>
         <button className="btn btn-ghost" title="Remove profile" onClick={() => remove(p)}><Icon name="trash" /></button>
       </div>})}</div>}
 

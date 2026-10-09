@@ -6,7 +6,10 @@ export const runtime = "nodejs";
 export async function POST(req) {
   try {
     const body = await req.json();
-    const worlds = await discovery.probe(body.address || "255.255.255.255", body);
+    const address = String(body.address || "").trim();
+    const worlds = !address || address === "255.255.255.255"
+      ? await discovery.probe("255.255.255.255", body)
+      : await discovery.probeDirect(address, body);
     return NextResponse.json({ ok: true, worlds });
   } catch (e) { return NextResponse.json({ ok: false, error: e.message }, { status: 400 }); }
 }

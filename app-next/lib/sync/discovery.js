@@ -99,4 +99,26 @@ function probe(address = "255.255.255.255", options = {}) {
   });
 }
 
-module.exports = { DISCOVERY_PORT, MAGIC, start, stop, status, probe, advertisement };
+function parseEndpoint(input, defaultPort = 4318) {
+  const raw = String(input || "").trim();
+  if (!raw) throw new Error("Enter the server IP address.");
+  const value = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+  const url = new URL(value);
+  if (url.protocol !== "http:" || url.username || url.password || (url.pathname && url.pathname !== "/")) throw new Error("Enter an IP address or hostname, optionally followed by :port.");
+  return { address: url.hostname, syncPort: Number(url.port || defaultPort) };
+}
+
+async function probeDirect(input, options = {}) {
+  const endpoint = parseEndpoint(input, Number(options.syncPort || 4318));
+  if (!Number.isInteger(endpoint.syncPort) || endpoint.syncPort < 1 || endpoint.syncPort > 65535) throw new Error("Invalid Sync port.");
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Math.min(Math.max(Number(options.timeoutMs || 8000), 1000), 15000));
+  try {
+    const response = await fetch(`http://${endpoint.address}:${endpoint.syncPort}/api/sync/public`, { cache: "no-store", signal: controller.signal });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !Array.isArray(payload.worlds)) throw new Error(payload.error || "This address is not publishing an RSDW Sync directory.");
+    return payload.worlds.map((world) => ({ ...world, queriedIp: endpoint.address, syncPort: Number(world.syncPort || endpoint.syncPort) }));
+  } finally { clearTimeout(timeout); }
+}
+
+module.exports = { DISCOVERY_PORT, MAGIC, start, stop, status, probe, probeDirect, parseEndpoint, advertisement };

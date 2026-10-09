@@ -396,7 +396,7 @@ function startNextServer() {
 
 
 function startShareServer() {
-  if (isDev || shareProc || !sharingEnabled()) return;
+  if (isDev || shareProc) return;
   const proxyPath = path.join(__dirname, "share-proxy.js");
   if (!fs.existsSync(proxyPath)) {
     logToFile(`Share proxy missing: ${proxyPath}`);
@@ -407,6 +407,7 @@ function startShareServer() {
     ...process.env,
     RSDW_UI_PORT: String(PORT),
     RSDW_SHARE_PORT: String(SHARE_PORT),
+    RSDW_REMOTE_ENABLED: sharingEnabled() ? "1" : "0",
     NODE_OPTIONS: `${process.env.NODE_OPTIONS || ""} --no-warnings`.trim(),
   };
 
@@ -844,14 +845,13 @@ ipcMain.handle("set-close-to-tray", (_e, enabled) => {
   return !!enabled;
 });
 
-// Remote Access — same-network (LAN) bind toggle. The renderer writes the choice through
-// the API (which persists it + the marker file); this applies it by restarting the server
-// on the new host. Returns whether the server came back up.
+// Remote Access toggle. The sharing proxy always serves password-protected public
+// Sync endpoints; toggling this restarts it only to add/remove administrative routes.
 ipcMain.handle("remote-get-lanbind", () => sharingEnabled());
 ipcMain.handle("remote-set-lanbind", async (_e, enabled) => {
   const host = enabled ? "0.0.0.0" : "127.0.0.1";
   try { fs.writeFileSync(path.join(dataDir(), "remote-bind.json"), JSON.stringify({ host }), "utf8"); } catch {}
-  if (enabled) startShareServer();
-  else await stopShareServer();
+  await stopShareServer();
+  startShareServer();
   return { ok: true, host, port: SHARE_PORT };
 });

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useTranslation, Trans } from "react-i18next";
 import { api, Icon, fmtTime, toast } from "@/components/ui";
 
-export default function SchedulePanel({ worldId, world, schedules, onChange, onGoToBroadcast }) {
+export default function SchedulePanel({ worldId, world, schedules, onChange }) {
   const { t } = useTranslation();
   const [jobType, setJobType] = useState("restart");
   const [mode, setMode] = useState("interval");

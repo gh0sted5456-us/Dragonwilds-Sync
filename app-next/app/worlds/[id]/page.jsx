@@ -9,7 +9,6 @@ import CustomizeModal from "@/components/CustomizeModal";
 import SettingsEditor from "@/components/SettingsEditor";
 import BackupsPanel from "@/components/BackupsPanel";
 import SchedulePanel from "@/components/SchedulePanel";
-import MapPanel from "@/components/MapPanel";
 import ModsPanel from "@/components/ModsPanel";
 import PrereqsNotice from "@/components/PrereqsNotice";
 import AdminPanel from "@/components/AdminPanel";
@@ -17,8 +16,6 @@ import TabPanelBoundary from "@/components/TabPanelBoundary";
 
 const TABS = [
   { id: "overview", labelKey: "world.tab.overview", icon: "grid" },
-  { id: "map", labelKey: "world.tab.map", icon: "map" },
-  { id: "broadcast", labelKey: "world.tab.broadcast", icon: "bell" },
   { id: "console", labelKey: "world.tab.console", icon: "terminal" },
   { id: "settings", labelKey: "world.tab.settings", icon: "settings" },
   { id: "backups", labelKey: "world.tab.backups", icon: "download" },
@@ -35,7 +32,6 @@ export default function WorldDetail() {
   const router = useRouter();
   const [data, setData] = useState(null);
   const [tab, setTab] = useState("overview");
-  const [mountedTabs, setMountedTabs] = useState(() => new Set(["overview"]));
   const [busy, setBusy] = useState(null);
   const [customizing, setCustomizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -51,13 +47,10 @@ export default function WorldDetail() {
     return () => clearInterval(t);
   }, [load]);
 
-  // Keep a panel mounted after its first visit. Rapid navigation used to tear down
-  // and recreate fetches, streams, and editors faster than their cleanup completed.
-  // Retaining visited panels makes switching instant and removes that race.
-  const selectTab = useCallback((next) => {
-    setMountedTabs((current) => current.has(next) ? current : new Set([...current, next]));
-    setTab(next);
-  }, []);
+  // Only the active panel is mounted. Hidden panels used to keep streams, polling,
+  // and editors alive simultaneously, which made rapid navigation accumulate work
+  // and occasionally surface a whole-application error.
+  const selectTab = useCallback((next) => setTab(next), []);
 
   const act = async (action) => {
     setBusy(action);
@@ -177,23 +170,12 @@ export default function WorldDetail() {
       </div>
 
       <div className="panel" style={{ padding: "1.3rem" }}>
-        {mountedTabs.has("overview") && <TabSlot id="overview" active={tab === "overview"}><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
-        {/* Players tab removed for Dragonwilds; player management is in-game only */}
-        {mountedTabs.has("map") && <TabSlot id="map" active={tab === "map"}><MapPanel players={live?.players} running={running} /></TabSlot>}
-        {mountedTabs.has("broadcast") && <TabSlot id="broadcast" active={tab === "broadcast"}>
-          <div className="panel-inset">
-            <div style={{ fontWeight: 800, fontSize: "0.9rem" }}>Broadcasts unavailable</div>
-            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem" }}>
-              The on-screen broadcast feature is Dragonwilds-specific and requires a community UE4SS mod which
-              is not bundled. This panel has been disabled to avoid offering unsupported functionality.
-            </p>
-          </div>
-        </TabSlot>}
-        {mountedTabs.has("console") && <TabSlot id="console" active={tab === "console"}><LogsPanel worldId={id} /></TabSlot>}
-        {mountedTabs.has("settings") && <TabSlot id="settings" active={tab === "settings"}><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
-        {mountedTabs.has("backups") && <TabSlot id="backups" active={tab === "backups"}><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}
-        {mountedTabs.has("schedule") && <TabSlot id="schedule" active={tab === "schedule"}><SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} onGoToBroadcast={() => selectTab("broadcast")} /></TabSlot>}
-        {mountedTabs.has("mods") && <TabSlot id="mods" active={tab === "mods"}>
+        {tab === "overview" && <TabSlot id="overview"><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
+        {tab === "console" && <TabSlot id="console"><LogsPanel worldId={id} /></TabSlot>}
+        {tab === "settings" && <TabSlot id="settings"><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
+        {tab === "backups" && <TabSlot id="backups"><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}
+        {tab === "schedule" && <TabSlot id="schedule"><SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} /></TabSlot>}
+        {tab === "mods" && <TabSlot id="mods">
           <div style={{ display: "grid", gap: "1.8rem" }}>
             <div>
               <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
@@ -202,7 +184,7 @@ export default function WorldDetail() {
           </div>
         </TabSlot>}
         {/* Discord integration removed for Dragonwilds; panels disabled */}
-        {mountedTabs.has("admin") && <TabSlot id="admin" active={tab === "admin"}><AdminPanel world={world} running={running} onChange={load} /></TabSlot>}
+        {tab === "admin" && <TabSlot id="admin"><AdminPanel world={world} running={running} onChange={load} /></TabSlot>}
       </div>
 
       {customizing && (
@@ -216,9 +198,9 @@ export default function WorldDetail() {
   );
 }
 
-function TabSlot({ id, active, children }) {
+function TabSlot({ id, children }) {
   return (
-    <section hidden={!active} aria-hidden={!active} data-world-tab={id}>
+    <section data-world-tab={id}>
       <TabPanelBoundary tabId={id}>{children}</TabPanelBoundary>
     </section>
   );

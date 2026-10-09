@@ -1,8 +1,7 @@
 // lib/mapcal.js
 // Map calibration math for the SERVER side — the Discord /player-location renderer
-// (lib/mapimage.js). It mirrors the same transform the in-app Live Map runs
-// client-side (components/MapPanel.jsx); the two are kept as separate copies on
-// purpose so this one never drags React/DOM code into the Node server, the same way
+// (lib/mapimage.js). It stays pure so map rendering never drags React/DOM code into
+// the Node server, the same way
 // fmtUptime is duplicated in discordbot.js. PURE: no fs/db imports, so loading the
 // calibration points is the caller's job (the server reads db + the baked file).
 //

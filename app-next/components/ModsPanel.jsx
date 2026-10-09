@@ -42,8 +42,9 @@ export default function ModsPanel({ worldId, running }) {
 
   const lanes = data?.modLanes || [];
   const lane = lanes.find((item) => item.id === activeLane) || lanes[0];
-  const selections = useMemo(() => new Map((data?.modSelections || (data?.modLaneSelections || []).map((key) => ({ key, clientRequired: true }))).map((item) => [item.key, item])), [data]);
-  const requiredCount = useMemo(() => [...selections.values()].filter((item) => item.clientRequired !== false).length, [selections]);
+  const selections = useMemo(() => new Map((data?.modSelections || (data?.modLaneSelections || []).map((key) => ({ key, scope: "both" }))).map((item) => [item.key, item])), [data]);
+  const clientCount = useMemo(() => [...selections.values()].filter((item) => item.scope !== "server").length, [selections]);
+  const serverCount = useMemo(() => [...selections.values()].filter((item) => item.scope !== "client").length, [selections]);
 
   async function uploadRuntime(component) {
     if (!isElectron) return toast("Runtime ZIP selection is available in the desktop app.", "error");
@@ -88,15 +89,14 @@ export default function ModsPanel({ worldId, running }) {
   async function toggleFolder(mod) {
     if (!mod.syncEligible || running) return;
     const next = new Map(selections);
-    if (next.has(mod.selectionKey)) next.delete(mod.selectionKey); else next.set(mod.selectionKey, { key: mod.selectionKey, clientRequired: true });
+    if (next.has(mod.selectionKey)) next.delete(mod.selectionKey); else next.set(mod.selectionKey, { key: mod.selectionKey, scope: "both" });
     await saveSelections([...next.values()]);
   }
 
-  async function toggleRequired(mod) {
+  async function setScope(mod, scope) {
     if (running || !selections.has(mod.selectionKey)) return;
     const next = new Map(selections);
-    const current = next.get(mod.selectionKey);
-    next.set(mod.selectionKey, { ...current, clientRequired: current.clientRequired === false });
+    next.set(mod.selectionKey, { ...next.get(mod.selectionKey), scope });
     await saveSelections([...next.values()]);
   }
 
@@ -161,10 +161,10 @@ export default function ModsPanel({ worldId, running }) {
       <section>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <div className="heading" style={{ fontSize: "0.96rem", marginBottom: 4 }}>Managed mods</div>
-          <div style={{ display: "flex", gap: 6 }}><span className="chip">{selections.size} managed</span><span className="chip">{requiredCount} required for players</span></div>
+          <div style={{ display: "flex", gap: 6 }}><span className="chip">{selections.size} managed</span><span className="chip">{clientCount} client</span><span className="chip">{serverCount} server</span></div>
         </div>
         <p className="subtle" style={{ fontSize: "0.76rem", margin: "0 0 10px" }}>
-          Manage mods exactly like this World profile: select a discovered mod, then choose whether joining players must install it. Server-only mods stay managed on the host but are never published to clients. Each server can use its own Required Player Mods source.
+          Select a discovered mod, then choose where it belongs: Client, Server, or Both. Client files are published in the downloadable manifest; Server files are materialized on the host. Existing selections migrate to Both automatically.
         </p>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 8 }}>
           {lanes.map((item) => (
@@ -200,7 +200,7 @@ export default function ModsPanel({ worldId, running }) {
               return <div key={type}>
                 <div className="subtle" style={{ fontSize: "0.7rem", fontWeight: 750, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 5 }}>{title}</div>
                 <div style={{ display: "grid", gap: 5 }}>
-                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onToggleRequired={() => toggleRequired(mod)} />)}
+                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onScope={(scope) => setScope(mod, scope)} />)}
                 </div>
               </div>;
             })}
@@ -214,9 +214,9 @@ export default function ModsPanel({ worldId, running }) {
   );
 }
 
-function ModFolder({ mod, selection, busy, onToggle, onToggleRequired }) {
+function ModFolder({ mod, selection, busy, onToggle, onScope }) {
   const selected = !!selection;
-  const clientRequired = selection?.clientRequired !== false;
+  const scope = selection?.scope || "both";
   return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
     <div style={{ minWidth: 0 }}>
       <div style={{ fontSize: "0.82rem", fontWeight: 720 }}>{mod.name}</div>
@@ -224,7 +224,9 @@ function ModFolder({ mod, selection, busy, onToggle, onToggleRequired }) {
     </div>
     {mod.syncEligible
       ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {selected && <button className={`btn ${clientRequired ? "btn-primary" : "btn-subtle"}`} disabled={busy} onClick={onToggleRequired}>{clientRequired ? "Required for players" : "Server only"}</button>}
+          {selected && <div className="panel" style={{ padding: 3, display: "flex", gap: 3 }}>
+            {["client", "server", "both"].map((value) => <button key={value} className={`btn ${scope === value ? "btn-primary" : "btn-subtle"}`} style={{ padding: ".35rem .55rem" }} disabled={busy} onClick={() => onScope(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
+          </div>}
           <button className={`btn ${selected ? "btn-ghost" : "btn-primary"}`} disabled={busy} onClick={onToggle}>{selected ? "Remove" : "Manage mod"}</button>
         </div>
       : <span className="chip">Detected only</span>}

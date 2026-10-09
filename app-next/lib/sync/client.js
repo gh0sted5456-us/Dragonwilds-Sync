@@ -124,7 +124,7 @@ async function performSync(profileId) {
   const connection = JSON.parse(profile.connection_json || "{}");
   const address = String(connection.address || connection.internalIp || connection.externalIp || "").trim();
   const worldId = String(connection.worldId || profile.server_world_id || "").trim();
-  const port = Number(connection.syncPort || 4317);
+  const port = Number(connection.syncPort || 4318);
   const platform = connection.platform === "gamepass" ? "gamepass" : "steam";
   const install = steamlib.normalizeGameInstall(dbm.getSetting(`clientInstall:${platform}`, null));
   if (!address || !worldId || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error("This World needs a valid Sync endpoint");
@@ -227,6 +227,9 @@ async function performSync(profileId) {
         accentColor: identity.accentColor || null,
       },
       worldType: manifest.world?.type || connection.worldType || "Private",
+      rules: manifest.world?.rules || connection.rules || {},
+      modBadges: [...new Set((manifest.units || []).map((unit) => String(unit.type || "mod").toUpperCase()))],
+      modCount: (manifest.units || []).length,
     },
     last_manifest_revision: manifest.revision,
   });

@@ -113,6 +113,13 @@ function buildWorldManifest(worldId, options = {}) {
       name: world.display_name,
       gamePort: world.game_port,
       type: world.community_server ? "Community" : "Private",
+      rules: {
+        access: world.community_server ? "Community" : "Private",
+        passwordRequired: !!String(world.server_password || "").trim(),
+        gamePort: world.game_port,
+        clientRequiredMods: modUnits.length + runtimeUnits.length,
+        platform: world.platform || "windows",
+      },
       identity: {
         iconData: world.icon_data || null,
         bannerData: world.banner_data || null,

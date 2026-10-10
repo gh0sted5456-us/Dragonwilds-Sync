@@ -9,7 +9,7 @@ import { useJobsPoll, summarize, ProgressBar } from "@/components/jobsClient";
 // labelKey resolves through t() at render time — NAV is a module-level const, so it
 // can't call the translation hook itself.
 const NAV = [
-  { href: "/", asset: "/rsdw/navigation/dragonwilds.webp", label: "Worlds", match: (p) => p === "/" || p.startsWith("/worlds") || p.startsWith("/profiles") },
+  { href: "/", asset: "/rsdw/dragonwilds-mark.png", label: "Worlds", match: (p) => p === "/" || p.startsWith("/worlds") || p.startsWith("/profiles") },
   { href: "/setup", material: "settings", label: "Application Setup", match: (p) => p.startsWith("/setup") },
   { href: "/remote-access", material: "sync", label: "Sync", match: (p) => p.startsWith("/remote-access") },
   { href: "/usage", material: "activity", label: "Activity", match: (p) => p.startsWith("/usage") },
@@ -88,7 +88,7 @@ export default function Shell({ children }) {
           {!collapsed && (
             <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", minWidth: 0 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, overflow: "hidden", display: "grid", placeItems: "center", flexShrink: 0 }}>
-                <img src="/icon-dark.png" alt="RSDW Sync" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <img src="/icon.png" alt="RSDW Sync" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
               </div>
               <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "0.92rem", whiteSpace: "nowrap" }}>RSDW</span>
             </div>
@@ -123,7 +123,7 @@ export default function Shell({ children }) {
         {/* footer: app version / update + theme */}
         <div style={{ padding: "0.55rem", borderTop: "1px solid var(--line-strong)", flexShrink: 0 }}>
           {!collapsed && ver?.updateAvailable && (
-            <button onClick={openRelease} title="Open the latest release to download"
+            <button onClick={openRelease} title={ver.channel === "experimental" ? "Open the latest Super Experimental source" : "Open the latest release to download"}
               style={{
                 width: "100%", marginBottom: "0.5rem", padding: "0.45rem 0.6rem", borderRadius: 8,
                 background: "var(--accent)", color: "var(--accent-ink)", border: "none", cursor: "pointer",
@@ -131,7 +131,7 @@ export default function Shell({ children }) {
               }}>
               <Icon name="download" size={15} />
               <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {t("app.updateAvailable", { version: ver.latest })}
+                {ver.channel === "experimental" ? "New Super Experimental build" : t("app.updateAvailable", { version: ver.latest })}
               </span>
             </button>
           )}
@@ -142,12 +142,12 @@ export default function Shell({ children }) {
                   RSDW Sync
                 </div>
                 <div className="subtle" style={{ fontSize: "0.68rem" }}>
-                  v1.0.0{ver && !ver.updateAvailable && ver.checked ? ` · ${t("app.upToDate")}` : ""}
+                  v{ver?.current || "0.1.1"}{ver?.channelLabel ? ` · ${ver.channelLabel}` : ""}{ver && !ver.updateAvailable && ver.checked ? ` · ${t("app.upToDate")}` : ""}
                 </div>
               </div>
             )}
             {collapsed && ver?.updateAvailable ? (
-              <button onClick={openRelease} title={t("app.updateAvailable", { version: ver.latest })}
+              <button onClick={openRelease} title={ver.channel === "experimental" ? "New Super Experimental build" : t("app.updateAvailable", { version: ver.latest })}
                 style={{ background: "var(--accent)", border: "none", cursor: "pointer", color: "var(--accent-ink)", padding: 7, borderRadius: 8, display: "grid", placeItems: "center" }}>
                 <Icon name="download" size={18} />
               </button>
@@ -159,8 +159,9 @@ export default function Shell({ children }) {
       </aside>
 
       {/* Main content */}
-      <main style={{ flex: 1, overflowY: "auto", background: "var(--bg)" }}>
-        <div style={{ padding: "1.4rem 1.8rem 3rem", maxWidth: 1120, margin: "0 auto" }}>
+      <main className="app-main" style={{ flex: 1, overflowY: "auto", background: "var(--bg)" }}>
+        <img className="app-watermark" src="/rsdw/app-icon.webp" alt="" aria-hidden="true" />
+        <div className="app-content" style={{ padding: "1.4rem 1.8rem 3rem", maxWidth: 1120, margin: "0 auto" }}>
           {children}
         </div>
       </main>

@@ -9,7 +9,7 @@ const { loadResources, languageMeta } = require("@/lib/i18n/loader");
 export const metadata = {
   title: "RSDW Sync",
   description: "Your Dragonwilds worlds, mods, players, and dedicated servers in one RSDW workspace.",
-  icons: { icon: "/icon-dark.png" },
+  icons: { icon: "/icon.png" },
 };
 
 export default function RootLayout({ children }) {

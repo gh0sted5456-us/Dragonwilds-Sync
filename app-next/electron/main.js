@@ -207,7 +207,7 @@ function trayIconPath() {
   const base = isDev
     ? path.join(__dirname, "..", "public")
     : path.join(process.resourcesPath, "app", "public");
-  return path.join(base, process.platform === "win32" ? "icon.ico" : "icon.png");
+  return path.join(base, "icon.png");
 }
 
 // Pull the world list from the local server for the tray menu. DB-only endpoint, so
@@ -324,7 +324,7 @@ async function refreshTrayMenu() {
 function createTray() {
   if (tray) return true;
   try {
-    // Prefer the provided icon files (public/icon.ico / public/icon.png). If
+    // Prefer the transparent RSDW icon (public/icon.png). If
     // those were replaced by the user in the repo's public/ folder they will be
     // used here when running from source; packaged apps use the embedded copy.
     let img = nativeImage.createFromPath(trayIconPath());
@@ -531,8 +531,8 @@ function createWindow() {
     title: "RSDW Sync",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
     icon: isDev
-      ? path.join(__dirname, "..", "public", process.platform === "win32" ? "icon.ico" : "icon.png")
-      : path.join(process.resourcesPath, "app", "public", process.platform === "win32" ? "icon.ico" : "icon.png"),
+      ? path.join(__dirname, "..", "public", "icon.png")
+      : path.join(process.resourcesPath, "app", "public", "icon.png"),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -748,6 +748,13 @@ ipcMain.handle("pick-zip", async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile"],
     filters: [{ name: "Zip archives", extensions: ["zip"] }],
+  });
+  return res.canceled ? null : res.filePaths[0];
+});
+ipcMain.handle("pick-world-save", async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [{ name: "Dragonwilds world save", extensions: ["sav", "zip"] }],
   });
   return res.canceled ? null : res.filePaths[0];
 });

@@ -146,10 +146,40 @@ function contains(rel, needle, message) {
   contains("electron/share-proxy.js", 'const listenHost = "0.0.0.0"');
   contains("electron/main.js", "APP_MANAGER_SHARE_PORT");
   contains("lib/sync/discovery.js", "APP_MANAGER_SHARE_PORT");
-  contains("electron/main.js", '"icon.ico"');
+  contains("electron/main.js", 'path.join(base, "icon.png")');
   contains("package.json", '"icon": "public/icon.ico"');
+  contains("package.json", '"signAndEditExecutable": false');
+  contains("components/Shell.jsx", 'className="app-watermark"');
+  contains("components/Shell.jsx", '/rsdw/app-icon.webp');
+  contains("components/ModsPanel.jsx", '/rsdw/platforms/runeschema.png');
+  contains("app/page.jsx", '/rsdw/dragonwilds-wordmark.png');
+  assert(fs.existsSync(path.join(root, "public", "rsdw", "platforms", "runeschema.png")), "RuneSchema logo asset missing");
+  assert(fs.existsSync(path.join(root, "public", "rsdw", "dragonwilds-mark.png")), "Dragonwilds mark missing");
+  assert(fs.existsSync(path.join(root, "public", "rsdw", "dragonwilds-wordmark.png")), "Dragonwilds wordmark missing");
   assert(JSON.parse(read("package.json")).build.compression !== "store", "portable build must compress the Electron runtime");
   contains("app/globals.css", "--radius: 12px");
+}
+
+// World replacement must use Dragonwilds' flat SaveGames layout without erasing
+// server configuration or allowing an ambiguous newest-save choice.
+{
+  const provision = contains("lib/provision.js", "function validateSaveSource(");
+  assert(provision.includes('saves.length !== 1'), "save ZIP must contain exactly one .sav");
+  assert(provision.includes('"Saved", "SaveGames"'), "world import must target only Saved/SaveGames");
+  assert(!provision.includes('path.join(world.install_dir, "RSDragonwilds", "Saved");'), "world import must not replace the entire Saved directory");
+  assert(provision.includes("createBackup(worldId, \"pre-import-safety\")"), "world import safety backup missing");
+  assert(provision.includes("isRunning(worldId)"), "world import running-server guard missing");
+  contains("electron/preload.js", "pickWorldSave");
+  contains("electron/main.js", 'ipcMain.handle("pick-world-save"');
+  contains("components/BackupsPanel.jsx", "check.activeSave");
+}
+
+// Packaged builds identify their Git branch/commit so stable and experimental
+// channels can independently report when GitHub has a newer build.
+{
+  contains("lib/appversion.js", 'stable: "main"');
+  contains("lib/appversion.js", 'experimental: "codex/super-experimental"');
+  contains("scripts/prepare-standalone.js", '"build-info.json"');
 }
 
 // Desktop autostart is opt-in and owned Servers receive a graceful quit request.

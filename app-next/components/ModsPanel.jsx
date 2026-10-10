@@ -14,7 +14,7 @@ const RUNTIME_PACKAGES = [
   { component: "ue4ss-server", stateKey: "ue4ssServer", label: "UE4SS · Dedicated Server", icon: "/rsdw/platforms/ue4ss.webp", note: "Win64 · server-only · version.dll loader" },
   { component: "ue4ss-steam", stateKey: "ue4ssSteam", label: "UE4SS · Steam", icon: "/rsdw/platforms/ue4ss.webp", note: "Win64 client · dwmapi.dll loader" },
   { component: "ue4ss-gamepass", stateKey: "ue4ssGamepass", label: "UE4SS · PC Game Pass", icon: "/rsdw/platforms/ue4ss.webp", note: "WinGDK client" },
-  { component: "runeschema", stateKey: "runeschema", label: "RuneSchema", icon: "/rsdw/platforms/runeschema.webp", note: "Routed to server / Win64 / WinGDK as applicable" },
+  { component: "runeschema", stateKey: "runeschema", label: "RuneSchema", icon: "/rsdw/platforms/runeschema.png", note: "Routed to server / Win64 / WinGDK as applicable" },
 ];
 
 export default function ModsPanel({ worldId, running }) {

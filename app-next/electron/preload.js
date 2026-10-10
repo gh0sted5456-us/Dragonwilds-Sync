@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("desktop", {
   platform: process.platform,   // "win32" | "linux" | "darwin" — drives the create-world default
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
   pickZip: () => ipcRenderer.invoke("pick-zip"),
+  pickWorldSave: () => ipcRenderer.invoke("pick-world-save"),
   getSystemTheme: () => ipcRenderer.invoke("get-theme"),
   openPath: (p) => ipcRenderer.invoke("open-path", p),
   openExternal: (value) => ipcRenderer.invoke("open-external", value),

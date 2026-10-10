@@ -41,12 +41,13 @@ export default function BackupsPanel({ worldId, backups, running, onChange }) {
   const importSave = async () => {
     if (running) return toast(t("backups.stopBeforeImport"), "error");
     if (!isElectron) return toast(t("backups.importPickerDesktop"));
-    const zipPath = await window.desktop.pickZip();
-    if (!zipPath) return;
+    const savePath = await window.desktop.pickWorldSave();
+    if (!savePath) return;
+    if (!confirm("Replace this server's active world with the selected save? RSDW will create a safety backup first and keep server settings intact.")) return;
     setImporting(true);
     try {
-      const { check } = await api(`/api/worlds/${worldId}/import`, { method: "POST", body: { zipPath } });
-      toast(t("backups.imported", { count: check.playerCount }), "success");
+      const { check } = await api(`/api/worlds/${worldId}/import`, { method: "POST", body: { savePath } });
+      toast(`World save replaced with ${check.activeSave}.`, "success");
       onChange();
     } catch (e) { toast(e.message, "error"); }
     finally { setImporting(false); }
@@ -66,6 +67,13 @@ export default function BackupsPanel({ worldId, backups, running, onChange }) {
             <Icon name="folder" /> {t("backups.openFolder")}
           </button>
         )}
+      </div>
+
+      <div className="panel-inset" style={{ padding: "0.7rem 0.85rem", marginBottom: "1rem" }}>
+        <strong style={{ fontSize: "0.82rem" }}>World replacement</strong>
+        <p className="subtle" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", lineHeight: 1.5 }}>
+          Import one <code>.sav</code> file, or a ZIP containing exactly one save. RSDW stops ambiguous multi-save imports, backs up the current world, replaces only <code>Saved/SaveGames</code>, and preserves server configuration.
+        </p>
       </div>
 
       {loc && (

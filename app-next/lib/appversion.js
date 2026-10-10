@@ -10,9 +10,9 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 
-// Disable external repo checks for the forked Dragonwilds manager.
-const REPO = "";
+const REPO = "gh0sted5456-us/Dragonwilds-Sync";
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
+const BRANCHES = { stable: "main", experimental: "codex/super-experimental" };
 
 // How long a fetched release is trusted before we look again. The scheduler polls
 // on this cadence; a navigation that lands after it just reuses the cache.
@@ -23,11 +23,26 @@ if (!g.__APP_APPVER) g.__APP_APPVER = { at: 0, data: null };
 
 // Current app version: injected by Electron (app.getVersion()), else package.json.
 function currentVersion() {
-  if (process.env.DWSM_APP_VERSION) return process.env.DWSM_APP_VERSION;
+  if (process.env.APP_MANAGER_APP_VERSION || process.env.DWSM_APP_VERSION) return process.env.APP_MANAGER_APP_VERSION || process.env.DWSM_APP_VERSION;
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json"), "utf8"));
     return pkg.version || "0.0.0";
   } catch { return "0.0.0"; }
+}
+
+function currentBuildInfo() {
+  let saved = {};
+  try { saved = JSON.parse(fs.readFileSync(path.join(process.cwd(), "build-info.json"), "utf8")); } catch {}
+  const version = currentVersion();
+  const branch = process.env.APP_MANAGER_BUILD_BRANCH || saved.branch || (version.includes("experimental") ? BRANCHES.experimental : BRANCHES.stable);
+  const channel = branch === BRANCHES.experimental || version.includes("experimental") ? "experimental" : "stable";
+  return {
+    version,
+    commit: process.env.APP_MANAGER_BUILD_COMMIT || saved.commit || null,
+    branch: BRANCHES[channel],
+    channel,
+    channelLabel: channel === "experimental" ? "Super Experimental" : "Main",
+  };
 }
 
 // Compare dotted numeric versions. Returns 1 if a>b, -1 if a<b, 0 if equal.
@@ -67,17 +82,33 @@ function getJson(url) {
 // resolves — on failure it caches a "not checked" marker and shortens the next
 // retry to ~5 min instead of holding the failure for the full TTL.
 async function refresh(now = Date.now()) {
+  const build = currentBuildInfo();
   try {
-    const rel = await getJson(`https://api.github.com/repos/${REPO}/releases/latest`);
+    const [commitResult, releaseResult] = await Promise.allSettled([
+      getJson(`https://api.github.com/repos/${REPO}/commits/${encodeURIComponent(build.branch)}`),
+      getJson(`https://api.github.com/repos/${REPO}/releases/latest`),
+    ]);
+    if (commitResult.status !== "fulfilled" && releaseResult.status !== "fulfilled") throw new Error("GitHub update endpoints unavailable");
+    const commit = commitResult.status === "fulfilled" ? commitResult.value : null;
+    const rel = releaseResult.status === "fulfilled" ? releaseResult.value : {};
     const latest = (rel.tag_name || "").replace(/^v/, "");
     const assets = (rel.assets || [])
       .filter((a) => /\.(exe|AppImage)$/i.test(a.name))
       .map((a) => ({ name: a.name, url: a.browser_download_url }));
-    const data = { latest, releaseUrl: rel.html_url || RELEASES_URL, assets, checked: true };
+    const branchUrl = `https://github.com/${REPO}/tree/${build.branch}`;
+    const data = {
+      latest: latest || null,
+      latestCommit: commit?.sha || null,
+      latestCommitAt: commit?.commit?.committer?.date || null,
+      releaseUrl: build.channel === "experimental" ? branchUrl : (rel.html_url || branchUrl),
+      branchUrl,
+      assets,
+      checked: true,
+    };
     g.__APP_APPVER = { at: now, data };
     return data;
   } catch {
-    const data = { latest: null, releaseUrl: RELEASES_URL, assets: [], checked: false };
+    const data = { latest: null, latestCommit: null, releaseUrl: `https://github.com/${REPO}/tree/${build.branch}`, assets: [], checked: false };
     g.__APP_APPVER = { at: now - TTL + 5 * 60 * 1000, data };
     return data;
   }
@@ -90,9 +121,11 @@ async function getStatus() {
   const now = Date.now();
   let data = g.__APP_APPVER.data;
   if (!data || now - g.__APP_APPVER.at >= TTL) data = await refresh(now);
-  const current = currentVersion();
-  const updateAvailable = !!data.latest && cmp(data.latest, current) > 0;
-  return { current, latest: data.latest, releaseUrl: data.releaseUrl, assets: data.assets, checked: data.checked, updateAvailable };
+  const build = currentBuildInfo();
+  const commitUpdate = !!build.commit && !!data.latestCommit && build.commit !== data.latestCommit;
+  const releaseUpdate = build.channel === "stable" && !!data.latest && cmp(data.latest, build.version) > 0;
+  const updateAvailable = commitUpdate || releaseUpdate;
+  return { current: build.version, currentCommit: build.commit, branch: build.branch, channel: build.channel, channelLabel: build.channelLabel, latest: data.latest, latestCommit: data.latestCommit, latestCommitAt: data.latestCommitAt, releaseUrl: data.releaseUrl, branchUrl: data.branchUrl, assets: data.assets, checked: data.checked, updateAvailable };
 }
 
 // Refresh only if the cache is older than the TTL. Used by the background poller so
@@ -102,4 +135,4 @@ async function refreshIfStale(now = Date.now()) {
   return g.__APP_APPVER.data;
 }
 
-module.exports = { getStatus, refresh, refreshIfStale, currentVersion, cmp, TTL, RELEASES_URL };
+module.exports = { getStatus, refresh, refreshIfStale, currentVersion, currentBuildInfo, cmp, TTL, RELEASES_URL, BRANCHES };

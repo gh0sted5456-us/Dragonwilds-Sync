@@ -67,6 +67,22 @@ body {
   font-size: 15px;
 }
 
+.app-main { position: relative; isolation: isolate; }
+.app-watermark {
+  position: fixed;
+  right: clamp(2rem, 7vw, 8rem);
+  bottom: clamp(2rem, 8vh, 6rem);
+  width: min(44vw, 520px);
+  max-height: 62vh;
+  object-fit: contain;
+  opacity: 0.035;
+  filter: grayscale(0.25);
+  pointer-events: none;
+  user-select: none;
+  z-index: -1;
+}
+.app-content { position: relative; z-index: 1; }
+
 @layer components {
   .panel {
     background: var(--card);

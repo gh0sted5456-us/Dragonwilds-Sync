@@ -76,11 +76,14 @@ export default function WorldsPage() {
 
       {mode === "player" ? <PlayerHub /> : <>
       <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "1.2rem", flexWrap: "wrap", gap: "1rem" }}>
-        <div>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <img src="/rsdw/dragonwilds-wordmark.png" alt="RuneScape Dragonwilds" style={{ width: 185, maxHeight: 58, objectFit: "contain" }} />
+          <div>
           <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>{t("worlds.title")}</h1>
           <p className="subtle" style={{ margin: "0.2rem 0 0", fontWeight: 700 }}>
             {t("worlds.summary", { count: worlds.length, running, players })}
           </p>
+          </div>
         </div>
         <div style={{ display: "flex", gap: "0.6rem" }}>
           <button className="btn btn-ghost" onClick={checkUpdates} disabled={checking}>
@@ -286,7 +289,7 @@ function WorldRow({ w, active, busy, onAction, onActivate }) {
       )}
 
       <div style={{ position: "relative", zIndex: 1, width: 46, height: 46, borderRadius: 10, background: w.icon_data ? "transparent" : accent, border: `1px solid ${w.icon_data ? "transparent" : "var(--line)"}`, display: "grid", placeItems: "center", flexShrink: 0, overflow: "hidden", boxShadow: w.icon_data ? "0 2px 8px rgba(0,0,0,0.3)" : "none" }}>
-        {w.icon_data ? <img src={w.icon_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <img src="/rsdw/navigation/dragonwilds.webp" alt="" style={{ width: "76%", height: "76%", objectFit: "contain" }} />}
+        {w.icon_data ? <img src={w.icon_data} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <img src="/rsdw/dragonwilds-mark.png" alt="" style={{ width: "76%", height: "76%", objectFit: "contain" }} />}
       </div>
 
       <div style={{ position: "relative", zIndex: 1, flex: 1, minWidth: 200 }}>
@@ -304,6 +307,11 @@ function WorldRow({ w, active, busy, onAction, onActivate }) {
           {w.updateAvailable && (
             <span className="chip" style={{ background: "var(--yellow)", color: "#1e1f22" }}>{t("worlds.updateAvailable")}</span>
           )}
+        </div>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
+          <RsdwBadge label={w.profileBadges?.host || (w.platform === "windows" ? "WINDOWS SERVER" : "LINUX SERVER")} />
+          {(w.profileBadges?.platforms || []).map((label) => <RsdwBadge key={label} label={label} />)}
+          {(w.profileBadges?.loaders || []).map((label) => <RsdwBadge key={label} label={label} />)}
         </div>
         <div className="subtle" style={{ fontSize: "0.78rem", fontWeight: 700, marginTop: 3 }}>
           {t("worlds.portsLine", { game: w.game_port, rest: w.rest_api_port, build: w.build_id || "—" })}

@@ -4,6 +4,8 @@ const rest = require("@/lib/restclient");
 const sup = require("@/lib/supervisor");
 const steam = require("@/lib/steamcmd");
 const ra = require("@/lib/remoteauth");
+const runtimePackages = require("@/lib/runtime-packages");
+const modLanes = require("@/lib/mod-lanes");
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,6 +22,27 @@ function ensureBuildId(w) {
     }
   } catch {}
   return w;
+}
+
+function profileBadges(world) {
+  let runtime = {};
+  let selections = [];
+  try { runtime = runtimePackages.status(world.world_id); } catch {}
+  try { selections = modLanes.readSelections(world.world_id); } catch {}
+  const keys = selections.map((item) => String(item.key || "").toLowerCase());
+  const has = (value) => keys.some((key) => key.includes(value));
+  const platforms = [];
+  if (runtime.ue4ssSteam?.installed || keys.some((key) => key.startsWith("steam|"))) platforms.push("STEAM CLIENT");
+  if (runtime.ue4ssGamepass?.installed || keys.some((key) => key.startsWith("gamepass|"))) platforms.push("GAME PASS CLIENT");
+  const loaders = [];
+  if (runtime.ue4ssServer?.installed || runtime.ue4ssSteam?.installed || runtime.ue4ssGamepass?.installed || has("ue4ss")) loaders.push("UE4SS");
+  if (runtime.runeschema?.installed || has("runeschema")) loaders.push("RUNESCHEMA");
+  if (has("pak")) loaders.push("PAK MODS");
+  return {
+    host: world.platform === "windows" ? "WINDOWS SERVER" : "LINUX SERVER",
+    platforms: platforms.length ? platforms : ["VANILLA CLIENTS"],
+    loaders,
+  };
 }
 
 export async function GET(req) {
@@ -51,7 +74,7 @@ export async function GET(req) {
         } catch {}
       }
       const updateState = steam.updateStateOf(w);
-      return { ...w, running, apiUp, live, updateState, updateAvailable: updateState === "available" };
+      return { ...w, running, apiUp, live, profileBadges: profileBadges(w), updateState, updateAvailable: updateState === "available" };
     })
   );
   return NextResponse.json({ ok: true, worlds: enriched });

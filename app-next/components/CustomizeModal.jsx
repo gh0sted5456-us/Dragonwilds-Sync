@@ -4,8 +4,9 @@ import { useTranslation } from "react-i18next";
 import { api, Icon, toast } from "@/components/ui";
 
 // Resize/compress an image file to a data URL under a target size.
-function fileToDataURL(file, maxDim, quality = 0.82) {
+function fileToDataURL(file, maxDim, { format = "image/jpeg", quality = 0.82 } = {}) {
   return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) return reject(new Error("Choose an image file"));
     const img = new Image();
     const reader = new FileReader();
     reader.onload = () => { img.src = reader.result; };
@@ -21,7 +22,7 @@ function fileToDataURL(file, maxDim, quality = 0.82) {
       canvas.width = width; canvas.height = height;
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL("image/jpeg", quality));
+      resolve(canvas.toDataURL(format, quality));
     };
     img.onerror = reject;
     reader.readAsDataURL(file);
@@ -34,16 +35,16 @@ export default function CustomizeModal({ world, onClose, onDone }) {
   const [name, setName] = useState(world.display_name || "");
   const [icon, setIcon] = useState(world.icon_data || null);
   const [banner, setBanner] = useState(world.banner_data || null);
-  const [accent, setAccent] = useState(world.accent_color || "#5865f2");
+  const [accent, setAccent] = useState(world.accent_color || "#c1a56d");
   const [saving, setSaving] = useState(false);
 
   const pickIcon = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
-    try { setIcon(await fileToDataURL(f, 256, 0.85)); } catch { toast(t("customize.readError"), "error"); }
+    try { setIcon(await fileToDataURL(f, 256, { format: "image/png" })); } catch { toast(t("customize.readError"), "error"); }
   };
   const pickBanner = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
-    try { setBanner(await fileToDataURL(f, 900, 0.8)); } catch { toast(t("customize.readError"), "error"); }
+    try { setBanner(await fileToDataURL(f, 1200, { format: "image/jpeg", quality: 0.82 })); } catch { toast(t("customize.readError"), "error"); }
   };
 
   const save = async () => {
@@ -69,7 +70,7 @@ export default function CustomizeModal({ world, onClose, onDone }) {
           {banner && <img src={banner} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}
           <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom, transparent 40%, var(--card) 100%)" }} />
           <div style={{ position: "absolute", left: 18, bottom: -22, width: 60, height: 60, borderRadius: 14, overflow: "hidden", border: "3px solid var(--card)", background: icon ? "transparent" : accent, display: "grid", placeItems: "center", boxShadow: "0 4px 14px rgba(0,0,0,0.4)" }}>
-            {icon ? <img src={icon} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <Icon name="globe" size={28} />}
+            {icon ? <img src={icon} alt="" style={{ width: "100%", height: "100%", objectFit: "contain" }} /> : <Icon name="globe" size={28} />}
           </div>
         </div>
 
@@ -80,6 +81,7 @@ export default function CustomizeModal({ world, onClose, onDone }) {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
             <div>
               <label className="label">{t("customize.profileIcon")}</label>
+              <div className="subtle" style={{ fontSize: "0.7rem", margin: "-0.2rem 0 0.45rem" }}>Square PNG recommended · transparency preserved</div>
               <div style={{ display: "flex", gap: 8 }}>
                 <label className="btn btn-ghost" style={{ cursor: "pointer", flex: 1 }}>
                   <Icon name="upload" size={15} /> {t("customize.upload")}
@@ -90,6 +92,7 @@ export default function CustomizeModal({ world, onClose, onDone }) {
             </div>
             <div>
               <label className="label">{t("customize.banner")}</label>
+              <div className="subtle" style={{ fontSize: "0.7rem", margin: "-0.2rem 0 0.45rem" }}>Wide image recommended · 1200 px max</div>
               <div style={{ display: "flex", gap: 8 }}>
                 <label className="btn btn-ghost" style={{ cursor: "pointer", flex: 1 }}>
                   <Icon name="upload" size={15} /> {t("customize.upload")}
@@ -104,11 +107,17 @@ export default function CustomizeModal({ world, onClose, onDone }) {
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: "1.4rem" }}>
             <input type="color" value={accent} onChange={(e) => setAccent(e.target.value)} style={{ width: 48, height: 38, border: "1px solid var(--line)", borderRadius: 8, background: "none", cursor: "pointer" }} />
             <code style={{ fontWeight: 700 }}>{accent}</code>
+            {["#c1a56d", "#6f4bd8", "#bd5f36", "#3f8b73"].map((color) => (
+              <button key={color} type="button" aria-label={`Use ${color}`} onClick={() => setAccent(color)} style={{ width: 24, height: 24, padding: 0, borderRadius: 999, border: accent === color ? "2px solid var(--ink)" : "1px solid var(--line-strong)", background: color, cursor: "pointer" }} />
+            ))}
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: "0.6rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.6rem", flexWrap: "wrap" }}>
+            <button className="btn btn-ghost" type="button" onClick={() => { setIcon(null); setBanner(null); setAccent("#c1a56d"); }}>Reset visuals</button>
+            <div style={{ display: "flex", gap: "0.6rem" }}>
             <button className="btn btn-ghost" onClick={onClose}>{t("customize.cancel")}</button>
             <button className="btn btn-primary" onClick={save} disabled={saving}><Icon name="download" /> {saving ? t("customize.saving") : t("customize.save")}</button>
+            </div>
           </div>
           <p className="subtle" style={{ fontSize: "0.7rem", fontWeight: 600, marginTop: 10, marginBottom: 0 }}>
             {t("customize.footer")}

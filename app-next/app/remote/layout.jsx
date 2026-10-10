@@ -13,9 +13,9 @@ export default function RemoteLayout({ children }) {
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, overflow: "hidden", display: "grid", placeItems: "center" }}>
-            <img src="/icon.png" alt="PSM" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            <img src="/icon.png" alt="RSDW Sync" style={{ width: "100%", height: "100%", objectFit: "contain" }} />
           </div>
-          <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "0.92rem" }}>PSM Remote</span>
+          <span style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: "0.92rem" }}>RSDW Remote</span>
         </div>
         <RemotePrefs />
       </header>

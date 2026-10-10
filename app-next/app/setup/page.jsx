@@ -5,11 +5,14 @@ import { api, Icon, toast } from "@/components/ui";
 export default function ApplicationSetupPage() {
   const [tab, setTab] = useState("play");
   return <div>
-    <header style={{ marginBottom: "1rem" }}>
-      <h1 className="heading" style={{ margin: 0, fontSize: "1.8rem" }}>Application Setup</h1>
-      <p className="subtle" style={{ fontWeight: 650, marginTop: 4 }}>
-        Prepare machine-level Dragonwilds lanes. Profiles use these lanes; opening RSDW Sync does not probe or alter them.
-      </p>
+    <header style={{ marginBottom: "1rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+      <img src="/rsdw/dragonwilds-logo.png" alt="RuneScape Dragonwilds" style={{ width: 112, height: 56, objectFit: "contain" }} />
+      <div>
+        <h1 className="heading" style={{ margin: 0, fontSize: "1.8rem" }}>Application Setup</h1>
+        <p className="subtle" style={{ fontWeight: 650, margin: "4px 0 0" }}>
+          Prepare machine-level Dragonwilds lanes. Profiles use these lanes; opening RSDW Sync does not probe or alter them.
+        </p>
+      </div>
     </header>
     <div className="panel" style={{ padding: 6, display: "flex", gap: 6, marginBottom: "1rem" }}>
       <button className={`btn ${tab === "server" ? "btn-primary" : "btn-ghost"}`} style={{ flex: 1 }} onClick={() => setTab("server")}>

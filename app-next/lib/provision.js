@@ -3,12 +3,12 @@ const fs = require("fs");
 const path = require("path");
 const crypto = require("crypto");
 const AdmZip = require("adm-zip");
-const { P } = require("./paths");
 const dbm = require("./db");
 const ini = require("./ini");
 const serverProfiles = require("./active-server-profile");
 const { suggestPorts } = require("./ports");
 const { createBackup } = require("./backups");
+const { trashPath } = require("./trash");
 const os = require("os");
 
 // Create a world profile record (no install yet).
@@ -90,68 +90,78 @@ function adoptExistingInstall({ display_name, install_dir, ports, admin_password
 }
 
 // ---- Save import (spec §3) ----
-function validateSaveZip(zipPath) {
-  const zip = new AdmZip(zipPath);
-  const entries = zip.getEntries().map((e) => e.entryName.replace(/\\/g, "/"));
-  const hasIni = entries.some((e) => /Config\/(Windows|Linux)Server\/DedicatedServer\.ini$/i.test(e));
-  const hasLevel = entries.some((e) => /SaveGames\/.+\/Level\.sav$/i.test(e));
-  const players = entries.filter((e) => /SaveGames\/.+\/Players\/.+\.sav$/i.test(e));
-  const worldGuid = (() => {
-    const m = entries.find((e) => /SaveGames\/[^/]+\/([^/]+)\/Level\.sav$/i.test(e));
-    return m ? m.match(/SaveGames\/[^/]+\/([^/]+)\/Level\.sav$/i)[1] : null;
-  })();
-  return { valid: hasLevel || hasIni, hasIni, hasLevel, playerCount: players.length, worldGuid, entries };
+// Dragonwilds uses a flat SaveGames directory and loads the newest .sav file.
+// Accept one unambiguous save only, preserving its original filename.
+function validateSaveSource(sourcePath) {
+  if (!sourcePath || !fs.existsSync(sourcePath)) throw new Error("Save file not found");
+  if (/\.sav$/i.test(sourcePath)) {
+    return { valid: true, kind: "sav", activeSave: path.basename(sourcePath), entryName: null, saveCount: 1 };
+  }
+  if (!/\.zip$/i.test(sourcePath)) throw new Error("Choose a Dragonwilds .sav file or a .zip containing exactly one .sav file");
+
+  const zip = new AdmZip(sourcePath);
+  const saves = zip.getEntries().filter((entry) => !entry.isDirectory && /\.sav$/i.test(entry.entryName));
+  if (saves.length !== 1) {
+    throw new Error(`Archive must contain exactly one Dragonwilds .sav file (found ${saves.length})`);
+  }
+  return {
+    valid: true,
+    kind: "zip",
+    activeSave: path.basename(saves[0].entryName.replace(/\\/g, "/")),
+    entryName: saves[0].entryName,
+    saveCount: 1,
+  };
 }
 
-// Import a validated save zip into a world's Saved folder.
-async function importSave(worldId, zipPath, { backupFirst = true } = {}) {
+// Replace only Saved/SaveGames. Config and all other server state stay intact.
+// The directory swap ensures the game never sees a half-copied world.
+async function importSave(worldId, sourcePath, { backupFirst = true } = {}) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  const check = validateSaveZip(zipPath);
-  if (!check.valid) throw new Error("Zip does not contain a recognizable Dragonwilds save (no Level.sav / settings ini)");
+  if (require("./supervisor").isRunning(worldId)) throw new Error("Stop the server before replacing its world save");
+  const check = validateSaveSource(sourcePath);
 
-  const saved = path.join(world.install_dir, "RSDragonwilds", "Saved");
-  if (backupFirst && fs.existsSync(saved)) {
-    try { await createBackup(worldId, "pre-import-safety"); } catch {}
+  const saveGames = path.join(world.install_dir, "RSDragonwilds", "Saved", "SaveGames");
+  if (backupFirst && fs.existsSync(saveGames)) {
+    await createBackup(worldId, "pre-import-safety");
   }
 
-  // extract to staging first
-  const stage = path.join(P.staging(), crypto.randomUUID());
-  fs.mkdirSync(stage, { recursive: true });
-  new AdmZip(zipPath).extractAllTo(stage, true);
+  fs.mkdirSync(path.dirname(saveGames), { recursive: true });
+  const nonce = crypto.randomUUID();
+  const incoming = path.join(path.dirname(saveGames), `.SaveGames.incoming-${nonce}`);
+  const previous = path.join(path.dirname(saveGames), `.SaveGames.previous-${nonce}`);
+  fs.mkdirSync(incoming, { recursive: true });
+  const destination = path.join(incoming, check.activeSave);
 
-  // find the Saved root inside staging (zip may wrap it)
-  const savedRoot = findSavedRoot(stage);
-  if (!savedRoot) { fs.rmSync(stage, { recursive: true, force: true }); throw new Error("Could not locate Saved contents in archive"); }
+  try {
+    if (check.kind === "sav") fs.copyFileSync(sourcePath, destination);
+    else {
+      const entry = new AdmZip(sourcePath).getEntry(check.entryName);
+      if (!entry) throw new Error("The selected save disappeared from its archive");
+      fs.writeFileSync(destination, entry.getData());
+    }
+    const now = new Date();
+    fs.utimesSync(destination, now, now);
 
-  if (fs.existsSync(saved)) fs.rmSync(saved, { recursive: true, force: true });
-  fs.mkdirSync(saved, { recursive: true });
-  copyDir(savedRoot, saved);
-  fs.rmSync(stage, { recursive: true, force: true });
+    if (fs.existsSync(saveGames)) fs.renameSync(saveGames, previous);
+    try {
+      fs.renameSync(incoming, saveGames);
+    } catch (error) {
+      if (fs.existsSync(previous) && !fs.existsSync(saveGames)) fs.renameSync(previous, saveGames);
+      throw error;
+    }
+  } catch (error) {
+    fs.rmSync(incoming, { recursive: true, force: true });
+    throw error;
+  }
 
-  // Re-apply identity, then make the imported settings the selected profile's
-  // durable snapshot before another Server profile can be materialized.
-  ini.applyWorldNetworkSettings(world.install_dir, world, { syncPublicPort: true });
-  serverProfiles.saveRawSettings(
-    worldId,
-    ini.readRawSettings(world.install_dir, world.platform).content,
-    { syncPublicPort: true }
-  );
-  dbm.logEvent(worldId, "import", `Imported save (${check.playerCount} players, guid ${check.worldGuid || "?"})`);
+  // A normal backup exists above; the swapped directory is also recoverable.
+  if (fs.existsSync(previous)) {
+    try { trashPath(previous); } catch {}
+  }
+
+  dbm.logEvent(worldId, "import", `Replaced active world save with ${check.activeSave}`);
   return check;
-}
-
-function findSavedRoot(dir) {
-  // Look for a folder that directly contains "SaveGames" or "Config".
-  const stack = [dir];
-  while (stack.length) {
-    const d = stack.pop();
-    const items = fs.readdirSync(d, { withFileTypes: true });
-    const names = items.filter((i) => i.isDirectory()).map((i) => i.name);
-    if (names.includes("SaveGames") || names.includes("Config")) return d;
-    for (const n of names) stack.push(path.join(d, n));
-  }
-  return null;
 }
 
 function copyDir(src, dst) {
@@ -165,5 +175,5 @@ function copyDir(src, dst) {
 
 module.exports = {
   createProfile, adoptExistingInstall,
-  validateSaveZip, importSave, copyDir,
+  validateSaveSource, validateSaveZip: validateSaveSource, importSave, copyDir,
 };

@@ -19,7 +19,7 @@ export async function GET(req, { params }) {
   for (const [k, v] of Object.entries(s.options)) if (!MANAGED.has(k)) portable[k] = v;
 
   const profile = {
-    type: "palworld-world-profile",
+    type: "dragonwilds-server-profile",
     version: 1,
     exported: Date.now(),
     display_name: w.display_name,
@@ -27,13 +27,12 @@ export async function GET(req, { params }) {
     icon_data: w.icon_data || null,
     banner_data: w.banner_data || null,
     mods_enabled: !!w.mods_enabled,
-    community_server: !!w.community_server,
     settings: portable,
   };
 
   const zip = new AdmZip();
   zip.addFile("world-profile.json", Buffer.from(JSON.stringify(profile, null, 2), "utf8"));
-  zip.addFile("PalWorldSettings.portable.ini", Buffer.from(ini.serializeOptionSettings(portable), "utf8"));
+  zip.addFile("DragonwildsServerSettings.portable.ini", Buffer.from(ini.serializeOptionSettings(portable), "utf8"));
   const buf = zip.toBuffer();
   const safe = (w.display_name || "world").replace(/[^a-z0-9_-]+/gi, "_");
   return new NextResponse(buf, {

@@ -22,8 +22,6 @@ export default function AdminPanel({ world, running, onChange }) {
   const [winePrefix, setWinePrefix] = useState(world.wine_prefix || "");
   const [wineLaunchFlags, setWineLaunchFlags] = useState(world.wine_launch_flags || "");
   const [crashGuard, setCrashGuard] = useState(!!world.crash_guard);
-  const [community, setCommunity] = useState(!!world.community_server);
-  const [legacyPerf, setLegacyPerf] = useState(world.legacy_perf_flags !== 0);
   const [saving, setSaving] = useState(false);
   const [installDir, setInstallDir] = useState(world.install_dir || "");
   const [ownerId, setOwnerId] = useState(world.owner_id || "");
@@ -72,8 +70,7 @@ export default function AdminPanel({ world, running, onChange }) {
         body: {
           display_name: name, admin_password: password, server_password: stripWrappingQuotes(serverPassword),
           extra_args: extraArgs, env_vars: envTextToObject(envVars),
-                crash_guard: crashGuard ? 1 : 0, community_server: community ? 1 : 0,
-                legacy_perf_flags: legacyPerf ? 1 : 0,
+                crash_guard: crashGuard ? 1 : 0,
                 owner_id: ownerId.trim() || null, default_world_name: defaultWorldName.trim() || null,
         },
       });
@@ -123,7 +120,7 @@ export default function AdminPanel({ world, running, onChange }) {
           </div>
           <div style={{ gridColumn: "1 / -1" }}>
             <label className="label">{t("admin.extraArgs")}</label>
-            <input className="input" value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="e.g. -NoAsyncLoadingThread" />
+            <input className="input" value={extraArgs} onChange={(e) => setExtraArgs(e.target.value)} placeholder="Optional dedicated-server arguments" />
           </div>
           <div>
             <label className="label">Owner ID</label>
@@ -173,36 +170,6 @@ export default function AdminPanel({ world, running, onChange }) {
             </div>
           </div>
         )}
-
-        <div className="panel-inset" style={{ padding: "0.9rem 1.1rem", marginTop: "0.9rem", borderLeft: `3px solid ${community ? "var(--green-bright)" : "var(--line-strong)"}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 240, flex: 1 }}>
-              <div className="heading" style={{ fontSize: "0.92rem" }}>{t("admin.communityTitle")}</div>
-              <div className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem", marginTop: 2 }}>
-                <Trans i18nKey="admin.communityDesc" components={{ b: <b />, code: <code /> }} />
-              </div>
-            </div>
-            <Toggle label={community ? t("admin.public") : t("admin.private")} on={community} onClick={() => setCommunity((v) => !v)} />
-          </div>
-          <div className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", marginTop: 8 }}>
-            {t("admin.communityNote")}
-          </div>
-        </div>
-
-        <div className="panel-inset" style={{ padding: "0.9rem 1.1rem", marginTop: "0.9rem", borderLeft: `3px solid ${legacyPerf ? "var(--green-bright)" : "var(--line-strong)"}` }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-            <div style={{ minWidth: 240, flex: 1 }}>
-              <div className="heading" style={{ fontSize: "0.92rem" }}>{t("admin.legacyPerfTitle")}</div>
-              <div className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem", marginTop: 2 }}>
-                <Trans i18nKey="admin.legacyPerfDesc" components={{ code: <code /> }} />
-              </div>
-            </div>
-            <Toggle label={legacyPerf ? t("common.on") : t("common.off")} on={legacyPerf} onClick={() => setLegacyPerf((v) => !v)} />
-          </div>
-          <div className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", marginTop: 8 }}>
-            {t("admin.legacyPerfNote")}
-          </div>
-        </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1rem" }}>
           <button className="btn btn-primary" onClick={saveProfile} disabled={saving}><Icon name="download" /> {saving ? t("common.saving") : t("admin.saveProfile")}</button>

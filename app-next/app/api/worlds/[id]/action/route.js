@@ -18,12 +18,9 @@ export async function POST(req, { params }) {
   try {
     let result;
     if (action === "start") { result = await sup.startWorld(params.id); notify(params.id, "start", `${w.display_name} started`); }
-    // The manual Stop button is a deliberate admin action — stop the world promptly
-    // with a graceful (native ~15s) shutdown, not a multi-minute warning countdown.
-    // Player warnings apply to *scheduled* stops/restarts (unattended) and to the
-    // Restart button; a hands-on Stop should not wait out warn_lead_minutes. Force-stop
-    // (below) is the immediate SIGKILL escape hatch.
-    else if (action === "stop") { result = await sup.stopWorld(params.id, { graceful: true }); notify(params.id, "stop", `${w.display_name} stopped`); }
+    // The primary Stop button is an emergency-safe operator action: terminate the
+    // whole owned process tree now and suppress crash-guardian relaunches.
+    else if (action === "stop") { result = await sup.stopWorld(params.id, { graceful: false }); notify(params.id, "stop", `${w.display_name} stopped`); }
     else if (action === "restart") {
       activeProfile.activate(params.id);
       // If this world warns players before shutdown, the countdown can run for

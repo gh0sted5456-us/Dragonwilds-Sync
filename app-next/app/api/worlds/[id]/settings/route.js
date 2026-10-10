@@ -39,7 +39,7 @@ export async function POST(req, { params }) {
   // The editor sends ONLY the keys the user actually changed (`changed`), plus
   // the full set it's aware of is irrelevant — we merge changes onto the CURRENT
   // ini so untouched settings (and any keys the editor doesn't know about) are
-  // preserved exactly as Palworld wrote them.
+  // preserved exactly as the dedicated server wrote them.
   const body = await req.json();
   const changed = body.changed || body.options || {};
 

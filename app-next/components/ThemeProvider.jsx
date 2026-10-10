@@ -7,14 +7,14 @@ export function useTheme() { return useContext(ThemeCtx); }
 export default function ThemeProvider({ children }) {
   useEffect(() => {
     document.documentElement.classList.add("dark");
-    try { localStorage.setItem("pal-theme", "dark"); } catch {}
+    try { localStorage.setItem("rsdw-theme", "dark"); } catch {}
   }, []);
 
   // RSDW Sync now has one deliberate application theme. Keep this compatibility
   // API so older components do not crash, but all theme requests resolve to dark.
   const setTheme = useCallback(() => {
     document.documentElement.classList.add("dark");
-    try { localStorage.setItem("pal-theme", "dark"); } catch {}
+    try { localStorage.setItem("rsdw-theme", "dark"); } catch {}
   }, []);
   const toggle = setTheme;
 

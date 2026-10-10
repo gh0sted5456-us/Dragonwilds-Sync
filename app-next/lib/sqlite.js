@@ -16,9 +16,9 @@ let backend = null;   // 'node' | 'wasm'
 let NodeDatabaseSync = null;
 let WasmDatabase = null;
 
-// PALWORLD_SQLITE_BACKEND=wasm forces the portable WASM backend (useful if a
+// APP_SQLITE_BACKEND=wasm forces the portable WASM backend (useful if a
 // runtime's node:sqlite is broken). Default: try node:sqlite, then fall back.
-const forced = process.env.PALWORLD_SQLITE_BACKEND;
+const forced = process.env.APP_SQLITE_BACKEND;
 
 if (forced !== "wasm") {
   try {

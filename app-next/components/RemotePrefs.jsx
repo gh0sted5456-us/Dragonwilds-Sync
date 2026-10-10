@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Icon } from "@/components/ui";
 
-const THEME_KEY = "pal-remote-theme";
+const THEME_KEY = "rsdw-remote-theme";
 
 function applyTheme(theme) {
   try {

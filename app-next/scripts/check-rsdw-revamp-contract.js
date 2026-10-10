@@ -59,6 +59,14 @@ function contains(rel, needle, message) {
   assert(supervisor.includes("spawn(bin, args, spawnOpts)"), "Server must launch as an explicit subprocess");
   assert(supervisor.includes("stopManagedWorlds"), "owned subprocess shutdown path missing");
   assert(supervisor.includes("3 restart attempts in 10 minutes"), "crash-loop guard missing");
+  assert(!supervisor.includes("-publiclobby"), "Palworld public-lobby launch flag must stay removed");
+  assert(!supervisor.includes("-useperfthreads") && !supervisor.includes("-NoAsyncLoadingThread") && !supervisor.includes("-UseMultithreadForDS"), "Palworld legacy performance flags must stay removed");
+  assert(supervisor.includes('if (!graceful) killTreeNow();'), "manual stop must immediately kill the server process tree");
+  const actionRoute = read("app/api/worlds/[id]/action/route.js");
+  assert(
+    actionRoute.includes('action === "stop"') && actionRoute.includes('{ graceful: false }'),
+    "primary Stop action must be immediate",
+  );
   contains("lib/steamcmd.js", "spawn(bin, args");
   contains("electron/main.js", "utilityProcess.fork(serverPath");
 }
@@ -189,6 +197,8 @@ function contains(rel, needle, message) {
   assert(main.includes('path: "/api/app/shutdown"'), "desktop shutdown bridge missing");
   const admin = read("components/AdminPanel.jsx");
   assert(!admin.includes("setAutostart"), "Server profile UI still exposes an automatic launch switch");
+  assert(!admin.includes("community_server") && !admin.includes("legacy_perf_flags"), "Palworld-only profile controls must stay removed");
+  assert(!read("app/page.jsx").includes("community_server"), "Palworld public/private badge must stay removed");
 }
 
 

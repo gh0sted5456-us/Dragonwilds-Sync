@@ -184,7 +184,7 @@ export default function SchedulePanel({ worldId, world, schedules, onChange }) {
 }
 
 // Per-world player-warning countdown shown before a scheduled OR manual
-// stop/restart/update. Broadcasts announce messages at each interval, then Palworld's
+// stop/restart/update. Broadcasts announce messages at each interval, then the server's
 // native red shutdown countdown covers the final minute.
 function WarningConfig({ world, onChange }) {
   const { t } = useTranslation();

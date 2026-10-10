@@ -299,11 +299,6 @@ function WorldRow({ w, active, busy, onAction, onActivate }) {
           </Link>
           <StatusChip status={w.status} running={w.running} />
           {active && <RsdwBadge label="ACTIVE SERVER PROFILE" />}
-          {w.community_server ? (
-            <span className="chip" style={{ background: "var(--green-bright)", color: "#0b3d1a" }} title={t("worlds.communityTip")}>{t("worlds.community")}</span>
-          ) : (
-            <span className="chip" style={{ background: "var(--line-strong)", color: "var(--ink-soft)" }} title={t("worlds.privateTip")}>{t("worlds.private")}</span>
-          )}
           {w.updateAvailable && (
             <span className="chip" style={{ background: "var(--yellow)", color: "#1e1f22" }}>{t("worlds.updateAvailable")}</span>
           )}

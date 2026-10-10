@@ -112,9 +112,9 @@ function buildWorldManifest(worldId, options = {}) {
       id: world.world_id,
       name: world.display_name,
       gamePort: world.game_port,
-      type: world.community_server ? "Community" : "Private",
+      type: "Dedicated",
       rules: {
-        access: world.community_server ? "Community" : "Private",
+        access: String(world.server_password || "").trim() ? "Password protected" : "Direct IP",
         passwordRequired: !!String(world.server_password || "").trim(),
         gamePort: world.game_port,
         clientRequiredMods: modUnits.length + runtimeUnits.length,

@@ -72,7 +72,7 @@ function hostPlatform() {
 //
 // Starting the GUI server directly sidesteps the whole thing: same server, one process,
 // no console anywhere in the tree, so no window can appear. Verified against a real
-// install — via the launcher: PalServer-Win64-Shipping-Cmd.exe plus a visible window;
+// install — via the launcher: the *-Cmd.exe process plus a visible window;
 // direct: a single process, no window, REST API up either way.
 //
 // This applies to the Windows build whether it's running natively or under Wine — the
@@ -129,21 +129,9 @@ function parseCustomEnv(world) {
 function buildArgs(world) {
   // Required launch flags for the dedicated server and logging behavior.
   const args = ["-server", "-log", "-NewConsole", `-port=${world.game_port}`, `-queryport=${world.query_port}`, `-RESTAPIPort=${world.rest_api_port}`];
-  // Legacy multithreading flags (issue #11): on by default so behavior is unchanged
-  // for every existing world, but skippable per world since Palworld's engine has
-  // handled multithreading on its own since 1.0 and these can now hurt more than help.
-  if (world.legacy_perf_flags !== 0) {
-    args.push("-useperfthreads", "-NoAsyncLoadingThread", "-UseMultithreadForDS");
-  }
   if (world.rest_api_enabled) args.push("-RESTAPIEnabled=true");
   // If mods are explicitly disabled for this world, hard-disable via launch flag.
   if (!world.mods_enabled) args.push("-NoMods");
-  // Community server: lists the server in the in-game public browser.
-  // Current flag is -publiclobby; EpicApp override kept for legacy builds.
-  if (world.community_server) {
-    args.push("-publiclobby");
-    args.push("EpicApp=RSDragonwilds");
-  }
   if (world.extra_args) args.push(...world.extra_args.split(/\s+/).filter(Boolean));
   return args;
 }
@@ -424,7 +412,7 @@ function recordDeath(worldId, death) {
   const cause = causeText(causeRaw);
 
   // Killer display: players keep their name. For Dragonwilds we do not perform
-  // any Pal-style name mapping — non-player killers are stored and shown as the
+  // any game-specific name mapping — non-player killers are stored and shown as the
   // raw codename or text provided by the relay.
   const killerRaw = kind === "player" ? "" : String(death.killer || "").trim();
   let killerDisplay = "";
@@ -521,7 +509,7 @@ async function startWorldUnlocked(worldId) {
   }
 
   // Re-assert this world's managed auth/network identity into DedicatedServer.ini
-  // right before launch. Palworld rewrites that file from its in-memory config on a
+  // right before launch. The dedicated server may rewrite that file on a
   // clean shutdown, so a value it once loaded (e.g. a blank AdminPassword) would
   // otherwise persist across every restart — leaving REST enabled with no password,
   // which floods the log with "Unauthorized (AdminPassword is empty)" and blocks all
@@ -653,38 +641,51 @@ async function stopWorldUnlocked(worldId, { graceful = true, waittime = 15 } = {
   const targetPid = child?.pid || world.process_id;
   await new Promise((resolve) => {
     let done = false;
-    const finish = () => { if (!done) { done = true; resolve(); } };
+    let poll = null;
+    let hardTimer = null;
+    let safetyTimer = null;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      if (poll) clearInterval(poll);
+      if (hardTimer) clearTimeout(hardTimer);
+      if (safetyTimer) clearTimeout(safetyTimer);
+      resolve();
+    };
+
+    const killTreeNow = () => {
+      if (!targetPid || !pidAlive(targetPid)) return finish();
+      // tree-kill uses taskkill /T /F on Windows and SIGKILL on Unix, so the
+      // dedicated server and every launcher/worker it owns are terminated as one.
+      safetyTimer = setTimeout(finish, 5000);
+      kill(targetPid, "SIGKILL", (error) => {
+        if (error && pidAlive(targetPid)) pushLog(worldId, `Immediate process-tree termination failed: ${error.message}`);
+        if (!pidAlive(targetPid)) finish();
+      });
+    };
 
     if (child) child.once("close", finish);
     if (!targetPid || !pidAlive(targetPid)) return finish();
 
-    // A server from an older detached build has no ChildProcess handle in this
-    // process. Kill by the persisted PID so Stop still means Stop.
-    const hardAfter = graceful ? (waittime + 5) * 1000 : 500;
-    setTimeout(() => {
-      if (!pidAlive(targetPid)) return finish();
-      kill(targetPid, "SIGKILL", () => setTimeout(finish, 500));
-      setTimeout(finish, 1800);
-    }, hardAfter);
+    // Operator Stop is authoritative and immediate. Graceful callers (scheduled
+    // restart/app exit) retain a bounded chance to save before the same hard kill.
+    // Detect exit even for a persisted PID from an older app process where no
+    // ChildProcess handle exists. This also makes immediate Stop return promptly.
+    poll = setInterval(() => { if (!pidAlive(targetPid)) finish(); }, 50);
 
-    // If REST shutdown already caused the external process to exit, detect that
-    // without waiting for the hard timeout.
-    if (!child) {
-      const poll = setInterval(() => {
-        if (!pidAlive(targetPid)) {
-          clearInterval(poll);
-          finish();
-        }
-      }, 250);
-      setTimeout(() => clearInterval(poll), hardAfter + 2000);
-    }
+    if (!graceful) killTreeNow();
+    else hardTimer = setTimeout(killTreeNow, (waittime + 5) * 1000);
   });
+  if (targetPid && pidAlive(targetPid)) {
+    dbm.updateWorld(worldId, { status: "running", process_id: targetPid });
+    throw new Error(`Could not terminate server process tree ${targetPid}. Try running RSDW Sync as an administrator.`);
+  }
   S.procs.delete(worldId);
   dbm.updateWorld(worldId, { status: "stopped", process_id: null });
   // Give Dragonwilds a moment to finish its exit-time writes, then put the
   // persisted Server profile back on disk. This prevents the game's shutdown
   // serialization from becoming the next launch's source of truth.
-  await new Promise((r) => setTimeout(r, 800));
+  if (graceful) await new Promise((r) => setTimeout(r, 800));
   try {
     const profiles = require("./active-server-profile");
     if (profiles.readActiveId() === worldId) {

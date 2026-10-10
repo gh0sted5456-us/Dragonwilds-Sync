@@ -6,7 +6,7 @@ const path = require("path");
 const fs = require("fs");
 
 function dataDir() {
-  const injected = process.env.APP_MANAGER_DATA_DIR || process.env.PALWORLD_MANAGER_DATA_DIR;
+  const injected = process.env.APP_MANAGER_DATA_DIR;
   const base = injected || path.join(process.cwd(), ".data");
   ensure(base);
   return base;

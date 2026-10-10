@@ -24,8 +24,8 @@ export async function GET(req, { params }) {
   portable.DefaultWorldName = w.default_world_name || "";
 
   const zip = new AdmZip();
-  zip.addFile("PalWorldSettings.portable.ini", Buffer.from(ini.serializeOptionSettings(portable), "utf8"));
-  zip.addFile("meta.json", Buffer.from(JSON.stringify({ type: "palworld-settings", exported: Date.now(), from: w.display_name, keys: Object.keys(portable).length }, null, 2), "utf8"));
+  zip.addFile("DragonwildsServerSettings.portable.ini", Buffer.from(ini.serializeOptionSettings(portable), "utf8"));
+  zip.addFile("meta.json", Buffer.from(JSON.stringify({ type: "dragonwilds-server-settings", exported: Date.now(), from: w.display_name, keys: Object.keys(portable).length }, null, 2), "utf8"));
   const buf = zip.toBuffer();
   const safe = (w.display_name || "world").replace(/[^a-z0-9_-]+/gi, "_");
   return new NextResponse(buf, {

@@ -1,22 +1,16 @@
 "use client";
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useTranslation, Trans } from "react-i18next";
-import { switchLanguage } from "@/lib/i18n/client";
 import { api, Icon, toast } from "@/components/ui";
 // Pal name mapping removed for RSDW — Pals are not a thing in Dragonwilds.
 
 export default function SettingsPage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const [s, setS] = useState(null);
   const [steam, setSteam] = useState(null);
   const [saving, setSaving] = useState(false);
   const [backupLoc, setBackupLoc] = useState(null);
   const [backupPath, setBackupPath] = useState("");
-  const [langs, setLangs] = useState([]);
-  const [switching, setSwitching] = useState(false);
-  const [catalog, setCatalog] = useState(null); // null=loading, {checked,packs}=loaded
-  const [busyCode, setBusyCode] = useState(""); // code currently installing/updating/deleting
   const [autoLaunch, setAutoLaunchState] = useState(null);
   const [closeToTray, setCloseToTrayState] = useState(null);
   const [componentUpdates, setComponentUpdates] = useState(null);
@@ -28,8 +22,6 @@ export default function SettingsPage() {
     api("/api/settings").then((r) => setS(r.settings)).catch(() => {});
     api("/api/steamcmd").then(setSteam).catch(() => {});
     api("/api/settings/backup-dir").then((r) => { setBackupLoc(r.backup); setBackupPath(r.backup.custom ? r.backup.path : ""); }).catch(() => {});
-    api("/api/i18n/languages").then((r) => setLangs(r.languages || [])).catch(() => {});
-    loadCatalog();
     const readDesktopFlag = async (method, fallback, setter) => {
       try {
         const fn = window.desktop?.[method];
@@ -42,11 +34,6 @@ export default function SettingsPage() {
     void readDesktopFlag("getCloseToTray", true, setCloseToTrayState);
   }, []);
 
-  const loadCatalog = (force) =>
-    api(`/api/i18n/registry${force ? "?force=1" : ""}`)
-      .then((r) => setCatalog({ checked: !!r.checked, packs: r.packs || [] }))
-      .catch(() => setCatalog({ checked: false, packs: [] }));
-
   const loadComponentUpdates = async (force = false) => {
     setComponentChecking(true);
     try {
@@ -57,49 +44,6 @@ export default function SettingsPage() {
     } finally {
       setComponentChecking(false);
     }
-  };
-
-  const chooseLanguage = async (code) => {
-    if (code === i18n.language) return;
-    setSwitching(true);
-    try {
-      const meta = langs.find((l) => l.code === code);
-      await switchLanguage(code, meta?.dir || "ltr");
-      setS((prev) => (prev ? { ...prev, language: code } : prev));
-    } catch (e) { toast(e.message, "error"); }
-    finally { setSwitching(false); }
-  };
-
-  const refreshLangs = () => api("/api/i18n/languages").then((r) => setLangs(r.languages || [])).catch(() => {});
-
-  // Install (or update) a pack straight from the GitHub catalog. The download route
-  // re-validates every pack exactly like a hand-imported file — the catalog only
-  // supplies the (host-allowlisted) link. We don't auto-switch; it just becomes
-  // available in the picker above.
-  const installFromCatalog = async (entry) => {
-    setBusyCode(entry.code);
-    try {
-      const r = await api("/api/i18n/download", { method: "POST", body: { url: entry.url, updatedAt: entry.updatedAt } });
-      toast(t("language.imported", { name: r.language?.nativeName || entry.nativeName || entry.code }), "success");
-      await refreshLangs();
-      loadCatalog();
-    } catch (err) { toast(err.message, "error"); }
-    finally { setBusyCode(""); }
-  };
-
-  // Delete an installed pack — no need to leave the app.
-  const deleteFromCatalog = async (entry) => {
-    if (!confirm(t("language.confirmRemove", { name: entry.nativeName || entry.code }))) return;
-    setBusyCode(entry.code);
-    try {
-      const r = await api(`/api/i18n/import?code=${encodeURIComponent(entry.code)}`, { method: "DELETE" });
-      setLangs(r.languages || []);
-      loadCatalog();
-      toast(t("language.removed"), "success");
-      // If the deleted pack was the active language, fall back to English.
-      if (i18n.language === entry.code) { await switchLanguage("en", "ltr"); setS((prev) => (prev ? { ...prev, language: "en" } : prev)); }
-    } catch (err) { toast(err.message, "error"); }
-    finally { setBusyCode(""); }
   };
 
   const saveBackupDir = async (p) => {
@@ -156,7 +100,6 @@ export default function SettingsPage() {
   // crammed. `electronOnly` categories are hidden in the browser build.
   const CATEGORIES = [
     { id: "appearance", icon: "sun" },
-    { id: "language", icon: "globe" },
     { id: "updates", icon: "refresh" },
     { id: "backups", icon: "download" },
     { id: "desktop", icon: "settings" },
@@ -211,107 +154,6 @@ export default function SettingsPage() {
             <div style={{ fontWeight: 850 }}>RSDW Dark</div>
             <div className="subtle" style={{ fontSize: "0.75rem", fontWeight: 600 }}>Matte black surfaces with muted gold borders and controls.</div>
           </div>
-        </div>
-      </div>
-      )}
-
-      {section === "language" && (
-      <div className="panel" style={{ padding: "1.3rem", marginBottom: "1rem" }}>
-        <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>
-          <Icon name="globe" size={17} /> {t("settings.language")}
-        </h3>
-        <p className="subtle" style={{ fontWeight: 600, fontSize: "0.78rem", margin: "0 0 0.6rem" }}>{t("settings.languageHelp")}</p>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", maxWidth: 360 }}>
-          <select className="input" style={{ flex: 1, minWidth: 200 }} value={i18n.language} disabled={switching}
-            onChange={(e) => chooseLanguage(e.target.value)}>
-            {langs.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.nativeName}{l.completeness < 100 ? ` — ${t("language.completeness", { percent: l.completeness })}` : ""}
-              </option>
-            ))}
-          </select>
-          {switching && <span className="subtle" style={{ fontSize: "0.78rem", fontWeight: 700 }}>…</span>}
-        </div>
-        {(() => {
-          const cur = langs.find((l) => l.code === i18n.language);
-          return cur && cur.completeness < 100 ? (
-            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", margin: "0.5rem 0 0" }}>{t("settings.languagePartial")}</p>
-          ) : null;
-        })()}
-
-        {/* Language packs from the GitHub catalog — install / update / delete, all in-app */}
-        <div style={{ marginTop: "1.1rem", borderTop: "1px solid var(--border)", paddingTop: "1rem" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-            <div className="heading" style={{ fontSize: "0.92rem" }}>{t("language.browseTitle")}</div>
-            <Link href="/language-packs" className="btn btn-ghost" style={{ marginLeft: "auto", padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}
-              title={t("language.makeOwn")}>
-              <Icon name="info" size={13} /> {t("language.makeOwn")}
-            </Link>
-            <button className="btn btn-ghost" style={{ padding: "0.2rem 0.5rem", fontSize: "0.72rem" }}
-              onClick={() => loadCatalog(true)} disabled={catalog === null || !!busyCode}>
-              <Icon name="refresh" size={13} /> {t("language.refresh")}
-            </button>
-          </div>
-          <p className="subtle" style={{ fontWeight: 600, fontSize: "0.76rem", margin: "0.2rem 0 0.7rem" }}>{t("language.browseDesc")}</p>
-
-          {catalog === null ? (
-            <p className="subtle" style={{ fontWeight: 700, fontSize: "0.78rem" }}>{t("common.loading")}</p>
-          ) : !catalog.checked ? (
-            <div className="panel-inset" style={{ padding: "0.7rem 0.9rem", borderLeft: "3px solid var(--yellow)" }}>
-              <p className="subtle" style={{ fontWeight: 600, fontSize: "0.76rem", margin: 0 }}>{t("language.catalogOffline")}</p>
-            </div>
-          ) : catalog.packs.length === 0 ? (
-            <p className="subtle" style={{ fontWeight: 600, fontSize: "0.76rem" }}>{t("language.noPacks")}</p>
-          ) : (
-            <div style={{ display: "grid", gap: "0.4rem" }}>
-              {catalog.packs.map((p) => {
-                const busy = busyCode === p.code;
-                const anyBusy = !!busyCode;
-                return (
-                  <div key={p.code} className="panel-inset" style={{ padding: "0.5rem 0.7rem", display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 800, fontSize: "0.84rem" }}>
-                        {p.nativeName} <span className="subtle" style={{ fontWeight: 700 }}>· {p.name}</span>
-                        {p.installed && <span className="s-running" style={{ fontWeight: 800, fontSize: "0.72rem", marginLeft: "0.4rem", whiteSpace: "nowrap" }}>✓ {t("language.installed")}</span>}
-                      </div>
-                      <div className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem" }}>
-                        {p.code}
-                        {typeof p.completeness === "number" ? ` · ${t("language.completeness", { percent: p.completeness })}` : ""}
-                        {p.authors?.length ? ` · ${t("language.byAuthors", { authors: p.authors.join(", ") })}` : ""}
-                      </div>
-                    </div>
-                    <div style={{ marginLeft: "auto", display: "flex", gap: "0.35rem", alignItems: "center" }}>
-                      {p.unsupported ? (
-                        <span className="subtle" style={{ fontWeight: 700, fontSize: "0.72rem" }}>{t("language.needsAppVersion", { version: p.appMinVersion })}</span>
-                      ) : busy ? (
-                        <button className="btn btn-ghost" disabled style={{ padding: "0.25rem 0.6rem", fontSize: "0.74rem" }}>{t("language.installing")}</button>
-                      ) : (
-                        <>
-                          {p.updateAvailable && (
-                            <button className="btn btn-primary" style={{ padding: "0.25rem 0.6rem", fontSize: "0.74rem" }}
-                              onClick={() => installFromCatalog(p)} disabled={anyBusy}>
-                              <Icon name="download" size={13} /> {t("language.update")}
-                            </button>
-                          )}
-                          {p.installed ? (
-                            <button className="btn btn-ghost" style={{ padding: "0.25rem 0.55rem", fontSize: "0.74rem" }}
-                              onClick={() => deleteFromCatalog(p)} disabled={anyBusy}>
-                              <Icon name="trash" size={13} /> {t("language.remove")}
-                            </button>
-                          ) : (
-                            <button className="btn btn-primary" style={{ padding: "0.25rem 0.6rem", fontSize: "0.74rem" }}
-                              onClick={() => installFromCatalog(p)} disabled={anyBusy}>
-                              <Icon name="download" size={13} /> {t("language.install")}
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
       )}

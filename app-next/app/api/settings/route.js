@@ -4,7 +4,7 @@ const dbm = require("@/lib/db");
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const KEYS = ["theme", "backupRetention", "hideConsoleWindow", "language", "onboarded", "autoUpdateEnabled", "updateCheckIntervalMinutes"];
+const KEYS = ["theme", "backupRetention", "hideConsoleWindow", "autoUpdateEnabled", "updateCheckIntervalMinutes"];
 
 // Read a setting, normalising the "never chosen" cases. getSetting only falls back when
 // the row is missing, so a row holding null would otherwise reach the UI as null.
@@ -37,8 +37,6 @@ function defaultFor(k) {
   if (k === "theme") return "dark";
   if (k === "backupRetention") return 10;
   if (k === "hideConsoleWindow") return true;
-  if (k === "language") return "en";
-  if (k === "onboarded") return false;
   if (k === "autoUpdateEnabled") return false;
   if (k === "updateCheckIntervalMinutes") return 30;
   return "";

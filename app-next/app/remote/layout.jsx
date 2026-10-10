@@ -1,7 +1,7 @@
 "use client";
 // Frame for the Remote Access guest surface. The admin sidebar is bypassed for /remote
 // (see components/Shell.jsx); this gives guests their own minimal top bar with the
-// per-device language + theme switch, and a centered content column.
+// per-device theme switch, and a centered content column.
 import RemotePrefs from "@/components/RemotePrefs";
 
 export default function RemoteLayout({ children }) {

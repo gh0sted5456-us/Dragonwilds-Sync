@@ -71,7 +71,7 @@ export default function Shell({ children }) {
   const W = collapsed ? 68 : 236;
 
   // The Remote Access guest surface (/remote) is its own self-contained shell — no admin
-  // sidebar, jobs, or first-run wizard. (/remote-access is the admin page and keeps the
+  // sidebar or jobs. (/remote-access is the admin page and keeps the
   // sidebar.) Hooks above always run; only the chrome is skipped.
   if (path === "/remote" || path.startsWith("/remote/")) return <>{children}</>;
 

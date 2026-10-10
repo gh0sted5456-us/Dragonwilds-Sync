@@ -49,6 +49,10 @@ function contains(rel, needle, message) {
   assert(!fs.existsSync(path.join(root, "app", "api", "boot", "route.js")), "obsolete boot API must stay deleted");
   assert(!fs.existsSync(path.join(root, "lib", "ue4ss.js")), "legacy Palworld UE4SS manager must stay deleted");
   assert(!fs.existsSync(path.join(root, "components", "Ue4ssPanel.jsx")), "legacy UE4SS panel must stay deleted");
+  assert(!fs.existsSync(path.join(root, "app", "language-packs", "page.jsx")), "language-pack page must stay deleted");
+  assert(!fs.existsSync(path.join(root, "app", "api", "i18n", "languages", "route.js")), "language-pack APIs must stay deleted");
+  assert(!fs.existsSync(path.join(root, "registry", "index.json")), "language-pack registry must stay deleted");
+  assert(!fs.existsSync(path.join(root, "lib", "i18n", "client.js")), "runtime language switching must stay deleted");
 
   const supervisor = contains("lib/supervisor.js", "owned: new Set()", "supervisor ownership registry missing");
   assert(!supervisor.includes("spawnOpts.detached"), "Server subprocess must not be detached");
@@ -125,6 +129,9 @@ function contains(rel, needle, message) {
   assert(!worldPage.includes("Ue4ssPanel"), "stale UE4SS-only panel must not remain mounted");
   assert(!worldPage.includes("mountedTabs"), "inactive world tabs must be unmounted to avoid overlapping requests and stale effects");
   assert(worldPage.includes("TabPanelBoundary"), "active world tabs must remain isolated by an error boundary");
+  assert(worldPage.includes('<TabSlot key="overview"') && worldPage.includes('<TabSlot key="admin"'), "World tabs must use distinct keys so failed panels cannot leak error state");
+  contains("components/ApplicationBoundary.jsx", "Application view failed");
+  contains("app/error.js", "Retry page");
   assert(!worldPage.includes("MapPanel") && !worldPage.includes('id: "broadcasts"'), "removed map and broadcast tabs must not return");
   const shell = read("components/Shell.jsx");
   assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");

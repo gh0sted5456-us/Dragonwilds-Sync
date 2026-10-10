@@ -19,7 +19,6 @@ export function middleware(req) {
     pathname.startsWith("/remote") ||
     pathname.startsWith("/api") ||
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/locales") ||
     pathname === "/icon.png" ||
     pathname === "/favicon.ico"
   ) return NextResponse.next();

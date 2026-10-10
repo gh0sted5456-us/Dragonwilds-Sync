@@ -35,16 +35,20 @@ export default function WorldDetail() {
   const [busy, setBusy] = useState(null);
   const [customizing, setCustomizing] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const loadAbort = useRef(null);
 
   const load = useCallback(async () => {
-    try { setData(await api(`/api/worlds/${id}`)); }
-    catch (e) { toast(e.message, "error"); }
+    loadAbort.current?.abort();
+    const controller = new AbortController();
+    loadAbort.current = controller;
+    try { setData(await api(`/api/worlds/${id}`, { signal: controller.signal })); }
+    catch (e) { if (e.name !== "AbortError") toast(e.message, "error"); }
   }, [id]);
 
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);
-    return () => clearInterval(t);
+    return () => { clearInterval(t); loadAbort.current?.abort(); };
   }, [load]);
 
   // Only the active panel is mounted. Hidden panels used to keep streams, polling,
@@ -170,12 +174,12 @@ export default function WorldDetail() {
       </div>
 
       <div className="panel" style={{ padding: "1.3rem" }}>
-        {tab === "overview" && <TabSlot id="overview"><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
-        {tab === "console" && <TabSlot id="console"><LogsPanel worldId={id} /></TabSlot>}
-        {tab === "settings" && <TabSlot id="settings"><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
-        {tab === "backups" && <TabSlot id="backups"><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}
-        {tab === "schedule" && <TabSlot id="schedule"><SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} /></TabSlot>}
-        {tab === "mods" && <TabSlot id="mods">
+        {tab === "overview" && <TabSlot key="overview" id="overview"><Overview world={world} live={live} events={events} sessions={sessions} onDelete={() => setDeleting(true)} /></TabSlot>}
+        {tab === "console" && <TabSlot key="console" id="console"><LogsPanel worldId={id} /></TabSlot>}
+        {tab === "settings" && <TabSlot key="settings" id="settings"><SettingsEditor worldId={id} world={world} running={running} onGoToAdmin={() => selectTab("admin")} /></TabSlot>}
+        {tab === "backups" && <TabSlot key="backups" id="backups"><BackupsPanel worldId={id} backups={backups} running={running} onChange={load} /></TabSlot>}
+        {tab === "schedule" && <TabSlot key="schedule" id="schedule"><SchedulePanel worldId={id} world={world} schedules={schedules} onChange={load} /></TabSlot>}
+        {tab === "mods" && <TabSlot key="mods" id="mods">
           <div style={{ display: "grid", gap: "1.8rem" }}>
             <div>
               <h3 className="heading" style={{ fontSize: "1.05rem", marginTop: 0 }}>Mods &amp; synchronization</h3>
@@ -184,7 +188,7 @@ export default function WorldDetail() {
           </div>
         </TabSlot>}
         {/* Discord integration removed for Dragonwilds; panels disabled */}
-        {tab === "admin" && <TabSlot id="admin"><AdminPanel world={world} running={running} onChange={load} /></TabSlot>}
+        {tab === "admin" && <TabSlot key="admin" id="admin"><AdminPanel world={world} running={running} onChange={load} /></TabSlot>}
       </div>
 
       {customizing && (

@@ -7,7 +7,6 @@ contextBridge.exposeInMainWorld("desktop", {
   pickDirectory: () => ipcRenderer.invoke("pick-directory"),
   pickZip: () => ipcRenderer.invoke("pick-zip"),
   getSystemTheme: () => ipcRenderer.invoke("get-theme"),
-  getSystemLocale: () => ipcRenderer.invoke("get-system-locale"),
   openPath: (p) => ipcRenderer.invoke("open-path", p),
   openExternal: (value) => ipcRenderer.invoke("open-external", value),
   createProfileShortcut: (profile) => ipcRenderer.invoke("create-profile-shortcut", profile),

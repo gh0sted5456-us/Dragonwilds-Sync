@@ -16,6 +16,12 @@ export default class TabPanelBoundary extends React.Component {
     console.error(`World tab failed: ${this.props.tabId}`, error, info);
   }
 
+  componentDidUpdate(previousProps) {
+    if (previousProps.tabId !== this.props.tabId && this.state.error) {
+      this.setState({ error: null, generation: 0 });
+    }
+  }
+
   retry = () => {
     this.setState((state) => ({ error: null, generation: state.generation + 1 }));
   };

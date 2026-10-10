@@ -33,9 +33,6 @@ const P = {
   backups: (custom) => ensure(backupsBase(custom)),
   defaultBackupsBase: () => path.join(dataDir(), "backups"),
   staging: () => ensure(path.join(dataDir(), "staging")),
-  // Writable dir for user-imported / downloaded translation packs (*.json). Inbuilt
-  // packs live read-only under <appRoot>/public/locales; see lib/i18n/loader.js.
-  languagePacks: () => ensure(path.join(dataDir(), "languagepacks")),
   // Where a manually-uploaded DailyLoginRewards players.json is parked when the mod
   // folder isn't locally reachable (lib/loginrewards.js upload fallback).
   loginRewards: () => ensure(path.join(dataDir(), "loginrewards")),

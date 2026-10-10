@@ -22,6 +22,7 @@ export default function AdminPanel({ world, running, onChange }) {
   const [winePrefix, setWinePrefix] = useState(world.wine_prefix || "");
   const [wineLaunchFlags, setWineLaunchFlags] = useState(world.wine_launch_flags || "");
   const [crashGuard, setCrashGuard] = useState(!!world.crash_guard);
+  const [autoUpdate, setAutoUpdate] = useState(!!world.auto_update);
   const [saving, setSaving] = useState(false);
   const [installDir, setInstallDir] = useState(world.install_dir || "");
   const [ownerId, setOwnerId] = useState(world.owner_id || "");
@@ -71,6 +72,7 @@ export default function AdminPanel({ world, running, onChange }) {
           display_name: name, admin_password: password, server_password: stripWrappingQuotes(serverPassword),
           extra_args: extraArgs, env_vars: envTextToObject(envVars),
                 crash_guard: crashGuard ? 1 : 0,
+                auto_update: autoUpdate ? 1 : 0,
                 owner_id: ownerId.trim() || null, default_world_name: defaultWorldName.trim() || null,
         },
       });
@@ -140,7 +142,11 @@ export default function AdminPanel({ world, running, onChange }) {
         </div>
         <div style={{ display: "flex", gap: "0.8rem", marginTop: "0.9rem", flexWrap: "wrap" }}>
           <Toggle label={t("admin.crashGuard")} on={crashGuard} onClick={() => setCrashGuard((v) => !v)} />
+          <Toggle label="Update and restart automatically" on={autoUpdate} onClick={() => setAutoUpdate((v) => !v)} />
         </div>
+        <p className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", marginTop: 6 }}>
+          When Steam publishes a new dedicated-server build, RSDW warns connected players, stops this profile, validates the update through SteamCMD, and restarts only after verification succeeds.
+        </p>
 
         {world.platform === "windows" && (
           <div className="panel-inset" style={{ padding: "0.9rem 1.1rem", marginTop: "0.9rem" }}>

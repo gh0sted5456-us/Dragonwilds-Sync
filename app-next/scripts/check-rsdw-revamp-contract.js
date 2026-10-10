@@ -142,7 +142,7 @@ function contains(rel, needle, message) {
   contains("app/error.js", "Retry page");
   assert(!worldPage.includes("MapPanel") && !worldPage.includes('id: "broadcasts"'), "removed map and broadcast tabs must not return");
   const shell = read("components/Shell.jsx");
-  assert(!shell.includes('fetch("/api/component-updates")'), "desktop shell must not probe UE4SS/RuneSchema during GUI startup");
+  assert(shell.includes('setTimeout(loadUpdates, 4000)'), "deferred game/framework update notification monitor missing");
   contains("electron/main.js", "loadingPage(");
   contains("electron/main.js", "startShareServer()");
   contains("electron/main.js", 'path.join(__dirname, "share-proxy.js")');
@@ -176,7 +176,10 @@ function contains(rel, needle, message) {
   assert(provision.includes('"Saved", "SaveGames"'), "world import must target only Saved/SaveGames");
   assert(!provision.includes('path.join(world.install_dir, "RSDragonwilds", "Saved");'), "world import must not replace the entire Saved directory");
   assert(provision.includes("createBackup(worldId, \"pre-import-safety\")"), "world import safety backup missing");
-  assert(provision.includes("isRunning(worldId)"), "world import running-server guard missing");
+  assert(provision.includes("isAlive(worldId)"), "world import persisted-process guard missing");
+  assert(provision.includes("function listSaveSlots("), "reusable world save slots missing");
+  assert(provision.includes("function activateSaveSlot("), "offline world save activation missing");
+  contains("app/api/worlds/[id]/save-slots/route.js", "provision.activateSaveSlot");
   contains("electron/preload.js", "pickWorldSave");
   contains("electron/main.js", 'ipcMain.handle("pick-world-save"');
   contains("components/BackupsPanel.jsx", "check.activeSave");
@@ -206,7 +209,7 @@ function contains(rel, needle, message) {
 // Profiles may select/use a lane but must not provision or cache independent installs.
 {
   contains("app/setup/page.jsx", "Application Setup");
-  contains("app/setup/page.jsx", "Dedicated Server lane");
+  contains("app/setup/page.jsx", "SteamCMD · Dedicated Server");
   contains("app/setup/page.jsx", 'label="Steam"');
   contains("app/setup/page.jsx", 'label="PC Game Pass"');
   contains("app/setup/page.jsx", "<PlayLane");
@@ -232,11 +235,18 @@ function contains(rel, needle, message) {
   assert(!fs.existsSync(path.join(root, "app", "api", "provision", "status", "route.js")), "obsolete per-World provision status API must stay deleted");
 
   const setupPage = read("app/setup/page.jsx");
-  assert(setupPage.includes('useState("play")'), "Application Setup must open on Play by default");
+  assert(setupPage.includes('useState("server")'), "Application Setup must open on SteamCMD Server setup by default");
   assert(!setupPage.includes('useState(typeof window'), "Application Setup must not derive initial state from window during SSR");
   const settingsPage = read("app/settings/page.jsx");
   assert(settingsPage.includes("window.desktop?.[method]") && settingsPage.includes('typeof fn === "function"'), "Settings must guard optional desktop bridges");
   assert(!settingsPage.includes("loadComponentUpdates(false);\n    if (isElectron)"), "Settings must not probe framework updates just by mounting");
+  assert(setupPage.includes("pickServerExecutable"), "Application Setup must allow selecting an existing server executable");
+  assert(setupPage.includes("defaultShowLog"), "Application Setup must show the complete SteamCMD log inline");
+  const setupRoute = read("app/api/application-setup/server/route.js");
+  assert(setupRoute.includes('body.mode === "adopt"'), "existing server executable adoption route missing");
+  assert(!setupRoute.includes("job.id"), "SteamCMD setup job still writes logs to an undefined job id");
+  const updates = read("lib/component-updates.js");
+  assert(updates.includes("dragonwilds-server") && updates.includes("dragonwilds-steam-client") && updates.includes("dragonwilds-gamepass-client"), "game/server version notifications are incomplete");
 
 }
 

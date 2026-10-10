@@ -65,6 +65,7 @@ function migrate(d) {
       status TEXT NOT NULL DEFAULT 'stopped',
       autostart INTEGER NOT NULL DEFAULT 0,
       crash_guard INTEGER NOT NULL DEFAULT 1,
+      auto_update INTEGER NOT NULL DEFAULT 0,
       build_id TEXT,
       latest_known_build_id TEXT,
       crash_count INTEGER NOT NULL DEFAULT 0,
@@ -241,6 +242,9 @@ function migrate(d) {
   }
   if (!cols.includes("mods_enabled")) {
     addColumnIfMissing(d, "ALTER TABLE worlds ADD COLUMN mods_enabled INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!cols.includes("auto_update")) {
+    addColumnIfMissing(d, "ALTER TABLE worlds ADD COLUMN auto_update INTEGER NOT NULL DEFAULT 0");
   }
   if (!cols.includes("icon_data")) {
     addColumnIfMissing(d, "ALTER TABLE worlds ADD COLUMN icon_data TEXT");   // data URL (small)
@@ -484,6 +488,7 @@ function updateWorld(id, patch) {
   if (merged.wine_binary === undefined || merged.wine_binary === null || merged.wine_binary === "") merged.wine_binary = "wine";
   if (merged.wine_prefix === undefined) merged.wine_prefix = null;
   if (merged.wine_launch_flags === undefined || merged.wine_launch_flags === null) merged.wine_launch_flags = "";
+  if (merged.auto_update === undefined || merged.auto_update === null) merged.auto_update = 0;
   if (merged.legacy_perf_flags === undefined || merged.legacy_perf_flags === null) merged.legacy_perf_flags = 1;
   db().prepare(`UPDATE worlds SET
     display_name=@display_name, install_dir=@install_dir, game_port=@game_port,
@@ -491,7 +496,7 @@ function updateWorld(id, patch) {
     admin_password=@admin_password, rest_api_enabled=@rest_api_enabled,
     rcon_enabled=@rcon_enabled, mods_enabled=@mods_enabled,
     process_id=@process_id, status=@status, autostart=@autostart,
-    crash_guard=@crash_guard, build_id=@build_id,
+    crash_guard=@crash_guard, auto_update=@auto_update, build_id=@build_id,
     latest_known_build_id=@latest_known_build_id, crash_count=@crash_count,
     extra_args=@extra_args, last_started_at=@last_started_at,
     icon_data=@icon_data, banner_data=@banner_data, accent_color=@accent_color,

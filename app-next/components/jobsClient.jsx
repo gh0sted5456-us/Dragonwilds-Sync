@@ -15,7 +15,7 @@ export function phaseLabel(phase) { return PHASE_LABELS[phase] || "Working"; }
 export function labelFor(job) { return job.worldName || (job.type === "install" ? "New server" : job.type === "redist" ? "Prerequisites" : "Server update"); }
 
 // Poll /api/jobs, fast while something runs, relaxed when idle. Exposes
-// window.__palJobsPing() so a page can force an immediate refresh after starting.
+// A shared browser event lets any page request an immediate refresh after starting.
 export function useJobsPoll() {
   const [jobs, setJobs] = useState([]);
   const jobsRef = useRef(jobs);
@@ -36,8 +36,9 @@ export function useJobsPoll() {
       t = setTimeout(loop, active ? 1000 : 3500);
     };
     loop();
-    window.__palJobsPing = () => poll();
-    return () => { stopped = true; clearTimeout(t); try { delete window.__palJobsPing; } catch {} };
+    const ping = () => { void poll(); };
+    window.addEventListener("rsdw-jobs-ping", ping);
+    return () => { stopped = true; clearTimeout(t); window.removeEventListener("rsdw-jobs-ping", ping); };
   }, []);
   return jobs;
 }
@@ -54,9 +55,9 @@ export function ProgressBar({ percent, style }) {
   );
 }
 
-export function JobCard({ job, onDismiss }) {
+export function JobCard({ job, onDismiss, defaultShowLog = false, logHeight = 200 }) {
   const { t } = useTranslation();
-  const [showLog, setShowLog] = useState(false);
+  const [showLog, setShowLog] = useState(defaultShowLog);
   const logRef = useRef(null);
   useEffect(() => { if (showLog && logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight; }, [job.lines, showLog]);
 
@@ -95,7 +96,7 @@ export function JobCard({ job, onDismiss }) {
         {job.startedAt && <span className="subtle" style={{ fontSize: "0.7rem", fontWeight: 600 }}>{new Date(job.startedAt).toLocaleTimeString()}</span>}
       </div>
       {showLog && (
-        <div ref={logRef} className="console" style={{ height: 200, marginTop: 8 }}>
+        <div ref={logRef} className="console" style={{ height: logHeight, marginTop: 8 }}>
           {(job.lines || []).length === 0
             ? <div className="ln subtle">{t("job.waiting")}</div>
             : job.lines.map((l, i) => <div key={i} className="ln">{l}</div>)}

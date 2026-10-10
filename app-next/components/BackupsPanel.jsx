@@ -8,10 +8,12 @@ export default function BackupsPanel({ worldId, backups, running, onChange }) {
   const [busy, setBusy] = useState(false);
   const [importing, setImporting] = useState(false);
   const [loc, setLoc] = useState(null);
+  const [slots, setSlots] = useState([]);
   const isElectron = typeof window !== "undefined" && window.desktop?.isElectron;
 
   useEffect(() => {
     api(`/api/settings/backup-dir?worldId=${encodeURIComponent(worldId)}`).then((r) => setLoc(r.backup)).catch(() => {});
+    api(`/api/worlds/${worldId}/save-slots`).then((r) => setSlots(r.slots || [])).catch(() => {});
   }, [worldId]);
 
   const openFolder = () => { if (isElectron && loc?.worldPath) window.desktop.openPath(loc.worldPath); };
@@ -47,7 +49,21 @@ export default function BackupsPanel({ worldId, backups, running, onChange }) {
     setImporting(true);
     try {
       const { check } = await api(`/api/worlds/${worldId}/import`, { method: "POST", body: { savePath } });
-      toast(`World save replaced with ${check.activeSave}.`, "success");
+      setSlots(check.slots || []);
+      toast(`World save slot ${check.activeSave} is now active. Login and server profile settings were retained.`, "success");
+      onChange();
+    } catch (e) { toast(e.message, "error"); }
+    finally { setImporting(false); }
+  };
+
+  const activateSlot = async (name) => {
+    if (running) return toast(t("backups.stopBeforeImport"), "error");
+    if (!confirm(`Activate ${name}? RSDW will back up the current save and retain this Server profile's passwords, owner ID, ports, and settings.`)) return;
+    setImporting(true);
+    try {
+      const { result } = await api(`/api/worlds/${worldId}/save-slots`, { method: "POST", body: { name } });
+      setSlots(result.slots || []);
+      toast(`${name} is now the active world save.`, "success");
       onChange();
     } catch (e) { toast(e.message, "error"); }
     finally { setImporting(false); }
@@ -72,9 +88,25 @@ export default function BackupsPanel({ worldId, backups, running, onChange }) {
       <div className="panel-inset" style={{ padding: "0.7rem 0.85rem", marginBottom: "1rem" }}>
         <strong style={{ fontSize: "0.82rem" }}>World replacement</strong>
         <p className="subtle" style={{ margin: "0.25rem 0 0", fontSize: "0.75rem", lineHeight: 1.5 }}>
-          Import one <code>.sav</code> file, or a ZIP containing exactly one save. RSDW stops ambiguous multi-save imports, backs up the current world, replaces only <code>Saved/SaveGames</code>, and preserves server configuration.
+          Import one <code>.sav</code> file, or a ZIP containing exactly one save. Each file becomes a reusable slot. While the server is down, activate any slot with one click; RSDW backs up the current save and preserves passwords, Owner ID, ports, mods, and all Server profile settings.
         </p>
       </div>
+
+      {slots.length > 0 && <div style={{ marginBottom: "1.2rem" }}>
+        <h4 className="heading" style={{ fontSize: ".9rem", margin: "0 0 .55rem" }}>World save slots</h4>
+        <div style={{ display: "grid", gap: ".45rem" }}>
+          {slots.map((slot) => <div key={slot.name} className="panel-inset" style={{ padding: ".55rem .7rem", display: "flex", alignItems: "center", gap: 8 }}>
+            <Icon name={slot.active ? "check" : "globe"} size={15} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <strong style={{ fontSize: ".8rem", wordBreak: "break-all" }}>{slot.name}</strong>
+              <div className="subtle" style={{ fontSize: ".68rem" }}>{fmtBytes(slot.size)} · {new Date(slot.modifiedAt).toLocaleString()}</div>
+            </div>
+            {slot.active
+              ? <span className="chip" style={{ background: "var(--accent)", color: "var(--accent-ink)" }}>ACTIVE</span>
+              : <button className="btn btn-ghost" disabled={running || importing} onClick={() => activateSlot(slot.name)}>Activate</button>}
+          </div>)}
+        </div>
+      </div>}
 
       {loc && (
         <p className="subtle" style={{ fontWeight: 600, fontSize: "0.72rem", margin: "-0.4rem 0 1rem", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>

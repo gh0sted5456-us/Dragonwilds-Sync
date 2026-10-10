@@ -6,6 +6,7 @@ const steam = require("@/lib/steamcmd");
 const ra = require("@/lib/remoteauth");
 const runtimePackages = require("@/lib/runtime-packages");
 const modLanes = require("@/lib/mod-lanes");
+const scheduler = require("@/lib/scheduler");
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -48,6 +49,9 @@ function profileBadges(world) {
 export async function GET(req) {
   const gate = ra.authorize(req, {});
   if (!gate.ok) return NextResponse.json({ ok: false, error: gate.reason }, { status: gate.status });
+  // Start the lightweight update/schedule monitor only once the authenticated UI
+  // actually opens the server list. Opted-in profiles may then update themselves.
+  scheduler.ensureScheduler();
   let worlds = dbm.listWorlds().map(ensureBuildId);
   // A per-world code only ever sees its own world in the list.
   if (!gate.admin && gate.code && gate.code.scope === "world") {

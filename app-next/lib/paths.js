@@ -42,6 +42,7 @@ const P = {
   remoteBind: () => path.join(dataDir(), "remote-bind.json"),
   worldLogDir: (worldId) => ensure(path.join(dataDir(), "logs", worldId)),
   worldBackupDir: (worldId, custom) => ensure(path.join(backupsBase(custom), worldId)),
+  worldSaveSlots: (worldId) => ensure(path.join(dataDir(), "save-slots", String(worldId))),
   // Default WINEPREFIX for a Windows-targeted world run via Wine on Linux.
   // Only created/used when actually needed (see supervisor.js).
   worldWinePrefix: (worldId) => path.join(dataDir(), "wine-prefixes", worldId),

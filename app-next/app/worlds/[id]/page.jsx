@@ -70,7 +70,7 @@ export default function WorldDetail() {
     setBusy("update");
     try {
       await api(`/api/worlds/${id}/update`, { method: "POST" });
-      try { window.__palJobsPing?.(); } catch {}
+      try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
       toast(t("world.updateStarted"), "success");
       // reflect status changes as the background job runs
       setTimeout(load, 1200);

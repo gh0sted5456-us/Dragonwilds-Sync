@@ -24,7 +24,7 @@ export default function PrereqsNotice({ worldId }) {
     try {
       await api(`/api/worlds/${worldId}/prereqs`, { method: "POST" });
       toast(t("prereqs.started"), "success");
-      try { window.__palJobsPing?.(); } catch {}
+      try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
       setTimeout(load, 30000); // re-check once the install has had a chance to finish
     } catch (e) { toast(e.message, "error"); }
     finally { setBusy(false); }

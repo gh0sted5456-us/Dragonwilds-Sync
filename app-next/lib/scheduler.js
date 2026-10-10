@@ -361,25 +361,31 @@ async function maybeAutoCheckUpdates(now = Date.now()) {
 }
 
 // Fixed alert cadence for auto-updates: warn players once a minute for five minutes
-// before the server goes down. The final minute is Palworld's own red shutdown
-// countdown (see lib/warn.js), so players see notices at 5/4/3/2 minutes plus the
+// before the server goes down. The final minute uses the dedicated server's native
+// shutdown countdown (see lib/warn.js), so players see notices at 5/4/3/2 minutes plus the
 // native banner for the last minute.
 const AUTO_UPDATE_WARN = { leadMinutes: 5, intervalMinutes: 1 };
 
-// When "auto-update" is enabled in Settings, update any server whose installed build
-// is behind the latest known public build. Off by default; the periodic check above
-// still runs regardless so the "update available" chips stay accurate. Gated by
+// When the global setting or a profile's "auto-update" toggle is enabled, update
+// any matching server whose installed build is behind the latest public build. Off
+// by default; periodic checks still keep the "update available" chips accurate. Gated by
 // ST.autoUpdating so overlapping ticks can't start two sweeps, and per-world by
 // ST.updating inside updateWorld so it never collides with a manual/scheduled update.
 async function runAutoUpdates() {
-  if (dbm.getSetting("autoUpdateEnabled", false) !== true) return;
+  const globalEnabled = dbm.getSetting("autoUpdateEnabled", false) === true;
+  if (!globalEnabled && !dbm.listWorlds().some((world) => !!world.auto_update)) return;
   if (ST.autoUpdating) return;
   ST.autoUpdating = true;
   try {
+    const handledInstalls = new Set();
     for (const w of dbm.listWorlds()) {
+      if (!globalEnabled && !w.auto_update) continue;
+      const installKey = String(w.install_dir || "").toLowerCase();
+      if (handledInstalls.has(installKey)) continue;
       if (!w.build_id || !w.latest_known_build_id) continue; // never checked yet
       if (w.build_id === w.latest_known_build_id) continue;  // already current
       if (ST.updating.has(w.world_id)) continue;             // update already in flight
+      handledInstalls.add(installKey);
       dbm.logEvent(w.world_id, "update", `Auto-update: new build ${w.latest_known_build_id} detected — warning players for 5 minutes, then updating`);
       try { await notify(w.world_id, "update", `${w.display_name}: a new Dragonwilds server build is out — auto-updating in 5 minutes`); } catch {}
       try {
@@ -400,7 +406,15 @@ async function checkUpdates() {
   const flagged = [];
   for (const w of dbm.listWorlds()) {
     dbm.updateWorld(w.world_id, { latest_known_build_id: latest });
-    if (w.build_id && w.build_id !== latest) flagged.push(w.world_id);
+    if (w.build_id && w.build_id !== latest) {
+      flagged.push(w.world_id);
+      const noticeKey = `updateNotice:server:${w.world_id}`;
+      if (dbm.getSetting(noticeKey, null) !== latest) {
+        dbm.setSetting(noticeKey, latest);
+        dbm.logEvent(w.world_id, "update", `Dragonwilds dedicated-server build ${latest} is available (installed ${w.build_id})`);
+        try { await notify(w.world_id, "update", `${w.display_name}: Dragonwilds server build ${latest} is available`, { installed: w.build_id, latest }); } catch {}
+      }
+    }
   }
   return { latest, worlds: flagged };
 }
@@ -443,7 +457,13 @@ async function updateWorld(worldId, onLog = () => {}, jobId = null, opts = {}) {
     const res = await steam.installOrUpdate(w.install_dir, emit, w.platform);
     if (!res.ok) throw new Error(`SteamCMD failed (code ${res.code})${res.detail ? `: ${res.detail}` : ""}`);
     const bid = res.buildId || steam.readInstalledBuildId(w.install_dir);
-    if (bid) dbm.updateWorld(worldId, { build_id: bid });
+    if (bid) {
+      for (const profile of dbm.listWorlds()) {
+        if (String(profile.install_dir).toLowerCase() === String(w.install_dir).toLowerCase()) {
+          dbm.updateWorld(profile.world_id, { build_id: bid, latest_known_build_id: bid });
+        }
+      }
+    }
     dbm.updateWorld(worldId, { status: "stopped" });
     try { syncedMods.reapplySelections(worldId); emit("Reapplied managed mod selection."); }
     catch (e) { emit(`Retained mod warning: ${e.message}`); dbm.logEvent(worldId, "mod", `Could not reapply retained mods after update: ${e.message}`); }

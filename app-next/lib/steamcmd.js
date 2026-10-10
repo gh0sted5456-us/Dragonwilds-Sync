@@ -4,6 +4,7 @@ const path = require("path");
 const os = require("os");
 const https = require("https");
 const { spawn } = require("child_process");
+const readline = require("readline");
 const { P } = require("./paths");
 
 const DRAGONWILDS_APPID = "4019830";
@@ -43,7 +44,7 @@ async function ensureSteamCmd(onLog = () => {}) {
   return steamcmdBinary();
 }
 
-// Verify a Palworld server install on disk, independent of SteamCMD's exit code.
+// Verify a Dragonwilds server install on disk, independent of SteamCMD's exit code.
 // A completed `app_update ... validate` leaves the server binary in place and a
 // readable build id in the app manifest — that, not the exit code, is the truth.
 function verifyInstall(installDir, targetPlatform) {
@@ -120,16 +121,18 @@ function runSteamCmdOnce(installDir, onLog, targetPlatform) {
     const scan = (line) => {
       // Only the app's own success marker counts. The bootstrapper prints
       // "Update complete, launching..." when it finishes updating *itself* — that
-      // is not the Palworld install completing, so it must not be treated as one.
+      // is not the Dragonwilds install completing, so it must not be treated as one.
     // Success markers for the app install/update use the configured app id.
     if (new RegExp(`Success!\\s*App\\s*'?${DRAGONWILDS_APPID}`, "i").test(line) || new RegExp(`App\\s*'?${DRAGONWILDS_APPID}'?\\s*fully installed`, "i").test(line)) sawSuccess = true;
       else if (APP_ERR_RE.test(line)) appErr = line.trim();
       else if (ANY_ERR_RE.test(line)) genErr = line.trim();
       onLog(line);
     };
-    const child = spawn(bin, args, { cwd: P.steamcmd() });
-    child.stdout.on("data", (d) => splitLines(d).forEach(scan));
-    child.stderr.on("data", (d) => splitLines(d).forEach(scan));
+    const child = spawn(bin, args, { cwd: P.steamcmd(), windowsHide: true });
+    // readline preserves complete SteamCMD lines across arbitrary stream chunks.
+    // Every line is kept by the job registry and shown in Application Setup.
+    readline.createInterface({ input: child.stdout, crlfDelay: Infinity }).on("line", scan);
+    readline.createInterface({ input: child.stderr, crlfDelay: Infinity }).on("line", scan);
     child.on("error", reject);
     child.on("close", (code) => {
       onLog(`SteamCMD exited with code ${code}`);
@@ -171,9 +174,9 @@ async function installOrUpdate(installDir, onLog = () => {}, targetPlatform) {
 //   • app-provisioned (+force_install_dir): <installDir>/steamapps/appmanifest_*.acf
 //   • Steam client / SteamCMD default:      <installDir>/../../appmanifest_*.acf
 //     (install dir is .../steamapps/common/RSDragonwilds)
-function readInstalledBuildId(installDir) {
+function readInstalledBuildIdForApp(installDir, appId) {
   if (!installDir) return null;
-  const name = `appmanifest_${DRAGONWILDS_APPID}.acf`;
+  const name = `appmanifest_${appId}.acf`;
   const candidates = [
     path.join(installDir, "steamapps", name),
     path.join(installDir, "..", "..", name),
@@ -190,12 +193,16 @@ function readInstalledBuildId(installDir) {
   return null;
 }
 
+function readInstalledBuildId(installDir) {
+  return readInstalledBuildIdForApp(installDir, DRAGONWILDS_APPID);
+}
+
 // Query the latest public build id via Steam's public web API (spec §8 step 1).
-async function fetchLatestBuildId() {
-  const url = `https://api.steamcmd.net/v1/info/${DRAGONWILDS_APPID}`;
+async function fetchLatestBuildId(appId = DRAGONWILDS_APPID) {
+  const url = `https://api.steamcmd.net/v1/info/${appId}`;
   try {
     const json = await getJson(url);
-    const bid = json?.data?.[DRAGONWILDS_APPID]?.depots?.branches?.public?.buildid;
+    const bid = json?.data?.[appId]?.depots?.branches?.public?.buildid;
     return bid ? String(bid) : null;
   } catch {
     return null;
@@ -215,9 +222,6 @@ function updateStateOf(w) {
 }
 
 // ---- helpers ----
-function splitLines(buf) {
-  return buf.toString("utf8").split(/\r?\n/).filter((l) => l.length);
-}
 function run(cmd, args) {
   return new Promise((resolve, reject) => {
     const c = spawn(cmd, args);
@@ -228,27 +232,36 @@ function run(cmd, args) {
 function download(url, dest) {
   return new Promise((resolve, reject) => {
     const file = fs.createWriteStream(dest);
-    https.get(url, (res) => {
+    const req = https.get(url, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         file.close();
         return download(res.headers.location, dest).then(resolve, reject);
       }
+      if (res.statusCode < 200 || res.statusCode >= 300) {
+        file.close();
+        try { fs.unlinkSync(dest); } catch {}
+        return reject(new Error(`SteamCMD download failed with HTTP ${res.statusCode}`));
+      }
       res.pipe(file);
       file.on("finish", () => file.close(resolve));
-    }).on("error", (e) => { try { fs.unlinkSync(dest); } catch {} reject(e); });
+    });
+    req.setTimeout(30000, () => req.destroy(new Error("SteamCMD download timed out")));
+    req.on("error", (e) => { try { file.close(); } catch {} try { fs.unlinkSync(dest); } catch {} reject(e); });
   });
 }
 function getJson(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
+    const req = https.get(url, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => { try { resolve(JSON.parse(data)); } catch (e) { reject(e); } });
-    }).on("error", reject);
+    });
+    req.setTimeout(8000, () => req.destroy(new Error("Steam build query timed out")));
+    req.on("error", reject);
   });
 }
 
 module.exports = {
   DRAGONWILDS_APPID, steamcmdBinary, steamcmdInstalled, ensureSteamCmd,
-  installOrUpdate, verifyInstall, readInstalledBuildId, fetchLatestBuildId, updateStateOf,
+  installOrUpdate, verifyInstall, readInstalledBuildId, readInstalledBuildIdForApp, fetchLatestBuildId, updateStateOf,
 };

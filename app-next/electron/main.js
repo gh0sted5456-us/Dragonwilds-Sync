@@ -744,6 +744,13 @@ ipcMain.handle("pick-directory", async () => {
   const res = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
   return res.canceled ? null : res.filePaths[0];
 });
+ipcMain.handle("pick-server-executable", async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: ["openFile"],
+    filters: [{ name: "Dragonwilds dedicated server", extensions: process.platform === "win32" ? ["exe"] : ["sh"] }],
+  });
+  return res.canceled ? null : res.filePaths[0];
+});
 ipcMain.handle("pick-zip", async () => {
   const res = await dialog.showOpenDialog(mainWindow, {
     properties: ["openFile"],

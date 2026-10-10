@@ -9,7 +9,6 @@ const g = globalThis;
 if (!g.__APP_JOBS2) g.__APP_JOBS2 = new Map();
 const JOBS = g.__APP_JOBS2;
 
-const MAX_LINES = 2000;
 const KEEP_FINISHED_MS = 10 * 60 * 1000; // linger finished jobs for 10 min
 
 // Create a job. type: "install" | "update".
@@ -67,7 +66,6 @@ function logJob(id, line) {
   const j = JOBS.get(id);
   if (!j) return;
   j.lines.push(line);
-  if (j.lines.length > MAX_LINES) j.lines.shift();
   const p = parseSteamProgress(line);
   if (p) {
     if (p.phase) j.phase = p.phase;
@@ -98,7 +96,7 @@ function finishJob(id, ok, { error = null, worldId } = {}) {
 //     "[ 96%] Downloading update (42,697 of 43,472 KB)..."  -> phase "steamcmd", 96%
 //     "[----] Installing update..."                          -> phase "steamcmd", indeterminate
 //
-//   Format B — the actual Palworld app depot download (multi-GB):
+//   Format B — the Dragonwilds dedicated-server depot download (multi-GB):
 //     " Update state (0x61) downloading, progress: 1.51 (63599352 / 4199616479)"
 //                                                             -> phase "download", 2%
 //     " Update state (0x5) verifying, progress: 40.00 (...)"  -> phase "verify"

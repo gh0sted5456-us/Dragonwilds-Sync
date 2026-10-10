@@ -49,6 +49,8 @@ try {
   assert.equal(updated.default_world_name, "Persistent World");
   assert.equal(updated.admin_password, "new-admin");
   assert.equal(updated.server_password, "new-world");
+  const autoUpdated = dbm.updateWorld(worldId, { auto_update: 1 });
+  assert.equal(autoUpdated.auto_update, 1, "per-server automatic update preference did not persist");
 
   const raw = [
     "[/Script/Dominion.DedicatedServerSettings]",

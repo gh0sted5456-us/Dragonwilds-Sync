@@ -26,6 +26,8 @@ function current() {
     ready: !!(installDir && info?.valid),
     buildId: info?.buildId || null,
     binary: info?.binary || null,
+    steamcmdInstalled: steam.steamcmdInstalled(),
+    steamcmdPath: steam.steamcmdBinary(),
   };
 }
 
@@ -36,18 +38,34 @@ export async function GET() {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const installDir = path.resolve(String(body.installDir || "").trim());
-    if (!installDir) throw new Error("Choose a dedicated-server installation folder.");
+    const rawPath = String(body.executablePath || body.installDir || "").trim();
+    if (!rawPath) throw new Error(body.mode === "adopt" ? "Choose RSDragonwildsServer.exe or RSDragonwildsServer.sh." : "Choose a dedicated-server installation folder.");
+
+    if (body.mode === "adopt") {
+      const check = detect.inspect(rawPath);
+      if (!check.valid) throw new Error(check.reason || "That executable is not a usable Dragonwilds dedicated server.");
+      dbm.setSetting(DIR_KEY, check.installDir);
+      dbm.setSetting(PLATFORM_KEY, check.platform);
+      for (const world of dbm.listWorlds()) {
+        dbm.updateWorld(world.world_id, { install_dir: check.installDir, platform: check.platform, build_id: check.buildId || world.build_id });
+      }
+      return NextResponse.json({ ok: true, adopted: true, server: current() });
+    }
+
+    const installDir = path.resolve(rawPath);
     const platform = body.platform === "linux" ? "linux" : "windows";
     fs.mkdirSync(installDir, { recursive: true });
 
-    const job = jobs.createJob({ type: "install", worldId: null, worldName: "Application Setup · Server" });
+    const active = jobs.listJobs().find((job) => job.status === "running" && job.worldName === "Application Setup · Server");
+    if (active) return NextResponse.json({ ok: true, jobId: active.id, alreadyRunning: true });
+
+    const jobId = jobs.createJob({ type: "install", worldId: null, worldName: "Application Setup · Server" });
     (async () => {
-      const log = (line) => jobs.logJob(job.id, line);
+      const log = (line) => jobs.logJob(jobId, line);
       try {
-        jobs.setPhase(job.id, "starting", "Preparing dedicated server");
+        jobs.setPhase(jobId, "starting", "Preparing SteamCMD");
         await steam.ensureSteamCmd(log);
-        jobs.setPhase(job.id, "steamcmd", "Installing Dragonwilds dedicated server…");
+        jobs.setPhase(jobId, "steamcmd", "Installing Dragonwilds dedicated server…");
         const result = await steam.installOrUpdate(installDir, log, platform);
         if (!result.ok) throw new Error(`SteamCMD failed (code ${result.code})${result.detail ? `: ${result.detail}` : ""}`);
         const check = detect.inspect(installDir);
@@ -57,14 +75,16 @@ export async function POST(req) {
         for (const world of dbm.listWorlds()) {
           dbm.updateWorld(world.world_id, { install_dir: check.installDir, platform });
         }
-        jobs.finishJob(job.id, true, { installDir: check.installDir, buildId: check.buildId || result.buildId || null });
+        log(`Verified dedicated server: ${check.binary}`);
+        log(`Installed build: ${check.buildId || result.buildId || "unknown"}`);
+        jobs.finishJob(jobId, true, { installDir: check.installDir, buildId: check.buildId || result.buildId || null });
       } catch (e) {
         log(`ERROR: ${e.message}`);
-        jobs.finishJob(job.id, false, { error: e.message });
+        jobs.finishJob(jobId, false, { error: e.message });
       }
     })();
 
-    return NextResponse.json({ ok: true, jobId: job.id });
+    return NextResponse.json({ ok: true, jobId });
   } catch (e) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 400 });
   }

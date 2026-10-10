@@ -229,9 +229,9 @@ export default function SettingsPage() {
         <div style={{ marginTop: "1.1rem", borderTop: "1px solid var(--line)", paddingTop: "1rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", marginBottom: "0.7rem" }}>
             <div>
-              <div className="heading" style={{ fontSize: "0.92rem" }}>Mod framework releases</div>
+              <div className="heading" style={{ fontSize: "0.92rem" }}>Game and framework update notifications</div>
               <div className="subtle" style={{ fontSize: "0.72rem", fontWeight: 600 }}>
-                UE4SS is checked against Nexus Mods for each installed client. RuneSchema is checked against GitHub releases.
+                Checks the Steam dedicated-server branch, the configured Steam and PC Game Pass player installations, UE4SS releases, and RuneSchema. Update badges appear here and in the sidebar.
               </div>
             </div>
             <button className="btn btn-ghost" style={{ marginLeft: "auto", padding: "0.3rem 0.55rem" }}

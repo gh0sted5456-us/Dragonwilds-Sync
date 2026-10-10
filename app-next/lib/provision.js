@@ -10,6 +10,7 @@ const { suggestPorts } = require("./ports");
 const { createBackup } = require("./backups");
 const { trashPath } = require("./trash");
 const os = require("os");
+const { P } = require("./paths");
 
 // Create a world profile record (no install yet).
 function createProfile({ display_name, install_dir, ports, admin_password, platform, owner_id, default_world_name, wine_binary, wine_prefix, wine_launch_flags }) {
@@ -113,33 +114,74 @@ function validateSaveSource(sourcePath) {
   };
 }
 
-// Replace only Saved/SaveGames. Config and all other server state stay intact.
-// The directory swap ensures the game never sees a half-copied world.
-async function importSave(worldId, sourcePath, { backupFirst = true } = {}) {
+function saveGamesDir(world) {
+  return path.join(world.install_dir, "RSDragonwilds", "Saved", "SaveGames");
+}
+
+function safeSaveName(value) {
+  const name = path.basename(String(value || ""));
+  if (!name || !/^[^\\/:*?"<>|]+\.sav$/i.test(name)) throw new Error("Invalid Dragonwilds save-slot name");
+  return name;
+}
+
+function captureActiveSaves(world) {
+  const saveGames = saveGamesDir(world);
+  const vault = P.worldSaveSlots(world.world_id);
+  let entries = [];
+  try { entries = fs.readdirSync(saveGames, { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    if (!entry.isFile() || !/\.sav$/i.test(entry.name)) continue;
+    const destination = path.join(vault, safeSaveName(entry.name));
+    if (!fs.existsSync(destination)) fs.copyFileSync(path.join(saveGames, entry.name), destination);
+  }
+}
+
+function listSaveSlots(worldId) {
   const world = dbm.getWorld(worldId);
   if (!world) throw new Error("World not found");
-  if (require("./supervisor").isRunning(worldId)) throw new Error("Stop the server before replacing its world save");
-  const check = validateSaveSource(sourcePath);
+  captureActiveSaves(world);
+  const active = new Set();
+  try {
+    for (const entry of fs.readdirSync(saveGamesDir(world), { withFileTypes: true })) {
+      if (entry.isFile() && /\.sav$/i.test(entry.name)) active.add(entry.name.toLowerCase());
+    }
+  } catch {}
+  const vault = P.worldSaveSlots(worldId);
+  return fs.readdirSync(vault, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.sav$/i.test(entry.name))
+    .map((entry) => {
+      const stat = fs.statSync(path.join(vault, entry.name));
+      return { name: entry.name, size: stat.size, modifiedAt: stat.mtimeMs, active: active.has(entry.name.toLowerCase()) };
+    })
+    .sort((a, b) => Number(b.active) - Number(a.active) || b.modifiedAt - a.modifiedAt);
+}
 
-  const saveGames = path.join(world.install_dir, "RSDragonwilds", "Saved", "SaveGames");
+// Replace only Saved/SaveGames. Config, passwords, owner identity, ports and the
+// selected Server profile remain untouched. The directory swap ensures the game
+// never sees a half-copied world.
+async function activateSaveSlot(worldId, slotName, { backupFirst = true } = {}) {
+  const world = dbm.getWorld(worldId);
+  if (!world) throw new Error("World not found");
+  if (require("./supervisor").isAlive(worldId)) throw new Error("Stop the server before replacing its world save");
+  const activeSave = safeSaveName(slotName);
+  const sourceFile = path.join(P.worldSaveSlots(worldId), activeSave);
+  if (!fs.existsSync(sourceFile)) throw new Error("Save slot not found");
+
+  const saveGames = saveGamesDir(world);
   if (backupFirst && fs.existsSync(saveGames)) {
     await createBackup(worldId, "pre-import-safety");
   }
+  captureActiveSaves(world);
 
   fs.mkdirSync(path.dirname(saveGames), { recursive: true });
   const nonce = crypto.randomUUID();
   const incoming = path.join(path.dirname(saveGames), `.SaveGames.incoming-${nonce}`);
   const previous = path.join(path.dirname(saveGames), `.SaveGames.previous-${nonce}`);
   fs.mkdirSync(incoming, { recursive: true });
-  const destination = path.join(incoming, check.activeSave);
+  const destination = path.join(incoming, activeSave);
 
   try {
-    if (check.kind === "sav") fs.copyFileSync(sourcePath, destination);
-    else {
-      const entry = new AdmZip(sourcePath).getEntry(check.entryName);
-      if (!entry) throw new Error("The selected save disappeared from its archive");
-      fs.writeFileSync(destination, entry.getData());
-    }
+    fs.copyFileSync(sourceFile, destination);
     const now = new Date();
     fs.utimesSync(destination, now, now);
 
@@ -160,8 +202,24 @@ async function importSave(worldId, sourcePath, { backupFirst = true } = {}) {
     try { trashPath(previous); } catch {}
   }
 
-  dbm.logEvent(worldId, "import", `Replaced active world save with ${check.activeSave}`);
-  return check;
+  dbm.logEvent(worldId, "import", `Activated world save slot ${activeSave}; Server profile identity retained`);
+  return { valid: true, activeSave, slots: listSaveSlots(worldId) };
+}
+
+async function importSave(worldId, sourcePath, { backupFirst = true } = {}) {
+  const world = dbm.getWorld(worldId);
+  if (!world) throw new Error("World not found");
+  if (require("./supervisor").isAlive(worldId)) throw new Error("Stop the server before replacing its world save");
+  const check = validateSaveSource(sourcePath);
+  captureActiveSaves(world);
+  const destination = path.join(P.worldSaveSlots(worldId), safeSaveName(check.activeSave));
+  if (check.kind === "sav") fs.copyFileSync(sourcePath, destination);
+  else {
+    const entry = new AdmZip(sourcePath).getEntry(check.entryName);
+    if (!entry) throw new Error("The selected save disappeared from its archive");
+    fs.writeFileSync(destination, entry.getData());
+  }
+  return activateSaveSlot(worldId, check.activeSave, { backupFirst });
 }
 
 function copyDir(src, dst) {
@@ -175,5 +233,5 @@ function copyDir(src, dst) {
 
 module.exports = {
   createProfile, adoptExistingInstall,
-  validateSaveSource, validateSaveZip: validateSaveSource, importSave, copyDir,
+  validateSaveSource, validateSaveZip: validateSaveSource, importSave, listSaveSlots, activateSaveSlot, copyDir,
 };

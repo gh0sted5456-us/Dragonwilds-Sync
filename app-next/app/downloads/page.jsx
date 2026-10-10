@@ -31,7 +31,7 @@ export default function DownloadsPage() {
       <Section title={`${t("downloads.inProgress")}${active.length ? ` (${active.length})` : ""}`}>
         {active.length === 0
           ? <Empty text={t("downloads.noActive")} />
-          : <div style={{ display: "grid", gap: "0.7rem" }}>{active.map((j) => <JobCard key={j.id} job={j} />)}</div>}
+          : <div style={{ display: "grid", gap: "0.7rem" }}>{active.map((j) => <JobCard key={j.id} job={j} defaultShowLog logHeight={320} />)}</div>}
       </Section>
 
       <Section title={t("downloads.history")}>

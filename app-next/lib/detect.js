@@ -40,7 +40,17 @@ function inspect(inputPath) {
   }
 
   const buildId = steam.readInstalledBuildId(dir); // may be null if no steam manifest
-  const savedDir = path.join(dir, "RSDragonwilds", "Saved");
+  const projectDir = path.join(dir, "RSDragonwilds");
+  const binariesDir = path.join(projectDir, "Binaries");
+  const contentDir = path.join(projectDir, "Content");
+  const savedDir = path.join(projectDir, "Saved");
+  const missing = [
+    !fs.existsSync(binariesDir) && "RSDragonwilds/Binaries",
+    !fs.existsSync(contentDir) && "RSDragonwilds/Content",
+  ].filter(Boolean);
+  if (missing.length) {
+    return { valid: false, reason: `The server executable was found, but the installation is incomplete (missing ${missing.join(", ")}). Use SteamCMD Validate / Update to repair it.`, installDir: dir, binary: bin.path, platform: bin.os === "win32" ? "windows" : "linux", missing };
+  }
   const hasSave = fs.existsSync(path.join(savedDir, "SaveGames"));
 
   // Same value in the "windows"/"linux" vocabulary used by the worlds.platform
@@ -70,6 +80,15 @@ function inspect(inputPath) {
     hasExistingSave: hasSave,
     serverName,
     matchesHostOs: bin.os === (os.platform() === "win32" ? "win32" : "linux"),
+    paths: {
+      root: dir,
+      binary: bin.path,
+      project: projectDir,
+      binaries: binariesDir,
+      content: contentDir,
+      saved: savedDir,
+      saveGames: path.join(savedDir, "SaveGames"),
+    },
   };
 }
 

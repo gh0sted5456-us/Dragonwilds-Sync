@@ -49,6 +49,31 @@ export default function Shell({ children }) {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    let stopped = false;
+    const loadUpdates = () => fetch("/api/component-updates", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((result) => { if (!stopped && result?.ok) setComponentUpdates(result); })
+      .catch(() => {});
+    // Keep startup responsive; version monitoring begins after the shell is visible.
+    const initial = setTimeout(loadUpdates, 4000);
+    const interval = setInterval(loadUpdates, 30 * 60 * 1000);
+    return () => { stopped = true; clearTimeout(initial); clearInterval(interval); };
+  }, []);
+
+  useEffect(() => {
+    const available = (componentUpdates?.items || []).filter((item) => item.updateAvailable);
+    if (!available.length) return;
+    const signature = available.map((item) => `${item.id}:${item.latestVersion}`).sort().join("|");
+    try {
+      if (localStorage.getItem("rsdw-update-notice") === signature) return;
+      localStorage.setItem("rsdw-update-notice", signature);
+    } catch {}
+    const id = `updates-${Date.now()}`;
+    setToasts((current) => [...current, { id, msg: `${available.length} Dragonwilds update${available.length === 1 ? "" : "s"} available — open Settings → Updates`, kind: "info" }]);
+    setTimeout(() => setToasts((current) => current.filter((item) => item.id !== id)), 7000);
+  }, [componentUpdates]);
+
   const openRelease = () => {
     const url = ver?.releaseUrl;
     if (url) { try { window.open(url, "_blank"); } catch {} }

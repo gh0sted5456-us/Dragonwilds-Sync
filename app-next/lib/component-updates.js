@@ -1,11 +1,15 @@
 const fs = require("fs");
 const path = require("path");
+const { execFile } = require("child_process");
 const dbm = require("./db");
+const steamcmd = require("./steamcmd");
+const { DRAGONWILDS_STEAM_APPID } = require("./steamlibrary");
 
 const NEXUS_URL = "https://www.nexusmods.com/runescapedragonwilds/mods/4?tab=files";
 const RUNESCHEMA_API = "https://api.github.com/repos/gh0sted5456-us/RuneSchema/releases/latest";
 const RUNESCHEMA_URL = "https://github.com/gh0sted5456-us/RuneSchema";
 const CACHE_MS = 10 * 60 * 1000;
+const GAMEPASS_STORE_ID = "9P402RWR63H4";
 const g = globalThis;
 
 function cleanVersion(value) {
@@ -51,6 +55,34 @@ function localVersions(root, platform) {
     ue4ss: ue ? cleanVersion(ue[1]) : null,
     runeSchema: rs ? cleanVersion(rs[1]) : null,
   };
+}
+
+function localGamePassVersion(root) {
+  if (!root) return { installed: false, version: null };
+  const candidates = [path.join(root, "MicrosoftGame.config"), path.join(root, "Content", "MicrosoftGame.config"), path.join(root, "AppxManifest.xml")];
+  for (const file of candidates) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const text = fs.readFileSync(file, "utf8");
+      const version = text.match(/\bVersion\s*=\s*["']([^"']+)["']/i)?.[1]
+        || text.match(/<Version>\s*([^<]+)\s*<\/Version>/i)?.[1];
+      return { installed: true, version: version ? cleanVersion(version) : null };
+    } catch {}
+  }
+  return { installed: fs.existsSync(root), version: null };
+}
+
+function latestGamePassVersion() {
+  if (process.platform !== "win32") return Promise.reject(new Error("Microsoft Store version checks require Windows"));
+  return new Promise((resolve, reject) => {
+    execFile("winget", ["show", "--id", GAMEPASS_STORE_ID, "--exact", "--source", "msstore", "--accept-source-agreements", "--disable-interactivity"],
+      { encoding: "utf8", windowsHide: true, timeout: 15000 }, (error, stdout) => {
+        if (error) return reject(new Error("Microsoft Store version query is unavailable"));
+        const version = String(stdout || "").match(/^Version:\s*(.+)$/mi)?.[1]?.trim();
+        if (!version || /^unknown$/i.test(version)) return reject(new Error("Microsoft Store did not report a public version"));
+        resolve(cleanVersion(version));
+      });
+  });
 }
 
 async function fetchText(url, accept = "text/html") {
@@ -143,10 +175,17 @@ async function getStatus({ force = false } = {}) {
 
   const steamRoot = dbm.getSetting("clientInstall:steam", null);
   const gamepassRoot = dbm.getSetting("clientInstall:gamepass", null);
+  const serverRoot = dbm.getSetting("applicationSetup:serverDir", null);
   const steam = localVersions(steamRoot, "steam");
   const gamepass = localVersions(gamepassRoot, "gamepass");
+  const installedServerBuild = steamcmd.readInstalledBuildId(serverRoot);
+  const installedSteamBuild = steamcmd.readInstalledBuildIdForApp(steamRoot, DRAGONWILDS_STEAM_APPID);
+  const installedGamePass = localGamePassVersion(gamepassRoot);
 
-  const [nexusResult, runeResult] = await Promise.allSettled([
+  const [serverBuildResult, steamBuildResult, gamePassResult, nexusResult, runeResult] = await Promise.allSettled([
+    steamcmd.fetchLatestBuildId(),
+    steamcmd.fetchLatestBuildId(DRAGONWILDS_STEAM_APPID),
+    gamepassRoot ? latestGamePassVersion() : Promise.resolve(null),
     latestNexusVersions(),
     latestRuneSchemaVersion(),
   ]);
@@ -157,6 +196,42 @@ async function getStatus({ force = false } = {}) {
   const localRune = maxRuneSchema(steam, gamepass);
 
   const items = [
+    {
+      id: "dragonwilds-server",
+      label: "Dragonwilds · Dedicated Server",
+      platform: "SteamCMD",
+      source: "Steam public branch",
+      url: "https://steamdb.info/app/4019830/depots/",
+      installed: !!serverRoot,
+      installedVersion: installedServerBuild,
+      latestVersion: serverBuildResult.status === "fulfilled" ? serverBuildResult.value : null,
+      updateAvailable: different(installedServerBuild, serverBuildResult.status === "fulfilled" ? serverBuildResult.value : null),
+      error: serverBuildResult.status === "rejected" ? serverBuildResult.reason?.message || "Steam server check failed" : null,
+    },
+    {
+      id: "dragonwilds-steam-client",
+      label: "Dragonwilds · Steam Player",
+      platform: "Steam",
+      source: "Steam public branch",
+      url: "https://store.steampowered.com/app/1374490/RuneScape_Dragonwilds/",
+      installed: !!steamRoot,
+      installedVersion: installedSteamBuild,
+      latestVersion: steamBuildResult.status === "fulfilled" ? steamBuildResult.value : null,
+      updateAvailable: different(installedSteamBuild, steamBuildResult.status === "fulfilled" ? steamBuildResult.value : null),
+      error: steamBuildResult.status === "rejected" ? steamBuildResult.reason?.message || "Steam player check failed" : null,
+    },
+    {
+      id: "dragonwilds-gamepass-client",
+      label: "Dragonwilds · PC Game Pass Player",
+      platform: "PC Game Pass",
+      source: "Microsoft Store",
+      url: "https://www.xbox.com/games/store/runescape-dragonwilds/9P402RWR63H4",
+      installed: installedGamePass.installed,
+      installedVersion: installedGamePass.version,
+      latestVersion: gamePassResult.status === "fulfilled" ? gamePassResult.value : null,
+      updateAvailable: different(installedGamePass.version, gamePassResult.status === "fulfilled" ? gamePassResult.value : null),
+      error: gamePassResult.status === "rejected" ? gamePassResult.reason?.message || "Microsoft Store check failed" : null,
+    },
     {
       id: "ue4ss-steam",
       label: "UE4SS · Steam",

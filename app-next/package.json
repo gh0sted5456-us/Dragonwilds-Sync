@@ -19,6 +19,7 @@
     "test:settings": "node scripts/check-settings-persistence.js",
     "test:mods": "node scripts/check-mod-sync-source.js",
     "test:lifecycle": "node scripts/check-lifecycle-guard.js",
+    "test:saves": "node scripts/check-save-slots.js",
     "test:discovery": "node scripts/check-direct-discovery.js",
     "test:contract": "node scripts/check-rsdw-revamp-contract.js",
     "prepare:standalone": "node scripts/prepare-standalone.js"

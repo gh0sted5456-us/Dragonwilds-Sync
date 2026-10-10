@@ -35,7 +35,10 @@ export default function WorldsPage() {
   const doAction = async (id, action) => {
     setBusy((b) => ({ ...b, [id]: action }));
     try {
-      if (action === "update") await api(`/api/worlds/${id}/update`, { method: "POST" });
+      if (action === "update") {
+        await api(`/api/worlds/${id}/update`, { method: "POST" });
+        try { window.dispatchEvent(new Event("rsdw-jobs-ping")); } catch {}
+      }
       else await api(`/api/worlds/${id}/action`, { method: "POST", body: { action } });
       toast(action === "update" ? "Server update queued." : t(ACTION_TOAST[action] || "toast.worldStarted"), "success");
       setTimeout(load, 600);

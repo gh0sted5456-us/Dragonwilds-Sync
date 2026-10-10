@@ -200,6 +200,7 @@ function contains(rel, needle, message) {
   contains("app/setup/page.jsx", 'label="Steam"');
   contains("app/setup/page.jsx", 'label="PC Game Pass"');
   contains("app/setup/page.jsx", "<PlayLane");
+  assert(!read("app/setup/page.jsx").includes("useEffect(load"), "React effects must not return API promises during tab unmount");
   contains("app/api/application-setup/server/route.js", 'const DIR_KEY = "applicationSetup:serverDir"');
   contains("app/api/application-setup/play/route.js", "clientInstall:");
   const provisionRoute = read("app/api/provision/route.js");

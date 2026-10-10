@@ -90,7 +90,7 @@ function PlaySetup() {
       gamepass: r.play?.gamepass?.installDir || "",
     });
   }).catch((e) => toast(e.message, "error"));
-  useEffect(load, []);
+  useEffect(() => { load(); }, []);
 
   const browse = async (platform) => {
     const selected = await window.desktop?.pickDirectory?.();

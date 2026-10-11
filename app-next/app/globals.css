@@ -67,6 +67,104 @@ body {
   font-size: 15px;
 }
 
+.desktop-shell { min-height: 100vh; height: 100vh; overflow: hidden; display: flex; flex-direction: column; }
+.app-frame { display: flex; min-height: 0; height: 100%; flex: 1; overflow: hidden; }
+.desktop-titlebar {
+  height: 46px;
+  flex: 0 0 46px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 150px 0 13px;
+  background: #181b1e;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: .79rem;
+  font-weight: 800;
+  letter-spacing: .025em;
+  user-select: none;
+  -webkit-app-region: drag;
+}
+.desktop-titlebar img { width: 25px; height: 25px; object-fit: contain; }
+.desktop-titlebar-product { color: var(--ink); }
+.desktop-titlebar-separator { color: var(--line-strong); font-weight: 500; }
+.desktop-titlebar-context { color: var(--accent); font-size: .75rem; font-weight: 750; letter-spacing: .035em; }
+.dragonwilds-header-logo { width: 205px; height: 62px; flex: 0 0 205px; object-fit: cover; object-position: center; }
+
+.launch-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 44%, #2b2520 0%, #181b1e 48%, #101214 100%);
+  opacity: 1;
+  transition: opacity .65s ease, transform .65s ease;
+}
+.launch-splash-leaving { opacity: 0; transform: scale(1.018); pointer-events: none; }
+.launch-splash-glow {
+  position: absolute;
+  width: min(62vw, 680px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(193,165,109,.17), rgba(88,52,121,.07) 42%, transparent 70%);
+  filter: blur(18px);
+  animation: splashGlow 4.8s ease-in-out infinite alternate;
+}
+.launch-splash-logos { position: relative; width: min(72vw, 620px); height: min(48vh, 390px); display: grid; place-items: center; }
+.launch-splash-logos img { position: absolute; max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 14px 34px rgba(0,0,0,.55)); }
+.launch-splash-dragonwilds { width: min(72vw, 620px); animation: dragonwildsFade 5.8s ease-in-out forwards; }
+.launch-splash-rsdw { width: min(43vw, 330px); opacity: 0; transform: scale(.91); animation: rsdwReveal 5.8s ease-in-out forwards; }
+.launch-splash-copy { position: absolute; bottom: clamp(42px, 8vh, 84px); display: grid; justify-items: center; gap: 9px; }
+.launch-splash-copy > span { color: var(--ink-muted); font-size: .68rem; font-weight: 850; letter-spacing: .24em; }
+.launch-splash-enter {
+  min-width: 158px;
+  padding: .72rem 1.65rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: rgba(24,27,30,.76);
+  color: var(--ink);
+  font: 800 .88rem var(--font-display);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: splashEnter 1s ease 3.35s forwards;
+  transition: color .18s ease, background .18s ease, box-shadow .18s ease;
+}
+.launch-splash-enter:hover, .launch-splash-enter:focus-visible { color: var(--accent-ink); background: var(--accent); box-shadow: 0 0 28px rgba(193,165,109,.24); outline: none; }
+.launch-splash-copy small { color: var(--ink-muted); opacity: 0; animation: splashEnter .8s ease 4s forwards; }
+@keyframes dragonwildsFade { 0%,31% { opacity: 1; transform: scale(1); } 67%,100% { opacity: 0; transform: scale(1.045); } }
+@keyframes rsdwReveal { 0%,30% { opacity: 0; transform: scale(.91); } 68%,100% { opacity: 1; transform: scale(1); } }
+@keyframes splashEnter { to { opacity: 1; transform: translateY(0); } }
+@keyframes splashGlow { from { transform: scale(.94); opacity: .7; } to { transform: scale(1.06); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .launch-splash-dragonwilds { animation-duration: 1.2s; }
+  .launch-splash-rsdw { animation-duration: 1.2s; }
+  .launch-splash-enter, .launch-splash-copy small { animation-delay: .65s; }
+}
+
+.code-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: grid;
+  place-items: center;
+  padding: clamp(12px, 3vw, 36px);
+  background: rgba(10,12,14,.82);
+  backdrop-filter: blur(8px);
+  animation: overlayIn .18s ease-out;
+}
+.code-editor-window { width: min(1180px, 96vw); height: min(820px, 92vh); min-height: 420px; display: grid; grid-template-rows: auto auto 1fr auto; overflow: hidden; box-shadow: 0 28px 80px rgba(0,0,0,.55); }
+.code-editor-header, .code-editor-footer { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: .75rem 1rem; background: var(--sidebar); }
+.code-editor-header { border-bottom: 1px solid var(--line-strong); }
+.code-editor-footer { border-top: 1px solid var(--line); font-size: .72rem; }
+.code-editor-warning { padding: .55rem 1rem; background: color-mix(in srgb, var(--yellow) 16%, var(--card)); color: var(--ink); border-bottom: 1px solid var(--yellow); font-size: .76rem; font-weight: 700; }
+.code-editor-surface { position: relative; min-height: 0; background: #181b1e; }
+
 .app-main { position: relative; isolation: isolate; }
 .app-watermark {
   position: fixed;

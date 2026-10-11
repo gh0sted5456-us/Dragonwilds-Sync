@@ -1,10 +1,13 @@
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const dbm = require("./db");
 const steamlib = require("./steamlibrary");
 const { trashPath } = require("./trash");
 
 const LANES = ["server", "required", "steam", "gamepass"];
+const EDITABLE_EXTENSIONS = new Set([".json", ".jsonc", ".lua"]);
+const MAX_EDITABLE_BYTES = 2 * 1024 * 1024;
 const selectionKey = (worldId) => `modLaneSelection:${worldId}`;
 const ledgerKey = (worldId) => `modLaneLedger:${worldId}`;
 const requiredSourceKey = (worldId) => `modRequiredSource:${worldId}`;
@@ -218,13 +221,103 @@ function browse(worldId, lane, relative = "") {
   if (!root) throw new Error("Choose this install folder first.");
   const normalized = steamlib.normalizeGameInstall(root);
   if (!normalized) throw new Error("The routed install folder is no longer valid.");
-  const base = path.resolve(normalized);
+  const base = fs.realpathSync(path.resolve(normalized));
   const parts = String(relative || "").replace(/\\/g, "/").split("/").filter((part) => part && part !== ".");
   if (parts.some((part) => part === "..")) throw new Error("Folder path escapes the install.");
-  const current = path.resolve(base, ...parts);
+  const requested = path.resolve(base, ...parts);
+  const current = fs.realpathSync(requested);
   if (current !== base && !current.toLowerCase().startsWith((base + path.sep).toLowerCase())) throw new Error("Folder path escapes the install.");
   const directories = fs.readdirSync(current, { withFileTypes: true }).filter((entry) => entry.isDirectory()).map((entry) => ({ name: entry.name, relative: [...parts, entry.name].join("/") }));
-  return { lane, root: base, relative: parts.join("/"), current, breadcrumbs: parts.map((name, index) => ({ name, relative: parts.slice(0, index + 1).join("/") })), directories };
+  const scanned = steamlib.scanGameMods(base);
+  const editableRoots = scanned.mods.map((mod) => {
+    try { return { mod, root: fs.realpathSync(mod.path) }; } catch { return null; }
+  }).filter(Boolean);
+  const files = fs.readdirSync(current, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && EDITABLE_EXTENSIONS.has(path.extname(entry.name).toLowerCase()))
+    .map((entry) => {
+      const file = path.join(current, entry.name);
+      const owner = editableRoots.find(({ root }) => file === root || file.toLowerCase().startsWith((root + path.sep).toLowerCase()));
+      if (!owner) return null;
+      return {
+        name: entry.name,
+        relative: [...parts, entry.name].join("/"),
+        language: path.extname(entry.name).toLowerCase() === ".lua" ? "lua" : "json",
+        modName: owner.mod.name,
+        hotload: owner.mod.identity?.hotload === true,
+      };
+    }).filter(Boolean);
+  return { lane, root: base, relative: parts.join("/"), current, breadcrumbs: parts.map((name, index) => ({ name, relative: parts.slice(0, index + 1).join("/") })), directories, files };
 }
 
-module.exports = { status, setSelections, selectedMods, browse, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };
+function editableTarget(worldId, lane, relative) {
+  if (!LANES.includes(lane)) throw new Error("Unknown mod lane");
+  const root = roots(worldId)[lane];
+  const normalized = root && steamlib.normalizeGameInstall(root);
+  if (!normalized) throw new Error("The routed install folder is no longer valid.");
+  const parts = String(relative || "").replace(/\\/g, "/").split("/").filter((part) => part && part !== ".");
+  if (!parts.length || parts.some((part) => part === "..")) throw new Error("Editor path escapes the install.");
+  const base = fs.realpathSync(path.resolve(normalized));
+  const requested = path.resolve(base, ...parts);
+  if (requested === base || !requested.toLowerCase().startsWith((base + path.sep).toLowerCase())) throw new Error("Editor path escapes the install.");
+  const extension = path.extname(requested).toLowerCase();
+  if (!EDITABLE_EXTENSIONS.has(extension)) throw new Error("Only JSON, JSONC, and Lua mod files can be edited.");
+  const stat = fs.lstatSync(requested);
+  if (!stat.isFile() || stat.isSymbolicLink()) throw new Error("The selected editor target is not a regular file.");
+  if (stat.size > MAX_EDITABLE_BYTES) throw new Error("This mod file is larger than the 2 MiB editor limit.");
+  const file = fs.realpathSync(requested);
+  if (!file.toLowerCase().startsWith((base + path.sep).toLowerCase())) throw new Error("Editor path escapes the install.");
+  const scanned = steamlib.scanGameMods(base);
+  const owner = scanned.mods.find((mod) => {
+    try {
+      const modRoot = fs.realpathSync(mod.path);
+      return file === modRoot || file.toLowerCase().startsWith((modRoot + path.sep).toLowerCase());
+    } catch { return false; }
+  });
+  if (!owner) throw new Error("Only files beneath detected mod directories can be edited.");
+  return { file, relative: parts.join("/"), extension, owner, hotload: owner.identity?.hotload === true };
+}
+
+function readEditableFile(worldId, lane, relative) {
+  const target = editableTarget(worldId, lane, relative);
+  const content = fs.readFileSync(target.file, "utf8");
+  return {
+    relative: target.relative,
+    name: path.basename(target.file),
+    language: target.extension === ".lua" ? "lua" : "json",
+    content,
+    etag: crypto.createHash("sha256").update(content).digest("hex"),
+    modName: target.owner.name,
+    hotload: target.hotload,
+  };
+}
+
+function writeEditableFile(worldId, lane, relative, content, expectedEtag) {
+  const target = editableTarget(worldId, lane, relative);
+  const value = String(content ?? "");
+  if (Buffer.byteLength(value, "utf8") > MAX_EDITABLE_BYTES) throw new Error("This mod file is larger than the 2 MiB editor limit.");
+  const current = fs.readFileSync(target.file, "utf8");
+  const currentEtag = crypto.createHash("sha256").update(current).digest("hex");
+  if (expectedEtag && expectedEtag !== currentEtag) throw new Error("This file changed on disk. Reopen it before saving your edits.");
+  if (target.extension === ".json") {
+    try { JSON.parse(value); } catch (error) { throw new Error(`JSON is not valid: ${error.message}`); }
+  }
+  const temp = `${target.file}.rsdw-edit-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+  const previous = `${target.file}.rsdw-previous-${process.pid}-${crypto.randomBytes(4).toString("hex")}`;
+  try {
+    fs.writeFileSync(temp, value, { encoding: "utf8", flag: "wx" });
+    // Keep a rollback copy because Windows game folders and antivirus filters can
+    // deny rename-over-existing even when ordinary writes are allowed.
+    fs.copyFileSync(target.file, previous, fs.constants.COPYFILE_EXCL);
+    try { fs.copyFileSync(temp, target.file); }
+    catch (error) { fs.copyFileSync(previous, target.file); throw error; }
+    fs.rmSync(previous, { force: true });
+  } finally {
+    try { if (fs.existsSync(temp)) fs.rmSync(temp, { force: true }); } catch {}
+    try { if (fs.existsSync(previous) && !fs.existsSync(target.file)) fs.copyFileSync(previous, target.file); } catch {}
+    try { if (fs.existsSync(previous)) fs.rmSync(previous, { force: true }); } catch {}
+  }
+  dbm.logEvent(worldId, "mod", `Edited ${target.owner.name}: ${target.relative}`);
+  return readEditableFile(worldId, lane, relative);
+}
+
+module.exports = { status, setSelections, selectedMods, browse, readEditableFile, writeEditableFile, setRequiredSource, setPakInstallMode, reapplySelections, readSelections, readPakInstallMode };

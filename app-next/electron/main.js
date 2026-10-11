@@ -48,6 +48,7 @@ let quitCleanupFinished = false;
 // True when the app was launched at login rather than opened by hand — used to start
 // straight to the tray without a window (feature: autostart to tray). Set in main().
 let launchedHidden = false;
+let windowAuthReady = Promise.resolve();
 
 // The executable is portable, but application state is deliberately kept in
 // Electron's normal per-user local data directory. Never bind Chromium cache,
@@ -289,7 +290,9 @@ function escapeHtml(value) {
   return String(value || "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
 }
 
-function loadAppIntoWindow(route = null) {
+async function loadAppIntoWindow(route = null) {
+  if (!mainWindow || !serverReady) return;
+  await windowAuthReady;
   if (!mainWindow || !serverReady) return;
   const base = isDev ? process.env.ELECTRON_START_URL : `http://127.0.0.1:${PORT}`;
   const target = route || pendingRoute || "";
@@ -527,9 +530,18 @@ function createWindow() {
     height: 840,
     minWidth: 940,
     minHeight: 640,
+    resizable: true,
+    maximizable: true,
+    thickFrame: true,
     backgroundColor: "#202427",
-    title: "RSDW Sync",
+    title: "RuneScape: Dragonwilds - Sync Launcher",
     autoHideMenuBar: true,   // hide File/Edit/View menu bar (Discord-like)
+    ...(process.platform === "win32" ? {
+      // Keep the native Windows caption buttons, but let the renderer paint the
+      // surrounding title bar so the window chrome belongs to the RSDW palette.
+      titleBarStyle: "hidden",
+      titleBarOverlay: { color: "#181b1e", symbolColor: "#f3efe7", height: 46 },
+    } : {}),
     icon: isDev
       ? path.join(__dirname, "..", "public", "icon.png")
       : path.join(process.resourcesPath, "app", "public", "icon.png"),
@@ -552,13 +564,10 @@ function createWindow() {
   // so the desktop app is recognised as the trusted admin from the very first request.
   // It's HttpOnly (invisible to page JS) and only ever lives in this Electron session —
   // a remote guest's browser has no way to obtain it.
-  mainWindow.webContents.session.cookies
+  mainWindow.loadURL(loadingPage());
+  windowAuthReady = mainWindow.webContents.session.cookies
     .set({ url: `http://127.0.0.1:${PORT}`, name: "dwsm_admin", value: ADMIN_TOKEN, httpOnly: true, sameSite: "lax" })
-    .catch(() => {})
-    .finally(() => {
-      if (!mainWindow) return;
-      mainWindow.loadURL(loadingPage());
-    });
+    .catch((error) => { logToFile(`Admin session cookie failed: ${error.message}`); });
 
   // Don't auto-show when we launched straight to the tray — the window is built so a
   // tray click has something to reveal, but it stays hidden until asked for.

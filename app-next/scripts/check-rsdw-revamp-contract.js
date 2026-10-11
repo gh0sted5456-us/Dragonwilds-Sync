@@ -156,6 +156,16 @@ function contains(rel, needle, message) {
   assert(!worldPage.includes("MapPanel") && !worldPage.includes('id: "broadcasts"'), "removed map and broadcast tabs must not return");
   const shell = read("components/Shell.jsx");
   assert(shell.includes('setTimeout(loadUpdates, 4000)'), "deferred game/framework update notification monitor missing");
+  assert(shell.includes("function SplashGate()") && shell.includes("launch-splash-dragonwilds") && shell.includes("launch-splash-rsdw"), "Dragonwilds-to-RSDW entry splash missing");
+  assert(shell.includes("RuneScape: Dragonwilds") && shell.includes("Sync Launcher"), "desktop product title missing");
+  const electronMain = read("electron/main.js");
+  assert(electronMain.includes('titleBarStyle: "hidden"') && electronMain.includes("titleBarOverlay"), "native Windows overlay title bar missing");
+  assert(electronMain.includes("resizable: true") && electronMain.includes("thickFrame: true"), "Windows edge and corner resizing must remain enabled");
+  assert(electronMain.indexOf("mainWindow.loadURL(loadingPage())") < electronMain.indexOf("windowAuthReady = mainWindow.webContents.session.cookies"), "startup placeholder can overwrite the authenticated app navigation");
+  contains("components/ModCodeEditor.jsx", 'import("monaco-editor")');
+  contains("components/ModCodeEditor.jsx", "Apply hotload");
+  contains("app/api/worlds/[id]/mods/editor/route.js", "!current.hotload");
+  contains("lib/mod-lanes.js", 'const EDITABLE_EXTENSIONS = new Set([".json", ".jsonc", ".lua"])');
   contains("electron/main.js", "loadingPage(");
   contains("electron/main.js", "startShareServer()");
   contains("electron/main.js", 'path.join(__dirname, "share-proxy.js")');

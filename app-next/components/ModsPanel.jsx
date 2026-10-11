@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, Icon, toast } from "@/components/ui";
 import { useJobsPoll } from "@/components/jobsClient";
+import ModCodeEditor from "@/components/ModCodeEditor";
 
 const GROUPS = [
   ["runeschema", "RuneSchema mods"],
@@ -23,6 +24,8 @@ export default function ModsPanel({ worldId, running }) {
   const [busy, setBusy] = useState(false);
   const [activeLane, setActiveLane] = useState("server");
   const [browser, setBrowser] = useState(null);
+  const [editor, setEditor] = useState(null);
+  const [editorSaving, setEditorSaving] = useState(false);
   const [prerequisites, setPrerequisites] = useState({ ue4ss: "", runeSchema: "" });
   const [runtimePackages, setRuntimePackages] = useState(null);
   const jobs = useJobsPoll();
@@ -137,6 +140,24 @@ export default function ModsPanel({ worldId, running }) {
     } catch (e) { toast(e.message, "error"); }
   }
 
+  async function openEditor(file) {
+    try {
+      const result = await api(`/api/worlds/${worldId}/mods/editor?lane=${encodeURIComponent(activeLane)}&path=${encodeURIComponent(file.relative)}`);
+      setEditor(result.file);
+    } catch (e) { toast(e.message, "error"); }
+  }
+
+  async function saveEditor(content) {
+    setEditorSaving(true);
+    try {
+      const result = await api(`/api/worlds/${worldId}/mods/editor`, { method: "PUT", body: { lane: activeLane, path: editor.relative, content, etag: editor.etag } });
+      setEditor(result.file);
+      toast(result.file.hotload && running ? `${result.file.modName} hotload file updated.` : `${result.file.name} saved.`, "success");
+      return true;
+    } catch (e) { toast(e.message, "error"); return false; }
+    finally { setEditorSaving(false); }
+  }
+
   if (!data) return <p className="subtle">Detecting routed installs and mods…</p>;
 
   return (
@@ -227,7 +248,7 @@ export default function ModsPanel({ worldId, running }) {
               return <div key={type}>
                 <div className="subtle" style={{ fontSize: "0.7rem", fontWeight: 750, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 5 }}>{title}</div>
                 <div style={{ display: "grid", gap: 5 }}>
-                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onScope={(scope) => setScope(mod, scope)} />)}
+                  {items.map((mod) => <ModFolder key={mod.selectionKey} mod={mod} selection={selections.get(mod.selectionKey)} busy={busy || running} onToggle={() => toggleFolder(mod)} onScope={(scope) => setScope(mod, scope)} onExplore={() => browse(relativeModPath(lane.root, mod.path))} />)}
                 </div>
               </div>;
             })}
@@ -236,12 +257,13 @@ export default function ModsPanel({ worldId, running }) {
         )}
       </section>}
 
-      {browser && <FolderExplorer data={browser} onBrowse={browse} onClose={() => setBrowser(null)} />}
+      {browser && <FolderExplorer data={browser} onBrowse={browse} onEdit={openEditor} onClose={() => setBrowser(null)} />}
+      {editor && <ModCodeEditor file={editor} running={running} saving={editorSaving} onSave={saveEditor} onClose={() => setEditor(null)} />}
     </div>
   );
 }
 
-function ModFolder({ mod, selection, busy, onToggle, onScope }) {
+function ModFolder({ mod, selection, busy, onToggle, onScope, onExplore }) {
   const selected = !!selection;
   const scope = selection?.scope || "both";
   return <div className="panel-inset" style={{ padding: "0.65rem 0.75rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
@@ -252,6 +274,7 @@ function ModFolder({ mod, selection, busy, onToggle, onScope }) {
     </div>
     {mod.syncEligible
       ? <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <button className="btn btn-subtle" onClick={onExplore}><Icon name="file" size={14} /> Code</button>
           {selected && <div className="panel" style={{ padding: 3, display: "flex", gap: 3 }}>
             {["client", "server", "both"].map((value) => <button key={value} className={`btn ${scope === value ? "btn-primary" : "btn-subtle"}`} style={{ padding: ".35rem .55rem" }} disabled={busy} onClick={() => onScope(value)}>{value[0].toUpperCase() + value.slice(1)}</button>)}
           </div>}
@@ -261,7 +284,7 @@ function ModFolder({ mod, selection, busy, onToggle, onScope }) {
   </div>;
 }
 
-function FolderExplorer({ data, onBrowse, onClose }) {
+function FolderExplorer({ data, onBrowse, onEdit, onClose }) {
   const parent = data.relative.split("/").filter(Boolean).slice(0, -1).join("/");
   return <section className="panel-inset" style={{ padding: "1rem" }}>
     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
@@ -278,9 +301,16 @@ function FolderExplorer({ data, onBrowse, onClose }) {
     <div style={{ display: "grid", gap: 5 }}>
       {data.relative && <button className="btn btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => onBrowse(parent)}>← Parent folder</button>}
       {data.directories.map((folder) => <button key={folder.relative} className="btn btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => onBrowse(folder.relative)}><Icon name="folder" size={14} /> {folder.name}</button>)}
-      {!data.directories.length && <div className="subtle" style={{ fontSize: "0.75rem" }}>No child folders.</div>}
+      {(data.files || []).map((file) => <button key={file.relative} className="btn btn-ghost" style={{ justifyContent: "flex-start" }} onClick={() => onEdit(file)}><Icon name="file" size={14} /> <span style={{ flex: 1, textAlign: "left" }}>{file.name}</span><span className="chip">{file.language.toUpperCase()}</span>{file.hotload && <span className="chip" style={{ background: "var(--green)" }}>HOTLOAD</span>}</button>)}
+      {!data.directories.length && !(data.files || []).length && <div className="subtle" style={{ fontSize: "0.75rem" }}>No child folders or editable JSON, JSONC, or Lua files.</div>}
     </div>
   </section>;
+}
+
+function relativeModPath(root, target) {
+  const base = String(root || "").replace(/\\/g, "/").replace(/\/$/, "");
+  const file = String(target || "").replace(/\\/g, "/");
+  return file.toLowerCase().startsWith(`${base.toLowerCase()}/`) ? file.slice(base.length + 1) : "";
 }
 
 function Notice({ children }) {

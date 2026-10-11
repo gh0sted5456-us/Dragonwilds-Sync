@@ -33,6 +33,9 @@ try {
   fs.mkdirSync(ue4ssFolder, { recursive: true }); fs.mkdirSync(runeFolder, { recursive: true });
   fs.writeFileSync(path.join(ue4ssFolder, "ID.txt"), "ModID: UEExample\nName: UE Example\nRuntimeRole: server\nHOTLOAD=YES\n");
   fs.writeFileSync(path.join(runeFolder, "ID.txt"), "ModID: RuneExample\nName: Rune Example\nRuntimeRole: client\nHOTLOAD=NO\n");
+  fs.writeFileSync(path.join(ue4ssFolder, "config.json"), '{"enabled":true}\n');
+  fs.writeFileSync(path.join(ue4ssFolder, "settings.jsonc"), '{\n  // editable comments\n  "speed": 1\n}\n');
+  fs.writeFileSync(path.join(ue4ssFolder, "main.lua"), "return { enabled = true }\n");
 
   dbm.insertWorld({
     world_id: worldId,
@@ -72,6 +75,18 @@ try {
   assert.equal(identifiedPak?.identity?.author, "Maxxfilth", "PAK author was not read");
   assert.equal(inventory.find((item) => item.modId === "UEExample")?.identity?.hotload, true, "UE4SS ID.txt was not read");
   assert.equal(inventory.find((item) => item.modId === "RuneExample")?.identity?.runtimeRole, "client", "RuneSchema ID.txt was not read");
+
+  const editorFolder = "RSDragonwilds/Binaries/Win64/ue4ss/Mods/ExampleUE4SS";
+  const editorBrowser = lanes.browse(worldId, "required", editorFolder);
+  assert.deepEqual(editorBrowser.files.map((file) => file.name).sort(), ["config.json", "main.lua", "settings.jsonc"], "Editable mod files were not exposed by the explorer");
+  assert(editorBrowser.files.every((file) => file.hotload), "HOTLOAD identity did not reach editable files");
+  const luaFile = lanes.readEditableFile(worldId, "required", `${editorFolder}/main.lua`);
+  assert.equal(luaFile.language, "lua");
+  const savedLua = lanes.writeEditableFile(worldId, "required", luaFile.relative, "return { enabled = false }\n", luaFile.etag);
+  assert(savedLua.content.includes("false"), "Lua edit was not saved");
+  assert.throws(() => lanes.writeEditableFile(worldId, "required", luaFile.relative, "return {}\n", luaFile.etag), /changed on disk/, "Stale editor save was not rejected");
+  const jsonFile = lanes.readEditableFile(worldId, "required", `${editorFolder}/config.json`);
+  assert.throws(() => lanes.writeEditableFile(worldId, "required", jsonFile.relative, "{broken", jsonFile.etag), /JSON is not valid/, "Invalid JSON was accepted");
 
   lanes.setSelections(worldId, [{ key: mod.selectionKey, scope: "client" }]);
   assert(!fs.existsSync(path.join(server, "RSDragonwilds", "Content", "Paks", "~mods", "RequiredExample.pak")), "Client-only mod was copied to the server");

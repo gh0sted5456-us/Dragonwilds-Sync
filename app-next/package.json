@@ -26,10 +26,12 @@
     "prepare:standalone": "node scripts/prepare-standalone.js"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
     "adm-zip": "^0.5.16",
     "discord.js": "^14.27.0",
     "i18next": "^23.16.8",
     "jpeg-js": "^0.4.4",
+    "monaco-editor": "^0.52.2",
     "next": "^14.2.35",
     "node-sqlite3-wasm": "^0.8.59",
     "pngjs": "^7.0.0",

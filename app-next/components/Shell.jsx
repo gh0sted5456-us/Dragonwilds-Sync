@@ -101,7 +101,10 @@ export default function Shell({ children }) {
   if (path === "/remote" || path.startsWith("/remote/")) return <>{children}</>;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", height: "100vh", overflow: "hidden" }}>
+    <div className="desktop-shell">
+      <SplashGate />
+      <DesktopTitleBar />
+      <div className="app-frame">
       {/* Single merged collapsible sidebar */}
       <aside style={{
         width: W, background: "var(--sidebar)", display: "flex", flexDirection: "column",
@@ -202,8 +205,62 @@ export default function Shell({ children }) {
           </div>
         ))}
       </div>
+      </div>
     </div>
   );
+}
+
+function DesktopTitleBar() {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => setVisible(!!window.desktop?.isElectron && window.desktop?.platform === "win32"), []);
+  if (!visible) return null;
+  return <div className="desktop-titlebar" aria-label="RuneScape Dragonwilds Sync Launcher window title bar">
+    <img src="/icon.png" alt="" />
+    <span className="desktop-titlebar-product">RuneScape: Dragonwilds</span>
+    <span className="desktop-titlebar-separator" aria-hidden="true">—</span>
+    <span className="desktop-titlebar-context">Sync Launcher</span>
+  </div>;
+}
+
+function SplashGate() {
+  const [visible, setVisible] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+
+  useEffect(() => {
+    if (!window.desktop?.isElectron) return;
+    try {
+      if (window.sessionStorage.getItem("rsdw-splash-entered") === "1") return;
+    } catch {}
+    setVisible(true);
+  }, []);
+
+  const enter = () => {
+    if (!visible || leaving) return;
+    setLeaving(true);
+    try { window.sessionStorage.setItem("rsdw-splash-entered", "1"); } catch {}
+    setTimeout(() => setVisible(false), 650);
+  };
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const keydown = (event) => { if (event.key === "Enter") enter(); };
+    window.addEventListener("keydown", keydown);
+    return () => window.removeEventListener("keydown", keydown);
+  }, [visible, leaving]);
+
+  if (!visible) return null;
+  return <div className={`launch-splash ${leaving ? "launch-splash-leaving" : ""}`} role="dialog" aria-label="Welcome to RSDW Sync">
+    <div className="launch-splash-glow" />
+    <div className="launch-splash-logos" aria-hidden="true">
+      <img className="launch-splash-dragonwilds" src="/rsdw/dragonwilds-wordmark.png" alt="" />
+      <img className="launch-splash-rsdw" src="/rsdw/app-icon.webp" alt="" />
+    </div>
+    <div className="launch-splash-copy">
+      <span>DRAGONWILDS PROFILES</span>
+      <button className="launch-splash-enter" onClick={enter}>Enter</button>
+      <small>Press Enter</small>
+    </div>
+  </div>;
 }
 
 function NavItem({ href, icon, asset, material, label, active, collapsed, badge }) {

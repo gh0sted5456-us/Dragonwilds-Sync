@@ -81,7 +81,7 @@ export default function WorldsPage() {
       {mode === "player" ? <PlayerHub /> : <>
       <header style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", marginBottom: "1.2rem", flexWrap: "wrap", gap: "1rem" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <img src="/rsdw/dragonwilds-wordmark.png" alt="RuneScape Dragonwilds" style={{ width: 185, maxHeight: 58, objectFit: "contain" }} />
+          <img className="dragonwilds-header-logo" src="/rsdw/dragonwilds-wordmark.png" alt="RuneScape Dragonwilds" />
           <div>
           <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>{t("worlds.title")}</h1>
           <p className="subtle" style={{ margin: "0.2rem 0 0", fontWeight: 700 }}>
@@ -215,9 +215,12 @@ function PlayerHub() {
 
   return <div>
     <header style={{ marginBottom: "1rem", display: "flex", gap: "1rem", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
-      <div style={{ minWidth: 240, flex: 1 }}>
-        <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1>
-        <p className="subtle" style={{ fontWeight: 700, marginBottom: 0 }}>Keep as many Worlds as you like. Connect, compare and resync only when you need to.</p>
+      <div style={{ minWidth: 240, flex: 1, display: "flex", alignItems: "center", gap: "1rem" }}>
+        <img className="dragonwilds-header-logo" src="/rsdw/dragonwilds-wordmark.png" alt="RuneScape Dragonwilds" />
+        <div>
+          <h1 className="heading" style={{ fontSize: "1.9rem", margin: 0 }}>Friends&apos; Worlds</h1>
+          <p className="subtle" style={{ fontWeight: 700, marginBottom: 0 }}>Keep as many Worlds as you like. Connect, compare and resync only when you need to.</p>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <LayoutToggle value={profileLayout} onChange={setProfileLayout} label="Friend profile view" />
